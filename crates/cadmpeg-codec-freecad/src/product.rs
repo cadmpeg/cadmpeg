@@ -16,9 +16,9 @@ use std::num::{NonZeroU64, NonZeroUsize};
 use crate::brep::ShapePayloadRecord;
 use crate::layout::link_array_side_entry_header as link_array;
 use crate::native::{
-    malformed, parse_bool, sole_named_property, ContainerNode,
-    CopyOnChangePolicy as NativeCopyOnChangePolicy, LinkArrayCardinality, LinkOccurrence,
-    ObjectRecord, ProductNode, ProductNodeRecord, PropertyRecord,
+    malformed, parse_bool, ContainerNode, CopyOnChangePolicy as NativeCopyOnChangePolicy,
+    LinkArrayCardinality, LinkOccurrence, ObjectRecord, ProductNode, ProductNodeRecord,
+    PropertyRecord,
 };
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -34,9 +34,9 @@ use cadmpeg_ir::units::FiniteVector;
 /// Elements one restored link array may contain. A larger count is malformed.
 const MAX_LINK_ARRAY_ELEMENTS: usize = 1_000_000;
 
-/// Occurrences a give-up names as left with no transform; the rest are
-/// counted.
-const MAX_NAMED_OCCURRENCES: usize = 8;
+/// Records a give-up names, such as the occurrences it leaves with no
+/// transform; the rest are counted.
+const MAX_NAMED_RECORDS: usize = 8;
 
 /// The product records of a document, and the product objects among them
 /// whose placement, scale, or element placements are stored in a form the
@@ -44,9 +44,12 @@ const MAX_NAMED_OCCURRENCES: usize = 8;
 pub(crate) struct ProductNodes {
     pub(crate) records: Vec<ProductNodeRecord>,
     pub(crate) unplaced: HashSet<String>,
-    /// The links given up for a prototype or element list stored in a form
-    /// the decoder cannot read.
+    /// The links given up for a member or element list stored in a form the
+    /// decoder cannot read.
     pub(crate) unresolved: Vec<UnresolvedLink>,
+    /// The links whose `LinkedObject` is stored in a form the decoder cannot
+    /// read.
+    pub(crate) unknown_prototypes: HashSet<String>,
     /// The give-ups of placement values, charged by [`transfer_neutral`]
     /// once it knows the occurrences each leaves with no transform.
     pub(crate) deferred: Vec<Deferred>,
@@ -62,6 +65,15 @@ pub(crate) struct UnresolvedLink {
 pub(crate) struct Deferred {
     object: String,
     record: GivenUpRecord,
+}
+
+/// A link given up for a member or element list stored in a form the
+/// decoder cannot read, and the properties given up with it.
+struct DroppedLink<'a> {
+    object: &'a ObjectRecord,
+    /// The objects its stored `ElementList` names, as far as it reads.
+    listed: Vec<String>,
+    given_up: Vec<(&'a PropertyRecord, CodecError)>,
 }
 
 /// A property value of one object.
@@ -173,6 +185,8 @@ pub(crate) fn transfer(
     let mut output = Vec::new();
     let mut unplaced = HashSet::new();
     let mut unresolved = Vec::new();
+    let mut unknown_prototypes = HashSet::new();
+    let mut dropped_links = Vec::new();
     let mut deferred = Vec::new();
     for object in objects {
         let Some(kind) = product_kind(&object.type_name) else {
@@ -211,30 +225,33 @@ pub(crate) fn transfer(
             &mut membership,
         )
         .unwrap_or_default();
-        let mut linked_target = |name: &str, expected_type: &str, root: &str| {
-            if !occurrence {
-                return None;
-            }
-            sole(
-                stored(&owned, name, |property| {
-                    Ok(single_link(property, expected_type, root, name)?.cloned())
-                }),
-                &mut membership,
+        let mut prototype_unreadable = Vec::new();
+        let mut copy_unreadable = Vec::new();
+        let (prototype_link, copy_on_change_source, copy_on_change_group) = if occurrence {
+            (
+                linked_target(
+                    &owned,
+                    ("LinkedObject", "App::PropertyXLink", "XLink"),
+                    &mut prototype_unreadable,
+                ),
+                linked_target(
+                    &owned,
+                    ("LinkCopyOnChangeSource", "App::PropertyXLink", "XLink"),
+                    &mut copy_unreadable,
+                ),
+                linked_target(
+                    &owned,
+                    ("LinkCopyOnChangeGroup", "App::PropertyLink", "Link"),
+                    &mut copy_unreadable,
+                ),
             )
-            .flatten()
+        } else {
+            (None, None, None)
         };
-        let prototype_link = linked_target("LinkedObject", "App::PropertyXLink", "XLink");
-        let copy_on_change_source =
-            linked_target("LinkCopyOnChangeSource", "App::PropertyXLink", "XLink");
-        let copy_on_change_group =
-            linked_target("LinkCopyOnChangeGroup", "App::PropertyLink", "Link");
         let placed = object_placement(&owned, losses, &mut deferred)?;
-        // A link built without one of these fields places the wrong objects.
+        // A link built without its member or element list places the wrong
+        // objects.
         if occurrence && !membership.is_empty() {
-            let mut dropped = Some(id.as_str());
-            for (property, error) in membership {
-                give_up(losses, property, error, dropped.take())?;
-            }
             unresolved.push(UnresolvedLink {
                 object: object.id().to_owned(),
                 placement: match placed {
@@ -242,7 +259,40 @@ pub(crate) fn transfer(
                     Placed::Unstated | Placed::Unknown => None,
                 },
             });
+            unplaced.insert(object.id().to_owned());
+            membership.extend(prototype_unreadable);
+            membership.extend(copy_unreadable);
+            dropped_links.push(DroppedLink {
+                object,
+                listed: owned
+                    .iter()
+                    .find(|property| property.name == "ElementList")
+                    .map(|property| linked_object_names(property.links()))
+                    .unwrap_or_default(),
+                given_up: membership,
+            });
             continue;
+        }
+        for (property, error) in prototype_unreadable {
+            unknown_prototypes.insert(object.id().to_owned());
+            deferred.push(Deferred {
+                object: object.id().to_owned(),
+                record: given_up(property, error, None)?.costing(format_args!(
+                    "the occurrences of {} place an unresolved definition",
+                    object.id()
+                )),
+            });
+        }
+        let copy_on_change_stated = copy_unreadable.is_empty();
+        for (property, error) in copy_unreadable {
+            losses.push(
+                given_up(property, error, None)?
+                    .costing(format_args!(
+                        "the copy-on-change state of {} is not stated",
+                        object.id()
+                    ))
+                    .loss(),
+            );
         }
         // A container keeps its placement and lists no member.
         for (property, error) in membership {
@@ -250,7 +300,7 @@ pub(crate) fn transfer(
             let listed = if listed.is_empty() {
                 String::new()
             } else {
-                format!(" ({})", listed.join(", "))
+                format!(" ({})", bounded_names(listed.iter().map(String::as_str)))
             };
             let consequence = if kind == ProductKind::Group {
                 format!(
@@ -320,12 +370,17 @@ pub(crate) fn transfer(
                         bool_value(property, "LinkCopyOnChangeTouched")
                     })
                     .reported(losses)?;
-                let copy_on_change = match crate::native::CopyOnChange::from_admitted(
-                    copy_on_change_policy,
-                    copy_on_change_source,
-                    copy_on_change_group,
-                    copy_on_change_touched,
-                ) {
+                let admitted = if copy_on_change_stated {
+                    crate::native::CopyOnChange::from_admitted(
+                        copy_on_change_policy,
+                        copy_on_change_source,
+                        copy_on_change_group,
+                        copy_on_change_touched,
+                    )
+                } else {
+                    Ok(None)
+                };
+                let copy_on_change = match admitted {
                     Ok(copy_on_change) => copy_on_change,
                     Err(error) => {
                         let payload = [
@@ -400,12 +455,129 @@ pub(crate) fn transfer(
             node,
         });
     }
+    drop_link_elements(
+        objects,
+        &by_owner,
+        dropped_links,
+        &mut output,
+        &mut deferred,
+    )?;
     Ok(ProductNodes {
         records: output,
         unplaced,
         unresolved,
+        unknown_prototypes,
         deferred,
     })
+}
+
+/// Gives up each link of `dropped` with the `App::LinkElement` objects it
+/// holds: those its stored `ElementList` names and those whose `_LinkOwner`
+/// is its persisted id, other than the elements a kept link lists. Their
+/// records leave `output`; each give-up is kept in `deferred`.
+fn drop_link_elements(
+    objects: &[ObjectRecord],
+    by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    dropped: Vec<DroppedLink<'_>>,
+    output: &mut Vec<ProductNodeRecord>,
+    deferred: &mut Vec<Deferred>,
+) -> Result<(), CodecError> {
+    if dropped.is_empty() {
+        return Ok(());
+    }
+    let dropped_objects = dropped
+        .iter()
+        .map(|link| link.object.id().as_str())
+        .collect::<HashSet<_>>();
+    let kept = output
+        .iter()
+        .flat_map(ProductNodeRecord::element_objects)
+        .cloned()
+        .collect::<HashSet<_>>();
+    let elements = objects
+        .iter()
+        .filter(|object| {
+            object.type_name == "App::LinkElement"
+                && !kept.contains(object.id())
+                && !dropped_objects.contains(object.id().as_str())
+        })
+        .collect::<Vec<_>>();
+    let mut removed = HashSet::new();
+    for link in dropped {
+        let mut ids = vec![crate::native::native_id("product", link.object.name())];
+        for element in &elements {
+            let owner = by_owner
+                .get(element.id().as_str())
+                .and_then(|owned| owned.iter().find(|property| property.name == "_LinkOwner"))
+                .and_then(|property| link_owner(property).ok());
+            if link.listed.contains(element.id())
+                || owner.is_some_and(|owner| Some(owner) == link.object.persistent_id)
+            {
+                ids.push(crate::native::native_id("product", element.name()));
+                removed.insert(element.id().clone());
+            }
+        }
+        let mut ids = Some(ids);
+        for (property, error) in link.given_up {
+            let record = given_up(property, error, None)?;
+            deferred.push(Deferred {
+                object: link.object.id().clone(),
+                record: match ids.take() {
+                    Some(ids) => record.dropping(
+                        ids.iter()
+                            .map(|id| Identity::try_from(id.as_str()))
+                            .collect::<Result<Vec<_>, _>>()
+                            .map_err(CodecError::malformed)?,
+                    ),
+                    None => record,
+                },
+            });
+        }
+    }
+    output.retain(|record| !removed.contains(&record.object));
+    Ok(())
+}
+
+/// The target of link property `name` of type `expected_type` and root
+/// element `root`, with an unreadable property kept in `unreadable`.
+fn linked_target<'a>(
+    owned: &[&'a PropertyRecord],
+    (name, expected_type, root): (&str, &str, &str),
+    unreadable: &mut Vec<(&'a PropertyRecord, CodecError)>,
+) -> Option<crate::native::LinkTarget> {
+    sole(
+        stored(owned, name, |property| {
+            Ok(single_link(property, expected_type, root, name)?.cloned())
+        }),
+        unreadable,
+    )
+    .flatten()
+}
+
+/// The persisted id of the link that holds link element `property`'s owner.
+fn link_owner(property: &PropertyRecord) -> Result<i64, CodecError> {
+    let value = single_value(property, "App::PropertyInteger", "_LinkOwner", "Integer")?;
+    value
+        .attributes
+        .get("value")
+        .and_then(|value| value.parse().ok())
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "product property {} has no integer value",
+                property.id
+            ))
+        })
+}
+
+/// `names`, the first [`MAX_NAMED_RECORDS`] of them named and the rest
+/// counted.
+fn bounded_names<'a>(names: impl ExactSizeIterator<Item = &'a str>) -> String {
+    let count = names.len();
+    let named = names.take(MAX_NAMED_RECORDS).collect::<Vec<_>>().join(", ");
+    match count.checked_sub(MAX_NAMED_RECORDS) {
+        Some(rest) if rest > 0 => format!("{named} and {rest} more"),
+        _ => named,
+    }
 }
 
 /// The value of `value`, a placement value of a link, with the give-up of an
@@ -580,21 +752,11 @@ pub(crate) fn transfer_neutral(
 
 /// The consequence that occurrences `occurrences` state no transform.
 fn no_transform(occurrences: &[OccurrenceId]) -> String {
-    let named = occurrences
-        .iter()
-        .take(MAX_NAMED_OCCURRENCES)
-        .map(OccurrenceId::as_str)
-        .collect::<Vec<_>>()
-        .join(", ");
-    match occurrences.len() {
-        1 => format!("occurrence {named} states no transform"),
-        count if count <= MAX_NAMED_OCCURRENCES => {
-            format!("occurrences {named} state no transform")
-        }
-        count => format!(
-            "occurrences {named} and {} more state no transform",
-            count - MAX_NAMED_OCCURRENCES
-        ),
+    let named = bounded_names(occurrences.iter().map(OccurrenceId::as_str));
+    if occurrences.len() == 1 {
+        format!("occurrence {named} states no transform")
+    } else {
+        format!("occurrences {named} state no transform")
     }
 }
 
@@ -643,25 +805,43 @@ fn project(
         .filter(|object| crate::design::is_datum_object(&object.type_name))
         .map(|object| object.id().as_str())
         .collect::<HashSet<_>>();
+    // Links place their own occurrences, also where the decoder gave up
+    // their record.
+    let link_objects = objects
+        .iter()
+        .filter(|object| product_kind(&object.type_name) == Some(ProductKind::Occurrence))
+        .map(|object| object.id().as_str())
+        .collect::<HashSet<_>>();
+    let mut properties_by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
+    let mut owners = Vec::new();
+    for property in properties {
+        if !properties_by_owner.contains_key(property.owner.as_str()) {
+            properties_by_owner.insert(property.owner.as_str(), Vec::new());
+            owners.push(property.owner.as_str());
+        }
+        if let Some(owned) = properties_by_owner.get_mut(property.owner.as_str()) {
+            owned.push(property);
+        }
+    }
+    let parent_map = ParentMap::new(records, objects, &properties_by_owner);
     let mut component_objects = Vec::new();
     // Components placed by a container of their own; the rest are reached
-    // only as a link's prototype and are placed by those links.
+    // only as a link's prototype and are placed by those links. An object a
+    // `PartDesign::Body` holds is placed only through the Body.
     let mut placed_objects = HashSet::new();
-    let mut occurrence_objects = HashSet::new();
     let mut link_prototypes = HashSet::new();
     for record in records {
-        if matches!(record.node, ProductNode::Occurrence(_)) {
-            occurrence_objects.insert(record.object.as_str());
-        } else {
+        if !matches!(record.node, ProductNode::Occurrence(_)) {
             component_objects.push(record.object.as_str());
             placed_objects.insert(record.object.as_str());
         }
     }
     for record in records {
         for member in record.members().iter().filter(|member| {
-            !occurrence_objects.contains(member.as_str())
+            !link_objects.contains(member.as_str())
                 && !constraint_objects.contains(member.as_str())
                 && !datum_objects.contains(member.as_str())
+                && !parent_map.body_held(member)
         }) {
             component_objects.push(member.as_str());
             placed_objects.insert(member.as_str());
@@ -689,7 +869,7 @@ fn project(
             component_objects.push(name);
             if matches!(record.node, ProductNode::LinkGroup { .. })
                 && object_by_id.contains_key(name.as_str())
-                && !occurrence_objects.contains(name.as_str())
+                && !link_objects.contains(name.as_str())
                 && !constraint_objects.contains(name.as_str())
             {
                 placed_objects.insert(name.as_str());
@@ -701,7 +881,7 @@ fn project(
             if reference.document().is_none() {
                 if let Some(name) = reference
                     .object()
-                    .filter(|name| !occurrence_objects.contains(*name))
+                    .filter(|name| !link_objects.contains(*name) && !parent_map.body_held(name))
                 {
                     component_objects.push(name);
                     placed_objects.insert(name);
@@ -712,17 +892,6 @@ fn project(
     component_objects.sort_unstable_by(Ord::cmp);
     component_objects.dedup();
 
-    let mut properties_by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
-    let mut owners = Vec::new();
-    for property in properties {
-        if !properties_by_owner.contains_key(property.owner.as_str()) {
-            properties_by_owner.insert(property.owner.as_str(), Vec::new());
-            owners.push(property.owner.as_str());
-        }
-        if let Some(owned) = properties_by_owner.get_mut(property.owner.as_str()) {
-            owned.push(property);
-        }
-    }
     let mut placements_by_object = HashMap::new();
     let mut unplaced = nodes
         .unplaced
@@ -734,6 +903,14 @@ fn project(
             if let Some(frame) = record.local_transform() {
                 placements_by_object.insert(owner, frame.transform());
             }
+            continue;
+        }
+        // `transfer` read and gave up the placement of a product object it
+        // states no record for.
+        if object_by_id
+            .get(owner)
+            .is_some_and(|object| product_kind(&object.type_name).is_some())
+        {
             continue;
         }
         let owned = properties_by_owner
@@ -790,34 +967,19 @@ fn project(
             unplaced.remove(owner);
         }
     }
-    // A PartDesign body and a copy-on-change group show their children only through themselves.
+    // A copy-on-change group shows its children only through itself.
     let copy_on_change_groups = records
         .iter()
         .filter_map(ProductNodeRecord::copy_on_change_group)
         .filter(|target| target.document().is_none())
         .filter_map(|target| target.object())
         .collect::<HashSet<_>>();
-    let mut listed_objects = HashSet::new();
-    for record in records
+    let copied_objects = records
         .iter()
         .filter(|record| copy_on_change_groups.contains(record.object.as_str()))
-    {
-        listed_objects.extend(record.element_objects().iter().cloned());
-    }
-    for object in objects
-        .iter()
-        .filter(|object| object.type_name == "PartDesign::Body")
-    {
-        let owned = properties_by_owner
-            .get(object.id().as_str())
-            .map_or(&[][..], Vec::as_slice);
-        // An unreadable `Group` lists nothing.
-        if let Ok(Some(group)) = sole_named_property("product", owned, "Group") {
-            if let Ok(links) = link_list(group, "App::PropertyLinkList", "Group") {
-                listed_objects.extend(linked_object_names(links));
-            }
-        }
-    }
+        .flat_map(ProductNodeRecord::element_objects)
+        .map(String::as_str)
+        .collect::<HashSet<_>>();
 
     let definition_id = |object: &str| -> Result<ProductDefinitionId, CodecError> {
         ProductDefinitionId::mint(crate::native::model_id(
@@ -831,7 +993,6 @@ fn project(
         OccurrenceId::mint(crate::native::model_id("occurrence", object, "container"))
             .map_err(CodecError::malformed)
     };
-    let parent_map = ParentMap::new(records, objects, &properties_by_owner);
     for (carrier, listed) in &parent_map.conflicts {
         let listed = listed
             .iter()
@@ -842,7 +1003,8 @@ fn project(
             losses,
             carrier,
             malformed(format!(
-                "it lists {listed}; each is placed in the group that holds it"
+                "it lists {listed}; FreeCAD keeps each in the group that holds it, \
+                 and this list places none of them"
             )),
             None,
         )?;
@@ -874,6 +1036,7 @@ fn project(
             &Placements {
                 placed: &placements_by_object,
                 unplaced: &unplaced,
+                unknown_prototypes: &nodes.unknown_prototypes,
             },
             &mut Links {
                 stack: Vec::new(),
@@ -1123,8 +1286,9 @@ fn project(
                     && !(definition.bodies.is_empty() && definition.instance_bodies.is_empty())
             });
         if has_geometry
-            && !occurrence_objects.contains(prototype)
-            && !listed_objects.contains(prototype)
+            && !link_objects.contains(prototype)
+            && !copied_objects.contains(prototype)
+            && !parent_map.body_held(prototype)
             && (placements_by_object.contains_key(prototype) || unplaced.contains(prototype))
         {
             placed_objects.insert(prototype);
@@ -1322,6 +1486,9 @@ pub(crate) fn localize_definition_bodies(
 struct Placements<'a> {
     placed: &'a HashMap<&'a str, Transform>,
     unplaced: &'a HashSet<&'a str>,
+    /// The links whose `LinkedObject` is stored in a form the decoder cannot
+    /// read.
+    unknown_prototypes: &'a HashSet<String>,
 }
 
 /// The walk of a nested link chain: the links entered, the links given up
@@ -1344,7 +1511,7 @@ enum Prototype {
 /// after the one that object follows in turn. Unknown where one of them is
 /// stored in a form the decoder cannot read or does not compose, and where
 /// the chain returns to a link it holds; each link of such a cycle is given
-/// up once.
+/// up once, whatever the placements on the chain.
 fn linked_prototype_transform(
     ctx: &DecodeContext<'_>,
     record: &ProductNodeRecord,
@@ -1357,7 +1524,11 @@ fn linked_prototype_transform(
         return Ok(Prototype::At(Transform::identity()));
     }
     let Some(prototype) = record.prototype() else {
-        return Ok(Prototype::At(Transform::identity()));
+        return Ok(if placements.unknown_prototypes.contains(&record.object) {
+            Prototype::Unknown(record.object.clone())
+        } else {
+            Prototype::At(Transform::identity())
+        });
     };
     if let Some(start) = links
         .stack
@@ -1377,17 +1548,9 @@ fn linked_prototype_transform(
         }
         return Ok(Prototype::Unknown(record.object.clone()));
     }
-    if placements.unplaced.contains(prototype) {
-        return Ok(Prototype::Unknown(prototype.to_owned()));
-    }
 
     links.stack.push(record.object.clone());
     let target_record = records.get(prototype).copied();
-    let placement = target_record
-        .and_then(ProductNodeRecord::local_transform)
-        .map(FiniteFrame::transform)
-        .or_else(|| placements.placed.get(prototype).copied())
-        .unwrap_or_default();
     let nested = target_record.map_or(Ok(Prototype::At(Transform::identity())), |target| {
         linked_prototype_transform(ctx, target, records, placements, links)
     });
@@ -1396,18 +1559,30 @@ fn linked_prototype_transform(
         Prototype::At(nested) => nested,
         unknown @ Prototype::Unknown(_) => return Ok(unknown),
     };
+    if placements.unplaced.contains(prototype) {
+        return Ok(Prototype::Unknown(prototype.to_owned()));
+    }
+    let placement = target_record
+        .and_then(ProductNodeRecord::local_transform)
+        .map(FiniteFrame::transform)
+        .or_else(|| placements.placed.get(prototype).copied())
+        .unwrap_or_default();
     match placement.compose(nested) {
         Ok(transform) => Ok(Prototype::At(transform)),
         Err(error) => {
-            links.deferred.push(Deferred {
-                object: record.object.clone(),
-                record: GivenUpRecord::new(
-                    Identity::try_from(record.object.as_str()).map_err(CodecError::malformed)?,
-                    format_args!(
-                        "the placement of its linked object {prototype} does not compose: {error}"
+            if links.charged.insert(record.object.clone()) {
+                links.deferred.push(Deferred {
+                    object: record.object.clone(),
+                    record: GivenUpRecord::new(
+                        Identity::try_from(record.object.as_str())
+                            .map_err(CodecError::malformed)?,
+                        format_args!(
+                            "the placement of its linked object {prototype} does not compose: \
+                             {error}"
+                        ),
                     ),
-                ),
-            });
+                });
+            }
             Ok(Prototype::Unknown(record.object.clone()))
         }
     }
@@ -1543,6 +1718,12 @@ impl<'a> ParentMap<'a> {
     /// The coordinate-system group that holds `object`.
     pub(crate) fn coordinate(&self, object: &str) -> Option<&'a str> {
         self.coordinate.get(object).copied()
+    }
+
+    /// Whether a `PartDesign::Body` holds `object`.
+    fn body_held(&self, object: &str) -> bool {
+        self.coordinate(object)
+            .is_some_and(|holder| !self.parts.contains(holder))
     }
 
     /// The product containers that place `object`, first its `App::Part` or
@@ -2170,15 +2351,41 @@ fn bool_list(property: &PropertyRecord, name: &str) -> Result<Vec<bool>, CodecEr
 pub(crate) fn product_cycle_nodes<'a>(
     nodes: &HashMap<&'a str, &'a ProductNodeRecord>,
 ) -> Result<HashSet<&'a str>, CodecError> {
+    cycle_nodes(nodes, |node| {
+        node.members()
+            .iter()
+            .map(String::as_str)
+            .chain(node.prototype())
+            .chain(node.element_objects().iter().map(String::as_str))
+            .collect()
+    })
+}
+
+/// The links on a cycle of links that follow their linked objects, which
+/// [`transfer_neutral`] gives up.
+pub(crate) fn followed_link_cycle_nodes<'a>(
+    nodes: &HashMap<&'a str, &'a ProductNodeRecord>,
+) -> Result<HashSet<&'a str>, CodecError> {
+    cycle_nodes(nodes, |node| {
+        node.prototype()
+            .filter(|_| node.link_transform() == Some(true) && node.external_document().is_none())
+            .into_iter()
+            .collect()
+    })
+}
+
+/// The records of `nodes` on a cycle of the edges `targets` gives.
+fn cycle_nodes<'a>(
+    nodes: &HashMap<&'a str, &'a ProductNodeRecord>,
+    targets: impl Fn(&'a ProductNodeRecord) -> Vec<&'a str>,
+) -> Result<HashSet<&'a str>, CodecError> {
     let edges = |name: &'a str| {
-        nodes.get(name).into_iter().flat_map(|node| {
-            node.members()
-                .iter()
-                .map(String::as_str)
-                .chain(node.prototype())
-                .chain(node.element_objects().iter().map(String::as_str))
-                .filter(|target| nodes.contains_key(target))
-        })
+        nodes
+            .get(name)
+            .map(|node| targets(node))
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|target| nodes.contains_key(target))
     };
     let collect_edges = |name: &'a str| -> Result<Vec<&'a str>, CodecError> {
         let mut targets = Vec::new();

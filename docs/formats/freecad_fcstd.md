@@ -643,8 +643,10 @@ components nor occurrences. A component gets its own occurrence when it is a pro
 container member, or an object a joint names directly. A link prototype whose geometry is in its
 own frame (definition bodies, instance bodies, or a mesh of its own) and that stores a placement,
 and that is not itself a link, also gets an occurrence at its own placement, unless
-it is in the `Group` of a `PartDesign::Body` or in the `ElementList` of the object that a link's
-`LinkCopyOnChangeGroup` names; such a prototype is a definition placed only by its links. An
+it is in the `ElementList` of the object that a link's `LinkCopyOnChangeGroup` names; such a
+prototype is a definition placed only by its links. An object that a `PartDesign::Body` holds has
+no occurrence of its own: a container, joint, or link that lists or names it does not place it, and
+an `App::LinkGroup` that lists it shows it at the link group's placement. An
 `App::LinkGroup` applies its placement to each object of its `ElementList`. The bodies of a
 definition come only from the `Shape` property of its object. Other shape payloads, such as
 `AddSubShape` and `InternalShape`, are not definition bodies. A datum (`PartDesign::Plane`,
@@ -660,10 +662,13 @@ non-finite transforms, and container cycles are validation errors; external targ
 intentionally unresolved. The native graph retains every direct container membership. FreeCAD holds
 an object in one coordinate-system group: an `App::Part`, `Assembly::AssemblyObject`,
 `Assembly::AssemblyLink`, or `PartDesign::Body`. A member that a later group in document order also
-lists stays in the first, and the later group's list property is given up as `record.unreadable`.
-An `App::LinkGroup` lists objects that a coordinate-system group also holds. Each object it lists
-has its own occurrence under the link group, beside its occurrence in the group that holds it. The
-occurrence under the first container that lists an object keeps the object's occurrence identity; the identity of each further occurrence adds that container's object key. The
+lists stays in the first, and the later group's list property is given up as `record.unreadable`;
+the later group places none of the objects the first holds. A `PartDesign::Body` lists as its
+features only the objects it holds, and a `Tip` that names an object it does not hold selects no
+active feature. An `App::LinkGroup` lists objects that a coordinate-system group also holds. Each
+object it lists has its own occurrence under the link group, beside its occurrence in the group
+that holds it. The occurrence under the first container that lists an object keeps the object's
+occurrence identity; the identity of each further occurrence adds that container's object key. The
 object that a link's `LinkCopyOnChangeGroup` names is a hidden `App::LinkGroup` that holds the
 link's copies and places none of them; it places a member only where no other container lists it.
 The primitive frames of the design layer and the product occurrences read this one parent
@@ -681,8 +686,10 @@ an empty or absent `Id` does not select `PartNumber`. Other product runtimes hav
 number semantics for a same-named `Id` property. Product object identity, user-visible labels, and BOM
 column selection are distinct from the part-number value. Both properties retain their own type and
 value, including empty strings. A wrong runtime type, wrong root tag, missing or extra direct value,
-nested value, or missing `value` retains the property natively. Duplicate property names within one
-owner are malformed.
+nested value, or missing `value` retains the property natively. FreeCAD restores the `_Property`
+elements of an owner and then its `Property` elements, each into the property of its name. Where
+an owner stores more than one element of one name, the element restored last sets the property,
+and the reading emits `metadata.persistence-property-repeated`.
 
 Named product carriers use the producer runtime type and value grammar. `Group` and `ElementList`
 are `App::PropertyLinkList` properties with one `LinkList` root; its `count` equals the number of
@@ -712,15 +719,22 @@ malformed.
 Each malformed named carrier is given up as a `record.unreadable` that names the property, and the
 rest of the document is kept. A container whose `Group` or `ElementList` is malformed keeps its
 product record, its placement, and its occurrence, and lists no member; the give-up states that the
-objects it lists are placed without its placement. A malformed `Group`, `ElementList`,
-`LinkedObject`, `LinkCopyOnChangeSource`, or `LinkCopyOnChangeGroup` of a link states its prototype
-or elements, so the link's product record is dropped with it, and the link's design feature is a
-`Place` whose operation is unresolved, at the placement the link stores. A malformed placement,
+objects it lists are placed without its placement; it names at most eight of them and counts the
+rest. A malformed `Group` or `ElementList` of a link states its elements, so the link's product
+record is dropped with it, together with the record of each `App::LinkElement` the link holds: each
+that its `ElementList` names and each whose `_LinkOwner` is the link's persisted `id`, unless another
+link lists it. The link's design feature is a `Place` whose operation is unresolved, at the
+placement the link stores, and each link occurrence that composes after the link has no transform.
+The link and its elements have no occurrence, and a container that lists the link does not place
+it. A link with a malformed `LinkedObject` keeps its product record with no prototype: each of its
+occurrences places an unresolved definition, and with `LinkTransform` true it has no transform. A
+malformed `LinkCopyOnChangeSource` or `LinkCopyOnChangeGroup` is given up with the link's
+copy-on-change state; the link keeps its product record. A malformed placement,
 `Scale`, `ScaleVector`, `PlacementList`, or `ScaleList` leaves each occurrence of the object, and
 each link occurrence that composes after its placement, with no transform; its give-up names those
 occurrences. A chain of links that follow their linked objects and return to a link they hold gives
-up each link of the cycle as `record.unreadable`; each link occurrence that composes after the cycle
-has no transform. Any other malformed carrier is
+up each link of the cycle as `record.unreadable`, whatever the placements on the chain hold; each
+link occurrence that composes after the cycle has no transform. Any other malformed carrier is
 absent from the product record. A malformed `ShowElement` reads as true where the link lists
 element objects, which FreeCAD keeps only while it shows them, and as false otherwise. A link
 copy-on-change payload with no readable `LinkCopyOnChange` policy is given up with it. An object
@@ -742,8 +756,9 @@ list by source order. An object that stores `LinkPlacement` is placed at it, wha
 object's own placement composes after the link's. FreeCAD holds one value in both carriers, so
 where one is malformed the other supplies the placement. Where both carry different values, the
 `Placement` value is stale, and the reading emits `assembly.placement-alias-noncanonical`. Each named
-`LinkedObject`, `LinkPlacement`, `Placement`, and `LinkTransform` carrier occurs at most once in a product record. Each placement carrier has at most
-one `App::PropertyPlacement` property with at most one `PropertyPlacement` value. A value carries finite
+`LinkedObject`, `LinkPlacement`, `Placement`, and `LinkTransform` carrier occurs at most once in a
+product record. Each placement carrier has at most one `App::PropertyPlacement` property with at
+most one `PropertyPlacement` value. A value carries finite
 `Px`, `Py`, and `Pz`. When `A` is present, finite axis-angle components `Ox`, `Oy`, `Oz`, and
 `A` are authoritative; the quaternion attributes are ignored. When `A` is absent, finite
 quaternion components `Q0` through `Q3` are required and authoritative; axis-angle attributes
@@ -757,7 +772,8 @@ For nested links, `prototype_transform` records the linked placement chain selec
 The chain resolves each local product target through its unique product record. A local target with
 no product record contributes its persisted `LinkPlacement` matrix or its restored `Placement`
 matrix directly.
-Prototype cycles are invalid in both the native and neutral product graphs.
+Prototype cycles are invalid in both the native and neutral product graphs, except a cycle of links
+that follow their linked objects, whose links are given up.
 
 CADIR decision: a scalar link whose `LinkTransform` is true and whose linked object has no own
 occurrence in the document's scope emits `feature.link-placement-unresolved`; its v11 `Place`
@@ -951,7 +967,9 @@ runtime type, without exactly one direct `Bool`, or with any other value does no
 operation remains native.
 Part `Extrusion` `DirMode` is an `App::PropertyEnumeration` whose indices `0`, `1`, and `2` mean
 Custom, Edge, and Normal. Custom uses `Dir`, Edge uses `DirLink`, and Normal uses the base-shape
-normal. An absent `DirMode` means Custom. A selected present `DirMode` carrier with another
+normal, which FreeCAD also stores in `Dir`. Where the base-shape normal is unknown, Normal uses the
+stored `Dir`, and with no `Dir` the direction is the profile normal. An absent `DirMode` means
+Custom. A selected present `DirMode` carrier with another
 runtime type, without exactly one direct `Integer`, or with a non-integer, negative, duplicate,
 nested, or unsupported index does not select a neutral extrusion; the operation remains native.
 Part `Extrusion` boolean carriers `Solid`, `Reversed`, and `Symmetric` are `App::PropertyBool`

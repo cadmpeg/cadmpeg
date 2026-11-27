@@ -685,7 +685,7 @@ fn link_placements_without_a_policy_apply_link_placement() {
 }
 
 #[test]
-fn ambiguous_link_prototype_carriers_give_up_the_link() {
+fn an_ambiguous_link_prototype_carrier_leaves_the_link_with_no_prototype() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3">
  <Object type="Part::Feature" name="First" id="1"/>
@@ -701,21 +701,27 @@ fn ambiguous_link_prototype_carriers_give_up_the_link() {
 </ObjectData></Document>"#;
     let result = decode_document(document);
     assert!(gives_up(&result, "Occurrence", "LinkedObject"));
-    assert!(product_node(&result, "Occurrence").is_none());
-    assert!(!result
-        .ir()
-        .model
-        .occurrences
-        .iter()
-        .any(
-            |occurrence| occurrence.native_ref.as_deref() == Some("fcstd:native:object#Occurrence")
-        ));
+    assert_eq!(
+        product_node(&result, "Occurrence")
+            .expect("the link keeps its record")
+            .prototype(),
+        None
+    );
+    let instance = occurrence(&result, "#Occurrence:instance");
+    assert!(
+        instance.prototype.as_str().ends_with(":unresolved"),
+        "{instance:?}"
+    );
+    assert_eq!(
+        instance.transform,
+        Some(cadmpeg_ir::transform::Transform::identity())
+    );
     assert_valid_document(result.ir());
 }
 
 #[test]
-fn rejects_duplicate_product_carriers() {
-    for document in [
+fn a_repeated_product_carrier_keeps_the_element_freecad_restores_last() {
+    let [prototype, placement] = [
         r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3">
  <Object type="Part::Feature" name="First" id="1"/>
@@ -744,18 +750,35 @@ fn rejects_duplicate_product_carriers() {
   <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="20" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#,
-    ] {
-        let error = FcstdCodec
-            .decode(
-                &mut Cursor::new(archive(document)),
-                &DecodeOptions::default(),
-            )
-            .expect_err("duplicate product carrier");
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-        ));
-    }
+    ];
+    let repeated = crate::loss::FreecadLossCode::PersistencePropertyRepeated
+        .note("")
+        .code;
+    let result = decode_document(prototype);
+    assert_eq!(
+        product_node(&result, "Occurrence")
+            .expect("link record")
+            .prototype(),
+        Some("fcstd:native:object#Second")
+    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == repeated));
+    assert_valid_document(result.ir());
+    let result = decode_document(placement);
+    let rows = occurrence(&result, "#Occurrence:instance")
+        .transform
+        .expect("the link's placement")
+        .affine_rows();
+    assert_eq!([rows[0][3], rows[1][3], rows[2][3]], [20.0, 0.0, 0.0]);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == repeated));
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -889,8 +912,8 @@ fn wrong_runtime_types_for_named_product_carriers_are_given_up() {
         (
             "LinkedObject",
             r#"<Property name="LinkedObject" type="App::PropertyLinkList"><LinkList count="1"><Link value="Prototype"/></LinkList></Property>"#,
-            false,
-            false,
+            true,
+            true,
         ),
         (
             "LinkTransform",
@@ -1438,7 +1461,7 @@ fn preserves_external_copy_on_change_targets_when_local_names_collide() {
 }
 
 #[test]
-fn rejects_non_schema_link_carrier_aliases() {
+fn a_non_schema_link_carrier_alias_leaves_the_link_with_no_prototype() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="App::Link" name="Link"/></Objects>
 <ObjectData Count="1"><Object name="Link"><Properties Count="1">
@@ -1462,10 +1485,14 @@ fn rejects_non_schema_link_carrier_aliases() {
         .expect("namespace")
         .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
         .expect("product nodes");
-    assert!(
-        records.is_empty(),
-        "unreadable prototype is not an empty link"
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| (record.object.as_str(), record.prototype()))
+            .collect::<Vec<_>>(),
+        [("fcstd:native:object#Link", None)]
     );
+    assert!(gives_up(&result, "Link", "LinkedObject"));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
@@ -1500,7 +1527,7 @@ fn restores_shadowed_link_subelement_name() {
 }
 
 #[test]
-fn rejects_conflicting_xlink_subelement_carriers() {
+fn a_conflicting_xlink_subelement_carrier_leaves_the_link_with_no_prototype() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="App::Link" name="Link"/></Objects>
 <ObjectData Count="1"><Object name="Link"><Properties Count="1">
@@ -1524,10 +1551,14 @@ fn rejects_conflicting_xlink_subelement_carriers() {
         .expect("namespace")
         .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
         .expect("product nodes");
-    assert!(
-        records.is_empty(),
-        "unreadable prototype is not an empty link"
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| (record.object.as_str(), record.prototype()))
+            .collect::<Vec<_>>(),
+        [("fcstd:native:object#Link", None)]
     );
+    assert!(gives_up(&result, "Link", "LinkedObject"));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 

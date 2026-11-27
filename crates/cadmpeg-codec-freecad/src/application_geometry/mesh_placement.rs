@@ -132,28 +132,33 @@ pub(crate) fn project(
             output.push(mesh.clone());
             continue;
         };
-        let own_occurrence = scene.own_occurrences.get(property.owner.as_str()).copied();
-        let transform = if let Some(occurrence) = own_occurrence {
-            world_transform(
+        // `FreeCAD` applies a mesh object's `Placement` to its kernel.
+        let own_placement = match placements.get(property.owner.as_str()).copied() {
+            None => Some(Transform::identity()),
+            Some(placement) => crate::placement::placement_matrix_unreported(placement)
+                .map(crate::native::frame::FiniteFrame::transform),
+        };
+        let transform = match scene.own_occurrences.get(property.owner.as_str()).copied() {
+            Some(occurrence) => world_transform(
                 ctx,
                 occurrence,
                 &occurrence_index,
                 parents,
                 &mut world,
                 &mut HashSet::new(),
-            )?
-        } else {
-            match placements.get(property.owner.as_str()).copied() {
-                None => Some(Transform::identity()),
-                Some(placement) => crate::placement::placement_matrix_unreported(placement)
-                    .map(crate::native::frame::FiniteFrame::transform),
-            }
+            )?,
+            None => own_placement,
         };
-        // A mesh whose placement is unknown keeps its stored coordinates.
+        // A mesh whose model-space placement is unknown is stated at its own
+        // placement, or at its stored coordinates where that is unknown too.
         if transform.is_none() {
             unplaced_loss(ctx, losses, mesh.id.as_str())?;
         }
-        output.push(placed_mesh(mesh, transform.unwrap_or_default(), None)?);
+        output.push(placed_mesh(
+            mesh,
+            transform.or(own_placement).unwrap_or_default(),
+            None,
+        )?);
     }
     let mut population = u64_from_index(ir.entity_count());
     for occurrence in scene.occurrences {
@@ -358,7 +363,8 @@ fn unplaced_loss(
 ) -> Result<(), CodecError> {
     let message = format!(
         "mesh {subject} has an unreadable placement on its path; its use is withheld, \
-         and an own mesh keeps its stored coordinates"
+         and an own mesh is stated at its own Placement, or at its stored coordinates \
+         where that Placement is unreadable"
     );
     ctx.retain_bytes(
         u64_from_index(message.len()),

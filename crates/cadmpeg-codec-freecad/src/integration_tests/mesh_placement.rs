@@ -187,6 +187,39 @@ fn application_mesh_composes_nested_container_placements() {
 }
 
 #[test]
+fn application_mesh_in_an_unplaced_container_keeps_its_own_placement() {
+    let result = decode(
+        &[
+            (
+                "Holder",
+                "App::Part",
+                vec![
+                    members(&["Mesh"]),
+                    r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="NaN"/></Property>"#.to_owned(),
+                ],
+            ),
+            (
+                "Mesh",
+                "Mesh::Feature",
+                mesh_properties([5.0, 0.0, 0.0], false),
+            ),
+        ],
+        &[],
+    );
+    assert_vertices(
+        &result,
+        0,
+        [[5.0, 0.0, 0.0], [7.0, 0.0, 0.0], [5.0, 3.0, 0.0]],
+    );
+    assert!(loss_codes(&result).contains(
+        &crate::loss::FreecadLossCode::MeshPlacementNotTransferred
+            .note(String::new())
+            .code
+            .to_string()
+    ));
+}
+
+#[test]
 fn application_mesh_links_select_prototype_placement_once() {
     for prototype_transform in [false, true] {
         let mut link = linked("Mesh", prototype_transform);

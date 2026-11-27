@@ -87,7 +87,7 @@ pub(crate) fn project(
         .filter(|id| !history.contained.contains(**id))
         .map(|id| Member::Feature((*id).clone()))
         .collect::<BTreeSet<_>>();
-    let mut places = places(ir, &definition, objects, &nodes.records, losses);
+    let mut places = places(ir, &definition, objects, nodes, losses);
     places.extend(unresolved_places(objects, &nodes.unresolved));
     grouped.extend(places.iter().map(|place| Member::Feature(place.id.clone())));
     features.extend(places);
@@ -325,14 +325,14 @@ fn spanned_definitions<'a>(
     spanned
 }
 
-/// The `Place` or `PlaceSet` feature of each `App::Link` (§6.7): the
-/// feature places the occurrences of the link that a definition of the
+/// The `Place` or `PlaceSet` feature of each `App::Link` of `nodes` (§6.7):
+/// the feature places the occurrences of the link that a definition of the
 /// scope of `definition` owns.
 fn places(
     ir: &CadIr,
     definition: &ProductDefinitionId,
     objects: &[ObjectRecord],
-    links: &[ProductNodeRecord],
+    nodes: &ProductNodes,
     losses: &mut Vec<LossNote>,
 ) -> Vec<Feature> {
     let spanned = spanned_definitions(
@@ -369,7 +369,8 @@ fn places(
         .map(|object| (object.id().as_str(), object.name()))
         .collect::<HashMap<_, _>>();
     let mut features = Vec::new();
-    for link in links
+    for link in nodes
+        .records
         .iter()
         .filter(|link| matches!(link.node, ProductNode::Occurrence(_)))
     {
@@ -395,7 +396,10 @@ fn places(
                             .any(|occurrence| occurrence.id.as_str() == own)
                     })
                 });
-                FeatureOperation::Place(Box::new(place(link, occurrence, own, losses)))
+                // The give-up of an unreadable `LinkedObject` names the
+                // occurrence that composes after it.
+                let charged = nodes.unknown_prototypes.contains(&link.object);
+                FeatureOperation::Place(Box::new(place(link, occurrence, own, charged, losses)))
             }
             several => FeatureOperation::PlaceSet(Box::new(PlaceSet {
                 occurrences: several
@@ -474,12 +478,14 @@ fn unresolved_places(objects: &[ObjectRecord], unresolved: &[UnresolvedLink]) ->
 /// parent where `LinkTransform` is false, and after the linked object's own
 /// occurrence where it is true and the scope holds that occurrence (`own`).
 /// Where it is true and the scope holds no such occurrence, the `Place`
-/// states neither, with a loss naming the link. The identity is absent
-/// under `Parent` with no scale (§2.4).
+/// states neither, with a loss naming the link unless a give-up already
+/// names it (`charged`). The identity is absent under `Parent` with no
+/// scale (§2.4).
 fn place(
     link: &ProductNodeRecord,
     occurrence: &Occurrence,
     own: bool,
+    charged: bool,
     losses: &mut Vec<LossNote>,
 ) -> Place {
     let scalar = link.element_count().unwrap_or(0) == 0
@@ -491,7 +497,7 @@ fn place(
     } else {
         Some(PlacementBase::Parent)
     };
-    if scalar && base.is_none() {
+    if scalar && base.is_none() && !charged {
         losses.push(
             FreecadLossCode::FeatureLinkPlacementUnresolved.note(format!(
                 "link {} composes its Placement after the linked object's own placement, \

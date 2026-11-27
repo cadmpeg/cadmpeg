@@ -373,6 +373,9 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         product_by_object.insert(node.object.as_str(), node);
     }
     let cyclic_products = product::product_cycle_nodes(&product_by_object)?;
+    // The decoder gives up the links of a cycle of links that follow their
+    // linked objects.
+    let given_up_cycles = product::followed_link_cycle_nodes(&product_by_object)?;
     for node in &product_nodes {
         if !object_ids.contains(node.object.as_str())
             || node
@@ -399,7 +402,9 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
                 Some(node.id.clone()),
             ));
         }
-        if cyclic_products.contains(node.object.as_str()) {
+        if cyclic_products.contains(node.object.as_str())
+            && !given_up_cycles.contains(node.object.as_str())
+        {
             findings.push(finding(
                 Check::NativeLinks,
                 format!("{} participates in a product-structure cycle", node.id),

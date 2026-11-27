@@ -236,7 +236,7 @@ pub(crate) fn transfer(
                 children: TreeChildren::default(),
             })
         } else if is_body(&object.type_name) {
-            body_definition(&owned, &feature_ids)?
+            body_definition(object.id(), &owned, &feature_ids, &parent_map)?
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_datum(&object.type_name) {
             datum_definition(&object.type_name, &owned)
@@ -625,9 +625,13 @@ fn body_membership_carrier_is_valid(properties: &[&PropertyRecord]) -> bool {
     }
 }
 
+/// The tree node of Body `body`: the features it holds, of those its
+/// membership list names, and its `Tip` where the Body holds it.
 fn body_definition(
+    body: &str,
     properties: &[&PropertyRecord],
     feature_ids: &HashMap<&str, FeatureId>,
+    parent_map: &crate::product::ParentMap<'_>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     if !body_membership_carrier_is_valid(properties) {
         return Ok(None);
@@ -638,6 +642,7 @@ fn body_definition(
             .links()
             .iter()
             .filter_map(|link| link.as_ref()?.object())
+            .filter(|target| parent_map.coordinate(target) == Some(body))
         {
             if let Some(feature) = feature_ids.get(target) {
                 children.push(feature.clone());
@@ -645,7 +650,9 @@ fn body_definition(
         }
     }
     let active_child = match body_tip(properties, feature_ids)? {
-        BodyTipResolution::Valid(active_child) => active_child,
+        BodyTipResolution::Valid(active_child) => {
+            active_child.filter(|child| children.contains(child))
+        }
         BodyTipResolution::Invalid => return Ok(None),
     };
     Ok(
@@ -5373,11 +5380,11 @@ fn extrusion_shape(
         let raw_direction = vector_property(ctx, properties, "Dir")?;
         let direction_magnitude = raw_direction.map(|direction| direction.get().norm());
         let direction_mode = required!(enumeration_selector(ctx, properties, "DirMode", 0)?);
-        let (mut direction, direction_source) = match direction_mode {
+        let (direction, direction_source) = match direction_mode {
             0 => (
-                required!(cadmpeg_ir::units::UnitVector3::normalized(
+                Some(required!(cadmpeg_ir::units::UnitVector3::normalized(
                     required!(raw_direction).get()
-                )),
+                ))),
                 ExtrusionDirectionSource::Custom {},
             ),
             1 => {
@@ -5386,16 +5393,17 @@ fn extrusion_shape(
                     return Ok(None);
                 }
                 (
-                    required!(cadmpeg_ir::units::UnitVector3::normalized(
+                    Some(required!(cadmpeg_ir::units::UnitVector3::normalized(
                         required!(raw_direction).get()
-                    )),
+                    ))),
                     ExtrusionDirectionSource::Edge {
                         reference: PathRef::Native(reference.id.clone()),
                     },
                 )
             }
-            2 => {
-                let normal = required!(match &profile {
+            // `FreeCAD` stores the profile normal it computes in `Dir`.
+            2 => (
+                match &profile {
                     ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id)) => sketches
                         .iter()
                         .find(|sketch| sketch.id == *sketch_id)
@@ -5403,12 +5411,11 @@ fn extrusion_shape(
                         .map(|(_, normal, _)| normal.get())
                         .or(profile_normal),
                     _ => profile_normal,
-                });
-                (
-                    required!(cadmpeg_ir::units::UnitVector3::normalized(normal)),
-                    ExtrusionDirectionSource::ProfileNormal {},
-                )
-            }
+                }
+                .or(raw_direction.map(cadmpeg_ir::features::geometry::FiniteVector3::get))
+                .and_then(cadmpeg_ir::units::UnitVector3::normalized),
+                ExtrusionDirectionSource::ProfileNormal {},
+            ),
             _ => return Ok(None),
         };
         let signed_length = |name| -> Result<_, CodecError> {
@@ -5501,9 +5508,22 @@ fn extrusion_shape(
                 (None, None) => return Ok(None),
             }
         };
-        if reverse_direction ^ required!(bool_selector(ctx, properties, "Reversed", false)?) {
-            direction = direction.reversed();
-        }
+        let reversed =
+            reverse_direction ^ required!(bool_selector(ctx, properties, "Reversed", false)?);
+        let direction = match direction {
+            Some(direction) => cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
+                vector: cadmpeg_ir::features::geometry::FeatureDirection3::from(if reversed {
+                    direction.reversed()
+                } else {
+                    direction
+                }),
+                source: Some(direction_source),
+            },
+            None if reversed => {
+                cadmpeg_ir::features::extents::ExtrudeDirection::ReversedProfileNormal {}
+            }
+            None => cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
+        };
         let face_maker = if property(properties, "FaceMakerClass").is_some() {
             let maker = required!(FaceMaker::new(required!(face_maker_class)));
             if property(properties, "FaceMakerMode").is_some()
@@ -5535,10 +5555,7 @@ fn extrusion_shape(
         return Ok(Some(FeatureDefinition::Operation(
             FeatureOperation::Extrude {
                 profile,
-                direction: cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
-                    vector: cadmpeg_ir::features::geometry::FeatureDirection3::from(direction),
-                    source: Some(direction_source),
-                },
+                direction,
                 start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
                 extent,
                 op: BooleanOp::NewBody,

@@ -318,19 +318,16 @@ fn a_malformed_non_sketch_profile_frame_gives_up_the_frame_and_keeps_the_pocket(
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Pocket"))
         .expect("pocket feature");
-    assert!(!matches!(
-        pocket.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Extrude {
-                direction: cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
-                    source: Some(
-                        cadmpeg_ir::features::extents::ExtrusionDirectionSource::ProfileNormal {}
-                    ),
-                    ..
-                },
-                ..
-            }
-        )
-    ));
+    // A Pocket cuts against the profile normal.
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Extrude { direction, .. },
+    ) = pocket.evaluation.definition()
+    else {
+        panic!("{:?}", pocket.evaluation.definition())
+    };
+    assert_eq!(
+        *direction,
+        cadmpeg_ir::features::extents::ExtrudeDirection::ReversedProfileNormal {}
+    );
     crate::test_support::test_archive::assert_valid_document(result.ir());
 }

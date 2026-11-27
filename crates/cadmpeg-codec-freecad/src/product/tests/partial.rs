@@ -162,43 +162,319 @@ fn a_nested_link_cycle_gives_up_only_the_links_in_it() {
         .affine_rows();
     assert_eq!(rows[0][3], 3.0);
     assert_valid_document(result.ir());
+    let findings = crate::test_support::validate_native(result.ir());
+    assert!(findings.is_empty(), "{findings:?}");
 }
 
 #[test]
-fn a_link_with_an_unreadable_prototype_is_an_unresolved_place_at_its_placement() {
-    let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
+fn a_link_cycle_is_given_up_whatever_the_placements_on_it_hold() {
+    let link = |name: &str, target: &str, q3: &str| {
+        format!(
+            r#"<Object name="{name}"><Properties Count="3"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="{target}"/></Property><Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property><Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="{q3}"/></Property></Properties></Object>"#
+        )
+    };
+    let document = format!(
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="App::Link" name="First"/><Object type="App::Link" name="Second"/></Objects>
 <ObjectData Count="2">
- <Object name="Prototype"><Properties Count="0"/></Object>
- <Object name="Occurrence"><Properties Count="2">
-  <Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
-  <Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="4" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
- </Properties></Object>
+ {}
+ {}
+</ObjectData></Document>"#,
+        link("First", "Second", "1"),
+        link("Second", "First", "NaN"),
+    );
+    let result = decode_document(&document);
+    let given_up = |name: &str| {
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.message
+                    .starts_with(&format!("record fcstd:native:object#{name} given up"))
+            })
+            .count()
+    };
+    assert_eq!(given_up("First"), 1, "{:?}", result.report().losses);
+    assert_eq!(given_up("Second"), 1);
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn an_object_a_body_holds_has_no_occurrence_of_a_part_that_lists_it_later() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object type="PartDesign::Body" name="Body"/><Object type="App::Part" name="Holder"/><Object type="Part::Feature" name="Member"/></Objects>
+<ObjectData Count="3">
+ <Object name="Body"><Properties Count="2"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Member"/></LinkList></Property><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="5" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="Holder"><Properties Count="2"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Member"/></LinkList></Property><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="9" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="Member"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="3" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
 </ObjectData></Document>"#;
     let result = decode_document(document);
-    assert!(gives_up(&result, "Occurrence", "LinkedObject"));
-    assert!(product_node(&result, "Occurrence").is_none());
+    assert!(!result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .any(|occurrence| occurrence.native_ref.as_deref() == Some("fcstd:native:object#Member")));
+    assert_eq!(
+        owned_suffixes(result.ir(), "#Holder:definition"),
+        Vec::<&str>::new()
+    );
+    let messages = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.message
+                .starts_with("record fcstd:native:property#Holder:Group given up")
+        })
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    let [message] = messages[..] else {
+        panic!("{:?}", result.report().losses)
+    };
+    assert!(
+        message.ends_with(
+            "it lists fcstd:native:object#Member, which fcstd:native:object#Body holds; \
+             FreeCAD keeps each in the group that holds it, and this list places none of them; dropped=[]"
+        ),
+        "{message}"
+    );
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn a_link_with_an_unreadable_prototype_keeps_its_elements_under_it() {
+    let element = |name: &str, x: u32| {
+        format!(
+            r#"<Object name="{name}"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="{x}" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>"#
+        )
+    };
+    let document = format!(
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Array"/><Object type="App::LinkElement" name="First"/><Object type="App::LinkElement" name="Second"/></Objects>
+<ObjectData Count="4">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Array"><Properties Count="5">
+  <Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="10" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="2"/></Property>
+  <Property name="ShowElement" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="ElementList" type="App::PropertyLinkList"><LinkList count="2"><Link value="First"/><Link value="Second"/></LinkList></Property>
+ </Properties></Object>
+ {}
+ {}
+</ObjectData></Document>"#,
+        element("First", 1),
+        element("Second", 2),
+    );
+    let result = decode_document(&document);
+    let messages = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.message
+                .starts_with("record fcstd:native:property#Array:LinkedObject given up")
+        })
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(messages.len(), 1, "{:?}", result.report().losses);
+    assert!(
+        messages[0].ends_with(
+            "; the occurrences of fcstd:native:object#Array place an unresolved definition; dropped=[]"
+        ),
+        "{}",
+        messages[0]
+    );
+    let node = product_node(&result, "Array").expect("the link keeps its record");
+    assert_eq!(node.prototype(), None);
+    assert_eq!(
+        result
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .map(|occurrence| {
+                let rows = occurrence
+                    .transform
+                    .expect("a placed element")
+                    .affine_rows();
+                (
+                    &occurrence.id.as_str()
+                        [occurrence.id.as_str().rfind('#').unwrap_or_default()..],
+                    [rows[0][3], rows[1][3], rows[2][3]],
+                )
+            })
+            .collect::<Vec<_>>(),
+        [
+            ("#Array:0", [11.0, 0.0, 0.0]),
+            ("#Array:1", [12.0, 0.0, 0.0])
+        ]
+    );
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn a_link_with_an_unreadable_element_list_is_given_up_with_its_elements() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="5"><Object type="Part::Feature" name="Prototype" id="1"/><Object type="App::Link" name="Array" id="2"/><Object type="App::LinkElement" name="Listed" id="3"/><Object type="App::LinkElement" name="Owned" id="4"/><Object type="App::Part" name="Holder" id="5"/></Objects>
+<ObjectData Count="5">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Array"><Properties Count="3">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="4" Pz="0" Q0="0" Q1="0" Q2="0" Q3="NaN"/></Property>
+  <Property name="ElementList" type="App::PropertyLink"><Link value="Listed"/></Property>
+ </Properties></Object>
+ <Object name="Listed"><Properties Count="0"/></Object>
+ <Object name="Owned"><Properties Count="1"><Property name="_LinkOwner" type="App::PropertyInteger"><Integer value="2"/></Property></Properties></Object>
+ <Object name="Holder"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Array"/></LinkList></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = decode_document(document);
+    for name in ["Array", "Listed", "Owned"] {
+        assert!(product_node(&result, name).is_none(), "{name}");
+    }
+    assert_eq!(
+        result
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .map(|occurrence| occurrence.id.as_str())
+            .collect::<Vec<_>>(),
+        ["fcstd:model:occurrence#Holder:container"]
+    );
+    let given_up = |name: &str| {
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.message.starts_with(&format!(
+                    "record fcstd:native:property#Array:{name} given up"
+                ))
+            })
+            .map(|loss| loss.message.as_str())
+            .collect::<Vec<_>>()
+    };
+    let [element_list] = given_up("ElementList")[..] else {
+        panic!("{:?}", result.report().losses)
+    };
+    assert!(
+        element_list.ends_with(
+            "; dropped=[fcstd:native:product#Array, fcstd:native:product#Listed, \
+             fcstd:native:product#Owned]"
+        ),
+        "{element_list}"
+    );
+    assert_eq!(given_up("Placement").len(), 1);
     let feature = result
         .ir()
         .design
         .features
         .iter()
-        .find(|feature| feature.native_ref.as_deref() == Some("fcstd:native:object#Occurrence"))
+        .find(|feature| feature.native_ref.as_deref() == Some("fcstd:native:object#Array"))
         .unwrap_or_else(|| panic!("{:?}", result.ir().design.features));
-    assert_eq!(feature.name.as_deref(), Some("Occurrence"));
     assert_eq!(
         feature.definition.operation,
         cadmpeg_ir::design::feature::FeatureOperation::Unresolved {
             family: cadmpeg_ir::design::feature::OperationFamily::Place
         }
     );
-    let placement = feature.placement.as_ref().expect("the link's placement");
-    let Some(cadmpeg_ir::design::construction::PostStep::Fixed(transform)) =
-        placement.after.first()
-    else {
-        panic!("{placement:?}");
-    };
-    let rows = transform.affine_rows();
+    assert_eq!(feature.placement, None);
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn a_link_with_an_unreadable_copy_on_change_source_keeps_its_occurrence() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Copy"/></Objects>
+<ObjectData Count="2">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Copy"><Properties Count="4">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+  <Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="4" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="LinkCopyOnChange" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="LinkCopyOnChangeSource" type="App::PropertyLink"><Link value="Prototype"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = decode_document(document);
+    let messages = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.message
+                .starts_with("record fcstd:native:property#Copy:LinkCopyOnChangeSource given up")
+        })
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(messages.len(), 1, "{:?}", result.report().losses);
+    assert!(
+        messages[0].ends_with(
+            "; the copy-on-change state of fcstd:native:object#Copy is not stated; dropped=[]"
+        ),
+        "{}",
+        messages[0]
+    );
+    let node = product_node(&result, "Copy").expect("the link keeps its record");
+    assert_eq!(node.prototype(), Some("fcstd:native:object#Prototype"));
+    assert!(node.copy_on_change_source().is_none());
+    let rows = occurrence(&result, "#Copy:instance")
+        .transform
+        .expect("the link's placement")
+        .affine_rows();
     assert_eq!([rows[0][3], rows[1][3], rows[2][3]], [0.0, 4.0, 0.0]);
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn a_member_list_give_up_names_eight_objects_and_counts_the_rest() {
+    let names = (0..10).map(|index| format!("M{index}")).collect::<Vec<_>>();
+    let links = names
+        .iter()
+        .map(|name| [r#"<Link value=""#, name, r#""/>"#].concat())
+        .collect::<String>();
+    let declarations = names
+        .iter()
+        .map(|name| [r#"<Object type="Part::Feature" name=""#, name, r#""/>"#].concat())
+        .collect::<String>();
+    let data = names
+        .iter()
+        .map(|name| {
+            [
+                r#"<Object name=""#,
+                name,
+                r#""><Properties Count="0"/></Object>"#,
+            ]
+            .concat()
+        })
+        .collect::<String>();
+    let document = format!(
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="11"><Object type="App::Part" name="Holder"/>{declarations}</Objects>
+<ObjectData Count="11">
+ <Object name="Holder"><Properties Count="1"><Property name="Group" type="App::PropertyLinkListHidden"><LinkList count="10">{links}</LinkList></Property></Properties></Object>
+ {data}
+</ObjectData></Document>"#
+    );
+    let result = decode_document(&document);
+    let named = names[..8]
+        .iter()
+        .map(|name| format!("fcstd:native:object#{name}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.ends_with(&format!(
+                "; the objects it lists ({named} and 2 more) are placed without the placement of \
+             fcstd:native:object#Holder; dropped=[]"
+            ))),
+        "{:?}",
+        result.report().losses
+    );
     assert_valid_document(result.ir());
 }
