@@ -49,7 +49,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             scene.assemblies = tree.assemblies;
         }
         scene.records = scene_records(ctx, &snapshot, &mut losses)?;
-        scene.units = document_units(ctx, &snapshot, &mut losses)?;
+        scene.units = document_units(ctx, &snapshot, &mut losses, &mut bodies.given_up)?;
         scene_streams(&snapshot, &mut losses);
     }
     let mut ir = CadIr::empty();
@@ -809,21 +809,35 @@ fn mass_properties(
     })
 }
 
-/// Reads the scene units of `Document Data`.
+/// Reads the scene units of `Document Data`, or gives up the stream when it
+/// does not open.
 fn document_units(
     ctx: &DecodeContext<'_>,
     snapshot: &CompoundSnapshot<'_>,
     losses: &mut Vec<LossNote>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<Option<UnitSystem>, CodecError> {
     let Some(entry) = snapshot.stream(DOCUMENT_DATA) else {
         return Ok(None);
     };
-    let stream = match snapshot.open(ctx, entry) {
-        Ok(stream) => stream,
+    let error = match snapshot.open(ctx, entry) {
+        Ok(stream) => return Ok(unit_losses(units::scene_units(stream.window()), losses)),
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(None),
+        Err(error) => error,
     };
-    Ok(unit_losses(units::scene_units(stream.window()), losses))
+    let located = match snapshot.open_located(ctx, entry) {
+        Ok(located) => located,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => None,
+    };
+    let bytes = located.as_ref().map_or(&[][..], |stream| stream.window());
+    let part = Part::at("ironcad", "stream", 0, bytes, [ArenaClass::Model])
+        .named(DOCUMENT_DATA)
+        .in_stream(cadmpeg_ir::stream_name!("ironcad:").with_suffix(DOCUMENT_DATA))
+        .digest_only()
+        .costing("the root definition states no units");
+    given_up.push(ctx.give_up_part(part, Cause::Unreadable.of(&error), error)?);
+    Ok(None)
 }
 
 /// Charges the notes of `scene` and returns its unit system.

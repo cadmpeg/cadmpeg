@@ -375,7 +375,8 @@ fn entity_tag(loss: &LossNote) -> Option<u32> {
 /// native entity record and the `cards` arena keep its bytes, so the part
 /// keeps their digest. Returns the Directory sequences of the given-up
 /// entities, of the entities dropped with them, and of the quarantined
-/// records.
+/// records, and the consequence that the give-up of each quarantined record
+/// states for the subfigure and network entities dropped with it.
 pub(crate) fn give_up_entities(
     losses: &mut Vec<LossNote>,
     directory: &[DirectoryEntry],
@@ -383,12 +384,12 @@ pub(crate) fn give_up_entities(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     fidelity: &mut SourceFidelity,
-) -> Result<BTreeSet<u32>, CodecError> {
+) -> Result<(BTreeSet<u32>, BTreeMap<u32, String>), CodecError> {
     let mut entries = BTreeMap::new();
     for entry in directory {
         entries.insert(entry.sequence, entry);
     }
-    let mut given_up = settle_needs(losses, &entries, ids)?;
+    let (mut given_up, mut unplaced) = settle_needs(losses, &entries, ids)?;
     given_up.extend(ids.quarantined.keys().copied());
     let mut whys = BTreeSet::new();
     for at in 0..losses.len() {
@@ -414,10 +415,15 @@ pub(crate) fn give_up_entities(
                 "IGES Directory Entry D{sequence} has no card span"
             ))
         })?;
-        let part = ids
+        let mut part = ids
             .image
             .part(ENTITY_PART, sequence, entry.source_offset, length)?
             .digest_only();
+        if ids.quarantined(sequence).is_none() {
+            if let Some(dependents) = unplaced.remove(&sequence) {
+                part = part.costing(unplaced_costing(&dependents));
+            }
+        }
         let loss = give_up_part(
             ctx,
             part,
@@ -430,8 +436,28 @@ pub(crate) fn give_up_entities(
         given_up.insert(sequence);
     }
     remove_at(losses, &whys);
-    Ok(given_up)
+    let costing = unplaced
+        .iter()
+        .map(|(sequence, dependents)| (*sequence, unplaced_costing(dependents)))
+        .collect();
+    Ok((given_up, costing))
 }
+
+/// The consequence that a give-up states for the subfigure and network
+/// entities, named in `dependents`, that it drops: the document keeps their
+/// native records and states none of their structure.
+fn unplaced_costing(dependents: &[String]) -> String {
+    let named = dependents.join(", ");
+    format!(
+        "subfigure and network entities that need it lose their neutral meaning, \
+         and their native records stay: {named}"
+    )
+}
+
+/// The names (`D<n> (Type <t>)`) of the dropped subfigure and network
+/// entities, by the Directory sequence of the entity whose give-up drops
+/// them.
+type Unplaced = BTreeMap<u32, Vec<String>>;
 
 /// Settles each [`give_up_needing`] marker of an entity that has no give-up
 /// of its own. The entity is dropped with a needed entity that the decode
@@ -449,12 +475,15 @@ pub(crate) fn give_up_entities(
 /// Directory section is read in full; otherwise it is the marker's cause. A
 /// marker that settles nothing goes with its `why`. Each [`give_up_record`]
 /// marker is settled the same way, as a record that no entity needs.
-/// Returns the Directory sequences of the dropped entities.
+/// Returns the Directory sequences of the dropped entities, and each dropped
+/// Type 308 or Type 320 definition and Type 408 or Type 420 instance by the
+/// entity whose give-up drops it: the end of its chain of needed entities,
+/// as the decode's give-ups name it.
 fn settle_needs(
     losses: &mut Vec<LossNote>,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     ids: &GivenUpIds<'_>,
-) -> Result<BTreeSet<u32>, CodecError> {
+) -> Result<(BTreeSet<u32>, Unplaced), CodecError> {
     let charged = losses
         .iter()
         .filter_map(given_up_entity)
@@ -482,7 +511,7 @@ fn settle_needs(
         }
     }
     if markers.is_empty() && records.is_empty() {
-        return Ok(BTreeSet::new());
+        return Ok((BTreeSet::new(), BTreeMap::new()));
     }
     let absent =
         |sequence: u32| !entries.contains_key(&sequence) && ids.quarantined(sequence).is_none();
@@ -618,10 +647,32 @@ fn settle_needs(
         removed.extend(why);
     }
     remove_at(losses, &removed);
-    Ok(settled
+    // A subfigure or network entity has no neutral record of its own to
+    // name, so the give-up at the end of its chain states it.
+    let mut unplaced = Unplaced::new();
+    for (&entity, &with) in &settled {
+        let (Some(mut at), Some(entry)) = (with, entries.get(&entity)) else {
+            continue;
+        };
+        if !matches!(entry.entity_type, 308 | 320 | 408 | 420) {
+            continue;
+        }
+        while ids.quarantined(at).is_none() {
+            match settled.get(&at) {
+                Some(Some(next)) => at = *next,
+                _ => break,
+            }
+        }
+        unplaced
+            .entry(at)
+            .or_default()
+            .push(format!("D{entity} (Type {})", entry.entity_type));
+    }
+    let dropped = settled
         .into_iter()
         .filter_map(|(entity, with)| with.map(|_| entity))
-        .collect())
+        .collect();
+    Ok((dropped, unplaced))
 }
 
 /// Settles as dropped each entity that needs an entity of `gone`, and

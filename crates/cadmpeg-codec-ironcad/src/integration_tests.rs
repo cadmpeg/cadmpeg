@@ -305,6 +305,66 @@ fn a_brep_data_frame_that_does_not_read_is_one_unreadable_give_up() {
         .expect_err("a pinned decode refuses an unreadable frame");
 }
 
+/// `BOX` with the start sector of its `Document Data` directory entry moved
+/// outside the allocation table, so that the stream does not open.
+fn box_without_document_data_chain() -> Vec<u8> {
+    let mut bytes = corpus(BOX);
+    let name = "Document Data"
+        .encode_utf16()
+        .chain([0])
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>();
+    let name_length = u16::try_from(name.len()).unwrap().to_le_bytes();
+    let entries = (0..bytes.len().saturating_sub(128))
+        .filter(|&at| {
+            bytes[at..at + name.len()] == name[..] && bytes[at + 64..at + 66] == name_length
+        })
+        .collect::<Vec<_>>();
+    let [entry] = entries.as_slice() else {
+        panic!("one `Document Data` directory entry: {entries:?}");
+    };
+    bytes[entry + 116..entry + 120].copy_from_slice(&0x00ff_fff0_u32.to_le_bytes());
+    bytes
+}
+
+#[test]
+fn a_document_data_stream_that_does_not_open_is_one_unreadable_give_up() {
+    let intact = decode(BOX);
+    assert!(intact
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .any(|definition| definition.is_root() && definition.units.is_some()));
+
+    let result = IronCadCodec
+        .decode(
+            &mut Cursor::new(box_without_document_data_chain()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let given_up: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| gives_up(&loss.code))
+        .collect();
+    let [loss] = given_up.as_slice() else {
+        panic!("one give-up loss: {given_up:?}");
+    };
+    assert_eq!(loss.code, record_unreadable_kind());
+    assert!(loss.message.contains("Document Data"), "{}", loss.message);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    let root = result
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.is_root())
+        .unwrap();
+    assert!(root.units.is_none());
+}
+
 #[test]
 fn parasolid_records_rewrite_into_framed_neutral_transmits() {
     for name in [BOX, CYLINDER, SCENE, "Block_Parasolid_100x50x20.ics"] {

@@ -170,6 +170,7 @@ The decoder gives up a part (CADIR §3.3) in these cases:
 | Part kind | Bytes | Cause |
 |---|---|---|
 | `stream` | The `Brep Data` stream, as its digest, when the stream does not open, its frame (§2) does not read, or its record tree (§3) does not read. | `record.unreadable` |
+| `stream` | The `Document Data` stream, as its digest, when the stream does not open. The root definition then states no units (§4). | `record.unreadable` for a damaged stream; `record.undecoded` for a stream form that the decoder does not read |
 | `kernel-record` | The kernel bytes of an ACIS result record whose save stream does not frame. | `record.unreadable` |
 | `kernel-record` | The kernel bytes of an ACIS record whose header does not read, of a result record whose framed ACIS records or Parasolid transmit the decode does not read, or of a result record whose identities do not move into its record namespace. | `record.undecoded` |
 

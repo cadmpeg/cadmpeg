@@ -417,11 +417,13 @@ impl<'a> PhysicalParse<'a> {
     }
 
     /// The framing recoveries, the give-up by `give_up` of the part of each
-    /// quarantined record in `image` with its error text, and the notes of
+    /// quarantined record in `image` with its error text and the consequence
+    /// that `costing` states for its Directory sequence, and the notes of
     /// unreadable Parameter Data literals.
     fn record_losses(
         &self,
         image: &entities::CardImage<'_>,
+        mut costing: BTreeMap<u32, String>,
         mut give_up: impl FnMut(Part<'_>, String) -> Result<LossNote, CodecError>,
     ) -> Result<Vec<LossNote>, CodecError> {
         let mut losses = self.framing_recoveries.notes();
@@ -432,37 +434,42 @@ impl<'a> PhysicalParse<'a> {
                     record.sequence
                 ))
             })?;
-            let part = image.part(
+            let mut part = image.part(
                 entities::DIRECTORY_ENTRY_PART,
                 record.sequence,
                 record.source_offset,
                 length,
             )?;
+            if let Some(consequence) = costing.remove(&record.sequence) {
+                part = part.costing(consequence);
+            }
             losses.push(give_up(part, record.defect_message())?);
         }
         // Records whose declared ranges conflict can start at one card. The
         // first gives up the part that starts there, which keeps the cards
         // of each, and its give-up states the defect of each.
-        let mut claimants = BTreeMap::<u64, Vec<String>>::new();
+        let mut claimants = BTreeMap::<u64, (Vec<String>, Vec<String>)>::new();
         for record in &self.quarantined_parameters {
-            claimants
-                .entry(record.source_offset())
-                .or_default()
-                .push(record.loss_note()?.message);
+            let (defects, consequences) = claimants.entry(record.source_offset()).or_default();
+            defects.push(record.loss_note()?.message);
+            consequences.extend(costing.remove(&record.sequence));
         }
         for record in &self.quarantined_parameters {
-            let Some(defects) = claimants.remove(&record.source_offset()) else {
+            let Some((defects, consequences)) = claimants.remove(&record.source_offset()) else {
                 continue;
             };
             let why = record.loss_note()?;
             // A record that owns no card is a part of no bytes at the offset
             // of its Directory Entry.
-            let part = image.part(
+            let mut part = image.part(
                 entities::PARAMETER_DATA_PART,
                 record.sequence,
                 record.source_offset(),
                 record.source_length().unwrap_or(0),
             )?;
+            if !consequences.is_empty() {
+                part = part.costing(consequences.join("; "));
+            }
             losses.push(give_up(
                 part,
                 format!("{}: {}", why.code, defects.join("; ")),
@@ -506,7 +513,7 @@ pub(crate) fn inspect(
     let primary = crate::dialect::classify(representation, &parse.global);
     let mut losses = parse.admission_losses();
     let image = entities::CardImage::new(window, representation);
-    let record_losses = parse.record_losses(&image, |part, error| {
+    let record_losses = parse.record_losses(&image, BTreeMap::new(), |part, error| {
         Ok(entities::give_up_part(ctx, part, Cause::Unreadable, error)?.loss())
     })?;
 
@@ -656,7 +663,7 @@ fn decode_with_limits(
         ),
         cadmpeg_ir::products::ExternalDocument::default(),
     )?;
-    let mut given_up = entities::give_up_entities(
+    let (mut given_up, unplaced) = entities::give_up_entities(
         &mut projection.losses,
         &parse.directory,
         &given_up_ids,
@@ -682,7 +689,7 @@ fn decode_with_limits(
         }
         given_up.extend(dropped);
     }
-    let record_losses = parse.record_losses(&image, |part, error| {
+    let record_losses = parse.record_losses(&image, unplaced, |part, error| {
         entities::give_up_part(ctx, part, Cause::Unreadable, error)?.commit(
             ctx,
             &mut ir,

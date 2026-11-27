@@ -56,7 +56,8 @@ pub(crate) enum SatLossCode {
     /// The stream declares no usable length unit; lengths are read unscaled as
     /// millimetres.
     HeaderLengthUnitUnresolved,
-    /// The input ends without a terminator line after its last complete record.
+    /// The input of a save format that ends with a terminator line ends
+    /// without one after its last complete record.
     FramingTerminatorMissing,
     /// Bytes after the last framed record were not read as records.
     FramingRecordsUnread,

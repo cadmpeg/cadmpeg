@@ -915,10 +915,15 @@ that entity:
 | 106 that projects one point                                     | `iges:model:point#D<n>-1` |
 
 `<n>` is the Directory Entry sequence number of the entity. A dependent of
-another type mints no single neutral record, so the projection records none for
-it and charges it no loss. Each of its own dependents is recorded against the
-entity that it needs. The native `iges:entity:directory#<n>` record of a
-dependent stays in the document.
+another type mints no single neutral record, so the projection records no
+`record.dropped-with` for it. Each of its own dependents is recorded against
+the entity that it needs. The native `iges:entity:directory#<n>` record of a
+dependent stays in the document. A dependent Type 308 or Type 320 definition,
+or Type 408 or Type 420 instance, loses its subfigure or network structure.
+The give-up at the end of its chain of needed entities states it: the
+give-up of the needed entity that charges its own give-up, or of the
+quarantine part that keeps the needed entity. The message names each such
+dependent by `D<n>` and its type.
 
 An explicit B-rep vertex list, edge list, loop, or face that the projection
 parses is an input of each edge list, loop, face, or shell that reads it. When
