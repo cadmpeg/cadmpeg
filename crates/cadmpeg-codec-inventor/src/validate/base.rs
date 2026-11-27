@@ -224,6 +224,36 @@ pub(super) fn valid(
     // only for a state of the feature's own class, Base or derived (for Split
     // it means consumed), and the validator trusts it because the state's
     // body keys are not persisted.
+    eprintln!(
+        "BASEDBG candidate={} result_key={} feature_kind={} source={} source_index={}",
+        base::history_candidate(
+            output,
+            link,
+            segment_token,
+            *record_ordinal,
+            &data.body_native_keys
+        ),
+        base::result_key(link),
+        crate::feature::history_states::kind_of(feature),
+        source.id(),
+        source.header.source_index
+    );
+    for state in &data.feature_history_states {
+        eprintln!(
+            "BASEDBG state feature={} index={} after={} kind={} creates={} class_eq={} binding={:?} key={:?}",
+            state.feature,
+            state.source_index,
+            state.state_after.is_some(),
+            state.kind,
+            crate::feature::history_states::creates_body(&state.kind),
+            crate::feature::history_states::class_of(&state.kind)
+                == crate::feature::history_states::class_of(
+                    &crate::feature::history_states::kind_of(feature)
+                ),
+            state.binding,
+            state.body_key
+        );
+    }
     base::history_candidate(
         output,
         link,
