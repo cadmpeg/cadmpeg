@@ -36,7 +36,8 @@ pub(super) struct Configurations {
 
 /// The configurations of the histories, or none where the document's active
 /// configuration does not resolve to one of them: a scope with
-/// configurations names its active one (part 10).
+/// configurations names its active one (part 10). Each takes its place in
+/// the one history that lists configurations.
 pub(super) fn configurations(
     histories: &[FeatureHistory],
     source: Option<&SourceMeta>,
@@ -58,6 +59,11 @@ pub(super) fn configurations(
     let Some(active) = crate::decode::active_configuration_position(source, &selectors) else {
         return Ok(Configurations::default());
     };
+    let listed = histories
+        .iter()
+        .filter(|history| !history.configurations.is_empty())
+        .count()
+        == 1;
     let base_material = native[active].material.as_deref();
     let mut records = Vec::with_capacity(native.len());
     for configuration in &native {
@@ -76,7 +82,7 @@ pub(super) fn configurations(
             id: neutral_configuration_id(&configuration.id)?,
             scope: scope.clone(),
             name: configuration.name.clone(),
-            position: None,
+            position: listed.then_some(configuration.ordinal),
             parent: None,
             comment: None,
             overrides: Overrides::default(),
