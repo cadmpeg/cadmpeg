@@ -2376,7 +2376,7 @@ where
         feature.operation_bodies = operation_bodies;
         features.push(feature);
     }
-    for index in mesh_operation_geometry_states(bytes, meta)? {
+    for index in mesh_operation_geometry_states(bytes, primary_frames, meta)? {
         if used_guids.contains(&index) {
             continue;
         }
@@ -2391,8 +2391,8 @@ where
     }
     let tessellate_scopes = {
         use crate::design::decode::mesh_operations::tessellate;
-        typed_primary_frames(
-            bytes,
+        typed_primary_frames_from(
+            primary_frames,
             meta,
             tessellate::SCOPE_TYPE_GUID,
             "mesh-tessellate-scope",
@@ -2469,6 +2469,7 @@ where
 /// scopes name as input or output geometry states.
 fn mesh_operation_geometry_states(
     bytes: &[u8],
+    primary_frames: &[DesignPrimaryFrame<'_>],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<u32>, CodecError> {
     use crate::design::decode::mesh_operations::{
@@ -2477,7 +2478,9 @@ fn mesh_operation_geometry_states(
     let mut states = Vec::new();
     for kind in MeshOperationKind::GEOMETRY_TAIL {
         let (type_guid, version) = kind.registration();
-        for frame in typed_primary_frames(bytes, meta, type_guid, "mesh-operation-scope")? {
+        for frame in
+            typed_primary_frames_from(primary_frames, meta, type_guid, "mesh-operation-scope")?
+        {
             if validate_mesh_registration(
                 frame,
                 version,
