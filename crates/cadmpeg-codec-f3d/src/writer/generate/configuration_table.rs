@@ -33,7 +33,7 @@ use crate::records::configuration::table::{
     new_document, new_row, property_component, push_column, push_property_column, push_row,
     remove_row, set_cell, set_row_name, set_row_order, write_test_rows, AdmittedTables, CellData,
     ColumnTarget, ConfigurationColumn, ConfigurationRow, ConfigurationTable, ConfiguredValue,
-    RowGuids, TableNames,
+    RowGuids, TableNames, TestRowTarget,
 };
 use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
 use crate::writer::primitives::{
@@ -643,13 +643,21 @@ impl Written<'_> {
             .columns
             .iter()
             .filter_map(|column| {
-                let entry = test_row(column, configuration, targets, &bases);
+                let members = test_row(column, configuration, targets, &bases);
+                let added = self.added.contains(&column.id);
+                let rewritten = column_parameter(&column.target, targets)
+                    .is_some_and(|parameter| rewritten.contains(&parameter));
                 let restated = moved
-                    || self.added.contains(&column.id)
-                    || entry != test_row(column, stored, targets, &bases)
-                    || column_parameter(&column.target, targets)
-                        .is_some_and(|parameter| rewritten.contains(&parameter));
-                restated.then_some((column.id.as_str(), entry))
+                    || added
+                    || rewritten
+                    || members != test_row(column, stored, targets, &bases);
+                restated.then_some((
+                    column.id.as_str(),
+                    TestRowTarget {
+                        members,
+                        required: added || rewritten || stored.is_some(),
+                    },
+                ))
             })
             .collect::<BTreeMap<_, _>>();
         if expected.is_empty() {

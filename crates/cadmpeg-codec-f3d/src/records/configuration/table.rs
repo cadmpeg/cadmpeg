@@ -513,11 +513,16 @@ pub(crate) struct TestRowWrite<'a> {
     pub(crate) unwritten: BTreeSet<&'a str>,
 }
 
+pub(crate) struct TestRowTarget {
+    pub(crate) members: Option<Map<String, Value>>,
+    pub(crate) required: bool,
+}
+
 /// Replace the known members of the targeted entries. Preserve opaque entries
 /// and extra members. Return which target columns read back differently.
 pub(crate) fn write_test_rows<'a>(
     payload: &mut Map<String, Value>,
-    target: &BTreeMap<&'a str, Option<Map<String, Value>>>,
+    target: &BTreeMap<&'a str, TestRowTarget>,
 ) -> TestRowWrite<'a> {
     let mut result = TestRowWrite::default();
     if let Some(cells) = payload.get_mut("testRowData").and_then(Value::as_array_mut) {
@@ -527,12 +532,12 @@ pub(crate) fn write_test_rows<'a>(
                 continue;
             };
             let Some((&column, expected)) =
-                string(&entry, "ColumnUniqueID").and_then(|column| target.get_key_value(column))
+                test_row_column(&entry).and_then(|column| target.get_key_value(column))
             else {
                 continue;
             };
             present.insert(column);
-            if let Some(expected) = expected {
+            if let Some(expected) = &expected.members {
                 if !test_row_agrees(&entry, expected) {
                     entry.extend(expected.clone());
                     *cell = Value::from(Value::Object(entry).to_string());
@@ -541,7 +546,8 @@ pub(crate) fn write_test_rows<'a>(
             }
         }
         for (&column, expected) in target {
-            if let Some(expected) = expected.as_ref().filter(|_| !present.contains(column)) {
+            let missing = expected.required && !present.contains(column);
+            if let Some(expected) = expected.members.as_ref().filter(|_| missing) {
                 cells.push(Value::from(Value::Object(expected.clone()).to_string()));
                 result.added = true;
             }
@@ -556,10 +562,11 @@ pub(crate) fn write_test_rows<'a>(
         .filter_map(test_row_members)
     {
         if let Some((&column, expected)) =
-            string(&entry, "ColumnUniqueID").and_then(|column| target.get_key_value(column))
+            test_row_column(&entry).and_then(|column| target.get_key_value(column))
         {
             read.insert(column);
             if !expected
+                .members
                 .as_ref()
                 .is_some_and(|expected| test_row_agrees(&entry, expected))
             {
@@ -570,7 +577,9 @@ pub(crate) fn write_test_rows<'a>(
     result.unwritten.extend(
         target
             .iter()
-            .filter(|(column, expected)| expected.is_some() && !read.contains(*column))
+            .filter(|(column, expected)| {
+                expected.required && expected.members.is_some() && !read.contains(*column)
+            })
             .map(|(&column, _)| column),
     );
     result
@@ -578,6 +587,10 @@ pub(crate) fn write_test_rows<'a>(
 
 fn test_row_members(cell: &Value) -> Option<Map<String, Value>> {
     serde_json::from_str(cell.as_str()?).ok()
+}
+
+fn test_row_column(entry: &Map<String, Value>) -> Option<&str> {
+    entry.get("ColumnUniqueID")?.as_str()
 }
 
 fn test_row_agrees(entry: &Map<String, Value>, expected: &Map<String, Value>) -> bool {

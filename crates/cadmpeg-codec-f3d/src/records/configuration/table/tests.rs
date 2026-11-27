@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::{write_test_rows, AdmittedTables, ConfiguredValue};
+use super::{write_test_rows, AdmittedTables, ConfiguredValue, TestRowTarget};
 use crate::test_support::configuration_table::{
     bool_cell, expression_cell, object_target, property_target, string_cell, table_document,
 };
@@ -311,10 +311,21 @@ fn table_components_are_selected_by_one_name() {
 #[test]
 fn a_test_row_target_preserves_opaque_entries_and_checks_every_target_column() {
     let entry = |column: &str, value: i32| json!({"ColumnUniqueID": column, "Value": value});
+    let target_entry = |column, value, required| TestRowTarget {
+        members: Some(entry(column, value).as_object().unwrap().clone()),
+        required,
+    };
     let target = BTreeMap::from([
-        ("A", Some(entry("A", 4).as_object().unwrap().clone())),
-        ("B", Some(entry("B", 5).as_object().unwrap().clone())),
-        ("C", None),
+        ("A", target_entry("A", 4, true)),
+        ("B", target_entry("B", 5, true)),
+        (
+            "C",
+            TestRowTarget {
+                members: None,
+                required: true,
+            },
+        ),
+        ("D", target_entry("D", 6, false)),
     ]);
     let mut payload = json!({
         "testRowData": [
