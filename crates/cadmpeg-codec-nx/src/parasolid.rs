@@ -288,11 +288,19 @@ pub(crate) fn referenced_value_records(
     bytes: &[u8],
 ) -> Result<value_records::EntityValueRecords<'_>, CodecError> {
     let primary = terminated_nodes(bytes);
-    let offsets = value_offsets(bytes, primary.as_ref());
+    referenced_value_records_in(bytes, primary.as_ref())
+}
+
+pub(crate) fn referenced_value_records_in<'a>(
+    bytes: &'a [u8],
+    primary: Option<&PrimaryRecords<'_>>,
+) -> Result<value_records::EntityValueRecords<'a>, CodecError> {
+    let primary = primary.filter(|primary| primary.is_terminated());
+    let offsets = value_offsets(bytes, primary);
     match primary {
         Some(primary) => value_records::entity_value_records_of_nodes(
             bytes,
-            &primary,
+            primary,
             &offsets.into_iter().collect(),
         ),
         None => value_records::entity_value_records_at(bytes, offsets),
@@ -404,11 +412,11 @@ pub(crate) fn field_names_records(bytes: &[u8]) -> Vec<FieldNamesRecord> {
     field_names_records_in(bytes, terminated_nodes(bytes).as_ref())
 }
 
-fn field_names_records_in(
+pub(crate) fn field_names_records_in(
     bytes: &[u8],
     primary: Option<&PrimaryRecords<'_>>,
 ) -> Vec<FieldNamesRecord> {
-    if let Some(primary) = primary {
+    if let Some(primary) = primary.filter(|primary| primary.is_terminated()) {
         return attribute_nodes::field_names(primary);
     }
     let mut records = Vec::new();
@@ -452,8 +460,11 @@ pub(crate) fn entity_51_records(bytes: &[u8]) -> Vec<Entity51Record> {
     entity_51_records_in(bytes, terminated_nodes(bytes).as_ref())
 }
 
-fn entity_51_records_in(bytes: &[u8], primary: Option<&PrimaryRecords<'_>>) -> Vec<Entity51Record> {
-    if let Some(primary) = primary {
+pub(crate) fn entity_51_records_in(
+    bytes: &[u8],
+    primary: Option<&PrimaryRecords<'_>>,
+) -> Vec<Entity51Record> {
+    if let Some(primary) = primary.filter(|primary| primary.is_terminated()) {
         return attribute_nodes::attributes(primary);
     }
     let mut records = Vec::new();
@@ -481,13 +492,16 @@ fn entity_51_records_in(bytes: &[u8], primary: Option<&PrimaryRecords<'_>>) -> V
 /// In a terminated node sequence these are the `ATTRIBUTE` nodes without a
 /// decoded record. Elsewhere they are the type-81 headers whose references do
 /// not frame to a decoded record of that XMT.
-pub(crate) fn omitted_entity_51_xmts(bytes: &[u8]) -> BTreeSet<u32> {
-    let primary = terminated_nodes(bytes);
-    let decoded = entity_51_records_in(bytes, primary.as_ref())
+pub(crate) fn omitted_entity_51_xmts_in(
+    bytes: &[u8],
+    primary: Option<&PrimaryRecords<'_>>,
+) -> BTreeSet<u32> {
+    let primary = primary.filter(|primary| primary.is_terminated());
+    let decoded = entity_51_records_in(bytes, primary)
         .into_iter()
         .map(|record| u32::from(record.xmt))
         .collect::<BTreeSet<_>>();
-    let framed = match &primary {
+    let framed = match primary {
         Some(primary) => primary
             .nodes()
             .filter(|node| node.kind() == node_type::ATTRIBUTE)
@@ -681,11 +695,11 @@ pub(crate) fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>
     attribute_definitions_in(bytes, terminated_nodes(bytes).as_ref())
 }
 
-fn attribute_definitions_in<'a>(
+pub(crate) fn attribute_definitions_in<'a>(
     bytes: &'a [u8],
     primary: Option<&PrimaryRecords<'_>>,
 ) -> Vec<AttributeDefinition<'a>> {
-    if let Some(primary) = primary {
+    if let Some(primary) = primary.filter(|primary| primary.is_terminated()) {
         return attribute_nodes::definitions(bytes, primary);
     }
     let identifiers = attribute_identifiers(bytes);

@@ -373,6 +373,7 @@ dependencies = [
  "cadmpeg-parasolid",
  "cadmpeg-test-support",
  "flate2",
+ "memchr",
  "roxmltree",
  "serde",
  "serde_json",
