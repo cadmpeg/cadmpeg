@@ -478,13 +478,13 @@ impl<'ir> Writer<'ir> {
         let mut bindings = BTreeMap::new();
         for binding in &ir.model.appearance_bindings {
             let key = match &binding.target.entity {
-                AppearanceTarget::Tessellation(id) => id.clone(),
+                AppearanceTarget::Tessellation(id) => id.to_string(),
                 AppearanceTarget::Body(id) => id.to_string(),
                 AppearanceTarget::Face(id) => id.to_string(),
                 AppearanceTarget::TriangleGroup {
                     tessellation,
                     group,
-                } => group_key(tessellation, group),
+                } => group_key(tessellation.as_str(), group),
                 _ => continue,
             };
             bindings

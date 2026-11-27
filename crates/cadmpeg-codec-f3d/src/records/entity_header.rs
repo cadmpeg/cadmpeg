@@ -147,6 +147,11 @@ impl SegmentType {
     pub(crate) fn id(&self) -> &String {
         self.id.text()
     }
+    /// The `MetaStream` and byte offset of the entry. A dynamic class tag
+    /// names a type by its position in this order.
+    pub(crate) fn table_position(&self) -> (&str, u64) {
+        (self.id.stream(), self.data.byte_offset)
+    }
     #[cfg(test)]
     pub(crate) fn set_module(&mut self, module: String) {
         self.data.module = module;

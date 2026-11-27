@@ -99,7 +99,7 @@ const MESH_TEXTURE_FILENAME_BASE_TYPE_GUID: &str = "98542EB9-A4F2-4137-A808-DBB5
 const MESH_TEXTURE_FILENAME_TYPE_VERSION: u32 = 0;
 const MESH_COLLECTION_OWNER_TYPE_GUID: &str = "E03784ED-5E19-4E14-B9F2-3B07017018CD";
 const MESH_COLLECTION_OWNER_BASE_TYPE_GUID: &str = "42054630-20A0-40E1-B969-CFE9E742F5C9";
-const MESH_COLLECTION_OWNER_TYPE_VERSIONS: [u32; 7] = [15, 17, 23, 21, 22, 19, 20];
+const MESH_COLLECTION_OWNER_TYPE_VERSIONS: [u32; 8] = [15, 17, 23, 21, 22, 19, 20, 16];
 const MESH_BODY_OWNER_TYPE_GUID: &str = "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA";
 const MESH_BODY_OWNER_BASE_TYPE_GUID: &str = "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081";
 const MESH_BODY_OWNER_TYPE_VERSION: u32 = 4;
@@ -4667,6 +4667,61 @@ mod tests {
         assert!(parse_mesh_collection_owner_record(&bytes, frame)
             .expect("valid generic owner frame")
             .is_none());
+    }
+
+    #[test]
+    fn mesh_collection_owner_of_type_version_sixteen_stores_the_named_entry() {
+        let mut graph = synthetic_mesh_graph(false);
+        let design_type = graph
+            .meta
+            .types
+            .iter_mut()
+            .find(|design_type| {
+                design_type
+                    .type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
+            })
+            .expect("collection-owner type");
+        let mut named = Vec::new();
+        push_indexed_header(&mut named, 270, 110);
+        named.extend_from_slice(&[0; 40]);
+        let name_at = named.len();
+        named.extend_from_slice(&17_u32.to_le_bytes());
+        for unit in crate::records::mesh::MESH_COLLECTION_ENTRY_NAME.encode_utf16() {
+            named.extend_from_slice(&unit.to_le_bytes());
+        }
+        let reference_at = named.len();
+        push_reference(&mut named, 100);
+        named.extend_from_slice(&[0; 12]);
+        let mut unnamed = named.clone();
+        unnamed[name_at + 4] = b'x';
+
+        for (version, admitted) in [(16, true), (18, false)] {
+            design_type.version = version;
+            let frame = TypedPrimaryFrame {
+                entity_id: 110,
+                start: 0,
+                end: named.len(),
+                design_type,
+            };
+            let owner = parse_mesh_collection_owner_record(&named, frame);
+            if admitted {
+                let owner = owner
+                    .expect("version-16 owner frame")
+                    .expect("named collection entry");
+                assert_eq!(owner.collection_record_index, 100);
+                assert_eq!(
+                    owner.owner.backlink_offset(),
+                    u64::try_from(reference_at).unwrap()
+                );
+                assert!(parse_mesh_collection_owner_record(&unnamed, frame)
+                    .expect("version-16 owner frame without the entry")
+                    .is_none());
+            } else {
+                assert!(matches!(owner, Err(CodecError::NotImplemented(_))));
+            }
+        }
     }
 
     #[test]

@@ -141,7 +141,7 @@ fn a_triangle_group_binding_names_a_group_of_its_tessellation() {
         TessellationTriangleGroup::new(None, vec![1]),
     ])
     .unwrap();
-    let tessellation = mesh.id.to_string();
+    let tessellation = mesh.id.clone();
     ir.model.tessellations.push(mesh);
     let appearance = AppearanceId::mint("synthetic:test:appearance#paint").expect("valid identity");
     ir.model.appearances.push(Appearance {

@@ -267,3 +267,35 @@ pub(super) fn prune_rejected_topology(out: &mut Brep, unbuilt_uses: &[(EdgeId, C
         })
         .count();
 }
+
+/// Why the FIN ring of a loop record does not build a loop.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum RingLoss {
+    /// The walk reaches a FIN that complete records claim in conflict.
+    AmbiguousFin,
+    /// The ring closes, and a forward link has no reciprocal backward link.
+    NonReciprocal,
+    /// The ring ends before it returns to its first FIN.
+    Open,
+}
+
+impl RingLoss {
+    pub(super) fn code(self) -> crate::loss::SldprtLossCode {
+        match self {
+            Self::AmbiguousFin => crate::loss::SldprtLossCode::TopologyAmbiguousFinFaceWithheld,
+            Self::NonReciprocal | Self::Open => {
+                crate::loss::SldprtLossCode::TopologyFinLinkUnresolved
+            }
+        }
+    }
+
+    pub(super) const fn why(self) -> &'static str {
+        match self {
+            Self::AmbiguousFin => "the ring of the loop holds an ambiguous FIN",
+            Self::NonReciprocal => {
+                "a FIN forward link of the loop names no reciprocal backward link"
+            }
+            Self::Open => "the FIN ring of the loop does not close",
+        }
+    }
+}

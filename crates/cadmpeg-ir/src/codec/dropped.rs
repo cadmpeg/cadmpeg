@@ -131,13 +131,7 @@ impl DecodeResult {
         }
         let before = cfg!(debug_assertions).then(|| record_ids(&self.ir));
         let mut releases = Vec::new();
-        crate::give_up::release_lost(
-            ctx,
-            &mut self.ir,
-            &ids,
-            crate::give_up::Naming::References,
-            &mut releases,
-        )?;
+        crate::give_up::release_lost(ctx, &mut self.ir, &ids, &mut releases)?;
         for (id, released) in releases {
             let Some(&index) = owner.get(&id) else {
                 continue;
