@@ -199,6 +199,10 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                     StepLossCode::ParseNoncanonicalSyntax,
                     "presentation_metadata",
                 ),
+                crate::parse::ParseDiagnosticKind::PresentationLiteralUnrepresentable => (
+                    StepLossCode::ParsePresentationLiteralUnrepresentable,
+                    "presentation_metadata",
+                ),
                 crate::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical => {
                     (StepLossCode::ParseNoncanonicalSyntax, "complex_entity")
                 }
@@ -570,9 +574,7 @@ fn decode_exchange_mode(
     if matches!(mode, DecodeMode::Decode(_)) {
         let metadata_offsets = diagnostics
             .iter()
-            .filter(|diagnostic| {
-                diagnostic.kind == crate::parse::ParseDiagnosticKind::PresentationMetadataUnusable
-            })
+            .filter(|diagnostic| diagnostic.kind.retains_presentation_record())
             .map(|diagnostic| diagnostic.offset)
             .collect::<std::collections::BTreeSet<_>>();
         for (&id, record) in exchange.records() {
@@ -969,6 +971,26 @@ fn drop_with_lost(exchange: &Exchange, id: u64, needs: impl IntoIterator<Item = 
     lost.is_some()
 }
 
+/// Drops instance `id` with the first instance that a parameter of `record`
+/// references, at any depth, and that the parser or the reader gave up or
+/// dropped. Returns whether one was.
+fn drop_with_lost_reference(
+    exchange: &Exchange,
+    id: u64,
+    record: &RawRecord,
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    let mut references = BTreeSet::new();
+    for value in record
+        .partials
+        .iter()
+        .flat_map(|partial| &partial.parameters)
+    {
+        collect_references(value, &mut references, ctx)?;
+    }
+    Ok(drop_with_lost(exchange, id, references))
+}
+
 /// Gives up each DATA instance the reader gave up as one part, and notes
 /// each instance it dropped with the record it needs (§3.3). An instance
 /// that no pass types keeps its exact source as an opaque record, so its
@@ -1059,7 +1081,7 @@ fn give_up_instances(
             Some(needed) => dropped_with(record.clone(), needed),
             None => GivenUpRecord::new(
                 record.clone(),
-                Cause::Unreadable,
+                Cause::Undecoded,
                 format_args!("it needs instance #{needs}, which the decode holds as no record"),
             )
             .loss(),
@@ -1818,19 +1840,30 @@ fn decode_text(
     field: &str,
     code: StepLossCode,
 ) -> Option<String> {
-    let Value::String(bytes) = value else {
-        return None;
-    };
-    match exchange.decode_string(bytes) {
-        Ok(text) => Some(text),
-        Err(error) => {
-            let message =
-                format!("STEP record #{record_id} has an invalid {field} string: {error}");
-
+    match string_text(exchange, value, record_id, field) {
+        Ok(text) => text,
+        Err(message) => {
             losses.push(code.note(message));
             None
         }
     }
+}
+
+/// The text of string `value`, `None` for a value of another kind, or the
+/// reason that the string does not decode, for a give-up that names it.
+fn string_text(
+    exchange: &Exchange,
+    value: &Value,
+    record_id: u64,
+    field: &str,
+) -> Result<Option<String>, String> {
+    let Value::String(bytes) = value else {
+        return Ok(None);
+    };
+    exchange
+        .decode_string(bytes)
+        .map(Some)
+        .map_err(|error| format!("STEP record #{record_id} has an invalid {field} string: {error}"))
 }
 
 fn collect_references(

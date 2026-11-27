@@ -360,7 +360,7 @@ compartments the decoder cannot order?
 **Known.** `crates/cadmpeg-codec-step/src/reader/pmi.rs:175-244` decodes each
 `DATUM_SYSTEM` record. When its datum references do not convert to the
 expected compartment structure, the decoder gives up the whole system with
-`record.unreadable`. `step.md` §8 defines datum, datum-feature, and
+`record.undecoded`. `step.md` §8 defines datum, datum-feature, and
 datum-target transfer. The inconsistent-compartment rule and a
 partial-transfer form for valid references are unspecified.
 

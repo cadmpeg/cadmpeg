@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 
 mod cache_storage;
 mod depth_limits;
+mod layers;
 mod shared_walks;
 mod surface_styles;
 

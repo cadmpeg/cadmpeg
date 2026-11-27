@@ -8,7 +8,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::unknown::part::{gives_up, record_undecoded_kind};
+use cadmpeg_ir::unknown::part::{gives_up, record_undecoded_kind, record_unreadable_kind};
 use cadmpeg_ir::CadIr;
 
 use crate::export::Builder;
@@ -782,55 +782,39 @@ fn missing_vertex_carrier_salvages_complete_sheet_member_but_rejects_solid() {
     );
 }
 
+/// `VERTEX_POINT('',#4)` with `#4` a `DIRECTION` breaks the point type of
+/// `vertex_geometry`. The vertex is given up as unreadable; the solid root
+/// drops with it, and the vertex's charge names the root's face and shell.
 #[test]
-fn rejected_solid_root_reports_its_give_up() {
+fn a_vertex_on_a_direction_is_unreadable_and_the_root_drops_with_it() {
     let source = String::from_utf8(
         include_bytes!("../../../../tests/fixtures/ap242_vertex_loop.p21").to_vec(),
     )
     .expect("fixture is UTF-8")
     .replace("#10=VERTEX_POINT('',#8);", "#10=VERTEX_POINT('',#4);");
-    let decoded = StepCodec::default()
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .expect("salvage mode accepts a destroyed solid");
-
-    assert!(decoded.ir().geometry.bodies.is_empty());
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
-            && loss.message.contains(" rejected: ")
-    }));
-}
-
-#[test]
-fn a_pinned_decode_reports_a_solid_root_that_does_not_resolve() {
-    let source = String::from_utf8(
-        include_bytes!("../../../../tests/fixtures/ap242_vertex_loop.p21").to_vec(),
-    )
-    .expect("fixture is UTF-8")
-    .replace("#10=VERTEX_POINT('',#8);", "#10=VERTEX_POINT('',#4);");
-    let root = source.find("#18=").expect("the solid root");
-    let head = format!(
-        "part data_record stream=\"\" offset={root} length={} record=",
-        "#18=MANIFOLD_SOLID_BREP('',#17);".len()
-    );
-    let names_root = |message: &str| message.starts_with(&head);
+    let part = |name: &str, statement: &str| {
+        format!(
+            "part data_record stream=\"\" offset={} length={} record=",
+            source.find(name).expect("statement"),
+            statement.len()
+        )
+    };
+    let vertex = part("#10=", "#10=VERTEX_POINT('',#4);");
+    let root = part("#18=", "#18=MANIFOLD_SOLID_BREP('',#17);");
 
     let admitted = StepCodec::default()
         .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
-        .expect("the default decode admits a document without the rejected solid");
+        .expect("the default decode admits a document without the destroyed solid");
+    assert!(admitted.ir().geometry.bodies.is_empty());
     let losses = &admitted.report().losses;
     let charges = losses
         .iter()
-        .filter(|loss| gives_up(&loss.code) && names_root(&loss.message))
+        .filter(|loss| gives_up(&loss.code) && loss.message.starts_with(&vertex))
         .collect::<Vec<_>>();
     let [charge] = charges.as_slice() else {
-        panic!("one charge names the root");
+        panic!("one charge names the vertex: {losses:?}");
     };
-    // The reader cannot tell a root that breaks the format from one whose
-    // carriers it holds no reading for, so the root is undecoded.
-    assert_eq!(charge.code, record_undecoded_kind());
-    assert!(charge.message.contains(" rejected: "), "{}", charge.message);
-    // The root's shell and its face drop with the root, each named by the id
-    // its record takes.
+    assert_eq!(charge.code, record_unreadable_kind());
     assert!(
         charge
             .message
@@ -838,17 +822,20 @@ fn a_pinned_decode_reports_a_solid_root_that_does_not_resolve() {
         "{}",
         charge.message
     );
+    assert!(
+        !losses.iter().any(|loss| loss.message.starts_with(&root)),
+        "{losses:?}"
+    );
 
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let pinned = StepCodec::default()
+    let failure = StepCodec::default()
         .decode(&mut Cursor::new(source), &options)
-        .expect("a pinned decode admits an undecoded root");
-    assert!(pinned
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == record_undecoded_kind() && names_root(&loss.message)));
+        .expect_err("a pinned decode refuses an unreadable vertex");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(rejection.loss().code, record_unreadable_kind());
 }
 
 #[test]

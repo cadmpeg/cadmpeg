@@ -257,3 +257,81 @@ fn a_zone_whose_owner_is_no_geometric_tolerance_is_given_up() {
     assert_eq!(charges, 1, "{:?}", result.report().losses);
     assert!(constraints(&result, "profile").zones.is_empty());
 }
+
+/// The give-ups whose text names tolerance zone #20.
+fn zone_charges(
+    result: &cadmpeg_ir::codec::DecodeResult,
+) -> Vec<&cadmpeg_ir::report::loss::LossNote> {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+        .filter(|loss| loss.message.contains("tolerance zone #20"))
+        .collect()
+}
+
+#[test]
+fn a_zone_whose_owner_is_a_dimension_is_undecoded() {
+    let source = format!(
+        "{}\n#50=DIMENSIONAL_SIZE(#6,'diameter');\n#51=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(LENGTH_MEASURE(35.),#1) REPRESENTATION_ITEM('nominal value'));\n#52=SHAPE_DIMENSION_REPRESENTATION('',(#51),#2);\n#53=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#50,#52);",
+        ZONES.replace("(#10),#21", "(#50),#21")
+    );
+    let result = decode_inline(&source);
+    let charges = zone_charges(&result);
+    let [charge] = charges.as_slice() else {
+        panic!("one give-up names the zone: {:?}", result.report().losses);
+    };
+    assert_eq!(charge.code, record_undecoded_kind());
+}
+
+#[test]
+fn a_zone_of_a_given_up_tolerance_drops_with_it() {
+    let source = ZONES.replace(
+        "#10=(GEOMETRIC_TOLERANCE('profile','',#11,#6) SURFACE_PROFILE_TOLERANCE() UNEQUALLY_DISPOSED_GEOMETRIC_TOLERANCE(#12));",
+        "#10=SURFACE_PROFILE_TOLERANCE('profile','',#11,#6,99999999999999999999);",
+    );
+    let result = decode_inline(&source);
+    assert!(
+        zone_charges(&result).is_empty(),
+        "{:?}",
+        result.report().losses
+    );
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "pmi.zone-unresolved"
+            || loss.message.contains("pmi.zone-unresolved")));
+}
+
+#[test]
+fn a_zone_form_that_does_not_decode_is_one_unreadable_charge() {
+    let source = ZONES.replace(
+        "TOLERANCE_ZONE_FORM('cylindrical or circular')",
+        "TOLERANCE_ZONE_FORM('\\X2\\D800\\X0\\')",
+    );
+    let result = decode_inline(&source);
+    let charges = zone_charges(&result);
+    let [charge] = charges.as_slice() else {
+        panic!("one give-up names the zone: {:?}", result.report().losses);
+    };
+    assert_eq!(charge.code, record_unreadable_kind());
+    assert!(
+        charge.message.contains("tolerance zone form"),
+        "{}",
+        charge.message
+    );
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "metadata.string-invalid"));
+
+    let blank = decode_inline(&ZONES.replace("'cylindrical or circular'", "' '"));
+    let charges = zone_charges(&blank);
+    let [charge] = charges.as_slice() else {
+        panic!("one give-up names the zone: {:?}", blank.report().losses);
+    };
+    assert_eq!(charge.code, record_undecoded_kind());
+}

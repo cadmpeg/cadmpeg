@@ -912,7 +912,7 @@ mod tests;
 pub(super) fn decoded(
     prim: &crate::stage::Prim<'_>,
     issues: &mut crate::schema::Issues,
-) -> Result<crate::brep::solid::Decoded, String> {
+) -> Result<crate::brep::solid::Decoded, crate::brep::solid::Fault> {
     let packed = crate::brep::solid::read(prim, issues)?;
     crate::brep::solid::decode(&packed)
 }
@@ -976,13 +976,15 @@ impl super::Builder<'_, '_, '_, '_> {
         fallbacks: &[usize],
         key: &str,
     ) -> Result<Vec<cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError> {
+        let since = self.issues.malformed.len();
         let decoded = match decoded(prim, &mut self.issues) {
             Ok(decoded) => decoded,
-            Err(reason) => {
+            Err(fault) => {
+                let error = self.charge_malformed(since, fault.reason);
                 self.tallies.given_up.push(GivenUpRecord::new(
                     crate::ids::body(key),
-                    Cause::Undecoded,
-                    reason,
+                    fault.cause,
+                    error,
                 ));
                 return Ok(Vec::new());
             }
@@ -1009,9 +1011,14 @@ impl super::Builder<'_, '_, '_, '_> {
                     keys.insert(ordinal, body_key);
                 }
                 Err(reason) => {
+                    let cause = if crate::brep::solid::breaks_rules(records) {
+                        Cause::Unreadable
+                    } else {
+                        Cause::Undecoded
+                    };
                     self.tallies.given_up.push(GivenUpRecord::new(
                         crate::ids::body(&body_key),
-                        Cause::Undecoded,
+                        cause,
                         reason,
                     ));
                 }
@@ -1162,13 +1169,18 @@ impl super::Builder<'_, '_, '_, '_> {
         } else {
             format!("{key}/{}", prim.name)
         };
+        let since = self.issues.malformed.len();
         let mesh = match crate::schema::mesh::read(self.stage, prim, &mut self.issues) {
             Ok(mesh) => mesh,
             Err(cause) => {
+                let error = self.charge_malformed(
+                    since,
+                    "the mesh states no points, or no face of three points",
+                );
                 self.tallies.given_up.push(GivenUpRecord::new(
                     crate::ids::tessellation(&tessellation_key),
                     cause,
-                    "the mesh states no points, or no face of three points",
+                    error,
                 ));
                 return Ok(());
             }

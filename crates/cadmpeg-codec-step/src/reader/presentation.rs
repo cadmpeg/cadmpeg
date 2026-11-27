@@ -27,10 +27,10 @@ use crate::ids;
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::decode_text;
 use super::groups::NonemptyGroup;
 use super::topology::TopologyData;
 use super::StageOutcome;
+use super::{decode_text, string_text};
 
 pub(super) fn decode(
     exchange: &Exchange,
@@ -201,26 +201,23 @@ pub(super) fn decode(
             );
             continue;
         }
-        let Some(name) =
-            named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 0).and_then(|value| {
-                decode_text(
-                    exchange,
-                    value,
-                    &mut losses,
-                    layer_id,
-                    "presentation layer name",
-                    StepLossCode::MetadataStringInvalid,
-                )
+        let name = named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 0)
+            .map_or(Ok(None), |value| {
+                string_text(exchange, value, layer_id, "presentation layer name")
             })
-        else {
-            exchange.lost().give_up_for(
-                layer_id,
-                Cause::Unreadable,
-                &StepLossCode::DecodeWarning.note(format!(
-                    "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
-                )),
-            );
-            continue;
+            .and_then(|name| {
+                name.ok_or_else(|| format!("PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"))
+            });
+        let name = match name {
+            Ok(name) => name,
+            Err(why) => {
+                exchange.lost().give_up_for(
+                    layer_id,
+                    Cause::Unreadable,
+                    &StepLossCode::DecodeWarning.note(why),
+                );
+                continue;
+            }
         };
         let description = named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 1)
             .and_then(|value| {

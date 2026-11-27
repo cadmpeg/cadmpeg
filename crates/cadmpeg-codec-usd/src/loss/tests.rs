@@ -16,6 +16,7 @@ fn code_strings_are_pinned() {
             "composition.external-arc",
             "composition.layer-unavailable",
             "composition.target-missing",
+            "composition.target-unresolved",
             "composition.variant-not-selected",
             "composition.over-undefined",
             "composition.cycle",
@@ -29,12 +30,14 @@ fn code_strings_are_pinned() {
             "metadata.not-transferred",
             "crate.value-not-read",
             "xform.malformed",
+            "xform.not-transferred",
             "mesh.subdivision-not-applied",
             "mesh.face-rejected",
             "mesh.primvar-not-transferred",
             "mesh.normals-not-transferred",
             "mesh.subset-not-transferred",
             "curves.rejected",
+            "curves.not-transferred",
             "nurbs.trim-not-transferred",
             "nurbs.trim-region-assumed",
             "nurbs.boundary-not-transferred",
@@ -94,4 +97,25 @@ fn note_takes_severity_from_the_code() {
         assert_eq!(note.message, "x");
         assert_eq!(note.code, code.kind());
     }
+}
+
+/// The floored codes are the list of `usd.md` §18.
+#[test]
+fn strict_floors_are_the_listed_codes() {
+    use cadmpeg_ir::report::Severity;
+    let floored: Vec<_> = UsdLossCode::ALL
+        .iter()
+        .filter_map(|code| code.kind().strict_floor().map(|floor| (code.code(), floor)))
+        .collect();
+    assert_eq!(
+        floored,
+        [
+            ("composition.target-missing", Severity::Warning),
+            ("attribute.value-malformed", Severity::Warning),
+            ("xform.malformed", Severity::Warning),
+            ("mesh.face-rejected", Severity::Warning),
+            ("curves.rejected", Severity::Warning),
+            ("nurbs.range-not-transferred", Severity::Warning),
+        ]
+    );
 }

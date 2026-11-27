@@ -263,17 +263,33 @@ fn a_pinned_decode_refuses_a_record_cut_by_the_end_of_input() {
 #[test]
 fn concatenated_sat_unreadable_later_header_keeps_the_first_model() {
     let first = crate::test_support::test_streams::text_sphere_stream(1.0);
-    for second in [b"23200 5 0 0\n".as_slice(), b"9999999999 5 0 0\n"] {
+    // A save format past the reader's range is a well-formed header the
+    // reader has no layout for; a header cut before its product line breaks
+    // the header framing.
+    for (second, cause, code) in [
+        (
+            b"23200 5 0 0\n".as_slice(),
+            cadmpeg_ir::unknown::part::Cause::Unreadable,
+            SatLossCode::FramingRecordsUnread,
+        ),
+        (
+            b"9999999999 5 0 0\n",
+            cadmpeg_ir::unknown::part::Cause::Undecoded,
+            SatLossCode::SourceStreamLayoutUnprojected,
+        ),
+    ] {
         let mut source = first.clone();
         source.extend(second);
         let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(&source));
         assert_eq!(result.ir().geometry.bodies.len(), 1);
         assert_eq!(result.ir().geometry.faces.len(), 1);
-        assert_unread_given_up(
-            &result.report().losses,
-            first.len(),
-            cadmpeg_ir::unknown::part::Cause::Undecoded,
-            SatLossCode::SourceStreamLayoutUnprojected,
+        assert_unread_given_up(&result.report().losses, first.len(), cause, code);
+        let mut options = cadmpeg_ir::codec::DecodeOptions::default();
+        options.strictness.pinned = true;
+        let pinned = SatCodec.decode(&mut std::io::Cursor::new(source), &options);
+        assert_eq!(
+            pinned.is_err(),
+            cause == cadmpeg_ir::unknown::part::Cause::Unreadable
         );
         assert_eq!(
             result

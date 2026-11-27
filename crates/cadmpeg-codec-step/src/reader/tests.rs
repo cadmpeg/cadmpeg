@@ -1156,3 +1156,50 @@ fn an_opaque_entity_type_reports_its_type_offset_and_count() {
     assert_eq!(provenance.tag.as_deref(), Some("UNKNOWN_ITEM"));
     assert_eq!(provenance.offset, u64::try_from(first).expect("offset"));
 }
+
+/// A record that drops with an instance that no give-up names, and that the
+/// decode holds as no record, gives up as its own with `record.undecoded`:
+/// the decode cannot tell why the instance holds no record.
+#[test]
+fn a_record_whose_need_holds_no_record_is_undecoded() {
+    use crate::ids::kind;
+    let input = b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));ENDSEC;END-ISO-10303-21;";
+    crate::test_support::with_service_context(input, |input, ctx| {
+        let (exchange, _) = crate::parse::parse_inner(input, ctx).expect("parse the exchange");
+        exchange
+            .lost()
+            .drop_record_with(1, crate::ids::data(kind!("point"), 1_u64), 99);
+        let (parts, losses) =
+            super::give_up_instances(input, &exchange, &HashSet::<u64>::new(), &[], ctx)
+                .expect("settle the lost instances");
+        assert!(parts.is_empty());
+        let [loss] = losses.as_slice() else {
+            panic!("one loss names the dropped record: {losses:?}");
+        };
+        assert_eq!(
+            loss.code,
+            cadmpeg_ir::unknown::part::record_undecoded_kind()
+        );
+        assert!(loss.message.contains("#99"), "{}", loss.message);
+    });
+}
+
+/// A header string whose escapes encode a control character is valid Part 21.
+/// The reader leaves the control out of the attribute and reports it with a
+/// code that has no strict floor.
+#[test]
+fn a_pinned_decode_admits_header_controls_that_escapes_encode() {
+    let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('a\\X2\\000A\\X0\\b'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &options)
+        .expect("an omitted header control pins no strict floor");
+    let losses = &result.report().losses;
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::HeaderControlsOmitted.kind()));
+    assert!(!losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::HeaderMetadataNoncanonical.kind()));
+}

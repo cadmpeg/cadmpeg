@@ -39,6 +39,9 @@ pub(crate) enum StepLossCode {
     ParseDraftGrammar,
     /// Readable DATA ends before a complete closing envelope.
     ParseEnvelopeIncomplete,
+    /// A presentation record holds a valid numeric token outside the reader's
+    /// range, and its exact source is retained.
+    ParsePresentationLiteralUnrepresentable,
     /// ZIP metadata violates the Part 21 profile without preventing root decoding.
     ContainerMemberNoncanonical,
     /// A decode stage surfaced a per-record warning.
@@ -55,6 +58,9 @@ pub(crate) enum StepLossCode {
     ImplementationLevelUnverified,
     /// Header metadata deviates from the format without preventing decoding.
     HeaderMetadataNoncanonical,
+    /// A header string attribute omits the control characters that its
+    /// escapes encode.
+    HeaderControlsOmitted,
     /// The declared `FILE_SCHEMA` identifier satisfies no declared dialect.
     SourceDialectUnverified,
     /// The declared schema object identifier names a module edition that the
@@ -426,6 +432,7 @@ impl StepLossCode {
         Self::ParsePreambleOmitted,
         Self::ParseDraftGrammar,
         Self::ParseEnvelopeIncomplete,
+        Self::ParsePresentationLiteralUnrepresentable,
         Self::ContainerMemberNoncanonical,
         Self::DecodeWarning,
         Self::ByteAccountingUnclassified,
@@ -434,6 +441,7 @@ impl StepLossCode {
         Self::SchemaObjectIdentifierOutOfRange,
         Self::ImplementationLevelUnverified,
         Self::HeaderMetadataNoncanonical,
+        Self::HeaderControlsOmitted,
         Self::SourceDialectUnverified,
         Self::SourceSchemaEditionAssumed,
         Self::AttributeStringInvalid,
@@ -611,6 +619,9 @@ impl StepLossCode {
             Self::ParsePreambleOmitted => "parse.preamble-omitted",
             Self::ParseDraftGrammar => "parse.draft-grammar",
             Self::ParseEnvelopeIncomplete => "parse.envelope-incomplete",
+            Self::ParsePresentationLiteralUnrepresentable => {
+                "parse.presentation-literal-unrepresentable"
+            }
             Self::DecodeWarning => "decode.warning",
             Self::ByteAccountingUnclassified => "decode.byte-accounting-unclassified",
             Self::OpaqueRecordPreserved => "decode.opaque-record-preserved",
@@ -620,6 +631,7 @@ impl StepLossCode {
             }
             Self::ImplementationLevelUnverified => "parse.implementation-level-unverified",
             Self::HeaderMetadataNoncanonical => "parse.header-metadata-noncanonical",
+            Self::HeaderControlsOmitted => "metadata.header-controls-omitted",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceSchemaEditionAssumed => "source.schema-edition-assumed",
             Self::AttributeStringInvalid => "attribute.string-invalid",
@@ -1007,7 +1019,9 @@ impl StepLossCode {
             | Self::LengthUnitContradicted
             | Self::OccurrencePlacementInferred
             | Self::TorusSheetUnresolved => LossTaxonomy::DecodeDiagnostic,
-            Self::CsgDesignUnscoped => LossTaxonomy::MetadataNotTransferred,
+            Self::CsgDesignUnscoped
+            | Self::ParsePresentationLiteralUnrepresentable
+            | Self::HeaderControlsOmitted => LossTaxonomy::MetadataNotTransferred,
             Self::NauoPlacementUnresolved
             | Self::BodyConflictingMappedPlacements
             | Self::AssemblyOccurrenceOmittedNoParentProduct
@@ -1071,7 +1085,10 @@ impl StepLossCode {
     const fn strict_floor(self) -> Option<Severity> {
         match self {
             Self::ParseNoncanonicalSyntax
+            | Self::ParseRecordOmitted
             | Self::ParseEnvelopeIncomplete
+            | Self::ContainerMemberNoncanonical
+            | Self::HeaderMetadataNoncanonical
             | Self::OrientedShellOmitsCfsFaces
             | Self::FaceMultipleOuterBounds
             | Self::PlacementReferenceInferred => Some(Severity::Warning),
@@ -1107,6 +1124,7 @@ mod tests {
                 "parse.preamble-omitted",
                 "parse.draft-grammar",
                 "parse.envelope-incomplete",
+                "parse.presentation-literal-unrepresentable",
                 "container.member-noncanonical",
                 "decode.warning",
                 "decode.byte-accounting-unclassified",
@@ -1115,6 +1133,7 @@ mod tests {
                 "metadata.schema-object-identifier-out-of-range",
                 "parse.implementation-level-unverified",
                 "parse.header-metadata-noncanonical",
+                "metadata.header-controls-omitted",
                 "source.dialect-unverified",
                 "source.schema-edition-assumed",
                 "attribute.string-invalid",
@@ -1337,7 +1356,10 @@ mod tests {
         };
         let floored = [
             StepLossCode::ParseNoncanonicalSyntax,
+            StepLossCode::ParseRecordOmitted,
             StepLossCode::ParseEnvelopeIncomplete,
+            StepLossCode::ContainerMemberNoncanonical,
+            StepLossCode::HeaderMetadataNoncanonical,
             StepLossCode::OrientedShellOmitsCfsFaces,
             StepLossCode::FaceMultipleOuterBounds,
             StepLossCode::PlacementReferenceInferred,

@@ -63,6 +63,9 @@ pub(super) enum JointRejection {
     /// A body relationship names a prim that is not a transferred
     /// occurrence.
     BodyNotTransferred,
+    /// A body relationship names a path that is no prim of a stage that the
+    /// decoder composed whole (spec §16.4).
+    BodyAbsent,
     /// Both body relationships are empty, so each side is the world.
     NoBody,
 }
@@ -73,7 +76,17 @@ impl JointRejection {
         match self {
             Self::FrameMalformed => "has a malformed frame",
             Self::BodyNotTransferred => "names a body that is not a transferred prim",
+            Self::BodyAbsent => "names a body that is no prim of the stage",
             Self::NoBody => "names no body",
+        }
+    }
+
+    /// The cause of the joint's give-up: unreadable where the joint breaks
+    /// §16.4.
+    const fn cause(self) -> Cause {
+        match self {
+            Self::BodyAbsent => Cause::Unreadable,
+            Self::FrameMalformed | Self::BodyNotTransferred | Self::NoBody => Cause::Undecoded,
         }
     }
 }
@@ -485,7 +498,11 @@ impl super::Builder<'_, '_, '_, '_> {
                     Some(body) => {
                         let occurrence = crate::ids::occurrence(body);
                         if !occurrences.contains(occurrence.as_str()) {
-                            rejection = Some(JointRejection::BodyNotTransferred);
+                            rejection = Some(if self.stage.holds_no_prim(body) {
+                                JointRejection::BodyAbsent
+                            } else {
+                                JointRejection::BodyNotTransferred
+                            });
                             break;
                         }
                         Some(JointOperand::occurrence(
@@ -507,7 +524,7 @@ impl super::Builder<'_, '_, '_, '_> {
             if let Some(rejection) = rejection {
                 self.tallies.given_up.push(GivenUpRecord::new(
                     &id,
-                    Cause::Undecoded,
+                    rejection.cause(),
                     format_args!("the joint {}", rejection.one()),
                 ));
                 rejected.insert(id);

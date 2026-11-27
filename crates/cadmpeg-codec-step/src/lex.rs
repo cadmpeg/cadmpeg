@@ -46,8 +46,9 @@ pub(crate) enum TokenKind {
     Integer(i64),
     /// Decimal real, including an optional exponent.
     Real(FiniteReal),
-    /// A bounded metadata literal that cannot enter its typed domain.
-    UninterpretedLiteral,
+    /// A bounded metadata literal that cannot enter its typed domain, with
+    /// the cause of its lexical defect.
+    UninterpretedLiteral(Cause),
     /// Dot-delimited enumeration or logical literal.
     Enumeration(String),
     /// Bytes between apostrophe delimiters, before escape decoding.
@@ -611,7 +612,9 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             )
         };
         match (self.literal_admission, admitted) {
-            (LiteralAdmission::Metadata, Err(_)) => Ok(TokenKind::UninterpretedLiteral),
+            (LiteralAdmission::Metadata, Err(error)) => {
+                Ok(TokenKind::UninterpretedLiteral(error.cause))
+            }
             (_, result) => result,
         }
     }
@@ -695,7 +698,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         for end in start + 1..self.input.len() {
             if self.input[end] == closing {
                 self.at = end + 1;
-                return Ok(TokenKind::UninterpretedLiteral);
+                return Ok(TokenKind::UninterpretedLiteral(error.cause));
             }
         }
         Err(error)

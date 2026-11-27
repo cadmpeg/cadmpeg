@@ -135,6 +135,10 @@ impl Rejected {
         self.errors.push(error);
     }
 
+    fn is_empty(&self) -> bool {
+        self.errors.is_empty()
+    }
+
     fn reasons(&self) -> String {
         self.errors
             .iter()
@@ -503,18 +507,38 @@ pub(super) fn decode(
                 ),
         );
     }
-    let vertices = vertex_defs(exchange);
+    let mut vertices = vertex_defs(exchange);
     let edges = edge_defs(exchange, ctx)?;
     let shells = shell_defs(exchange, ctx)?;
     let point_positions = carrier_index;
+    // ISO 10303-42 types `vertex_point.vertex_geometry` as a point. A vertex
+    // on a lost point drops with it, and a vertex that names no point or
+    // another geometric item breaks that type. Neither builds a vertex.
     for (vertex_id, vertex) in exchange.entities("VERTEX_POINT") {
         let Some(point_id) = named_reference(vertex, "VERTEX_POINT", 1, 0) else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "VERTEX_POINT #{vertex_id} has no resolvable point carrier"
-            )));
+            exchange.lost().give_up(
+                vertex_id,
+                Cause::Unreadable,
+                format!("VERTEX_POINT #{vertex_id} has no point reference"),
+            );
+            vertices.remove(&vertex_id);
             continue;
         };
-        if !carrier_index.points.contains_key(&point_id) {
+        if super::instance_is_lost(exchange, point_id) {
+            exchange.lost().drop_with(vertex_id, point_id);
+            vertices.remove(&vertex_id);
+        } else if let Some(entity) = exchange
+            .records()
+            .get(&point_id)
+            .and_then(super::geometry::non_point_geometry)
+        {
+            exchange.lost().give_up(
+                vertex_id,
+                Cause::Unreadable,
+                format!("VERTEX_POINT #{vertex_id} names {entity} #{point_id} as its point"),
+            );
+            vertices.remove(&vertex_id);
+        } else if !carrier_index.points.contains_key(&point_id) {
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "VERTEX_POINT #{vertex_id} has unresolved point carrier #{point_id}"
             )));
@@ -764,6 +788,11 @@ pub(super) fn decode(
         losses.append(&mut root_losses);
         let (built, failures) = outcome.into_parts();
         let label = format!("STEP topology root #{id}");
+        let lost_need = failures
+            .as_ref()
+            .and_then(|failures| failures.first.as_ref())
+            .map(|failure| failure.record_id)
+            .filter(|&record| super::instance_is_lost(exchange, record));
         let owner_failure = match failures
             .as_ref()
             .and_then(|failures| failures.first.as_ref())
@@ -798,11 +827,17 @@ pub(super) fn decode(
             }
         }
         if body_ids.is_empty() {
-            exchange.lost().give_up(
-                id,
-                Cause::Undecoded,
-                format!("{owner_failure}{}", rejected.reasons()),
-            );
+            // A root that fails first on a lost record and whose drafts the
+            // commit rejects none of drops with that record, so the record's
+            // charge names the root's shells and faces.
+            match lost_need.filter(|_| rejected.is_empty()) {
+                Some(needs) => exchange.lost().drop_with(id, needs),
+                None => exchange.lost().give_up(
+                    id,
+                    Cause::Undecoded,
+                    format!("{owner_failure}{}", rejected.reasons()),
+                ),
+            }
             failed_roots.push((id, record));
         } else {
             let copies = body_ids.clone();

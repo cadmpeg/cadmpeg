@@ -916,6 +916,16 @@ pub(super) fn decode(
                     };
                     (origin, axis, reference)
                 });
+            let lost_direction = [2, 3]
+                .into_iter()
+                .filter_map(|index| {
+                    named_parameter(record, placement_type, index).and_then(Value::reference)
+                })
+                .find(|&direction| super::instance_is_lost(exchange, direction));
+            if let Some(direction) = lost_direction {
+                exchange.lost().drop_with(id, direction);
+                continue;
+            }
             if inferred_reference {
                 losses.push(StepLossCode::PlacementReferenceInferred.note(format!(
                         "AXIS2_PLACEMENT_3D #{id} has a reference direction parallel to its axis; inferred an orthogonal reference"
@@ -1090,6 +1100,7 @@ pub(super) fn decode(
         } else {
             None
         };
+        let mut rejected = None;
         let geometry = match curve_kind {
             LeafCurveEntity::Line => named_parameter(record, "LINE", 1)
                 .and_then(Value::reference)
@@ -1189,15 +1200,17 @@ pub(super) fn decode(
                         )))
                     },
                 ),
-            LeafCurveEntity::Polyline => polyline(id, record, &points, &mut losses)
+            LeafCurveEntity::Polyline => polyline(record, &points, &mut rejected)
                 .map(SolvedCurveGeometry::Nurbs)
                 .map(CurveGeometry::Solved),
             LeafCurveEntity::BSplineWithKnots
             | LeafCurveEntity::UniformCurve
             | LeafCurveEntity::QuasiUniformCurve
-            | LeafCurveEntity::BezierCurve => nurbs_curve(id, record, &points, &mut losses)
-                .map(SolvedCurveGeometry::Nurbs)
-                .map(CurveGeometry::Solved),
+            | LeafCurveEntity::BezierCurve => {
+                { nurbs_curve(id, record, &points, &mut losses, &mut rejected) }
+                    .map(SolvedCurveGeometry::Nurbs)
+                    .map(CurveGeometry::Solved)
+            }
         };
         if let Some(geometry) = geometry {
             if let Some(offset) = parameter_offset {
@@ -1216,8 +1229,11 @@ pub(super) fn decode(
                 id,
                 (
                     Cause::Unreadable,
-                    StepLossCode::DecodeWarning
-                        .note(format!("{} #{id} has invalid geometry", curve_kind.name())),
+                    StepLossCode::DecodeWarning.note(format!(
+                        "{} #{id} has invalid geometry{}",
+                        curve_kind.name(),
+                        rejection(rejected)
+                    )),
                 ),
             );
         }
@@ -1229,7 +1245,8 @@ pub(super) fn decode(
         {
             continue;
         }
-        if let Some(nurbs) = nurbs_curve(id, record, &points, &mut losses) {
+        let mut rejected = None;
+        if let Some(nurbs) = nurbs_curve(id, record, &points, &mut losses, &mut rejected) {
             ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: CurveId::from(ids::data(kind!("curve"), id)),
@@ -1244,7 +1261,8 @@ pub(super) fn decode(
                 (
                     Cause::Unreadable,
                     StepLossCode::DecodeWarning.note(format!(
-                        "B_SPLINE_CURVE_WITH_KNOTS #{id} has invalid geometry"
+                        "B_SPLINE_CURVE_WITH_KNOTS #{id} has invalid geometry{}",
+                        rejection(rejected)
                     )),
                 ),
             );
@@ -1801,6 +1819,7 @@ pub(super) fn decode(
         let placement = named_parameter(record, surface_type, 1)
             .and_then(Value::reference)
             .and_then(|placement| placements.get(&placement).copied());
+        let mut rejected = None;
         let geometry = match surface_kind {
             LeafSurfaceEntity::Plane => placement.and_then(|(origin, normal, u_axis)| {
                 let frame = OrthonormalFrame3::from_units(normal, u_axis)?;
@@ -1882,9 +1901,11 @@ pub(super) fn decode(
             LeafSurfaceEntity::BSplineWithKnots
             | LeafSurfaceEntity::UniformSurface
             | LeafSurfaceEntity::QuasiUniformSurface
-            | LeafSurfaceEntity::BezierSurface => nurbs_surface(id, record, &points, &mut losses)
-                .map(SolvedSurfaceGeometry::Nurbs)
-                .map(SurfaceGeometry::Solved),
+            | LeafSurfaceEntity::BezierSurface => {
+                { nurbs_surface(id, record, &points, &mut losses, &mut rejected) }
+                    .map(SolvedSurfaceGeometry::Nurbs)
+                    .map(SurfaceGeometry::Solved)
+            }
         };
         if let Some(geometry) = geometry {
             ir.geometry.surfaces.push(Surface {
@@ -1899,8 +1920,10 @@ pub(super) fn decode(
                 id,
                 (
                     Cause::Unreadable,
-                    StepLossCode::DecodeWarning
-                        .note(format!("{surface_type} #{id} has invalid geometry")),
+                    StepLossCode::DecodeWarning.note(format!(
+                        "{surface_type} #{id} has invalid geometry{}",
+                        rejection(rejected)
+                    )),
                 ),
             );
         }
@@ -1911,7 +1934,8 @@ pub(super) fn decode(
         {
             continue;
         }
-        if let Some(nurbs) = nurbs_surface(id, record, &points, &mut losses) {
+        let mut rejected = None;
+        if let Some(nurbs) = nurbs_surface(id, record, &points, &mut losses, &mut rejected) {
             ir.geometry.surfaces.push(Surface {
                 id: SurfaceId::from(ids::data(kind!("surface"), id)),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
@@ -1925,7 +1949,8 @@ pub(super) fn decode(
                 (
                     Cause::Unreadable,
                     StepLossCode::DecodeWarning.note(format!(
-                        "B_SPLINE_SURFACE_WITH_KNOTS #{id} has invalid geometry"
+                        "B_SPLINE_SURFACE_WITH_KNOTS #{id} has invalid geometry{}",
+                        rejection(rejected)
                     )),
                 ),
             );
@@ -2429,20 +2454,39 @@ pub(super) fn decode(
         }
     }
     // An invalid carrier that no edge or face retains as an unknown carrier
-    // leaves no record, and its give-up carries why.
-    for (id, (cause, why)) in invalid_curves {
-        if carrier_index.curves.contains_key(&id) {
+    // leaves no record. It drops with a lost instance that it references, or
+    // its give-up carries why. A carrier on two-dimensional geometry outside
+    // a decoded pcurve lies in a two-dimensional context, which the reader
+    // holds no reading for.
+    let planar = |reference: &u64| {
+        points2.contains_key(reference)
+            || directions2.contains_key(reference)
+            || vectors2.contains_key(reference)
+            || placements2.contains_key(reference)
+    };
+    let mut settle = |id: u64, cause: Cause, why: LossNote, retained: bool| {
+        if retained {
             losses.push(why);
-        } else {
+            return Ok(());
+        }
+        let Some(record) = exchange.records().get(&id) else {
+            return Ok(());
+        };
+        if !super::drop_with_lost_reference(exchange, id, record, ctx)? {
+            let cause = if direct_references(record).iter().any(planar) {
+                Cause::Undecoded
+            } else {
+                cause
+            };
             exchange.lost().give_up_for(id, cause, &why);
         }
+        Ok::<_, CodecError>(())
+    };
+    for (id, (cause, why)) in invalid_curves {
+        settle(id, cause, why, carrier_index.curves.contains_key(&id))?;
     }
     for (id, (cause, why)) in invalid_surfaces {
-        if carrier_index.surfaces.contains_key(&id) {
-            losses.push(why);
-        } else {
-            exchange.lost().give_up_for(id, cause, &why);
-        }
+        settle(id, cause, why, carrier_index.surfaces.contains_key(&id))?;
     }
     let mut surface_parameter_scales = BTreeMap::new();
     let lookup = SurfaceScaleLookup::new(ir);
@@ -3181,6 +3225,23 @@ impl LeafSurfaceEntity {
             Self::BezierSurface => "BEZIER_SURFACE",
         }
     }
+}
+
+/// The entity name of `record` where it is a direction, vector, placement,
+/// curve, or surface that the geometry stage reads.
+pub(super) fn non_point_geometry(record: &RawRecord) -> Option<&'static str> {
+    entity_type(
+        record,
+        &[
+            "DIRECTION",
+            "VECTOR",
+            "AXIS1_PLACEMENT",
+            "AXIS2_PLACEMENT_2D",
+            "AXIS2_PLACEMENT_3D",
+        ],
+    )
+    .or_else(|| LeafCurveEntity::of(record).map(LeafCurveEntity::name))
+    .or_else(|| LeafSurfaceEntity::of(record).map(LeafSurfaceEntity::name))
 }
 
 fn entity_type<'a>(record: &RawRecord, names: &[&'a str]) -> Option<&'a str> {
@@ -5178,6 +5239,7 @@ fn nurbs_curve(
     record: &RawRecord,
     points: &BTreeMap<u64, FinitePoint3>,
     losses: &mut Vec<LossNote>,
+    rejected: &mut Option<String>,
 ) -> Option<NurbsCurve> {
     let definition = nurbs_curve_definition(id, record, losses, "B_SPLINE_CURVE")?;
     let mut control_points = Vec::new();
@@ -5195,9 +5257,7 @@ fn nurbs_curve(
     match curve {
         Ok(curve) => Some(curve),
         Err(error) => {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "B_SPLINE_CURVE #{id} is not a curve carrier: {error}"
-            )));
+            *rejected = Some(error.to_string());
             None
         }
     }
@@ -5995,10 +6055,9 @@ fn polyline_pcurve(
 }
 
 fn polyline(
-    id: u64,
     record: &RawRecord,
     points: &BTreeMap<u64, FinitePoint3>,
-    losses: &mut Vec<LossNote>,
+    rejected: &mut Option<String>,
 ) -> Option<NurbsCurve> {
     let values = record.parameter(1).and_then(Value::list)?;
     let mut control_points = Vec::new();
@@ -6023,10 +6082,7 @@ fn polyline(
     {
         Ok(curve) => Some(curve),
         Err(error) => {
-            losses.push(
-                StepLossCode::DecodeWarning
-                    .note(format!("POLYLINE #{id} is not a curve carrier: {error}")),
-            );
+            *rejected = Some(error.to_string());
             None
         }
     }
@@ -6037,6 +6093,7 @@ fn nurbs_surface(
     record: &RawRecord,
     points: &BTreeMap<u64, FinitePoint3>,
     losses: &mut Vec<LossNote>,
+    rejected: &mut Option<String>,
 ) -> Option<NurbsSurface> {
     let (base, offset) = if record.partials.len() > 1 {
         (record.partial("B_SPLINE_SURFACE")?, 0)
@@ -6185,9 +6242,7 @@ fn nurbs_surface(
     match surface {
         Ok(surface) => Some(surface),
         Err(error) => {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "B_SPLINE_SURFACE #{id} is not a surface carrier: {error}"
-            )));
+            *rejected = Some(error.to_string());
             None
         }
     }
@@ -6428,6 +6483,14 @@ fn base_axis_2d(
         }
         (None, None) => (HypotDirection2::X_AXIS, HypotDirection2::Y_AXIS),
     }
+}
+
+/// The text that follows an invalid-geometry message: the reason the carrier
+/// constructor gave, where it gave one.
+fn rejection(reason: Option<String>) -> String {
+    reason
+        .map(|reason| format!(": {reason}"))
+        .unwrap_or_default()
 }
 
 /// The instances that the parameters of `record` reference directly.

@@ -289,11 +289,13 @@ pub(super) fn decode(
                 );
             }
             Err(message) => {
-                exchange.lost().give_up(
-                    id,
-                    Cause::Unreadable,
-                    format!("{entity} #{id}: {message}"),
-                );
+                if !super::drop_with_lost_reference(exchange, id, record, ctx)? {
+                    exchange.lost().give_up(
+                        id,
+                        Cause::Unreadable,
+                        format!("{entity} #{id}: {message}"),
+                    );
+                }
             }
         }
     }

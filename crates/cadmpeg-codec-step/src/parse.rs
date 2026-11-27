@@ -49,8 +49,9 @@ pub(crate) enum Value {
     Integer(i64),
     /// Real value.
     Real(FiniteReal),
-    /// A metadata literal whose exact bytes remain in its source record.
-    UninterpretedLiteral,
+    /// A metadata literal whose exact bytes remain in its source record,
+    /// with the cause of its defect.
+    UninterpretedLiteral(Cause),
     /// Enumeration or logical name without delimiter dots.
     Enumeration(String),
     /// Raw string-token bytes before Part 21 escape decoding.
@@ -78,7 +79,7 @@ fn try_clone_value(value: &Value, budget: &DecodeContext<'_>) -> Result<Value, C
         Value::ExpressValueConstant(text) => Value::ExpressValueConstant(text.to_owned()),
         Value::Integer(value) => Value::Integer(*value),
         Value::Real(value) => Value::Real(*value),
-        Value::UninterpretedLiteral => Value::UninterpretedLiteral,
+        Value::UninterpretedLiteral(cause) => Value::UninterpretedLiteral(*cause),
         Value::Enumeration(text) => Value::Enumeration(text.to_owned()),
         Value::String(bytes) => Value::String(bytes.clone()),
         Value::Binary(binary) => Value::Binary(binary.clone()),
@@ -113,7 +114,7 @@ fn node_payload(value: &Value) -> u64 {
         | Value::ExternalReference(_)
         | Value::Integer(_)
         | Value::Real(_)
-        | Value::UninterpretedLiteral
+        | Value::UninterpretedLiteral(_)
         | Value::Omitted
         | Value::Derived
         | Value::List(_) => 0,
@@ -626,8 +627,12 @@ pub(crate) enum ParseDiagnosticKind {
     EnvelopeIncomplete,
     /// Descriptive header metadata is nonconforming but readable.
     HeaderMetadataNoncanonical,
-    /// A bounded presentation value remains source-only.
+    /// A bounded presentation value that breaks the Part 21 grammar remains
+    /// source-only.
     PresentationMetadataUnusable,
+    /// A bounded presentation value that is a valid token outside the
+    /// reader's numeric range remains source-only.
+    PresentationLiteralUnrepresentable,
     /// Complex-entity partials are not in their canonical alphabetical order.
     ComplexPartialsNotAlphabetical,
     /// A simple named carrier omits its inherited `name` value.
@@ -640,6 +645,16 @@ pub(crate) enum ParseDiagnosticKind {
     /// `FILE_DESCRIPTION` declares an implementation level whose grammar is
     /// not implemented; parsing continued with the edition-3 class-3 grammar.
     ImplementationLevelUnverified,
+}
+
+impl ParseDiagnosticKind {
+    /// Whether the diagnostic keeps its presentation record as exact source.
+    pub(crate) fn retains_presentation_record(self) -> bool {
+        matches!(
+            self,
+            Self::PresentationMetadataUnusable | Self::PresentationLiteralUnrepresentable
+        )
+    }
 }
 
 /// One attributable parser diagnostic that does not prevent recovery.
@@ -1507,7 +1522,7 @@ impl Parser<'_, '_, '_> {
             partials::RecordPartials::single(first)
         };
         for diagnostic in &mut self.diagnostics[diagnostic_start..] {
-            if diagnostic.kind == ParseDiagnosticKind::PresentationMetadataUnusable {
+            if diagnostic.kind.retains_presentation_record() {
                 diagnostic.offset = start;
             }
         }
@@ -1536,17 +1551,31 @@ impl Parser<'_, '_, '_> {
             parser.parameters_with_name::<RecordParameters>(first_is_name && !presentation)
         })?;
         if first_is_name
-            && matches!(parameters.first(), Some(Value::UninterpretedLiteral))
+            && matches!(parameters.first(), Some(Value::UninterpretedLiteral(_)))
             && !named_carrier_arities(&name).contains(&parameters.len())
         {
             return self.err("unreadable literal in a required DATA attribute");
         }
         self.lexer.set_literal_admission(LiteralAdmission::Required);
-        if presentation && metadata::unreadable_literal(&parameters, self.budget)? {
-            self.diagnostics.push(ParseDiagnostic {
-                offset, kind: ParseDiagnosticKind::PresentationMetadataUnusable,
-                message: format!("{name} contains an unusable bounded presentation literal; exact record retained"),
-            });
+        if presentation {
+            let literal = match metadata::unreadable_literal(&parameters, self.budget)? {
+                Some(Cause::Unreadable) => Some((
+                    ParseDiagnosticKind::PresentationMetadataUnusable,
+                    "an unusable bounded presentation literal",
+                )),
+                Some(_) => Some((
+                    ParseDiagnosticKind::PresentationLiteralUnrepresentable,
+                    "a bounded presentation literal outside the reader's numeric range",
+                )),
+                None => None,
+            };
+            if let Some((kind, what)) = literal {
+                self.diagnostics.push(ParseDiagnostic {
+                    offset,
+                    kind,
+                    message: format!("{name} contains {what}; exact record retained"),
+                });
+            }
         }
         Ok(PartialRecord { name, parameters })
     }
@@ -1618,7 +1647,7 @@ impl Parser<'_, '_, '_> {
                 TokenKind::ConstantValue(name) => Value::ExpressValueConstant(name),
                 TokenKind::Integer(v) => Value::Integer(v),
                 TokenKind::Real(v) => Value::Real(v),
-                TokenKind::UninterpretedLiteral => Value::UninterpretedLiteral,
+                TokenKind::UninterpretedLiteral(cause) => Value::UninterpretedLiteral(cause),
                 TokenKind::Enumeration(value) => Value::Enumeration(value),
                 TokenKind::String(value) => Value::String(value),
                 TokenKind::Binary(value) => Value::Binary(value),
@@ -1640,7 +1669,7 @@ impl Parser<'_, '_, '_> {
             if parser.peek(&TokenKind::RParen) {
                 if metadata {
                     parser.punct(&TokenKind::RParen)?;
-                    return Ok(Value::UninterpretedLiteral);
+                    return Ok(Value::UninterpretedLiteral(Cause::Unreadable));
                 }
                 return parser.err("typed parameter requires one value");
             }
@@ -1655,7 +1684,7 @@ impl Parser<'_, '_, '_> {
                     let _ = parser.value()?;
                 }
                 parser.punct(&TokenKind::RParen)?;
-                return Ok(Value::UninterpretedLiteral);
+                return Ok(Value::UninterpretedLiteral(Cause::Unreadable));
             }
             parser.punct(&TokenKind::RParen)?;
 
@@ -2534,7 +2563,7 @@ fn is_anchor_item(value: &Value) -> bool {
         | Value::Resource(_)
         | Value::Omitted => true,
         Value::List(values) => values.iter().all(is_anchor_item),
-        Value::Derived | Value::Typed(_, _) | Value::UninterpretedLiteral => false,
+        Value::Derived | Value::Typed(_, _) | Value::UninterpretedLiteral(_) => false,
     }
 }
 

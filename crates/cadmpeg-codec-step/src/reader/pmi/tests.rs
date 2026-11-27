@@ -1421,7 +1421,7 @@ fn invalid_datum_system_records_a_loss_and_preserves_good_annotations() {
         .losses
         .iter()
         .filter(|loss| {
-            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
                 && loss.message.contains("DATUM_SYSTEM")
         })
         .collect::<Vec<_>>();

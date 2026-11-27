@@ -734,9 +734,22 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                     return Err(error)
                 }
                 Err(error) => {
-                    push_diagnostic(&mut framing, StreamDiagnosticKind::Unread, unread_start, format_args!("the next stream header at byte {next} cannot select a native layout: {error}; the later stream is not read as records"));
+                    // `next_header` admits only a first line of four decimal
+                    // words, so a save-format word past `u32` is the one
+                    // well-formed header that selects no native layout.
+                    let layout = bytes[next..]
+                        .split(|byte| is_ws(*byte))
+                        .find(|word| !word.is_empty())
+                        .and_then(|word| std::str::from_utf8(word).ok())
+                        .is_some_and(|word| word.parse::<u32>().is_err());
+                    let what = if layout {
+                        "cannot select a native layout"
+                    } else {
+                        "does not parse"
+                    };
+                    push_diagnostic(&mut framing, StreamDiagnosticKind::Unread, unread_start, format_args!("the next stream header at byte {next} {what}: {error}; the later stream is not read as records"));
                     unread = Some(unread_start..bytes.len());
-                    unread_stream_layout = true;
+                    unread_stream_layout = layout;
                     break 'stream;
                 }
             };

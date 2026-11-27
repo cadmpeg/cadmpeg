@@ -212,7 +212,7 @@ pub(super) fn decode(
             Err(error) => {
                 exchange.lost().give_up(
                     id,
-                    Cause::Unreadable,
+                    Cause::Undecoded,
                     format!("DATUM_SYSTEM #{id} omitted: {error}"),
                 );
                 continue;
@@ -399,11 +399,34 @@ pub(super) fn decode(
         typed.insert(id);
     }
 
+    // The dimensions that a PLUS_MINUS_TOLERANCE tolerances. ISO 10303-47
+    // states `plus_minus_tolerance` UR1: one tolerance for each dimension.
+    let mut toleranced = BTreeSet::new();
     for (id, record) in exchange.entities("PLUS_MINUS_TOLERANCE") {
         let refs = collect_pmi_references(record.parameters(), ctx)?;
-        let dimension = refs
+        let dimension_id = refs
             .iter()
-            .find_map(|reference| annotations.get(*reference));
+            .copied()
+            .find(|reference| annotations.get(*reference).is_some());
+        let dimension = dimension_id.and_then(|reference| annotations.get(reference));
+        let additional = || {
+            let dimension = dimension_id.unwrap_or_default();
+            if toleranced.contains(&dimension) {
+                (
+                    Cause::Unreadable,
+                    format!(
+                        "PLUS_MINUS_TOLERANCE #{id} tolerances dimension #{dimension}, which an earlier PLUS_MINUS_TOLERANCE tolerances (ISO 10303-47 plus_minus_tolerance UR1)"
+                    ),
+                )
+            } else {
+                (
+                    Cause::Undecoded,
+                    format!(
+                        "PLUS_MINUS_TOLERANCE #{id} tolerances dimension #{dimension}, which holds a tolerance from its own representation"
+                    ),
+                )
+            }
+        };
         let limits = refs.iter().find_map(|reference| {
             exchange
                 .records()
@@ -487,14 +510,12 @@ pub(super) fn decode(
                     }
                     typed.insert(id);
                     typed.extend(refs);
+                    toleranced.extend(dimension_id);
                 } else {
-                    exchange.lost().give_up_for(
-                        id,
-                        Cause::Undecoded,
-                        &StepLossCode::DecodeWarning.note(format!(
-                            "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
-                        )),
-                    );
+                    let (cause, why) = additional();
+                    exchange
+                        .lost()
+                        .give_up_for(id, cause, &StepLossCode::DecodeWarning.note(why));
                 }
             } else {
                 exchange.lost().give_up_for(
@@ -528,14 +549,12 @@ pub(super) fn decode(
                     );
                 }
                 typed.extend([id, fit_id]);
+                toleranced.extend(dimension_id);
             } else {
-                exchange.lost().give_up_for(
-                    id,
-                    Cause::Undecoded,
-                    &StepLossCode::DecodeWarning.note(format!(
-                        "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
-                    )),
-                );
+                let (cause, why) = additional();
+                exchange
+                    .lost()
+                    .give_up_for(id, cause, &StepLossCode::DecodeWarning.note(why));
             }
         } else {
             exchange.lost().give_up_for(

@@ -1207,7 +1207,7 @@ fn value_text(
 ) -> Result<Option<String>, CodecError> {
     let _depth_guard = ctx.enter_nested("step_drawing_value_text_depth")?;
     let text = match value {
-        Value::UninterpretedLiteral => return Ok(None),
+        Value::UninterpretedLiteral(_) => return Ok(None),
         Value::Reference(id) => {
             format!("#{id}")
         }

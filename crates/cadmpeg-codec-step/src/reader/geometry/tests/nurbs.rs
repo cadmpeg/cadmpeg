@@ -343,12 +343,10 @@ fn a_weight_lane_shorter_than_its_pole_lane_is_stated_as_a_loss() {
         "a refused carrier states no curve"
     );
     assert!(
-        result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("B_SPLINE_CURVE #7")
-                && loss.message.contains("pole(s) against")),
+        result.report().losses.iter().any(|loss| loss
+            .message
+            .contains("CURVE #7 has invalid geometry")
+            && loss.message.contains("3 pole(s) against 2 weight(s)")),
         "the refusal names the record and both lane counts: {:#?}",
         result.report().losses
     );

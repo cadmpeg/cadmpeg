@@ -1279,9 +1279,18 @@ fn damaged_first_ancillary_local_frame_keeps_required_root_readable() {
         .any(|id| id.as_str().contains(":zip-declaration#")));
     let mut pinned = DecodeOptions::default();
     pinned.strictness.pinned = true;
-    codec
+    // A damaged local frame breaks the Part 21 ZIP profile, so its recovery
+    // pins a strict floor that a pinned decode refuses.
+    let failure = codec
         .decode(&mut Cursor::new(&bytes), &pinned)
-        .expect("a noncanonical archive member pins no strict floor");
+        .expect_err("a noncanonical archive member pins a strict floor");
+    let cadmpeg_ir::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        crate::loss::StepLossCode::ContainerMemberNoncanonical.kind()
+    );
 }
 
 #[test]
