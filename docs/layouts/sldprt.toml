@@ -12440,6 +12440,37 @@ anchor = "and u16 `0`"
 value = 0
 
 [[record]]
+name = "three_int_identity_own"
+kind = "byte"
+section = "2.3"
+anchor = "three little-endian u32"
+size = 12
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/carchive/rules/idrep.rs"
+note = "Own bytes of a three-integer identity representation; they follow its `moFR_c` object."
+
+[[record.field]]
+name = "word_0"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "three little-endian u32"
+
+[[record.field]]
+name = "word_4"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "three little-endian u32"
+
+[[record.field]]
+name = "word_8"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "three little-endian u32"
+
+[[record]]
 name = "view_bytes"
 kind = "byte"
 section = "Configuration objects"
