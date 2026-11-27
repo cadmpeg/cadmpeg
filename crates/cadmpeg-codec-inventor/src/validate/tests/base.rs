@@ -120,7 +120,7 @@ fn validation_accepts_a_derived_result_only_on_a_body_creating_state() {
     let (design, base) = derived_at_version(false, 19);
     let ir = decoded(&design, &base).into_parts().0;
     assert!(!ir.geometry.bodies.is_empty());
-    assert!(base_findings_of(ir.clone(), |_| {}).is_empty());
+    assert_eq!(base_findings_of(ir.clone(), |_| {}), Vec::<String>::new());
     assert!(!base_findings_of(ir.clone(), |states| states[0].body_key = Some(8)).is_empty());
     // A Base state does not bind a derived feature: the kinds differ.
     assert!(!base_findings_of(ir, |states| states[0].kind = BASE_TAG.into()).is_empty());
