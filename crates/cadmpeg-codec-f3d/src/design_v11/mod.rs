@@ -318,15 +318,7 @@ pub(crate) fn project(
     thread::project(ctx, ir, losses)?;
     match (root, sources) {
         (Some(root), Some(sources)) => {
-            match ctx.run_part(|| states::project(ctx, ir, sources, &root, &tails, losses))? {
-                Ok(carried) => return Ok(carried),
-                Err(error) => {
-                    losses.push(F3dLossCode::HistoryStatesUnread.note(format!(
-                        "scope {}: the states after its timeline items are not stated: {error}.",
-                        root.definition
-                    )));
-                }
-            }
+            return states::project(ctx, ir, sources, &root, &tails, losses);
         }
         (Some(root), None) if stored_histories => {
             losses.push(F3dLossCode::HistoryStatesUnread.note(format!(

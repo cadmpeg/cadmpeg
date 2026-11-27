@@ -19,28 +19,40 @@
 //! definition bound to that cluster; a loss names a consumed body that takes
 //! the owner of its history, and a state omits one with no owner.
 //!
-//! An item that builds the current geometry, that is not stateless, and
-//! that stores a state id has an evaluation of the state after it, whose
-//! base is the state after the next later such item, and `Current` at the
-//! scope's current position for the last of them. The current position has
-//! no evaluation. An item that stores no state id holds members and poses
-//! that the walk does not read: it has no evaluation, and a loss names it.
-//! An item whose state the walk does not place has no evaluation, and a
-//! loss names it and the assumption that it commits no state. An item whose
-//! state id several histories store, where the walk stands at that state in
-//! one of them and the next earlier item of that history stores another
-//! state, is taken to have stored it there, and the walk stops at it. The
-//! walk also stops where the stored states of the items of one history do
-//! not meet, and a loss names each feature whose state it leaves unstated.
+//! The walk takes a joint origin, a grounding, a rigid group, a motion link,
+//! a reference image, and a decal as stateless. The current position is the
+//! last item that commits a state; the state after it and after each later
+//! item is the current state (§5.4 Keys). An
+//! item before the current position that is not stateless and whose state
+//! the walk places has an evaluation of the state after it, whose base is
+//! the state after the next later such item, and `Current` at the scope's
+//! current position for the last of them. An item that stores no state id
+//! holds members and poses that the walk does not read: it has no
+//! evaluation, and a loss names it. Where such an item moves, creates, or
+//! re-owns occurrences, the evaluations before it take the current poses
+//! and membership, and a loss names them. An item that stores no scope tail
+//! and is the one such item between two items of a history whose stored
+//! states do not meet takes the gap: its state is the state before the
+//! later item, and the state before it is the state of the earlier one. An
+//! item whose state id several histories store lies in the one of them that
+//! the walk stands at that state in. A loss names each state so placed.
+//! Another item whose state the walk does not place has no evaluation, and
+//! a loss names it and the assumption that it commits no state. The walk
+//! stops where the stored states of the items of one history do not meet,
+//! and a loss names each feature whose state it leaves unstated.
+//!
+//! The walk is a task of the decode: where its charges reach a limit of the
+//! decode, the scope states no evaluation and a loss names it.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::edit::state_view::ResolvedState;
 use cadmpeg_ir::design::evaluation::{
     Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
 };
+use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ids::EvaluationId;
 use cadmpeg_ir::design::refs::{EntityRef, Evaluated, Member, Position, RecordRef};
 use cadmpeg_ir::document::{CadIr, Topology};
@@ -112,6 +124,9 @@ pub(super) type Tails<'a> = HashMap<(&'a str, u64), Tail<'a>>;
 /// Pushes to `ir` the evaluations of the stored states of `scope`, and to
 /// `losses` a note for each state it does not state. Returns the native
 /// records that the evaluations reference and the document does not hold.
+/// The walk runs as a task of `ctx`: where it fails, or its charges reach a
+/// limit of the decode, `ir` and `ctx` are unchanged and one loss names the
+/// scope.
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -120,29 +135,51 @@ pub(super) fn project(
     tails: &Tails<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<UnknownRecord>, CodecError> {
+    let arena = DecodeArena::new();
+    let local = ctx.checkpoint().resume(&arena);
     let mut evaluations = Vec::new();
     let mut carried = Vec::new();
-    let mut reader = Reader {
-        ctx,
+    let mut found = Vec::new();
+    let read = Reader {
+        ctx: &local,
         ir,
         fidelity: sources.fidelity,
         scope,
         tails,
         pairs: sources.history_owners,
-        losses,
-    };
-    if let Err(reason) = reader.read(sources.scan, &mut evaluations, &mut carried)? {
-        losses.push(F3dLossCode::HistoryStatesUnread.note(format!(
-            "scope {}: the states after its timeline items are not stated: {reason}.",
-            scope.definition
-        )));
+        losses: &mut found,
     }
-    ctx.charge_entities(
-        u64_from_index(evaluations.len()),
-        "project F3D v11 history states",
-    )?;
-    ir.design.evaluations.extend(evaluations);
-    Ok(carried)
+    .read(sources.scan, &mut evaluations, &mut carried)
+    .and_then(|read| {
+        local.charge_entities(
+            u64_from_index(evaluations.len()),
+            "project F3D v11 history states",
+        )?;
+        Ok(read)
+    });
+    let unfit = || "the walk does not fit the decode's resource limits left".to_owned();
+    let outcome = match read {
+        _ if local.resource_refusal().is_some() => Err(unfit()),
+        Err(error @ CodecError::Io(_)) => return Err(error),
+        Err(error) => Err(error.to_string()),
+        Ok(Err(reason)) => Err(reason),
+        Ok(Ok(())) if ctx.accept_trace(&local.take_trace()) => Ok(()),
+        Ok(Ok(())) => Err(unfit()),
+    };
+    match outcome {
+        Ok(()) => {
+            losses.extend(found);
+            ir.design.evaluations.extend(evaluations);
+            Ok(carried)
+        }
+        Err(reason) => {
+            losses.push(F3dLossCode::HistoryStatesUnread.note(format!(
+                "scope {}: the states after its timeline items are not stated: {reason}.",
+                scope.definition
+            )));
+            Ok(Vec::new())
+        }
+    }
 }
 
 /// Where the state after a timeline item lies.
@@ -157,11 +194,77 @@ enum Kind {
         state: i64,
         previous: Option<i64>,
     },
+    /// The item's parameter scope stores no tail.
+    Tailless,
     /// The state id is not placed in one history, for this reason.
     Unresolved(String),
     /// The histories `stored` store the state id `state`, and the parameter
-    /// scope binds none of them.
-    Ambiguous { state: i64, stored: Vec<usize> },
+    /// scope binds none of them. `previous` is the preceding state id of the
+    /// scope tail.
+    Ambiguous {
+        state: i64,
+        stored: Vec<usize>,
+        previous: Option<i64>,
+    },
+}
+
+/// What the operation of a timeline item changes in a state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Role {
+    /// The geometry, or what it changes is not known.
+    Geometry,
+    /// Nothing: a joint origin, a grounding, a rigid group, a motion link, a
+    /// reference image, or a decal.
+    Inert,
+    /// The poses, existence, or owners of occurrences: a joint, an insert,
+    /// a new component, a paste, a component transfer, a capture position,
+    /// or a component pattern or mirror. Its ASM history state is null.
+    Assembly,
+    /// The bodies that it moves, or the occurrences where it stores no
+    /// state id.
+    Move,
+}
+
+impl Role {
+    /// An item of this role whose state lies at `kind` moves, creates, or
+    /// re-owns occurrences, and stores no history state of that change.
+    fn moves(self, kind: &Kind) -> bool {
+        self == Role::Assembly || self == Role::Move && *kind == Kind::NoState
+    }
+}
+
+/// What the operation `operation` of a v11 timeline item changes.
+fn role(operation: &FeatureOperation) -> Role {
+    match operation {
+        FeatureOperation::Unresolved { family } => match family {
+            OperationFamily::RigidGroup => Role::Inert,
+            OperationFamily::Joint
+            | OperationFamily::Place
+            | OperationFamily::PlaceSet
+            | OperationFamily::ComponentPattern
+            | OperationFamily::MirrorComponents => Role::Assembly,
+            OperationFamily::TransformBodies => Role::Move,
+            _ => Role::Geometry,
+        },
+        FeatureOperation::Native { kind, .. } => match kind.as_str().strip_prefix("f3d:") {
+            Some("JointOrigin" | "Ground" | "MotionLink" | "reference_image" | "Decal") => {
+                Role::Inert
+            }
+            Some(
+                "NewComponent"
+                | "Paste"
+                | "CopyPaste"
+                | "BodyToComponent"
+                | "component_transfer"
+                | "captured_component_positions"
+                | "Position"
+                | "Assemble"
+                | "As-built",
+            ) => Role::Assembly,
+            _ => Role::Geometry,
+        },
+        _ => Role::Geometry,
+    }
 }
 
 /// A built timeline item of a feature of the root document.
@@ -172,8 +275,14 @@ struct Entry<'a> {
     record: u64,
     /// The index of its member in the timeline.
     position: usize,
+    /// The item changes no state: its feature is stateless (§5.4), or its
+    /// role is inert.
     stateless: bool,
-    /// The item is at the current position.
+    /// The item moves, creates, or re-owns occurrences, and stores no
+    /// history state.
+    moves: bool,
+    /// The state after the item is the current state: it is at or after the
+    /// current position.
     current: bool,
     kind: Kind,
 }
@@ -226,15 +335,121 @@ fn last_items<'e, H>(
     last
 }
 
-/// An item of `entries` whose state id several histories store, at a history
-/// whose walk stands at that state when the walk passes the item.
-#[derive(Clone, Copy)]
-struct Standing {
-    entry: usize,
-    state: i64,
-    histories: usize,
-    /// The count of planned evaluations when the walk passes the item.
-    planned: usize,
+/// The stored state of `states` before the state `state` of an item whose
+/// scope tail stores the preceding state id `previous`.
+fn before(states: &BTreeMap<i64, String>, state: i64, previous: Option<i64>) -> Option<i64> {
+    previous
+        .filter(|previous| *previous < state && states.contains_key(previous))
+        .or_else(|| states.range(..state).next_back().map(|(found, _)| *found))
+}
+
+/// Binds to one of `histories`, whose heads are `heads`, the state of each
+/// item of `entries` that its scope tail does not place, walking latest
+/// first from each head. An item with no scope tail that is the one such
+/// item between two items of a history whose stored states do not meet, or
+/// between the last item of a history and a head above its state, takes
+/// that gap. An item whose state id several histories store takes the one
+/// of them that the walk stands at that state in. The walk ends where the
+/// stored states of two items of a history do not meet otherwise. Returns
+/// each item so bound, by index, with why.
+fn resolve(
+    entries: &mut [Entry<'_>],
+    heads: &[Option<i64>],
+    histories: &[History<'_>],
+) -> Vec<(usize, String)> {
+    let mut at = heads.to_vec();
+    let mut tailless = vec![Vec::<usize>::new(); heads.len()];
+    let mut later = vec![None::<usize>; heads.len()];
+    let mut placed = BTreeSet::new();
+    let mut out = Vec::new();
+    for index in (0..entries.len()).rev() {
+        let entry = &entries[index];
+        let shared = match &entry.kind {
+            Kind::Tailless if !entry.stateless => {
+                for found in &mut tailless {
+                    found.push(index);
+                }
+                None
+            }
+            Kind::Ambiguous {
+                state,
+                stored,
+                previous,
+            } if !entry.stateless => {
+                let mut standing = stored
+                    .iter()
+                    .copied()
+                    .filter(|history| at[*history] == Some(*state));
+                match (standing.next(), standing.next()) {
+                    (Some(history), None) => Some((history, *state, *previous, stored.len())),
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        if let Some((history, state, previous, count)) = shared {
+            out.push((
+                index,
+                format!(
+                    "{count} ASM histories store its state id {state}, its parameter scope binds none of them, and the items after it leave {} at that state",
+                    histories[history].blob.stream
+                ),
+            ));
+            entries[index].kind = Kind::Bound {
+                history,
+                state,
+                previous: before(&histories[history].states, state, previous),
+            };
+        }
+        let Kind::Bound {
+            history,
+            state,
+            previous,
+        } = entries[index].kind
+        else {
+            continue;
+        };
+        if at[history] != Some(state) {
+            let open = tailless[history]
+                .iter()
+                .copied()
+                .filter(|found| !placed.contains(found))
+                .collect::<Vec<_>>();
+            match (at[history], open.as_slice(), later[history]) {
+                (Some(gap), [one], _) if gap > state => {
+                    let stream = histories[history].blob.stream;
+                    out.push((
+                        *one,
+                        match later[history] {
+                            Some(next) => format!(
+                                "it is the one item with no scope tail between feature {} and feature {} of {stream}, whose stored states {state} and {gap} do not meet; its state is the state before feature {}, and the state before it is the state after feature {}",
+                                entries[index].feature,
+                                entries[next].feature,
+                                entries[next].feature,
+                                entries[index].feature
+                            ),
+                            None => format!(
+                                "it is the one item with no scope tail after feature {}, the last item of {stream}, whose state {state} is below the head {gap}; its state is the head, and the state before it is the state after feature {}",
+                                entries[index].feature, entries[index].feature
+                            ),
+                        },
+                    ));
+                    entries[*one].kind = Kind::Bound {
+                        history,
+                        state: gap,
+                        previous: Some(state),
+                    };
+                    placed.insert(*one);
+                }
+                (_, _, None) => {}
+                (_, _, Some(_)) => break,
+            }
+        }
+        at[history] = previous;
+        tailless[history].clear();
+        later[history] = Some(index);
+    }
+    out
 }
 
 /// The states after `entries`, walking back through the histories named
@@ -247,84 +462,81 @@ fn plan(entries: &[Entry<'_>], heads: &[Option<i64>], names: &[&str]) -> Plan {
         .map(|(last, head)| last.map(|(state, _)| state).or(*head))
         .collect::<Vec<_>>();
     let mut set = vec![0_usize; heads.len()];
-    let mut standing = vec![None::<Standing>; heads.len()];
     let mut planned = Vec::<Planned>::new();
     for (index, entry) in entries.iter().enumerate().rev() {
-        let earlier = entries[..index]
-            .iter()
-            .filter(|entry| entry.evaluated())
-            .map(|entry| entry.feature.clone());
-        match &entry.kind {
-            Kind::Bound {
-                history,
-                state,
-                previous,
-            } => {
-                if at[*history] != Some(*state) {
-                    let (from, reason) = match standing[*history] {
-                        Some(standing) => (
-                            standing.planned,
-                            format!(
-                                "feature {} stores state {}, which {} ASM histories store, and the items after it leave {} at that state, where feature {} of that history stores state {state}",
-                                entries[standing.entry].feature,
-                                standing.state,
-                                standing.histories,
-                                names[*history],
-                                entry.feature
-                            ),
-                        ),
-                        None => (
-                            set[*history],
-                            format!(
-                                "feature {} stores state {state} of {}, and the items after it leave that history at {}",
-                                entry.feature,
-                                names[*history],
-                                at[*history].map_or_else(
-                                    || "no state".to_owned(),
-                                    |state| format!("state {state}")
-                                )
-                            ),
-                        ),
-                    };
-                    let features = planned
-                        .drain(from..)
-                        .map(|planned| entries[planned.entry].feature.clone())
-                        .chain(entry.evaluated().then(|| entry.feature.clone()))
-                        .chain(earlier)
-                        .collect();
-                    return Plan {
-                        planned,
-                        stop: Some(Stop { reason, features }),
-                    };
-                }
-                if entry.evaluated() {
-                    planned.push(Planned {
-                        entry: index,
-                        targets: at.clone(),
-                    });
-                }
-                at[*history] = *previous;
-                set[*history] = planned.len();
-                standing[*history] = None;
-            }
-            Kind::Ambiguous { state, stored } if !entry.stateless => {
-                for history in stored {
-                    if at[*history] == Some(*state) && standing[*history].is_none() {
-                        standing[*history] = Some(Standing {
-                            entry: index,
-                            state: *state,
-                            histories: stored.len(),
-                            planned: planned.len(),
-                        });
-                    }
-                }
-            }
-            Kind::NoState | Kind::Unresolved(_) | Kind::Ambiguous { .. } => {}
+        let Kind::Bound {
+            history,
+            state,
+            previous,
+        } = entry.kind
+        else {
+            continue;
+        };
+        if at[history] != Some(state) {
+            let reason = format!(
+                "feature {} stores state {state} of {}, and the items after it leave that history at {}",
+                entry.feature,
+                names[history],
+                at[history].map_or_else(|| "no state".to_owned(), |state| format!("state {state}"))
+            );
+            let features = planned
+                .drain(set[history]..)
+                .map(|planned| entries[planned.entry].feature.clone())
+                .chain(
+                    entries[..=index]
+                        .iter()
+                        .rev()
+                        .filter(|entry| entry.evaluated())
+                        .map(|entry| entry.feature.clone()),
+                )
+                .collect();
+            return Plan {
+                planned,
+                stop: Some(Stop { reason, features }),
+            };
         }
+        if entry.evaluated() {
+            planned.push(Planned {
+                entry: index,
+                targets: at.clone(),
+            });
+        }
+        at[history] = previous;
+        set[history] = planned.len();
     }
     Plan {
         planned,
         stop: None,
+    }
+}
+
+/// Marks the items of `entries` whose state is the current state: the item
+/// at the current position and the items after it. The current position is
+/// the last item that commits a state, or the member at the last position of
+/// `others` where that is later; every item is current where none commits
+/// one. An item is taken to commit no state where it is stateless, or where
+/// the walk does not place its state and every history's head is the state
+/// of its last item.
+fn mark_current(entries: &mut [Entry<'_>], heads: &[Option<i64>], others: &[usize]) {
+    let tail = last_items(entries, heads)
+        .iter()
+        .zip(heads)
+        .any(|(last, head)| last.map(|(state, _)| state) != *head && last.is_some());
+    let commits = |entry: &Entry<'_>| {
+        !entry.stateless
+            && match entry.kind {
+                Kind::Bound { .. } | Kind::NoState => true,
+                Kind::Tailless | Kind::Unresolved(_) | Kind::Ambiguous { .. } => tail,
+            }
+    };
+    let at = entries
+        .iter()
+        .filter(|entry| commits(entry))
+        .map(|entry| entry.position)
+        .chain(others.iter().copied())
+        .max();
+    for entry in entries {
+        entry.current = at.is_none_or(|at| entry.position >= at);
     }
 }
 
@@ -475,29 +687,91 @@ fn unstated(definition: &ProductDefinitionId, entries: &[Entry<'_>]) -> Option<L
     })
 }
 
-/// One loss for each item of `entries` whose state the walk does not place.
-/// The walk takes such an item to commit no state, and the check between
-/// the items of each history stops it where their stored states disagree.
-/// An item whose state id several histories store ends the walk where the
-/// walk stands at that state in one of them and the next earlier item of
-/// that history stores another state.
+/// One loss for each item of `entries` before the current position whose
+/// state the walk does not place. The walk takes such an item to commit no
+/// state, and the check between the items of each history stops it where
+/// their stored states disagree.
 fn unresolved(definition: &ProductDefinitionId, entries: &[Entry<'_>]) -> Vec<LossNote> {
     entries
         .iter()
         .filter(|entry| !entry.stateless && !entry.current)
-        .filter_map(|entry| match &entry.kind {
-            Kind::Unresolved(reason) => Some(F3dLossCode::HistoryStateUnread.note(format!(
+        .filter_map(|entry| {
+            let reason = match &entry.kind {
+                Kind::Unresolved(reason) => reason.clone(),
+                Kind::Tailless => "its scope tail is not read".to_owned(),
+                Kind::Ambiguous { state, stored, .. } => format!(
+                    "{} ASM histories store state {state}, its parameter scope binds none of them, and the items after it leave none or several of them at that state",
+                    stored.len()
+                ),
+                Kind::Bound { .. } | Kind::NoState => return None,
+            };
+            Some(F3dLossCode::HistoryStateUnread.note(format!(
                 "scope {definition}: the state after feature {} is not stated: {reason}. The item is taken to commit no history state, and the states of the other items are their own stored states.",
                 entry.feature
-            ))),
-            Kind::Ambiguous { state, stored } => Some(F3dLossCode::HistoryStateUnread.note(format!(
-                "scope {definition}: the state after feature {} is not stated: {} ASM histories store state {state}, and its parameter scope binds none of them. Where the walk stands at state {state} in one of them and the next earlier item of that history stores another state, the item is taken to have stored it there, and the walk stops at the item; elsewhere the item is taken to commit no history state, and the states of the other items are their own stored states.",
-                entry.feature,
-                stored.len()
-            ))),
-            Kind::Bound { .. } | Kind::NoState => None,
+            )))
         })
         .collect()
+}
+
+/// One loss for each item of `inferred`, an index into `entries` with why
+/// the walk bound its state to a history of `histories`.
+fn placed(
+    definition: &ProductDefinitionId,
+    entries: &[Entry<'_>],
+    histories: &[History<'_>],
+    inferred: &[(usize, String)],
+) -> Vec<LossNote> {
+    inferred
+        .iter()
+        .filter_map(|(index, why)| {
+            let entry = &entries[*index];
+            let Kind::Bound {
+                history, state, ..
+            } = entry.kind
+            else {
+                return None;
+            };
+            Some(F3dLossCode::HistoryStateInferred.note(format!(
+                "scope {definition}: the state after feature {} is taken to be state {state} of {}: {why}.",
+                entry.feature, histories[history].blob.stream
+            )))
+        })
+        .collect()
+}
+
+/// The loss of the evaluations of `emitted` that lie before an item of
+/// `entries` that moves, creates, or re-owns occurrences, if any: they take
+/// the current poses and occurrence membership.
+fn poses_assumed(
+    definition: &ProductDefinitionId,
+    entries: &[Entry<'_>],
+    emitted: &[Planned],
+) -> Option<LossNote> {
+    let movers = entries
+        .iter()
+        .filter(|entry| entry.moves && !entry.stateless)
+        .collect::<Vec<_>>();
+    let last = movers.iter().map(|entry| entry.position).max()?;
+    let before = emitted
+        .iter()
+        .map(|planned| &entries[planned.entry])
+        .filter(|entry| entry.position < last)
+        .collect::<Vec<_>>();
+    let first = before.iter().map(|entry| entry.position).min()?;
+    let features = before
+        .iter()
+        .map(|entry| entry.feature.as_str())
+        .collect::<BTreeSet<_>>();
+    let after = movers
+        .iter()
+        .filter(|entry| entry.position > first)
+        .map(|entry| entry.feature.as_str())
+        .collect::<BTreeSet<_>>();
+    Some(F3dLossCode::HistoryStatePosesAssumed.note(format!(
+        "scope {definition}: the states after features {} take the current occurrence poses and membership: features {} after them move, create, or re-own occurrences, and the decoder reads no earlier pose or membership.",
+        join(features),
+        join(after)
+    )))
 }
 
 /// The loss of the states that each of `histories` stores after the state
@@ -520,7 +794,7 @@ fn tails_assumed(
                 .collect::<Vec<_>>();
             (!later.is_empty()).then(|| {
                 F3dLossCode::HistoryStateTailAssumed.note(format!(
-                    "scope {definition}: no timeline position joins the states {} of {}, which it stores after state {state} of feature {feature}; the current state is taken to hold their change.",
+                    "scope {definition}: no timeline position joins the states {} of {}, which it stores after state {state} of feature {feature}. They are the states of scopes that the timeline does not list, or of items whose scope tail is not read; the current state is taken to hold their change.",
                     later.join(", "),
                     history.blob.stream
                 ))
@@ -630,7 +904,6 @@ fn marked(
         .collect()
 }
 
-/// `items`, separated by commas.
 /// The current bodies of each history, whose record space is the entry of
 /// `spaces` at its index, and the current bodies in no history.
 fn held<'b>(
@@ -663,12 +936,13 @@ fn inherited_bodies(
 ) -> Option<LossNote> {
     (!inherited.is_empty()).then(|| {
         F3dLossCode::HistoryStateBodyInherited.note(format!(
-            "scope {definition}: the states after its timeline items hold the current bodies {} as the current geometry does: they lie in no model blob with a history.",
+            "scope {definition}: the states after its timeline items hold the current bodies {} as the current geometry does, also before the item that makes them: they lie in no model blob with a history, and no timeline item is joined to them.",
             join(inherited.iter().copied())
         ))
     })
 }
 
+/// `items`, separated by commas.
 fn join<'a>(items: impl IntoIterator<Item = &'a str>) -> String {
     items.into_iter().collect::<Vec<_>>().join(", ")
 }
@@ -791,16 +1065,12 @@ impl<'r> Reader<'r, '_> {
             .collect::<Vec<_>>();
         let (held, inherited) = held(&scope.bodies, &spaces);
         let mut entries = Vec::new();
+        let mut others = Vec::new();
         for (position, member) in built.iter().enumerate() {
-            let current = position + 1 == built.len();
-            if let Some(entry) = self.entry(
-                member,
-                position,
-                current,
-                &histories,
-                configuration.as_ref(),
-            )? {
-                entries.push(entry);
+            match self.entry(member, position, &histories, configuration.as_ref())? {
+                Some(entry) => entries.push(entry),
+                None if self.stateless(member, configuration.as_ref()) => {}
+                None => others.push(position),
             }
         }
         let heads = histories
@@ -811,6 +1081,8 @@ impl<'r> Reader<'r, '_> {
             .iter()
             .map(|history| history.blob.stream)
             .collect::<Vec<_>>();
+        let inferred = resolve(&mut entries, &heads, &histories);
+        mark_current(&mut entries, &heads, &others);
         self.losses.extend(unstated(&scope.definition, &entries));
         self.losses.extend(unresolved(&scope.definition, &entries));
         let Plan { planned, stop } = plan(&entries, &heads, &names);
@@ -821,6 +1093,8 @@ impl<'r> Reader<'r, '_> {
         if planned.is_empty() {
             return Ok(Ok(()));
         }
+        self.losses
+            .extend(placed(&scope.definition, &entries, &histories, &inferred));
         self.losses
             .extend(tails_assumed(&scope.definition, &entries, &histories));
         self.losses
@@ -858,7 +1132,25 @@ impl<'r> Reader<'r, '_> {
         }
         self.losses
             .extend(marked(&scope.definition, &histories, &marks));
+        self.losses.extend(poses_assumed(
+            &scope.definition,
+            &entries,
+            &planned[..out.len()],
+        ));
         Ok(Ok(()))
+    }
+
+    /// Whether `member`, which has no entry, changes no state: a feature
+    /// that is stateless in `configuration`. A container, or a feature with
+    /// no stateless reading, is taken to change one.
+    fn stateless(&self, member: &Member, configuration: Option<&ConfigurationId>) -> bool {
+        match member {
+            Member::Feature(feature) => self
+                .ir
+                .is_stateless(feature, configuration)
+                .unwrap_or(false),
+            Member::Container(_) => false,
+        }
     }
 
     /// The entry of a member that is a feature of the root document.
@@ -866,7 +1158,6 @@ impl<'r> Reader<'r, '_> {
         &self,
         member: &'r Member,
         position: usize,
-        current: bool,
         histories: &[History<'_>],
         configuration: Option<&ConfigurationId>,
     ) -> Result<Option<Entry<'r>>, CodecError> {
@@ -876,20 +1167,29 @@ impl<'r> Reader<'r, '_> {
         let Some((stream, record)) = self.scope.items.get(feature) else {
             return Ok(None);
         };
+        let reading = |error| {
+            CodecError::malformed(format_args!(
+                "F3D feature {feature} has no stateless reading: {error}"
+            ))
+        };
         let stateless = self
             .ir
             .is_stateless(feature, configuration)
-            .map_err(|error| {
-                CodecError::malformed(format_args!(
-                    "F3D feature {feature} has no stateless reading: {error}"
-                ))
-            })?;
+            .map_err(reading)?;
+        let role = role(
+            &self
+                .ir
+                .feature_definition_in(feature, configuration)
+                .map_err(reading)?
+                .operation,
+        );
         let tail = self.tails.get(&(stream.as_str(), *record)).copied();
         let kind = match tail.map(|tail| (tail, tail.state)) {
             _ if !document_prefix(stream).is_empty() => {
                 Kind::Unresolved("its timeline item lies in another document".to_owned())
             }
-            None => Kind::Unresolved("its scope tail is not read".to_owned()),
+            None if role == Role::Assembly => Kind::NoState,
+            None => Kind::Tailless,
             Some((_, None)) => Kind::NoState,
             Some((tail, Some(state))) if tail.flags.is_some_and(|flags| flags.no_result) => {
                 Kind::Unresolved(format!(
@@ -903,8 +1203,9 @@ impl<'r> Reader<'r, '_> {
             stream: stream.as_str(),
             record: *record,
             position,
-            stateless,
-            current,
+            stateless: stateless || role == Role::Inert,
+            moves: role.moves(&kind),
+            current: false,
             kind,
         }))
     }
@@ -1084,8 +1385,10 @@ impl<'r> Reader<'r, '_> {
 
     /// Pushes to `out` the evaluation of the state after each item of the
     /// plan, latest first, each based on the one before it, and to `marks`
-    /// each body that takes an owner the file does not state for it. Returns
-    /// where the chain stops.
+    /// each body that takes an owner the file does not state for it. The
+    /// chain stops before an evaluation whose native records, with those of
+    /// the evaluations after it, can cost more retained bytes to attach to
+    /// the document than the allowance left. Returns where the chain stops.
     fn emit(
         &mut self,
         chain: &Chain<'_, '_>,
@@ -1146,6 +1449,7 @@ impl<'r> Reader<'r, '_> {
         let limit = self.ctx.policy().limits.max_state_chain_depth;
         let mut depth = 0_u64;
         let mut base = StateBase::Current(scope.at.clone());
+        let mut owed = 0_u64;
         for (index, planned) in chain.planned.iter().enumerate() {
             let entry = &chain.entries[planned.entry];
             if depth >= limit {
@@ -1271,8 +1575,24 @@ impl<'r> Reader<'r, '_> {
                 }
                 previous[at] = (target.clone(), next);
             }
+            let held = carried.len();
             if let Err(reason) = self.carry(&delta, &sources, carried)? {
                 return Ok(Some(chain.stop(index, reason)));
+            }
+            let owing = attach_bound(&carried[held..]).and_then(|cost| owed.checked_add(cost));
+            match owing.filter(|owing| {
+                let remaining = self.ctx.retained_allowance();
+                self.ctx.observe_retained_allowance(remaining, *owing);
+                *owing <= remaining
+            }) {
+                Some(owing) => owed = owing,
+                None => {
+                    carried.truncate(held);
+                    return Ok(Some(chain.stop(
+                        index,
+                        "its native records do not fit the retained-byte allowance left".to_owned(),
+                    )));
+                }
             }
             let id = evaluation_id(entry.stream, entry.record)?;
             if !current.names().is_empty() {
@@ -1305,7 +1625,10 @@ impl<'r> Reader<'r, '_> {
                     Kind::Bound { history, state, .. } => {
                         chain.histories[history].states.get(&state).cloned()
                     }
-                    Kind::NoState | Kind::Unresolved(_) | Kind::Ambiguous { .. } => None,
+                    Kind::NoState
+                    | Kind::Tailless
+                    | Kind::Unresolved(_)
+                    | Kind::Ambiguous { .. } => None,
                 },
             });
             depth += 1;
@@ -1452,6 +1775,21 @@ impl<'r> Reader<'r, '_> {
     }
 }
 
+/// A bound of the retained bytes that attaching `records` to a document
+/// charges: the compact JSON text of each record's id and links, with each
+/// character escaped to at most six bytes.
+/// `None` where the bound exceeds `u64`.
+fn attach_bound(records: &[UnknownRecord]) -> Option<u64> {
+    let text = |length: usize| u64_from_index(length).checked_mul(6);
+    records.iter().try_fold(0_u64, |total, record| {
+        let id = text(record.id().as_str().len())?.checked_add(32)?;
+        let links = record.links().iter().try_fold(0_u64, |sum, link| {
+            sum.checked_add(text(link.len())?)?.checked_add(3)
+        })?;
+        total.checked_add(id)?.checked_add(links)
+    })
+}
+
 fn same_bytes(retained: &RetainedSourceRecord, unknown: &UnknownRecord) -> bool {
     match (retained.data(), unknown.data()) {
         (Some(retained), Some(unknown)) => retained == unknown,
@@ -1483,17 +1821,16 @@ fn bind(histories: &[History<'_>], tail: &Tail<'_>, state: i64) -> Kind {
             }),
     };
     let Some(history) = history else {
-        return Kind::Ambiguous { state, stored };
+        return Kind::Ambiguous {
+            state,
+            stored,
+            previous: tail.previous,
+        };
     };
-    let states = &histories[history].states;
-    let previous = tail
-        .previous
-        .filter(|previous| *previous < state && states.contains_key(previous))
-        .or_else(|| states.range(..state).next_back().map(|(found, _)| *found));
     Kind::Bound {
         history,
         state,
-        previous,
+        previous: before(&histories[history].states, state, tail.previous),
     }
 }
 

@@ -993,6 +993,47 @@ fn a_history_true_write_decodes_each_stored_state_and_a_base_feature_rewrite_cha
 }
 
 #[test]
+fn a_design_whose_stored_states_overrun_the_retained_allowance_decodes_without_them() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let (ir, _) = with_a_second_extrude(Boolean::NewBody);
+    let (_, full, bytes) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    assert!(!full.design.evaluations.is_empty());
+    let decode = |limit: u64| {
+        let mut options = DecodeOptions::default();
+        options.policy.limits.max_retained_bytes = limit;
+        crate::F3dCodec
+            .decode(&mut std::io::Cursor::new(bytes.clone()), &options)
+            .ok()
+    };
+    let mut refused = 0_u64;
+    let mut decodes = DecodeOptions::default().policy.limits.max_retained_bytes;
+    assert!(decode(refused).is_none() && decode(decodes).is_some());
+    while decodes - refused > 1 {
+        let limit = refused + (decodes - refused) / 2;
+        if decode(limit).is_some() {
+            decodes = limit;
+        } else {
+            refused = limit;
+        }
+    }
+    let decoded = decode(decodes).expect("the design decodes at the least allowance");
+    let losses = &decoded.report().losses;
+    assert!(decoded.ir().design.evaluations.is_empty(), "{losses:#?}");
+    assert!(
+        losses.iter().any(|loss| {
+            [
+                F3dLossCode::HistoryStatesUnread.kind(),
+                F3dLossCode::HistoryStateUnread.kind(),
+            ]
+            .contains(&loss.code)
+                && (loss.message.contains("resource limits")
+                    || loss.message.contains("retained-byte allowance"))
+        }),
+        "{losses:#?}"
+    );
+}
+
+#[test]
 fn a_history_true_write_charges_no_evaluation_that_its_history_restates() {
     let (mut ir, _) = with_a_second_extrude(Boolean::NewBody);
     let cube = cube_evaluation(&ir);

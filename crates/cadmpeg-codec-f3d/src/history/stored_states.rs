@@ -9,14 +9,14 @@
 //! does not hold that are no sketch region, and the consumed bodies that
 //! the timeline position of the state keeps (§5.5). A state whose table
 //! takes the revision of a slot from the board of a later state that updates
-//! that slot twice is not read. A record table whose estimated retained
-//! bytes do not fit the retained-byte allowance left is not read.
+//! that slot twice is not read. The history, its head, and each state are
+//! decoded as tasks of the decode: one whose charges the decode's resource
+//! limits left refuse is not read, and the decode goes on.
 
-use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_asm::kernel_header::RefWidth;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, WorkBudget};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::ids::BodyId;
@@ -38,47 +38,42 @@ pub(crate) const MAX_STATE_WORK: usize = 1 << 22;
 /// with a history adds to [`MAX_STATE_WORK`].
 pub(crate) const STATE_WORK_PER_BYTE: usize = 4;
 
-/// What the stored states of one decode may spend: record-table entries,
-/// and the retained bytes that the session allows.
-pub(crate) struct Budget {
-    work: WorkBudget,
-    /// The most retained bytes that one record-table entry of a decoded
-    /// state has cost.
-    rate: Cell<u64>,
-}
+/// The record-table entries that the stored states of one decode may
+/// decode.
+pub(crate) struct Budget(WorkBudget);
 
 impl Budget {
     /// A budget of `work` table entries.
     pub(crate) fn new(work: usize) -> Self {
-        Self {
-            work: WorkBudget::new(work),
-            rate: Cell::new(0),
-        }
+        Self(WorkBudget::new(work))
     }
+}
 
-    /// Whether a record table of `entries` entries fits the retained-byte
-    /// allowance left, at the highest cost per entry seen.
-    fn admits(&self, ctx: &DecodeContext<'_>, entries: usize) -> bool {
-        let remaining = ctx.retained_allowance();
-        let Some(estimate) = self.rate.get().checked_mul(u64_from_index(entries)) else {
-            ctx.observe_retained_allowance(remaining, u64::MAX);
-            return false;
-        };
-        ctx.observe_retained_allowance(remaining, estimate);
-        estimate < remaining
+/// Runs `work` as a task of `ctx` and commits its charges to `ctx`. Where
+/// a charge of the task reaches a limit of the decode, or `ctx` refuses its
+/// charges, the inner error says that `what` does not fit, and `ctx` is
+/// unchanged.
+pub(crate) fn task<T>(
+    ctx: &DecodeContext<'_>,
+    what: &str,
+    work: impl FnOnce(&DecodeContext<'_>) -> Result<Result<T, String>, CodecError>,
+) -> Result<Result<T, String>, CodecError> {
+    let arena = DecodeArena::new();
+    let local = ctx.checkpoint().resume(&arena);
+    let out = work(&local);
+    let unfit = || {
+        Ok(Err(format!(
+            "{what} does not fit the decode's resource limits left"
+        )))
+    };
+    if local.resource_refusal().is_some() {
+        return unfit();
     }
-
-    /// Takes into the cost per entry the bytes retained since `before`, the
-    /// available retained bytes before a decode of `entries` table entries.
-    fn spend(&self, ctx: &DecodeContext<'_>, before: u64, entries: usize) {
-        if let Some(rate) = before
-            .checked_sub(ctx.retained_bytes_available())
-            .and_then(|cost| cost.checked_div(u64_from_index(entries)))
-            .and_then(|rate| rate.checked_add(1))
-        {
-            self.rate.set(self.rate.get().max(rate));
-        }
+    let out = out?;
+    if !ctx.accept_trace(&local.take_trace()) {
+        return unfit();
     }
+    Ok(out)
 }
 
 /// The model blob of one ASM history.
@@ -143,13 +138,15 @@ pub(crate) fn read(
     let Some(header) = cadmpeg_asm::asm_header::parse(blob.bytes) else {
         return Ok(Err("the blob has no ASM header".to_owned()));
     };
-    let before = ctx.retained_bytes_available();
-    let unbound = super::decode_unbound(ctx, blob.bytes, blob.stream, blob.width)?;
-    budget.spend(ctx, before, 0);
-    let Some((states, archive)) = unbound else {
-        return Ok(Err(
-            "the history or its record archive does not decode".to_owned()
-        ));
+    let unbound = task(ctx, "the history and its record archive", |ctx| {
+        Ok(
+            super::decode_unbound(ctx, blob.bytes, blob.stream, blob.width)?
+                .ok_or_else(|| "the history or its record archive does not decode".to_owned()),
+        )
+    })?;
+    let (states, archive) = match unbound {
+        Ok(unbound) => unbound,
+        Err(reason) => return Ok(Err(reason)),
     };
     let Some(active_count) = super::archived_active_record_count(&states)?
         .or_else(|| super::insert_only_active_record_count(&states))
@@ -167,7 +164,6 @@ pub(crate) fn read(
     let subtypes =
         super::history_bodies::archive_subtypes(&archive, header.metadata.save_format_version);
     let decoder = StateDecoder {
-        ctx,
         blob,
         header: &header.metadata,
         subtypes: &subtypes,
@@ -194,7 +190,9 @@ pub(crate) fn read(
             }
             let state_id = states[index].state_id;
             if head.is_none() {
-                match decoder.measured(versions.len(), || decoder.head(versions, current, keys)) {
+                match task(ctx, "its head", |ctx| {
+                    decoder.head(ctx, versions, current, keys)
+                }) {
                     Ok(found) => head = Some(found.map(|found| (state_id, found))),
                     Err(error) => {
                         failure = Some(error);
@@ -216,8 +214,8 @@ pub(crate) fn read(
                     read.push((want.clone(), Err(reason)));
                     continue;
                 }
-                match decoder.measured(versions.len(), || {
-                    decoder.state(versions, current, found, &want.consumed)
+                match task(ctx, "its record table", |ctx| {
+                    decoder.state(ctx, versions, current, found, &want.consumed)
                 }) {
                     Ok(records) => {
                         if let Err(reason) = &records {
@@ -265,8 +263,7 @@ struct Head {
 }
 
 /// What decodes the record table of one state of a history.
-struct StateDecoder<'a, 'c> {
-    ctx: &'a DecodeContext<'c>,
+struct StateDecoder<'a> {
     blob: &'a Blob<'a>,
     header: &'a cadmpeg_asm::kernel_header::KernelHeader,
     subtypes: &'a cadmpeg_asm::nurbs::toks::SubtypeTable,
@@ -275,28 +272,16 @@ struct StateDecoder<'a, 'c> {
     budget: &'a Budget,
 }
 
-impl StateDecoder<'_, '_> {
-    /// Runs `decode` of a record table of `entries` entries and charges the
-    /// bytes it retains to the budget.
-    fn measured<T>(
-        &self,
-        entries: usize,
-        decode: impl FnOnce() -> Result<T, CodecError>,
-    ) -> Result<T, CodecError> {
-        let before = self.ctx.retained_bytes_available();
-        let out = decode();
-        self.budget.spend(self.ctx, before, entries);
-        out
-    }
-
+impl StateDecoder<'_> {
     /// The head, or why it is not read.
     fn head(
         &self,
+        ctx: &DecodeContext<'_>,
         versions: &super::binding::FastMap<i64, i64>,
         current: &BTreeSet<BodyId>,
         consumed: &BTreeSet<u64>,
     ) -> Result<Result<Head, String>, CodecError> {
-        let brep = match self.brep(versions)? {
+        let brep = match self.brep(ctx, versions)? {
             Ok(brep) => brep,
             Err(reason) => return Ok(Err(format!("its head is not read ({reason})"))),
         };
@@ -331,7 +316,7 @@ impl StateDecoder<'_, '_> {
             .cloned()
             .collect();
         Ok(self
-            .records(brep, current.iter().cloned().collect())?
+            .records(ctx, brep, current.iter().cloned().collect())?
             .map(|records| Head {
                 bodies,
                 consumed: keyed,
@@ -346,12 +331,13 @@ impl StateDecoder<'_, '_> {
     /// region.
     fn state(
         &self,
+        ctx: &DecodeContext<'_>,
         versions: &super::binding::FastMap<i64, i64>,
         current: &BTreeSet<BodyId>,
         head: &Head,
         consumed: &BTreeSet<u64>,
     ) -> Result<Result<StateRecords, String>, CodecError> {
-        let brep = match self.brep(versions)? {
+        let brep = match self.brep(ctx, versions)? {
             Ok(brep) => brep,
             Err(reason) => return Ok(Err(reason)),
         };
@@ -372,21 +358,17 @@ impl StateDecoder<'_, '_> {
             })
             .cloned()
             .collect();
-        self.records(brep, kept)
+        self.records(ctx, brep, kept)
     }
 
     /// The B-rep graph of the record table `versions` maps to, with the ids
     /// of the model blob.
     fn brep(
         &self,
+        ctx: &DecodeContext<'_>,
         versions: &super::binding::FastMap<i64, i64>,
     ) -> Result<Result<Brep, String>, CodecError> {
-        if !self.budget.admits(self.ctx, versions.len()) {
-            return Ok(Err(
-                "its record table does not fit the retained-byte allowance left".to_owned(),
-            ));
-        }
-        if !self.budget.work.charge_by(versions.len()) {
+        if !self.budget.0.charge_by(versions.len()) {
             return Ok(Err("the state work bound is reached".to_owned()));
         }
         let Some(table) = super::history_bodies::materialize_hashed_table(versions, self.archive)
@@ -394,7 +376,7 @@ impl StateDecoder<'_, '_> {
             return Ok(Err("its record table is incomplete".to_owned()));
         };
         let mut brep = match crate::brep::decode_state(
-            self.ctx,
+            ctx,
             &table,
             self.blob.bytes,
             (self.header, self.subtypes),
@@ -405,7 +387,7 @@ impl StateDecoder<'_, '_> {
             Err(error) => return Ok(Err(format!("its record table does not decode: {error}"))),
         };
         if let Some(namespace) = self.blob.namespace {
-            brep.qualify_ids(self.ctx, crate::ids::ID_FORMAT, namespace)?;
+            brep.qualify_ids(ctx, crate::ids::ID_FORMAT, namespace)?;
         }
         Ok(Ok(brep))
     }
@@ -415,14 +397,15 @@ impl StateDecoder<'_, '_> {
     /// undecoded.
     fn records(
         &self,
+        ctx: &DecodeContext<'_>,
         mut brep: Brep,
         kept: Vec<BodyId>,
     ) -> Result<Result<StateRecords, String>, CodecError> {
-        brep.retain_bodies(self.ctx, kept)?;
+        brep.retain_bodies(ctx, kept)?;
         let mut scratch = CadIr::empty();
         scratch.tolerances = *self.tolerances;
         let remainder = cadmpeg_asm::brep::transfer::transfer_into_ir(
-            self.ctx,
+            ctx,
             &mut scratch,
             cadmpeg_ir::codec_id!("f3d"),
             brep.asm,
@@ -430,7 +413,7 @@ impl StateDecoder<'_, '_> {
         .map(|(_, remainder)| remainder);
         let mut notes = Vec::new();
         let admitted = remainder.and_then(|remainder| {
-            geometry_admission::admit_noted(self.ctx, &mut scratch, &mut notes)
+            geometry_admission::admit_noted(ctx, &mut scratch, &mut notes)
                 .map(|()| remainder.unknowns)
         });
         match admitted {

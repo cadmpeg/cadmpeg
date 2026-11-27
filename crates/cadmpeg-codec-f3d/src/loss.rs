@@ -700,6 +700,13 @@ pub(crate) enum F3dLossCode {
     /// An evaluation keeps the current state's name of an entity whose
     /// record it changes.
     HistoryStateNameInherited,
+    /// An evaluation before an unread timeline item that moves, creates, or
+    /// re-owns occurrences takes the current poses and occurrence membership.
+    HistoryStatePosesAssumed,
+    /// The state after a timeline item is taken from the chain of the
+    /// history that the walk places it in, which its scope tail does not
+    /// state.
+    HistoryStateInferred,
     /// A coordinate frame retains its source construction references and expressions.
     CoordinateSystemConstructionNative,
     /// A coordinate frame transfers without its source construction references and expressions.
@@ -1896,6 +1903,8 @@ impl F3dLossCode {
         Self::HistoryStateOwnerAssumed,
         Self::HistoryStateBodyInherited,
         Self::HistoryStateNameInherited,
+        Self::HistoryStatePosesAssumed,
+        Self::HistoryStateInferred,
         Self::CoordinateSystemConstructionNative,
         Self::CoordinateSystemConstructionDropped,
         Self::CoordinateSystemFrameUnresolved,
@@ -2962,6 +2971,8 @@ impl F3dLossCode {
             Self::HistoryStateOwnerAssumed => "history.state-owner-assumed",
             Self::HistoryStateBodyInherited => "history.state-body-inherited",
             Self::HistoryStateNameInherited => "history.state-name-inherited",
+            Self::HistoryStatePosesAssumed => "history.state-poses-assumed",
+            Self::HistoryStateInferred => "history.state-inferred",
             Self::CoordinateSystemConstructionNative => {
                 "feature.coordinate-system-construction-native"
             }
@@ -4058,6 +4069,8 @@ impl F3dLossCode {
             | Self::HistoryStateOwnerAssumed
             | Self::HistoryStateBodyInherited
             | Self::HistoryStateNameInherited
+            | Self::HistoryStatePosesAssumed
+            | Self::HistoryStateInferred
             | Self::CoordinateSystemConstructionNative
             | Self::CoordinateSystemConstructionDropped
             | Self::CoordinateSystemFrameUnresolved
@@ -4862,6 +4875,8 @@ impl F3dLossCode {
             | Self::HistoryStateOwnerAssumed
             | Self::HistoryStateBodyInherited
             | Self::HistoryStateNameInherited
+            | Self::HistoryStatePosesAssumed
+            | Self::HistoryStateInferred
             | Self::CoordinateSystemConstructionNative
             | Self::CoordinateSystemConstructionDropped
             | Self::CoordinateSystemFrameUnresolved
@@ -5836,6 +5851,8 @@ mod tests {
                 "history.state-owner-assumed",
                 "history.state-body-inherited",
                 "history.state-name-inherited",
+                "history.state-poses-assumed",
+                "history.state-inferred",
                 "feature.coordinate-system-construction-native",
                 "feature.coordinate-system-construction-dropped",
                 "feature.coordinate-system-frame-unresolved",

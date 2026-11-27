@@ -171,12 +171,22 @@ of the decode; a stream that exhausts it keeps its bulletin boards and
 history records without historical topology, and the decode reports
 `history.binding-work-exceeded`.
 
-F3D stored states are the second user. Before the design-state walk of a
-decode reads the record table of a stored state, it estimates the table's
-cost as its entry count times the highest cost per entry of the tables
-decoded so far. A table whose estimate does not fit the allowance left is
-not read, and the walk stops that history's states with
-`history.state-unread`.
+F3D stored states are the second user. The walk of the stored states of a
+scope runs as a task of the decode (`DecodeContext::checkpoint`). Where a
+charge of the walk reaches a limit, the scope states no evaluation,
+`history.states-unread` names it, and the decode goes on with the
+allowance that it had before the walk. In the walk, the read of each
+history and its record archive, the read of its head, and the read of the
+record table of each stored state are tasks of their own. A read that does
+not fit the allowance left gives up the states of that history: the chain
+stops at the latest evaluation that needs one of them, and
+`history.state-unread` names the state of that feature and of each earlier
+feature of the scope, because each evaluation holds the state of every
+history. Before it states an evaluation, the walk adds an upper bound of
+the retained bytes that the attachment of its native records to the
+document charges: six bytes for each byte of each record identity and link,
+32 bytes for each record, and 3 bytes for each link. The chain stops before
+the evaluation where the sum exceeds the allowance left.
 
 ## Scan limits
 

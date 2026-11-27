@@ -5,7 +5,7 @@
 use std::collections::BTreeSet;
 
 use cadmpeg_asm::kernel_header::RefWidth;
-use cadmpeg_core::decode::DecodePolicy;
+use cadmpeg_core::decode::{DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::units::Tolerances;
 
@@ -110,47 +110,69 @@ fn read_head(
     )
 }
 
-#[test]
-fn a_table_past_the_retained_allowance_left_is_not_read_and_the_decode_goes_on() {
-    let bytes = crate::history::tests::budgets::geometry_history(true);
-    let head_cost = crate::test_support::with_decode_policy(&DecodePolicy::desktop(), |ctx| {
+/// The retained bytes that `work` charges under the desktop policy.
+fn retained(work: impl FnOnce(&DecodeContext<'_>)) -> u64 {
+    crate::test_support::with_decode_policy(&DecodePolicy::desktop(), |ctx| {
         let before = ctx.retained_bytes_available();
-        let budget = Budget::new(MAX_STATE_WORK);
-        assert!(read_head(ctx, &bytes, &budget).expect("no ceiling").is_ok());
+        work(ctx);
         before - ctx.retained_bytes_available()
-    });
-    assert!(head_cost > 1);
+    })
+}
+
+/// The read of the head of the history `bytes` under a retained-byte
+/// allowance of `limit`, which leaves the decode unrefused.
+fn read_within(bytes: &[u8], limit: u64) -> Result<Read, String> {
     let mut policy = DecodePolicy::desktop();
-    policy.limits.max_retained_bytes = 2 * head_cost - 1;
+    policy.limits.max_retained_bytes = limit;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let budget = Budget::new(MAX_STATE_WORK);
-        assert!(read_head(ctx, &bytes, &budget).expect("no ceiling").is_ok());
-        let second = read_head(ctx, &bytes, &budget).expect("no ceiling");
+        let read = read_head(ctx, bytes, &budget).expect("no ceiling");
+        assert_eq!(ctx.resource_refusal(), None);
+        read
+    })
+}
+
+#[test]
+fn a_task_past_the_decode_limits_gives_up_and_leaves_the_decode_unrefused() {
+    crate::test_support::with_decode_policy(&DecodePolicy::desktop(), |ctx| {
+        let left = ctx.retained_bytes_available();
+        let over = super::task(ctx, "the history and its record archive", |ctx| {
+            ctx.retain_bytes(left + 1, "test charge")?;
+            Ok(Ok(()))
+        })
+        .expect("no error");
         assert_eq!(
-            second.err().as_deref(),
-            Some("its head is not read (its record table does not fit the retained-byte allowance left)")
+            over.err().as_deref(),
+            Some(
+                "the history and its record archive does not fit the decode's resource limits left"
+            )
         );
         assert_eq!(ctx.resource_refusal(), None);
+        assert_eq!(ctx.retained_bytes_available(), left);
+        let within = super::task(ctx, "its head", |ctx| {
+            ctx.retain_bytes(left, "test charge")?;
+            Ok(Ok(()))
+        })
+        .expect("no error");
+        assert!(within.is_ok());
+        assert_eq!(ctx.retained_bytes_available(), 0);
     });
 }
 
 #[test]
-fn a_table_that_fits_the_retained_allowance_left_is_read() {
+fn a_head_past_the_retained_allowance_left_is_not_read_and_the_decode_goes_on() {
     let bytes = crate::history::tests::budgets::geometry_history(true);
-    let head_cost = crate::test_support::with_decode_policy(&DecodePolicy::desktop(), |ctx| {
-        let before = ctx.retained_bytes_available();
+    let total = retained(|ctx| {
         let budget = Budget::new(MAX_STATE_WORK);
         assert!(read_head(ctx, &bytes, &budget).expect("no ceiling").is_ok());
-        before - ctx.retained_bytes_available()
     });
-    let mut policy = DecodePolicy::desktop();
-    policy.limits.max_retained_bytes = 3 * head_cost;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        let budget = Budget::new(MAX_STATE_WORK);
-        assert!(read_head(ctx, &bytes, &budget).expect("no ceiling").is_ok());
-        assert!(read_head(ctx, &bytes, &budget).expect("no ceiling").is_ok());
-        assert_eq!(ctx.resource_refusal(), None);
-    });
+    assert!(total > 0);
+    let short = read_within(&bytes, total - 1).err().unwrap_or_default();
+    assert!(
+        short.ends_with("does not fit the decode's resource limits left"),
+        "{short}"
+    );
+    assert!(read_within(&bytes, total).is_ok());
 }
 
 #[test]

@@ -12,6 +12,7 @@ use cadmpeg_ir::design::evaluation::{
     CurrentState, Evaluation, EvaluationStatus, StateBase, StateDelta,
 };
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::names::NameEntry;
 use cadmpeg_ir::design::refs::{EntityRef, Evaluated, Member, Position, RecordRef};
 use cadmpeg_ir::design::scope::DesignScope;
@@ -36,9 +37,10 @@ use crate::records::feature::scope::DesignScopeTailFlags;
 use crate::test_support::zip_test::f3d_with_smbh;
 
 use super::{
-    bind, held, history_owners, inherited_bodies, marked, omitted, plan, project, step, stopped,
-    tails_assumed, unresolved, unstated, wants, Chain, Consumed, Entry, History, Kind, Marks, Plan,
-    Planned, Reader, Rule, Scope, Tail, Tails,
+    attach_bound, bind, held, history_owners, inherited_bodies, mark_current, marked, omitted,
+    placed, plan, poses_assumed, project, resolve, role, step, stopped, tails_assumed, unresolved,
+    unstated, wants, Chain, Consumed, Entry, History, Kind, Marks, Plan, Planned, Reader, Role,
+    Rule, Scope, Tail, Tails,
 };
 
 fn point(name: &str, x: f64) -> Point {
@@ -102,9 +104,28 @@ struct Design {
     scope: Scope,
 }
 
-/// A root scope whose timeline holds the unresolved extrudes `names`, with
-/// scope records 10 onward, whose current state is after the feature `at`
-/// and holds `bodies`.
+/// The operation of the fixture feature `name`: a joint, a body move, a
+/// rigid group, or a new component where its name starts with that word,
+/// else an extrude.
+fn operation(name: &str) -> FeatureOperation {
+    let family = |family| FeatureOperation::Unresolved { family };
+    match name {
+        _ if name.starts_with("joint") => family(OperationFamily::Joint),
+        _ if name.starts_with("move") => family(OperationFamily::TransformBodies),
+        _ if name.starts_with("group") => family(OperationFamily::RigidGroup),
+        _ if name.starts_with("component") => FeatureOperation::Native {
+            kind: CodecName::new(&cadmpeg_ir::codec_id!("f3d"), "NewComponent")
+                .expect("a codec name"),
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        },
+        _ => family(OperationFamily::Extrude),
+    }
+}
+
+/// A root scope whose timeline holds the features `names`, of the
+/// operations that [`operation`] gives them, with scope records 10 onward,
+/// whose current state is after the feature `at` and holds `bodies`.
 fn design(names: &[&str], at: &str, bodies: Vec<Body>) -> Design {
     let mut ir = CadIr::empty();
     let mut members = Vec::new();
@@ -116,9 +137,7 @@ fn design(names: &[&str], at: &str, bodies: Vec<Body>) -> Design {
             name: None,
             suppressed: None,
             definition: FeatureDefinition {
-                operation: FeatureOperation::Unresolved {
-                    family: OperationFamily::Extrude,
-                },
+                operation: operation(name),
                 assembly: None,
                 refine: None,
                 fuzzy_tolerance: None,
@@ -219,31 +238,54 @@ fn project_without_blobs(design: &mut Design, tails: &Tails<'_>) -> Vec<LossNote
     losses
 }
 
-/// The tail of the item `record` that stores no state id.
-fn stateless_tail(record: u64) -> Tails<'static> {
-    Tails::from([(
-        (STREAM, record),
-        Tail {
-            state: None,
-            previous: None,
-            flags: None,
-            history: None,
-        },
-    )])
+/// The tails of the items `records` that store no state id.
+fn stateless_tails(records: &[u64]) -> Tails<'static> {
+    records
+        .iter()
+        .map(|record| {
+            (
+                (STREAM, *record),
+                Tail {
+                    state: None,
+                    previous: None,
+                    flags: None,
+                    history: None,
+                },
+            )
+        })
+        .collect()
 }
 
 #[test]
 fn a_built_item_with_no_state_id_has_no_evaluation_and_a_loss_names_it() {
-    let mut design = design(&["joint", "second"], "second", Vec::new());
-    let losses = project_without_blobs(&mut design, &stateless_tail(10));
+    let mut design = design(&["first", "second"], "second", Vec::new());
+    let losses = project_without_blobs(&mut design, &stateless_tails(&[10, 11]));
     assert!(design.ir.design.evaluations.is_empty());
     let [loss] = losses.as_slice() else {
         panic!("one loss: {losses:#?}");
     };
     assert_eq!(loss.code, F3dLossCode::HistoryStateUnread.kind());
     assert!(
-        loss.message.contains(feature_id("joint").as_str())
+        loss.message.contains(feature_id("first").as_str())
             && loss.message.contains("they store no history state"),
+        "{}",
+        loss.message
+    );
+}
+
+#[test]
+fn a_new_component_with_no_scope_tail_stores_no_history_state() {
+    let mut design = design(&["component", "second"], "second", Vec::new());
+    let losses = project_without_blobs(&mut design, &stateless_tails(&[11]));
+    assert!(design.ir.design.evaluations.is_empty());
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:#?}");
+    };
+    assert_eq!(loss.code, F3dLossCode::HistoryStateUnread.kind());
+    assert!(
+        loss.message.contains(feature_id("component").as_str())
+            && loss.message.contains("they store no history state")
+            && !loss.message.contains("scope tail"),
         "{}",
         loss.message
     );
@@ -252,7 +294,7 @@ fn a_built_item_with_no_state_id_has_no_evaluation_and_a_loss_names_it() {
 #[test]
 fn an_item_with_no_scope_tail_has_no_evaluation_and_a_loss_names_it() {
     let mut design = design(&["first", "second"], "second", Vec::new());
-    let losses = project_without_blobs(&mut design, &Tails::new());
+    let losses = project_without_blobs(&mut design, &stateless_tails(&[11]));
     assert!(design.ir.design.evaluations.is_empty());
     let [loss] = losses.as_slice() else {
         panic!("one loss: {losses:#?}");
@@ -337,11 +379,23 @@ fn bound(history: usize, state: i64, previous: Option<i64>) -> Kind {
     }
 }
 
-/// The entries of the members of `design`, of kinds `kinds`, the last at
-/// the current position.
-fn entries(design: &Design, kinds: Vec<Kind>) -> Vec<Entry<'_>> {
-    let count = kinds.len();
-    design
+/// The heads of `histories`.
+fn heads(histories: &[History<'_>]) -> Vec<Option<i64>> {
+    histories
+        .iter()
+        .map(|history| history.states.keys().next_back().copied())
+        .collect()
+}
+
+/// The entries of the members of `design`, of kinds `kinds`, after the walk
+/// binds the states it places among the histories `stored` and marks the
+/// current position; and each state so placed.
+fn walk<'d>(
+    design: &'d Design,
+    kinds: Vec<Kind>,
+    stored: &[Stored],
+) -> (Vec<Entry<'d>>, Vec<(usize, String)>) {
+    let mut entries = design
         .scope
         .members
         .iter()
@@ -352,17 +406,36 @@ fn entries(design: &Design, kinds: Vec<Kind>) -> Vec<Entry<'_>> {
                 panic!("a feature member");
             };
             let (stream, record) = &design.scope.items[feature];
+            let role = role(
+                &design
+                    .ir
+                    .feature_definition_in(feature, None)
+                    .expect("a definition")
+                    .operation,
+            );
             Entry {
                 feature,
                 stream,
                 record: *record,
                 position,
-                stateless: false,
-                current: position + 1 == count,
+                stateless: role == Role::Inert,
+                moves: role.moves(&kind),
+                current: false,
                 kind,
             }
         })
-        .collect()
+        .collect::<Vec<_>>();
+    let histories = histories(stored);
+    let heads = heads(&histories);
+    let inferred = resolve(&mut entries, &heads, &histories);
+    mark_current(&mut entries, &heads, &[]);
+    (entries, inferred)
+}
+
+/// The plan of the walk of `walk` over the histories `stored`.
+fn plan_of(entries: &[Entry<'_>], stored: &[Stored]) -> Plan {
+    let names = stored.iter().map(|stored| stored.name).collect::<Vec<_>>();
+    plan(entries, &heads(&histories(stored)), &names)
 }
 
 /// A read history whose head `head` holds `records`, with the stored
@@ -413,13 +486,9 @@ fn run(
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("a context");
     let histories = histories(stored);
-    let entries = entries(design, kinds);
-    let heads = histories
-        .iter()
-        .map(|history| history.states.keys().next_back().copied())
-        .collect::<Vec<_>>();
-    let names = stored.iter().map(|stored| stored.name).collect::<Vec<_>>();
-    let Plan { planned, stop } = plan(&entries, &heads, &names);
+    let (entries, inferred) = walk(design, kinds, stored);
+    let heads = heads(&histories);
+    let Plan { planned, stop } = plan_of(&entries, stored);
     let definition = &design.scope.definition;
     let mut losses = unstated(definition, &entries)
         .into_iter()
@@ -427,6 +496,7 @@ fn run(
         .chain(stop.as_ref().and_then(|stop| stopped(definition, stop)))
         .collect::<Vec<_>>();
     if !planned.is_empty() {
+        losses.extend(placed(definition, &entries, &histories, &inferred));
         losses.extend(tails_assumed(definition, &entries, &histories));
     }
     let wants = wants(&entries, &planned, consumed);
@@ -474,6 +544,11 @@ fn run(
             .filter_map(|stop| stopped(definition, &stop)),
     );
     losses.extend(marked(definition, &histories, &marks));
+    losses.extend(poses_assumed(
+        definition,
+        &entries,
+        &planned[..evaluations.len()],
+    ));
     Outcome {
         evaluations,
         carried,
@@ -609,7 +684,11 @@ fn the_state_before_a_combine_holds_its_tool_body() {
 #[test]
 fn only_the_states_before_the_first_consumer_of_a_body_want_it() {
     let design = design(&["a", "b", "c", "d"], "d", Vec::new());
-    let entries = entries(
+    let stored = [Stored {
+        name: "BREP.x",
+        states: &[1, 2, 3, 4],
+    }];
+    let (entries, _) = walk(
         &design,
         vec![
             bound(0, 1, None),
@@ -617,8 +696,9 @@ fn only_the_states_before_the_first_consumer_of_a_body_want_it() {
             bound(0, 3, Some(2)),
             bound(0, 4, Some(3)),
         ],
+        &stored,
     );
-    let Plan { planned, stop } = plan(&entries, &[Some(4)], &["BREP.x"]);
+    let Plan { planned, stop } = plan_of(&entries, &stored);
     assert_eq!(stop, None);
     let consumed = Consumed {
         placed: BTreeMap::from([(5, 1), (6, 2)]),
@@ -744,6 +824,7 @@ fn a_state_that_several_histories_store_lies_in_the_history_its_scope_binds() {
         Kind::Ambiguous {
             state: 5,
             stored: vec![0, 1],
+            previous: Some(3),
         }
     );
     assert_eq!(bind(&histories, &tail(None), 2), bound(0, 2, Some(1)));
@@ -756,7 +837,11 @@ fn a_state_that_several_histories_store_lies_in_the_history_its_scope_binds() {
 #[test]
 fn an_item_whose_state_is_not_placed_has_no_evaluation_and_the_walk_goes_on() {
     let design = design(&["c", "a", "u", "b", "d"], "d", Vec::new());
-    let entries = entries(
+    let stored = [Stored {
+        name: "BREP.x",
+        states: &[1, 2, 3, 4],
+    }];
+    let (entries, inferred) = walk(
         &design,
         vec![
             bound(0, 1, None),
@@ -765,8 +850,10 @@ fn an_item_whose_state_is_not_placed_has_no_evaluation_and_the_walk_goes_on() {
             bound(0, 3, Some(2)),
             bound(0, 4, Some(3)),
         ],
+        &stored,
     );
-    let Plan { planned, stop } = plan(&entries, &[Some(4)], &["BREP.x"]);
+    assert!(inferred.is_empty());
+    let Plan { planned, stop } = plan_of(&entries, &stored);
     assert_eq!(stop, None);
     assert_eq!(
         planned
@@ -792,7 +879,11 @@ fn an_item_whose_state_is_not_placed_has_no_evaluation_and_the_walk_goes_on() {
 #[test]
 fn an_unplaced_item_that_steps_a_history_ends_the_states_before_it() {
     let design = design(&["c", "a", "u", "b", "d"], "d", Vec::new());
-    let entries = entries(
+    let stored = [Stored {
+        name: "BREP.x",
+        states: &[1, 2, 4, 5],
+    }];
+    let (entries, inferred) = walk(
         &design,
         vec![
             bound(0, 1, None),
@@ -801,8 +892,10 @@ fn an_unplaced_item_that_steps_a_history_ends_the_states_before_it() {
             bound(0, 4, Some(3)),
             bound(0, 5, Some(4)),
         ],
+        &stored,
     );
-    let Plan { planned, stop } = plan(&entries, &[Some(5)], &["BREP.x"]);
+    assert!(inferred.is_empty());
+    let Plan { planned, stop } = plan_of(&entries, &stored);
     assert_eq!(
         planned,
         [Planned {
@@ -815,10 +908,19 @@ fn an_unplaced_item_that_steps_a_history_ends_the_states_before_it() {
 }
 
 #[test]
-fn an_item_whose_state_several_histories_store_ends_the_walk_where_the_next_item_of_one_of_them_stores_another(
-) {
+fn an_item_whose_state_several_histories_store_lies_in_the_one_the_walk_stands_at_that_state_in() {
     let design = design(&["c", "a", "u", "b", "d"], "d", Vec::new());
-    let entries = entries(
+    let stored = [
+        Stored {
+            name: "BREP.x",
+            states: &[1, 3, 5],
+        },
+        Stored {
+            name: "BREP.y",
+            states: &[2, 3, 4],
+        },
+    ];
+    let (entries, inferred) = walk(
         &design,
         vec![
             bound(0, 1, None),
@@ -826,67 +928,129 @@ fn an_item_whose_state_several_histories_store_ends_the_walk_where_the_next_item
             Kind::Ambiguous {
                 state: 3,
                 stored: vec![0, 1],
+                previous: None,
             },
             bound(1, 4, Some(2)),
             bound(0, 5, Some(3)),
         ],
+        &stored,
     );
-    let Plan { planned, stop } = plan(&entries, &[Some(5), Some(4)], &["BREP.x", "BREP.y"]);
-    assert_eq!(
-        planned,
-        [Planned {
-            entry: 3,
-            targets: vec![Some(3), Some(4)],
-        }]
-    );
-    let stop = stop.expect("a stop");
-    assert_eq!(stop.features, [feature_id("a"), feature_id("c")]);
-    assert!(
-        stop.reason
-            .contains("stores state 3, which 2 ASM histories store")
-            && stop.reason.contains("BREP.x"),
-        "{}",
-        stop.reason
-    );
-}
-
-#[test]
-fn an_item_whose_state_several_histories_store_is_passed_where_the_next_item_of_each_stores_that_state(
-) {
-    let design = design(&["c", "u", "b", "d"], "d", Vec::new());
-    let entries = entries(
-        &design,
-        vec![
-            bound(0, 3, None),
-            Kind::Ambiguous {
-                state: 3,
-                stored: vec![0, 1],
-            },
-            bound(1, 4, Some(2)),
-            bound(0, 5, Some(3)),
-        ],
-    );
-    let Plan { planned, stop } = plan(&entries, &[Some(5), Some(4)], &["BREP.x", "BREP.y"]);
+    assert_eq!(entries[2].kind, bound(0, 3, Some(1)));
+    let Plan { planned, stop } = plan_of(&entries, &stored);
     assert_eq!(stop, None);
     assert_eq!(
         planned,
         [
             Planned {
-                entry: 2,
+                entry: 3,
                 targets: vec![Some(3), Some(4)],
             },
             Planned {
-                entry: 0,
+                entry: 2,
                 targets: vec![Some(3), Some(2)],
             },
+            Planned {
+                entry: 1,
+                targets: vec![Some(1), Some(2)],
+            },
+            Planned {
+                entry: 0,
+                targets: vec![Some(1), None],
+            },
         ]
+    );
+    let histories = histories(&stored);
+    let [loss] = placed(&design.scope.definition, &entries, &histories, &inferred)
+        .try_into()
+        .expect("one loss");
+    assert_eq!(loss.code, F3dLossCode::HistoryStateInferred.kind());
+    assert!(
+        loss.message.contains(&format!(
+            "the state after feature {} is taken to be state 3 of BREP.x",
+            feature_id("u")
+        )) && loss.message.contains("leave BREP.x at that state"),
+        "{}",
+        loss.message
+    );
+    assert!(unresolved(&design.scope.definition, &entries).is_empty());
+}
+
+#[test]
+fn an_item_whose_state_several_histories_stand_at_commits_no_state_and_the_walk_goes_on() {
+    let design = design(&["c", "e", "u", "b", "d"], "d", Vec::new());
+    let stored = [
+        Stored {
+            name: "BREP.x",
+            states: &[3, 5],
+        },
+        Stored {
+            name: "BREP.y",
+            states: &[3, 4],
+        },
+    ];
+    let (entries, inferred) = walk(
+        &design,
+        vec![
+            bound(0, 3, None),
+            bound(1, 3, None),
+            Kind::Ambiguous {
+                state: 3,
+                stored: vec![0, 1],
+                previous: None,
+            },
+            bound(1, 4, Some(3)),
+            bound(0, 5, Some(3)),
+        ],
+        &stored,
+    );
+    assert!(inferred.is_empty());
+    let Plan { planned, stop } = plan_of(&entries, &stored);
+    assert_eq!(stop, None);
+    assert_eq!(
+        planned,
+        [
+            Planned {
+                entry: 3,
+                targets: vec![Some(3), Some(4)],
+            },
+            Planned {
+                entry: 1,
+                targets: vec![Some(3), Some(3)],
+            },
+            Planned {
+                entry: 0,
+                targets: vec![Some(3), None],
+            },
+        ]
+    );
+    let [loss] = unresolved(&design.scope.definition, &entries)
+        .try_into()
+        .expect("one loss");
+    assert!(
+        loss.message.contains(feature_id("u").as_str())
+            && loss
+                .message
+                .contains("leave none or several of them at that state")
+            && loss.message.contains("taken to commit no history state"),
+        "{}",
+        loss.message
     );
 }
 
 #[test]
 fn an_item_whose_state_does_not_meet_the_later_items_ends_the_states_there() {
     let design = design(&["a", "b", "c", "d"], "d", Vec::new());
-    let entries = entries(
+    let stored = [
+        Stored {
+            name: "BREP.x",
+            states: &[1, 2, 3, 4],
+        },
+        Stored {
+            name: "BREP.y",
+            states: &[5],
+        },
+    ];
+    let (entries, inferred) = walk(
         &design,
         vec![
             bound(0, 1, None),
@@ -894,8 +1058,10 @@ fn an_item_whose_state_does_not_meet_the_later_items_ends_the_states_there() {
             bound(0, 3, Some(2)),
             bound(0, 4, Some(3)),
         ],
+        &stored,
     );
-    let Plan { planned, stop } = plan(&entries, &[Some(4), Some(5)], &["BREP.x", "BREP.y"]);
+    assert!(inferred.is_empty());
+    let Plan { planned, stop } = plan_of(&entries, &stored);
     assert_eq!(
         planned,
         [Planned {
@@ -951,7 +1117,7 @@ fn a_stopped_chain_names_every_dropped_feature_in_order() {
 }
 
 #[test]
-fn an_item_with_no_state_id_has_no_evaluation_and_the_walk_goes_on() {
+fn the_states_before_a_joint_whose_state_is_not_read_take_the_current_poses_with_a_loss() {
     let design = design(&["a", "joint", "c"], "c", Vec::new());
     let outcome = run(
         &design,
@@ -982,16 +1148,232 @@ fn an_item_with_no_state_id_has_no_evaluation_and_the_walk_goes_on() {
             }
         )
     );
+    let [unread, poses] = outcome.losses.as_slice() else {
+        panic!("two losses: {:#?}", outcome.losses);
+    };
+    assert_eq!(unread.code, F3dLossCode::HistoryStateUnread.kind());
+    assert!(
+        unread
+            .message
+            .contains(&format!("features {} are not stated", feature_id("joint"))),
+        "{}",
+        unread.message
+    );
+    assert_eq!(poses.code, F3dLossCode::HistoryStatePosesAssumed.kind());
+    assert!(
+        poses.message.contains(&format!(
+            "the states after features {} take the current occurrence poses",
+            feature_id("a")
+        )) && poses
+            .message
+            .contains(&format!("features {} after them", feature_id("joint"))),
+        "{}",
+        poses.message
+    );
+}
+
+#[test]
+fn the_states_after_the_last_item_that_moves_occurrences_take_no_pose_loss() {
+    let design = design(&["joint", "a", "c"], "c", Vec::new());
+    let outcome = run(
+        &design,
+        vec![Kind::NoState, bound(0, 1, None), bound(0, 2, Some(1))],
+        &[Stored {
+            name: "BREP.x",
+            states: &[1, 2],
+        }],
+        &[Ok(read(
+            2,
+            points(vec![point("p", 2.0)]),
+            vec![(want(1, &[]), Ok(records(points(vec![point("p", 1.0)]))))],
+        ))],
+        &[Consumed::default()],
+        &no_fidelity(),
+    );
+    assert_eq!(outcome.evaluations.len(), 1);
+    assert!(
+        outcome
+            .losses
+            .iter()
+            .all(|loss| loss.code != F3dLossCode::HistoryStatePosesAssumed.kind()),
+        "{:#?}",
+        outcome.losses
+    );
+}
+
+#[test]
+fn an_item_followed_only_by_stateless_items_holds_the_current_state() {
+    let stored = [Stored {
+        name: "BREP.x",
+        states: &[1, 2],
+    }];
+    let reads = [Ok(read(
+        2,
+        points(vec![point("p", 2.0)]),
+        vec![(want(1, &[]), Ok(records(points(vec![point("p", 1.0)]))))],
+    ))];
+    let design = design(&["a", "b", "group"], "group", Vec::new());
+    let outcome = run(
+        &design,
+        vec![bound(0, 1, None), bound(0, 2, Some(1)), Kind::NoState],
+        &stored,
+        &reads,
+        &[Consumed::default()],
+        &no_fidelity(),
+    );
+    assert!(outcome.losses.is_empty(), "{:#?}", outcome.losses);
+    let [a] = outcome.evaluations.as_slice() else {
+        panic!("one evaluation: {:#?}", outcome.evaluations);
+    };
+    assert_eq!(a.of, after("a"));
+    let design = self::design(&["a", "u", "group"], "group", Vec::new());
+    let outcome = run(
+        &design,
+        vec![bound(0, 1, None), Kind::NoState, Kind::NoState],
+        &stored,
+        &reads,
+        &[Consumed::default()],
+        &no_fidelity(),
+    );
+    assert_eq!(outcome.evaluations.len(), 1);
+    let [tail] = outcome.losses.as_slice() else {
+        panic!("one loss: {:#?}", outcome.losses);
+    };
+    assert_eq!(tail.code, F3dLossCode::HistoryStateTailAssumed.kind());
+}
+
+#[test]
+fn the_one_item_with_no_scope_tail_between_two_items_whose_states_do_not_meet_takes_the_gap() {
+    let design = design(&["a", "holes", "c"], "c", Vec::new());
+    let at = |x| points(vec![point("p", x)]);
+    let outcome = run(
+        &design,
+        vec![bound(0, 1, None), Kind::Tailless, bound(0, 3, Some(2))],
+        &[Stored {
+            name: "BREP.x",
+            states: &[1, 2, 3],
+        }],
+        &[Ok(read(
+            3,
+            at(3.0),
+            vec![
+                (want(2, &[]), Ok(records(at(2.0)))),
+                (want(1, &[]), Ok(records(at(1.0)))),
+            ],
+        ))],
+        &[Consumed::default()],
+        &no_fidelity(),
+    );
+    let [holes, a] = outcome.evaluations.as_slice() else {
+        panic!("two evaluations: {:#?}", outcome.evaluations);
+    };
+    assert_eq!([&holes.of, &a.of], [&after("holes"), &after("a")]);
+    assert_eq!(holes.native_ref.as_deref(), Some("f3d:asm:state#2"));
+    assert_eq!(content(holes).1.records.points, [point("p", 2.0)]);
+    assert_eq!(content(a).1.records.points, [point("p", 1.0)]);
     let [loss] = outcome.losses.as_slice() else {
         panic!("one loss: {:#?}", outcome.losses);
     };
-    assert_eq!(loss.code, F3dLossCode::HistoryStateUnread.kind());
+    assert_eq!(loss.code, F3dLossCode::HistoryStateInferred.kind());
     assert!(
-        loss.message
-            .contains(&format!("features {} are not stated", feature_id("joint"))),
+        loss.message.contains(&format!(
+            "the state after feature {} is taken to be state 2 of BREP.x",
+            feature_id("holes")
+        )),
         "{}",
         loss.message
     );
+}
+
+#[test]
+fn the_one_item_with_no_scope_tail_after_the_last_item_of_a_history_takes_its_head() {
+    let design = design(&["a", "holes"], "holes", Vec::new());
+    let (entries, inferred) = walk(
+        &design,
+        vec![bound(0, 1, None), Kind::Tailless],
+        &[Stored {
+            name: "BREP.x",
+            states: &[1, 2],
+        }],
+    );
+    assert_eq!(entries[1].kind, bound(0, 2, Some(1)));
+    assert!(entries[1].current && !entries[0].current);
+    let [(1, why)] = inferred.as_slice() else {
+        panic!("one placed state: {inferred:#?}");
+    };
+    assert!(why.contains("its state is the head"), "{why}");
+}
+
+#[test]
+fn two_items_with_no_scope_tail_in_one_gap_end_the_walk_there() {
+    let design = design(&["a", "h", "i", "d"], "d", Vec::new());
+    let stored = [Stored {
+        name: "BREP.x",
+        states: &[1, 2, 3, 4],
+    }];
+    let (entries, inferred) = walk(
+        &design,
+        vec![
+            bound(0, 1, None),
+            Kind::Tailless,
+            Kind::Tailless,
+            bound(0, 4, Some(3)),
+        ],
+        &stored,
+    );
+    assert!(inferred.is_empty());
+    let Plan { planned, stop } = plan_of(&entries, &stored);
+    assert!(planned.is_empty());
+    assert_eq!(stop.expect("a stop").features, [feature_id("a")]);
+}
+
+#[test]
+fn a_joint_origin_a_grounding_and_a_rigid_group_change_no_state() {
+    let native = |kind| FeatureOperation::Native {
+        kind: CodecName::new(&cadmpeg_ir::codec_id!("f3d"), kind).expect("a codec name"),
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    };
+    for kind in ["JointOrigin", "Ground", "MotionLink"] {
+        assert_eq!(role(&native(kind)), Role::Inert, "{kind}");
+    }
+    assert_eq!(role(&operation("group")), Role::Inert);
+    assert_eq!(role(&native("NewComponent")), Role::Assembly);
+    assert_eq!(role(&operation("joint")), Role::Assembly);
+    assert_eq!(role(&operation("move")), Role::Move);
+    assert!(Role::Move.moves(&Kind::NoState) && !Role::Move.moves(&bound(0, 1, None)));
+    assert_eq!(role(&operation("extrude")), Role::Geometry);
+}
+
+#[test]
+fn the_attach_bound_covers_the_text_of_each_native_record() {
+    let id = |name: &str| UnknownId::mint(format!("f3d:asm:record#{name}")).expect("an id");
+    let records = vec![
+        UnknownRecord::retained(id("plain"), 0, vec![1], Vec::new()),
+        UnknownRecord::retained(
+            id("linked"),
+            0,
+            vec![2],
+            vec![
+                "f3d:asm:record#plain".to_owned(),
+                "f3d:brep:a\"b".to_owned(),
+            ],
+        ),
+    ];
+    let bound = attach_bound(&records).expect("a bound");
+    let text = records
+        .iter()
+        .map(|record| {
+            cadmpeg_core::json!({"id": record.id().as_str(), "links": record.links()})
+                .to_string()
+                .len()
+        })
+        .sum::<usize>();
+    assert!(
+        u64::try_from(text).expect("a length") <= bound,
+        "{text} {bound}"
+    );
+    assert_eq!(attach_bound(&[]), Some(0));
 }
 
 #[test]
@@ -1504,6 +1886,40 @@ fn an_admission_note_of_a_record_that_a_state_states_charges_a_loss_keyed_by_its
         "{}",
         loss.message
     );
+}
+
+#[test]
+fn a_current_body_in_no_history_stays_in_each_earlier_state() {
+    let mesh = Body {
+        id: BodyId::mint("f3d:mesh:entity#imported").expect("identity grammar"),
+        ..body("mesh", None)
+    };
+    let design = design(&["a", "b"], "b", vec![body("1", None), mesh.clone()]);
+    let outcome = run(
+        &design,
+        vec![bound(0, 1, None), bound(0, 2, Some(1))],
+        &[Stored {
+            name: "BREP.x",
+            states: &[1, 2],
+        }],
+        &[Ok(read(
+            2,
+            Topology {
+                bodies: vec![body("1", None)],
+                ..Topology::default()
+            },
+            vec![(want(1, &[]), Ok(records(points(vec![point("p", 1.0)]))))],
+        ))],
+        &[Consumed::default()],
+        &no_fidelity(),
+    );
+    let [a] = outcome.evaluations.as_slice() else {
+        panic!("one evaluation: {:#?}", outcome.evaluations);
+    };
+    let (_, delta) = content(a);
+    assert!(delta.removed.contains(&RecordRef::Body(body("1", None).id)));
+    assert!(!delta.removed.contains(&RecordRef::Body(mesh.id.clone())));
+    assert!(!delta.records.bodies.iter().any(|body| body.id == mesh.id));
 }
 
 #[test]

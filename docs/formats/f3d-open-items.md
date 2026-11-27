@@ -1005,7 +1005,7 @@ option `2`, and side extents `[1, 0]`.
 
 **Need.** A design with two components, each with a Sketch and a new-body `Extrude`, and a `Move` of the body of the second component whose parameter scope stores no body-map entity suffix, saved once. For the `Move` item, its current identity compared with the `delta_state` chain of each history, and the history whose state changes the moved body.
 
-**Note.** The decoder states no evaluation of that item and charges `history.state-unread` for it. Where the states of the later items reach that identity in one of the histories and the next earlier item of that history stores another state, the decoder takes the item to store the state there, states the evaluations of the later items, and charges `history.state-unread` for the states of the items before it. Elsewhere the decoder takes the item to commit no state.
+**Note.** Where the states of the later items, walked back from the head of each history, stand at that identity in exactly one of the histories, the decoder takes the item to store the state of that history, takes the state before it from the preceding identity of its tail, states its evaluation, continues the walk, and charges `history.state-inferred`. Elsewhere the decoder takes the item to commit no state, states no evaluation of it, and charges `history.state-unread`.
 
 ### DR-1068. History states after the state of the last timeline item
 
@@ -1015,7 +1015,7 @@ option `2`, and side extents `[1, 0]`.
 
 **Need.** A Sketch and a new-body `Extrude`, then a `Fillet` of one edge, saved once with the timeline marker at the end and once after a `Move` of the body that stores no history-state identity: for each save, the identity of the head compared with the current identity of the last item, the bulletin boards of the states above that identity, and the records of each such state compared with the current geometry.
 
-**Note.** The decoder takes the current state to hold the change of these states, states the item's evaluation from the state with its current identity, and charges `history.state-tail-assumed`.
+**Note.** Where exactly one timeline item after the last item of the history stores no scope tail, the decoder takes that item to store the head state, with the state of the last item before it, and charges `history.state-inferred`. The decoder does the same for the one item with no scope tail between two items of a history whose stored states do not meet. Elsewhere the decoder takes the current state to hold the change of these states, states the item's evaluation from the state with its current identity, and charges `history.state-tail-assumed`.
 
 ### DR-1054. Bulletin board of a state that changes an earlier body
 
