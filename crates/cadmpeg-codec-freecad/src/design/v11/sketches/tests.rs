@@ -359,6 +359,135 @@ fn a_detached_sketch_has_no_input() {
     assert!(plane.mode.is_none());
 }
 
+/// The single pick of the plane of the sketch read from `object`.
+fn support(ir: &CadIr, object: &str) -> PickTarget {
+    let id = format!("fcstd:design:sketch#{object}");
+    let sketch = ir
+        .design
+        .sketches
+        .iter()
+        .find(|sketch| sketch.id.as_str() == id)
+        .unwrap_or_else(|| panic!("{id}: {:?}", ir.design.sketches));
+    let SketchPlane::Placed(plane) = &sketch.plane else {
+        panic!("{:?}", sketch.plane);
+    };
+    let [input] = plane.inputs.as_slice() else {
+        panic!("{:?}", plane.inputs);
+    };
+    let Some(cadmpeg_ir::design::construction::InputReference::Picks(selection)) = &input.reference
+    else {
+        panic!("{input:?}");
+    };
+    let Picks::Named(members) = &selection.picks else {
+        panic!("{selection:?}");
+    };
+    let [picked] = members.as_slice() else {
+        panic!("{members:?}");
+    };
+    picked.target.clone()
+}
+
+#[test]
+fn a_sketch_attached_to_a_sketch_picks_a_plane_of_its_frame() {
+    let attached = |name: &str, mode: &str| {
+        format!(
+            r#"<Object name="{name}"><Properties Count="3">
+  <Property name="AttachmentSupport" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Sketch" sub=""/></LinkSubList></Property>
+  <Property name="MapMode" type="App::PropertyEnumeration"><Integer value="{mode}"/></Property>
+  <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+ </Properties></Object>
+"#
+        )
+    };
+    let document = BODY_SKETCH
+        .replace(
+            r#"<Objects Count="4">"#,
+            r#"<Objects Count="7">"#,
+        )
+        .replace(
+            r#" <Object type="Sketcher::SketchObject" name="Sketch" id="4"/>"#,
+            r#" <Object type="Sketcher::SketchObject" name="Sketch" id="4"/>
+ <Object type="Sketcher::SketchObject" name="OnXz" id="5"/>
+ <Object type="Sketcher::SketchObject" name="OnXy" id="6"/>
+ <Object type="Sketcher::SketchObject" name="OnFace" id="7"/>"#,
+        )
+        .replace(r#"<ObjectData Count="4">"#, r#"<ObjectData Count="7">"#)
+        .replace(
+            r#"<LinkList count="1"><Link value="Sketch"/></LinkList>"#,
+            r#"<LinkList count="4"><Link value="Sketch"/><Link value="OnXz"/><Link value="OnXy"/><Link value="OnFace"/></LinkList>"#,
+        )
+        .replace(
+            "</ObjectData>",
+            &format!(
+                "{}{}{}</ObjectData>",
+                attached("OnXz", "3"),
+                attached("OnXy", "2"),
+                attached("OnFace", "5"),
+            ),
+        );
+    let ir = decode(&document);
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("fcstd:design:sketch#Sketch").unwrap();
+    for (object, entity) in [
+        ("OnXz", PrincipalEntity::XzPlane),
+        ("OnXy", PrincipalEntity::XyPlane),
+        ("OnFace", PrincipalEntity::XyPlane),
+    ] {
+        assert_eq!(
+            support(&ir, object),
+            PickTarget::SketchFrame {
+                sketch: sketch.clone(),
+                entity
+            },
+            "{object}"
+        );
+    }
+}
+
+#[test]
+fn an_external_geometry_of_an_unread_object_names_its_unread_source() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch"/><Object type="Part::FeaturePython" name="Window"/></Objects>
+<ObjectData Count="2"><Object name="Sketch"><Properties Count="3">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+<Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Window" sub="Edge1"/></LinkSubList></Property>
+<Property name="ExternalGeo" type="Part::PropertyGeometryList"><GeometryList count="3">
+<Geometry type="Part::GeomLineSegment" id="-1"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="" Flags="0"/></GeoExtensions><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
+<Geometry type="Part::GeomLineSegment" id="-2"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="" Flags="0"/></GeoExtensions><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
+<Geometry type="Part::GeomLineSegment" id="1" ref="Window.Edge1"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="Window.Edge1" Flags="0"/></GeoExtensions><LineSegment StartX="2" StartY="3" EndX="4" EndY="3"/></Geometry>
+</GeometryList></Property>
+</Properties></Object><Object name="Window"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let ir = decoded.ir();
+    let entity = ir
+        .design
+        .sketch_entities
+        .iter()
+        .find(|entity| entity.id.as_str().ends_with(":external:0"))
+        .unwrap_or_else(|| panic!("{:?}", ir.design.sketch_entities));
+    let EntityDefinition::Defined { form, .. } = &entity.definition else {
+        panic!("{entity:?}");
+    };
+    let EntityForm::Derived(derivation) = form.as_ref() else {
+        panic!("{entity:?}");
+    };
+    assert_eq!(derivation.source.picks, Picks::Unread, "{derivation:?}");
+    let unread = crate::loss::FreecadLossCode::DesignSketchSourceUnread.note("");
+    assert!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == unread.code && loss.message.contains(":external:0")),
+        "{:?}",
+        decoded.report().losses
+    );
+}
+
 #[test]
 fn an_external_geometry_is_a_projection_of_its_linked_subelement() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">

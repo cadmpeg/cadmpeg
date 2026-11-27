@@ -50,8 +50,8 @@ use cadmpeg_ir::scalar::{Angle, FiniteReal, Length, PositiveReal};
 use cadmpeg_ir::sketches::{
     Sketch as LegacySketch, SketchConstraint as LegacyConstraint,
     SketchConstraintDefinitionInput as Kind, SketchConstraintId, SketchEntity as LegacyEntity,
-    SketchEntityId, SketchGeometry, SketchGeometryDefinition as Geometry, SketchInternalAlignment,
-    SketchLocus,
+    SketchEntityId, SketchGeometry, SketchGeometryDefinition as Geometry, SketchId,
+    SketchInternalAlignment, SketchLocus,
 };
 use cadmpeg_ir::transform::Transform;
 
@@ -148,6 +148,8 @@ struct Targets {
     features: HashMap<String, (FeatureId, bool)>,
     /// The origin planes, axes, and points by their object.
     origins: HashMap<String, PickTarget>,
+    /// The sketches by the object they were read from.
+    sketches: HashMap<String, SketchId>,
 }
 
 /// The sketch of each sketch feature among `features` and its records. Each
@@ -157,21 +159,6 @@ pub(super) fn project(
     features: &mut [Feature],
     losses: &mut Vec<LossNote>,
 ) -> Result<Projected, ResourceLimit> {
-    let targets = Targets {
-        features: features
-            .iter()
-            .filter_map(|feature| {
-                let datum = matches!(
-                    feature.definition.operation,
-                    FeatureOperation::Unresolved {
-                        family: OperationFamily::Datum
-                    }
-                );
-                Some((feature.native_ref.clone()?, (feature.id.clone(), datum)))
-            })
-            .collect(),
-        origins: origins(scope),
-    };
     let sketches = scope
         .ir
         .model
@@ -194,17 +181,40 @@ pub(super) fn project(
             Some((&legacy.id, record))
         })
         .collect::<BTreeMap<_, _>>();
-    let mut out = Projected::default();
-    for feature in features.iter_mut() {
-        if !matches!(
+    let projected = |feature: &Feature| {
+        matches!(
             feature.definition.operation,
             FeatureOperation::Unresolved {
                 family: OperationFamily::Sketch
             }
-        ) {
-            continue;
-        }
-        let Some(record) = sketches.get(&feature.id) else {
+        )
+        .then(|| sketches.get(&feature.id).copied())
+        .flatten()
+    };
+    let targets = Targets {
+        features: features
+            .iter()
+            .filter_map(|feature| {
+                let datum = matches!(
+                    feature.definition.operation,
+                    FeatureOperation::Unresolved {
+                        family: OperationFamily::Datum
+                    }
+                );
+                Some((feature.native_ref.clone()?, (feature.id.clone(), datum)))
+            })
+            .collect(),
+        origins: origins(scope),
+        sketches: features
+            .iter()
+            .filter_map(|feature| {
+                Some((feature.native_ref.clone()?, projected(feature)?.id.clone()))
+            })
+            .collect(),
+    };
+    let mut out = Projected::default();
+    for feature in features.iter_mut() {
+        let Some(record) = projected(feature) else {
             continue;
         };
         sketch(scope, &targets, feature, record, &mut out, losses)?;
@@ -266,7 +276,7 @@ fn sketch(
         points: &points,
         roles: &roles,
     };
-    let sources = sources(scope, targets, &entities, &anchor);
+    let sources = sources(scope, targets, &entities, &anchor, losses);
     for entity in &entities {
         let (definition, construction) = definition(scope, entity, &anchor, &sources, losses);
         out.entities.push(SketchEntity {
@@ -960,6 +970,7 @@ fn sources<'e>(
     targets: &Targets,
     entities: &[&'e LegacyEntity],
     anchor: &Anchor,
+    losses: &mut Vec<LossNote>,
 ) -> BTreeMap<&'e SketchEntityId, (OrderedSelection, Option<u32>)> {
     let mut by_link = BTreeMap::<&(String, Vec<String>), Vec<&SketchEntityId>>::new();
     for entity in entities {
@@ -974,7 +985,15 @@ fn sources<'e>(
     }
     let mut out = BTreeMap::new();
     for (link, members) in by_link {
-        let Some(selection) = picks(targets, std::slice::from_ref(link), anchor) else {
+        let Some(selection) = picks(targets, std::slice::from_ref(link), anchor, None) else {
+            losses.push(FreecadLossCode::DesignSketchSourceUnread.note(format!(
+                "external geometry {} links an object that no design record restates; its source is unread",
+                members
+                    .iter()
+                    .map(|member| member.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )));
             continue;
         };
         let shared = members.len() > 1;
@@ -987,13 +1006,15 @@ fn sources<'e>(
 }
 
 /// The selection of the objects and subelements `links` name, in order: an
-/// origin entity as `Principal`, a datum feature as `Datum`, another feature
+/// origin entity as `Principal`, a sketch as the principal entity `plane` of
+/// its frame, else as the sketch, a datum feature as `Datum`, another feature
 /// as its result, and a subelement of a feature by its native name. `None`
 /// where a link names an object that no design record restates.
 fn picks(
     targets: &Targets,
     links: &[(String, Vec<String>)],
     at: &Anchor,
+    plane: Option<PrincipalEntity>,
 ) -> Option<OrderedSelection> {
     let mut picked = Vec::new();
     for (object, subelements) in links {
@@ -1011,7 +1032,15 @@ fn picks(
         let (feature, datum) = targets.features.get(object)?;
         if subelements.is_empty() {
             picked.push(pick(
-                if *datum {
+                if let Some(sketch) = targets.sketches.get(object) {
+                    plane.map_or_else(
+                        || PickTarget::Sketch(sketch.clone()),
+                        |entity| PickTarget::SketchFrame {
+                            sketch: sketch.clone(),
+                            entity,
+                        },
+                    )
+                } else if *datum {
                     PickTarget::Datum {
                         feature: feature.clone(),
                         part: None,
@@ -1153,7 +1182,14 @@ fn plane(
     let Some(mode) = mode.filter(|mode| !links.is_empty() && *mode != "Deactivated") else {
         return construction;
     };
-    let selection = picks(targets, &links, &anchor);
+    // The `Object` modes align the sketch with one plane of the support's
+    // own frame; every other mode lies it on the support's plane.
+    let plane = match mode {
+        "ObjectXZ" => PrincipalEntity::XzPlane,
+        "ObjectYZ" => PrincipalEntity::YzPlane,
+        _ => PrincipalEntity::XyPlane,
+    };
+    let selection = picks(targets, &links, &anchor, Some(plane));
     if selection.is_none() {
         losses.push(FreecadLossCode::DesignSketchSupportUnread.note(format!(
             "sketch {} is attached to an object that no design record restates; its support is unread",

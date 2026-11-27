@@ -137,6 +137,9 @@ pub(crate) enum FreecadLossCode {
     /// A sketch's attachment support names an object no design record
     /// restates; the plane's input is unread.
     DesignSketchSupportUnread,
+    /// An external geometry links an object that no design record
+    /// restates; its source is unread.
+    DesignSketchSourceUnread,
     /// A sketch's attachment offset has no post steps; the resolved frame
     /// holds it.
     DesignSketchOffsetUnstated,
@@ -210,6 +213,7 @@ impl FreecadLossCode {
         Self::FileVersionUnverified,
         Self::ElementMapVersionUnresolved,
         Self::DesignSketchSupportUnread,
+        Self::DesignSketchSourceUnread,
         Self::DesignSketchOffsetUnstated,
         Self::DesignSketchEntityNative,
         Self::DesignSketchRelationNative,
@@ -285,6 +289,7 @@ impl FreecadLossCode {
             Self::FileVersionUnverified => "metadata.file-version-unverified",
             Self::ElementMapVersionUnresolved => "element-map.version-unresolved",
             Self::DesignSketchSupportUnread => "design.sketch-support-unread",
+            Self::DesignSketchSourceUnread => "design.sketch-source-unread",
             Self::DesignSketchOffsetUnstated => "design.sketch-offset-unstated",
             Self::DesignSketchEntityNative => "design.sketch-entity-native",
             Self::DesignSketchRelationNative => "design.sketch-relation-native",
@@ -351,6 +356,7 @@ impl FreecadLossCode {
             | Self::FileVersionUnverified
             | Self::ElementMapVersionUnresolved
             | Self::DesignSketchSupportUnread
+            | Self::DesignSketchSourceUnread
             | Self::DesignSketchOffsetUnstated
             | Self::DesignSketchEntityNative
             | Self::DesignSketchRelationNative
@@ -414,6 +420,7 @@ impl FreecadLossCode {
             | Self::FileVersionUnverified => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::ElementMapVersionUnresolved => LossTaxonomy::RecordNotTyped,
             Self::DesignSketchSupportUnread
+            | Self::DesignSketchSourceUnread
             | Self::DesignSketchOffsetUnstated
             | Self::DesignSketchEntityNative
             | Self::DesignSketchRelationNative
@@ -507,6 +514,7 @@ mod tests {
                 "metadata.file-version-unverified",
                 "element-map.version-unresolved",
                 "design.sketch-support-unread",
+                "design.sketch-source-unread",
                 "design.sketch-offset-unstated",
                 "design.sketch-entity-native",
                 "design.sketch-relation-native",
