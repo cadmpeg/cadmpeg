@@ -7,7 +7,8 @@
 //! No value that depends on a measure is checked: the source evaluates a
 //! measure with a kernel and stores it at its own precision (§5.13).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::f64::consts::TAU;
 
 pub(super) mod constructions;
 mod placements;
@@ -15,6 +16,7 @@ mod sketches;
 
 use super::parameters::references;
 use super::records::DesignRecords;
+use super::Held;
 use crate::design::dimension::{Dimension, ParameterRef, RefTarget};
 use crate::design::edit::{cache_value, evaluate, Value};
 use crate::design::expr::{Expression, Node};
@@ -28,11 +30,17 @@ use crate::report::check::Finding;
 /// The relative tolerance of a value that is neither a length nor an angle.
 const RELATIVE: f64 = 1e-9;
 
-pub(super) fn check_caches(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
+pub(super) fn check_caches(
+    index: &DesignRecords<'_>,
+    held: &[Held<'_>],
+    findings: &mut Vec<Finding>,
+) {
     placements::check_placements(index, findings);
     sketches::check_sketches(index, findings);
+    let rotations = rotations(held);
     for parameter in &index.ir.design.parameters {
-        check_parameter(index, parameter, findings);
+        let rotation = rotations.contains(parameter.id.as_str());
+        check_parameter(index, parameter, rotation, findings);
     }
     for feature in &index.ir.design.features {
         if let FeatureOperation::Joint(joint) = &feature.definition.operation {
@@ -43,13 +51,28 @@ pub(super) fn check_caches(index: &DesignRecords<'_>, findings: &mut Vec<Finding
     }
 }
 
+/// The parameters that every dimension binding them binds as the angle of a
+/// rotation step.
+fn rotations<'a>(held: &[Held<'a>]) -> HashSet<&'a str> {
+    let mut rotation = HashMap::<&str, bool>::new();
+    for dimension in held.iter().flat_map(|record| &record.dimensions) {
+        *rotation.entry(dimension.parameter.as_str()).or_insert(true) &= dimension.rotation;
+    }
+    rotation
+        .into_iter()
+        .filter_map(|(parameter, rotation)| rotation.then_some(parameter))
+        .collect()
+}
+
 /// A parameter's cached value against its neutral expression, where the
 /// expression depends on no measure, in its own tree or through the
 /// parameters it references; and an integer parameter's evaluated value is a
-/// whole number.
+/// whole number. A parameter that binds only rotations agrees with its
+/// expression to within a whole turn.
 fn check_parameter(
     index: &DesignRecords<'_>,
     parameter: &DesignParameter,
+    rotation: bool,
     findings: &mut Vec<Finding>,
 ) {
     let ParameterDefinition::Expression(Expression::Neutral(neutral)) = &parameter.definition
@@ -93,7 +116,7 @@ fn check_parameter(
     if depends_on_measure(index, &neutral.0) {
         return;
     }
-    if !agree(index, &evaluated, &cached) {
+    if !agree(index, &evaluated, &cached, rotation) {
         super::warning(
             findings,
             id,
@@ -185,7 +208,7 @@ fn program_reads<'a>(statements: &'a [Statement], parameter: &str) -> Vec<&'a No
 /// Whether two values agree: a length within the linear tolerance, an angle
 /// within the angular tolerance, another number within a relative 1e-9, and
 /// a Boolean or a text exactly.
-fn agree(index: &DesignRecords<'_>, left: &Value, right: &Value) -> bool {
+fn agree(index: &DesignRecords<'_>, left: &Value, right: &Value, rotation: bool) -> bool {
     match (left, right) {
         (
             Value::Number {
@@ -206,7 +229,13 @@ fn agree(index: &DesignRecords<'_>, left: &Value, right: &Value) -> bool {
                 Quantity::ANGLE => tolerances.angular.get(),
                 _ => RELATIVE * a.abs().max(b.abs()),
             };
-            (a - b).abs() <= allowed
+            let difference = if rotation && *q == Quantity::ANGLE {
+                let turned = (a - b).rem_euclid(TAU);
+                turned.min(TAU - turned)
+            } else {
+                (a - b).abs()
+            };
+            difference <= allowed
         }
         (Value::Boolean(a), Value::Boolean(b)) => a == b,
         (Value::Text(a), Value::Text(b)) => a == b,

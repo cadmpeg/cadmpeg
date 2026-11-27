@@ -651,6 +651,58 @@ fn a_group_member_is_pinned_only_after_a_member_with_a_result_of_its_own() {
     assert_clean(&ir);
 }
 
+/// `grouped(Current)` with a third member, an extrude with a current
+/// state, so that the scope's current geometry is stated and holds neither
+/// datum.
+fn grouped_beside_a_current_state() -> CadIr {
+    let mut ir = grouped(json!({"kind": "current"}));
+    ir.design.features.push(feature(
+        "c",
+        json!({"kind": "unresolved", "value": {"family": "extrude"}}),
+    ));
+    let Container::Unordered { members, .. } = &mut ir.design.containers[0] else {
+        unreachable!()
+    };
+    members.insert(from(
+        json!({"kind": "feature", "value": key("feature", "c")}),
+    ));
+    ir.design.scopes[0].current.push(from(json!({
+        "at": {"kind": "after", "value": {"kind": "feature", "value": key("feature", "c")}},
+        "bodies": [],
+        "poses": [],
+        "status": "current"
+    })));
+    ir
+}
+
+#[test]
+fn a_group_member_attached_to_a_stateless_member_orders_it_before_its_picks() {
+    // Datum b is attached to datum a; no current state depends on either.
+    assert_clean(&grouped_beside_a_current_state());
+
+    let mut cycle = grouped_beside_a_current_state();
+    cycle.design.features[0] = feature(
+        "a",
+        plane_datum(construction(vec![input(
+            "offset",
+            Some(named(json!({"kind": "current"}), vec![datum_pick("b")])),
+            Some(length(1.0)),
+        )])),
+    );
+    assert_finding(
+        &cycle,
+        Check::Design,
+        Severity::Warning,
+        "a back-edge of a dependency cycle",
+    );
+    assert!(!findings(&cycle).iter().any(|finding| {
+        finding.severity == Severity::Error
+            && finding
+                .message
+                .contains("does not depend-order before its anchor")
+    }));
+}
+
 #[test]
 fn a_group_member_is_not_pinned_after_a_container() {
     let mut ir = grouped(pinned_after("container", &key("container", "body")));

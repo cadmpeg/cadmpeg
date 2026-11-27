@@ -769,6 +769,9 @@ fn check_target_order<'a>(
     }
     let at = site.holder.record();
     let cycle = holder.is_some_and(|feature| index.depends_on(target, feature));
+    if !cycle && holder.is_some_and(|holder| attached_in_unordered(index, site, holder, target)) {
+        return;
+    }
     let severity = if cycle {
         Severity::Warning
     } else {
@@ -789,6 +792,27 @@ fn check_target_order<'a>(
             }
         ),
     );
+}
+
+/// Whether `target` is a stateless feature that `holder`, a member of an
+/// unordered container, depends on, picked from a selection anchored
+/// `Current`: an attachment orders its target before the attached member
+/// (§5.3).
+fn attached_in_unordered(
+    index: &DesignIndex<'_>,
+    site: Site<'_>,
+    holder: &str,
+    target: &str,
+) -> bool {
+    matches!(site.anchor, Anchor::Current)
+        && matches!(
+            index.place(MemberKey::Feature(holder)),
+            Some((crate::design::container::Container::Unordered { .. }, _))
+        )
+        && index
+            .operation(target)
+            .is_some_and(FeatureOperation::cannot_change_state)
+        && index.depends_on(holder, target)
 }
 
 /// A datum part names a part the datum has.
