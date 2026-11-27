@@ -18,7 +18,7 @@ use cadmpeg_ir::design::ops::sketch::{
 };
 use cadmpeg_ir::design::options::NativeOption;
 use cadmpeg_ir::design::parameter::DesignParameter;
-use cadmpeg_ir::design::selection::{PickTarget, Picks, PrincipalEntity};
+use cadmpeg_ir::design::selection::{Ordered, PickTarget, Picks, PrincipalEntity};
 use cadmpeg_ir::sketches::SketchEntityId;
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 
@@ -539,7 +539,7 @@ fn a_sketch_attached_to_a_sketch_picks_a_plane_of_its_frame() {
 }
 
 #[test]
-fn an_external_geometry_of_an_unread_object_names_its_unread_source() {
+fn an_external_geometry_of_an_unread_object_picks_its_link_by_native_name() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch"/><Object type="Part::FeaturePython" name="Window"/></Objects>
 <ObjectData Count="2"><Object name="Sketch"><Properties Count="3">
@@ -570,7 +570,11 @@ fn an_external_geometry_of_an_unread_object_names_its_unread_source() {
     let EntityForm::Derived(derivation) = form.as_ref() else {
         panic!("{entity:?}");
     };
-    assert_eq!(derivation.source.picks, Picks::Unread, "{derivation:?}");
+    assert_eq!(
+        native_paths(&derivation.source.picks),
+        ["Window.Edge1"],
+        "{derivation:?}"
+    );
     let unread = crate::loss::FreecadLossCode::DesignSketchSourceUnread.note("");
     assert!(
         decoded
@@ -580,6 +584,70 @@ fn an_external_geometry_of_an_unread_object_names_its_unread_source() {
             .any(|loss| loss.code == unread.code && loss.message.contains(":external:0")),
         "{:?}",
         decoded.report().losses
+    );
+}
+
+/// The `FreeCAD` paths of `picks`, each a `Native` pick that no design
+/// record holds.
+fn native_paths(picks: &Picks<Ordered>) -> Vec<String> {
+    let Picks::Named(members) = picks else {
+        panic!("{picks:?}");
+    };
+    members
+        .as_slice()
+        .iter()
+        .map(|picked| {
+            assert!(
+                matches!(picked.target, PickTarget::Native { within: None }),
+                "{picked:?}"
+            );
+            match picked.native.as_ref().map(|native| &native.value) {
+                Some(NativeNameValue::Text(path)) => path.as_str().to_owned(),
+                other => panic!("{other:?}"),
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn an_external_geometry_with_no_stored_curve_picks_its_link_by_native_name() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch"/><Object type="Part::FeaturePython" name="Window"/></Objects>
+<ObjectData Count="2"><Object name="Sketch"><Properties Count="2">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+<Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="Window" sub="Edge4"/><Link obj="Window" sub="Edge2"/></LinkSubList></Property>
+</Properties></Object><Object name="Window"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let ir = decoded.ir();
+    let sources = ir
+        .design
+        .sketch_entities
+        .iter()
+        .filter(|entity| entity.id.as_str().contains(":external:"))
+        .map(|entity| {
+            let EntityDefinition::Defined { form, solved } = &entity.definition else {
+                panic!("{entity:?}");
+            };
+            let EntityForm::Derived(derivation) = form.as_ref() else {
+                panic!("{entity:?}");
+            };
+            assert!(solved.is_none(), "{entity:?}");
+            native_paths(&derivation.source.picks)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        sources,
+        [
+            vec!["Window.Edge4".to_owned()],
+            vec!["Window.Edge2".to_owned()]
+        ],
+        "{:?}",
+        ir.design.sketch_entities
     );
 }
 

@@ -138,7 +138,8 @@ pub(crate) enum FreecadLossCode {
     /// restates; the plane's input is unread.
     DesignSketchSupportUnread,
     /// An external geometry links an object that no design record
-    /// restates; its source is unread.
+    /// restates, or stores no link; its source is the native pick of the
+    /// link, or unread.
     DesignSketchSourceUnread,
     /// A sketch's attachment offset has no post steps; the resolved frame
     /// holds it.

@@ -996,6 +996,22 @@ fn definition(
         let construction = stored
             .flags
             .is_none_or(|flags| flags & EXTERNAL_GEOMETRY_DEFINING_FLAG == 0);
+        if curve.is_none() && matches!(source.picks, Picks::Unread) {
+            losses.push(FreecadLossCode::DesignSketchEntityNative.note(format!(
+                "external geometry {} stores no curve and has an unread source; it states its native kind",
+                entity.id()
+            )));
+            return (
+                EntityDefinition::Defined {
+                    form: Box::new(EntityForm::Native(native_entity_kind(
+                        &cadmpeg_core::nonblank_literal!("fcstd"),
+                        &entity.geometry,
+                    ))),
+                    solved: None,
+                },
+                Some(construction),
+            );
+        }
         return (
             EntityDefinition::Defined {
                 form: Box::new(EntityForm::Derived(Box::new(Derivation {
@@ -1051,17 +1067,28 @@ fn sources<'e>(
     }
     let mut out = BTreeMap::new();
     for (link, members) in by_link {
-        let Some(selection) = picks(targets, std::slice::from_ref(link), anchor, Reading::Shape)
-        else {
-            losses.push(FreecadLossCode::DesignSketchSourceUnread.note(format!(
-                "external geometry {} links an object that no design record restates; its source is unread",
-                members
-                    .iter()
-                    .map(|member| member.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )));
-            continue;
+        let selection = match picks(targets, std::slice::from_ref(link), anchor, Reading::Shape) {
+            Some(selection) => selection,
+            None => {
+                let native = native_source(scope, link, anchor);
+                losses.push(FreecadLossCode::DesignSketchSourceUnread.note(format!(
+                    "external geometry {} links an object that no design record restates; {}",
+                    members
+                        .iter()
+                        .map(|member| member.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    if native.is_some() {
+                        "its source is the native pick of the link"
+                    } else {
+                        "its source is unread"
+                    }
+                )));
+                let Some(native) = native else {
+                    continue;
+                };
+                native
+            }
         };
         let shared = members.len() > 1;
         for (index, member) in members.into_iter().enumerate() {
@@ -1070,6 +1097,47 @@ fn sources<'e>(
         }
     }
     out
+}
+
+/// The source of an external geometry that links `link`, an object no
+/// design record restates: a `Native` pick of each subelement, or of the
+/// object, by its `FreeCAD` subelement path `Object.Subelement` (§5.8).
+/// `None` where the document holds no such object.
+fn native_source(
+    scope: &Scope<'_>,
+    (object, subelements): &(String, Vec<String>),
+    at: &Anchor,
+) -> Option<OrderedSelection> {
+    let name = scope
+        .objects
+        .iter()
+        .find(|record| record.id() == object)?
+        .name();
+    let subelements = subelements
+        .iter()
+        .filter(|sub| !sub.is_empty())
+        .collect::<Vec<_>>();
+    let paths = if subelements.is_empty() {
+        vec![name.clone()]
+    } else {
+        subelements
+            .iter()
+            .map(|sub| format!("{name}.{sub}"))
+            .collect()
+    };
+    let picked = paths
+        .into_iter()
+        .map(|path| {
+            Some(pick(
+                PickTarget::Native { within: None },
+                Some(NativeName {
+                    codec: cadmpeg_core::codec_id!("fcstd"),
+                    value: NativeNameValue::Text(NonBlankString::new(path)?),
+                }),
+            ))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    selection(at, picked)
 }
 
 /// How a link reads the object it names.
