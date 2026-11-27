@@ -16,11 +16,8 @@
 
 use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
-use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use cadmpeg_codec_freecad::FcstdCodec;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_test_support::unknown_keys::accepting_shapes;
 
 /// Extension of the committed fixture inputs.
@@ -54,9 +51,7 @@ fn check_unknown_keys(partition: usize) {
     let mut fallbacks = 0_usize;
     for path in fixtures {
         let bytes = std::fs::read(&path).expect("read fixture");
-        let result = FcstdCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .expect("decode fixture");
+        let result = crate::test_support::cached_full_decode(&bytes).expect("decode fixture");
         let ir = json::to_value(result.ir()).expect("serialize ir");
         let sweep = accepting_shapes(&ir)
             .unwrap_or_else(|error| panic!("{} does not read back: {error}", path.display()));

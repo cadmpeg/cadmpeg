@@ -88,7 +88,7 @@ fn entities<'a, O: MemberOrder>(
         }
         found.push(entity);
     }
-    let sketch = index.sketches.get(sketch?)?;
+    let sketch = index.records.sketches.get(sketch?)?;
     matches!(sketch.solve.status, EvaluationStatus::Current).then_some(found)
 }
 

@@ -131,9 +131,7 @@ fn corrupt(original: &[u8], entries: &[&str]) -> Vec<u8> {
 fn an_unreadable_shape_entry_drops_only_the_properties_that_need_it() {
     let mut cases = 0;
     for (fixture, original) in fixtures() {
-        let Ok(baseline) =
-            FcstdCodec.decode(&mut Cursor::new(&original), &DecodeOptions::default())
-        else {
+        let Ok(baseline) = crate::test_support::cached_full_decode(&original) else {
             continue;
         };
         let baseline_objects = objects(baseline.ir());

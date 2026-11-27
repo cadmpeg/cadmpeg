@@ -1194,7 +1194,7 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
                 angle,
                 count: 4,
             } if *axis_origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-            && *axis_dir == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+            && *axis_dir == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
             && (angle.get() - std::f64::consts::TAU).abs() < EPS_PATTERN_ANGLE)
     ));
     assert!(matches!(&(definition("Mirror")),
@@ -1385,4 +1385,80 @@ fn audit_regression_distinct_tiny_pattern_steps_stay_explicit() {
         crate::design::uniform_step(&[finite(0.), finite(1e-16), finite(2e-16)]),
         Some(finite(1e-16))
     );
+}
+
+const EPS_ORIGIN_AXIS: f64 = 1.0e-12;
+
+/// An `App::Line` lies along its placement's local X axis. The Origin's
+/// X, Y, and Z axis lines carry the identity and the two 120-degree rotations
+/// that carry X onto Y and Z.
+#[test]
+fn polar_pattern_about_origin_axis_lines_uses_local_x_of_the_line() {
+    let h = 0.5;
+    let axes = [
+        ("X_Axis", [0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        ("Y_Axis", [h, h, h, h], [0.0, 1.0, 0.0]),
+        ("Z_Axis", [h, -h, h, h], [0.0, 0.0, 1.0]),
+    ];
+    for (name, q, expected) in axes {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="Part::Box" name="Seed" id="1"/>
+ <Object type="App::Line" name="{name}" id="2"/>
+ <Object type="PartDesign::PolarPattern" name="Ring" id="3"/>
+ <Object type="PartDesign::Body" name="Body" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Seed"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="{name}"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="{q0}" Q1="{q1}" Q2="{q2}" Q3="{q3}"/></Property></Properties></Object>
+ <Object name="Ring"><Properties Count="5">
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="Axis" type="App::PropertyLinkSub"><LinkSub value="{name}" count="1"><Sub value=""/></LinkSub></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="360"/></Property>
+  <Property name="Occurrences" type="App::PropertyInteger"><Integer value="6"/></Property>
+ </Properties></Object>
+ <Object name="Body"><Properties Count="1">
+  <Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="Seed"/><Link value="Ring"/></LinkList></Property>
+ </Properties></Object>
+</ObjectData></Document>"#,
+            q0 = q[0],
+            q1 = q[1],
+            q2 = q[2],
+            q3 = q[3],
+        );
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .expect("origin axis pattern");
+        let ring = result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Ring"))
+            .expect("pattern");
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Pattern { pattern, .. },
+        ) = ring.evaluation.definition()
+        else {
+            panic!("{name}: pattern is not a neutral operation");
+        };
+        let cadmpeg_ir::features::patterns::PatternTransform::Circular {
+            axis_dir, count, ..
+        } = pattern.definition()
+        else {
+            panic!("{name}: pattern is not circular");
+        };
+        assert_eq!(*count, 6);
+        assert!(
+            (axis_dir.x - expected[0]).abs() < EPS_ORIGIN_AXIS
+                && (axis_dir.y - expected[1]).abs() < EPS_ORIGIN_AXIS
+                && (axis_dir.z - expected[2]).abs() < EPS_ORIGIN_AXIS,
+            "{name}: {axis_dir:?}"
+        );
+    }
 }

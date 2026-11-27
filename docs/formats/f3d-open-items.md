@@ -3879,17 +3879,17 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Note.** The decoder assumes the null names no item and reports `feature.timeline-null-slot-assumed`.
 
-### DR-530. Body frame of object-prelude occurrence snapshots
+### DR-530. Placement of object-prelude occurrences that no component path names
 
-**Question.** How does the closing placement of an object-prelude occurrence map the solved BREP body frame into its containing component?
+**Question.** What gives the local placement of an object-prelude occurrence, whose carrier GUID follows the ordinal directly, when no component-path record names it as its target?
 
-**Known.** An occurrence carrier can have an object property prelude, a one-byte zero ordinal prefix, and one closing placement. Its carrier GUID follows the ordinal directly. The closing component reference precedes the placement flag. A chain of three such carriers gives one solved body a Y axis with its XZ center at (-4.3,13.5) mm; the axis of the mating body is near (0,0) mm. A single such carrier rotates the X axis of a solved body to Z; the mating body has axis X. In both cases the CommonData stream has zero admitted component paths. A carrier with a two-byte prefix and a source marker is placed from its closing matrix under the assumption that the matrix is in the component frame. The leading-source and closing-local placements in the F30 generation are separate fields in another complete envelope.
+**Known.** An occurrence carrier can have an object property prelude, a one-byte zero ordinal prefix, and one closing placement. Its carrier GUID follows the ordinal directly. The closing component reference precedes the placement flag. A component-path record that names such an occurrence as its target stores a world pose that differs from the closing matrix. In a stream with a component-path record, where every record is read as a local path form and names one unique expanded occurrence, the closing matrices of the object-prelude occurrences that no record names place their solved bodies coaxially with the bodies they mate with. A single such carrier in a stream with no component-path record rotates the X axis of a solved body to Z; the mating body has axis X. A carrier with a two-byte prefix and a source marker is placed from its closing matrix under the assumption that the matrix is in the component frame. The leading-source and closing-local placements in the F30 generation are separate fields in another complete envelope.
 
-**Need.** A controlled object-prelude save with a moved component, its original and solved BREP frames, and an independent current placement. Determine the reference frame of the closing matrix and the body-frame correction before admitting that matrix as a body placement.
+**Need.** A controlled object-prelude save with a moved component, with and without a component-path record for it, its original and solved BREP frames, and an independent current placement. Determine the reference frame of the closing matrix and the body-frame correction before admitting that matrix as a body placement in a stream with no component-path record.
 
-**Conflict.** Treating the closing matrix of an object-prelude carrier whose GUID follows the ordinal directly as a solved-body local placement gives the two incorrect mating placements above.
+**Conflict.** Treating the closing matrix of an object-prelude carrier whose GUID follows the ordinal directly as a solved-body local placement, in a stream with no component-path record, gives the incorrect mating placement above.
 
-**Note.** The decoder retains the native carrier. A matrix-bearing object-prelude occurrence whose carrier GUID follows the ordinal directly requires an independently resolved component-path pose before neutral projection. Its unresolved subtree retains stored body frames and the existing `assembly.local-occurrence-unplaced` loss. Identity frames retain their definition frame. Ancestor placement must also resolve. An object-prelude occurrence whose two-byte prefix carries a source marker (flag 0 or 1) is placed from its closing matrix without that proof, with the assumption loss `assembly.local-occurrence-marked-prelude-assumed`.
+**Note.** The decoder retains the native carrier. It assumes the closing matrix is the local placement in the component frame of the owner, and records `assembly.local-occurrence-object-prelude-assumed`, only when the carrier's Design stream stores at least one component-path record, every component-path record of that stream is read as a local path form, every one names one unique expanded occurrence (a pose chosen among several instances does not), and none names the carrier as its target. Otherwise the matrix-bearing occurrence keeps its stored body frames and the existing `assembly.local-occurrence-unplaced` loss. The condition applies to each Design stream separately. Identity frames retain their definition frame. Ancestor placement must also resolve. An object-prelude occurrence whose two-byte prefix carries a source marker (flag 0 or 1) is placed from its closing matrix without that proof, with the assumption loss `assembly.local-occurrence-marked-prelude-assumed`. A carrier that an assembly alignment operand path names, with no frame sense, is placed from its closing matrix and carries the same assumption loss; an occurrence that an assembly operation places from an operation matrix does not.
 
 ### SM-03. ContourFlange travel, thickness side and rule entries
 
@@ -4266,3 +4266,13 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 **Need.** A mesh import saved by Fusion 2706.1.17, and a `MeshTessellate` feature saved by an earlier Fusion version.
 
 **Note.** The mesh graph requires a Scene node in that slot; such a design reports `mesh.container-undecoded`.
+
+### DR-1079. Document body of a keyless pattern copy
+
+**Question.** Does the document list a pattern or Mirror copy body whose ASM body record stores no body key?
+
+**Known.** The active record stream of the `.smbh` member that the modern body map names holds the body record of the copy with ASM body key `-1`, its own lump and shell, and the faces of the copy. The terminal history state holds the slot. The modern body map stores no pair for the slot. The Body container lists more Body entities than the body map stores pairs. A copy body that the body map names stores a nonnegative ASM body key. A feature Mirror of a hidden New Body seed, and a feature Mirror whose New Body copy is coincident with the boss that its Join seed copy adds, each store the copy with a nonnegative key and a body-map pair, and the Fusion browser lists the copy as a body.
+
+**Need.** A save whose copy body stores key `-1`, with a Fusion readback of its body list. The forms above do not give that key, so the save needs another construction of the copy, for example a Mirror edited after a later feature or a design saved by an earlier Fusion version. Compare the body record keys, the body-map pairs, and the Body container entities with the bodies that the Fusion browser lists.
+
+**Note.** The decoder omits the body from the model and reports `feature.pattern-copy-body-omitted` (`f3d.md` "Each copy that a feature pattern or a feature Mirror makes").

@@ -5,6 +5,40 @@ use cadmpeg_core::serde_erase::json;
 
 pub(crate) mod test_archive;
 
+/// Decodes `bytes` once per process and shares the immutable result across
+/// read-only fixture checks inside this test binary.
+pub(crate) fn cached_full_decode(
+    bytes: &[u8],
+) -> Result<std::sync::Arc<cadmpeg_ir::codec::DecodeResult>, String> {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, OnceLock, PoisonError};
+
+    #[allow(clippy::type_complexity)]
+    static CACHE: OnceLock<
+        Mutex<
+            HashMap<[u8; 32], Arc<OnceLock<Result<Arc<cadmpeg_ir::codec::DecodeResult>, String>>>>,
+        >,
+    > = OnceLock::new();
+    let digest = cadmpeg_ir::hash::sha256(bytes);
+    let slot = {
+        let mut map = CACHE
+            .get_or_init(Mutex::default)
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        map.entry(digest)
+            .or_insert_with(|| Arc::new(OnceLock::new()))
+            .clone()
+    };
+    slot.get_or_init(|| {
+        crate::FcstdCodec
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .map(Arc::new)
+            .map_err(|error| error.to_string())
+    })
+    .clone()
+}
+
 pub(crate) fn assert_retained_refusal_at<T>(
     input: &[u8],
     operation: &str,
