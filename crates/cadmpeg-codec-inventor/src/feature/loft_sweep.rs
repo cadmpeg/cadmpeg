@@ -44,7 +44,11 @@ pub(crate) fn retained_control_losses<'a>(
         }
     }
     // A surface loft refused for its part operation has its own loss.
-    let surface_lofts = surface_lofts.saturating_sub(surface_operation_refusals);
+    // Every refused surface loft is also a retained surface loft, so the
+    // difference never underflows; a count that would is not reported.
+    let surface_lofts = surface_lofts
+        .checked_sub(surface_operation_refusals)
+        .unwrap_or_default();
     let mut losses = Vec::new();
     if sweeps != 0 {
         losses.push(crate::loss::InventorLossCode::FeatureSweepControlsUnresolved.note(format!(
