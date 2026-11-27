@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Planar sketch statements from decoded Inventor geometry.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -11,16 +11,18 @@ use cadmpeg_ir::design::construction::{
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::sketch::{
-    DefiningRole, EntityDefinition, EntityForm, EntityRole, Planar, Sketch, SketchEntity,
-    SketchPlane, SketchSolve,
+    DefiningRole, EntityDefinition, EntityForm, EntityRole, Planar, PlanarCurve, Sketch,
+    SketchEntity, SketchPlane, SketchSolve,
 };
-use cadmpeg_ir::design::projection::sketch::planar_curve;
+use cadmpeg_ir::design::projection::sketch::{curve_ends, planar_curve};
 use cadmpeg_ir::design::selection::{Anchor, Picks, Selection};
 use cadmpeg_ir::features::FeatureOperation as LegacyOperation;
+use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    SketchEntity as LegacyEntity, SketchGeometryDefinition as Geometry, SketchId, SketchPlacement,
+    SketchEntity as LegacyEntity, SketchEntityId, SketchGeometryDefinition as Geometry, SketchId,
+    SketchPlacement,
 };
-use cadmpeg_ir::units::UnitVector3;
+use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 use cadmpeg_ir::CadIr;
 
 mod constraints;
@@ -160,6 +162,29 @@ pub(super) fn project(
                 native_ref: entity.native_ref.clone(),
             });
         }
+        for (id, native, position) in end_points(
+            ir.model
+                .sketch_entities
+                .iter()
+                .filter(|entity| entity.sketch == source.id),
+        ) {
+            ctx.charge_entities(1, "project Inventor v11 sketch end point")?;
+            ir.design.sketch_entities.push(SketchEntity {
+                id,
+                sketch: source.id.clone(),
+                definition: EntityDefinition::Free(PlanarCurve::Point(position)),
+                roles: roles
+                    .get(&(&source.id, native))
+                    .cloned()
+                    .unwrap_or_default(),
+                construction: None,
+                centerline: None,
+                native: None,
+                native_options: BTreeMap::default(),
+                source_settings: BTreeMap::default(),
+                native_ref: Some(native.to_owned()),
+            });
+        }
         for constraint in ir
             .model
             .sketch_constraints
@@ -177,6 +202,50 @@ pub(super) fn project(
     ir.design.sketch_entities.sort_by(|a, b| a.id.cmp(&b.id));
     ir.design.sketch_constraints.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(losses)
+}
+
+/// A point at each line or arc end of a sketch, from `entities`, whose
+/// endpoint record no point entity of the sketch carries: the point of the
+/// first end that names the record, its identity minted from that curve and
+/// end.
+fn end_points<'a>(
+    entities: impl Iterator<Item = &'a LegacyEntity> + Clone,
+) -> Vec<(SketchEntityId, &'a str, FinitePoint2)> {
+    let carried = entities
+        .clone()
+        .filter(|entity| matches!(entity.geometry.definition(), Geometry::Point { .. }))
+        .filter_map(|entity| entity.native_ref.as_deref())
+        .collect::<HashSet<_>>();
+    let taken = entities
+        .clone()
+        .map(|entity| entity.id().as_str())
+        .collect::<HashSet<_>>();
+    let mut minted = HashSet::new();
+    let mut points = Vec::new();
+    for curve in entities {
+        let (Some(ends), [start, end]) =
+            (curve_ends(&curve.geometry), curve.endpoint_refs.as_slice())
+        else {
+            continue;
+        };
+        for ((native, [u, v]), side) in [start, end].into_iter().zip(ends).zip(["start", "end"]) {
+            if carried.contains(native.as_str()) || minted.contains(native.as_str()) {
+                continue;
+            }
+            let (Ok(id), Some(position)) = (
+                SketchEntityId::mint(format!("{}/{side}-point", curve.id())),
+                FinitePoint2::new(Point2::new(u, v)),
+            ) else {
+                continue;
+            };
+            if taken.contains(id.as_str()) {
+                continue;
+            }
+            minted.insert(native.as_str());
+            points.push((id, native.as_str(), position));
+        }
+    }
+    points
 }
 
 fn endpoint_roles(entities: &[LegacyEntity]) -> EndpointRoles<'_> {

@@ -63,3 +63,25 @@ pub fn planar_curve(geometry: &SketchGeometry) -> Option<PlanarCurve> {
         | SketchGeometryDefinition::Native { .. } => return None,
     })
 }
+
+/// The start and end of a line or an arc in sketch coordinates, or `None`
+/// for another geometry.
+#[must_use]
+pub fn curve_ends(geometry: &SketchGeometry) -> Option<[[f64; 2]; 2]> {
+    match geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => Some([[start.u, start.v], [end.u, end.v]]),
+        SketchGeometryDefinition::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } => {
+            let at = |angle: f64| {
+                let (sin, cos) = angle.portable_sin_cos();
+                [center.u + radius.get() * cos, center.v + radius.get() * sin]
+            };
+            Some([at(start_angle.get()), at(end_angle.get())])
+        }
+        _ => None,
+    }
+}

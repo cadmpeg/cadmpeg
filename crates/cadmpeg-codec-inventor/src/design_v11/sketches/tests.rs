@@ -506,3 +506,94 @@ fn endpoint_roles_keep_reference_names_in_their_own_sketch() {
         );
     }
 }
+
+/// The fields a CADIR write of `ir` names for the model sketch entity `id`:
+/// none where it carries the record whole.
+fn entity_charge(ir: &CadIr, id: &str) -> Vec<String> {
+    use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(ir, None))
+        .expect("the CADIR writer drops what it cannot write");
+    let Some(loss) = plan.report().losses.iter().find(|loss| {
+        loss.code.local_code() == "arena.omitted"
+            && loss.message.contains("model arena `sketch_entities`")
+    }) else {
+        return Vec::new();
+    };
+    let (omitted, part) = loss
+        .message
+        .split_once(" stated in part: ")
+        .unwrap_or((loss.message.as_str(), ""));
+    assert!(!omitted.contains(id), "{}", loss.message);
+    part.split_once(&format!("{id} ("))
+        .and_then(|(_, fields)| fields.split_once(')'))
+        .map(|(fields, _)| fields.split(", ").map(str::to_owned).collect())
+        .unwrap_or_default()
+}
+
+/// Two lines whose endpoint records no point entity of the sketch carries,
+/// as a block instance's placed curves name the points of the block
+/// definition, end at points the design states: one point for the shared
+/// record, the end of each line that names it, and a CADIR write carries
+/// each line's endpoint records.
+#[test]
+fn endpoint_records_without_point_entities_are_stated_as_points() {
+    let mut ir = fixture();
+    for (name, start, end, refs) in [
+        ("p", [0.0, 0.0], [2.0, 0.0], ["first", "corner"]),
+        ("q", [2.0, 0.0], [2.0, 1.0], ["corner", "last"]),
+    ] {
+        add_entity(
+            &mut ir,
+            name,
+            Geometry::Line {
+                start: Point2::new(start[0], start[1]),
+                end: Point2::new(end[0], end[1]),
+            },
+            false,
+        );
+        ir.model
+            .sketch_entities
+            .last_mut()
+            .expect("line")
+            .endpoint_refs = Vec::from(refs.map(|name| format!("inventor:pmdc:point#{name}")));
+    }
+    run(&mut ir);
+    let corner = ir
+        .design
+        .sketch_entities
+        .iter()
+        .filter(|entity| entity.native_ref.as_deref() == Some("inventor:pmdc:point#corner"))
+        .collect::<Vec<_>>();
+    let [corner] = corner.as_slice() else {
+        panic!("one point carries the shared record: {corner:#?}");
+    };
+    assert_eq!(
+        corner.definition,
+        EntityDefinition::Free(PlanarCurve::Point(
+            FinitePoint2::new(Point2::new(2.0, 0.0)).expect("point")
+        ))
+    );
+    assert_eq!(
+        corner.roles,
+        vec![
+            EntityRole {
+                of: entity_id("p"),
+                role: DefiningRole::End
+            },
+            EntityRole {
+                of: entity_id("q"),
+                role: DefiningRole::Start
+            },
+        ]
+    );
+    assert_eq!(ir.design.sketch_entities.len(), 5);
+    for line in ["p", "q"] {
+        let fields = entity_charge(&ir, entity_id(line).as_str());
+        assert!(
+            !fields.iter().any(|field| field == "endpoint_refs"),
+            "{fields:?}"
+        );
+    }
+}

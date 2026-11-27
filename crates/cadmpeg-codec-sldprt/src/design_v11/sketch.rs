@@ -48,7 +48,7 @@ use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::design::parameter::{
     DesignParameter, DimensionDisplay, ParameterDefinition, ParameterOwner, ParameterValue,
 };
-use cadmpeg_ir::design::projection::sketch::planar_curve;
+use cadmpeg_ir::design::projection::sketch::{curve_ends, planar_curve};
 use cadmpeg_ir::design::selection::{
     Anchor, Members, OrderedSelection, PickTarget, Picked, Picks, PrincipalEntity, Selection,
 };
@@ -975,27 +975,6 @@ fn carrier(geometry: &cadmpeg_ir::sketches::SketchGeometry) -> Option<([f64; 2],
     match geometry.definition() {
         Geometry::Circle { center, radius } | Geometry::Arc { center, radius, .. } => {
             Some(([center.u, center.v], radius.get()))
-        }
-        _ => None,
-    }
-}
-
-/// The start and end of a line or an arc.
-fn curve_ends(geometry: &cadmpeg_ir::sketches::SketchGeometry) -> Option<[[f64; 2]; 2]> {
-    use cadmpeg_ir::math::portable::Portable;
-    match geometry.definition() {
-        Geometry::Line { start, end } => Some([[start.u, start.v], [end.u, end.v]]),
-        Geometry::Arc {
-            center,
-            radius,
-            start_angle,
-            end_angle,
-        } => {
-            let at = |angle: f64| {
-                let (sin, cos) = angle.portable_sin_cos();
-                [center.u + radius.get() * cos, center.v + radius.get() * sin]
-            };
-            Some([at(start_angle.get()), at(end_angle.get())])
         }
         _ => None,
     }
