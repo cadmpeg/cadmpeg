@@ -50,13 +50,14 @@ fn a_path_terminator_in_place_of_the_attribute_run_reads_a_placed_occurrence() {
     assert_eq!(transform.value.rows()[1][3], 3.0);
     assert_eq!(transform.value.rows()[2][3], 4.0);
     assert_eq!(transform.offset, 210);
-    let wire = serde_json::to_value(&occurrence).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&occurrence).unwrap();
     assert_eq!(wire["attributed"]["ordinal_prefix"], 0);
     assert_eq!(
         wire["attributed"]["attributes"].as_array().unwrap().len(),
         0
     );
-    let restored: DesignComponentOccurrence = serde_json::from_value(wire).unwrap();
+    let restored: DesignComponentOccurrence =
+        cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
     assert_eq!(restored, occurrence);
 }
 
