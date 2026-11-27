@@ -426,6 +426,62 @@ fn an_unedited_feature_whose_state_the_active_row_supplies_is_not_charged() {
     assert!(losses.is_empty(), "{losses:#?}");
 }
 
+/// The Base Feature of column `F`, whose scope stores state 8 after state 7
+/// and no suppression, decoded under active row `tall`, which suppresses it.
+/// The body history binds the feature an output body that no product
+/// definition holds: the decoder keeps the feature active and drops the
+/// output link. An unedited write charges the row's contradiction and states
+/// when a feature reads back in the row's state.
+#[test]
+fn a_producer_the_active_row_suppresses_is_charged_with_the_condition_of_the_read_back() {
+    let mut natives = natives();
+    natives.scopes[0] =
+        DesignParameterScope::empty(&natives.scopes[0].id, DesignFeatureKind::BaseFeature, 314);
+    natives.scopes[0]
+        .try_edit(|draft| {
+            draft.history_state_id = Some(8);
+            draft.previous_history_state_id = Some(7);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let mut producer = neutral_feature(&natives.scopes[0], "f3d:model:feature#sketch");
+    producer.native_ref = Some(natives.scopes[0].id.clone());
+    producer.evaluation.set_outputs(
+        DistinctMembers::try_from(vec![cadmpeg_ir::ids::BodyId::mint(
+            "test:model:body#unowned",
+        )
+        .unwrap()])
+        .unwrap(),
+    );
+    natives.neutral_features[0] = producer;
+    let documents = active_in_source("tall");
+    let configurations = natives.attach(&documents);
+    let feature = &natives.neutral_features[0];
+    assert!(feature.evaluation.outputs().is_empty());
+    assert_eq!(feature.suppressed, Some(false));
+    let decoded = Projection {
+        configurations,
+        ..project(&documents, &natives.targets()).unwrap()
+    };
+    let (unchanged, losses) = charged(&natives, &documents, &decoded, &decoded.configurations);
+    assert!(unchanged);
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert_eq!(losses[0].0, "export/value.unwritable");
+    assert!(
+        losses[0].1.contains(
+            "the Design stream stores the state of its active row, so a feature whose scope stores no suppression and to which the body history binds no output body reads back in the row's state"
+        ),
+        "{losses:#?}"
+    );
+    assert!(
+        losses[0].1.contains(&format!(
+            "{} stated {{\"kind\":\"active\",\"outputs\":[]}}, the active row states {{\"kind\":\"suppressed\"}}",
+            feature.id
+        )),
+        "{losses:#?}"
+    );
+}
+
 /// The feature of column `F`, an Extrude and then a Sketch, whose scope
 /// tail stores an active state, under row `tall`, which suppresses it. A
 /// write that keeps that stored state and the cell of the source's active row

@@ -8,6 +8,8 @@
 //! the loft result check reads. It adds no record to the document, and the
 //! nest cap and nest work budget of [`super::history_bodies`] do not apply to
 //! it. The decode of one state into a scratch model is shared with the nests.
+//! A stored-body Base result that the final model no longer holds reads the
+//! same view.
 
 use cadmpeg_asm::brep::inspect_with_header;
 use cadmpeg_asm::history::{materialize_record_table, walk_entity_versions_until};
@@ -55,6 +57,10 @@ pub(crate) trait ResultStates {
         ctx: &DecodeContext<'_>,
         source_index: u32,
     ) -> Result<Rc<StateModel>, CodecError>;
+
+    /// Whether the oldest state whose live naming tags list `source_index`
+    /// holds a body record with `key` and the next older state holds none.
+    fn introduces(&self, source_index: u32, key: i64) -> bool;
 
     /// The model of the state before the one `after` selects, which is the
     /// next older state. `Unavailable` when no state lists `source_index` or
@@ -267,6 +273,22 @@ impl ResultStates for StateViews<'_, '_> {
             return Ok(Rc::new(StateModel::Unavailable));
         };
         self.model_at(ctx, header, ordinal)
+    }
+
+    fn introduces(&self, source_index: u32, key: i64) -> bool {
+        let index = &self.closed.index;
+        let Some(&ordinal) = index.first.get(&source_index) else {
+            return false;
+        };
+        let holds = |ordinal: u32| {
+            usize::try_from(ordinal)
+                .ok()
+                .and_then(|ordinal| index.states.get(ordinal))
+                .is_some_and(|state| state.body_keys.binary_search(&key).is_ok())
+        };
+        ordinal
+            .checked_sub(1)
+            .is_some_and(|before| holds(ordinal) && !holds(before))
     }
 }
 
