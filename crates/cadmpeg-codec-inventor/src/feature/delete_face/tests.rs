@@ -91,9 +91,11 @@ fn delete_face_refusals_name_the_failing_slot() {
     let mut repeated = ok.clone();
     repeated[0] = collection(faces, &[32, 32]);
     assert_eq!(read(&source(), &repeated, &all), NativeReason::Faces);
+    // A face collection may be empty; the record then stays native for its
+    // heal mode, not for slot 0.
     let mut empty = ok.clone();
     empty[0] = collection(faces, &[]);
-    assert_eq!(read(&source(), &empty, &all), NativeReason::Faces);
+    assert_eq!(read(&source(), &empty, &all), NativeReason::Controls);
     let mut selection = ok.clone();
     selection[0] = collection(PmDcFeatureReferenceFamily::SelectionList, &[32]);
     assert_eq!(read(&source(), &selection, &all), NativeReason::Faces);
@@ -124,12 +126,31 @@ fn delete_face_refusals_name_the_failing_slot() {
             },
         )
     };
+    // An ordered body selection holds distinct surface-body wrappers and null
+    // members, with no member count.
+    let mut wrappers = all.clone();
+    wrappers.insert(34, WRAPPER_TYPE_ID);
     let mut two = ok.clone();
     two[3] = body_selection(&[34, 35]);
-    assert_eq!(read(&source(), &two, &all), NativeReason::Selection);
+    assert_eq!(read(&source(), &two, &wrappers), NativeReason::Controls);
+    let mut with_null = ok.clone();
+    with_null[3] = body_selection(&[34, 0]);
+    assert_eq!(read(&source(), &with_null, &all), NativeReason::Controls);
     let mut none = ok.clone();
     none[3] = body_selection(&[0]);
-    assert_eq!(read(&source(), &none, &all), NativeReason::Selection);
+    assert_eq!(read(&source(), &none, &all), NativeReason::Controls);
+    let mut repeated_wrapper = ok.clone();
+    repeated_wrapper[3] = body_selection(&[34, 34]);
+    assert_eq!(
+        read(&source(), &repeated_wrapper, &all),
+        NativeReason::Selection
+    );
+    let mut other_member = ok.clone();
+    other_member[3] = body_selection(&[34, 35]);
+    assert_eq!(
+        read(&source(), &other_member, &all),
+        NativeReason::Selection
+    );
     let mut foreign = all;
     foreign.insert(33, "other");
     assert_eq!(read(&source(), &ok, &foreign), NativeReason::Selection);
