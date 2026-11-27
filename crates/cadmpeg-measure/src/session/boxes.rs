@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Body boxes from one box pass.
 
-use std::collections::BTreeSet;
 use crate::{fast_map, fast_map_with_capacity, FastMap};
+use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 

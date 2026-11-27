@@ -72,25 +72,23 @@ fn admit_text(text: &str) -> Result<(), String> {
     Ok(())
 }
 
+const fn build_delim_table(include_comma: bool) -> [bool; 256] {
+    let mut table = [false; 256];
+    let mut i = 0;
+    while i < 256 {
+        table[i] = matches!(i, 0x22 | 0x7b | 0x5b | 0x7d | 0x5d) || (include_comma && i == 0x2c);
+        i += 1;
+    }
+    table
+}
+
 /// Byte lookup for JSON structural delimiters outside a string when commas do
 /// not matter (`"`, `{`, `[`, `}`, `]`).
-const DEEP_DELIM: [bool; 256] = {
-    let mut table = [false; 256];
-    table[b'"' as usize] = true;
-    table[b'{' as usize] = true;
-    table[b'[' as usize] = true;
-    table[b'}' as usize] = true;
-    table[b']' as usize] = true;
-    table
-};
+const DEEP_DELIM: [bool; 256] = build_delim_table(false);
 
 /// Byte lookup for JSON structural delimiters outside a string when commas
 /// advance followed container members (`"`, `{`, `[`, `}`, `]`, `,`).
-const SHALLOW_DELIM: [bool; 256] = {
-    let mut table = DEEP_DELIM;
-    table[b',' as usize] = true;
-    table
-};
+const SHALLOW_DELIM: [bool; 256] = build_delim_table(true);
 
 /// The depth of JSON text (§2.5), read without parsing it.
 pub(crate) fn text_depth(text: &str) -> usize {
@@ -132,7 +130,9 @@ pub(crate) fn text_depth(text: &str) -> usize {
                 pos += 1;
             }
             b'}' | b']' => {
-                depth = depth.saturating_sub(1);
+                if let Some(next) = depth.checked_sub(1) {
+                    depth = next;
+                }
                 pos += 1;
             }
             _ => {

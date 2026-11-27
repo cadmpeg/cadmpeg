@@ -13,8 +13,8 @@
 //! subtree member lists is placed by its own transform first, then by that
 //! member's placement.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use crate::{fast_map_with_capacity, FastMap};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use cadmpeg_ir::ids::OccurrenceId;
 use cadmpeg_ir::products::{Occurrence, ProductDefinition, Storage};
@@ -170,14 +170,12 @@ pub(crate) fn space<'ir>(
 ) -> Option<Space<'ir>> {
     let model = &ir.model;
     let definitions = model.product_definitions.as_slice();
-    let mut by_id: FastMap<&str, &'ir Occurrence> =
-        fast_map_with_capacity(model.occurrences.len());
+    let mut by_id: FastMap<&str, &'ir Occurrence> = fast_map_with_capacity(model.occurrences.len());
     for occurrence in &model.occurrences {
         by_id.insert(occurrence.id.as_str(), occurrence);
     }
     // The occurrences each definition owns, in its order.
-    let mut owned: FastMap<&str, Vec<&'ir Occurrence>> =
-        fast_map_with_capacity(definitions.len());
+    let mut owned: FastMap<&str, Vec<&'ir Occurrence>> = fast_map_with_capacity(definitions.len());
     for definition in definitions {
         owned.insert(
             definition.id.as_str(),

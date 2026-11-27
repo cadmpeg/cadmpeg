@@ -10,8 +10,8 @@
 //! error. A saved-cache disagreement or an unavailable comparison is a
 //! warning.
 
-use std::collections::{BTreeMap, BTreeSet};
 use crate::{fast_map_with_capacity, FastMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;

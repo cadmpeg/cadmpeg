@@ -4,9 +4,9 @@
 mod boundary;
 mod speed;
 
+use crate::FastMap;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use crate::FastMap;
 
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;

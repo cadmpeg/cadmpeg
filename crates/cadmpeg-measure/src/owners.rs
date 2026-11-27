@@ -8,9 +8,7 @@ use cadmpeg_ir::geometry::{Curve, ProceduralSurface, Surface};
 use cadmpeg_ir::ids::{BodyId, ShellId};
 use cadmpeg_ir::index::{FastBuildHasher, ModelIndex, StandardIndex};
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::topology::{
-    Body, Coedge, Edge, Face, Loop, Region, Sense, Shell, Vertex,
-};
+use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Region, Sense, Shell, Vertex};
 use cadmpeg_ir::CadIr;
 
 /// Lookups of one document's topology and carriers.

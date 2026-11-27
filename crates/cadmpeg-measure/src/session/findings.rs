@@ -24,8 +24,8 @@
 //! one [`Check::MeasurementIncomplete`] info finding states how many faces
 //! and bodies the pass did not check.
 
-use std::collections::BTreeSet;
 use crate::{fast_map, fast_map_with_capacity, FastMap};
+use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_ir::report::check::{Check, Finding, RuleName};
@@ -567,7 +567,8 @@ impl<'ir> Measurer<'ir> {
                 }
             }
         }
-        let mut edges: FastMap<&'ir str, EdgeGeometry<'ir>> = fast_map_with_capacity(needed_edges.len());
+        let mut edges: FastMap<&'ir str, EdgeGeometry<'ir>> =
+            fast_map_with_capacity(needed_edges.len());
         for edge_id in needed_edges {
             let Some(edge) = self.owners.edge(edge_id) else {
                 continue;

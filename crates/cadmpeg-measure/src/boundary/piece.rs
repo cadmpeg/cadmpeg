@@ -2,8 +2,8 @@
 //! One boundary piece: a parameter interval with its image in the carrier's
 //! parameter plane and in model space.
 
-use std::cell::{OnceCell, RefCell};
 use crate::{fast_map, FastMap};
+use std::cell::{OnceCell, RefCell};
 use std::sync::Arc;
 
 use cadmpeg_ir::features::geometry::FiniteVector3;

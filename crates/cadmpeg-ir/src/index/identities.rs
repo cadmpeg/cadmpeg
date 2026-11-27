@@ -46,7 +46,7 @@ impl Hasher for IdentityHasher {
 
     #[inline]
     fn write_usize(&mut self, value: usize) {
-        self.mix(u64::try_from(value).unwrap_or(u64::MAX));
+        self.write(&value.to_ne_bytes());
     }
 }
 

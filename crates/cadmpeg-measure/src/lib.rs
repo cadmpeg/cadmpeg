@@ -70,8 +70,7 @@ pub use budget::{
     MEASURE_PASS_WORK_FLOOR,
 };
 
-pub(crate) type FastMap<K, V> =
-    std::collections::HashMap<K, V, cadmpeg_ir::index::FastBuildHasher>;
+pub(crate) type FastMap<K, V> = std::collections::HashMap<K, V, cadmpeg_ir::index::FastBuildHasher>;
 
 #[inline]
 pub(crate) fn fast_map<K, V>() -> FastMap<K, V> {

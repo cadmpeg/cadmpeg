@@ -2,8 +2,8 @@
 //! The measurement of one face: carrier, boundary, region, area, lengths,
 //! box and orientation.
 
-use std::collections::BTreeSet;
 use crate::FastMap;
+use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_ir::source_fidelity::SourceFidelity;

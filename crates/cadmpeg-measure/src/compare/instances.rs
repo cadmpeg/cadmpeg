@@ -13,8 +13,8 @@
 //! root definition's bodies, and a body that no definition lists, are placed
 //! once at the identity.
 
-use std::collections::{BTreeMap, BTreeSet};
 use crate::{fast_map_with_capacity, FastMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::design::selection::{OccurrencePath, StepRef};
 use cadmpeg_ir::products::{Occurrence, ProductDefinition, Storage};

@@ -4,8 +4,8 @@
 
 mod volume;
 
-use std::collections::{BTreeMap, BTreeSet};
 use crate::FastMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{Body, Sense, Shell};

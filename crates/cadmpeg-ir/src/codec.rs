@@ -508,7 +508,9 @@ impl DecodeResult {
             if matches!(
                 digest,
                 Err(crate::hash::DigestError::CanonicalJson(
-                    crate::hash::finite_json::CanonicalJsonError::Resource(ref limit)
+                    crate::hash::finite_json::CanonicalJsonError::Resource(
+                        cadmpeg_core::CodecError::ResourceLimit(ref limit)
+                    )
                 )) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
             ) {
                 if let Ok(full) = crate::hash::measure_document_bounds(ir) {

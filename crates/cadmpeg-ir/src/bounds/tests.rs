@@ -221,16 +221,14 @@ fn every_unstated_field_takes_its_value_in_the_empty_document() {
 
 #[test]
 fn slice_measure_and_text_depth_agree_with_byte_scan_across_chunk_splits() {
-    let mut ir = crate::examples::unit_cube_with_history_body().unwrap();
-    ir.design.parameters.push(crate::design::Parameter {
-        id: crate::ids::ParameterId::mint("test:design:parameter#0").unwrap(),
-        scope: crate::ids::ScopeId::mint("test:design:scope#0").unwrap(),
-        name: "escape\"\\test".into(),
-        expression: Some(negations(super::MAX_EXPRESSION_DEPTH + 1)),
-        role: crate::design::parameters::ParameterRole::Free,
-        native_ref: None,
-    });
-    let mut doc = serde_json::to_value(&ir).unwrap();
+    let ir = crate::examples::unit_cube_with_history_body().unwrap();
+    let mut doc = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
+    doc["design"]["parameters"] = json!([
+        {
+            "id": "escape\"\\test",
+            "expression": cadmpeg_core::serde_erase::json::to_value(negations(super::MAX_EXPRESSION_DEPTH + 1)).unwrap(),
+        }
+    ]);
     doc["native"] = json!({
         "test": {
             "deep": [
@@ -240,7 +238,7 @@ fn slice_measure_and_text_depth_agree_with_byte_scan_across_chunk_splits() {
         }
     });
     doc["source"] = nest(MAX_DOCUMENT_DEPTH);
-    let text = serde_json::to_string_pretty(&doc).unwrap();
+    let text = cadmpeg_core::serde_erase::json::to_string_pretty(&doc).unwrap();
     let bytes = text.as_bytes();
 
     // Reference one-byte-at-a-time text_depth using Scan::byte.

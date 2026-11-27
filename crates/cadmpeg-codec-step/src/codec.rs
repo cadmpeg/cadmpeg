@@ -137,9 +137,9 @@ impl CodecBackend for StepCodec {
             }
             parse::parse_header(bytes, ctx)?
         };
-        Ok(Some(DialectLayers::of(crate::dialect::StepDialect::classify(
-            &exchange,
-        ))))
+        Ok(Some(DialectLayers::of(
+            crate::dialect::StepDialect::classify(&exchange),
+        )))
     }
 
     fn decode_impl(

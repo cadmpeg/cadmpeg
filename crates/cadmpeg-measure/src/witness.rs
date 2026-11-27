@@ -27,8 +27,8 @@
 //!   When exactly one holds beyond the errors, it is every linked face's
 //!   reading.
 
-use std::collections::{BTreeMap, BTreeSet};
 use crate::FastMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_core::decode::ResourceLimit;

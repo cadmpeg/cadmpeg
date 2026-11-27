@@ -5,14 +5,13 @@
 mod boxes;
 mod findings;
 
-use std::collections::BTreeSet;
 use crate::{fast_map, FastMap};
+use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceFailure, ResourceLimit,
 };
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::report::strictness::{code_name, Strictness};
 use cadmpeg_ir::source_fidelity::SourceFidelity;
 use cadmpeg_ir::transform::Transform;
