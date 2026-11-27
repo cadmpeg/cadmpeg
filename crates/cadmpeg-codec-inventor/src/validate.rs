@@ -2516,7 +2516,18 @@ fn validate_features(
             let matches = labels
                 .get(&(token, raw_feature.identity.record_ordinal))
                 .is_some_and(|label| {
-                    loft_index.as_ref().is_some_and(|index| {
+                    !crate::feature::loft_sweep::controls::wrapper_used_earlier(
+                        raw_feature,
+                        &data.pm_dc_features,
+                        |other| {
+                            extrusion_positions
+                                .get(&(
+                                    other.identity.segment_token.as_str(),
+                                    other.identity.record_ordinal,
+                                ))
+                                .copied()
+                        },
+                    ) && loft_index.as_ref().is_some_and(|index| {
                         index.surface_matches(
                             raw_feature,
                             label,
@@ -2538,26 +2549,11 @@ fn validate_features(
                                     .as_ref()?;
                                 Some((*parameter, value))
                             },
-                            crate::feature::loft_sweep::controls::SurfaceContext {
-                                type_at: |ordinal| {
-                                    thicken_record_types
-                                        .get(&(token, ordinal))?
-                                        .as_ref()
-                                        .copied()
-                                },
-                                wrapper_used_earlier:
-                                    crate::feature::loft_sweep::controls::wrapper_used_earlier(
-                                        raw_feature,
-                                        &data.pm_dc_features,
-                                        |other| {
-                                            extrusion_positions
-                                                .get(&(
-                                                    other.identity.segment_token.as_str(),
-                                                    other.identity.record_ordinal,
-                                                ))
-                                                .copied()
-                                        },
-                                    ),
+                            |ordinal| {
+                                thicken_record_types
+                                    .get(&(token, ordinal))?
+                                    .as_ref()
+                                    .copied()
                             },
                         )
                     })

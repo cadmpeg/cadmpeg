@@ -1008,7 +1008,7 @@ fn decode_container<'a>(
         }
         if unresolved.features != 0 {
             losses.push(InventorLossCode::FeatureOperationGraphOpen.note(format!(
-                "{} typed Inventor feature record(s) have an operation graph that is not closed: each is retained as a native record, or typed with a native profile or section selection.",
+                "{} typed Inventor feature record(s) have an operation graph that is not closed: each is retained as a native record, has no history placement, has a chamfer edge group that is unresolved, or is typed with a native profile or section selection.",
                 unresolved.features
             )));
         }
@@ -1070,6 +1070,7 @@ fn decode_container<'a>(
                 .features
                 .iter()
                 .map(|feature| feature.evaluation.definition()),
+            unresolved.surface_loft_operation_refusals,
         ));
         let partial_threads = ir
             .model
@@ -1664,6 +1665,7 @@ struct UnresolvedDesign {
     revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     edge_treatment_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     loft_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    surface_loft_operation_refusals: usize,
     split_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     thicken_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     plate_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -1753,6 +1755,7 @@ fn project_design(
         revolve_losses: features.revolve_losses,
         edge_treatment_losses: features.edge_treatment_losses,
         loft_losses: features.loft_losses,
+        surface_loft_operation_refusals: features.surface_loft_operation_refusals,
         split_losses: features.split_losses,
         thicken_losses: features.thicken_losses,
         plate_losses: features.plate_losses,

@@ -675,3 +675,25 @@ fn the_slot_6_wrapper_must_not_be_named_by_an_earlier_feature() {
     let bare = test_feature(20, 14, &[]);
     assert!(wrapper_used_earlier(&bare, &features, at));
 }
+
+#[test]
+fn a_section_with_source_index_1_is_refused_in_either_surface_form() {
+    // A sketch section with source index 1 stores source_value 1, which is
+    // also its own index: it would read as a face loop.
+    let mut sketch = surface_fixture();
+    sketch.properties[7] = edited(&sketch.properties[7], |p| p.header.source_index = 1);
+    assert_eq!(sketch.admitted_surface(), Err(NativeReason::SectionRecord));
+    // A face-loop section with source index 1 stores the same value.
+    let mut face_loop = surface_fixture();
+    face_loop.properties[6] = edited(&face_loop.properties[6], |p| {
+        p.header.source_index = 1;
+        let PmDcFeaturePropertyKind::LoftSection { source_value, .. } = &mut p.kind else {
+            panic!("section");
+        };
+        *source_value = 1;
+    });
+    assert_eq!(
+        face_loop.admitted_surface(),
+        Err(NativeReason::SectionRecord)
+    );
+}

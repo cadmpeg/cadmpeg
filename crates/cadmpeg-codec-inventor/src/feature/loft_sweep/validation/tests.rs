@@ -255,10 +255,7 @@ impl Surface {
                 let at = usize::try_from(r.record_ordinal()?).ok()?.checked_sub(9)?;
                 Some((self.parameters.get(at)?, self.values.get(at)?))
             },
-            controls::SurfaceContext {
-                type_at: |ordinal| (ordinal == typed).then_some(participant.as_str()),
-                wrapper_used_earlier: false,
-            },
+            |ordinal| (ordinal == typed).then_some(participant.as_str()),
         )
     }
 }
@@ -331,34 +328,4 @@ fn surface_match_rejects_a_face_loop_section_of_another_record() {
         allow_multi_profile_faces: None,
     });
     assert!(!f.matches(&swapped));
-}
-
-#[test]
-fn surface_match_rejects_a_loft_whose_wrapper_an_earlier_feature_names() {
-    let f = Surface::new();
-    let index = ValidationIndex::new(&f.ir, &f.raw_sketches, &[], &[], &[]);
-    let participant = type_id_string(FACE_LOOP_PARTICIPANT_TYPE);
-    let definition = f.definition(0);
-    let run = |used| {
-        index.surface_matches(
-            &f.source,
-            &f.label,
-            &definition,
-            |r| {
-                f.properties
-                    .iter()
-                    .find(|p| Some(p.identity.record_ordinal) == r.record_ordinal())
-            },
-            |r| {
-                let at = usize::try_from(r.record_ordinal()?).ok()?.checked_sub(9)?;
-                Some((f.parameters.get(at)?, f.values.get(at)?))
-            },
-            controls::SurfaceContext {
-                type_at: |ordinal| (ordinal == PARTICIPANT_ORDINAL).then_some(participant.as_str()),
-                wrapper_used_earlier: used,
-            },
-        )
-    };
-    assert!(run(false));
-    assert!(!run(true));
 }

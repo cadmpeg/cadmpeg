@@ -17,7 +17,7 @@ fn retained_features_report_unresolved_construction_controls_by_family() {
             parameters: std::collections::BTreeMap::new(),
         })
     });
-    let losses = retained_control_losses(&definitions);
+    let losses = retained_control_losses(&definitions, 0);
     assert_eq!(losses.len(), 3);
     assert_eq!(
         losses[0].code,
@@ -44,8 +44,8 @@ fn retained_features_report_unresolved_construction_controls_by_family() {
     assert!(losses[2]
         .message
         .starts_with("Retained 1 native Inventor surface loft"));
-    assert!(retained_control_losses(std::iter::empty()).is_empty());
-    assert!(retained_control_losses(&definitions[4..]).is_empty());
+    assert!(retained_control_losses(std::iter::empty(), 0).is_empty());
+    assert!(retained_control_losses(&definitions[4..], 0).is_empty());
 }
 
 fn header(version: u8) -> Vec<u8> {

@@ -234,6 +234,9 @@ pub(crate) struct FeatureProjection {
     pub(crate) revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) edge_treatment_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) loft_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Surface lofts that stay native because an earlier feature names their
+    /// result wrapper.
+    pub(crate) surface_loft_operation_refusals: usize,
     pub(crate) split_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) thicken_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) plate_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -2269,6 +2272,7 @@ pub(crate) fn project(
             revolve_losses: Vec::new(),
             edge_treatment_losses: Vec::new(),
             loft_losses: Vec::new(),
+            surface_loft_operation_refusals: 0,
             split_losses: Vec::new(),
             thicken_losses: Vec::new(),
             plate_losses: (!inventory.sheet_metal_flanges.is_empty())
@@ -2503,6 +2507,7 @@ pub(crate) fn project(
     let mut revolve_losses = Vec::new();
     let mut edge_treatment_losses = Vec::new();
     let mut loft_losses = Vec::new();
+    let mut surface_loft_operation_refusals = 0_usize;
     let mut split_losses = Vec::new();
     let mut thicken_losses = Vec::new();
     let mut plate_refusals = sheet_metal::projection::Refusals::default();
@@ -2586,37 +2591,33 @@ pub(crate) fn project(
                     }
                     FeatureFamily::Shell => project_shell(ctx, feature, label, &index),
                     FeatureFamily::Sweep | FeatureFamily::Loft | FeatureFamily::SurfaceLoft => {
-                        loft_sweep::projection::project(
-                            ctx,
-                            feature,
-                            label,
-                            &index,
-                            family,
-                            loft_sweep::controls::SurfaceContext {
-                                type_at: |ordinal| {
+                        if matches!(family, FeatureFamily::SurfaceLoft)
+                            && loft_sweep::projection::refuse_used_wrapper(
+                                feature,
+                                &inventory.features,
+                                &index.positions,
+                                &mut loft_losses,
+                            )
+                        {
+                            surface_loft_operation_refusals += 1;
+                            None
+                        } else {
+                            loft_sweep::projection::project(
+                                ctx,
+                                feature,
+                                label,
+                                &index,
+                                family,
+                                |ordinal| {
                                     inventory
                                         .record_types
                                         .get(&feature.identity.segment_token)?
                                         .get(&ordinal)?
                                         .as_deref()
                                 },
-                                wrapper_used_earlier: matches!(family, FeatureFamily::SurfaceLoft)
-                                    && loft_sweep::controls::wrapper_used_earlier(
-                                        feature,
-                                        &inventory.features,
-                                        |other| {
-                                            index
-                                                .positions
-                                                .get(&(
-                                                    other.identity.segment_token.as_str(),
-                                                    other.identity.record_ordinal,
-                                                ))
-                                                .copied()
-                                        },
-                                    ),
-                            },
-                            &mut loft_losses,
-                        )
+                                &mut loft_losses,
+                            )
+                        }
                     }
                     FeatureFamily::Revolve => {
                         project_revolve(ctx, feature, label, &index, &mut revolve_losses)
@@ -2965,6 +2966,7 @@ pub(crate) fn project(
         revolve_losses,
         edge_treatment_losses,
         loft_losses,
+        surface_loft_operation_refusals,
         split_losses,
         thicken_losses,
         plate_losses: plate_refusals

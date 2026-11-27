@@ -20,6 +20,7 @@ pub(crate) mod validation;
 
 pub(crate) fn retained_control_losses<'a>(
     definitions: impl IntoIterator<Item = &'a cadmpeg_ir::features::FeatureDefinition>,
+    surface_operation_refusals: usize,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, NativeFeatureKind};
     use slots::Family;
@@ -42,6 +43,8 @@ pub(crate) fn retained_control_losses<'a>(
             }
         }
     }
+    // A surface loft refused for its part operation has its own loss.
+    let surface_lofts = surface_lofts.saturating_sub(surface_operation_refusals);
     let mut losses = Vec::new();
     if sweeps != 0 {
         losses.push(crate::loss::InventorLossCode::FeatureSweepControlsUnresolved.note(format!(

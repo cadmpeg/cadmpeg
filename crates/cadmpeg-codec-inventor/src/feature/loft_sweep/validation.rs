@@ -66,9 +66,9 @@ impl<'a> ValidationIndex<'a> {
         definition: &FeatureDefinition,
         property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
         parameter: impl Fn(PmDcReference) -> Option<(&'a PmDcParameter, &'a ParameterValue)>,
-        surface: controls::SurfaceContext<impl Fn(u32) -> Option<&'t str>>,
+        type_at: impl Fn(u32) -> Option<&'t str>,
     ) -> bool {
-        if surface.wrapper_used_earlier || !controls::matches_surface_definition(definition) {
+        if !controls::matches_surface_definition(definition) {
             return false;
         }
         let Ok(admitted) = controls::surface_sections(source, &property, parameter) else {
@@ -119,7 +119,7 @@ impl<'a> ValidationIndex<'a> {
                 .references()
                 .iter()
                 .any(|r| r.record_ordinal() == Some(raw.identity.record_ordinal))
-            && controls::face_loop_participant(label, raw.identity.record_ordinal, surface.type_at)
+            && controls::face_loop_participant(label, raw.identity.record_ordinal, type_at)
             && self
                 .profiles
                 .whole_sketch(token, raw.identity.record_ordinal, sketch)

@@ -26,7 +26,7 @@ pub(in crate::feature) fn project<'a>(
     label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
     family: FeatureFamily,
-    surface: controls::SurfaceContext<impl Fn(u32) -> Option<&'a str>>,
+    type_at: impl Fn(u32) -> Option<&'a str>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
     let operation = match family {
@@ -45,13 +45,50 @@ pub(in crate::feature) fn project<'a>(
             }
             Err(Refusal::Codec(error)) => return Some(Err(error)),
         },
-        FeatureFamily::SurfaceLoft if surface.wrapper_used_earlier => return None,
-        FeatureFamily::SurfaceLoft => match surface_loft(source, label, index, surface.type_at) {
+        FeatureFamily::SurfaceLoft => match surface_loft(source, label, index, type_at) {
             Ok(operation) => operation,
             Err(_) => return None,
         },
         _ => return None,
     };
+    typed(ctx, source, label, index, family, operation, losses)
+}
+
+/// Whether an earlier feature names the result wrapper of a surface loft. The
+/// loft then stays native, and its note names the part-operation rule as the
+/// cause; the feature counts toward the surface-loft operation refusals.
+pub(in crate::feature) fn refuse_used_wrapper(
+    source: &PmDcFeature,
+    features: &[PmDcFeature],
+    positions: &std::collections::HashMap<(&str, u32), u64>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> bool {
+    let used = controls::wrapper_used_earlier(source, features, |other| {
+        positions
+            .get(&(
+                other.identity.segment_token.as_str(),
+                other.identity.record_ordinal,
+            ))
+            .copied()
+    });
+    if used {
+        losses.push(crate::loss::InventorLossCode::FeatureSurfaceLoftOperationAssumed.note(
+            "Surface loft retained natively: an earlier feature names its result wrapper, so the creation-or-combination rule of part-operation value 5 is open.",
+        ));
+    }
+    used
+}
+
+/// The typed feature of a loft or sweep whose operation is admitted.
+fn typed(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+    family: FeatureFamily,
+    operation: FeatureOperation,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
     let result = if matches!(family, FeatureFamily::SurfaceLoft) {
         body_result(ctx, source, family.output_slot(source), index)
     } else {

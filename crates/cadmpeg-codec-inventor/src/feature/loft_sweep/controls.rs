@@ -129,6 +129,11 @@ pub(crate) fn surface_sections<'a>(
     parameter: impl Fn(PmDcReference) -> Option<(&'a PmDcParameter, &'a ParameterValue)>,
 ) -> Result<SurfaceSections, NativeReason> {
     let [first, last] = admit(source, Form::Surface, property, parameter)?;
+    // A section whose own source index is 1 stores `source_value` 1 in both
+    // forms, so the two forms cannot be told apart: the pair is refused.
+    if first.source_index == 1 || last.source_index == 1 {
+        return Err(NativeReason::SectionRecord);
+    }
     let is_loop = |section: &AdmittedSection| section.source_value == section.source_index;
     let is_sketch = |section: &AdmittedSection| section.source_value == 1 && !is_loop(section);
     if is_sketch(&first) && is_loop(&last) {
@@ -331,14 +336,6 @@ pub(crate) fn face_loop_participant<'a>(
         return false;
     };
     type_at(*other) == Some(type_id_string(FACE_LOOP_PARTICIPANT_TYPE).as_str())
-}
-
-/// What a surface-loft check reads beyond the loft's own records: the record
-/// type of a record ordinal, and whether an earlier feature names the loft's
-/// result wrapper.
-pub(crate) struct SurfaceContext<F> {
-    pub(crate) type_at: F,
-    pub(crate) wrapper_used_earlier: bool,
 }
 
 /// Whether the surface-body wrapper in slot 6 of `source` is already named by
