@@ -97,6 +97,10 @@ impl Fixture {
     }
 
     fn admitted(&self) -> Result<[PmDcReference; 2], NativeReason> {
+        self.admitted_with_op().map(|(links, _)| links)
+    }
+
+    fn admitted_with_op(&self) -> Result<([PmDcReference; 2], BooleanOp), NativeReason> {
         sections(
             &self.source,
             |r| {
@@ -237,7 +241,7 @@ fn positional_definition() -> FeatureDefinition {
 fn validator_refuses_each_construction_value_outside_the_positional_form() {
     let f = Fixture::new();
     let definition = positional_definition();
-    assert!(matches_definition(&definition));
+    assert!(matches_definition(&definition, BooleanOp::NewBody));
     let base = json::to_value(&definition).expect("definition");
     for (field, value) in [
         ("closed", cadmpeg_core::json!(true)),
@@ -251,7 +255,7 @@ fn validator_refuses_each_construction_value_outside_the_positional_form() {
         let mut changed = base.clone();
         changed["value"]["value"][field] = value;
         let changed = json::from_value(changed).expect("changed loft");
-        assert!(!matches_definition(&changed));
+        assert!(!matches_definition(&changed, BooleanOp::NewBody));
     }
     assert!(validates(
         &f.source,
@@ -300,6 +304,7 @@ fn native_loft_refusals_pin_the_operand_result_and_scalar_losses() {
         NativeReason::ResultTopology,
         NativeReason::ResultStateFailed,
         NativeReason::ResultStateBounded,
+        NativeReason::ResultJoin,
     ] {
         assert_eq!(
             reason.note().code,
@@ -314,6 +319,10 @@ fn native_loft_refusals_pin_the_operand_result_and_scalar_losses() {
         (
             NativeReason::ResultStateBounded,
             "history state of the loft passed the local work cap of state views",
+        ),
+        (
+            NativeReason::ResultJoin,
+            "joined result body does not merge with a body of the preceding history state",
         ),
     ] {
         assert_eq!(
@@ -448,6 +457,66 @@ fn validator_checks_vector_lengths_controls_sections_and_both_scalars() {
     }
 }
 
+#[test]
+fn part_operation_one_is_a_new_body_and_three_is_a_join() {
+    let mut f = Fixture::new();
+    assert_eq!(
+        f.admitted_with_op().map(|(_, op)| op),
+        Ok(BooleanOp::NewBody)
+    );
+    for (value, expected) in [
+        (3, Ok(BooleanOp::Join)),
+        (2, Err(NativeReason::Slot(1))),
+        (4, Err(NativeReason::Slot(1))),
+        (0, Err(NativeReason::Slot(1))),
+    ] {
+        f.properties[1] = edited(&f.properties[1], |p| match &mut p.kind {
+            PmDcFeaturePropertyKind::Enumeration { value: slot, .. } => *slot = value,
+            _ => panic!("operation"),
+        });
+        assert_eq!(f.admitted_with_op().map(|(_, op)| op), expected);
+    }
+    // Another enumeration type is not the part operation.
+    f.properties[1] = edited(&f.properties[1], |p| match &mut p.kind {
+        PmDcFeaturePropertyKind::Enumeration {
+            type_value, value, ..
+        } => {
+            *type_value = 4;
+            *value = 3;
+        }
+        _ => panic!("operation"),
+    });
+    assert_eq!(f.admitted_with_op(), Err(NativeReason::Slot(1)));
+}
+
+#[test]
+fn the_validator_requires_the_definition_operation_to_equal_the_source_operation() {
+    let mut f = Fixture::new();
+    f.properties[1] = edited(&f.properties[1], |p| match &mut p.kind {
+        PmDcFeaturePropertyKind::Enumeration { value, .. } => *value = 3,
+        _ => panic!("operation"),
+    });
+    let new_body = positional_definition();
+    let mut joined = json::to_value(&new_body).expect("definition");
+    joined["value"]["value"]["op"] = cadmpeg_core::json!("join");
+    let joined: FeatureDefinition = json::from_value(joined).expect("joined loft");
+    assert!(matches_definition(&joined, BooleanOp::Join));
+    assert!(!matches_definition(&joined, BooleanOp::NewBody));
+    let check = |definition: &FeatureDefinition| {
+        validates(
+            &f.source,
+            definition,
+            |r| f.properties.get(usize::try_from(r.record_ordinal()?).ok()?),
+            |r| {
+                let i = usize::try_from(r.record_ordinal()?).ok()?.checked_sub(9)?;
+                Some((f.parameters.get(i)?, f.values.get(i)?))
+            },
+        )
+    };
+    assert!(check(&joined));
+    assert!(!check(&new_body));
+}
+
 /// A surface loft fixture: slot 6 holds the result wrapper, slot 13 is null,
 /// the first section is the face loop (its `source_value` is its own source
 /// index), and the second section selects a sketch wire.
@@ -567,7 +636,7 @@ fn surface_definition_is_the_unguided_new_body_sheet_loft() {
     base["value"]["value"]["solid"] = cadmpeg_core::json!(false);
     let surface: FeatureDefinition = json::from_value(base.clone()).expect("surface loft");
     assert!(matches_surface_definition(&surface));
-    assert!(!matches_definition(&surface));
+    assert!(!matches_definition(&surface, BooleanOp::NewBody));
     for (field, value) in [
         ("closed", cadmpeg_core::json!(true)),
         ("ruled", cadmpeg_core::json!(true)),

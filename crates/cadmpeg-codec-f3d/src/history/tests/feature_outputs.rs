@@ -1937,6 +1937,7 @@ fn feature_output_equal_endpoints_preserve_an_existing_output_proof() {
 
 mod deleted_bodies;
 mod edge_midpoints;
+mod pattern_copies;
 mod saved_edges;
 mod split_plane;
 mod stored_results;
