@@ -93,8 +93,9 @@ pub(super) fn remove(topology: &mut Topology, drop: &BTreeSet<String>) {
 impl StateDelta {
     /// The delta that takes `base` to `state`, both whole record sets in one
     /// id space (§2.2): each record of `state` that `base` lacks or holds
-    /// with other content, and a reference to each record of `base` that
-    /// `state` lacks. The maps stay empty.
+    /// with other content, the carrier in `state` of each procedural record
+    /// among them, and a reference to each record of `base` that `state`
+    /// lacks. The maps stay empty.
     #[must_use]
     pub fn between(base: &Topology, state: &Topology) -> Self {
         let mut delta = Self::default();
@@ -116,6 +117,29 @@ impl StateDelta {
             )*};
         }
         topology_arenas!(diff);
+        // The wire writes a procedural record with the carrier that owns it.
+        macro_rules! carriers {
+            ($($carriers:ident $procedural:ident),*) => {$(
+                let constructions: BTreeSet<&str> = delta.records.$procedural.iter()
+                    .map(ArenaRecord::record_identity)
+                    .collect();
+                if !constructions.is_empty() {
+                    let changed: BTreeSet<&str> = delta.records.$carriers.iter()
+                        .map(ArenaRecord::record_identity)
+                        .collect();
+                    let carriers = state.$carriers.iter()
+                        .filter(|carrier| {
+                            changed.contains(carrier.record_identity())
+                                || carrier.geometry.procedural_construction()
+                                    .is_some_and(|construction| constructions.contains(construction.as_str()))
+                        })
+                        .cloned()
+                        .collect();
+                    delta.records.$carriers = carriers;
+                }
+            )*};
+        }
+        carriers!(curves procedural_curves, surfaces procedural_surfaces);
         delta
     }
 }

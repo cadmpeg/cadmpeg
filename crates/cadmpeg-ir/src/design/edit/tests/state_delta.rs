@@ -66,3 +66,38 @@ fn a_delta_over_its_base_resolves_to_the_state() {
     held.sort_by(|a, b| a.id.cmp(&b.id));
     assert_eq!(held, state.bodies);
 }
+
+/// A procedural record is written with the carrier that owns it, so a delta
+/// that holds a changed procedural curve also holds its unchanged carrier.
+#[test]
+fn a_delta_holds_the_carrier_of_each_procedural_record_it_holds() {
+    use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+    use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry};
+    use crate::ids::{CurveId, ProceduralCurveId};
+
+    let carrier = |key: u32| Curve {
+        id: CurveId::mint(format!("test:model:curve#{key}")).expect("curve id"),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+        parameter_range: None,
+        source_object: None,
+        native_ref: None,
+    };
+    let mut base = crate::document::Topology {
+        curves: vec![carrier(1), carrier(2)],
+        ..crate::document::Topology::default()
+    };
+    let mut state = base.clone();
+    let construction = ProceduralCurve::new(
+        ProceduralCurveId::mint("test:model:construction#1").expect("construction id"),
+        ProceduralCurveDefinition::Exact { cache: None },
+    );
+    state
+        .add_procedural_curves(vec![(carrier(1).id, construction)])
+        .expect("resource")
+        .expect("owner");
+    base.curves.clone_from(&state.curves);
+    let delta = StateDelta::between(&base, &state);
+    assert_eq!(delta.records.procedural_curves, state.procedural_curves);
+    assert_eq!(delta.records.curves, vec![state.curves[0].clone()]);
+    serde_json::to_string(&delta).expect("the delta has a wire form");
+}
