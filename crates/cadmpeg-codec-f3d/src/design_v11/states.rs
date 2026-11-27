@@ -1032,8 +1032,7 @@ impl<'r> Reader<'r, '_> {
             .ok_or_else(|| {
                 CodecError::malformed("F3D model blobs with a history exceed the state work range")
             })?;
-        let budget =
-            stored_states::Budget::new(self.ctx, stored_states::MAX_STATE_WORK.max(scaled));
+        let budget = stored_states::Budget::new(stored_states::MAX_STATE_WORK.max(scaled));
         let mut out = Vec::with_capacity(histories.len());
         for (index, history) in histories.iter().enumerate() {
             let head = heads[index].map(|state| Want {

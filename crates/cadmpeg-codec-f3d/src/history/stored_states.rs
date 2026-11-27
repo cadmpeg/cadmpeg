@@ -9,9 +9,8 @@
 //! does not hold that are no sketch region, and the consumed bodies that
 //! the timeline position of the state keeps (§5.5). A state whose table
 //! takes the revision of a slot from the board of a later state that updates
-//! that slot twice is not read. The record tables of the stored states of one
-//! decode retain at most half of the retained-byte allowance left when the
-//! walk starts; a table that would pass it is not read.
+//! that slot twice is not read. A record table whose estimated retained
+//! bytes do not fit the retained-byte allowance left is not read.
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -40,41 +39,36 @@ pub(crate) const MAX_STATE_WORK: usize = 1 << 22;
 pub(crate) const STATE_WORK_PER_BYTE: usize = 4;
 
 /// What the stored states of one decode may spend: record-table entries,
-/// and retained bytes. Half the retained-byte allowance left when the walk
-/// starts is theirs; the other half covers the native records that their
-/// evaluations carry, which the decode charges again when it attaches them.
+/// and the retained bytes that the session allows.
 pub(crate) struct Budget {
     work: WorkBudget,
-    remaining: Cell<u64>,
     /// The most retained bytes that one record-table entry of a decoded
     /// state has cost.
     rate: Cell<u64>,
 }
 
 impl Budget {
-    /// A budget of `work` table entries and half the retained allowance.
-    pub(crate) fn new(ctx: &DecodeContext<'_>, work: usize) -> Self {
+    /// A budget of `work` table entries.
+    pub(crate) fn new(work: usize) -> Self {
         Self {
             work: WorkBudget::new(work),
-            remaining: Cell::new(ctx.retained_allowance() / 2),
             rate: Cell::new(0),
         }
     }
 
-    /// Whether a record table of `entries` entries fits what remains, at
-    /// the highest cost per entry seen.
+    /// Whether a record table of `entries` entries fits the retained-byte
+    /// allowance left, at the highest cost per entry seen.
     fn admits(&self, ctx: &DecodeContext<'_>, entries: usize) -> bool {
         let estimate = self.rate.get().saturating_mul(u64_from_index(entries));
-        ctx.observe_retained_allowance(self.remaining.get(), estimate);
-        estimate < self.remaining.get()
+        let remaining = ctx.retained_allowance();
+        ctx.observe_retained_allowance(remaining, estimate);
+        estimate < remaining
     }
 
-    /// Takes from what remains the bytes retained since `before`, the
+    /// Takes into the cost per entry the bytes retained since `before`, the
     /// available retained bytes before a decode of `entries` table entries.
     fn spend(&self, ctx: &DecodeContext<'_>, before: u64, entries: usize) {
         let cost = before.saturating_sub(ctx.retained_bytes_available());
-        self.remaining
-            .set(self.remaining.get().saturating_sub(cost));
         if let Some(rate) = cost.checked_div(u64_from_index(entries)) {
             self.rate.set(self.rate.get().max(rate.saturating_add(1)));
         }
@@ -383,7 +377,7 @@ impl StateDecoder<'_, '_> {
     ) -> Result<Result<Brep, String>, CodecError> {
         if !self.budget.admits(self.ctx, versions.len()) {
             return Ok(Err(
-                "the retained-byte allowance of the stored states is reached".to_owned(),
+                "its record table does not fit the retained-byte allowance left".to_owned(),
             ));
         }
         if !self.budget.work.charge_by(versions.len()) {

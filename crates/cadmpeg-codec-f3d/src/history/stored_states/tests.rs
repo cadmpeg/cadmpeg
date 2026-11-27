@@ -111,11 +111,11 @@ fn read_head(
 }
 
 #[test]
-fn a_table_past_the_retained_share_of_the_stored_states_is_not_read_and_the_decode_goes_on() {
+fn a_table_past_the_retained_allowance_left_is_not_read_and_the_decode_goes_on() {
     let bytes = crate::history::tests::budgets::geometry_history(true);
     let head_cost = crate::test_support::with_decode_policy(&DecodePolicy::desktop(), |ctx| {
         let before = ctx.retained_bytes_available();
-        let budget = Budget::new(ctx, MAX_STATE_WORK);
+        let budget = Budget::new(MAX_STATE_WORK);
         assert!(read_head(ctx, &bytes, &budget).expect("no ceiling").is_ok());
         before - ctx.retained_bytes_available()
     });
@@ -123,13 +123,32 @@ fn a_table_past_the_retained_share_of_the_stored_states_is_not_read_and_the_deco
     let mut policy = DecodePolicy::desktop();
     policy.limits.max_retained_bytes = 2 * head_cost - 1;
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        let budget = Budget::new(ctx, MAX_STATE_WORK);
+        let budget = Budget::new(MAX_STATE_WORK);
         assert!(read_head(ctx, &bytes, &budget).expect("no ceiling").is_ok());
         let second = read_head(ctx, &bytes, &budget).expect("no ceiling");
         assert_eq!(
             second.err().as_deref(),
-            Some("its head is not read (the retained-byte allowance of the stored states is reached)")
+            Some("its head is not read (its record table does not fit the retained-byte allowance left)")
         );
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}
+
+#[test]
+fn a_table_that_fits_the_retained_allowance_left_is_read() {
+    let bytes = crate::history::tests::budgets::geometry_history(true);
+    let head_cost = crate::test_support::with_decode_policy(&DecodePolicy::desktop(), |ctx| {
+        let before = ctx.retained_bytes_available();
+        let budget = Budget::new(MAX_STATE_WORK);
+        assert!(read_head(ctx, &bytes, &budget).expect("no ceiling").is_ok());
+        before - ctx.retained_bytes_available()
+    });
+    let mut policy = DecodePolicy::desktop();
+    policy.limits.max_retained_bytes = 3 * head_cost;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let budget = Budget::new(MAX_STATE_WORK);
+        assert!(read_head(ctx, &bytes, &budget).expect("no ceiling").is_ok());
+        assert!(read_head(ctx, &bytes, &budget).expect("no ceiling").is_ok());
         assert_eq!(ctx.resource_refusal(), None);
     });
 }
@@ -148,7 +167,7 @@ fn a_want_of_the_head_state_that_keeps_consumed_bodies_is_read() {
         consumed: BTreeSet::from([1]),
     };
     crate::test_support::with_decode_context(|ctx| {
-        let budget = Budget::new(ctx, MAX_STATE_WORK);
+        let budget = Budget::new(MAX_STATE_WORK);
         let read = super::read(
             ctx,
             &blob,
