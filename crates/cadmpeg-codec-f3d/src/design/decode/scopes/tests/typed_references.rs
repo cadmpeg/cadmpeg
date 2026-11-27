@@ -3,6 +3,7 @@
 
 use crate::test_support::lp_utf16;
 use crate::test_support::typed_reference_scopes::{parse, typed_reference, typed_scope_frame};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn typed_scope_reads_the_wide_reference_table_and_196_byte_tail() {
@@ -102,13 +103,13 @@ fn typed_extrude_prologue_reads_operation_at_22_and_wide_extent_slots() {
     let evidence = prologue.opaque_distance_word().unwrap();
     assert_eq!(evidence.value.get(), word);
     assert_eq!(evidence.byte_offset, u64::try_from(option_offset).unwrap());
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(prologue).unwrap();
+    let mut wire = json::to_value(prologue).unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<DesignExtrudePrologue>(wire.clone()).unwrap(),
+        json::from_value::<DesignExtrudePrologue>(wire.clone()).unwrap(),
         prologue
     );
-    wire["opaque_distance_word"]["value"] = serde_json::json!(0);
-    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignExtrudePrologue>(wire).is_err());
+    wire["opaque_distance_word"]["value"] = cadmpeg_core::json!(0);
+    assert!(json::from_value::<DesignExtrudePrologue>(wire).is_err());
 
     for (offset, value) in [(26, 2), (30, 1), (35, 0), (36, 1), (option_offset + 4, 1)] {
         let mut different = opaque.clone();

@@ -57,6 +57,7 @@ use crate::history_records::AsmHistoricalTransition;
 use crate::history_records::AsmHistoryRecord;
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::historical_context::AsmFaceBoundary;
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 #[test]
@@ -1847,7 +1848,7 @@ fn edge_recipe_scope_binding_with_peer(
         .iter()
         .enumerate()
         .map(|(index, _)| {
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": format!("{stream}:design-edge-operand#{}", index + 20),
                 "scope_record_index": scope.record_index,
                 "scope_reference_ordinal": index,

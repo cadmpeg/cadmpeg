@@ -11,9 +11,11 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 use cadmpeg_ir::subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdPlaneFrame,
-    SubdRadialMapSelector, SubdRadialSymmetryMap, SubdScheme, SubdSecondaryGrip, SubdSurface,
-    SubdSymmetry, SubdSymmetryKind, SubdUserKnot, SubdVertex, SubdVertexGripLayout, SubdVertexTag,
+    SubdRadialMapSelector, SubdRadialSymmetry, SubdRadialSymmetryMap, SubdScheme,
+    SubdSecondaryGrip, SubdSurface, SubdSymmetry, SubdSymmetryKind, SubdUserKnot, SubdVertex,
+    SubdVertexGripLayout, SubdVertexTag,
 };
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::container::ContainerScan;
@@ -144,6 +146,7 @@ enum GripVertexMarker {
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<(Vec<SubdSurface>, Vec<cadmpeg_ir::report::loss::LossNote>), CodecError> {
     let Some(folder) = scan.design_asset_folder() else {
         return Ok((Vec::new(), Vec::new()));
@@ -175,8 +178,10 @@ pub(crate) fn decode(
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
-                let message = format!("T-spline control cage not decoded: {error}");
-                losses.push(F3dLossCode::TsplineCageUndecoded.note(message));
+                let note = F3dLossCode::TsplineCageUndecoded
+                    .note(format!("T-spline control cage not decoded: {error}"));
+                losses.push(note);
+                given_up.extend(scan.give_up_entry(ctx, &entry.name, error)?);
             }
         }
     }
@@ -481,19 +486,10 @@ fn parse_radial_pairs<'a>(
     if values.len() % 2 != 0 {
         return Err(malformed(name, "radial symmetry map has an unpaired index"));
     }
-    let mut sources = BTreeSet::new();
-    let mut pairs = Vec::new();
-    for pair in values.chunks_exact(2) {
-        if sources.contains(&pair[0]) {
-            return Err(malformed(
-                name,
-                "radial symmetry map repeats a source index",
-            ));
-        }
-        sources.insert(pair[0]);
-        pairs.push([pair[0], pair[1]]);
-    }
-    Ok(pairs)
+    Ok(values
+        .chunks_exact(2)
+        .map(|pair| [pair[0], pair[1]])
+        .collect())
 }
 
 fn validate_symmetry_map(
@@ -1517,8 +1513,11 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 let projected = project_radial_maps(&maps, &face_ir, &edge_ir, &vertex_ir);
                 unresolved_radial_pairs += projected.unresolved;
                 (
-                    SubdSymmetryKind::radial_from_parts(segments, sweep, maps)
-                        .map_err(|error| malformed(name, error))?,
+                    SubdSymmetryKind::Radial(SubdRadialSymmetry {
+                        segments,
+                        sweep,
+                        radial_maps: maps,
+                    }),
                     projected.face,
                     projected.edge,
                     projected.vertex,
@@ -1734,6 +1733,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
 mod tests {
     mod user_knots;
 
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::subd;
     use cadmpeg_test_support::wire;
 
@@ -2275,7 +2275,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             pairs: vec![pair],
         })
         .collect();
-        let synthetic = cadmpeg_core::serde_erase::json::to_string(&[RadialFixture {
+        let synthetic = json::to_string(&[RadialFixture {
             source,
             face_pairs: vec![[0, 0]],
             edge_pairs: vec![[0, 1]],

@@ -2,6 +2,7 @@
 
 use super::{validate, Entry, Value};
 use cadmpeg_core::decode::View;
+use cadmpeg_core::serde_erase::json;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -23,11 +24,8 @@ fn tagged_entries_exhaust_their_variable_width_table() -> TestResult {
             (tag, &entry.value),
             (1, Value::Identifier1(_)) | (2, Value::Identifier2(_)) | (3, Value::Pair3(_))
         ));
-        let wire = cadmpeg_core::serde_erase::json::to_value(&entry)?;
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<Entry>(wire)?,
-            entry
-        );
+        let wire = json::to_value(&entry)?;
+        assert_eq!(json::from_value::<Entry>(wire)?, entry);
     }
     assert!(view.is_empty());
     Ok(())
@@ -70,14 +68,14 @@ fn fixed_entry_length_retains_untagged_tables() {
 fn native_entries_reject_unknown_forms_and_wrong_identifier_widths() {
     for form in ["identifier1", "identifier2"] {
         for value in ["", "00", "zz", "0000000000000000000000000000000000ff"] {
-            let wire = serde_json::json!({"key": 7, "value": {"form": form, "value": value}});
-            assert!(cadmpeg_core::serde_erase::json::from_value::<Entry>(wire).is_err());
+            let wire = cadmpeg_core::json!({"key": 7, "value": {"form": form, "value": value}});
+            assert!(json::from_value::<Entry>(wire).is_err());
         }
     }
     for wire in [
-        serde_json::json!({"key": 7, "value": {"form": "unknown", "value": [0, 0]}}),
-        serde_json::json!({"key": 7, "value": {"form": "pair3", "value": [0]}}),
+        cadmpeg_core::json!({"key": 7, "value": {"form": "unknown", "value": [0, 0]}}),
+        cadmpeg_core::json!({"key": 7, "value": {"form": "pair3", "value": [0]}}),
     ] {
-        assert!(cadmpeg_core::serde_erase::json::from_value::<Entry>(wire).is_err());
+        assert!(json::from_value::<Entry>(wire).is_err());
     }
 }

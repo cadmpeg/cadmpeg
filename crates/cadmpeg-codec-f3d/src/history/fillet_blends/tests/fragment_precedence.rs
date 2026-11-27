@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use cadmpeg_core::serde_erase::json;
 
 fn fragment_blend_operand(
     input: &AsmHistoricalTopology,
@@ -13,7 +14,7 @@ fn fragment_blend_operand(
         0, 0, -1,
     ];
     let mut operand: crate::records::topology::edge_identity::DesignEdgeOperand =
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "f3d:Design/BulkStream.dat:edge-operand#7", "scope_record_index":42,
             "scope_reference_ordinal":0, "record_index":7, "byte_offset":0, "class_tag":"297",
             "paired_byte_offset":16, "paired_class_tag":"259", "recipe_record_index":10,
@@ -44,7 +45,7 @@ fn fragment_blend_operand(
     )
     .collect();
     operand.recipe_reference_contexts = [vec![10,13],vec![11]].into_iter().enumerate().map(|(ordinal,faces)| {
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "reference_ordinal":ordinal,"result_faces":[],"result_shared_edge_slots":[],
             "preceding_faces":faces.iter().map(|f| format!("f3d:brep:entity#{f}")).collect::<Vec<_>>(),
             "preceding_face_boundary_ids":faces.iter().map(|f| format!("boundary-{f}")).collect::<Vec<_>>(),

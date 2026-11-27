@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
 use crate::examples::unit_cube;
@@ -29,6 +30,8 @@ fn historical_vertex_selection_requires_input_state_membership() {
         .feature_input_topologies
         .push(FeatureInputTopology {
             face_owners: Vec::new(),
+            face_geometry: Vec::new(),
+            body_writers: Vec::new(),
             id: state_id.clone(),
             input_of: feature_id.clone(),
             bodies: crate::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
@@ -173,7 +176,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             allow_multi_profile_faces: None,
         }),
     ];
-    let json = cadmpeg_core::serde_erase::json::to_string(&definitions).unwrap();
+    let json = json::to_string(&definitions).unwrap();
     assert_eq!(
         serde_json::from_str::<[FeatureDefinition; 2]>(&json).unwrap(),
         definitions
@@ -1253,7 +1256,7 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         .expect("validate the neutral model")
         .is_ok());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&ir.model.assets[0]).unwrap()["content"]["data"],
+        json::to_value(&ir.model.assets[0]).unwrap()["content"]["data"],
         "AQID"
     );
 
@@ -1343,6 +1346,8 @@ fn input_edge_geometry_names_its_own_state_members_once() {
         .feature_input_topologies
         .push(FeatureInputTopology {
             face_owners: Vec::new(),
+            face_geometry: Vec::new(),
+            body_writers: Vec::new(),
             id: FeatureInputTopologyId::mint("test:model:feature-input#fillet").unwrap(),
             input_of: feature_id.clone(),
             bodies: DistinctMembers::default(),
@@ -1413,6 +1418,8 @@ fn input_face_owners_name_their_own_state_members_once() {
         .feature_input_topologies
         .push(FeatureInputTopology {
             face_owners: vec![owner(&face, &body)],
+            face_geometry: Vec::new(),
+            body_writers: Vec::new(),
             id: FeatureInputTopologyId::mint("test:model:feature-input#offset").unwrap(),
             input_of: feature_id.clone(),
             bodies: DistinctMembers::try_from(vec![body.clone(), other.clone()]).unwrap(),
@@ -1462,6 +1469,85 @@ fn input_face_owners_name_their_own_state_members_once() {
         HistoricalFaceId::mint("test:model:historical-face#missing").expect("valid identity");
     ir.model.feature_input_topologies[0].face_owners = vec![owner(&missing_face, &missing_body)];
     assert_eq!(state_findings(&ir), 2);
+}
+
+#[test]
+fn input_face_geometry_names_its_own_state_faces_once() {
+    use crate::features::evaluation::{
+        FeatureInputTopology, HistoricalFaceGeometry, HistoricalFaceSurface,
+    };
+    use crate::features::selections::DistinctMembers;
+    use crate::features::{Feature, FeatureDefinition, FeatureId};
+    use crate::ids::{FeatureInputTopologyId, HistoricalFaceId};
+
+    let feature_id = FeatureId::mint("test:model:feature#offset").expect("identity grammar");
+    let face = HistoricalFaceId::mint("test:model:historical-face#1").expect("valid identity");
+    let geometry = |face: &HistoricalFaceId| HistoricalFaceGeometry {
+        face: face.clone(),
+        surface: HistoricalFaceSurface::Plane(
+            crate::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
+        reversed: true,
+    };
+    let mut ir = CadIr::empty();
+    ir.model
+        .feature_input_topologies
+        .push(FeatureInputTopology {
+            face_owners: Vec::new(),
+            face_geometry: vec![geometry(&face)],
+            body_writers: Vec::new(),
+            id: FeatureInputTopologyId::mint("test:model:feature-input#offset").unwrap(),
+            input_of: feature_id.clone(),
+            bodies: DistinctMembers::default(),
+            faces: DistinctMembers::try_from(vec![face.clone()]).unwrap(),
+            edges: DistinctMembers::default(),
+            vertices: DistinctMembers::default(),
+            edge_geometry: Vec::new(),
+            native_ref: None,
+        });
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: feature_id,
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: crate::features::FeatureContent::default(),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(crate::features::FeatureOperation::Native {
+                kind: "OffsetFaces".into(),
+                parameters: BTreeMap::new(),
+            }),
+        ),
+        native_ref: None,
+    });
+    let state_findings = |ir: &CadIr| {
+        validate_neutral(ir, Vec::new())
+            .expect("validate the neutral model")
+            .findings
+            .into_iter()
+            .filter(|finding| finding.entity.as_deref() == Some("test:model:feature-input#offset"))
+            .count()
+    };
+    assert_eq!(state_findings(&ir), 0);
+
+    ir.model.feature_input_topologies[0]
+        .face_geometry
+        .push(geometry(&face));
+    assert_eq!(state_findings(&ir), 1);
+
+    let missing =
+        HistoricalFaceId::mint("test:model:historical-face#missing").expect("valid identity");
+    ir.model.feature_input_topologies[0].face_geometry = vec![geometry(&missing)];
+    assert_eq!(state_findings(&ir), 1);
 }
 
 #[test]
@@ -1520,11 +1606,10 @@ fn revolve_validator_limits_fixed_angles_and_two_side_sum() {
         ),
     ] {
         let mut ir = CadIr::empty();
-        let mut construction: RevolveConstruction =
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-                "kind": "unresolved", "value": {"kind": "profile"}
-            }))
-            .unwrap();
+        let mut construction: RevolveConstruction = json::from_value(cadmpeg_core::json!({
+            "kind": "unresolved", "value": {"kind": "profile"}
+        }))
+        .unwrap();
         if let RevolveConstruction::Unresolved(PartialRevolveConstruction::Profile {
             extent: target,
             ..
@@ -1561,4 +1646,190 @@ fn revolve_validator_limits_fixed_angles_and_two_side_sum() {
             !valid
         );
     }
+}
+
+#[test]
+fn input_body_writers_name_state_bodies_once_and_model_features() {
+    use crate::features::evaluation::{FeatureInputTopology, HistoricalBodyWriter};
+    use crate::features::selections::DistinctMembers;
+    use crate::features::{Feature, FeatureDefinition, FeatureId};
+    use crate::ids::{FeatureInputTopologyId, HistoricalBodyId};
+
+    let feature = |id: &str, ordinal| Feature {
+        product_definition: None,
+        id: FeatureId::mint(id).expect("identity grammar"),
+        ordinal,
+        name: None,
+        suppressed: None,
+        dependencies: DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: crate::features::FeatureContent::default(),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(crate::features::FeatureOperation::Native {
+                kind: "Shell".into(),
+                parameters: BTreeMap::new(),
+            }),
+        ),
+        native_ref: None,
+    };
+    let body = HistoricalBodyId::mint("test:model:historical-body#1").expect("valid identity");
+    let writer = |body: &HistoricalBodyId, feature: &str| HistoricalBodyWriter {
+        body: body.clone(),
+        writer: FeatureId::mint(feature).expect("identity grammar"),
+    };
+    let mut ir = CadIr::empty();
+    ir.model
+        .features
+        .push(feature("test:model:feature#extrude", 0));
+    ir.model
+        .features
+        .push(feature("test:model:feature#shell", 1));
+    ir.model
+        .feature_input_topologies
+        .push(FeatureInputTopology {
+            face_owners: Vec::new(),
+            face_geometry: Vec::new(),
+            body_writers: vec![writer(&body, "test:model:feature#extrude")],
+            id: FeatureInputTopologyId::mint("test:model:feature-input#shell").unwrap(),
+            input_of: FeatureId::mint("test:model:feature#shell").unwrap(),
+            bodies: DistinctMembers::try_from(vec![body.clone()]).unwrap(),
+            faces: DistinctMembers::default(),
+            edges: DistinctMembers::default(),
+            vertices: DistinctMembers::default(),
+            edge_geometry: Vec::new(),
+            native_ref: None,
+        });
+    let state_findings = |ir: &CadIr| {
+        validate_neutral(ir, Vec::new())
+            .expect("validate the neutral model")
+            .findings
+            .into_iter()
+            .filter(|finding| finding.entity.as_deref() == Some("test:model:feature-input#shell"))
+            .count()
+    };
+    assert_eq!(state_findings(&ir), 0);
+
+    ir.model.feature_input_topologies[0]
+        .body_writers
+        .push(writer(&body, "test:model:feature#extrude"));
+    assert_eq!(state_findings(&ir), 1);
+
+    ir.model.feature_input_topologies[0].body_writers =
+        vec![writer(&body, "test:model:feature#absent")];
+    assert_eq!(state_findings(&ir), 1);
+
+    let missing = HistoricalBodyId::mint("test:model:historical-body#missing").unwrap();
+    ir.model.feature_input_topologies[0].body_writers =
+        vec![writer(&missing, "test:model:feature#extrude")];
+    assert_eq!(state_findings(&ir), 1);
+}
+
+#[test]
+fn occurrence_body_selection_must_name_an_occurrence_and_bodies() {
+    use crate::features::selections::BodySelection;
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+    use crate::ids::{BodyId, OccurrenceId};
+
+    const OCCURRENCE: &str = "synthetic:test:occurrence#placed";
+    const MISSING_BODY: &str = "synthetic:test:body#missing";
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let body = ir.geometry.bodies[0].id.clone();
+    let selection = |bodies: Vec<BodyId>| BodySelection::Occurrence {
+        occurrence: OccurrenceId::mint(OCCURRENCE).expect("identity grammar"),
+        occurrence_path: Vec::new(),
+        bodies: bodies.try_into().unwrap(),
+        native: "synthetic:native-selection#0".into(),
+    };
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: FeatureId::mint("synthetic:test:feature#consumer").expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        dependencies: crate::features::selections::DistinctMembers::default(),
+        source_properties: BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: crate::features::FeatureContent::default(),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+                bodies: selection(vec![body.clone()]),
+            }),
+        ),
+        native_ref: None,
+    });
+    let messages = |ir: &CadIr| {
+        validate_neutral(ir, Vec::new())
+            .expect("validate the neutral model")
+            .findings
+            .into_iter()
+            .map(|finding| finding.message)
+            .collect::<Vec<_>>()
+    };
+    let missing_occurrence = format!("references missing body-selection occurrence `{OCCURRENCE}`");
+    let missing_body = format!("references missing selected body `{MISSING_BODY}`");
+    assert!(messages(&ir).contains(&missing_occurrence));
+
+    let mut placed = crate::products::Occurrence::new(
+        OccurrenceId::mint(OCCURRENCE).expect("identity grammar"),
+        ir.model.product_definitions[0].id.clone(),
+        None,
+    );
+    placed.native_ref = None;
+    ir.model.occurrences.push(placed);
+    let found = messages(&ir);
+    assert!(!found.contains(&missing_occurrence), "{found:?}");
+    assert!(!found.contains(&missing_body), "{found:?}");
+
+    ir.model.features[0].evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::BaseFeature { bodies }) = definition
+        else {
+            panic!("test consumer must retain its body selection");
+        };
+        *bodies = selection(vec![
+            body.clone(),
+            BodyId::mint(MISSING_BODY).expect("identity grammar"),
+        ]);
+    });
+    assert!(messages(&ir).contains(&missing_body));
+
+    let outside = |ir: &CadIr| {
+        messages(ir)
+            .iter()
+            .any(|message| message.contains("outside its prototype"))
+    };
+    ir.model.features[0].evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::BaseFeature { bodies }) = definition
+        else {
+            panic!("test consumer must retain its body selection");
+        };
+        *bodies = selection(vec![body.clone()]);
+    });
+    assert!(ir.model.product_definitions[0].bodies.contains(&body));
+    assert!(!outside(&ir));
+
+    let mut empty = ir.model.product_definitions[0].clone();
+    empty.id = crate::ids::ProductDefinitionId::mint("synthetic:test:definition#empty")
+        .expect("identity grammar");
+    empty.bodies.clear();
+    empty.occurrences.clear();
+    ir.model.occurrences[0].prototype = empty.id.clone();
+    ir.model.product_definitions.push(empty);
+    assert!(outside(&ir));
+
+    ir.model.occurrences[0].prototype = ir.model.product_definitions[0].id.clone();
+    ir.model.features[0].evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+            bodies: BodySelection::Occurrence {
+                occurrence_path, ..
+            },
+        }) = definition
+        else {
+            panic!("test consumer must retain its occurrence selection");
+        };
+        occurrence_path.push("nested".into());
+    });
+    assert!(outside(&ir));
 }

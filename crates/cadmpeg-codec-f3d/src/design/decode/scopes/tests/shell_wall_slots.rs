@@ -7,6 +7,7 @@ use crate::records::feature::direct_face::{
 };
 use crate::records::references::DesignClassTag;
 use crate::test_support::{indexed_header, lp_utf16};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::report::loss::LossNote;
 
 const SHELL_TYPE_GUID: &str = "E8063467-BC05-4688-8196-AECB90F0EFEE";
@@ -224,30 +225,29 @@ fn unequal_decoded_wall_slots_project_without_a_symmetric_thickness() {
         panic!("expected a Shell scope");
     };
     *slot = Some(operation);
-    let group: DesignConstructionOperandGroup =
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-            "id": "f3d:test:group#91",
-            "scope_record_index": 90,
-            "scope_reference_ordinal": 0,
-            "record_index": 91,
-            "byte_offset": 1000,
-            "class_tag": "332",
-            "members": [92],
-            "member_offsets": [1026],
-            "frame": {
-                "member_count_offset": 1021,
-                "opaque_index": 1,
-                "opaque_index_offset": 1072,
-                "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 1076,
-                "variant": false
-            },
-            "role": 68_719_476_736_u64,
-            "role_offset": 1054,
-            "paired_class_tag": "259",
-            "paired_byte_offset": 1125
-        }))
-        .unwrap();
+    let group: DesignConstructionOperandGroup = json::from_value(cadmpeg_core::json!({
+        "id": "f3d:test:group#91",
+        "scope_record_index": 90,
+        "scope_reference_ordinal": 0,
+        "record_index": 91,
+        "byte_offset": 1000,
+        "class_tag": "332",
+        "members": [92],
+        "member_offsets": [1026],
+        "frame": {
+            "member_count_offset": 1021,
+            "opaque_index": 1,
+            "opaque_index_offset": 1072,
+            "opaque_scalar": 0.0,
+            "opaque_scalar_offset": 1076,
+            "variant": false
+        },
+        "role": 68_719_476_736_u64,
+        "role_offset": 1054,
+        "paired_class_tag": "259",
+        "paired_byte_offset": 1125
+    }))
+    .unwrap();
     let Some(FeatureDefinition::Operation(FeatureOperation::Shell {
         thickness,
         outward,

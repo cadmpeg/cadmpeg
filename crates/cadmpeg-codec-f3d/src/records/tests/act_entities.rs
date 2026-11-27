@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::records::act::{ActChannelGroup, ActEntity};
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
 fn group_wire() -> serde_json::Value {
-    serde_json::json!({
+    cadmpeg_core::json!({
         "id":"stream:act-entity#7", "record_index":7, "entity_id":"0_1", "in_table":false,
         "channel_class_tag":"261", "channel_record_index_offset":100, "channel_entity_id_offset":200,
         "channels":{"Appearance":"11111111-2222-3333-4444-555555555555"},
@@ -60,19 +61,19 @@ fn act_group_admission_rejects_invalid_names_counts_and_locations() {
         ("channel_entity_id_offset", 191),
     ] {
         let mut wire = group_wire();
-        wire[field] = serde_json::json!(value);
-        assert!(cadmpeg_core::serde_erase::json::from_value::<ActEntity>(wire).is_err());
+        wire[field] = cadmpeg_core::json!(value);
+        assert!(json::from_value::<ActEntity>(wire).is_err());
     }
     for offset in [100, 129, u64::MAX] {
         let mut wire = group_wire();
-        wire["channel_guid_offsets"]["Appearance"] = serde_json::json!(offset);
-        assert!(cadmpeg_core::serde_erase::json::from_value::<ActEntity>(wire).is_err());
+        wire["channel_guid_offsets"]["Appearance"] = cadmpeg_core::json!(offset);
+        assert!(json::from_value::<ActEntity>(wire).is_err());
     }
     for tail_offset in [100, 191, 200] {
         let mut wire = group_wire();
-        wire["channel_class_tail"] = serde_json::json!("01");
-        wire["channel_class_tail_offset"] = serde_json::json!(tail_offset);
-        assert!(cadmpeg_core::serde_erase::json::from_value::<ActEntity>(wire).is_err());
+        wire["channel_class_tail"] = cadmpeg_core::json!("01");
+        wire["channel_class_tail_offset"] = cadmpeg_core::json!(tail_offset);
+        assert!(json::from_value::<ActEntity>(wire).is_err());
     }
 }
 
@@ -82,33 +83,30 @@ fn act_entity_requires_a_group_and_a_table_or_inline_key() {
     wire.as_object_mut()
         .unwrap()
         .remove("channel_entity_id_offset");
-    assert!(cadmpeg_core::serde_erase::json::from_value::<ActEntity>(wire.clone()).is_err());
-    wire["in_table"] = serde_json::json!(true);
-    wire["table_record_index_offset"] = serde_json::json!(20);
-    wire["table_entity_id_offset"] = serde_json::json!(34);
-    let entity: ActEntity = cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(entity).unwrap(),
-        wire
-    );
+    assert!(json::from_value::<ActEntity>(wire.clone()).is_err());
+    wire["in_table"] = cadmpeg_core::json!(true);
+    wire["table_record_index_offset"] = cadmpeg_core::json!(20);
+    wire["table_entity_id_offset"] = cadmpeg_core::json!(34);
+    let entity: ActEntity = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(entity).unwrap(), wire);
     for field in ["channel_class_tag", "channel_record_index_offset"] {
         wire.as_object_mut().unwrap().remove(field);
     }
-    wire["channels"] = serde_json::json!({});
-    wire["channel_guid_offsets"] = serde_json::json!({});
-    assert!(cadmpeg_core::serde_erase::json::from_value::<ActEntity>(wire).is_err());
+    wire["channels"] = cadmpeg_core::json!({});
+    wire["channel_guid_offsets"] = cadmpeg_core::json!({});
+    assert!(json::from_value::<ActEntity>(wire).is_err());
 }
 
 #[test]
 fn act_entity_edits_keep_keys_and_channel_locations_valid() {
-    let mut entity: ActEntity = cadmpeg_core::serde_erase::json::from_value(group_wire()).unwrap();
+    let mut entity: ActEntity = json::from_value(group_wire()).unwrap();
     for key in ["", "_1", "1_", "a_1", "1_2_3", "1_+2"] {
         let before = entity.clone();
         assert!(entity.try_set_entity_id(key.into()).is_err());
         assert_eq!(entity, before);
         let mut wire = group_wire();
-        wire["entity_id"] = serde_json::json!(key);
-        assert!(cadmpeg_core::serde_erase::json::from_value::<ActEntity>(wire).is_err());
+        wire["entity_id"] = cadmpeg_core::json!(key);
+        assert!(json::from_value::<ActEntity>(wire).is_err());
     }
     entity.try_set_entity_id("000_001".into()).unwrap();
     assert_eq!(entity.entity_id(), "000_001");

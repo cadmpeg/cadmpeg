@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::design::selection::{OrderedSelection, SetSelection};
 use cadmpeg_ir::features::geometry::FeatureDirection3;
 use cadmpeg_ir::math::Vector3;
@@ -80,9 +81,8 @@ fn a_silhouette_split_is_a_split_along_its_direction() {
         native_value(picks),
         Some(&NativeNameValue::Text(NonBlankString::new(SCOPE).unwrap()))
     );
-    let wire =
-        cadmpeg_core::serde_erase::json::to_value(FeatureOperation::Split(split.clone())).unwrap();
-    let back: FeatureOperation = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+    let wire = json::to_value(FeatureOperation::Split(split.clone())).unwrap();
+    let back: FeatureOperation = json::from_value(wire).unwrap();
     assert_eq!(back, FeatureOperation::Split(split));
 }
 

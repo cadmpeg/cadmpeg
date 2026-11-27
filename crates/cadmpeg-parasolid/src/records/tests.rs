@@ -5,6 +5,7 @@ use super::{
 };
 use crate::test_support::with_decode_context;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::serde_erase::json;
 
 pub(super) fn read(
     bytes: &[u8],
@@ -149,7 +150,7 @@ fn region_insert_and_append_preserve_class_constraints() {
                 schema.fields.iter().any(|f| f.name.as_str() == "frame"),
                 frame
             );
-            let wire = cadmpeg_core::serde_erase::json::to_value(&schema).unwrap();
+            let wire = json::to_value(&schema).unwrap();
             assert_eq!(
                 wire["fields"][schema.fields.len() - 1]["pointer_class"],
                 owner_class
@@ -185,17 +186,17 @@ fn descriptor_positive_integer_and_wire_invariants_are_checked() {
     for bytes in [&[0, 0][..], &[255, 255, 0, 0]] {
         assert_eq!(positive(&mut View::over_retained(bytes)), None);
     }
-    let field = serde_json::json!({"name":"child", "data_type":"p", "pointer_class":12, "n_elements":0, "transmit":true});
-    let valid: SchemaField = cadmpeg_core::serde_erase::json::from_value(field.clone()).unwrap();
+    let field = cadmpeg_core::json!({"name":"child", "data_type":"p", "pointer_class":12, "n_elements":0, "transmit":true});
+    let valid: SchemaField = json::from_value(field.clone()).unwrap();
     assert_eq!(valid.data_type, DataType::Pointer);
     for (name, value) in [
-        ("name", serde_json::json!("")),
-        ("data_type", serde_json::json!("d")),
-        ("transmit", serde_json::json!(false)),
+        ("name", cadmpeg_core::json!("")),
+        ("data_type", cadmpeg_core::json!("d")),
+        ("transmit", cadmpeg_core::json!(false)),
     ] {
         let mut invalid = field.clone();
         invalid[name] = value;
-        assert!(cadmpeg_core::serde_erase::json::from_value::<SchemaField>(invalid).is_err());
+        assert!(json::from_value::<SchemaField>(invalid).is_err());
     }
 }
 

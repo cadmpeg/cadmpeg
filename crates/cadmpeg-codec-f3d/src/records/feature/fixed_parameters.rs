@@ -72,50 +72,36 @@ mod tests {
         DesignFixedExtrudeDistance, DesignFixedFilletGroup, DesignFixedFilletGroupWire,
         FIXED_FILLET_GROUP_CLONE_COUNT,
     };
+    use cadmpeg_core::serde_erase::json;
     use serde::Serialize;
 
     #[test]
     fn fixed_extrude_distance_construction_json_refuses_nonpositive_value() {
-        let mut wire = serde_json::json!({
+        let mut wire = cadmpeg_core::json!({
             "carrier": "distance_construction",
             "scalar": { "value": 1.0, "record_index": 1, "value_offset": 2 }
         });
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignFixedExtrudeDistance>(wire.clone())
-                .is_ok()
-        );
-        wire["scalar"]["value"] = serde_json::json!(0.0);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignFixedExtrudeDistance>(wire.clone())
-                .is_err()
-        );
-        wire["scalar"]["value"] = serde_json::json!(-1.0);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignFixedExtrudeDistance>(wire)
-                .is_err()
-        );
+        assert!(json::from_value::<DesignFixedExtrudeDistance>(wire.clone()).is_ok());
+        wire["scalar"]["value"] = cadmpeg_core::json!(0.0);
+        assert!(json::from_value::<DesignFixedExtrudeDistance>(wire.clone()).is_err());
+        wire["scalar"]["value"] = cadmpeg_core::json!(-1.0);
+        assert!(json::from_value::<DesignFixedExtrudeDistance>(wire).is_err());
     }
 
     #[test]
     fn fixed_extrude_scalar_json_refuses_zero_distance() {
-        let mut wire = serde_json::json!({
+        let mut wire = cadmpeg_core::json!({
             "carrier": "fixed_scalar",
             "scalar": { "value": -1.0, "record_index": 1, "value_offset": 2 }
         });
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignFixedExtrudeDistance>(wire.clone())
-                .is_ok()
-        );
-        wire["scalar"]["value"] = serde_json::json!(0.0);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignFixedExtrudeDistance>(wire)
-                .is_err()
-        );
+        assert!(json::from_value::<DesignFixedExtrudeDistance>(wire.clone()).is_ok());
+        wire["scalar"]["value"] = cadmpeg_core::json!(0.0);
+        assert!(json::from_value::<DesignFixedExtrudeDistance>(wire).is_err());
     }
 
     fn group(variable: bool, tangency: bool) -> DesignFixedFilletGroup {
         let mut wire = if variable {
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "radii": [1.0, 2.0, 3.0],
                 "radius_record_indexes": [10, 11, 12],
                 "radius_offsets": [100, 108, 116],
@@ -124,7 +110,7 @@ mod tests {
                 "intermediate_parameter_offsets": [200]
             })
         } else {
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "radii": [1.0],
                 "radius_record_indexes": [10],
                 "radius_offsets": [100]
@@ -132,9 +118,9 @@ mod tests {
         };
         if tangency {
             wire["tangency_weight"] =
-                serde_json::json!({"value": 1.0, "record_index": 5, "value_offset": 50});
+                cadmpeg_core::json!({"value": 1.0, "record_index": 5, "value_offset": 50});
         }
-        cadmpeg_core::serde_erase::json::from_value(wire).unwrap()
+        json::from_value(wire).unwrap()
     }
 
     #[test]
@@ -143,10 +129,7 @@ mod tests {
             for tangency in [false, true] {
                 let group = group(variable, tangency);
                 let owned = DesignFixedFilletGroupWire::from(group.clone());
-                assert_eq!(
-                    cadmpeg_core::serde_erase::json::to_vec(&group).unwrap(),
-                    cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
-                );
+                assert_eq!(json::to_vec(&group).unwrap(), json::to_vec(&owned).unwrap());
             }
         }
     }

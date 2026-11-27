@@ -3,6 +3,7 @@
 
 use crate::history::face_resolution::resolve_draft_face_by_surface_transition;
 use crate::history_records::AsmHistoricalTopology;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn face_transition_requires_one_changed_surface_geometry() {
@@ -29,41 +30,40 @@ fn face_transition_requires_one_changed_surface_geometry() {
         alternate_selector_edges: Vec::new(),
         operand_offset: None,
     };
-    let mut operand: DesignFaceOperand =
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-            "id": "f3d:test:face-operand#1",
-            "scope_record_index": 10,
-            "scope_reference_ordinal": 0,
-            "record_index": 1,
+    let mut operand: DesignFaceOperand = json::from_value(cadmpeg_core::json!({
+        "id": "f3d:test:face-operand#1",
+        "scope_record_index": 10,
+        "scope_reference_ordinal": 0,
+        "record_index": 1,
+        "byte_offset": 0,
+        "class_tag": "414",
+        "paired_byte_offset": 100,
+        "paired_class_tag": "258",
+        "recipe_record_index": 4,
+        "recipe_record_byte_offset": 116,
+        "recipe_id": "f3d:test:recipe#4",
+        "recipe_prefix_offset": 127,
+        "recipe_prefix_bytes": "",
+        "recipe_references": [],
+        "recipe_kind": "bounded_face",
+        "recipe_program_offset": 0,
+        "recipe_program": [0, -1, 1],
+        "recipe_node_offsets": [0],
+        "recipe_nodes": [{
             "byte_offset": 0,
-            "class_tag": "414",
-            "paired_byte_offset": 100,
-            "paired_class_tag": "258",
-            "recipe_record_index": 4,
-            "recipe_record_byte_offset": 116,
-            "recipe_id": "f3d:test:recipe#4",
-            "recipe_prefix_offset": 127,
-            "recipe_prefix_bytes": "",
-            "recipe_references": [],
-            "recipe_kind": "bounded_face",
-            "recipe_program_offset": 0,
-            "recipe_program": [0, -1, 1],
-            "recipe_node_offsets": [0],
-            "recipe_nodes": [{
-                "byte_offset": 0,
-                "end_byte_offset": 12,
-                "program": [0, -1, 1],
-                "recipe_structure": null
-            }],
-            "candidate_faces": ["f3d:brep:entity#10", "f3d:brep:entity#11"],
-            "preceding_candidate_faces": [],
-            "changed_candidate_faces": [],
-            "historical_support_contexts": [],
-            "resolved_face_slots": [],
-            "next_record_index": 5,
-            "next_byte_offset": 200
-        }))
-        .expect("Draft face operand");
+            "end_byte_offset": 12,
+            "program": [0, -1, 1],
+            "recipe_structure": null
+        }],
+        "candidate_faces": ["f3d:brep:entity#10", "f3d:brep:entity#11"],
+        "preceding_candidate_faces": [],
+        "changed_candidate_faces": [],
+        "historical_support_contexts": [],
+        "resolved_face_slots": [],
+        "next_record_index": 5,
+        "next_byte_offset": 200
+    }))
+    .expect("Draft face operand");
     operand.recipe_kind = ConstructionRecipeKind::BoundedFace;
     operand.recipe_references = vec![reference(Vec::new(), vec![face(10), face(11)])];
 

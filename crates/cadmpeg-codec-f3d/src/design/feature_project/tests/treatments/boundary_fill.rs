@@ -6,6 +6,7 @@ use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope, De
 use crate::records::identity::ReferenceRun;
 use crate::records::topology::construction::DesignConstructionOperandRole;
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 #[test]
@@ -47,20 +48,21 @@ fn boundary_fill_projects_body_region_groups() {
                 cadmpeg_ir::features::selections::BodySelection::Native(cell.id.clone())
             )]
     ));
-    let wire = cadmpeg_core::serde_erase::json::to_value(&projected).unwrap();
-    assert_eq!(wire["value"]["value"]["plane_tools"], serde_json::json!([]));
+    let wire = json::to_value(&projected).unwrap();
+    assert_eq!(
+        wire["value"]["value"]["plane_tools"],
+        cadmpeg_core::json!([])
+    );
     assert_eq!(
         wire["value"]["value"]["cells"][0],
-        serde_json::json!({"kind":"body_region","value":{"kind":"native","value":cell.id}})
+        cadmpeg_core::json!({"kind":"body_region","value":{"kind":"native","value":cell.id}})
     );
     let mut missing_planes = wire;
     missing_planes["value"]["value"]
         .as_object_mut()
         .unwrap()
         .remove("plane_tools");
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<FeatureDefinition>(missing_planes).is_err()
-    );
+    assert!(json::from_value::<FeatureDefinition>(missing_planes).is_err());
 }
 
 #[test]
@@ -101,17 +103,14 @@ fn boundary_fill_projects_recorded_cells_and_removal_control() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let native_wire = cadmpeg_core::serde_erase::json::to_value(&fill_scope).unwrap();
+    let native_wire = json::to_value(&fill_scope).unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(native_wire.clone())
-            .unwrap(),
+        json::from_value::<DesignParameterScope>(native_wire.clone()).unwrap(),
         fill_scope
     );
     let mut invalid_wire = native_wire;
-    invalid_wire["boundary_fill"]["operands"]["suffix"] = serde_json::json!("00".repeat(140));
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(invalid_wire).is_err()
-    );
+    invalid_wire["boundary_fill"]["operands"]["suffix"] = cadmpeg_core::json!("00".repeat(140));
+    assert!(json::from_value::<DesignParameterScope>(invalid_wire).is_err());
     let projected = crate::test_support::with_decode_context(|ctx| {
         crate::design::feature_project::boundary_fill::project(
             &fill_scope,
@@ -122,7 +121,7 @@ fn boundary_fill_projects_recorded_cells_and_removal_control() {
         .unwrap()
         .unwrap()
     });
-    let wire = cadmpeg_core::serde_erase::json::to_value(&projected).unwrap();
+    let wire = json::to_value(&projected).unwrap();
     assert_eq!(
         wire["value"]["value"]["tools"]["value"],
         "f3d:native/BulkStream.dat:construction-group#100"
@@ -132,20 +131,20 @@ fn boundary_fill_projects_recorded_cells_and_removal_control() {
     assert_eq!(operation["remove_tools"], false);
     assert_eq!(
         operation["plane_tools"],
-        serde_json::json!(["f3d:native/BulkStream.dat:design-record#301", null])
+        cadmpeg_core::json!(["f3d:native/BulkStream.dat:design-record#301", null])
     );
     assert_eq!(
         operation["cells"],
-        serde_json::json!([
+        cadmpeg_core::json!([
             {"kind":"recorded","value":{"record":"f3d:native/BulkStream.dat:design-record#777"}},
             {"kind":"recorded","value":{}}
         ])
     );
     let mut null_record = wire.clone();
     null_record["value"]["value"]["cells"][1]["value"]["record"] = serde_json::Value::Null;
-    assert!(cadmpeg_core::serde_erase::json::from_value::<FeatureDefinition>(null_record).is_err());
+    assert!(json::from_value::<FeatureDefinition>(null_record).is_err());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<FeatureDefinition>(wire).unwrap(),
+        json::from_value::<FeatureDefinition>(wire).unwrap(),
         projected
     );
 }

@@ -10,6 +10,7 @@ use crate::test_support::carchive::{
     sldprt_with_archive_parameter, sldprt_with_stopped_archive_walk,
 };
 use crate::test_support::container::scan;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::report::loss::LossNote;
 use std::sync::Arc;
@@ -71,6 +72,7 @@ fn scalar_archive_classes_map_each_value_offset() {
         status: Status::End,
         sketch_profiles: Vec::new(),
         marks: Vec::new(),
+        pattern_seeds: Vec::new(),
         trace: Vec::new(),
         parameters: vec![
             parameter("moLengthParameter_c", 42),
@@ -93,10 +95,7 @@ fn archive_parameter_classes_serialize_as_snake_case() {
         (ArchiveParameterClass::Scaler, "\"scaler\""),
         (ArchiveParameterClass::Integer, "\"integer\""),
     ] {
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&class).unwrap(),
-            text
-        );
+        assert_eq!(json::to_string(&class).unwrap(), text);
     }
 }
 
@@ -105,7 +104,7 @@ fn lanes_of(bytes: &[u8]) -> (Vec<crate::records::FeatureInputLane>, Vec<LossNot
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut annotations = Annotations::default();
     let mut losses = Vec::new();
-    let (lanes, _, _, _, _) =
+    let (lanes, _, _, _, _, _) =
         super::lanes(&ctx, &scan, &mut annotations, &mut losses).expect("lane assembly succeeds");
     (lanes, losses)
 }

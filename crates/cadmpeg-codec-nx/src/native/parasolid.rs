@@ -412,6 +412,7 @@ impl TryFrom<ParasolidDeltasRecordWire> for ParasolidDeltasRecord {
 #[cfg(test)]
 mod deltas_record_wire_tests {
     use super::ParasolidDeltasRecord;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn group_and_region_projections_preserve_values_and_reject_conflicting_controls() {
@@ -420,25 +421,19 @@ mod deltas_record_wire_tests {
             r#"{"id":"nx:test:region#0","stream_ordinal":0,"family":"REGION","kind":19,"xmt":10,"node_id":7,"references":[3,4,5,6,30],"region_type":83,"byte_len":24,"inflated_offset":0}"#,
         ] {
             let value: ParasolidDeltasRecord = serde_json::from_str(json).unwrap();
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
-                json
-            );
+            assert_eq!(json::to_string(&value).unwrap(), json);
             cadmpeg_test_support::native_serialization::assert_native_limit(
                 &value,
                 serde_json::from_str::<serde_json::Value>(json).unwrap(),
             );
             for (field, invalid) in [
-                ("kind", serde_json::json!(12)),
-                ("xmt", serde_json::json!(1)),
-                ("references", serde_json::json!([0, 1, 1, 1, 1])),
+                ("kind", cadmpeg_core::json!(12)),
+                ("xmt", cadmpeg_core::json!(1)),
+                ("references", cadmpeg_core::json!([0, 1, 1, 1, 1])),
             ] {
                 let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
                 wire[field] = invalid;
-                assert!(
-                    cadmpeg_core::serde_erase::json::from_value::<ParasolidDeltasRecord>(wire)
-                        .is_err()
-                );
+                assert!(json::from_value::<ParasolidDeltasRecord>(wire).is_err());
             }
         }
     }
@@ -1032,47 +1027,44 @@ impl TryFrom<ParasolidTermUseRecordWire> for ParasolidTermUseRecord {
 #[cfg(test)]
 mod term_use_wire_tests {
     use super::ParasolidTermUseRecord;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn complete_limit_retains_both_native_points_and_holds_one_zero() {
         let json = r#"{"id":"term","stream_ordinal":0,"xmt":2,"count":2,"form":"TF","data":{"layout":"xyz3","hvecs":[[0.0,-0.0,1.0],[0.0,-0.0,1.0]]},"framing":"direct","inflated_offset":10}"#;
         let record: ParasolidTermUseRecord = serde_json::from_str(json).unwrap();
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&record).unwrap(),
+            json::to_string(&record).unwrap(),
             json.replace("-0.0", "0.0")
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(&super::ParasolidTermUseRecordWire::from(
-                record.clone()
-            ))
-            .unwrap()
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&super::ParasolidTermUseRecordWire::from(record.clone())).unwrap()
         );
     }
 
     #[test]
     fn term_use_wire_rejects_count_form_and_storage_disagreement() {
-        let valid = serde_json::json!({"id":"term", "stream_ordinal":0, "xmt":2,
+        let valid = cadmpeg_core::json!({"id":"term", "stream_ordinal":0, "xmt":2,
             "count":2,"form":"TF", "data":{"layout":"xyz3","hvecs":[[0.0,0.0,0.0],[1.0,0.0,0.0]]},
             "framing":"direct","inflated_offset":0});
         for (field, value) in [
-            ("count", serde_json::json!(1)),
-            ("form", serde_json::json!("L?")),
+            ("count", cadmpeg_core::json!(1)),
+            ("form", cadmpeg_core::json!("L?")),
             (
                 "data",
-                serde_json::json!({"layout":"xyz3","hvecs":[[0.0,0.0,0.0]]}),
+                cadmpeg_core::json!({"layout":"xyz3","hvecs":[[0.0,0.0,0.0]]}),
             ),
-            ("data", serde_json::json!({"layout":"xyz3","hvecs":[]})),
+            ("data", cadmpeg_core::json!({"layout":"xyz3","hvecs":[]})),
             (
                 "data",
-                serde_json::json!({"layout":"ext11","hvecs":[{"point":[0.0,0.0,0.0]}]}),
+                cadmpeg_core::json!({"layout":"ext11","hvecs":[{"point":[0.0,0.0,0.0]}]}),
             ),
         ] {
             let mut malformed = valid.clone();
             malformed[field] = value;
             assert!(
-                cadmpeg_core::serde_erase::json::from_value::<ParasolidTermUseRecord>(malformed)
-                    .is_err(),
+                json::from_value::<ParasolidTermUseRecord>(malformed).is_err(),
                 "{field}"
             );
         }
@@ -1322,27 +1314,23 @@ pub(super) struct ParasolidBlendSurfaceRecord {
 #[cfg(test)]
 mod blend_surface_wire_tests {
     use super::ParasolidBlendSurfaceRecord;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn checked_blend_state_retains_the_flat_native_wire() {
         let json = r#"{"id":"blend","stream_ordinal":0,"xmt":20,"support_xmts":[6,7],"spine_xmt":0,"offsets":[-3.0,3.0],"thumb_weights":[-0.0,-2.0],"inflated_offset":10}"#;
         let record: ParasolidBlendSurfaceRecord = serde_json::from_str(json).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&record).unwrap(),
-            json
-        );
+        assert_eq!(json::to_string(&record).unwrap(), json);
         for (field, value) in [
-            ("support_xmts", serde_json::json!([1, 7])),
-            ("offsets", serde_json::json!([3.0, 4.0])),
+            ("support_xmts", cadmpeg_core::json!([1, 7])),
+            ("offsets", cadmpeg_core::json!([3.0, 4.0])),
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
             wire[field] = value;
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<ParasolidBlendSurfaceRecord>(wire)
-                    .unwrap_err()
-                    .to_string()
-                    .contains(field)
-            );
+            assert!(json::from_value::<ParasolidBlendSurfaceRecord>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains(field));
         }
     }
 }

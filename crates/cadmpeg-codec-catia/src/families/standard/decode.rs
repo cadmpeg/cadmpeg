@@ -1194,10 +1194,14 @@ fn attach_free_vertices(
         Vec::new(),
         free_vertices,
     );
-    for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
+    for key in [
+        cadmpeg_ir::annotations::AnnotationKey::from(&body_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&region_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&shell_id),
+    ] {
         annotate(
             annotations,
-            id,
+            &key,
             "MainDataStream+SurfacicReps",
             0,
             "unbound_point_owner",
@@ -1928,6 +1932,15 @@ fn try_decode_standard_populations(
         }
         if output.report.transfer.geometry_transferred() {
             merged.report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
+        }
+        let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+        for mut loss in output.report.losses {
+            if loss.code == unreadable {
+                cadmpeg_ir::unknown::part::rescope_give_up(&mut loss, |id| {
+                    Ok(rescope_standard_id(id, &scope))
+                })?;
+                merged.report.losses.push(loss);
+            }
         }
     }
 
@@ -2670,6 +2683,15 @@ fn try_decode_standard_population(
         Err(StandardTopologyError::Codec(error)) => return Some(Err(error)),
     };
     let topology_attached = topology_failure.is_none();
+    let given_up_faces: Vec<cadmpeg_ir::ids::FaceId> = match topology_failure {
+        Some(_) => topology_ir
+            .geometry
+            .faces
+            .iter()
+            .map(|face| face.id.clone())
+            .collect(),
+        None => Vec::new(),
+    };
     if topology_attached {
         ir = topology_ir;
         annotations = topology_annotations.into_retained();
@@ -2806,8 +2828,6 @@ fn try_decode_standard_population(
         Err(_) => return None,
     };
     consolidated_curve_bindings.standard_face_pcurves += source_jet_pcurves.pcurves;
-    consolidated_curve_bindings.widened_vertices = weighted.widened_vertices;
-    consolidated_curve_bindings.max_vertex_widening = weighted.max_vertex_widening;
     if let Err(error) = link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations) {
         return Some(Err(error));
     }
@@ -2836,6 +2856,16 @@ scan,
             admitted_standard_face_rows: face_count,
         },
 topology_failure.map(StandardTopologyFailure::message));
+    if let Some(failure) = topology_failure {
+        let code = CatiaLossCode::TopologyBoundaryGraphNotEmitted.kind();
+        report.losses.extend(given_up_faces.into_iter().map(|face| {
+            cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                face,
+                format_args!("{code}: {}", failure.message()),
+            )
+            .loss()
+        }));
+    }
     if consolidated_curve_bindings.rechart_numeric_failures != 0 {
         report.losses.push((CatiaLossCode::GeometryPcurveRechartNonFinite).note(format!(
             "{} pcurve rechart attempts produced non-finite coordinates; native records remain retained",
@@ -2858,13 +2888,6 @@ topology_failure.map(StandardTopologyFailure::message));
         report.losses.push(CatiaLossCode::SourceAnnotationCollision.note(format!(
             "{} source-owned spherical pcurve identity collision(s) were withheld",
             source_jet_pcurves.unresolved_identity_collisions,
-        )));
-    }
-    if consolidated_curve_bindings.widened_vertices != 0 {
-        report.losses.push(CatiaLossCode::GeometryVertexToleranceWidened.note(format!(
-            "Widened {} vertex tolerances for binary32 coordinate storage; maximum widening {:.17} mm",
-            consolidated_curve_bindings.widened_vertices,
-            consolidated_curve_bindings.max_vertex_widening,
         )));
     }
     report.coverage.record(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT, usize::from(true));
@@ -3010,6 +3033,7 @@ topology_failure.map(StandardTopologyFailure::message));
         report,
         annotations,
         unknowns,
+        given_up: Vec::new(),
         admitted_model_entities: admission.admitted(),
     }))
     })()
@@ -4031,13 +4055,19 @@ fn partition_standard_face_components(
             }
             continue;
         }
-        for (id, tag) in [
-            (region_id.as_str(), "derived_region"),
-            (shell_id.as_str(), "derived_shell"),
+        for (key, tag) in [
+            (
+                cadmpeg_ir::annotations::AnnotationKey::from(&region_id),
+                "derived_region",
+            ),
+            (
+                cadmpeg_ir::annotations::AnnotationKey::from(&shell_id),
+                "derived_shell",
+            ),
         ] {
             annotate(
                 annotations,
-                id,
+                &key,
                 "MainDataStream+SurfacicReps",
                 0,
                 tag,
@@ -7121,7 +7151,7 @@ fn standard_native_graph_endpoint_pairs(
     let identity_points = unique_native_identity_points(
         graph.vertices.logical_vertices(),
         graph.vertices.raw_points().len(),
-        &graph.vertex_tolerances,
+        &graph.vertex_residuals,
         points,
     );
     let mut pairs = Vec::new();

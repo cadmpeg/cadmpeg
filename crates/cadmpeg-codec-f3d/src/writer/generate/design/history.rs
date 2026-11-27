@@ -161,17 +161,25 @@ fn boards(records: &[Record], states: &[usize]) -> Result<(Vec<Vec<i64>>, Vec<us
         .collect::<Vec<_>>();
     let mut owner = vec![None::<usize>; records.len()];
     for (state, &body) in states.iter().enumerate() {
-        let start = *bodies
-            .get(body)
-            .ok_or_else(|| CodecError::malformed(format_args!("no ASM body {body}")))?;
+        let start = bodies.get(body).copied();
+        debug_assert!(
+            start.is_some(),
+            "the B-rep stream writes one body record for each body of the design, in the design's body order, and each state names one of those bodies"
+        );
+        let start =
+            start.ok_or_else(|| CodecError::malformed(format_args!("no ASM body {body}")))?;
         let mut stack = vec![start];
         while let Some(index) = stack.pop() {
             // A record that an earlier body reaches is in that body's state.
             if owner.get(index).copied().flatten().is_some() {
                 continue;
             }
-            let record = records
-                .get(index)
+            let record = records.get(index);
+            debug_assert!(
+                record.is_some(),
+                "each reference of the B-rep stream names one of its records"
+            );
+            let record = record
                 .ok_or_else(|| CodecError::malformed(format_args!("ASM reference {index}")))?;
             owner[index] = Some(state);
             for token in record.tokens.iter() {

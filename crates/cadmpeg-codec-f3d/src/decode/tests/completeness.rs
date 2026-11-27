@@ -2,6 +2,7 @@
 //! Completeness predicates for projected design feature definitions.
 
 use super::super::feature_definition_is_incomplete;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::surfaces::UntrimLoops;
 
 #[test]
@@ -34,10 +35,10 @@ fn separate_completeness_requires_shell_geometry_and_keep_body() {
             Some(MeshSeparationGroups::All {}),
             Some(MeshSeparationGroups::Selected { members: None }),
         ] {
-            let source: MeshSelection = cadmpeg_core::serde_erase::json::from_value(if native {
-                serde_json::json!({"kind": "native", "value": {"native": "native-scope"}})
+            let source: MeshSelection = json::from_value(if native {
+                cadmpeg_core::json!({"kind": "native", "value": {"native": "native-scope"}})
             } else {
-                serde_json::json!({"kind": "tessellations", "value": ["test:mesh:tessellation#41"]})
+                cadmpeg_core::json!({"kind": "tessellations", "value": ["test:mesh:tessellation#41"]})
             })
             .unwrap();
             let definition = FeatureDefinition::Operation(FeatureOperation::MeshModify {
@@ -152,10 +153,7 @@ fn surface_untrim_completeness_tracks_faces_loops_and_extension_independently() 
 #[test]
 fn form_completeness_requires_complete_membership_with_a_committed_cage() {
     let definition = |value| {
-        cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::features::FeatureDefinition>(
-            value,
-        )
-        .expect("Form definition")
+        json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value).expect("Form definition")
     };
     assert!(feature_definition_is_incomplete(
         &cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -165,11 +163,11 @@ fn form_completeness_requires_complete_membership_with_a_committed_cage() {
         )
     ));
     for members in [
-        serde_json::json!([]),
-        serde_json::json!([{"observation":0,"ordinal":0}]),
+        cadmpeg_core::json!([]),
+        cadmpeg_core::json!([{"observation":0,"ordinal":0}]),
     ] {
         assert!(feature_definition_is_incomplete(&definition(
-            serde_json::json!({"kind": "operation", "value": {"kind": "form", "value": {
+            cadmpeg_core::json!({"kind": "operation", "value": {"kind": "form", "value": {
                 "cages": {"kind": "retained", "value": {
                     "observations":[{"paths":[],"binding":{"kind":"decoded","cage":"test:model:subd#1"}}],
                     "membership":{"kind":"partial","cardinality":2,"order":"unknown","members":members}
@@ -179,7 +177,7 @@ fn form_completeness_requires_complete_membership_with_a_committed_cage() {
         )));
     }
     assert!(!feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "form", "value": {
+        cadmpeg_core::json!({"kind": "operation", "value": {"kind": "form", "value": {
             "cages": {"kind": "complete", "value": ["test:model:subd#1"]},
             "inputs": cadmpeg_ir::features::form::FormInputs::default(),
             "cage_inputs":{"observations":[{"paths":[],"binding":{"kind":"decoded","cage":"test:model:subd#1"}}],"membership":{"kind":"complete","members":[0],"order":"assumed","certainty":"assumed"}}}}})
@@ -899,10 +897,10 @@ fn mesh_combination_local_operands_remain_incomplete_in_both_reports() {
 #[test]
 fn plane_cut_completeness_requires_the_source_plane_and_active_controls() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-    let base = serde_json::json!({"kind": "mesh_modify", "value": {"source":{"kind":"tessellations","value":["test:mesh:tessellation#1"]},"modification":{"kind":"plane_cut","cut":{"origin":{"x":0,"y":0,"z":0},"normal":{"x":0,"y":0,"z":1},"mode":"trim","fill":"no_fill","retained_side":"positive"}}}});
+    let base = cadmpeg_core::json!({"kind": "mesh_modify", "value": {"source":{"kind":"tessellations","value":["test:mesh:tessellation#1"]},"modification":{"kind":"plane_cut","cut":{"origin":{"x":0,"y":0,"z":0},"normal":{"x":0,"y":0,"z":1},"mode":"trim","fill":"no_fill","retained_side":"positive"}}}});
     let incomplete = |wire| {
         feature_definition_is_incomplete(&FeatureDefinition::Operation(
-            cadmpeg_core::serde_erase::json::from_value::<FeatureOperation>(wire).unwrap(),
+            json::from_value::<FeatureOperation>(wire).unwrap(),
         ))
     };
     assert!(!incomplete(base.clone()));
@@ -929,8 +927,8 @@ fn plane_cut_completeness_requires_the_source_plane_and_active_controls() {
         assert_eq!(incomplete(wire), fill_required);
     }
     for source in [
-        serde_json::json!({"kind": "native", "value": {"native":"scope","members":["7"]}}),
-        serde_json::json!({"kind": "unresolved", "value": {"feature":"test:model:feature#cut"}}),
+        cadmpeg_core::json!({"kind": "native", "value": {"native":"scope","members":["7"]}}),
+        cadmpeg_core::json!({"kind": "unresolved", "value": {"feature":"test:model:feature#cut"}}),
     ] {
         let mut wire = base.clone();
         wire["value"]["source"] = source;

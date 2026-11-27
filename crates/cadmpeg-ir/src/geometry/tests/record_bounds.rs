@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::test_support::edit;
+use cadmpeg_core::serde_erase::json;
 use serde::{
     de::{value::Error, value::F64Deserializer, value::SeqDeserializer, IntoDeserializer, Visitor},
     Deserialize, Deserializer,
@@ -58,11 +59,10 @@ fn partial_record_bounds_round_trip_through_checked_storage() {
         .expect("finite partial record bounds");
     assert_eq!(bounds.get(), [Some(0.1), None, Some(0.2), None]);
 
-    let wire = cadmpeg_core::serde_erase::json::to_value(bounds).expect("serialize record bounds");
-    assert_eq!(wire, serde_json::json!([0.1, null, 0.2, null]));
+    let wire = json::to_value(bounds).expect("serialize record bounds");
+    assert_eq!(wire, cadmpeg_core::json!([0.1, null, 0.2, null]));
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<RecordBounds>(wire)
-            .expect("deserialize record bounds"),
+        json::from_value::<RecordBounds>(wire).expect("deserialize record bounds"),
         bounds
     );
 }
@@ -77,8 +77,8 @@ fn an_all_absent_quartet_is_admitted_and_keeps_its_signed_zeros() {
         absent
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(absent).expect("serialize an absent quartet"),
-        serde_json::json!([null, null, null, null])
+        json::to_value(absent).expect("serialize an absent quartet"),
+        cadmpeg_core::json!([null, null, null, null])
     );
 
     let signed = RecordBounds::try_new([Some(-0.0), Some(0.0), None, Some(-0.0)])
@@ -88,12 +88,10 @@ fn an_all_absent_quartet_is_admitted_and_keeps_its_signed_zeros() {
     assert!(slots[1].is_some_and(f64::is_sign_positive));
     assert!(slots[3].is_some_and(f64::is_sign_negative));
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<RecordBounds>(
-            cadmpeg_core::serde_erase::json::to_value(signed).expect("serialize signed zeros")
-        )
-        .expect("deserialize signed zeros")
-        .get()
-        .map(|slot| slot.map(f64::to_bits)),
+        json::from_value::<RecordBounds>(json::to_value(signed).expect("serialize signed zeros"))
+            .expect("deserialize signed zeros")
+            .get()
+            .map(|slot| slot.map(f64::to_bits)),
         slots.map(|slot| slot.map(f64::to_bits))
     );
 }
@@ -130,11 +128,9 @@ fn the_containing_row_separates_an_absent_quartet_from_a_stated_one() {
         surface.clone(),
         &ProceduralSurface::new(id(), unknown_definition(), None),
     );
-    let wire = cadmpeg_core::serde_erase::json::to_value(&without)
-        .expect("serialize a row without bounds");
+    let wire = json::to_value(&without).expect("serialize a row without bounds");
     assert!(wire.get("record_bounds").is_none());
-    let decoded: crate::geometry::ProceduralSurfaceRow =
-        cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+    let decoded: crate::geometry::ProceduralSurfaceRow = json::from_value(wire).unwrap();
     assert_eq!(decoded.into_parts().1.record_bounds(), None);
 
     let with = crate::geometry::ProceduralSurfaceRow::new(
@@ -145,14 +141,12 @@ fn the_containing_row_separates_an_absent_quartet_from_a_stated_one() {
             Some(RecordBounds::try_new([None; 4]).expect("an absent quartet")),
         ),
     );
-    let wire = cadmpeg_core::serde_erase::json::to_value(&with)
-        .expect("serialize a row with an absent quartet");
+    let wire = json::to_value(&with).expect("serialize a row with an absent quartet");
     assert_eq!(
         wire["record_bounds"],
-        serde_json::json!([null, null, null, null])
+        cadmpeg_core::json!([null, null, null, null])
     );
-    let decoded: crate::geometry::ProceduralSurfaceRow =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    let decoded: crate::geometry::ProceduralSurfaceRow = json::from_value(wire.clone()).unwrap();
     assert_eq!(
         decoded.into_parts().1.record_bounds().unwrap().get(),
         [None; 4]
@@ -160,9 +154,7 @@ fn the_containing_row_separates_an_absent_quartet_from_a_stated_one() {
 
     let mut null_key = wire.clone();
     null_key["record_bounds"] = serde_json::Value::Null;
-    let Err(refusal) = cadmpeg_core::serde_erase::json::from_value::<
-        crate::geometry::ProceduralSurfaceRow,
-    >(null_key) else {
+    let Err(refusal) = json::from_value::<crate::geometry::ProceduralSurfaceRow>(null_key) else {
         panic!("an explicit null is not the absent spelling");
     };
     assert!(refusal.to_string().contains("record_bounds"), "{refusal}");
@@ -180,10 +172,9 @@ fn the_direct_surface_leaves_out_absent_bounds_and_refuses_null() {
             unknown_definition(),
             raw.map(RecordBounds::try_from).transpose().unwrap(),
         );
-        let mut wire = cadmpeg_core::serde_erase::json::to_value(&surface).unwrap();
+        let mut wire = json::to_value(&surface).unwrap();
         assert_eq!(wire.get("record_bounds").is_some(), raw.is_some());
-        let decoded: ProceduralSurface =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        let decoded: ProceduralSurface = json::from_value(wire.clone()).unwrap();
         assert_eq!(
             decoded
                 .record_bounds()
@@ -191,8 +182,7 @@ fn the_direct_surface_leaves_out_absent_bounds_and_refuses_null() {
             raw.map(|bounds| bounds.map(|slot| slot.map(f64::to_bits)))
         );
         wire["record_bounds"] = serde_json::Value::Null;
-        let error =
-            cadmpeg_core::serde_erase::json::from_value::<ProceduralSurface>(wire).unwrap_err();
+        let error = json::from_value::<ProceduralSurface>(wire).unwrap_err();
         assert!(error.to_string().contains("record_bounds"), "{error}");
     }
 }

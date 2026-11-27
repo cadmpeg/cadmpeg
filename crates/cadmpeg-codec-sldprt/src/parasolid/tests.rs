@@ -530,3 +530,16 @@ fn body_stream_identity_follows_the_partition_deltas_descriptions() {
         );
     }
 }
+
+/// A wrapper whose frame header states a zero uncompressed size and a zero
+/// member size holds an empty stream: no stream and no member to give up.
+#[test]
+fn an_empty_wrapper_holds_no_stream_and_no_unread_member() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut payload = WRAPPED_MAGIC.to_vec();
+    payload.extend_from_slice(&[0; 8]);
+    let extracted = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap();
+    assert!(extracted.streams.is_empty());
+    assert!(extracted.unread.is_empty(), "{:?}", extracted.unread);
+}

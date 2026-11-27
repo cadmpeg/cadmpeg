@@ -9,6 +9,7 @@ use crate::records::identity::Located;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::edge_identity::DesignEdgeOperand;
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::extents::AngularTermination;
 use cadmpeg_ir::features::revolve::RevolveExtent;
 use cadmpeg_ir::features::selections::FaceSelection;
@@ -54,7 +55,7 @@ fn group(
     member: u32,
     role: DesignOperandRole,
 ) -> DesignConstructionOperandGroup {
-    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("f3d:test:group#{record_index}"),
         "scope_record_index": 12,
         "scope_reference_ordinal": record_index - 100,
@@ -80,7 +81,7 @@ fn group(
 }
 
 fn axis() -> DesignEdgeOperand {
-    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "f3d:test:edge-operand#201",
         "scope_record_index": 12,
         "scope_reference_ordinal": 1,

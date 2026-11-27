@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 use crate::feature::{plate_result, plate_side, FeatureFamily, PLATE_SIDE_TYPE};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide;
 
 fn enumeration(
@@ -311,7 +312,7 @@ fn an_unrecognized_label_class_charges_one_note_per_class() {
     use cadmpeg_ir::features::evaluation::FeatureEvaluation;
     use cadmpeg_ir::features::NativeFeatureKind;
     let native = |id: &str, kind: &str| -> Feature {
-        let mut feature: Feature = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        let mut feature: Feature = json::from_value(cadmpeg_core::json!({
             "id": id, "ordinal": 1,
             "definition": {"kind": "operation", "value": {"kind": "native", "value": {"kind": "Plate", "parameters": {}}}},
             "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
