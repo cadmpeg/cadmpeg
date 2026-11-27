@@ -239,3 +239,96 @@ fn a_literal_is_the_shortest_decimal_at_fifteen_significant_digits() {
     assert_eq!(super::decimal(0.1 + 0.2, |value| value), "0.3");
     assert_eq!(super::decimal(12.5, f64::to_radians), "12.5");
 }
+
+#[test]
+fn sheet_cells_are_parameters_named_by_their_alias() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object name="Sheet" type="Spreadsheet::Sheet"/></Objects>
+<ObjectData Count="1">
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="6">
+<Cell address="A1" alias="w" content="12 mm" alignment="center|vcenter" style="bold"/>
+<Cell address="A2" content="=w * 2"/>
+<Cell address="A3" alias="label" content="'Plate"/>
+<Cell address="A4" content="note"/>
+<Cell address="B1" alias="taller" content="=A1 + 1 mm"/>
+<Cell address="B2" content="=Sheet.w / 4"/>
+</Cells></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let ir = decode(&archive(document));
+    let cell =
+        |address: &str| parameter(&ir, &format!("fcstd:design:parameter#Sheet:cell:{address}"));
+    let name = |address: &str| {
+        cell(address)
+            .name
+            .as_ref()
+            .map(|name| name.as_str().to_owned())
+    };
+    let width = "fcstd:design:parameter#Sheet:cell:A1".to_owned();
+    assert_eq!(name("A1").as_deref(), Some("w"));
+    assert_eq!(cell("A1").kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert_eq!(neutral(cell("A1")), ("12[mm]".to_owned(), Vec::new()));
+    let settings = json::to_value(&cell("A1").source_settings).unwrap();
+    assert_eq!(
+        settings["fcstd:alignment"]["value"]["value"], "center|vcenter",
+        "{settings}"
+    );
+    assert_eq!(
+        settings["fcstd:style"]["value"]["value"], "bold",
+        "{settings}"
+    );
+
+    assert_eq!(name("A2"), None);
+    assert_eq!(cell("A2").kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert_eq!(cell("A2").value, None);
+    assert_eq!(
+        neutral(cell("A2")),
+        ("$0 * 2".to_owned(), vec![width.clone()])
+    );
+
+    for (address, text) in [("A3", "Plate"), ("A4", "note")] {
+        assert_eq!(cell(address).kind, ValueKind::Text);
+        assert_eq!(
+            cell(address).value,
+            Some(cadmpeg_ir::design::parameter::ParameterValue::Text(
+                text.to_owned()
+            ))
+        );
+        assert_eq!(
+            cell(address).definition,
+            cadmpeg_ir::design::parameter::ParameterDefinition::Expression(Expression::Neutral(
+                Neutral(cadmpeg_ir::design::expr::Node::Text(text.to_owned()))
+            ))
+        );
+    }
+    assert_eq!(name("A3").as_deref(), Some("label"));
+
+    assert_eq!(
+        neutral(cell("B1")),
+        ("$0 + 1[mm]".to_owned(), vec![width.clone()])
+    );
+    assert_eq!(neutral(cell("B2")), ("$0 / 4".to_owned(), vec![width]));
+}
+
+#[test]
+fn a_lone_reference_to_a_formula_cell_takes_the_cells_quantity() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object name="Sketch" type="Sketcher::SketchObject"/><Object name="Sheet" type="Spreadsheet::Sheet"/></Objects>
+<ObjectData Count="2">
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="2"><Cell address="A1" alias="w" content="6mm"/><Cell address="A2" alias="double" content="=w * 2"/></Cells></Property></Properties></Object>
+<Object name="Sketch"><Properties Count="3">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1"><Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="12" EndY="0"/></Geometry></GeometryList></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="1">
+<Constrain Name="width" Type="6" First="0" FirstPos="1" Second="0" SecondPos="2" Value="12"/>
+</ConstraintList></Property>
+<Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path=".Constraints.width" expression="Sheet.double"/></ExpressionEngine></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let ir = decode(&archive(document));
+    let distance = parameter(&ir, "fcstd:design:parameter#Sketch:constraint:1");
+    assert_eq!(
+        neutral(distance),
+        (
+            "$0".to_owned(),
+            vec!["fcstd:design:parameter#Sheet:cell:A2".to_owned()]
+        )
+    );
+}

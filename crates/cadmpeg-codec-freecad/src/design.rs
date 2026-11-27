@@ -3268,6 +3268,14 @@ fn bind_parameter_dependencies(
         let source_name = parameter.properties.get("source_name");
         let mut names = Vec::new();
         names.push(parameter.name.clone());
+        // An expression names an aliased cell by its alias or its address.
+        if let Some(address) = parameter
+            .properties
+            .get("address")
+            .filter(|address| **address != parameter.name)
+        {
+            names.push(address.to_owned());
+        }
         if let Some(source_name) = source_name {
             let constraint = parameter
                 .native_ref

@@ -7,7 +7,9 @@
 //! `MultiTransform` lists, which are its layout (§6.5). Each design object
 //! outside every Body is one feature, a member of the scope's root unordered
 //! `Group` (§5.2), whose own result is its current state (§5.3), and each
-//! `App::Link` is a `Place` feature in that `Group` (§6.7). A document with
+//! `App::Link` is a `Place` feature in that `Group` (§6.7). Each
+//! `Spreadsheet::Sheet` is a `Spreadsheet` feature whose cells are its
+//! parameters (§5.12). A document with
 //! no design object, no link, and no parameter has no scope (§5.1).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -25,6 +27,7 @@ use cadmpeg_ir::design::ops::assembly::{Place, PlaceSet, PlacementBase};
 use cadmpeg_ir::design::ops::body::ScaleFactors;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
+use cadmpeg_ir::design::spreadsheet::Spreadsheet;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::features::operation_settings::FuzzyTolerance as LegacyFuzzyTolerance;
@@ -63,10 +66,11 @@ pub(crate) fn project(
 ) {
     let source = Source::of(objects, properties);
     let history = History::of(&ir.model.features, &source);
+    let sheets = sheets(ir, &history);
     let mut features = history
         .features
         .values()
-        .map(|legacy| feature(legacy, &source))
+        .map(|legacy| feature(legacy, &source, &sheets))
         .collect::<Vec<_>>();
     let mut grouped = history
         .features
@@ -172,6 +176,7 @@ pub(crate) fn project(
     ir.design.containers = containers;
     ir.design.features = features;
     ir.design.parameters = parameters;
+    ir.design.spreadsheets = sheets.into_values().collect();
     // A member of the Group that changes state has its own result, the
     // bodies of its shape (§5.3).
     for member in grouped {
@@ -670,12 +675,38 @@ impl<'a> History<'a> {
     }
 }
 
+/// The sheet record of each spreadsheet feature of `history`, by its
+/// feature (§5.12).
+fn sheets<'a>(ir: &CadIr, history: &History<'a>) -> BTreeMap<&'a FeatureId, Spreadsheet> {
+    ir.model
+        .spreadsheets
+        .iter()
+        .filter_map(|sheet| {
+            let (feature, _) = history.features.get_key_value(&sheet.feature)?;
+            let record = Spreadsheet::new(
+                sheet.id.clone(),
+                sheet.cells().to_vec(),
+                sheet.column_widths().to_vec(),
+                sheet.row_heights().to_vec(),
+                sheet.merged_ranges().to_vec(),
+                sheet.native_ref.clone(),
+            )
+            .ok()?;
+            Some((*feature, record))
+        })
+        .collect()
+}
+
 /// The feature of `legacy`. Its `refine` and `fuzzy_tolerance` are stated only
 /// where the object stores `Refine` and `FuzzyTolerance` (§2.4): the decoded
 /// definition fills the one the object lacks. A Part workbench feature that
 /// applies its `Placement` after its operation states it as its `placement`
 /// (§5.10); a primitive or a curve primitive places its own local frame.
-fn feature(legacy: &LegacyFeature, source: &Source<'_>) -> Feature {
+fn feature(
+    legacy: &LegacyFeature,
+    source: &Source<'_>,
+    sheets: &BTreeMap<&FeatureId, Spreadsheet>,
+) -> Feature {
     let (operation, refine, fuzzy_tolerance) = match legacy.evaluation.definition() {
         LegacyDefinition::PostProcess {
             operation,
@@ -696,7 +727,10 @@ fn feature(legacy: &LegacyFeature, source: &Source<'_>) -> Feature {
         ),
         LegacyDefinition::Operation(operation) => (operation, None, None),
     };
-    let operation = self::operation(legacy, operation);
+    let operation = match sheets.get(&legacy.id) {
+        Some(sheet) => FeatureOperation::Spreadsheet(sheet.id.clone()),
+        None => self::operation(legacy, operation),
+    };
     let kind = legacy.source_tag.as_deref();
     let placed = kind.is_some_and(|kind| kind.starts_with("Part::"))
         && match &operation {
@@ -759,10 +793,6 @@ fn operation(legacy: &LegacyFeature, operation: &LegacyOperation) -> FeatureOper
             }
         }
         LegacyOperation::Sketch { .. } => OperationFamily::Sketch,
-        LegacyOperation::TreeNode {
-            role: FeatureTreeNodeRole::Equations,
-            ..
-        } => OperationFamily::Spreadsheet,
         LegacyOperation::SpatialSketch { .. } => OperationFamily::SpatialSketch,
         LegacyOperation::DatumPrincipalPlane { .. }
         | LegacyOperation::DatumPlane { .. }

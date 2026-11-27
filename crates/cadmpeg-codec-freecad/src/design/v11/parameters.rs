@@ -5,12 +5,14 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
+use cadmpeg_ir::design::dimension::{Dimension, ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{
     self, Expression, ExpressionDialect, ExpressionToken, MulOp, Neutral, Node, UnaryOp,
 };
 use cadmpeg_ir::design::feature::Feature;
 use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::names::CodecName;
+use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use cadmpeg_ir::design::parameter::{
     DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue,
 };
@@ -29,6 +31,18 @@ use crate::loss::FreecadLossCode;
 /// The property type of a sketch's constraints, whose values `FreeCAD` stores
 /// in millimetres and radians.
 const CONSTRAINT_LIST: &str = "Sketcher::PropertyConstraintList";
+
+/// The property type of a spreadsheet's cells, one parameter each (§5.12).
+const SHEET: &str = "Spreadsheet::PropertySheet";
+
+/// The display attributes of a cell, each kept as `fcstd:<attribute>`.
+const CELL_DISPLAY: [&str; 5] = [
+    "alignment",
+    "style",
+    "foregroundColor",
+    "backgroundColor",
+    "displayUnit",
+];
 
 /// Each parameter the decoder read that one of `features` or a Body owns, in
 /// the scope of `definition`. `containers` maps a Body's feature to its
@@ -69,20 +83,60 @@ pub(super) fn project(
         .filter(|parameter| owners.contains_key(&parameter.id))
         .map(|parameter| (&parameter.id, parameter))
         .collect::<BTreeMap<_, _>>();
+    // The legacy parameters follow their dependencies, so a quantity found
+    // for a parameter with no stored value is known before an expression
+    // that references it.
+    let mut known = BTreeMap::new();
     let mut parameters = Vec::new();
-    for (id, owner) in &owners {
-        let parameter = by_id[id];
-        let (kind, value) = kind_and_value(parameter.value.as_ref());
-        let parameter_definition = if property(parameter, "is_driving") == Some("0") {
-            ParameterDefinition::Driven
+    for parameter in &ir.model.parameters {
+        let Some(owner) = owners.get(&parameter.id) else {
+            continue;
+        };
+        if !std::ptr::eq(by_id[&parameter.id], parameter) {
+            continue;
+        }
+        let carrier = parameter
+            .native_ref
+            .as_deref()
+            .and_then(|property| carriers.get(property).copied());
+        let (kind, value, parameter_definition) = if carrier == Some(SHEET) {
+            let (kind, value, expression) = cell(parameter, &by_id, &known, carriers, losses);
+            (kind, value, ParameterDefinition::Expression(expression))
         } else {
-            ParameterDefinition::Expression(expression(parameter, &by_id, &kind, carriers, losses))
+            let (kind, value) = kind_and_value(parameter.value.as_ref());
+            let parameter_definition = if property(parameter, "is_driving") == Some("0") {
+                ParameterDefinition::Driven
+            } else {
+                ParameterDefinition::Expression(expression(
+                    parameter, &by_id, &known, &kind, carriers, losses,
+                ))
+            };
+            (kind, value, parameter_definition)
+        };
+        if let ValueKind::Quantity(quantity) = kind {
+            let found = carrier == Some(SHEET)
+                && matches!(
+                    parameter_definition,
+                    ParameterDefinition::Expression(Expression::Neutral(_))
+                );
+            if value.is_some() || found {
+                known.insert(&parameter.id, quantity);
+            }
+        }
+        let (name, source_settings) = if carrier == Some(SHEET) {
+            (
+                property(parameter, "alias")
+                    .and_then(|alias| NonBlankString::new(alias.to_owned())),
+                cell_settings(parameter),
+            )
+        } else {
+            (name(parameter), BTreeMap::default())
         };
         parameters.push(DesignParameter {
             id: parameter.id.clone(),
             scope: definition.clone(),
             owner: Some(owner.clone()),
-            name: name(parameter),
+            name,
             kind,
             unit: None,
             definition: parameter_definition,
@@ -92,7 +146,7 @@ pub(super) fn project(
             decimals: None,
             comment: None,
             native_options: BTreeMap::default(),
-            source_settings: BTreeMap::default(),
+            source_settings,
             native_ref: parameter.native_ref.clone(),
         });
     }
@@ -113,6 +167,68 @@ fn property<'a>(parameter: &'a LegacyParameter, key: &str) -> Option<&'a str> {
 fn name(parameter: &LegacyParameter) -> Option<NonBlankString> {
     let name = property(parameter, "source_name").unwrap_or(&parameter.name);
     NonBlankString::new(name.to_owned())
+}
+
+/// A cell's kind, value, and expression (§5.12). `FreeCAD` reads an `=`
+/// content as a formula, a `'` content as the text after the mark, a
+/// content that starts with a number as a number or a quantity, and any
+/// other content as text. A formula with no stored value has the quantity
+/// of its neutral tree.
+fn cell(
+    parameter: &LegacyParameter,
+    parameters: &BTreeMap<&ParameterId, &LegacyParameter>,
+    known: &BTreeMap<&ParameterId, Quantity>,
+    carriers: &HashMap<&str, &str>,
+    losses: &mut Vec<LossNote>,
+) -> (ValueKind, Option<ParameterValue>, Expression) {
+    let content = parameter.expression.as_str();
+    let text = |text: &str| {
+        (
+            ValueKind::Text,
+            Some(ParameterValue::Text(text.to_owned())),
+            Expression::Neutral(Neutral(Node::Text(text.to_owned()))),
+        )
+    };
+    if let Some(quoted) = content.strip_prefix('\'') {
+        return text(quoted);
+    }
+    let formula = match content.strip_prefix('=') {
+        Some(formula) => formula,
+        None if parameter.value.is_some() => {
+            let (kind, value) = kind_and_value(parameter.value.as_ref());
+            let expression = expression(parameter, parameters, known, &kind, carriers, losses);
+            return (kind, value, expression);
+        }
+        None if content.starts_with(|ch: char| ch.is_ascii_digit() || ".+-".contains(ch)) => {
+            content
+        }
+        None => return text(content),
+    };
+    if parameter.value.is_some() {
+        let (kind, value) = kind_and_value(parameter.value.as_ref());
+        let expression = translated(parameter, formula, parameters, known, Some(&kind));
+        return (kind, value, expression);
+    }
+    let expression = translated(parameter, formula, parameters, known, None);
+    let kind = match &expression {
+        Expression::Neutral(Neutral(tree)) => quantity(tree, parameters, known),
+        Expression::Source { .. } => None,
+    }
+    .map_or(ValueKind::Quantity(Quantity::REAL), ValueKind::Quantity);
+    (kind, None, expression)
+}
+
+/// A cell's display attributes, which only a `FreeCAD` writer writes (Rule N
+/// case (b)).
+fn cell_settings(parameter: &LegacyParameter) -> NativeOptions {
+    CELL_DISPLAY
+        .iter()
+        .filter_map(|attribute| {
+            let value = NonBlankString::new(property(parameter, attribute)?.to_owned())?;
+            let key = CodecName::new(&cadmpeg_ir::codec_id!("fcstd"), attribute)?;
+            Some((key, NativeOption::Text(Dimension::Literal(value))))
+        })
+        .collect()
 }
 
 fn kind_and_value(value: Option<&LegacyValue>) -> (ValueKind, Option<ParameterValue>) {
@@ -146,6 +262,7 @@ fn kind_and_value(value: Option<&LegacyValue>) -> (ValueKind, Option<ParameterVa
 fn expression(
     parameter: &LegacyParameter,
     parameters: &BTreeMap<&ParameterId, &LegacyParameter>,
+    known: &BTreeMap<&ParameterId, Quantity>,
     kind: &ValueKind,
     carriers: &HashMap<&str, &str>,
     losses: &mut Vec<LossNote>,
@@ -163,7 +280,7 @@ fn expression(
             return Expression::Neutral(Neutral(literal));
         }
     }
-    translated(parameter, text, parameters, kind)
+    translated(parameter, text, parameters, known, Some(kind))
 }
 
 /// The expression of a parameter that stores no expression text: its stored
@@ -290,13 +407,14 @@ fn decimal(stored: f64, canonical: fn(f64) -> f64) -> String {
 }
 
 /// A `FreeCAD` expression as a neutral tree where every construct translates
-/// and its quantity is the parameter's kind, and as the source's tokens with
-/// each resolved reference otherwise.
+/// and its quantity is `kind`, or any quantity where `kind` is `None`, and as
+/// the source's tokens with each resolved reference otherwise.
 fn translated(
     parameter: &LegacyParameter,
     text: &str,
     parameters: &BTreeMap<&ParameterId, &LegacyParameter>,
-    kind: &ValueKind,
+    known: &BTreeMap<&ParameterId, Quantity>,
+    kind: Option<&ValueKind>,
 ) -> Expression {
     let targets = reference_paths(parameter, parameters);
     let mut tokens = Vec::new();
@@ -392,7 +510,13 @@ fn translated(
     }
     if translates {
         if let Ok(tree) = expr::parse(&neutral, &refs, &[]) {
-            let stated = quantity(&tree, parameters);
+            let stated = quantity(&tree, parameters, known);
+            let Some(kind) = kind else {
+                if stated.is_some() {
+                    return Expression::Neutral(Neutral(tree));
+                }
+                return source(text, tokens);
+            };
             if stated.map(ValueKind::Quantity).as_ref() == Some(kind) {
                 return Expression::Neutral(Neutral(tree));
             }
@@ -410,8 +534,12 @@ fn translated(
             }
         }
     }
-    // A source token list holds a text token (part 10): a lone reference
-    // stays the source's text.
+    source(text, tokens)
+}
+
+/// The source's tokens of `text`. A source token list holds a text token
+/// (part 10): a lone reference stays the source's text.
+fn source(text: &str, mut tokens: Vec<ExpressionToken<ParameterRef>>) -> Expression {
     if !text.is_empty()
         && !tokens
             .iter()
@@ -426,7 +554,9 @@ fn translated(
 }
 
 /// The paths by which the expression names each parameter it depends on:
-/// `Object.Property` and `Object.Constraints.name`.
+/// `Object.Property`, `Object.Constraints.name`, and a cell's
+/// `Object.alias` and `Object.address`. A parameter of the expression's own
+/// owner is also named without its object (a cell's `=A1 * 2`).
 fn reference_paths<'a>(
     parameter: &LegacyParameter,
     parameters: &BTreeMap<&ParameterId, &'a LegacyParameter>,
@@ -448,7 +578,14 @@ fn reference_paths<'a>(
         if let Some(name) = property(target, "source_name") {
             names.push(format!("Constraints.{name}"));
         }
+        if let Some(address) = property(target, "address") {
+            names.push(address.to_owned());
+        }
+        let local = target.owner == parameter.owner;
         for name in names {
+            if local {
+                paths.entry(name.clone()).or_insert(&target.id);
+            }
             paths
                 .entry(format!("{object}.{name}"))
                 .or_insert(&target.id);
@@ -488,6 +625,7 @@ fn unit_symbol(word: &str) -> Option<&'static str> {
 fn quantity(
     tree: &Node<ParameterRef>,
     parameters: &BTreeMap<&ParameterId, &LegacyParameter>,
+    known: &BTreeMap<&ParameterId, Quantity>,
 ) -> Option<Quantity> {
     let mut pending = vec![(tree, false)];
     let mut values: Vec<Quantity> = Vec::new();
@@ -513,6 +651,10 @@ fn quantity(
                 }),
                 _,
             ) => {
+                if let Some(quantity) = known.get(id) {
+                    values.push(*quantity);
+                    continue;
+                }
                 let target = parameters.get(id)?;
                 let (ValueKind::Quantity(quantity), _) = kind_and_value(target.value.as_ref())
                 else {

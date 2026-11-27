@@ -613,6 +613,15 @@ parameters without evaluating arbitrary formulas in the decoder. Cell counts are
 match their declared framing. Parameter ordinals use stable dependency order and persisted cell
 order as the tie-break rule. A neutral sheet record binds those cell identities to the owning
 feature and retains ordered non-default column widths, row heights, and inclusive merged ranges.
+The sheet object is a `Spreadsheet` design feature that names this record. The feature owns each
+cell parameter. A cell alias names its parameter; a cell without an alias has an unnamed parameter.
+The parameter expression is the cell content: `'`-quoted content and other content that does not
+start with a number are text literals, and an `=` formula or content that starts with a number is a
+neutral expression. An expression names a cell by its alias or its address, unqualified within
+its sheet and as `Sheet.name` elsewhere. A formula cell stores no value; its value kind is the
+quantity that its expression gives from the kinds of its references, and a real number when those
+kinds are unknown. Alignment, style, foreground and background colors, and display unit are source
+settings of the cell parameter.
 Only positive row and column spans define a neutral merged range. Nonpositive span attributes remain
 native cell metadata and do not create a neutral range.
 Dimension counts must match their records; names, addresses, ownership, merged anchors, duplicate

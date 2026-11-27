@@ -715,9 +715,10 @@ fn objects_outside_a_body_are_group_members_with_their_parameters() {
     };
     assert_eq!(
         operation("fcstd:design:feature#Sheet"),
-        FeatureOperation::Unresolved {
-            family: OperationFamily::Spreadsheet
-        }
+        FeatureOperation::Spreadsheet(
+            cadmpeg_ir::spreadsheets::SpreadsheetId::mint("fcstd:design:spreadsheet#Sheet")
+                .unwrap()
+        )
     );
     let length = ir
         .design
@@ -740,6 +741,61 @@ fn objects_outside_a_body_are_group_members_with_their_parameters() {
         assert!(!omitted.contains(id), "{id}: {omitted:?}");
     }
     assert_eq!(written.design.features, ir.design.features);
+    assert_eq!(written.design.parameters, ir.design.parameters);
+}
+
+#[test]
+fn a_spreadsheet_is_a_feature_naming_its_sheet_record() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Spreadsheet::Sheet" name="Sheet" id="1"/></Objects>
+<ObjectData Count="1">
+ <Object name="Sheet"><Properties Count="2">
+  <Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="3">
+   <Cell address="A1" alias="w" content="12mm"/>
+   <Cell address="A2" content="=w * 2"/>
+   <Cell address="C1" content="'Title" rowSpan="1" colSpan="2"/>
+  </Cells></Property>
+  <Property name="columnWidths" type="Spreadsheet::PropertyColumnWidths"><ColumnInfo Count="1"><Column name="C" width="140"/></ColumnInfo></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let ir = decode(&archive(document), DecodeDepth::Design);
+    let [sheet] = ir.design.spreadsheets.as_slice() else {
+        panic!("{:?}", ir.design.spreadsheets);
+    };
+    assert_eq!(sheet.id.as_str(), "fcstd:design:spreadsheet#Sheet");
+    let cells = sheet
+        .cells()
+        .iter()
+        .map(|cell| (cell.address.a1(), cell.parameter.as_str().to_owned()))
+        .collect::<Vec<_>>();
+    let cell = |address: &str| format!("fcstd:design:parameter#Sheet:cell:{address}");
+    assert_eq!(
+        cells,
+        ["A1", "A2", "C1"].map(|address| (address.to_owned(), cell(address)))
+    );
+    assert_eq!(sheet.column_widths().len(), 1);
+    assert_eq!(sheet.column_widths()[0].pixels, 140);
+    assert_eq!(sheet.merged_ranges().len(), 1);
+    let feature = ir
+        .design
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "fcstd:design:feature#Sheet")
+        .unwrap();
+    assert_eq!(
+        feature.definition.operation,
+        FeatureOperation::Spreadsheet(sheet.id.clone())
+    );
+    let (written, omitted) = cadir_round_trip(&ir);
+    for id in [
+        "fcstd:design:spreadsheet#Sheet".to_owned(),
+        cell("A1"),
+        cell("A2"),
+        cell("C1"),
+    ] {
+        assert!(!omitted.contains(&id), "{id}: {omitted:?}");
+    }
+    assert_eq!(written.design.spreadsheets, ir.design.spreadsheets);
     assert_eq!(written.design.parameters, ir.design.parameters);
 }
 
