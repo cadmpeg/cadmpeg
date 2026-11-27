@@ -1025,7 +1025,6 @@ fn extent_interval(sweep: &Sweep<'_>) -> Option<(f64, f64)> {
             let half = blind(side)? / 2.0;
             (start - half, start + half)
         }
-        _ => return None,
     };
     Some((first.min(second), first.max(second)))
 }
