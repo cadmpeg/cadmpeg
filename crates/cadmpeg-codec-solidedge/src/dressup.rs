@@ -4,9 +4,10 @@
 //!
 //! A feature whose slots do not resolve, or hold a value the specification
 //! does not state, stays unresolved and adds `feature.dressup-unread`. The
-//! edges a round or a chamfer selects are stored as topology proxies that the
-//! decoder does not read; they are stated as unread selections and add one
-//! `feature.selection-unread` note for the document. Stored lengths are
+//! edges a round or a chamfer selects are stored as topology proxies (§7.5);
+//! they are stated as unread selections and add one
+//! `feature.selection-unread` note for the document. The stations of a
+//! variable-radius round read from the proxies of its vertices. Stored lengths are
 //! metres and stored angles are radians; the design states millimetres.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -16,8 +17,9 @@ use cadmpeg_ir::design::construction::{kinds, Construction, FrameValue};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::dressup::{
-    BlendControls, Bore, CenterSource, Chamfer, ChamferSet, ChamferSize, Cone, Fillet,
-    FilletSection, FilletSet, FilletSize, Hole, HoleHead, HolePositions, HoleShape,
+    Along, BlendControls, Bore, CenterSource, Chamfer, ChamferSet, ChamferSize, Cone, Fillet,
+    FilletSection, FilletSet, FilletSize, Hole, HoleHead, HolePositions, HoleShape, StationAt,
+    Stations, ValueStation,
 };
 use cadmpeg_ir::design::ops::shared::Limit;
 use cadmpeg_ir::design::ops::sketch::SketchPlane;
@@ -26,7 +28,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::{InteriorAngle, Length, PositiveLength};
+use cadmpeg_ir::scalar::{Fraction, InteriorAngle, Length, NonNegativeLength, PositiveLength};
 use cadmpeg_ir::units::UnitVector3;
 
 use crate::construction;
@@ -58,6 +60,13 @@ const ROUND_KIND_AFTER_NAME: usize = 84;
 const ROUND_RADIUS_AFTER_NAME: usize = 96;
 /// Bytes between the slots of one kind in a round.
 const ROUND_STRIDE: usize = 20;
+/// Bytes from the end of a function name to the vertex proxies of a round with
+/// `n` sets: `ROUND_VERTICES_BASE + ROUND_VERTICES_PER_SET * n` (§7.3).
+const ROUND_VERTICES_BASE: usize = 108;
+const ROUND_VERTICES_PER_SET: usize = 60;
+/// Bytes between the last slot of a section of a variable-radius set and the
+/// first slot of the next section.
+const SECTION_GAP: usize = 12;
 
 /// Bytes from the end of a function name to each chamfer slot (§7.4).
 const CHAMFER_TYPE_AFTER_NAME: usize = 68;
@@ -72,8 +81,17 @@ const HOLE_COUNTERSINK: u32 = 1;
 const HOLE_COUNTERBORE: u32 = 2;
 const HOLE_TAPPED: u32 = 3;
 
-/// The set kind of a constant-radius round set (§7.3).
+/// The set kinds of a round (§7.3).
 const SET_CONSTANT_RADIUS: f64 = 1.0;
+const SET_VARIABLE_RADIUS: f64 = 2.0;
+
+/// The last ten bytes of the geometry class identifier of a topology proxy
+/// (§7.5).
+const GEOMETRY_TAIL: [u8; 10] = [0xce, 0x11, 0x9a, 0x5e, 0x08, 0x00, 0x36, 0x9b, 0x41, 0x02];
+/// The geometry kind byte of a straight edge (§7.5).
+const GEOMETRY_LINE: u8 = 3;
+/// The distance in metres within which a vertex coincides with an edge end.
+const EPS_SAME_VERTEX: f64 = 1e-6;
 
 /// The chamfer types (§7.4).
 const CHAMFER_EQUAL: f64 = 41.0;
@@ -166,6 +184,153 @@ fn stride(base: usize, count: usize, step: usize) -> Result<usize, String> {
         .checked_mul(step)
         .and_then(|bytes| bytes.checked_add(base))
         .ok_or_else(|| "a slot offset overflows".to_owned())
+}
+
+/// The offset of the geometry record of a topology proxy: the byte after the
+/// geometry class identifier (§7.5).
+fn geometry_at(proxy: &Object<'_>) -> Result<usize, String> {
+    proxy
+        .bytes
+        .windows(GEOMETRY_TAIL.len())
+        .position(|window| window == GEOMETRY_TAIL)
+        .map(|at| at + GEOMETRY_TAIL.len())
+        .ok_or_else(|| "a topology proxy holds no geometry class identifier".to_owned())
+}
+
+/// The `f64` at `at`, finite.
+fn finite_at(bytes: &[u8], at: usize, what: &str) -> Result<f64, String> {
+    View::f64_le_at(bytes, at)
+        .filter(|value| value.is_finite())
+        .ok_or_else(|| format!("the {what} of a topology proxy does not read"))
+}
+
+/// The start, direction and length of the straight edge a proxy stores, in
+/// metres (§7.5).
+fn line_edge(proxy: &Object<'_>) -> Result<([f64; 3], [f64; 3], f64), String> {
+    let at = geometry_at(proxy)?;
+    if proxy.bytes.get(at) != Some(&GEOMETRY_LINE) {
+        return Err("a topology proxy does not hold a straight edge".to_owned());
+    }
+    let mut start = [0.0; 3];
+    let mut direction = [0.0; 3];
+    for i in 0..3 {
+        start[i] = finite_at(proxy.bytes, at + 1 + 8 * i, "edge start")?;
+        direction[i] = finite_at(proxy.bytes, at + 25 + 8 * i, "edge direction")?;
+    }
+    let length = finite_at(proxy.bytes, at + 57, "edge length")?;
+    Ok((start, direction, length))
+}
+
+/// The point a vertex proxy stores, in metres (§7.5).
+fn vertex_point(proxy: &Object<'_>) -> Result<[f64; 3], String> {
+    let at = geometry_at(proxy)?;
+    let mut point = [0.0; 3];
+    for (i, value) in point.iter_mut().enumerate() {
+        *value = finite_at(proxy.bytes, at + 8 * i, "vertex point")?;
+    }
+    Ok(point)
+}
+
+fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
+    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+}
+
+/// The topology proxy object a slot names.
+fn proxy_at<'a>(
+    cluster: &Cluster<'a>,
+    types: &'a TypeTable,
+    object: &Object<'_>,
+    end: usize,
+    after: usize,
+    what: &str,
+) -> Result<Object<'a>, String> {
+    let (found, class) = named(cluster, types, slot(object, end, after)?, what)?;
+    if class != PROXY_CLASS {
+        return Err(format!("the {what} object is of class {class}"));
+    }
+    Ok(found)
+}
+
+/// The size of a variable-radius set: one station for each vertex proxy,
+/// placed at fraction 0 where the vertex is the start of the edge and at
+/// fraction 1 where it is the end (§7.3).
+fn variable_size(
+    cluster: &Cluster<'_>,
+    types: &TypeTable,
+    object: &Object<'_>,
+    end: usize,
+    vertices_at: usize,
+) -> Result<FilletSize, String> {
+    let edge = proxy_at(cluster, types, object, end, ROUND_PROXY_AFTER_NAME, "edge")?;
+    let (start, direction, length) = line_edge(&edge)?;
+    let finish = [
+        start[0] + direction[0] * length,
+        start[1] + direction[1] * length,
+        start[2] + direction[2] * length,
+    ];
+    let mut count = 0_usize;
+    while is_proxy(
+        cluster,
+        types,
+        object,
+        end,
+        stride(vertices_at, count, ROUND_STRIDE)?,
+    ) {
+        count = count
+            .checked_add(1)
+            .ok_or_else(|| "the vertex count overflows".to_owned())?;
+    }
+    if count < 2 {
+        return Err("a variable-radius set names fewer than two vertices".to_owned());
+    }
+    let radii_at = stride(vertices_at, count, ROUND_STRIDE).and_then(|at| {
+        at.checked_add(SECTION_GAP)
+            .ok_or_else(|| "a slot offset overflows".to_owned())
+    })?;
+    let mut points = Vec::new();
+    for j in 0..count {
+        let vertex = proxy_at(
+            cluster,
+            types,
+            object,
+            end,
+            stride(vertices_at, j, ROUND_STRIDE)?,
+            "vertex",
+        )?;
+        let point = vertex_point(&vertex)?;
+        let fraction = if distance(point, start) <= EPS_SAME_VERTEX {
+            0.0
+        } else if distance(point, finish) <= EPS_SAME_VERTEX {
+            1.0
+        } else {
+            return Err(format!("vertex {j} is not an end of the edge"));
+        };
+        let radius = dimension_slot(
+            cluster,
+            types,
+            object,
+            end,
+            stride(radii_at, j, ROUND_STRIDE)?,
+            "vertex radius",
+        )?
+        .ok_or_else(|| format!("vertex {j} has no radius"))?;
+        let value = NonNegativeLength::new(radius * MM_PER_M)
+            .ok_or_else(|| format!("the vertex radius {radius} is not a length"))?;
+        points.push(ValueStation {
+            at: StationAt::Parameter {
+                along: Along::Chain {},
+                fraction: Dimension::Literal(
+                    Fraction::new(fraction).ok_or_else(|| "the fraction is invalid".to_owned())?,
+                ),
+            },
+            value: Dimension::Literal(value),
+        });
+    }
+    Ok(FilletSize::Variable(Stations {
+        points,
+        law: None,
+        chain_start: None,
+    }))
 }
 
 /// The frame of the sketch `owner` owns.
@@ -409,15 +574,20 @@ fn round(
             ROUND_STRIDE,
         )?;
         let kind = double_slot(cluster, types, object, end, kind_at, "set kind")?;
-        if !is(kind, SET_CONSTANT_RADIUS) {
+        let size = if is(kind, SET_CONSTANT_RADIUS) {
+            let radius = dimension_slot(cluster, types, object, end, radius_at, "radius")?
+                .ok_or_else(|| format!("set {k} has no radius"))?;
+            FilletSize::Radius(length(radius, "radius")?)
+        } else if is(kind, SET_VARIABLE_RADIUS) && count == 1 {
+            let vertices_at = stride(ROUND_VERTICES_BASE, count, ROUND_VERTICES_PER_SET)?;
+            variable_size(cluster, types, object, end, vertices_at)?
+        } else {
             return Err(format!("the kind {kind} of set {k} is not 1"));
-        }
-        let radius = dimension_slot(cluster, types, object, end, radius_at, "radius")?
-            .ok_or_else(|| format!("set {k} has no radius"))?;
+        };
         sets.push(FilletSet::Edges {
             edges: unread(),
             section: FilletSection {
-                size: Some(FilletSize::Radius(length(radius, "radius")?)),
+                size: Some(size),
                 profile: None,
                 weight: None,
             },

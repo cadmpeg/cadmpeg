@@ -48,29 +48,31 @@
 
 **Need.** A document saved with one feature suppressed, one saved with the rollback position moved, and a no-edit resave of each.
 
-### DR-1016. Feature navigator final word
+### DR-1016. Feature navigator final word after suppression
 
-**Question.** What does the final word of the feature navigator object count?
+**Question.** Which state raises the final word of the feature navigator object above the number of feature-tree items that are not folders, plus one, and by how much?
 
-**Known.** For `n` listed features the word is `n` + 1 in most documents, `n` + 2 with a swept protrusion, and `n` with a lofted protrusion or a base tab followed by a flange.
+**Known.** The word is that number plus one in every document without a suppressed feature. Suppressing an extruded cutout raises it by 2, and suppressing a mirror copy raises it by 1. Suppressing a pattern does not raise it.
 
-**Need.** Documents that differ in one feature of each kind.
+**Need.** Documents that differ in one suppression, with the final word read before and after each change.
 
 ### DR-1020. Second side word of extruded features
 
 **Question.** What does the `Double Value Object` 156 bytes after the function name of an extruded or revolved feature state?
 
-**Known.** The slot holds no object in the first feature of a document. In the later features of controlled saves it holds `2` for protrusions, including one extended against its profile normal, and `1` for cutouts, including one extended along its profile normal. Four protrusions in other documents hold `1`.
+**Known.** The slot holds no object in the first feature of a document. In every later extruded protrusion and cutout of the controlled saves it holds `1`, for each side value `1`, `2` and `3` and for both boolean operations.
 
-**Need.** The protrusions that hold `1` rebuilt in controlled saves, and a protrusion and a cutout that differ only in the boolean operation.
+**Conflict.** Other documents hold `2` in later protrusions, `1` in cutouts, and `1` in four further protrusions. The boolean operation and the side value do not separate them.
+
+**Need.** A document whose later extruded feature holds `2`, and a pair of saves that differ only in the setting that changes it.
 
 ### DR-1021. Topology proxy selections
 
-**Question.** Which edges and faces does a `CLSID_JMTopologyProxy` object select, and which face of a two-setback chamfer is its reference face?
+**Question.** What do the `f64` values after the axis of a circular-edge proxy store, which face of a two-setback chamfer is its reference face, and where does a thin wall with several open faces store the faces after the first?
 
-**Known.** Rounds and chamfers name their edges and reference faces by `CLSID_JMTopologyProxy` identifiers (§7.3, §7.4). A proxy object is 559 bytes for an edge selection and 827 bytes for a chamfer reference face in the read documents.
+**Known.** The geometry records of straight-edge, planar-face and vertex proxies are in §7.5. A circular-edge proxy holds the center and the axis of the circle and then five `f64` values, the first of which is the radius in one read document. A thin wall stores a proxy of 881 bytes 152 bytes after the end of its function name, whatever number of faces the thin wall opens.
 
-**Need.** Documents that differ only in the selected edge of a round, and a two-setback chamfer and its copy with the setbacks swapped.
+**Need.** A round on a circular edge of a second radius, a two-setback chamfer and its copy with the setbacks swapped, and a thin wall whose volume shows two open faces.
 
 ### DR-1022. Tapped hole thread data
 
@@ -98,11 +100,11 @@
 
 ### DR-1025. Round set kinds
 
-**Question.** What does round set kind `2` state, and where does such a set store its size?
+**Question.** What do the blend shape and the setback of a round set store?
 
-**Known.** Set kind `1` is a constant radius with the layout of §7.3. One read round has set kind `2`. Its feature object is longer and holds two more `CLSID_JMTopologyProxy` identifiers and two `CLSID_JDim` identifiers after the kind.
+**Known.** Set kind `1` is a constant radius and set kind `2` is a variable radius (§7.3). A corner round with unequal radii holds one set of kind `1` for each edge.
 
-**Need.** A variable-radius round and a round with a setback or other non-constant section, each with a copy that differs in one value.
+**Need.** A round with a conic or G2 blend shape and a round with a setback, each with a copy that differs in one value, saved from the Solid Edge user interface.
 
 ### DR-1067. Mirror plane of an assembly mirror
 
