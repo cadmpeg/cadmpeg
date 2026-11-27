@@ -255,12 +255,13 @@ little-endian `u32` values.
 | entries | `M` pairs of `0` and an object identifier |
 | final word | |
 
-The final word does not depend on the kind of any feature. In a document
-where no feature is suppressed, it equals the number
-of feature-tree items that are not feature-tree folders, plus one. A mirror
-copy and a pattern each count once, as do a swept, lofted, revolved or
-sheet-metal feature. A feature-tree folder adds an entry and does not change
-the word. Suppression of a feature can raise the word above this value. The word is not a feature count.
+The final word does not depend on the kind of any feature. Let `n` be the
+number of feature-tree items that are not feature-tree folders. A mirror copy
+and a pattern each count once, as do a swept, lofted, revolved or sheet-metal
+feature. A feature-tree folder adds an entry and does not change `n`. In a
+document with no suppressed feature the word is `n` + 1. Each suppressed
+feature adds the number of non-folder items that follow it in the feature-tree
+order, except items whose recompute failed. The word is not a feature count.
 
 One more `u32` can follow the final word. The object then ends. The first
 three entries are the three base reference planes, of class
