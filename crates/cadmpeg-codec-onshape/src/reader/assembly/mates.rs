@@ -142,33 +142,44 @@ const PAIRED_MATE_TYPES: [&str; 6] = [
     "BALL",
 ];
 
-/// The joint that the mate `feature` at the occurrence path `path` maps to,
-/// and the source address of the given-up instance that one of its
-/// connectors names, where one does.
+/// The joint that the mate `feature` at the occurrence path `path` maps to
+/// where the instance that one of its connectors names is given up, and
+/// the source address of that instance. A mate names such a joint where
+/// each of its two connectors states a valid occurrence path and frame, and
+/// each connector under no given-up instance resolves. A planar mate takes
+/// its sense from the placements of both connectors, so it names none.
 fn dropped_joint(
     structure: &Structure<'_, '_>,
     feature: &Value,
     path: &[String],
 ) -> Option<(Identity, String)> {
     let data = feature.get("featureData")?;
-    if !text(data, "mateType").is_ok_and(|kind| PAIRED_MATE_TYPES.contains(&kind)) {
+    if !text(data, "mateType")
+        .is_ok_and(|kind| kind != "PLANAR" && PAIRED_MATE_TYPES.contains(&kind))
+    {
         return None;
     }
     let native = text(feature, "id").ok()?;
-    let entities = data.get("matedEntities").and_then(Value::as_array)?;
-    let needs = entities.iter().take(2).find_map(|entity| {
-        let components = entity.get("matedOccurrence").and_then(Value::as_array)?;
-        let mut occurrence = path.to_vec();
-        for component in components.iter().take(super::ASSEMBLY_DEPTH) {
-            occurrence.push(component.as_str()?.to_owned());
-            if let Some(record) = structure.given_up.get(&occurrence) {
-                return Some(record.clone());
+    let [first, second] = rows(data, "matedEntities").ok()? else {
+        return None;
+    };
+    let mut needs = None;
+    for entity in [first, second] {
+        let occurrence = occurrence_path(entity, path).ok()?;
+        let given_up = (path.len() + 1..=occurrence.len())
+            .find_map(|end| structure.given_up.get(&occurrence[..end]));
+        match given_up {
+            Some(record) => {
+                mated_frame(entity).ok()?;
+                needs.get_or_insert_with(|| record.clone());
+            }
+            None => {
+                connector(structure, entity, path).ok()?;
             }
         }
-        None
-    })?;
+    }
     let joint = Identity::try_from(id("joint", &format!("{}:{native}", key(path)))).ok()?;
-    Some((joint, needs))
+    Some((joint, needs?))
 }
 
 struct MappedMate {
@@ -280,11 +291,8 @@ fn sense(first: Option<Transform>, second: Option<Transform>) -> Option<PlaneSen
         None
     }
 }
-fn connector(
-    structure: &Structure<'_, '_>,
-    entity: &Value,
-    parent: &[String],
-) -> Mapping<Connector> {
+/// The occurrence path that the mated `entity` of a mate at `parent` names.
+fn occurrence_path(entity: &Value, parent: &[String]) -> Mapping<Vec<String>> {
     let mut path = parent.to_vec();
     let components = rows(entity, "matedOccurrence")?;
     if parent.len() + components.len() > super::ASSEMBLY_DEPTH {
@@ -299,10 +307,42 @@ fn connector(
                 .to_owned(),
         );
     }
+    Ok(path)
+}
+
+fn connector(
+    structure: &Structure<'_, '_>,
+    entity: &Value,
+    parent: &[String],
+) -> Mapping<Connector> {
+    let path = occurrence_path(entity, parent)?;
     let placement = structure
         .placements
         .get(&path)
         .ok_or("mate occurrence path is unresolved")?;
+    let frame = mated_frame(entity)?;
+    let world = placement
+        .world
+        .map(|world| world.compose(frame))
+        .transpose()
+        .map_err(|reason| format!("solved connector world frame is invalid: {reason}"))?;
+    Ok(Connector {
+        joint: JointConnector {
+            operand: JointOperand::occurrence(
+                placement.id.clone(),
+                path.last().cloned().unwrap_or_default(),
+                Vec::new(),
+            ),
+            frame,
+            detached: false,
+        },
+        world,
+        nested: path.len() - parent.len() > 1,
+    })
+}
+
+/// The frame that the mated `entity` states in its occurrence.
+fn mated_frame(entity: &Value) -> Mapping<Transform> {
     let cs = entity
         .get("matedCS")
         .ok_or("evaluated mate coordinate system is missing")?;
@@ -330,24 +370,7 @@ fn connector(
     if !frame.is_proper_rigid() {
         return Err("mate axes do not form a proper rigid frame".into());
     }
-    let world = placement
-        .world
-        .map(|world| world.compose(frame))
-        .transpose()
-        .map_err(|reason| format!("solved connector world frame is invalid: {reason}"))?;
-    Ok(Connector {
-        joint: JointConnector {
-            operand: JointOperand::occurrence(
-                placement.id.clone(),
-                path.last().cloned().unwrap_or_default(),
-                Vec::new(),
-            ),
-            frame,
-            detached: false,
-        },
-        world,
-        nested: components.len() > 1,
-    })
+    Ok(frame)
 }
 
 fn quantities(

@@ -572,3 +572,64 @@ fn ignored_spun_profile_intervals_keep_typed_surfaces_and_report_loss() {
         assert!(notes[0].message.contains(&format!("[{low}, {high}]")));
     }
 }
+
+/// The ring of `ellipse_sheet` whose edge has no EDGE record and whose FINs
+/// name a vertex that no record states.
+fn unresolved_end_sheet() -> Vec<(u16, u16, Vec<F>)> {
+    let mut nodes = ellipse_sheet(true);
+    nodes.retain(|(kind, _, _)| *kind != 16);
+    for (kind, _, fields) in &mut nodes {
+        if *kind == 17 {
+            fields[4] = F::P(9);
+        }
+    }
+    nodes
+}
+
+#[test]
+fn a_loop_whose_unrecorded_edge_has_an_unresolved_end_names_the_vertex() {
+    let out = decode(&unresolved_end_sheet());
+    assert!(out.loops.is_empty());
+    assert!(out.edges.is_empty());
+    let loop_charge = format!("{}:", SldprtLossCode::TopologyVertexRecordUnresolved.kind());
+    assert!(
+        out.dropped.iter().any(|dropped| matches!(
+            dropped,
+            super::DroppedRecord::GivenUp { record, error, .. }
+                if record.contains("loop") && error.starts_with(&loop_charge)
+        )),
+        "{:#?}",
+        out.dropped
+    );
+    assert_eq!(
+        given_up(&out, SldprtLossCode::TopologyFinPartnerUnresolved),
+        0
+    );
+}
+
+/// The nodes of `nodes` without their BODY record, whose body the decode
+/// then derives.
+fn without_body(mut nodes: Vec<(u16, u16, Vec<F>)>) -> Vec<(u16, u16, Vec<F>)> {
+    nodes.retain(|(kind, _, _)| *kind != 12);
+    nodes
+}
+
+#[test]
+fn a_derived_body_is_a_solid_only_where_its_faces_close() {
+    use cadmpeg_ir::topology::BodyKind;
+    let mut partial = loopless_nodes(53);
+    partial[3].2[5] = F::P(6);
+    for (nodes, kind) in [
+        (loopless_nodes(53), BodyKind::Solid),
+        (partial, BodyKind::Sheet),
+        (ellipse_sheet(true), BodyKind::Sheet),
+    ] {
+        let out = decode(&without_body(nodes));
+        assert!(out.stats.synthetic_body_grouping);
+        assert_eq!(out.faces.len(), 1, "{:#?}", out.dropped);
+        let [body] = out.bodies.as_slice() else {
+            panic!("one derived body");
+        };
+        assert_eq!(body.kind, kind);
+    }
+}

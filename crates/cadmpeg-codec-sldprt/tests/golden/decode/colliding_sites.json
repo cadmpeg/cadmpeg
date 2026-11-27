@@ -25,11 +25,11 @@
       "bodies": [
         {
           "id": "sldprt:brep:body#0@block@250",
-          "kind": "solid"
+          "kind": "sheet"
         },
         {
           "id": "sldprt:brep:body#0@block@8",
-          "kind": "solid"
+          "kind": "sheet"
         }
       ],
       "coedges": [],

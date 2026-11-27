@@ -326,7 +326,7 @@ pub(super) fn decode(
                 assets: Vec::new(),
                 ..Drawing::new(
                     DrawingId::from(identity.clone()),
-                    identity.as_str().to_owned(),
+                    identity.clone(),
                     drawing_kind(name),
                     name.into(),
                     order,

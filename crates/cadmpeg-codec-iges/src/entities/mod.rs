@@ -257,6 +257,26 @@ fn give_up_record(
     losses.push(unreadable);
 }
 
+/// Pushes `why` and the give-up of `record`, a neutral record that a pass
+/// mints from `entry`'s decoded entity and then drops, naming `marked`, the
+/// record that states its unstated children for the drop (§5.6).
+fn give_up_marking(
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    record: impl Into<Identity>,
+    marked: Option<impl Into<Identity>>,
+    why: LossNote,
+) {
+    let mut provenance = entry.loss_provenance();
+    provenance.tag = None;
+    let unreadable = GivenUpRecord::caused_by(record, &why)
+        .at(provenance)
+        .marking(marked)
+        .loss();
+    losses.push(why);
+    losses.push(unreadable);
+}
+
 /// Keeps the first `record.unreadable` of each entity for which the
 /// projection holds no record, and removes the others, and each
 /// `record.dropped-with` note of an entity that the projection holds.

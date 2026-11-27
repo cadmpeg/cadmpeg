@@ -84,7 +84,7 @@
       "bodies": [
         {
           "id": "sldprt:brep:body#0",
-          "kind": "solid"
+          "kind": "sheet"
         }
       ],
       "coedges": [],

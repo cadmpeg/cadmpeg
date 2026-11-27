@@ -15190,7 +15190,7 @@
         },
         "object": {
           "description": "Application object persisting this drawing entity.",
-          "type": "string"
+          "$ref": "#/$defs/Identity"
         },
         "kind": {
           "description": "Format-neutral semantic role.",
@@ -15307,7 +15307,7 @@
           "description": "Template, image, symbol, or other retained assets.",
           "type": "array",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/Identity"
           }
         },
         "native_ref": {
@@ -40692,7 +40692,7 @@
           "description": "Referenced display assets as global native entry ids.",
           "type": "array",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/Identity"
           }
         }
       },
@@ -50447,7 +50447,7 @@
         },
         "object": {
           "description": "Application object persisting this annotation.",
-          "type": "string"
+          "$ref": "#/$defs/Identity"
         },
         "kind": {
           "description": "Format-neutral semantic role.",
@@ -50560,7 +50560,7 @@
           "description": "Symbol, image, font, or other retained assets.",
           "type": "array",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/Identity"
           }
         },
         "native_ref": {
@@ -67566,7 +67566,7 @@
         },
         "object": {
           "description": "Owning application object identity, if resolved.",
-          "type": "string"
+          "$ref": "#/$defs/Identity"
         },
         "order": {
           "description": "Source order in the provider table.",

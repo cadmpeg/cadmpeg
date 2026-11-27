@@ -57,8 +57,10 @@ use super::typed::RegionKind;
 use super::{CurveCarrier, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
 
+mod grouping;
 mod prune;
 
+use grouping::{shell_face_components, unclassified_body_kind};
 use prune::{prune_rejected_topology, RingLoss};
 
 const EPS_NORMAL_NONZERO: f64 = 1.0e-12;
@@ -504,90 +506,6 @@ impl Brep {
             .map_err(cadmpeg_core::CodecError::from)?;
         Ok(())
     }
-}
-
-fn shell_face_components(out: &Brep, native_shell_id: &str) -> Vec<Vec<FaceId>> {
-    let mut candidates = Vec::new();
-    for face in &out.faces {
-        if face.shell.as_str() == native_shell_id {
-            candidates.push(&face.id);
-        }
-    }
-    // A face that does not state all its loops does not state all its
-    // neighbours, so the shell is not split on its edges.
-    if out
-        .faces
-        .iter()
-        .any(|face| face.shell.as_str() == native_shell_id && face.loops.is_partial())
-    {
-        let mut component: Vec<FaceId> = candidates.into_iter().cloned().collect();
-        component.sort_by(|left, right| left.as_str().cmp(right.as_str()));
-        return vec![component];
-    }
-    let mut candidate_ids = HashSet::new();
-    for face in &candidates {
-        let key = face.as_str();
-        candidate_ids.insert(key);
-    }
-    let mut loop_faces = HashMap::new();
-    for loop_ in &out.loops {
-        if candidate_ids.contains(loop_.face.as_str()) {
-            let key = loop_.id.as_str();
-            loop_faces.insert(key, loop_.face.as_str());
-        }
-    }
-    let mut faces_by_edge = HashMap::<&str, HashSet<&str>>::new();
-    for coedge in &out.coedges {
-        if let Some(face) = loop_faces.get(coedge.owner_loop.as_str()) {
-            let key = coedge.edge.as_str();
-            let edge_faces = faces_by_edge.entry(key).or_default();
-            edge_faces.insert(*face);
-        }
-    }
-    let mut neighbors = HashMap::<&str, HashSet<&str>>::new();
-    for edge_faces in faces_by_edge.values() {
-        for &face in edge_faces {
-            let adjacent = neighbors.entry(face).or_default();
-            for &other in edge_faces {
-                if other != face {
-                    adjacent.insert(other);
-                }
-            }
-        }
-    }
-
-    // The walk moves over borrowed keys, so the face each key names is looked
-    // up rather than rebuilt from its text.
-    let mut faces_by_key = HashMap::new();
-    for face in &candidates {
-        let key = face.as_str();
-        faces_by_key.insert(key, *face);
-    }
-    let mut assigned = HashSet::new();
-    let mut components = Vec::new();
-    for face in &candidates {
-        let key = face.as_str();
-        if !assigned.insert(key) {
-            continue;
-        }
-        let mut component = Vec::new();
-        let mut pending = Vec::new();
-        pending.push(key);
-        while let Some(current) = pending.pop() {
-            let Some(face) = faces_by_key.get(current) else {
-                continue;
-            };
-            component.push((*face).clone());
-            for &neighbor in neighbors.get(current).into_iter().flatten() {
-                if assigned.insert(neighbor) {
-                    pending.push(neighbor);
-                }
-            }
-        }
-        component.sort_by(|left, right| left.as_str().cmp(right.as_str()));
-        components.push(component);
-    }
-    components
 }
 
 #[derive(Debug, Clone)]
@@ -4039,6 +3957,7 @@ fn decode_graph_inner(
     let mut edge_curve_spans = HashMap::<u32, (u32, Option<[f64; 2]>)>::new();
     let mut closed_edge_starts = HashMap::<u32, cadmpeg_ir::math::Point3>::new();
     let mut reversed_edge_orientation = HashSet::<u32>::new();
+    let mut unresolved_end_edges = HashSet::<u32>::new();
     let edge_attrs = sorted_graph_attrs(edge_ends.keys().copied());
     for e in edge_attrs {
         let (start_v, end_v, curve_attr, fin_attr) = edge_ends[&e];
@@ -4082,6 +4001,8 @@ fn decode_graph_inner(
                     "an end vertex of the edge does not resolve",
                     &[],
                 ));
+            } else {
+                unresolved_end_edges.insert(e);
             }
             continue;
         }
@@ -4771,22 +4692,33 @@ fn decode_graph_inner(
             if loop_set.contains(loop_attr) {
                 continue;
             }
+            let edge_of_ring = |edges: &HashSet<u32>| {
+                ring.iter().any(|c| {
+                    t.coedges()
+                        .get(c)
+                        .is_some_and(|ce| edges.contains(&ce.refs[6]))
+                })
+            };
             if broken_rings.contains(loop_attr) {
                 lost.push((
                     *loop_attr,
                     crate::loss::SldprtLossCode::TopologyFinLinkUnresolved,
                     "the coedges of the loop do not form a ring",
                 ));
-            } else if !ring.iter().any(|c| {
-                t.coedges()
-                    .get(c)
-                    .is_some_and(|ce| withheld_edges.contains(&ce.refs[6]))
-            }) {
-                lost.push((
-                    *loop_attr,
-                    crate::loss::SldprtLossCode::TopologyFinPartnerUnresolved,
-                    "an edge of the loop has no canonical FIN the decode reads",
-                ));
+            } else if !edge_of_ring(&withheld_edges) {
+                lost.push(if edge_of_ring(&unresolved_end_edges) {
+                    (
+                        *loop_attr,
+                        crate::loss::SldprtLossCode::TopologyVertexRecordUnresolved,
+                        "an end vertex of an edge of the loop does not resolve",
+                    )
+                } else {
+                    (
+                        *loop_attr,
+                        crate::loss::SldprtLossCode::TopologyFinPartnerUnresolved,
+                        "an edge of the loop has no canonical FIN the decode reads",
+                    )
+                });
             }
         }
         for (loop_attr, _) in &f.vertex_loops {
@@ -5494,6 +5426,7 @@ fn decode_graph_inner(
         )?;
         let native_regions = body_record.map_or(&[][..], |record| record.regions.as_slice());
         let mut body_regions = Vec::new();
+        let mut body_faces = HashSet::new();
         if native_regions.is_empty() {
             let region_id = RegionId::compose(&region_namespace(), group);
             let native_shell_id = ShellId::compose(&shell_namespace(), group);
@@ -5509,6 +5442,7 @@ fn decode_graph_inner(
                     shell_component(&native_shell_id, component)?
                 };
                 annotate_group(AnnotationKey::from(&shell_id), None)?;
+                body_faces.extend(faces.iter().cloned());
                 let mut face_ids = HashSet::new();
                 face_ids.extend(faces.iter().map(cadmpeg_ir::ids::FaceId::as_str));
                 for face in &mut out.faces {
@@ -5580,9 +5514,13 @@ fn decode_graph_inner(
             }
         }
         admit_brep_entity(ctx)?;
+        let kind = body_record.map_or_else(
+            || unclassified_body_kind(&out, &body_faces),
+            |record| record.kind,
+        );
         out.bodies.push(Body {
             id: body_id,
-            kind: body_record.map_or(BodyKind::Solid, |record| record.kind),
+            kind,
             transform: None,
             name: None,
             color: None,

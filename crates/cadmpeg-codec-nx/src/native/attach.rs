@@ -5799,7 +5799,7 @@ fn text_semantic_annotation(
         assets: Vec::new(),
         ..SemanticAnnotation::new(
             id,
-            native_ref.to_owned(),
+            cadmpeg_ir::ids::Identity::try_from(native_ref).map_err(CodecError::malformed)?,
             SemanticAnnotationKind::Text,
             "TEXT".to_owned(),
             order,

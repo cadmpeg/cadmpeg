@@ -917,6 +917,34 @@ fn a_vertexless_edge_with_no_carrier_is_given_up_at_its_node() {
     }
 }
 
+/// A swept ring face whose edge has neither a vertex nor a carrier is
+/// dropped with its loop; its surface leaves with it, and the charge names
+/// the surface's procedural construction among the records dropped.
+#[test]
+fn a_dropped_swept_face_names_the_construction_of_its_surface() {
+    let kept = decode_partition(test_support::swept_ring_partition(NULL_REAL));
+    let [construction] = kept.ir().geometry.procedural_surfaces.as_slice() else {
+        panic!("the swept surface has one construction");
+    };
+    let result = decode_partition(test_support::uncarried_swept_ring_partition(NULL_REAL));
+    let geometry = &result.ir().geometry;
+    assert!(geometry.faces.is_empty());
+    assert!(geometry.procedural_surfaces.is_empty());
+    let id = construction.id.as_str();
+    assert!(
+        result.report().losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss
+                    .message
+                    .split_once("; dropped=[")
+                    .and_then(|(_, tail)| tail.split_once(']'))
+                    .is_some_and(|(list, _)| list.split(", ").any(|named| named == id))
+        }),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
 fn swept_ring_direction(scale: f64) -> f64 {
     let bytes = test_support::with_partitions(&[test_support::swept_ring_partition(scale)]);
     let result = SolidEdgeCodec

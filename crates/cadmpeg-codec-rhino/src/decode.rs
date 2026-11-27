@@ -2929,28 +2929,23 @@ impl<'a> DecodeContext<'a> {
         );
         let (mut ir, unknowns) = self.session.into_parts();
         source_fidelity.attach_native_unknown_records(&mut ir, "rhino", unknowns, ctx)?;
-        let parts = given_up
-            .iter()
-            .map(|part| part.id().clone())
-            .collect::<Vec<_>>();
-        for part in given_up {
-            losses.push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
-        }
         let untyped = self
             .opaque_records
             .iter()
             .map(|record| record.id().clone())
             .collect::<Vec<_>>();
-        source_fidelity.retain_unknown_records("rhino", self.opaque_records)?;
+        source_fidelity
+            .retain_unknown_records(crate::container::FILE_OWNER, self.opaque_records)?;
         for id in untyped {
             source_fidelity.mark_untyped(id.as_str(), [cadmpeg_core::decode::ArenaClass::Model])?;
         }
-        crate::container::keep_uncovered_part_bytes(
+        losses.extend(crate::container::commit_given_up(
             ctx,
             self.scan.data,
+            &mut ir,
             &mut source_fidelity,
-            &parts,
-        )?;
+            given_up,
+        )?);
         let primary = crate::container::dialect_match(self.scan);
         // Charged from the admission the source records, so the document-level
         // residual admission and its loss cannot be reported apart.

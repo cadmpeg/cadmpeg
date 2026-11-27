@@ -381,6 +381,38 @@ fn an_instance_without_a_type_is_given_up_with_the_mates_that_need_it() {
     );
 }
 
+/// A given-up instance names among its dropped records only the joints its
+/// mates map to: a planar mate's sense needs the lost placement, and a mate
+/// whose other connector has no frame maps to no joint.
+#[test]
+fn a_given_up_instance_names_only_the_joints_its_mates_map_to() {
+    let mut definition = definition();
+    definition["rootAssembly"]["instances"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("type");
+    let mut frameless = mate("frameless", "FASTENED");
+    frameless["featureData"]["matedEntities"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("matedCS");
+    definition["rootAssembly"]["features"] = json!([
+        mate("planar", "PLANAR"),
+        frameless,
+        mate("fastened", "FASTENED")
+    ]);
+    let (_, report) = read(definition);
+    let charges = charges(&report, &format!("{DEFINITION}#/rootAssembly/instances/1"));
+    let [charge] = charges.as_slice() else {
+        panic!("one charge: {:?}", report.losses());
+    };
+    let joint = crate::reader::id("joint", "[]:fastened");
+    assert!(
+        charge.ends_with(&format!("; dropped=[{joint}]")),
+        "{charge}"
+    );
+}
+
 #[test]
 fn a_repeated_instance_id_is_given_up_only_where_its_content_differs() {
     let repeat = format!("{DEFINITION}#/rootAssembly/instances/2");

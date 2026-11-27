@@ -1881,6 +1881,8 @@ impl LegacyPlaneError {
 struct LegacyPlaneSource<'a> {
     entry: &'a DirectoryEntry,
     record: &'a ParameterRecord,
+    /// The sequence of the Type 108 Form 1 face that bounds the hole.
+    parent: u32,
 }
 
 fn legacy_single_parent_face(
@@ -1892,16 +1894,11 @@ fn legacy_single_parent_face(
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<Option<(ModelDraft, Vec<u32>)>, LegacyPlaneError> {
-    let LegacyPlaneSource { entry, record } = source;
-    let Some(parent_sequence) = existing_pointer(record, 3, entries) else {
-        return Ok(None);
-    };
-    let Some(parent_entry) = entries.get(&parent_sequence) else {
-        return Ok(None);
-    };
-    if parent_entry.entity_type != 108 || parent_entry.form != 1 {
-        return Ok(None);
-    }
+    let LegacyPlaneSource {
+        entry,
+        record,
+        parent: parent_sequence,
+    } = source;
     let Some(child_count) = record.count(2).filter(|count| *count > 0) else {
         return Err("legacy single-parent plane hole has no children".into());
     };
@@ -1985,6 +1982,28 @@ fn legacy_single_parent_face(
         )?,
         children,
     )))
+}
+
+/// States the face of `candidate` with its holes not stated in full, for a
+/// face whose Type 402 Form 9 hole the projection gives up (§5.6).
+fn state_holes_unstated(candidate: &mut ModelDraft) {
+    for face in &mut candidate.geometry_mut().faces {
+        face.loops = match std::mem::replace(
+            &mut face.loops,
+            cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        ) {
+            cadmpeg_ir::topology::FaceLoops::Classified { outer, inner } => {
+                cadmpeg_ir::topology::FaceLoops::PartialClassified {
+                    outer: Some(outer),
+                    inner,
+                }
+            }
+            cadmpeg_ir::topology::FaceLoops::Unspecified { loops } => {
+                cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops }
+            }
+            partial => partial,
+        };
+    }
 }
 
 enum FlowPointer {
@@ -2306,8 +2325,9 @@ pub(super) fn project(
     let mut placement_rejections = BTreeMap::new();
     let mut assemblies = BTreeMap::new();
     let mut attribute_shapes = BTreeMap::<u32, Vec<(i64, usize)>>::new();
-    let mut legacy_face_candidates = Vec::<(&DirectoryEntry, FaceId, ModelDraft)>::new();
+    let mut legacy_face_candidates = Vec::<(&DirectoryEntry, u32, FaceId, ModelDraft)>::new();
     let mut legacy_plane_sequences = BTreeSet::new();
+    let mut failed_holes = Vec::<(&DirectoryEntry, u32, cadmpeg_ir::report::loss::LossNote)>::new();
     let mut flows = BTreeMap::new();
     for entry in directory
         .iter()
@@ -2861,10 +2881,19 @@ pub(super) fn project(
             };
         if valid {
             decoded.insert(entry.sequence);
-            if entry.form == 9 {
+            let parent = existing_pointer(record, 3, &entries).filter(|parent| {
+                entries
+                    .get(parent)
+                    .is_some_and(|parent| parent.entity_type == 108 && parent.form == 1)
+            });
+            if let (9, Some(parent)) = (entry.form, parent) {
                 match legacy_single_parent_face(
                     ir,
-                    LegacyPlaneSource { entry, record },
+                    LegacyPlaneSource {
+                        entry,
+                        record,
+                        parent,
+                    },
                     &entries,
                     &records,
                     boundary_rules,
@@ -2879,14 +2908,14 @@ pub(super) fn project(
                             crate::ids::Word::LegacySingleParent,
                             entry.sequence,
                         ));
-                        legacy_face_candidates.push((entry, face, candidate));
+                        legacy_face_candidates.push((entry, parent, face, candidate));
                     }
                     Ok(None) => {}
-                    Err(reason) => super::push_entity_finding(
-                        &mut losses,
+                    Err(reason) => failed_holes.push((
                         entry,
-                        format_args!("{}", reason.non_resource()?),
-                    ),
+                        parent,
+                        super::entity_note(entry, format_args!("{}", reason.non_resource()?)),
+                    )),
                 }
             }
         } else {
@@ -2967,7 +2996,7 @@ pub(super) fn project(
                     );
                     match candidate {
                         Ok(candidate) => {
-                            legacy_face_candidates.push((entry, face, candidate));
+                            legacy_face_candidates.push((entry, entry.sequence, face, candidate));
                         }
                         Err(reason) => super::give_up_record(
                             &mut losses,
@@ -3017,8 +3046,19 @@ pub(super) fn project(
 
     drop(index);
     let mut commit_session = CommitSession::new(ir, ctx, None)?;
-    for (entry, face, candidate) in legacy_face_candidates {
-        if commit_session.commit_model(candidate)?.is_err() {
+    let mut partial_faces = BTreeMap::new();
+    for (entry, parent, face, mut candidate) in legacy_face_candidates {
+        let partial = failed_holes
+            .iter()
+            .any(|(_, hole_parent, _)| *hole_parent == parent);
+        if partial {
+            state_holes_unstated(&mut candidate);
+        }
+        let committed = commit_session.commit_model(candidate)?.is_ok();
+        if committed && partial {
+            partial_faces.insert(parent, face.clone());
+        }
+        if !committed {
             super::give_up_record(
                 &mut losses,
                 entry,
@@ -3030,6 +3070,18 @@ pub(super) fn project(
                 ),
             );
         }
+    }
+    for (entry, parent, why) in failed_holes {
+        super::give_up_marking(
+            &mut losses,
+            entry,
+            crate::ids::face(&crate::ids::Stem::word_directory(
+                crate::ids::Word::LegacySingleParent,
+                entry.sequence,
+            )),
+            partial_faces.get(&parent).cloned(),
+            why,
+        );
     }
 
     let mut visited_flows = BTreeSet::new();

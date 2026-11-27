@@ -808,3 +808,76 @@ fn a_key_restated_with_different_values_in_a_kept_record_is_given_up_as_parts() 
     assert_eq!(codes(&read.report), ["read/record.repeated"]);
     assert_eq!(read.document.native_unknowns("cadir").unwrap().len(), 2);
 }
+
+/// The `object` of the view presentations in `read`.
+fn view_objects(read: &CadirRead) -> Vec<Option<String>> {
+    read.document
+        .model
+        .view_presentations
+        .iter()
+        .map(|view| {
+            view.object
+                .as_ref()
+                .map(|object| object.as_str().to_owned())
+        })
+        .collect()
+}
+
+/// A view presentation whose `object` names a neutral record the read gives
+/// up keeps no link to it (§3.3).
+#[test]
+fn a_view_presentation_keeps_no_object_of_a_given_up_point() {
+    let (_, mut value) = wire();
+    let point = points(&mut value)[0]["id"].as_str().unwrap().to_owned();
+    value["model"]["view_presentations"] = json!([{
+        "id": "test:model:view#1", "object": point, "order": 0, "properties": {}
+    }]);
+    points(&mut value)[0]["position"] = json!("not a point");
+    let read = read(value.to_string().as_bytes());
+    assert!(read
+        .document
+        .geometry
+        .points
+        .iter()
+        .all(|kept| kept.id.as_str() != point));
+    assert!(
+        view_objects(&read)
+            .iter()
+            .flatten()
+            .all(|object| *object != point),
+        "{:?}",
+        read.report
+    );
+}
+
+/// A view presentation whose `object` names a native record that the read
+/// gives up for an id stated twice with different values keeps no link to
+/// it (§3.3).
+#[test]
+fn a_view_presentation_keeps_no_object_of_a_repeated_native_record() {
+    const OBJECT: &str = "test:native:object#1";
+    let (_, mut value) = wire();
+    value["native"]["test"] = json!({"objects": [
+        {"id": OBJECT, "label": "a"},
+        {"id": OBJECT, "label": "b"}
+    ]});
+    value["model"]["view_presentations"] = json!([{
+        "id": "test:model:view#1", "object": OBJECT, "order": 0, "properties": {}
+    }]);
+    let read = read(value.to_string().as_bytes());
+    assert!(
+        codes(&read.report)
+            .iter()
+            .any(|code| code == "read/record.repeated"),
+        "{:?}",
+        read.report
+    );
+    assert!(
+        view_objects(&read)
+            .iter()
+            .flatten()
+            .all(|object| object != OBJECT),
+        "{:?}",
+        read.report
+    );
+}

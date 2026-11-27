@@ -212,11 +212,9 @@ pub(crate) const VIEW_RECORD_PART: &str = "view-record";
 pub(crate) const V1_RECORD_PART: &str = "v1-record";
 
 /// Gives up the framed record of `kind` at `range` of `data` for the codec
-/// loss `why`. The part keeps the length and digest of the record's bytes;
-/// [`keep_uncovered_part_bytes`] gives it the bytes where no other retained
-/// record keeps them. Its loss names the caller's retained-bytes ceiling
-/// where the bytes pass it. The part links to `holder`, the document record
-/// that contains it, when there is one.
+/// loss `why`. The part keeps the length and digest of the record's bytes
+/// until [`commit_given_up`] commits it. The part links to `holder`, the
+/// document record that contains it, when there is one.
 pub(crate) fn give_up_retained(
     ctx: &DecodeContext<'_>,
     data: &[u8],
@@ -235,12 +233,6 @@ pub(crate) fn give_up_retained(
         [cadmpeg_core::decode::ArenaClass::Model],
     )
     .digest_only();
-    if cadmpeg_core::decode::u64_from_index(bytes.len()) > ctx.retained_bytes_available() {
-        part = part.costing(
-            "its bytes pass the caller's retained-bytes ceiling (max_retained_bytes); \
-             the part keeps their length and digest",
-        );
-    }
     if let Some(holder) = holder {
         part = part.contained_in(cadmpeg_ir::ids::Identity::from(holder));
     }
@@ -250,58 +242,65 @@ pub(crate) fn give_up_retained(
     )
 }
 
-/// Gives the given-up part of each stub in `parts` the bytes of `data` it
-/// spans, where no other retained record of `fidelity` keeps them and they
-/// fit the caller's retained-bytes ceiling (`rhino_3dm.md` §21).
+/// The owner of the retained records that the decoder keeps from the file's
+/// own bytes. The root owner names the same bytes.
+pub(crate) const FILE_OWNER: &str = "rhino";
+
+/// Whether the retained records of owners `a` and `b` index one byte space.
+fn same_bytes(a: &str, b: &str) -> bool {
+    let in_file = |owner: &str| owner.is_empty() || owner == FILE_OWNER;
+    a == b || (in_file(a) && in_file(b))
+}
+
+/// Commits each part of `given_up` to `ir` and `fidelity` and returns its
+/// loss. A part keeps the bytes of `data` it spans where no retained record
+/// of its stream keeps them. Where those bytes pass the caller's
+/// retained-bytes ceiling, the part keeps their length and digest, and its
+/// loss names the ceiling (`rhino_3dm.md` §21).
 ///
 /// # Errors
 ///
-/// A resource refusal for the retained bytes, or a malformed error when a
-/// part's span lies outside `data`.
-pub(crate) fn keep_uncovered_part_bytes(
+/// A resource refusal for the retained bytes or a stub, or a malformed
+/// error when a part's span lies outside `data` or its stub is present.
+pub(crate) fn commit_given_up(
     ctx: &DecodeContext<'_>,
     data: &[u8],
+    ir: &mut CadIr,
     fidelity: &mut cadmpeg_ir::SourceFidelity,
-    parts: &[UnknownId],
-) -> Result<(), CodecError> {
-    for id in parts {
-        let Some(record) = fidelity.retained_record(id.as_str()) else {
-            continue;
-        };
+    given_up: Vec<GivenUpPart>,
+) -> Result<Vec<LossNote>, CodecError> {
+    let mut losses = Vec::with_capacity(given_up.len());
+    for mut part in given_up {
+        let record = part.retained();
         let (start, end, length) = (record.offset(), record.end_offset(), record.byte_len());
-        let covered = fidelity.retained_records().iter().any(|(other, kept)| {
-            other != id
-                && kept.data().is_some()
+        let covered = fidelity.retained_records().iter().any(|(_, kept)| {
+            kept.data().is_some()
+                && same_bytes(kept.stream(), record.stream())
                 && kept.offset() <= start
                 && end <= kept.end_offset()
         });
-        if record.data().is_some() || covered || length > ctx.retained_bytes_available() {
-            continue;
+        if !covered && length <= ctx.retained_bytes_available() {
+            let bytes = usize::try_from(start)
+                .ok()
+                .zip(usize::try_from(end).ok())
+                .and_then(|(start, end)| data.get(start..end))
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "given-up part {} lies outside the source",
+                        part.id()
+                    ))
+                })?;
+            part.keep_bytes(ctx, bytes)?;
+        } else if !covered {
+            part.costing(
+                ctx,
+                "its bytes pass the caller's retained-bytes ceiling (max_retained_bytes); \
+                 the part keeps their length and digest",
+            )?;
         }
-        let (classes, owner) = (record.untyped().clone(), record.stream().to_owned());
-        let bytes = usize::try_from(start)
-            .ok()
-            .zip(usize::try_from(end).ok())
-            .and_then(|(start, end)| data.get(start..end))
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!("given-up part {id} lies outside the source"))
-            })?;
-        ctx.retain_bytes(length, "given-up part source bytes")?;
-        let mut inline = ctx.alloc_filled(bytes.len(), 0_u8, "given-up part source bytes")?;
-        inline.copy_from_slice(bytes);
-        let kept = cadmpeg_ir::RetainedSourceRecord::from_bytes(
-            owner,
-            start,
-            cadmpeg_ir::RetainedBytes::Inline { data: inline },
-        )
-        .map_err(CodecError::malformed)?
-        .with_untyped(classes);
-        fidelity.remove_retained_record(id.as_str());
-        fidelity
-            .insert_retained_record(id.clone(), kept)
-            .map_err(CodecError::malformed)?;
+        losses.push(part.commit(ctx, ir, fidelity)?);
     }
-    Ok(())
+    Ok(losses)
 }
 
 /// Gives up the framed object record at `source_order`, spanning `range`,

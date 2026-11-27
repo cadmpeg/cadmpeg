@@ -224,8 +224,8 @@ enum Wrapped {
     /// The wrapper frames a zlib member that does not inflate to its declared
     /// size; the range spans the wrapper in the outer payload.
     Uninflated(Range<usize>),
-    /// The bytes at the magic frame no member, or the inflated bytes are not
-    /// a Parasolid stream.
+    /// The bytes at the magic frame no member, the frame states an empty
+    /// stream, or the inflated bytes are not a Parasolid stream.
     None,
 }
 
@@ -284,6 +284,9 @@ fn single_wrapped_stream(
     let Some((member, uncompressed_size, member_end)) = frame else {
         return Ok(Wrapped::None);
     };
+    if uncompressed_size == 0 || member.is_empty() {
+        return Ok(Wrapped::None);
+    }
     match inflate_zlib_frame(ctx, member, uncompressed_size)? {
         Some(bytes) => extracted_stream(magic_at, bytes).map(Wrapped::stream),
         None if uncompressed_size > MAX_WRAPPED_FRAME_UNCOMPRESSED => Ok(Wrapped::None),

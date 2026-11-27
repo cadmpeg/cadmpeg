@@ -339,7 +339,8 @@ fn assert_members_carried_or_named(
     }
 }
 
-/// Whether `losses` declare that the write omits every body of `source`.
+/// Whether `losses` declare that the write omits every body of `source`,
+/// each of which holds a partial face.
 fn omits_every_body(
     source: &cadmpeg_ir::CadIr,
     losses: &[cadmpeg_ir::report::loss::LossNote],
@@ -349,11 +350,25 @@ fn omits_every_body(
         .filter(|loss| loss.code.local_code() == "writer.bodies-omitted")
         .map(|loss| loss.message.as_str())
         .collect::<Vec<_>>();
-    !source.geometry.bodies.is_empty()
-        && source.geometry.bodies.iter().all(|body| {
-            declared
-                .iter()
-                .any(|message| names_record(message, body.id.as_str()))
+    let geometry = &source.geometry;
+    let holds_partial_face = |body: &cadmpeg_ir::topology::Body| {
+        geometry.faces.iter().any(|face| {
+            face.loops.is_partial()
+                && geometry.shells.iter().any(|shell| {
+                    shell.id == face.shell
+                        && geometry
+                            .regions
+                            .iter()
+                            .any(|region| region.id == shell.region && region.body == body.id)
+                })
+        })
+    };
+    !geometry.bodies.is_empty()
+        && geometry.bodies.iter().all(|body| {
+            holds_partial_face(body)
+                && declared
+                    .iter()
+                    .any(|message| names_record(message, body.id.as_str()))
         })
 }
 

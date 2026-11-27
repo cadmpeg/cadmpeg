@@ -1225,6 +1225,7 @@ fn drop_unused_surfaces(
         ir.geometry
             .procedural_surfaces
             .retain(|procedural| &procedural.id != construction);
+        losses.push(dropped_with(construction, &surface));
         let Some(section) = nodes
             .get(&index)
             .and_then(|node| ptr(*node, "section"))
