@@ -107,17 +107,17 @@ fn configurations_whose_active_one_does_not_resolve_are_named_in_a_note() {
     assert!(message.starts_with("2 configurations"), "{message}");
 }
 
-/// A part whose configurations `Default`, the active one, and `Large` store
-/// the fillet radius `D1` as 25 mm and 50 mm in their own lanes, with `D2`
-/// defined as `D1 * 2`.
-fn with_configured_radius() -> CadIr {
+/// A part whose fillet radius `D1` the history states as `text`, with `D2`
+/// defined as `D1 * 2`, and whose configurations `Default`, the active one,
+/// and `Large` store `D1` as `radii` metres in their own lanes.
+fn with_configured_radius(text: &str, radii: [f64; 2]) -> CadIr {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Large"/><Fillet Name="Round1" Type="Fillet"><Dimension Name="D1">30mm</Dimension><Dimension Name="D2">D1 * 2</Dimension></Fillet></Keywords>"#,
+        format!(r#"<Keywords><Configuration Name="Default"/><Configuration Name="Large"/><Fillet Name="Round1" Type="Fillet"><Dimension Name="D1">{text}</Dimension><Dimension Name="D2">D1 * 2</Dimension></Fillet></Keywords>"#).as_bytes(),
     ));
-    for (lane, radius) in [(0, 0.025), (1, 0.050)] {
+    for (lane, radius) in radii.into_iter().enumerate() {
         source.extend(make_block(
             0x45,
             &format!("Contents/Config-{lane}-ResolvedFeatures"),
@@ -135,7 +135,7 @@ fn with_configured_radius() -> CadIr {
 
 #[test]
 fn a_dimension_another_configuration_stores_apart_is_an_override_of_it() {
-    let ir = with_configured_radius();
+    let ir = with_configured_radius("30mm", [0.025, 0.050]);
     let parameter = |name: &str| {
         ir.design
             .parameters
@@ -182,4 +182,31 @@ fn a_dimension_another_configuration_stores_apart_is_an_override_of_it() {
 
     let (_, read) = round_trip(&ir);
     assert_eq!(read.design.configurations, ir.design.configurations);
+}
+
+#[test]
+fn a_configuration_storing_the_active_configurations_values_states_no_override() {
+    let ir = with_configured_radius("12.34567mm", [0.012_345_666_666_666_7; 2]);
+    let radius = ir
+        .design
+        .parameters
+        .iter()
+        .find(|parameter| {
+            parameter
+                .name
+                .as_ref()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                == Some("D1")
+        })
+        .unwrap();
+    let stored = ir
+        .model
+        .configurations
+        .iter()
+        .find(|configuration| configuration.name.as_deref() == Some("Large"))
+        .unwrap();
+    assert!(stored.parameter_values.contains_key(&radius.id));
+    assert!(named(&ir, "Default").overrides.parameters.is_empty());
+    let overrides = &named(&ir, "Large").overrides.parameters;
+    assert!(overrides.is_empty(), "{overrides:#?}");
 }

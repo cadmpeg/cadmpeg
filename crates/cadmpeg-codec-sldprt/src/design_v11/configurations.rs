@@ -138,13 +138,16 @@ pub(super) fn unplaced(
 
 /// States in each configuration that is not active the parameter values in
 /// which its decoded state, the model configuration of the same id in
-/// `decoded`, differs from the design's.
+/// `decoded`, differs from the active configuration's.
 pub(super) fn parameter_overrides(
     configurations: &mut Configurations,
     decoded: &[cadmpeg_ir::features::parameters::DesignConfiguration],
     parameters: &[DesignParameter],
 ) {
     let Configurations { records, active } = configurations;
+    let base = decoded
+        .iter()
+        .find(|configuration| active.as_ref().is_some_and(|id| configuration.id == *id));
     for record in records.iter_mut() {
         if active.as_ref() == Some(&record.id) {
             continue;
@@ -159,9 +162,12 @@ pub(super) fn parameter_overrides(
             let Some(stored) = state.parameter_values.get(&parameter.id) else {
                 continue;
             };
-            if let Some(entry) =
-                super::parameters::configuration_override(parameter, stored.clone())
-            {
+            let active = base.and_then(|base| base.parameter_values.get(&parameter.id));
+            if let Some(entry) = super::parameters::configuration_override(
+                parameter,
+                stored.clone(),
+                active.cloned(),
+            ) {
                 record
                     .overrides
                     .parameters

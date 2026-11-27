@@ -1300,23 +1300,24 @@ fn added(entry: &Entry<'_>, readings: &Readings<'_>) -> Reading {
 }
 
 /// The override of `parameter` in a configuration that stores `stored` for
-/// it, where that value differs from the parameter's at [`LITERAL_DIGITS`]
-/// significant digits (§5.11). A parameter whose expression is one literal
-/// has the stored value as a literal in the same unit; any other expression
-/// keeps its text, and the override states the value alone, a cache.
+/// it, where that value differs at [`LITERAL_DIGITS`] significant digits
+/// from `active`, the value the active configuration stores, else from the
+/// parameter's (§5.11). A parameter whose expression is one literal has the
+/// stored value as a literal in the same unit; any other expression keeps
+/// its text, and the override states the value alone, a cache.
 pub(super) fn configuration_override(
     parameter: &DesignParameter,
     stored: cadmpeg_ir::features::parameters::ParameterValue,
+    active: Option<cadmpeg_ir::features::parameters::ParameterValue>,
 ) -> Option<ParameterOverride> {
     let ParameterDefinition::Expression(expression) = &parameter.definition else {
         return None;
     };
     let value = typed_cache(&parameter.kind, stored)?;
-    if parameter
-        .value
-        .as_ref()
-        .is_some_and(|base| same_value(base, &value))
-    {
+    let base = active
+        .and_then(|active| typed_cache(&parameter.kind, active))
+        .or_else(|| parameter.value.clone());
+    if base.is_some_and(|base| same_value(&base, &value)) {
         return None;
     }
     let expression =
