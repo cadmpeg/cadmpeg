@@ -63,6 +63,53 @@ fn collection_links_support_both_versions_and_local_reference_forms() {
     }
 }
 
+fn typed_member_collection(version: u32, member_types: [Option<&str>; 2]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend(3u32.to_le_bytes());
+    bytes.extend(b"256");
+    bytes.extend(2u64.to_le_bytes());
+    bytes.extend([0; 5]);
+    bytes.push(1);
+    bytes.extend(1u32.to_le_bytes());
+    lp(&mut bytes, "crv_tag_id_idx");
+    lp(&mut bytes, "IntrinsicMetaTypeuint64");
+    bytes.extend(0u64.to_le_bytes());
+    if version == 3 {
+        bytes.extend([2, 0, 0, 0, 1, 0]);
+    }
+    bytes.extend(2u32.to_le_bytes());
+    for (target, member_type) in [5u64, 6].into_iter().zip(member_types) {
+        bytes.push(1);
+        bytes.extend(target.to_le_bytes());
+        if let Some(member_type) = member_type {
+            lp(&mut bytes, member_type);
+        }
+        bytes.extend([0, 0]);
+    }
+    reference(&mut bytes, 7, true);
+    bytes
+}
+
+#[test]
+fn version_three_run_references_carry_the_sketch_container_type() {
+    let container = super::SKETCH_CONTAINER_TYPE_GUID;
+    let parse = |version, member_types| {
+        parse_collection(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            View::over_retained(&typed_member_collection(version, member_types)),
+            version,
+        )
+    };
+    let collection = parse(3, [Some(container), Some(container)]).expect("typed version-3 run");
+    assert_eq!(collection.members, [5, 6]);
+    assert_eq!(collection.owner, Some(7));
+    assert!(parse(4, [Some(container), Some(container)]).is_err());
+    assert!(parse(3, [Some(container), None]).is_err());
+    assert!(parse(3, [None, Some(container)]).is_err());
+    let other = "11111111-2222-4333-8444-555555555555";
+    assert!(parse(3, [Some(other), Some(other)]).is_err());
+}
+
 #[test]
 fn collection_ownership_assigns_a_component_and_reports_an_unresolved_link() {
     let product = ProductDefinitionId::mint("test:model:product#part").unwrap();
