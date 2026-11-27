@@ -920,18 +920,20 @@ fn each_output_charges_a_record_with_its_own_needs() {
     );
 }
 
-/// A stored state whose delta changes in an output that then drops it is no
-/// partial copy of that output: the root output holds it whole, so no
-/// output charges it.
+/// A stored state of the root whose delta restates a face of the cube: the
+/// part output drops the face from the delta, as it needs the cube's
+/// records, and then drops the state, as it needs the root definition. The
+/// part output holds no partial copy, and the root output holds the state
+/// whole, so no output charges it.
 #[test]
 fn a_stored_state_an_output_changes_and_drops_is_not_charged_as_partial() {
     use crate::design::evaluation::{
         Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
     };
-    use crate::design::refs::{Evaluated, Position, RecordRef};
+    use crate::design::refs::{Evaluated, Position};
     const STATE: &str = "test:design:evaluation#root";
     let mut ir = two_file_document_with_records();
-    let face = ir.geometry.faces[0].id.clone();
+    let face = ir.geometry.faces[0].clone();
     ir.design.evaluations.push(Evaluation {
         id: crate::design::ids::EvaluationId::mint(STATE).unwrap(),
         scope: definition_id("root"),
@@ -943,7 +945,10 @@ fn a_stored_state_an_output_changes_and_drops_is_not_charged_as_partial() {
         content: Some(StateContent {
             base: StateBase::Empty,
             delta: StateDelta {
-                removed: vec![RecordRef::Face(face)],
+                records: crate::document::Topology {
+                    faces: vec![face],
+                    ..crate::document::Topology::default()
+                },
                 ..StateDelta::default()
             },
         }),
