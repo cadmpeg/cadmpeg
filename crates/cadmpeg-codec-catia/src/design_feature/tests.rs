@@ -398,6 +398,57 @@ fn sketch_owner_native() -> CatiaNative {
     }
 }
 
+/// An entity record of `graph` whose compact definition names `class`.
+fn compact_entity(entity_id: u32, class: &str) -> crate::native::entity_record::CatiaEntityRecord {
+    crate::native::entity_record::CatiaEntityRecord {
+        id: format!("entity-{entity_id}"),
+        object_graph: "graph".to_string(),
+        object_record: format!("record-{entity_id}"),
+        ordinal: 0,
+        byte_offset: 0,
+        lead: 0,
+        body: crate::native::entity_record::CatiaEntityRecordBody::empty_nested(),
+        definition_schema_selections: Vec::new(),
+        compact_class: Some(crate::native::feature_tree::CatiaCompactClass {
+            token: crate::native::feature_tree::CatiaFieldToken::Tag(0x40),
+            ordinal: 12,
+            entry: "class-entry".to_string(),
+            name: class.to_string(),
+        }),
+        entity_id,
+        value_schema_selections: Vec::new(),
+        range_interval: None,
+        object_production: None,
+        value_production: None,
+        reference_signature: None,
+        suffix: None,
+        suffix_schema_selection: None,
+    }
+}
+
+/// A sketch owner transfers only where the owner entity's compact class is
+/// `PRTSketch` (`catia.md` §7.3.2).
+#[test]
+fn a_sketch_owner_whose_entity_is_another_class_is_no_sketch() {
+    let sketches = |class: &str| {
+        let mut native = sketch_owner_native();
+        native.entity_records = vec![compact_entity(1, class)];
+        let mut ir = CadIr::empty();
+        crate::test_support::with_service_context(|ctx| {
+            transfer_design_features(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+            )
+        })
+        .unwrap();
+        ir.model.sketches.len()
+    };
+    assert_eq!(sketches("PRTSketch"), 1);
+    assert_eq!(sketches("Pad"), 0);
+}
+
 #[test]
 fn design_sketch_entity_limit_refuses_before_sketch_push() {
     let native = sketch_owner_native();

@@ -108,16 +108,33 @@ const FAMILIES: &[(&str, OperationFamily)] = &[
     ("CATSmd_BendExtremity", OperationFamily::SheetMetal),
 ];
 
-/// Classes the part root lists that hold no operation: its properties and
-/// its parameter, relation, and annotation sets.
-const NOT_OPERATIONS: [&str; 7] = [
-    "MechanicalPartProperties",
-    "TTRSSet",
-    "RelationSet",
-    "ParameterSet",
-    "String",
-    "GSMWSupportSet",
-    "StDynAnalysisRootNodeFeature",
+/// The solid feature classes: a set that lists one of them is a body.
+const BODY_FEATURES: [&str; 25] = [
+    "Pad",
+    "Pocket",
+    "Shaft",
+    "Groove",
+    "Hole",
+    "Rib",
+    "Slot",
+    "Stiffener",
+    "EdgeFillet",
+    "TritangentFillet",
+    "Chamfer",
+    "Draft",
+    "Shell",
+    "Thickness",
+    "ThickSurface",
+    "CloseSurface",
+    "SewSurface",
+    "Add",
+    "Remove",
+    "Assemble",
+    "Intersect",
+    "Split",
+    "RemoveFace",
+    "Thread",
+    "Mirror",
 ];
 
 /// The §6 family of a feature class's operation.
@@ -128,7 +145,7 @@ pub(super) fn family(class: &str) -> Option<OperationFamily> {
         .map(|(_, family)| *family)
 }
 
-/// Whether a class the part root lists holds no operation.
-pub(super) fn is_not_operation(class: &str) -> bool {
-    NOT_OPERATIONS.contains(&class)
+/// Whether a class is a solid feature class.
+pub(super) fn is_body_feature(class: &str) -> bool {
+    BODY_FEATURES.contains(&class)
 }

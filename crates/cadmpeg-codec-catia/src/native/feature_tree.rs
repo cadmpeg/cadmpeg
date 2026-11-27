@@ -14,27 +14,36 @@ const RETAIN_TREE: &str = "retain CATIA feature-tree membership";
 
 /// A compact tag byte minus this base is a zero-based catalog ordinal.
 const COMPACT_TAG_BASE: u8 = 0x34;
-/// Prefix-relative offset of the class tag in a compact definition prefix.
-const COMPACT_CLASS_OFFSET: usize = 2;
 
-const CONTAINER_CLASSES: [&str; 4] = ["MechanicalPart", "MechanicalTool", "HybridBody", "GSMTool"];
+/// Classes whose payload is read as a run of tagged segments: the part root,
+/// bodies, geometrical sets, and Boolean features.
+const SEGMENTED_CLASSES: [&str; 8] = [
+    "MechanicalPart",
+    "MechanicalTool",
+    "HybridBody",
+    "GSMTool",
+    "Add",
+    "Remove",
+    "Assemble",
+    "Intersect",
+];
 
-/// Stored class token of a compact definition prefix.
+/// Stored token of one compact field: a class, a second prefix field, or a
+/// payload field tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) enum CatiaCompactClassToken {
+pub(crate) enum CatiaFieldToken {
     /// One-byte tag: the entry's one-based ordinal plus `33`.
     Tag(u8),
-    /// Wide `32 <ordinal:u32le>` selector: the entry's one-based ordinal.
-    Selector(u32),
+    /// Wide `32 <ordinal:u32le>` field: the entry's one-based ordinal.
+    Wide(u32),
 }
 
-/// Class named by a compact definition prefix.
+/// Class named by a compact definition prefix, whose class field starts at
+/// prefix offset 2.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct CatiaCompactClass {
-    /// Byte offset of the class token within the definition prefix.
-    pub(crate) offset: u64,
     /// Stored class token.
-    pub(crate) token: CatiaCompactClassToken,
+    pub(crate) token: CatiaFieldToken,
     /// Zero-based catalog ordinal selected by the token.
     pub(crate) ordinal: u32,
     /// Selected catalog entry.
@@ -49,7 +58,7 @@ pub(crate) struct CatiaCompactSegment {
     /// Byte offset of the tag within the payload.
     pub(crate) payload_offset: u64,
     /// Stored field tag.
-    pub(crate) tag: u8,
+    pub(crate) tag: CatiaFieldToken,
     /// Catalog entry selected by the tag.
     pub(crate) entry: String,
     /// UTF-8 field name stored by the entry.
@@ -65,6 +74,17 @@ pub(crate) enum CatiaSegmentValue {
     Token(CatiaFeatureReference),
     /// Counted list of entity and persistent-identity token pairs, in stored order.
     List(Vec<CatiaFeatureMember>),
+    /// One field of the record an entity token selects: `FD <entity> <field>`.
+    FieldOf {
+        /// The record.
+        record: CatiaFeatureReference,
+        /// Stored field token.
+        tag: CatiaFieldToken,
+        /// Catalog entry selected by the field token.
+        entry: String,
+        /// UTF-8 field name stored by the entry.
+        name: String,
+    },
 }
 
 /// Same-graph record selected by a stored entity identity.
@@ -117,7 +137,8 @@ pub(crate) struct CatiaFeatureMember {
     pub(crate) target: Option<CatiaFeatureTarget>,
 }
 
-/// Part root, body, or geometrical set and its stored feature-tree fields.
+/// Part root, body, geometrical set, or Boolean feature and its stored
+/// feature-tree fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct CatiaFeatureContainer {
     /// Globally unique container identity.
@@ -161,25 +182,18 @@ pub(crate) fn compact_class(
     if !matches!(*lead, 0x00 | 0x01 | 0x08 | 0x10) || flags & !0x0c != 0 {
         return Ok(None);
     }
-    let Some((token, second)) = class_field(fields) else {
+    let Some((token, second)) = field_token(fields) else {
         return Ok(None);
     };
-    if class_field(second).is_none_or(|(_, rest)| !rest.is_empty()) {
+    if field_token(second).is_none_or(|(_, rest)| !rest.is_empty()) {
         return Ok(None);
     }
-    let entry = catalog.and_then(|catalog| match token {
-        CatiaCompactClassToken::Tag(tag) => tag_entry(catalog, tag),
-        CatiaCompactClassToken::Selector(ordinal) => catalog
-            .entries
-            .get(usize::try_from(ordinal.checked_sub(1)?).ok()?),
-    });
-    let Some(entry) = entry else {
+    let Some(entry) = catalog.and_then(|catalog| token_entry(catalog, token)) else {
         return Ok(None);
     };
     retain_text(ctx, &entry.id)?;
     retain_text(ctx, &entry.value)?;
     Ok(Some(CatiaCompactClass {
-        offset: u64_from_index(COMPACT_CLASS_OFFSET),
         token,
         ordinal: entry.ordinal,
         entry: entry.id.clone(),
@@ -187,23 +201,39 @@ pub(crate) fn compact_class(
     }))
 }
 
-/// One class field at the start of `bytes` and the bytes after it: the wide
-/// selector `32 <ordinal:u32le>` or one tag byte.
-fn class_field(bytes: &[u8]) -> Option<(CatiaCompactClassToken, &[u8])> {
+/// One field token at the start of `bytes` and the bytes after it: the wide
+/// field `32 <ordinal:u32le>` or one tag byte.
+fn field_token(bytes: &[u8]) -> Option<(CatiaFieldToken, &[u8])> {
     match bytes {
         [0x32, ..] => Some((
-            CatiaCompactClassToken::Selector(View::u32_le_at(bytes, 1)?),
+            CatiaFieldToken::Wide(View::u32_le_at(bytes, 1)?),
             bytes.get(5..)?,
         )),
-        [tag, rest @ ..] => Some((CatiaCompactClassToken::Tag(*tag), rest)),
+        [tag, rest @ ..] => Some((CatiaFieldToken::Tag(*tag), rest)),
         [] => None,
     }
 }
 
-fn tag_entry(catalog: &CatiaCatalog, tag: u8) -> Option<&CatiaCatalogEntry> {
-    catalog
-        .entries
-        .get(usize::from(tag.checked_sub(COMPACT_TAG_BASE)?))
+/// The catalog entry a field token selects: zero-based ordinal `tag − 34`
+/// for a tag, one-based `ordinal` for a wide field.
+fn token_entry(catalog: &CatiaCatalog, token: CatiaFieldToken) -> Option<&CatiaCatalogEntry> {
+    let index = match token {
+        CatiaFieldToken::Tag(tag) => usize::from(tag.checked_sub(COMPACT_TAG_BASE)?),
+        CatiaFieldToken::Wide(ordinal) => usize::try_from(ordinal.checked_sub(1)?).ok()?,
+    };
+    catalog.entries.get(index)
+}
+
+/// The field token at `at` of `payload` that selects a catalog entry, the
+/// entry, and the offset after the token.
+fn payload_field<'c>(
+    payload: &[u8],
+    at: usize,
+    catalog: &'c CatiaCatalog,
+) -> Option<(CatiaFieldToken, &'c CatiaCatalogEntry, usize)> {
+    let (token, rest) = field_token(payload.get(at..)?)?;
+    let entry = token_entry(catalog, token)?;
+    Some((token, entry, payload.len() - rest.len()))
 }
 
 /// Integer token of a compact payload: `80 <u32le>` is the value itself, and
@@ -231,16 +261,25 @@ struct ListItem {
     persistent_id: u32,
 }
 
-enum SegmentValue {
-    Single { offset: usize, value: u32 },
+enum SegmentValue<'c> {
+    Single {
+        offset: usize,
+        value: u32,
+    },
     List(Vec<ListItem>),
+    FieldOf {
+        offset: usize,
+        value: u32,
+        tag: CatiaFieldToken,
+        entry: &'c CatiaCatalogEntry,
+    },
 }
 
 struct Segment<'c> {
     offset: usize,
-    tag: u8,
+    tag: CatiaFieldToken,
     entry: &'c CatiaCatalogEntry,
-    value: SegmentValue,
+    value: SegmentValue<'c>,
 }
 
 struct Segmentation<'c> {
@@ -248,21 +287,19 @@ struct Segmentation<'c> {
     unsegmented: Option<usize>,
 }
 
-/// Walk `<tag> <value>` segments up to the final `FE` run. A value is a
-/// counted list `<count> 81 (<entity> <persistent-id>){count}` or one integer
-/// token. The walk stops at the first byte no segment covers.
+/// Walk `<field> <value>` segments up to the final `FE` run. A field is a
+/// tag byte or a wide field `32 <u32le>` that selects a catalog entry. A
+/// value is a counted list `<count> 81 (<entity> <persistent-id>){count}`,
+/// one field of a record `FD <entity> <field>`, or one integer token. The
+/// walk stops at the first byte no segment covers.
 fn segment<'c>(payload: &[u8], catalog: &'c CatiaCatalog) -> Segmentation<'c> {
     let is_terminal = |at: usize| {
         payload
             .get(at..)
             .is_some_and(|rest| rest.iter().all(|&b| b == 0xfe))
     };
-    let starts_segment = |at: usize| {
-        is_terminal(at)
-            || payload
-                .get(at)
-                .is_some_and(|&tag| tag_entry(catalog, tag).is_some())
-    };
+    let starts_segment =
+        |at: usize| is_terminal(at) || payload_field(payload, at, catalog).is_some();
     let mut segments = Vec::new();
     let mut at = 0;
     loop {
@@ -272,9 +309,25 @@ fn segment<'c>(payload: &[u8], catalog: &'c CatiaCatalog) -> Segmentation<'c> {
                 unsegmented: None,
             };
         }
-        let parsed = payload.get(at).and_then(|&tag| {
-            let entry = tag_entry(catalog, tag)?;
-            let value_at = at + 1;
+        let parsed = payload_field(payload, at, catalog).and_then(|(tag, entry, value_at)| {
+            if payload.get(value_at) == Some(&0xfd) {
+                let (value, after) = int_token(payload, value_at + 1)?;
+                let (field, field_entry, end) = payload_field(payload, after, catalog)?;
+                return starts_segment(end).then_some((
+                    Segment {
+                        offset: at,
+                        tag,
+                        entry,
+                        value: SegmentValue::FieldOf {
+                            offset: value_at + 1,
+                            value,
+                            tag: field,
+                            entry: field_entry,
+                        },
+                    },
+                    end,
+                ));
+            }
             let (value, after) = int_token(payload, value_at)?;
             let list = (payload.get(after) == Some(&0x81))
                 .then(|| counted_list(payload, after + 1, value))
@@ -331,7 +384,8 @@ fn counted_list(payload: &[u8], start: usize, count: u32) -> Option<(Vec<ListIte
     Some((items, at))
 }
 
-/// Derive every part-root, body, and geometrical-set container of the graphs.
+/// Derive every part root, body, geometrical set, and Boolean feature of the
+/// graphs.
 pub(crate) fn derive(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -367,7 +421,7 @@ pub(crate) fn derive(
             let Some(class) = entity
                 .compact_class
                 .as_ref()
-                .filter(|class| CONTAINER_CLASSES.contains(&class.name.as_str()))
+                .filter(|class| SEGMENTED_CLASSES.contains(&class.name.as_str()))
             else {
                 continue;
             };
@@ -413,6 +467,21 @@ pub(crate) fn derive(
                         }
                         CatiaSegmentValue::List(members)
                     }
+                    &SegmentValue::FieldOf {
+                        offset,
+                        value,
+                        tag,
+                        entry,
+                    } => CatiaSegmentValue::FieldOf {
+                        record: CatiaFeatureReference {
+                            payload_offset: u64_from_index(offset),
+                            entity_id: value,
+                            target: target(value)?,
+                        },
+                        tag,
+                        entry: retain_text(ctx, &entry.id)?,
+                        name: retain_text(ctx, &entry.value)?,
+                    },
                 };
                 segments.push(CatiaCompactSegment {
                     payload_offset: u64_from_index(segment.offset),

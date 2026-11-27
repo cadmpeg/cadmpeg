@@ -1807,16 +1807,18 @@ The class field names the record's class. The second field selects one entry of 
 
 Preserve the class tag or wide ordinal, its prefix offset, the selected zero-based ordinal, and the selected entry and name. Each wide field is also a definition selector under the walk above, which resolves each stored ordinal as a zero-based entry. The compact class reading is a separate reading of the same bytes.
 
-The paired `7C0A` payload of a part root, body, or geometrical set in the compact form is a run of tagged segments:
+The paired `7C0A` payload of a part root, a body, a geometrical set, or a Boolean feature (`Add`, `Remove`, `Assemble`, `Intersect`) in the compact form is a run of tagged segments:
 
 ```text
 payload := segment* FE+
-segment := <field-tag> value
-value   := list | <entity>
+segment := <field> value
+field   := <tag> | 32 <ordinal:u32le>
+value   := list | field-of | <entity>
 list    := <count> 81 (<entity> <persistent-id>){count}
+field-of := FD <entity> field
 ```
 
-A field tag names a catalog entry under the class-tag rule. Every count, entity, and persistent identity is one integer token:
+A field is a tag byte or a wide field, and it names a catalog entry under the field-form rule above. Every count, entity, and persistent identity is one integer token:
 
 | Token | Bytes | Value |
 |---|---|---|
@@ -1826,19 +1828,22 @@ A field tag names a catalog entry under the class-tag rule. Every count, entity,
 
 | Condition | Reading |
 |---|---|
-| all `count` pairs are present, and the list ends at the final `FE` run or at a field-tag byte | `list` |
+| all `count` pairs are present, and the list ends at the final `FE` run or at the start of a field | `list` |
+| `FD`, one entity token, and one field, which end at the final `FE` run or at the start of a field | `field-of`: the field of the record that the entity selects |
 | any other value | one `<entity>` token |
-| a byte outside the field tags where a segment starts | the walk stops; the remaining bytes are unsegmented |
+| bytes that start no field where a segment starts | the walk stops; the remaining bytes are unsegmented |
 | the final `FE` run | the walk is complete |
 
-Preserve each segment's tag, payload offset, selected entry and name, and value, and the payload offset where an incomplete walk stops. An entity token selects the same graph's unique paired entity and object record, and the compact class of that record is preserved with it. An identity that selects no paired record keeps its value and position. A persistent identity is preserved as stored.
+Preserve each segment's field tag or wide ordinal, payload offset, selected entry and name, and value, and the payload offset where an incomplete walk stops. An entity token selects the same graph's unique paired entity and object record, and the compact class of that record is preserved with it. An identity that selects no paired record keeps its value and position. A persistent identity is preserved as stored.
 
 | Class | Record |
 |---|---|
 | `MechanicalPart` | the part root |
 | `MechanicalTool` | a body |
-| `HybridBody` | the main body where the root's `MainTool` selects it; otherwise a body, an ordered geometrical set, or a geometrical set |
+| `HybridBody` | the main body where the root's `MainTool` selects it; a body where its `_FtrList` lists a solid feature; otherwise a body, an ordered geometrical set, or a geometrical set |
 | `GSMTool` | an ordered geometrical set or a geometrical set |
+
+A solid feature is a record of class `Pad`, `Pocket`, `Shaft`, `Groove`, `Hole`, `Rib`, `Slot`, `Stiffener`, `EdgeFillet`, `TritangentFillet`, `Chamfer`, `Draft`, `Shell`, `Thickness`, `ThickSurface`, `CloseSurface`, `SewSurface`, `Add`, `Remove`, `Assemble`, `Intersect`, `Split`, `RemoveFace`, `Thread`, or `Mirror`. Only a body holds a solid feature.
 
 Each container's `_FtrList` segment lists its members in stored order. A member that is a container is a set nested in the set that lists it. A member list states containment and order.
 
@@ -1857,6 +1862,8 @@ The part root's other segments are its remaining fields:
 | `_ReferencePlanes` | list | the principal planes |
 
 The root's other fields, such as `PartAlgoConfigs`, have the same segment form. The `_ReferencePlanes` list selects the same three `GSMPlane` records as the first three members of the root's `_FtrList`.
+
+A Boolean feature is a member of the body it combines into. Its `_FtrList` lists two members: the record of its result, then the body it combines into that body, its tool. No other `_FtrList` lists the tool. The Boolean's `ToolList` field lists the tool again.
 
 The compact class of a member names its feature kind. Each class below has the operation family of CADIR v11 §6:
 

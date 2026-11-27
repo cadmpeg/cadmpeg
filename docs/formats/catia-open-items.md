@@ -216,7 +216,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which stored field tells an ordered geometrical set from a geometrical set?
 
-**Known.** `catia.md` §7.3.2 defines the compact `GSMTool` record and its `_FtrList` member list. Its compact prefix has lead `00` and flags `08`, and its second field selects the catalog entry `Open_body`. A `GSMTool` payload stores one `_FtrList` segment or stores no segment. A `HybridBody` record that `MainTool` selects is the main body; another `HybridBody` record has the same prefix form and second entry. The design layer states each `GSMTool` record and each `HybridBody` record that `MainTool` does not select as an unordered geometrical set holding its members, and names it in the loss `design.set-kind-unread`.
+**Known.** `catia.md` §7.3.2 defines the compact `GSMTool` record and its `_FtrList` member list. Its compact prefix has lead `00` and flags `08`, and its second field selects the catalog entry `Open_body`. A `GSMTool` payload stores one `_FtrList` segment or stores no segment. A `HybridBody` record that `MainTool` selects is the main body, and a `HybridBody` record whose `_FtrList` lists a solid feature is a body. Another `HybridBody` record has the same prefix form and second entry. The design layer states each `GSMTool` record and each other `HybridBody` record as an unordered geometrical set holding its members, and names it in the loss `design.set-kind-unread`.
 
 **Need.** Two saves of one part that differ in one control: a geometrical set saved as an ordered geometrical set, then saved as a plain geometrical set. Compare the compact prefix, the second-tag entry, and the payload segments of the two `GSMTool` records.
 
@@ -228,13 +228,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** One saved part whose three principal planes each carry a sketch with a stored, resolved placement: a sketch on the xy plane, one on the yz plane, and one on the zx plane. Compare each sketch's support entity with the `_ReferencePlanes` list index, and the sketch normal with the plane each index selects.
 
-### DI-36. Owner of a body that no `_FtrList` lists
+### DI-36. Field of a `UdfFeature` record that selects its `Assemble`
 
-**Question.** Which record holds a `HybridBody` record that no `_FtrList` of the part lists, and where in the feature tree does that body stand?
+**Question.** Which field of a `UdfFeature` record selects the `Assemble` record that combines the instance's body into the body that lists the instance?
 
-**Known.** A part can store `HybridBody` records that neither the root's `_FtrList` nor the `_FtrList` of any container lists. The `_FtrList` of such a record lists features, such as `Pad`, `Pocket`, `PRTSketch`, `GSMTranslate`, `GSMRotate`, and `EdgeFillet`, or parameters and relations, such as `LENGTH`, `ANGLE`, `Boolean`, `String`, and `RelationSet`. In the parts that store such records, the number of `Add` and `Assemble` records equals the number of unlisted `HybridBody` records. The compact-record reader does not read the payload of an `Add` or `Assemble` record. The design layer states each unlisted record as a root of the part's scope after the listed sets, of the kind DI-34 gives, and names it in the loss `design.sets-unlisted`.
+**Known.** `catia.md` §7.3.2 defines the compact `UdfFeature` class, the segment form of a payload, and the `_FtrList` of a Boolean record: the record of its result, then its tool, a body that no other `_FtrList` lists. The body of a `UdfFeature` instance is the tool of an `Assemble` record. No `_FtrList` lists that `Assemble` record. The body that lists the `UdfFeature` lists no `Assemble` record. The `UdfFeature` payload stores `field-of` values, such as its `UdfShapeIn` field, and wide fields. CADIR v11 §6 `TemplateInstance` holds the template body's features and an `Assemble` that unions that body into the body before the instance. The design layer states the `UdfFeature` as `Unresolved { TemplateInstance }`, states the instance's body as a root of the part's scope in the loss `design.sets-unlisted`, and states the `Assemble` record as no feature.
 
-**Need.** Two saves of one part that differ in one control: a second body saved as a body of the root, then saved after a Boolean `Add` of that body into the main body. Compare the root's `_FtrList`, the `Add` record's payload for the body's entity token, and the body's `HybridBody` record.
+**Need.** Two saves of one part that differ in one control: a part with one user feature instance in its main body, then the same part with a second instance of the same template. Compare the segments of each `UdfFeature` payload with the entity token of each `Assemble` record whose tool is that instance's body.
 
 ## 3. Standard nested `V5_CFV2`
 

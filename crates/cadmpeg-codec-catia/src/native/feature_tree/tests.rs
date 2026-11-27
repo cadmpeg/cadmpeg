@@ -1,4 +1,4 @@
-use super::CatiaCompactClassToken::{Selector, Tag};
+use super::CatiaFieldToken::{Tag, Wide};
 use super::{CatiaFeatureContainer, CatiaFeatureMember, CatiaFeatureReference, CatiaSegmentValue};
 use crate::native::CatiaNative;
 use crate::test_support::test_feature_tree::{
@@ -24,7 +24,7 @@ fn members(container: &CatiaFeatureContainer) -> Option<&[CatiaFeatureMember]> {
     match (lists.next(), lists.next()) {
         (Some(segment), None) => match &segment.value {
             CatiaSegmentValue::List(members) => Some(members),
-            CatiaSegmentValue::Token(_) => None,
+            CatiaSegmentValue::Token(_) | CatiaSegmentValue::FieldOf { .. } => None,
         },
         (None, None) if container.unsegmented_payload_offset.is_none() => Some(&[]),
         _ => None,
@@ -83,14 +83,10 @@ fn compact_definition_tag_selects_the_class_entry() {
             (3, Tag(HYBRID_BODY), 11, "HybridBody"),
             (4, Tag(GSM_PLANE), 13, "GSMPlane"),
             (5, Tag(PAD), 12, "Pad"),
-            (6, Selector(13), 12, "Pad"),
+            (6, Wide(13), 12, "Pad"),
             (7, Tag(MECHANICAL_TOOL), 10, "MechanicalTool"),
         ]
     );
-    assert!(native.entity_records.iter().all(|entity| entity
-        .compact_class
-        .as_ref()
-        .is_some_and(|class| class.offset == 2)));
 }
 
 #[test]
@@ -157,8 +153,8 @@ fn compact_definition_admits_each_lead_and_each_field_form() {
             (3, Tag(PAD), "Pad"),
             (4, Tag(HYBRID_BODY), "HybridBody"),
             (5, Tag(PAD), "Pad"),
-            (6, Selector(14), "GSMPlane"),
-            (7, Selector(11), "MechanicalTool"),
+            (6, Wide(14), "GSMPlane"),
+            (7, Wide(11), "MechanicalTool"),
         ]
     );
 }
@@ -181,10 +177,10 @@ fn part_root_lists_its_members_in_stored_order() {
             .map(|segment| (segment.payload_offset, segment.tag, segment.name.as_str()))
             .collect::<Vec<_>>(),
         [
-            (0, FTR_LIST, "_FtrList"),
-            (18, CURRENT_FEATURE, "CurrentFeature"),
-            (20, MAIN_TOOL, "MainTool"),
-            (22, REFERENCE_PLANES, "_ReferencePlanes"),
+            (0, Tag(FTR_LIST), "_FtrList"),
+            (18, Tag(CURRENT_FEATURE), "CurrentFeature"),
+            (20, Tag(MAIN_TOOL), "MainTool"),
+            (22, Tag(REFERENCE_PLANES), "_ReferencePlanes"),
         ]
     );
     let members = members(root).expect("root members");
@@ -343,4 +339,107 @@ fn feature_containers_round_trip_through_the_native_wire() {
     >(entities)
     .expect("entities read back");
     assert_eq!(back, native.entity_records);
+}
+
+/// A wide field `32 <u32le>` selects its catalog entry by one-based ordinal.
+fn wide_field(ordinal: u32) -> Vec<u8> {
+    let mut field = vec![0x32];
+    field.extend_from_slice(&ordinal.to_le_bytes());
+    field
+}
+
+/// A list ends where a wide field starts, and the wide field is a segment
+/// (`catia.md` §7.3.2).
+#[test]
+fn a_wide_field_after_a_list_ends_the_list() {
+    let mut records = part();
+    let mut body = vec![FTR_LIST, 0x83, 0x81, 0x86];
+    body.extend(escaped(0x2000));
+    body.push(0x87);
+    body.extend(escaped(0x2001));
+    body.extend(wide_field(u32::from(CURRENT_FEATURE - 0x34) + 1));
+    body.extend([0x86, 0xfe]);
+    records[1].2 = body;
+    let native = CatiaNative::decode(&stream(&records));
+    let body = container(&native, 3);
+    assert_eq!(body.unsegmented_payload_offset, None);
+    assert_eq!(
+        member_classes(members(body).expect("body members")),
+        [(5, Some("Pad")), (6, Some("Pad"))]
+    );
+    assert_eq!(
+        body.segments
+            .iter()
+            .map(|segment| (segment.payload_offset, segment.tag, segment.name.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            (0, Tag(FTR_LIST), "_FtrList"),
+            (15, Wide(8), "CurrentFeature"),
+        ]
+    );
+    assert_eq!(
+        token(body, "CurrentFeature").map(|token| token.entity_id),
+        Some(5)
+    );
+}
+
+/// A payload that starts with a wide field is segmented from its first byte.
+#[test]
+fn a_payload_that_starts_with_a_wide_field_is_segmented() {
+    let mut records = part();
+    let mut body = wide_field(u32::from(FTR_LIST - 0x34) + 1);
+    body.extend([0x83, 0x81, 0x86]);
+    body.extend(escaped(0x2000));
+    body.push(0x87);
+    body.extend(escaped(0x2001));
+    body.push(0xfe);
+    records[1].2 = body;
+    let native = CatiaNative::decode(&stream(&records));
+    let body = container(&native, 3);
+    assert_eq!(body.unsegmented_payload_offset, None);
+    assert_eq!(body.segments[0].tag, Wide(7));
+    assert_eq!(
+        member_classes(members(body).expect("body members")),
+        [(5, Some("Pad")), (6, Some("Pad"))]
+    );
+}
+
+/// `FD <entity> <field>` is one field of the record the entity selects, and
+/// the walk goes on after it (`catia.md` §7.3.2).
+#[test]
+fn a_field_of_a_record_is_one_segment_value() {
+    let mut records = part();
+    let mut body = vec![CURRENT_FEATURE, 0xfd, 0x86, MAIN_TOOL];
+    body.extend([FTR_LIST, 0x83, 0x81, 0x86]);
+    body.extend(escaped(0x2000));
+    body.push(0x87);
+    body.extend(escaped(0x2001));
+    body.push(0xfe);
+    records[1].2 = body;
+    let native = CatiaNative::decode(&stream(&records));
+    let body = container(&native, 3);
+    assert_eq!(body.unsegmented_payload_offset, None);
+    let CatiaSegmentValue::FieldOf {
+        record, tag, name, ..
+    } = &body.segments[0].value
+    else {
+        panic!("a field of a record");
+    };
+    assert_eq!(
+        (record.payload_offset, record.entity_id, *tag, name.as_str()),
+        (2, 5, Tag(MAIN_TOOL), "MainTool")
+    );
+    assert_eq!(
+        record
+            .target
+            .as_ref()
+            .and_then(|target| target.class.as_ref())
+            .map(|class| class.name.as_str()),
+        Some("Pad")
+    );
+    assert_eq!(body.segments[1].payload_offset, 4);
+    assert_eq!(
+        member_classes(members(body).expect("body members")),
+        [(5, Some("Pad")), (6, Some("Pad"))]
+    );
 }

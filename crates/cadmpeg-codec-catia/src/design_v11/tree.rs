@@ -5,6 +5,8 @@
 
 use std::collections::{BTreeSet, HashMap};
 
+use cadmpeg_ir::design::feature::OperationFamily;
+
 use super::classes;
 use crate::decode::ModelingGraphScope;
 use crate::native::feature_tree::{
@@ -18,8 +20,7 @@ pub(super) struct Tree<'a> {
     pub(super) graph_offset: u64,
     /// The part root.
     pub(super) root: &'a CatiaFeatureContainer,
-    /// Members the root lists outside every set, other than records that
-    /// hold no operation.
+    /// Members the root lists outside every set.
     pub(super) group: Vec<Item<'a>>,
     /// The root's sets in list order, then the sets no read list holds.
     pub(super) sets: Vec<Set<'a>>,
@@ -29,6 +30,9 @@ pub(super) struct Tree<'a> {
     pub(super) unstated: Vec<Unstated>,
     /// The sets among `sets` that no read list holds.
     pub(super) unlisted: Vec<String>,
+    /// The one root set each Boolean feature's `_FtrList` lists, its tool,
+    /// by the Boolean's entity.
+    pub(super) tools: HashMap<u32, &'a CatiaFeatureContainer>,
 }
 
 /// A body or a geometrical set and its members in stored order.
@@ -40,7 +44,8 @@ pub(super) struct Set<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SetKind {
-    /// A `MechanicalTool`, or the `HybridBody` that `MainTool` selects.
+    /// A `MechanicalTool`, the `HybridBody` that `MainTool` selects, or a
+    /// `HybridBody` that lists a feature only a body holds.
     Body,
     /// Any other set: whether it is a body, an ordered geometrical set, or
     /// a geometrical set is unread.
@@ -79,6 +84,7 @@ pub(super) struct Unstated {
 
 const ORDERED_BODY_CLASS: &str = "MechanicalTool";
 const MAIN_BODY_CLASS: &str = "HybridBody";
+const SET_CLASSES: [&str; 3] = [ORDERED_BODY_CLASS, MAIN_BODY_CLASS, "GSMTool"];
 
 /// The tree of the one part root in the modelling graphs: `Ok(None)` where
 /// the graphs hold no feature-tree record, and `Err` with the reason where
@@ -113,7 +119,7 @@ pub(super) fn read<'a>(
         .iter()
         .filter(|container| {
             container.object_graph == root.object_graph
-                && container.object_record != root.object_record
+                && SET_CLASSES.contains(&container.class.name.as_str())
         })
         .map(|container| (container.object_record.as_str(), container))
         .collect::<HashMap<_, _>>();
@@ -131,11 +137,26 @@ pub(super) fn read<'a>(
     for member in listed {
         match walk.item(member) {
             Some(Item::Set(set)) => sets.push(set),
-            Some(Item::Feature { class, .. }) if classes::is_not_operation(class) => {}
             Some(item) => group.push(item),
             None => {}
         }
     }
+    let booleans = native
+        .feature_containers
+        .iter()
+        .filter(|container| {
+            container.object_graph == root.object_graph
+                && classes::family(&container.class.name) == Some(OperationFamily::Combine)
+        })
+        .filter_map(|boolean| {
+            let listed = member_list(boolean)?
+                .into_iter()
+                .filter_map(|member| containers.get(member.target.as_ref()?.object_record.as_str()))
+                .copied()
+                .collect::<Vec<_>>();
+            Some((boolean, listed))
+        })
+        .collect::<Vec<_>>();
     let listed_anywhere = containers
         .values()
         .filter_map(|container| member_list(container))
@@ -156,8 +177,23 @@ pub(super) fn read<'a>(
         walk.placed.insert(container.entity_id);
         match walk.set(container) {
             Some(set) => {
+                let holders = booleans
+                    .iter()
+                    .filter(|(_, tools)| {
+                        tools
+                            .iter()
+                            .any(|tool| tool.entity_id == container.entity_id)
+                    })
+                    .map(|(boolean, _)| {
+                        format!(
+                            ", the tool of {} ({})",
+                            boolean.object_record, boolean.class.name
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .concat();
                 unlisted.push(format!(
-                    "{} ({})",
+                    "{} ({}{holders})",
                     container.object_record, container.class.name
                 ));
                 sets.push(set);
@@ -177,6 +213,17 @@ pub(super) fn read<'a>(
         }
     }
     walk.unstated.sort_by(|a, b| a.record.cmp(&b.record));
+    let roots = sets
+        .iter()
+        .map(|set| set.container.entity_id)
+        .collect::<BTreeSet<_>>();
+    let tools = booleans
+        .into_iter()
+        .filter_map(|(boolean, tools)| match tools.as_slice() {
+            [tool] if roots.contains(&tool.entity_id) => Some((boolean.entity_id, *tool)),
+            _ => None,
+        })
+        .collect();
     Ok(Some(Tree {
         graph_offset,
         root,
@@ -185,6 +232,7 @@ pub(super) fn read<'a>(
         current: token(root, "CurrentFeature").map(|reference| reference.entity_id),
         unstated: walk.unstated,
         unlisted,
+        tools,
     }))
 }
 
@@ -233,18 +281,21 @@ impl<'a> Walk<'a, '_> {
     /// The set a container states, or `None` where its member list is unread.
     fn set(&mut self, container: &'a CatiaFeatureContainer) -> Option<Set<'a>> {
         let listed = member_list(container)?;
+        let members = listed
+            .into_iter()
+            .filter_map(|member| self.item(member))
+            .collect::<Vec<_>>();
+        let holds_body_feature = members.iter().any(
+            |item| matches!(item, Item::Feature { class, .. } if classes::is_body_feature(class)),
+        );
         let kind = if container.class.name == ORDERED_BODY_CLASS
             || (container.class.name == MAIN_BODY_CLASS
-                && self.main == Some(container.object_record.as_str()))
+                && (self.main == Some(container.object_record.as_str()) || holds_body_feature))
         {
             SetKind::Body
         } else {
             SetKind::KindUnread
         };
-        let members = listed
-            .into_iter()
-            .filter_map(|member| self.item(member))
-            .collect();
         Some(Set {
             container,
             kind,
@@ -263,7 +314,7 @@ fn member_list(container: &CatiaFeatureContainer) -> Option<Vec<&CatiaFeatureMem
     match (lists.next(), lists.next()) {
         (Some(segment), None) => match &segment.value {
             CatiaSegmentValue::List(members) => Some(members.iter().collect()),
-            CatiaSegmentValue::Token(_) => None,
+            CatiaSegmentValue::Token(_) | CatiaSegmentValue::FieldOf { .. } => None,
         },
         (None, _)
             if container.segments.is_empty() && container.unsegmented_payload_offset.is_none() =>
@@ -286,7 +337,7 @@ fn token<'a>(
     match (found.next(), found.next()) {
         (Some(segment), None) => match &segment.value {
             CatiaSegmentValue::Token(reference) => Some(reference),
-            CatiaSegmentValue::List(_) => None,
+            CatiaSegmentValue::List(_) | CatiaSegmentValue::FieldOf { .. } => None,
         },
         _ => None,
     }

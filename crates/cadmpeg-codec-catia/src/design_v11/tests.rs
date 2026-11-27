@@ -11,8 +11,10 @@ use cadmpeg_ir::design::construction::{InputReference, Relation, Subject};
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::datum::DatumElement;
+use cadmpeg_ir::design::ops::shared::ToolDisposition;
 use cadmpeg_ir::design::ops::sketch::{SketchPlane, SketchRelation};
-use cadmpeg_ir::design::refs::Member;
+use cadmpeg_ir::design::options::BooleanOp;
+use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::selection::{Anchor, PickTarget, Picks, PrincipalEntity};
 use cadmpeg_ir::report::check::Check;
 use cadmpeg_ir::{CadIr, ReadOptions};
@@ -21,7 +23,7 @@ use cadmpeg_test_support::EditableDecodeResult;
 use crate::loss::CatiaLossCode;
 use crate::test_support::test_container::outer_container_catpart;
 use crate::test_support::test_feature_tree::{
-    compact, escaped, part, stream, stream_with_catalog, stream_with_sketches, FTR_LIST,
+    compact, escaped, part, stream, stream_with_catalog, stream_with_sketches, FTR_LIST, GSM_PLANE,
     HYBRID_BODY, PAD, SKETCH,
 };
 use crate::test_support::test_formula::standard_catpart_with_formula_relation;
@@ -401,14 +403,16 @@ fn has_loss(result: &EditableDecodeResult, code: CatiaLossCode, text: &str) -> b
         .any(|loss| loss.code == code.note("").code && loss.message.contains(text))
 }
 
-/// A `HybridBody` that `MainTool` does not select is a set whose kind is
-/// unread: an unordered geometrical set of its typed members, and a loss
-/// names it.
+/// A `HybridBody` that `MainTool` does not select and that lists no solid
+/// feature is a set whose kind is unread: an unordered geometrical set of
+/// its typed members, and a loss names it.
 #[test]
 fn a_set_whose_kind_is_unread_is_an_unordered_geometrical_set() {
     let mut records = part();
     assert_eq!(records[0].2[21], 0x84, "the main-body token");
     records[0].2[21] = 0x88;
+    records[3].1 = compact(0x0c, GSM_PLANE);
+    records[4].1 = compact(0x0c, GSM_PLANE);
     let result = decode(
         outer_container_catpart(&stream(&records)).0,
         &DecodeOptions::default(),
@@ -450,8 +454,8 @@ fn a_set_whose_kind_is_unread_is_an_unordered_geometrical_set() {
             .collect::<Vec<_>>(),
         [
             (4, "unresolved Datum".to_owned()),
-            (5, "unresolved Extrude".to_owned()),
-            (6, "unresolved Extrude".to_owned()),
+            (5, "unresolved Datum".to_owned()),
+            (6, "unresolved Datum".to_owned()),
         ]
     );
     assert!(has_loss(
@@ -459,6 +463,42 @@ fn a_set_whose_kind_is_unread_is_an_unordered_geometrical_set() {
         CatiaLossCode::DesignSetKindUnread,
         "(HybridBody)"
     ));
+    assert_eq!(design_findings(&result), Vec::<String>::new());
+    assert_design_survives_cadir(ir);
+}
+
+/// A `HybridBody` that `MainTool` does not select and that lists a solid
+/// feature is a body: ordered, with the in-work object as its rollback, and
+/// no loss charges its kind (`catia.md` §7.3.2).
+#[test]
+fn a_hybrid_body_that_lists_a_solid_feature_is_a_body() {
+    let mut records = part();
+    assert_eq!(records[0].2[21], 0x84, "the main-body token");
+    records[0].2[21] = 0x88;
+    let result = decode(
+        outer_container_catpart(&stream(&records)).0,
+        &DecodeOptions::default(),
+    );
+    let ir = result.ir();
+    let Container::Ordered {
+        kind,
+        members,
+        rollback,
+        ..
+    } = container(ir, "catia:outer:feature-container", 3)
+    else {
+        panic!("the body is ordered");
+    };
+    assert_eq!(*kind, OrderedKind::Body);
+    assert_eq!(
+        members.iter().map(member).collect::<Vec<_>>(),
+        [("feature", 5), ("feature", 6)]
+    );
+    let Some(Rollback::Before(next)) = rollback else {
+        panic!("a rollback before the member after the in-work object");
+    };
+    assert_eq!(member(next), ("feature", 6));
+    assert!(!has_loss(&result, CatiaLossCode::DesignSetKindUnread, ""));
     assert_eq!(design_findings(&result), Vec::<String>::new());
     assert_design_survives_cadir(ir);
 }
@@ -489,12 +529,12 @@ fn a_set_no_list_holds_is_a_root_after_the_listed_sets() {
             .collect::<Vec<_>>(),
         [2, 3, 7, 8]
     );
-    let Container::Unordered { kind, members, .. } =
+    let Container::Ordered { kind, members, .. } =
         container(ir, "catia:outer:feature-container", 8)
     else {
-        panic!("the set is unordered");
+        panic!("a set that lists a pad is a body");
     };
-    assert_eq!(*kind, UnorderedKind::GeometricalSet);
+    assert_eq!(*kind, OrderedKind::Body);
     assert_eq!(
         members.iter().map(member).collect::<Vec<_>>(),
         [("feature", 9)]
@@ -607,14 +647,70 @@ fn an_in_work_object_outside_every_body_is_charged() {
     ));
 }
 
-/// A record the part root lists that holds no operation is no member of
-/// the part's group.
+/// A record the part root lists whose class has no operation family is a
+/// native feature of the part's group, as in a set.
 #[test]
-fn a_root_record_that_holds_no_operation_is_no_feature() {
+fn a_root_record_of_a_class_with_no_family_is_a_native_feature() {
+    for class in ["RelationSet", "String"] {
+        let mut catalog = crate::test_support::test_feature_tree::CATALOG.to_vec();
+        catalog.push(class);
+        let mut records = part();
+        records[2].1 = compact(0x0c, 0x43);
+        let result = decode(
+            outer_container_catpart(&stream_with_catalog(&records, &catalog)).0,
+            &DecodeOptions::default(),
+        );
+        let ir = result.ir();
+        let Container::Unordered { members, .. } = container(ir, "catia:outer:feature-group", 2)
+        else {
+            panic!("the part's group is unordered");
+        };
+        assert_eq!(
+            members.iter().map(member).collect::<Vec<_>>(),
+            [("feature", 4)]
+        );
+        let feature = ir
+            .design
+            .features
+            .iter()
+            .find(|feature| entity(feature.id.as_str()) == 4)
+            .unwrap();
+        assert_eq!(
+            operation(&feature.definition.operation),
+            format!("catia:{class}")
+        );
+        assert_eq!(design_findings(&result), Vec::<String>::new());
+        assert_design_survives_cadir(ir);
+    }
+}
+
+/// A Boolean feature whose `_FtrList` lists a set that no other list holds
+/// combines that set into the body it sits in: the set is a root body, and
+/// the Boolean picks its result at its rollback position and absorbs it
+/// (§6, `Combine`; `catia.md` §7.3.2).
+#[test]
+fn a_boolean_absorbs_the_body_its_feature_list_holds() {
     let mut catalog = crate::test_support::test_feature_tree::CATALOG.to_vec();
-    catalog.push("MechanicalPartProperties");
+    catalog.push("Assemble");
+    let assemble = 0x43;
     let mut records = part();
-    records[2].1 = compact(0x0c, 0x43);
+    let mut body = vec![FTR_LIST, 0x84, 0x81, 0x86];
+    body.extend(escaped(0x2000));
+    body.push(0x87);
+    body.extend(escaped(0x2001));
+    body.push(0x89);
+    body.extend(escaped(0x2002));
+    body.push(0xfe);
+    records[1].2 = body;
+    let mut boolean = vec![FTR_LIST, 0x82, 0x81, 0x8a];
+    boolean.extend(escaped(0x3000));
+    boolean.push(0xfe);
+    let mut tool = vec![FTR_LIST, 0x82, 0x81, 0x8b];
+    tool.extend(escaped(0x3001));
+    tool.push(0xfe);
+    records.push((8, compact(0x08, assemble), boolean));
+    records.push((9, compact(0x08, HYBRID_BODY), tool));
+    records.push((10, compact(0x08, PAD), vec![0xfe]));
     let result = decode(
         outer_container_catpart(&stream_with_catalog(&records, &catalog)).0,
         &DecodeOptions::default(),
@@ -629,14 +725,58 @@ fn a_root_record_that_holds_no_operation_is_no_feature() {
             .iter()
             .map(|id| entity(id.as_str()))
             .collect::<Vec<_>>(),
-        [3, 7]
+        [2, 3, 7, 9]
     );
-    assert!(ir
+    let tool = container(ir, "catia:outer:feature-container", 9);
+    let Container::Ordered { kind, members, .. } = tool else {
+        panic!("the tool is a body");
+    };
+    assert_eq!(*kind, OrderedKind::Body);
+    assert_eq!(
+        members.iter().map(member).collect::<Vec<_>>(),
+        [("feature", 10)]
+    );
+    let Container::Ordered { members, .. } = container(ir, "catia:outer:feature-container", 3)
+    else {
+        panic!("the main body is ordered");
+    };
+    assert_eq!(
+        members.iter().map(member).collect::<Vec<_>>(),
+        [("feature", 5), ("feature", 6), ("feature", 8)]
+    );
+    let feature = ir
         .design
         .features
         .iter()
-        .all(|feature| entity(feature.id.as_str()) != 4));
+        .find(|feature| entity(feature.id.as_str()) == 8)
+        .unwrap();
+    let FeatureOperation::Combine(combine) = &feature.definition.operation else {
+        panic!("the Boolean is a combine");
+    };
+    assert_eq!(combine.op, Some(BooleanOp::Assemble));
+    assert_eq!(combine.tools_after, Some(ToolDisposition::Absorbed));
+    assert_eq!(
+        combine
+            .target
+            .as_ref()
+            .map(|target| (&target.at, &target.picks)),
+        Some((&Anchor::Input, &Picks::Unread))
+    );
+    assert_eq!(
+        combine.tools.at,
+        Anchor::Pinned(Position::After(Member::Container(tool.id().clone())))
+    );
+    let Picks::Named(picks) = &combine.tools.picks else {
+        panic!("the tool is one named pick");
+    };
+    assert_eq!(picks.as_slice().len(), 1);
+    assert!(has_loss(
+        &result,
+        CatiaLossCode::DesignSetsUnlisted,
+        "(HybridBody, the tool of "
+    ));
     assert_eq!(design_findings(&result), Vec::<String>::new());
+    assert_design_survives_cadir(ir);
 }
 
 /// Feature-tree records with no part root leave the tree unread, and a loss

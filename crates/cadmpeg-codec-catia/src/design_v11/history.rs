@@ -2,18 +2,22 @@
 //! The part's bodies, its sets, its own group, and their member features
 //! (§5.2).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::construction::FrameValue;
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ids::ContainerId;
-use cadmpeg_ir::design::names::CodecName;
+use cadmpeg_ir::design::names::{CodecName, NativeName, NativeNameValue};
+use cadmpeg_ir::design::ops::body::Combine;
+use cadmpeg_ir::design::ops::shared::ToolDisposition;
 use cadmpeg_ir::design::ops::sketch::{Planar, Sketch, SketchConstraint};
-use cadmpeg_ir::design::refs::Member;
-use cadmpeg_ir::design::selection::Anchor;
+use cadmpeg_ir::design::options::BooleanOp;
+use cadmpeg_ir::design::refs::{Member, Position};
+use cadmpeg_ir::design::selection::{Anchor, Members, PickTarget, Picked, Picks, Selection};
 use cadmpeg_ir::features::{Feature as LegacyFeature, FeatureId, FeatureOperation as Legacy};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::{SketchConstraint as LegacyConstraint, SketchId};
@@ -23,6 +27,7 @@ use super::tree::{Item, Set, SetKind, Tree};
 use super::{classes, datums, sketches};
 use crate::ids::neutral_history_id;
 use crate::loss::{identity_statement, CatiaLossCode};
+use crate::native::feature_tree::CatiaFeatureContainer;
 
 /// Push the part's containers and their member features, and return the
 /// scope's roots: the part's group first, then its sets in list order.
@@ -50,6 +55,7 @@ pub(super) fn project(
         model_sketches: &model_sketches,
         model_constraints: &ir.model.sketch_constraints,
         current: tree.and_then(|tree| tree.current),
+        tools: tree.map(|tree| &tree.tools),
         rollback_stated: false,
         restated: BTreeSet::new(),
         features: Vec::new(),
@@ -208,6 +214,8 @@ struct Statements<'c, 'l> {
     model_constraints: &'l [LegacyConstraint],
     /// The in-work object's entity.
     current: Option<u32>,
+    /// The tool set of each Boolean feature, by the Boolean's entity.
+    tools: Option<&'l HashMap<u32, &'l CatiaFeatureContainer>>,
     /// Whether a stated body's rollback holds the in-work object.
     rollback_stated: bool,
     restated: BTreeSet<FeatureId>,
@@ -300,6 +308,14 @@ impl Statements<'_, '_> {
             .as_ref()
             .map(|target| target.object_record.clone());
         let operation = match class.map(|class| (class, classes::family(class))) {
+            Some((class, Some(OperationFamily::Combine))) => {
+                match self.tools.and_then(|tools| tools.get(&member.entity_id)) {
+                    Some(tool) => combine(class, tool)?,
+                    None => FeatureOperation::Unresolved {
+                        family: OperationFamily::Combine,
+                    },
+                }
+            }
             Some((_, Some(family))) => FeatureOperation::Unresolved { family },
             Some((class, None)) => native_operation(class)?,
             None => {
@@ -384,6 +400,55 @@ impl Statements<'_, '_> {
         };
         Ok(FeatureOperation::Unresolved { family })
     }
+}
+
+/// The Boolean feature of class `class` whose tool is the root set `tool`:
+/// it targets the body it sits in, and picks the tool's result at the
+/// tool's rollback position.
+fn combine(class: &str, tool: &CatiaFeatureContainer) -> Result<FeatureOperation, CodecError> {
+    let op = match class {
+        "Add" => BooleanOp::Join,
+        "Remove" => BooleanOp::Cut,
+        "Intersect" => BooleanOp::Intersect,
+        "Assemble" => BooleanOp::Assemble,
+        _ => {
+            return Ok(FeatureOperation::Unresolved {
+                family: OperationFamily::Combine,
+            })
+        }
+    };
+    let tool_id = ContainerId::mint(tool.id.clone()).map_err(CodecError::malformed)?;
+    let pick = Picked {
+        target: PickTarget::Native { within: None },
+        context: None,
+        native: Some(NativeName {
+            codec: cadmpeg_ir::codec_id!("catia"),
+            value: NativeNameValue::Text(
+                NonBlankString::new(tool.object_record.clone())
+                    .ok_or_else(|| CodecError::malformed("CATIA tool record name is blank"))?,
+            ),
+        }),
+        domain: None,
+        witness: None,
+        resolved: None,
+    };
+    Ok(FeatureOperation::Combine(Box::new(Combine {
+        target: Some(Selection {
+            at: Anchor::Input,
+            picks: Picks::Unread,
+            native: None,
+        }),
+        tools: Selection {
+            at: Anchor::Pinned(Position::After(Member::Container(tool_id))),
+            picks: Picks::Named(Members::new(vec![pick]).map_err(CodecError::malformed)?),
+            native: None,
+        },
+        op: Some(op),
+        tools_after: Some(ToolDisposition::Absorbed),
+        new_component: None,
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    })))
 }
 
 /// The class of the native placeholder for a member whose record is unread.

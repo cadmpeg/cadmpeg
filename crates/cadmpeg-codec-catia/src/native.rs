@@ -7596,7 +7596,8 @@ define_catia_arenas! {
         pub(crate) stored;
     },
     feature_containers: CatiaFeatureContainer {
-        /// Part roots, bodies, and geometrical sets with their stored feature trees.
+        /// Part roots, bodies, geometrical sets, and Boolean features with
+        /// their stored feature-tree fields.
         pub(crate) stored;
     },
     finjpl_segments: CatiaFinjplSegment {
