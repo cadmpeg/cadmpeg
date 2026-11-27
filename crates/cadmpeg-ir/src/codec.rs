@@ -24,6 +24,7 @@ use crate::report::{
 };
 use crate::source_fidelity::SourceFidelity;
 use crate::ContainerSummary;
+use cadmpeg_core::decode::tree::{XmlNote, XmlUnread};
 use cadmpeg_core::decode::{
     ArenaClass, ContentScope, DecodeArena, DecodeContext, DecodeDepth, DecodePolicy,
     InspectOptions, LimitScope, ResourceLimits, View, WholeInput,
@@ -282,6 +283,7 @@ impl DecodeResult {
         record_digests: bool,
     ) -> Result<Self, DecodeFailure> {
         let mut result = DecodeResult::new(decoded, format, ctx.depth(), ctx.policy())?;
+        result.charge_unread_xml(ctx);
         result.name_dropped_records(ctx)?;
         result.give_up_repeated_ids(ctx, format)?;
         if !ctx.container_only() {
@@ -310,6 +312,37 @@ impl DecodeResult {
             return Err(DecodeFailure::StrictRejected { rejection });
         }
         Ok(result)
+    }
+
+    /// Charges what the session's XML parses left unread from DOCTYPEs.
+    fn charge_unread_xml(&mut self, ctx: &DecodeContext<'_>) {
+        for XmlNote {
+            operation,
+            unread,
+            documents,
+            references,
+        } in ctx.take_xml_notes()
+        {
+            self.report.losses.push(match unread {
+                XmlUnread::ExternalSubset => DecodeLossCode::XmlExternalSubsetUnread.note(format!(
+                    "{operation}: {documents} XML text(s) name an external DTD subset; the \
+                     decoder does not read it, so its declarations do not apply"
+                )),
+                XmlUnread::AttributeDefaults => {
+                    DecodeLossCode::XmlAttributeDefaultsUnapplied.note(format!(
+                        "{operation}: the DTD of {documents} XML text(s) declares attribute \
+                         defaults; the decoder does not apply them"
+                    ))
+                }
+                XmlUnread::ExternalEntity => {
+                    DecodeLossCode::XmlExternalEntityUnexpanded.note(format!(
+                        "{operation}: {references} reference(s) in {documents} XML text(s) \
+                         name an external entity; the decoder fetches no external entity and \
+                         expands each to empty text"
+                    ))
+                }
+            });
+        }
     }
 
     /// Builds a result by stamping the document's source classification onto

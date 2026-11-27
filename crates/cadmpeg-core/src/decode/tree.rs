@@ -7,12 +7,17 @@
 //! other code walks it recursively. A scan of the text gives the depth and
 //! bounds the tree's storage. Each parse charges that bound, and an XML
 //! parse also its name comparisons, to the session as expanded bytes against
-//! the caller's ceiling on the bytes expanded in all.
+//! the caller's ceiling on the bytes expanded in all. An XML text's DOCTYPE
+//! adds what its entity references expand to before the charge, and the
+//! session records what the parse leaves unread from it.
 
 use std::collections::HashSet;
+use std::ops::Range;
 
 use super::{u64_from_index, DecodeContext, DepthGuard, ResourceDimension, ResourceFailure};
 use crate::CodecError;
+
+mod dtd;
 
 /// One roxmltree 0.21.1 `NodeData` with the `positions` feature: four links,
 /// the node kind with an inline expanded name, and the source range.
@@ -47,6 +52,9 @@ const XML_COPY_BYTES: u64 = 32 + 24;
 const XML_COPY_FACTOR: u64 = 5;
 /// Parser state and the initial capacities of the parser and the scan.
 const XML_FIXED_BYTES: u64 = 1024 + 16 * 1024;
+/// One roxmltree 0.21.1 `Entity`, a name and a value span, in a growing
+/// vector.
+const XML_ENTITY_BYTES: u64 = 3 * 40;
 /// One 32-byte `serde_json::Value` in an array that may hold twice its
 /// length.
 const JSON_VALUE_BYTES: u64 = 64;
@@ -111,13 +119,15 @@ impl DecodeContext<'_> {
         Ok(shape.depth)
     }
 
-    /// Parses XML with DTD processing disabled and charges its node depth.
-    /// The scan bounds the storage that roxmltree reserves, copies and links
-    /// and the name comparisons it makes, one byte each. The session charges
-    /// that bound as expanded bytes against the caller's ceiling on the bytes
-    /// expanded in all, before the parse. A refusal is `ResourceLimit` of
-    /// `scope: Session`: its `additional` is the bound, `u64::MAX` where the
-    /// bound passes `u64`.
+    /// Parses XML and charges its node depth. The scan bounds the storage
+    /// that roxmltree reserves, copies and links and the name comparisons it
+    /// makes, one byte each, with what the entity references of a DOCTYPE
+    /// expand to. The session charges that bound as expanded bytes against
+    /// the caller's ceiling on the bytes expanded in all, before the parse.
+    /// A refusal is `ResourceLimit` of `scope: Session`: its `additional` is
+    /// the bound, `u64::MAX` where the bound passes `u64`. External entities
+    /// expand to empty text and no external subset is read; the session
+    /// records each as an [`XmlNote`].
     pub fn parse_xml<'input>(
         &self,
         text: &'input str,
@@ -143,6 +153,12 @@ impl DecodeContext<'_> {
         })
     }
 
+    /// What the session's XML parses left unread from DOCTYPEs since the
+    /// last call, one note per operation and cause.
+    pub fn take_xml_notes(&self) -> Vec<XmlNote> {
+        self.budget.take_xml_notes()
+    }
+
     /// Parses `text` after the session charges its parse and `admit` accepts
     /// its attributes and distinct namespace prefixes.
     fn parse_xml_within<'input>(
@@ -156,48 +172,70 @@ impl DecodeContext<'_> {
         }
         let ceiling = self.budget.policy().limits.max_decompressed_bytes_total;
         let used = self.budget.decompressed_used();
-        let shape = xml_shape_checked(
+        let fits =
+            |bytes: Option<u64>| match bytes.and_then(|bytes| bytes.checked_add(XML_FIXED_BYTES)) {
+                Some(bytes) if used.checked_add(bytes).is_some_and(|all| all <= ceiling) => Ok(()),
+                need => Err(need.map_or(TreeNeed::Unbounded, TreeNeed::Bytes)),
+            };
+        let plan = plan_xml(
             text,
             || Ok(()),
-            |count| match count
-                .checked_mul(XML_PREFIX_BYTES)
-                .and_then(|bytes| bytes.checked_add(XML_FIXED_BYTES))
-            {
-                Some(bytes) if used.checked_add(bytes).is_some_and(|all| all <= ceiling) => Ok(()),
-                need => Err(need),
+            |count, analysis| {
+                fits(
+                    count
+                        .checked_mul(XML_PREFIX_BYTES)
+                        .and_then(|bytes| bytes.checked_add(analysis)),
+                )
             },
+            |analysis| fits(Some(analysis)),
         )
-        .map_err(|need| {
-            self.refuse_tree(
-                ceiling,
-                used,
-                need.map_or(TreeNeed::Unbounded, TreeNeed::Bytes),
-                operation,
-            )
+        .map_err(|stop| match stop {
+            dtd::Stop::Refused(need) => self.refuse_tree(ceiling, used, need, operation),
+            dtd::Stop::Unbounded => self.refuse_tree(ceiling, used, TreeNeed::Unbounded, operation),
+            dtd::Stop::Malformed(reason) => Self::tree_malformed(reason),
         })?;
-        let prefixes = u64_from_index(shape.prefixes.len());
-        let Some((nodes, cost)) = xml_parse_cost(&shape, prefixes) else {
-            return Err(self.refuse_tree(ceiling, used, TreeNeed::Unbounded, operation));
-        };
-        self.budget.charge_expanded(cost, operation)?;
-        admit(shape.attributes + prefixes)?;
+        self.budget.charge_expanded(plan.cost, operation)?;
+        admit(plan.entities)?;
+        let mut options = plan.options();
         // roxmltree node ids are `u32`; a larger bound leaves the parser's own.
-        let mut options = roxmltree::ParsingOptions::default();
-        if let Ok(limit) = u32::try_from(nodes) {
+        if let Ok(limit) = u32::try_from(plan.nodes) {
             options.nodes_limit = limit;
         }
         let limit = options.nodes_limit;
-        // roxmltree recurses once per element level.
-        self.at_depth(shape.depth, operation, || {
+        // roxmltree recurses once per element level and entity level.
+        let document = self.at_depth(plan.depth, operation, || {
             roxmltree::Document::parse_with_options(text, options).map_err(|error| match error {
                 roxmltree::Error::NodesLimitReached => CodecError::NotImplemented(format!(
                     "{operation}: the XML tree holds more than {limit} nodes"
                 )),
+                roxmltree::Error::EntityReferenceLoop(_) => CodecError::NotImplemented(format!(
+                    "{operation}: an XML entity reference expands more than 255 nested \
+                     references or 10 levels"
+                )),
                 error => Self::tree_malformed(error),
             })
-        })
+        })?;
+        let unread = plan.unread;
+        for (cause, held, references) in [
+            (XmlUnread::ExternalSubset, unread.external_subset, 0),
+            (XmlUnread::AttributeDefaults, unread.attribute_defaults, 0),
+            (
+                XmlUnread::ExternalEntity,
+                unread.external_references != 0,
+                unread.external_references,
+            ),
+        ] {
+            if held {
+                self.budget.note_xml(XmlNote {
+                    operation,
+                    unread: cause,
+                    documents: 1,
+                    references,
+                });
+            }
+        }
+        Ok(document)
     }
-
     /// Refuses a tree parse whose bound `need` passes the expanded bytes that
     /// the session has left.
     fn refuse_tree(
@@ -242,7 +280,7 @@ impl DecodeContext<'_> {
 
 impl crate::scan::ScanBudget<'_> {
     /// Parses XML after admitting its input, tree storage, name comparisons,
-    /// and nesting depth.
+    /// entity expansion and nesting depth.
     pub fn parse_xml<'input>(
         &self,
         text: &'input str,
@@ -251,30 +289,163 @@ impl crate::scan::ScanBudget<'_> {
 
         self.source(u64_from_index(text.len()))?;
         self.retain(XML_FIXED_BYTES)?;
-        let shape = xml_shape_checked(text, || self.check(), |_| self.retain(XML_PREFIX_BYTES))?;
+        let plan = plan_xml(
+            text,
+            || self.check(),
+            |_, _| self.retain(XML_PREFIX_BYTES),
+            |analysis| self.retain(analysis),
+        )
+        .map_err(|stop| match stop {
+            dtd::Stop::Refused(reason) => reason,
+            dtd::Stop::Unbounded => StopReason::RetainedBytes,
+            dtd::Stop::Malformed(reason) => StopReason::Malformed(reason),
+        })?;
         self.check()?;
-        let prefixes = u64_from_index(shape.prefixes.len());
-        self.depth(shape.depth)?;
-        let (nodes, storage) = xml_parse_cost(&shape, prefixes)
-            .and_then(|(nodes, cost)| {
-                let rest = cost.checked_sub(
-                    prefixes
-                        .checked_mul(XML_PREFIX_BYTES)?
-                        .checked_add(XML_FIXED_BYTES)?,
-                )?;
-                Some((nodes, rest))
-            })
+        self.depth(plan.depth)?;
+        let storage = plan
+            .prefixes
+            .checked_mul(XML_PREFIX_BYTES)
+            .and_then(|bytes| bytes.checked_add(XML_FIXED_BYTES))
+            .and_then(|bytes| bytes.checked_add(plan.analysis))
+            .and_then(|held| plan.cost.checked_sub(held))
             .ok_or(StopReason::RetainedBytes)?;
         self.retain(storage)?;
         let options = roxmltree::ParsingOptions {
-            nodes_limit: u32::try_from(nodes).map_err(|_| StopReason::RetainedBytes)?,
-            ..roxmltree::ParsingOptions::default()
+            nodes_limit: u32::try_from(plan.nodes).map_err(|_| StopReason::RetainedBytes)?,
+            ..plan.options()
         };
         let document = roxmltree::Document::parse_with_options(text, options)
             .map_err(|error| StopReason::Malformed(error.to_string()))?;
         self.check()?;
         Ok(document)
     }
+}
+
+/// What a parse leaves unread from an XML text's DOCTYPE.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XmlUnread {
+    /// The DOCTYPE names an external subset, whose declarations the parse
+    /// does not read.
+    ExternalSubset,
+    /// The internal subset declares attribute defaults, which the parse
+    /// does not apply.
+    AttributeDefaults,
+    /// References to entities that the DOCTYPE declares by an external
+    /// identifier, which expand to empty text.
+    ExternalEntity,
+}
+
+/// What the XML parses of one operation left unread, for one cause.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct XmlNote {
+    /// The operation that parsed the texts.
+    pub operation: &'static str,
+    /// What the parses left unread.
+    pub unread: XmlUnread,
+    /// The texts parsed with this cause.
+    pub documents: u64,
+    /// For [`XmlUnread::ExternalEntity`], the references that expanded to
+    /// empty text.
+    pub references: u64,
+}
+
+/// What a parse of an XML text holds and spends, admitted before it runs.
+struct XmlPlan {
+    /// The most nodes roxmltree makes.
+    nodes: u64,
+    /// The bytes the parse holds and spends, with the analysis and the
+    /// scan's prefix set.
+    cost: u64,
+    /// The bytes the DOCTYPE analysis holds.
+    analysis: u64,
+    /// Distinct namespace prefixes.
+    prefixes: u64,
+    /// Attributes, namespace declarations included, and distinct namespace
+    /// prefixes.
+    entities: u64,
+    /// The nesting levels the parse reaches.
+    depth: u64,
+    /// Whether the text has a DOCTYPE, which roxmltree then reads.
+    doctype: bool,
+    unread: dtd::Unread,
+}
+
+impl XmlPlan {
+    fn options<'input>(&self) -> roxmltree::ParsingOptions<'input> {
+        roxmltree::ParsingOptions {
+            allow_dtd: self.doctype,
+            // An external entity expands to empty text, so the parse fetches nothing.
+            entity_resolver: Some(&|_, _| Ok(Some(""))),
+            ..roxmltree::ParsingOptions::default()
+        }
+    }
+}
+
+/// Plans a parse of `text`. `check` runs before each byte the scans read,
+/// `admit_prefix` before the prefix set grows, with its new length and the
+/// analysis bytes, and `admit_analysis` before the DOCTYPE analysis
+/// allocates.
+fn plan_xml<E>(
+    text: &str,
+    mut check: impl FnMut() -> Result<(), E>,
+    mut admit_prefix: impl FnMut(u64, u64) -> Result<(), E>,
+    admit_analysis: impl FnOnce(u64) -> Result<(), E>,
+) -> Result<XmlPlan, dtd::Stop<E>> {
+    let mut doctype = dtd::Doctype::read(text, admit_analysis)?;
+    let analysis = doctype.as_ref().map_or(0, dtd::Doctype::analysis);
+    let scope = XmlScope {
+        range: 0..text.len(),
+        skip: doctype
+            .as_ref()
+            .map_or(0..0, |doctype| doctype.range.clone()),
+        open: 0,
+    };
+    let mut prefixes = HashSet::new();
+    let counts = xml_counts_checked(
+        text,
+        &scope,
+        &mut prefixes,
+        &mut check,
+        |count| admit_prefix(count, analysis),
+        |name, in_text| {
+            if let Some(doctype) = doctype.as_mut() {
+                doctype.refer(name, in_text);
+            }
+        },
+    )
+    .map_err(dtd::Stop::Refused)?;
+    let (counts, expansion, unread) = match &doctype {
+        None => (counts, XmlExpansion::default(), dtd::Unread::default()),
+        Some(doctype) => {
+            let expanded = doctype.expand(text, &mut prefixes, &mut check, |count| {
+                admit_prefix(count, analysis)
+            })?;
+            let mut total = counts
+                .plus(&expanded.counts, 1)
+                .ok_or(dtd::Stop::Unbounded)?;
+            total.depth = counts
+                .depth
+                .checked_add(expanded.depth)
+                .ok_or(dtd::Stop::Unbounded)?;
+            (total, expanded.expansion, expanded.unread)
+        }
+    };
+    let prefixes = u64_from_index(prefixes.len());
+    let (nodes, cost) =
+        xml_parse_cost(&counts, prefixes, &expansion).ok_or(dtd::Stop::Unbounded)?;
+    Ok(XmlPlan {
+        nodes,
+        cost,
+        analysis,
+        prefixes,
+        entities: counts
+            .attributes
+            .checked_add(prefixes)
+            .ok_or(dtd::Stop::Unbounded)?,
+        depth: counts.depth,
+        doctype: doctype.is_some(),
+        unread,
+    })
 }
 
 /// The bytes a tree parse holds and spends.
@@ -307,8 +478,8 @@ enum XmlScan {
 
 /// Upper bounds on what roxmltree reserves, copies and keeps per nesting
 /// level while it parses an XML text.
-#[derive(Default)]
-struct XmlShape<'text> {
+#[derive(Clone, Copy, Default)]
+struct XmlCounts {
     /// `<` anywhere in the text. roxmltree reserves one node for each.
     less_than: u64,
     /// `=` anywhere in the text. roxmltree reserves one attribute for each.
@@ -322,8 +493,6 @@ struct XmlShape<'text> {
     attribute_pairs: u128,
     /// `xmlns` outside quoted values in tags, one per namespace declaration.
     declarations: u64,
-    /// Names that follow `xmlns:` in tags.
-    prefixes: HashSet<&'text [u8]>,
     /// The deepest node, counted as roxmltree counts ancestors: the root
     /// element is one, and an element, text, CDATA, comment or instruction
     /// is one more than the element that contains it.
@@ -336,9 +505,12 @@ struct XmlShape<'text> {
     copies: u64,
     /// The source bytes of those texts and values.
     copied: u64,
+    /// Whether the text closes each element it opens, and no other, and
+    /// ends outside markup.
+    balanced: bool,
 }
 
-impl<'text> XmlShape<'text> {
+impl XmlCounts {
     fn copy(&mut self, copied: bool, source: &[u8]) {
         if copied {
             self.copies += 1;
@@ -351,66 +523,126 @@ impl<'text> XmlShape<'text> {
         self.depth = self.depth.max(open + 1);
     }
 
-    /// Adds a declared prefix, after `admit` accepts the set's new length
-    /// when the name is new.
-    fn prefix<E>(
-        &mut self,
-        name: &'text [u8],
-        admit: &mut impl FnMut(u64) -> Result<(), E>,
-    ) -> Result<(), E> {
-        if !self.prefixes.contains(name) {
-            admit(u64_from_index(self.prefixes.len()) + 1)?;
-            self.prefixes.insert(name);
-        }
-        Ok(())
+    /// These counts and `times` the counts of `other`; the widest tag and
+    /// the deepest node of either.
+    fn plus(&self, other: &Self, times: u64) -> Option<Self> {
+        let sum = |own: u64, more: u64| own.checked_add(more.checked_mul(times)?);
+        Some(Self {
+            less_than: sum(self.less_than, other.less_than)?,
+            equals: sum(self.equals, other.equals)?,
+            attributes: sum(self.attributes, other.attributes)?,
+            tag_attributes: self.tag_attributes.max(other.tag_attributes),
+            attribute_pairs: self
+                .attribute_pairs
+                .checked_add(other.attribute_pairs.checked_mul(u128::from(times))?)?,
+            declarations: sum(self.declarations, other.declarations)?,
+            depth: self.depth.max(other.depth),
+            cdata: sum(self.cdata, other.cdata)?,
+            copies: sum(self.copies, other.copies)?,
+            copied: sum(self.copied, other.copied)?,
+            balanced: self.balanced && other.balanced,
+        })
     }
 }
 
-/// Scans `text` once. Comments, CDATA, processing instructions and
-/// declarations end at their first terminator, never after the parser's, so
-/// the counts do not fall below what the parser stores. A text run ends at
-/// markup other than CDATA, where roxmltree stops merging text.
-/// `check` runs before each byte, and `admit_prefix` before the prefix set
-/// grows, with its new length.
-fn xml_shape_checked<E>(
-    text: &str,
+/// What a DOCTYPE adds to a parse besides the counts of the text its
+/// references expand to.
+#[derive(Clone, Copy, Default)]
+struct XmlExpansion {
+    /// Entity references roxmltree expands, nested ones included. Each
+    /// adds text pieces to a merged run.
+    references: u64,
+    /// Bytes of entity names roxmltree compares while it looks the
+    /// references up.
+    lookups: u64,
+    /// Entity declarations roxmltree stores.
+    declared: u64,
+    /// Bytes the DOCTYPE analysis holds.
+    analysis: u64,
+    /// Whether expansions add attributes past roxmltree's reservation.
+    attributes: bool,
+}
+
+/// The bytes a scan reads.
+struct XmlScope {
+    range: Range<usize>,
+    /// A DOCTYPE inside `range`, of which only `<` and `=` count.
+    skip: Range<usize>,
+    /// Elements open where the scan starts: none in a document, one in an
+    /// entity value, which expands inside an element.
+    open: u64,
+}
+
+/// Adds a declared prefix, after `admit` accepts the set's new length when
+/// the name is new.
+fn add_prefix<'text, E>(
+    prefixes: &mut HashSet<&'text [u8]>,
+    name: &'text [u8],
+    admit: &mut impl FnMut(u64) -> Result<(), E>,
+) -> Result<(), E> {
+    if !prefixes.contains(name) {
+        admit(u64_from_index(prefixes.len()) + 1)?;
+        prefixes.insert(name);
+    }
+    Ok(())
+}
+
+/// Scans the bytes of `scope` once. Comments, CDATA, processing
+/// instructions and declarations end at their first terminator, never after
+/// the parser's, so the counts do not fall below what the parser stores. A
+/// text run ends at markup other than CDATA, where roxmltree stops merging
+/// text. `check` runs before each byte, `admit_prefix` before `prefixes`
+/// grows, with its new length, and `refer` at each general entity
+/// reference in a text run or a quoted value, with whether it is in text.
+fn xml_counts_checked<'text, E>(
+    text: &'text str,
+    scope: &XmlScope,
+    prefixes: &mut HashSet<&'text [u8]>,
     mut check: impl FnMut() -> Result<(), E>,
     mut admit_prefix: impl FnMut(u64) -> Result<(), E>,
-) -> Result<XmlShape<'_>, E> {
-    let bytes = text.as_bytes();
-    let mut shape = XmlShape::default();
+    mut refer: impl FnMut(&'text [u8], bool),
+) -> Result<XmlCounts, E> {
+    let bytes = text.as_bytes().get(..scope.range.end).unwrap_or_default();
+    let mut counts = XmlCounts::default();
     let mut state = XmlScan::Text;
     let mut tag_attributes = 0_u64;
     let mut prefix_start = None::<usize>;
     // Open elements; whether the current tag closes one; its last byte
     // outside whitespace, which is `/` for an empty element.
-    let mut open = 0_u64;
+    let mut open = scope.open;
+    let mut balanced = true;
     let mut closing = false;
     let mut last = 0_u8;
     // Start of the current text run or attribute value, and whether
     // roxmltree copies it.
-    let mut run_start = 0_usize;
+    let mut run_start = scope.range.start;
     let mut copied = false;
-    for (index, &byte) in bytes.iter().enumerate() {
+    for (index, &byte) in bytes.iter().enumerate().skip(scope.range.start) {
         check()?;
-        shape.less_than += u64::from(byte == b'<');
-        shape.equals += u64::from(byte == b'=');
+        counts.less_than += u64::from(byte == b'<');
+        counts.equals += u64::from(byte == b'=');
+        if scope.skip.contains(&index) {
+            if index + 1 == scope.skip.end {
+                run_start = scope.skip.end;
+            }
+            continue;
+        }
         let tail = bytes.get(index..).unwrap_or_default();
         state = match state {
             XmlScan::Text if byte == b'<' => {
                 if tail.starts_with(b"<![CDATA[") {
-                    shape.cdata += 1;
-                    shape.contains(open);
+                    counts.cdata += 1;
+                    counts.contains(open);
                     copied = true;
                     XmlScan::Cdata
                 } else {
-                    shape.copy(copied, bytes.get(run_start..index).unwrap_or_default());
+                    counts.copy(copied, bytes.get(run_start..index).unwrap_or_default());
                     copied = false;
                     if tail.starts_with(b"<!--") {
-                        shape.contains(open);
+                        counts.contains(open);
                         XmlScan::Comment
                     } else if tail.starts_with(b"<?") {
-                        shape.contains(open);
+                        counts.contains(open);
                         XmlScan::Instruction
                     } else if tail.starts_with(b"<!") {
                         XmlScan::Declaration
@@ -423,9 +655,12 @@ fn xml_shape_checked<E>(
             }
             XmlScan::Text => {
                 copied |= matches!(byte, b'&' | b'\r');
+                if let Some(name) = dtd::reference(tail) {
+                    refer(name, true);
+                }
                 // Text outside the root element is not a node.
                 if open != 0 {
-                    shape.contains(open);
+                    counts.contains(open);
                 }
                 XmlScan::Text
             }
@@ -433,14 +668,15 @@ fn xml_shape_checked<E>(
                 let delimiter =
                     byte.is_ascii_whitespace() || matches!(byte, b'=' | b'/' | b'>' | b'\'' | b'"');
                 if let Some(start) = prefix_start.filter(|_| delimiter) {
-                    shape.prefix(
+                    add_prefix(
+                        prefixes,
                         bytes.get(start..index).unwrap_or_default(),
                         &mut admit_prefix,
                     )?;
                     prefix_start = None;
                 }
                 if tail.starts_with(b"xmlns") {
-                    shape.declarations += 1;
+                    counts.declarations += 1;
                     if prefix_start.is_none() && tail.get(5) == Some(&b':') {
                         prefix_start = Some(index + 6);
                     }
@@ -453,11 +689,12 @@ fn xml_shape_checked<E>(
                     }
                     b'>' => {
                         if closing {
-                            if let Some(outer) = open.checked_sub(1) {
-                                open = outer;
+                            match open.checked_sub(1).filter(|_| open > scope.open) {
+                                Some(outer) => open = outer,
+                                None => balanced = false,
                             }
                         } else {
-                            shape.contains(open);
+                            counts.contains(open);
                             if last != b'/' {
                                 open += 1;
                             }
@@ -466,10 +703,10 @@ fn xml_shape_checked<E>(
                         XmlScan::Text
                     }
                     b'=' => {
-                        shape.attribute_pairs += u128::from(tag_attributes);
+                        counts.attribute_pairs += u128::from(tag_attributes);
                         tag_attributes += 1;
-                        shape.attributes += 1;
-                        shape.tag_attributes = shape.tag_attributes.max(tag_attributes);
+                        counts.attributes += 1;
+                        counts.tag_attributes = counts.tag_attributes.max(tag_attributes);
                         XmlScan::Tag { quote: 0 }
                     }
                     _ => XmlScan::Tag { quote: 0 },
@@ -480,13 +717,16 @@ fn xml_shape_checked<E>(
                 next
             }
             XmlScan::Tag { quote } if byte == quote => {
-                shape.copy(copied, bytes.get(run_start..index).unwrap_or_default());
+                counts.copy(copied, bytes.get(run_start..index).unwrap_or_default());
                 copied = false;
                 last = byte;
                 XmlScan::Tag { quote: 0 }
             }
             XmlScan::Tag { quote } => {
                 copied |= matches!(byte, b'&' | b'\t' | b'\n' | b'\r');
+                if let Some(name) = dtd::reference(tail) {
+                    refer(name, false);
+                }
                 XmlScan::Tag { quote }
             }
             XmlScan::Comment if tail.starts_with(b"-->") => {
@@ -506,86 +746,101 @@ fn xml_shape_checked<E>(
         };
     }
     // A text run or CDATA section that the text ends in.
-    shape.copy(copied, bytes.get(run_start..).unwrap_or_default());
+    counts.copy(copied, bytes.get(run_start..).unwrap_or_default());
     if let Some(start) = prefix_start {
-        shape.prefix(bytes.get(start..).unwrap_or_default(), &mut admit_prefix)?;
+        add_prefix(
+            prefixes,
+            bytes.get(start..).unwrap_or_default(),
+            &mut admit_prefix,
+        )?;
     }
-    Ok(shape)
+    counts.balanced = balanced && open == scope.open && matches!(state, XmlScan::Text);
+    Ok(counts)
 }
 
 /// Bytes that roxmltree 0.21.1 and this module hold while they parse a text
-/// of `shape`, besides nodes past the reserved slots. roxmltree reserves a
+/// of `counts`, besides nodes past the reserved slots. roxmltree reserves a
 /// node for each `<` and an attribute for each `=` before it parses, and
-/// shrinking the attribute vector copies the attributes. Each element that
-/// declares a namespace stores its declarations and copies the namespaces
-/// in scope: at most one per declared prefix, the default namespace and
-/// `xml`. The temporary attributes of the widest tag and the scan's prefix
-/// set grow as vectors and tables do.
-fn xml_storage_bytes(shape: &XmlShape<'_>, prefixes: u64) -> Option<u64> {
-    let namespace_indices = shape
+/// shrinking the attribute vector copies the attributes; attributes that
+/// entity expansions add grow the vector, which can then hold three slots
+/// for each. Each element that declares a namespace stores its declarations
+/// and copies the namespaces in scope: at most one per declared prefix, the
+/// default namespace and `xml`. The temporary attributes of the widest tag
+/// and the scan's prefix set grow as vectors and tables do. Each entity
+/// reference adds at most two text pieces to a merged run, and the DOCTYPE
+/// adds roxmltree's entity declarations and the analysis's own bytes.
+fn xml_storage_bytes(counts: &XmlCounts, prefixes: u64, expansion: &XmlExpansion) -> Option<u64> {
+    let namespace_indices = counts
         .declarations
         .checked_mul(prefixes.checked_add(3)?)?
         .checked_add(1)?;
+    let mut attribute_slots = counts.equals.checked_add(counts.attributes)?;
+    if expansion.attributes {
+        attribute_slots = attribute_slots.checked_mul(3)?;
+    }
     XML_FIXED_BYTES
-        .checked_add(shape.less_than.checked_mul(XML_NODE_BYTES)?)?
+        .checked_add(counts.less_than.checked_mul(XML_NODE_BYTES)?)?
+        .checked_add(attribute_slots.checked_mul(XML_ATTRIBUTE_BYTES)?)?
+        .checked_add(counts.depth.checked_add(2)?.checked_mul(XML_LEVEL_BYTES)?)?
         .checked_add(
-            shape
-                .equals
-                .checked_add(shape.attributes)?
-                .checked_mul(XML_ATTRIBUTE_BYTES)?,
-        )?
-        .checked_add(shape.depth.checked_add(2)?.checked_mul(XML_LEVEL_BYTES)?)?
-        .checked_add(
-            shape
+            counts
                 .cdata
+                .checked_add(expansion.references)?
                 .checked_mul(2)?
                 .checked_add(1)?
                 .checked_mul(XML_TEXT_PIECE_BYTES)?,
         )?
-        .checked_add(shape.copied.checked_mul(XML_COPY_FACTOR)?)?
-        .checked_add(shape.copies.checked_mul(XML_COPY_BYTES)?)?
+        .checked_add(counts.copied.checked_mul(XML_COPY_FACTOR)?)?
+        .checked_add(counts.copies.checked_mul(XML_COPY_BYTES)?)?
         .checked_add(
-            shape
+            counts
                 .declarations
                 .checked_add(1)?
                 .checked_mul(2 * XML_NAMESPACE_BYTES)?,
         )?
         .checked_add(namespace_indices.checked_mul(3 * 2)?)?
         .checked_add(
-            shape
+            counts
                 .tag_attributes
                 .checked_mul(3)?
                 .max(XML_TEMP_ATTRIBUTE_SLOTS)
                 .checked_mul(XML_TEMP_ATTRIBUTE_BYTES)?,
         )?
-        .checked_add(prefixes.checked_mul(XML_PREFIX_BYTES)?)
+        .checked_add(prefixes.checked_mul(XML_PREFIX_BYTES)?)?
+        .checked_add(expansion.declared.checked_mul(XML_ENTITY_BYTES)?)?
+        .checked_add(expansion.analysis)
 }
 
 /// The name comparisons roxmltree 0.21.1 makes while it parses a text of
-/// `shape`: each attribute with the earlier attributes of its tag, and the
+/// `counts`: each attribute with the earlier attributes of its tag, the
 /// name of each tag and prefixed attribute with the namespaces in scope, at
-/// most one per declared prefix, the default namespace and `xml`.
-fn xml_comparisons(shape: &XmlShape<'_>, prefixes: u64) -> Option<u64> {
-    shape
+/// most one per declared prefix, the default namespace and `xml`, and the
+/// entity names it looks references up among.
+fn xml_comparisons(counts: &XmlCounts, prefixes: u64, expansion: &XmlExpansion) -> Option<u64> {
+    counts
         .less_than
-        .checked_add(shape.attributes)?
+        .checked_add(counts.attributes)?
         .checked_mul(prefixes.checked_add(2)?)?
-        .checked_add(u64::try_from(shape.attribute_pairs).ok()?)
+        .checked_add(u64::try_from(counts.attribute_pairs).ok()?)?
+        .checked_add(expansion.lookups)
 }
 
-/// The most nodes roxmltree 0.21.1 makes for a text of `shape`, and the
+/// The most nodes roxmltree 0.21.1 makes for a text of `counts`, and the
 /// bytes a parse of it holds and spends: [`xml_storage_bytes`],
 /// [`xml_comparisons`], and three slots for each node, which a node vector
 /// that grows or shrinks can hold. roxmltree makes the root node, at most one
 /// node for each `<`, and at most one text node after each `<`.
-fn xml_parse_cost(shape: &XmlShape<'_>, prefixes: u64) -> Option<(u64, u64)> {
-    let nodes = shape.less_than.checked_mul(2)?.checked_add(1)?;
-    let cost = xml_storage_bytes(shape, prefixes)?
-        .checked_add(xml_comparisons(shape, prefixes)?)?
+fn xml_parse_cost(
+    counts: &XmlCounts,
+    prefixes: u64,
+    expansion: &XmlExpansion,
+) -> Option<(u64, u64)> {
+    let nodes = counts.less_than.checked_mul(2)?.checked_add(1)?;
+    let cost = xml_storage_bytes(counts, prefixes, expansion)?
+        .checked_add(xml_comparisons(counts, prefixes, expansion)?)?
         .checked_add(nodes.checked_mul(3 * XML_NODE_BYTES)?)?;
     Some((nodes, cost))
 }
-
 /// Upper bounds on a JSON parse: the nesting depth it can reach and the
 /// parts of a `serde_json::Value` tree.
 #[derive(Default)]
@@ -732,9 +987,11 @@ impl JsonStringScan {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::{
-        json_shape, json_storage_bytes, xml_comparisons, xml_parse_cost, xml_shape_checked,
-        xml_storage_bytes, XmlShape, XML_FIXED_BYTES, XML_NODE_BYTES, XML_PREFIX_BYTES,
+        dtd, json_shape, json_storage_bytes, plan_xml, xml_counts_checked, XmlCounts, XmlPlan,
+        XmlScope, XML_FIXED_BYTES, XML_PREFIX_BYTES,
     };
     use crate::decode::{
         u64_from_index, DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, LimitScope,
@@ -743,7 +1000,7 @@ mod tests {
     use crate::CodecError;
 
     /// Per-thread heap observation for the storage-bound tests.
-    mod heap {
+    pub(super) mod heap {
         use std::alloc::{GlobalAlloc, Layout, System};
         use std::cell::Cell;
 
@@ -804,7 +1061,7 @@ mod tests {
 
         /// The most heap bytes that `action` held at once on this thread,
         /// besides what it returns.
-        pub(super) fn peak<R>(action: impl FnOnce() -> R) -> (R, u64) {
+        pub(in crate::decode::tree) fn peak<R>(action: impl FnOnce() -> R) -> (R, u64) {
             LIVE.with(|live| live.set(0));
             PEAK.with(|peak| peak.set(0));
             TRACK.with(|track| track.set(true));
@@ -815,17 +1072,48 @@ mod tests {
         }
     }
 
-    fn xml_shape(text: &str) -> XmlShape<'_> {
-        xml_shape_checked(text, || Ok::<(), std::convert::Infallible>(()), |_| Ok(()))
-            .unwrap_or_else(|never| match never {})
+    /// The counts of a scan of the whole `text` and the namespace prefixes
+    /// it declares.
+    fn xml_scan(text: &str) -> (XmlCounts, HashSet<&[u8]>) {
+        let mut prefixes = HashSet::new();
+        let scope = XmlScope {
+            range: 0..text.len(),
+            skip: 0..0,
+            open: 0,
+        };
+        let counts = xml_counts_checked(
+            text,
+            &scope,
+            &mut prefixes,
+            || Ok::<(), std::convert::Infallible>(()),
+            |_| Ok(()),
+            |_, _| {},
+        )
+        .unwrap_or_else(|never| match never {});
+        (counts, prefixes)
+    }
+
+    fn xml_shape(text: &str) -> XmlCounts {
+        xml_scan(text).0
+    }
+
+    fn xml_plan(text: &str) -> XmlPlan {
+        match plan_xml(
+            text,
+            || Ok::<(), std::convert::Infallible>(()),
+            |_, _| Ok(()),
+            |_| Ok(()),
+        ) {
+            Ok(plan) => plan,
+            Err(dtd::Stop::Refused(never)) => match never {},
+            Err(dtd::Stop::Unbounded) => panic!("unbounded XML parse"),
+            Err(dtd::Stop::Malformed(reason)) => panic!("malformed DOCTYPE: {reason}"),
+        }
     }
 
     /// What a parse of `text` charges to the session as expanded bytes.
     fn xml_cost(text: &str) -> u64 {
-        let shape = xml_shape(text);
-        xml_parse_cost(&shape, u64_from_index(shape.prefixes.len()))
-            .expect("XML parse bound")
-            .1
+        xml_plan(text).cost
     }
 
     fn repeated(count: usize, part: impl Fn(usize) -> String) -> String {
@@ -866,6 +1154,72 @@ mod tests {
              \n    <Objects Count=\"{objects}\">{declarations}\n    </Objects>\
              \n    <ObjectData Count=\"{objects}\">{data}\n    </ObjectData>\n</Document>\n"
         )
+    }
+
+    /// Documents whose DOCTYPE declares entities that `count` references
+    /// expand, with a label each.
+    fn doctype_documents(count: usize) -> Vec<(&'static str, String)> {
+        let big = "y".repeat(4096);
+        vec![
+            (
+                "a DOCTYPE without a subset",
+                format!("<!DOCTYPE r>\n<r>{}</r>", "<a/>".repeat(count)),
+            ),
+            (
+                "markup in a DOCTYPE",
+                format!(
+                    "<?xml version='1.0'?><!-- c --><!DOCTYPE r SYSTEM 'r.dtd' [<!-- < = -->\
+                     <?p x=1?><!ELEMENT r ANY><!ATTLIST r a CDATA 'b=c'>]><r>{}</r>",
+                    "<a b='1'/>".repeat(count)
+                ),
+            ),
+            (
+                "elements from entities",
+                format!(
+                    "<!DOCTYPE r [<!ENTITY e \"<b x='1' xmlns:q='u' q:y='2'>t&amp;\r</b>\">]>\
+                     <r>{}</r>",
+                    "&e;".repeat(count)
+                ),
+            ),
+            (
+                "nested entities",
+                format!(
+                    "<!DOCTYPE r [<!ENTITY a 'abc'><!ENTITY b '&a;&a;&a;&a;'>\
+                     <!ENTITY c '&b;<![CDATA[d]]>&b;&b;&b;'>]><r>{}</r>",
+                    "<p>&c;</p>".repeat(count / 4)
+                ),
+            ),
+            (
+                "entities in values",
+                format!(
+                    "<!DOCTYPE r [<!ENTITY v 'x&#10;y'><!ENTITY w '&v;\t&v;'>]><r>{}</r>",
+                    "<a b='&w;' c='&v;'/>".repeat(count)
+                ),
+            ),
+            (
+                "external entities",
+                format!(
+                    "<!DOCTYPE r [<!ENTITY x SYSTEM 'x.xml'><!ENTITY p PUBLIC 'p' 'p.xml'>]>\
+                     <r>{}</r>",
+                    "&x;t&p;".repeat(count)
+                ),
+            ),
+            (
+                "a long value referenced often",
+                format!(
+                    "<!DOCTYPE r [<!ENTITY big '{big}'>]><r>{}</r>",
+                    "<a>&big;</a>".repeat(count / 16)
+                ),
+            ),
+            (
+                "many declarations",
+                format!(
+                    "<!DOCTYPE r [{}]><r>{}</r>",
+                    repeated(count, |index| format!("<!ENTITY e{index} 'v{index}'>")),
+                    repeated(count, |index| format!("&e{index};"))
+                ),
+            ),
+        ]
     }
 
     #[derive(Debug, serde::Deserialize, PartialEq)]
@@ -911,7 +1265,7 @@ mod tests {
 
     #[test]
     fn xml_shape_counts_tag_attributes_and_declared_prefixes() {
-        let shape = xml_shape(
+        let (shape, prefixes) = xml_scan(
             "<?xml version=\"1.0\"?><r xmlns=\"u\" xmlns:p=\"u\" a=\"x=y\"><!-- b=c xmlns:q='u' -->\
              <p:c xmlns:p ='v' d='1'/><![CDATA[e=f]]>g=h</r>",
         );
@@ -920,7 +1274,7 @@ mod tests {
         // Three attributes give three pairs, and two give one.
         assert_eq!(shape.attribute_pairs, 4);
         assert_eq!(shape.declarations, 3);
-        assert_eq!(shape.prefixes.into_iter().collect::<Vec<_>>(), [&b"p"[..]]);
+        assert_eq!(prefixes.into_iter().collect::<Vec<_>>(), [&b"p"[..]]);
     }
 
     #[test]
@@ -1046,13 +1400,11 @@ mod tests {
             ),
             wide_tag(1000),
             declared_prefixes(300),
-        ] {
-            let shape = xml_shape(&text);
-            let nodes = shape.less_than * 2 + 1;
-            let prefixes = u64_from_index(shape.prefixes.len());
-            let storage = xml_storage_bytes(&shape, prefixes).expect("XML storage bound")
-                + xml_comparisons(&shape, prefixes).expect("XML comparison bound")
-                + nodes * 3 * XML_NODE_BYTES;
+        ]
+        .into_iter()
+        .chain(doctype_documents(128).into_iter().map(|(_, text)| text))
+        {
+            let storage = xml_cost(&text);
             let clock = ManualClock::default();
             let budget = ScanBudget::new(
                 ScanLimits {
@@ -1126,7 +1478,10 @@ mod tests {
             ("realistic", realistic_document(count / 4)),
             ("a wide tag", wide_tag(count / 4)),
             ("declared prefixes", declared_prefixes(count / 4)),
-        ];
+        ]
+        .into_iter()
+        .chain(doctype_documents(count))
+        .collect::<Vec<_>>();
         // roxmltree recurses once per level, past a test thread's stack.
         std::thread::Builder::new()
             .stack_size(64 << 20)
