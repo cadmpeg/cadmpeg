@@ -1201,7 +1201,7 @@ mod flange;
 pub(crate) use flange::{flange_document, FlangeSpec};
 
 mod kinds;
-pub(crate) use kinds::{kind_document, EdgeSpec, Operand};
+pub(crate) use kinds::{bends_proxy, kind_document, BendSpec, EdgeSpec, Operand};
 
 pub(crate) fn with_partitions(streams: &[Vec<u8>]) -> Vec<u8> {
     let fat = 2 + 8 * streams.len();

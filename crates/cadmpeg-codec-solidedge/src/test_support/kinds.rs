@@ -3,8 +3,8 @@
 //! (`docs/formats/solidedge.md` §10.4 to §10.7).
 
 use super::{
-    feature_with_streams, part_body, profile_group, put_reals, slot_object, Member2d, Object,
-    ProfileFrame, Slot, EXTENT_CLASSES, EXTENT_SET,
+    feature_with_streams, part_body, profile_group, put_reals, put_words, slot_object, Member2d,
+    Object, ProfileFrame, Slot, EXTENT_CLASSES, EXTENT_SET,
 };
 
 /// The class names of a kind document, by form.
@@ -65,6 +65,63 @@ pub(crate) enum Operand<'a> {
     BlankEdge,
     /// A profile group.
     Profile(&'a ProfileFrame, &'a [Member2d]),
+    /// A `CLSID_JMTopologyProxy` with the given body (the object bytes after
+    /// its 8-byte frame) in the slot that many bytes after the function name.
+    Proxy(&'a [u8], usize),
+}
+
+/// A bends proxy of an unfold that is not flat (§10.6), in metres.
+#[derive(Clone, Copy)]
+pub(crate) struct BendSpec {
+    /// The radius of the arcs of the first and of the second layer face.
+    pub(crate) radii: [f64; 2],
+    /// The length of the straight edges of the first and of the second layer
+    /// face.
+    pub(crate) widths: [f64; 2],
+}
+
+impl Default for BendSpec {
+    fn default() -> Self {
+        Self {
+            radii: [0.003, 0.001],
+            widths: [0.03, 0.03],
+        }
+    }
+}
+
+/// Bytes of a bends proxy and the object offsets of its two groups.
+const BENDS_BYTES: usize = 1410;
+const BENDS_GROUPS: [usize; 2] = [237, 695];
+const ARC_BYTES: usize = 97;
+const LINE_BYTES: usize = 65;
+
+/// The body of a bends proxy of an unfold that is not flat: two groups, each
+/// of an arc, a straight edge, an arc and a straight edge.
+pub(crate) fn bends_proxy(spec: &BendSpec) -> Vec<u8> {
+    let mut proxy = vec![0_u8; BENDS_BYTES - 8];
+    for (group, at) in BENDS_GROUPS.iter().enumerate() {
+        put_words(&mut proxy, *at, &[1, 4]);
+        proxy[*at..*at + 2].copy_from_slice(&2_u16.to_le_bytes());
+        let mut next = at + 10;
+        for _ in 0..2 {
+            proxy[next - 8] = 16;
+            put_reals(&mut proxy, next + 1, &[0.0, 0.0, 0.0]);
+            put_reals(&mut proxy, next + 25, &[0.0, 1.0, 0.0]);
+            put_reals(&mut proxy, next + 49, &[0.0, 0.0, spec.radii[group]]);
+            put_reals(
+                &mut proxy,
+                next + 73,
+                &[1.0, 0.0, std::f64::consts::FRAC_PI_2],
+            );
+            next += ARC_BYTES;
+            proxy[next - 8] = 3;
+            put_reals(&mut proxy, next + 1, &[0.0, 0.0, 0.0]);
+            put_reals(&mut proxy, next + 25, &[0.0, 1.0, 0.0]);
+            put_reals(&mut proxy, next + 57, &[spec.widths[group]]);
+            next += LINE_BYTES;
+        }
+    }
+    proxy
 }
 
 /// A document with one feature, object 10, of `function`. `operand` fills the
@@ -104,6 +161,15 @@ pub(crate) fn kind_document(
             });
             body[end + OBJECT_AFTER_NAME..end + OBJECT_AFTER_NAME + 4]
                 .copy_from_slice(&PROXY_OBJECT.to_le_bytes());
+        }
+        Operand::Proxy(proxy, after) => {
+            extra.push(Object {
+                id: PROXY_OBJECT,
+                form: PROXY_FORM,
+                flags: 0,
+                body: proxy.to_vec(),
+            });
+            body[end + after..end + after + 4].copy_from_slice(&PROXY_OBJECT.to_le_bytes());
         }
         Operand::Profile(frame, members) => {
             extra.extend(profile_group(EXTENT_SET, frame, 1, 200, members));

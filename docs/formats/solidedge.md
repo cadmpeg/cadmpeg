@@ -541,6 +541,7 @@ bytes of the identifier give the geometry class:
 | `76 E3 FE 7C 16 3A` | planar face | `u8` `14`, `f64` point (3), `f64` unit normal (3), `f64` unit vector (3) |
 | `72 C7 D4 1D 15 3A` | vertex | `f64` point (3) |
 | `92 DA 66 66 16 3A` | circular edge | `u8` `15`, `f64` center (3), `f64` unit axis (3) |
+| `BE DA BE 91 16 3A` | cylindrical face | `u8` `23`, `f64` point on the axis (3), `f64` unit axis (3), `f64` radius vector (3) |
 
 The end point of a straight edge is the start point plus the length times the
 direction. The unit normal of a planar face points out of the material.
@@ -919,16 +920,51 @@ selection:
 | unfold | 96 | `JMGetSMBendLayerFaces` | the bends |
 | refold | 68 | `JMGetSMBendLayerFaces` | the bends |
 
-The stationary face proxy of an unfold stores the straight boundary edges of
-the two layer faces of the selected sheet face, one on each side of the
-sheet, as two groups of edge records. A record has 65 bytes. Its first
-three `f64` are the edge start point in metres, the next three `f64` at 24
-bytes from the record start are the unit edge direction, and the `f64` at 56
-bytes is the edge length. The first group starts at proxy offset 224. With `k`
-the number of edges of one layer face, the groups have `k` consecutive records
-each, the second group starts at offset 224 + 65 `k` + 109, and the proxy has
-`712` + 130 `k` bytes. A proxy of 1232 bytes has `k` = 4 and a proxy of
-2012 bytes has `k` = 10.
+The proxy of a selected face stores the boundary edges of the two layer faces
+of the selected sheet face, one layer face on each side of the sheet, as two
+groups of edge records. A group starts with `u32` `1`, `u32` `k` and `u16`
+`2`, with `k` the number of edge records of the group. The edge records
+follow. An edge record starts with a kind byte:
+
+| Kind | Edge | Record bytes | Fields after the kind byte |
+| ---: | --- | ---: | --- |
+| `3` | straight edge | 65 | `f64` start point (3), `f64` unit direction (3), `f64` `0`, `f64` length |
+| `16` | circular arc | 97 | `f64` center (3), `f64` unit normal (3), `f64` radius vector (3), `f64` `1`, `f64` start angle, `f64` end angle |
+
+The radius vector is perpendicular to the normal and its length is the radius.
+Angles are in radians. Lengths and points are metres in the part frame of the
+model state before the feature, so an earlier unfold of the same part moves the
+edges that a later feature selects.
+
+The stationary face proxy of an unfold stores `k` straight edges in each group.
+The first group starts at proxy offset 213, the second group starts at offset
+213 + 65 `k` + 109, and the proxy has `712` + 130 `k` bytes. A proxy of 1232
+bytes has `k` = 4 and a proxy of 2012 bytes has `k` = 10.
+
+The bends proxy of an unfold selects one bend that is not flat. It has 1410
+bytes. Its two groups are the two layer faces of the bend and each has `k` = 4
+edge records in the order arc, straight edge, arc, straight edge. The first
+group starts at proxy offset 237 and the second group at offset 695. The two
+arcs of a group have the same radius and the two straight edges of a group have
+the same length, the bend width. The two groups have the two radii of the bend:
+the inside radius and the inside radius plus the sheet thickness, in either
+order. For a bend of 90 degrees, the end angle of each arc minus its start
+angle is pi / 2.
+
+The geometry record of a bends proxy of 1410 bytes starts at object offset 140
+and holds the cylindrical face of the first group. The geometry class
+identifier starts with `BE DA BE 91 16 3A` and the kind byte is `23` (§7.6).
+
+The bends proxy of a refold selects one bend that is flat. It has 1232 bytes
+and `k` = 4 as the stationary face proxy of an unfold has, with straight edge
+records only. The four edges of a group form a rectangle: two edges have the
+bend width and two edges have the same length across the bend. The two groups
+store the same lengths.
+
+An unfold feature selects one bend. The unfold of three bends about one
+stationary face is three consecutive unfold features. The unfold features of
+two stationary faces store the same edge values for a bend that has the same
+model state before the feature.
 
 ### 10.7 Close corner
 
