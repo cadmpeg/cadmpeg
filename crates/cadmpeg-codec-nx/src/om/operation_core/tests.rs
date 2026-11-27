@@ -52,7 +52,7 @@ fn motion(null: bool) -> Vec<u8> {
     bytes
 }
 fn wire(kind: &str, bytes: Vec<u8>) -> serde_json::Value {
-    serde_json::json!({"kind": kind, "bytes": NativeBytes::from(bytes)})
+    cadmpeg_core::json!({"kind": kind, "bytes": NativeBytes::from(bytes)})
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn complete_native_cores_admit_each_boolean_mode_and_exact_scalar_width() {
             };
             cadmpeg_test_support::native_serialization::assert_native_limit(
                 &record,
-                serde_json::json!({"id":"nx:feature:core#0","core":value}),
+                cadmpeg_core::json!({"id":"nx:feature:core#0","core":value}),
             );
             for end in 0..bytes.len() {
                 assert!(

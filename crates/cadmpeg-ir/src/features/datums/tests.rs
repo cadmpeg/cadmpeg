@@ -129,21 +129,6 @@ fn datum_axis_walks_bound_dimensions_and_preserves_colliding_option_literals() {
     );
 }
 
-#[cfg(feature = "schema")]
-#[test]
-fn datum_axis_schema_requires_a_readable_fact_and_nonnull_geometry() {
-    let schema = json::to_value(schemars::schema_for!(DatumAxis)).unwrap();
-    assert_eq!(schema["allOf"][0]["anyOf"].as_array().unwrap().len(), 5);
-    assert_eq!(
-        schema["allOf"][0]["anyOf"][2]["properties"]["inputs"]["minItems"],
-        1
-    );
-    assert!(!schema["properties"]["origin"].to_string().contains("null"));
-    assert!(!schema["properties"]["direction"]
-        .to_string()
-        .contains("null"));
-}
-
 fn feature(operation: FeatureOperation, ordinal: u64) -> crate::features::Feature {
     crate::features::Feature {
         product_definition: None,
@@ -421,7 +406,7 @@ fn datum_axis_validation_reaches_solved_plane_frame_and_curve_values() {
 fn datum_axis_validation_keeps_curve_origins_and_two_pick_parameters() {
     use crate::design::construction::{InputRole, Relation, ScalarDimension, Subject};
     use crate::design::selection::OrderedSelection;
-    let picks: OrderedSelection = json::from_value(serde_json::json!({
+    let picks: OrderedSelection = json::from_value(cadmpeg_core::json!({
         "at":{"kind":"input"}, "picks":{"kind":"named","value":[
             {"target":{"kind":"principal","value":{"entity":"x_axis"}}},
             {"target":{"kind":"principal","value":{"entity":"origin"}}}

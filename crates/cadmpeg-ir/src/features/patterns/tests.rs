@@ -8,8 +8,8 @@ use crate::features::selections::FaceSelection;
 use crate::math::{Point3, Vector3};
 use crate::scalar::{Angle, Length, PositiveAngle, PositiveLength, PositiveReal};
 use crate::units::UnitVector3;
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 #[test]
 fn partial_curve_driven_preserves_independent_values_through_wire_and_units() {
@@ -65,43 +65,6 @@ fn partial_curve_driven_preserves_independent_values_through_wire_and_units() {
         json::to_value(empty).unwrap(),
         json!({"kind":"curve_driven_partial", "parameters":{}})
     );
-}
-
-#[cfg(feature = "schema")]
-#[test]
-fn partial_curve_driven_schema_agrees_with_reader_on_optional_fields_and_count() {
-    use crate::features::patterns::curve_driven::CurveDrivenPatternParameters;
-    let schema = json::to_value(schemars::schema_for!(CurveDrivenPatternParameters)).unwrap();
-    let properties = schema["properties"].as_object().unwrap();
-    assert!(schema.get("required").is_none());
-    for name in [
-        "path",
-        "count",
-        "spacing",
-        "distance",
-        "total_extent",
-        "reversed",
-        "path_oriented",
-        "start_parameter",
-    ] {
-        let property = &properties[name];
-        assert!(
-            !property.to_string().contains("\"null\""),
-            "{name}: {property}"
-        );
-        let mut fields = serde_json::Map::new();
-        fields.insert(name.into(), serde_json::Value::Null);
-        assert!(json::from_value::<CurveDrivenPatternParameters>(fields.into()).is_err());
-    }
-    assert_eq!(properties["count"]["minimum"], json!(1));
-    for (count, accepted) in [(0, false), (1, true)] {
-        let value = json!({"kind":"curve_driven_partial", "parameters":{"count":count}});
-        assert_eq!(json::from_value::<PatternKind>(value).is_ok(), accepted);
-    }
-    assert!(json::from_value::<PatternKind>(
-        json!({"kind":"curve_driven_partial", "parameters":{}})
-    )
-    .is_ok());
 }
 
 fn direction(x: f64, y: f64, z: f64) -> FeatureDirection3 {

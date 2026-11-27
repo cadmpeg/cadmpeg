@@ -113,6 +113,101 @@ fn mesh_losses_are_emitted() {
     );
 }
 
+/// A mesh prim with no points is given up: the default decode charges
+/// `mesh.rejected` and the prim's `record.unreadable`, and a pinned decode
+/// refuses on the `record.unreadable`.
+#[test]
+fn a_rejected_mesh_is_given_up_and_refuses_a_pinned_decode() {
+    use cadmpeg_ir::codec::Codec as _;
+
+    let text = mesh("int[] faceVertexCounts = [3]\nint[] faceVertexIndices = [0, 1, 2]");
+    let message = format!(
+        "record {} given up: usd/mesh.rejected; dropped=[]",
+        crate::ids::tessellation("/M")
+    );
+    let given_up = |loss: &LossNote| {
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind() && loss.message == message
+    };
+
+    let result = decode(&text);
+    assert!(result.ir().model.tessellations.is_empty());
+    let losses = &result.report().losses;
+    assert!(emitted(losses, UsdLossCode::MeshRejected), "{losses:#?}");
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+            .count(),
+        1,
+        "{losses:#?}"
+    );
+    assert!(losses.iter().any(given_up), "{losses:#?}");
+
+    let mut options = cadmpeg_ir::codec::DecodeOptions::default();
+    options.strictness.pinned = true;
+    match crate::UsdCodec.decode(&mut std::io::Cursor::new(text.as_bytes()), &options) {
+        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }) => {
+            assert!(given_up(rejection.loss()), "{:#?}", rejection.loss());
+        }
+        Ok(_) => panic!("expected a strict refusal"),
+        Err(other) => panic!("expected a strict refusal, got {other:?}"),
+    }
+}
+
+/// A rejected mesh drops the appearance binding that would target its
+/// tessellation with the tessellation's give-up.
+#[test]
+fn a_rejected_mesh_drops_its_appearance_binding_with_it() {
+    let text = "#usda 1.0\ndef Mesh \"M\"\n{\nint[] faceVertexCounts = [3]\nint[] faceVertexIndices = [0, 1, 2]\nrel material:binding = </Grey>\n}\ndef Material \"Grey\"\n{\ntoken outputs:surface.connect = </Grey/S.outputs:surface>\ndef Shader \"S\"\n{\nuniform token info:id = \"UsdPreviewSurface\"\ncolor3f inputs:diffuseColor = (0.5, 0.5, 0.5)\ntoken outputs:surface\n}\n}\n";
+    let result = decode(text);
+    assert!(result.ir().model.appearance_bindings.is_empty());
+    let message = format!(
+        "record {} given up: usd/mesh.rejected; dropped=[{}]",
+        crate::ids::tessellation("/M"),
+        crate::ids::appearance_binding("/M")
+    );
+    let losses = &result.report().losses;
+    assert!(
+        losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.message == message
+        }),
+        "{losses:#?}"
+    );
+}
+
+/// A `BasisCurves` prim whose cubic basis the reader does not implement
+/// states no curve: the prim is given up, and a pinned decode refuses it on
+/// its `record.unreadable`.
+#[test]
+fn a_curve_batch_with_an_unsupported_basis_is_given_up() {
+    use cadmpeg_ir::codec::Codec as _;
+
+    let text = "#usda 1.0\ndef BasisCurves \"C\"\n{\n    uniform token basis = \"hermite\"\n    int[] curveVertexCounts = [4]\n    point3f[] points = [(0, 0, 0), (1, 0, 0), (2, 0, 0), (3, 0, 0)]\n}\n";
+    let message = format!(
+        "record {} given up: usd/curves.rejected; dropped=[]",
+        crate::ids::body("/C")
+    );
+    let given_up = |loss: &LossNote| {
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind() && loss.message == message
+    };
+
+    let result = decode(text);
+    assert!(result.ir().geometry.edges.is_empty());
+    let losses = &result.report().losses;
+    assert!(losses.iter().any(given_up), "{losses:#?}");
+
+    let mut options = cadmpeg_ir::codec::DecodeOptions::default();
+    options.strictness.pinned = true;
+    match crate::UsdCodec.decode(&mut std::io::Cursor::new(text.as_bytes()), &options) {
+        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }) => {
+            assert!(given_up(rejection.loss()), "{:#?}", rejection.loss());
+        }
+        Ok(_) => panic!("expected a strict refusal"),
+        Err(other) => panic!("expected a strict refusal, got {other:?}"),
+    }
+}
+
 #[test]
 fn curve_and_patch_losses_are_emitted() {
     assert_decode_emits(
@@ -331,6 +426,70 @@ fn physics_losses_are_emitted() {
     assert!(emitted(&report.losses, UsdLossCode::ExportJointNotWritten));
 }
 
+/// A joint that the decoder reads and leaves out is given up by its id, one
+/// `record.unreadable` per joint with its own cause, and each cause has a
+/// `physics.joint-rejected` note of its own.
+#[test]
+fn a_rejected_joint_is_given_up_with_its_cause() {
+    let cases = [
+        ("", "names no body"),
+        (
+            "rel physics:body1 = </Missing>",
+            "names a body that is not a transferred prim",
+        ),
+        (
+            "rel physics:body1 = </B>\n    quatf physics:localRot0 = (0, 0, 0, 0)",
+            "has a malformed frame",
+        ),
+    ];
+    for (body, cause) in cases {
+        let text = format!(
+            "#usda 1.0\ndef Xform \"B\"\n{{\n}}\ndef PhysicsFixedJoint \"J\"\n{{\n    {body}\n}}\n"
+        );
+        let result = decode(&text);
+        let joint = crate::ids::joint("/J");
+        assert!(
+            result
+                .ir()
+                .model
+                .assembly_joints
+                .iter()
+                .all(|record| record.id != joint),
+            "{text}"
+        );
+        let feature = crate::ids::joint_feature("/J");
+        assert!(result
+            .ir()
+            .design
+            .features
+            .iter()
+            .all(|record| record.id != feature));
+        let losses = &result.report().losses;
+        let charges: Vec<&str> = losses
+            .iter()
+            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+            .map(|loss| loss.message.as_str())
+            .collect();
+        assert_eq!(
+            charges,
+            [format!(
+                "record {joint} given up: usd/physics.joint-rejected: the joint {cause}; dropped=[]"
+            )],
+            "{text}"
+        );
+        let notes: Vec<&str> = losses
+            .iter()
+            .filter(|loss| loss.code == UsdLossCode::JointRejected.kind())
+            .map(|loss| loss.message.as_str())
+            .collect();
+        let [note] = notes.as_slice() else {
+            panic!("one physics.joint-rejected note: {notes:?}");
+        };
+        assert!(note.starts_with("1 joints "), "{note}");
+        assert!(note.ends_with(": /J"), "{note}");
+    }
+}
+
 #[test]
 fn design_state_beside_the_joints_is_reported_on_write() {
     let source = decode("#usda 1.0\ndef Xform \"A\"\n{\n}\ndef Xform \"B\"\n{\n}\ndef PhysicsFixedJoint \"J\"\n{\n    rel physics:body0 = </A>\n    rel physics:body1 = </B>\n}\n");
@@ -452,5 +611,39 @@ fn an_occurrence_of_a_prototype_left_out_is_left_out() {
         decoded.ir().model.occurrences.len(),
         source.ir().model.occurrences.len() - 2,
         "{text}"
+    );
+}
+
+/// A `BrepArray` whose arrays read and do not decode gives up each B-rep
+/// that `brep:regionCount` counts, not only the first.
+#[test]
+fn a_brep_array_that_does_not_decode_gives_up_each_brep_it_counts() {
+    let text = std::fs::read_to_string(format!(
+        "{}/tests/golden/fixtures/brep_array_box.usda",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .expect("fixture");
+    let broken = text.replacen(
+        "uniform uint[] brep:regionCount = [2]",
+        "uniform uint[] brep:regionCount = [2, 1]",
+        1,
+    );
+    assert_ne!(broken, text);
+    let result = decode(&broken);
+    let prefix = format!("{}:", UsdLossCode::BrepRejected.kind());
+    let given_up: Vec<&str> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.message.contains(&prefix))
+        .map(|loss| loss.message.as_str())
+        .collect();
+    assert_eq!(given_up.len(), 2, "{given_up:#?}");
+    assert!(
+        given_up
+            .iter()
+            .any(|message| message.contains("brep1 given up")),
+        "{given_up:#?}"
     );
 }

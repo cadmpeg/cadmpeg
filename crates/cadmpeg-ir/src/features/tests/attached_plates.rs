@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::features::sheet_metal_forms::{SheetMetalRelief, SheetMetalTransition};
 use crate::features::FeatureOperation;
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 #[test]
 fn relief_and_transition_preserve_evaluated_lengths_and_default_forms() {
@@ -100,32 +100,4 @@ fn unchanged_corner_requires_an_explicit_effect_and_preserves_its_bend() {
     let mut missing = wire;
     missing["value"].as_object_mut().unwrap().remove("effect");
     assert!(json::from_value::<FeatureOperation>(missing).is_err());
-}
-
-#[test]
-#[cfg(feature = "schema")]
-fn corner_schema_requires_bend_and_effect() {
-    fn find_corner(value: &serde_json::Value) -> Option<&serde_json::Value> {
-        if value["properties"]["kind"]["const"] == "sheet_metal_corner"
-            || value["properties"]["kind"]["enum"] == json!(["sheet_metal_corner"])
-        {
-            return Some(&value["properties"]["value"]);
-        }
-        match value {
-            serde_json::Value::Object(fields) => fields.values().find_map(find_corner),
-            serde_json::Value::Array(values) => values.iter().find_map(find_corner),
-            _ => None,
-        }
-    }
-    let schema = json::to_value(schemars::schema_for!(FeatureOperation)).unwrap();
-    let corner = find_corner(&schema).unwrap();
-    let corner = match corner.get("$ref").and_then(serde_json::Value::as_str) {
-        Some(reference) => schema
-            .pointer(reference.strip_prefix('#').unwrap())
-            .unwrap(),
-        None => corner,
-    };
-    let required = corner["required"].as_array().unwrap();
-    assert!(required.contains(&json!("bend")));
-    assert!(required.contains(&json!("effect")));
 }

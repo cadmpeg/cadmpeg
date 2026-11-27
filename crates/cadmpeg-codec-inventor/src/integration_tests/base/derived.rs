@@ -1,129 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{fixtures, header, link_layout, list, SyntheticRecords};
+use super::{header, link_layout};
 use crate::loss::InventorLossCode;
-use crate::test_support::test_fixtures::{
-    acis_sphere_kernel_stream_with_body_key, base_envelope_fixture, content, push_u16, push_u32,
-    stored_kernel_body_fixture, BaseEnvelopeRecords,
-};
+use crate::test_support::base_envelope::{decoded, derived, derived_at_version};
+use crate::test_support::test_fixtures::{content, push_u16, push_u32};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::Severity;
-
-fn kind(hex: &str) -> [u8; 16] {
-    let bytes: Vec<u8> = hex
-        .as_bytes()
-        .chunks_exact(2)
-        .map(|pair| {
-            u8::from_str_radix(std::str::from_utf8(pair).expect("hex pair"), 16).expect("hex byte")
-        })
-        .collect();
-    bytes.try_into().expect("sixteen-byte identifier")
-}
-
-fn derived(mirror: bool) -> (SyntheticRecords, BaseEnvelopeRecords) {
-    let (mut design, mut base) = fixtures();
-    base.design_version = 19;
-    let mut feature = content(100);
-    push_u32(&mut feature, 0);
-    push_u32(&mut feature, 0);
-    list(&mut feature, &[0x8000_0003, 0x8000_0004, 0x8000_0009]);
-    push_u32(&mut feature, 0);
-    design[1].1 = feature;
-    let label = &mut design[5].1;
-    let len = label.len();
-    label[len - 16..].copy_from_slice(&kind("eecb298e2c45650820104eb55d062c80"));
-    let mut source = content(110);
-    push_u32(&mut source, 0x8000_000a);
-    design.push((kind("3cc048210042420ba62103b20b7f4891"), source));
-    let mut component = content(111);
-    for value in [
-        u32::MAX,
-        0x8000_000b,
-        0x8000_000c,
-        0x8000_000d,
-        0x8000_000e,
-        0x3000_0004,
-        0,
-        0x8000_000f,
-    ] {
-        push_u32(&mut component, value);
-    }
-    design.push((kind("a034363fd31191b5c0000385e89c6b4f"), component));
-    design.push((kind("9f34363fd31191b5c0000385e89c6b4f"), content(114)));
-    design.push((kind("604d8790d011f8d10008cabc0663dc09"), content(115)));
-    let mut transform = content(112);
-    push_u16(&mut transform, 0x8421);
-    push_u16(&mut transform, if mirror { 0x7bdf } else { 0x7bde });
-    design.push((kind("184d8790d011f8d10008cabc0663dc09"), transform));
-    design.push((kind("d77e5d25d311f2b5c0000385e89c6b4f"), content(116)));
-    design.push((kind("a7fbcb1db64f16cfe979019eae94a4df"), content(117)));
-    design[2].1[header::LEN..header::LEN + 4].copy_from_slice(&0x8000_0010_u32.to_le_bytes());
-    let mut link = base.brep[0].1.clone();
-    link[link_layout::HEADER_ID..link_layout::HEADER_ID + 2].copy_from_slice(&88_u16.to_le_bytes());
-    link[link_layout::SELECTION_SOURCE..link_layout::SELECTION_SOURCE + 4]
-        .copy_from_slice(&101_u32.to_le_bytes());
-    link[link_layout::BODY_REFERENCE..link_layout::BODY_REFERENCE + 4]
-        .copy_from_slice(&0x8000_0011_u32.to_le_bytes());
-    link[link_layout::ENTITY_ID..link_layout::ENTITY_ID + 4].copy_from_slice(&9_u32.to_le_bytes());
-    design.push((base.brep[0].0, link));
-    design.push((
-        crate::kernel::KERNEL_RECORD_TYPE_ID,
-        stored_kernel_body_fixture(
-            &acis_sphere_kernel_stream_with_body_key(21_800, 9),
-            0x8000_0011,
-        ),
-    ));
-    let mut tagging = content(120);
-    push_u32(&mut tagging, 0);
-    push_u32(&mut tagging, 0);
-    list(&mut tagging, &[0x8000_0012]);
-    push_u32(&mut tagging, 0);
-    design[6].1 = tagging;
-    let label = &mut design[7].1;
-    let len = label.len();
-    label[len - 16..].copy_from_slice(&kind("e899dbdfd31165afc0000185e89c6b4f"));
-    let mut collection = content(121);
-    list(&mut collection, &[0x8000_0004]);
-    design.push((kind("ae70680ed14a1e86d76248b03c2a96e1"), collection));
-    (design, base)
-}
-
-fn derived_at_version(mirror: bool, version: u8) -> (SyntheticRecords, BaseEnvelopeRecords) {
-    let (mut design, mut base) = derived(mirror);
-    base.design_version = version;
-    if version >= 23 {
-        let stamps = if version >= 25 { 2 } else { 1 };
-        for ordinal in [2, 3, 8, 12, 17] {
-            for _ in 0..stamps {
-                design[ordinal]
-                    .1
-                    .splice(header::LEN..header::LEN, (-1_i32).to_le_bytes());
-            }
-        }
-        push_u32(
-            &mut design[9].1,
-            crate::layout::pm_dc_derived_component_suffix::STATE_VALUE,
-        );
-        let footer = design[16].1.len() - 2 * std::mem::size_of::<u32>();
-        design[16].1.insert(footer, 0);
-    }
-    (design, base)
-}
-
-fn decoded(
-    design: &SyntheticRecords,
-    base: &BaseEnvelopeRecords,
-) -> cadmpeg_ir::codec::DecodeResult {
-    let bytes = base_envelope_fixture(
-        &acis_sphere_kernel_stream_with_body_key(21_800, 7),
-        design,
-        base,
-    );
-    crate::InventorCodec
-        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
-        .expect("derived decode")
-}
 
 #[test]
 fn derived_identity_and_reflection_retain_exact_native_source_and_stored_result() {
@@ -333,10 +216,10 @@ fn derived_validator_rejects_changed_source_transform_state_types_and_qualifiers
                     9 => record["save_version_major"] = 18.into(),
                     10 => {
                         record["header"]["stamps"] =
-                            serde_json::json!(vec![0; 2 + usize::from(version >= 25)]);
+                            cadmpeg_core::json!(vec![0; 2 + usize::from(version >= 25)]);
                     }
-                    11 => record["header"]["stamps"] = serde_json::json!([0]),
-                    12 => record["header"]["stamps"] = serde_json::json!([-2]),
+                    11 => record["header"]["stamps"] = cadmpeg_core::json!([0]),
+                    12 => record["header"]["stamps"] = cadmpeg_core::json!([-2]),
                     _ => record["header"]["flags_extension"] = 0.into(),
                 }
                 namespace

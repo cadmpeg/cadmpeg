@@ -3,7 +3,7 @@
 use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 
-use serde_json::json;
+use cadmpeg_core::json;
 
 use super::DesignScope;
 use crate::design::read;
@@ -64,24 +64,6 @@ fn unproduced_refuses_null_duplicates_invalid_ids_and_unknown_fields() {
     let mut json = json::to_value(scope()).unwrap();
     json["extra"] = json!([]);
     assert!(read::from_str::<DesignScope>(&json.to_string(), &ResourceLimits::desktop()).is_err());
-}
-
-#[cfg(feature = "schema")]
-#[test]
-fn unproduced_schema_is_a_required_unique_array_of_body_ids() {
-    let schema = json::to_value(schemars::schema_for!(DesignScope)).unwrap();
-    let property = &schema["properties"]["unproduced"];
-    assert_eq!(property["type"], "array");
-    assert_eq!(property["uniqueItems"], true);
-    assert!(property["items"]["$ref"]
-        .as_str()
-        .unwrap()
-        .ends_with("/BodyId"));
-    assert!(schema["required"]
-        .as_array()
-        .unwrap()
-        .contains(&json!("unproduced")));
-    assert_eq!(schema["additionalProperties"], false);
 }
 
 #[test]

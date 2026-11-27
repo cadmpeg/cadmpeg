@@ -90,7 +90,7 @@ fn scene_archive_reads_root_rows_and_excludes_member_rows() {
     ));
     assert_eq!(
         json::to_value(&native.display_poses[0].path).unwrap(),
-        serde_json::json!([3, 17])
+        cadmpeg_core::json!([3, 17])
     );
 }
 

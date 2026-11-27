@@ -14,7 +14,7 @@ use cadmpeg_core::serde_erase::json;
 /// the reference `second`.
 fn as_perpendicular(relation: &PmDcSketchConstraint, second: u32) -> PmDcSketchConstraint {
     let mut wire = json::to_value(relation).expect("relation wire");
-    wire["kind"] = serde_json::json!({
+    wire["kind"] = cadmpeg_core::json!({
         "form": "perpendicular",
         "first": wire["kind"]["first"].clone(),
         "second": {"index": second, "qualified": true},
@@ -26,7 +26,7 @@ fn as_perpendicular(relation: &PmDcSketchConstraint, second: u32) -> PmDcSketchC
 /// The same record read as a horizontal alignment.
 fn as_horizontal_alignment(relation: &PmDcSketchConstraint) -> PmDcSketchConstraint {
     let mut wire = json::to_value(relation).expect("relation wire");
-    wire["kind"] = serde_json::json!({
+    wire["kind"] = cadmpeg_core::json!({
         "form": "horizontal_alignment",
         "first": wire["kind"]["first"].clone(),
         "second": wire["kind"]["second"].clone(),
@@ -86,7 +86,7 @@ fn a_perpendicular_relation_with_an_unknown_hint_code_stays_native() {
 /// The same record read as a perpendicular relation with the same operands.
 fn with_perpendicular_kind(relation: &PmDcSketchConstraint) -> PmDcSketchConstraint {
     let mut wire = json::to_value(relation).expect("relation wire");
-    wire["kind"] = serde_json::json!({
+    wire["kind"] = cadmpeg_core::json!({
         "form": "perpendicular",
         "first": wire["kind"]["first"].clone(),
         "second": wire["kind"]["second"].clone(),

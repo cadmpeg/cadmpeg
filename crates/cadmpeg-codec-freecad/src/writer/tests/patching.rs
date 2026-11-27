@@ -9,8 +9,8 @@ use crate::test_support::test_archive::{archive_entries, CORE_DESIGN_PRODUCT};
 use crate::writer::{entry_order, serialize_property, serialize_value};
 use crate::FcstdCodec;
 use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::Encoder;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -41,7 +41,7 @@ fn entries_follow_the_ledger_order_and_unplaced_entries_follow_them() {
         )
     };
     let span = |id: &str, name: &str, start: u64| {
-        json::from_value::<crate::native::ArchiveSpan>(serde_json::json!({
+        json::from_value::<crate::native::ArchiveSpan>(cadmpeg_core::json!({
             "id": id,
             "start": start,
             "end": start + 4,
@@ -94,7 +94,7 @@ pub(super) fn write_and_read_back(
 ) {
     let mut bytes = Vec::new();
     let report = FcstdCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, None))
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the retained document patches");
     let decoded = FcstdCodec
@@ -294,7 +294,7 @@ fn x65_backslash_entry_is_refused_by_constructor_reader_and_native_record() {
     )
     .expect_err("constructor refuses backslash");
     assert!(error.to_string().contains("unsafe ZIP entry path"));
-    let wire = serde_json::json!({"id": "test:native:entry#backslash", "name": r"..\outside", "role": "auxiliary", "byte_len": 0, "sha256": cadmpeg_ir::hash::sha256_hex(&[]), "referenced_by": [], "data": ""});
+    let wire = cadmpeg_core::json!({"id": "test:native:entry#backslash", "name": r"..\outside", "role": "auxiliary", "byte_len": 0, "sha256": cadmpeg_ir::hash::sha256_hex(&[]), "referenced_by": [], "data": ""});
     let error = json::from_value::<crate::native::EntryRecord>(wire)
         .expect_err("native entry refuses backslash");
     assert!(error.to_string().contains("unsafe ZIP entry path"));
@@ -342,7 +342,8 @@ fn property_edits_use_value_order_when_raw_xml_is_identical() {
             r#"<Property name="Values" type="App::PropertyStringList">{raw_value}{raw_value}</Property>"#
         ), 0).unwrap(),
     };
-    let output = serialize_property(&property).expect("required invariant");
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let output = serialize_property(&ctx, &property).expect("required invariant");
     assert_eq!(output.matches(r#"value="same""#).count(), 1);
     assert_eq!(output.matches(r#"value="changed""#).count(), 1);
     assert!(
@@ -360,11 +361,201 @@ fn xml_serialization_preserves_normalized_whitespace() {
         text: Some("a\tb\nc\rd".into()),
         raw_xml: r#"<String value="old">old</String>"#.into(),
     };
-    let serialized = serialize_value(&value).expect("required invariant");
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let serialized = serialize_value(&ctx, &value).expect("required invariant");
     assert!(serialized.contains("a&#9;b&#10;c&#13;d"));
     assert_eq!(serialized.matches("&#9;").count(), 2);
     assert_eq!(serialized.matches("&#10;").count(), 2);
     assert_eq!(serialized.matches("&#13;").count(), 2);
+}
+
+fn decoded_product() -> cadmpeg_ir::DecodeResult {
+    FcstdCodec
+        .decode(
+            &mut Cursor::new(CORE_DESIGN_PRODUCT),
+            &DecodeOptions::default(),
+        )
+        .expect("decode source")
+}
+
+/// The decoded product with the retained XML of its document `Label` value
+/// replaced by `raw_xml`.
+fn with_label_value(raw_xml: String) -> cadmpeg_ir::CadIr {
+    let mut edited = decoded_product().ir().clone();
+    let mut properties = native_arena::<PropertyRecord>(&edited, "properties");
+    let label = properties
+        .iter_mut()
+        .find(|property| {
+            property.owner == crate::native::native_id("document", "0") && property.name == "Label"
+        })
+        .expect("document Label");
+    let crate::native::PropertyBody::Persisted { values, .. } = &mut label.body else {
+        panic!("the document Label persists its value");
+    };
+    values[0].raw_xml = raw_xml;
+    replace_arena(&mut edited, "properties", &properties);
+    edited
+}
+
+/// The resource refusal of a write of `ir` under `limits`.
+fn write_refusal(
+    ir: &cadmpeg_ir::CadIr,
+    limits: cadmpeg_core::decode::ResourceLimits,
+) -> cadmpeg_core::decode::ResourceLimit {
+    let refused = FcstdCodec
+        .plan(EncodeInput::new(ir, None).with_limits(limits))
+        .and_then(|plan| plan.write_to(&mut Vec::new()));
+    let Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit)) = refused else {
+        panic!("a ceiling refuses the write: {refused:?}");
+    };
+    assert_eq!(limit.scope, cadmpeg_core::decode::LimitScope::Session);
+    limit
+}
+
+/// The retained property XML parses in the encode session, so the caller's
+/// depth ceiling refuses a value nested past it. Under the default ceiling the
+/// same document writes.
+#[test]
+fn the_caller_depth_limit_governs_retained_value_xml() {
+    const CEILING: u64 = 64;
+    let nesting = usize::try_from(2 * CEILING).expect("nesting fits usize");
+    let edited = with_label_value(format!(
+        r#"<String value="nested">{}{}</String>"#,
+        "<Level>".repeat(nesting),
+        "</Level>".repeat(nesting)
+    ));
+
+    let mut bytes = Vec::new();
+    FcstdCodec
+        .plan(EncodeInput::new(&edited, None))
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("the default ceiling admits the nested value");
+
+    let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
+    limits.max_recursion_depth = CEILING;
+    let limit = write_refusal(&edited, limits);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::RecursionDepth
+    );
+    assert_eq!(limit.limit, CEILING);
+    assert_eq!(limit.operation, "FreeCAD retained property value XML");
+}
+
+/// Each attribute of retained value XML is an entity that the write's
+/// session admits. An entity ceiling one below the session's count at the
+/// wide value refuses the write, and the desktop ceiling writes it.
+#[test]
+fn retained_value_attributes_count_against_the_entity_ceiling() {
+    use cadmpeg_core::decode::test_support::at_charge;
+    use cadmpeg_core::decode::{ResourceDimension, ResourceLimits};
+    use std::fmt::Write as _;
+
+    let attributes = (0..257).fold(String::new(), |mut tag, index| {
+        write!(tag, r#" a{index}="""#).expect("write attribute");
+        tag
+    });
+    let edited = with_label_value(format!(r#"<String value="wide"{attributes}/>"#));
+    let mut probe = ResourceLimits::desktop();
+    probe.max_entities = u64::MAX;
+    // Each retained value parse is one charge; the wide one holds `value`
+    // and the 257 added attributes.
+    let found = (0..persisted_values(&edited))
+        .map(|skip| {
+            at_charge(
+                ResourceDimension::Entities,
+                "FreeCAD retained property value XML",
+                skip,
+                || write_refusal(&edited, probe),
+            )
+        })
+        .find(|limit| limit.additional == 258)
+        .expect("the wide value is charged");
+    let mut limits = ResourceLimits::desktop();
+    limits.max_entities = found.used + found.additional - 1;
+    assert_eq!(write_refusal(&edited, limits), found);
+    FcstdCodec
+        .plan(EncodeInput::new(&edited, None).with_limits(ResourceLimits::desktop()))
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect("the desktop ceiling writes the wide value");
+}
+
+/// The values that the properties of `ir` persist, one retained value parse
+/// each.
+fn persisted_values(ir: &cadmpeg_ir::CadIr) -> usize {
+    native_arena::<PropertyRecord>(ir, "properties")
+        .iter()
+        .map(|property| {
+            if let crate::native::PropertyBody::Persisted { values, .. } = &property.body {
+                values.len()
+            } else {
+                0
+            }
+        })
+        .sum()
+}
+
+/// The parse of retained value XML charges its tree storage and its name
+/// comparisons to the write's session as expanded bytes. Its one tag with
+/// `value` and 2^13 added attributes compares 2^25 + 2^12 attribute pairs.
+/// A ceiling on the bytes expanded in all one below the session's count at
+/// the wide value refuses the write, and the desktop ceiling writes it.
+#[test]
+fn retained_value_attribute_comparisons_count_against_the_expanded_bytes_ceiling() {
+    use cadmpeg_core::decode::test_support::at_charge;
+    use cadmpeg_core::decode::{ResourceDimension, ResourceLimits};
+    use std::fmt::Write as _;
+
+    let attributes = (0..1 << 13).fold(String::new(), |mut tag, index| {
+        write!(tag, r#" a{index}="""#).expect("write attribute");
+        tag
+    });
+    let edited = with_label_value(format!(r#"<String value="wide"{attributes}/>"#));
+    let mut probe = ResourceLimits::desktop();
+    probe.max_decompressed_bytes_total = u64::MAX;
+    let found = (0..persisted_values(&edited))
+        .map(|skip| {
+            at_charge(
+                ResourceDimension::DecompressedBytes,
+                "FreeCAD retained property value XML",
+                skip,
+                || write_refusal(&edited, probe),
+            )
+        })
+        .find(|limit| limit.additional > (1 << 25) + (1 << 12))
+        .expect("the wide value is charged");
+    let mut limits = ResourceLimits::desktop();
+    limits.max_decompressed_bytes_total = found.used + found.additional - 1;
+    assert_eq!(write_refusal(&edited, limits), found);
+    FcstdCodec
+        .plan(EncodeInput::new(&edited, None).with_limits(ResourceLimits::desktop()))
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect("the desktop ceiling writes the wide value");
+}
+
+/// Each parse of retained XML charges its text to the input of the write's
+/// one session. A ceiling of the stored `Document.xml`'s length admits the
+/// declaration read, and the first property parse after it passes the
+/// ceiling: the write refuses although no single text exceeds it.
+#[test]
+fn the_input_ceiling_bounds_every_parse_of_one_write() {
+    let decoded = decoded_product();
+    let document_xml = native_arena::<crate::native::EntryRecord>(decoded.ir(), "entries")
+        .into_iter()
+        .find(|entry| entry.name() == "Document.xml")
+        .expect("the retained Document.xml")
+        .data()
+        .len();
+    let document_xml = u64::try_from(document_xml).expect("length fits u64");
+    let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
+    limits.max_input_bytes = document_xml;
+    let limit = write_refusal(decoded.ir(), limits);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::InputBytes
+    );
+    assert_eq!((limit.limit, limit.used), (document_xml, document_xml));
+    assert_eq!(limit.operation, "FreeCAD retained property XML");
 }
 
 #[test]
@@ -396,10 +587,7 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
 
     let mut encoded = Vec::new();
     let report = FcstdCodec
-        .plan(
-            EncodeInput::new(&edited, Some(decoded.source_fidelity())),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(&edited, Some(decoded.source_fidelity())))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("encode edit");
     assert!(report.losses.is_empty(), "{:#?}", report.losses);
@@ -558,7 +746,7 @@ fn seekable_encoder_matches_the_write_only_fallback() {
         .expect("decode source");
     let mut staged = Vec::new();
     FcstdCodec
-        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(decoded.ir(), None))
         .and_then(|plan| plan.write_to(&mut staged))
         .expect("write-only fallback");
     let mut streamed = Cursor::new(Vec::new());
@@ -569,10 +757,19 @@ fn seekable_encoder_matches_the_write_only_fallback() {
         .and_then(cadmpeg_ir::SourceMeta::dialect)
         .expect("decoded FCStd source is classified")
         .dialect();
-    let resolution = retained_baseline(decoded.ir(), source_dialect)
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy {
+        limits: cadmpeg_core::decode::ResourceLimits::desktop(),
+    };
+    let ctx = cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &policy,
+        cadmpeg_core::decode::DecodeDepth::Full,
+    );
+    let resolution = retained_baseline(&ctx, decoded.ir(), source_dialect)
         .expect("the retained Document.xml reads")
         .expect("the decoded schema-4 baseline is preserved");
-    crate::writer::write_seekable(&mut streamed, &resolution).expect("seekable writer");
+    crate::writer::write_seekable(&ctx, &mut streamed, &resolution).expect("seekable writer");
 
     assert_eq!(streamed.into_inner(), staged);
 }
@@ -625,7 +822,7 @@ pub(crate) fn writes_around_declaration_edits_and_unreadable_entries() {
         entry["name"].as_str().expect("entry name").to_owned(),
     );
     let data = entry["data"].as_str().expect("entry hex bytes");
-    entry["data"] = serde_json::json!(format!("{data}00"));
+    entry["data"] = cadmpeg_core::json!(format!("{data}00"));
     let naming = properties_naming(&stale_entry, &stale_name);
     replace_arena(&mut stale_entry, "entries", &entries);
     let (report, bytes, round_trip) = write_and_read_back(&stale_entry);
@@ -740,7 +937,7 @@ fn retaining_writes_preserve_physical_restoration_order_after_cadir_finalization
             }
             let mut output = Vec::new();
             FcstdCodec
-                .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
+                .plan(EncodeInput::new(&ir, None))
                 .and_then(|plan| plan.write_to(&mut output))
                 .expect("required invariant");
             let mut archive =
@@ -817,7 +1014,7 @@ fn typed_input_edits_persist_owner_recompute_state_without_touching_outputs_or_n
             );
             let mut bytes = Vec::new();
             FcstdCodec
-                .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
+                .plan(EncodeInput::new(&ir, None))
                 .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("write edit");
             let output = FcstdCodec
@@ -911,7 +1108,7 @@ fn checked_native_input_record_edits_also_schedule_owner_recomputation() {
         .expect("replace values");
     let mut bytes = Vec::new();
     FcstdCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&ir, None))
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("write native edit");
     let output = FcstdCodec

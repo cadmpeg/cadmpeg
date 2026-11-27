@@ -128,8 +128,9 @@ fn unrepresented_product_structure_is_an_export_loss() {
 
     let plan = RhinoCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V8.descriptor().id.as_str(),
+            )),
         )
         .expect("the point body is writable");
     let omitted = plan
@@ -154,7 +155,7 @@ fn unrepresented_product_structure_is_an_export_loss() {
 /// design content a part from a history-based system holds beside its shape.
 fn with_design_content(ir: &mut CadIr) {
     ir.model.features.push(
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "cadir:model:feature#boss", "ordinal": 0, "name": "Boss", "suppressed": false,
             "definition": {"kind": "operation", "value": {"kind": "stored_geometry", "value": {}}},
             "outputs": [], "dependencies": [], "source_properties": {},
@@ -189,8 +190,9 @@ fn with_design_content(ir: &mut CadIr) {
 fn write_v8(ir: &CadIr) -> (Vec<u8>, Vec<String>) {
     let plan = RhinoCodec
         .plan(
-            EncodeInput::new(ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            EncodeInput::new(ir, None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V8.descriptor().id.as_str(),
+            )),
         )
         .expect("the document is writable");
     let mut bytes = Vec::new();
@@ -274,8 +276,9 @@ fn the_display_mesh_of_a_brep_body_is_withheld_and_named() {
 
     let plan = RhinoCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V8.descriptor().id.as_str(),
+            )),
         )
         .expect("the body is written without its display mesh");
     let withheld = crate::loss::RhinoLossCode::WriterBodyMeshWithheld.kind();
@@ -306,8 +309,9 @@ fn a_carrier_from_another_format_is_written_without_its_source_identity() {
 
     let plan = RhinoCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V8.descriptor().id.as_str(),
+            )),
         )
         .expect("the surface is written without its source identity");
     let omitted = crate::loss::RhinoLossCode::WriterSourceAssociationOmitted.kind();

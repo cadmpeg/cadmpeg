@@ -172,7 +172,13 @@ fn generated_wire_and_general_bodies_refuse_solid_lump_conversion() {
     for kind in [BodyKind::Wire, BodyKind::General] {
         let mut ir = cube();
         ir.geometry.bodies[0].kind = kind;
-        let error = crate::writer::brep_body(&ir, 0.001, false).unwrap_err();
+        let error = crate::writer::brep_body(
+            &ir,
+            0.001,
+            cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
+            false,
+        )
+        .unwrap_err();
         assert!(error.to_string().contains("as a solid lump"));
     }
 }
@@ -205,7 +211,13 @@ fn regenerated_shell_wire_members_and_pcurve_uses_have_counted_losses() {
     ir.geometry.pcurves.push(pcurve);
     // The topology writer ignores the shell members and the coedge relation;
     // accounting belongs to that write, irrespective of neutral admission.
-    crate::writer::brep_body(&ir, 0.001, false).unwrap();
+    crate::writer::brep_body(
+        &ir,
+        0.001,
+        cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
+        false,
+    )
+    .unwrap();
     let losses = super::super::accounting::losses(&ir, &CodecDigests::new(), true);
     for (code, field) in [
         (
@@ -270,9 +282,7 @@ fn a_body_on_an_opaque_carrier_without_a_retained_partition_is_omitted() {
         .id
         .as_str()
         .to_owned();
-    let plan = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
-        .unwrap();
+    let plan = SldprtCodec.plan(EncodeInput::new(&ir, None)).unwrap();
     assert!(plan.report().losses.iter().any(|loss| {
         loss.code.local_code() == "writer.bodies-omitted"
             && loss.message.contains(&format!("edge {edge}"))
@@ -490,7 +500,7 @@ fn a_parameter_without_a_feature_record_is_dropped_with_a_loss() {
 
     let mut output = Vec::new();
     let report = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&ir, None))
         .unwrap()
         .write_to(&mut output)
         .unwrap();

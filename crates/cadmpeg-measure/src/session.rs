@@ -5,13 +5,13 @@
 mod boxes;
 mod findings;
 
-use std::collections::{BTreeSet, HashMap};
+use crate::{fast_map, FastMap};
+use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceFailure, ResourceLimit,
 };
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::report::strictness::{code_name, Strictness};
 use cadmpeg_ir::source_fidelity::SourceFidelity;
 use cadmpeg_ir::transform::Transform;
@@ -241,7 +241,6 @@ pub struct Measurer<'ir> {
     input: MeasureInput<'ir>,
     options: MeasureOptions,
     owners: Owners<'ir>,
-    index: ModelIndex<'ir>,
 }
 
 impl<'ir> Measurer<'ir> {
@@ -252,7 +251,6 @@ impl<'ir> Measurer<'ir> {
             input,
             options,
             owners: Owners::new(input.ir),
-            index: ModelIndex::new_model_only(input.ir),
         }
     }
 
@@ -346,37 +344,35 @@ impl<'ir> Measurer<'ir> {
         let pass = self.pass("measurement pass allowance")?;
 
         let world = |body: &str| space.as_ref().and_then(|space| space.placements.get(body));
-        let mut composed: HashMap<&'ir str, Option<Transform>> = HashMap::new();
-        let placements: HashMap<&'ir str, Outcome<Placement>> = geometry
-            .bodies
-            .iter()
-            .map(|body| {
-                let placed = match (world(body.id.as_str()), body.transform) {
-                    (None, transform) => Ok(transform),
-                    (Some(world), transform) => world
-                        .compose(transform.unwrap_or_else(Transform::identity))
-                        .map(Some),
-                };
-                if let Ok(transform) = placed {
-                    composed.insert(
-                        body.id.as_str(),
-                        transform.filter(|transform| *transform != Transform::identity()),
-                    );
-                }
-                let placement = match placed {
-                    Ok(Some(transform)) => settle(Placement::of(transform)),
-                    Ok(None) => Ok(Ok(Placement::identity())),
-                    Err(_) => Ok(Err(Missing {
-                        reason: crate::reason::UnavailableReason::PlacementNonFinite,
-                        entity: Some(body.id.as_str().to_owned()),
-                        message: "the occurrence placement and the body transform do not \
-                                  compose to a finite placement"
-                            .to_owned(),
-                    })),
-                };
-                placement.map(|placement| (body.id.as_str(), placement))
-            })
-            .collect::<Result<_, ResourceLimit>>()?;
+        let mut composed: FastMap<&'ir str, Option<Transform>> = fast_map();
+        let mut placements: FastMap<&'ir str, Outcome<Placement>> =
+            crate::fast_map_with_capacity(geometry.bodies.len());
+        for body in &geometry.bodies {
+            let placed = match (world(body.id.as_str()), body.transform) {
+                (None, transform) => Ok(transform),
+                (Some(world), transform) => world
+                    .compose(transform.unwrap_or_else(Transform::identity))
+                    .map(Some),
+            };
+            if let Ok(transform) = placed {
+                composed.insert(
+                    body.id.as_str(),
+                    transform.filter(|transform| *transform != Transform::identity()),
+                );
+            }
+            let placement = match placed {
+                Ok(Some(transform)) => settle(Placement::of(transform)),
+                Ok(None) => Ok(Ok(Placement::identity())),
+                Err(_) => Ok(Err(Missing {
+                    reason: crate::reason::UnavailableReason::PlacementNonFinite,
+                    entity: Some(body.id.as_str().to_owned()),
+                    message: "the occurrence placement and the body transform do not \
+                              compose to a finite placement"
+                        .to_owned(),
+                })),
+            };
+            placements.insert(body.id.as_str(), placement?);
+        }
         let placement_of = |body: Option<&str>| -> Outcome<Placement> {
             body.and_then(|body| placements.get(body))
                 .cloned()
@@ -404,7 +400,8 @@ impl<'ir> Measurer<'ir> {
             }
         }
 
-        let mut edges: HashMap<&'ir str, EdgeGeometry<'ir>> = HashMap::new();
+        let mut edges: FastMap<&'ir str, EdgeGeometry<'ir>> =
+            crate::fast_map_with_capacity(needed_edges.len());
         for edge_id in &needed_edges {
             let Some(edge) = self.owners.edge(edge_id) else {
                 continue;
@@ -413,7 +410,7 @@ impl<'ir> Measurer<'ir> {
             let slice = pass.edge_slice();
             let eval = Eval {
                 ctx,
-                index: &self.index,
+                index: &self.owners.index,
                 work: &slice,
             };
             let geometry = measure_edge(&eval, &self.owners, edge, &placement_of(body), Work::Row)?;
@@ -425,11 +422,13 @@ impl<'ir> Measurer<'ir> {
             .filter_map(|face| self.owners.face(face))
             .filter_map(|face| self.owners.face_body(face))
             .collect();
-        let flux_origins: HashMap<&'ir str, cadmpeg_ir::math::Point3> = flux_bodies
-            .into_iter()
-            .map(|id| (id, self.flux_origin(id, &edges, &placement_of(Some(id)))))
-            .collect();
-        let mut faces: HashMap<&'ir str, FaceResult<'ir>> = HashMap::new();
+        let mut flux_origins: FastMap<&'ir str, cadmpeg_ir::math::Point3> =
+            crate::fast_map_with_capacity(flux_bodies.len());
+        for id in flux_bodies {
+            flux_origins.insert(id, self.flux_origin(id, &edges, &placement_of(Some(id))));
+        }
+        let mut faces: FastMap<&'ir str, FaceResult<'ir>> =
+            crate::fast_map_with_capacity(needed_faces.len());
         for face_id in faces_by_inverted_boundary(&self.owners, &needed_faces) {
             let Some(face) = self.owners.face(face_id) else {
                 continue;
@@ -438,7 +437,7 @@ impl<'ir> Measurer<'ir> {
             let slice = pass.face_slice();
             let eval = Eval {
                 ctx,
-                index: &self.index,
+                index: &self.owners.index,
                 work: &slice,
             };
             let input = FaceInput {
@@ -463,7 +462,7 @@ impl<'ir> Measurer<'ir> {
             pass: &pass,
             eval: Eval {
                 ctx,
-                index: &self.index,
+                index: &self.owners.index,
                 work: &witness_slice,
             },
             placements: &placements,
@@ -625,20 +624,16 @@ impl<'ir> Measurer<'ir> {
     }
 
     /// The placement of each body from its own transform.
-    fn body_placements(&self) -> Result<HashMap<&'ir str, Outcome<Placement>>, ResourceLimit> {
-        self.input
-            .ir
-            .geometry
-            .bodies
-            .iter()
-            .map(|body| {
-                let placement = match body.transform {
-                    Some(transform) => settle(Placement::of(transform)),
-                    None => Ok(Ok(Placement::identity())),
-                };
-                placement.map(|placement| (body.id.as_str(), placement))
-            })
-            .collect()
+    fn body_placements(&self) -> Result<FastMap<&'ir str, Outcome<Placement>>, ResourceLimit> {
+        let mut placements = crate::fast_map_with_capacity(self.input.ir.geometry.bodies.len());
+        for body in &self.input.ir.geometry.bodies {
+            let placement = match body.transform {
+                Some(transform) => settle(Placement::of(transform)),
+                None => Ok(Ok(Placement::identity())),
+            }?;
+            placements.insert(body.id.as_str(), placement);
+        }
+        Ok(placements)
     }
 
     /// The faces of the shell of a face whose region may rest on its
@@ -678,7 +673,7 @@ impl<'ir> Measurer<'ir> {
     fn flux_origin(
         &self,
         body: &str,
-        edges: &HashMap<&'ir str, EdgeGeometry<'ir>>,
+        edges: &FastMap<&'ir str, EdgeGeometry<'ir>>,
         placement: &Outcome<Placement>,
     ) -> cadmpeg_ir::math::Point3 {
         let union =
@@ -821,7 +816,7 @@ impl<'ir> Measurer<'ir> {
 
     fn document(
         rows: &Rows<'_>,
-        face_results: &HashMap<&'ir str, FaceResult<'ir>>,
+        face_results: &FastMap<&'ir str, FaceResult<'ir>>,
         pass: &PassAllowance,
         counts: [usize; 2],
     ) -> DocumentMeasures {

@@ -2664,18 +2664,6 @@
         "product_occurrences": [],
         "product_properties": [],
         "properties": [],
-        "quarantined_directory_records": [],
-        "quarantined_parameter_records": [
-          {
-            "bytes": "3530382c352c302c31372c312c312c322c312c31392c302c32312c312c31352c322c302c302c302c31372c322c312c302c302c31372c332c312c302c302c3137202020202020323350202020202031322c342c312c303b20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202032335020202020203133",
-            "cards": 2,
-            "defect": "numeric-crosses-card",
-            "id": "iges:quarantine:parameter#23",
-            "section": "parameter-data",
-            "sequence": 23,
-            "source_offset": 3402
-          }
-        ],
         "rectangular_arrays": [],
         "segmented_visibility": [],
         "selected_components": [],
@@ -2687,6 +2675,12 @@
         "text_templates": [],
         "transformations": [],
         "units_data": [],
+        "unknowns": [
+          {
+            "id": "iges:source:part#fb6f6854b3e88f037e275fd0afb18b7a8a5558227540ca2ca3647b9972c340fa",
+            "links": []
+          }
+        ],
         "view_visibility": [],
         "views": []
       }
@@ -2817,8 +2811,7 @@
           "value": {
             "code": "parameter.data-quarantined",
             "kind": "noncanonical_source_syntax",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "IGES Parameter Data of D23 (P12 through P13) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
@@ -2829,6 +2822,24 @@
           "tag": "D23:parameter"
         },
         "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "part parameter-data \"D23\" stream=\"\" offset=3402 length=161 record=iges:source:part#fb6f6854b3e88f037e275fd0afb18b7a8a5558227540ca2ca3647b9972c340fa: malformed container: iges/parameter.data-quarantined: IGES Parameter Data of D23 (P12 through P13) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted; dropped=[iges:model:shell#D27]",
+        "provenance": {
+          "format": "iges",
+          "offset": 3402,
+          "tag": "parameter-data"
+        },
+        "severity": "error"
       },
       {
         "code": {
@@ -3004,8 +3015,8 @@
         {
           "outcome": {
             "kind": "retained",
-            "note": "quarantined parameter data retained; tokens were not recovered",
-            "target": "iges:quarantine:parameter#23"
+            "note": "quarantined parameter data given up; its part keeps the cards",
+            "target": "iges:source:part#fb6f6854b3e88f037e275fd0afb18b7a8a5558227540ca2ca3647b9972c340fa"
           },
           "source": "D23:parameter"
         }
@@ -3029,6 +3040,17 @@
         },
         "offset": 0,
         "stream": "iges",
+        "untyped": [
+          "model"
+        ]
+      },
+      "iges:source:part#fb6f6854b3e88f037e275fd0afb18b7a8a5558227540ca2ca3647b9972c340fa": {
+        "bytes": {
+          "data": "NTA4LDUsMCwxNywxLDEsMiwxLDE5LDAsMjEsMSwxNSwyLDAsMCwwLDE3LDIsMSwwLDAsMTcsMywxLDAsMCwxNyAgICAgIDIzUCAgICAgMTIKLDQsMSwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDIzUCAgICAgMTM=",
+          "kind": "inline"
+        },
+        "offset": 3402,
+        "stream": "",
         "untyped": [
           "model"
         ]

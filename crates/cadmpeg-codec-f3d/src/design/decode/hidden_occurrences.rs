@@ -14,7 +14,7 @@ use crate::records::feature::assembly_features::DesignComponentOccurrence;
 use crate::records::xref::XrefReference;
 
 use super::meta::stream_types_by_entity;
-use super::sketch::{indexed_record_offsets, IndexedRecordOffsets};
+use super::sketch::IndexedRecordOffsets;
 
 /// Type GUID of the hidden-occurrence record.
 pub(crate) const HIDDEN_OCCURRENCE_TYPE_GUID: &str = "2BB3BB69-B0FD-4D56-B4CD-DEBD30847BE3";
@@ -86,7 +86,14 @@ pub(crate) fn decode_hidden_occurrences(
             )
             .collect::<BTreeSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
-        out.extend(decode_stream(bytes, &stream, &entities, &occurrences));
+        let records = scan.design_record_offsets(&entry.name)?;
+        out.extend(decode_stream_with_records(
+            bytes,
+            &records,
+            &stream,
+            &entities,
+            &occurrences,
+        ));
     }
     Ok(out)
 }
@@ -94,24 +101,30 @@ pub(crate) fn decode_hidden_occurrences(
 /// The hidden-occurrence records of one stream. `entities` holds the record
 /// indexes of the type's entities; `occurrences` the record indexes of the
 /// stream's occurrence carriers.
+#[cfg(test)]
 pub(super) fn decode_stream(
     bytes: &[u8],
     stream: &str,
     entities: &BTreeSet<u32>,
     occurrences: &BTreeSet<u32>,
 ) -> Vec<DesignHiddenOccurrence> {
-    let headers: Vec<(usize, u32)> = indexed_record_offsets(bytes)
-        .map(|header| (header.offset, header.record_index))
-        .collect();
     let records = IndexedRecordOffsets::build(bytes);
+    decode_stream_with_records(bytes, &records, stream, entities, occurrences)
+}
+
+fn decode_stream_with_records(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    stream: &str,
+    entities: &BTreeSet<u32>,
+    occurrences: &BTreeSet<u32>,
+) -> Vec<DesignHiddenOccurrence> {
     let mut out = Vec::new();
     for &entity in entities {
         let Some(&start) = records.offsets(entity).first() else {
             continue;
         };
-        let end = headers
-            .get(headers.partition_point(|(offset, _)| *offset <= start))
-            .map_or(bytes.len(), |(offset, _)| *offset);
+        let end = records.next_offset(start + 1).unwrap_or(bytes.len());
         let Some(body) = bytes.get(start + 11..end) else {
             continue;
         };

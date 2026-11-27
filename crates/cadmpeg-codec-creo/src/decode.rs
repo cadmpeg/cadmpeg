@@ -7,9 +7,10 @@
 //! Preserved native records and geometry sections retain unresolved source
 //! geometry. The report states geometry and topology losses for withheld data.
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Decoded;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 
 use crate::container;
 
@@ -73,6 +74,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         coverage,
         brep_diagnostics,
         transfer_losses,
+        given_up,
     } = if ctx.container_only() {
         build_container_ir(ctx, &scan, &classification)?
     } else {
@@ -116,9 +118,61 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     for (id, classes) in ids.iter().zip(classes) {
         source_fidelity.mark_untyped(id.as_str(), classes)?;
     }
+    for part in given_up {
+        body.losses
+            .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
+    }
+    for part in build::report_coverage::give_up_unread_section_rows(ctx, &scan)? {
+        body.losses
+            .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
+    }
+    for expansion in &scan.framing.expansion_losses {
+        let part = give_up_unexpanded_section(ctx, &scan, expansion)?;
+        body.losses
+            .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
+    }
     Ok(Decoded {
         ir,
         body,
         source_fidelity,
     })
+}
+
+/// Gives up the section whose compressed payload `expansion` reports as
+/// unexpanded, as a `compressed-section` part. The passthrough record of the
+/// section retains its bytes, so the part keeps only their length and digest
+/// and its stub links to that record.
+fn give_up_unexpanded_section(
+    ctx: &DecodeContext<'_>,
+    scan: &container::ContainerScan<'_>,
+    expansion: &container::SectionExpansionLoss,
+) -> Result<GivenUpPart, CodecError> {
+    let bytes = scan
+        .framing
+        .sections
+        .iter()
+        .find(|section| section.offset() == expansion.section_offset)
+        .and_then(|section| container::section_region(&scan.framing.data, section))
+        .ok_or_else(|| CodecError::malformed("an unexpanded Creo section has no stored region"))?;
+    let section = crate::identity::compose_checked::<cadmpeg_ir::ids::UnknownId>(
+        &cadmpeg_ir::identity_namespace!("creo", "compressed", "section"),
+        expansion.section_offset,
+    )?;
+    let part = Part::at(
+        "creo",
+        "compressed-section",
+        cadmpeg_core::decode::u64_from_index(expansion.section_offset),
+        bytes,
+        [ArenaClass::Model, ArenaClass::Design],
+    )
+    .contained_in(cadmpeg_ir::ids::Identity::from(section))
+    .digest_only();
+    ctx.give_up_part(
+        part,
+        CodecError::malformed(format_args!(
+            "{}: {}",
+            crate::loss::CreoLossCode::CompressedSectionUnexpanded.kind(),
+            expansion.message
+        )),
+    )
 }

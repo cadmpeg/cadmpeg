@@ -63,7 +63,7 @@ fn decoded_route_refuses_nesting_limit() {
 }
 
 #[test]
-fn bounded_indexed_section_search_reports_a_scan_loss() {
+fn bounded_indexed_section_search_gives_up_its_entry_as_a_part() {
     let file = crate::test_support::test_prt::prt_with_named_payloads(&[(
         "/Root/UG_PART/UG_PART",
         crate::test_support::test_om::indexed_om_section(),
@@ -82,20 +82,26 @@ fn bounded_indexed_section_search_reports_a_scan_loss() {
         streams: Vec::new(),
         untyped: std::cell::RefCell::default(),
     };
-    let mut body = cadmpeg_ir::codec::DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
-        coverage: cadmpeg_ir::report::decode::Coverage::default(),
-        losses: Vec::new(),
-        notes: Vec::new(),
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
+    let mut decoded = cadmpeg_ir::codec::Decoded {
+        ir: cadmpeg_ir::CadIr::empty(),
+        body: cadmpeg_ir::codec::DecodeBody {
+            transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
+            coverage: cadmpeg_ir::report::decode::Coverage::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+            transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
+        },
+        source_fidelity: cadmpeg_ir::SourceFidelity::new(
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(file.as_slice()),
+        ),
     };
 
-    super::super::report_untransferred_streams(
-        &scan,
-        &mut body,
-        crate::native::TypedNative::Available,
-    );
+    crate::test_support::with_decode_context(|ctx| {
+        super::super::give_up_bounded_om_entries(ctx, &scan, &mut decoded)
+    })
+    .expect("the bounded entry is given up");
 
+    let body = &decoded.body;
     let bounded = body
         .losses
         .iter()
@@ -106,4 +112,73 @@ fn bounded_indexed_section_search_reports_a_scan_loss() {
     assert!(bounded[0]
         .message
         .contains(&crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK.to_string()));
+    let (offset, length) = scan.container.entries[0]
+        .file_span()
+        .expect("the bounded entry is a file");
+    let given_up = body
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    assert_eq!(given_up.len(), 1);
+    let prefix = format!(
+        "part om-entry \"/Root/UG_PART/UG_PART\" stream=\"nx:container\" \
+         offset={offset} length={length} record=nx:source:part#"
+    );
+    assert!(given_up[0].message.starts_with(&prefix), "{given_up:#?}");
+    let stub = given_up[0]
+        .message
+        .split_whitespace()
+        .find_map(|token| token.strip_prefix("record=")?.strip_suffix(':'))
+        .expect("the charge names its stub");
+    let stubs = decoded.ir.native_unknowns("nx").expect("the stub reads");
+    assert!(stubs.iter().any(|unknown| unknown.id.as_str() == stub));
+    let start = usize::try_from(offset).expect("offset fits");
+    let end = start
+        .checked_add(usize::try_from(length).expect("length fits"))
+        .expect("the entry ends in the file");
+    assert_eq!(
+        decoded
+            .source_fidelity
+            .retained_record(stub)
+            .and_then(|record| record.data()),
+        Some(&file.as_slice()[start..end])
+    );
+}
+
+/// The charge of an object-model entry of `length` bytes given up under a
+/// caller's retained-byte ceiling of 4096 bytes.
+fn om_entry_charge(length: usize) -> String {
+    use cadmpeg_ir::unknown::part::{DecodeParts, Part};
+    let bytes = vec![0x5a; length];
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_retained_bytes = 4096,
+        |ctx| {
+            let part = Part::at(
+                "nx",
+                "om-entry",
+                0,
+                &bytes,
+                [cadmpeg_core::decode::ArenaClass::Model],
+            );
+            ctx.give_up_part(
+                crate::decode::within_retained_ceiling(ctx, part, bytes.len()),
+                cadmpeg_core::CodecError::malformed("entry"),
+            )
+            .expect("the part is given up")
+            .loss()
+            .message
+        },
+    )
+}
+
+#[test]
+fn an_om_entry_keeps_only_a_digest_past_the_callers_retained_byte_ceiling() {
+    assert!(!om_entry_charge(1024).contains("max_retained_bytes"));
+    let past = om_entry_charge(8192);
+    assert!(
+        past.contains("max_retained_bytes of 4096") && past.contains("length and digest"),
+        "{past}"
+    );
 }

@@ -4,7 +4,7 @@
 use cadmpeg_core::serde_erase::json;
 
 fn edge_identity_operand(compact: bool, local_id_offset: u64) -> super::DesignEdgeIdentityOperand {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "identity", "scope_record_index": 4, "group_record_index": 1,
         "group_member_ordinal": 0, "record_index": 2, "byte_offset": 10,
         "class_tag": "346", "compact_layout": compact, "local_id": 17,
@@ -82,7 +82,7 @@ fn edge_operand_wire_rejects_partial_resolved_axis() {
 }
 
 fn edge_operand_for_borrowed(axis: bool) -> super::DesignEdgeOperand {
-    let mut wire = serde_json::json!({
+    let mut wire = cadmpeg_core::json!({
         "id":"f3d:native:edge-operand#0", "scope_record_index":1,
         "scope_reference_ordinal":0, "record_index":2,"byte_offset":10,
         "class_tag":"346","paired_byte_offset":20,"paired_class_tag":"262",

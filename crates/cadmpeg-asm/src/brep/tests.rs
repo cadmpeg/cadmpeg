@@ -519,7 +519,7 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
 
 /// A cone closed by a disk. The apex loop is one null-curve edge whose two
 /// vertex references name the apex vertex.
-const CONE_WITH_POINT_APEX_SAT: &[u8] = b"23200 0 1 0 \n\
+pub(in crate::brep) const CONE_WITH_POINT_APEX_SAT: &[u8] = b"23200 0 1 0 \n\
 14 cadmpeg-tests 4 ACIS 0 \n\
 1 1e-06 1e-10 \n\
 body $-1 -1 $-1 $1 $-1 $-1 #\n\
@@ -1406,7 +1406,7 @@ fn a_restated_join_map_names_no_wire_key() {
         let serde_json::Value::Object(mut fields) = value.clone() else {
             panic!("AsmBrep serializes as a map");
         };
-        fields.insert(restated.to_string(), serde_json::json!({}));
+        fields.insert(restated.to_string(), cadmpeg_core::json!({}));
         let Err(error) = cadmpeg_core::serde_erase::from_json_value::<AsmBrep>(
             &serde_json::Value::Object(fields),
         ) else {

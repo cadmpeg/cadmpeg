@@ -185,7 +185,7 @@ fn viewport_plot_weight_keeps_the_exact_unset_sentinel() {
     );
     assert_eq!(
         json::to_value(values[0].plot_weight_mm).expect("serialized plot weight"),
-        serde_json::json!(-1.0)
+        cadmpeg_core::json!(-1.0)
     );
 }
 

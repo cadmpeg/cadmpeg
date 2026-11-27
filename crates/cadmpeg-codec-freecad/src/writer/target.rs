@@ -15,7 +15,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     carried_source_losses, edit_dropped, edit_unverified,
     target::{ResolvedWrite, WrittenRow},
-    ArenaCoverage, Consumption, EncodeInput, ExportBody, PatchConsumption, WritePath,
+    ArenaCoverage, Consumption, EncodeInput, ExportBody, NativeDisposition, NativeDispositions,
+    PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::digest::Sha256Digest;
@@ -125,12 +126,13 @@ const PATCH_ONLY: &str =
 /// no such entry with a readable `Document.xml` gives this writer, which has no
 /// synthesis path, nothing to write.
 pub(crate) fn plan(
+    ctx: &DecodeContext<'_>,
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    let (resolution, written_row) = resolve(input.ir, resolved)?;
-    let baseline = admit_unedited(input.ir, input.fidelity)?;
-    let mut body = finish(&resolution, input.fidelity, baseline)?;
+    let (resolution, written_row) = resolve(ctx, input.ir, resolved)?;
+    let baseline = admit_unedited(ctx, input.ir, input.fidelity)?;
+    let mut body = finish(ctx, &resolution, input.fidelity, baseline)?;
     body.written_row = written_row;
     Ok(body)
 }
@@ -188,18 +190,16 @@ enum Baseline {
 /// A document whose sidecar records no digest (no sidecar, or every decode
 /// below `Full`) is [`Baseline::Unrecorded`]. A held digest that does not
 /// compute, for a reason other than a resource ceiling, shows an edit.
-fn admit_unedited(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Baseline, CodecError> {
+fn admit_unedited(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    fidelity: Option<&SourceFidelity>,
+) -> Result<Baseline, CodecError> {
     let Some(expected) = fidelity.and_then(|fidelity| fidelity.codec_digests.get(UNCARRIED_DIGEST))
     else {
         return Ok(Baseline::Unrecorded);
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    let current = match uncarried_digest(&ctx, ir) {
+    let current = match uncarried_digest(ctx, ir) {
         Ok(current) => current,
         Err(error) => {
             let reason = error.to_string();
@@ -207,7 +207,9 @@ fn admit_unedited(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Basel
             return Ok(Baseline::Edited(Some(reason)));
         }
     };
-    ctx.finish_session()?;
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(limit));
+    }
     Ok(if current == *expected {
         Baseline::Unedited
     } else {
@@ -224,12 +226,13 @@ fn admit_unedited(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Basel
 /// not isolate the edited record, and the record the digest error names
 /// (§3.4, Paths item 4).
 fn finish(
+    ctx: &DecodeContext<'_>,
     resolution: &Resolution<'_>,
     fidelity: Option<&cadmpeg_ir::SourceFidelity>,
     baseline: Baseline,
 ) -> Result<ExportBody, CodecError> {
     let mut bytes = Vec::new();
-    let outcome = write(&mut bytes, resolution)?;
+    let outcome = write(ctx, &mut bytes, resolution)?;
     let write_path = WritePath::Patched {
         consumption: PatchConsumption::Independent(Consumption::NotConsumed),
     };
@@ -262,24 +265,33 @@ fn finish(
         )),
     }
     losses.extend(outcome.losses);
+    // The patched archive holds every record of the retained graph; a
+    // namespace of another format has no place in it.
+    let mut native = NativeDispositions::dropped("which the FCStd writer does not write");
+    native.namespace("fcstd", NativeDisposition::Written);
+    outcome.omitted.declare(&mut native);
     Ok(ExportBody {
         bytes,
+        synthesis_cause: None,
         census: outcome.census,
         losses,
         write_path,
         coverage: ArenaCoverage::Complete,
+        native,
         notes: outcome.notes,
         written_row: None,
+        annotations: None,
     })
 }
 
 /// Decide what to write, from the request and the source: the retained
 /// document, and the row it is where the resolution names another.
 fn resolve<'a>(
+    ctx: &DecodeContext<'_>,
     ir: &'a CadIr,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<(Resolution<'a>, Option<WrittenRow>), CodecError> {
-    let mut resolution = retained_baseline(ir, resolved.target_id())?
+    let mut resolution = retained_baseline(ctx, ir, resolved.target_id())?
         .ok_or_else(|| resolved.unavailable(BASELINE_UNAVAILABLE))?;
     let declared = FcstdDialect::from_schema_version(resolution.schema_version()).id();
     if declared == *resolved.target_id() {
@@ -306,6 +318,7 @@ fn resolve<'a>(
 /// whose name an earlier entry already takes, is left out of the archive and
 /// reported. `target` is the dialect the resolution names.
 pub(super) fn retained_baseline<'a>(
+    ctx: &DecodeContext<'_>,
     ir: &'a CadIr,
     target: &DialectId,
 ) -> Result<Option<Resolution<'a>>, CodecError> {
@@ -313,8 +326,8 @@ pub(super) fn retained_baseline<'a>(
         return Ok(None);
     };
     let mut omitted = Omissions::default();
-    let (records, unreadable) = super::read_arena::<EntryRecord>(namespace, "entries")?;
-    let omitted_members = entry_names(namespace, &unreadable);
+    let (records, unreadable) = super::read_arena::<EntryRecord>(ctx, namespace, "entries")?;
+    let omitted_members = entry_names(ctx, namespace, &unreadable);
     for id in unreadable {
         omitted.push(super::UNREADABLE_ENTRY, id);
     }
@@ -333,7 +346,7 @@ pub(super) fn retained_baseline<'a>(
     let Some(document_xml) = document_xml else {
         return Ok(None);
     };
-    let Some((document, schema_version, vocabulary)) = read_declaration(document_xml.data())?
+    let Some((document, schema_version, vocabulary)) = read_declaration(ctx, document_xml.data())?
     else {
         return Ok(None);
     };
@@ -356,7 +369,11 @@ pub(super) fn retained_baseline<'a>(
 
 /// The member names the entry records `ids` state, for each record whose
 /// name reads.
-fn entry_names(namespace: &cadmpeg_ir::native::NativeNamespace, ids: &[String]) -> HashSet<String> {
+fn entry_names(
+    ctx: &DecodeContext<'_>,
+    namespace: &cadmpeg_ir::native::NativeNamespace,
+    ids: &[String],
+) -> HashSet<String> {
     #[derive(serde::Deserialize)]
     struct Named {
         name: String,
@@ -368,7 +385,7 @@ fn entry_names(namespace: &cadmpeg_ir::native::NativeNamespace, ids: &[String]) 
         .into_iter()
         .flatten()
         .map(cadmpeg_ir::native::NativeRecord::id)
-        .zip(namespace.arena_iter_as::<Named>("entries"))
+        .zip(namespace.arena_iter_as_for_decode::<Named>(ctx, "entries"))
         .filter(|(id, _)| ids.contains(id))
         .filter_map(|(_, named)| named.ok().map(|named| named.name))
         .collect()
@@ -377,16 +394,18 @@ fn entry_names(namespace: &cadmpeg_ir::native::NativeNamespace, ids: &[String]) 
 /// The document facts, `SchemaVersion`, and vocabulary that `bytes` declare,
 /// or `None` where they do not read as a `Document.xml` the decoder admits.
 fn read_declaration(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<(DocumentFacts, String, Vocabulary)>, CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)?;
-    let declared = crate::container::admit_document(&ctx, bytes).and_then(|xml| {
-        let (document, schema_version) = crate::container::parse_document(&xml, &mut Vec::new())?;
-        let vocabulary = Vocabulary::from_declaration(&schema_version)?;
-        Ok((document, schema_version, vocabulary))
-    });
+    let declared = std::str::from_utf8(bytes)
+        .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))
+        .and_then(|text| super::parse_retained(ctx, text, super::DOCUMENT_XML))
+        .and_then(|xml| {
+            let (document, schema_version) =
+                crate::container::parse_document(&xml, &mut Vec::new())?;
+            let vocabulary = Vocabulary::from_declaration(&schema_version)?;
+            Ok((document, schema_version, vocabulary))
+        });
     match declared {
         Ok(declared) => Ok(Some(declared)),
         Err(error) => recover(error).map(|()| None),

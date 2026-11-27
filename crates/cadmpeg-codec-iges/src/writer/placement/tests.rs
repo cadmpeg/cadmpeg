@@ -90,7 +90,8 @@ fn a_polygonal_surface_maps_its_vertices_and_scales_its_deflection_by_the_larges
         [0.0, 0.0, 1.0, 0.5],
     ];
     let source = polygonal_sheet(Transform::affine(rows));
-    let (placed, _) = placed_bodies(&source).expect("the body is placed");
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let (placed, _) = placed_bodies(&ctx, &source).expect("the body is placed");
     let placed = polygonal(placed.as_ref());
     let expected = polygonal(&source)
         .vertices()

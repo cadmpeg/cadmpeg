@@ -137,7 +137,7 @@ pub(super) fn state(
                 place(
                     presentation,
                     PresentationItem::Tessellation {
-                        tessellation: tessellation.id.to_string(),
+                        tessellation: tessellation.id.clone(),
                     },
                 );
             }

@@ -248,7 +248,7 @@ fn fillet_multiple_variable_runs_assign_and_validate_each_group() {
 fn fixed_fillet_unassigned_group_laws_retain_native_validation() {
     use crate::records::feature::scope::DesignScopePayloadMut;
     let mut native = native();
-    let fixed = json::from_value(serde_json::json!({"groups": [{
+    let fixed = json::from_value(cadmpeg_core::json!({"groups": [{
         "radii": [0.2], "radius_offsets": [2020], "radius_record_indexes": [202]
     }]}))
     .unwrap();

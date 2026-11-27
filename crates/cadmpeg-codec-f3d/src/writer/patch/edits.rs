@@ -1656,14 +1656,9 @@ fn validate_fixed_design_string(id: &str, before: &str, after: &str) -> Result<(
 }
 
 pub(super) fn validate_configuration_edits(
-    native: PatchNatives<'_>,
+    baseline: &[crate::records::configuration::DesignConfiguration],
+    target: &[crate::records::configuration::DesignConfiguration],
 ) -> Result<BTreeMap<String, Vec<u8>>, CodecError> {
-    let baseline = native
-        .baseline
-        .map_or(&[][..], |native| native.design_configurations.as_slice());
-    let target = native
-        .target
-        .map_or(&[][..], |native| native.design_configurations.as_slice());
     let baseline = baseline
         .iter()
         .map(|configuration| (configuration.entry_name().as_str(), configuration))
@@ -1693,7 +1688,10 @@ pub(super) fn validate_configuration_edits(
         if before != after {
             edits.insert(
                 name.to_owned(),
-                crate::records::configuration::encode_configuration_payload(after)?,
+                crate::records::configuration::encode_configuration_payload(
+                    after.entry_name(),
+                    after.payload(),
+                )?,
             );
         }
     }
@@ -4448,7 +4446,7 @@ mod tests {
     }
 
     fn assignment(physical_token: bool) -> DesignMaterialAssignment {
-        let mut document = serde_json::json!({
+        let mut document = cadmpeg_core::json!({
             "id": "material#0",
             "asm_body_key": 42,
             "asm_body_key_offset": 200,

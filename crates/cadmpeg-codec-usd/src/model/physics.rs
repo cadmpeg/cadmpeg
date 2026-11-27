@@ -32,6 +32,9 @@ use cadmpeg_ir::transform::Transform;
 
 use cadmpeg_ir::physics::solver::SolverTarget;
 
+use cadmpeg_ir::unknown::part::{dropped_with, GivenUpRecord};
+
+use crate::loss::UsdLossCode;
 use crate::schema::physics::{Drive, JointData, JointType, Limit};
 use crate::schema::physx::Holder;
 use crate::schema::xform::{compose, quaternion, Affine};
@@ -51,6 +54,49 @@ pub(super) enum PhysicsOwner {
 pub(super) struct PendingJoint {
     pub(super) path: String,
     pub(super) data: JointData,
+}
+
+/// Why the decoder leaves a joint prim out of the document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum JointRejection {
+    /// A joint frame is not a finite rigid transform.
+    FrameMalformed,
+    /// A body relationship names a prim that is not a transferred
+    /// occurrence.
+    BodyNotTransferred,
+    /// Both body relationships are empty, so each side is the world.
+    NoBody,
+    /// A coupling relationship targets no joint that the decoder adds.
+    CouplingUnresolved,
+}
+
+impl JointRejection {
+    pub(super) const ALL: [Self; 4] = [
+        Self::NoBody,
+        Self::BodyNotTransferred,
+        Self::FrameMalformed,
+        Self::CouplingUnresolved,
+    ];
+
+    /// The cause, as the predicate of one joint.
+    const fn one(self) -> &'static str {
+        match self {
+            Self::FrameMalformed => "has a malformed frame",
+            Self::BodyNotTransferred => "names a body that is not a transferred prim",
+            Self::NoBody => "names no body",
+            Self::CouplingUnresolved => "couples a joint that is not a transferred joint",
+        }
+    }
+
+    /// The cause, as the predicate of several joints.
+    pub(super) const fn several(self) -> &'static str {
+        match self {
+            Self::FrameMalformed => "have a malformed frame",
+            Self::BodyNotTransferred => "name a body that is not a transferred prim",
+            Self::NoBody => "name no body",
+            Self::CouplingUnresolved => "couple a joint that is not a transferred joint",
+        }
+    }
 }
 
 fn frame_axis(letter: char) -> FrameAxis {
@@ -288,10 +334,10 @@ impl super::Builder<'_, '_, '_, '_> {
         Ok(())
     }
 
-    /// The joints that the coupling joint at `path` names, when each names
-    /// one joint that was added; otherwise none, reported.
-    fn coupled_joints(&mut self, path: &str, coupled: &[Option<String>]) -> Vec<JointId> {
-        let ids: Option<Vec<JointId>> = coupled
+    /// The joints that a coupling joint names, when each relationship names
+    /// one joint that was added.
+    fn coupled_joints(&self, coupled: &[Option<String>]) -> Option<Vec<JointId>> {
+        coupled
             .iter()
             .map(|target| {
                 let id = crate::ids::joint(target.as_deref()?);
@@ -302,13 +348,27 @@ impl super::Builder<'_, '_, '_, '_> {
                     .any(|joint| joint.id == id)
                     .then_some(id)
             })
-            .collect();
-        ids.unwrap_or_else(|| {
-            self.tallies
-                .joint_properties
-                .push(format!("{path}: the coupled joints do not resolve"));
-            Vec::new()
-        })
+            .collect()
+    }
+
+    /// Leaves the joint `id` at `path` out of the document for `rejection`.
+    fn reject_joint(
+        &mut self,
+        id: JointId,
+        rejection: JointRejection,
+        path: String,
+        rejected: &mut BTreeSet<JointId>,
+    ) {
+        self.tallies.given_up.push(GivenUpRecord::new(
+            &id,
+            format_args!(
+                "{}: the joint {}",
+                UsdLossCode::JointRejected.kind(),
+                rejection.one()
+            ),
+        ));
+        self.tallies.rejected_joints.push((rejection, path));
+        rejected.insert(id);
     }
 
     /// The physics material that `prim` binds: its physics-purpose binding,
@@ -439,6 +499,8 @@ impl super::Builder<'_, '_, '_, '_> {
         pending.sort_by_key(|joint| {
             matches!(joint.data.kind, JointType::Gear | JointType::RackPinion)
         });
+        // The joints left out so far.
+        let mut rejected = BTreeSet::new();
         for PendingJoint { path, data } in pending {
             let alignment = match data.kind {
                 JointType::Revolute | JointType::Prismatic => {
@@ -446,18 +508,19 @@ impl super::Builder<'_, '_, '_, '_> {
                 }
                 _ => crate::schema::xform::IDENTITY,
             };
+            let id = crate::ids::joint(&path);
             let mut connectors = Vec::new();
-            let mut unresolved = false;
+            let mut rejection = None;
             for side in 0..2 {
                 let Some(frame) = self.joint_frame(&data, side, &alignment) else {
-                    unresolved = true;
+                    rejection = Some(JointRejection::FrameMalformed);
                     break;
                 };
                 let operand = match &data.bodies[side] {
                     Some(body) => {
                         let occurrence = crate::ids::occurrence(body);
                         if !occurrences.contains(occurrence.as_str()) {
-                            unresolved = true;
+                            rejection = Some(JointRejection::BodyNotTransferred);
                             break;
                         }
                         Some(JointOperand::occurrence(
@@ -470,9 +533,36 @@ impl super::Builder<'_, '_, '_, '_> {
                 };
                 connectors.push((operand, frame));
             }
-            if unresolved || connectors.iter().all(|(operand, _)| operand.is_none()) {
-                self.tallies.rejected_joints.push(path);
+            let rejection = rejection.or_else(|| {
+                connectors
+                    .iter()
+                    .all(|(operand, _)| operand.is_none())
+                    .then_some(JointRejection::NoBody)
+            });
+            if let Some(rejection) = rejection {
+                self.reject_joint(id, rejection, path, &mut rejected);
                 continue;
+            }
+            // A coupling needs each joint it couples.
+            let mut coupled_joints = Vec::new();
+            if matches!(data.kind, JointType::Gear | JointType::RackPinion) {
+                if let Some(needed) = data
+                    .coupled
+                    .iter()
+                    .flatten()
+                    .map(|target| crate::ids::joint(target))
+                    .find(|target| rejected.contains(target))
+                {
+                    self.tallies.dependents.push(dropped_with(&id, &needed));
+                    rejected.insert(id);
+                    continue;
+                }
+                let Some(ids) = self.coupled_joints(&data.coupled) else {
+                    let rejection = JointRejection::CouplingUnresolved;
+                    self.reject_joint(id, rejection, path, &mut rejected);
+                    continue;
+                };
+                coupled_joints = ids;
             }
             let connector = |(operand, frame): (Option<JointOperand>, Transform)| JointConnector {
                 operand: operand.unwrap_or_else(|| JointOperand::root("/", Vec::new())),
@@ -487,7 +577,6 @@ impl super::Builder<'_, '_, '_, '_> {
             let generic = (data.kind == JointType::Generic)
                 .then(|| generic_kind(&data.limits, scale))
                 .flatten();
-            let id = crate::ids::joint(&path);
             let mut joint = match data.kind {
                 JointType::Fixed if connectors.iter().any(|(operand, _)| operand.is_none()) => {
                     let (grounded, world): (Vec<_>, Vec<_>) = connectors
@@ -523,7 +612,6 @@ impl super::Builder<'_, '_, '_, '_> {
                                 .and_then(|value| FiniteReal::new(value * scale)),
                         },
                         JointType::Gear | JointType::RackPinion => {
-                            let coupled_joints = self.coupled_joints(&path, &data.coupled);
                             if data.kind == JointType::Gear {
                                 PairedJointKind::Gears {
                                     distance: None,

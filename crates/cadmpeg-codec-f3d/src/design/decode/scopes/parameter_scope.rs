@@ -93,7 +93,7 @@ use crate::records::feature::direct_face;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::container::ContainerRole;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -122,9 +122,19 @@ pub(crate) struct DecodedParameterScopes {
 /// Decode every canonical sketch or construction-operation scope, including
 /// scopes that own no parameters and therefore have no owner-frame backlink.
 pub(crate) fn decode_parameter_scopes(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     sources: &ParameterScopeSources<'_>,
+) -> Result<DecodedParameterScopes, CodecError> {
+    decode_parameter_scopes_for(ctx, scan, sources, None)
+}
+
+/// Decode configuration-linked scopes through the shared scope reader.
+pub(crate) fn decode_parameter_scopes_for(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    sources: &ParameterScopeSources<'_>,
+    selected: Option<&std::collections::BTreeSet<u32>>,
 ) -> Result<DecodedParameterScopes, CodecError> {
     let &ParameterScopeSources {
         entities,
@@ -177,20 +187,34 @@ pub(crate) fn decode_parameter_scopes(
         let split_face_frames = metadata
             .as_ref()
             .and_then(|metadata| {
-                crate::design::decode::meta::unambiguous_design_primary_frames(bytes, metadata).ok()
+                crate::design::decode::meta::scan_unambiguous_design_primary_frames(
+                    scan,
+                    &entry.name,
+                    metadata,
+                )
+                .ok()
             })
             .unwrap_or_default();
         let paste_metadata = metadata.as_ref().filter(|_| needs_browser_metadata);
         let paste_nodes = super::base_feature::PasteNodes {
             sources: paste_metadata
                 .and_then(|metadata| {
-                    crate::design::decode::presentation::browser_node_suffixes(bytes, metadata).ok()
+                    crate::design::decode::presentation::scan_browser_node_suffixes(
+                        scan,
+                        &entry.name,
+                        bytes,
+                        metadata,
+                    )
+                    .ok()
                 })
                 .unwrap_or_default(),
             copies: paste_metadata
                 .and_then(|metadata| {
-                    crate::design::decode::presentation::presentation_scene_node_guids(
-                        bytes, metadata,
+                    crate::design::decode::presentation::scan_presentation_scene_node_guids(
+                        scan,
+                        &entry.name,
+                        bytes,
+                        metadata,
                     )
                     .ok()
                 })
@@ -224,6 +248,9 @@ pub(crate) fn decode_parameter_scopes(
             }
         }
         for header in parameter_scope_candidate_headers(bytes, &records)? {
+            if selected.is_some_and(|selected| !selected.contains(&header.record_index)) {
+                continue;
+            }
             let Some(mut scope) = parse_parameter_scope_with_type_guid(
                 bytes,
                 &records,
@@ -239,15 +266,26 @@ pub(crate) fn decode_parameter_scopes(
                     .map(|row| row.type_guid.as_str()),
             )?
             else {
-                if let Some(tail_length) = unparsed_rigid_group_tail_length(
+                if let Some((tail_length, end)) = unparsed_rigid_group_frame(
                     bytes,
                     &records,
                     header.record_index,
                     header.byte_offset,
                 ) {
-                    losses.push(crate::loss::F3dLossCode::AssemblyRigidGroupFrameUnparsed.note(
-                        format!("Design rigid-group frame {} in {} at {} has no admitted layout ({tail_length}-byte tail).", header.record_index, entry.name, header.byte_offset),
-                    ));
+                    let start = usize::try_from(header.byte_offset)
+                        .map_err(|_| CodecError::malformed("F3D rigid-group frame offset"))?;
+                    let mut frames = Vec::new();
+                    crate::design::decode::record::RecordFrame::new(&entry.name, start, end)
+                        .give_up(
+                            crate::loss::F3dLossCode::AssemblyRigidGroupFrameUnparsed.note(
+                                format!("Design rigid-group frame {} in {} at {} has no admitted layout ({tail_length}-byte tail).", header.record_index, entry.name, header.byte_offset),
+                            ),
+                            &mut losses,
+                            &mut frames,
+                        );
+                    given_up.extend(crate::design::decode::record::give_up_frames(
+                        ctx, scan, frames,
+                    )?);
                 }
                 continue;
             };
@@ -1776,12 +1814,14 @@ enum ScopeTailForm {
     TypedExtended,
 }
 
-fn unparsed_rigid_group_tail_length(
+/// The tail length and the frame end of a rigid-group record whose frame
+/// matches the ordinary layout up to an unadmitted tail.
+fn unparsed_rigid_group_frame(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
     byte_offset: u64,
-) -> Option<usize> {
+) -> Option<(usize, usize)> {
     use crate::layout::assembly_alternate_rigid_group_prefix as alternate;
     use crate::layout::assembly_rigid_as_built_scope as ordinary;
     let start = usize::try_from(byte_offset).ok()?;
@@ -1815,8 +1855,8 @@ fn unparsed_rigid_group_tail_length(
             && bytes.get(guid_end..table)?.iter().all(|byte| *byte == 0))
         .then_some(tail_length)
     });
-    if known_tail.is_some() {
-        return known_tail;
+    if let Some(tail_length) = known_tail {
+        return Some((tail_length, paired));
     }
     let prologue_shift = if crate::bytes::local_reference_target(
         bytes,
@@ -1899,7 +1939,7 @@ fn unparsed_rigid_group_tail_length(
     {
         return None;
     }
-    paired.checked_sub(kind_end)
+    Some((paired.checked_sub(kind_end)?, paired))
 }
 
 /// The tail offsets of the timeline state of a feature item tail.

@@ -8,7 +8,7 @@ use cadmpeg_core::serde_erase::json;
 /// messages of its losses of `code` and the document its bytes read back as.
 fn written_with_losses(ir: &CadIr, code: &str) -> (Vec<String>, CadIr) {
     let plan = CadirEncoder
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, None))
         .expect("the CADIR writer drops what it cannot write and does not refuse");
     let messages = plan
         .report()
@@ -60,10 +60,7 @@ fn the_cadir_writer_does_not_check_feature_parent_relations_it_omits() {
     let write = |ir: &CadIr| {
         let reject_errors = Strictness::default().with_code("export:record.invalid");
         let plan = CadirEncoder
-            .plan(
-                EncodeInput::new(ir, None).with_strictness(&reject_errors),
-                TargetRequest::Unnamed,
-            )
+            .plan(EncodeInput::new(ir, None).with_strictness(&reject_errors))
             .expect("the writer checks no relation it omits");
         let invalid = plan
             .report()
@@ -335,7 +332,7 @@ fn the_cadir_writer_copies_the_base_owner_of_a_delta_construction() {
         ProceduralCurveDefinition::Exact { cache: None },
     );
     ir.geometry.procedural_curves.push(base.clone());
-    let replacement: ProceduralCurve = json::from_value(serde_json::json!({
+    let replacement: ProceduralCurve = json::from_value(cadmpeg_core::json!({
         "id": REPLACED,
         "definition": {"kind": "unknown"}
     }))
@@ -458,11 +455,12 @@ fn the_cadir_writer_drops_a_record_whose_expression_does_not_print() {
 }
 
 /// Sets each document-level field of `ir` to a value other than its default:
-/// `fragment`, `repro`, source metadata and tolerances.
+/// `fragment`, `repro`, source metadata, tolerances and up axis.
 fn state_document_fields(ir: &mut CadIr) {
     ir.fragment = true;
+    ir.up_axis = Some(crate::up_axis::UpAxis::Y);
     ir.source = Some(
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "attributes": {},
         }))
@@ -514,6 +512,8 @@ fn assert_document_fields_without_records(ir: &CadIr, written: &CadIr) {
     assert_eq!(written.scope(), ir.scope());
     assert_eq!(written.source, ir.source);
     assert_eq!(written.tolerances, ir.tolerances);
+    assert_eq!(written.up_axis, ir.up_axis);
+    assert!(written.up_axis.is_some());
 }
 
 /// An output from which every record was dropped is the CADIR document with
@@ -546,21 +546,19 @@ fn the_cadir_writer_writes_the_empty_document_where_the_scope_excludes_every_rec
     state_document_fields(&mut ir);
     ir.design.parameters.push(negated_parameter("kept", 1));
     let mut value = json::to_value(&ir).unwrap();
-    value["scope"] = serde_json::json!({"model": true, "design": false, "process": false});
-    let read = CadIr::read(
+    value["scope"] = cadmpeg_core::json!({"model": true, "design": false, "process": false});
+    let (read, _, _) = CadIr::read(
         value.to_string().as_bytes(),
         &crate::document::read::ReadOptions::default(),
     )
-    .expect("the read keeps the scope as written");
+    .expect("the read keeps the scope as written")
+    .without_sidecar();
 
-    assert_ne!(
-        read.document.scope(),
-        cadmpeg_core::decode::ContentScope::full()
-    );
+    assert_ne!(read.scope(), cadmpeg_core::decode::ContentScope::full());
 
-    let (losses, written) = written_with_losses(&read.document, "output.empty");
+    let (losses, written) = written_with_losses(&read, "output.empty");
     assert_eq!(losses.len(), 1, "{losses:?}");
-    assert_document_fields_without_records(&read.document, &written);
+    assert_document_fields_without_records(&read, &written);
 }
 
 /// The CADIR wire leaves out the legacy model arenas (§3.4): a document whose
@@ -595,4 +593,197 @@ fn the_cadir_writer_writes_the_empty_document_for_records_the_wire_omits() {
     let (losses, written) = written_with_losses(&ir, "output.empty");
     assert_eq!(losses.len(), 1, "{losses:?}");
     assert_document_fields_without_records(&ir, &written);
+}
+
+/// A native record that names a record the scope excludes leaves the file
+/// with it, and the write declares it dropped, so the report names it as an
+/// omitted native record (Rule W3).
+#[test]
+fn the_cadir_writer_names_a_native_record_dropped_with_an_excluded_record() {
+    const NEEDS: &str = "test:native:needs#1";
+    let mut ir = crate::examples::unit_cube().expect("valid unit cube fixture");
+    ir.design.parameters.push(negated_parameter("kept", 1));
+    let target = ir.design.parameters[0].id.to_string();
+    ir.native
+        .namespace_mut(crate::design::names::CodecId::new("test").unwrap())
+        .set_arena_records(
+            "needs",
+            vec![crate::NativeRecord::new(
+                crate::ids::Identity::new(NEEDS).unwrap(),
+                [("target".to_owned(), serde_json::Value::String(target))]
+                    .into_iter()
+                    .collect(),
+            )
+            .unwrap()],
+        )
+        .unwrap();
+    let mut value = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
+    value["scope"] = cadmpeg_core::json!({"model": true, "design": false, "process": false});
+    let (read, _, _) = CadIr::read(
+        value.to_string().as_bytes(),
+        &crate::document::read::ReadOptions::default(),
+    )
+    .expect("the read keeps the scope as written")
+    .without_sidecar();
+
+    let (omitted, written) = written_with_losses(&read, "native.records-omitted");
+    assert!(written
+        .native
+        .namespace("test")
+        .is_none_or(|namespace| namespace.arenas().values().all(Vec::is_empty)));
+    assert_eq!(written.geometry.faces.len(), ir.geometry.faces.len());
+    assert_eq!(
+        omitted,
+        [format!(
+            "the CADIR write omits 1 native record(s) of `test` arena `needs` that the CADIR \
+             write drops with a record it does not write: {NEEDS}"
+        )]
+    );
+}
+
+/// A write that leaves out records leaves out their annotations: those of an
+/// evaluation the scope excludes and of each record of its delta go, and
+/// those of a record the write keeps stay, as does a key that named no record
+/// of the input (§3.2, §3.4).
+#[test]
+fn the_cadir_writer_drops_the_annotations_of_the_records_it_leaves_out() {
+    use crate::annotations::{AnnotationKey, StreamHandle};
+    let mut ir = crate::validate::design::fixture::document();
+    let face = ir.geometry.faces[0].id.clone();
+    let copy = ir.geometry.faces[0].clone();
+    let evaluation = ir.design.evaluations[0].id.clone();
+    ir.design.evaluations[0]
+        .content
+        .as_mut()
+        .expect("the fixture stores the state")
+        .delta
+        .records
+        .faces = vec![copy];
+    ir.finalize();
+    ir.set_scope(cadmpeg_core::decode::ContentScope::geometry());
+    let qualified = AnnotationKey::in_delta(&evaluation, &face).to_string();
+    let dangling = "test:design:face#missing";
+    let stream = StreamHandle::new(crate::stream_name!("test:source"));
+    let mut builder = crate::AnnotationBuilder::new();
+    for key in [
+        face.as_str(),
+        evaluation.as_str(),
+        qualified.as_str(),
+        dangling,
+    ] {
+        builder.note(key, &stream, 0, None);
+        builder.exactness(key, crate::provenance::Exactness::Inferred);
+    }
+    let mut fidelity = SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(b"source"));
+    fidelity.annotations = builder.build();
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&ir, Some(&fidelity)))
+        .expect("a scope breach does not refuse the write");
+    let annotations = plan
+        .annotations()
+        .expect("the write leaves out annotated records");
+    for gone in [evaluation.as_str(), qualified.as_str()] {
+        assert!(!annotations.provenance.contains_key(gone), "{gone}");
+        assert!(!annotations.exactness().contains_key(gone), "{gone}");
+    }
+    for kept in [face.as_str(), dangling] {
+        assert!(annotations.provenance.contains_key(kept), "{kept}");
+        assert!(annotations.exactness().contains_key(kept), "{kept}");
+    }
+}
+
+/// The annotations a CADIR write states are those of the document it writes
+/// (§3.2, §3.4): the key of a record of an arena the wire omits goes, and the
+/// key of a written design record or native record that shares its id with
+/// such a record stays, as do the keys of the other written records.
+#[test]
+fn the_cadir_writer_states_the_annotations_of_the_records_it_writes() {
+    use crate::annotations::{Removed, StreamHandle};
+    use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
+    use crate::features::FeatureId;
+
+    const SHARED: &str = "test:writer:feature#shared";
+    const NATIVE: &str = "test:writer:feature#native";
+    const OMITTED: &str = "test:writer:feature#omitted";
+    let legacy = |id: &str| crate::features::Feature {
+        product_definition: None,
+        id: FeatureId::mint(id).unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: crate::features::selections::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: crate::features::FeatureContent::default(),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
+            crate::features::FeatureDefinition::Operation(
+                crate::features::FeatureOperation::StoredGeometry {},
+            ),
+        ),
+        native_ref: None,
+    };
+    let mut ir = crate::examples::unit_cube().unwrap();
+    ir.set_scope(cadmpeg_core::decode::ContentScope::full());
+    let point = ir.geometry.points[0].id.as_str().to_owned();
+    ir.model.features.push(legacy(OMITTED));
+    ir.model.features.push(legacy(SHARED));
+    ir.model.features.push(legacy(NATIVE));
+    ir.native
+        .namespace_mut(cadmpeg_core::text::CodecId::new("test".to_owned()).unwrap())
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::text::NonBlankString::new("records").unwrap(),
+            vec![crate::native::NativeRecord::from_identity(
+                crate::ids::Identity::new(NATIVE).unwrap(),
+                [],
+            )],
+        );
+    ir.design.features.push(Feature {
+        id: FeatureId::mint(SHARED).unwrap(),
+        name: None,
+        suppressed: None,
+        definition: FeatureDefinition {
+            operation: FeatureOperation::Unresolved {
+                family: OperationFamily::Extrude,
+            },
+            assembly: None,
+            refine: None,
+            fuzzy_tolerance: None,
+        },
+        placement: None,
+        component: None,
+        driven_by: None,
+        native_ref: None,
+    });
+    ir.finalize();
+    let stream = StreamHandle::new(crate::stream_name!("test:source"));
+    let mut builder = crate::AnnotationBuilder::new();
+    for key in [point.as_str(), SHARED, NATIVE, OMITTED] {
+        builder.note(key, &stream, 0, None);
+    }
+    assert_eq!(
+        Removed::omitted_by_the_wire(&ir),
+        Removed::before(&ir).after_writing(&ir),
+        "a write that changes nothing else removes what the wire omits"
+    );
+    let mut fidelity = SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(b"source"));
+    fidelity.annotations = builder.build();
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&ir, Some(&fidelity)))
+        .expect("the write does not refuse");
+    let annotations = plan
+        .annotations()
+        .expect("a CADIR write with a fidelity states its annotations");
+    let mut keys: Vec<&str> = annotations
+        .provenance
+        .keys()
+        .map(crate::annotations::AnnotationKey::as_str)
+        .collect();
+    keys.sort_unstable();
+    let mut expected = vec![point.as_str(), SHARED, NATIVE];
+    expected.sort_unstable();
+    assert_eq!(keys, expected);
 }

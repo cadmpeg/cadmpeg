@@ -41,6 +41,8 @@ use crate::brep::{
     AnalyticSurface, Brep, Catalog, CurveKind, Frame, PcurveKind, Reference, SurfaceKind,
 };
 use crate::ids::brep as id;
+use crate::loss::UsdLossCode;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
 
 /// The entities of one B-rep, in arena order.
 #[derive(Debug, Default)]
@@ -966,6 +968,15 @@ pub(super) fn folded(
     .then_some(source)
 }
 
+/// The body key of the B-rep at `ordinal` of the `BrepArray` keyed `key`.
+fn brep_key(key: &str, ordinal: usize) -> String {
+    if ordinal == 0 {
+        key.to_owned()
+    } else {
+        format!("{key}#brep{ordinal}")
+    }
+}
+
 impl super::Builder<'_, '_, '_, '_> {
     /// Adds a body for each B-rep of the `BrepArray` prim `prim`, and the
     /// fallback meshes of `fallbacks` as tessellations of its first body.
@@ -975,12 +986,28 @@ impl super::Builder<'_, '_, '_, '_> {
         fallbacks: &[usize],
         key: &str,
     ) -> Result<Vec<cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError> {
-        let decoded = match decoded(prim, &mut self.issues) {
+        // Where the arrays read and do not decode, each B-rep they count is
+        // given up; where they do not read, the count is unknown.
+        let (decoded, breps) = match crate::brep::solid::read(prim, &mut self.issues) {
+            Ok(packed) => (
+                crate::brep::solid::decode(&packed),
+                packed.region_count.len().max(1),
+            ),
+            Err(reason) => (Err(reason), 1),
+        };
+        let decoded = match decoded {
             Ok(decoded) => decoded,
             Err(reason) => {
                 self.tallies
                     .rejected_breps
                     .push(format!("{}: {reason}", prim.path));
+                for ordinal in 0..breps {
+                    let body_key = brep_key(key, ordinal);
+                    self.tallies.given_up.push(GivenUpRecord::new(
+                        crate::ids::body(&body_key),
+                        format_args!("{}: {reason}", UsdLossCode::BrepRejected.kind()),
+                    ));
+                }
                 return Ok(Vec::new());
             }
         };
@@ -994,21 +1021,22 @@ impl super::Builder<'_, '_, '_, '_> {
         let mut bodies = Vec::new();
         let mut keys: BTreeMap<usize, String> = BTreeMap::new();
         for (ordinal, records) in decoded.breps.iter().enumerate() {
-            let body_key = if ordinal == 0 {
-                key.to_owned()
-            } else {
-                format!("{key}#brep{ordinal}")
-            };
+            let body_key = brep_key(key, ordinal);
             match self.brep_body(prim, &body_key, records)? {
                 Ok(body) => {
                     self.body_material(prim, &body_key, &body)?;
                     bodies.push(body);
                     keys.insert(ordinal, body_key);
                 }
-                Err(reason) => self
-                    .tallies
-                    .rejected_breps
-                    .push(format!("{}: {reason}", prim.path)),
+                Err(reason) => {
+                    self.tallies
+                        .rejected_breps
+                        .push(format!("{}: {reason}", prim.path));
+                    self.tallies.given_up.push(GivenUpRecord::new(
+                        crate::ids::body(&body_key),
+                        format_args!("{}: {reason}", UsdLossCode::BrepRejected.kind()),
+                    ));
+                }
             }
         }
         self.brep_subsets(prim, key, &decoded.faces, &keys)?;
@@ -1151,8 +1179,17 @@ impl super::Builder<'_, '_, '_, '_> {
         ordinal: usize,
         body: &cadmpeg_ir::ids::BodyId,
     ) -> Result<(), cadmpeg_core::CodecError> {
+        let tessellation_key = if ordinal == 0 {
+            key.to_owned()
+        } else {
+            format!("{key}/{}", prim.name)
+        };
         let Some(mesh) = crate::schema::mesh::read(self.stage, prim, &mut self.issues) else {
             self.tallies.rejected_meshes.push(prim.path.clone());
+            self.tallies.given_up.push(GivenUpRecord::new(
+                crate::ids::tessellation(&tessellation_key),
+                UsdLossCode::MeshRejected.kind(),
+            ));
             return Ok(());
         };
         self.ctx.retain_bytes(
@@ -1162,17 +1199,16 @@ impl super::Builder<'_, '_, '_, '_> {
             ),
             super::RETAIN_MESH,
         )?;
-        let tessellation_key = if ordinal == 0 {
-            key.to_owned()
-        } else {
-            format!("{key}/{}", prim.name)
-        };
         let tessellation = match self.tessellation(&tessellation_key, &mesh) {
             Ok(tessellation) => tessellation,
             Err(reason) => {
                 self.tallies
                     .rejected_meshes
                     .push(format!("{}: {reason}", prim.path));
+                self.tallies.given_up.push(GivenUpRecord::new(
+                    crate::ids::tessellation(&tessellation_key),
+                    format_args!("{}: {reason}", UsdLossCode::MeshRejected.kind()),
+                ));
                 return Ok(());
             }
         };
@@ -1216,10 +1252,23 @@ impl super::Builder<'_, '_, '_, '_> {
             unstated,
         } = imported;
         let geometry = &mut self.ir.geometry;
-        geometry.points.extend(points);
-        geometry.vertices.extend(vertices);
+        // A construction that does not attach gives the body up, so none of
+        // its records may stay.
+        let kept = (
+            geometry.curves.len(),
+            geometry.surfaces.len(),
+            geometry.procedural_surfaces.len(),
+        );
         geometry.curves.extend(curves);
         geometry.surfaces.extend(surfaces);
+        if let Err(error) = geometry.add_procedural_surfaces(constructions)? {
+            geometry.curves.truncate(kept.0);
+            geometry.surfaces.truncate(kept.1);
+            geometry.procedural_surfaces.truncate(kept.2);
+            return Ok(Err(error.to_string()));
+        }
+        geometry.points.extend(points);
+        geometry.vertices.extend(vertices);
         geometry.pcurves.extend(pcurves);
         geometry.edges.extend(edges);
         geometry.coedges.extend(coedges);
@@ -1227,9 +1276,6 @@ impl super::Builder<'_, '_, '_, '_> {
         geometry.faces.extend(faces);
         geometry.shells.extend(shells);
         geometry.regions.extend(regions);
-        if let Err(error) = geometry.add_procedural_surfaces(constructions)? {
-            return Ok(Err(error.to_string()));
-        }
         self.tallies.unstated_boundaries.extend(
             unstated
                 .into_iter()

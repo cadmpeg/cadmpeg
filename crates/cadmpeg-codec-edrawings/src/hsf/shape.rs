@@ -131,9 +131,9 @@ fn resolve<'a>(scene: &Scene<'a>, id: u32) -> Result<(Shell<'a>, Option<[f32; 12
     let mut current = id;
     let mut affine: Option<[f32; 12]> = None;
     for _ in 0..MAX_INSTANCE_CHAIN {
-        match scene.objects.get(&current) {
+        match scene.objects.get(&current).map(|stored| stored.object) {
             None => return Err(ShellError::Missing),
-            Some(Object::Shell(shell)) => return Ok((*shell, affine)),
+            Some(Object::Shell(shell)) => return Ok((shell, affine)),
             Some(Object::Instance(instance)) => {
                 if affine.is_some() {
                     // A chained instance would need a composed affine; the

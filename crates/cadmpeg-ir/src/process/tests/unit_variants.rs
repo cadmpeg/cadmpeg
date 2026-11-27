@@ -7,9 +7,10 @@ use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use cadmpeg_core::json;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 use syn::{Fields, Item};
 
 use super::read_desktop;

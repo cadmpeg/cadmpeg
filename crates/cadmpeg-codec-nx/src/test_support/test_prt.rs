@@ -155,6 +155,12 @@ pub(crate) fn prt_with_arrangements() -> Vec<u8> {
 }
 
 pub(crate) fn prt_with_arrangement_attribute(active_name: Option<&str>) -> Vec<u8> {
+    prt_with_arrangements_over(active_name, &topology_partition_stream())
+}
+
+/// A part with two arrangements, `active_name` the active one, over the
+/// partition `stream`.
+pub(crate) fn prt_with_arrangements_over(active_name: Option<&str>, stream: &[u8]) -> Vec<u8> {
     let mut arrangements = br#"<Arrangements><Arrangement Default="YES" Name="Model"/><Arrangement Default="NO" Name="Exploded"/></Arrangements>"#.to_vec();
     arrangements.push(0);
     let mut attributes = match active_name {
@@ -166,10 +172,7 @@ pub(crate) fn prt_with_arrangement_attribute(active_name: Option<&str>) -> Vec<u
     };
     attributes.push(0);
     prt_with_named_payloads(&[
-        (
-            "/Root/UG_PART/UG_PART",
-            zlib_compress(&topology_partition_stream()),
-        ),
+        ("/Root/UG_PART/UG_PART", zlib_compress(stream)),
         ("/Root/part/arrangements", arrangements),
         ("/Root/part/attrs", attributes),
     ])
@@ -359,6 +362,30 @@ pub(crate) fn prt_with_two_bodies_and_rmfastload() -> Vec<u8> {
     let mut rm_payload = b"UGS::Solid::Topol".to_vec();
     append_rmfastload_table(&mut rm_payload, 1_000..1_050);
 
+    prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", part_payload),
+        ("/Root/FastLoad/RMFastLoad", rm_payload),
+    ])
+}
+
+/// Two partition streams whose bodies store `res_linear` (metres) `first` and
+/// `second`, and an `RMFastLoad` table that selects the body of the first.
+pub(crate) fn prt_with_rmfastload_over_resolutions(first: f64, second: f64) -> Vec<u8> {
+    let description = ": TRANSMIT FILE (partition) created by modeller";
+    let mut part_payload = zlib_compress(&super::test_streams::primary_stopped_stream(
+        &many_face_partition_stream(1_000),
+        description,
+        1_100,
+        first,
+    ));
+    part_payload.extend(zlib_compress(&super::test_streams::primary_stopped_stream(
+        &many_face_partition_stream(2_000),
+        description,
+        2_100,
+        second,
+    )));
+    let mut rm_payload = b"UGS::Solid::Topol".to_vec();
+    append_rmfastload_table(&mut rm_payload, 1_000..1_050);
     prt_with_named_payloads(&[
         ("/Root/UG_PART/UG_PART", part_payload),
         ("/Root/FastLoad/RMFastLoad", rm_payload),

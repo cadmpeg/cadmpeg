@@ -91,8 +91,16 @@ impl ShellRanks {
     }
 }
 
+#[cfg(test)]
 pub(super) fn historical_topology(
     brep: &cadmpeg_asm::brep::AsmBrep,
+) -> Result<Option<AsmHistoricalTopology>, cadmpeg_core::CodecError> {
+    historical_topology_with_senses(brep, None)
+}
+
+pub(super) fn historical_topology_with_senses(
+    brep: &cadmpeg_asm::brep::AsmBrep,
+    senses: Option<&mut super::chamfer_supports::StreamChamferSenses>,
 ) -> Result<Option<AsmHistoricalTopology>, cadmpeg_core::CodecError> {
     macro_rules! topology_some {
         ($value:expr) => {
@@ -126,7 +134,9 @@ pub(super) fn historical_topology(
         Some(collected)
     }
 
-    super::chamfer_supports::note(brep);
+    if let Some(senses) = senses {
+        super::chamfer_supports::note(brep, senses);
+    }
     let mut surface_radii = brep
         .surfaces
         .iter()
@@ -484,6 +494,7 @@ pub(super) fn historical_topology(
             })
             .collect::<Option<Vec<_>>>()),
         edge_samples: super::edge_samples::historical_edge_samples(brep)?,
+        face_samples: super::face_samples::historical_face_samples(brep),
         body_design_links: last_body_design_links(&body_design_links(brep)?),
     };
     // Transitions diff each family in key order. The decoder appends the
@@ -506,10 +517,18 @@ pub(super) fn historical_topology(
     Ok(Some(topology))
 }
 
+#[cfg(test)]
 pub(crate) fn historical_topology_with_tags(
     brep: &crate::brep::Brep,
 ) -> Result<Option<AsmHistoricalTopology>, cadmpeg_core::CodecError> {
-    let Some(mut topology) = historical_topology(&brep.asm)? else {
+    historical_topology_with_tags_and_senses(brep, None)
+}
+
+pub(super) fn historical_topology_with_tags_and_senses(
+    brep: &crate::brep::Brep,
+    senses: Option<&mut super::chamfer_supports::StreamChamferSenses>,
+) -> Result<Option<AsmHistoricalTopology>, cadmpeg_core::CodecError> {
+    let Some(mut topology) = historical_topology_with_senses(&brep.asm, senses)? else {
         return Ok(None);
     };
     for tag in &brep.persistent_subentity_tags {

@@ -396,20 +396,61 @@ pub(crate) fn expand_deferred_edge_port_components(
     true
 }
 
+/// Per-spine cache of the standard trim-mesh analysis and edge ports so
+/// multiple solver and topology stages reuse one parse per spine.
+pub(crate) struct StandardMeshCache {
+    analysis: std::cell::OnceCell<Option<Arc<StandardMeshAnalysis>>>,
+    edge_ports: std::cell::OnceCell<Option<Vec<[u32; 2]>>>,
+}
+
+impl StandardMeshCache {
+    pub(crate) fn new() -> Self {
+        Self {
+            analysis: std::cell::OnceCell::new(),
+            edge_ports: std::cell::OnceCell::new(),
+        }
+    }
+
+    fn analysis(
+        &self,
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+    ) -> Result<Option<&Arc<StandardMeshAnalysis>>, CodecError> {
+        if let Some(cached) = self.analysis.get() {
+            return Ok(cached.as_ref());
+        }
+        let computed = standard_mesh_analysis(ctx, bytes)?.map(Arc::new);
+        Ok(self.analysis.get_or_init(|| computed).as_ref())
+    }
+
+    pub(crate) fn edge_ports(
+        &self,
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+    ) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
+        if let Some(cached) = self.edge_ports.get() {
+            return Ok(cached.clone());
+        }
+        let computed = match self.analysis(ctx, bytes)? {
+            Some(analysis) => match global_edge_port_identities(ctx, bytes)? {
+                Some(local_ports) => mesh_edge_ports(analysis, &local_ports)?,
+                None => None,
+            },
+            None => None,
+        };
+        Ok(self.edge_ports.get_or_init(|| computed).clone())
+    }
+}
+
 /// Collapse physical edge endpoints through every exact trim-mesh occurrence.
 /// The returned component identifiers are compact and stable within this
 /// result; they are not coordinate-row indices.
+#[cfg(test)]
 pub(crate) fn standard_mesh_edge_ports(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<Vec<[u32; 2]>>, CodecError> {
-    let Some(analysis) = standard_mesh_analysis(ctx, bytes)? else {
-        return Ok(None);
-    };
-    let Some(local_ports) = global_edge_port_identities(ctx, bytes)? else {
-        return Ok(None);
-    };
-    mesh_edge_ports(&analysis, &local_ports)
+    StandardMeshCache::new().edge_ports(ctx, bytes)
 }
 
 fn mesh_edge_ports(
@@ -1530,19 +1571,36 @@ impl StandardMeshBoundaryContext {
         bytes: &[u8],
         edge_faces: &[[usize; 2]],
     ) -> Result<Option<Self>, CodecError> {
-        Self::parse_ports(ctx, bytes, edge_faces, false)
+        Self::parse_ports_with_cache(ctx, bytes, edge_faces, false, None)
     }
 
-    pub(super) fn parse_ports(
+    fn parse_with_cache(
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+        edge_faces: &[[usize; 2]],
+        cache: Option<&StandardMeshCache>,
+    ) -> Result<Option<Self>, CodecError> {
+        Self::parse_ports_with_cache(ctx, bytes, edge_faces, false, cache)
+    }
+
+    pub(super) fn parse_ports_with_cache(
         ctx: &DecodeContext<'_>,
         bytes: &[u8],
         edge_faces: &[[usize; 2]],
         global_handle_ports: bool,
+        cache: Option<&StandardMeshCache>,
     ) -> Result<Option<Self>, CodecError> {
-        let Some(analysis) = standard_mesh_analysis(ctx, bytes)? else {
-            return Ok(None);
+        let analysis = if let Some(cache) = cache {
+            let Some(analysis) = cache.analysis(ctx, bytes)? else {
+                return Ok(None);
+            };
+            Arc::clone(analysis)
+        } else {
+            let Some(analysis) = standard_mesh_analysis(ctx, bytes)? else {
+                return Ok(None);
+            };
+            Arc::new(analysis)
         };
-        let analysis = Arc::new(analysis);
         if analysis.edge_rows.len() != edge_faces.len() {
             return Ok(None);
         }
@@ -2840,6 +2898,7 @@ fn standard_mesh_missing_edge_assignment_domains(
     Ok(Some((assignment_results, (edge_runs).clone())))
 }
 
+#[cfg(test)]
 fn standard_mesh_missing_edge_assignments(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -2847,7 +2906,27 @@ fn standard_mesh_missing_edge_assignments(
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
     canonicalize_spans: bool,
 ) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementCandidate>>>>, CodecError> {
-    let Some(context) = StandardMeshBoundaryContext::parse(ctx, bytes, edge_faces)? else {
+    standard_mesh_missing_edge_assignments_with_cache(
+        ctx,
+        bytes,
+        edge_faces,
+        edge_candidates,
+        canonicalize_spans,
+        None,
+    )
+}
+
+fn standard_mesh_missing_edge_assignments_with_cache(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+    edge_candidates: Option<&[Vec<[usize; 2]>]>,
+    canonicalize_spans: bool,
+    cache: Option<&StandardMeshCache>,
+) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementCandidate>>>>, CodecError> {
+    let Some(context) =
+        StandardMeshBoundaryContext::parse_with_cache(ctx, bytes, edge_faces, cache)?
+    else {
         return Ok(None);
     };
     let Some((domains, _)) = standard_mesh_missing_edge_assignment_domains(
@@ -3389,9 +3468,18 @@ fn standard_mesh_assignment_corner_points(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
+    cache: Option<&StandardMeshCache>,
 ) -> Result<Option<MeshAssignmentCorners>, CodecError> {
+    let local_cache;
+    let cache = match cache {
+        Some(cache) => cache,
+        None => {
+            local_cache = StandardMeshCache::new();
+            &local_cache
+        }
+    };
     (|| -> Option<Result<_, CodecError>> {
-        let analysis = match standard_mesh_analysis(ctx, bytes) {
+        let analysis = match cache.analysis(ctx, bytes) {
             Ok(Some(analysis)) => analysis,
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
@@ -3400,13 +3488,19 @@ fn standard_mesh_assignment_corner_points(
         if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
             return None;
         }
-        let runs = mesh_edge_runs(&analysis);
-        let assignments =
-            match standard_mesh_missing_edge_assignments(ctx, bytes, edge_faces, None, true) {
-                Ok(Some(assignments)) => assignments,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+        let runs = mesh_edge_runs(analysis);
+        let assignments = match standard_mesh_missing_edge_assignments_with_cache(
+            ctx,
+            bytes,
+            edge_faces,
+            None,
+            true,
+            Some(cache),
+        ) {
+            Ok(Some(assignments)) => assignments,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let mut cycle_lengths = Vec::new();
         for cycles in &analysis.cycles {
             let mut lengths = Vec::new();
@@ -3486,17 +3580,34 @@ fn standard_mesh_assignment_corner_points(
 /// Retain endpoint constraints on each placement inside each complete face
 /// assignment. Assignment and placement order are unchanged from the serialized
 /// face and edge order.
+#[cfg(test)]
 fn standard_mesh_missing_edge_endpoint_assignments(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
 ) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementEndpointCandidate>>>>, CodecError> {
+    standard_mesh_missing_edge_endpoint_assignments_with_cache(
+        ctx,
+        bytes,
+        edge_faces,
+        edge_points,
+        None,
+    )
+}
+
+fn standard_mesh_missing_edge_endpoint_assignments_with_cache(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+    edge_points: &[Option<[usize; 2]>],
+    cache: Option<&StandardMeshCache>,
+) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementEndpointCandidate>>>>, CodecError> {
     let Some(MeshAssignmentCorners {
         assignments,
         corner_points,
         cycle_lengths,
-    }) = standard_mesh_assignment_corner_points(ctx, bytes, edge_faces, edge_points)?
+    }) = standard_mesh_assignment_corner_points(ctx, bytes, edge_faces, edge_points, cache)?
     else {
         return Ok(None);
     };
@@ -3547,17 +3658,58 @@ fn standard_mesh_missing_edge_endpoint_assignments(
 /// Enforce resolved edge endpoint pairs and complete opposite-face placement
 /// domains across correlated face assignments. A face assignment is removed as
 /// a unit when any of its placements has no compatible endpoint pair.
+#[cfg(test)]
 fn standard_mesh_pruned_missing_edge_endpoint_assignments(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
 ) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementEndpointCandidate>>>>, CodecError> {
-    let Some(mut faces) =
-        standard_mesh_missing_edge_endpoint_assignments(ctx, bytes, edge_faces, edge_points)?
+    standard_mesh_pruned_missing_edge_endpoint_assignments_with_cache(
+        ctx,
+        bytes,
+        edge_faces,
+        edge_points,
+        None,
+    )
+}
+
+fn standard_mesh_pruned_missing_edge_endpoint_assignments_with_cache(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+    edge_points: &[Option<[usize; 2]>],
+    cache: Option<&StandardMeshCache>,
+) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementEndpointCandidate>>>>, CodecError> {
+    let Some(mut faces) = standard_mesh_missing_edge_endpoint_assignments_with_cache(
+        ctx,
+        bytes,
+        edge_faces,
+        edge_points,
+        cache,
+    )?
     else {
         return Ok(None);
     };
+    let mut face_edges = ctx.alloc_filled(faces.len(), Vec::new(), "catia_pruned_face_edges")?;
+    for (edge, incident) in edge_faces.iter().enumerate() {
+        if incident[0] < faces.len() {
+            face_edges[incident[0]].push(edge);
+        }
+        if incident[1] != incident[0] && incident[1] < faces.len() {
+            face_edges[incident[1]].push(edge);
+        }
+    }
+    let face_edge_slots: Vec<HashMap<usize, usize>> = face_edges
+        .iter()
+        .map(|edges| {
+            edges
+                .iter()
+                .enumerate()
+                .map(|(slot, &edge)| (edge, slot))
+                .collect()
+        })
+        .collect();
     loop {
         let before = (
             faces.iter().map(Vec::len).sum::<usize>(),
@@ -3570,26 +3722,31 @@ fn standard_mesh_pruned_missing_edge_endpoint_assignments(
         );
         let mut face_domains = HashMap::<(usize, usize), Option<HashSet<[usize; 2]>>>::new();
         for (face, assignments) in faces.iter().enumerate() {
-            for edge in edge_faces
-                .iter()
-                .enumerate()
-                .filter_map(|(edge, incident)| incident.contains(&face).then_some(edge))
-            {
-                let mut domain = HashSet::new();
-                let mut complete = true;
-                for assignment in assignments {
-                    let Some(pairs) = assignment
-                        .iter()
-                        .find(|candidate| candidate.placement.edge == edge)
-                        .and_then(|candidate| candidate.endpoint_pairs.as_ref())
-                    else {
-                        complete = false;
-                        break;
+            let edges = &face_edges[face];
+            let slots = &face_edge_slots[face];
+            let mut domains = vec![HashSet::new(); edges.len()];
+            let mut matched_counts = vec![0usize; edges.len()];
+            let mut seen_assignment = vec![usize::MAX; edges.len()];
+            for (assignment_index, assignment) in assignments.iter().enumerate() {
+                for candidate in assignment {
+                    let Some(&slot) = slots.get(&candidate.placement.edge) else {
+                        continue;
                     };
-                    for &pair in pairs {
-                        domain.insert(pair);
+                    if seen_assignment[slot] == assignment_index {
+                        continue;
+                    }
+                    seen_assignment[slot] = assignment_index;
+                    if let Some(pairs) = candidate.endpoint_pairs.as_ref() {
+                        matched_counts[slot] += 1;
+                        for &pair in pairs {
+                            domains[slot].insert(pair);
+                        }
                     }
                 }
+            }
+            let assignment_count = assignments.len();
+            for (slot, (&edge, domain)) in edges.iter().zip(domains).enumerate() {
+                let complete = matched_counts[slot] == assignment_count;
                 face_domains.insert((face, edge), complete.then_some(domain));
             }
         }
@@ -3650,11 +3807,28 @@ fn standard_mesh_pruned_missing_edge_endpoint_assignments(
 /// corners are both bound by exact matched edge runs. Input pairs are physical
 /// edge-row ordered; pair orientation is ignored in the returned domains
 /// because a missing placement has not yet selected its traversal direction.
+#[cfg(test)]
 pub(crate) fn standard_mesh_placement_endpoint_pairs(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
+) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError> {
+    standard_mesh_placement_endpoint_pairs_with_cache(
+        ctx,
+        bytes,
+        edge_faces,
+        edge_points,
+        &StandardMeshCache::new(),
+    )
+}
+
+pub(crate) fn standard_mesh_placement_endpoint_pairs_with_cache(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+    edge_points: &[Option<[usize; 2]>],
+    cache: &StandardMeshCache,
 ) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError> {
     let Some(edge_rows) = standard_edge_rows(ctx, bytes)? else {
         return Ok(None);
@@ -3662,11 +3836,12 @@ pub(crate) fn standard_mesh_placement_endpoint_pairs(
     if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
         return Ok(None);
     }
-    let Some(assignments) = standard_mesh_pruned_missing_edge_endpoint_assignments(
+    let Some(assignments) = standard_mesh_pruned_missing_edge_endpoint_assignments_with_cache(
         ctx,
         bytes,
         edge_faces,
         edge_points,
+        Some(cache),
     )?
     else {
         return Ok(None);
@@ -3692,17 +3867,14 @@ pub(crate) fn standard_mesh_placement_endpoint_pairs(
             placement_counts[edge] += 1;
             if let Some(pairs) = candidate.endpoint_pairs {
                 bound_counts[edge] += 1;
-                for pair in pairs {
-                    if !domains[edge].contains(&pair) {
-                        domains[edge].push(pair);
-                    }
-                }
+                domains[edge].extend(pairs);
             }
         }
     }
     for (edge, domain) in domains.iter_mut().enumerate() {
         if bound_counts[edge] == placement_counts[edge] {
             domain.sort_unstable_by(Ord::cmp);
+            domain.dedup();
         } else {
             domain.clear();
         }

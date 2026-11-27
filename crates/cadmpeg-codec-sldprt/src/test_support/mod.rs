@@ -8,7 +8,8 @@ use std::io::Write;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::EncodeError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-use cadmpeg_ir::{report::export::WritePath, CadIr, SourceFidelity};
+use cadmpeg_ir::report::export::WritePath;
+use cadmpeg_ir::{CadIr, SourceFidelity};
 
 use crate::SldprtCodec;
 
@@ -22,30 +23,37 @@ struct SessionWrite<'s, 'f> {
 impl cadmpeg_ir::codec::write::EncoderBackend for SessionWrite<'_, '_> {
     const FORMAT: cadmpeg_ir::codec::FormatId =
         <SldprtCodec as cadmpeg_ir::codec::write::EncoderBackend>::FORMAT;
+    const NAME: &'static str = <SldprtCodec as cadmpeg_ir::codec::write::EncoderBackend>::NAME;
     const REQUEST: cadmpeg_core::decode::DecodeDepth =
         <SldprtCodec as cadmpeg_ir::codec::write::EncoderBackend>::REQUEST;
+    const REUSES_SOURCE: bool =
+        <SldprtCodec as cadmpeg_ir::codec::write::EncoderBackend>::REUSES_SOURCE;
+    const DEFINITION_PER_FILE: bool =
+        <SldprtCodec as cadmpeg_ir::codec::write::EncoderBackend>::DEFINITION_PER_FILE;
     type Target = cadmpeg_ir::codec::write::target::Catalog;
     const TARGET: cadmpeg_ir::codec::write::target::Catalog =
         <SldprtCodec as cadmpeg_ir::codec::write::EncoderBackend>::TARGET;
 
     fn plan_resolved(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
     ) -> Result<cadmpeg_ir::codec::write::ExportBody, CodecError> {
-        let (body, read_back) = crate::writer::target::plan(input, &target, self.session)?;
+        let (body, read_back) = crate::writer::target::plan(ctx, input, &target, self.session)?;
         self.read_back.set(read_back);
         Ok(body)
     }
 
     fn restore(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: &cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
         notes: &mut Vec<String>,
         losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     ) -> Result<Option<CadIr>, CodecError> {
-        crate::writer::saved::restore(input, target, notes, losses)
+        crate::writer::saved::restore(ctx, input, target, notes, losses)
     }
 }
 
@@ -66,7 +74,7 @@ pub(crate) fn plan_in_session(
         session,
         read_back: std::cell::Cell::new(None),
     };
-    let plan = write.plan(input, TargetRequest::Unnamed)?;
+    let plan = write.plan(input)?;
     Ok((plan, write.read_back.into_inner()))
 }
 
@@ -77,20 +85,19 @@ pub(crate) fn plan_inherited_write(
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
 ) -> Result<WritePath, cadmpeg_ir::codec::write::EncodeError> {
-    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Unnamed)?;
+    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)))?;
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
 /// Plans a write that names no target and whose patch path declines the
 /// edited document:
 /// the writer synthesizes it without its `SolidWorks` history (§3.4, Paths).
-/// Checks that the output decodes, and returns the
-/// `export:native.records-omitted` message, which states why the patch
-/// declined.
+/// Checks that the output decodes, and returns the synthesis cause the
+/// report states, which says why the patch declined.
 pub(crate) fn plan_inherited_write_declined(ir: &CadIr, fidelity: &SourceFidelity) -> String {
     let mut output = Vec::new();
     let report = SldprtCodec
-        .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, Some(fidelity)))
         .unwrap()
         .write_to(&mut output)
         .unwrap();
@@ -120,16 +127,12 @@ fn declined(report: &cadmpeg_ir::report::export::ExportReport, output: Vec<u8>) 
         report.write_path()
     );
     decode_bytes(output);
-    report
-        .losses
-        .iter()
-        .find(|loss| {
-            loss.code.local_code() == "native.records-omitted"
-                && loss.message.contains("because the patch of the document")
-        })
-        .unwrap_or_else(|| panic!("{:?}", report.losses))
-        .message
-        .clone()
+    let Some(cadmpeg_ir::report::export::SynthesisCause::PatchDeclined { reason }) =
+        report.synthesis_cause()
+    else {
+        panic!("the write states no synthesis cause: {:?}", report.losses)
+    };
+    reason.clone()
 }
 
 /// The messages of a write's unwritten-attribute losses, by code.
@@ -187,7 +190,7 @@ pub(crate) fn write_with_unwritten_attributes(
     ir: &CadIr,
     fidelity: &SourceFidelity,
 ) -> Result<(Vec<u8>, UnwrittenLosses), cadmpeg_ir::codec::write::EncodeError> {
-    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Unnamed)?;
+    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)))?;
     let losses = UnwrittenLosses::of(&plan.report().losses);
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes)?;
@@ -200,7 +203,7 @@ pub(crate) fn plan_fixture_with_native_envelope(
     request: TargetRequest<'_>,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, EncodeError> {
     let (ir, fidelity) = fixture_native_envelope_context(input).map_err(EncodeError::Backend)?;
-    SldprtCodec.plan(EncodeInput::new(&ir, Some(&fidelity)), request)
+    SldprtCodec.plan(EncodeInput::new(&ir, Some(&fidelity)).with_target(request))
 }
 
 fn fixture_native_envelope_context(
@@ -337,7 +340,11 @@ fn write_without_stale_solid(
     );
     let written = read_back.unwrap_or_else(|| {
         std::sync::Arc::new(
-            crate::decode::decode_for_read_back(&output).expect("the written part decodes"),
+            crate::decode::decode_for_read_back(
+                &output,
+                cadmpeg_core::decode::ResourceLimits::desktop(),
+            )
+            .expect("the written part decodes"),
         )
     });
     (report, written, fidelity)
@@ -455,10 +462,7 @@ pub(crate) fn write_history_over_stale_solid(
     let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))
         .map_err(cadmpeg_ir::codec::write::EncodeError::Backend)?;
     let report = SldprtCodec
-        .plan(
-            EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Unnamed,
-        )?
+        .plan(EncodeInput::new(&ir, Some(&fidelity)))?
         .write_to(writer)?;
     assert!(
         report
@@ -471,22 +475,34 @@ pub(crate) fn write_history_over_stale_solid(
     Ok(report)
 }
 
-/// Runs the semantic writer over an authored native envelope and returns what
-/// it reports.
+/// Runs the semantic writer over an authored native envelope in a write
+/// session under `limits` and returns what it reports.
 pub(crate) fn write_in_native_envelope(
     ir: &CadIr,
     fidelity: &SourceFidelity,
+    limits: cadmpeg_core::decode::ResourceLimits,
     writer: &mut dyn Write,
 ) -> Result<crate::writer::SemanticOutput, CodecError> {
     let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))?;
     let records = crate::source_records(&ir, &fidelity)?;
-    crate::writer::write_semantic_with_records(
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy { limits };
+    let ctx = cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &policy,
+        cadmpeg_core::decode::DecodeDepth::Full,
+    );
+    crate::writer::write_semantic_with_records_cached(
         &ir,
         &fidelity.annotations,
         &fidelity.codec_digests,
         &records,
-        &[],
-        &[],
+        crate::writer::SemanticWriteControls {
+            withheld: &[],
+            shaped: &[],
+            ctx: &ctx,
+        },
+        &mut crate::writer::SemanticWriteCache::default(),
         writer,
     )
 }

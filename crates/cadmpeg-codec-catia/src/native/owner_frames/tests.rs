@@ -160,15 +160,15 @@ fn owner_wire_refuses_frame_field_and_logical_incidence_mutations() {
     ] {
         let mut invalid = valid.clone();
         match field {
-            "value" => invalid["payload"]["references"][0] = serde_json::json!(0),
+            "value" => invalid["payload"]["references"][0] = cadmpeg_core::json!(0),
             "encoding" => {
-                invalid["payload"]["reference_encodings"][0] = serde_json::json!("owned_child");
+                invalid["payload"]["reference_encodings"][0] = cadmpeg_core::json!("owned_child");
             }
-            "tail" => invalid["payload"]["tail"] = serde_json::json!("01"),
-            "node-target" => invalid["face_node"]["target"] = serde_json::json!(0),
-            "node-offset" => invalid["face_node"]["source_offset"] = serde_json::json!(1),
-            "owner-offset" => invalid["source_offset"] = serde_json::json!(0),
-            "frame" => invalid["frame"]["payload"] = serde_json::json!(""),
+            "tail" => invalid["payload"]["tail"] = cadmpeg_core::json!("01"),
+            "node-target" => invalid["face_node"]["target"] = cadmpeg_core::json!(0),
+            "node-offset" => invalid["face_node"]["source_offset"] = cadmpeg_core::json!(1),
+            "owner-offset" => invalid["source_offset"] = cadmpeg_core::json!(0),
+            "frame" => invalid["frame"]["payload"] = cadmpeg_core::json!(""),
             _ => unreachable!("known mutation"),
         }
         assert!(
@@ -243,7 +243,7 @@ fn counted_numeric_bounds_round_trip_and_reject_changed_projection() {
         *packet
     );
     let mut invalid = wire.clone();
-    invalid["payload"]["numeric_bounds"]["upper"][0] = serde_json::json!(1.0);
+    invalid["payload"]["numeric_bounds"]["upper"][0] = cadmpeg_core::json!(1.0);
     assert!(json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(invalid).is_err());
     let mut absent = wire;
     absent["payload"]

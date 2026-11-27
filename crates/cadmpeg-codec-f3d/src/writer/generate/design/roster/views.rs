@@ -5,10 +5,12 @@
 //! "`AssetSettings`", "Lighting environment").
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::up_axis::UpAxis;
 
 use super::super::frames::{Bind, DesignRecords};
 use super::values::BodyBox;
 use super::{Context, ASSET_SETTINGS, LIGHTING, NAMED_VIEWS, ZERO_RECORD};
+use crate::design::decode::up_axis::{stored_pair, Z_UP_PAIR};
 use crate::layout;
 
 /// The extents of the `TOP`, `FRONT` and `RIGHT` cameras.
@@ -24,10 +26,20 @@ const EYE_DISTANCE: f64 = 2.5;
 const RADIUS_MARGIN: f64 = 1.0023;
 /// The scene scale `AssetSettings` stores.
 const SCENE_SCALE: [f64; 3] = [1.8; 3];
-/// The front direction `AssetSettings` stores twice.
-const FRONT: [f64; 3] = [0.0, 1.0, 0.0];
-/// The up direction of the `FRONT`, `RIGHT` and `HOME` cameras.
-const UP: [f64; 3] = [0.0, 0.0, 1.0];
+/// The front direction of the Z-up form, stored in `AssetSettings` twice.
+const FRONT: [f64; 3] = Z_UP_PAIR.0;
+/// The up direction of the `FRONT`, `RIGHT` and `HOME` cameras of the Z-up form.
+const UP: [f64; 3] = Z_UP_PAIR.1;
+
+/// `v`, a Z-up direction or offset, as the document of `axis` stores it: the
+/// Y-up form is the Z-up form turned by -90 degrees about X,
+/// `(x, y, z) -> (x, z, -y)`.
+fn oriented(axis: Option<UpAxis>, v: [f64; 3]) -> [f64; 3] {
+    match axis {
+        Some(UpAxis::Y) => [v[0], v[2], 0.0 - v[1]],
+        Some(UpAxis::Z) | None => v,
+    }
+}
 /// The box a design with no measured body box is fitted to.
 const UNIT_BOX: BodyBox = BodyBox {
     min: [0.0; 3],
@@ -45,12 +57,12 @@ pub(super) struct View {
 impl View {
     /// The `HOME` view of `fitted`: its centre seen along `(1, -1, 1)` with
     /// up `(0, 0, 1)`, the extents fitting its projection.
-    pub(super) fn home(fitted: &BodyBox) -> Self {
+    pub(super) fn home(fitted: &BodyBox, axis: Option<UpAxis>) -> Self {
         let sqrt3 = 3f64.sqrt();
-        let normal = [1.0 / sqrt3, -1.0 / sqrt3, 1.0 / sqrt3];
+        let normal = oriented(axis, [1.0 / sqrt3, -1.0 / sqrt3, 1.0 / sqrt3]);
         let sqrt6 = 6f64.sqrt();
-        let up = [-1.0 / sqrt6, 1.0 / sqrt6, 2.0 / sqrt6];
-        let right = [1.0 / 2f64.sqrt(), 1.0 / 2f64.sqrt(), 0.0];
+        let up = oriented(axis, [-1.0 / sqrt6, 1.0 / sqrt6, 2.0 / sqrt6]);
+        let right = oriented(axis, [1.0 / 2f64.sqrt(), 1.0 / 2f64.sqrt(), 0.0]);
         let corners = (0..8).map(|corner: u8| {
             [0, 1, 2].map(|axis| {
                 if (corner >> axis) & 1 == 0 {
@@ -76,7 +88,7 @@ impl View {
             extents,
             eye: [0, 1, 2].map(|axis| target[axis] + distance * normal[axis]),
             target,
-            up: UP,
+            up: oriented(axis, UP),
         }
     }
 }
@@ -97,12 +109,13 @@ pub(super) fn fitted_box(ctx: &Context<'_>) -> Option<BodyBox> {
 
 pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), CodecError> {
     let fitted = fitted_box(ctx).unwrap_or(UNIT_BOX);
-    let home = View::home(&fitted);
+    let axis = ctx.values.up_axis;
+    let home = View::home(&fitted, axis);
     let fixed = |target: [f64; 3], up: [f64; 3]| View {
         extents: [FIXED_EXTENT; 2],
         eye: [0.0; 3],
-        target,
-        up,
+        target: oriented(axis, target),
+        up: oriented(axis, up),
     };
     let views = [
         ("TOP", fixed([-0.0, -0.0, -1.0], FRONT)),
@@ -183,6 +196,7 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Co
             (block + 68, Bind::F64s(&home.up)),
         ]
     };
+    let pair = stored_pair(ctx.values.up_axis);
     let mut binds = vec![(
         layout::base_feature_asset_settings::UNIT_SYSTEM,
         Bind::Ref(ctx.values.unit_system),
@@ -196,9 +210,12 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Co
     binds.extend([
         (
             layout::base_feature_asset_settings::FRONT_A,
-            Bind::F64s(&FRONT),
+            Bind::F64s(&pair.0),
         ),
-        (layout::base_feature_asset_settings::UP_A, Bind::F64s(&UP)),
+        (
+            layout::base_feature_asset_settings::UP_A,
+            Bind::F64s(&pair.1),
+        ),
         (
             layout::base_feature_asset_settings::NAMED_VIEWS,
             Bind::Ref(NAMED_VIEWS),
@@ -221,9 +238,12 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Co
         ),
         (
             layout::base_feature_asset_settings::FRONT_B,
-            Bind::F64s(&FRONT),
+            Bind::F64s(&pair.0),
         ),
-        (layout::base_feature_asset_settings::UP_B, Bind::F64s(&UP)),
+        (
+            layout::base_feature_asset_settings::UP_B,
+            Bind::F64s(&pair.1),
+        ),
         (
             layout::base_feature_asset_settings::RECORD_2,
             Bind::Ref(ZERO_RECORD),

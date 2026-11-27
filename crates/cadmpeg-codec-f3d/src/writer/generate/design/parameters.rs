@@ -43,7 +43,7 @@ use crate::records::parameters::{
     DesignParameterDiscriminator, DesignParameterDraft, DesignParameterSource,
 };
 use crate::writer::generate::presentation::GeneratedDesignRegistry;
-use crate::writer::generate::records::encode_document_parameters;
+use crate::writer::generate::records::{encode_document_parameters, ParameterRecords};
 use crate::writer::generate::reduce::named_loss;
 
 /// The parameter collection the native path's parameter tails name.
@@ -525,10 +525,10 @@ pub(in crate::writer::generate) fn plan(
 /// parameter that no scope parameter restates. It never refuses.
 pub(in crate::writer::generate) fn native_or_neutral(
     target: &CadIr,
-    native: &F3dNative,
-) -> Result<ParameterSource, CodecError> {
-    if target.model.parameters == native_projection(native)? {
-        return Ok(ParameterSource::Native);
+    projected: &[cadmpeg_ir::features::parameters::DesignParameter],
+) -> ParameterSource {
+    if target.model.parameters == projected {
+        return ParameterSource::Native;
     }
     let mut plan = super::root_scope(target).map_or_else(
         || ParameterPlan {
@@ -552,51 +552,43 @@ pub(in crate::writer::generate) fn native_or_neutral(
             .map(|row| row.id.to_string())
             .filter(|id| !restated.contains(id.as_str())),
     ));
-    Ok(ParameterSource::Neutral(plan))
+    ParameterSource::Neutral(plan)
 }
 
-/// The native records' parameters as the decoder projects them.
-fn native_projection(
+/// The native records' features and parameters as the decoder projects them.
+pub(in crate::writer::generate) fn native_projection(
+    decode_ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     native: &F3dNative,
-) -> Result<Vec<cadmpeg_ir::features::parameters::DesignParameter>, CodecError> {
-    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &decode_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    Ok(
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            &decode_ctx,
-            &crate::design::feature_project::ProjectInputs {
-                native: &native.design_parameters,
-                source_parameters: &native.design_parameters,
-                owners: &native.design_parameter_owners,
-                scopes: &native.design_parameter_scopes,
-                timelines: &native.design_feature_timelines,
-                construction_groups: &native.design_construction_operand_groups,
-                fillet_radius_groups: &native.design_fillet_radius_groups,
-                edge_operands: &native.design_edge_operands,
-                edge_identity_operands: &native.design_edge_identity_operands,
-                edge_treatment_vertex_operands: &native.design_edge_treatment_vertex_operands,
-                entity_selection_operands: &native.design_entity_selection_operands,
-                design_types: &native.design_types,
-                curve_identities: &native.sketch_curve_identities,
-                face_operands: &native.design_face_operands,
-                face_source_groups: &native.design_face_source_groups,
-                body_recipe_operands: &native.design_body_recipe_operands,
-                placements: &native.design_sketch_placements,
-                placement_constructions: &native.design_placement_constructions,
-                body_bindings: &native.design_body_bindings,
-                component_naming_spaces: &native.design_component_naming_spaces,
-                histories: &native.asm_histories,
-                face_boundaries: &native.asm_face_boundaries,
-                sheet_metal_settings: &native.design_sheet_metal_settings,
-                construction_recipes: &native.construction_recipes,
-                persistent_subentity_tags: &native.persistent_subentity_tags,
-            },
-        )?
-        .parameters,
+) -> Result<crate::design::feature_project::ProjectedParameterDesign, CodecError> {
+    crate::design::feature_project::project_parameter_design_with_edge_identities(
+        decode_ctx,
+        &crate::design::feature_project::ProjectInputs {
+            native: &native.design_parameters,
+            source_parameters: &native.design_parameters,
+            owners: &native.design_parameter_owners,
+            scopes: &native.design_parameter_scopes,
+            timelines: &native.design_feature_timelines,
+            construction_groups: &native.design_construction_operand_groups,
+            fillet_radius_groups: &native.design_fillet_radius_groups,
+            edge_operands: &native.design_edge_operands,
+            edge_identity_operands: &native.design_edge_identity_operands,
+            edge_treatment_vertex_operands: &native.design_edge_treatment_vertex_operands,
+            entity_selection_operands: &native.design_entity_selection_operands,
+            design_types: &native.design_types,
+            curve_identities: &native.sketch_curve_identities,
+            face_operands: &native.design_face_operands,
+            face_source_groups: &native.design_face_source_groups,
+            body_recipe_operands: &native.design_body_recipe_operands,
+            placements: &native.design_sketch_placements,
+            placement_constructions: &native.design_placement_constructions,
+            body_bindings: &native.design_body_bindings,
+            component_naming_spaces: &native.design_component_naming_spaces,
+            histories: &native.asm_histories,
+            face_boundaries: &native.asm_face_boundaries,
+            sheet_metal_settings: &native.design_sheet_metal_settings,
+            construction_recipes: &native.construction_recipes,
+            persistent_subentity_tags: &native.persistent_subentity_tags,
+        },
     )
 }
 
@@ -605,7 +597,7 @@ pub(in crate::writer::generate) fn encode(
     source: &ParameterSource,
     native: &F3dNative,
     registry: &mut GeneratedDesignRegistry,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<ParameterRecords, CodecError> {
     match source {
         ParameterSource::Native => {
             encode_document_parameters(&native.design_parameters, NATIVE_PARAMETER_COLLECTION)
@@ -618,6 +610,18 @@ pub(in crate::writer::generate) fn encode(
 }
 
 impl ParameterPlan {
+    /// The records and names assigned to source parameters in the new stream.
+    pub(in crate::writer::generate) fn destinations(
+        &self,
+        indices: &[u32],
+    ) -> super::super::configuration_table::DestinationParameters<'_> {
+        self.written
+            .iter()
+            .zip(indices)
+            .map(|(parameter, &index)| (parameter.source.clone(), (index, parameter.name.as_str())))
+            .collect()
+    }
+
     /// The record indices of the written parameters, allocated in
     /// `registry`, in written order.
     pub(in crate::writer::generate) fn allocate(
@@ -635,9 +639,9 @@ impl ParameterPlan {
         registry: &mut GeneratedDesignRegistry,
         indices: &[u32],
         collection: Option<u32>,
-    ) -> Result<Vec<u8>, CodecError> {
+    ) -> Result<ParameterRecords, CodecError> {
         if self.written.is_empty() {
-            return Ok(Vec::new());
+            return Ok(ParameterRecords::default());
         }
         let class_tag = registry.register(super::types::PARAMETER, indices)?;
         let collection = match collection {
@@ -679,7 +683,7 @@ impl ParameterPlan {
                 parameter.record(class_tag.clone(), record_index, ordinal, discriminator)?;
             out.primaries.push((record_index, out.bytes.len()));
             out.bytes
-                .extend(encode_document_parameters(&[record], collection)?);
+                .extend(encode_document_parameters(&[record], collection)?.bytes);
         }
         Ok(())
     }

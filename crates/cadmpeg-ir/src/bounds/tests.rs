@@ -2,8 +2,9 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::json;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::{
     read_json, text_depth, Bound, Measure, Measured, Outside, Place, DIGEST_WALK_DEPTH,
@@ -216,4 +217,50 @@ fn every_unstated_field_takes_its_value_in_the_empty_document() {
     );
     assert!(!ir.fragment);
     assert_eq!(ir.tolerances, crate::units::Tolerances::default());
+}
+
+#[test]
+fn slice_measure_and_text_depth_agree_with_byte_scan_across_chunk_splits() {
+    let ir = crate::examples::unit_cube_with_history_body().unwrap();
+    let mut doc = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
+    doc["design"]["parameters"] = json!([
+        {
+            "id": "escape\"\\test",
+            "expression": cadmpeg_core::serde_erase::json::to_value(negations(super::MAX_EXPRESSION_DEPTH + 1)).unwrap(),
+        }
+    ]);
+    doc["native"] = json!({
+        "test": {
+            "deep": [
+                {"id": "n0", "msg": "escaped\\\"quote\\\\end", "x": nest(MAX_DOCUMENT_DEPTH - 4)},
+                {"id": "n1", "msg": "plain", "x": nest(MAX_DOCUMENT_DEPTH - 5)}
+            ]
+        }
+    });
+    doc["source"] = nest(MAX_DOCUMENT_DEPTH);
+    let text = cadmpeg_core::serde_erase::json::to_string_pretty(&doc).unwrap();
+    let bytes = text.as_bytes();
+
+    // Reference one-byte-at-a-time text_depth using Scan::byte.
+    let mut ref_scan = super::Scan::default();
+    let mut ref_deepest = 0;
+    for &b in bytes {
+        ref_scan.byte(b);
+        ref_deepest = ref_deepest.max(ref_scan.depth);
+    }
+    assert_eq!(text_depth(&text), ref_deepest);
+
+    // Measure in a single write vs small chunk splits (1, 3, 7, 13 bytes).
+    let mut whole = Measure::new(Vec::new());
+    std::io::Write::write_all(&mut whole, bytes).unwrap();
+    let whole = whole.finish();
+    for chunk_size in [1, 3, 7, 13, 64] {
+        let mut chunked = Measure::new(Vec::new());
+        for chunk in bytes.chunks(chunk_size) {
+            std::io::Write::write_all(&mut chunked, chunk).unwrap();
+        }
+        let chunked = chunked.finish();
+        assert_eq!(chunked.records, whole.records, "chunk_size={chunk_size}");
+        assert_eq!(chunked.outside, whole.outside, "chunk_size={chunk_size}");
+    }
 }

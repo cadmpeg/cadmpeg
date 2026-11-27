@@ -4,12 +4,15 @@
 use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
-use crate::records::configuration::table::{ConfigurationRow, ConfiguredValue};
+use crate::records::configuration::table::{
+    ColumnTarget, ConfigurationRow, ConfigurationTable, ConfiguredValue,
+};
 use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
-use std::collections::{BTreeMap, HashSet};
+use cadmpeg_ir::unknown::part::GivenUpPart;
+use std::collections::{BTreeMap, BTreeSet};
 
 mod json;
 
@@ -30,11 +33,13 @@ pub(crate) struct DecodedConfigurations {
 }
 
 /// Decode every JSON design-configuration table and rule entry, and attach the
-/// active row of the Design root record to its table document.
+/// active row of the Design root record to its table document. An entry that
+/// does not decode is given up as an archive-entry part into `given_up`.
 pub(crate) fn decode_configurations(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<DecodedConfigurations, CodecError> {
     let mut documents = Vec::new();
     for entry in scan
@@ -43,26 +48,20 @@ pub(crate) fn decode_configurations(
         .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::DesignConfig))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        if let Some(document) = super::decode::record::recover(
-            decode_configuration_document(ctx, &entry.name, bytes),
-            losses,
-            crate::loss::F3dLossCode::ConfigurationDocumentUndecoded,
-            format_args!("Configuration document {}", entry.name),
-        )? {
-            documents.push(document);
+        match decode_configuration_document(ctx, &entry.name, bytes) {
+            Ok(document) => documents.push(document),
+            Err(error) if super::decode::record::is_fatal(&error) => return Err(error),
+            Err(error) => {
+                losses.push(
+                    crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.note(format!(
+                        "Configuration document {} remains in the source archive because its decoding failed: {error}",
+                        entry.name
+                    )),
+                );
+                given_up.extend(scan.give_up_entry(ctx, &entry.name, error)?);
+            }
         }
     }
-    let mut names = HashSet::new();
-    documents.retain(|document| {
-        if names.insert(document.entry_name().as_str().to_owned()) {
-            true
-        } else {
-            losses.push(crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.note(
-                format!("Configuration document {} repeats its identity and remains in the source archive", document.entry_name()),
-            ));
-            false
-        }
-    });
     let roots = crate::design::decode::configuration_root::decode_configuration_roots(scan)?;
     let unbound_roots = roots.unparsed + attach_roots(&mut documents, roots.rows)?;
     Ok(DecodedConfigurations {
@@ -111,7 +110,7 @@ fn attach_roots(
 
 /// The table document that holds `table_id`; with no such document, the only
 /// table document.
-fn root_document(documents: &[DesignConfiguration], table_id: &str) -> Option<usize> {
+pub(crate) fn root_document(documents: &[DesignConfiguration], table_id: &str) -> Option<usize> {
     let table_documents = || {
         documents
             .iter()
@@ -147,7 +146,7 @@ fn unique<T: PartialEq>(mut values: impl Iterator<Item = T>) -> Option<T> {
 impl ConfigurationTargets<'_> {
     /// The neutral parameter of parameter record `record_index`, limited to
     /// `stream` when it is stated.
-    fn parameter(
+    pub(crate) fn parameter(
         &self,
         record_index: u32,
         stream: Option<&str>,
@@ -169,7 +168,7 @@ impl ConfigurationTargets<'_> {
             .then_some(id)
     }
 
-    fn owned_parameter(
+    pub(crate) fn owned_parameter(
         &self,
         owner_record_index: u32,
     ) -> Option<cadmpeg_ir::features::ParameterId> {
@@ -187,7 +186,10 @@ impl ConfigurationTargets<'_> {
         self.parameter(parameter, Some(stream?))
     }
 
-    fn feature(&self, scope_record_index: u32) -> Option<&cadmpeg_ir::features::Feature> {
+    pub(crate) fn feature(
+        &self,
+        scope_record_index: u32,
+    ) -> Option<&cadmpeg_ir::features::Feature> {
         let id = unique(
             self.scopes
                 .iter()
@@ -199,9 +201,65 @@ impl ConfigurationTargets<'_> {
             .find(|feature| feature.id == id)
     }
 
+    /// The target of a column that names the neutral parameter `id`: the
+    /// owner record of its parameter record, else the parameter record
+    /// itself (f3d.md §1.2). `None` where no single record names it.
+    pub(crate) fn parameter_column(
+        &self,
+        id: &cadmpeg_ir::features::ParameterId,
+    ) -> Option<ColumnTarget> {
+        let records = self
+            .parameters
+            .iter()
+            .filter(|parameter| crate::ids::neutral_parameter_id(parameter) == *id)
+            .collect::<Vec<_>>();
+        let [record] = records.as_slice() else {
+            return None;
+        };
+        let stream = crate::ids::native_stream(&record.id);
+        let owners = self
+            .owners
+            .iter()
+            .filter(|owner| {
+                owner.parameter_record_index() == record.record_index
+                    && crate::ids::native_stream(owner.id()) == stream
+            })
+            .collect::<Vec<_>>();
+        let (target, named) = match owners.as_slice() {
+            [] => (
+                ColumnTarget::Parameter(record.record_index),
+                self.parameter(record.record_index, None),
+            ),
+            [owner] => (
+                ColumnTarget::OwnedParameter(owner.record_index()),
+                self.owned_parameter(owner.record_index()),
+            ),
+            _ => return None,
+        };
+        (named.as_ref() == Some(id)).then_some(target)
+    }
+
+    /// The target of a column that names the neutral feature `id`: its
+    /// parameter scope record. `None` where no single record names it.
+    pub(crate) fn feature_column(
+        &self,
+        id: &cadmpeg_ir::features::FeatureId,
+    ) -> Option<ColumnTarget> {
+        let scopes = self
+            .scopes
+            .iter()
+            .filter(|scope| crate::ids::neutral_feature_id(scope) == *id)
+            .collect::<Vec<_>>();
+        let [scope] = scopes.as_slice() else {
+            return None;
+        };
+        (self.feature(scope.record_index)?.id == *id)
+            .then_some(ColumnTarget::Feature(scope.record_index))
+    }
+
     /// The value of neutral parameter `id` whose evaluation in database
     /// units is `evaluated`, typed as the parameter's own value.
-    fn parameter_value(
+    pub(crate) fn parameter_value(
         &self,
         id: &cadmpeg_ir::features::ParameterId,
         evaluated: FiniteReal,
@@ -227,19 +285,17 @@ impl ConfigurationTargets<'_> {
     }
 }
 
-/// Project the rows of the one populated table into the neutral configuration
-/// arena. Rule documents remain native because a rule is a selector, not a
-/// model variant.
-pub(crate) fn project_configurations(
+/// The one table whose rows the neutral configurations project, the only
+/// table of `native` that holds rows, with the position of its document.
+fn projected_table(
     native: &[DesignConfiguration],
-    targets: &ConfigurationTargets<'_>,
-) -> Result<Vec<cadmpeg_ir::features::parameters::DesignConfiguration>, CodecError> {
-    let mut populated = native.iter().flat_map(|document| {
+) -> Result<Option<(usize, &ConfigurationTable)>, CodecError> {
+    let mut populated = native.iter().enumerate().flat_map(|(index, document)| {
         document
             .tables()
             .iter()
             .filter(|table| !table.rows.is_empty())
-            .map(move |table| (document, table))
+            .map(move |table| (index, table))
     });
     let first = populated.next();
     if populated.next().is_some() {
@@ -247,8 +303,46 @@ pub(crate) fn project_configurations(
             "independent nonempty F3D configuration tables have no shared authored order".into(),
         ));
     }
+    Ok(first)
+}
+
+/// The neutral configurations of configuration documents, and the table
+/// whose rows they project.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct Projection {
+    /// The position of the table's document, and of the table in the
+    /// document's `tables` array.
+    pub(crate) table: Option<(usize, usize)>,
+    pub(crate) configurations: Vec<cadmpeg_ir::features::parameters::DesignConfiguration>,
+}
+
+/// The table at `table`, the position of a document of `documents` and of
+/// the table in the document's `tables` array, with the position of its
+/// document.
+pub(crate) fn table_at(
+    documents: &[DesignConfiguration],
+    table: Option<(usize, usize)>,
+) -> Option<(usize, &ConfigurationTable)> {
+    let (document, position) = table?;
+    let table = documents
+        .get(document)?
+        .tables()
+        .iter()
+        .find(|candidate| candidate.position == position)?;
+    Some((document, table))
+}
+
+/// Project the rows of the one populated table into the neutral configuration
+/// arena, and name the table. Rule documents remain native because a rule is
+/// a selector, not a model variant.
+pub(crate) fn project(
+    native: &[DesignConfiguration],
+    targets: &ConfigurationTargets<'_>,
+) -> Result<Projection, CodecError> {
     let mut projected = Vec::new();
-    if let Some((document, table)) = first {
+    let table = projected_table(native)?;
+    if let Some((index, table)) = table {
+        let document = &native[index];
         let active_row = document
             .active_row()
             .filter(|row| row.table_id == table.id)
@@ -281,7 +375,10 @@ pub(crate) fn project_configurations(
         configuration.properties.insert(key, condition.to_owned());
     }
     projected.sort_by(|left, right| left.id.cmp(&right.id));
-    Ok(projected)
+    Ok(Projection {
+        table: table.map(|(index, table)| (index, table.position)),
+        configurations: projected,
+    })
 }
 
 fn project_row(
@@ -381,19 +478,80 @@ fn project_row(
     Ok(configuration)
 }
 
+/// The features to which the body history binds an output body.
+pub(crate) fn body_producers(
+    features: &[cadmpeg_ir::features::Feature],
+) -> BTreeSet<cadmpeg_ir::features::FeatureId> {
+    features
+        .iter()
+        .filter(|feature| !feature.evaluation.outputs().is_empty())
+        .map(|feature| feature.id.clone())
+        .collect()
+}
+
+/// Project the configuration tables of `native` into `model` and reconcile
+/// the active configuration with the features. A row copies the definition
+/// and dependencies of each feature it states, so this runs after every
+/// decode pass that rewrites a feature. `producers` is [`body_producers`]
+/// taken before the owner pass, which can drop output links.
+pub(crate) fn attach(
+    native: &crate::native::F3dNative,
+    model: &mut cadmpeg_ir::document::Model,
+    producers: &BTreeSet<cadmpeg_ir::features::FeatureId>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    let mut configurations = crate::design::decode::record::recover_partial(
+        project(
+            &native.design_configurations,
+            &ConfigurationTargets {
+                parameters: &native.design_parameters,
+                owners: &native.design_parameter_owners,
+                scopes: &native.design_parameter_scopes,
+                neutral_parameters: &model.parameters,
+                neutral_features: &model.features,
+            },
+        )
+        .map(|projection| projection.configurations),
+        losses,
+        crate::loss::F3dLossCode::ConfigurationProjectionNative,
+        "Configuration projection",
+    )?
+    .unwrap_or_default();
+    let unstored = native
+        .design_parameter_scopes
+        .iter()
+        .filter(|scope| scope.stored_suppression().is_none())
+        .map(crate::ids::neutral_feature_id)
+        .collect::<BTreeSet<_>>();
+    // A feature that produces a body is active in the stored geometry.
+    let undecided = model
+        .features
+        .iter()
+        .filter(|feature| {
+            !producers.contains(&feature.id)
+                && (feature.suppressed.is_none() || unstored.contains(&feature.id))
+        })
+        .map(|feature| feature.id.clone())
+        .collect();
+    reconcile_active_configurations(&mut model.features, &mut configurations, &undecided)?;
+    model.configurations = configurations;
+    Ok(())
+}
+
 /// Make the active configurations and the current feature states agree where
 /// the source leaves one of them silent. A table lists only the features it
 /// toggles, so a suppressed feature with no row keeps that state in the active
-/// row. A Sketch scope's state identities do not decide its suppression, and a
-/// feature can have no stored state, so the active row supplies it. A row with
-/// a suppression column that names no feature could name the feature that
-/// gained a row, so that row records the assumption in a property.
+/// row. The active row supplies the state of each feature of `undecided`,
+/// whose records do not decide it (f3d.md §1.2). Every other feature keeps
+/// its state, so a row that contradicts it reaches the disagreement finding.
+/// A row with a suppression column that names no feature could name the
+/// feature that gained a row, so that row records the assumption in a
+/// property.
 pub(crate) fn reconcile_active_configurations(
     features: &mut [cadmpeg_ir::features::Feature],
     configurations: &mut [cadmpeg_ir::features::parameters::DesignConfiguration],
+    undecided: &BTreeSet<cadmpeg_ir::features::FeatureId>,
 ) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-
     for configuration in configurations.iter_mut().filter(|row| row.active) {
         let unresolved_column = configuration
             .properties
@@ -401,17 +559,11 @@ pub(crate) fn reconcile_active_configurations(
             .any(|key| key.as_str().starts_with("suppressed:"));
         for feature in features.iter_mut() {
             match configuration.feature_states.get(&feature.id) {
-                Some(state) if state.evaluation.is_suppressed() => {
-                    let undecided = feature.suppressed.is_none()
-                        || matches!(
-                            feature.evaluation.definition(),
-                            FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
-                        );
-                    if undecided {
-                        feature.suppressed = Some(true);
+                Some(state) => {
+                    if undecided.contains(&feature.id) {
+                        feature.suppressed = Some(state.evaluation.is_suppressed());
                     }
                 }
-                Some(_) => {}
                 None => {
                     if feature.suppressed == Some(true) {
                         configuration

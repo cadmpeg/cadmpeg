@@ -10,6 +10,7 @@ use crate::design::decode::sketch::{
 use crate::records::entity_header::DESIGN_MODULE_SKETCH;
 
 pub(super) const ENTITY_SUFFIX: u64 = 201;
+const STREAM: &str = "Design/BulkStream.dat";
 
 fn decode_sketch_visibilities_in_stream(
     bytes: &[u8],
@@ -21,8 +22,14 @@ fn decode_sketch_visibilities_in_stream(
     )>,
     cadmpeg_core::CodecError,
 > {
-    super::super::decode_sketch_visibilities_in_stream(bytes, metadata, &mut Vec::new())
-        .map(|v| v.into_iter().map(|(id, vis, _)| (id, vis)).collect())
+    super::super::decode_sketch_visibilities_in_stream(
+        bytes,
+        metadata,
+        STREAM,
+        &mut Vec::new(),
+        &mut Vec::new(),
+    )
+    .map(|v| v.into_iter().map(|(id, vis, _)| (id, vis)).collect())
 }
 
 fn decode_with_losses(
@@ -35,14 +42,35 @@ fn decode_with_losses(
     )>,
     Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
-    let mut losses = Vec::new();
-    let visibilities =
-        super::super::decode_sketch_visibilities_in_stream(bytes, metadata, &mut losses)
-            .unwrap()
-            .into_iter()
-            .map(|(id, vis, _)| (id, vis))
-            .collect();
+    let (visibilities, losses, _) = decode_with_given_up(bytes, metadata);
     (visibilities, losses)
+}
+
+fn decode_with_given_up(
+    bytes: &[u8],
+    metadata: &crate::metastream::MetaStream,
+) -> (
+    Vec<(
+        u64,
+        crate::records::sketch_placement::DesignSketchVisibility,
+    )>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+    Vec<crate::design::decode::record::GivenUpFrame>,
+) {
+    let mut losses = Vec::new();
+    let mut given_up = Vec::new();
+    let visibilities = super::super::decode_sketch_visibilities_in_stream(
+        bytes,
+        metadata,
+        STREAM,
+        &mut losses,
+        &mut given_up,
+    )
+    .unwrap()
+    .into_iter()
+    .map(|(id, vis, _)| (id, vis))
+    .collect();
+    (visibilities, losses, given_up)
 }
 
 pub(super) fn member(stream_ordinal: u32, visible: u8) -> Vec<u8> {
@@ -249,6 +277,15 @@ fn collection_stream_version(
     collections: &[(u64, &[u64])],
     version: u32,
 ) -> (Vec<u8>, crate::metastream::MetaStream) {
+    collection_stream_form(named_collection, collections, version, None)
+}
+
+fn collection_stream_form(
+    named_collection: u64,
+    collections: &[(u64, &[u64])],
+    version: u32,
+    member_type: Option<&str>,
+) -> (Vec<u8>, crate::metastream::MetaStream) {
     let (mut bytes, mut metadata) = visibility_stream();
     let member_at = bytes.len() - member(1, 1).len();
     bytes[member_at + 37..member_at + 45].copy_from_slice(&named_collection.to_le_bytes());
@@ -279,6 +316,9 @@ fn collection_stream_version(
         for target in *members {
             bytes.push(1);
             bytes.extend_from_slice(&target.to_le_bytes());
+            if let Some(member_type) = member_type {
+                crate::test_support::lp_ascii(&mut bytes, member_type);
+            }
             bytes.extend_from_slice(&[0; 2]);
         }
         metadata.records.push(crate::metastream::RecordIndexEntry {
@@ -479,13 +519,19 @@ fn unread_folder_charges_one_loss_for_its_sketches() {
     // sketch and the parent collection both name it.
     let (mut bytes, mut metadata) = collection_stream(500, &[(300, &[500])]);
     append_folder(&mut bytes, &mut metadata, "Folder Name", 2, 8);
-    let (visibilities, losses) = decode_with_losses(&bytes, &metadata);
+    let (visibilities, losses, given_up) = decode_with_given_up(&bytes, &metadata);
     assert_eq!(visibilities.len(), 1);
     assert_eq!(visibilities[0].1.ordinal_collection, None);
     assert_eq!(
-        losses.iter().map(|loss| &loss.code).collect::<Vec<_>>(),
-        [&crate::loss::F3dLossCode::SketchFolderUndecoded.kind()]
+        crate::test_support::loss_codes(&losses),
+        [crate::loss::F3dLossCode::SketchFolderUndecoded.kind()]
     );
+    assert!(losses[0].message.contains("sketch folder 500"));
+    // §3.3: the folder frame is given up as a part.
+    let [frame] = given_up.as_slice() else {
+        panic!("one given-up folder frame: {given_up:?}");
+    };
+    assert_eq!(frame.span().0, STREAM);
 }
 
 #[test]
@@ -576,6 +622,26 @@ fn version_three_collection_has_six_bytes_before_its_member_run() {
     assert_eq!(visibilities[0].0, ENTITY_SUFFIX);
     assert_eq!(visibilities[0].1.ordinal_collection.unwrap().get(), 300);
     assert!(visibilities[0].1.visible);
+}
+
+#[test]
+fn version_three_collection_run_carries_the_sketch_container_type() {
+    let undecoded = crate::loss::F3dLossCode::SketchOrdinalCollectionUndecoded.kind();
+    let decode = |version, member_type| {
+        let (bytes, metadata) =
+            collection_stream_form(300, &[(300, &[ENTITY_SUFFIX])], version, Some(member_type));
+        decode_with_losses(&bytes, &metadata)
+    };
+    let (visibilities, losses) = decode(3, SKETCH_CONTAINER_TYPE_GUID);
+    assert_eq!(visibilities[0].1.ordinal_collection.unwrap().get(), 300);
+    assert!(losses.is_empty());
+    for (version, member_type) in [
+        (4, SKETCH_CONTAINER_TYPE_GUID),
+        (3, "11111111-2222-4333-8444-555555555555"),
+    ] {
+        let (_, losses) = decode(version, member_type);
+        assert!(losses.iter().any(|loss| loss.code == undecoded));
+    }
 }
 
 #[test]

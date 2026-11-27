@@ -55,7 +55,7 @@ pub struct PresentationState {
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub attributes: BTreeMap<NonBlankString, String>,
     /// Referenced display assets as global native entry ids.
-    pub assets: Vec<String>,
+    pub assets: Vec<crate::ids::Identity>,
 }
 
 /// Document-wide persisted GUI state.
@@ -199,7 +199,7 @@ pub struct ViewPresentation {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_object"
     )]
-    pub object: Option<String>,
+    pub object: Option<crate::ids::Identity>,
     /// Source order in the provider table.
     pub order: u32,
     /// Persisted tree expansion state.
@@ -316,7 +316,7 @@ pub enum PresentationItem {
     /// Tessellation identity.
     Tessellation {
         /// Assigned tessellation identity.
-        tessellation: String,
+        tessellation: crate::tessellation::TessellationId,
     },
     /// Point cloud.
     PointCloud {
@@ -463,7 +463,7 @@ mod tests {
     fn a_named_optional_key_states_a_value_or_is_left_out() {
         use super::ViewPresentation;
 
-        let refusal = json::from_value::<ViewPresentation>(serde_json::json!({
+        let refusal = json::from_value::<ViewPresentation>(cadmpeg_core::json!({
             "id": "freecad:presentation:view#1",
             "order": 0,
             "properties": {},
@@ -476,7 +476,7 @@ mod tests {
                 && text.contains("this key states a value or is left out; it does not state null"),
             "{text}"
         );
-        let absent = json::from_value::<ViewPresentation>(serde_json::json!({
+        let absent = json::from_value::<ViewPresentation>(cadmpeg_core::json!({
             "id": "freecad:presentation:view#1",
             "order": 0,
             "properties": {}
@@ -719,11 +719,11 @@ mod tests {
 
     #[test]
     fn source_identity_admission_preserves_nonempty_wire() {
-        let wire = serde_json::json!({"kind": "source", "source_id": "#42"});
+        let wire = cadmpeg_core::json!({"kind": "source", "source_id": "#42"});
         let value: PresentationItem = json::from_value(wire.clone()).expect("nonempty source_id");
         assert_eq!(json::to_value(value).expect("serialize"), wire);
         let error = json::from_value::<PresentationItem>(
-            serde_json::json!({"kind": "source", "source_id": ""}),
+            cadmpeg_core::json!({"kind": "source", "source_id": ""}),
         )
         .expect_err("empty source_id");
         assert!(error.to_string().contains("source_id"));
@@ -741,7 +741,7 @@ mod tests {
                         .expect("valid identity"),
                 ));
             ir.model.view_presentations.push(
-                json::from_value(serde_json::json!({
+                json::from_value(cadmpeg_core::json!({
                     "id": format!("test:presentation:view#{key}"),
                     "order": 1,
                     "properties": {}
@@ -793,7 +793,7 @@ mod tests {
 cadmpeg_core::named_optional_field!(deserialize_schema_version, u32, "schema_version");
 cadmpeg_core::named_optional_field!(deserialize_active_view, String, "active_view");
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
-cadmpeg_core::named_optional_field!(deserialize_object, String, "object");
+cadmpeg_core::named_optional_field!(deserialize_object, crate::ids::Identity, "object");
 cadmpeg_core::named_optional_field!(deserialize_expanded, bool, "expanded");
 cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
 cadmpeg_core::named_optional_field!(deserialize_display_mode, String, "display_mode");

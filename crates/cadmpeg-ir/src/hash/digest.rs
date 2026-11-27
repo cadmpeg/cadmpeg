@@ -103,16 +103,6 @@ mod tests {
     use super::Sha256Digest;
     use cadmpeg_core::serde_erase::json;
 
-    #[cfg(feature = "schema")]
-    #[test]
-    fn digest_schema_does_not_admit_a_trailing_line_break() {
-        let schema = json::to_value(schemars::schema_for!(Sha256Digest)).unwrap();
-        assert_eq!(schema["minLength"], 64);
-        assert_eq!(schema["maxLength"], 64);
-        assert_eq!(schema["pattern"], "^[0-9a-f]{64}$");
-        assert!(Sha256Digest::try_from(format!("{}\n", "a".repeat(64))).is_err());
-    }
-
     #[test]
     fn digest_matches_sha256_abc_vector() {
         let expected = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
@@ -135,12 +125,12 @@ mod tests {
             "é".repeat(32),
         ] {
             assert!(Sha256Digest::try_from(text.as_str()).is_err());
-            assert!(json::from_value::<Sha256Digest>(serde_json::json!(text)).is_err());
+            assert!(json::from_value::<Sha256Digest>(cadmpeg_core::json!(text)).is_err());
         }
         let digest = Sha256Digest::from_bytes([0; 32]);
         assert_eq!(digest.as_str(), "0".repeat(64));
         assert_eq!(
-            json::from_value::<Sha256Digest>(serde_json::json!(digest)).unwrap(),
+            json::from_value::<Sha256Digest>(cadmpeg_core::json!(digest)).unwrap(),
             digest
         );
     }

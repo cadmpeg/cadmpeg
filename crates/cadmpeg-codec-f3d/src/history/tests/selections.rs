@@ -321,7 +321,7 @@ fn compact_edge_treatment_deletions_require_exact_cardinality() {
 #[test]
 fn compact_transition_fallback_is_scoped_to_each_operand_group() {
     let scope: crate::records::feature::scope::DesignParameterScope =
-        json_wire::from_value(serde_json::json!({
+        json_wire::from_value(cadmpeg_core::json!({
             "id": "f3d:test:scope",
             "byte_offset": 0,
             "class_tag": "300",
@@ -343,7 +343,7 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         }))
         .expect("Fillet scope");
     let identity = |group_record_index, group_member_ordinal, record_index| {
-        json_wire::from_value::<DesignEdgeIdentityOperand>(serde_json::json!({
+        json_wire::from_value::<DesignEdgeIdentityOperand>(cadmpeg_core::json!({
             "id": format!("f3d:test:identity#{record_index}"),
             "scope_record_index": 1,
             "group_record_index": group_record_index,
@@ -796,6 +796,7 @@ fn combine_external_scope() -> crate::records::feature::scope::DesignParameterSc
         crate::records::feature::combine::DesignCombineBodySelection {
             record_index,
             external_identity: Some(identity(occurrence_reference)),
+            legacy_external_identity: None,
             body_node: None,
         }
     };
@@ -836,6 +837,7 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
         crate::records::feature::combine::DesignCombineBodySelection {
             record_index,
             external_identity: Some(combine_external_identity(occurrence_reference)),
+            legacy_external_identity: None,
             body_node: None,
         }
     };
@@ -856,6 +858,68 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
         .tools
         .additional[0] = tool(13, 500);
     assert!(super::super::body_selections::combine_external_local_tools(&scope).is_none());
+}
+
+#[test]
+fn combine_legacy_external_tools_retain_occurrence_local_identities() {
+    use cadmpeg_ir::features::selections::BodySelection;
+
+    let tool = |record_index, browser_node_entity| {
+        crate::records::feature::combine::DesignCombineBodySelection {
+            record_index,
+            external_identity: None,
+            legacy_external_identity: Some(
+                crate::records::feature::combine::DesignCombineLegacyExternalBodyIdentity {
+                    selector_asset_id: "11111111-1111-4111-8111-111111111111"
+                        .to_owned()
+                        .try_into()
+                        .expect("GUID"),
+                    selector_asset_id_offset: 44,
+                    selector_context_id: "22222222-2222-4222-8222-222222222222"
+                        .to_owned()
+                        .try_into()
+                        .expect("GUID"),
+                    selector_context_id_offset: 120,
+                    occurrence_reference: 500,
+                    occurrence_reference_offset: 205,
+                    browser_node_entity,
+                    browser_node_entity_offset: 220,
+                    source_occurrence_identity: 0x0123_4567_89ab_cdef,
+                    source_occurrence_identity_offset: 229,
+                    tail_values: [0, 0],
+                    tail_value_offsets: [285, 297],
+                },
+            ),
+            body_node: None,
+        }
+    };
+    let mut scope = combine_external_scope();
+    let operation = scope.combine_operation_mut().expect("Combine operation");
+    operation.tools.first = tool(12, 700);
+    operation.tools.additional = vec![tool(13, 701)];
+    let BodySelection::Local { bodies, native } =
+        super::super::body_selections::combine_external_local_tools(&scope)
+            .expect("complete legacy local tool identity")
+    else {
+        panic!("local body selection");
+    };
+    assert_eq!(bodies.len(), 2);
+    assert_ne!(bodies[0], bodies[1]);
+    assert_eq!(native.as_str(), scope.id);
+    assert!(super::super::body_selections::combine_external_tools_refusal(&scope).is_none());
+
+    scope
+        .combine_operation_mut()
+        .expect("Combine operation")
+        .tools
+        .additional[0] = tool(13, 700);
+    assert!(super::super::body_selections::combine_external_local_tools(&scope).is_none());
+    assert_eq!(
+        super::super::body_selections::combine_external_tools_refusal(&scope)
+            .expect("refused legacy tools charge a loss")
+            .code,
+        crate::loss::F3dLossCode::FeatureCombineToolExternalBodyUnbound.kind()
+    );
 }
 
 #[test]
@@ -1608,7 +1672,7 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
     }
     prefix.extend_from_slice(&0u32.to_le_bytes());
 
-    let mut operand = json_wire::from_value::<DesignFaceOperand>(serde_json::json!({
+    let mut operand = json_wire::from_value::<DesignFaceOperand>(cadmpeg_core::json!({
         "id": "f3d:Design/BulkStream.dat:design-face-operand#1",
         "scope_record_index": 1,
         "scope_reference_ordinal": 0,

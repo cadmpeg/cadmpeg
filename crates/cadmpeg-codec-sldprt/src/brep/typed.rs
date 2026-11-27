@@ -16,6 +16,7 @@ use cadmpeg_parasolid::pointer::read_at as read_ref;
 
 pub(super) mod nodes;
 pub(super) mod schema;
+mod shell_containment;
 
 const BODY_TAG: [u8; 2] = [0x00, 0x0c];
 const SHELL_TAG: [u8; 2] = [0x00, 0x0d];
@@ -25,13 +26,15 @@ const REGION_TAG: [u8; 2] = [0x00, 0x13];
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 const RESOLUTION_SIZE_MIN: f64 = 1.0;
 const RESOLUTION_SIZE_MAX: f64 = 1.0e6;
-const RESOLUTION_LINEAR_MIN: f64 = 1.0e-15;
-const RESOLUTION_LINEAR_MAX: f64 = 1.0e-2;
+/// The `res_linear` magnitudes (metres) that decide between header reference
+/// counts when more than one count reads a complete BODY.
+const RESOLUTION_LINEAR_PLAUSIBLE_MIN: f64 = 1.0e-15;
+const RESOLUTION_LINEAR_PLAUSIBLE_MAX: f64 = 1.0e-2;
 const BODY_HEADER_REF_MAX: usize = 32;
 const BODY_POST_TOPOLOGY_REF_MAX: usize = 4;
 
 /// A typed BODY node.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct BodyNode {
     /// Stream-local transmit index.
     pub(super) attr: u32,
@@ -45,6 +48,8 @@ pub(super) struct BodyNode {
     pub(super) ownership_refs: Vec<u32>,
     /// Stored Parasolid body kind discriminator.
     pub(super) kind: BodyKind,
+    /// Stored `res_linear`, the body's linear precision in metres.
+    pub(super) linear_resolution: f64,
     /// Byte offset of the node payload.  The first BODY has no repeated tag.
     pub(super) offset: usize,
     /// First byte after the complete node.
@@ -58,6 +63,7 @@ struct BodyCandidate {
     ownership_refs: [u32; 7 + BODY_POST_TOPOLOGY_REF_MAX],
     ownership_len: usize,
     kind: BodyKind,
+    linear_resolution: f64,
     offset: usize,
     end: usize,
 }
@@ -70,10 +76,22 @@ impl BodyCandidate {
             topology_refs: self.topology_refs,
             ownership_refs: self.ownership_refs[..self.ownership_len].to_vec(),
             kind: self.kind,
+            linear_resolution: self.linear_resolution,
             offset: self.offset,
             end: self.end,
         }
     }
+}
+
+/// What the BODY records that link to a stored REGION say of a body's kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum StoredBodyKind {
+    /// No BODY record links to a stored REGION.
+    Absent,
+    /// The linked BODY records state more than one kind.
+    Disagree,
+    /// Every linked BODY record states this kind.
+    Agreed(BodyKind),
 }
 
 impl BodyNode {
@@ -151,6 +169,8 @@ pub(super) struct FaceNode {
     pub(super) node_id: u32,
     /// `[next_face, previous_face, loop, shell, surface]`.
     pub(super) refs: [u32; 5],
+    /// `[next_front, previous_front, front_shell]` from the complete FACE.
+    pub(super) front: Option<[u32; 3]>,
     /// Stored face sense marker.
     pub(super) sense: Sense,
     /// Byte offset of the node tag.
@@ -160,7 +180,7 @@ pub(super) struct FaceNode {
 }
 
 /// All typed ownership nodes recovered from one stream.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(super) struct Facts {
     pub(super) bodies: Vec<BodyNode>,
     pub(super) shells: Vec<ShellNode>,
@@ -176,6 +196,27 @@ type OwnershipMaps = (
 );
 
 impl Facts {
+    /// The kind the BODY records that link to a stored REGION state. A BODY
+    /// links when a REGION names it as its body. A BODY that links to no
+    /// region, such as one that owns only vertices, says nothing of the
+    /// faces' body.
+    pub(super) fn stored_body_kind(&self) -> StoredBodyKind {
+        let links = |body: &&BodyNode| {
+            self.regions
+                .iter()
+                .any(|region| region.refs[1] == body.attr)
+        };
+        let mut kinds = self.bodies.iter().filter(links).map(|body| body.kind);
+        let Some(first) = kinds.next() else {
+            return StoredBodyKind::Absent;
+        };
+        if kinds.all(|kind| kind == first) {
+            StoredBodyKind::Agreed(first)
+        } else {
+            StoredBodyKind::Disagree
+        }
+    }
+
     /// Ownership classes claimed for each stream-local transmit index.
     fn topology_class_masks(&self) -> HashMap<u32, u8> {
         let mut classes = HashMap::new();
@@ -358,6 +399,11 @@ impl Facts {
     pub(super) fn valid_ownership_face_attrs(&self) -> Option<HashSet<u32>> {
         self.valid_ownership_maps()
             .map(|(_, _, _, faces)| faces.into_keys().collect())
+    }
+
+    /// The FACE nodes of a valid typed ownership graph, by transmit index.
+    pub(super) fn valid_ownership_faces(&self) -> Option<HashMap<u32, FaceNode>> {
+        self.valid_ownership_maps().map(|(_, _, _, faces)| faces)
     }
 
     /// Physical FACE records selected by a closed typed ownership set.
@@ -637,41 +683,20 @@ fn region_chain_from_head(
         return Some(Vec::new());
     }
 
-    // A BODY may store either the first REGION attribute or the predecessor
-    // sentinel used by the REGION doubly-linked list.  Both forms carry the
-    // same closure: the first region's previous reference is the stored head
-    // in the sentinel form, and each later region points back to its source.
-    let (mut next, first_previous) =
-        if let Some(attr) = node_ref(head).filter(|attr| regions.contains_key(attr)) {
-            let first = regions.get(&attr)?;
-            // A direct region head names the first node.  A later region in
-            // the chain is not another valid head: its previous pointer must
-            // point back to the preceding region.  The sentinel form below
-            // is the only form that admits a non-null first previous link.
-            (first.refs[3] <= 1).then_some((attr, None))?
-        } else {
-            let mut candidates = regions
-                .values()
-                .filter(|region| region.refs[3] == head)
-                .map(|region| region.attr);
-            let attr = candidates.next()?;
-            if candidates.next().is_some() {
-                return None;
-            }
-            (attr, Some(head))
-        };
-
+    // The BODY names its first REGION, whose previous reference is null.
+    let first = node_ref(head).and_then(|attr| regions.get(&attr))?;
+    if first.refs[3] > 1 {
+        return None;
+    }
+    let mut next = first.attr;
     let mut out = Vec::new();
     let mut seen = HashSet::new();
-    let mut expected_previous = first_previous;
     loop {
         if !seen.insert(next) {
             return None;
         }
         let region = regions.get(&next)?;
-        if region.refs[1] != body.attr
-            || expected_previous.is_some_and(|previous| region.refs[3] != previous)
-        {
+        if region.refs[1] != body.attr {
             return None;
         }
         let following = region.refs[2];
@@ -684,14 +709,13 @@ fn region_chain_from_head(
         if following_region.refs[3] != region.attr {
             return None;
         }
-        expected_previous = Some(region.attr);
         next = following_attr;
     }
     Some(out)
 }
 
 /// One validated typed body hierarchy.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(in crate::brep) struct Hierarchy {
     pub(super) body: BodyNode,
     pub(super) regions: Vec<RegionNode>,
@@ -701,12 +725,13 @@ pub(in crate::brep) struct Hierarchy {
 }
 
 pub(super) fn topology_owner_attrs_for_streams<'a>(
-    streams: impl IntoIterator<Item = (&'a Facts, &'a [u8], bool)>,
+    streams: impl IntoIterator<Item = (&'a Facts, &'a super::topology::ScopedBody<'a>)>,
 ) -> HashSet<u32> {
     let mut selected = HashMap::<u32, (bool, u8)>::new();
-    for (facts, bytes, deltas) in streams {
+    for (facts, stream) in streams {
+        let deltas = stream.prefixed;
         let mut classes = facts.topology_class_masks();
-        for point in super::topology::point_class_attrs(bytes, deltas) {
+        for point in super::topology::point_class_attrs(stream) {
             *classes.entry(point).or_insert(0) |= 16;
         }
         for (attr, mask) in classes {
@@ -784,7 +809,7 @@ fn valid_resolution(size: f64, linear: f64) -> bool {
     size.is_finite()
         && linear.is_finite()
         && (RESOLUTION_SIZE_MIN..=RESOLUTION_SIZE_MAX).contains(&size)
-        && (RESOLUTION_LINEAR_MIN..=RESOLUTION_LINEAR_MAX).contains(&linear.abs())
+        && linear != 0.0
 }
 
 fn parse_body_fields(
@@ -838,6 +863,7 @@ fn parse_body_fields(
         ownership_refs,
         ownership_len,
         kind,
+        linear_resolution: linear,
         offset,
         end: at,
     })
@@ -847,25 +873,31 @@ fn parse_body_layout(bytes: &[u8], offset: usize, payload: usize) -> Option<Body
     // BODY is a fixed XT node.  Its fields begin immediately after the
     // attribute/node-id prefix; there is no additional length/index frame.
     // The embedded schema can add or remove leading reference fields, so the
-    // field count is selected only when exactly one complete interpretation
-    // passes the resolution, state, kind, and topology guards.
+    // field count is the one complete interpretation that passes the
+    // resolution, state, kind, and topology guards; among several, the one
+    // with a plausible `res_linear` (`sldprt.md` BODY).
     let (_, _, fields) = node_prefix(bytes, payload)?;
-    let mut candidate = None;
-    for header_ref_count in 0..=BODY_HEADER_REF_MAX {
-        if let Some(body) = parse_body_fields(bytes, offset, payload, fields, header_ref_count) {
-            if candidate.is_some() {
-                return None;
-            }
-            candidate = Some(body);
-        }
+    let mut candidates = (0..=BODY_HEADER_REF_MAX)
+        .filter_map(|count| parse_body_fields(bytes, offset, payload, fields, count))
+        .collect::<Vec<_>>();
+    if candidates.len() > 1 {
+        candidates.retain(plausible_resolution);
     }
-    candidate
+    let candidate = candidates.pop()?;
+    candidates.is_empty().then_some(candidate)
+}
+
+fn plausible_resolution(body: &BodyCandidate) -> bool {
+    (RESOLUTION_LINEAR_PLAUSIBLE_MIN..=RESOLUTION_LINEAR_PLAUSIBLE_MAX)
+        .contains(&body.linear_resolution.abs())
 }
 
 fn parse_tagged_body(bytes: &[u8], offset: usize) -> Option<BodyCandidate> {
-    tagged_candidates(bytes, offset, BODY_TAG, parse_body_layout)
-        .into_iter()
-        .min_by_key(|node| node.end)
+    tagged_candidates(bytes, offset, BODY_TAG, |bytes, offset, payload| {
+        parse_body_layout(bytes, offset, payload).filter(plausible_resolution)
+    })
+    .into_iter()
+    .min_by_key(|node| node.end)
 }
 
 fn parse_shell_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<ShellNode> {
@@ -942,13 +974,16 @@ fn parse_face_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<Face
     if refs[3] <= 1 {
         return None;
     }
+    let end = at + 1;
+    let front = super::topology::face_front_refs(bytes, payload, end);
     Some(FaceNode {
         attr,
         node_id,
         refs,
+        front,
         sense,
         offset,
-        end: at + 1,
+        end,
     })
 }
 
@@ -1027,19 +1062,24 @@ fn resolve_framing<T>(
     });
 }
 
+#[cfg(test)]
 pub(super) fn scan(bytes: &[u8]) -> Facts {
-    scan_with_payload_exclusions(bytes, false)
+    scan_with_payload_exclusions(&super::topology::ScopedBody::new(bytes, false))
 }
 
-pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Facts {
-    let scopes = super::topology::topology_scopes(bytes, prefixed);
-    let payload_ranges = &scopes.excluded_starts;
+pub(super) fn scan_with_payload_exclusions(stream: &super::topology::ScopedBody<'_>) -> Facts {
+    let bytes = stream.body;
+    let payload_ranges = &stream.scopes.excluded_starts;
     let mut payload_index = 0;
     let mut facts = Facts::default();
     let mut body_offsets = HashSet::new();
     let mut shell_offsets = HashSet::new();
     let mut region_offsets = HashSet::new();
     let mut face_offsets = HashSet::new();
+    // Tag-framed BODY readings whose `res_linear` is outside the plausible
+    // range, kept only where a SHELL or REGION names them and no plausible
+    // BODY holds their index (`sldprt.md` BODY).
+    let mut unnamed_tagged_bodies = HashSet::new();
     let mut schema_ranges = Vec::new();
     let mut offset = 0usize;
     while offset.checked_add(2).is_some_and(|end| end < bytes.len()) {
@@ -1133,15 +1173,25 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
                 continue;
             }
             if bytes.get(offset..offset + 2) == Some(&BODY_TAG) {
-                for body in tagged_candidates(bytes, offset, BODY_TAG, parse_body_layout) {
-                    if !body_offsets.contains(&body.offset) {
-                        push_record(
-                            &mut body_offsets,
-                            &mut facts.bodies,
-                            body.offset,
-                            body.into_node(),
-                        );
+                // Each reading of one tag shares the tag offset. A plausible
+                // reading takes it before an implausible one, the 0xff-prefixed
+                // reading first among equals.
+                let mut readings = tagged_candidates(bytes, offset, BODY_TAG, parse_body_layout);
+                readings.sort_by_key(|body| !plausible_resolution(body));
+                if let Some(body) = readings
+                    .into_iter()
+                    .next()
+                    .filter(|body| !body_offsets.contains(&body.offset))
+                {
+                    if !plausible_resolution(&body) {
+                        unnamed_tagged_bodies.insert(body.offset);
                     }
+                    push_record(
+                        &mut body_offsets,
+                        &mut facts.bodies,
+                        body.offset,
+                        body.into_node(),
+                    );
                 }
             }
             for shell in tagged_candidates(bytes, offset, SHELL_TAG, parse_shell_fields) {
@@ -1175,6 +1225,7 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
             }
         }
     }
+    let scopes = &stream.scopes;
     let outside_payload = |start: usize, end: usize| {
         let index = scopes.payloads.partition_point(|range| range.end <= start);
         let start_index = scopes
@@ -1201,6 +1252,22 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
     facts
         .faces
         .retain(|node| outside_payload(node.offset, node.end));
+    let named_bodies = facts
+        .shells
+        .iter()
+        .map(|node| node.refs[1])
+        .chain(facts.regions.iter().map(|node| node.refs[1]))
+        .collect::<HashSet<_>>();
+    let plausible_bodies = facts
+        .bodies
+        .iter()
+        .filter(|node| !unnamed_tagged_bodies.contains(&node.offset))
+        .map(|node| node.attr)
+        .collect::<HashSet<_>>();
+    facts.bodies.retain(|node| {
+        !unnamed_tagged_bodies.contains(&node.offset)
+            || (named_bodies.contains(&node.attr) && !plausible_bodies.contains(&node.attr))
+    });
     let referenced = facts
         .bodies
         .iter()
@@ -1235,6 +1302,7 @@ mod tests {
         read_refs, region_chain, scan, BodyNode, FaceNode, Facts, RegionKind, RegionNode,
         ShellNode, BODY_TAG, FACE_TAG, MAGIC, REGION_TAG, SHELL_TAG,
     };
+    use crate::brep::topology::ScopedBody;
     use crate::test_support::container::sldprt_with_body;
     use crate::test_support::parasolid::triangle_body;
     use crate::SldprtCodec;
@@ -1279,7 +1347,13 @@ mod tests {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
+        let body = crate::writer::brep_body(
+            decoded.ir(),
+            0.001,
+            cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
+            false,
+        )
+        .unwrap();
         let facts = scan(&body);
 
         assert!(facts.has_valid_ownership(), "{facts:?}");
@@ -1308,7 +1382,13 @@ mod tests {
             .edges
             .iter()
             .any(|edge| edge.curve() == Some(curve)));
-        let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
+        let body = crate::writer::brep_body(
+            decoded.ir(),
+            0.001,
+            cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
+            false,
+        )
+        .unwrap();
         let facts = scan(&body);
         let scopes = super::super::topology::topology_scopes(&body, false);
         assert!(
@@ -1350,12 +1430,21 @@ mod tests {
     }
 
     fn body_fields<const N: usize>(header: [u32; N], body_type: u8, topology: [u32; 7]) -> Vec<u8> {
+        body_fields_with_resolution(header, 1.0e-8, body_type, topology)
+    }
+
+    fn body_fields_with_resolution<const N: usize>(
+        header: [u32; N],
+        res_linear: f64,
+        body_type: u8,
+        topology: [u32; 7],
+    ) -> Vec<u8> {
         let mut bytes = Vec::new();
         for value in header {
             push_ref(&mut bytes, value);
         }
         bytes.extend_from_slice(&1000.0f64.to_be_bytes());
-        bytes.extend_from_slice(&1.0e-8f64.to_be_bytes());
+        bytes.extend_from_slice(&res_linear.to_be_bytes());
         for value in [1, 1, 1] {
             push_ref(&mut bytes, value);
         }
@@ -1585,6 +1674,108 @@ mod tests {
         assert!(facts.topology_owner_attrs().contains(&3));
     }
 
+    /// A BODY of `header` and `res_linear` after a node prefix, and the offset
+    /// of its fields.
+    fn body_payload<const N: usize>(header: [u32; N], res_linear: f64) -> (Vec<u8>, usize) {
+        let mut bytes = Vec::new();
+        push_ref(&mut bytes, 3);
+        bytes.extend_from_slice(&1006u32.to_be_bytes());
+        let fields = bytes.len();
+        bytes.extend(body_fields_with_resolution(
+            header,
+            res_linear,
+            1,
+            [7, 8, 9, 10, 1, 12, 11],
+        ));
+        (bytes, fields)
+    }
+
+    #[test]
+    fn a_body_that_also_reads_one_reference_short_keeps_its_stored_resolution() {
+        // A last header reference of 16400 has the bytes 0x4010, the high word
+        // of an f64 in `[1, 1e6]`, so the count one short also reads a BODY,
+        // with a subnormal `res_linear`.
+        let (bytes, fields) = body_payload([5, 6, 1, 1, 1, 16400], 1.0e-8);
+        let short = super::parse_body_fields(&bytes, 0, 0, fields, 5).expect("count 5 reads");
+        assert!(short.linear_resolution.abs() < f64::MIN_POSITIVE);
+        assert!(super::parse_body_fields(&bytes, 0, 0, fields, 6).is_some());
+        let body = super::parse_body_layout(&bytes, 0, 0).expect("the body is admitted");
+        assert_eq!(body.linear_resolution.to_bits(), 1.0e-8f64.to_bits());
+        assert_eq!(body.kind, BodyKind::Solid);
+    }
+
+    #[test]
+    fn a_lone_reading_outside_the_plausible_resolution_is_admitted() {
+        let (bytes, fields) = body_payload([5, 6, 1, 1, 1, 1], 0.1);
+        let readings = (0..=super::BODY_HEADER_REF_MAX)
+            .filter(|count| super::parse_body_fields(&bytes, 0, 0, fields, *count).is_some())
+            .count();
+        assert_eq!(readings, 1);
+        let body = super::parse_body_layout(&bytes, 0, 0).expect("the body is admitted");
+        assert_eq!(body.linear_resolution.to_bits(), 0.1f64.to_bits());
+    }
+
+    #[test]
+    fn a_tagged_body_outside_the_plausible_resolution_claims_no_owner_class() {
+        let mut bytes = typed_shell_with_body(5, 814, 3, 39);
+        bytes.extend(typed_prefix(BODY_TAG, 5, 1006));
+        bytes.extend(body_fields_with_resolution(
+            [5, 6, 1, 1, 1, 1],
+            0.5,
+            1,
+            [7, 8, 9, 10, 1, 12, 11],
+        ));
+        let facts = scan(&bytes);
+        assert!(facts.bodies.is_empty());
+        assert_eq!(facts.topology_class_masks().get(&5), Some(&2));
+    }
+
+    #[test]
+    fn an_unprefixed_tagged_body_keeps_its_reading_over_an_implausible_prefixed_one() {
+        // A two-word index pointer begins with 0xff, so the 0xff-prefixed
+        // reading of the tag also frames a BODY, one byte later, with a
+        // `res_linear` below the plausible range.
+        let mut bytes = BODY_TAG.to_vec();
+        push_ref(&mut bytes, 33_007);
+        assert_eq!(bytes[2], 0xff);
+        bytes.extend_from_slice(&784u32.to_be_bytes());
+        bytes.extend(body_fields_with_resolution(
+            [5, 6, 1, 1, 1, 64],
+            1.0e-7,
+            1,
+            [7, 8, 9, 10, 1, 12, 11],
+        ));
+        let prefixed = super::parse_body_layout(&bytes, 0, 3).expect("prefixed reading");
+        assert!(!super::plausible_resolution(&prefixed));
+
+        let facts = scan(&bytes);
+        let [body] = facts.bodies.as_slice() else {
+            panic!("one BODY: {:?}", facts.bodies);
+        };
+        assert_eq!(body.attr, 33_007);
+        assert_eq!(body.linear_resolution.to_bits(), 1.0e-7f64.to_bits());
+    }
+
+    #[test]
+    fn a_named_implausible_body_that_shares_a_plausible_body_index_is_dropped() {
+        let mut bytes = typed_shell_with_body(9, 814, 5, 39);
+        for (node_id, res_linear) in [(1006, 1.0e-8), (1007, 0.5)] {
+            bytes.extend(typed_prefix(BODY_TAG, 5, node_id));
+            bytes.extend(body_fields_with_resolution(
+                [5, 6, 1, 1, 1, 1],
+                res_linear,
+                1,
+                [7, 8, 9, 10, 1, 12, 11],
+            ));
+        }
+        let facts = scan(&bytes);
+        let [body] = facts.bodies.as_slice() else {
+            panic!("one BODY: {:?}", facts.bodies);
+        };
+        assert_eq!(body.attr, 5);
+        assert_eq!(body.linear_resolution.to_bits(), 1.0e-8f64.to_bits());
+    }
+
     #[test]
     fn edited_shell_schema_selects_shell_for_a_shared_valid_prefix() {
         let mut bytes = copied_schema(SHELL_TAG, 9);
@@ -1649,7 +1840,7 @@ mod tests {
         bytes.extend(500u16.to_be_bytes());
         bytes.extend(&payload);
         for prefixed in [false, true] {
-            let facts = super::scan_with_payload_exclusions(&bytes, prefixed);
+            let facts = super::scan_with_payload_exclusions(&ScopedBody::new(&bytes, prefixed));
             assert!(!facts.topology_owner_attrs().contains(&3));
             assert!(!facts.bodies.iter().any(|node| node.attr == 3));
         }
@@ -1676,14 +1867,19 @@ mod tests {
         schema_pointer(&mut bytes, &[b'a'; 40], 82);
         bytes.push(b'Z');
         let payload = bytes.len();
-        assert!(
-            super::super::topology::point_class_attrs(&bytes[fake_point..], false).contains(&3)
-        );
+        assert!(super::super::topology::point_class_attrs(&ScopedBody::new(
+            &bytes[fake_point..],
+            false
+        ))
+        .contains(&3));
         bytes.extend(body_node(3, 1006, 1));
         bytes.extend([0, 1, 0, 1, 0, 0, 0, 0, 0, 1]);
         let scopes = super::super::topology::topology_scopes(&bytes, false);
         assert!(scopes.payloads.is_empty());
-        assert!(!super::super::topology::point_class_attrs(&bytes, false).contains(&3));
+        assert!(
+            !super::super::topology::point_class_attrs(&ScopedBody::new(&bytes, false))
+                .contains(&3)
+        );
         let facts = scan(&bytes);
         assert!(facts
             .bodies
@@ -1691,7 +1887,9 @@ mod tests {
             .any(|node| node.offset == payload && node.attr == 3));
         assert!(facts.topology_owner_attrs().contains(&3));
         bytes.extend(crate::test_support::parasolid::world_point(3, [0.0; 3]));
-        assert!(super::super::topology::point_class_attrs(&bytes, false).contains(&3));
+        assert!(
+            super::super::topology::point_class_attrs(&ScopedBody::new(&bytes, false)).contains(&3)
+        );
     }
 
     #[test]
@@ -1859,6 +2057,7 @@ mod tests {
                 topology_refs: [8, 1, 1, 1, 1, 1, 1],
                 ownership_refs: vec![41],
                 kind: BodyKind::Solid,
+                linear_resolution: 1.0e-8,
                 offset: 1,
                 end: 2,
             }],
@@ -1890,6 +2089,7 @@ mod tests {
                 attr: 100,
                 node_id: 55,
                 refs: [1, 1, 1, 8, 12],
+                front: None,
                 sense: Sense::Forward,
                 offset: 9,
                 end: 10,
@@ -1915,6 +2115,7 @@ mod tests {
                     topology_refs: [8, 1, 1, 1, 1, 1, 1],
                     ownership_refs: vec![41],
                     kind: BodyKind::Solid,
+                    linear_resolution: 1.0e-8,
                     offset: 1,
                     end: 2,
                 },
@@ -1924,6 +2125,7 @@ mod tests {
                     topology_refs: [999, 1, 1, 1, 1, 1, 1],
                     ownership_refs: vec![900],
                     kind: BodyKind::Solid,
+                    linear_resolution: 1.0e-8,
                     offset: 3,
                     end: 4,
                 },
@@ -1963,6 +2165,7 @@ mod tests {
                 topology_refs: [8, 1, 1, 1, 1, 1, 1],
                 ownership_refs: vec![41],
                 kind: BodyKind::Solid,
+                linear_resolution: 1.0e-8,
                 offset: 1,
                 end: 2,
             }],
@@ -1986,6 +2189,7 @@ mod tests {
                     attr: 100,
                     node_id: 55,
                     refs: [1, 1, 1, 65_536, 12],
+                    front: None,
                     sense: Sense::Forward,
                     offset: 7,
                     end: 8,
@@ -1994,6 +2198,7 @@ mod tests {
                     attr: 101,
                     node_id: 56,
                     refs: [1, 1, 1, 8, 12],
+                    front: None,
                     sense: Sense::Forward,
                     offset: 9,
                     end: 10,
@@ -2018,6 +2223,7 @@ mod tests {
                 topology_refs: [8, 1, 1, 1, 1, 1, 1],
                 ownership_refs: vec![41],
                 kind: BodyKind::Solid,
+                linear_resolution: 1.0e-8,
                 offset: 1,
                 end: 2,
             }],
@@ -2077,6 +2283,7 @@ mod tests {
                 topology_refs: [8, 1, 1, 1, 1, 1, 1],
                 ownership_refs: vec![41],
                 kind: BodyKind::Solid,
+                linear_resolution: 1.0e-8,
                 offset: 1,
                 end: 2,
             }],
@@ -2096,14 +2303,17 @@ mod tests {
         assert!(facts.hierarchies(&HashSet::new()).is_none());
     }
 
+    /// A region-chain head that names no REGION selects no REGION, also
+    /// where a REGION's previous reference holds that value (§6).
     #[test]
-    fn region_chain_accepts_body_predecessor_sentinel() {
+    fn a_region_chain_head_that_names_no_region_selects_no_chain() {
         let body = BodyNode {
             attr: 3,
             node_id: 7,
             topology_refs: [7, 1, 1, 1, 10, 1, 1],
             ownership_refs: Vec::new(),
             kind: BodyKind::Solid,
+            linear_resolution: 1.0e-8,
             offset: 1,
             end: 2,
         };
@@ -2118,11 +2328,7 @@ mod tests {
                 end: 4,
             },
         )]);
-        let chain = region_chain(&body, &regions).expect("sentinel-linked region");
-        assert_eq!(
-            chain.iter().map(|region| region.attr).collect::<Vec<_>>(),
-            vec![35]
-        );
+        assert_eq!(region_chain(&body, &regions), Some(Vec::new()));
     }
 
     #[test]
@@ -2152,6 +2358,7 @@ mod tests {
                 topology_refs: [1, 1, 1, 1, 1, 1, 1],
                 ownership_refs: Vec::new(),
                 kind: BodyKind::Wire,
+                linear_resolution: 1.0e-8,
                 offset: 1,
                 end: 2,
             }],
@@ -2192,7 +2399,7 @@ mod tests {
         bytes.extend(710u16.to_be_bytes());
         bytes.extend(payload);
         for prefixed in [false, true] {
-            let facts = super::scan_with_payload_exclusions(&bytes, prefixed);
+            let facts = super::scan_with_payload_exclusions(&ScopedBody::new(&bytes, prefixed));
             assert!(facts.bodies.is_empty());
             assert!(!facts.topology_owner_attrs().contains(&900));
         }
@@ -2209,12 +2416,14 @@ mod tests {
             u16::try_from(owner).unwrap(),
             [0.0; 3],
         );
-        assert!(super::super::topology::point_class_attrs(&point, true).contains(&owner));
+        assert!(
+            super::super::topology::point_class_attrs(&ScopedBody::new(&point, true))
+                .contains(&owner)
+        );
         for reverse in [false, true] {
-            let mut streams = vec![
-                (&partition, &[][..], false),
-                (&delta, point.as_slice(), true),
-            ];
+            let partition_stream = ScopedBody::new(&[], false);
+            let delta_stream = ScopedBody::new(point.as_slice(), true);
+            let mut streams = vec![(&partition, &partition_stream), (&delta, &delta_stream)];
             if reverse {
                 streams.reverse();
             }
@@ -2232,8 +2441,8 @@ mod tests {
         shell.attr = owner;
         partition.shells.push(shell);
         assert!(!super::topology_owner_attrs_for_streams([
-            (&partition, &[][..], false),
-            (&delta, &[][..], true)
+            (&partition, &ScopedBody::new(&[][..], false)),
+            (&delta, &ScopedBody::new(&[][..], true))
         ])
         .contains(&owner));
     }
@@ -2256,8 +2465,8 @@ mod tests {
         delta.bodies.push(source.bodies[0].clone());
         let empty = Facts::default();
         assert!(super::topology_owner_attrs_for_streams([
-            (&empty, &[][..], false),
-            (&delta, &[][..], true)
+            (&empty, &ScopedBody::new(&[][..], false)),
+            (&delta, &ScopedBody::new(&[][..], true))
         ])
         .contains(&owner));
         let mut partition = Facts::default();
@@ -2265,15 +2474,15 @@ mod tests {
         face.attr = owner;
         partition.faces.push(face);
         assert!(!super::topology_owner_attrs_for_streams([
-            (&partition, &[][..], false),
-            (&delta, &[][..], true)
+            (&partition, &ScopedBody::new(&[][..], false)),
+            (&delta, &ScopedBody::new(&[][..], true))
         ])
         .contains(&owner));
         let point =
             crate::test_support::parasolid::world_point(u16::try_from(owner).unwrap(), [0.0; 3]);
         assert!(!super::topology_owner_attrs_for_streams([
-            (&empty, point.as_slice(), false),
-            (&delta, &[][..], true)
+            (&empty, &ScopedBody::new(point.as_slice(), false)),
+            (&delta, &ScopedBody::new(&[][..], true))
         ])
         .contains(&owner));
     }
@@ -2286,6 +2495,7 @@ mod tests {
             attr,
             node_id: attr,
             refs: [next, 1, 1, 5, 1],
+            front: None,
             sense: Sense::Forward,
             offset: 0,
             end: 0,
@@ -2319,6 +2529,7 @@ mod tests {
             attr,
             node_id: attr,
             refs: [next, 1, 1, 5, 1],
+            front: None,
             sense: Sense::Forward,
             offset: 0,
             end: 0,
