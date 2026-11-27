@@ -1,7 +1,7 @@
 //! The persistent-identity family: `moFR_c`, the `*IdRep_c` classes,
 //! `moExtObject_c`, `moCStringHandle_c`.
 
-use super::super::reader::{bad, Reader, Res, V};
+use super::super::reader::{bad, Reader, Res, Stop, V};
 use crate::layout::three_int_identity_own as three_int;
 
 #[cfg(test)]
@@ -117,7 +117,11 @@ pub(crate) fn rep(r: &mut Reader<'_>) -> Res<V> {
         ]));
     }
     let n = own(&c).unwrap_or(0);
-    let own_bytes = r.slice(r.p, n).to_vec();
+    let own_bytes = r.slice(r.p, n);
+    if own_bytes.len() != n {
+        return Err(Stop::End(r.p));
+    }
+    let own_bytes = own_bytes.to_vec();
     r.skip(n);
     Ok(V::map([("fr", V::from(f)), ("own", V::Bytes(own_bytes))]))
 }
