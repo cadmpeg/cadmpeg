@@ -696,17 +696,13 @@ fn a_suppression_no_column_holds_declines_the_patch_and_is_charged() {
     assert!(!decoded.ir().model.configurations.is_empty());
     let mut ir = decoded.ir().clone();
     let (configuration, _) = contradicted(&mut ir);
-    let report = crate::test_support::assert_written_with_loss(
-        &ir,
-        Some(decoded.source_fidelity()),
-        "f3d/writer.patch-declined",
-        DECLINED,
-    );
+    let report =
+        crate::test_support::assert_patch_declined(&ir, Some(decoded.source_fidelity()), DECLINED);
     assert!(
-        report.losses.iter().any(|loss| {
-            loss.code.to_string() != "f3d/writer.patch-declined"
-                && loss.message.contains(&configuration)
-        }),
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(&configuration)),
         "{:#?}",
         report.losses
     );
@@ -745,10 +741,12 @@ fn a_definition_no_column_holds_writes_and_is_charged() {
         id.as_str(),
     );
     assert!(
-        report.losses.iter().any(|loss| {
-            loss.code.to_string() == "f3d/writer.patch-declined" && loss.message.contains(DECLINED)
-        }),
-        "{:#?}",
-        report.losses
+        matches!(
+            report.synthesis_cause(),
+            Some(cadmpeg_ir::report::export::SynthesisCause::PatchDeclined { reason })
+                if reason.contains(DECLINED)
+        ),
+        "{:?}",
+        report.write_path()
     );
 }
