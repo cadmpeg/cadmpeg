@@ -2837,8 +2837,6 @@ fn untaken_local_bodies_losses(
         .collect()
 }
 
-/// Gives up the Parasolid site `part` whose entity records frame and build
-/// no geometry. A site that holds no entity record gives up nothing.
 /// A site states content when it holds a face, a surface, a point, or a body
 /// whose faces were lost.
 fn states_content(decoded: &Brep) -> bool {
@@ -2848,6 +2846,8 @@ fn states_content(decoded: &Brep) -> bool {
         || !decoded.bodies.is_empty()
 }
 
+/// Gives up the Parasolid site `part` whose entity records frame and state
+/// no content. A site that holds no entity record gives up nothing.
 fn give_up_unbuilt_site(
     ctx: &DecodeContext<'_>,
     part: Part<'_>,
