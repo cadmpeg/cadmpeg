@@ -550,3 +550,66 @@ fn a_live_tool_that_a_later_transition_changes_stays_native() {
         BodySelection::NativeSet(_)
     ));
 }
+
+/// A scope of the tool history whose result state is `state`.
+fn modifier_scope(record_index: u32, state: i64) -> DesignParameterScope {
+    let mut modifier = scope(DesignFeatureKind::Fillet, record_index);
+    modifier
+        .try_edit(|draft| {
+            draft.history_state_id = Some(state);
+            draft.previous_history_state_id = Some(state - 1);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    modifier
+}
+
+/// Bind a Combine of ordinal 3 whose tool the tool history changes in state 2,
+/// where the feature of state 2 has `modifier_ordinal`.
+fn bind_modified_tool(
+    modifier_ordinal: u64,
+) -> (Vec<Feature>, Vec<cadmpeg_ir::report::loss::LossNote>) {
+    let history = tool_history(&[&[]]);
+    let scopes = vec![
+        component_scope(),
+        modifier_scope(200, 2),
+        combine_scope(&[(150, 100)]),
+    ];
+    let mut features = vec![
+        feature("first", 1, &scope_id(100)),
+        feature("modifier", modifier_ordinal, &scope_id(200)),
+        feature("combine", 3, &scope_id(400)),
+    ];
+    let scope_histories = std::collections::HashMap::from([
+        (scope_id(100), TOOL_HISTORY.to_owned()),
+        (scope_id(200), TOOL_HISTORY.to_owned()),
+    ]);
+    let (losses, _) = bind(
+        &mut features,
+        &scopes,
+        &[live_pair(150)],
+        (std::slice::from_ref(&history), &scope_histories),
+    );
+    (features, losses)
+}
+
+#[test]
+fn a_live_tool_changed_only_by_features_before_the_combine_selects_its_model_body() {
+    let (features, losses) = bind_modified_tool(2);
+    assert!(losses.is_empty(), "{losses:?}");
+    assert!(matches!(
+        tools_of(&features[2]),
+        BodySelection::Resolved { .. }
+    ));
+}
+
+#[test]
+fn a_live_tool_changed_by_a_feature_after_the_combine_stays_native() {
+    let (features, losses) = bind_modified_tool(5);
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(losses[0].message.contains("later transition"), "{losses:?}");
+    assert!(matches!(
+        tools_of(&features[2]),
+        BodySelection::NativeSet(_)
+    ));
+}

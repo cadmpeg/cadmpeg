@@ -664,6 +664,44 @@ pub(super) fn later_body_changes(
     )
 }
 
+/// The states after the result state of `scope` in `history` whose
+/// transition updates or deletes `slot`.
+pub(super) fn later_slot_change_states(
+    history: &AsmHistory,
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    slot: i64,
+) -> Option<Vec<i64>> {
+    let state_id = scope.history_state_id()?;
+    let order = history.states_oldest_first()?;
+    let states = history.states();
+    let mut positions = order.iter().enumerate().filter(|(_, index)| {
+        states
+            .get(**index)
+            .is_some_and(|state| state.state_id == state_id)
+    });
+    let (position, _) = positions.next()?;
+    if positions.next().is_some() {
+        return None;
+    }
+    Some(
+        order[position + 1..]
+            .iter()
+            .filter_map(|index| states.get(*index))
+            .filter(|state| {
+                state.transition.as_ref().is_some_and(|transition| {
+                    let bodies = &transition.topology.bodies;
+                    bodies
+                        .updated
+                        .iter()
+                        .chain(&bodies.deleted)
+                        .any(|s| *s == slot)
+                })
+            })
+            .map(|state| state.state_id)
+            .collect(),
+    )
+}
+
 struct ReverseContext<'a> {
     inputs: &'a FeatureBodySelectionInputs<'a>,
     scope_histories: &'a HashMap<String, String>,

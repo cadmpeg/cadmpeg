@@ -69,7 +69,12 @@ fn resolve_tool(
     let body = if pair.history_only {
         ToolBody::Generated(pair.id().clone())
     } else {
-        ToolBody::Model(live_tool_body(pair, creator, combine_history, inputs)?)
+        ToolBody::Model(live_tool_body(
+            pair,
+            creator,
+            (combine_ordinal, combine_history),
+            inputs,
+        )?)
     };
     Ok(ResolvedTool {
         generator: feature.id.clone(),
@@ -79,11 +84,13 @@ fn resolve_tool(
 
 /// The solved body of a live pair whose creating scope reads a history other
 /// than `combine_history`, when the creating state inserts one body slot and
-/// no later transition of that history updates or deletes the slot.
+/// every later transition of that history that updates or deletes the slot
+/// belongs to a feature that precedes the Combine. The solved body is then
+/// the body that the Combine reads.
 fn live_tool_body(
     pair: &DesignBodyBinding,
     creator: &DesignParameterScope,
-    combine_history: Option<&str>,
+    (combine_ordinal, combine_history): (u64, Option<&str>),
     inputs: &Inputs<'_>,
 ) -> Result<cadmpeg_ir::ids::BodyId, &'static str> {
     let history = super::history_states::bound_scope_history(
@@ -110,10 +117,26 @@ fn live_tool_body(
     }) else {
         return Err("its creating state does not insert exactly one body");
     };
-    let later = super::generated_bodies::later_body_changes(history, creator)
+    let later = super::generated_bodies::later_slot_change_states(history, creator, *slot)
         .ok_or("its creating state has no unique place in the history's state order")?;
-    if later.contains(slot) {
-        return Err("a later transition of its history changes the body");
+    let stream = crate::ids::native_stream(&creator.id);
+    for changed in later {
+        let mut owners = inputs.scopes.iter().filter(|candidate| {
+            candidate.history_state_id() == Some(changed)
+                && crate::ids::native_stream(&candidate.id) == stream
+                && inputs.scope_histories.get(&candidate.id) == Some(&history.id)
+        });
+        let owner = match (owners.next(), owners.next()) {
+            (Some(owner), None) => owner,
+            _ => return Err("a later transition of its history changes the body"),
+        };
+        let precedes = inputs
+            .by_native
+            .get(owner.id.as_str())
+            .is_some_and(|feature| feature.ordinal < combine_ordinal);
+        if !precedes {
+            return Err("a later transition of its history changes the body");
+        }
     }
     pair.body
         .clone()
