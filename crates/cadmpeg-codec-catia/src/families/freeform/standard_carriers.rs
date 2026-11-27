@@ -481,6 +481,7 @@ impl<'a> CarrierResolver<'a> {
                         )
                     }
                     0x82 => {
+                        const DUAL_ENDPOINT_TOL_MM: f64 = 0.05;
                         let mut dat = 1;
                         let ref1 = allocation_reference(&dpl, &mut dat)?;
                         let ref2 = allocation_reference(&dpl, &mut dat)?;
@@ -514,13 +515,12 @@ impl<'a> CarrierResolver<'a> {
                             );
                             eval::decode::curve_point(EvaluationAdmission::Standard, &cg, t)
                                 .ok()
-                                .map(|p| p.get())
+                                .map(cadmpeg_ir::features::geometry::FinitePoint3::get)
                         };
                         let p1a = eval_end(&c1, range1[0])?;
                         let p1b = eval_end(&c1, range1[1])?;
                         let p2a = eval_end(&c2, range2[0])?;
                         let p2b = eval_end(&c2, range2[1])?;
-                        const DUAL_ENDPOINT_TOL_MM: f64 = 0.05;
                         let same_dir = p1a.distance(p2a) <= DUAL_ENDPOINT_TOL_MM
                             && p1b.distance(p2b) <= DUAL_ENDPOINT_TOL_MM;
                         let opp_dir = p1a.distance(p2b) <= DUAL_ENDPOINT_TOL_MM
