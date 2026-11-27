@@ -5,21 +5,19 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::construction::{
-    Construction, ConstructionInput, FrameValue, InputReference,
-};
+use cadmpeg_ir::design::construction::{Construction, ConstructionInput, InputReference};
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::sketch::{
-    DefiningRole, EntityDefinition, EntityForm, EntityRole, Planar, PlanarCurve, Sketch,
-    SketchEntity, SketchPlane, SketchSolve,
+    DefiningRole, EntityDefinition, EntityForm, EntityRole, Planar, Sketch, SketchEntity,
+    SketchPlane, SketchSolve,
 };
+use cadmpeg_ir::design::projection::sketch::{planar_curve, stored_frame};
 use cadmpeg_ir::design::selection::{Anchor, Picks, Selection};
 use cadmpeg_ir::features::FeatureOperation as LegacyOperation;
 use cadmpeg_ir::sketches::{
-    SketchEntity as LegacyEntity, SketchGeometryDefinition as Geometry, SketchId, SketchPlacement,
+    SketchEntity as LegacyEntity, SketchGeometryDefinition as Geometry, SketchId,
 };
-use cadmpeg_ir::units::{UnitVector2, UnitVector3};
 use cadmpeg_ir::CadIr;
 
 mod constraints;
@@ -57,26 +55,9 @@ pub(super) fn project(
             continue;
         };
         ctx.charge_entities(1, "project Inventor v11 sketch")?;
-        let (inputs, resolved) = match source.placement {
-            SketchPlacement::Resolved { .. } => {
-                let (origin, normal, u_axis) = source
-                    .placement
-                    .resolved()
-                    .ok_or_else(|| CodecError::malformed("Inventor sketch frame"))?;
-                let x_axis = UnitVector3::normalized_nonzero(u_axis)
-                    .ok_or_else(|| CodecError::malformed("Inventor sketch x axis"))?;
-                let z_axis = UnitVector3::normalized_nonzero(normal)
-                    .ok_or_else(|| CodecError::malformed("Inventor sketch normal"))?;
-                let frame = FrameValue {
-                    origin,
-                    x_axis,
-                    z_axis,
-                    y_axis: UnitVector3::normalized(z_axis.as_raw().cross(*x_axis.as_raw()))
-                        .ok_or_else(|| CodecError::malformed("Inventor sketch y axis"))?,
-                };
-                (Vec::new(), Some(frame))
-            }
-            SketchPlacement::Unresolved {} => (
+        let (inputs, resolved) = match stored_frame(source.placement) {
+            Some(frame) => (Vec::new(), Some(frame)),
+            None => (
                 vec![ConstructionInput {
                     role: None,
                     reference: Some(InputReference::Picks(Selection {
@@ -125,7 +106,7 @@ pub(super) fn project(
             ir.design.sketch_entities.push(SketchEntity {
                 id: entity.id().clone(),
                 sketch: source.id.clone(),
-                definition: curve(&entity.geometry).map_or_else(
+                definition: planar_curve(&entity.geometry).map_or_else(
                     || EntityDefinition::Defined {
                         form: Box::new(EntityForm::Native(match entity.geometry.definition() {
                             Geometry::Native { native_kind } => native_kind.clone(),
@@ -198,60 +179,6 @@ fn endpoint_roles(entities: &[LegacyEntity]) -> EndpointRoles<'_> {
         roles.sort_by(|left, right| left.of.cmp(&right.of));
     }
     roles
-}
-
-fn curve(geometry: &cadmpeg_ir::sketches::SketchGeometry) -> Option<PlanarCurve> {
-    Some(match geometry.definition() {
-        Geometry::Point { position } => PlanarCurve::Point(*position),
-        Geometry::Line { start, end } => PlanarCurve::Line {
-            start: *start,
-            end: *end,
-        },
-        Geometry::ReferenceLine { origin, direction } => PlanarCurve::InfiniteLine {
-            through: *origin,
-            direction: normalized_direction([direction.get().u, direction.get().v])?,
-        },
-        Geometry::Circle { center, radius } => PlanarCurve::Circle {
-            center: *center,
-            radius: *radius,
-        },
-        Geometry::Arc {
-            center,
-            radius,
-            start_angle,
-            end_angle,
-        } => PlanarCurve::Arc {
-            center: *center,
-            radius: *radius,
-            start: *start_angle,
-            end: *end_angle,
-        },
-        Geometry::Ellipse {
-            center,
-            major_angle,
-            radii,
-            bounds,
-        } => PlanarCurve::Ellipse {
-            center: *center,
-            major: direction(*major_angle)?,
-            radii: [radii.major(), radii.minor()],
-            range: *bounds,
-        },
-        Geometry::Nurbs { curve } => PlanarCurve::Nurbs(curve.clone()),
-        _ => return None,
-    })
-}
-
-fn normalized_direction(value: [f64; 2]) -> Option<UnitVector2> {
-    use cadmpeg_ir::math::portable::Portable;
-    let length = value[0].portable_hypot(value[1]);
-    UnitVector2::new(value.map(|component| component / length))
-}
-
-fn direction(angle: cadmpeg_ir::scalar::Angle) -> Option<UnitVector2> {
-    use cadmpeg_ir::math::portable::Portable;
-    let (sin, cos) = angle.get().portable_sin_cos();
-    UnitVector2::new([cos, sin])
 }
 
 #[cfg(test)]
