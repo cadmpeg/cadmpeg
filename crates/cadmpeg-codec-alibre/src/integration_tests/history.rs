@@ -469,7 +469,11 @@ fn a_sheet_metal_part_states_its_rule() {
     };
     close(parameter(ir, depth), 1.0);
     close(parameter(ir, width), 0.5);
-    let options: Vec<_> = rule.native_options.keys().map(|key| key.as_str()).collect();
+    let options: Vec<_> = rule
+        .native_options
+        .keys()
+        .map(cadmpeg_ir::design::names::CodecName::as_str)
+        .collect();
     assert_eq!(
         options,
         [
@@ -491,7 +495,12 @@ fn a_sheet_metal_radius_is_an_equation_of_the_thickness() {
         ir.design
             .parameters
             .iter()
-            .find(|p| p.name.as_ref().map(|n| n.as_str()) == Some(name))
+            .find(|p| {
+                p.name
+                    .as_ref()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    == Some(name)
+            })
             .unwrap()
     };
     let thickness = named("AD_Thickness");
@@ -530,7 +539,12 @@ fn a_sheet_metal_part_keeps_its_integer_and_unitless_parameters() {
         ir.design
             .parameters
             .iter()
-            .find(|p| p.name.as_ref().map(|n| n.as_str()) == Some(name))
+            .find(|p| {
+                p.name
+                    .as_ref()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    == Some(name)
+            })
             .unwrap()
     };
     let kind = named("AD_BendReliefType");
@@ -722,7 +736,12 @@ mod synthetic {
             .design
             .parameters
             .iter()
-            .find(|p| p.name.as_ref().map(|n| n.as_str()) == Some("AD_GlobalBendRadius"))
+            .find(|p| {
+                p.name
+                    .as_ref()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    == Some("AD_GlobalBendRadius")
+            })
             .unwrap();
         assert_eq!(
             radius.value,
