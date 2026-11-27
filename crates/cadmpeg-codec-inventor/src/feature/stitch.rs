@@ -49,7 +49,7 @@ pub(crate) fn millimetres(parameter: &crate::design::PmDcParameter) -> Option<Le
     Length::new(parameter.model_value.get() * 10.0)
 }
 
-/// The neutral operation and the result wrapper that the PmDc slots give.
+/// The neutral operation and the result wrapper that the `PmDc` slots give.
 /// `property` resolves a record reference index to a feature property, and
 /// `length` resolves one to the value of a length parameter.
 pub(crate) fn operation<'a>(

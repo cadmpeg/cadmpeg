@@ -991,6 +991,7 @@ mod tests {
                 "feature.thread-definition-partial",
                 "feature.thicken-operands-native",
                 "feature.thicken-construction-native",
+                "feature.stitch-controls-native",
                 "feature.shell-definition-partial",
                 "feature.sheet-metal-attachment-controls-native",
                 "feature.sheet-metal-bend-controls-native",
