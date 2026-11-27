@@ -761,21 +761,21 @@ object identifiers after the end of its function name (§4.2):
 | 380 | `Double Value Object` relief width |
 | 408 | `Double Value Object` relief length |
 | 440 | `Double Value Object` offset kind, `44` |
-| 492 | `CLSID_JDim` partial width where the extent kind is `135`; offset where the extent kind is `138`; setback from the start of the edge where the extent kind is `140` |
+| 492 | `CLSID_JDim` partial width where the extent kind is `135`; offset where the extent kind is `138` or `139`; setback from the start of the edge where the extent kind is `140` |
 | 496 | `Double Value Object` relief type, where the extent kind is `134` |
-| 512 | `CLSID_JDim` width where the extent kind is `138`; setback from the end of the edge where the extent kind is `140` |
+| 512 | `CLSID_JDim` width where the extent kind is `138` or `139`; setback from the end of the edge where the extent kind is `140` |
 | 520 | `Double Value Object` relief type, where the extent kind is `135` |
-| 540 | `Double Value Object` relief type, where the extent kind is `138` or `140` |
+| 540 | `Double Value Object` relief type, where the extent kind is `138`, `139` or `140` |
 | 832 | `Double Value Object` bend method, the document variable of §10.1 index 13 |
 | 860 | `Double Value Object` bend deduction, the document variable of §10.1 index 11 |
 | 888 | `Double Value Object` bend allowance, the document variable of §10.1 index 12 |
 
 The slots from offset 492 on are 24 bytes later where the extent kind is
 `135` than where it is `134`, and 44 bytes later where the extent kind is
-`138` or `140`. The slots at offsets 832, 860 and 888 are
-those of the extent kind `134` layout; where the extent kind is `140` the bend
-method, bend deduction and bend allowance slots lie at offsets 876, 904 and
-932. The feature holds one edge. A flange
+`138`, `139` or `140`. The slots at offsets 832, 860 and 888 are
+those of the extent kind `134` layout; where the extent kind is `138`, `139`
+or `140` the bend method, bend deduction and bend allowance slots lie at
+offsets 876, 904 and 932. The feature holds one edge. A flange
 that follows another flange in the part names that flange at offset 40.
 
 The extent kind is `134` for the full length of the edge and `135` for a
@@ -794,10 +794,15 @@ the end of the edge. The start of the edge is the end that the edge proxy
 (§7.6) names as its start point. The flange spans the edge length less both
 setbacks. A setback is not negative. The stored edge proxy is the whole edge.
 
-The extent kind `138` is a width along the edge that starts at an offset from
-one end of the edge. The `CLSID_JDim` at offset 492 stores the offset and the
-`CLSID_JDim` at offset 512 stores the width. The stored edge proxy is the whole
-edge.
+The extent kinds `138` and `139` are a width along the edge that starts at an
+offset from one end of the edge. The `CLSID_JDim` at offset 492 stores the
+offset and the `CLSID_JDim` at offset 512 stores the width. The stored edge
+proxy is the whole edge. The offset of the extent kind `138` counts from the
+start of the edge (§7.6) and the width runs towards the end of the edge. The
+offset of the extent kind `139` counts from the end of the edge and the width
+runs towards the start of the edge. The offset and the width are independent
+of the edge length: the setback from the other end is the edge length less the
+offset and the width.
 
 The relief width and the relief length dimension the notch that the relief
 cuts in the base at each end of the flange width. The notch lies outside the

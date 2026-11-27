@@ -96,14 +96,6 @@
 
 **Need.** The flat pattern of the same flanges under each bend method, at two flange angles.
 
-### DR-1073. Offset end of extent kind 138
-
-**Question.** From which end of the edge does the offset of extent kind `138` (§10.3) count, and do the bend method, bend deduction and bend allowance slots lie 44 bytes later than for the extent kind `134`, as they do for extent kind `140`?
-
-**Known.** The offset and the width are two `CLSID_JDim` slots at offsets 492 and 512. The relief type is at offset 540. The offset equals the remaining edge length less the width in every stored flange of this kind, so both ends have the same setback.
-
-**Need.** A flange of extent kind `138` whose offset differs from the remaining edge length less the width, on an edge of known direction.
-
 ### DR-1034. Flange constants and options
 
 **Question.** Which options set the flange object slots that hold the same value in every stored flange, and which values can the offset kind, the dimension side and the corner relief take?
