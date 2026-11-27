@@ -89,16 +89,16 @@ pub(crate) fn collect(
             continue;
         };
         let head = &history.states()[head];
-        let Some((current, _)) = super::feature_outputs::feature_history_states(
+        let Some(placement) = super::feature_outputs::feature_history_states(
             feature,
             scopes,
             histories,
             scope_histories,
-        )
-        .pair() else {
+        ) else {
             tails.push(unproved(head.id.clone(), None, Some(head.state_id), false));
             continue;
         };
+        let current = placement.state_id;
         if current == head.state_id {
             continue;
         }

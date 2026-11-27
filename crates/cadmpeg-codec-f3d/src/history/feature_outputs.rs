@@ -5,7 +5,9 @@ use super::binding_histories::history_state_indexes;
 use super::body_closures::{bodies_touching, changed_topology_family_refs};
 use super::face_resolution::historical_brep_source;
 use super::historical_index::HistoricalBodyIndex;
-use super::history_states::{bound_history_state_pair, unique_history_state_pair};
+use super::history_states::{
+    bound_history_state_pair, unique_history_state_pair, PreviousState, ScopeStates, StateConflict,
+};
 use super::output_properties::{
     classify_face_plane, classify_inserted_face, collect_edge_midpoint_slots,
     feature_consumes_tool_body, feature_supports_body_absorption, resolve_split_result_plane,
@@ -58,7 +60,17 @@ pub(crate) fn bind_feature_outputs(
         .collect::<Vec<_>>();
     let feature_states = placements
         .iter()
-        .map(|placement| placement.pair())
+        .map(|placement| {
+            let placement = placement.as_ref()?;
+            match placement.from.previous {
+                PreviousState::Linked(previous_state_id) => {
+                    Some((placement.state_id, previous_state_id))
+                }
+                PreviousState::Unheld | PreviousState::Unnamed | PreviousState::Conflicting(_) => {
+                    None
+                }
+            }
+        })
         .collect::<Vec<_>>();
     let feature_sources = features
         .iter()
@@ -609,22 +621,28 @@ pub(crate) fn bind_feature_outputs(
         {
             continue;
         }
-        let Some((state_id, previous_state_id)) = feature_states[idx] else {
-            if let FeatureStates::Unlinked { scope, state_id } = placements[idx] {
+        let Some(placement) = placements[idx] else {
+            continue;
+        };
+        let PreviousState::Linked(previous_state_id) = placement.from.previous else {
+            if let Some(reason) = unlinked_reason(placement.from.previous) {
                 if feature.evaluation.outputs().is_empty()
                     && super::stored_bodies::bound_result_bodies(feature).is_none()
                     && !super::stored_bodies::has_projection_bound_base_feature_outputs(
                         feature, scopes,
                     )
                 {
-                    losses.push(crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.note(format!(
-                        "{} has state {state_id} of scope {scope} in the body history, and the histories that hold it link it to no single previous state.",
-                        feature.id
-                    )));
+                    losses.push(
+                        crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.note(format!(
+                            "{} has state {} of scope {} in the body history, and {reason}.",
+                            feature.id, placement.from.state_id, placement.scope
+                        )),
+                    );
                 }
             }
             continue;
         };
+        let state_id = placement.state_id;
         let bound_history = feature_sources[idx];
         let history_source = bound_history.and_then(|h| historical_brep_source(&histories[h].id));
         let cur_key = bound_history.map(|h| (h, state_id));
@@ -1100,60 +1118,58 @@ pub(super) fn combine_states_applied_operation(
 
 /// Where a feature's scopes place it in the body history.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum FeatureStates<'a> {
-    /// The feature produces the first state from the second.
-    Pair(i64, i64),
-    /// The feature's scopes state no history state that a history holds.
-    Unplaced,
-    /// The histories that hold `state_id` of `scope` link it to no single
-    /// previous state.
-    Unlinked { scope: &'a str, state_id: i64 },
+pub(super) struct FeatureStates<'a> {
+    /// The history state the feature produces.
+    pub(super) state_id: i64,
+    /// The scope whose previous state the feature follows.
+    pub(super) scope: &'a str,
+    /// The states of that scope.
+    pub(super) from: ScopeStates,
 }
 
-impl FeatureStates<'_> {
-    pub(super) fn pair(self) -> Option<(i64, i64)> {
-        match self {
-            Self::Pair(state_id, previous_state_id) => Some((state_id, previous_state_id)),
-            Self::Unplaced | Self::Unlinked { .. } => None,
-        }
-    }
-}
-
-/// The history state a feature's scope produces and the state it follows.
-/// A derived base group produces the state of its last scope from the
-/// previous state of its first.
+/// The history state a feature's scope produces and the states of the scope
+/// whose previous state it follows. A derived base group produces the state
+/// of its last scope from the previous state of its first.
 pub(super) fn feature_history_states<'a>(
     feature: &cadmpeg_ir::features::Feature,
     scopes: &'a [crate::records::feature::scope::DesignParameterScope],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
-) -> FeatureStates<'a> {
-    use super::history_states::ScopePrevious;
-    let Some(scope) = feature
+) -> Option<FeatureStates<'a>> {
+    let scope = feature
         .native_ref
         .as_deref()
-        .and_then(|id| scopes.iter().find(|scope| scope.id == id))
-    else {
-        return FeatureStates::Unplaced;
-    };
+        .and_then(|id| scopes.iter().find(|scope| scope.id == id))?;
     let (first, state_id) =
         match crate::records::feature::derived_base::feature_derived_base_scopes(feature, scopes) {
-            Some(group) => match (group.first(), group.last()) {
-                (Some(&first), Some(last)) => (first, last.history_state_id()),
-                _ => return FeatureStates::Unplaced,
-            },
-            None => (scope, scope.history_state_id()),
+            Some(group) => (*group.first()?, group.last()?.history_state_id()?),
+            None => (scope, scope.history_state_id()?),
         };
-    let Some(state_id) = state_id else {
-        return FeatureStates::Unplaced;
-    };
-    match super::history_states::scope_previous_history_state(first, scope_histories, histories) {
-        ScopePrevious::Known(previous_state_id) => FeatureStates::Pair(state_id, previous_state_id),
-        ScopePrevious::Unlinked(state_id) => FeatureStates::Unlinked {
-            scope: &first.id,
-            state_id,
-        },
-        ScopePrevious::Stateless | ScopePrevious::Unheld => FeatureStates::Unplaced,
+    Some(FeatureStates {
+        state_id,
+        scope: &first.id,
+        from: super::history_states::scope_states(first, scope_histories, histories)?,
+    })
+}
+
+/// Why the histories give a held scope state no previous state.
+fn unlinked_reason(previous: PreviousState) -> Option<String> {
+    match previous {
+        PreviousState::Linked(_) | PreviousState::Unheld => None,
+        PreviousState::Unnamed => {
+            Some("no history that holds it links it to a previous state".into())
+        }
+        PreviousState::Conflicting(StateConflict::Histories(first, second)) => Some(format!(
+            "the histories that hold it link it to previous states {first} and {second}"
+        )),
+        PreviousState::Conflicting(StateConflict::TransitionAndHeader(transition, header)) => {
+            Some(format!(
+                "a history that holds it links it to previous state {transition} by its transition and to previous state {header} by its header"
+            ))
+        }
+        PreviousState::Conflicting(StateConflict::HeldTwice) => {
+            Some("a history holds it twice".into())
+        }
     }
 }
 

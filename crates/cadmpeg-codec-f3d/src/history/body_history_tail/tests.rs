@@ -143,6 +143,36 @@ pub(crate) fn one_tail() -> (BodyHistoryTails, BodyId) {
     (found, body(1))
 }
 
+/// A feature whose histories link its state to different previous states
+/// still states that state, so a body whose history ends at it retains no
+/// change after it.
+#[test]
+fn a_feature_at_the_head_state_retains_no_change_when_its_previous_state_is_unlinked() {
+    let mut scope = scope(64);
+    scope
+        .try_edit(|draft| {
+            draft.previous_history_state_id = None;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let mut other = history();
+    other.id = "f3d:BREP.other.smbh:asm-history#0".into();
+    other.states_mut()[0]
+        .transition
+        .as_mut()
+        .unwrap()
+        .previous_state_id = Some(7);
+    let found = collect(
+        &[feature(&scope, 1)],
+        &[scope],
+        &[history(), other],
+        &Default::default(),
+        None,
+    );
+    assert!(found.tails.is_empty());
+    assert!(found.unread.is_empty());
+}
+
 #[test]
 fn a_later_body_change_retains_a_native_operation_owned_by_the_target() {
     let scope = scope(59);
