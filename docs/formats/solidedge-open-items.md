@@ -69,7 +69,9 @@
 
 **Question.** What does the `Double Value Object` 156 bytes after the function name of an extruded or revolved feature state?
 
-**Known.** The slot holds no object in the first feature of a document. In the later features of controlled saves it holds `2` for protrusions, including one extended against its profile normal, and `1` for cutouts, including one extended along its profile normal. Four protrusions in other documents hold `1`.
+**Known.** The slot holds no object in the first feature of a document. In every later extruded protrusion and cutout of the controlled saves it holds `1`, for each side value `1`, `2` and `3` and for both boolean operations.
 
-**Need.** The protrusions that hold `1` rebuilt in controlled saves, and a protrusion and a cutout that differ only in the boolean operation.
+**Conflict.** Other documents hold `2` in later protrusions, `1` in cutouts, and `1` in four further protrusions. The boolean operation and the side value do not separate them.
+
+**Need.** A document whose later extruded feature holds `2`, and a pair of saves that differ only in the setting that changes it.
 
