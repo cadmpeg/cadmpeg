@@ -434,7 +434,7 @@ fn typed_ownership_can_close_across_partition_and_deltas() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.message.contains("No body record was available")));
+        .any(|loss| loss.message.contains("No body record names a region")));
 }
 
 #[test]

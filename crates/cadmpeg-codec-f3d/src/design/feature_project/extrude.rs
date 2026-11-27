@@ -153,6 +153,12 @@ pub(super) fn project_extrude(
     {
         return Ok(None);
     }
+    let has_wall_thickness = parameters.iter().any(|(_, parameter)| {
+        matches!(
+            parameter.source_kind_str(),
+            "Side1WallThickness" | "Side2WallThickness"
+        )
+    });
     let mut scope_groups = Vec::new();
     for group in construction_groups.iter().filter(|group| {
         native_stream(&group.id) == native_stream(&scope.id)
@@ -580,6 +586,7 @@ pub(super) fn project_extrude(
             Some(Some(_)),
         )
     );
+    let mut same_side_start = None;
     let (shape, reverse_direction) = match (or_none!(prologue.extent()), along, against) {
         (DesignExtrudeExtent::OneSidedDistance, Some((Some(along), along_direction)), None)
             if (matches!(along_direction, AlongDirection::PrologueReversal)
@@ -608,7 +615,23 @@ pub(super) fn project_extrude(
             let blind = |length: NonZeroLength| LinearTermination::Blind {
                 length: NonZeroLength::from(length.abs()),
             };
+            // Each signed distance places one end of the solid on the profile normal:
+            // side one at `along`, side two at `-against`, and the solid lies between
+            // the two ends. Distances of opposite sign put both ends on one side of the
+            // profile plane: a one-sided extrude from an offset plane at the nearer end.
             match (along, against) {
+                (Some(along), Some(against)) if (along.get() < 0.0) != (against.get() < 0.0) => {
+                    let (near, far) = if along.get().abs() < against.get().abs() {
+                        (along.get(), -against.get())
+                    } else {
+                        (-against.get(), along.get())
+                    };
+                    same_side_start = Some(or_none!(Length::new(near)));
+                    (
+                        ExtentShape::OneSided(blind(or_none!(NonZeroLength::new(far - near)))),
+                        far < 0.0,
+                    )
+                }
                 (Some(along), Some(against)) => (
                     ExtentShape::TwoSided {
                         first: blind(along),
@@ -861,6 +884,17 @@ pub(super) fn project_extrude(
         }
         _ => return Ok(None),
     };
+    let same_side_offset = same_side_start.is_some();
+    // Only a solid extrude from its profile plane without a draft is read with both ends
+    // on one side: a draft makes the solid reach the profile plane, and wall thickness
+    // and a profile offset are not established (DR-1080).
+    let start = match (same_side_start, start) {
+        (None, start) => start,
+        (Some(offset), ExtrudeStart::ProfilePlane {}) if !has_wall_thickness => {
+            ExtrudeStart::OffsetProfilePlane { offset }
+        }
+        (Some(_), _) => return Ok(None),
+    };
     let direction = if reverse_direction {
         ExtrudeDirection::ReversedProfileNormal {}
     } else {
@@ -899,6 +933,12 @@ pub(super) fn project_extrude(
         .transpose()
         .ok();
     let second_draft = or_none!(second_draft);
+    if matches!(start, ExtrudeStart::OffsetProfilePlane { .. })
+        && same_side_offset
+        && (draft.is_some() || second_draft.is_some())
+    {
+        return Ok(None);
+    }
     let (draft, second_draft) = if first_side_zero {
         (second_draft, None)
     } else {

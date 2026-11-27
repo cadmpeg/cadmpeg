@@ -3303,6 +3303,21 @@ Parsed by:
 | 20 | 16 | `marker` | `bytes[16]` | little | spec | the 16 bytes `7d c3 94 25 ad 49 b2 54 7d c3 94 25 ad 49 b2 54` · value `[125, 195, 148, 37, 173, 73, 178, 84, 125, 195, 148, 37, 173, 73, 178, 84]` |
 | 36 | 2 | `zero_tail` | `u16` | little | spec | and u16 `0` · value `0` |
 
+## `three_int_identity_own`
+
+Spec §2.3 · layout: byte offsets · size: 12 B
+
+Own bytes of a three-integer identity representation; they follow its `moFR_c` object.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/carchive/rules/idrep.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `word_0` | `u32` | little | spec | three little-endian u32 |
+| 4 | 4 | `word_4` | `u32` | little | spec | three little-endian u32 |
+| 8 | 4 | `word_8` | `u32` | little | spec | three little-endian u32 |
+
 ## `view_bytes`
 
 Spec §Configuration objects · layout: byte offsets · size: 115 B
