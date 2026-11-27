@@ -741,12 +741,51 @@ fn faces_withheld_by_the_component_gate_are_given_up() {
     assert_eq!(charged, faces, "{charges:#?}");
     assert_eq!(charges.len(), faces.len(), "{charges:#?}");
     assert!(
-        charges.iter().all(|message| message.ends_with(
+        charges.iter().all(|message| message.contains(
             "the component admission gate withheld the face: 1 admitted component(s), \
-             selected body count 2; selected body count mismatch; dropped=[]"
+             selected body count 2; selected body count mismatch; dropped=["
         )),
         "{charges:#?}"
     );
+    let mut dropped = Vec::new();
+    for message in &charges {
+        let list = message
+            .split_once("dropped=[")
+            .and_then(|(_, tail)| tail.split_once(']'))
+            .map(|(list, _)| list)
+            .expect("each charge lists its dropped records");
+        dropped.extend(
+            list.split(", ")
+                .filter(|id| !id.is_empty())
+                .map(str::to_owned),
+        );
+    }
+    let named: BTreeSet<String> = dropped.iter().cloned().collect();
+    assert_eq!(named.len(), dropped.len(), "one charge names each record");
+    let geometry = &admitted.ir().geometry;
+    let withheld: BTreeSet<String> = geometry
+        .loops
+        .iter()
+        .map(|record| record.id.to_string())
+        .chain(geometry.coedges.iter().map(|record| record.id.to_string()))
+        .chain(geometry.edges.iter().map(|record| record.id.to_string()))
+        .chain(geometry.vertices.iter().map(|record| record.id.to_string()))
+        .chain(geometry.shells.iter().map(|record| record.id.to_string()))
+        .chain(geometry.regions.iter().map(|record| record.id.to_string()))
+        .chain(geometry.bodies.iter().map(|record| record.id.to_string()))
+        .collect();
+    assert!(!withheld.is_empty());
+    assert!(
+        withheld.is_subset(&named),
+        "{:?}",
+        withheld.difference(&named).collect::<Vec<_>>()
+    );
+    let kept = &result.ir().geometry;
+    assert!(named.iter().all(|id| {
+        !kept.curves.iter().any(|record| record.id.as_str() == id)
+            && !kept.surfaces.iter().any(|record| record.id.as_str() == id)
+            && !kept.points.iter().any(|record| record.id.as_str() == id)
+    }));
 
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;

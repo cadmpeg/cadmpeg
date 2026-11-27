@@ -3379,6 +3379,12 @@ body and is the auxiliary field. The equation table ends before the following
 `scale`, `scales`, or `guesses` named record. The declared count and decoded row
 count are independent native values.
 
+When a feature table declares more rows than the reader decodes, the reader
+gives up the rows from the first row it does not decode as a
+`feature-table-rows` part. The part runs to the next table label or decoded
+row of the feature definition, or to the end of the definition, and retains
+its bytes.
+
 Within each `var_arr` row, `value` and `guess` are independent scalar lanes.
 The unresolved forms `00 <tail2>` and `34 <tail2>` occupy three bytes;
 `01 <tail3>` occupies four. Each lane retains its complete body and has no

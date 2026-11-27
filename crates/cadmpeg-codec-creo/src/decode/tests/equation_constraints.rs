@@ -95,10 +95,12 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
 
     let mut disabled = definition;
     disabled.relations = Some(crate::feature::definitions::FeatureRelationTable {
+        rows_end: None,
         declared_count: 1,
         entity_ref: None,
         rows: Vec::new(),
         skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 1,
                 entity_ref: 901,
@@ -114,6 +116,7 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
             }],
         }),
         triples: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 1,
                 entity_ref: 903,
@@ -181,6 +184,7 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
+            rows_end: None,
             declared_count: 7,
             entity_ref: None,
             rows: vec![
@@ -343,6 +347,7 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
+            rows_end: None,
             declared_count: 2,
             entity_ref: None,
             rows: vec![
@@ -413,10 +418,12 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
 
     let mut disabled = definition;
     disabled.relations = Some(crate::feature::definitions::FeatureRelationTable {
+        rows_end: None,
         declared_count: 1,
         entity_ref: None,
         rows: Vec::new(),
         skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 1,
                 entity_ref: 901,
@@ -432,6 +439,7 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
             }],
         }),
         triples: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 1,
                 entity_ref: 903,
@@ -493,6 +501,7 @@ fn equation_function_zero_emits_polar_distance_constraint() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
+            rows_end: None,
             declared_count: 6,
             entity_ref: None,
             rows: vec![
@@ -605,10 +614,12 @@ fn equation_function_zero_emits_polar_distance_constraint() {
 
     let mut disabled = definition;
     disabled.relations = Some(crate::feature::definitions::FeatureRelationTable {
+        rows_end: None,
         declared_count: 1,
         entity_ref: None,
         rows: Vec::new(),
         skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 1,
                 entity_ref: 901,
@@ -624,6 +635,7 @@ fn equation_function_zero_emits_polar_distance_constraint() {
             }],
         }),
         triples: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 1,
                 entity_ref: 903,
@@ -687,6 +699,7 @@ fn equation_function_six_emits_fixed_distance_constraint() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
+            rows_end: None,
             declared_count: 5,
             entity_ref: None,
             rows: vec![
@@ -780,10 +793,12 @@ fn equation_function_six_emits_fixed_distance_constraint() {
 
     let mut disabled = definition;
     disabled.relations = Some(crate::feature::definitions::FeatureRelationTable {
+        rows_end: None,
         declared_count: 1,
         entity_ref: None,
         rows: Vec::new(),
         skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 1,
                 entity_ref: 901,
@@ -799,6 +814,7 @@ fn equation_function_six_emits_fixed_distance_constraint() {
             }],
         }),
         triples: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 1,
                 entity_ref: 903,
@@ -864,6 +880,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
+            rows_end: None,
             declared_count: 3,
             entity_ref: None,
             rows: vec![
@@ -999,6 +1016,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
+            rows_end: None,
             declared_count: 4,
             entity_ref: None,
             rows: vec![
@@ -1160,6 +1178,7 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
+            rows_end: None,
             declared_count: 9,
             entity_ref: None,
             rows: vec![
@@ -1232,10 +1251,12 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
 
     let mut disabled = definition;
     disabled.relations = Some(crate::feature::definitions::FeatureRelationTable {
+        rows_end: None,
         declared_count: 1,
         entity_ref: None,
         rows: Vec::new(),
         skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 1,
                 entity_ref: 901,
@@ -1251,6 +1272,7 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
             }],
         }),
         triples: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 1,
                 entity_ref: 903,
@@ -1312,6 +1334,7 @@ fn equation_function_thirty_five_emits_point_on_line() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
+            rows_end: None,
             declared_count: 9,
             entity_ref: None,
             rows: vec![
@@ -1410,10 +1433,12 @@ fn equation_function_thirty_five_emits_point_on_line() {
 
     let mut disabled = definition;
     disabled.relations = Some(crate::feature::definitions::FeatureRelationTable {
+        rows_end: None,
         declared_count: 1,
         entity_ref: None,
         rows: Vec::new(),
         skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 1,
                 entity_ref: 901,
@@ -1429,6 +1454,7 @@ fn equation_function_thirty_five_emits_point_on_line() {
             }],
         }),
         triples: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 1,
                 entity_ref: 903,
@@ -1489,6 +1515,7 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
+            rows_end: None,
             declared_count: 3,
             entity_ref: None,
             rows: vec![
@@ -1574,10 +1601,12 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
 
     let mut disabled = definition;
     disabled.relations = Some(crate::feature::definitions::FeatureRelationTable {
+        rows_end: None,
         declared_count: 1,
         entity_ref: None,
         rows: Vec::new(),
         skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 1,
                 entity_ref: 901,
@@ -1593,6 +1622,7 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
             }],
         }),
         triples: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 1,
                 entity_ref: 903,
@@ -1643,6 +1673,7 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(crate::feature::definitions::FeatureVariableTable {
+                rows_end: None,
                 declared_count: 8,
                 entity_ref: None,
                 rows: vec![
@@ -1762,10 +1793,12 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
 
     let mut disabled = definition([10.0, 0.0], 10.0);
     disabled.relations = Some(crate::feature::definitions::FeatureRelationTable {
+        rows_end: None,
         declared_count: 1,
         entity_ref: None,
         rows: Vec::new(),
         skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 1,
                 entity_ref: 901,
@@ -1781,6 +1814,7 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
             }],
         }),
         triples: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 1,
                 entity_ref: 903,

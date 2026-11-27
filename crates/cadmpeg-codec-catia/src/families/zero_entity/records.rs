@@ -999,6 +999,40 @@ pub(crate) fn zero_entity_support_runs_in_range(
     Ok(runs)
 }
 
+/// Names, as dropped with each zero-entity NURBS carrier that `refusal`
+/// holds, the records `ids` states for the support records after it. The walk
+/// of support runs skips a refused carrier, so its support records form no
+/// run. A carrier whose support records do not all decode holds no run and
+/// names no record.
+pub(crate) fn drop_supports_with_refused_carriers(
+    data: &[u8],
+    range: Range<usize>,
+    refusal: &mut crate::nurbs::LaneRefusals,
+    ids: impl Fn(&ZeroEntitySupportOccurrence) -> Result<Vec<cadmpeg_ir::ids::Identity>, CodecError>,
+) -> Result<(), CodecError> {
+    let records = zero_entity_records_in_range(data, range);
+    for (index, carrier) in records.iter().enumerate() {
+        if !refusal.holds(ZERO_ENTITY_NURBS_SURFACE_PART, carrier.pos) {
+            continue;
+        }
+        let mut scratch = crate::nurbs::LaneRefusals::new();
+        let Some(supports) = records[index + 1..]
+            .iter()
+            .take_while(|record| record.tag[0] == 0x21)
+            .map(|record| zero_entity_support_occurrence(data, *record, &mut scratch))
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        let mut dropped = Vec::new();
+        for support in &supports {
+            dropped.extend(ids(support)?);
+        }
+        refusal.drop_with(ZERO_ENTITY_NURBS_SURFACE_PART, carrier.pos, dropped);
+    }
+    Ok(())
+}
+
 fn bind_face_support_occurrences(
     face: &mut ZeroEntityFace,
     supports: &[ZeroEntitySupportOccurrence],

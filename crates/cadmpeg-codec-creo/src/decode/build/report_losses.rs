@@ -641,13 +641,14 @@ pub(super) fn push_brep_transfer_note(
                 .loss()
             }),
     );
-    losses.extend(diagnostics.gated_faces.iter().map(|face| {
+    losses.extend(diagnostics.gated_faces.iter().map(|(face, dropped)| {
         GivenUpRecord::new(
             face.clone(),
             format_args!(
                 "{code}: the component admission gate withheld the face: {component_gate}"
             ),
         )
+        .dropping(dropped.iter().cloned())
         .loss()
     }));
     Ok(())

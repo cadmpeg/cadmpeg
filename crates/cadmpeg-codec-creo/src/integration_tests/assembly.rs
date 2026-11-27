@@ -421,7 +421,7 @@ fn a_component_table_the_reader_cannot_frame_is_given_up() {
         &charges[0],
         &bytes,
         (field, end),
-        "the members field opens no component table array",
+        "the members field header is not the table array form the reader reads",
     );
 }
 
@@ -511,7 +511,7 @@ fn an_unframed_table_beside_the_transferred_one_is_given_up() {
         &charges[0],
         &bytes,
         (fields[1], sections[1].1),
-        "the members field opens no component table array",
+        "the members field header is not the table array form the reader reads",
     );
 }
 

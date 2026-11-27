@@ -258,10 +258,13 @@ fn missing_section_segment_rows_are_given_up_and_a_pinned_decode_refuses_them() 
     payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
     payload.extend_from_slice(b"dimtab_ptr\0");
     let data = build_prt("c", &[("FeatDefs", payload)]);
-    let table = data
-        .windows(b"segtab_ptr\0".len())
-        .position(|window| window == b"segtab_ptr\0")
-        .expect("the segment table label");
+    // The unread row starts after the terminator of the decoded row, and the
+    // part runs from it to the end of the definition.
+    let dimensions = data
+        .windows(b"dimtab_ptr\0".len())
+        .position(|window| window == b"dimtab_ptr\0")
+        .expect("the dimension table label");
+    let (start, end) = (dimensions - 1, dimensions + b"dimtab_ptr\0".len());
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data.clone()), &DecodeOptions::default())
@@ -273,13 +276,36 @@ fn missing_section_segment_rows_are_given_up_and_a_pinned_decode_refuses_them() 
         .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
         .map(|loss| loss.message.clone())
         .collect();
-    assert_eq!(
-        charges,
-        [format!(
-            "record creo:featdefs:segment_rows#{table} stream=\"\" offset={table} given up: \
-             {}: 1 of the 2 row(s) the table declares did not decode; dropped=[]",
+    let [charge] = charges.as_slice() else {
+        panic!("one charge: {charges:?}");
+    };
+    assert!(
+        charge.starts_with(&format!(
+            "part feature-table-rows stream=\"\" offset={start} length={} record=",
+            end - start
+        )),
+        "{charge}"
+    );
+    assert!(
+        charge.ends_with(&format!(
+            ": {}: 1 of the 2 row(s) the table declares did not decode; dropped=[]",
             CreoLossCode::SectionSegmentMissing.kind()
-        )]
+        )),
+        "{charge}"
+    );
+    let stub = result
+        .ir()
+        .native_unknowns("creo")
+        .expect("native unknowns")
+        .into_iter()
+        .find(|record| charge.contains(&format!(" record={}: ", record.id)))
+        .expect("the charge names its part stub");
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record(stub.id.as_str())
+            .and_then(|record| record.data()),
+        Some(&data[start..end])
     );
 
     let mut options = DecodeOptions::default();
@@ -429,6 +455,7 @@ fn incomplete_section_tables_keep_saved_endpoint_witnesses() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
+            rows_end: None,
             declared_count: 1,
             entity_ref: None,
             rows: Vec::new(),
@@ -598,6 +625,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::test_support::with_points(
             crate::feature::definitions::FeatureVariableTable {
+                rows_end: None,
                 declared_count: 1,
                 entity_ref: None,
                 rows: vec![crate::feature::definitions::FeatureVariableRow {
@@ -769,6 +797,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
             offset: 0,
         }),
         relations: Some(crate::feature::definitions::FeatureRelationTable {
+            rows_end: None,
             declared_count: 6,
             entity_ref: None,
             rows: vec![

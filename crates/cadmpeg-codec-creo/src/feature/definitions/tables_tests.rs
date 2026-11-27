@@ -550,6 +550,7 @@ fn variable_table_withholds_duplicate_coordinate_identities() {
         offset,
     };
     let table = FeatureVariableTable {
+        rows_end: None,
         declared_count: 3,
         entity_ref: Some(119),
         rows: vec![row(1, 2.0, 10), row(1, 2.0, 20), row(2, 3.0, 30)],
@@ -578,6 +579,7 @@ fn radius_variables_do_not_create_section_points() {
         offset,
     };
     let table = FeatureVariableTable {
+        rows_end: None,
         declared_count: 3,
         entity_ref: Some(119),
         rows: vec![row(1, 7, 2.0, 10), row(2, 7, 3.0, 20), row(3, 99, 4.0, 30)],
@@ -596,6 +598,7 @@ fn radius_variables_do_not_create_section_points() {
 fn reconciled_points_keep_a_section_point() {
     let table = with_points(
         FeatureVariableTable {
+            rows_end: None,
             declared_count: 0,
             entity_ref: None,
             rows: Vec::new(),
@@ -884,7 +887,7 @@ fn positional_skamp_table_replays_counted_nested_items() {
             \x06\x03\xf1\xf7\x60\xe2\x07\x02\xf3\xf7\x58\xe2\
             \x02\x01\xea\x22\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x08\x00";
 
-    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88).0;
 
     assert_eq!(skamps.len(), 2);
     assert_eq!(skamps[0].id, 1);
@@ -905,7 +908,7 @@ fn positional_skamp_table_replays_consecutive_single_item_rows() {
             \x02\x01\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x07\x00\xe2\
             \x03\x02\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x08\x00";
 
-    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88).0;
 
     assert_eq!(skamps.len(), 3);
     assert_eq!(
@@ -925,7 +928,7 @@ fn positional_skamp_table_accepts_a_following_table_wrapper_boundary() {
             \x07\x00\xf1\xf7\x60\xe2\x08\x02\
             \xf4\x04\xf7\x64\xf8\x01\xf7\x64\xfb\xe2";
 
-    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88).0;
 
     assert_eq!(skamps.len(), 2);
     assert_eq!(skamps[1].items.len(), 2);
@@ -945,7 +948,7 @@ fn positional_skamp_table_accepts_a_following_table_header_boundary() {
             \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00\
             \xf8\x02\xf7\x64\xfb\xe2\xf7\x65";
 
-    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88).0;
 
     assert_eq!(skamps.len(), 1);
     assert_eq!(skamps[0].items[0].entity_id, 6);
@@ -957,7 +960,7 @@ fn positional_skamp_table_accepts_a_following_wrapper_body_boundary() {
             \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00\
             \xf4\x04\xf7\x64\xe1\xe1\xe3";
 
-    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88).0;
 
     assert_eq!(skamps.len(), 1);
     assert_eq!(skamps[0].items[0].entity_id, 6);
@@ -972,7 +975,7 @@ fn positional_skamp_table_skips_row_auxiliary_frames() {
             \xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x08\x00\xf3\xf7\x58\xe2\
             \x03\x02\x00\x23\xf7\x60\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x09\x00";
 
-    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88).0;
 
     assert_eq!(skamps.len(), 3);
     assert_eq!(skamps[1].id, 2);
@@ -991,7 +994,7 @@ fn positional_skamp_table_rejects_ambiguous_nested_item_arrays() {
             \xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x07\x00\
             \xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x08\x00";
 
-    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88).0;
 
     assert_eq!(skamps.len(), 1);
     assert_eq!(skamps[0].id, 1);
@@ -1004,7 +1007,7 @@ fn positional_skamp_table_rejects_multiple_matching_nested_item_arrays() {
             \xf8\x01\xf7\x62\xfb\xe2\xf7\x63\x07\x00\
             \xf3\xf7\x58\xe2";
 
-    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88).0;
 
     assert!(skamps.is_empty());
 }
@@ -1014,13 +1017,13 @@ fn positional_solver_tables_retain_complete_prefix_rows() {
     let skamps = b"\xf8\x02\xf7\x58\xfb\xe2\xf7\x59\
             \x01\x00\x00\x23\xf8\x02\xf7\x60\xfb\xe2\xf7\x61\
             \x06\x03\xf1\xf7\x60\xe2\x07\x02\xf3\xf7\x58\xe2";
-    let rows = positional_feature_skamps(skamps, 0, skamps.len(), 88);
+    let rows = positional_feature_skamps(skamps, 0, skamps.len(), 88).0;
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].id, 1);
 
     let triples = b"\xf8\x02\xf7\x64\xfb\xe2\xf7\x65\
             \x01\xf6\x04\xf1\xf7\x64\xe2";
-    let rows = positional_relation_triples(triples, 0, triples.len(), 100);
+    let rows = positional_relation_triples(triples, 0, triples.len(), 100).0;
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].relation_id, Some(1));
 }
@@ -1030,7 +1033,9 @@ fn positional_skamp_table_reads_one_row() {
     let payload = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59\
             \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00";
     assert_eq!(
-        positional_feature_skamps(payload, 0, payload.len(), 88).len(),
+        positional_feature_skamps(payload, 0, payload.len(), 88)
+            .0
+            .len(),
         1
     );
 }
@@ -1049,14 +1054,14 @@ fn named_solver_tables_retain_complete_prefix_rows() {
             \xe0\x01status\0\x04\xe0\x00items\0\xf8\x01\xf7\x6c\xfb\xe2\
             \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\xf1\xf7\x6c\xe2\
             \xf3\xf7\x6b\xe2invalid";
-    let rows = feature_skamps(skamps, 0, skamps.len());
+    let rows = feature_skamps(skamps, 0, skamps.len()).0;
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].id, 5);
 
     let triples = b"triples_ptr\0\xf4\x04\xf8\x02\xf7\x6d\xfb\xe2\
             \xe0\x01rel_id\0\x07\xe0\x01eqn_id\0\x08\
             \xe0\x01skamp_id\0\x05\xf1\xf7\x6d\xe2\x01\x02\x03";
-    let rows = feature_relation_triples(triples, 0, triples.len());
+    let rows = feature_relation_triples(triples, 0, triples.len()).0;
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].relation_id, Some(7));
 }
@@ -1071,7 +1076,7 @@ fn named_solver_tables_accept_direct_prototype_item_schema_close() {
             \x07\x02\x03\x23\xf8\x01\xf7\x6c\xfb\xe2\
             \xf7\x6d\x2a\x01\xe2";
 
-    let rows = feature_skamps(skamps, 0, skamps.len());
+    let rows = feature_skamps(skamps, 0, skamps.len()).0;
 
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].id, 5);
@@ -1172,7 +1177,7 @@ fn positional_triples_replay_nullable_relation_joins() {
     let payload = b"\xf8\x02\xf7\x64\xfb\xe2\xf7\x65\
             \x01\xf6\x04\xf1\xf7\x64\xe2\x02\xf6\x05";
 
-    let triples = positional_relation_triples(payload, 0, payload.len(), 100);
+    let triples = positional_relation_triples(payload, 0, payload.len(), 100).0;
 
     assert_eq!(triples.len(), 2);
     assert_eq!(triples[0].relation_id, Some(1));

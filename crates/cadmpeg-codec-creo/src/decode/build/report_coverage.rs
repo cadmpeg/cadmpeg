@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Coverage-drop and incomplete-feature loss notes.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::container::ContainerScan;
-use crate::feature::definitions::SolverSubtable;
+use crate::feature::definitions::{FeatureDefinition, SolverSubtable};
 use crate::loss::CreoLossCode;
 
 use super::super::coverage::{constraint_kind_breakdown, surface_family, SURFACE_KINDS};
@@ -12,11 +12,10 @@ use super::super::feature_history::dimensions::feature_relation_table_expected_r
 use super::super::sketch_ids::{feature_definition_has_sketch_design, model_sketch_id};
 use super::super::sketch_transfer::transfer::expected_segment_rows;
 use super::report_losses::{coverage_count, push_report_loss};
+use cadmpeg_core::decode::{ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::ids::{Identity, IdentityNamespace};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::GivenUpRecord;
-use cadmpeg_ir::SourceProvenance;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 
 struct CountBreakdown<'a>(&'a [(&'a str, usize)]);
 
@@ -40,117 +39,217 @@ impl std::fmt::Display for CountBreakdown<'_> {
 /// One feature table whose declared row count exceeds its decoded rows.
 struct UnreadRows {
     code: CreoLossCode,
+    /// Offset of the table label.
     offset: usize,
+    /// Offset where the row reader stopped, when the reader states it.
+    rows_end: Option<usize>,
     expected: usize,
     decoded: usize,
 }
 
-/// Gives up the rows of each feature table that the reader stops short of
-/// its declared count. The rows from the first one the grammar refuses have
-/// no framed end and hold their ids in the bytes not read, so one charge per
-/// table names them by the table's offset and states how many rows it lost.
-/// The scope of each table kind is the scope of its count note.
-pub(super) fn push_unread_section_rows(
-    losses: &mut Vec<LossNote>,
-    scan: &ContainerScan,
-) -> Result<(), CodecError> {
-    let mut tables = BTreeMap::<Identity, UnreadRows>::new();
-    let mut add = |namespace: &IdentityNamespace, rows: UnreadRows| {
-        if rows.decoded < rows.expected {
-            let id = crate::identity::compose_checked::<Identity>(namespace, rows.offset)?;
-            tables.entry(id).or_insert(rows);
-        }
-        Ok::<_, CodecError>(())
-    };
-    for definition in &scan.features.definitions {
-        if let Some(table) = &definition.segments {
-            if feature_definition_has_sketch_design(definition)
-                && model_sketch_id(scan, definition).is_some()
-            {
-                add(
-                    &crate::identity::FEATDEFS_SEGMENT_ROWS,
-                    UnreadRows {
-                        code: CreoLossCode::SectionSegmentMissing,
-                        offset: table.offset,
-                        expected: expected_segment_rows(definition.identity.id(), table)?,
-                        decoded: table.rows.len(),
-                    },
-                )?;
-            }
-        }
-        if let Some(relations) = &definition.relations {
-            if let Some(expected) = feature_relation_table_expected_rows(relations) {
-                add(
-                    &crate::identity::FEATDEFS_RELATION_ROWS,
-                    UnreadRows {
-                        code: CreoLossCode::SectionRelationMissing,
-                        offset: relations.offset,
-                        expected,
-                        decoded: relations.rows.len(),
-                    },
-                )?;
-            }
-            for (namespace, code, table) in [
-                (
-                    &crate::identity::FEATDEFS_INCIDENCE_ROWS,
-                    CreoLossCode::SectionIncidenceMissing,
-                    relations.skamps.as_ref().map(solver_rows),
-                ),
-                (
-                    &crate::identity::FEATDEFS_RELATION_JOIN_ROWS,
-                    CreoLossCode::SectionRelationJoinMissing,
-                    relations.triples.as_ref().map(solver_rows),
-                ),
-            ] {
-                if let Some(Some((offset, expected, decoded))) = table {
-                    add(
-                        namespace,
-                        UnreadRows {
-                            code,
-                            offset,
-                            expected,
-                            decoded,
-                        },
-                    )?;
-                }
-            }
-        }
-        if let Some(variables) = &definition.variables {
-            add(
-                &crate::identity::FEATDEFS_SOLVER_VARIABLE_ROWS,
-                UnreadRows {
-                    code: CreoLossCode::SectionSolverVariableMissing,
-                    offset: variables.offset,
-                    expected: cadmpeg_core::decode::index_from_u32(variables.declared_count),
-                    decoded: variables.rows.len(),
-                },
-            )?;
-        }
-    }
-    losses.extend(tables.into_iter().map(|(id, rows)| {
-        GivenUpRecord::new(
-            id,
-            format_args!(
-                "{}: {} of the {} row(s) the table declares did not decode",
-                rows.code.kind(),
-                rows.expected - rows.decoded,
-                rows.expected
-            ),
+impl UnreadRows {
+    fn cause(&self) -> String {
+        format!(
+            "{}: {} of the {} row(s) the table declares did not decode",
+            self.code.kind(),
+            self.expected - self.decoded,
+            self.expected
         )
-        .at(SourceProvenance::root(
-            "creo",
-            cadmpeg_core::decode::u64_from_index(rows.offset),
-        ))
-        .loss()
-    }));
-    Ok(())
+    }
 }
 
-/// The offset, declared count and decoded count of a declared solver table.
-fn solver_rows<T>(table: &SolverSubtable<T>) -> Option<(usize, usize, usize)> {
-    let header = table.header()?;
+/// The unread rows of the tables whose first unread row starts at one offset.
+struct UnreadRun<'a> {
+    bytes: &'a [u8],
+    tables: Vec<UnreadRows>,
+}
+
+/// Gives up the rows of each feature table that the reader stops short of
+/// its declared count, as one `feature-table-rows` part per first unread
+/// row. The rows from the first one the grammar refuses have no framed end,
+/// so the part runs to the next table or row the definition decodes, or to
+/// the end of the definition. The scope of each table kind is the scope of
+/// its count note.
+pub(in crate::decode) fn give_up_unread_section_rows(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<GivenUpPart>, CodecError> {
+    let mut runs = BTreeMap::<usize, UnreadRun<'_>>::new();
+    for definition in &scan.features.definitions {
+        let tables = unread_tables(scan, definition)?;
+        if tables.is_empty() {
+            continue;
+        }
+        let kept = decoded_offsets(definition);
+        let body_end = definition.offset.saturating_add(definition.body.len());
+        for rows in tables {
+            let start = rows.rows_end.unwrap_or(rows.offset);
+            let end = kept
+                .range(start.saturating_add(1)..)
+                .next()
+                .copied()
+                .unwrap_or(body_end)
+                .max(start);
+            let bytes = start
+                .checked_sub(definition.offset)
+                .zip(end.checked_sub(definition.offset))
+                .and_then(|(from, to)| definition.body.get(from..to))
+                .unwrap_or_default();
+            let run = runs.entry(start).or_insert(UnreadRun {
+                bytes,
+                tables: Vec::new(),
+            });
+            if !run.tables.iter().any(|table| table.code == rows.code) {
+                run.tables.push(rows);
+            }
+        }
+    }
+    runs.into_iter()
+        .map(|(start, run)| {
+            let cause = run
+                .tables
+                .iter()
+                .map(UnreadRows::cause)
+                .collect::<Vec<_>>()
+                .join("; ");
+            ctx.give_up_part(
+                Part::at(
+                    "creo",
+                    "feature-table-rows",
+                    cadmpeg_core::decode::u64_from_index(start),
+                    run.bytes,
+                    [ArenaClass::Design],
+                ),
+                CodecError::malformed(cause),
+            )
+        })
+        .collect()
+}
+
+/// The tables of `definition` whose decoded rows fall short of their
+/// declared count.
+fn unread_tables(
+    scan: &ContainerScan,
+    definition: &FeatureDefinition,
+) -> Result<Vec<UnreadRows>, CodecError> {
+    let mut tables = Vec::new();
+    if let Some(table) = &definition.segments {
+        if feature_definition_has_sketch_design(definition)
+            && model_sketch_id(scan, definition).is_some()
+        {
+            tables.push(UnreadRows {
+                code: CreoLossCode::SectionSegmentMissing,
+                offset: table.offset,
+                rows_end: table.rows.rows_end(),
+                expected: expected_segment_rows(definition.identity.id(), table)?,
+                decoded: table.rows.len(),
+            });
+        }
+    }
+    if let Some(relations) = &definition.relations {
+        if let Some(expected) = feature_relation_table_expected_rows(relations) {
+            tables.push(UnreadRows {
+                code: CreoLossCode::SectionRelationMissing,
+                offset: relations.offset,
+                rows_end: relations.rows_end,
+                expected,
+                decoded: relations.rows.len(),
+            });
+        }
+        if let Some(rows) = relations
+            .skamps
+            .as_ref()
+            .and_then(|table| solver_rows(CreoLossCode::SectionIncidenceMissing, table))
+        {
+            tables.push(rows);
+        }
+        if let Some(rows) = relations
+            .triples
+            .as_ref()
+            .and_then(|table| solver_rows(CreoLossCode::SectionRelationJoinMissing, table))
+        {
+            tables.push(rows);
+        }
+    }
+    if let Some(variables) = &definition.variables {
+        tables.push(UnreadRows {
+            code: CreoLossCode::SectionSolverVariableMissing,
+            offset: variables.offset,
+            rows_end: variables.rows_end,
+            expected: cadmpeg_core::decode::index_from_u32(variables.declared_count),
+            decoded: variables.rows.len(),
+        });
+    }
+    tables.retain(|rows| rows.decoded < rows.expected);
+    Ok(tables)
+}
+
+/// The declared and decoded counts of a declared solver table.
+fn solver_rows<T>(code: CreoLossCode, table: &SolverSubtable<T>) -> Option<UnreadRows> {
+    let SolverSubtable::Declared {
+        header, rows_end, ..
+    } = table
+    else {
+        return None;
+    };
     let expected = cadmpeg_core::decode::index_from_u32(header.declared_count);
-    Some((header.offset, expected, expected - table.missing_rows()))
+    Some(UnreadRows {
+        code,
+        offset: header.offset,
+        rows_end: *rows_end,
+        expected,
+        decoded: expected - table.missing_rows(),
+    })
+}
+
+/// The offsets of the table labels and rows `definition` decodes.
+fn decoded_offsets(definition: &FeatureDefinition) -> BTreeSet<usize> {
+    let mut kept = BTreeSet::new();
+    kept.extend(definition.parameter_frames.iter().map(|frame| frame.offset));
+    kept.extend(definition.outlines.iter().map(|outline| outline.offset));
+    if let Some(table) = &definition.variables {
+        kept.insert(table.offset);
+        kept.extend(table.rows.iter().map(|row| row.offset));
+    }
+    if let Some(table) = &definition.segments {
+        kept.insert(table.offset);
+        kept.extend(table.rows.offsets());
+    }
+    if let Some(table) = &definition.trim_entities {
+        kept.insert(table.offset);
+        kept.extend(table.rows.iter().map(|row| row.offset));
+    }
+    if let Some(table) = &definition.trim_vertices {
+        kept.insert(table.offset);
+        kept.extend(table.rows.iter().map(|row| row.offset));
+    }
+    if let Some(table) = &definition.order_table {
+        kept.insert(table.offset);
+        kept.extend(table.rows.iter().map(|row| row.offset));
+    }
+    if let Some(table) = &definition.section_3d {
+        kept.insert(table.offset);
+    }
+    if let Some(table) = &definition.dimensions {
+        kept.insert(table.offset);
+        kept.extend(table.rows.iter().map(|row| row.offset));
+    }
+    if let Some(table) = &definition.relations {
+        kept.insert(table.offset);
+        kept.extend(table.rows.iter().map(|row| row.offset));
+        let skamps = table.skamps.as_ref().and_then(SolverSubtable::header);
+        let triples = table.triples.as_ref().and_then(SolverSubtable::header);
+        kept.extend(
+            skamps
+                .into_iter()
+                .chain(triples)
+                .map(|header| header.offset),
+        );
+    }
+    if let Some(table) = &definition.saved_section {
+        kept.insert(table.offset);
+    }
+    kept
 }
 
 pub(super) fn push_coverage_drop_losses(
@@ -588,7 +687,7 @@ pub(super) fn push_coverage_drop_losses(
 
 #[cfg(test)]
 mod tests {
-    use super::{push_coverage_drop_losses, push_unread_section_rows};
+    use super::{give_up_unread_section_rows, push_coverage_drop_losses};
     use crate::feature::definitions::{
         DefinitionIdentity, FeatureDefinition, FeatureRelationTable, FeatureSolverTableHeader,
         FeatureVariableTable, SolverSubtable,
@@ -597,6 +696,7 @@ mod tests {
 
     fn solver_table<T>(declared_count: u32, offset: usize) -> SolverSubtable<T> {
         SolverSubtable::Declared {
+            rows_end: Some(offset + 10),
             header: FeatureSolverTableHeader {
                 declared_count,
                 entity_ref: 0,
@@ -612,10 +712,13 @@ mod tests {
                 schema_id: std::num::NonZeroU32::new(42),
                 owner_feature_id: Some(42),
             },
-            body: Vec::new(),
+            body: (0..400_u16)
+                .map(|at| u8::try_from(at % 251).expect("byte"))
+                .collect(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(FeatureVariableTable {
+                rows_end: Some(320),
                 declared_count: 3,
                 entity_ref: None,
                 rows: Vec::new(),
@@ -628,6 +731,7 @@ mod tests {
             section_3d: None,
             dimensions: None,
             relations: Some(FeatureRelationTable {
+                rows_end: Some(110),
                 declared_count: 5,
                 entity_ref: None,
                 rows: Vec::new(),
@@ -641,33 +745,72 @@ mod tests {
     }
 
     #[test]
-    fn each_short_feature_table_is_given_up_once() {
+    fn each_short_feature_table_gives_up_its_unread_rows_as_one_part() {
         let mut scan = crate::test_support::empty_container_scan();
         // A definition read twice at one offset holds one set of tables.
         scan.features.definitions = vec![
             definition_with_short_tables(),
             definition_with_short_tables(),
         ];
+        let body = definition_with_short_tables().body;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+                .expect("test root is admitted");
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        let mut fidelity = cadmpeg_ir::SourceFidelity::for_root(root);
         let mut losses = Vec::new();
-        push_unread_section_rows(&mut losses, &scan).expect("charges");
+        for part in give_up_unread_section_rows(&ctx, &scan).expect("parts") {
+            losses.push(part.commit(&ctx, &mut ir, &mut fidelity).expect("commit"));
+        }
         assert!(losses
             .iter()
             .all(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()));
-        let messages: Vec<_> = losses.iter().map(|loss| loss.message.as_str()).collect();
-        assert_eq!(
-            messages,
-            [
-                "record creo:featdefs:incidence_rows#200 stream=\"\" offset=200 given up: \
-                 creo/section.incidence-missing: 2 of the 2 row(s) the table declares did not \
-                 decode; dropped=[]",
-                "record creo:featdefs:relation_rows#100 stream=\"\" offset=100 given up: \
-                 creo/section.relation-missing: 3 of the 3 row(s) the table declares did not \
-                 decode; dropped=[]",
-                "record creo:featdefs:solver_variable_rows#300 stream=\"\" offset=300 given up: \
-                 creo/section.solver-variable-missing: 3 of the 3 row(s) the table declares did \
-                 not decode; dropped=[]",
-            ]
-        );
+        // Each part runs from the first unread row to the next table label or
+        // to the end of the definition.
+        let expected = [
+            (
+                110,
+                200,
+                "creo/section.relation-missing: 3 of the 3 row(s) the table declares did not decode",
+            ),
+            (
+                210,
+                250,
+                "creo/section.incidence-missing: 2 of the 2 row(s) the table declares did not \
+                 decode",
+            ),
+            (
+                320,
+                400,
+                "creo/section.solver-variable-missing: 3 of the 3 row(s) the table declares did \
+                 not decode",
+            ),
+        ];
+        assert_eq!(losses.len(), expected.len());
+        for (loss, (start, end, cause)) in losses.iter().zip(expected) {
+            let message = loss.message.as_str();
+            let head = format!(
+                "part feature-table-rows stream=\"\" offset={start} length={} record=",
+                end - start
+            );
+            assert!(message.starts_with(&head), "{message}");
+            assert!(
+                message.contains(&format!(": {cause}; dropped=[]")),
+                "{message}"
+            );
+            assert!(!message.contains("featdefs:"), "{message}");
+            let stub = message[head.len()..]
+                .split(':')
+                .take(3)
+                .collect::<Vec<_>>()
+                .join(":");
+            assert!(stub.starts_with("creo:source:part#"), "{message}");
+            let retained = fidelity.retained_record(&stub).expect("retained part");
+            assert_eq!(retained.data(), Some(&body[start..end]));
+        }
+        assert_eq!(fidelity.retained_records().len(), expected.len());
     }
 
     #[test]

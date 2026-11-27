@@ -74,6 +74,8 @@ struct RefusedFrame {
     offset: usize,
     bytes: Vec<u8>,
     why: cadmpeg_ir::report::loss::LossNote,
+    /// The records the decode drops because they need this record.
+    dropped: Vec<cadmpeg_ir::ids::Identity>,
 }
 
 impl LaneRefusals {
@@ -119,7 +121,8 @@ impl LaneRefusals {
                     cadmpeg_core::decode::u64_from_index(frame.offset),
                     &frame.bytes,
                     [cadmpeg_core::decode::ArenaClass::Model],
-                );
+                )
+                .dropping(frame.dropped);
                 ctx.give_up_part(
                     match image {
                         Some(image) => part.contained_in(image.clone()).digest_only(),
@@ -143,9 +146,35 @@ impl LaneRefusals {
                 offset: frame.offset,
                 bytes: frame.bytes.to_vec(),
                 why: why.clone(),
+                dropped: Vec::new(),
             });
         }
         self.notes.push(why);
+    }
+
+    /// Whether the sink holds the frame of `kind` at `offset` and has not
+    /// given it up yet.
+    pub(crate) fn holds(&self, kind: &str, offset: usize) -> bool {
+        self.given_up
+            .iter()
+            .any(|frame| frame.kind == kind && frame.offset == offset)
+    }
+
+    /// Names `records` as dropped because they need the frame of `kind` at
+    /// `offset` that the sink holds.
+    pub(crate) fn drop_with(
+        &mut self,
+        kind: &str,
+        offset: usize,
+        records: impl IntoIterator<Item = cadmpeg_ir::ids::Identity>,
+    ) {
+        if let Some(frame) = self
+            .given_up
+            .iter_mut()
+            .find(|frame| frame.kind == kind && frame.offset == offset)
+        {
+            frame.dropped.extend(records);
+        }
     }
 
     pub(crate) fn push_pcurve_circle_plane_mismatch(&mut self, source_offset: usize) {

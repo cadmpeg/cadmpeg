@@ -15,6 +15,7 @@ use crate::test_support::test_container::{
     main_stream, standard_catpart_from_streams, surf_stream, zero_entity_nurbs_catpart,
 };
 use crate::test_support::test_e5::{append_e5_record, e5_catpart_appending};
+use crate::test_support::test_zero_entity::zero_entity_support_stream;
 use crate::CatiaCodec;
 use cadmpeg_test_support::EditableDecodeResult;
 
@@ -125,6 +126,62 @@ fn a_non_finite_zero_entity_pole_gives_up_its_frame() {
         "{}",
         rejection.loss().message
     );
+}
+
+/// The walk of support runs skips a refused zero-entity carrier, so the
+/// support records after it form no run and the route mints no curve for
+/// them. The part of the carrier lists the curve and construction each
+/// support record would have held.
+#[test]
+fn a_refused_zero_entity_carrier_drops_the_curves_of_its_support_records() {
+    let mut bytes = vec![0u8; 16];
+    bytes[..8].copy_from_slice(crate::container::OUTER_MAGIC);
+    let stream = zero_entity_support_stream();
+    // The stream holds a plane carrier and its support record.
+    let support = stream[0x6a + 12..].to_vec();
+    bytes.extend(stream);
+    let carrier = bytes.len();
+    let mut nurbs = zero_entity_nurbs_catpart().split_off(16);
+    nurbs[167..175].copy_from_slice(&f64::NAN.to_le_bytes());
+    bytes.extend(nurbs);
+    bytes.extend(support);
+    let part = Part::at(
+        "catia",
+        "zero-entity-nurbs-surface",
+        u64::try_from(carrier).unwrap(),
+        &bytes[carrier..bytes.len() - (0x71 + 12)],
+        [ArenaClass::Model],
+    )
+    .id()
+    .unwrap();
+    // The refused support record is the fourth framed record.
+    let curve = crate::resource::compose_u32_id(
+        &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "support-curve"),
+        4,
+        cadmpeg_ir::ids::CurveId::mint,
+    )
+    .unwrap();
+    let construction = crate::resource::compose_u32_id(
+        &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "support-curve-construction"),
+        4,
+        cadmpeg_ir::ids::ProceduralCurveId::mint,
+    )
+    .unwrap();
+
+    let result = decode(bytes);
+    let charges = unreadable(&result);
+    assert_eq!(charges.len(), 1, "{charges:?}");
+    assert!(names_part(charges[0], &part), "{}", charges[0].message);
+    assert!(
+        charges[0]
+            .message
+            .ends_with(&format!("dropped=[{curve}, {construction}]")),
+        "{}",
+        charges[0].message
+    );
+    let curves = &result.ir().geometry.curves;
+    assert_eq!(curves.len(), 1, "the plane's support curve stays");
+    assert_ne!(curves[0].id, curve);
 }
 
 /// A face record whose E5 reference graph does not parse builds no face; the

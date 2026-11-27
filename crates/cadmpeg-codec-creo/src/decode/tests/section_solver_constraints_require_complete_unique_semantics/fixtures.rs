@@ -64,6 +64,7 @@ pub(super) fn base_definition() -> crate::feature::definitions::FeatureDefinitio
         offset: 44,
     };
     let relations = crate::feature::definitions::FeatureRelationTable {
+        rows_end: None,
         declared_count: 3,
         entity_ref: None,
         rows: vec![crate::feature::definitions::FeatureRelation {
@@ -78,6 +79,7 @@ pub(super) fn base_definition() -> crate::feature::definitions::FeatureDefinitio
             offset: 80,
         }],
         skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 15,
                 entity_ref: 1,
@@ -338,6 +340,7 @@ pub(super) fn base_definition() -> crate::feature::definitions::FeatureDefinitio
         outlines: Vec::new(),
         variables: Some(with_points(
             crate::feature::definitions::FeatureVariableTable {
+                rows_end: None,
                 declared_count: 0,
                 entity_ref: None,
                 rows: Vec::new(),

@@ -1737,8 +1737,8 @@ pub(in crate::families) fn a8_surface_header_from_object_frame(
 
 /// Decode one selected `a8 <flag> 34` frame and its complete pole grid.
 ///
-/// The object graph keeps a frame whose lanes the IR refuses as an
-/// unresolved surface, so the refusal is a note.
+/// A frame whose lanes the IR refuses gives no surface. The face that refers
+/// to the frame takes an unknown surface, so the refusal is a note.
 pub(in crate::families) fn a8_surface_from_object_frame(
     data: &[u8],
     start: usize,

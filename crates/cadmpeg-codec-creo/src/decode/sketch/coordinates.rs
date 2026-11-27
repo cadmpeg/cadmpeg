@@ -982,6 +982,7 @@ mod tests {
             outlines: Vec::new(),
             variables: Some(crate::feature::definitions::test_support::with_points(
                 FeatureVariableTable {
+                    rows_end: None,
                     declared_count: 0,
                     entity_ref: None,
                     rows: Vec::new(),
@@ -1036,10 +1037,12 @@ mod tests {
             section_3d: None,
             dimensions: None,
             relations: Some(FeatureRelationTable {
+                rows_end: None,
                 declared_count: 1,
                 entity_ref: None,
                 rows: Vec::new(),
                 skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+                    rows_end: None,
                     header: FeatureSolverTableHeader {
                         declared_count: 2,
                         entity_ref: 0,
@@ -1333,6 +1336,7 @@ mod tests {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(FeatureVariableTable {
+                rows_end: None,
                 declared_count: 13,
                 entity_ref: None,
                 rows: vec![
@@ -1420,6 +1424,7 @@ mod tests {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(FeatureVariableTable {
+                rows_end: None,
                 declared_count: 21,
                 entity_ref: None,
                 rows: vec![
@@ -1514,6 +1519,7 @@ mod tests {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(FeatureVariableTable {
+                rows_end: None,
                 declared_count: 23,
                 entity_ref: None,
                 rows: vec![
@@ -1607,6 +1613,7 @@ mod tests {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(FeatureVariableTable {
+                rows_end: None,
                 declared_count: 7,
                 entity_ref: None,
                 rows: vec![
@@ -1684,6 +1691,7 @@ mod tests {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(FeatureVariableTable {
+                rows_end: None,
                 declared_count: 14,
                 entity_ref: None,
                 rows: vec![
@@ -1756,6 +1764,7 @@ mod tests {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(FeatureVariableTable {
+                rows_end: None,
                 declared_count: 6,
                 entity_ref: None,
                 rows: vec![
@@ -1790,6 +1799,7 @@ mod tests {
                 offset: 0,
             }),
             relations: Some(FeatureRelationTable {
+                rows_end: None,
                 declared_count: 3,
                 entity_ref: None,
                 rows: vec![FeatureRelation {

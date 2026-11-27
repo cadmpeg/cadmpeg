@@ -237,7 +237,7 @@ pub(super) fn give_up_unread_tables(
                 None => (
                     "component-table",
                     field,
-                    "the members field opens no component table array",
+                    "the members field header is not the table array form the reader reads",
                 ),
             };
         let Some(bytes) = scan.framing.data.get(offset..section.end()) else {

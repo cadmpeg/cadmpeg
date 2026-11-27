@@ -47,6 +47,19 @@ impl SegmentRow {
         };
         *offset += base;
     }
+
+    fn offset(&self) -> usize {
+        match self {
+            Self::Ordinary(row) => row.offset,
+            Self::Circle(row) => row.offset,
+            Self::Point(row) => row.offset,
+            Self::CenteredLine(row) => row.offset,
+            Self::ReferenceLine(row) => row.offset,
+            Self::BoundedCurve(row) => row.offset,
+            Self::Conic(row) => row.offset,
+            Self::Opaque(row) => row.offset,
+        }
+    }
 }
 
 /// An ID resolves only while its source row is unique across all families.
@@ -55,6 +68,9 @@ impl SegmentRow {
 pub(crate) struct SegmentRows {
     rows: Vec<SegmentRow>,
     identities: BTreeMap<u32, Option<usize>>,
+    /// Byte offset in the original stream of the first row the reader did
+    /// not read, or of the end of the rows it read.
+    rows_end: Option<usize>,
 }
 
 #[cfg(test)]
@@ -69,7 +85,7 @@ impl FromIterator<SegmentRow> for SegmentRows {
 }
 
 impl SegmentRows {
-    pub(crate) fn from_parsed_rows(rows: Vec<SegmentRow>) -> Self {
+    pub(crate) fn from_parsed_rows(rows: Vec<SegmentRow>, rows_end: usize) -> Self {
         let mut identities = BTreeMap::new();
         for (ordinal, row) in rows.iter().enumerate() {
             let external_id = row.external_id();
@@ -82,7 +98,22 @@ impl SegmentRows {
                 }
             }
         }
-        Self { rows, identities }
+        Self {
+            rows,
+            identities,
+            rows_end: Some(rows_end),
+        }
+    }
+
+    /// Byte offset in the original stream of the first row the reader did
+    /// not read, or of the end of the rows it read.
+    pub(crate) fn rows_end(&self) -> Option<usize> {
+        self.rows_end
+    }
+
+    /// Byte offsets in the original stream of the rows the reader read.
+    pub(crate) fn offsets(&self) -> impl Iterator<Item = usize> + '_ {
+        self.rows.iter().map(SegmentRow::offset)
     }
 
     #[cfg(test)]
@@ -143,6 +174,9 @@ impl SegmentRows {
     pub(crate) fn add_offset(&mut self, base: usize) {
         for row in &mut self.rows {
             row.add_offset(base);
+        }
+        if let Some(end) = &mut self.rows_end {
+            *end += base;
         }
     }
 

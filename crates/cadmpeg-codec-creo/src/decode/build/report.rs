@@ -193,7 +193,6 @@ pub(in super::super) fn build_report(
         }
     }
     push_coverage_drop_losses(&mut losses, &coverage, &solve_work_caps)?;
-    super::report_coverage::push_unread_section_rows(&mut losses, scan)?;
     let mut text_work_caps = std::collections::BTreeMap::<&str, usize>::new();
     for (bound, count) in scan
         .curves
