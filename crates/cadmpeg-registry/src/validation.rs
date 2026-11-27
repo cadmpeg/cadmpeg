@@ -28,7 +28,7 @@ pub fn check_with_context(
 ) -> Result<ValidationReport, CodecError> {
     let options = MeasureOptions {
         work,
-        density: None,
+        ..MeasureOptions::default()
     };
     let has_native = inputs
         .descriptors()
@@ -74,6 +74,7 @@ pub fn check_with_context(
         };
         let measure_handle = has_measure.then(|| {
             let cp = checkpoint.clone();
+            let options = options.clone();
             scope.spawn(move || {
                 let arena = DecodeArena::new();
                 let local_ctx = cp.resume(&arena);

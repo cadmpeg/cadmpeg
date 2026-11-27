@@ -232,6 +232,24 @@ pub fn stated_definitions(
         .filter(|definition| !definition.is_document_root())
 }
 
+/// The definitions other than the root that no occurrence of `model`
+/// places and that the document stores: each is a top-level definition of
+/// its output (§3.4, Encode sets).
+pub fn unplaced_definitions(
+    model: &crate::document::Model,
+) -> impl Iterator<Item = &ProductDefinition> {
+    let placed: std::collections::BTreeSet<&ProductDefinitionId> = model
+        .occurrences
+        .iter()
+        .map(|occurrence| &occurrence.prototype)
+        .collect();
+    model.product_definitions.iter().filter(move |definition| {
+        !definition.is_root()
+            && !matches!(definition.storage, Storage::External(_))
+            && !placed.contains(&definition.id)
+    })
+}
+
 /// The configuration of another definition that a definition was generated
 /// from.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -535,61 +553,58 @@ mod tests {
     mod wire;
     use super::{ExternalDocument, JointLimits, JointOperand};
     use crate::ids::OccurrenceId;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn a_blank_selection_id_has_no_wire_spelling() {
         assert!(
-            serde_json::from_value::<crate::features::evaluation::SelectionMember>(
-                serde_json::json!({"kind": "face", "id": "   "})
+            json::from_value::<crate::features::evaluation::SelectionMember>(
+                cadmpeg_core::json!({"kind": "face", "id": "   "})
             )
             .is_err()
         );
         assert!(
-            serde_json::from_value::<crate::features::evaluation::SelectionMember>(
-                serde_json::json!({"kind": "face", "id": " a "})
+            json::from_value::<crate::features::evaluation::SelectionMember>(
+                cadmpeg_core::json!({"kind": "face", "id": " a "})
             )
             .is_ok()
         );
         let topology = |id: &str| {
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "id": "test:model:feature-result#1",
                 "output_of": "test:test:feature#1",
                 "members": [{"kind": "face", "id": id}],
             })
         };
         assert!(
-            serde_json::from_value::<crate::features::evaluation::FeatureResultTopology>(topology(
-                "   "
-            ))
-            .is_err()
+            json::from_value::<crate::features::evaluation::FeatureResultTopology>(topology("   "))
+                .is_err()
         );
         assert!(
-            serde_json::from_value::<crate::features::evaluation::FeatureResultTopology>(topology(
-                " a "
-            ))
-            .is_ok()
+            json::from_value::<crate::features::evaluation::FeatureResultTopology>(topology(" a "))
+                .is_ok()
         );
     }
 
     #[test]
     fn a_joint_operand_states_the_container_that_owns_its_object() {
         let root = JointOperand::root("Body1", Vec::new());
-        let root_wire = serde_json::to_value(&root).unwrap();
+        let root_wire = json::to_value(&root).unwrap();
         assert_eq!(
             root_wire,
-            serde_json::json!({"container": {"kind": "root"}, "object": "Body1", "subelements": []})
+            cadmpeg_core::json!({"container": {"kind": "root"}, "object": "Body1", "subelements": []})
         );
         assert_eq!(
-            serde_json::from_value::<JointOperand>(root_wire.clone()).unwrap(),
+            json::from_value::<JointOperand>(root_wire.clone()).unwrap(),
             root
         );
 
         let occurrence_id = OccurrenceId::mint("test:model:occurrence#0").unwrap();
         let occurrence = JointOperand::occurrence(occurrence_id.clone(), "Body1", Vec::new());
-        let occurrence_wire = serde_json::to_value(&occurrence).unwrap();
+        let occurrence_wire = json::to_value(&occurrence).unwrap();
         assert_eq!(occurrence_wire["container"]["kind"], "occurrence");
         assert_eq!(
-            serde_json::from_value::<JointOperand>(occurrence_wire.clone()).unwrap(),
+            json::from_value::<JointOperand>(occurrence_wire.clone()).unwrap(),
             occurrence
         );
 
@@ -598,34 +613,34 @@ mod tests {
             "Body1",
             Vec::new(),
         );
-        let external_wire = serde_json::to_value(&external).unwrap();
+        let external_wire = json::to_value(&external).unwrap();
         assert_eq!(external_wire["container"]["kind"], "external");
         assert_eq!(
             external_wire["container"]["external_document"],
-            serde_json::json!({"path": "parts/widget.FCStd"})
+            cadmpeg_core::json!({"path": "parts/widget.FCStd"})
         );
         assert_eq!(
-            serde_json::from_value::<JointOperand>(external_wire).unwrap(),
+            json::from_value::<JointOperand>(external_wire).unwrap(),
             external
         );
 
         let mut both = occurrence_wire;
-        both["container"]["external_document"] = serde_json::json!({});
-        let error = serde_json::from_value::<JointOperand>(both)
+        both["container"]["external_document"] = cadmpeg_core::json!({});
+        let error = json::from_value::<JointOperand>(both)
             .unwrap_err()
             .to_string();
         assert!(error.contains("external_document"), "{error}");
 
         let mut stray = root_wire.clone();
-        stray["container"]["occurrence"] = serde_json::json!(occurrence_id.as_str());
-        let error = serde_json::from_value::<JointOperand>(stray)
+        stray["container"]["occurrence"] = cadmpeg_core::json!(occurrence_id.as_str());
+        let error = json::from_value::<JointOperand>(stray)
             .unwrap_err()
             .to_string();
         assert!(error.contains("occurrence"), "{error}");
 
         let mut without_object = root_wire;
         without_object.as_object_mut().unwrap().remove("object");
-        let error = serde_json::from_value::<JointOperand>(without_object)
+        let error = json::from_value::<JointOperand>(without_object)
             .unwrap_err()
             .to_string();
         assert!(error.contains("object"), "{error}");
@@ -646,8 +661,7 @@ mod tests {
         ] {
             let limits = JointLimits::new(minimum, maximum).unwrap();
             assert_eq!(
-                serde_json::from_value::<JointLimits>(serde_json::to_value(&limits).unwrap())
-                    .unwrap(),
+                json::from_value::<JointLimits>(json::to_value(&limits).unwrap()).unwrap(),
                 limits
             );
         }
@@ -682,17 +696,17 @@ mod tests {
             [bound(-2.0), bound(3.0)]
         );
 
-        let wire = serde_json::to_value(JointLimits::Range(range)).unwrap();
+        let wire = json::to_value(JointLimits::Range(range)).unwrap();
         assert_eq!(
             wire,
-            serde_json::json!({"kind": "range", "minimum": -2.0, "maximum": 3.0})
+            cadmpeg_core::json!({"kind": "range", "minimum": -2.0, "maximum": 3.0})
         );
         assert_eq!(
-            serde_json::from_value::<JointLimits>(wire).unwrap(),
+            json::from_value::<JointLimits>(wire).unwrap(),
             JointLimits::Range(range)
         );
-        let error = serde_json::from_value::<JointLimits>(
-            serde_json::json!({"kind": "range", "minimum": 2.0, "maximum": 1.0}),
+        let error = json::from_value::<JointLimits>(
+            cadmpeg_core::json!({"kind": "range", "minimum": 2.0, "maximum": 1.0}),
         )
         .unwrap_err()
         .to_string();

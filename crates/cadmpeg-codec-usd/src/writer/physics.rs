@@ -10,17 +10,19 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::ids::{BodyId, OccurrenceId, PhysicalMaterialId, PhysicsSceneId};
 use cadmpeg_ir::physics::solver::SolverTarget;
 use cadmpeg_ir::physics::{ColliderShape, MassProperties, PhysicsTarget};
 use cadmpeg_ir::products::{
-    AssemblyJoint, DriveAxis, DriveMode, FrameAxis, JointConnector, JointId, JointLimits,
-    JointOperands, OperandContainer, PairedJointKind,
+    AssemblyJoint, DriveAxis, DriveMode, FrameAxis, JointConnector, JointLimits, JointOperands,
+    OperandContainer, PairedJointKind,
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
-use super::text::{quoted, real32, tuple32, Names};
+use super::text::{float, floats, quoted, Names};
 use super::Writer;
 
 /// Name of the scope that holds physical materials and joints.
@@ -76,8 +78,15 @@ pub(super) struct Plan {
     colliders: BTreeMap<BodyId, PrimPhysics>,
     /// Material names in the `Physics` scope.
     materials: BTreeMap<PhysicalMaterialId, String>,
-    /// The solver settings of each joint, physical material, and scene.
-    joint_settings: BTreeMap<JointId, PrimPhysics>,
+    /// The joints to write, each with the name of its prim.
+    pub(super) joints: Vec<(AssemblyJoint, Option<String>)>,
+    /// Design joint features with no assembly-joint form.
+    pub(super) unwritten_joints: usize,
+    /// Values of design joint features with no assembly-joint field.
+    pub(super) unwritten_joint_properties: usize,
+    /// The solver settings of each joint, by the id of its design joint
+    /// feature, and of each physical material and scene.
+    joint_settings: BTreeMap<String, PrimPhysics>,
     material_settings: BTreeMap<PhysicalMaterialId, PrimPhysics>,
     scene_settings: BTreeMap<PhysicsSceneId, PrimPhysics>,
     /// Solver properties with no prim or attribute to write.
@@ -149,21 +158,6 @@ fn quaternion(transform: &Transform) -> [f64; 4] {
     components.map(|value| value / norm)
 }
 
-/// A `float` attribute value: `value` rounded to binary32.
-fn float(value: f64) -> String {
-    real32(crate::text::value::round_f32(value))
-}
-
-/// A `float` tuple value, each component rounded to binary32.
-fn floats(values: &[f64]) -> String {
-    tuple32(
-        &values
-            .iter()
-            .map(|value| crate::text::value::round_f32(*value))
-            .collect::<Vec<_>>(),
-    )
-}
-
 fn mass_lines(mass: &MassProperties, length: f64) -> Vec<String> {
     let mut lines = Vec::new();
     if let Some(value) = mass.mass {
@@ -198,6 +192,50 @@ fn mass_lines(mass: &MassProperties, length: f64) -> Vec<String> {
         lines.push(format!("quatf physics:principalAxes = {}", floats(&axes)));
     }
     lines
+}
+
+/// The joints the writer writes, each with the name of its prim: the
+/// model's assembly joints, each in the form of the design joint feature
+/// that restates it, then the design joint features that restate no
+/// assembly joint. Also the count of joint features with no assembly-joint
+/// form and the count of joint values with no assembly-joint field.
+fn joint_list(ir: &CadIr) -> (Vec<(AssemblyJoint, Option<String>)>, usize, usize) {
+    let mut unconverted = 0;
+    let mut dropped = 0;
+    let mut restated = BTreeSet::new();
+    let mut converted = BTreeMap::new();
+    for feature in &ir.design.features {
+        let FeatureOperation::Joint(joint) = &feature.definition.operation else {
+            continue;
+        };
+        restated.insert(feature.id.as_str());
+        let Some(assembly) = crate::joint::assembly(&feature.id, joint) else {
+            unconverted += 1;
+            continue;
+        };
+        let mut written = assembly.joint;
+        dropped += assembly.dropped;
+        written.suppressed = match &feature.suppressed {
+            None => false,
+            Some(Dimension::Literal(suppressed)) => *suppressed,
+            Some(_) => {
+                dropped += 1;
+                false
+            }
+        };
+        written.native_ref.clone_from(&feature.native_ref);
+        converted.insert(feature.id.as_str(), (written, feature.name.clone()));
+    }
+    let mut joints = Vec::new();
+    for joint in &ir.model.assembly_joints {
+        if let Some(written) = converted.remove(joint.id.as_str()) {
+            joints.push(written);
+        } else if !restated.contains(joint.id.as_str()) {
+            joints.push((joint.clone(), None));
+        }
+    }
+    joints.extend(converted.into_values());
+    (joints, unconverted, dropped)
 }
 
 impl Plan {
@@ -259,6 +297,7 @@ impl Plan {
             entry.0.push(schemas(&[schema]));
             entry.1.extend(lines);
         };
+        let (joints, unwritten_joints, unwritten_joint_properties) = joint_list(ir);
         let mut rigid: BTreeSet<OccurrenceId> = BTreeSet::new();
         for body in &model.rigid_bodies {
             if let PhysicsTarget::Occurrence { occurrence } = &body.target.entity {
@@ -305,7 +344,7 @@ impl Plan {
             }
             add(&body.target.entity, "PhysicsRigidBodyAPI", lines);
         }
-        for joint in &model.assembly_joints {
+        for (joint, _) in &joints {
             for connector in joint.connectors() {
                 if let OperandContainer::Occurrence { occurrence, .. } =
                     &connector.operand.container
@@ -372,7 +411,7 @@ impl Plan {
                 );
             }
         }
-        let mut joint_settings: BTreeMap<JointId, PrimPhysics> = BTreeMap::new();
+        let mut joint_settings: BTreeMap<String, PrimPhysics> = BTreeMap::new();
         let mut material_settings: BTreeMap<PhysicalMaterialId, PrimPhysics> = BTreeMap::new();
         let mut scene_settings: BTreeMap<PhysicsSceneId, PrimPhysics> = BTreeMap::new();
         let mut unwritten_settings = 0;
@@ -406,7 +445,7 @@ impl Plan {
                     .find(|record| &record.id == articulation)
                     .map(|record| record.root.entity.clone()),
                 SolverTarget::Joint { joint } => {
-                    onto(joint_settings.entry(joint.clone()).or_default());
+                    onto(joint_settings.entry(joint.as_str().to_owned()).or_default());
                     None
                 }
                 SolverTarget::PhysicalMaterial { material } => {
@@ -429,6 +468,9 @@ impl Plan {
             body_velocities,
             colliders,
             materials,
+            joints,
+            unwritten_joints,
+            unwritten_joint_properties,
             joint_settings,
             material_settings,
             scene_settings,
@@ -718,7 +760,7 @@ impl Writer<'_> {
         let (settings_schemas, settings_lines) = self
             .physics
             .joint_settings
-            .get(&joint.id)
+            .get(joint.id.as_str())
             .cloned()
             .unwrap_or_default();
         let mut metadata = if applied.is_empty() {
@@ -736,11 +778,10 @@ impl Writer<'_> {
         metadata.extend(settings_schemas);
         self.prim_head(&format!("def {joint_type}"), &name, &metadata);
         self.out.open();
-        if let Some(key) = super::physx::placeholder(&SolverTarget::Joint {
-            joint: joint.id.clone(),
-        }) {
-            self.target_paths.insert(key, self.out.path());
-        }
+        self.target_paths.insert(
+            super::physx::joint_placeholder(joint.id.as_str()),
+            self.out.path(),
+        );
         for line in &settings_lines {
             self.out.line(line);
         }
@@ -913,11 +954,8 @@ impl Writer<'_> {
             None => self.unwritten.joint_properties += 1,
         }
         for (name, coupled) in names[1..].iter().zip(coupled) {
-            if let Some(key) = super::physx::placeholder(&SolverTarget::Joint {
-                joint: coupled.clone(),
-            }) {
-                self.out.line(&format!("rel {name} = <{key}>"));
-            }
+            let key = super::physx::joint_placeholder(coupled.as_str());
+            self.out.line(&format!("rel {name} = <{key}>"));
         }
     }
 
@@ -925,7 +963,7 @@ impl Writer<'_> {
     pub(super) fn joints(&mut self, names: &mut Names) {
         let model = &self.ir.model;
         if model.physical_materials.is_empty()
-            && model.assembly_joints.is_empty()
+            && self.physics.joints.is_empty()
             && model.physics_scenes.is_empty()
         {
             return;
@@ -1019,8 +1057,8 @@ impl Writer<'_> {
             }
             self.out.close();
         }
-        for joint in &model.assembly_joints {
-            if !self.joint(joint, &mut children, None) {
+        for (joint, name) in std::mem::take(&mut self.physics.joints) {
+            if !self.joint(&joint, &mut children, name.as_deref()) {
                 self.unwritten.joints += 1;
             }
         }

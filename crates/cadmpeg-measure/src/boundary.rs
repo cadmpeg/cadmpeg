@@ -11,7 +11,7 @@
 pub(crate) mod pcurve;
 pub(crate) mod piece;
 
-use std::collections::HashMap;
+use crate::FastMap;
 use std::sync::Arc;
 
 use cadmpeg_ir::math::Point3;
@@ -110,7 +110,7 @@ enum CoedgePieces<'ir> {
 /// What the resolver needs to know about the face.
 pub(crate) struct FaceFrame<'a, 'ir> {
     pub(crate) owners: &'a Owners<'ir>,
-    pub(crate) edges: &'a HashMap<&'ir str, EdgeGeometry<'ir>>,
+    pub(crate) edges: &'a FastMap<&'ir str, EdgeGeometry<'ir>>,
     pub(crate) face: &'ir Face,
     pub(crate) chart: &'a Chart<'ir>,
     pub(crate) body: Placement,
@@ -125,7 +125,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
             return Err(MeasureFailure::unavailable(
                 UnavailableReason::BoundaryPartialFace,
                 Some(self.face.id.as_str()),
-                "the face does not state every loop, so its extent is not stated",
+                "the face does not state its boundary in full, so its extent is not stated",
             ));
         };
         for loop_id in boundary {

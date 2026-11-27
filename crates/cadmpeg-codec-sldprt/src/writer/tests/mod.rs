@@ -3,6 +3,7 @@
 
 mod anonymous_metadata;
 mod brep_agreement;
+mod caller_limits;
 mod capacity;
 pub(crate) mod configuration_carriers;
 mod digests;
@@ -31,6 +32,7 @@ mod swobjects;
 mod targets;
 mod thicken_reference;
 mod transformed_surface;
+mod unbakeable_placements;
 mod vertex_records;
 mod wide_pointers;
 

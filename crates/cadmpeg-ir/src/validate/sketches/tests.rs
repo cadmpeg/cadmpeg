@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::test_support::edit;
+use cadmpeg_core::serde_erase::json;
 
 use super::sketch_curve_offset_matches;
 use crate::examples::unit_cube;
@@ -832,7 +833,7 @@ fn sketch_constraint_native_ref_must_resolve() {
                 && finding.entity.as_deref() == Some(id.as_str())
                 && finding.message.contains("native:missing-operand#0")
         }));
-    let serialized = serde_json::to_string(&ir.model.sketch_constraints).unwrap();
+    let serialized = json::to_string(&ir.model.sketch_constraints).unwrap();
     let round_trip: Vec<crate::sketches::SketchConstraint> =
         serde_json::from_str(&serialized).unwrap();
     assert!(matches!(
@@ -854,10 +855,9 @@ fn sketch_constraint_native_ref_must_resolve() {
         .as_object_mut()
         .unwrap()
         .remove("native_properties");
-    let error =
-        serde_json::from_value::<Vec<crate::sketches::SketchConstraint>>(without_properties)
-            .unwrap_err()
-            .to_string();
+    let error = json::from_value::<Vec<crate::sketches::SketchConstraint>>(without_properties)
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("native_properties"), "{error}");
 }
 
@@ -1089,6 +1089,7 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
         native_ref: None,
     });
 
+    crate::examples::add_document_root(&mut ir);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .findings

@@ -4,11 +4,14 @@
 pub(crate) mod identities;
 
 use std::collections::HashMap;
+
+pub use identities::{FastBuildHasher, IdentityHasher};
 use std::sync::OnceLock;
 
 use crate::appearance::Appearance;
 use crate::document::CadIr;
 use crate::geometry::{pcurve::Pcurve, Curve, ProceduralCurve, ProceduralSurface, Surface};
+use crate::math::Point3;
 use crate::schema::{EntityKind, EntitySchema};
 use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
@@ -16,13 +19,13 @@ use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vert
 
 /// Borrowed identity text mapped to its first inserted value.
 struct BorrowedIdentityIndex<'ir, V> {
-    slots: HashMap<&'ir str, V>,
+    slots: HashMap<&'ir str, V, FastBuildHasher>,
 }
 
 impl<'ir, V> BorrowedIdentityIndex<'ir, V> {
     fn new() -> Self {
         Self {
-            slots: HashMap::new(),
+            slots: HashMap::default(),
         }
     }
 
@@ -52,7 +55,7 @@ impl<'ir, V> BorrowedIdentityIndex<'ir, V> {
     }
 }
 
-type IdentityIndex<'a> = HashMap<&'a str, usize>;
+type IdentityIndex<'a> = HashMap<&'a str, usize, FastBuildHasher>;
 
 #[derive(Clone, Copy, Default)]
 struct IdentityOwner {
@@ -77,7 +80,7 @@ pub(crate) fn public_result<T>(value: Result<T, std::convert::Infallible>) -> T 
 }
 
 fn build_identity_index<T: EntitySchema>(entities: &[T]) -> IdentityIndex<'_> {
-    let mut index = HashMap::with_capacity(entities.len());
+    let mut index = HashMap::with_capacity_and_hasher(entities.len(), FastBuildHasher::default());
     for (slot, entity) in entities.iter().enumerate() {
         index.insert(entity.identity(), slot);
     }
@@ -176,12 +179,11 @@ macro_rules! define_model_index {
         pub struct ModelIndex<'a> {
             ir: &'a CadIr,
             $($lookup: OnceLock<IdentityIndex<'a>>,)*
-            curve_use_hulls: OnceLock<HashMap<&'a str, Option<[f64; 2]>>>,
-            procedural_surface_by_surface: BorrowedIdentityIndex<'a, &'a ProceduralSurface>,
-            procedural_surfaces_by_id: BorrowedIdentityIndex<'a, &'a ProceduralSurface>,
-            procedural_curves_by_curve: BorrowedIdentityIndex<'a, Vec<&'a ProceduralCurve>>,
-            identities: BorrowedIdentityIndex<'a, IdentityOwner>,
-            entity_identities_distinct: bool,
+            curve_use_hulls: OnceLock<HashMap<&'a str, Option<[f64; 2]>, FastBuildHasher>>,
+            vertex_positions: OnceLock<HashMap<&'a str, (Point3, Option<f64>), FastBuildHasher>>,
+            child_lists: OnceLock<crate::topology::ChildLists<'a>>,
+            procedural: OnceLock<ProceduralLookups<'a>>,
+            identities: OnceLock<(BorrowedIdentityIndex<'a, IdentityOwner>, bool)>,
             include_native: bool,
             additional_native_identities: Vec<&'a str>,
             native_unknowns: Option<(&'a str, &'a [crate::unknown::UnknownRecord], &'a [usize])>,
@@ -226,53 +228,28 @@ macro_rules! define_model_index {
                 additional: impl IntoIterator<Item = &'a str>,
                 native_unknowns: Option<(&'a str, &'a [crate::unknown::UnknownRecord], &'a [usize])>,
             ) -> Self {
-                let mut procedural_surface_by_surface = BorrowedIdentityIndex::new();
-                let mut procedural_curves_by_curve = BorrowedIdentityIndex::new();
-                let mut procedural_surfaces_by_id = BorrowedIdentityIndex::new();
-                for procedural in &ir.geometry.procedural_surfaces {
-                    procedural_surfaces_by_id.entry(procedural.id.as_str(), || procedural);
-                }
-                let mut procedural_curves_by_id = BorrowedIdentityIndex::new();
-                for procedural in &ir.geometry.procedural_curves {
-                    procedural_curves_by_id.entry(procedural.id.as_str(), || procedural);
-                }
-                for carrier in &ir.geometry.surfaces {
-                    if let Some(construction) = carrier.geometry.procedural_construction() {
-                        if let Some(&procedural) = procedural_surfaces_by_id.slots.get(construction.as_str()) {
-                            *procedural_surface_by_surface.entry(carrier.id.as_str(), || procedural) = procedural;
-                        }
-                    }
-                }
-                for carrier in &ir.geometry.curves {
-                    if let Some(construction) = carrier.geometry.procedural_construction() {
-                        if let Some(&procedural) = procedural_curves_by_id.slots.get(construction.as_str()) {
-                            let members = procedural_curves_by_curve.entry(carrier.id.as_str(), Vec::new);
-                            members.push(procedural);
-                        }
-                    }
-                }
-                let additional_native_identities = additional.into_iter().collect();
-                let mut index = Self {
+                Self {
                     ir,
                     $($lookup: OnceLock::new(),)*
                     curve_use_hulls: OnceLock::new(),
-                    procedural_surface_by_surface,
-                    procedural_surfaces_by_id,
-                    procedural_curves_by_curve,
-                    identities: BorrowedIdentityIndex { slots: HashMap::new() },
-                    entity_identities_distinct: false,
+                    vertex_positions: OnceLock::new(),
+                    child_lists: OnceLock::new(),
+                    procedural: OnceLock::new(),
+                    identities: OnceLock::new(),
                     include_native,
-                    additional_native_identities,
+                    additional_native_identities: additional.into_iter().collect(),
                     native_unknowns,
-                };
-                (index.identities, index.entity_identities_distinct) = index.build_identity_set();
-                index
+                }
+            }
+
+            fn procedural(&self) -> &ProceduralLookups<'a> {
+                self.procedural.get_or_init(|| ProceduralLookups::build(self.ir))
             }
 
             /// Parameter hull of the edges and coedge uses on this carrier.
             pub fn curve_use_hull(&self, curve: &str) -> Option<[f64; 2]> {
                 self.curve_use_hulls.get_or_init(|| {
-                    let mut hulls = HashMap::new();
+                    let mut hulls = HashMap::default();
                     for edge in &self.ir.geometry.edges {
                         if let Some(curve) = edge.curve() {
                             let range = edge.param_range().map(crate::units::FiniteVector::get);
@@ -288,8 +265,34 @@ macro_rules! define_model_index {
                 }).get(curve).copied().flatten()
             }
 
+            /// Every shell's faces and every body's regions of the indexed geometry.
+            pub fn child_lists(&self) -> &crate::topology::ChildLists<'a> {
+                self.child_lists.get_or_init(|| self.ir.geometry.child_lists())
+            }
+
+            /// The position of the point of the last vertex with `identity`
+            /// whose point resolves, with the vertex tolerance.
+            pub fn vertex_position(&self, identity: &str) -> Option<&(Point3, Option<f64>)> {
+                self.vertex_positions.get_or_init(|| {
+                    let mut positions = HashMap::default();
+                    for vertex in &self.ir.geometry.vertices {
+                        if let Some(point) = self.points(vertex.point.as_str(), StandardIndex) {
+                            positions.insert(
+                                vertex.id.as_str(),
+                                (point.position().get(), vertex.tolerance.map(crate::scalar::PositiveLength::get)),
+                            );
+                        }
+                    }
+                    positions
+                }).get(identity)
+            }
+
+            fn identity_universe(&self) -> &(BorrowedIdentityIndex<'a, IdentityOwner>, bool) {
+                self.identities.get_or_init(|| self.build_identity_set())
+            }
+
             fn identity_set(&self) -> &BorrowedIdentityIndex<'a, IdentityOwner> {
-                &self.identities
+                &self.identity_universe().0
             }
 
             fn build_identity_set(&self) -> (BorrowedIdentityIndex<'a, IdentityOwner>, bool) {
@@ -300,7 +303,7 @@ macro_rules! define_model_index {
                     self.native_view().for_each(|_, _, records| slots += records.len());
                     slots += self.additional_native_identities.len();
                 }
-                let mut identities = BorrowedIdentityIndex { slots: HashMap::with_capacity(slots) };
+                let mut identities = BorrowedIdentityIndex { slots: HashMap::with_capacity_and_hasher(slots, FastBuildHasher::default()) };
                 $(for entity in &self.ir.$home.$field {
                     let declared = IdentityOwner::neutral(entity);
                     let owner = identities.entry(entity.identity(), || declared);
@@ -323,19 +326,19 @@ macro_rules! define_model_index {
             /// Returns whether a native record owns `identity`. Staged identities are not
             /// native records, and a model-only index holds no native record.
             pub(crate) fn native_record_owns(&self, identity: &str) -> bool {
-                self.identities.slots.get(identity).is_some_and(|owner| owner.native)
+                self.identity_set().slots.get(identity).is_some_and(|owner| owner.native)
             }
 
             /// The kind of the model record that owns `identity`; `None` where no
             /// record or records of two kinds own it.
             pub fn neutral_kind(&self, identity: &str) -> Option<EntityKind> {
-                self.identities.slots.get(identity).and_then(|owner| owner.kind)
+                self.identity_set().slots.get(identity).and_then(|owner| owner.kind)
             }
 
             /// Returns whether every model entity and native record has its own identity.
             /// A model-only index does not know and returns false.
             pub(crate) fn entity_identities_distinct(&self) -> bool {
-                self.entity_identities_distinct
+                self.identity_universe().1
             }
 
             /// Returns the indexed document.
@@ -371,21 +374,21 @@ macro_rules! define_model_index {
             pub fn procedural_surface_for_surface<P: IndexQuery>(
                 &self, surface: &str, query: P,
             ) -> P::Output<Option<&'a ProceduralSurface>> {
-                query.finish(self.procedural_surface_by_surface.get(surface, &query, "model procedural surface query").map(|value| value.copied()))
+                query.finish(self.procedural().surface_by_surface.get(surface, &query, "model procedural surface query").map(|value| value.copied()))
             }
 
             /// Looks up the first procedural surface construction with `identity`.
             pub(crate) fn procedural_surface_construction<P: IndexQuery>(
                 &self, identity: &str, query: P,
             ) -> P::Output<Option<&'a ProceduralSurface>> {
-                query.finish(self.procedural_surfaces_by_id.get(identity, &query, "model surface construction identity").map(|value| value.copied()))
+                query.finish(self.procedural().surfaces_by_id.get(identity, &query, "model surface construction identity").map(|value| value.copied()))
             }
 
             /// Looks up procedural constructions that own a curve in arena order.
             pub fn procedural_curves_for_curve<P: IndexQuery>(
                 &self, curve: &str, query: P,
             ) -> P::Output<Option<&[&'a ProceduralCurve]>> {
-                query.finish(self.procedural_curves_by_curve.get(curve, &query, "model procedural curve query").map(|value| value.map(Vec::as_slice)))
+                query.finish(self.procedural().curves_by_curve.get(curve, &query, "model procedural curve query").map(|value| value.map(Vec::as_slice)))
             }
 
             $(
@@ -400,8 +403,51 @@ macro_rules! define_model_index {
 
 crate::document::arena_registry!(define_model_index);
 
+/// Procedural constructions by identity and by the carrier they own.
+struct ProceduralLookups<'a> {
+    surface_by_surface: BorrowedIdentityIndex<'a, &'a ProceduralSurface>,
+    surfaces_by_id: BorrowedIdentityIndex<'a, &'a ProceduralSurface>,
+    curves_by_curve: BorrowedIdentityIndex<'a, Vec<&'a ProceduralCurve>>,
+}
+
+impl<'a> ProceduralLookups<'a> {
+    fn build(ir: &'a CadIr) -> Self {
+        let mut surface_by_surface = BorrowedIdentityIndex::new();
+        let mut curves_by_curve = BorrowedIdentityIndex::new();
+        let mut surfaces_by_id = BorrowedIdentityIndex::new();
+        for procedural in &ir.geometry.procedural_surfaces {
+            surfaces_by_id.entry(procedural.id.as_str(), || procedural);
+        }
+        let mut curves_by_id = BorrowedIdentityIndex::new();
+        for procedural in &ir.geometry.procedural_curves {
+            curves_by_id.entry(procedural.id.as_str(), || procedural);
+        }
+        for carrier in &ir.geometry.surfaces {
+            if let Some(construction) = carrier.geometry.procedural_construction() {
+                if let Some(&procedural) = surfaces_by_id.slots.get(construction.as_str()) {
+                    *surface_by_surface.entry(carrier.id.as_str(), || procedural) = procedural;
+                }
+            }
+        }
+        for carrier in &ir.geometry.curves {
+            if let Some(construction) = carrier.geometry.procedural_construction() {
+                if let Some(&procedural) = curves_by_id.slots.get(construction.as_str()) {
+                    curves_by_curve
+                        .entry(carrier.id.as_str(), Vec::new)
+                        .push(procedural);
+                }
+            }
+        }
+        Self {
+            surface_by_surface,
+            surfaces_by_id,
+            curves_by_curve,
+        }
+    }
+}
+
 fn merge_curve_use<'a>(
-    hulls: &mut HashMap<&'a str, Option<[f64; 2]>>,
+    hulls: &mut HashMap<&'a str, Option<[f64; 2]>, FastBuildHasher>,
     curve: &'a str,
     range: Option<[f64; 2]>,
 ) {

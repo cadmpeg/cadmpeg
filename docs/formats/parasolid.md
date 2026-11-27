@@ -4,7 +4,7 @@
 
 ---
 
-A Parasolid transmit stream serializes one modelling-kernel partition as a binary transmit header and a node sequence. Siemens NX `.prt` files carry these streams as described in [`siemens_nx.md`](siemens_nx.md) §3. SolidWorks `.sldprt` files carry them as described in [`sldprt.md`](sldprt.md) §3. This document gives the stream grammar that both hosts share.
+A Parasolid transmit stream serializes one modelling-kernel partition as a binary transmit header and a node sequence. Siemens NX `.prt` files carry these streams as described in [`siemens_nx.md`](siemens_nx.md) §3. SolidWorks `.sldprt` files carry them as described in [`sldprt.md`](sldprt.md) §3. Solid Edge documents carry these streams as described in [`solidedge.md`](solidedge.md) §2. This document gives the stream grammar that the hosts share.
 
 ## 1. Neutral-binary encoding
 
@@ -139,3 +139,56 @@ these effective field lists:
 
 The variable fields carry their element count in the node header before the
 node index. The `teeth` arrays can contain null pointers after populated teeth.
+
+## 4. Modeller precision
+
+A BODY node stores `res_size` and `res_linear` as f64 BE values in metres.
+`res_linear` is the linear precision of the body: two positions closer than
+`res_linear` are one position. The modeller default is `1.0e-8` m. The angular
+precision of the modeller is `1.0e-11` rad, and no node stores it.
+
+A `res_linear` states a linear precision when it is finite and positive in
+metres and in millimetres. The linear tolerance of a part is the largest
+`res_linear` that states a linear precision among the bodies that the
+document holds after body selection, in every configuration and stored
+state, converted to millimetres. When no such body stores one, the linear
+tolerance is the modeller default, `1.0e-5` mm. The angular tolerance of a
+part is the modeller angular precision. The geometry of one stream is
+evaluated at the largest linear precision among the bodies of that stream.
+
+A body that the document holds and whose BODY `res_linear` states no linear
+precision is charged `body.resolution-invalid`. A body that the document
+holds and for which no BODY `res_linear` is read is charged
+`body.resolution-unread`. Each charge names the body.
+
+## 5. Native binary encoding
+
+A native binary transmit holds the header fields and the node grammar of the
+neutral-binary encoding (§§1–2) in other widths and byte order. The header is
+the byte `0x41`, a little-endian `u16` description length and the description,
+a little-endian `u32` schema-token length and the token, the maximum node type
+as a little-endian `u16` when the token selects embedded schema edits, and the
+user-field size as a little-endian `u32`.
+
+| Element | Neutral binary | Native binary |
+| --- | --- | --- |
+| Node type, short, word | `u16` BE | `u16` LE |
+| Integer, variable count | `u32` BE | `u32` LE |
+| Real and each real of an interval, vector, Hvec, or box | f64 BE | f64 LE |
+| Node index and pointer | biased index encoding of the index plus one | `u32` LE index; `0` is null |
+| Field pointer class | `u16` BE | `u16` LE |
+| Field extent | biased index encoding of the extent plus one | `u32` LE extent |
+
+Bytes, characters, logicals, short strings, and edit-program operations have
+the same form in both encodings. The terminator is node type `1` and the null
+index. A node of one encoding has the same fields, in the same order, as the
+node of the other encoding.
+
+## 6. Colour attributes
+
+An ATTRIBUTE node (type `81`) whose definition (type `80`) names the identifier
+`SDL/TYSA_COLOUR` states a colour. Its `fields` list names one REAL_VALUES node
+(type `83`) of three reals: red, green, and blue, each in `0` to `1`. The
+attribute's `owner` is the coloured entity, and the attribute lies in the
+`attributes_features` chain of that entity, linked by `next`. A FACE node whose
+chain holds a colour attribute has that colour.

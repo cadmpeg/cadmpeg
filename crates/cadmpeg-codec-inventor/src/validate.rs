@@ -215,9 +215,19 @@ pub(crate) fn validate_native(
     ) {
         findings.push(finding(Check::NativeLinks, detail, None));
     }
-    validate_design(&data, ir, &mut findings);
-    validate_sketches(&data, ir, &mut findings);
-    validate_features(ctx, ir, &data, &mut findings)?;
+    let raw_records = data
+        .records
+        .iter()
+        .map(|record| {
+            (
+                (record.token.as_str(), record.ordinal),
+                record.type_id.as_str(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    validate_design(&data, &raw_records, ir, &mut findings);
+    validate_sketches_with_raw(&data, &raw_records, ir, &mut findings);
+    validate_features_with_raw(ctx, ir, &data, &raw_records, &mut findings)?;
     unique(
         &mut findings,
         data.unknowns.iter().map(|record| record.id.as_str()),
@@ -235,7 +245,7 @@ pub(crate) fn validate_native(
     validate_protein_record_coverage(&data, &mut findings);
     validate_ufrx(ir, &data, &mut findings);
     validate_assembly(ctx, ir, &data, &mut findings)?;
-    validate_presentation(ir, &data, &mut findings);
+    validate_presentation(ir, &data, &raw_records, &mut findings);
     for issue in &data.structural_issues {
         findings.push(finding(
             Check::NativeLinks,
@@ -297,17 +307,12 @@ fn design_v11_findings(
     Ok(findings)
 }
 
-fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
-    let raw = data
-        .records
-        .iter()
-        .map(|record| {
-            (
-                (record.token.as_str(), record.ordinal),
-                record.type_id.as_str(),
-            )
-        })
-        .collect::<HashMap<_, _>>();
+fn validate_design(
+    data: &NativeData,
+    raw: &HashMap<(&str, u32), &str>,
+    ir: &CadIr,
+    findings: &mut Vec<Finding>,
+) {
     let resolves =
         |token: &str, reference: u32| reference == 0 || raw.contains_key(&(token, reference - 1));
     unique(
@@ -436,7 +441,7 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
             ));
         }
     }
-    validate_parameter_scopes(data, &raw, findings);
+    validate_parameter_scopes(data, raw, findings);
     let native_parameter_ids = data
         .pm_dc_parameters
         .iter()
@@ -562,6 +567,7 @@ fn sketch_point(
     Some(position)
 }
 
+#[cfg(test)]
 fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
     let raw = data
         .records
@@ -573,6 +579,15 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             )
         })
         .collect::<HashMap<_, _>>();
+    validate_sketches_with_raw(data, &raw, ir, findings);
+}
+
+fn validate_sketches_with_raw(
+    data: &NativeData,
+    raw: &HashMap<(&str, u32), &str>,
+    ir: &CadIr,
+    findings: &mut Vec<Finding>,
+) {
     let record_is_exact = |token: &str, ordinal: u32, type_id: &str| {
         raw.get(&(token, ordinal)).copied() == Some(type_id)
     };
@@ -1144,15 +1159,13 @@ fn tagging_definition_matches(
         && !has_result
 }
 
+#[cfg(test)]
 fn validate_features(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     data: &NativeData,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let mirror_outputs = mirror::validate_mirrors(ctx, ir, data, findings)?;
-    sheet_metal::records(data, findings);
-    sheet_metal::definitions(ir, data, findings);
     let raw = data
         .records
         .iter()
@@ -1163,6 +1176,19 @@ fn validate_features(
             )
         })
         .collect::<HashMap<_, _>>();
+    validate_features_with_raw(ctx, ir, data, &raw, findings)
+}
+
+fn validate_features_with_raw(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    data: &NativeData,
+    raw: &HashMap<(&str, u32), &str>,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
+    let mirror_outputs = mirror::validate_mirrors(ctx, ir, data, findings)?;
+    sheet_metal::records(data, raw, findings);
+    sheet_metal::definitions(ir, data, findings);
     let resolves =
         |token: &str, reference: u32| reference == 0 || raw.contains_key(&(token, reference - 1));
     unique(
@@ -1420,6 +1446,10 @@ fn validate_features(
                 references.extend(axis.references().iter().map(|reference| reference.index()));
             }
             PmDcFeaturePropertyKind::PlaneSurface {
+                references: surface,
+                ..
+            }
+            | PmDcFeaturePropertyKind::ParametricSurface {
                 references: surface,
                 ..
             } => {
@@ -2509,7 +2539,67 @@ fn validate_features(
         if matches!(
             definition,
             cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Loft { .. }
+                cadmpeg_ir::features::FeatureOperation::Loft { solid: false, .. }
+            )
+        ) {
+            let token = raw_feature.identity.segment_token.as_str();
+            let matches = labels
+                .get(&(token, raw_feature.identity.record_ordinal))
+                .is_some_and(|label| {
+                    !crate::feature::loft_sweep::controls::wrapper_used_earlier(
+                        raw_feature,
+                        &data.pm_dc_features,
+                        |other| {
+                            extrusion_positions
+                                .get(&(
+                                    other.identity.segment_token.as_str(),
+                                    other.identity.record_ordinal,
+                                ))
+                                .copied()
+                        },
+                    ) && loft_index.as_ref().is_some_and(|index| {
+                        index.surface_matches(
+                            raw_feature,
+                            label,
+                            definition,
+                            |reference| {
+                                feature_properties
+                                    .get(&(token, reference.record_ordinal()?))?
+                                    .as_ref()
+                                    .copied()
+                            },
+                            |reference| {
+                                let parameter = feature_parameters
+                                    .get(&(token, reference.record_ordinal()?))?
+                                    .as_ref()?;
+                                let value = parameter_values
+                                    .get(parameter.id().as_str())?
+                                    .as_ref()?
+                                    .value
+                                    .as_ref()?;
+                                Some((*parameter, value))
+                            },
+                            |ordinal| {
+                                thicken_record_types
+                                    .get(&(token, ordinal))?
+                                    .as_ref()
+                                    .copied()
+                            },
+                        )
+                    })
+                });
+            if !matches {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor surface loft does not match its positional operands".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+        }
+        if matches!(
+            definition,
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Loft { solid: true, .. }
             )
         ) {
             let token = raw_feature.identity.segment_token.as_str();
@@ -2538,6 +2628,10 @@ fn validate_features(
                                     .as_ref()?;
                                 Some((*parameter, value))
                             },
+                            crate::feature::history_states::loft_state_bound(
+                                &data.feature_history_states,
+                                &raw_feature.id(),
+                            ),
                         )
                     })
                 });
@@ -2686,6 +2780,32 @@ fn validate_features(
                 findings.push(finding(
                     Check::NativeLinks,
                     "Inventor neutral split does not match its PmDc operands".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+        }
+        if matches!(family, crate::feature::FeatureFamily::Stitch) {
+            let token = raw_feature.identity.segment_token.as_str();
+            let expected = crate::feature::stitch::operation(
+                raw_feature,
+                |reference| {
+                    properties_by_record
+                        .get(&(token, reference.checked_sub(1)?))
+                        .copied()
+                },
+                |reference| {
+                    let raw = feature_parameters
+                        .get(&(token, reference.checked_sub(1)?))?
+                        .as_ref()?;
+                    crate::feature::stitch::millimetres(raw)
+                },
+            );
+            if expected.is_none_or(|(expected, _)| {
+                cadmpeg_ir::features::FeatureDefinition::Operation(expected) != *definition
+            }) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor neutral stitch does not match its PmDc slots".into(),
                     Some(feature.id.as_str().to_owned()),
                 ));
             }
@@ -2845,7 +2965,12 @@ fn face_property_is_admitted<'a>(
     }
 }
 
-fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
+fn validate_presentation(
+    ir: &CadIr,
+    data: &NativeData,
+    raw_records: &HashMap<(&str, u32), &str>,
+    findings: &mut Vec<Finding>,
+) {
     unique(
         findings,
         data.pm_app_default_styles
@@ -2946,16 +3071,6 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
         }
     }
 
-    let raw_records = data
-        .records
-        .iter()
-        .map(|record| {
-            (
-                (record.token.as_str(), record.ordinal),
-                record.type_id.as_str(),
-            )
-        })
-        .collect::<HashMap<_, _>>();
     let raw_keys = raw_records.keys().copied().collect::<HashSet<_>>();
     let rendering_keys = data
         .pm_app_rendering_styles
@@ -4089,6 +4204,7 @@ fn finding(check: Check, message: String, entity: Option<String>) -> Finding {
     Finding {
         related: Vec::new(),
         check,
+        rule: cadmpeg_ir::rule_name!("inventor/validate.native-records"),
         severity: Severity::Error,
         message,
         entity,

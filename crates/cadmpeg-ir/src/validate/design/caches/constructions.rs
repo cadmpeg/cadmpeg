@@ -12,12 +12,18 @@
 //! `resolved` alone, from
 //! a pick anchored in the current state that resolves to a vertex, a
 //! straight or circular edge, or a planar or cylindrical face of the current
-//! geometry. A construction whose `after` holds a step other than `Flip`
+//! geometry. A principal entity and a picked entity are read in the frame
+//! the construction states its values in (§5.2), through rigid maps only:
+//! the bodies' placement of the entity, then the inverse of that frame. A
+//! construction whose `after` holds a step other than `Flip`
 //! states a value its inputs do not fix, and is not checked.
 
+use std::cell::OnceCell;
 use std::f64::consts::PI;
 
 use super::super::dimensions::{from_cache, Bound};
+use super::super::frames::{self, held_by, relative, Placement};
+use super::super::matching::StateTopology;
 use super::super::parameters::cache_in;
 use super::super::records::DesignRecords;
 use super::super::walk::ConstructionView;
@@ -33,7 +39,7 @@ use crate::design::selection::{Anchor, PickTarget, Picks, PrincipalEntity};
 use crate::features::geometry::FinitePoint3;
 use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::math::portable::Portable;
-use crate::math::Vector3;
+use crate::math::{Point3, Vector3};
 use crate::report::check::Finding;
 use crate::units::UnitVector3;
 
@@ -67,14 +73,23 @@ struct Reader<'a, 'v> {
     chain: Vec<&'a DesignConfiguration>,
     /// The configuration whose value is read; `None` is `resolved`.
     configuration: Option<&'a str>,
+    /// The map from the construction's frame into its definition's frame in
+    /// the configuration read, where it is known and rigid.
+    frame: Option<Placement>,
+    current: &'v OnceCell<StateTopology<'a>>,
 }
 
 /// Checks `construction`'s `resolved` in the scope's active configuration and
-/// each `resolved_in` value in its configuration.
+/// each `resolved_in` value in its configuration. `frame` gives the map from
+/// the frame the construction states its values in into its definition's
+/// frame, in a configuration (`None` is `resolved`); `current` holds the
+/// current geometry's topology once a pick reads it.
 pub(in crate::validate::design) fn check_construction<'a>(
     index: &DesignRecords<'a>,
     construction: ConstructionView<'a>,
     scope: Option<&str>,
+    frame: &dyn Fn(Option<&str>) -> Option<Placement>,
+    current: &OnceCell<StateTopology<'a>>,
     at: &str,
     findings: &mut Vec<Finding>,
 ) {
@@ -110,6 +125,8 @@ pub(in crate::validate::design) fn check_construction<'a>(
             index,
             chain: index.configuration_chain(configuration.or(active)),
             configuration,
+            frame: frame(configuration.filter(|configuration| Some(*configuration) != active)),
+            current,
         };
         for input in inputs {
             let residuals = reader.residual(value, input).unwrap_or_default();
@@ -135,7 +152,8 @@ pub(in crate::validate::design) fn check_construction<'a>(
                 warning(
                     findings,
                     at,
-                    format_args!(
+                    crate::rule!(
+                        "design.construction-misses-input",
                         "a construction's {which} misses its {:?} input by {residual}",
                         input.role.as_ref().map(|role| &role.relation)
                     ),
@@ -158,6 +176,25 @@ enum Value {
 fn point(value: FinitePoint3) -> Vector3 {
     let point = value.get();
     Vector3::new(point.x, point.y, point.z)
+}
+
+/// `locus` under a rigid `placement`.
+fn placed(placement: Placement, locus: Locus) -> Option<Locus> {
+    let at = |at: Vector3| {
+        let moved = frames::point(placement, Point3::new(at.x, at.y, at.z))?;
+        Some(Vector3::new(moved.x, moved.y, moved.z))
+    };
+    let along = |along: Vector3| frames::vector(placement, along);
+    Some(match locus {
+        Locus::Point(origin) => Locus::Point(at(origin)?),
+        Locus::Direction(direction) => Locus::Direction(along(direction)?),
+        Locus::Line(origin, direction) => Locus::Line(at(origin)?, along(direction)?),
+        Locus::Plane(origin, normal) => Locus::Plane(at(origin)?, along(normal)?),
+        Locus::Round(center, axis) => Locus::Round(at(center)?, along(axis)?),
+        Locus::Frame(origin, [x, y, z]) => {
+            Locus::Frame(at(origin)?, [along(x)?, along(y)?, along(z)?])
+        }
+    })
 }
 
 fn unit(value: UnitVector3) -> Vector3 {
@@ -320,7 +357,7 @@ impl Reader<'_, '_> {
                         PickTarget::Principal {
                             entity,
                             container: None,
-                        } => Some(principal_locus(*entity)),
+                        } => placed(relative(self.frame?, None)?, principal_locus(*entity)),
                         _ if self.configuration.is_none()
                             && matches!(selection.at, Anchor::Current) =>
                         {
@@ -374,50 +411,53 @@ impl Reader<'_, '_> {
     }
 
     /// A vertex, a straight or circular edge, or a planar or cylindrical
-    /// face of the current geometry.
+    /// face of the current geometry, in the construction's frame.
     fn entity(&self, entity: &EntityRef) -> Option<Locus> {
-        let geometry = &self.index.ir.geometry;
-        match entity {
+        let topology = self
+            .current
+            .get_or_init(|| StateTopology::of_geometry(&self.index.ir.geometry));
+        let (locus, bodies) = match entity {
             EntityRef::Vertex(id) => {
-                let vertex = geometry.vertices.iter().find(|vertex| &vertex.id == id)?;
-                let at = geometry.points.iter().find(|at| at.id == vertex.point)?;
-                Some(Locus::Point(point(at.position())))
+                let vertex = topology.vertices.get(id.as_str())?;
+                let at = topology.points.get(vertex.point.as_str())?;
+                let locus = Locus::Point(point(at.position()));
+                (locus, topology.vertex_bodies(id.as_str()))
             }
             EntityRef::Edge(id) => {
-                let edge = geometry.edges.iter().find(|edge| &edge.id == id)?;
-                let curve = edge.curve()?;
-                let curve = geometry
-                    .curves
-                    .iter()
-                    .find(|candidate| &candidate.id == curve)?;
-                match &curve.geometry {
+                let curve = topology.edges.get(id.as_str())?.curve()?;
+                let locus = match &topology.curves.get(curve.as_str())?.geometry {
                     CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) => {
-                        Some(Locus::Line(point(line.origin()), unit(line.direction())))
+                        Locus::Line(point(line.origin()), unit(line.direction()))
                     }
-                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) => Some(
-                        Locus::Round(point(circle.center()), unit(*circle.frame().axis())),
-                    ),
-                    _ => None,
-                }
+                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) => {
+                        Locus::Round(point(circle.center()), unit(*circle.frame().axis()))
+                    }
+                    _ => return None,
+                };
+                (locus, topology.edge_bodies(id.as_str()))
             }
             EntityRef::Face(id) => {
-                let face = geometry.faces.iter().find(|face| &face.id == id)?;
-                let surface = geometry
-                    .surfaces
-                    .iter()
-                    .find(|surface| surface.id == face.surface)?;
-                match &surface.geometry {
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => Some(
-                        Locus::Plane(point(plane.origin()), unit(*plane.frame().axis())),
-                    ),
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) => Some(
-                        Locus::Round(point(cylinder.origin()), unit(*cylinder.frame().axis())),
-                    ),
-                    _ => None,
-                }
+                let face = topology.faces.get(id.as_str())?;
+                let locus = match &topology.surfaces.get(face.surface.as_str())?.geometry {
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => {
+                        Locus::Plane(point(plane.origin()), unit(*plane.frame().axis()))
+                    }
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) => {
+                        Locus::Round(point(cylinder.origin()), unit(*cylinder.frame().axis()))
+                    }
+                    _ => return None,
+                };
+                let body = topology.face_body(id.as_str()).map(|body| body.id.as_str());
+                (locus, body.into_iter().collect())
             }
-            _ => None,
-        }
+            _ => return None,
+        };
+        let held = held_by(
+            bodies
+                .iter()
+                .filter_map(|body| topology.bodies.get(body).copied()),
+        )?;
+        placed(relative(self.frame?, held)?, locus)
     }
 
     /// The residual of one input on the construction's `value`, where

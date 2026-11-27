@@ -119,10 +119,12 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
         section_3d: None,
         dimensions: None,
         relations: Some(crate::feature::definitions::FeatureRelationTable {
+            rows_end: None,
             declared_count: 2,
             entity_ref: None,
             rows: Vec::new(),
             skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+                rows_end: None,
                 header: crate::feature::definitions::FeatureSolverTableHeader {
                     declared_count: 2,
                     entity_ref: 70,
@@ -351,6 +353,7 @@ fn arc_carriers_use_trim_vertices() {
     let mut var_arc = definition;
     var_arc.variables = Some(crate::feature::definitions::test_support::with_points(
         crate::feature::definitions::FeatureVariableTable {
+            rows_end: 0,
             declared_count: 0,
             entity_ref: None,
             rows: Vec::new(),

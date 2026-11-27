@@ -5,7 +5,7 @@
 use std::io::Cursor;
 use std::path::Path;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use cadmpeg_measure::test_support::round_trip::{measured, measures_agree_with, measures_decide};
@@ -46,9 +46,7 @@ fn authored_box_and_cylinder_have_their_scripted_measures() {
         ),
     ] {
         let bytes = std::fs::read(fixtures.join(format!("{name}.FCStd"))).unwrap();
-        let decoded = FcstdCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .unwrap();
+        let decoded = crate::test_support::cached_full_decode(&bytes).unwrap();
         let report = measured(name, decoded.ir()).unwrap();
         assert_eq!(report.bodies().len(), 1, "{name}");
         let body = &report.bodies()[0];
@@ -159,8 +157,7 @@ fn patched_corpus_documents_keep_measured_geometry() {
                             .expect("fixture name")
                             .to_owned();
                         let bytes = std::fs::read(path).expect("fixture bytes");
-                        let decoded = FcstdCodec
-                            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                        let decoded = crate::test_support::cached_full_decode(&bytes)
                             .unwrap_or_else(|_| panic!("{label}: the fixture does not decode"));
                         let Some(report) =
                             measures_decide(&label, decoded.ir()).expect("the fixture is measured")
@@ -182,7 +179,7 @@ fn patched_corpus_documents_keep_measured_geometry() {
                             });
                         let mut encoded = Vec::new();
                         let plan = FcstdCodec
-                            .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+                            .plan(EncodeInput::new(&edited, None))
                             .unwrap_or_else(|_| panic!("{label}: the edit is not planned"));
                         assert!(
                             matches!(plan.report().write_path(), WritePath::Patched { .. }),
@@ -448,7 +445,7 @@ fn authored_uniform_appearance_binds_every_box_edge_and_vertex() {
         panic!("one authored box view presentation");
     };
     assert_eq!(
-        view.object.as_deref(),
+        view.object.as_ref().map(cadmpeg_ir::ids::Identity::as_str),
         Some(crate::native::native_id("object", BOX_OBJECT).as_str())
     );
     assert_eq!(

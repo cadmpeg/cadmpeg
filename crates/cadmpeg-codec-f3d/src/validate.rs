@@ -92,7 +92,7 @@ fn design_stream(id: &str) -> &str {
 }
 
 /// Report whether a native `stream` scope contains the design `entry`, either
-/// directly or through an `f3d:xref/` qualifier.
+/// directly or below the definition key of an archive member.
 fn design_stream_contains_entry(stream: &str, entry: &str) -> bool {
     ids::native_scope_matches(stream, entry)
 }
@@ -191,6 +191,7 @@ fn push_constant_finding(
     findings.push(Finding {
         related: Vec::new(),
         check,
+        rule: cadmpeg_ir::rule_name!("f3d/validate.native-constant"),
         severity: Severity::Error,
         message: message.into(),
         entity,
@@ -364,6 +365,7 @@ pub(crate) fn validate_native(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
             return Ok(vec![Finding {
+                rule: cadmpeg_ir::rule_name!("f3d/validate.fusion-native-namespace-does-not-match"),
                 related: Vec::new(),
                 check: Check::NativeLinks,
                 severity: Severity::Error,
@@ -374,6 +376,7 @@ pub(crate) fn validate_native(
     };
     let mut findings = validate_loaded(decode, ir, &native)?;
     findings.extend(skipped.into_iter().map(|reason| Finding {
+        rule: cadmpeg_ir::rule_name!("f3d/validate.skipped-native-arena-row"),
         check: Check::FragmentSkipped,
         severity: Severity::Info,
         entity: None,

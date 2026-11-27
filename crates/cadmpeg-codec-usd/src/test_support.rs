@@ -70,7 +70,11 @@ pub(crate) fn decode_with(
         DecodeContext::from_root_bytes(text.as_bytes(), &arena, &policy).expect("context");
     let ctx = ctx.with_companions(files);
     let result = UsdCodec
-        .decode_with_context(&ctx, root)
+        .decode_with_context(
+            &ctx,
+            root,
+            &cadmpeg_ir::report::strictness::Strictness::default(),
+        )
         .unwrap_or_else(|failure| panic!("decode failed: {failure:?}\n{text}"));
     ctx.finish_session().expect("session");
     result
@@ -84,8 +88,8 @@ pub(crate) type Written = (String, cadmpeg_ir::report::export::ExportReport);
 pub(crate) fn try_encode(
     ir: &cadmpeg_ir::CadIr,
     request: TargetRequest<'_>,
-) -> Result<Written, cadmpeg_core::CodecError> {
-    let plan = UsdCodec.plan(EncodeInput::new(ir, None), request)?;
+) -> Result<Written, cadmpeg_ir::codec::write::EncodeError> {
+    let plan = UsdCodec.plan(EncodeInput::new(ir, None).with_target(request))?;
     let mut bytes = Vec::new();
     let report = plan.write_to(&mut bytes)?;
     if bytes.starts_with(b"PXR-USDC") {
@@ -115,8 +119,9 @@ pub(crate) fn encode_with(
 ) -> Written {
     let plan = UsdCodec
         .plan(
-            EncodeInput::new(ir, None).with_scene(scene),
-            TargetRequest::Explicit("usda-1.0"),
+            EncodeInput::new(ir, None)
+                .with_scene(scene)
+                .with_target(TargetRequest::Explicit("usda-1.0")),
         )
         .expect("plan the write");
     let mut bytes = Vec::new();
@@ -130,7 +135,7 @@ pub(crate) fn encode_with(
 /// The bytes that `ir` writes as for the target `request` resolves.
 pub(crate) fn encode_bytes(ir: &cadmpeg_ir::CadIr, request: TargetRequest<'_>) -> Vec<u8> {
     let plan = UsdCodec
-        .plan(EncodeInput::new(ir, None), request)
+        .plan(EncodeInput::new(ir, None).with_target(request))
         .expect("plan the write");
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("write");

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{ConstructionRecipe, ConstructionRecipeWire, CONSTRUCTION_RECIPE_CLONE_COUNT};
+use cadmpeg_core::serde_erase::json;
 
 fn recipe(with_design: bool) -> ConstructionRecipe {
     let suffix = if with_design {
@@ -19,8 +20,8 @@ fn construction_recipe_borrowed_wire_matches_owned_wire_bytes() {
     for record in [recipe(false), recipe(true)] {
         let owned = ConstructionRecipeWire::from(record.clone());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&owned).unwrap()
         );
     }
 }

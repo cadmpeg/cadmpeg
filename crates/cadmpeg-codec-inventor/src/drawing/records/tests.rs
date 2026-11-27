@@ -5,6 +5,7 @@ use super::{
 };
 use crate::test_support::test_fixtures::{push_u16, push_u32, push_utf16};
 use cadmpeg_core::decode::View;
+use cadmpeg_core::serde_erase::json;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -106,7 +107,7 @@ fn sheet_prefix_keeps_both_lists_and_its_opaque_tail() -> TestResult {
         .all(|reference| reference.qualified()));
     assert_eq!(tail.len, 46);
     assert!(record.valid(&ctx)?);
-    let restored: Record = serde_json::from_value(serde_json::to_value(&record)?)?;
+    let restored: Record = json::from_value(json::to_value(&record)?)?;
     assert_eq!(restored, record);
     assert!(restored.valid(&ctx)?);
     Ok(())
@@ -132,7 +133,7 @@ fn both_view_forms_keep_every_operand_and_the_extension() -> TestResult {
         assert_eq!(text, "Generated view");
         assert_eq!(tail.len, 2);
         assert!(record.valid(&ctx)?);
-        let restored: Record = serde_json::from_value(serde_json::to_value(&record)?)?;
+        let restored: Record = json::from_value(json::to_value(&record)?)?;
         assert_eq!(restored, record);
         assert!(restored.valid(&ctx)?);
     }
@@ -153,7 +154,7 @@ fn modeled_document_reference_keeps_each_path_form() -> TestResult {
         assert_eq!(stored, path);
         assert_eq!(tail.len, 2);
         assert!(record.valid(&ctx)?);
-        let restored: Record = serde_json::from_value(serde_json::to_value(&record)?)?;
+        let restored: Record = json::from_value(json::to_value(&record)?)?;
         assert!(restored.valid(&ctx)?);
     }
     for path in [
@@ -395,5 +396,79 @@ fn short_prefix_error_keeps_the_input_space_and_offset() -> TestResult {
         return Err("located truncation".into());
     };
     assert_eq!(location, expected);
+    Ok(())
+}
+
+#[test]
+fn a_sheet_whose_view_link_is_given_up_is_dropped_with_that_record() -> TestResult {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let sheet = record(Family::Sheet, SHEET, sheet(6))?;
+    let Fields::Sheet { views, .. } = &sheet.fields else {
+        return Err("sheet fields".into());
+    };
+    let ordinal = views.references()[0]
+        .record_ordinal()
+        .ok_or("sheet view ordinal")?;
+    let given_up = "inventor:drawing:record#generated-given-up";
+    let mut inventory = crate::drawing::Inventory::default();
+    inventory
+        .refused
+        .insert(("generated".to_owned(), ordinal), given_up.to_owned());
+    inventory.refuse_references(&ctx, &sheet, 0x40, true)?;
+    let losses = inventory.losses();
+    let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+    assert!(losses.iter().all(|loss| loss.code != unreadable));
+    assert!(losses.contains(&cadmpeg_ir::unknown::part::dropped_with(
+        cadmpeg_ir::ids::Identity::new(&sheet.id)?,
+        cadmpeg_ir::ids::Identity::new(given_up)?,
+    )));
+    Ok(())
+}
+
+#[test]
+fn a_record_refused_for_its_own_references_gives_up_its_payload() -> TestResult {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let sheet = record(Family::Sheet, SHEET, sheet(6))?;
+    let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+    for links in [false, true] {
+        let mut inventory = crate::drawing::Inventory::default();
+        inventory.refuse_references(&ctx, &sheet, 0x40, links)?;
+        assert!(inventory
+            .losses()
+            .iter()
+            .all(|loss| loss.code != unreadable));
+        let [part] = inventory.given_up.as_slice() else {
+            return Err("one given-up part".into());
+        };
+        let charge = part.loss();
+        assert_eq!(charge.code, unreadable);
+        assert!(
+            charge.message.starts_with(&format!(
+                "part rse-record stream=\"RSeStorage/Bgenerated:expanded\" offset=64 length={} ",
+                sheet.payload.len()
+            )),
+            "{}",
+            charge.message
+        );
+        assert!(
+            charge.message.contains("drawing.record-malformed"),
+            "{}",
+            charge.message
+        );
+        assert!(
+            charge
+                .message
+                .ends_with(&format!("; dropped=[{}]", sheet.id)),
+            "{}",
+            charge.message
+        );
+        assert!(!charge.message.contains("record-issue#"));
+        assert_eq!(
+            inventory
+                .refused
+                .get(&("generated".to_owned(), sheet.ordinal)),
+            (!links).then_some(&sheet.id)
+        );
+    }
     Ok(())
 }

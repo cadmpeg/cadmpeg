@@ -161,7 +161,10 @@ fn check_slot(operation: &Operation, slot: &str, wanted: SlotSource, findings: &
         super::error(
             findings,
             id,
-            format_args!("slot `{slot}` names no geometry of the operation"),
+            crate::rule!(
+                "process.slot-names-no-geometry-operation",
+                "slot `{slot}` names no geometry of the operation"
+            ),
         );
         return;
     };
@@ -169,7 +172,10 @@ fn check_slot(operation: &Operation, slot: &str, wanted: SlotSource, findings: &
         super::error(
             findings,
             id,
-            format_args!("slot `{slot}` names geometry whose role is not `reference`"),
+            crate::rule!(
+                "process.slot-names-geometry-role-not-reference",
+                "slot `{slot}` names geometry whose role is not `reference`"
+            ),
         );
     }
     let (source, empty) = match &geometry.source {
@@ -187,13 +193,19 @@ fn check_slot(operation: &Operation, slot: &str, wanted: SlotSource, findings: &
         super::error(
             findings,
             id,
-            format_args!("slot `{slot}` names geometry that holds no {wanted_name}"),
+            crate::rule!(
+                "process.slot-names-geometry-holds-no",
+                "slot `{slot}` names geometry that holds no {wanted_name}"
+            ),
         );
     } else if empty {
         super::error(
             findings,
             id,
-            format_args!("slot `{slot}` names geometry that holds none of its {wanted_name}"),
+            crate::rule!(
+                "process.slot-names-geometry-holds-none",
+                "slot `{slot}` names geometry that holds none of its {wanted_name}"
+            ),
         );
     }
 }
@@ -238,7 +250,8 @@ fn check_operation(
         super::error(
             findings,
             id,
-            format_args!(
+            crate::rule!(
+                "process.operation-states-class-does-not-admit",
                 "operation states `{}`, which its class does not admit",
                 field.name()
             ),
@@ -260,7 +273,7 @@ fn check_operation(
                     super::error(
                         findings,
                         id,
-                        format_args!(
+                        crate::rule!("process.height-measured-operation-machine-geometry-does", 
                             "a height is measured from the operation's `machine` geometry, which it does not hold"
                         ),
                     );
@@ -279,7 +292,8 @@ fn check_operation(
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "process.slot-names-two-geometries-operation",
                     "slot `{}` names two geometries of the operation",
                     slot.as_str()
                 ),
@@ -291,7 +305,10 @@ fn check_operation(
             super::error(
                 findings,
                 id,
-                format_args!("a literal `linking.lift` is negative; a lift raises the tool"),
+                crate::rule!(
+                    "process.literal-linking-lift-negative-lift-raises",
+                    "a literal `linking.lift` is negative; a lift raises the tool"
+                ),
             );
         }
         if let Some(clearance) = &linking.pass_clearance {
@@ -299,7 +316,10 @@ fn check_operation(
                 super::error(
                     findings,
                     id,
-                    format_args!("`pass_clearance` states neither `radial` nor `axial`"),
+                    crate::rule!(
+                        "process.pass-clearance-states-neither-radial-nor",
+                        "`pass_clearance` states neither `radial` nor `axial`"
+                    ),
                 );
             }
         }
@@ -316,7 +336,8 @@ fn check_operation(
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "process.plunge-helix-taper-stated-plunge-kind",
                     "`plunge.helix_taper` is stated on a plunge whose kind is not `helix`"
                 ),
             );
@@ -363,7 +384,10 @@ fn check_profile_ranges(operation: &Operation, findings: &mut Vec<Finding>) {
             super::error(
                 findings,
                 operation.id.as_str(),
-                format_args!("a profile curve on an unbounded carrier states no `range`"),
+                crate::rule!(
+                    "process.profile-curve-unbounded-carrier-states-no",
+                    "a profile curve on an unbounded carrier states no `range`"
+                ),
             );
         }
     }
@@ -385,7 +409,8 @@ fn check_radii(operation: &Operation, findings: &mut Vec<Finding>) {
         super::error(
             findings,
             id,
-            format_args!(
+            crate::rule!(
+                "process.positions-base-radial-roles-base-most",
                 "`positions` is the base of {} radial roles; it is the base of at most one",
                 positions.len()
             ),
@@ -398,14 +423,14 @@ fn check_radii(operation: &Operation, findings: &mut Vec<Finding>) {
                     super::error(
                         findings,
                         id,
-                        format_args!("radial limit {role:?} names role {target:?}, which is its own or not stated"),
+                        crate::rule!("process.radial-limit-names-role-own-not", "radial limit {role:?} names role {target:?}, which is its own or not stated"),
                     );
                 }
                 if positions.contains(&target) {
                     super::error(
                         findings,
                         id,
-                        format_args!("radial limit {role:?} names role {target:?}, whose base is `positions`"),
+                        crate::rule!("process.radial-limit-names-role-base-positions", "radial limit {role:?} names role {target:?}, whose base is `positions`"),
                     );
                 }
             }
@@ -414,7 +439,7 @@ fn check_radii(operation: &Operation, findings: &mut Vec<Finding>) {
                     super::error(
                         findings,
                         id,
-                        format_args!("radial limit {role:?} is based on `positions`, which only `inner` or `outer` is"),
+                        crate::rule!("process.radial-limit-based-positions-only-inner", "radial limit {role:?} is based on `positions`, which only `inner` or `outer` is"),
                     );
                 }
                 check_slot(operation, slot.as_str(), SlotSource::Points, findings);
@@ -431,7 +456,10 @@ fn check_radii(operation: &Operation, findings: &mut Vec<Finding>) {
                     super::error(
                         findings,
                         id,
-                        format_args!("radial limit {role:?} reaches itself through `limit` bases"),
+                        crate::rule!(
+                            "process.radial-limit-reaches-itself-through-limit",
+                            "radial limit {role:?} reaches itself through `limit` bases"
+                        ),
                     );
                     break;
                 }
@@ -469,7 +497,10 @@ fn check_leads(
                 super::error(
                     findings,
                     id,
-                    format_args!("a literal lead angle lies outside 0° to 90°"),
+                    crate::rule!(
+                        "process.literal-lead-angle-lies-outside-0",
+                        "a literal lead angle lies outside 0° to 90°"
+                    ),
                 );
             }
         }
@@ -481,7 +512,10 @@ fn check_leads(
             super::error(
                 findings,
                 id,
-                format_args!("a lead with an arc states a `LineTurn::Angle`"),
+                crate::rule!(
+                    "process.lead-arc-states-lineturn-angle",
+                    "a lead with an arc states a `LineTurn::Angle`"
+                ),
             );
         }
         let spindle = matches!(
@@ -495,7 +529,7 @@ fn check_leads(
             super::error(
                 findings,
                 id,
-                format_args!("a lead angle is measured from the spindle axis on an operation that is not turning"),
+                crate::rule!("process.lead-angle-measured-spindle-axis-operation", "a lead angle is measured from the spindle axis on an operation that is not turning"),
             );
         }
     }
@@ -515,7 +549,8 @@ fn check_cycle(operation: &Operation, class: Option<&OperationClass>, findings: 
         super::error(
             findings,
             id,
-            format_args!(
+            crate::rule!(
+                "process.operation-states-cycle-only-drilling-probing",
                 "operation states a `cycle`, which only a drilling or probing operation states"
             ),
         );
@@ -533,14 +568,20 @@ fn check_cycle(operation: &Operation, class: Option<&OperationClass>, findings: 
             super::error(
                 findings,
                 id,
-                format_args!("a probing operation's `cycle` states `probe_at` and no other field"),
+                crate::rule!(
+                    "process.probing-operation-cycle-states-probe-no",
+                    "a probing operation's `cycle` states `probe_at` and no other field"
+                ),
             );
         }
     } else if cycle.probe_at.is_some() {
         super::error(
             findings,
             id,
-            format_args!("`cycle.probe_at` is stated on an operation that is not probing"),
+            crate::rule!(
+                "process.cycle-probe-stated-operation-not-probing",
+                "`cycle.probe_at` is stated on an operation that is not probing"
+            ),
         );
     }
     if let Some(Choice {
@@ -552,20 +593,31 @@ fn check_cycle(operation: &Operation, class: Option<&OperationClass>, findings: 
     }
     if let Some(depth) = &cycle.depth {
         if depth.tip_through.is_none() && depth.break_through.is_none() {
-            super::error(findings, id, format_args!("`cycle.depth` states no field"));
+            super::error(
+                findings,
+                id,
+                crate::rule!(
+                    "process.cycle-depth-states-no-field",
+                    "`cycle.depth` states no field"
+                ),
+            );
         }
         if matches!(&depth.break_through, Some(Dimension::Literal(b)) if b.get() < 0.0) {
             super::error(
                 findings,
                 id,
-                format_args!("a literal `cycle.depth.break_through` is negative"),
+                crate::rule!(
+                    "process.literal-cycle-depth-break-through-negative",
+                    "a literal `cycle.depth.break_through` is negative"
+                ),
             );
         }
         if !operation.heights.contains_key(&HeightRole::Bottom) {
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "process.operation-cycle-states-depth-operation-states",
                     "operation's cycle states `depth`, but the operation states no `bottom` height"
                 ),
             );
@@ -612,7 +664,10 @@ fn check_tool_axis(operation: &Operation, findings: &mut Vec<Finding>) {
         super::error(
             findings,
             id,
-            format_args!("{what} picks {class}; it picks {wanted}"),
+            crate::rule!(
+                "process.picks-picks",
+                "{what} picks {class}; it picks {wanted}"
+            ),
         );
     }
     let Some(count) = named_picks(&selection.selection) else {
@@ -622,13 +677,19 @@ fn check_tool_axis(operation: &Operation, findings: &mut Vec<Finding>) {
         super::error(
             findings,
             id,
-            format_args!("{what} picks {count} entities; it picks one"),
+            crate::rule!(
+                "process.picks-entities-picks-one",
+                "{what} picks {count} entities; it picks one"
+            ),
         );
     } else if !one && count == 0 {
         super::error(
             findings,
             id,
-            format_args!("{what} picks nothing; it picks at least one face"),
+            crate::rule!(
+                "process.picks-nothing-picks-least-one-face",
+                "{what} picks nothing; it picks at least one face"
+            ),
         );
     }
 }
@@ -682,7 +743,10 @@ fn check_wcs(holder: &str, wcs: &Wcs, findings: &mut Vec<Finding>) {
         super::error(
             findings,
             holder,
-            format_args!("WCS origin `frame_origin` is stated without a `frame` orientation"),
+            crate::rule!(
+                "process.wcs-origin-frame-origin-stated-without",
+                "WCS origin `frame_origin` is stated without a `frame` orientation"
+            ),
         );
     }
 }
@@ -743,7 +807,11 @@ fn check_technology(
         ),
     ];
     for (_, message) in ranges.into_iter().filter(|(refused, _)| *refused) {
-        super::error(findings, holder, format_args!("{message}"));
+        super::error(
+            findings,
+            holder,
+            crate::rule!("process.technology-value-ranges", "{message}"),
+        );
     }
     if matches!(
         technology.stepdown_rule,
@@ -755,7 +823,8 @@ fn check_technology(
         super::error(
             findings,
             holder,
-            format_args!(
+            crate::rule!(
+                "process.stepdown-rule-constant-engagement-only-stepover",
                 "`stepdown_rule` is `constant_engagement`, which only `stepover_rule` states"
             ),
         );
@@ -764,7 +833,10 @@ fn check_technology(
         super::error(
             findings,
             holder,
-            format_args!("`jet_cut` is stated where the technology's tool is no jet cutter"),
+            crate::rule!(
+                "process.jet-cut-stated-where-technology-tool",
+                "`jet_cut` is stated where the technology's tool is no jet cutter"
+            ),
         );
     }
 }
@@ -787,7 +859,8 @@ fn check_motion_cycle(holder: &str, cycle: &Cycle, findings: &mut Vec<Finding>) 
                 super::error(
                     findings,
                     holder,
-                    format_args!(
+                    crate::rule!(
+                        "process.cycle-not-probe-cycle-states-probe",
                         "a cycle that is not a probe cycle states a probe clearance or overtravel"
                     ),
                 );
@@ -815,7 +888,10 @@ fn check_probe_target(holder: &str, target: &ProbeTarget, findings: &mut Vec<Fin
         super::error(
             findings,
             holder,
-            format_args!("a probe target's width, diameter, or spacing is not positive"),
+            crate::rule!(
+                "process.probe-target-width-diameter-spacing-not",
+                "a probe target's width, diameter, or spacing is not positive"
+            ),
         );
     }
 }

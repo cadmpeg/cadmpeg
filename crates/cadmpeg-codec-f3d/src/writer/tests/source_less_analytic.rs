@@ -12,10 +12,10 @@
 )]
 
 use cadmpeg_core::convert::f64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use cadmpeg_test_support::EditableDecodeResult;
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::{Cursor, Read};
 
@@ -28,6 +28,7 @@ use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::{f3d_with_configuration, f3d_with_smbh};
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
+use configuration_root::{assert_active_row_written, write_and_decode};
 
 const EPS_CONE_ANGLE: f64 = 1.0e-12;
 
@@ -59,7 +60,7 @@ fn assert_invalid_configuration_is_contained(name: &str, payload: &[u8], expecte
     assert!(!contained.ir().geometry.bodies.is_empty());
 
     let mut strict = DecodeOptions::default();
-    strict.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
+    strict.strictness.pinned = true;
     let refused = F3dCodec.decode(&mut Cursor::new(bytes), &strict);
     assert!(
         matches!(
@@ -100,14 +101,14 @@ fn generated_configuration_document() -> serde_json::Value {
         ],
         &["small", "medium", "large"],
     );
-    document["extension"] = serde_json::json!({"future": 7});
+    document["extension"] = cadmpeg_core::json!({"future": 7});
     document
 }
 
 #[test]
 fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let name = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
-    let payload = serde_json::to_vec(&generated_configuration_document()).unwrap();
+    let payload = json::to_vec(&generated_configuration_document()).unwrap();
     let decoded = EditableDecodeResult::from(
         F3dCodec
             .decode(
@@ -200,12 +201,9 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
 
     let mut root_edit = decoded.ir().clone();
     set_active_row(&mut root_edit, "medium");
-    crate::test_support::assert_written_with_loss(
+    crate::test_support::assert_patch_declined(
         &root_edit,
         Some(decoded.source_fidelity()),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
         "changes the Design root record",
     );
 
@@ -221,7 +219,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less configuration encode");
     let mut inconsistent = source_less.clone();
@@ -232,20 +230,21 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .find(|configuration| configuration.name.as_deref() == Some("Medium"))
         .expect("medium configuration")
         .active = true;
-    crate::test_support::assert_written_with_loss(
-        &inconsistent,
-        None,
-        "export/native.records-omitted",
-        "must equal the projection of native configuration tables",
-    );
+    let (_, inconsistent_round_trip) = write_and_decode(&inconsistent);
+    assert_active_row_written(&inconsistent_round_trip, &inconsistent, "medium");
     let mut rooted = source_less.clone();
     set_active_row(&mut rooted, "medium");
-    crate::test_support::assert_written_with_loss(
-        &rooted,
-        None,
-        "export/native.records-omitted",
-        "does not write the Design configuration root record",
+    let (rooted_report, rooted_round_trip) = write_and_decode(&rooted);
+    let medium_id = crate::ids::neutral_configuration_id(name, "medium");
+    assert!(
+        rooted_report.losses.iter().any(|loss| loss.code.to_string()
+            == "export/record.residual-unavailable"
+            && loss.message.contains("DR-1063")
+            && loss.message.contains(medium_id.as_str())),
+        "{:#?}",
+        rooted_report.losses
     );
+    assert_active_row_written(&rooted_round_trip, &rooted, "medium");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less configuration round trip");
@@ -372,14 +371,7 @@ fn generated_f3d_replays_byte_exactly_and_regenerates_on_semantic_edits() {
 
     let (mut modified, _, fidelity) = decoded.into_parts();
     modified.geometry.bodies[0].name = Some("edited".into());
-    crate::test_support::assert_written_with_loss(
-        &modified,
-        Some(&fidelity),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
-        "",
-    );
+    crate::test_support::assert_patch_declined(&modified, Some(&fidelity), "");
 }
 
 #[test]
@@ -460,6 +452,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
                 asm_body_key_offset: 0,
                 asm_body_key: 42,
                 entity_suffix: 42,
+                browser_node_entity: 43,
                 visible: false,
             },
         )
@@ -468,7 +461,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     let mut encoded = Vec::new();
     crate::native::reset_load_count();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less F3D encode");
     assert_eq!(crate::native::load_count(), 1);
@@ -533,12 +526,25 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             wire.asm_body_key = 43;
             *visibility = crate::records::bodies::BodyVisibility::try_from(wire).unwrap();
         }
-        crate::test_support::assert_written_with_loss(
-            &invalid,
-            None,
-            "export/native.records-omitted",
-            "uses an ASM key different from body",
+        let mut bytes = Vec::new();
+        let report = F3dCodec
+            .plan(EncodeInput::new(&invalid, None))
+            .and_then(|plan| plan.write_to(&mut bytes))
+            .expect("source-less write");
+        assert!(
+            report
+                .losses
+                .iter()
+                .all(|loss| !loss.message.contains("body visibilit")),
+            "{:#?}",
+            report.losses
         );
+        let regenerated = F3dCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("source-less round trip");
+        let visibilities = &f3d_native(regenerated.ir()).body_visibilities;
+        assert_eq!(visibilities.len(), 1);
+        assert_eq!(visibilities[0].asm_body_key(), 42);
     }
 
     assert_eq!(round_trip.ir().geometry.bodies.len(), 1);
@@ -700,22 +706,27 @@ fn generated_source_less_f3d_drops_subds() {
             &[],
         )
         .unwrap();
-    source_less.geometry.subds.push(cadmpeg_ir::SubdSurface {
-        id: cadmpeg_ir::ids::SubdId::mint("test:f3d:subd#0").expect("identity grammar"),
-        scheme: cadmpeg_ir::SubdScheme::CatmullClark,
-        source_object: None,
-        cage: cadmpeg_ir::subd::SubdCage::default(),
-        native_ref: None,
-    });
+    let ordinary = source_less.geometry.bodies.len();
+    let cage = cadmpeg_test_support::cages::push_cage_body(&mut source_less, "f3d");
 
-    crate::test_support::assert_written_with_loss(
+    let report = crate::test_support::assert_written_with_loss(
         &source_less,
         None,
         &crate::loss::F3dLossCode::WriterSubdOmitted
             .kind()
             .to_string(),
-        "test:f3d:subd#0",
+        cage.body.as_str(),
     );
+    cadmpeg_test_support::cages::assert_cage_body_dropped(&report, &cage, "bodies", ordinary);
+    let mut bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&source_less, None))
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
+    let written = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(written.ir().geometry.bodies.len(), ordinary);
 }
 
 #[test]
@@ -852,7 +863,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less document parameter encode");
     let decoded = F3dCodec
@@ -906,7 +917,7 @@ fn generated_source_less_writes_document_tolerance_contract() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less tolerance encode");
     let round_trip = F3dCodec
@@ -947,7 +958,7 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_reports_loss
         Some(cadmpeg_ir::scalar::PositiveLength::new(0.03).expect("positive finite tolerance"));
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("supported tolerant edge encode");
     let round_trip = F3dCodec
@@ -965,7 +976,7 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_reports_loss
         Some(cadmpeg_ir::scalar::PositiveLength::new(0.04).expect("positive finite tolerance"));
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("supported tolerant vertex encode");
     let round_trip = F3dCodec
@@ -1183,7 +1194,7 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less polygon encode");
     let round_trip = F3dCodec
@@ -1295,7 +1306,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
         .collect::<Vec<_>>();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less line-carrier encode");
     let round_trip = F3dCodec
@@ -1373,7 +1384,7 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less circle-carrier encode");
     let round_trip = F3dCodec
@@ -1403,12 +1414,9 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
             )
             .unwrap(),
         ));
-    crate::test_support::assert_written_with_loss(
+    crate::test_support::assert_patch_declined(
         round_trip.ir(),
         Some(round_trip.source_fidelity()),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
         "does not support edits to curve",
     );
 }
@@ -1460,7 +1468,7 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less ellipse-carrier encode");
     let round_trip = F3dCodec
@@ -1512,7 +1520,7 @@ fn generated_source_less_face_writes_cylinder_surface_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cylinder encode");
     let round_trip = F3dCodec
@@ -1681,7 +1689,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less closed cylinder band encode");
     let round_trip = F3dCodec
@@ -1745,7 +1753,7 @@ fn generated_source_less_face_writes_signed_sphere_surface_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less sphere encode");
     let round_trip = F3dCodec
@@ -1786,7 +1794,7 @@ fn generated_source_less_face_writes_cone_surface_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cone encode");
     let round_trip = F3dCodec
@@ -1829,7 +1837,7 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
 
     let mut initial = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut initial))
         .expect("source-less cone encode");
     let retained_decode = F3dCodec
@@ -1874,6 +1882,8 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
 }
 
 mod closed_edges;
+mod configuration_root;
+mod configuration_round_trip;
 mod family_changes;
 mod reversed_edges;
 mod tolerant_tails;

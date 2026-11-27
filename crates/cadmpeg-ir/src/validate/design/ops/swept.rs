@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Swept solids and the loft (§6.3).
 
+use crate::report::check::Ruled;
 use std::f64::consts::TAU;
 
 use super::options;
@@ -10,8 +11,8 @@ use crate::design::ops::shared::{Limit, RadialDimension, Span};
 use crate::design::ops::swept::{
     CenterlineAt, CornerTransition, DraftNeutral, Extrude, ExtrudeDraft, GuideFrame,
     HelicalSection, HelicalSweep, HoleDraft, Loft, PathExtent, Primitive, PrimitiveShape,
-    ProfileFit, Revolve, Rib, ScalingLaw, SectionForm, SectionShape, SectionTurn, Spine, Sweep,
-    SweepControls, SweepOrientation, SweepSection,
+    ProfileFit, Revolve, Rib, ScalingLaw, SectionForm, SectionShape, SectionTurn, Spine,
+    SpineLimits, Sweep, SweepControls, SweepOrientation, SweepSection,
 };
 use crate::design::options::{
     BodyForm, Boolean, BooleanOp, SectionCondition, SolidOutput, Support,
@@ -23,7 +24,7 @@ use super::super::records::DesignRecords;
 
 pub(super) fn check_extrude(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     extrude: &Extrude,
     findings: &mut Vec<Finding>,
 ) {
@@ -41,7 +42,10 @@ pub(super) fn check_extrude(
         error(
             findings,
             site.entity,
-            format_args!("Extrude.sheet_cut occurs only in an extrude that cuts"),
+            crate::rule!(
+                "design.extrude-sheet-cut-occurs-only-extrude",
+                "Extrude.sheet_cut occurs only in an extrude that cuts"
+            ),
         );
     }
     options::check_solid_output(index, site, &extrude.output, findings);
@@ -58,14 +62,15 @@ fn cuts(output: &SolidOutput) -> bool {
 }
 
 fn check_extrude_draft(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     draft: &ExtrudeDraft,
     span: Option<&Span<crate::scalar::Length>>,
     findings: &mut Vec<Finding>,
 ) {
-    let mut refuse = |message: std::fmt::Arguments<'_>| error(findings, site.entity, message);
+    let mut refuse = |message: Ruled<'_>| error(findings, site.entity, message);
     if draft.end.is_none() && draft.start.is_none() {
-        refuse(format_args!(
+        refuse(crate::rule!(
+            "design.extrudedraft-states-neither-end-nor-start",
             "ExtrudeDraft states neither end nor start; a draft that is off is draft: None"
         ));
     }
@@ -73,12 +78,14 @@ fn check_extrude_draft(
         matches!(span, Some(Span::Between { start, .. }) if matches!(**start, Limit::AtOrigin));
     if draft.start.is_some() {
         if matches!(span, Some(Span::Symmetric { .. })) {
-            refuse(format_args!(
+            refuse(crate::rule!(
+                "design.extrudedraft-under-symmetric-span-states-start",
                 "ExtrudeDraft under a symmetric span states start"
             ));
         }
         if starts_at_origin {
-            refuse(format_args!(
+            refuse(crate::rule!(
+                "design.extrudedraft-states-start-where-span-start",
                 "ExtrudeDraft states start where the span's start is AtOrigin"
             ));
         }
@@ -86,47 +93,57 @@ fn check_extrude_draft(
     if draft.neutral == Some(DraftNeutral::Start) {
         let between = matches!(span, Some(Span::Between { .. }));
         if !between || starts_at_origin || draft.start.is_some() {
-            refuse(format_args!(
+            refuse(crate::rule!("design.extrudedraft-neutral-start-occurs-only-under", 
                 "ExtrudeDraft.neutral Start occurs only under a Span::Between whose start is not AtOrigin, with no start draft"
             ));
         }
     }
     if let Some(HoleDraft::Angles { start: Some(_), .. }) = &draft.holes {
         if draft.start.is_none() {
-            refuse(format_args!(
+            refuse(crate::rule!(
+                "design.holedraft-angles-states-start-where-extrudedraft",
                 "HoleDraft::Angles states start where its ExtrudeDraft does not"
             ));
         }
     }
 }
 
-fn check_fit(site: Site<'_>, fit: &ProfileFit, findings: &mut Vec<Finding>) {
+fn check_fit(site: Site<'_, '_>, fit: &ProfileFit, findings: &mut Vec<Finding>) {
     if fit.outer.is_none() && fit.inner.is_none() {
         error(
             findings,
             site.entity,
-            format_args!("ProfileFit states neither outer nor inner"),
+            crate::rule!(
+                "design.profilefit-states-neither-outer-nor-inner",
+                "ProfileFit states neither outer nor inner"
+            ),
         );
     }
     if fit.outer_join.is_some() && fit.outer.is_none() {
         error(
             findings,
             site.entity,
-            format_args!("ProfileFit states outer_join without outer"),
+            crate::rule!(
+                "design.profilefit-states-outer-join-without-outer",
+                "ProfileFit states outer_join without outer"
+            ),
         );
     }
     if fit.inner_join.is_some() && fit.inner.is_none() {
         error(
             findings,
             site.entity,
-            format_args!("ProfileFit states inner_join without inner"),
+            crate::rule!(
+                "design.profilefit-states-inner-join-without-inner",
+                "ProfileFit states inner_join without inner"
+            ),
         );
     }
 }
 
 pub(super) fn check_revolve(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     revolve: &Revolve,
     findings: &mut Vec<Finding>,
 ) {
@@ -140,9 +157,34 @@ pub(super) fn check_revolve(
     options::check_solid_output(index, site, &revolve.output, findings);
 }
 
+/// `SpineLimits` targets are points or planes (§6.6).
+pub(super) fn check_spine_limits(
+    site: Site<'_, '_>,
+    field: &str,
+    limits: &SpineLimits,
+    findings: &mut Vec<Finding>,
+) {
+    for (end, target) in [("start", &limits.start), ("end", &limits.end)] {
+        let Some(class) = target
+            .as_ref()
+            .and_then(|target| picks::refused(target, picks::is_point_or_plane))
+        else {
+            continue;
+        };
+        error(
+            findings,
+            site.entity,
+            crate::rule!(
+                "design.spine-limit-picks-no-point-or-plane",
+                "{field}.{end} picks {class}; a spine limit is a point or a plane"
+            ),
+        );
+    }
+}
+
 pub(super) fn check_sweep(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     sweep: &Sweep,
     findings: &mut Vec<Finding>,
 ) {
@@ -156,19 +198,26 @@ pub(super) fn check_sweep(
                 error(
                     findings,
                     site.entity,
-                    format_args!("SweepSection::Generated states a turn for a Circle section"),
+                    crate::rule!(
+                        "design.sweepsection-generated-states-turn-circle-section",
+                        "SweepSection::Generated states a turn for a Circle section"
+                    ),
                 );
             }
             if *turn == Some(SectionTurn::ZStart) && !matches!(shape, SectionShape::Square { .. }) {
                 error(
                     findings,
                     site.entity,
-                    format_args!("SectionTurn::ZStart occurs only with a Square section"),
+                    crate::rule!(
+                        "design.sectionturn-zstart-occurs-only-square-section",
+                        "SectionTurn::ZStart occurs only with a Square section"
+                    ),
                 );
             }
         }
     }
     options::check_path(site, "Sweep.path", &sweep.path, findings);
+    check_spine_limits(site, "Sweep.limits", &sweep.limits, findings);
     check_controls(site, &sweep.controls, sweep.guides.len(), findings);
     for guide in &sweep.guides {
         options::check_path(site, "SweepGuide.path", &guide.path, findings);
@@ -183,14 +232,17 @@ pub(super) fn check_sweep(
         error(
             findings,
             site.entity,
-            format_args!("Sweep.transition is Open, which occurs only in ImplicitSweep.corner"),
+            crate::rule!(
+                "design.sweep-transition-open-occurs-only-implicitsweep",
+                "Sweep.transition is Open, which occurs only in ImplicitSweep.corner"
+            ),
         );
     }
     options::check_solid_output(index, site, &sweep.output, findings);
 }
 
 fn check_controls(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     controls: &SweepControls,
     guides: usize,
     findings: &mut Vec<Finding>,
@@ -205,7 +257,7 @@ fn check_controls(
                 error(
                     findings,
                     site.entity,
-                    format_args!(
+                    crate::rule!("design.sweeporientation-guides-needs-least-guides-feature", 
                         "SweepOrientation::Guides needs at least {least} guides; the feature has {guides}"
                     ),
                 );
@@ -221,7 +273,7 @@ fn check_controls(
     }
 }
 
-fn check_path_extent(site: Site<'_>, extent: &PathExtent, findings: &mut Vec<Finding>) {
+fn check_path_extent(site: Site<'_, '_>, extent: &PathExtent, findings: &mut Vec<Finding>) {
     for fraction in [&extent.along, &extent.against].into_iter().flatten() {
         site.bound(findings, |values| {
             let value = values.get(fraction)?.get();
@@ -238,7 +290,7 @@ fn check_path_extent(site: Site<'_>, extent: &PathExtent, findings: &mut Vec<Fin
 }
 
 fn check_section_shape(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     shape: &SectionShape,
     helical: bool,
     findings: &mut Vec<Finding>,
@@ -255,7 +307,10 @@ fn check_section_shape(
         SectionShape::Triangle { apex: Some(_), .. } if !helical => error(
             findings,
             site.entity,
-            format_args!("SectionShape::Triangle.apex occurs only in a HelicalSection::Generated"),
+            crate::rule!(
+                "design.sectionshape-triangle-apex-occurs-only-helicalsection",
+                "SectionShape::Triangle.apex occurs only in a HelicalSection::Generated"
+            ),
         ),
         _ => {}
     }
@@ -263,7 +318,7 @@ fn check_section_shape(
 
 pub(super) fn check_helical_sweep(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     sweep: &HelicalSweep,
     findings: &mut Vec<Finding>,
 ) {
@@ -286,7 +341,7 @@ pub(super) fn check_helical_sweep(
 /// curve is read.
 pub(super) fn check_helix_circle(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     circle: &crate::design::selection::OrderedSelection,
     findings: &mut Vec<Finding>,
 ) {
@@ -294,7 +349,10 @@ pub(super) fn check_helix_circle(
         error(
             findings,
             site.entity,
-            format_args!("HelixStart::Circle selects other than exactly one circle or arc"),
+            crate::rule!(
+                "design.helixstart-circle-selects-other-exactly-one",
+                "HelixStart::Circle selects other than exactly one circle or arc"
+            ),
         );
     }
     let allowed = |class| {
@@ -311,7 +369,10 @@ pub(super) fn check_helix_circle(
         error(
             findings,
             site.entity,
-            format_args!("HelixStart::Circle picks {class}, not a circle or arc"),
+            crate::rule!(
+                "design.helixstart-circle-picks-not-circle-arc",
+                "HelixStart::Circle picks {class}, not a circle or arc"
+            ),
         );
     }
     let entities = picks::named(circle).unwrap_or_default();
@@ -322,7 +383,8 @@ pub(super) fn check_helix_circle(
         error(
             findings,
             site.entity,
-            format_args!(
+            crate::rule!(
+                "design.helixstart-circle-picks-sketch-entity-curve",
                 "HelixStart::Circle picks a sketch entity whose curve is no circle or arc"
             ),
         );
@@ -331,7 +393,7 @@ pub(super) fn check_helix_circle(
 
 pub(super) fn check_rib(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     rib: &Rib,
     findings: &mut Vec<Finding>,
 ) {
@@ -344,7 +406,10 @@ pub(super) fn check_rib(
             error(
                 findings,
                 site.entity,
-                format_args!("Rib.extent is other than Next, Amount, ToGeometry, or ToPlane"),
+                crate::rule!(
+                    "design.rib-extent-other-next-amount-togeometry",
+                    "Rib.extent is other than Next, Amount, ToGeometry, or ToPlane"
+                ),
             );
         }
         options::check_limit(site, "Rib.extent", extent, false, findings);
@@ -353,7 +418,10 @@ pub(super) fn check_rib(
         error(
             findings,
             site.entity,
-            format_args!("Rib.thickness_at occurs only with draft"),
+            crate::rule!(
+                "design.rib-thickness-occurs-only-draft",
+                "Rib.thickness_at occurs only with draft"
+            ),
         );
     }
     if let Some(thickness) = &rib.thickness {
@@ -366,7 +434,7 @@ pub(super) fn check_rib(
 
 pub(super) fn check_primitive(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     primitive: &Primitive,
     findings: &mut Vec<Finding>,
 ) {
@@ -407,7 +475,10 @@ pub(super) fn check_primitive(
             error(
                 findings,
                 site.entity,
-                format_args!("a Plane primitive's output body is other than Sheet or None"),
+                crate::rule!(
+                    "design.plane-primitive-output-body-other-sheet",
+                    "a Plane primitive's output body is other than Sheet or None"
+                ),
             );
         }
         _ => {}
@@ -416,7 +487,7 @@ pub(super) fn check_primitive(
 }
 
 fn check_wedge(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     y: &[Dimension<crate::scalar::Length>; 2],
     base: &[Dimension<crate::scalar::Length>; 4],
     top: &[Dimension<crate::scalar::Length>; 4],
@@ -444,7 +515,7 @@ fn check_wedge(
 
 pub(super) fn check_loft(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     loft: &Loft,
     findings: &mut Vec<Finding>,
 ) {
@@ -454,21 +525,27 @@ pub(super) fn check_loft(
         error(
             findings,
             site.entity,
-            format_args!("Loft has {stations} sections and point ends; it needs at least 2"),
+            crate::rule!(
+                "design.loft-sections-point-ends-needs-least",
+                "Loft has {stations} sections and point ends; it needs at least 2"
+            ),
         );
     }
     if loft.cross.len() == 1 {
         error(
             findings,
             site.entity,
-            format_args!("Loft.cross holds one section; it is empty or holds at least 2"),
+            crate::rule!(
+                "design.loft-cross-holds-one-section-empty",
+                "Loft.cross holds one section; it is empty or holds at least 2"
+            ),
         );
     }
     if loft.shape.section_law.is_some() && stations <= 2 {
         error(
             findings,
             site.entity,
-            format_args!("LoftShape.section_law occurs only in a loft of more than two sections and point ends"),
+            crate::rule!("design.loftshape-section-law-occurs-only-loft", "LoftShape.section_law occurs only in a loft of more than two sections and point ends"),
         );
     }
     if let Some(smoothing) = &loft.shape.smoothing {
@@ -476,7 +553,10 @@ pub(super) fn check_loft(
             error(
                 findings,
                 site.entity,
-                format_args!("LoftSmoothing states neither angle nor deviation"),
+                crate::rule!(
+                    "design.loftsmoothing-states-neither-angle-nor-deviation",
+                    "LoftSmoothing states neither angle nor deviation"
+                ),
             );
         }
     }
@@ -484,7 +564,10 @@ pub(super) fn check_loft(
         error(
             findings,
             site.entity,
-            format_args!("LoftShape.style occurs with ruled: true"),
+            crate::rule!(
+                "design.loftshape-style-occurs-ruled-true",
+                "LoftShape.style occurs with ruled: true"
+            ),
         );
     }
     let guides = loft.guides.len();
@@ -496,7 +579,8 @@ pub(super) fn check_loft(
             error(
                 findings,
                 site.entity,
-                format_args!(
+                crate::rule!(
+                    "design.guide-influence-nextguide-occurs-only-loft",
                     "a guide's influence NextGuide occurs only in a loft with at least two guides"
                 ),
             );
@@ -512,7 +596,10 @@ pub(super) fn check_loft(
             error(
                 findings,
                 site.entity,
-                format_args!("Section.spine_point occurs only in a loft with a spine"),
+                crate::rule!(
+                    "design.section-spine-point-occurs-only-loft",
+                    "Section.spine_point occurs only in a loft with a spine"
+                ),
             );
         }
         let faces = matches!(
@@ -533,7 +620,8 @@ pub(super) fn check_loft(
             error(
                 findings,
                 site.entity,
-                format_args!(
+                crate::rule!(
+                    "design.section-trim-support-occurs-only-where",
                     "Section.trim_support occurs only where its condition names a Faces support"
                 ),
             );
@@ -552,7 +640,10 @@ pub(super) fn check_loft(
                     error(
                         findings,
                         site.entity,
-                        format_args!("two area stations of a Centerline name one position"),
+                        crate::rule!(
+                            "design.two-area-stations-centerline-name-one",
+                            "two area stations of a Centerline name one position"
+                        ),
                     );
                 }
                 seen.push(&station.at);
@@ -571,7 +662,7 @@ pub(super) fn check_loft(
 
 /// Where a `CornerTransition` other than a sweep's occurs.
 pub(super) fn check_corner(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     field: &str,
     corner: Option<&CornerTransition>,
     findings: &mut Vec<Finding>,
@@ -580,7 +671,10 @@ pub(super) fn check_corner(
         error(
             findings,
             site.entity,
-            format_args!("{field} is Carried, which occurs only in Sweep.transition"),
+            crate::rule!(
+                "design.carried-occurs-only-sweep-transition",
+                "{field} is Carried, which occurs only in Sweep.transition"
+            ),
         );
     }
 }

@@ -425,9 +425,11 @@ fn decoded_text_brep_facts_keep_text_dialects_and_exclude_binary_routes() {
             Some(crate::container::TextBrepFraming::Parsed(stream))
                 if stream.terminator == expected_terminator
         ));
-        let (facts, brep) = crate::decode::try_decode_text_model(&ctx, &scan)
+        let mut given_up = Vec::new();
+        let (facts, brep) = crate::decode::try_decode_text_model(&ctx, &scan, &mut given_up)
             .unwrap()
             .expect("text sphere supplies model geometry");
+        assert!(given_up.is_empty());
         assert_eq!(brep.asm.faces.len(), 1);
         let framing = facts.kernel.as_ref().unwrap();
         let crate::container::KernelFraming::Text { header, .. } = framing else {
@@ -583,7 +585,7 @@ fn the_file_definition_is_the_root_occurrence_prototype_or_the_one_unplaced_defi
     };
     let root = "f3d:model:component#root";
     let child = "f3d:model:component#child";
-    let member = "f3d:xref/role-a/reference-0/occurrence-0/archive:product-definition#0";
+    let member = "f3d:xref:product-definition#role-a/reference-0/occurrence-0";
     let file_definition = |model: &cadmpeg_ir::document::Model| {
         super::super::file_definition(model).map(|id| id.as_str().to_owned())
     };

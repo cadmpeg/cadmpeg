@@ -11,8 +11,7 @@ use cadmpeg_ir::ids::{
     BodyId, CoedgeId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::topology::{
-    AnchoredVertexUse, Body, BodyKind, Coedge, Face, FaceLoops, Loop, LoopBoundaryRole, Region,
-    Sense, Shell,
+    AnchoredVertexUse, Body, BodyKind, Coedge, Face, FaceLoops, Loop, Region, Sense, Shell,
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -374,7 +373,7 @@ pub(super) fn emit_faces(
         "single_body",
         Exactness::Inferred,
     )?;
-    annotations.derived(body_id.as_str(), "kind")?;
+    annotations.derived(&body_id, "kind")?;
     let mut body_regions = Vec::new();
     for id in region_ids.values() {
         let id = id.clone();
@@ -407,7 +406,7 @@ pub(super) fn emit_faces(
             Exactness::Inferred,
         )?;
         for field in ["body", "shells"] {
-            annotations.derived(region_id.as_str(), field)?;
+            annotations.derived(&region_id, field)?;
         }
         let region_record_id = region_id.clone();
         let region_body_id = body_id.clone();
@@ -424,7 +423,7 @@ pub(super) fn emit_faces(
             "derived_shell",
             Exactness::Inferred,
         )?;
-        annotations.derived(shell_id.as_str(), "region")?;
+        annotations.derived(&shell_id, "region")?;
         let mut shell_faces = Vec::new();
         for face in component_faces {
             let face_id = crate::resource::compose_u32_id(
@@ -462,12 +461,11 @@ pub(super) fn emit_faces(
             Exactness::Inferred,
         )?;
         for field in ["shell", "surface", "loops"] {
-            annotations.derived(face_id.as_str(), field)?;
+            annotations.derived(&face_id, field)?;
         }
         let face_record_id = face_id.clone();
         let face_shell_id = shell_id.clone();
         let face_surface_id = surface_ids[&face.surface].clone();
-        let face_record_index = ir.geometry.faces.len();
         admission.charge()?;
         ir.geometry.faces.push(Face {
             id: face_record_id,
@@ -521,15 +519,8 @@ pub(super) fn emit_faces(
                 "62_loop",
                 Exactness::ByteExact,
             )?;
-            for field in ["face", "coedges", "vertex_uses"] {
-                annotations.derived(loop_id.as_str(), field)?;
-            }
-            if ir.geometry.faces[face_record_index].loops.role(&loop_id)
-                != LoopBoundaryRole::Unspecified
-            {
-                annotations
-                    .derived(loop_id.as_str(), "boundary_role")
-                    .map_err(cadmpeg_core::CodecError::from)?;
+            for field in ["face", "boundary.coedges", "boundary.vertex_uses"] {
+                annotations.derived(&loop_id, field)?;
             }
             let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, vertex_uses) else {
                 return Ok(false);
@@ -555,7 +546,7 @@ pub(super) fn emit_faces(
                     Exactness::ByteExact,
                 )?;
                 for field in ["owner_loop", "edge", "radial_next", "sense", "pcurves"] {
-                    annotations.derived(id.as_str(), field)?;
+                    annotations.derived(&id, field)?;
                 }
                 let arena_index = ir.geometry.coedges.len();
 

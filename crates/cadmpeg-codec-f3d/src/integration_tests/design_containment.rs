@@ -3,9 +3,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{
-    DecodeDepth, DecodeMode, ResourceDimension, ResourceFailure, ResourceLimit,
-};
+use cadmpeg_core::decode::{DecodeDepth, ResourceDimension, ResourceFailure, ResourceLimit};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_test_support::EditableDecodeResult;
@@ -82,10 +80,40 @@ fn a_design_intent_failure_keeps_geometry_and_reports_one_error_loss() {
     assert_valid(&contained);
 }
 
+/// A design-intent failure gives up the history partition from where the
+/// history decode starts, the history preamble, as a failed history decode
+/// gives it up.
+#[test]
+fn a_design_intent_failure_gives_up_the_history_partition_from_its_preamble() {
+    let smbh = synthetic_geometry_with_history_smbh();
+    let start = crate::history::partition_start(&smbh).expect("the stream stores a history");
+    assert_ne!(
+        Some(start),
+        cadmpeg_asm::asm_header::solved_record_limit(&smbh)
+    );
+    inject_failure(malformed_design);
+    let contained = decode(design_archive());
+    let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+    let parts = contained
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == unreadable && loss.message.starts_with("part asm-history "))
+        .collect::<Vec<_>>();
+    assert_eq!(parts.len(), 1, "{parts:#?}");
+    assert!(
+        parts[0]
+            .message
+            .contains(&format!(" offset={start} length={} ", smbh.len() - start)),
+        "{}",
+        parts[0].message
+    );
+}
+
 #[test]
 fn strict_mode_refuses_a_contained_design_intent_failure() {
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
     inject_failure(malformed_design);
 
     let failure = F3dCodec
@@ -99,6 +127,10 @@ fn strict_mode_refuses_a_contained_design_intent_failure() {
         rejection.loss().code,
         F3dLossCode::DesignIntentUndecoded.kind()
     );
+    assert!(rejection
+        .loss()
+        .message
+        .contains("injected design-intent failure"));
 }
 
 fn moved_first_point(result: &EditableDecodeResult) -> cadmpeg_ir::document::CadIr {
@@ -130,12 +162,9 @@ fn a_source_whose_design_intent_was_contained_regenerates_instead_of_patching() 
     let contained = decode(design_archive());
     let edited = moved_first_point(&contained);
     inject_failure(malformed_design);
-    crate::test_support::assert_written_with_loss(
+    crate::test_support::assert_patch_declined(
         &edited,
         Some(contained.source_fidelity()),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
         "design intent was not decoded",
     );
 }
@@ -525,7 +554,7 @@ fn an_unread_primary_header_is_a_loss_at_geometry_and_design_depth() {
             depth,
             ..DecodeOptions::default()
         };
-        options.policy.mode = DecodeMode::Strict;
+        options.strictness.pinned = true;
         let failure = F3dCodec
             .decode(&mut Cursor::new(&bytes), &options)
             .expect_err("strict decode refuses the unread header");
@@ -534,7 +563,107 @@ fn an_unread_primary_header_is_a_loss_at_geometry_and_design_depth() {
         };
         assert_eq!(
             rejection.loss().code,
-            F3dLossCode::PrimaryRecordUndecoded.kind()
+            cadmpeg_ir::unknown::part::record_unreadable_kind()
+        );
+        assert!(
+            rejection.loss().message.starts_with(
+                "part design-record stream=\"FusionAssetName[Active]/FusionDesignSegmentType2/BulkStream.dat\" offset="
+            ),
+            "{}",
+            rejection.loss().message
+        );
+    }
+}
+
+fn unreadable_messages(result: &EditableDecodeResult) -> Vec<String> {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.clone())
+        .collect()
+}
+
+#[test]
+fn a_design_intent_failure_gives_up_the_design_streams() {
+    assert!(unreadable_messages(&decode(design_archive())).is_empty());
+
+    inject_failure(malformed_design);
+    let contained = decode(design_archive());
+
+    let messages = unreadable_messages(&contained);
+    let design = messages
+        .iter()
+        .filter(|message| {
+            message.starts_with(
+                "part archive-entry \"FusionAssetName[Active]/Design1/BulkStream.dat\" stream=\"\" offset=",
+            )
+        })
+        .collect::<Vec<_>>();
+    let history = messages
+        .iter()
+        .filter(|message| {
+            message.starts_with(
+                "part asm-history stream=\"FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh\"",
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(design.len(), 1, "{messages:#?}");
+    assert_eq!(history.len(), 1, "{messages:#?}");
+    for message in design.iter().chain(&history) {
+        assert!(
+            message.contains("design intent was not decoded: "),
+            "{message}"
+        );
+        assert!(
+            message.contains("injected design-intent failure"),
+            "{message}"
+        );
+        assert!(message.contains("; dropped=[]"), "{message}");
+    }
+    assert_valid(&contained);
+}
+
+#[test]
+fn generated_feature_designs_give_up_no_record() {
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+    use crate::test_support::zip_test::{
+        f3d_with_smbh_and_protein_with_generated_copy_paste,
+        f3d_with_smbh_and_protein_with_generated_copy_paste_bodies,
+        f3d_with_smbh_and_protein_with_generated_form,
+        f3d_with_smbh_and_protein_with_generated_remove_body,
+        f3d_with_smbh_and_protein_with_generated_surface_stitch,
+    };
+    let smbh = synthetic_geometry_smbh();
+    for (name, bytes) in [
+        (
+            "remove body",
+            f3d_with_smbh_and_protein_with_generated_remove_body(&smbh),
+        ),
+        (
+            "surface stitch",
+            f3d_with_smbh_and_protein_with_generated_surface_stitch(&smbh),
+        ),
+        (
+            "copy paste",
+            f3d_with_smbh_and_protein_with_generated_copy_paste(&smbh),
+        ),
+        (
+            "copy paste bodies",
+            f3d_with_smbh_and_protein_with_generated_copy_paste_bodies(&smbh),
+        ),
+        ("form", f3d_with_smbh_and_protein_with_generated_form(&smbh)),
+    ] {
+        let result = decode(bytes);
+        assert_eq!(unreadable_messages(&result), Vec::<String>::new(), "{name}");
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .all(|loss| loss.code != F3dLossCode::SketchCurveRecordUndecoded.kind()),
+            "{name}"
         );
     }
 }

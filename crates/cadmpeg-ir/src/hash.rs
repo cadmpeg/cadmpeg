@@ -18,12 +18,7 @@ use crate::units::{CanonicalUnitsWire, Tolerances};
 pub mod digest;
 pub mod finite_json;
 
-use finite_json::admission::CanonicalAdmission;
-use finite_json::{write_canonical_json, CanonicalJsonError};
-
-/// Bytes gathered before the hasher sees them; the pretty JSON writer emits one
-/// short write per token.
-const DIGEST_BUFFER_BYTES: usize = 64 * 1024;
+use finite_json::CanonicalJsonError;
 
 /// Borrowed unique owners. Repeated construction references have no owner.
 pub(crate) struct ProceduralOwners<'a, T>(HashMap<&'a str, Option<&'a T>>);
@@ -80,24 +75,136 @@ pub fn content_digest(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
 ) -> Result<digest::Sha256Digest, DigestError> {
-    canonical_json_digest(ctx, ir)
+    let bytes = cadmpeg_core::finite_json::canonical_json_sha256_erased(
+        Some((ctx, "walk document digest")),
+        &|serializer| {
+            ir.serialize_pretty_erased(
+                serializer,
+                finite_json::admission::CanonicalAdmission::limited(ctx, "walk document digest"),
+            )
+        },
+    )
+    .map_err(digest_error_from_finite)?;
+    Ok(digest::Sha256Digest::from_bytes(bytes))
+}
+
+/// Returns [`content_digest`], and the records of `ir` past a bound of §2.5,
+/// found in the same walk. A refused walk returns what it found before the
+/// refusal.
+pub(crate) fn measured_content_digest(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> (
+    Result<digest::Sha256Digest, DigestError>,
+    crate::bounds::Measured,
+) {
+    let mut buffered = std::io::BufWriter::with_capacity(
+        cadmpeg_core::finite_json::DIGEST_BUFFER_BYTES,
+        DigestWriter(Sha256::new()),
+    );
+    let mut measure = crate::bounds::Measure::new(&mut buffered);
+    let admission =
+        finite_json::admission::CanonicalAdmission::limited(ctx, "walk document digest");
+    let written =
+        finite_json::write_canonical_json_erased(admission, &mut measure, &|serializer| {
+            ir.serialize_pretty_erased(serializer, admission)
+        });
+    let measured = measure.finish();
+    let digest = written
+        .map_err(DigestError::from)
+        .and_then(|()| finish_digest(buffered));
+    (digest, measured)
+}
+
+/// Measures every record and outside value of `ir` past a bound of §2.5 in a
+/// single unlimited-depth pass without computing a SHA-256 digest.
+pub(crate) fn measure_document_bounds(
+    ir: &CadIr,
+) -> Result<crate::bounds::Measured, CanonicalJsonError> {
+    let mut measure = crate::bounds::Measure::new(std::io::sink());
+    let admission = finite_json::admission::CanonicalAdmission::unlimited();
+    let written = finite_json::write_serde_json_erased(admission, &mut measure, &|serializer| {
+        ir.serialize_pretty_erased(serializer, admission)
+    });
+    let measured = measure.finish();
+    written?;
+    Ok(measured)
+}
+
+/// The canonical JSON of `ir`, with each record it holds past a bound of
+/// §2.5. The walk admits every depth.
+pub(crate) fn measured_canonical_json(
+    ir: &CadIr,
+) -> Result<(Vec<u8>, crate::bounds::Measured), CanonicalJsonError> {
+    let mut bytes = Vec::new();
+    let mut measure = crate::bounds::Measure::new(&mut bytes);
+    let written = finite_json::write_canonical_json_erased(
+        finite_json::admission::CanonicalAdmission::unlimited(),
+        &mut measure,
+        &|serializer| {
+            ir.serialize_pretty_erased(
+                serializer,
+                finite_json::admission::CanonicalAdmission::unlimited(),
+            )
+        },
+    );
+    let measured = measure.finish();
+    written?;
+    Ok((bytes, measured))
+}
+
+/// The refusal of the canonical JSON of `value`, where its walk is refused.
+/// The walk notes no bound for a later measured walk.
+pub(crate) fn canonical_refusal<T: Serialize + ?Sized>(value: &T) -> Option<CanonicalJsonError> {
+    let refusal = finite_json::write_canonical_json(
+        finite_json::admission::CanonicalAdmission::unlimited(),
+        &mut std::io::sink(),
+        value,
+    )
+    .err();
+    crate::bounds::take_expression_past();
+    refusal
 }
 
 fn canonical_json_digest<T: Serialize + ?Sized>(
     ctx: &DecodeContext<'_>,
     value: &T,
 ) -> Result<digest::Sha256Digest, DigestError> {
-    let mut buffered =
-        std::io::BufWriter::with_capacity(DIGEST_BUFFER_BYTES, DigestWriter(Sha256::new()));
-    write_canonical_json(
-        CanonicalAdmission::limited(ctx, "walk document digest"),
-        &mut buffered,
-        value,
-    )?;
+    let bytes = cadmpeg_core::finite_json::canonical_json_sha256_erased(
+        Some((ctx, "walk document digest")),
+        &|serializer| value.serialize(serializer),
+    )
+    .map_err(digest_error_from_finite)?;
+    Ok(digest::Sha256Digest::from_bytes(bytes))
+}
+
+struct DigestWriter(Sha256);
+
+impl std::io::Write for DigestWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.update(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn finish_digest(
+    buffered: std::io::BufWriter<DigestWriter>,
+) -> Result<digest::Sha256Digest, DigestError> {
     let writer = buffered
         .into_inner()
         .map_err(|error| DigestError::Write(error.into_error()))?;
     Ok(digest::Sha256Digest::from_bytes(writer.0.finalize().into()))
+}
+
+fn digest_error_from_finite(error: cadmpeg_core::finite_json::FiniteJsonError) -> DigestError {
+    match error {
+        cadmpeg_core::finite_json::FiniteJsonError::Write(error) => DigestError::Write(error),
+        other => DigestError::CanonicalJson(CanonicalJsonError::from(other)),
+    }
 }
 
 /// A digest could not be computed.
@@ -169,21 +276,19 @@ pub fn document_local_sha256_without_carried(
 ) -> Result<String, CodecError> {
     let unknowns = reduced_unknowns(ctx, ir, format, source_image_id)?;
     let omitted_arenas = edited_omitted_arenas(ctx, ir)?;
-    let document = (|| {
-        Ok::<_, CodecError>(NormalizedDocument {
-            ir_version: ir.ir_version(),
-            fragment: ir.fragment,
-            source: source.cloned(),
-            units: CanonicalUnitsWire::default(),
-            tolerances: &ir.tolerances,
-            geometry: ir.geometry.sorted(),
-            model: ir.model.sorted()?,
-            design: ir.design.sorted(),
-            process: ir.process.sorted(),
-            native: normalized_native(ctx, &ir.native, format, &unknowns, carried),
-            omitted_arenas,
-        })
-    })()?;
+    let document = NormalizedDocument {
+        ir_version: ir.ir_version(),
+        fragment: ir.fragment,
+        source: source.cloned(),
+        units: CanonicalUnitsWire::default(),
+        tolerances: &ir.tolerances,
+        geometry: ir.geometry.sorted(),
+        model: ir.model.sorted(),
+        design: ir.design.sorted(),
+        process: ir.process.sorted(),
+        native: normalized_native(ctx, &ir.native, format, &unknowns, carried),
+        omitted_arenas,
+    };
     match canonical_json_sha256(ctx, &document) {
         Ok(digest) => Ok(digest),
         Err(error) => {
@@ -311,12 +416,12 @@ impl Serialize for DigestNativeArena<'_, '_> {
 
         const PARALLEL_THRESHOLD: usize = 512;
         const CHUNK_RECORDS: usize = 512;
-        let workers = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+        let workers = cadmpeg_core::parallelism();
         if self.records.len() < PARALLEL_THRESHOLD || workers <= 1 {
             let mut seq = serializer.serialize_seq(Some(self.records.len()))?;
             for &record in &self.records {
                 seq.serialize_element(&DigestNativeRecord {
-                    ctx: self.ctx,
+                    ctx: Some(self.ctx),
                     record,
                 })?;
             }
@@ -409,12 +514,85 @@ impl Serialize for DigestNativeArena<'_, '_> {
 }
 
 /// Serializes a stored canonical compact [`NativeRecord`] as pretty JSON at
-/// indent level 4 (inside `NormalizedDocument.native.<format>.<arena>[i]`),
+/// indent level 4 (inside `native.<format>.<arena>[i]` of a document),
 /// avoiding `serde_json::Deserializer` round-tripping while keeping the exact
 /// bytes `serde_json::Serializer::pretty` + `FiniteSerializer` produce.
+///
+/// A record that nests past [`crate::bounds::MAX_DOCUMENT_DEPTH`] at that
+/// position writes through its own `Serialize`, so a refused walk writes the
+/// same text up to the refusal and [`crate::bounds::Measure`] finds the same
+/// records past the bound.
 struct DigestNativeRecord<'a, 'input> {
-    ctx: &'a DecodeContext<'input>,
+    ctx: Option<&'a DecodeContext<'input>>,
     record: &'a NativeRecord,
+}
+
+/// The native namespaces of a document in the order it holds them, for a
+/// pretty canonical JSON writer: each record writes as [`DigestNativeRecord`]
+/// writes it. `ctx` admits the depth of each record.
+pub(crate) struct PrettyNative<'a, 'input> {
+    pub(crate) ctx: Option<&'a DecodeContext<'input>>,
+    pub(crate) native: &'a Native,
+}
+
+impl Serialize for PrettyNative<'_, '_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_map(self.native.0.iter().map(|(codec, namespace)| {
+            (
+                codec,
+                PrettyArenas {
+                    ctx: self.ctx,
+                    arenas: namespace.arenas(),
+                },
+            )
+        }))
+    }
+}
+
+struct PrettyArenas<'a, 'input> {
+    ctx: Option<&'a DecodeContext<'input>>,
+    arenas: &'a BTreeMap<cadmpeg_core::text::NonBlankString, Vec<NativeRecord>>,
+}
+
+impl Serialize for PrettyArenas<'_, '_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_map(self.arenas.iter().map(|(arena, records)| {
+            (
+                arena,
+                PrettyRecords {
+                    ctx: self.ctx,
+                    records,
+                },
+            )
+        }))
+    }
+}
+
+struct PrettyRecords<'a, 'input> {
+    ctx: Option<&'a DecodeContext<'input>>,
+    records: &'a [NativeRecord],
+}
+
+impl Serialize for PrettyRecords<'_, '_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if self
+            .records
+            .windows(2)
+            .all(|pair| pair[0].id() <= pair[1].id())
+        {
+            serializer.collect_seq(self.records.iter().map(|record| DigestNativeRecord {
+                ctx: self.ctx,
+                record,
+            }))
+        } else {
+            let mut sorted: Vec<&NativeRecord> = self.records.iter().collect();
+            sorted.sort_by(|left, right| left.id().cmp(right.id()));
+            serializer.collect_seq(sorted.into_iter().map(|record| DigestNativeRecord {
+                ctx: self.ctx,
+                record,
+            }))
+        }
+    }
 }
 
 /// Depth of `NormalizedDocument.native.<format>.<arena>[i]` in pretty JSON.
@@ -558,10 +736,14 @@ impl Serialize for DigestNativeRecord<'_, '_> {
                 buf.reserve(reserve);
             }
             let max_depth = pretty_format_compact_json(text, NATIVE_RECORD_INDENT_LEVEL, &mut buf);
-            if max_depth > 2 {
+            if max_depth + NATIVE_RECORD_INDENT_LEVEL > crate::bounds::MAX_DOCUMENT_DEPTH {
+                drop(buf);
+                return self.record.serialize(serializer);
+            }
+            if let Some(ctx) = self.ctx.filter(|_| max_depth > 2) {
                 let extra = max_depth - 2;
                 let enter = || {
-                    self.ctx.enter_nested("walk document digest").map_err(|_| {
+                    ctx.enter_nested("walk document digest").map_err(|_| {
                         serde::ser::Error::custom("canonical JSON resource admission refused")
                     })
                 };
@@ -655,19 +837,6 @@ fn sorted_records(records: &[NativeRecord]) -> Vec<&NativeRecord> {
     refs
 }
 
-/// A byte sink that feeds a SHA-256 hasher.
-struct DigestWriter(Sha256);
-
-impl std::io::Write for DigestWriter {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.0.update(bytes);
-        Ok(bytes.len())
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
 /// Borrowed bytes displayed and serialized as two lowercase hexadecimal digits per byte.
 pub struct LowerHex<'a>(pub &'a [u8]);
 
@@ -697,6 +866,7 @@ mod tests {
     use crate::ids::UnknownId;
     use crate::native::{Native, NativeRecord};
     use crate::unknown::UnknownRecord;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_core::CodecError;
 
     /// The document digest counts the arenas the wire omits where they differ
@@ -739,7 +909,7 @@ mod tests {
     fn canonical_json_sha256_matches_json_larger_than_the_buffer() {
         let value: Vec<String> = (0..6_000).map(|index| format!("entry-{index}")).collect();
         let json = crate::hash::finite_json::to_canonical_json_string(&value).unwrap();
-        assert!(json.len() > super::DIGEST_BUFFER_BYTES);
+        assert!(json.len() > cadmpeg_core::finite_json::DIGEST_BUFFER_BYTES);
         assert_eq!(
             canonical_json_sha256(
                 &cadmpeg_core::decode::test_support::service_decode_context(),
@@ -788,16 +958,13 @@ mod tests {
         ] {
             let hex = super::LowerHex(bytes);
             assert_eq!(hex.to_string(), expected);
-            assert_eq!(
-                serde_json::to_value(&hex).unwrap(),
-                serde_json::json!(expected)
-            );
+            assert_eq!(json::to_value(&hex).unwrap(), cadmpeg_core::json!(expected));
         }
     }
 
     #[test]
     fn a_nested_non_finite_float_has_no_digest() {
-        let nested = serde_json::json!({ "outer": [{ "inner": 1.0 }] });
+        let nested = cadmpeg_core::json!({ "outer": [{ "inner": 1.0 }] });
         assert!(canonical_json_sha256(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             &nested
@@ -825,7 +992,7 @@ mod tests {
 
     /// Record covering JSON shapes whose rendering could drift.
     fn pinned_record() -> NativeRecord {
-        let serde_json::Value::Object(fields) = serde_json::json!({
+        let serde_json::Value::Object(fields) = cadmpeg_core::json!({
             "zeta": null,
             "alpha": [-1, 0, 1.5, 2.0, 1e10, 1e-7],
             "beta": {
@@ -884,10 +1051,7 @@ mod tests {
   "gamma": 9007199254740993,
   "zeta": null
 }"#;
-        assert_eq!(
-            serde_json::to_string_pretty(&pinned_record()).unwrap(),
-            expected
-        );
+        assert_eq!(json::to_string_pretty(&pinned_record()).unwrap(), expected);
     }
 
     /// Same record indented inside namespace and arena, as hashing sees it.
@@ -924,10 +1088,7 @@ mod tests {
     ]
   }
 }"#;
-        assert_eq!(
-            serde_json::to_string_pretty(&pinned_native()).unwrap(),
-            expected
-        );
+        assert_eq!(json::to_string_pretty(&pinned_native()).unwrap(), expected);
     }
 
     /// Digest over the arena above; formatting drift under
@@ -1007,7 +1168,7 @@ mod tests {
         .unwrap();
 
         let mut readable_fields = serde_json::Map::new();
-        readable_fields.insert("links".into(), serde_json::json!([]));
+        readable_fields.insert("links".into(), cadmpeg_core::json!([]));
         let readable_ir = pinned_document_with_unknown(readable_fields);
         let readable = document_local_sha256(
             &cadmpeg_core::decode::test_support::service_decode_context(),
@@ -1020,7 +1181,7 @@ mod tests {
         assert_ne!(readable, absent);
 
         let mut unreadable_fields = serde_json::Map::new();
-        unreadable_fields.insert("links".into(), serde_json::json!(7));
+        unreadable_fields.insert("links".into(), cadmpeg_core::json!(7));
         let unreadable = pinned_document_with_unknown(unreadable_fields);
         assert!(document_local_sha256(
             &cadmpeg_core::decode::test_support::service_decode_context(),
@@ -1041,7 +1202,7 @@ mod tests {
 
         // Source retention fields belong to the sidecar. They cannot be
         // silently reduced out of a reserved product unknown record.
-        let serde_json::Value::Object(source_fields) = serde_json::json!({
+        let serde_json::Value::Object(source_fields) = cadmpeg_core::json!({
             "links": [], "offset": 4096, "byte_len": 12,
             "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
             "data": "AQID"
@@ -1480,10 +1641,124 @@ mod tests {
         );
     }
 
+    /// A document whose native records hold every JSON value kind, a negative
+    /// zero, and a record that nests past the document bound.
+    fn native_document() -> CadIr {
+        let mut deep = serde_json::Value::from(-0.0);
+        for _ in 0..140 {
+            deep = serde_json::Value::Array(vec![deep]);
+        }
+        let serde_json::Value::Object(fields) = cadmpeg_core::json!({
+            "deep": deep,
+            "zero": -0.0,
+            "spelled": "-0.0",
+            "text": "\u{e9}\"\\\n",
+        }) else {
+            panic!("the record literal is a JSON object");
+        };
+        let deep = NativeRecord::new(
+            crate::ids::Identity::new("pin:test:record#1").expect("valid identity"),
+            fields,
+        )
+        .expect("valid native identity");
+        let mut ir = unit_cube().expect("the example builds");
+        ir.native = pinned_native();
+        ir.native
+            .namespace_mut(crate::codec_id!("pin"))
+            .arenas_mut()
+            .get_mut("records")
+            .expect("pinned arena")
+            .push(deep);
+        ir.finalize();
+        ir
+    }
+
+    /// The bytes and the measure of `ir` written with each record parsed and
+    /// written again.
+    fn parsed_canonical_json(ir: &CadIr) -> (Vec<u8>, crate::bounds::Measured) {
+        let mut bytes = Vec::new();
+        let mut measure = crate::bounds::Measure::new(&mut bytes);
+        super::finite_json::write_canonical_json_erased(
+            super::finite_json::admission::CanonicalAdmission::unlimited(),
+            &mut measure,
+            &|serializer| ir.serialize_erased(serializer),
+        )
+        .expect("the document has canonical JSON");
+        let measured = measure.finish();
+        (bytes, measured)
+    }
+
+    #[test]
+    fn stored_native_text_writes_the_bytes_of_its_parse() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
+        let ir = native_document();
+        let (parsed, parsed_measured) = parsed_canonical_json(&ir);
+        let (stored, stored_measured) =
+            super::measured_canonical_json(&ir).expect("the document has canonical JSON");
+        assert_eq!(String::from_utf8(stored), String::from_utf8(parsed.clone()));
+        assert_eq!(stored_measured.records, parsed_measured.records);
+        assert_eq!(stored_measured.outside, parsed_measured.outside);
+        assert_eq!(stored_measured.records.len(), 1);
+
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy {
+            limits: ResourceLimits {
+                max_recursion_depth: crate::bounds::DIGEST_WALK_DEPTH,
+                ..DecodePolicy::service().limits
+            },
+        };
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (digest, measured) = super::measured_content_digest(&ctx, &ir);
+        assert_eq!(
+            digest.expect("the walk admits the document").to_string(),
+            sha256_hex(&parsed)
+        );
+        assert_eq!(measured.records, parsed_measured.records);
+        assert_eq!(
+            super::content_digest(&ctx, &ir).unwrap().to_string(),
+            sha256_hex(&parsed)
+        );
+    }
+
+    #[test]
+    fn stored_native_text_is_refused_where_its_parse_is_refused() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
+        let ir = native_document();
+        for depth in [16, 64, 128] {
+            let arena = DecodeArena::new();
+            let policy = DecodePolicy {
+                limits: ResourceLimits {
+                    max_recursion_depth: depth,
+                    ..DecodePolicy::service().limits
+                },
+            };
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let (digest, measured) = super::measured_content_digest(&ctx, &ir);
+            assert!(digest.is_err(), "depth {depth} admits the document");
+            let parsed_arena = DecodeArena::new();
+            let (parsed_ctx, _) =
+                DecodeContext::from_root_bytes(&[], &parsed_arena, &policy).unwrap();
+            let mut bytes = Vec::new();
+            let mut measure = crate::bounds::Measure::new(&mut bytes);
+            let written = super::finite_json::write_canonical_json_erased(
+                super::finite_json::admission::CanonicalAdmission::limited(
+                    &parsed_ctx,
+                    "walk document digest",
+                ),
+                &mut measure,
+                &|serializer| ir.serialize_erased(serializer),
+            );
+            let parsed_measured = measure.finish();
+            assert!(written.is_err());
+            assert_eq!(measured.records, parsed_measured.records, "depth {depth}");
+            assert_eq!(measured.outside, parsed_measured.outside, "depth {depth}");
+        }
+    }
+
     #[test]
     fn pretty_format_compact_json_matches_canonical_pretty_printer() {
         let samples = [
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "id": "test:scope:kind#0",
                 "empty_obj": {},
                 "empty_arr": [],
@@ -1493,13 +1768,13 @@ mod tests {
                 "escaped": "a\"b\\c\n\t\"{}",
                 "nested": { "k": [1, true, null, { "x": -0.0 }] }
             }),
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "id": "test:scope:kind#1",
                 "payload": [[-0.0], [[[]]], {"a": {"b": {}}}]
             }),
         ];
         for sample in &samples {
-            let compact = serde_json::to_string(sample).unwrap();
+            let compact = json::to_string(sample).unwrap();
             let mut formatted = String::new();
             let max_depth = super::pretty_format_compact_json(&compact, 0, &mut formatted);
             assert!(max_depth >= 2);

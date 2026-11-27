@@ -22,11 +22,13 @@ unreachable_pub = "deny"
 
 [features]
 default = [
-  "solidedge", "f3d", "inventor", "freecad", "sldprt", "catia", "creo", "nx",
+  "alibre", "solidedge", "ironcad", "f3d", "inventor", "freecad", "sldprt", "catia", "creo", "nx",
   "rhino", "iges", "sat", "pvz", "edrawings", "usd", "step",
 ]
+alibre = ["dep:cadmpeg-codec-alibre"]
 f3d = ["dep:cadmpeg-codec-f3d"]
 solidedge = ["dep:cadmpeg-codec-solidedge"]
+ironcad = ["dep:cadmpeg-codec-ironcad"]
 inventor = ["dep:cadmpeg-codec-inventor"]
 freecad = ["dep:cadmpeg-codec-freecad"]
 sldprt = ["dep:cadmpeg-codec-sldprt"]
@@ -45,9 +47,12 @@ step = ["dep:cadmpeg-codec-step"]
 libfuzzer-sys = "0.4"
 cadmpeg-asm = { path = "../cadmpeg-asm" }
 cadmpeg-core = { path = "../cadmpeg-core" }
+cadmpeg-parasolid = { path = "../cadmpeg-parasolid" }
 cadmpeg-container = { path = "../cadmpeg-container" }
+cadmpeg-codec-alibre = { path = "../cadmpeg-codec-alibre", optional = true }
 cadmpeg-codec-f3d = { path = "../cadmpeg-codec-f3d", optional = true }
 cadmpeg-codec-solidedge = { path = "../cadmpeg-codec-solidedge", optional = true }
+cadmpeg-codec-ironcad = { path = "../cadmpeg-codec-ironcad", optional = true }
 cadmpeg-codec-inventor = { path = "../cadmpeg-codec-inventor", optional = true }
 cadmpeg-protein = { path = "../cadmpeg-protein" }
 cadmpeg-codec-freecad = { path = "../cadmpeg-codec-freecad", optional = true }
@@ -61,7 +66,7 @@ cadmpeg-codec-sat = { path = "../cadmpeg-codec-sat", optional = true }
 cadmpeg-codec-pvz = { path = "../cadmpeg-codec-pvz", optional = true }
 cadmpeg-codec-edrawings = { path = "../cadmpeg-codec-edrawings", optional = true }
 cadmpeg-codec-usd = { path = "../cadmpeg-codec-usd", optional = true }
-cadmpeg-ir = { path = "../cadmpeg-ir", features = ["examples"] }
+cadmpeg-ir = { path = "../cadmpeg-ir" }
 cadmpeg-codec-step = { path = "../cadmpeg-codec-step", optional = true }
 zip = { version = "9", default-features = false, features = ["deflate"] }
 flate2 = "1"
@@ -869,3 +874,49 @@ test = false
 doc = false
 bench = false
 required-features = ["solidedge"]
+
+[[bin]]
+name = "alibre_codec"
+path = "fuzz_targets/alibre_codec.rs"
+test = false
+doc = false
+bench = false
+required-features = ["alibre"]
+
+[[bin]]
+name = "alibre_sab"
+path = "fuzz_targets/alibre_sab.rs"
+test = false
+doc = false
+bench = false
+required-features = ["alibre"]
+
+[[bin]]
+name = "ironcad_codec"
+path = "fuzz_targets/ironcad_codec.rs"
+test = false
+doc = false
+bench = false
+required-features = ["ironcad"]
+
+[[bin]]
+name = "ironcad_scene"
+path = "fuzz_targets/ironcad_scene.rs"
+test = false
+doc = false
+bench = false
+required-features = ["ironcad"]
+
+[[bin]]
+name = "asm_acis_interned"
+path = "fuzz_targets/asm_acis_interned.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parasolid_native"
+path = "fuzz_targets/parasolid_native.rs"
+test = false
+doc = false
+bench = false

@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Focused validation checks for geometry payloads.
 
-use crate::document::CadIr;
+use crate::index::ModelIndex;
 use crate::report::{
     check::{Check, Finding},
     Severity,
 };
 
-pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(super) fn check_tessellations(index: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
+    let ir = index.ir();
+    if ir.model.tessellations.is_empty() {
+        return;
+    }
     let bodies = crate::index::identities::BorrowedIdentities::build(|add| {
         for body in &ir.geometry.bodies {
             add(body.id.as_str(), ());
@@ -18,13 +22,14 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
             add(face.id.as_str(), ());
         }
     });
+    let lists = index.child_lists();
     let mut face_bodies = std::collections::BTreeMap::new();
     for body in &ir.geometry.bodies {
-        for face in ir
-            .geometry
+        for face in lists
             .stated_body_regions(&body.id)
-            .flat_map(crate::topology::Region::stated_shells)
-            .flat_map(|shell| ir.geometry.stated_shell_faces(shell))
+            .iter()
+            .flat_map(|region| region.stated_shells())
+            .flat_map(|shell| lists.stated_shell_faces(shell))
         {
             face_bodies.insert(face.id.as_str(), body.id.as_str());
         }
@@ -54,7 +59,7 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 Check::Tessellation,
                 Severity::Error,
                 Some(mesh.id.as_str()),
-                format_args!("{message}"),
+                crate::rule!("geometry_payloads.tessellation-targets", "{message}"),
             );
         }
         if let Some(message) = triangle_group_face_error(mesh, &face_bodies) {
@@ -63,7 +68,10 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 Check::Tessellation,
                 Severity::Error,
                 Some(mesh.id.as_str()),
-                format_args!("{message}"),
+                crate::rule!(
+                    "geometry_payloads.tessellation-triangle-group-faces",
+                    "{message}"
+                ),
             );
         }
         for assignment in mesh.texture_assignments() {
@@ -73,7 +81,10 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                     Check::Tessellation,
                     Severity::Error,
                     Some(mesh.id.as_str()),
-                    format_args!("references a missing tessellation texture asset"),
+                    crate::rule!(
+                        "geometry_payloads.references-missing-tessellation-texture-asset",
+                        "references a missing tessellation texture asset"
+                    ),
                 );
                 break;
             }

@@ -115,31 +115,36 @@ fn reversed_composite_with_shared_vertex() -> EditableDecodeResult {
 }
 
 #[test]
-fn encode_refuses_reversed_composite_with_shared_wire_vertex() {
+fn encode_drops_a_reversed_composite_with_shared_wire_vertex() {
     let decoded = reversed_composite_with_shared_vertex();
     let validation =
         cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
-    let Err(error) = plan_at(IgesVersion::V5_0, decoded.ir(), None) else {
-        panic!("shared wire vertex was accepted");
-    };
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error.to_string().contains("shared wire vertex"), "{error}");
+    let plan = plan_at(IgesVersion::V5_0, decoded.ir(), None).unwrap();
+    let losses = &plan.report().losses;
+    assert!(
+        losses.iter().any(|loss| {
+            loss.code.to_string() == "iges/writer.body-omitted"
+                && loss.message.contains("shared wire vertex")
+        }),
+        "{losses:#?}"
+    );
 }
 
 #[test]
-fn encode_reports_orphan_wire_vertex_as_malformed() {
+fn encode_drops_the_wire_beside_an_orphan_vertex_and_names_the_vertex() {
     let mut decoded = reversed_composite_with_shared_vertex();
     decoded.ir_mut().geometry.shells[0]
         .members
         .retain(|member| !matches!(member, cadmpeg_ir::topology::ShellMember::FreeVertex { .. }));
-    let Err(error) = plan_at(IgesVersion::V5_0, decoded.ir(), None) else {
-        panic!("orphan vertex was accepted");
-    };
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    let plan = plan_at(IgesVersion::V5_0, decoded.ir(), None).unwrap();
+    let losses = &plan.report().losses;
     assert!(
-        error.to_string().contains("no wire or face owner"),
-        "{error}"
+        losses.iter().any(|loss| {
+            loss.code.to_string() == "iges/writer.body-omitted"
+                && loss.message.contains("no wire or face owner")
+        }),
+        "{losses:#?}"
     );
 }
 
@@ -229,9 +234,15 @@ fn synthesized_wire_refuses_shared_vertex_identity() {
         ir.geometry.edges[1].ends.as_ref().unwrap().start
     );
 
-    let error = crate::writer::synthesize(&ir, IgesVersion::V5_3)
+    let error = crate::writer::tests::synthesize(&ir, IgesVersion::V5_3)
         .err()
         .expect("shared wire vertex must be refused");
+    assert!(
+        error.records.contains(ir.geometry.bodies[0].id.as_str()),
+        "{:?}",
+        error.records
+    );
+    let error = error.error;
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
     assert!(error.to_string().contains("shared wire vertex"), "{error}");
 }
@@ -247,9 +258,15 @@ fn synthesized_owned_wire_refuses_unrepresented_body() {
         cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
-    let error = crate::writer::synthesize(&ir, IgesVersion::V5_3)
+    let error = crate::writer::tests::synthesize(&ir, IgesVersion::V5_3)
         .err()
         .expect("owned wire body must be refused");
+    assert!(
+        error.records.contains(ir.geometry.bodies[0].id.as_str()),
+        "{:?}",
+        error.records
+    );
+    let error = error.error;
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
     assert!(error.to_string().contains("owned wire body"), "{error}");
 }
@@ -261,9 +278,15 @@ fn synthesized_wire_reports_missing_edge_as_malformed() {
         .expect("source line");
     let mut ir = decoded.ir().clone();
     ir.geometry.edges.clear();
-    let error = crate::writer::synthesize(&ir, IgesVersion::V5_3)
+    let error = crate::writer::tests::synthesize(&ir, IgesVersion::V5_3)
         .err()
         .expect("missing edge must be refused");
+    assert!(
+        error.records.contains(ir.geometry.bodies[0].id.as_str()),
+        "{:?}",
+        error.records
+    );
+    let error = error.error;
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     assert!(error.to_string().contains("missing edge"), "{error}");
 }
@@ -276,7 +299,7 @@ fn synthesized_free_geometry_reports_unowned_body_presentation() {
     let mut ir = decoded.ir().clone();
     ir.geometry.bodies[0].color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0);
     ir.geometry.bodies[0].visible = Some(false);
-    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    let generated = crate::writer::tests::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
     assert!(generated.losses.iter().any(|loss| {
         loss.code == IgesLossCode::WriterBodyColorNotRepresented.kind()
             && loss.message.contains("no owning Directory Entry")

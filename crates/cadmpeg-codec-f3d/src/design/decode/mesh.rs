@@ -11,8 +11,11 @@ use cadmpeg_core::decode::DecodeContext;
 
 use crate::bytes::{lp_ascii_strict, take_reference};
 use crate::container::ContainerScan;
+#[cfg(test)]
+use crate::design::decode::meta::design_primary_frames;
 use crate::design::decode::meta::{
-    metadata_for_bulk_stream, typed_primary_frames, TypedPrimaryFrame,
+    metadata_for_bulk_stream, scan_design_primary_frames, typed_primary_frames_from,
+    DesignPrimaryFrame, TypedPrimaryFrame,
 };
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope_with_type_guid;
 use crate::design::decode::sketch::IndexedRecordOffsets;
@@ -99,7 +102,7 @@ const MESH_TEXTURE_FILENAME_BASE_TYPE_GUID: &str = "98542EB9-A4F2-4137-A808-DBB5
 const MESH_TEXTURE_FILENAME_TYPE_VERSION: u32 = 0;
 const MESH_COLLECTION_OWNER_TYPE_GUID: &str = "E03784ED-5E19-4E14-B9F2-3B07017018CD";
 const MESH_COLLECTION_OWNER_BASE_TYPE_GUID: &str = "42054630-20A0-40E1-B969-CFE9E742F5C9";
-const MESH_COLLECTION_OWNER_TYPE_VERSIONS: [u32; 7] = [15, 17, 23, 21, 22, 19, 20];
+const MESH_COLLECTION_OWNER_TYPE_VERSIONS: [u32; 8] = [15, 17, 23, 21, 22, 19, 20, 16];
 const MESH_BODY_OWNER_TYPE_GUID: &str = "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA";
 const MESH_BODY_OWNER_BASE_TYPE_GUID: &str = "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081";
 const MESH_BODY_OWNER_TYPE_VERSION: u32 = 4;
@@ -207,6 +210,16 @@ pub(crate) enum MeshContainerOutcome {
         /// Exact read or parse failure.
         error: CodecError,
     },
+    /// The container decoded, but placing it through one joined Design body
+    /// record failed, so that mesh body is dropped.
+    Unplaced {
+        /// Native archive entry name.
+        entry_name: String,
+        /// Id of the dropped mesh body.
+        body_id: String,
+        /// Exact placement failure.
+        error: CodecError,
+    },
     /// A complete Design mesh body names no archive entry.
     Missing {
         /// Entry basename stored by the Design record.
@@ -299,6 +312,13 @@ struct MeshCollectionOwnerRecord {
     collection_record_index: u32,
 }
 
+fn mesh_body_id(entry_name: &str, body_byte_offset: u64) -> String {
+    format!(
+        "{}:mesh-body#{body_byte_offset}",
+        crate::ids::native_scope(entry_name)
+    )
+}
+
 impl MeshBody {
     /// Project one decoded container through its joined Design body record.
     fn from_container(
@@ -320,10 +340,7 @@ impl MeshBody {
             texture_ids,
             attributes,
         } = container;
-        let id = format!(
-            "{}:mesh-body#{body_byte_offset}",
-            crate::ids::native_scope(entry_name)
-        );
+        let id = mesh_body_id(entry_name, body_byte_offset);
         let mut placed_vertices = Vec::new();
         for point in vertices {
             placed_vertices.push(transform.transform_point(point)?);
@@ -954,8 +971,8 @@ fn parse_mesh_collection_record(
         } else {
             owner_at
         };
-        // An empty collection can store a zero u32 before its owner reference.
-        let owner_at = if body_records.is_empty() && View::u32_le_at(record, owner_at) == Some(0) {
+        let counted_entries = flagged && !body_records.is_empty();
+        let owner_at = if !counted_entries && View::u32_le_at(record, owner_at) == Some(0) {
             owner_at.checked_add(4)?
         } else {
             owner_at
@@ -1812,6 +1829,7 @@ fn mesh_filename_entries(
     entries
 }
 
+#[cfg(test)]
 fn parse_mesh_design_records<F>(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -1822,10 +1840,38 @@ fn parse_mesh_design_records<F>(
 where
     F: FnMut(&str) -> Result<(String, cadmpeg_ir::assets::AssetId), CodecError>,
 {
-    let stream = crate::ids::native_scope(source_entry_name);
     let records = IndexedRecordOffsets::build(bytes);
-    let collection_frames =
-        typed_primary_frames(bytes, meta, MESH_COLLECTION_TYPE_GUID, "mesh-collection")?;
+    let primary_frames = design_primary_frames(bytes, meta)?;
+    parse_mesh_design_records_with_frames(
+        ctx,
+        bytes,
+        meta,
+        source_entry_name,
+        &records,
+        &primary_frames,
+        asset_for_filename,
+    )
+}
+
+fn parse_mesh_design_records_with_frames<F>(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    source_entry_name: &str,
+    records: &IndexedRecordOffsets,
+    primary_frames: &[DesignPrimaryFrame<'_>],
+    asset_for_filename: &mut F,
+) -> Result<Vec<DesignMeshFeature>, CodecError>
+where
+    F: FnMut(&str) -> Result<(String, cadmpeg_ir::assets::AssetId), CodecError>,
+{
+    let stream = crate::ids::native_scope(source_entry_name);
+    let collection_frames = typed_primary_frames_from(
+        primary_frames,
+        meta,
+        MESH_COLLECTION_TYPE_GUID,
+        "mesh-collection",
+    )?;
     if collection_frames.is_empty() {
         return Ok(Vec::new());
     }
@@ -1840,15 +1886,20 @@ where
         return Ok(Vec::new());
     }
     let mut entry_names = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_ENTRY_NAME_TYPE_GUID, "mesh-entry-name")?
-            .into_iter()
-            .map(|frame| parse_mesh_entry_name_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        typed_primary_frames_from(
+            primary_frames,
+            meta,
+            MESH_ENTRY_NAME_TYPE_GUID,
+            "mesh-entry-name",
+        )?
+        .into_iter()
+        .map(|frame| parse_mesh_entry_name_record(bytes, frame))
+        .collect::<Result<Vec<_>, _>>()?,
         |record| record.entry.record().record_index(),
         "mesh-entry-name",
     )?;
     let mut guids = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_GUID_TYPE_GUID, "mesh-GUID")?
+        typed_primary_frames_from(primary_frames, meta, MESH_GUID_TYPE_GUID, "mesh-GUID")?
             .into_iter()
             .map(|frame| parse_mesh_guid_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
@@ -1856,7 +1907,7 @@ where
         "mesh-GUID",
     )?;
     let mut bodies = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_BODY_TYPE_GUID, "mesh-body")?
+        typed_primary_frames_from(primary_frames, meta, MESH_BODY_TYPE_GUID, "mesh-body")?
             .into_iter()
             .map(|frame| parse_mesh_body_record(ctx, bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
@@ -1865,8 +1916,8 @@ where
     )?;
     let collection_record_indices = mesh_collection_indices(&collections);
     let mut texture_tables = unique_record_map(
-        typed_primary_frames(
-            bytes,
+        typed_primary_frames_from(
+            primary_frames,
             meta,
             MESH_TEXTURE_TABLE_TYPE_GUID,
             "mesh-texture-table",
@@ -1878,7 +1929,7 @@ where
         "mesh-texture-table",
     )?;
     let mut wrappers = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_WRAPPER_TYPE_GUID, "mesh-wrapper")?
+        typed_primary_frames_from(primary_frames, meta, MESH_WRAPPER_TYPE_GUID, "mesh-wrapper")?
             .into_iter()
             .map(|frame| parse_mesh_wrapper_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
@@ -1886,37 +1937,47 @@ where
         "mesh-wrapper",
     )?;
     let mut scopes = unique_record_map(
-        typed_primary_frames(
-            bytes,
+        typed_primary_frames_from(
+            primary_frames,
             meta,
             MESH_FEATURE_SCOPE_TYPE_GUID,
             "mesh-feature-scope",
         )?
         .into_iter()
-        .map(|frame| parse_mesh_scope_record(bytes, meta, &records, frame))
+        .map(|frame| parse_mesh_scope_record(bytes, meta, records, frame))
         .collect::<Result<Vec<_>, _>>()?,
         |record| record.scope.record().record_index(),
         "mesh-feature-scope",
     )?;
     let mut states = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_SCENE_STATE_TYPE_GUID, "mesh-scene-state")?
-            .into_iter()
-            .map(|frame| parse_mesh_scene_state_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        typed_primary_frames_from(
+            primary_frames,
+            meta,
+            MESH_SCENE_STATE_TYPE_GUID,
+            "mesh-scene-state",
+        )?
+        .into_iter()
+        .map(|frame| parse_mesh_scene_state_record(bytes, frame))
+        .collect::<Result<Vec<_>, _>>()?,
         |record| record.record().record_index(),
         "mesh-scene-state",
     )?;
     let mut scene_nodes = unique_record_map(
-        typed_primary_frames(bytes, meta, SCENE_NODE_TYPE_GUID, "mesh-scene-node")?
-            .into_iter()
-            .map(|frame| parse_scene_node_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        typed_primary_frames_from(
+            primary_frames,
+            meta,
+            SCENE_NODE_TYPE_GUID,
+            "mesh-scene-node",
+        )?
+        .into_iter()
+        .map(|frame| parse_scene_node_record(bytes, frame))
+        .collect::<Result<Vec<_>, _>>()?,
         |record| record.node.record_index(),
         "mesh-scene-node",
     )?;
     let mut scene_auxiliary_frames = typed_frame_map(
-        typed_primary_frames(
-            bytes,
+        typed_primary_frames_from(
+            primary_frames,
             meta,
             SCENE_AUXILIARY_TYPE_GUID,
             "mesh-scene-auxiliary",
@@ -1924,8 +1985,8 @@ where
         "mesh-scene-auxiliary",
     )?;
     let filename_frames = typed_frame_map(
-        typed_primary_frames(
-            bytes,
+        typed_primary_frames_from(
+            primary_frames,
             meta,
             MESH_TEXTURE_FILENAME_TYPE_GUID,
             "mesh-texture-filename",
@@ -1933,8 +1994,8 @@ where
         "mesh-texture-filename",
     )?;
     let mut owner_records = Vec::new();
-    for frame in typed_primary_frames(
-        bytes,
+    for frame in typed_primary_frames_from(
+        primary_frames,
         meta,
         MESH_COLLECTION_OWNER_TYPE_GUID,
         "mesh-collection-owner",
@@ -1950,10 +2011,14 @@ where
         |record| record.owner.record().record_index(),
         "mesh-collection-owner",
     )?;
-    let mut body_owner_candidates =
-        typed_primary_frames(bytes, meta, MESH_BODY_OWNER_TYPE_GUID, "mesh-body-owner")?;
-    body_owner_candidates.extend(typed_primary_frames(
-        bytes,
+    let mut body_owner_candidates = typed_primary_frames_from(
+        primary_frames,
+        meta,
+        MESH_BODY_OWNER_TYPE_GUID,
+        "mesh-body-owner",
+    )?;
+    body_owner_candidates.extend(typed_primary_frames_from(
+        primary_frames,
         meta,
         MESH_BODY_OWNER_ALTERNATE_TYPE_GUID,
         "mesh-body-owner",
@@ -1962,14 +2027,19 @@ where
 
     let operation_context = MeshOperationContext {
         bytes,
-        records: &records,
+        records,
         scopes: typed_frame_map(
-            typed_primary_frames(bytes, meta, MESH_CUT_SCOPE_TYPE_GUID, "mesh-cut-scope")?,
+            typed_primary_frames_from(
+                primary_frames,
+                meta,
+                MESH_CUT_SCOPE_TYPE_GUID,
+                "mesh-cut-scope",
+            )?,
             "mesh-cut-scope",
         )?,
         groups: typed_frame_map(
-            typed_primary_frames(
-                bytes,
+            typed_primary_frames_from(
+                primary_frames,
                 meta,
                 MESH_OPERATION_GROUP_TYPE_GUID,
                 "mesh-operation-group",
@@ -1977,8 +2047,8 @@ where
             "mesh-operation-group",
         )?,
         members: typed_frame_map(
-            typed_primary_frames(
-                bytes,
+            typed_primary_frames_from(
+                primary_frames,
                 meta,
                 MESH_OPERATION_MEMBER_TYPE_GUID,
                 "mesh-operation-member",
@@ -2307,11 +2377,15 @@ fn decode_mesh_design_records(
             continue;
         };
         let mut asset_for_filename = |filename: &str| mesh_image_asset(scan, filename);
-        let records = parse_mesh_design_records(
+        let records = scan.design_record_offsets(&entry.name)?;
+        let primary_frames = scan_design_primary_frames(scan, &entry.name, &meta)?;
+        let records = parse_mesh_design_records_with_frames(
             ctx,
             scan.entry_bytes(&entry.name)?,
             &meta,
             &entry.name,
+            &records,
+            &primary_frames,
             &mut asset_for_filename,
         )?;
         if !records.is_empty() {
@@ -2574,6 +2648,12 @@ pub(crate) fn decode_mesh_bodies(
         };
         let mut first = Some(container);
         for (design_ordinal, feature_ordinal, body_ordinal) in joined {
+            let body_byte_offset = design_records[design_ordinal][feature_ordinal]
+                .body_at(body_ordinal)
+                .ok_or_else(|| CodecError::malformed("F3D joined mesh body index is invalid"))?
+                .placement
+                .record()
+                .byte_offset();
             let container = match first.take() {
                 Some(container) => container,
                 None => match scan
@@ -2583,8 +2663,9 @@ pub(crate) fn decode_mesh_bodies(
                     Ok(container) => container,
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                     Err(error) => {
-                        outcomes.push(MeshContainerOutcome::Failed {
+                        outcomes.push(MeshContainerOutcome::Unplaced {
                             entry_name: entry.name.clone(),
+                            body_id: mesh_body_id(&entry.name, body_byte_offset),
                             error,
                         });
                         continue;
@@ -2603,15 +2684,16 @@ pub(crate) fn decode_mesh_bodies(
                 .ok_or_else(|| CodecError::malformed("F3D joined mesh body index is invalid"))?;
             let projected = match MeshBody::from_container(
                 &entry.name,
-                body.placement.record().byte_offset(),
+                body_byte_offset,
                 body.placement.transform(),
                 container,
             ) {
                 Ok(projected) => projected,
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
-                    outcomes.push(MeshContainerOutcome::Failed {
+                    outcomes.push(MeshContainerOutcome::Unplaced {
                         entry_name: entry.name.clone(),
+                        body_id: mesh_body_id(&entry.name, body_byte_offset),
                         error,
                     });
                     continue;
@@ -2641,6 +2723,7 @@ pub(crate) fn decode_mesh_bodies(
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::u64_from_index;
+    use cadmpeg_core::serde_erase::json;
 
     mod body_forms;
     mod collection;
@@ -3489,6 +3572,47 @@ mod tests {
         );
     }
 
+    #[test]
+    fn nonempty_mesh_collection_with_a_zero_word_before_its_owner_lists_its_bodies() {
+        let parse = |graph: &SyntheticMeshGraph| {
+            let mut no_asset = no_texture_asset;
+            parse_mesh_design_records(
+                &graph.bytes,
+                &graph.meta,
+                "Synthetic/BulkStream.dat",
+                &mut no_asset,
+            )
+        };
+        let mut graph = synthetic_mesh_graph_with_collection(false, 1, CollectionForm::OwnerGap);
+        let design = parse(&graph).expect("mesh graph whose collection stores the zero word");
+        let [feature] = design.as_slice() else {
+            panic!("one mesh feature");
+        };
+        assert_eq!(feature.collection().record().record_index(), 100);
+        assert_eq!(
+            feature
+                .bodies()
+                .iter()
+                .map(|body| body.placement.record().record_index())
+                .collect::<Vec<_>>(),
+            [104]
+        );
+
+        let frame = sole_typed_frame(&graph, MESH_COLLECTION_TYPE_GUID);
+        assert_eq!(frame.end - frame.start, 77 + 11);
+        let wire = json::to_value(feature).unwrap();
+        assert_eq!(wire["collection_record"]["frame_length"], 88);
+        assert_eq!(
+            wire["collection_owner_reference_offset"],
+            cadmpeg_core::json!(frame.start + 77)
+        );
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
+        assert_eq!(decoded, *feature);
+        let owner_gap = frame.start + 38 + 11 + 9 + 4 + 11;
+        graph.bytes[owner_gap] = 1;
+        assert!(parse(&graph).is_err());
+    }
+
     /// An empty collection can store a zero u32 before its owner reference; it is
     /// still an empty registry. A nonzero value there is not a collection.
     #[test]
@@ -3619,10 +3743,10 @@ mod tests {
             panic!("one mesh feature");
         };
         assert_eq!(feature.bodies()[0].placement.record().record_index(), 104);
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         assert_eq!(
             wire["collection_body_reference_offsets"],
-            serde_json::json!([66])
+            cadmpeg_core::json!([66])
         );
         assert_eq!(wire["texture_table_reference_offset"], 31);
         assert_eq!(wire["collection_base_record"]["byte_offset"], 42);
@@ -3631,8 +3755,7 @@ mod tests {
         assert_eq!(wire["bodies"][0]["body_words"]["body_word"], 0);
         assert_eq!(wire["body_count_offsets"][0], 21);
         assert_eq!(wire["body_count_offsets"][1], 62);
-        let decoded: crate::records::mesh::DesignMeshFeature =
-            serde_json::from_value(wire).unwrap();
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
         assert_eq!(decoded, *feature);
     }
 
@@ -3715,10 +3838,9 @@ mod tests {
         let [feature] = features.as_slice() else {
             panic!("one feature")
         };
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         assert_eq!(wire["bodies"][0]["body_name"], "Axle");
-        let decoded: crate::records::mesh::DesignMeshFeature =
-            serde_json::from_value(wire).unwrap();
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
         assert_eq!(
             decoded.bodies()[0]
                 .placement
@@ -3756,15 +3878,14 @@ mod tests {
         let [feature] = features.as_slice() else {
             panic!("one feature")
         };
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         assert_eq!(wire["scopes"][0]["scope_flagged_word"], 37);
         assert_eq!(wire["scopes"][0]["scope_body_count_offset"], start + 25);
         assert_eq!(
             wire["scope_body_reference_offsets"],
-            serde_json::json!([start + 29])
+            cadmpeg_core::json!([start + 29])
         );
-        let decoded: crate::records::mesh::DesignMeshFeature =
-            serde_json::from_value(wire).unwrap();
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
         assert_eq!(decoded, *feature);
         let losses: Vec<_> = super::mesh_scope_prefix_losses(&features).collect();
         assert_eq!(losses.len(), 1);
@@ -3798,7 +3919,7 @@ mod tests {
         );
         assert_eq!(body.guid.opaque_run(), Some(&MESH_GUID_BYTES_21_TO_31));
         let start = u64_from_index(start);
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         let body_wire = &wire["bodies"][0];
         assert_eq!(body_wire["body_words"]["flagged_word"], 0x1122_3344_u32);
         assert_eq!(body_wire["body_words"]["body_word"], 0x5566_7788_u32);
@@ -3806,7 +3927,7 @@ mod tests {
         assert_eq!(super::mesh_word_losses(&features).count(), 2);
         assert_eq!(
             body_wire["transform_offsets"],
-            serde_json::json!([start + 46, start + 175])
+            cadmpeg_core::json!([start + 46, start + 175])
         );
         assert_eq!(body_wire["scope_reference_offset"], start + 512);
         assert_eq!(body_wire["wrapper_reference_offset"], start + 523);
@@ -3814,14 +3935,13 @@ mod tests {
         assert_eq!(body_wire["guid_reference_offset"], start + 545);
         assert_eq!(body_wire["scene_node_reference_offset"], start + 557);
         let decoded: crate::records::mesh::DesignMeshFeature =
-            serde_json::from_value(wire.clone()).unwrap();
+            json::from_value(wire.clone()).unwrap();
         assert_eq!(decoded, *feature);
         let mut plain_offsets = wire;
         plain_offsets["bodies"][0]["transform_offsets"] =
-            serde_json::json!([start + 42, start + 171]);
+            cadmpeg_core::json!([start + 42, start + 171]);
         assert!(
-            serde_json::from_value::<crate::records::mesh::DesignMeshFeature>(plain_offsets)
-                .is_err()
+            json::from_value::<crate::records::mesh::DesignMeshFeature>(plain_offsets).is_err()
         );
         assert_eq!(super::mesh_guid_byte_losses(&features).count(), 1);
     }
@@ -3902,13 +4022,12 @@ mod tests {
             feature.bodies()[0].guid.opaque_run(),
             Some(&MESH_GUID_BYTES_21_TO_31)
         );
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         assert_eq!(
             wire["bodies"][0]["guid_opaque_bytes"],
             "112233445566778899aabb"
         );
-        let decoded: crate::records::mesh::DesignMeshFeature =
-            serde_json::from_value(wire).unwrap();
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
         assert_eq!(decoded, *feature);
 
         let losses: Vec<_> = super::mesh_guid_byte_losses(&features).collect();
@@ -3938,7 +4057,7 @@ mod tests {
         )
         .expect("mesh graph");
         assert_eq!(features[0].bodies()[0].guid.opaque_run(), None);
-        let wire = serde_json::to_value(&features[0]).unwrap();
+        let wire = json::to_value(&features[0]).unwrap();
         assert!(wire["bodies"][0].get("guid_opaque_bytes").is_none());
         assert_eq!(super::mesh_guid_byte_losses(&features).count(), 0);
     }
@@ -4223,10 +4342,9 @@ mod tests {
         let [feature] = features.as_slice() else {
             panic!("one feature")
         };
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         assert_eq!(wire["bodies"][0]["wrapper_opaque_tail"], "090807");
-        let decoded: crate::records::mesh::DesignMeshFeature =
-            serde_json::from_value(wire).unwrap();
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
         assert_eq!(decoded, *feature);
         let losses: Vec<_> = super::mesh_wrapper_tail_losses(&features).collect();
         assert_eq!(losses.len(), 1);
@@ -4465,6 +4583,61 @@ mod tests {
         assert!(parse_mesh_collection_owner_record(&bytes, frame)
             .expect("valid generic owner frame")
             .is_none());
+    }
+
+    #[test]
+    fn mesh_collection_owner_of_type_version_sixteen_stores_the_named_entry() {
+        let mut graph = synthetic_mesh_graph(false);
+        let design_type = graph
+            .meta
+            .types
+            .iter_mut()
+            .find(|design_type| {
+                design_type
+                    .type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
+            })
+            .expect("collection-owner type");
+        let mut named = Vec::new();
+        push_indexed_header(&mut named, 270, 110);
+        named.extend_from_slice(&[0; 40]);
+        let name_at = named.len();
+        named.extend_from_slice(&17_u32.to_le_bytes());
+        for unit in crate::records::mesh::MESH_COLLECTION_ENTRY_NAME.encode_utf16() {
+            named.extend_from_slice(&unit.to_le_bytes());
+        }
+        let reference_at = named.len();
+        push_reference(&mut named, 100);
+        named.extend_from_slice(&[0; 12]);
+        let mut unnamed = named.clone();
+        unnamed[name_at + 4] = b'x';
+
+        for (version, admitted) in [(16, true), (18, false)] {
+            design_type.version = version;
+            let frame = TypedPrimaryFrame {
+                entity_id: 110,
+                start: 0,
+                end: named.len(),
+                design_type,
+            };
+            let owner = parse_mesh_collection_owner_record(&named, frame);
+            if admitted {
+                let owner = owner
+                    .expect("version-16 owner frame")
+                    .expect("named collection entry");
+                assert_eq!(owner.collection_record_index, 100);
+                assert_eq!(
+                    owner.owner.backlink_offset(),
+                    u64::try_from(reference_at).unwrap()
+                );
+                assert!(parse_mesh_collection_owner_record(&unnamed, frame)
+                    .expect("version-16 owner frame without the entry")
+                    .is_none());
+            } else {
+                assert!(matches!(owner, Err(CodecError::NotImplemented(_))));
+            }
+        }
     }
 
     #[test]

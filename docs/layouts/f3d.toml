@@ -9817,6 +9817,126 @@ source = "spec"
 anchor = "a same-segment reference to the owning scope"
 
 [[record]]
+name = "combine_legacy_external_body_reference"
+kind = "byte"
+section = "3.1"
+anchor = "Its cross-document body reference is a legacy target reference"
+size = 60
+note = "Offsets are relative to the first byte after the u32 one that follows the occurrence reference."
+
+[[record.field]]
+name = "body_marker"
+offset = 0
+type = "u8"
+value = 1
+source = "spec"
+anchor = "Its cross-document body reference is a legacy target reference (§1.4): `u8 1`"
+
+[[record.field]]
+name = "browser_node_entity"
+offset = 1
+type = "u64"
+source = "spec"
+anchor = "the u64 entity ID of a body-visibility browser node in the referenced design"
+
+[[record.field]]
+name = "occurrence_marker"
+offset = 9
+type = "u8"
+value = 1
+source = "spec"
+anchor = "in the referenced design, `u8 1`"
+
+[[record.field]]
+name = "source_occurrence_identity"
+offset = 10
+type = "u64"
+source = "spec"
+anchor = "a u64 source occurrence identity, `u8 0`"
+
+[[record.field]]
+name = "cross_document_flag"
+offset = 18
+type = "u8"
+value = 0
+source = "spec"
+anchor = "a u64 source occurrence identity, `u8 0`"
+
+[[record.field]]
+name = "type_guid"
+offset = 19
+type = "bytes[40]"
+source = "spec"
+anchor = "the LP-ASCII 36 type GUID `D26351F0-5940-4D23-AA20-2C35475A6D9E`"
+
+[[record.field]]
+name = "closing_zero"
+offset = 59
+type = "u8"
+value = 0
+source = "spec"
+anchor = "`D26351F0-5940-4D23-AA20-2C35475A6D9E`, and `u8 0`"
+
+[[record]]
+name = "combine_legacy_external_selector_tail"
+kind = "byte"
+section = "3.1"
+anchor = "The legacy selector tail is u32 `9`, u16 `2`"
+size = 41
+note = "Offsets are relative to the first byte after the legacy cross-document body reference. The separator after the reference to `N+2` is two or three bytes long."
+
+[[record.field]]
+name = "constant_nine"
+offset = 0
+type = "u32"
+value = 9
+source = "spec"
+anchor = "The legacy selector tail is u32 `9`"
+
+[[record.field]]
+name = "constant_two"
+offset = 4
+type = "u16"
+value = 2
+source = "spec"
+anchor = "The legacy selector tail is u32 `9`, u16 `2`"
+
+[[record.field]]
+name = "selection_payload_stamp"
+offset = 6
+type = "u64"
+source = "spec"
+anchor = "a u64 selection-payload stamp"
+
+[[record.field]]
+name = "evaluation_epoch"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "a u32 evaluation epoch"
+
+[[record.field]]
+name = "evaluation_scalar"
+offset = 18
+type = "f64"
+source = "spec"
+anchor = "a finite nonnegative f64 evaluation scalar"
+
+[[record.field]]
+name = "repeated_epoch"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "a u32 equal to the epoch"
+
+[[record.field]]
+name = "nested_two_reference"
+offset = 30
+type = "bytes[11]"
+source = "spec"
+anchor = "a u32 equal to the epoch, a same-segment reference to `N+2`"
+
+[[record]]
 name = "indexed_companion_record_prefix"
 kind = "byte"
 section = "3.1"
@@ -41917,6 +42037,7 @@ section = "1.2"
 anchor = "The `DesignConfigurationRoot` record in the Design `BulkStream` names the active row."
 size = 57
 note = "Offsets are relative to the record's indexed header. The LP-UTF16 table id begins at the end of the prefix."
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/configuration_root.rs"
 
 [[record.gap]]
 offset = 0
@@ -41960,6 +42081,11 @@ type = "u32"
 value = 1
 source = "spec"
 anchor = "eleven zero bytes, u32 `1`, the LP-UTF16 table id"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/records/configuration.rs"
+contains = "pub(crate) const ID_WIDTH: usize = 256;"
+note = "The reader admits a table id and a row id of 1 to 256 UTF-16 code units after the prefix; the writer fits both ids to the same width."
 
 [[record]]
 name = "snapshot_body_map_plain_prefix"
@@ -54737,6 +54863,342 @@ offset = 68
 type = "bytes[90]"
 source = "spec"
 anchor = "`base_feature_snapshot_body_map`"
+
+# --- Records of a design whose timeline holds no body -------------------------
+
+[[record]]
+name = "body_less_design_body_owner"
+kind = "byte"
+section = "Records of a design whose timeline holds no body"
+anchor = "`body_less_design_body_owner`"
+size = 71
+note = "The design `Body` owner of a design whose timeline holds no body."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "`body_less_design_body_owner`"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[10]"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+source = "spec"
+anchor = "`body_less_design_body_owner`"
+
+[[record.field]]
+name = "flag"
+offset = 21
+type = "u8"
+value = 0
+source = "spec"
+anchor = "`body_less_design_body_owner`"
+
+[[record.field]]
+name = "set_count"
+offset = 22
+type = "u32"
+value = 0
+source = "spec"
+anchor = "`body_less_design_body_owner`"
+
+[[record.field]]
+name = "run_count"
+offset = 26
+type = "u32"
+value = 0
+source = "spec"
+anchor = "`body_less_design_body_owner`"
+
+[[record.field]]
+name = "marker_a"
+offset = 30
+type = "u8"
+value = 1
+source = "spec"
+anchor = "`body_less_design_body_owner`"
+
+[[record.field]]
+name = "companion_slot"
+offset = 31
+type = "u8"
+value = 0
+source = "spec"
+anchor = "`body_less_design_body_owner`"
+
+[[record.field]]
+name = "body_map"
+offset = 32
+type = "bytes[11]"
+source = "spec"
+anchor = "`body_less_design_body_owner`"
+
+[[record.field]]
+name = "marker_b"
+offset = 43
+type = "u8"
+value = 1
+source = "spec"
+anchor = "`body_less_design_body_owner`"
+
+[[record.field]]
+name = "alternate_owner_list"
+offset = 44
+type = "bytes[11]"
+source = "spec"
+anchor = "`body_less_design_body_owner`"
+
+[[record.field]]
+name = "separator"
+offset = 55
+type = "u8"
+value = 0
+source = "spec"
+anchor = "`body_less_design_body_owner`"
+
+[[record.field]]
+name = "run_count_repeat"
+offset = 56
+type = "u32"
+value = 0
+source = "spec"
+anchor = "`body_less_design_body_owner`"
+
+[[record.field]]
+name = "aggregate"
+offset = 60
+type = "bytes[11]"
+source = "spec"
+anchor = "`body_less_design_body_owner`"
+
+[[record]]
+name = "body_less_parameter_body_owner"
+kind = "byte"
+section = "Records of a design whose timeline holds no body"
+anchor = "`body_less_parameter_body_owner`"
+size = 61
+note = "The parameter `Body` owner of a design whose timeline holds no body."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "`body_less_parameter_body_owner`"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[10]"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+source = "spec"
+anchor = "`body_less_parameter_body_owner`"
+
+[[record.field]]
+name = "flag"
+offset = 21
+type = "u8"
+value = 0
+source = "spec"
+anchor = "`body_less_parameter_body_owner`"
+
+[[record.field]]
+name = "set_count"
+offset = 22
+type = "u32"
+value = 0
+source = "spec"
+anchor = "`body_less_parameter_body_owner`"
+
+[[record.field]]
+name = "run_count"
+offset = 26
+type = "u32"
+value = 0
+source = "spec"
+anchor = "`body_less_parameter_body_owner`"
+
+[[record.field]]
+name = "marker_a"
+offset = 30
+type = "u8"
+value = 1
+source = "spec"
+anchor = "`body_less_parameter_body_owner`"
+
+[[record.field]]
+name = "companion_slot"
+offset = 31
+type = "u8"
+value = 0
+source = "spec"
+anchor = "`body_less_parameter_body_owner`"
+
+[[record.field]]
+name = "snapshot_body_map"
+offset = 32
+type = "bytes[11]"
+source = "spec"
+anchor = "`body_less_parameter_body_owner`"
+
+[[record.field]]
+name = "marker_b"
+offset = 43
+type = "u8"
+value = 1
+source = "spec"
+anchor = "`body_less_parameter_body_owner`"
+
+[[record.field]]
+name = "null_slot"
+offset = 44
+type = "u8"
+value = 0
+source = "spec"
+anchor = "`body_less_parameter_body_owner`"
+
+[[record.field]]
+name = "separator"
+offset = 45
+type = "u8"
+value = 0
+source = "spec"
+anchor = "`body_less_parameter_body_owner`"
+
+[[record.field]]
+name = "run_count_repeat"
+offset = 46
+type = "u32"
+value = 0
+source = "spec"
+anchor = "`body_less_parameter_body_owner`"
+
+[[record.field]]
+name = "aggregate"
+offset = 50
+type = "bytes[11]"
+source = "spec"
+anchor = "`body_less_parameter_body_owner`"
+
+[[record]]
+name = "body_less_body_map"
+kind = "byte"
+section = "Records of a design whose timeline holds no body"
+anchor = "`body_less_body_map`"
+size = 41
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/body.rs"
+note = "The body map of a design whose timeline holds no body: no pair and an empty basename."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "`body_less_body_map`"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[10]"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+source = "spec"
+anchor = "`body_less_body_map`"
+
+[[record.field]]
+name = "body_count"
+offset = 21
+type = "u32"
+value = 0
+source = "spec"
+anchor = "`body_less_body_map`"
+
+[[record.field]]
+name = "body_owner"
+offset = 25
+type = "bytes[11]"
+source = "spec"
+anchor = "`body_less_body_map`"
+
+[[record.field]]
+name = "separator"
+offset = 36
+type = "u8"
+value = 0
+source = "spec"
+anchor = "`body_less_body_map`"
+
+[[record.field]]
+name = "basename_length"
+offset = 37
+type = "u32"
+value = 0
+source = "spec"
+anchor = "`body_less_body_map`"
+
+[[record]]
+name = "body_less_snapshot_body_map"
+kind = "byte"
+section = "Records of a design whose timeline holds no body"
+anchor = "`body_less_snapshot_body_map`"
+size = 52
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/body.rs"
+note = "The snapshot body map of a design whose timeline holds no body: no pair and an empty basename."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "`body_less_snapshot_body_map`"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[10]"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+source = "spec"
+anchor = "`body_less_snapshot_body_map`"
+
+[[record.field]]
+name = "companion"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "`body_less_snapshot_body_map`"
+
+[[record.field]]
+name = "body_count"
+offset = 32
+type = "u32"
+value = 0
+source = "spec"
+anchor = "`body_less_snapshot_body_map`"
+
+[[record.field]]
+name = "body_owner"
+offset = 36
+type = "bytes[11]"
+source = "spec"
+anchor = "`body_less_snapshot_body_map`"
+
+[[record.field]]
+name = "separator"
+offset = 47
+type = "u8"
+value = 0
+source = "spec"
+anchor = "`body_less_snapshot_body_map`"
+
+[[record.field]]
+name = "basename_length"
+offset = 48
+type = "u32"
+value = 0
+source = "spec"
+anchor = "`body_less_snapshot_body_map`"
 
 [[record]]
 name = "base_feature_scene_node"

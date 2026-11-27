@@ -23,6 +23,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 pub(crate) struct BoundFeatureOutputs {
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) sweep_kinds: crate::design::feature_project::sweep_fallback::OutputFacts,
+    /// Pattern features, their result states, and the generated body slots
+    /// that no model body joins.
+    pub(crate) omitted_copies: Vec<(cadmpeg_ir::features::FeatureId, i64, Vec<i64>)>,
 }
 
 pub(crate) fn bind_feature_outputs(
@@ -37,6 +40,7 @@ pub(crate) fn bind_feature_outputs(
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut losses = Vec::new();
+    let mut omitted_copies_out = Vec::new();
     let mut sweep_kinds = crate::design::feature_project::sweep_fallback::OutputFacts::default();
     let mut inferred_histories = Vec::new();
     let mut datum_plane_frames = HashMap::<
@@ -225,9 +229,7 @@ pub(crate) fn bind_feature_outputs(
         let order = history
             .states_oldest_first()
             .unwrap_or_else(|| (0..history.states().len()).collect());
-        let workers = std::thread::available_parallelism()
-            .map_or(1, std::num::NonZeroUsize::get)
-            .min(6);
+        let workers = cadmpeg_core::parallelism().min(6);
         let keep_materialized = history.states().len() <= super::KEEP_MATERIALIZED_MAX_STATES;
         if keep_materialized && workers > 1 && order.len() >= 8 {
             super::output_measure::measure_history_states_parallel(
@@ -266,22 +268,43 @@ pub(crate) fn bind_feature_outputs(
             let walked = walked_deletions.take();
             if let Some(Some(&previous)) = state.next_ref.map(|node| by_node.get(&node)) {
                 if output_states.contains(&(history_index, state.state_id)) {
-                    if let (Some(transition), Some(prev_topology)) = (
-                        state.transition.as_ref(),
-                        history.topology(&history.states()[previous]),
-                    ) {
-                        let prev_index = HistoricalBodyIndex::new(prev_topology);
-                        let whole_deleted: Vec<i64> = transition
-                            .topology
-                            .bodies
-                            .deleted
-                            .iter()
-                            .copied()
-                            .filter(|&b| prev_index.is_solid(b))
-                            .collect();
-                        if !whole_deleted.is_empty() {
-                            state_deleted_bodies
-                                .insert((history_index, state.state_id), whole_deleted);
+                    if let Some(transition) = state.transition.as_ref() {
+                        if !transition.topology.bodies.deleted.is_empty() {
+                            let prev_state_id = history.states()[previous].state_id;
+                            let whole_deleted: Vec<i64> =
+                                if measured_states.contains(&(history_index, prev_state_id)) {
+                                    state_solid_bodies
+                                        .get(&(history_index, prev_state_id))
+                                        .map(|prev_solid| {
+                                            transition
+                                                .topology
+                                                .bodies
+                                                .deleted
+                                                .iter()
+                                                .copied()
+                                                .filter(|b| prev_solid.contains(b))
+                                                .collect()
+                                        })
+                                        .unwrap_or_default()
+                                } else if let Some(prev_topology) =
+                                    history.topology(&history.states()[previous])
+                                {
+                                    let prev_index = HistoricalBodyIndex::new(prev_topology);
+                                    transition
+                                        .topology
+                                        .bodies
+                                        .deleted
+                                        .iter()
+                                        .copied()
+                                        .filter(|&b| prev_index.is_solid(b))
+                                        .collect()
+                                } else {
+                                    Vec::new()
+                                };
+                            if !whole_deleted.is_empty() {
+                                state_deleted_bodies
+                                    .insert((history_index, state.state_id), whole_deleted);
+                            }
                         }
                     }
                 }
@@ -311,6 +334,8 @@ pub(crate) fn bind_feature_outputs(
             let state_key = (history_index, cur_state_id);
             if let Some(requests) = treatment_states.remove(&state_key) {
                 let topology = history.topology(&history.states()[index]);
+                let edge_slots =
+                    topology.map(|topology| super::selection::FamilySlots::new(&topology.edges));
                 let samples = topology.map(|topology| KeyedRows::new(&topology.edge_samples));
                 for EdgeMidpointRequest {
                     feature_index,
@@ -319,8 +344,9 @@ pub(crate) fn bind_feature_outputs(
                 {
                     let mut midpoints = Vec::new();
                     for slot in slots {
-                        let sample = topology
-                            .filter(|topology| topology.edges.contains(&slot))
+                        let sample = edge_slots
+                            .as_ref()
+                            .filter(|edge_slots| edge_slots.contains(slot))
                             .and_then(|_| samples.as_ref()?.get(slot));
                         if let Some(sample) = sample {
                             midpoints.push(sample.interior);
@@ -993,6 +1019,21 @@ pub(crate) fn bind_feature_outputs(
                 saved_edges.push(slot.to_string());
             }
         }
+        let bound_states = histories[history_index].states();
+        let omitted_copies =
+            omitted_pattern_copies(feature, &outputs, (before_solid, after_solid), |slot| {
+                !stored_active.contains_in_source(slot, source)
+                    && !bound_states.iter().any(|state| {
+                        state.state_id != state_id
+                            && state
+                                .transition
+                                .as_ref()
+                                .is_some_and(|t| t.topology.bodies.deleted.contains(&slot))
+                    })
+            });
+        if !omitted_copies.is_empty() {
+            omitted_copies_out.push((feature.id.clone(), state_id, omitted_copies));
+        }
         if resolved.len() + saved_edges.len() != outputs.len() {
             losses.push(crate::loss::F3dLossCode::FeatureOutputBodyUnbound.note(format!(
                 "{} has {} affected body slot(s) without a unique active body in its BREP namespace.",
@@ -1044,7 +1085,104 @@ pub(crate) fn bind_feature_outputs(
     Ok(BoundFeatureOutputs {
         losses,
         sweep_kinds,
+        omitted_copies: omitted_copies_out,
     })
+}
+
+/// The solid body slots that a pattern's result state adds to its input state
+/// and that `omitted` accepts, in increasing order.
+pub(super) fn omitted_pattern_copies(
+    feature: &cadmpeg_ir::features::Feature,
+    outputs: &[i64],
+    (before, after): (Option<&BTreeSet<i64>>, Option<&BTreeSet<i64>>),
+    omitted: impl Fn(i64) -> bool,
+) -> Vec<i64> {
+    let is_pattern = matches!(
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Pattern { .. }
+        )
+    );
+    let (true, Some(before), Some(after)) = (is_pattern, before, after) else {
+        return Vec::new();
+    };
+    let mut slots = outputs
+        .iter()
+        .copied()
+        .filter(|slot| after.contains(slot) && !before.contains(slot) && omitted(*slot))
+        .collect::<Vec<_>>();
+    slots.sort_unstable();
+    slots.dedup();
+    slots
+}
+
+/// Whether a Combine selects generated bodies of `producer` as its target or tools.
+pub(crate) fn combine_consumes_generated_bodies(
+    features: &[cadmpeg_ir::features::Feature],
+    producer: &cadmpeg_ir::features::FeatureId,
+) -> bool {
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    features.iter().any(|feature| {
+        let (FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })
+        | FeatureDefinition::PostProcess {
+            operation: FeatureOperation::Combine { operands, .. },
+            ..
+        }) = feature.evaluation.definition()
+        else {
+            return false;
+        };
+        [operands.target(), operands.tools()]
+            .into_iter()
+            .any(|selection| {
+                matches!(selection, BodySelection::Generated { bodies, .. }
+                if bodies.iter().any(|body| &body.feature == producer))
+            })
+    })
+}
+
+/// The loss note and the result state of a pattern whose generated bodies at
+/// `slots` the model omits.
+pub(crate) fn omitted_copy_outputs(
+    feature: &cadmpeg_ir::features::Feature,
+    state_id: i64,
+    slots: &[i64],
+) -> (
+    cadmpeg_ir::report::loss::LossNote,
+    Option<cadmpeg_ir::features::evaluation::FeatureResultTopology>,
+) {
+    let note = crate::loss::F3dLossCode::FeaturePatternCopyBodyOmitted.note(format!(
+        "{} generates separate body slot(s) {} that its history keeps and no Combine selects; the Design body map names no body at them, so the model omits them.",
+        feature.id,
+        slots.iter().map(i64::to_string).collect::<Vec<_>>().join(",")
+    ));
+    (note, omitted_copy_result(feature, state_id, slots))
+}
+
+fn omitted_copy_result(
+    feature: &cadmpeg_ir::features::Feature,
+    state_id: i64,
+    slots: &[i64],
+) -> Option<cadmpeg_ir::features::evaluation::FeatureResultTopology> {
+    let bodies = slots
+        .iter()
+        .map(|slot| cadmpeg_core::text::NonBlankString::new(slot.to_string()))
+        .collect::<Option<Vec<_>>>()?;
+    let members = cadmpeg_ir::features::evaluation::FeatureResultMembers::new(
+        bodies,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .ok()?;
+    Some(
+        cadmpeg_ir::features::evaluation::FeatureResultTopology::new(
+            crate::ids::history_result_state_id(&feature.id, state_id),
+            feature.id.clone(),
+            members,
+            None,
+        ),
+    )
 }
 
 pub(super) fn combine_states_applied_operation(

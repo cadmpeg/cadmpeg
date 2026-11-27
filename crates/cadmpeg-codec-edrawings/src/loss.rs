@@ -189,7 +189,7 @@ impl EdrawingsLossCode {
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `edrawings/<local>`. Severity comes from the
-    /// local code; the strict floor comes from the taxonomy.
+    /// local code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())

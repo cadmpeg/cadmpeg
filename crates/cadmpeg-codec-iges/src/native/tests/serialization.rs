@@ -10,30 +10,11 @@ fn physical_card_id_streams_once_with_native_retained_limit() {
     let record = super::super::NativeCard { index: 0, line };
     assert_native_limit(
         &record,
-        serde_json::json!({
+        cadmpeg_core::json!({
             "id": "iges:physical:card#1", "offset": 0,
             "payload": cadmpeg_ir::hash::LowerHex(&line.physical().payload),
             "line_ending": "0a", "section": "start", "sequence": 1,
         }),
-    );
-}
-
-#[test]
-fn quarantined_record_id_serializes_its_section_and_sequence() {
-    #[derive(serde::Serialize)]
-    struct Record {
-        id: super::super::QuarantinedId,
-    }
-
-    let record = Record {
-        id: super::super::QuarantinedId {
-            section: "directory",
-            sequence: 3,
-        },
-    };
-    assert_eq!(
-        serde_json::to_value(&record).unwrap(),
-        serde_json::json!({"id": "iges:quarantine:directory#3"})
     );
 }
 

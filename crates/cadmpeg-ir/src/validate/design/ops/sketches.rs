@@ -3,9 +3,8 @@
 //! defining forms and roles, relation operands, patterns, regions, and the
 //! parameters sketch dimensions bind.
 
+use crate::report::check::Ruled;
 use std::collections::{BTreeMap, BTreeSet};
-
-use serde_json::Value;
 
 use super::body::{self, RunKind};
 use super::{error, Site};
@@ -78,6 +77,7 @@ trait Space: SketchSpace + Sized {
     fn constraint(id: &Self::Constraint) -> &str;
     fn shape(curve: &Self::Curve) -> Shape;
     fn entities<'a>(index: &DesignRecords<'a>) -> &'a [SketchEntity<Self>];
+    fn entity_by_id<'a>(index: &DesignRecords<'a>, id: &str) -> Option<&'a SketchEntity<Self>>;
     fn constraints<'a>(index: &DesignRecords<'a>) -> &'a [SketchConstraint<Self>];
 }
 
@@ -118,6 +118,10 @@ impl Space for Planar {
 
     fn entities<'a>(index: &DesignRecords<'a>) -> &'a [SketchEntity<Self>] {
         &index.ir.design.sketch_entities
+    }
+
+    fn entity_by_id<'a>(index: &DesignRecords<'a>, id: &str) -> Option<&'a SketchEntity<Self>> {
+        index.sketch_entities.get(id).copied()
     }
 
     fn constraints<'a>(index: &DesignRecords<'a>) -> &'a [SketchConstraint<Self>] {
@@ -165,6 +169,10 @@ impl Space for Spatial {
 
     fn entities<'a>(index: &DesignRecords<'a>) -> &'a [SketchEntity<Self>] {
         &index.ir.design.spatial_sketch_entities
+    }
+
+    fn entity_by_id<'a>(index: &DesignRecords<'a>, id: &str) -> Option<&'a SketchEntity<Self>> {
+        index.spatial_sketch_entities.get(id).copied()
     }
 
     fn constraints<'a>(index: &DesignRecords<'a>) -> &'a [SketchConstraint<Self>] {
@@ -250,12 +258,8 @@ fn curve<S: SketchSpace>(entity: &SketchEntity<S>) -> Option<&S::Curve> {
     }
 }
 
-fn shape_in<S: Space>(index: &DesignRecords<'_>, id: &str) -> Option<Shape> {
-    S::entities(index)
-        .iter()
-        .find(|entity| S::entity(&entity.id) == id)
-        .and_then(curve)
-        .map(S::shape)
+fn shape_in<'a, S: Space + 'a>(index: &DesignRecords<'a>, id: &str) -> Option<Shape> {
+    S::entity_by_id(index, id).and_then(curve).map(S::shape)
 }
 
 /// The stated shape of the sketch entity a pick targets. `None` where the
@@ -266,6 +270,11 @@ fn picked_shape(index: &DesignRecords<'_>, target: &PickTarget) -> Option<Shape>
         PickTarget::SpatialSketchEntity(id) => shape_in::<Spatial>(index, id.as_str()),
         _ => None,
     }
+}
+
+/// Whether a pick targets a sketch entity whose stated curve is a point.
+pub(super) fn picks_point(index: &DesignRecords<'_>, target: &PickTarget) -> bool {
+    picked_shape(index, target) == Some(Shape::Point)
 }
 
 /// Whether a pick targets a sketch entity whose stated curve is no point.
@@ -326,7 +335,14 @@ impl<'a> Sketches<'a> {
     }
 }
 
-pub(super) fn check_sketches(index: &DesignRecords<'_>, wire: &Value, findings: &mut Vec<Finding>) {
+pub(super) fn check_sketches(
+    index: &DesignRecords<'_>,
+    sketch_regions: &[(
+        &crate::sketches::SketchId,
+        &crate::design::selection::SketchRegion,
+    )],
+    findings: &mut Vec<Finding>,
+) {
     let sketches = Sketches::new(index);
     check_ownership(index, findings);
     for sketch in &index.ir.design.sketches {
@@ -340,7 +356,10 @@ pub(super) fn check_sketches(index: &DesignRecords<'_>, wire: &Value, findings: 
                     error(
                         findings,
                         sketch.id.as_str(),
-                        format_args!("the sketch's resolved frame axes are not orthonormal"),
+                        crate::rule!(
+                            "design.sketch-resolved-frame-axes-not-orthonormal",
+                            "the sketch's resolved frame axes are not orthonormal"
+                        ),
                     );
                 }
             }
@@ -349,7 +368,7 @@ pub(super) fn check_sketches(index: &DesignRecords<'_>, wire: &Value, findings: 
     check_space::<Planar>(index, &sketches, findings);
     check_space::<Spatial>(index, &sketches, findings);
     check_block_cycles(index, findings);
-    check_regions(index, wire, findings);
+    check_regions(index, sketch_regions, findings);
 }
 
 /// Each sketch's owner exists and owns it by its operation, its overrides,
@@ -357,6 +376,8 @@ pub(super) fn check_sketches(index: &DesignRecords<'_>, wire: &Value, findings: 
 fn check_ownership(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     let design = &index.ir.design;
     let mut overridden: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    let mut override_defs: BTreeMap<&str, Vec<&crate::design::feature::FeatureDefinition>> =
+        BTreeMap::new();
     let overrides = design
         .configurations
         .iter()
@@ -365,6 +386,10 @@ fn check_ownership(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     for overrides in overrides {
         for (feature, state) in &overrides.features {
             if let Some(definition) = &state.definition {
+                override_defs
+                    .entry(feature.as_str())
+                    .or_default()
+                    .push(definition);
                 let named = match &definition.operation {
                     FeatureOperation::Sketch(sketch) => Some(sketch.as_str()),
                     FeatureOperation::SpatialSketch(sketch) => Some(sketch.as_str()),
@@ -377,6 +402,7 @@ fn check_ownership(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
             }
         }
     }
+    let mut cached_strings: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
     let owners = design
         .sketches
         .iter()
@@ -398,7 +424,10 @@ fn check_ownership(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
             error(
                 findings,
                 sketch,
-                format_args!("the sketch's owner {owner} is no feature of the design"),
+                crate::rule!(
+                    "design.sketch-owner-no-feature-design",
+                    "the sketch's owner {owner} is no feature of the design"
+                ),
             );
             continue;
         };
@@ -412,7 +441,10 @@ fn check_ownership(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
             error(
                 findings,
                 sketch,
-                format_args!("a Block sketch is owned by {owner}, which has no Sketch operation"),
+                crate::rule!(
+                    "design.block-sketch-owned-no-sketch-operation",
+                    "a Block sketch is owned by {owner}, which has no Sketch operation"
+                ),
             );
         }
         let owns = match own {
@@ -422,13 +454,13 @@ fn check_ownership(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
                         .get(owner)
                         .is_some_and(|named| named.contains(sketch))
             }
-            None => names_sketch(index, feature, sketch),
+            None => names_sketch(feature, &override_defs, &mut cached_strings, sketch),
         };
         if !owns {
             error(
                 findings,
                 sketch,
-                format_args!("the sketch's owner {owner} neither holds it as its operation nor names it in its definition"),
+                crate::rule!("design.sketch-owner-neither-holds-operation-nor", "the sketch's owner {owner} neither holds it as its operation nor names it in its definition"),
             );
         }
     }
@@ -439,23 +471,16 @@ fn check_ownership(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
             _ => continue,
         };
         let owner = if planar {
-            design
-                .sketches
-                .iter()
-                .find(|s| s.id.as_str() == own)
-                .map(|s| s.owner.as_str())
+            index.sketches.get(own).map(|s| s.owner.as_str())
         } else {
-            design
-                .spatial_sketches
-                .iter()
-                .find(|s| s.id.as_str() == own)
-                .map(|s| s.owner.as_str())
+            index.spatial_sketches.get(own).map(|s| s.owner.as_str())
         };
         if owner != Some(feature.id.as_str()) {
             error(
                 findings,
                 feature.id.as_str(),
-                format_args!(
+                crate::rule!(
+                    "design.feature-sketch-operation-names-no-sketch",
                     "the feature's sketch operation names {own}, which is no sketch it owns"
                 ),
             );
@@ -465,21 +490,28 @@ fn check_ownership(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
 
 /// Whether a feature's definition, or a definition override of it, names
 /// the sketch.
-fn names_sketch(index: &DesignRecords<'_>, feature: &Feature, sketch: &str) -> bool {
-    let design = &index.ir.design;
-    let overrides = design
-        .configurations
-        .iter()
-        .map(|c| &c.overrides)
-        .chain(design.arrangements.iter().map(|a| &a.overrides))
-        .filter_map(|overrides| overrides.features.get(&feature.id)?.definition.as_ref());
-    std::iter::once(&feature.definition)
-        .chain(overrides)
-        .any(|definition| super::wire_strings(definition).contains(sketch))
+fn names_sketch<'a>(
+    feature: &'a Feature,
+    override_defs: &BTreeMap<&'a str, Vec<&'a crate::design::feature::FeatureDefinition>>,
+    cached_strings: &mut BTreeMap<&'a str, BTreeSet<String>>,
+    sketch: &str,
+) -> bool {
+    let strings = cached_strings
+        .entry(feature.id.as_str())
+        .or_insert_with(|| {
+            let mut found = super::wire_strings(&feature.definition);
+            if let Some(defs) = override_defs.get(feature.id.as_str()) {
+                for definition in defs {
+                    found.extend(super::wire_strings(*definition));
+                }
+            }
+            found
+        });
+    strings.contains(sketch)
 }
 
-fn check_space<S: Space>(
-    index: &DesignRecords<'_>,
+fn check_space<'a, S: Space + 'a>(
+    index: &DesignRecords<'a>,
     sketches: &Sketches<'_>,
     findings: &mut Vec<Finding>,
 ) {
@@ -493,7 +525,8 @@ fn check_space<S: Space>(
             error(
                 findings,
                 of,
-                format_args!(
+                crate::rule!(
+                    "design.entities-hold-one-role-entity",
                     "{} entities hold one role {role:?} of the entity",
                     holders.len()
                 ),
@@ -522,11 +555,12 @@ fn check_entity<S: Space>(
             .get(S::entity(other))
             .is_some_and(|other| S::sketch(&other.sketch) == sketch)
     };
-    let mut refuse = |message: std::fmt::Arguments<'_>| error(findings, id, message);
+    let mut refuse = |message: Ruled<'_>| error(findings, id, message);
     match &entity.definition {
         EntityDefinition::Free(curve) => {
             if S::shape(curve) == Shape::Spatial {
-                refuse(format_args!(
+                refuse(crate::rule!(
+                    "design.free-entity-planar-sketch-spatial-curve",
                     "a Free entity of a planar sketch has a Spatial curve"
                 ));
             }
@@ -543,19 +577,21 @@ fn check_entity<S: Space>(
                         | EntityForm::Native(_)
                 )
             {
-                refuse(format_args!(
+                refuse(crate::rule!("design.entity-solved-curve-none-only-derived", 
                     "the entity's solved curve is None; only Derived, Text, BlockInstance, and Native forms omit it"
                 ));
             }
             if shape == Some(Shape::Spatial) && !derived {
-                refuse(format_args!(
+                refuse(crate::rule!(
+                    "design.planarcurve-spatial-occurs-solved-curve-form",
                     "PlanarCurve::Spatial occurs as the solved curve of a form other than Derived"
                 ));
             }
             match &**form {
                 EntityForm::Interpolated(_) => {
                     if shape.is_some_and(|shape| !matches!(shape, Shape::Nurbs { .. })) {
-                        refuse(format_args!(
+                        refuse(crate::rule!(
+                            "design.interpolated-entity-solved-curve-not-nurbs",
                             "an Interpolated entity's solved curve is not a NURBS"
                         ));
                     }
@@ -571,7 +607,7 @@ fn check_entity<S: Space>(
                         )
                     );
                     if !conic {
-                        refuse(format_args!(
+                        refuse(crate::rule!("design.conic-entity-solved-curve-no-ellipse", 
                             "a Conic entity's solved curve is no ellipse, parabola, or hyperbola arc, nor a rational NURBS"
                         ));
                     }
@@ -583,13 +619,15 @@ fn check_entity<S: Space>(
                             crate::design::selection::Picks::Unread
                         )
                     {
-                        refuse(format_args!(
+                        refuse(crate::rule!(
+                            "design.derived-entity-no-solved-curve-unread",
                             "a Derived entity with no solved curve has an Unread source"
                         ));
                     }
                     if let DerivationMode::OntoFaces { faces, .. } = &derivation.mode {
                         if let Some(class) = super::picks::refused(faces, super::picks::is_face) {
-                            refuse(format_args!(
+                            refuse(crate::rule!(
+                                "design.derivationmode-ontofaces-faces-picks-not-face",
                                 "DerivationMode::OntoFaces.faces picks {class}, not a face"
                             ));
                         }
@@ -602,14 +640,16 @@ fn check_entity<S: Space>(
                         None => Vec::new(),
                     };
                     if !layout.into_iter().all(same) {
-                        refuse(format_args!(
+                        refuse(crate::rule!(
+                            "design.text-layout-names-entity-another-sketch",
                             "a text layout names an entity of another sketch"
                         ));
                     }
                     if text.text.vertical_box == Some(TextVerticalBox::CapHeight)
                         && text.text.vertical == Some(TextAlign::Baseline)
                     {
-                        refuse(format_args!(
+                        refuse(crate::rule!(
+                            "design.textcontent-aligned-capheight-states-vertical-baseline",
                             "a TextContent aligned to CapHeight states vertical Baseline"
                         ));
                     }
@@ -622,7 +662,8 @@ fn check_entity<S: Space>(
                         _ => None,
                     };
                     match block {
-                        None => refuse(format_args!(
+                        None => refuse(crate::rule!(
+                            "design.instanced-instance-no-blockinstance-entity-same",
                             "Instanced.instance is no BlockInstance entity of the same sketch"
                         )),
                         Some(block) => {
@@ -634,7 +675,8 @@ fn check_entity<S: Space>(
                                 .find(|e| e.id == *of)
                                 .is_some_and(|e| e.sketch.as_str() == block);
                             if !of_block {
-                                refuse(format_args!(
+                                refuse(crate::rule!(
+                                    "design.instanced-no-entity-instance-block-definition",
                                     "Instanced.of is no entity of the instance's block definition"
                                 ));
                             }
@@ -643,7 +685,10 @@ fn check_entity<S: Space>(
                 }
                 EntityForm::Frame => {
                     if shape.is_some_and(|shape| shape != Shape::Point) {
-                        refuse(format_args!("a Frame entity's solved curve is not a Point"));
+                        refuse(crate::rule!(
+                            "design.frame-entity-solved-curve-not-point",
+                            "a Frame entity's solved curve is not a Point"
+                        ));
                     }
                 }
                 EntityForm::BlockInstance(_) | EntityForm::Native(_) => {}
@@ -675,7 +720,8 @@ fn check_sketch_space<S: Space>(
         error(
             findings,
             record,
-            format_args!(
+            crate::rule!(
+                "design.record-sketch-names-sketch-other-space",
                 "the record of a {} sketch names {sketch}, a sketch of the other space",
                 S::NAME
             ),
@@ -684,7 +730,8 @@ fn check_sketch_space<S: Space>(
         error(
             findings,
             record,
-            format_args!(
+            crate::rule!(
+                "design.record-names-sketch-no-sketch",
                 "the record names sketch {sketch}, which is no {} sketch",
                 S::NAME
             ),
@@ -706,7 +753,10 @@ fn check_role<S: Space>(
         error(
             findings,
             id,
-            format_args!("the entity holds a role of {of}, which is no entity of its sketch"),
+            crate::rule!(
+                "design.entity-holds-role-no-entity-sketch",
+                "the entity holds a role of {of}, which is no entity of its sketch"
+            ),
         );
         return;
     }
@@ -726,9 +776,10 @@ fn check_role<S: Space>(
             | DefiningRole::Anchor
             | DefiningRole::Insertion
     );
-    let mut refuse = |message: std::fmt::Arguments<'_>| error(findings, id, message);
+    let mut refuse = |message: Ruled<'_>| error(findings, id, message);
     if point_role && !derived_unsolved && holder_shape.is_some_and(|shape| shape != Shape::Point) {
-        refuse(format_args!(
+        refuse(crate::rule!(
+            "design.entity-holds-point-role-no-point",
             "the entity holds the point role {role:?} but is no point"
         ));
     }
@@ -737,7 +788,8 @@ fn check_role<S: Space>(
     match role {
         DefiningRole::Start | DefiningRole::End => {
             if target.is_some_and(|shape| !shape.bounded()) {
-                refuse(format_args!(
+                refuse(crate::rule!(
+                    "design.targets-no-bounded-curve",
                     "{role:?} targets {of}, which is no bounded curve"
                 ));
             }
@@ -749,19 +801,27 @@ fn check_role<S: Space>(
                     Shape::Circle | Shape::Arc | Shape::Ellipse(_) | Shape::Hyperbola(_)
                 )
             }) {
-                refuse(format_args!(
+                refuse(crate::rule!(
+                    "design.center-targets-no-circle-arc-ellipse",
                     "Center targets {of}, which is no circle, arc, ellipse, or hyperbola"
                 ));
             }
         }
         DefiningRole::Apex if !matches!(form, Some(EntityForm::Conic { .. })) => {
-            refuse(format_args!("Apex targets {of}, which is no Conic"));
+            refuse(crate::rule!(
+                "design.apex-targets-no-conic",
+                "Apex targets {of}, which is no Conic"
+            ));
         }
         DefiningRole::Anchor if !matches!(form, Some(EntityForm::Text(_))) => {
-            refuse(format_args!("Anchor targets {of}, which is no Text"));
+            refuse(crate::rule!(
+                "design.anchor-targets-no-text",
+                "Anchor targets {of}, which is no Text"
+            ));
         }
         DefiningRole::Insertion if !matches!(form, Some(EntityForm::BlockInstance(_))) => {
-            refuse(format_args!(
+            refuse(crate::rule!(
+                "design.insertion-targets-no-blockinstance",
                 "Insertion targets {of}, which is no BlockInstance"
             ));
         }
@@ -773,7 +833,10 @@ fn check_role<S: Space>(
                     knots
                 };
                 if usize::try_from(*i).is_ok_and(|i| i >= count) {
-                    refuse(format_args!("{role:?} lies past the {count} of {of}"));
+                    refuse(crate::rule!(
+                        "design.lies-past",
+                        "{role:?} lies past the {count} of {of}"
+                    ));
                 }
             }
         }
@@ -791,7 +854,7 @@ fn check_role<S: Space>(
                     .is_none_or(|handle| handle.direction.is_none())
             });
             if !line || spline.is_none() || !fit || !free {
-                refuse(format_args!(
+                refuse(crate::rule!("design.handle-held-other-construction-line-interpolated", 
                     "Handle({i}) is held other than by a construction Line of an Interpolated spline with fit point {i} and an undirected handle there"
                 ));
             }
@@ -801,7 +864,8 @@ fn check_role<S: Space>(
             let axis =
                 holder.construction == Some(true) && holder_shape == Some(Shape::InfiniteLine);
             if !frame || !axis {
-                refuse(format_args!(
+                refuse(crate::rule!(
+                    "design.held-other-construction-infiniteline-frame-entity",
                     "{role:?} is held other than by a construction InfiniteLine of a Frame entity"
                 ));
             }
@@ -827,7 +891,10 @@ fn check_fit_indices<S: Space>(entities: &Entities<'_, S>, findings: &mut Vec<Fi
             error(
                 findings,
                 spline,
-                format_args!("the spline's Fit indices are not 0 to n−1 without gaps"),
+                crate::rule!(
+                    "design.spline-fit-indices-not-0-n",
+                    "the spline's Fit indices are not 0 to n−1 without gaps"
+                ),
             );
         }
     }
@@ -852,7 +919,10 @@ impl<S: Space> Operands<'_, '_, S> {
             error(
                 findings,
                 self.id,
-                format_args!("the constraint names {name}, which is no entity of its sketch"),
+                crate::rule!(
+                    "design.constraint-names-no-entity-sketch",
+                    "the constraint names {name}, which is no entity of its sketch"
+                ),
             );
         }
     }
@@ -865,7 +935,10 @@ impl<S: Space> Operands<'_, '_, S> {
                     error(
                         findings,
                         self.id,
-                        format_args!("Operand::Frame occurs in a spatial sketch"),
+                        crate::rule!(
+                            "design.operand-frame-occurs-spatial-sketch",
+                            "Operand::Frame occurs in a spatial sketch"
+                        ),
                     );
                 } else if !matches!(
                     principal,
@@ -874,7 +947,10 @@ impl<S: Space> Operands<'_, '_, S> {
                     error(
                         findings,
                         self.id,
-                        format_args!("Operand::Frame names other than XAxis, YAxis, or Origin"),
+                        crate::rule!(
+                            "design.operand-frame-names-other-xaxis-yaxis",
+                            "Operand::Frame names other than XAxis, YAxis, or Origin"
+                        ),
                     );
                 }
             }
@@ -888,7 +964,10 @@ impl<S: Space> Operands<'_, '_, S> {
                     error(
                         findings,
                         self.id,
-                        format_args!("a Model operand picks its own sketch's SketchFrame"),
+                        crate::rule!(
+                            "design.model-operand-picks-own-sketch-sketchframe",
+                            "a Model operand picks its own sketch's SketchFrame"
+                        ),
                     );
                 }
             }
@@ -906,13 +985,19 @@ impl<S: Space> Operands<'_, '_, S> {
         }
     }
 
-    fn refuse(&self, findings: &mut Vec<Finding>, message: std::fmt::Arguments<'_>) {
+    fn refuse(&self, findings: &mut Vec<Finding>, message: Ruled<'_>) {
         error(findings, self.id, message);
     }
 
     fn planar_only(&self, findings: &mut Vec<Finding>, what: &str) {
         if !S::PLANAR {
-            self.refuse(findings, format_args!("{what} occurs in a spatial sketch"));
+            self.refuse(
+                findings,
+                crate::rule!(
+                    "design.occurs-spatial-sketch",
+                    "{what} occurs in a spatial sketch"
+                ),
+            );
         }
     }
 
@@ -973,7 +1058,7 @@ fn check_constraint<S: Space>(
         error(
             findings,
             id,
-            format_args!("a dimension constraint that binds a parameter states a name; the parameter's name is its name"),
+            crate::rule!("design.dimension-constraint-binds-parameter-states-name", "a dimension constraint that binds a parameter states a name; the parameter's name is its name"),
         );
     }
     check_bound_scope(index, sketches, id, sketch, &constraint.relation, findings);
@@ -992,7 +1077,9 @@ fn check_bound_scope<T: serde::Serialize>(
     let Some(scope) = sketches.owner_scope(index, sketch) else {
         return;
     };
-    let Ok(wire) = serde_json::to_value(value) else {
+    let Ok(wire) =
+        cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| value.serialize(adapter))
+    else {
         return;
     };
     let bound = super::tagged(&wire, "parameter")
@@ -1005,7 +1092,7 @@ fn check_bound_scope<T: serde::Serialize>(
                 error(
                     findings,
                     id,
-                    format_args!("the sketch dimension binds {parameter}, a parameter of another scope than the sketch owner's"),
+                    crate::rule!("design.sketch-dimension-binds-parameter-another-scope", "the sketch dimension binds {parameter}, a parameter of another scope than the sketch owner's"),
                 );
             }
         }
@@ -1034,7 +1121,10 @@ fn check_relation<S: Space>(
                 {
                     ops.refuse(
                         findings,
-                        format_args!("a Concentric operand is not circular or elliptic"),
+                        crate::rule!(
+                            "design.concentric-operand-not-circular-elliptic",
+                            "a Concentric operand is not circular or elliptic"
+                        ),
                     );
                 }
             }
@@ -1055,7 +1145,8 @@ fn check_relation<S: Space>(
                     if !bounds(p, a) || !bounds(q, b) {
                         ops.refuse(
                             findings,
-                            format_args!(
+                            crate::rule!(
+                                "design.contact-ends-names-point-does-not",
                                 "Contact::Ends names a point that does not bound its curve"
                             ),
                         );
@@ -1064,7 +1155,13 @@ fn check_relation<S: Space>(
                 Some(Contact::Via(point)) => {
                     ops.entity(point, findings);
                     if !ops.point(point) {
-                        ops.refuse(findings, format_args!("Contact::Via names no point entity"));
+                        ops.refuse(
+                            findings,
+                            crate::rule!(
+                                "design.contact-via-names-no-point-entity",
+                                "Contact::Via names no point entity"
+                            ),
+                        );
                     }
                 }
                 None => {}
@@ -1085,7 +1182,10 @@ fn check_relation<S: Space>(
             if !fits {
                 ops.refuse(
                     findings,
-                    format_args!("Horizontal or Vertical takes one line or two points"),
+                    crate::rule!(
+                        "design.horizontal-vertical-takes-one-line-two",
+                        "Horizontal or Vertical takes one line or two points"
+                    ),
                 );
             }
         }
@@ -1095,7 +1195,10 @@ fn check_relation<S: Space>(
             if !ops.point(point) || ops.shape(of).is_some_and(|shape| !shape.bounded()) {
                 ops.refuse(
                     findings,
-                    format_args!("Midpoint takes a point entity and a bounded curve"),
+                    crate::rule!(
+                        "design.midpoint-takes-point-entity-bounded-curve",
+                        "Midpoint takes a point entity and a bounded curve"
+                    ),
                 );
             }
         }
@@ -1112,7 +1215,7 @@ fn check_relation<S: Space>(
             let lines = shapes.iter().all(|&shape| line(shape));
             let circles = shapes.iter().all(|shape| shape.circular());
             if members.len() < 2 || !(lines || circles) {
-                ops.refuse(findings, format_args!("Equal takes at least two members of one kind class, lines or circular entities"));
+                ops.refuse(findings, crate::rule!("design.equal-takes-least-two-members-one", "Equal takes at least two members of one kind class, lines or circular entities"));
             }
         }
         SketchRelation::EqualDistance { first, second } => {
@@ -1150,7 +1253,10 @@ fn check_relation<S: Space>(
                     }) {
                         ops.refuse(
                             findings,
-                            format_args!("AngleOperands::Sweep names no arc or elliptic arc"),
+                            crate::rule!(
+                                "design.angleoperands-sweep-names-no-arc-elliptic",
+                                "AngleOperands::Sweep names no arc or elliptic arc"
+                            ),
                         );
                     }
                 }
@@ -1161,7 +1267,10 @@ fn check_relation<S: Space>(
                     if !points.iter().all(|point| ops.point(point)) {
                         ops.refuse(
                             findings,
-                            format_args!("AngleOperands::Points names an entity that is no point"),
+                            crate::rule!(
+                                "design.angleoperands-points-names-entity-no-point",
+                                "AngleOperands::Points names an entity that is no point"
+                            ),
                         );
                     }
                 }
@@ -1183,13 +1292,19 @@ fn check_relation<S: Space>(
             if refused {
                 ops.refuse(
                     findings,
-                    format_args!("Radial.of is no circle, arc, or ellipse its measure applies to"),
+                    crate::rule!(
+                        "design.radial-no-circle-arc-ellipse-measure",
+                        "Radial.of is no circle, arc, or ellipse its measure applies to"
+                    ),
                 );
             }
         }
         SketchRelation::Length { of, .. } => {
             if of.is_empty() {
-                ops.refuse(findings, format_args!("Length.of is empty"));
+                ops.refuse(
+                    findings,
+                    crate::rule!("design.length-empty", "Length.of is empty"),
+                );
             }
             for entity in of {
                 ops.entity(entity, findings);
@@ -1197,7 +1312,13 @@ fn check_relation<S: Space>(
         }
         SketchRelation::Offset(offset) => {
             if offset.pairs.is_empty() {
-                ops.refuse(findings, format_args!("SketchOffset.pairs is empty"));
+                ops.refuse(
+                    findings,
+                    crate::rule!(
+                        "design.sketchoffset-pairs-empty",
+                        "SketchOffset.pairs is empty"
+                    ),
+                );
             }
             let mut results = BTreeSet::new();
             let sources: BTreeSet<&str> = offset.pairs.iter().map(|[s, _]| S::entity(s)).collect();
@@ -1206,7 +1327,7 @@ fn check_relation<S: Space>(
                 ops.entity(result, findings);
                 let result = S::entity(result);
                 if !results.insert(result) || sources.contains(result) {
-                    ops.refuse(findings, format_args!("an offset result is a result in two pairs or a source of the same offset"));
+                    ops.refuse(findings, crate::rule!("design.offset-result-result-two-pairs-source", "an offset result is a result in two pairs or a source of the same offset"));
                 }
             }
         }
@@ -1223,7 +1344,10 @@ fn check_relation<S: Space>(
             if polygon.edges.len() < 3 || !lines {
                 ops.refuse(
                     findings,
-                    format_args!("SketchPolygon.edges holds fewer than three lines"),
+                    crate::rule!(
+                        "design.sketchpolygon-edges-holds-fewer-three-lines",
+                        "SketchPolygon.edges holds fewer than three lines"
+                    ),
                 );
             }
             match &polygon.circle {
@@ -1235,14 +1359,20 @@ fn check_relation<S: Space>(
                     {
                         ops.refuse(
                             findings,
-                            format_args!("SketchPolygon.circle is no circle entity"),
+                            crate::rule!(
+                                "design.sketchpolygon-circle-no-circle-entity",
+                                "SketchPolygon.circle is no circle entity"
+                            ),
                         );
                     }
                 }
                 None if polygon.inscribed.is_some() => {
                     ops.refuse(
                         findings,
-                        format_args!("SketchPolygon.inscribed occurs without a circle"),
+                        crate::rule!(
+                            "design.sketchpolygon-inscribed-occurs-without-circle",
+                            "SketchPolygon.inscribed occurs without a circle"
+                        ),
                     );
                 }
                 None => {}
@@ -1255,7 +1385,10 @@ fn check_relation<S: Space>(
             if !slot.centers.iter().all(|center| ops.point(center)) {
                 ops.refuse(
                     findings,
-                    format_args!("SketchSlot.centers names an entity that is no point"),
+                    crate::rule!(
+                        "design.sketchslot-centers-names-entity-no-point",
+                        "SketchSlot.centers names an entity that is no point"
+                    ),
                 );
             }
         }
@@ -1263,7 +1396,13 @@ fn check_relation<S: Space>(
             ops.entity(point, findings);
             ops.operand(curve, findings);
             if !ops.point(point) {
-                ops.refuse(findings, format_args!("Pierce.point is no point entity"));
+                ops.refuse(
+                    findings,
+                    crate::rule!(
+                        "design.pierce-point-no-point-entity",
+                        "Pierce.point is no point entity"
+                    ),
+                );
             }
         }
         SketchRelation::Weight { pole, .. } => {
@@ -1281,7 +1420,10 @@ fn check_relation<S: Space>(
             if !holds {
                 ops.refuse(
                     findings,
-                    format_args!("Weight.pole holds no Pole role of a spline entity"),
+                    crate::rule!(
+                        "design.weight-pole-holds-no-pole-role",
+                        "Weight.pole holds no Pole role of a spline entity"
+                    ),
                 );
             }
         }
@@ -1295,7 +1437,8 @@ fn check_relation<S: Space>(
             if of.is_empty() || !lines {
                 ops.refuse(
                     findings,
-                    format_args!(
+                    crate::rule!(
+                        "design.fixedlength-fixedangle-names-no-lines-entity",
                         "FixedLength or FixedAngle names no lines, or an entity that is no line"
                     ),
                 );
@@ -1315,7 +1458,13 @@ fn check_pattern<S: Space>(
     findings: &mut Vec<Finding>,
 ) {
     if pattern.seeds.is_empty() {
-        ops.refuse(findings, format_args!("SketchPattern.seeds is empty"));
+        ops.refuse(
+            findings,
+            crate::rule!(
+                "design.sketchpattern-seeds-empty",
+                "SketchPattern.seeds is empty"
+            ),
+        );
     }
     let site = Site {
         entity: ops.id,
@@ -1334,7 +1483,8 @@ fn check_pattern<S: Space>(
             if !(1..=2).contains(&directions.len()) {
                 ops.refuse(
                     findings,
-                    format_args!(
+                    crate::rule!(
+                        "design.linear-sketch-pattern-directions-one-two",
                         "a Linear sketch pattern has {} directions; it has one or two",
                         directions.len()
                     ),
@@ -1383,18 +1533,30 @@ fn check_pattern<S: Space>(
         if indices.contains(&&instance.index) {
             ops.refuse(
                 findings,
-                format_args!(
+                crate::rule!(
+                    "design.sketch-pattern-instance-index-repeats",
                     "sketch pattern instance index {:?} repeats",
                     instance.index.0
                 ),
             );
         }
         indices.push(&instance.index);
+        if instance_in_counts(&pattern.layout, &instance.index) == Some(false) {
+            ops.refuse(
+                findings,
+                crate::rule!(
+                    "design.sketch-pattern-instance-index-lies-outside",
+                    "sketch pattern instance index {:?} lies outside its layout's runs",
+                    instance.index.0
+                ),
+            );
+        }
         let suppressed = instance.suppressed == Some(true);
         if !suppressed && instance.entities.len() != pattern.seeds.len() {
             ops.refuse(
                 findings,
-                format_args!(
+                crate::rule!(
+                    "design.sketch-pattern-instance-entities-seeds",
                     "a sketch pattern instance has {} entities for {} seeds",
                     instance.entities.len(),
                     pattern.seeds.len()
@@ -1407,12 +1569,39 @@ fn check_pattern<S: Space>(
             if !placed.insert(entity) || seeds.contains(entity) {
                 ops.refuse(
                     findings,
-                    format_args!(
+                    crate::rule!(
+                        "design.sketch-entity-two-instances-both-seed",
                         "sketch entity {entity} is in two instances or both seed and instance"
                     ),
                 );
             }
         }
+    }
+}
+
+/// Whether a sketch pattern instance index has one coordinate per run of the
+/// layout, each in its run's coordinate range (§6.5, Coordinate range), the
+/// seed first. `None` for a `Native` layout, which states no runs.
+fn instance_in_counts<S: SketchSpace>(
+    layout: &SketchPatternLayout<S>,
+    index: &crate::design::names::InstanceIndex,
+) -> Option<bool> {
+    use super::super::names::seed_first_run_admits;
+    let coordinates = &index.0;
+    match layout {
+        SketchPatternLayout::Linear { directions } => Some(
+            coordinates.len() == directions.len()
+                && coordinates.iter().zip(directions).all(|(value, axis)| {
+                    seed_first_run_admits(&axis.spacing, axis.sides.as_ref(), i64::from(*value))
+                }),
+        ),
+        SketchPatternLayout::Circular { spacing, sides, .. } => {
+            Some(match coordinates.as_slice() {
+                [value] => seed_first_run_admits(spacing, sides.as_ref(), i64::from(*value)),
+                _ => false,
+            })
+        }
+        SketchPatternLayout::Native(_) => None,
     }
 }
 
@@ -1437,7 +1626,10 @@ fn check_block_cycles(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
                 error(
                     findings,
                     start,
-                    format_args!("block instancing places the sketch inside itself"),
+                    crate::rule!(
+                        "design.block-instancing-places-sketch-inside-itself",
+                        "block instancing places the sketch inside itself"
+                    ),
                 );
                 break;
             }
@@ -1450,32 +1642,33 @@ fn check_block_cycles(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
 
 /// Every `SketchRegion` pick: a nonempty outer boundary of non-construction
 /// curves of its sketch, and fragments below their counts.
-fn check_regions(index: &DesignRecords<'_>, wire: &Value, findings: &mut Vec<Finding>) {
-    let entities: BTreeMap<&str, &SketchEntity<Planar>> = index
-        .ir
-        .design
-        .sketch_entities
-        .iter()
-        .map(|e| (e.id.as_str(), e))
-        .collect();
-    for found in super::tagged(wire, "sketch_region") {
-        let Ok(PickTarget::SketchRegion { sketch, region }) =
-            serde_json::from_value::<PickTarget>(found.clone())
-        else {
-            continue;
-        };
+pub(super) fn check_regions(
+    index: &DesignRecords<'_>,
+    sketch_regions: &[(
+        &crate::sketches::SketchId,
+        &crate::design::selection::SketchRegion,
+    )],
+    findings: &mut Vec<Finding>,
+) {
+    if sketch_regions.is_empty() {
+        return;
+    }
+    for &(sketch, region) in sketch_regions {
         let at = sketch.as_str();
         if region.outer.is_empty() {
             error(
                 findings,
                 at,
-                format_args!("a SketchRegion's outer boundary is empty"),
+                crate::rule!(
+                    "design.sketchregion-outer-boundary-empty",
+                    "a SketchRegion's outer boundary is empty"
+                ),
             );
         }
         for boundary in region.outer.iter().chain(region.holes.iter().flatten()) {
-            let entity = entities.get(boundary.entity.as_str());
+            let entity = index.sketch_entities.get(boundary.entity.as_str()).copied();
             let curve = entity.is_some_and(|entity| {
-                entity.sketch == sketch
+                &entity.sketch == sketch
                     && entity.construction != Some(true)
                     && curve(entity).is_none_or(|c| Planar::shape(c) != Shape::Point)
             });
@@ -1483,7 +1676,7 @@ fn check_regions(index: &DesignRecords<'_>, wire: &Value, findings: &mut Vec<Fin
                 error(
                     findings,
                     at,
-                    format_args!("a SketchRegion boundary use names {}, which is no non-construction curve of the sketch", boundary.entity.as_str()),
+                    crate::rule!("design.sketchregion-boundary-use-names-no-non", "a SketchRegion boundary use names {}, which is no non-construction curve of the sketch", boundary.entity.as_str()),
                 );
             }
             if boundary
@@ -1494,7 +1687,10 @@ fn check_regions(index: &DesignRecords<'_>, wire: &Value, findings: &mut Vec<Fin
                 error(
                     findings,
                     at,
-                    format_args!("a SketchRegion boundary fragment's index is not below its count"),
+                    crate::rule!(
+                        "design.sketchregion-boundary-fragment-index-not-below",
+                        "a SketchRegion boundary fragment's index is not below its count"
+                    ),
                 );
             }
         }

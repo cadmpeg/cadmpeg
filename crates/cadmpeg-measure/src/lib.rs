@@ -47,6 +47,7 @@ mod failure;
 mod flux;
 mod geom;
 mod length;
+mod loss;
 mod occurrence;
 mod orientation;
 mod owners;
@@ -68,6 +69,21 @@ pub use budget::{
     WorkProfile, MAX_MEASURE_PASS_WORK_PER_ITEM, MAX_MEASURE_PASS_WORK_PER_ITEM_SERVICE,
     MEASURE_PASS_WORK_FLOOR,
 };
+
+pub(crate) type FastMap<K, V> = std::collections::HashMap<K, V, cadmpeg_ir::index::FastBuildHasher>;
+
+#[inline]
+pub(crate) fn fast_map<K, V>() -> FastMap<K, V> {
+    std::collections::HashMap::with_hasher(cadmpeg_ir::index::FastBuildHasher::default())
+}
+
+#[inline]
+pub(crate) fn fast_map_with_capacity<K, V>(capacity: usize) -> FastMap<K, V> {
+    std::collections::HashMap::with_capacity_and_hasher(
+        capacity,
+        cadmpeg_ir::index::FastBuildHasher::default(),
+    )
+}
 pub use declared::declared_findings;
 pub use select::{FaceFilter, RadiusRange, Selection, SurfaceKind};
 pub use session::{

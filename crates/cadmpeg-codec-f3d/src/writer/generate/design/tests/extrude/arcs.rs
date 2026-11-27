@@ -658,7 +658,7 @@ pub(super) enum Side {
 /// `loops`. Each loop lists its corners in run order with the material on
 /// the left (the exterior counterclockwise, holes clockwise), each with its
 /// side to the next corner; one corner with an arc side is a whole circle.
-fn prism(loops: &[Vec<([f64; 2], Side)>], [bottom, top]: [f64; 2]) -> CadIr {
+pub(super) fn prism(loops: &[Vec<([f64; 2], Side)>], [bottom, top]: [f64; 2]) -> CadIr {
     let height = top - bottom;
     let z_axis = Vector3::new(0.0, 0.0, 1.0);
     let x_axis = Vector3::new(1.0, 0.0, 0.0);

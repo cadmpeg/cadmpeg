@@ -329,6 +329,9 @@ pub(crate) struct AsmHistoricalTopology {
     /// Model-space samples of the bounded curve carriers of edges in this state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) edge_samples: Vec<AsmHistoricalEdgeSample>,
+    /// Model-space carrier surfaces of faces in this state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) face_samples: Vec<AsmHistoricalFaceSample>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -481,6 +484,14 @@ pub(crate) struct AsmHistoricalEdgeSample {
         deserialize_with = "deserialize_edge_sample_carrier"
     )]
     pub(crate) carrier: Option<cadmpeg_ir::features::evaluation::HistoricalEdgeCarrier>,
+}
+
+/// Carrier surface of one face and the face's sense on it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct AsmHistoricalFaceSample {
+    pub(crate) face: i64,
+    pub(crate) surface: cadmpeg_ir::features::evaluation::HistoricalFaceSurface,
+    pub(crate) reversed: bool,
 }
 
 /// Ordered stable entity-slot relation in a historical B-rep.
@@ -959,6 +970,7 @@ impl From<AsmEntityChange> for AsmEntityChangeSerde {
 #[cfg(test)]
 mod tests {
     use super::AsmDeltaState;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn transient_envelopes_preserve_topology_identity_and_wire() {
@@ -978,8 +990,8 @@ mod tests {
         });
         assert_eq!(empty, cached);
         assert_eq!(
-            serde_json::to_vec(&empty).unwrap(),
-            serde_json::to_vec(&cached).unwrap()
+            json::to_vec(&empty).unwrap(),
+            json::to_vec(&cached).unwrap()
         );
         let rows = AsmHistoricalRowsDelta {
             face_envelopes: AsmHistoricalRowDelta {
@@ -992,8 +1004,8 @@ mod tests {
         let empty_rows = AsmHistoricalRowsDelta::default();
         assert_eq!(rows, empty_rows);
         assert_eq!(
-            serde_json::to_vec(&rows).unwrap(),
-            serde_json::to_vec(&empty_rows).unwrap()
+            json::to_vec(&rows).unwrap(),
+            json::to_vec(&empty_rows).unwrap()
         );
     }
 
@@ -1020,10 +1032,7 @@ mod tests {
                 raw_bytes: (b"history payload".to_vec()).into(),
             };
             let old = AsmHistoryRecordWire::from(record.clone());
-            assert_eq!(
-                serde_json::to_vec(&record).unwrap(),
-                serde_json::to_vec(&old).unwrap()
-            );
+            assert_eq!(json::to_vec(&record).unwrap(), json::to_vec(&old).unwrap());
         }
     }
 
@@ -1043,7 +1052,7 @@ mod tests {
             },
             raw_bytes: (vec![0xab; 4096]).into(),
         };
-        let needed = serde_json::to_vec(&record).unwrap().len();
+        let needed = json::to_vec(&record).unwrap().len();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -1076,8 +1085,8 @@ mod tests {
             .unwrap();
         let stored = &namespace.arenas()["asm_history_records"][0];
         assert_eq!(
-            serde_json::to_value(stored).unwrap(),
-            serde_json::to_value(&record).unwrap()
+            json::to_value(stored).unwrap(),
+            json::to_value(&record).unwrap()
         );
     }
 
@@ -1098,8 +1107,8 @@ mod tests {
             };
             let owned = AsmEntityChangeSerde::from(change.clone());
             assert_eq!(
-                serde_json::to_vec(&change).unwrap(),
-                serde_json::to_vec(&owned).unwrap()
+                json::to_vec(&change).unwrap(),
+                json::to_vec(&owned).unwrap()
             );
         }
     }
@@ -1114,7 +1123,7 @@ mod tests {
             byte_offset: 12,
             kind: super::AsmEntityChangeKind::Update { old: 8, new: 7 },
         };
-        let needed = serde_json::to_vec(&change).unwrap().len();
+        let needed = json::to_vec(&change).unwrap().len();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -1146,8 +1155,8 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            serde_json::to_value(&namespace.arenas()["asm_entity_changes"][0]).unwrap(),
-            serde_json::to_value(&change).unwrap()
+            json::to_value(&namespace.arenas()["asm_entity_changes"][0]).unwrap(),
+            json::to_value(&change).unwrap()
         );
     }
 
@@ -1156,7 +1165,7 @@ mod tests {
         let wire = r#"{"id":"state","parent":"history","byte_offset":0,"state_id":1,"version_flag":1,"state_flag":0,"node_index":1,"owner_ref":0,"bulletin_boards":[],"records":[]}"#;
         let state: AsmDeltaState = serde_json::from_str(wire).unwrap();
         assert!(state.transition.is_none());
-        assert_eq!(serde_json::to_string(&state).unwrap(), wire);
+        assert_eq!(json::to_string(&state).unwrap(), wire);
     }
     #[test]
     fn history_record_framing_preserves_wire_and_rejects_opaque_metadata() {
@@ -1168,7 +1177,7 @@ mod tests {
         ] {
             let wire = format!("{prefix}{fields},\"raw_bytes\":\"\"}}");
             let record: super::AsmHistoryRecord = serde_json::from_str(&wire).unwrap();
-            assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+            assert_eq!(json::to_string(&record).unwrap(), wire);
         }
         for fields in [
             r#""edge","framing_error":"invalid frame""#,
@@ -1328,6 +1337,8 @@ pub(crate) struct AsmHistoricalRowsDelta {
     pub(crate) point_positions: AsmHistoricalRowDelta<AsmHistoricalPoint>,
     #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
     pub(crate) edge_samples: AsmHistoricalRowDelta<AsmHistoricalEdgeSample>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) face_samples: AsmHistoricalRowDelta<AsmHistoricalFaceSample>,
 }
 
 impl AsmHistoricalRow for AsmHistoricalEntityTags {
@@ -1371,6 +1382,12 @@ impl AsmHistoricalRow for AsmHistoricalEdge {
 impl AsmHistoricalRow for AsmHistoricalEdgeSample {
     fn key(&self) -> i64 {
         self.edge
+    }
+}
+
+impl AsmHistoricalRow for AsmHistoricalFaceSample {
+    fn key(&self) -> i64 {
+        self.face
     }
 }
 

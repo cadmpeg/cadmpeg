@@ -29,10 +29,15 @@ roxmltree.workspace = true
 serde.workspace = true
 schemars = { workspace = true, optional = true }
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
 toml.workspace = true
+
+[[test]]
+name = "schema_derives"
+required-features = ["schema"]
 
 [lints]
 workspace = true

@@ -16,9 +16,11 @@ use std::rc::Rc;
 
 use crate::design::names::{Generator, TopoName};
 use crate::document::Topology;
-use crate::geometry::Curve;
+use crate::geometry::{Curve, Surface};
 use crate::schema::EntitySchema;
-use crate::topology::{Coedge, Edge, Loop, LoopBoundary, Point, Vertex};
+use crate::topology::{
+    Body, Coedge, Edge, Face, Loop, LoopBoundary, Point, Region, Shell, ShellMember, Vertex,
+};
 
 use super::selections::Stored;
 use super::states::{Extent, States};
@@ -56,26 +58,45 @@ impl Entry {
 /// The topology records of one stored state, by identity, and the adjacency
 /// the matching rule reads.
 pub(super) struct StateTopology<'a> {
+    pub(super) bodies: BTreeMap<&'a str, &'a Body>,
+    regions: BTreeMap<&'a str, &'a Region>,
+    shells: BTreeMap<&'a str, &'a Shell>,
+    pub(super) faces: BTreeMap<&'a str, &'a Face>,
     pub(super) edges: BTreeMap<&'a str, &'a Edge>,
     pub(super) vertices: BTreeMap<&'a str, &'a Vertex>,
     pub(super) points: BTreeMap<&'a str, &'a Point>,
     pub(super) curves: BTreeMap<&'a str, &'a Curve>,
+    pub(super) surfaces: BTreeMap<&'a str, &'a Surface>,
     /// The faces that use each edge through a coedge.
-    edge_faces: BTreeMap<&'a str, BTreeSet<&'a str>>,
+    pub(super) edge_faces: BTreeMap<&'a str, BTreeSet<&'a str>>,
     /// The faces on which each vertex lies.
-    vertex_faces: BTreeMap<&'a str, BTreeSet<&'a str>>,
+    pub(super) vertex_faces: BTreeMap<&'a str, BTreeSet<&'a str>>,
+    /// The edges that each vertex ends.
+    vertex_edges: BTreeMap<&'a str, BTreeSet<&'a str>>,
+    /// The shells that list each wire edge.
+    wire_shells: BTreeMap<&'a str, Vec<&'a Shell>>,
+    /// The shells that list each free vertex.
+    free_shells: BTreeMap<&'a str, Vec<&'a Shell>>,
+    /// The face loops that use each edge through a coedge.
+    pub(super) edge_loops: BTreeMap<&'a str, BTreeSet<&'a str>>,
+    /// The edges each face loop uses through its coedges.
+    pub(super) loop_edges: BTreeMap<&'a str, BTreeSet<&'a str>>,
 }
 
 /// The records of one stored state, collected before adjacency is derived.
 #[derive(Default)]
 struct Collected<'a> {
-    faces: BTreeSet<&'a str>,
+    bodies: BTreeMap<&'a str, &'a Body>,
+    regions: BTreeMap<&'a str, &'a Region>,
+    shells: BTreeMap<&'a str, &'a Shell>,
+    faces: BTreeMap<&'a str, &'a Face>,
     loops: BTreeMap<&'a str, &'a Loop>,
     coedges: BTreeMap<&'a str, &'a Coedge>,
     edges: BTreeMap<&'a str, &'a Edge>,
     vertices: BTreeMap<&'a str, &'a Vertex>,
     points: BTreeMap<&'a str, &'a Point>,
     curves: BTreeMap<&'a str, &'a Curve>,
+    surfaces: BTreeMap<&'a str, &'a Surface>,
 }
 
 impl<'a> Collected<'a> {
@@ -99,33 +120,35 @@ impl<'a> Collected<'a> {
                 }
             }
         }
-        for face in &topology.faces {
-            let id = face.identity();
-            if keep(id) {
-                self.faces.insert(id);
-            }
-        }
+        put(&mut self.bodies, &topology.bodies, keep);
+        put(&mut self.regions, &topology.regions, keep);
+        put(&mut self.shells, &topology.shells, keep);
+        put(&mut self.faces, &topology.faces, keep);
         put(&mut self.loops, &topology.loops, keep);
         put(&mut self.coedges, &topology.coedges, keep);
         put(&mut self.edges, &topology.edges, keep);
         put(&mut self.vertices, &topology.vertices, keep);
         put(&mut self.points, &topology.points, carry);
         put(&mut self.curves, &topology.curves, carry);
+        put(&mut self.surfaces, &topology.surfaces, carry);
     }
 
     fn finish(self) -> StateTopology<'a> {
         let mut edge_faces: BTreeMap<&'a str, BTreeSet<&'a str>> = BTreeMap::new();
         let mut vertex_faces: BTreeMap<&'a str, BTreeSet<&'a str>> = BTreeMap::new();
+        let mut edge_loops: BTreeMap<&'a str, BTreeSet<&'a str>> = BTreeMap::new();
+        let mut loop_edges: BTreeMap<&'a str, BTreeSet<&'a str>> = BTreeMap::new();
         for coedge in self.coedges.values() {
             let Some(record) = self.loops.get(coedge.owner_loop.as_str()) else {
                 continue;
             };
             let face = record.face.as_str();
-            if self.faces.contains(face) && self.edges.contains_key(coedge.edge.as_str()) {
-                edge_faces
-                    .entry(coedge.edge.as_str())
-                    .or_default()
-                    .insert(face);
+            let edge = coedge.edge.as_str();
+            if self.faces.contains_key(face) && self.edges.contains_key(edge) {
+                edge_faces.entry(edge).or_default().insert(face);
+                let id = record.id.as_str();
+                edge_loops.entry(edge).or_default().insert(id);
+                loop_edges.entry(id).or_default().insert(edge);
             }
         }
         for (edge, faces) in &edge_faces {
@@ -136,9 +159,33 @@ impl<'a> Collected<'a> {
                     .extend(faces.iter().copied());
             }
         }
+        let mut vertex_edges: BTreeMap<&'a str, BTreeSet<&'a str>> = BTreeMap::new();
+        for (edge, record) in &self.edges {
+            for vertex in record.vertices() {
+                vertex_edges
+                    .entry(vertex.as_str())
+                    .or_default()
+                    .insert(edge);
+            }
+        }
+        let mut wire_shells: BTreeMap<&'a str, Vec<&'a Shell>> = BTreeMap::new();
+        let mut free_shells: BTreeMap<&'a str, Vec<&'a Shell>> = BTreeMap::new();
+        for &shell in self.shells.values() {
+            for member in &shell.members {
+                match member {
+                    ShellMember::WireEdge { id } => {
+                        wire_shells.entry(id.as_str()).or_default().push(shell);
+                    }
+                    ShellMember::FreeVertex { id } => {
+                        free_shells.entry(id.as_str()).or_default().push(shell);
+                    }
+                    ShellMember::Subd { .. } => {}
+                }
+            }
+        }
         for record in self.loops.values() {
             if let LoopBoundary::Vertex { vertex, .. } = &record.boundary {
-                if self.faces.contains(record.face.as_str()) {
+                if self.faces.contains_key(record.face.as_str()) {
                     vertex_faces
                         .entry(vertex.as_str())
                         .or_default()
@@ -147,17 +194,34 @@ impl<'a> Collected<'a> {
             }
         }
         StateTopology {
+            bodies: self.bodies,
+            regions: self.regions,
+            shells: self.shells,
+            faces: self.faces,
             edges: self.edges,
             vertices: self.vertices,
             points: self.points,
             curves: self.curves,
+            surfaces: self.surfaces,
             edge_faces,
             vertex_faces,
+            vertex_edges,
+            wire_shells,
+            free_shells,
+            edge_loops,
+            loop_edges,
         }
     }
 }
 
 impl<'a> StateTopology<'a> {
+    /// Every record of `geometry`.
+    pub(super) fn of_geometry(geometry: &'a Topology) -> Self {
+        let mut collected = Collected::default();
+        collected.add(geometry, &|_| true, &|_| true);
+        collected.finish()
+    }
+
     fn of_extents(geometry: &'a Topology, extents: &[&Extent<'a>]) -> Self {
         let mut collected = Collected::default();
         collected.add(
@@ -188,6 +252,56 @@ impl<'a> StateTopology<'a> {
         Some(collected.finish())
     }
 
+    /// The body that holds `face` through its shell and region, where the
+    /// state holds them.
+    pub(super) fn face_body(&self, face: &str) -> Option<&'a Body> {
+        let face = self.faces.get(face)?;
+        let shell = self.shells.get(face.shell.as_str())?;
+        self.shell_body(shell)
+    }
+
+    fn shell_body(&self, shell: &Shell) -> Option<&'a Body> {
+        let region = self.regions.get(shell.region.as_str())?;
+        self.bodies.get(region.body.as_str()).copied()
+    }
+
+    /// The bodies that hold `edge`: those of the faces that use it and of the
+    /// shells that own it as a wire edge.
+    pub(super) fn edge_bodies(&self, edge: &str) -> BTreeSet<&'a str> {
+        let mut bodies: BTreeSet<&'a str> = self
+            .edge_faces
+            .get(edge)
+            .into_iter()
+            .flatten()
+            .filter_map(|face| self.face_body(face))
+            .map(|body| body.id.as_str())
+            .collect();
+        for &shell in self.wire_shells.get(edge).into_iter().flatten() {
+            bodies.extend(self.shell_body(shell).map(|body| body.id.as_str()));
+        }
+        bodies
+    }
+
+    /// The bodies that hold `vertex`: those of the faces it lies on, of the
+    /// edges it ends, and of the shells that own it as a free vertex.
+    pub(super) fn vertex_bodies(&self, vertex: &str) -> BTreeSet<&'a str> {
+        let mut bodies: BTreeSet<&'a str> = self
+            .vertex_faces
+            .get(vertex)
+            .into_iter()
+            .flatten()
+            .filter_map(|face| self.face_body(face))
+            .map(|body| body.id.as_str())
+            .collect();
+        for edge in self.vertex_edges.get(vertex).into_iter().flatten() {
+            bodies.extend(self.edge_bodies(edge));
+        }
+        for &shell in self.free_shells.get(vertex).into_iter().flatten() {
+            bodies.extend(self.shell_body(shell).map(|body| body.id.as_str()));
+        }
+        bodies
+    }
+
     /// The faces on which an end vertex of `edge` lies.
     fn end_faces(&self, edge: &str) -> BTreeSet<&'a str> {
         self.edges
@@ -203,7 +317,7 @@ impl<'a> StateTopology<'a> {
 
 /// One stored state's name table, with its topology derived on first use.
 pub(super) struct Matcher<'a> {
-    states: &'a States<'a>,
+    states: StatesRef<'a>,
     state: StateKey<'a>,
     entries: BTreeMap<&'a str, Entry>,
     topology: OnceCell<Option<StateTopology<'a>>>,
@@ -218,7 +332,7 @@ enum StateKey<'a> {
 impl<'a> Matcher<'a> {
     /// The matcher of a stored state. `None` where an evaluation's chain of
     /// bases does not resolve, which the evaluation rules report.
-    fn new(states: &'a States<'a>, state: &Stored<'a>) -> Option<Self> {
+    fn new(states: StatesRef<'a>, state: &Stored<'a>) -> Option<Self> {
         let (entries, key) = match state {
             Stored::Extents(extents) => (
                 states
@@ -228,12 +342,7 @@ impl<'a> Matcher<'a> {
                         Some((entity.id(), Entry::of(entry.name.as_ref()?)))
                     })
                     .collect(),
-                StateKey::Extents(
-                    extents
-                        .iter()
-                        .map(|extent| std::ptr::from_ref(*extent))
-                        .collect(),
-                ),
+                StateKey::Extents(extents.iter().map(Rc::as_ptr).collect()),
             ),
             Stored::Evaluation(evaluation) => (
                 states
@@ -263,12 +372,13 @@ impl<'a> Matcher<'a> {
                         .states
                         .extents
                         .iter()
-                        .filter(|extent| extents.contains(&std::ptr::from_ref(*extent)))
+                        .filter(|extent| extents.contains(&Rc::as_ptr(extent)))
+                        .map(Rc::as_ref)
                         .collect();
                     Some(StateTopology::of_extents(self.states.geometry(), &extents))
                 }
                 StateKey::Evaluation(evaluation) => {
-                    StateTopology::of_evaluation(self.states, evaluation)
+                    StateTopology::of_evaluation(&self.states, evaluation)
                 }
             })
             .as_ref()
@@ -528,41 +638,63 @@ fn index_places(name: &TopoName) -> BTreeMap<Place, BTreeSet<u32>> {
     found
 }
 
+#[derive(Clone)]
+enum StatesRef<'a> {
+    #[cfg(test)]
+    Borrowed(&'a States<'a>),
+    Owned(Rc<States<'a>>),
+}
+
+impl<'a> std::ops::Deref for StatesRef<'a> {
+    type Target = States<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            #[cfg(test)]
+            Self::Borrowed(states) => states,
+            Self::Owned(states) => states,
+        }
+    }
+}
+
 /// The matchers of the stored states one validation reads, each built once.
-pub(super) struct Matchers<'a> {
-    states: &'a States<'a>,
+pub(in crate::validate) struct Matchers<'a> {
+    states: StatesRef<'a>,
     built: std::cell::RefCell<BTreeMap<StateKey<'a>, Option<Rc<Matcher<'a>>>>>,
 }
 
 impl<'a> Matchers<'a> {
-    pub(super) fn new(states: &'a States<'a>) -> Self {
+    #[cfg(test)]
+    pub(in crate::validate) fn new(states: &'a States<'a>) -> Self {
         Self {
-            states,
+            states: StatesRef::Borrowed(states),
+            built: std::cell::RefCell::new(BTreeMap::new()),
+        }
+    }
+
+    pub(in crate::validate) fn owned(states: States<'a>) -> Self {
+        Self {
+            states: StatesRef::Owned(Rc::new(states)),
             built: std::cell::RefCell::new(BTreeMap::new()),
         }
     }
 
     /// The resolved states the matchers read.
-    pub(super) const fn states(&self) -> &'a States<'a> {
-        self.states
+    pub(super) fn states(&self) -> &States<'a> {
+        &self.states
     }
 
     /// The matcher of a stored state. `None` where an evaluation's chain of
     /// bases does not resolve.
     pub(super) fn get(&self, state: &Stored<'a>) -> Option<Rc<Matcher<'a>>> {
         let key = match state {
-            Stored::Extents(extents) => StateKey::Extents(
-                extents
-                    .iter()
-                    .map(|extent| std::ptr::from_ref(*extent))
-                    .collect(),
-            ),
+            Stored::Extents(extents) => StateKey::Extents(extents.iter().map(Rc::as_ptr).collect()),
             Stored::Evaluation(evaluation) => StateKey::Evaluation(evaluation),
         };
         if let Some(found) = self.built.borrow().get(&key) {
             return found.clone();
         }
-        let matcher = Matcher::new(self.states, state).map(Rc::new);
+        let matcher = Matcher::new(self.states.clone(), state).map(Rc::new);
         self.built.borrow_mut().insert(key, matcher.clone());
         matcher
     }

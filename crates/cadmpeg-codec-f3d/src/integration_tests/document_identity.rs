@@ -5,6 +5,7 @@ use crate::test_support::assembly_test::{
     f3d_with_identity_xrefs, f3d_with_redirections_json, f3d_without_brep,
     f3z_archive_with_design_description, redirections_json,
 };
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::products::{ExternalDocument, Storage};
 use std::io::Write;
@@ -59,14 +60,14 @@ fn unreferenced_design_identity_keeps_components_local() {
         &[("embedded.f3d", XREF_ROLE)],
     ))
     .unwrap();
-    table["references"] = serde_json::json!({});
+    table["references"] = cadmpeg_core::json!({});
     for retain_table in [false, true] {
         let base = f3d_with_smbh(&synthetic_geometry_smbh());
         let mut zip = zip::ZipWriter::new_append(Cursor::new(base)).unwrap();
         let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
         if retain_table {
             zip.start_file("RedirectionsStream.dat", options).unwrap();
-            zip.write_all(&serde_json::to_vec(&table).unwrap()).unwrap();
+            zip.write_all(&json::to_vec(&table).unwrap()).unwrap();
         }
         let mut metadata =
             crate::test_support::streams_test::design_metastream_with_records(&[], &[]);
@@ -124,7 +125,7 @@ fn archive_description_supplies_member_and_unresolved_link_identities() {
         design["lineageUrn"] = "".into();
         design["versionUrn"] = "".into();
     }
-    let root = f3d_with_redirections_json("assembly-design", &serde_json::to_vec(&table).unwrap());
+    let root = f3d_with_redirections_json("assembly-design", &json::to_vec(&table).unwrap());
     let child = include_bytes!("../../tests/golden/fixtures/generated_unit_cube.f3d");
     let objects: Vec<_> = [
         ("root.f3d", "Root"),
@@ -134,7 +135,7 @@ fn archive_description_supplies_member_and_unresolved_link_identities() {
     ]
     .iter()
     .map(|(path, key)| {
-        serde_json::json!({
+        cadmpeg_core::json!({
             "relativePath": path,
             "lineage": format!("urn:adsk.wipprod:dm.lineage:{key}"),
             "about": format!("urn:adsk.wipprod:fs.file:vf.{key}?version=1")
@@ -142,11 +143,11 @@ fn archive_description_supplies_member_and_unresolved_link_identities() {
     })
     .collect();
     let description =
-        serde_json::json!({"designDescription":{"designGraphs":[{"designObjects":objects}]}});
+        cadmpeg_core::json!({"designDescription":{"designGraphs":[{"designObjects":objects}]}});
     let bytes = f3z_archive_with_design_description(
         "root.f3d",
         &[("root.f3d", &root), ("child.f3d", child)],
-        &serde_json::to_vec(&description).unwrap(),
+        &json::to_vec(&description).unwrap(),
     );
     let decoded = crate::test_support::archive_session::decode(
         &mut Cursor::new(bytes),
@@ -219,6 +220,37 @@ fn api_export_with_placements(linked: bool, terminal: Option<(u8, &str)>) -> Vec
     api_export_with_identity_fields(linked, terminal, None)
 }
 
+/// A manifest reference extension that states an empty reference run, with
+/// no Redirections entry, gives up the extension's bytes in `Manifest.dat`;
+/// no loss names an id that no record carries.
+#[test]
+fn an_unreadable_manifest_reference_extension_is_given_up_in_the_manifest() {
+    // A reference role that is no GUID: the extension does not read.
+    let bytes = api_export_archive(
+        &[("child-role", "ChildKey", "child.f3d")],
+        None,
+        None,
+        false,
+    );
+    let head = "part manifest-references stream=\"Manifest.dat\" offset=";
+    let decoded = EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+            .expect("an unreadable reference extension remains a reported decode"),
+    );
+    crate::test_support::charged_part(decoded.ir(), &decoded.report().losses, head, "");
+    assert!(
+        !decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("f3d:archive:entry#")),
+        "{:#?}",
+        decoded.report().losses
+    );
+    crate::test_support::assert_pinned_refusal(bytes, head);
+}
+
 fn api_export_with_identity_fields(
     linked: bool,
     terminal: Option<(u8, &str)>,
@@ -229,6 +261,22 @@ fn api_export_with_identity_fields(
 
 fn api_export_build(
     linked: bool,
+    terminal: Option<(u8, &str)>,
+    blank: Option<&str>,
+    keep_redirections: bool,
+) -> Vec<u8> {
+    let references: &[(&str, &str, &str)] = if linked {
+        &[(XREF_ROLE, "ChildKey", "child.f3d")]
+    } else {
+        &[]
+    };
+    api_export_archive(references, terminal, blank, keep_redirections)
+}
+
+/// The identity-xref archive whose `Manifest.dat` reference extension states
+/// `references`, without `RedirectionsStream.dat` unless `keep_redirections`.
+fn api_export_archive(
+    references: &[(&str, &str, &str)],
     terminal: Option<(u8, &str)>,
     blank: Option<&str>,
     keep_redirections: bool,
@@ -249,11 +297,7 @@ fn api_export_build(
         if name == "Manifest.dat" {
             let manifest = crate::manifest::parse_top_level(&bytes).unwrap();
             let mut extension =
-                crate::test_support::manifest_test::api_reference_extension(if linked {
-                    &[(XREF_ROLE, "ChildKey", "child.f3d")]
-                } else {
-                    &[]
-                });
+                crate::test_support::manifest_test::api_reference_extension(references);
             if let Some(field) = blank {
                 let mut key = Vec::new();
                 crate::test_support::lp_utf16(&mut key, field);
@@ -498,10 +542,10 @@ fn f3z_conflicting_description_identity_keeps_member_geometry_and_identity() {
         "assembly-design",
         "root.f3d",
         &targets,
-        &serde_json::to_vec(&table).unwrap(),
+        &json::to_vec(&table).unwrap(),
     );
     let child = include_bytes!("../../tests/golden/fixtures/generated_unit_cube.f3d");
-    let description = serde_json::json!({"designDescription":{"designGraphs":[{"designObjects":[
+    let description = cadmpeg_core::json!({"designDescription":{"designGraphs":[{"designObjects":[
         {"relativePath":"root.f3d", "lineage":"urn:first", "about":"urn:version:first"},
         {"relativePath":"root.f3d", "lineage":"urn:second", "about":"urn:version:second"},
         {"relativePath":"missing.f3d", "lineage":"", "about":""},
@@ -510,7 +554,7 @@ fn f3z_conflicting_description_identity_keeps_member_geometry_and_identity() {
     let bytes = f3z_archive_with_design_description(
         "root.f3d",
         &[("root.f3d", &root), ("child.f3d", child)],
-        &serde_json::to_vec(&description).unwrap(),
+        &json::to_vec(&description).unwrap(),
     );
     let decoded = crate::test_support::archive_session::decode(
         &mut Cursor::new(bytes),

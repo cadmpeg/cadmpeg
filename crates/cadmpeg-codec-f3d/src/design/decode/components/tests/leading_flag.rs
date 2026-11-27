@@ -5,6 +5,7 @@ use super::super::leading_flag_component_occurrence;
 use super::{guid, COMPONENT, OCCURRENCE};
 use crate::records::feature::assembly_features::DesignComponentOccurrence;
 use crate::test_support::indexed_header;
+use cadmpeg_core::serde_erase::json;
 
 const STREAM: &str = "f3d:Design/BulkStream.dat";
 const MATRIX: [f64; 16] = [
@@ -90,13 +91,13 @@ fn leading_flag_frames_state_the_occurrence_and_its_offsets() {
             .unwrap();
             assert_eq!(transform.value, expected);
         }
-        let wire = serde_json::to_value(&record).unwrap();
+        let wire = json::to_value(&record).unwrap();
         assert_eq!(wire["component_guid_offset"], 55 + extra);
         assert_eq!(wire["occurrence_guid_offset"], 131 + extra);
         assert_eq!(wire["owner_entity_offset"], 241 + 2 * extra);
         assert_eq!(wire["leading_flag"]["ordinal_prefix"], 1);
         assert_eq!(wire["leading_flag"]["record_reference"], 11);
-        let decoded: DesignComponentOccurrence = serde_json::from_value(wire.clone()).unwrap();
+        let decoded: DesignComponentOccurrence = json::from_value(wire.clone()).unwrap();
         assert_eq!(decoded, record);
         for field in [
             "component_guid_offset",
@@ -104,12 +105,12 @@ fn leading_flag_frames_state_the_occurrence_and_its_offsets() {
             "owner_entity_offset",
         ] {
             let mut changed = wire.clone();
-            changed[field] = serde_json::json!(wire[field].as_u64().unwrap() + 1);
-            assert!(serde_json::from_value::<DesignComponentOccurrence>(changed).is_err());
+            changed[field] = cadmpeg_core::json!(wire[field].as_u64().unwrap() + 1);
+            assert!(json::from_value::<DesignComponentOccurrence>(changed).is_err());
         }
         let mut owned = wire.clone();
-        owned["owner_type_guid"] = serde_json::json!(OWNER_TYPE);
-        assert!(serde_json::from_value::<DesignComponentOccurrence>(owned).is_err());
+        owned["owner_type_guid"] = cadmpeg_core::json!(OWNER_TYPE);
+        assert!(json::from_value::<DesignComponentOccurrence>(owned).is_err());
     }
 }
 
@@ -205,7 +206,7 @@ fn discover(
         super::super::admitted_stream_occurrences(
             ctx,
             bytes,
-            STREAM,
+            "Design/BulkStream.dat",
             &frame_ends,
             &super::super::occurrence_source_entities(meta),
             &primary,
@@ -405,8 +406,8 @@ fn closing_placement_can_differ_from_the_saved_source_frame() {
     let record = parse(&bytes).unwrap();
     assert_eq!(record.transform().unwrap().offset, 359);
     assert_eq!(record.transform().unwrap().value.rows()[0][3], 6.0);
-    let wire = serde_json::to_value(&record).unwrap();
-    let reread: DesignComponentOccurrence = serde_json::from_value(wire).unwrap();
+    let wire = json::to_value(&record).unwrap();
+    let reread: DesignComponentOccurrence = json::from_value(wire).unwrap();
     assert_eq!(record, reread);
 
     let mut bytes = frame(false);
@@ -415,8 +416,8 @@ fn closing_placement_can_differ_from_the_saved_source_frame() {
     let record = parse(&bytes).unwrap();
     assert_eq!(record.transform().unwrap().offset, 231);
     assert_eq!(record.transform().unwrap().value.rows()[0][3], 5.0);
-    let wire = serde_json::to_value(&record).unwrap();
-    let reread: DesignComponentOccurrence = serde_json::from_value(wire).unwrap();
+    let wire = json::to_value(&record).unwrap();
+    let reread: DesignComponentOccurrence = json::from_value(wire).unwrap();
     assert_eq!(record, reread);
 }
 
@@ -427,8 +428,8 @@ fn a_source_matrix_can_close_with_current_identity() {
     bytes.drain(359..487);
     let record = parse(&bytes).unwrap();
     assert!(record.transform().is_none());
-    let wire = serde_json::to_value(&record).unwrap();
+    let wire = json::to_value(&record).unwrap();
     assert_eq!(wire["owner_entity_offset"], 369);
-    let reread: DesignComponentOccurrence = serde_json::from_value(wire).unwrap();
+    let reread: DesignComponentOccurrence = json::from_value(wire).unwrap();
     assert_eq!(record, reread);
 }

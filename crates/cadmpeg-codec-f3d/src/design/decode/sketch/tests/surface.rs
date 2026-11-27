@@ -152,10 +152,9 @@ fn unreadable_surface_keeps_its_sibling_surface() {
             surfaces[0].geometry.control_points[1][1].get(),
             Point3::new(30.0, 20.0, 10.0)
         );
-        assert_eq!(losses.len(), 1);
         assert_eq!(
-            losses[0].code,
-            crate::loss::F3dLossCode::SketchSurfaceUndecoded.kind()
+            crate::test_support::loss_codes(&losses),
+            crate::test_support::given_up_codes(crate::loss::F3dLossCode::SketchSurfaceUndecoded)
         );
     });
 }

@@ -3,10 +3,12 @@
 use std::collections::BTreeSet;
 
 use crate::design::configuration::{
-    ArrangementKind, DefinitionOverride, FeatureStateOverride, ParameterOverride, PartNumber,
+    ArrangementKind, DefinitionOverride, FeatureStateOverride, OccurrenceOverride,
+    ParameterOverride, PartNumber,
 };
 use crate::design::dimension::Dimension;
 use crate::design::parameter::{Deviations, Tolerance};
+use crate::design::scope::OccurrenceDesign;
 use crate::design::units::{Quantity, ValueKind};
 use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
@@ -304,11 +306,57 @@ fn a_fusion_root_component_spans_the_components_its_root_occurrences_place() {
     assert_no_design_finding(&ir);
     let records = DesignRecords::new(&ir);
     assert_eq!(
-        records.spanned_definitions("test:design:definition#part"),
+        *records.spanned_definitions("test:design:definition#part"),
         BTreeSet::from([
             "test:design:definition#bracket",
             "test:design:definition#part",
             "test:design:definition#pin",
         ])
     );
+}
+
+/// An occurrence design that changes nothing.
+fn unchanged() -> OccurrenceDesign {
+    OccurrenceDesign {
+        configuration: None,
+        arrangements: Vec::new(),
+        grounded: None,
+        flexible: None,
+        parameters: std::collections::BTreeMap::new(),
+    }
+}
+
+#[test]
+fn occurrence_keys_name_occurrences_of_spanned_definitions() {
+    const FRAGMENT: &str = "which the scope does not span";
+    let quiet = |ir: &CadIr| {
+        !design_findings(ir)
+            .iter()
+            .any(|f| f.message.contains(FRAGMENT))
+    };
+    let mut ir = document();
+    add_definition(&mut ir, "assembly");
+    add_definition(&mut ir, "bolt");
+    place(&mut ir, "part", "own", "bolt");
+    place(&mut ir, "assembly", "foreign", "bolt");
+    let overrides = &mut ir.design.configurations[0].overrides.occurrences;
+    overrides.insert(id("occurrence", "own"), OccurrenceOverride::default());
+    ir.design.scopes[0]
+        .occurrences
+        .insert(id("occurrence", "own"), unchanged());
+    assert!(quiet(&ir));
+    let overrides = &mut ir.design.configurations[0].overrides.occurrences;
+    overrides.insert(id("occurrence", "foreign"), OccurrenceOverride::default());
+    assert_finding(
+        &ir,
+        "test:design:occurrence#foreign is owned by test:design:definition#assembly, which the scope does not span",
+    );
+    let mut ir = document();
+    add_definition(&mut ir, "assembly");
+    add_definition(&mut ir, "bolt");
+    place(&mut ir, "assembly", "foreign", "bolt");
+    ir.design.scopes[0]
+        .occurrences
+        .insert(id("occurrence", "foreign"), unchanged());
+    assert_finding(&ir, "test:design:occurrence#foreign is owned by");
 }

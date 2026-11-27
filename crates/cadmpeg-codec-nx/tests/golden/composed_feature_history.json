@@ -4110,8 +4110,8 @@
         }
       },
       "tolerances": {
-        "angular": 1e-10,
-        "linear": 1e-6
+        "angular": 1e-11,
+        "linear": 0.00001
       },
       "units": {
         "angle": "radian",
@@ -4144,8 +4144,7 @@
             "value": {
               "code": "geometry.not-transferred",
               "kind": "geometry_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
@@ -4258,28 +4257,6 @@
             "kind": "entity"
           },
           "nx:feature-history:feature#0000000000-0000000014": {
-            "entity": "derived",
-            "fields": {
-              "source_content": "derived"
-            },
-            "kind": "entity"
-          },
-          "nx:feature-history:sketch#0000000000-0000000000": {
-            "entity": "derived",
-            "fields": {},
-            "kind": "entity"
-          },
-          "nx:feature-history:sketch#0000000000-0000000001": {
-            "entity": "derived",
-            "fields": {},
-            "kind": "entity"
-          },
-          "nx:feature-history:sketch-entity#point-0000000000-0000000000-0-0-1-0": {
-            "entity": "derived",
-            "fields": {},
-            "kind": "entity"
-          },
-          "nx:feature-history:sketch-entity#point-0000000000-0000000001-0-0-6-0": {
             "entity": "derived",
             "fields": {},
             "kind": "entity"
@@ -4636,16 +4613,6 @@
             "stream": "nx:container",
             "tag": "FEATURE_PAYLOAD_STRING"
           },
-          "nx:feature-history:sketch#0000000000-0000000000": {
-            "offset": 308,
-            "stream": "nx:container",
-            "tag": "SKETCH"
-          },
-          "nx:feature-history:sketch#0000000000-0000000001": {
-            "offset": 350,
-            "stream": "nx:container",
-            "tag": "SKETCH"
-          },
           "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000000": {
             "offset": 1900,
             "stream": "nx:container",
@@ -4655,21 +4622,6 @@
             "offset": 1968,
             "stream": "nx:container",
             "tag": "FEATURE_SKETCH_FIXED_PAIR"
-          },
-          "nx:feature-history:sketch-entity#fixed-point-0000000000-0000000001-0000000001": {
-            "offset": 1900,
-            "stream": "nx:container",
-            "tag": "SKETCH_NATIVE_FIXED_POINT"
-          },
-          "nx:feature-history:sketch-entity#point-0000000000-0000000000-0-0-1-0": {
-            "offset": 321,
-            "stream": "nx:container",
-            "tag": "SKETCH_NATIVE_POINT_GROUP"
-          },
-          "nx:feature-history:sketch-entity#point-0000000000-0000000001-0-0-6-0": {
-            "offset": 363,
-            "stream": "nx:container",
-            "tag": "SKETCH_NATIVE_POINT_GROUP"
           },
           "nx:feature-history:sketch-fixed-point#0000000000-0000000001-0000000001": {
             "offset": 1900,

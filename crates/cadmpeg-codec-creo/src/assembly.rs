@@ -30,6 +30,9 @@ pub(crate) struct MemberTable {
 pub(crate) struct MemberTableStop {
     pub(crate) offset: usize,
     pub(crate) reason: &'static str,
+    /// A row starts at `offset` that the grammar does not admit, rather than
+    /// the table closing with a row count other than the declared one.
+    pub(crate) row_unread: bool,
 }
 
 /// One component placed by the assembly.
@@ -124,6 +127,7 @@ pub(crate) fn member_table(payload: &[u8]) -> Option<MemberTable> {
             table.stop = Some(MemberTableStop {
                 offset: row_start,
                 reason: "the named first row does not match the component row grammar",
+                row_unread: true,
             });
             return Some(table);
         }
@@ -142,6 +146,7 @@ pub(crate) fn member_table(payload: &[u8]) -> Option<MemberTable> {
                 table.stop = Some(MemberTableStop {
                     offset: row_start,
                     reason: "a positional row does not match the component row grammar",
+                    row_unread: true,
                 });
                 return Some(table);
             }
@@ -151,6 +156,7 @@ pub(crate) fn member_table(payload: &[u8]) -> Option<MemberTable> {
         table.stop = Some(MemberTableStop {
             offset: view.position(),
             reason: "the table ends with a row count that differs from its declared count",
+            row_unread: false,
         });
     }
     Some(table)
@@ -161,14 +167,21 @@ const ROW_CONTINUES: u8 = 0xe3;
 /// Terminator after the final row.
 const TABLE_ENDS: u8 = 0xf4;
 
+/// The offset of each `members` field in `payload`.
+pub(crate) fn member_fields(payload: &[u8]) -> impl Iterator<Item = usize> + '_ {
+    let mut next = cadmpeg_core::bytes::find(payload, MEMBERS_FIELD);
+    std::iter::from_fn(move || {
+        let at = next?;
+        next = cadmpeg_core::bytes::find_from(payload, MEMBERS_FIELD, at + 1);
+        Some(at)
+    })
+}
+
 fn unique_field(payload: &[u8]) -> Option<usize> {
-    let mut matches = payload
-        .windows(MEMBERS_FIELD.len())
-        .enumerate()
-        .filter(|(_, window)| *window == MEMBERS_FIELD)
-        .map(|(offset, _)| offset);
-    let first = matches.next()?;
-    matches.next().is_none().then_some(first)
+    let first = cadmpeg_core::bytes::find(payload, MEMBERS_FIELD)?;
+    cadmpeg_core::bytes::find_from(payload, MEMBERS_FIELD, first + 1)
+        .is_none()
+        .then_some(first)
 }
 
 fn expect(view: &mut View<'_>, bytes: &[u8]) -> Option<()> {

@@ -2,16 +2,14 @@
 //! The shared option types (§6): native keys, profiles and paths, outputs
 //! and Booleans, spans and limits, and wall thicknesses.
 
-use serde_json::Value;
-
 use super::picks::{self, Class};
 use super::{error, Site};
 use crate::design::container::{Container, OrderedKind};
 use crate::design::names::NameKind;
 use crate::design::ops::shared::{Limit, Span};
 use crate::design::options::{
-    BodyForm, Boolean, BooleanOp, LimitOffset, PathRef, ProfileRef, SheetOutput, SolidOutput,
-    Solidify, SymmetricMeasure, Targets, Thickness,
+    BodyForm, Boolean, BooleanOp, LimitOffset, NativeOptions, PathRef, ProfileRef, SheetOutput,
+    SolidOutput, Solidify, SymmetricMeasure, Targets, Thickness,
 };
 use crate::report::check::Finding;
 use crate::scalar::{Angle, Length};
@@ -19,33 +17,21 @@ use crate::scalar::{Angle, Length};
 use super::super::records::{DesignRecords, MemberKey};
 
 /// No key is in both `native_options` and `source_settings` of one record.
-pub(super) fn check_native_keys(wire: &Value, findings: &mut Vec<Finding>) {
-    let mut pending = vec![(wire, "design")];
-    while let Some((value, owner)) = pending.pop() {
-        match value {
-            Value::Object(map) => {
-                let owner = map.get("id").and_then(Value::as_str).unwrap_or(owner);
-                let keys = |field: &str| {
-                    map.get(field)
-                        .and_then(Value::as_object)
-                        .map(|options| options.keys().map(String::as_str).collect::<Vec<_>>())
-                        .unwrap_or_default()
-                };
-                let native = keys("native_options");
-                let settings = keys("source_settings");
-                for key in native.iter().filter(|key| settings.contains(key)) {
-                    error(
-                        findings,
-                        owner,
-                        format_args!(
-                            "key {key:?} is in both native_options and source_settings of one record"
-                        ),
-                    );
-                }
-                pending.extend(map.values().map(|value| (value, owner)));
-            }
-            Value::Array(items) => pending.extend(items.iter().map(|value| (value, owner))),
-            _ => {}
+pub(super) fn check_native_keys(
+    native_keys: &[(&str, &NativeOptions, &NativeOptions)],
+    findings: &mut Vec<Finding>,
+) {
+    for &(owner, native, settings) in native_keys {
+        for key in native.keys().filter(|key| settings.contains_key(*key)) {
+            let key = key.as_str();
+            error(
+                findings,
+                owner,
+                crate::rule!(
+                    "design.key-both-native-options-source-settings",
+                    "key {key:?} is in both native_options and source_settings of one record"
+                ),
+            );
         }
     }
 }
@@ -53,7 +39,7 @@ pub(super) fn check_native_keys(wire: &Value, findings: &mut Vec<Finding>) {
 /// A profile holds at least one pick or is `Unread`, and its picks target
 /// what a profile can be made of.
 pub(super) fn check_profile(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     field: &str,
     profile: &ProfileRef,
     findings: &mut Vec<Finding>,
@@ -62,7 +48,10 @@ pub(super) fn check_profile(
         error(
             findings,
             site.entity,
-            format_args!("{field} holds no pick; a profile holds at least one or is Unread"),
+            crate::rule!(
+                "design.holds-no-pick-profile-holds-least",
+                "{field} holds no pick; a profile holds at least one or is Unread"
+            ),
         );
     }
     let allowed = |class: Class| {
@@ -82,19 +71,30 @@ pub(super) fn check_profile(
         error(
             findings,
             site.entity,
-            format_args!("{field} picks {class}, which no profile is made of"),
+            crate::rule!(
+                "design.picks-no-profile-made",
+                "{field} picks {class}, which no profile is made of"
+            ),
         );
     }
 }
 
 /// A path holds at least one pick or is `Unread`, and its picks target
 /// curves.
-pub(super) fn check_path(site: Site<'_>, field: &str, path: &PathRef, findings: &mut Vec<Finding>) {
+pub(super) fn check_path(
+    site: Site<'_, '_>,
+    field: &str,
+    path: &PathRef,
+    findings: &mut Vec<Finding>,
+) {
     if picks::is_empty(path) {
         error(
             findings,
             site.entity,
-            format_args!("{field} holds no pick; a path holds at least one or is Unread"),
+            crate::rule!(
+                "design.holds-no-pick-path-holds-least",
+                "{field} holds no pick; a path holds at least one or is Unread"
+            ),
         );
     }
     let allowed = |class: Class| {
@@ -111,7 +111,10 @@ pub(super) fn check_path(site: Site<'_>, field: &str, path: &PathRef, findings: 
         error(
             findings,
             site.entity,
-            format_args!("{field} picks {class}, which no path is made of"),
+            crate::rule!(
+                "design.picks-no-path-made",
+                "{field} picks {class}, which no path is made of"
+            ),
         );
     }
 }
@@ -129,7 +132,7 @@ pub(super) enum BooleanAt<'a> {
 
 pub(super) fn check_solid_output(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     output: &SolidOutput,
     findings: &mut Vec<Finding>,
 ) {
@@ -149,7 +152,7 @@ pub(super) fn check_solid_output(
 
 pub(super) fn check_sheet_output(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     output: &SheetOutput,
     findings: &mut Vec<Finding>,
 ) {
@@ -169,7 +172,7 @@ pub(super) fn check_sheet_output(
 /// `Body` container names no targets.
 pub(super) fn check_boolean(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     boolean: &Boolean,
     at: BooleanAt<'_>,
     findings: &mut Vec<Finding>,
@@ -181,7 +184,11 @@ pub(super) fn check_boolean(
         BooleanOp::Assemble | BooleanOp::Compound | BooleanOp::UnionTrim => error(
             findings,
             site.entity,
-            format_args!("Boolean op {} occurs only as a Combine's op", op_name(op)),
+            crate::rule!(
+                "design.boolean-op-occurs-only-combine-op",
+                "Boolean op {} occurs only as a Combine's op",
+                op_name(op)
+            ),
         ),
         BooleanOp::Sew => {
             let sheet = match at {
@@ -193,7 +200,10 @@ pub(super) fn check_boolean(
                 error(
                     findings,
                     site.entity,
-                    format_args!("Sew occurs only in an output whose result is a sheet"),
+                    crate::rule!(
+                        "design.sew-occurs-only-output-result-sheet",
+                        "Sew occurs only in an output whose result is a sheet"
+                    ),
                 );
             }
         }
@@ -206,7 +216,7 @@ pub(super) fn check_boolean(
 
 pub(super) fn check_targets(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     targets: &Targets,
     findings: &mut Vec<Finding>,
 ) {
@@ -215,7 +225,10 @@ pub(super) fn check_targets(
             error(
                 findings,
                 site.entity,
-                format_args!("Targets::Selected picks {class}; its picks resolve to bodies"),
+                crate::rule!(
+                    "design.targets-selected-picks-picks-resolve-bodies",
+                    "Targets::Selected picks {class}; its picks resolve to bodies"
+                ),
             );
         }
     }
@@ -223,7 +236,10 @@ pub(super) fn check_targets(
         error(
             findings,
             site.entity,
-            format_args!("a member of a Body container states targets; its target is its body"),
+            crate::rule!(
+                "design.member-body-container-states-targets-target",
+                "a member of a Body container states targets; its target is its body"
+            ),
         );
     }
 }
@@ -256,7 +272,7 @@ const fn op_name(op: &BooleanOp) -> &'static str {
 
 /// A length span: its limits, and a nonzero symmetric amount.
 pub(super) fn check_length_span(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     field: &str,
     span: &Span<Length>,
     findings: &mut Vec<Finding>,
@@ -277,7 +293,7 @@ pub(super) fn check_length_span(
 /// An angular span: its limits, and a symmetric amount that is not zero and
 /// at most π per side or 2π in total.
 pub(super) fn check_angle_span(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     field: &str,
     span: &Span<Angle>,
     findings: &mut Vec<Finding>,
@@ -304,7 +320,7 @@ pub(super) fn check_angle_span(
 }
 
 fn check_between<Q>(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     field: &str,
     start: &Limit<Q>,
     end: &Limit<Q>,
@@ -314,7 +330,10 @@ fn check_between<Q>(
         error(
             findings,
             site.entity,
-            format_args!("{field} is a Span::Between with AtOrigin at both start and end"),
+            crate::rule!(
+                "design.span-between-atorigin-both-start-end",
+                "{field} is a Span::Between with AtOrigin at both start and end"
+            ),
         );
     }
 }
@@ -323,7 +342,7 @@ fn check_between<Q>(
 /// `LimitOffset::Angle` occurs only in an angular limit and `Translated`
 /// only in a length limit.
 pub(super) fn check_limit<Q>(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     field: &str,
     limit: &Limit<Q>,
     angular: bool,
@@ -348,7 +367,8 @@ pub(super) fn check_limit<Q>(
         error(
             findings,
             site.entity,
-            format_args!(
+            crate::rule!(
+                "design.togeometry-target-picks-picks-faces-surfaces",
                 "{field} ToGeometry.target picks {class}; it picks faces, surfaces, or bodies"
             ),
         );
@@ -357,26 +377,39 @@ pub(super) fn check_limit<Q>(
         error(
             findings,
             site.entity,
-            format_args!("{field} ToGeometry.far occurs only where target picks bodies"),
+            crate::rule!(
+                "design.togeometry-far-occurs-only-where-target",
+                "{field} ToGeometry.far occurs only where target picks bodies"
+            ),
         );
     }
     match offset {
         Some(LimitOffset::Angle(_)) if !angular => error(
             findings,
             site.entity,
-            format_args!("{field} LimitOffset::Angle occurs only in an angular limit"),
+            crate::rule!(
+                "design.limitoffset-angle-occurs-only-angular-limit",
+                "{field} LimitOffset::Angle occurs only in an angular limit"
+            ),
         ),
         Some(LimitOffset::Translated(_)) if angular => error(
             findings,
             site.entity,
-            format_args!("{field} LimitOffset::Translated occurs only in a length limit"),
+            crate::rule!(
+                "design.limitoffset-translated-occurs-only-length-limit",
+                "{field} LimitOffset::Translated occurs only in a length limit"
+            ),
         ),
         _ => {}
     }
 }
 
 /// Two `Offsets` sum to a positive wall.
-pub(super) fn check_thickness(site: Site<'_>, thickness: &Thickness, findings: &mut Vec<Finding>) {
+pub(super) fn check_thickness(
+    site: Site<'_, '_>,
+    thickness: &Thickness,
+    findings: &mut Vec<Finding>,
+) {
     if let Thickness::Offsets { outside, inside } = thickness {
         site.bound(findings, |values| {
             (values.get(outside)?.get() + values.get(inside)?.get() <= 0.0)

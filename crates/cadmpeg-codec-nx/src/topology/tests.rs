@@ -28,6 +28,7 @@ use crate::topology::{
 use crate::NxCodec;
 use cadmpeg_core::decode::View;
 
+mod give_ups;
 mod primary_edges;
 
 #[test]
@@ -568,6 +569,19 @@ fn topology_accepts_cached_last_face_and_implicit_region_identity() {
         "nx:s0:region#12"
     );
     assert_eq!(result.ir().geometry.faces.len(), 2);
+    let face = result
+        .ir()
+        .geometry
+        .faces
+        .iter()
+        .find(|face| face.id.as_str() == "nx:s0:face#20")
+        .expect("FACE 20 is kept");
+    assert!(face.loops.is_partial(), "{:?}", face.loops);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == NxLossCode::TopologyFaceBoundaryUnstated.kind()));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
@@ -1543,6 +1557,7 @@ fn an_unresolved_vertex_loop_is_omitted_and_its_face_is_kept() {
         .find(|face| face.id.as_str() == "nx:s0:face#30")
         .expect("FACE 30 is kept");
     assert!(face.loops.stated().next().is_none(), "{:?}", face.loops);
+    assert!(face.loops.is_partial(), "{:?}", face.loops);
     assert!(model
         .loops
         .iter()
@@ -1580,6 +1595,8 @@ fn a_face_keeps_its_ring_loop_when_its_vertex_loop_is_unresolved() {
         .map(cadmpeg_ir::ids::LoopId::as_str)
         .collect::<Vec<_>>();
     assert!(loops.len() == 1 && loops[0].ends_with("#5"), "{loops:?}");
+    // The face keeps the loop it read and states that one is not stated.
+    assert!(model.faces[0].loops.is_partial());
     assert!(model
         .bodies
         .iter()
@@ -1605,6 +1622,8 @@ fn one_face_shell_whose_face_has_no_surface_withholds_its_shell_and_body() {
         .expect("face")
         .pos();
     put_ref(&mut stream, face + 26, 1);
+    let graph = Graph::parse(&stream);
+    let shell = graph.get(NodeKind::Shell, 3).expect("shell");
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
@@ -1631,4 +1650,64 @@ fn one_face_shell_whose_face_has_no_surface_withholds_its_shell_and_body() {
     assert!(losses.iter().any(|loss| {
         loss.code == NxLossCode::TopologyShellWithheld.kind() && loss.message.contains("BODY 2")
     }));
+    // The shell is a part of its stream; the body, dropped only because its
+    // one shell is given up, is named in that charge and has none of its own.
+    let charges = losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    let shell_charge = charges
+        .iter()
+        .find(|loss| {
+            loss.message
+                .starts_with("part parasolid-record stream=\"nx:parasolid#0:")
+                && loss.message.contains(&format!(
+                    "\" offset={} length={} record=",
+                    shell.pos(),
+                    shell.end() - shell.pos()
+                ))
+        })
+        .unwrap_or_else(|| panic!("the shell is given up as a part: {losses:#?}"));
+    assert!(
+        shell_charge.message.contains("nx:s0:body#2"),
+        "{shell_charge:#?}"
+    );
+    assert_eq!(
+        charges
+            .iter()
+            .filter(|loss| loss
+                .message
+                .split(|c: char| c.is_whitespace() || matches!(c, '[' | ']' | ','))
+                .any(|token| token == "nx:s0:body#2"))
+            .count(),
+        1,
+        "{charges:#?}"
+    );
+}
+
+#[test]
+fn a_withheld_face_leaves_no_loss_that_states_it_partial() {
+    // FACE 4's vertex loop names an unresolved VERTEX, and the face has no
+    // surface, so its shell and body are withheld: no loss states it partial.
+    let mut stream = vertex_loop_topology_partition_stream(99);
+    let face = Graph::parse(&stream)
+        .get(NodeKind::Face, 4)
+        .expect("face")
+        .pos();
+    put_ref(&mut stream, face + 26, 1);
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .expect("decode");
+    assert!(result.ir().geometry.faces.is_empty());
+    let losses = &result.report().losses;
+    assert!(losses.iter().any(|loss| {
+        loss.code == NxLossCode::TopologyShellWithheld.kind() && loss.message.contains("SHELL 3")
+    }));
+    assert!(
+        losses
+            .iter()
+            .all(|loss| !loss.message.contains("is stated partial")),
+        "{losses:#?}"
+    );
 }

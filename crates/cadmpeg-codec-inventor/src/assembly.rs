@@ -7,11 +7,13 @@ use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
+use cadmpeg_ir::ids::{Identity, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
     AssemblyJoint, JointConnector, JointId, JointOperand, Occurrence, ProductDefinition, Storage,
 };
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::{dropped_with, GivenUpRecord};
 
 use crate::compact_matrix::CompactMatrix;
 use crate::native::ufrx::{ExternalReferenceRecord, UfrxOccurrenceRecord};
@@ -176,6 +178,10 @@ pub(crate) struct AssemblyProjection {
     /// Hidden occurrences below a root occurrence; they stay in native records.
     pub(crate) nested_hidden: usize,
     pub(crate) unresolved_placements: BTreeMap<UnresolvedCause, NonZeroUsize>,
+    /// The ids of the occurrences the projection drops, each with the
+    /// first cause that drops it. An id that another `UFRx` record builds
+    /// is not dropped.
+    pub(crate) unbuilt_placements: Vec<(String, UnresolvedCause)>,
 }
 
 /// Projects the current document's occurrence table without loading prototypes.
@@ -230,6 +236,7 @@ pub(crate) fn project_occurrences(
     let mut occurrences = Vec::new();
     let mut joints = Vec::new();
     let mut unresolved_placements = BTreeMap::new();
+    let mut unbuilt_placements = Vec::new();
 
     for source in ufrx_occurrences {
         let Some(reference) =
@@ -239,6 +246,7 @@ pub(crate) fn project_occurrences(
                 &mut unresolved_placements,
                 UnresolvedCause::ExternalReference,
             )?;
+            unbuilt_placements.push((source.occurrence_id, UnresolvedCause::ExternalReference));
             continue;
         };
         let Some(occurrence_record) = occurrence_records
@@ -249,6 +257,7 @@ pub(crate) fn project_occurrences(
                 &mut unresolved_placements,
                 UnresolvedCause::OccurrenceRecord,
             )?;
+            unbuilt_placements.push((source.occurrence_id, UnresolvedCause::OccurrenceRecord));
             continue;
         };
         if emitted_ids.contains(&source.occurrence_id) {
@@ -263,6 +272,7 @@ pub(crate) fn project_occurrences(
         let suppressed = reference.state[0] & SUPPRESSED_REFERENCE_STATE != 0;
         let hidden = hidden_keys.contains(&source.occurrence_key);
         let invisible = suppressed || hidden;
+        let occurrence_id = source.occurrence_id;
         let (transform, visible) = match placements
             .get(&source.occurrence_id)
             .and_then(Option::as_ref)
@@ -285,6 +295,7 @@ pub(crate) fn project_occurrences(
                         &mut unresolved_placements,
                         UnresolvedCause::InvalidTransform,
                     )?;
+                    unbuilt_placements.push((occurrence_id, UnresolvedCause::InvalidTransform));
                     continue;
                 };
                 (transform, invisible.then_some(false))
@@ -292,6 +303,7 @@ pub(crate) fn project_occurrences(
             None if suppressed => (Transform::identity(), Some(false)),
             None => {
                 count_unresolved(&mut unresolved_placements, UnresolvedCause::Placement)?;
+                unbuilt_placements.push((occurrence_id, UnresolvedCause::Placement));
                 continue;
             }
         };
@@ -344,13 +356,63 @@ pub(crate) fn project_occurrences(
         }
     }
 
+    let built = occurrences
+        .iter()
+        .map(|occurrence| occurrence.id.clone())
+        .collect::<HashSet<_>>();
+    let mut dropped = HashSet::new();
+    let unbuilt_placements = unbuilt_placements
+        .into_iter()
+        .filter_map(|(occurrence_id, cause)| {
+            let id = OccurrenceId::compose(
+                &cadmpeg_ir::identity_namespace!("inventor", "assembly", "instance"),
+                occurrence_id,
+            );
+            (!built.contains(&id) && dropped.insert(occurrence_id))
+                .then(|| (id.as_str().to_owned(), cause))
+        })
+        .collect();
     Ok(AssemblyProjection {
         definitions: definitions.into_values().collect(),
         occurrences,
         joints,
         nested_hidden,
         unresolved_placements,
+        unbuilt_placements,
     })
+}
+
+/// The charge of each occurrence that `unbuilt` names. An occurrence that has
+/// no placement because each of its placement records was given up goes with
+/// the give-up of the first of them: `rejected` holds the occurrence id and
+/// the stub of each given-up placement record, in record order. Every other
+/// occurrence is given up itself.
+pub(crate) fn unbuilt_losses(
+    unbuilt: &[(String, UnresolvedCause)],
+    rejected: &[(u32, Identity)],
+) -> Result<Vec<LossNote>, CodecError> {
+    let mut held = HashMap::new();
+    for (occurrence_id, stub) in rejected {
+        let id = OccurrenceId::compose(
+            &cadmpeg_ir::identity_namespace!("inventor", "assembly", "instance"),
+            *occurrence_id,
+        );
+        held.entry(id.as_str().to_owned()).or_insert(stub);
+    }
+    let code = crate::loss::InventorLossCode::AssemblyPlacementNotTransferred.kind();
+    unbuilt
+        .iter()
+        .map(|(record, cause)| {
+            let record = Identity::new(record)?;
+            Ok(match held.get(record.as_str()) {
+                Some(stub) if *cause == UnresolvedCause::Placement => {
+                    dropped_with(record, (*stub).clone())
+                }
+                _ => GivenUpRecord::new(record, format_args!("{code}: {}", cause.description()))
+                    .loss(),
+            })
+        })
+        .collect()
 }
 
 /// Resolves a one-based same-segment record reference to a record ordinal.
@@ -947,6 +1009,78 @@ mod tests {
             .len(),
             1
         );
+    }
+
+    #[test]
+    fn an_unbuilt_occurrence_names_its_own_instance_once_and_never_a_built_one() {
+        let projection = project_under_service(
+            &[
+                ufrx_occurrence(4, 7, 0),
+                ufrx_occurrence(5, 7, 1),
+                ufrx_occurrence(5, 8, 2),
+                ufrx_occurrence(4, 8, 3),
+            ],
+            &[external_reference(4, "part.ipt", [0, 0])],
+            &[assembly_occurrence(7)],
+            &[assembly_placement(7)],
+        );
+        assert_eq!(projection.occurrences.len(), 1);
+        assert_eq!(
+            projection.unbuilt_placements,
+            [(
+                "inventor:assembly:instance#8".to_owned(),
+                super::UnresolvedCause::ExternalReference
+            )]
+        );
+    }
+
+    #[test]
+    fn an_occurrence_whose_placements_were_all_given_up_goes_with_the_first() {
+        let stub = |name: &str| cadmpeg_ir::ids::Identity::new(name).expect("stub id");
+        let losses = super::unbuilt_losses(
+            &[
+                (
+                    "inventor:assembly:instance#7".to_owned(),
+                    super::UnresolvedCause::Placement,
+                ),
+                (
+                    "inventor:assembly:instance#8".to_owned(),
+                    super::UnresolvedCause::Placement,
+                ),
+                (
+                    "inventor:assembly:instance#9".to_owned(),
+                    super::UnresolvedCause::OccurrenceRecord,
+                ),
+            ],
+            &[
+                (7, stub("inventor:source:part#first")),
+                (7, stub("inventor:source:part#second")),
+                (9, stub("inventor:source:part#third")),
+            ],
+        )
+        .expect("losses");
+        let [seven, eight, nine] = losses.as_slice() else {
+            panic!("one loss per occurrence: {losses:#?}");
+        };
+        assert_eq!(
+            cadmpeg_ir::unknown::part::needs(seven)
+                .map(|(record, needs)| (record.as_str(), needs.as_str())),
+            Some(("inventor:assembly:instance#7", "inventor:source:part#first"))
+        );
+        for (loss, id) in [
+            (eight, "inventor:assembly:instance#8"),
+            (nine, "inventor:assembly:instance#9"),
+        ] {
+            assert_eq!(
+                loss.code,
+                cadmpeg_ir::unknown::part::record_unreadable_kind()
+            );
+            assert!(
+                loss.message.starts_with(&format!("record {id} given up: ")),
+                "{}",
+                loss.message
+            );
+        }
     }
 
     #[test]

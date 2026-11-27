@@ -21,7 +21,7 @@ use crate::records::identity::Located;
 use cadmpeg_core::container::ContainerRole;
 
 use super::scopes::shared_frames::marked_record_reference;
-use super::sketch::{indexed_record_offsets, IndexedRecordOffsets};
+use super::sketch::IndexedRecordOffsets;
 
 /// A freedom entry before its word: byte `1`, f64 `0`, and f64 π. The u32
 /// word, `1` or `3`, and the u32 code follow; a word-`1` entry then stores an
@@ -100,9 +100,11 @@ pub(crate) fn decode_joint_motions(
             },
             joints,
         };
+        let records = scan.design_record_offsets(&entry.name)?;
         out.extend(decode_stream(
             bytes,
             &entry.name,
+            &records,
             &assemble_scopes,
             &as_built,
         ));
@@ -116,19 +118,12 @@ pub(crate) fn decode_joint_motions(
 fn decode_stream(
     bytes: &[u8],
     entry_name: &str,
+    records: &IndexedRecordOffsets,
     assemble_scopes: &HashMap<u32, bool>,
     as_built: &AsBuiltJoints<'_>,
 ) -> Vec<DesignJointMotion> {
-    let headers: Vec<(usize, u32)> = indexed_record_offsets(bytes)
-        .map(|header| (header.offset, header.record_index))
-        .collect();
-    let records = IndexedRecordOffsets::build(bytes);
     // A record ends at the next indexed header of any record.
-    let record_end = |start: usize| {
-        headers
-            .get(headers.partition_point(|(offset, _)| *offset <= start))
-            .map_or(bytes.len(), |(offset, _)| *offset)
-    };
+    let record_end = |start: usize| records.next_offset(start + 1).unwrap_or(bytes.len());
     // Freedom entries grouped by the record that holds them.
     let mut by_record: Vec<(usize, u32, FreedomEntries)> = Vec::new();
     let mut starts = memchr::memmem::find_iter(bytes, &FREEDOM_ENTRY_PREFIX)
@@ -157,12 +152,12 @@ fn decode_stream(
             },
             _ => None,
         };
-        let position = headers.partition_point(|(offset, _)| *offset <= at);
-        let Some(&(record_start, record_index)) =
-            position.checked_sub(1).and_then(|i| headers.get(i))
-        else {
+        let headers = records.headers();
+        let position = headers.partition_point(|header| header.offset <= at);
+        let Some(header) = position.checked_sub(1).and_then(|i| headers.get(i)) else {
             continue;
         };
+        let (record_start, record_index) = (header.offset, header.record_index);
         let located = Located {
             value: code,
             offset: u64_from_index(code_at),
@@ -193,7 +188,7 @@ fn decode_stream(
         };
         let Some(joint_index) =
             as_built_motion_joint(bytes, &motion, &entries, as_built).or_else(|| {
-                motion_joint(bytes, &records, &record_end, assemble_scopes, &motion)
+                motion_joint(bytes, records, &record_end, assemble_scopes, &motion)
                     .filter(|joint| !as_built.joints.contains(joint))
             })
         else {
@@ -205,7 +200,7 @@ fn decode_stream(
         let (freedoms, words): (Vec<_>, Vec<_>) = entries.into_iter().unzip();
         let usual = words.iter().all(|entry| entry.word == 3);
         out.push(DesignJointMotion {
-            id: format!("f3d:{entry_name}:design-joint-motion#{motion_start}"),
+            id: crate::ids::native_scoped_id(entry_name, "design-joint-motion", motion_start),
             joint_record_index: joint_index,
             joint_byte_offset: u64_from_index(joint_start),
             motion_record_index: motion_index,
