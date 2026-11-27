@@ -484,6 +484,7 @@ pub(super) fn historical_topology(
             })
             .collect::<Option<Vec<_>>>()),
         edge_samples: super::edge_samples::historical_edge_samples(brep)?,
+        face_samples: super::face_samples::historical_face_samples(brep),
         body_design_links: last_body_design_links(&body_design_links(brep)?),
     };
     // Transitions diff each family in key order. The decoder appends the

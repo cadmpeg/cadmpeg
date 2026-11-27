@@ -728,8 +728,7 @@
           "value": {
             "code": "geometry.brep-not-transferred",
             "kind": "geometry_not_transferred",
-            "namespace": "catia",
-            "strict_floor": "warning"
+            "namespace": "catia"
           }
         },
         "message": "No B-rep geometry was transferred. This file's storage variant is `catia:inner-no-directory` (nested V5_CFV2 with no BREP-body directory (contiguous inner body): freeform carrier decode supported); the applicable decoded record families transfer geometry in this codec.",
@@ -741,8 +740,7 @@
           "value": {
             "code": "topology.graph-not-built",
             "kind": "topology_not_transferred",
-            "namespace": "catia",
-            "strict_floor": "warning"
+            "namespace": "catia"
           }
         },
         "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",

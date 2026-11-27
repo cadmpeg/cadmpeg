@@ -173,7 +173,7 @@ impl SourceDefinitions {
 }
 
 fn value(definition: &FeatureDefinition) -> Value {
-    serde_json::to_value(definition).unwrap_or(Value::Null)
+    cadmpeg_core::serde_erase::to_json_value(definition).unwrap_or(Value::Null)
 }
 
 struct Comparison<'a> {
@@ -355,7 +355,7 @@ fn summary(value: &Value) -> String {
 mod tests {
     use std::collections::HashMap;
 
-    use serde_json::json;
+    use cadmpeg_core::json;
 
     use super::Comparison;
 

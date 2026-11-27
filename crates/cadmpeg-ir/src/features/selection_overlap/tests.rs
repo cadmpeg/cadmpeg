@@ -128,6 +128,16 @@ fn selection_overlap_preserves_every_membership_form() {
         }]),
         native: "native".to_owned().try_into().expect("native selection"),
     };
+    let generated_set = |feature: &str, local: &str| BodySelection::GeneratedSet {
+        members: BodyMembers(vec![BodyMember::new(
+            GeneratedBodyRef {
+                feature: FeatureId::mint(format!("test:model:feature#{feature}"))
+                    .expect("feature identity"),
+                local_id: local.to_owned().try_into().expect("local identity"),
+            },
+            native(),
+        )]),
+    };
     let local_body = |name: &str| BodySelection::Local {
         bodies: NativeSelections(vec![name.into()]),
         native: "native".to_owned().try_into().expect("native selection"),
@@ -153,6 +163,21 @@ fn selection_overlap_preserves_every_membership_form() {
         (
             generated_body("same", "same"),
             generated_body("same", "other"),
+            false,
+        ),
+        (
+            generated_body("same", "same"),
+            generated_set("same", "same"),
+            true,
+        ),
+        (
+            generated_set("same", "same"),
+            generated_set("same", "same"),
+            true,
+        ),
+        (
+            generated_set("same", "same"),
+            generated_set("same", "other"),
             false,
         ),
         (local_body("same"), local_body("same"), true),

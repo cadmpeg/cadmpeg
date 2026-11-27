@@ -210,9 +210,9 @@ pub(crate) fn validate_operations(
     if ir.design == expected.design {
         return Ok(Vec::new());
     }
-    let actual = serde_json::to_value(&ir.design)
+    let actual = cadmpeg_core::serde_erase::to_json_value(&ir.design)
         .map_err(|error| CodecError::malformed(error.to_string()))?;
-    let expected = serde_json::to_value(&expected.design)
+    let expected = cadmpeg_core::serde_erase::to_json_value(&expected.design)
         .map_err(|error| CodecError::malformed(error.to_string()))?;
     let detail = cadmpeg_ir::compare::values_agree(&actual, &expected)
         .err()

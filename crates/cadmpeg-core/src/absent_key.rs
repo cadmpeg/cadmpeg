@@ -18,19 +18,20 @@
 
 use serde::Deserialize;
 
-/// Read a stated optional key. `null` is refused; absence is `None` through the
+/// Read a stated optional key. `null` is refused, or read as `None` and
+/// reported inside a [`crate::read_session`]; absence is `None` through the
 /// field's `default`.
 ///
 /// Private: the refusal it states names no key, so every declaration reaches it
 /// through [`named_present`], which adds the key.
-fn present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+fn present<'de, D, T>(deserializer: D, field: &str) -> Result<Option<T>, D::Error>
 where
     D: serde::Deserializer<'de>,
     T: Deserialize<'de>,
 {
-    struct Visitor<T>(std::marker::PhantomData<T>);
+    struct Visitor<'f, T>(std::marker::PhantomData<T>, &'f str);
 
-    impl<'de, T: Deserialize<'de>> serde::de::Visitor<'de> for Visitor<T> {
+    impl<'de, T: Deserialize<'de>> serde::de::Visitor<'de> for Visitor<'_, T> {
         type Value = Option<T>;
 
         fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -38,12 +39,16 @@ where
         }
 
         fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
-            Err(E::custom(
-                "this key states a value or is left out; it does not state null",
-            ))
+            self.visit_none()
         }
 
         fn visit_none<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            let field = self.1;
+            if crate::read_session::repair(crate::read_session::Repair::Spelling, &|| {
+                format!("`{field}` states null for an omitted value")
+            }) {
+                return Ok(None);
+            }
             Err(E::custom(
                 "this key states a value or is left out; it does not state null",
             ))
@@ -57,7 +62,7 @@ where
         }
     }
 
-    deserializer.deserialize_option(Visitor(std::marker::PhantomData))
+    deserializer.deserialize_option(Visitor(std::marker::PhantomData, field))
 }
 
 /// Read a stated optional key and name the field in whatever it refuses.
@@ -77,8 +82,12 @@ where
     D: serde::Deserializer<'de>,
     T: Deserialize<'de>,
 {
-    present(deserializer)
-        .map_err(|error| serde::de::Error::custom(format_args!("{field}: {error}")))
+    present(deserializer, field).map_err(|error| serde::de::Error::custom(named(field, &error)))
+}
+
+/// The refusal `error` with the key `field` before it.
+fn named(field: &str, error: &dyn std::fmt::Display) -> String {
+    format!("{field}: {error}")
 }
 
 /// Define the named reader one optional key is declared with.
@@ -157,4 +166,29 @@ where
     T: Deserialize<'de>,
 {
     Option::<T>::deserialize(deserializer)
+}
+
+#[cfg(test)]
+mod tests {
+    #[derive(Debug, serde::Deserialize)]
+    struct Holder {
+        #[serde(default, deserialize_with = "deserialize_note")]
+        note: Option<u32>,
+    }
+
+    crate::named_optional_field!(deserialize_note, u32, "note");
+
+    #[test]
+    fn null_is_refused_and_a_read_session_reads_it_as_left_out() {
+        let error = serde_json::from_str::<Holder>(r#"{"note":null}"#).expect_err("null");
+        assert!(
+            error.to_string().contains("note: this key states a value"),
+            "{error}"
+        );
+        let (read, repairs) =
+            crate::read_session::run(|| serde_json::from_str::<Holder>(r#"{"note":null}"#));
+        assert_eq!(read.expect("a session reads null").note, None);
+        assert_eq!(repairs.len(), 1);
+        assert!(repairs[0].what.contains("`note`"), "{repairs:?}");
+    }
 }

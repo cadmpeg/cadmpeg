@@ -30,7 +30,11 @@ pub(crate) fn convert_to_step(bytes: &[u8]) -> StepConversion {
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("acquire the archive");
-    let decoded = F3dCodec.decode_with_context(&ctx, root);
+    let decoded = F3dCodec.decode_with_context(
+        &ctx,
+        root,
+        &cadmpeg_ir::report::strictness::Strictness::default(),
+    );
     ctx.finish_session().expect("the decode session closes");
     let (ir, decode, fidelity) = decoded
         .unwrap_or_else(|error| panic!("decode refused: {error:?}"))
@@ -56,7 +60,7 @@ pub(crate) fn convert_to_step(bytes: &[u8]) -> StepConversion {
     let plan = StepCodec::default()
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .expect("plan the STEP export");
     let carried = plan.carried_errors(&ir, &validation);

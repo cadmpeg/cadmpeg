@@ -133,6 +133,8 @@ pub(in crate::feature) fn project(
             )?;
             states.push(FeatureInputTopology {
                 face_owners: Vec::new(),
+                face_geometry: Vec::new(),
+                body_writers: Vec::new(),
                 id,
                 input_of: features[target].id.clone(),
                 bodies: DistinctMembers::default(),

@@ -3,6 +3,7 @@
 
 use super::CatiaSampledParameterMap;
 use crate::native::CatiaNative;
+use cadmpeg_core::serde_erase::json;
 
 fn frame() -> Vec<u8> {
     let payload = crate::test_support::test_parameter_map::payload(17, true, -0.0);
@@ -24,19 +25,19 @@ fn native_a8_sampled_map_retains_exact_payload_and_checked_wire() {
     let [map] = native.sampled_parameter_maps.as_slice() else {
         panic!("one complete map")
     };
-    let wire = serde_json::to_value(map).expect("serialize map");
+    let wire = json::to_value(map).expect("serialize map");
     assert_eq!(wire["object_id"], 42);
     assert_eq!(&*map.payload, &bytes[11..]);
     assert_eq!(
-        serde_json::from_value::<CatiaSampledParameterMap>(wire.clone()).expect("load exact map"),
+        json::from_value::<CatiaSampledParameterMap>(wire.clone()).expect("load exact map"),
         *map
     );
     let mut wrong = wire.clone();
-    wrong["data"]["reference_parameters"][0] = serde_json::json!(0.5);
-    assert!(serde_json::from_value::<CatiaSampledParameterMap>(wrong).is_err());
+    wrong["data"]["reference_parameters"][0] = cadmpeg_core::json!(0.5);
+    assert!(json::from_value::<CatiaSampledParameterMap>(wrong).is_err());
     let mut wrong = wire;
-    wrong["data"]["fit_tolerance"] = serde_json::json!(0.001);
-    assert!(serde_json::from_value::<CatiaSampledParameterMap>(wrong).is_err());
+    wrong["data"]["fit_tolerance"] = cadmpeg_core::json!(0.001);
+    assert!(json::from_value::<CatiaSampledParameterMap>(wrong).is_err());
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("borrowed store");
     let mut owned = cadmpeg_ir::NativeNamespace::default();
@@ -63,12 +64,12 @@ fn native_a8_sampled_map_reads_the_one_zero_written_for_a_negative_zero_fit_tole
     };
     let written = cadmpeg_ir::hash::finite_json::to_json_value(map).expect("write map");
     assert_eq!(written["data"]["fit_tolerance"].to_string(), "0.0");
-    let read = serde_json::from_value::<CatiaSampledParameterMap>(written.clone())
+    let read = json::from_value::<CatiaSampledParameterMap>(written.clone())
         .expect("read the written map");
     assert_eq!(&*read.payload, &bytes[11..]);
     let mut moved = written;
-    moved["data"]["fit_tolerance"] = serde_json::json!(0.001);
-    assert!(serde_json::from_value::<CatiaSampledParameterMap>(moved).is_err());
+    moved["data"]["fit_tolerance"] = cadmpeg_core::json!(0.001);
+    assert!(json::from_value::<CatiaSampledParameterMap>(moved).is_err());
 }
 
 #[test]

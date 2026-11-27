@@ -1236,7 +1236,7 @@ fn semantic_writer_keeps_stored_filled_surface_weights_and_names_the_edit() {
             });
         });
     }
-    let unwritten =
+    let (unwritten, _) =
         crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert!(
         unwritten
@@ -1291,7 +1291,7 @@ fn semantic_writer_keeps_stored_filled_surface_constraints_and_names_the_edit() 
                 }
             });
         }
-        let unwritten =
+        let (unwritten, _) =
             crate::test_support::unwritten_feature_edits(edited.ir(), edited.source_fidelity());
         assert!(
             unwritten
@@ -1843,15 +1843,11 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
     ));
     let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope_declined(
         &detached,
         decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("unresolved revolution construction"));
+    );
+    assert!(error.contains("unresolved revolution construction"));
     decoded.ir_mut().model.features[0].name = Some("Renamed turn".into());
 
     let mut encoded = Vec::new();

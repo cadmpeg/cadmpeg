@@ -59,6 +59,7 @@ fn optional_owner_does_not_swallow_retention_resource_limits() {
         crate::container::extract_streams_for_owner(
             &ctx,
             &payload,
+            &cadmpeg_ir::stream_name!("ThirdPty/WELDMENT_STORAGE"),
             Some("ThirdPty/WELDMENT_STORAGE"),
             weldment_part(&payload),
             &mut Vec::new(),

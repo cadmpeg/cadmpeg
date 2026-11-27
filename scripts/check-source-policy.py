@@ -40,10 +40,12 @@ def cached_analysis(function):
         cache = _ANALYSIS.get()
         if cache is None:
             return function(*arguments, **keywords)
-        key = (function, arguments, tuple(sorted(keywords.items())))
-        if key not in cache:
-            cache[key] = function(*arguments, **keywords)
-        return cache[key]
+        key = (function, arguments, tuple(sorted(keywords.items())) if keywords else ())
+        try:
+            return cache[key]
+        except KeyError:
+            value = cache[key] = function(*arguments, **keywords)
+            return value
     return cached
 
 
@@ -73,7 +75,9 @@ FROM_ENDIAN = re.compile(r"\bfrom_(?:le|be)_bytes\b")
 MALFORMED_FORMAT = re.compile(r"CodecError::Malformed\s*\(\s*format!", re.MULTILINE)
 LOSS_NOTE_LIT = re.compile(r"\bLossNote\s*\{")
 LOSS_NOTE_PATH = r"(?:::\s*)?(?:(?:r#)?[^\W\d]\w*\s*::\s*)*(?:r#)?(?P<name>LossNote)"
-LOSS_NOTE_RETURN = re.compile(r"->\s*" + LOSS_NOTE_PATH + r"\s*\{")
+LOSS_NOTE_RETURN = re.compile(
+    r"->\s*(?:&\s*(?:'\w+\s+)?(?:mut\s+)?)?" + LOSS_NOTE_PATH + r"\s*\{"
+)
 LOSS_NOTE_STRUCT = re.compile(r"\bstruct\s+(?:r#)?(?P<name>LossNote)\s*\{")
 LOSS_NOTE_IMPL = re.compile(r"\bimpl(?:<[^>]*>)?\s+" + LOSS_NOTE_PATH + r"\s*\{")
 LOSS_NOTE_TRAIT_IMPL = re.compile(r"\bfor\s+" + LOSS_NOTE_PATH + r"\s*\{")
@@ -1610,6 +1614,8 @@ def scan_authoring_paths() -> list[Finding]:
             if not path.is_file() or path.suffix not in AUTHORING_PATH_TEXT_SUFFIXES:
                 continue
             text = path.read_text(encoding="utf-8", errors="replace")
+            if not AUTHORING_PATH.search(text):
+                continue
             for number, line in enumerate(text.splitlines(), start=1):
                 for match in AUTHORING_PATH.finditer(line):
                     findings.append(Finding(
@@ -1656,6 +1662,81 @@ def workspace_packages() -> dict[str, str]:
     if not isinstance(table, dict):
         return {}
     return {key: dependency_package(key, value, {}) for key, value in table.items()}
+
+
+# A typed JSON read compiles the type's whole read tree once per deserializer
+# type. Every typed read goes through serde_json's `StrRead` deserializer
+# (`serde_json::from_str`, or `cadmpeg_core::serde_erase::json`, which writes a
+# `Value` or checks bytes as text first), so each type compiles its read once.
+SECOND_DESERIALIZER = re.compile(
+    r"\bserde_json\s*::\s*(?:value\s*::\s*)?from_(?:value|slice)\b"
+    r"|\bserde_json\s*::\s*\{[^}]*\bfrom_(?:value|slice)\b"
+    r"|\bDeserializer\s*::\s*from_slice\b"
+)
+# `serde_json::json!` and `serde_json::to_value` write a typed value through
+# `serde_json`'s `Value` serializer, which compiles the type's whole write tree
+# once more. `cadmpeg_core::json!` and `cadmpeg_core::serde_erase::json`
+# write it through `SerAdapter`.
+SECOND_SERIALIZER = re.compile(
+    r"\bserde_json\s*::\s*(?:json\s*!|to_value\b)"
+    r"|\bserde_json\s*::\s*\{[^}]*\b(?:json|to_value)\b[^}]*\}"
+)
+# The wire types whose read tree is the IR's own: reading one through a
+# `serde_json::Value` (or any deserializer but the one its reader is given)
+# compiles that tree again.
+HUB_WIRE_READ = re.compile(
+    r"\b(?:CadIr|Annotations|AsmBrep|Topology|Model|Design|Process)\s*::\s*deserialize\s*\(\s*"
+    r"(?!deserializer\b)"
+)
+
+
+# Tests whose subject is a reader's agreement across deserializer types, with
+# the reason each is outside the rule.
+JSON_READ_EXEMPT_FILES = {
+    "crates/cadmpeg-core/src/tagged/tests.rs":
+        "checks that the tagged reader agrees with serde's reader on a Value",
+    "crates/cadmpeg-derive/tests/deserialize_name.rs":
+        "checks that the derived name reader reads a Value",
+}
+
+
+def scan_json_reads(sources: dict[Path, str]) -> list[Finding]:
+    """Report a typed JSON read through a deserializer other than `StrRead`."""
+    findings: list[Finding] = []
+    for path, source in sources.items():
+        if relative_path(path) in JSON_READ_EXEMPT_FILES:
+            continue
+        if "serde_json" not in source and "deserialize" not in source:
+            continue
+        code = mask_rust_non_code(source)
+        for pattern in (SECOND_DESERIALIZER, HUB_WIRE_READ):
+            for match in pattern.finditer(code):
+                findings.append(Finding(
+                    "json_second_deserializer",
+                    relative_path(path),
+                    code.count("\n", 0, match.start()) + 1,
+                    "Read typed JSON with serde_json::from_str or cadmpeg_core::serde_erase::json "
+                    "(from_value, from_slice); another deserializer type compiles the type's read tree again.",
+                ))
+    return findings
+
+
+def scan_json_writes(sources: dict[Path, str]) -> list[Finding]:
+    """Report a typed JSON value write through `serde_json`'s `Value` serializer."""
+    findings: list[Finding] = []
+    for path, source in sources.items():
+        if "serde_json" not in source or relative_path(path).startswith("crates/cadmpeg-derive/"):
+            continue
+        code = mask_rust_non_code(source)
+        for match in SECOND_SERIALIZER.finditer(code):
+            findings.append(Finding(
+                "json_second_serializer",
+                relative_path(path),
+                code.count("\n", 0, match.start()) + 1,
+                "Build JSON with cadmpeg_core::json! and cadmpeg_core::serde_erase::json::to_value; "
+                "serde_json's Value serializer compiles the type's write tree again.",
+            ))
+    return findings
 
 
 def scan_measurement_dependency() -> list[Finding]:
@@ -2024,13 +2105,17 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
         def receiver_has_type(receiver, owner):
             key = receiver, owner
             if key not in receiver_types:
+                # Each pattern spells the owner or a constructor; a file that
+                # spells neither skips the search.
                 receiver_types[key] = bool(
-                    re.search(r"\b" + re.escape(receiver) + r"\s*:\s*(?:&\s*(?:'\w+\s*)?(?:mut\s*)?)?(?:\w+::)*"
-                              + re.escape(owner) + r"\b", code)
-                    or re.search(r"\blet\s+(?:mut\s+)?" + re.escape(receiver)
-                                 + r"\s*=\s*(?:[\w]+::)*" + re.escape(owner) + r"::", code)
-                    or any(re.search(r"\blet\s+(?:mut\s+)?" + re.escape(receiver)
-                                     + r"\s*=\s*(?:[\w]+::)*" + re.escape(constructor) + r"\s*\(", code)
+                    owner in code and (
+                        re.search(r"\b" + re.escape(receiver) + r"\s*:\s*(?:&\s*(?:'\w+\s*)?(?:mut\s*)?)?(?:\w+::)*"
+                                  + re.escape(owner) + r"\b", code)
+                        or re.search(r"\blet\s+(?:mut\s+)?" + re.escape(receiver)
+                                     + r"\s*=\s*(?:[\w]+::)*" + re.escape(owner) + r"::", code))
+                    or any(constructor in code and re.search(
+                               r"\blet\s+(?:mut\s+)?" + re.escape(receiver)
+                               + r"\s*=\s*(?:[\w]+::)*" + re.escape(constructor) + r"\s*\(", code)
                            for constructor in owner_constructors.get(owner, ())))
             return receiver_types[key]
 
@@ -2163,7 +2248,7 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
                     parent = parents.get(parent)
                 bindings.setdefault(word, []).append((index, 0, pairs.get(parent, len(words))))
             level = function_level(index) if word in candidate_names else 0
-            opening = evaluation_call_open(words, index)
+            opening = evaluation_call_open(words, index) if level else None
             if level and opening in pairs:
                 refused[index] = level
             elif level:
@@ -2188,6 +2273,8 @@ def scan_evaluation_refusals(sources: dict[Path, str]) -> list[Finding]:
                         refused[index] = bound_level
             if index not in refused:
                 continue
+            if opening is None:
+                opening = evaluation_call_open(words, index)
             start = evaluation_expression_start(words, pairs, index)
             end = pairs[opening] + 1 if opening in pairs else index + 1
             end, level = consume(start, end, refused[index])
@@ -2414,6 +2501,8 @@ SOURCE_SCANS = {
     "authoring_paths": lambda sources: scan_authoring_paths(),
     "measurement_dependency": lambda sources: scan_measurement_dependency(),
     "script_tests": lambda sources: scan_script_tests(),
+    "json_reads": lambda sources: scan_json_reads(sources),
+    "json_writes": lambda sources: scan_json_writes(sources),
 }
 _TASK_SOURCES: dict[Path, str] = {}
 
