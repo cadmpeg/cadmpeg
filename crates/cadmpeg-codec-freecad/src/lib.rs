@@ -1174,17 +1174,18 @@ impl CodecBackend for FcstdCodec {
             design::hide_intermediate_bodies(&mut ir, &intermediate);
             if ctx.depth() >= DecodeDepth::Design {
                 design::v11::project(
+                    ctx,
                     &mut ir,
                     product::document_definition_id()?,
                     &graph.objects,
                     &graph.properties,
-                    &product_nodes,
                     &design::v11::Assembly {
+                        links: &product_nodes,
                         joints: &joint_records,
                         topology: &topology_occurrences,
                     },
                     &mut transfer_losses,
-                );
+                )?;
             }
             design::v11::states::state(
                 ctx,
