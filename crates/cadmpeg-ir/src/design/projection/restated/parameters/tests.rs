@@ -216,3 +216,24 @@ fn a_display_modifier_is_carried_by_the_matching_typed_field() {
     design.display = Some(super::DimensionDisplay::Radius);
     assert!(cut(&model, &design).contains("expression"));
 }
+
+#[test]
+fn a_parenthesized_negation_carries_the_signed_literal() {
+    let mut model = model("-(12 mm)");
+    model.dependencies = DistinctMembers::default();
+    model.value = Some(ModelValue::Length(Length::new(-12.0).unwrap()));
+    let mut design = design(ParameterDefinition::Expression(Expression::Neutral(
+        Neutral(parse("-12[mm]", NO_REFS, &[]).unwrap()),
+    )));
+    design.value = Some(ParameterValue::Number(FiniteReal::new(-12.0).unwrap()));
+    assert!(cut(&model, &design).is_empty());
+
+    model.expression = "-(-12 mm)".into();
+    assert!(cut(&model, &design).contains("expression"));
+
+    model.expression = "-(12 mm + 2 mm)".into();
+    assert!(cut(&model, &design).contains("expression"));
+
+    model.expression = "-(12 m)".into();
+    assert!(cut(&model, &design).contains("expression"));
+}

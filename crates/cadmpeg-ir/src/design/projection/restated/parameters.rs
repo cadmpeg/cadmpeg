@@ -307,6 +307,12 @@ fn expression_carried(model: &ModelParameter, design: &DesignParameter) -> bool 
                     .or_else(|| text.strip_prefix("&lt;MOD-RHO&gt;")),
                 _ => None,
             };
+            if let Some(operand) = text
+                .strip_prefix("-(")
+                .and_then(|text| text.strip_suffix(')'))
+            {
+                return negated_literal_carried(operand, &neutral.0);
+            }
             let literal = literal(&neutral.0);
             if let Some(number) = number_text {
                 return matches!((literal, number.trim().parse::<f64>()),
@@ -372,6 +378,30 @@ fn literal<R>(node: &Node<R>) -> Option<Literal<'_>> {
         Node::Text(text) => Some(Literal::Text(text)),
         _ => None,
     }
+}
+
+fn negated_literal_carried<R>(text: &str, tree: &Node<R>) -> bool {
+    let Node::Unary {
+        op: UnaryOp::Negate,
+        operand,
+    } = tree
+    else {
+        return false;
+    };
+    let Node::Number { value, unit } = operand.as_ref() else {
+        return false;
+    };
+    let mut words = text.split_whitespace();
+    let Some(number) = words.next().and_then(|word| word.parse::<f64>().ok()) else {
+        return false;
+    };
+    let symbol = words.next().unwrap_or("");
+    let unit_matches = match unit.0.as_slice() {
+        [] => matches!(symbol, "" | "ul"),
+        [factor] => factor.power.get() == 1 && factor.symbol.name() == symbol,
+        _ => false,
+    };
+    number.is_finite() && same_number(number, value.get()) && unit_matches && words.next().is_none()
 }
 
 /// The number of a literal's text: a number with an optional unit after
