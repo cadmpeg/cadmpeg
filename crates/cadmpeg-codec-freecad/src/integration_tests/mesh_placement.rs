@@ -235,8 +235,11 @@ fn application_mesh_links_select_prototype_placement_once() {
                 .unwrap(),
             1
         );
-        // An object at the document root has no own occurrence, so a link
-        // that follows its placement states no `Place.placement` (§6.7).
+        // A mesh object owns no `Shape` body, so it has no own occurrence,
+        // and a link that follows its placement states no `Place.placement`
+        // (§6.7). The same holds where the linked object is a link, is in a
+        // document that was not read, is listed only through a Body or a
+        // copy-on-change group, or stores no placement.
         let expected: &[&str] = if prototype_transform {
             &["fcstd/feature.link-placement-unresolved"]
         } else {

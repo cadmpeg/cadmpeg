@@ -66,7 +66,7 @@ pub(crate) fn project(
     let mut features = history
         .features
         .values()
-        .map(|legacy| feature(legacy, &source, losses))
+        .map(|legacy| feature(legacy, &source))
         .collect::<Vec<_>>();
     let mut grouped = history
         .features
@@ -137,7 +137,7 @@ pub(crate) fn project(
             placement: body
                 .native_ref
                 .as_deref()
-                .and_then(|object| source.placement(object, losses)),
+                .and_then(|object| source.placement(object)),
         });
     }
     if !grouped.is_empty() {
@@ -548,23 +548,10 @@ impl<'a> Source<'a> {
 
     /// The `Placement` that object `object` stores, as a construction: `None`
     /// where it stores none or the identity, which no binding of it is
-    /// stated for (§2.4). An unreadable `Placement` states none and charges a
-    /// loss naming the object.
-    fn placement(
-        &self,
-        object: &str,
-        losses: &mut Vec<LossNote>,
-    ) -> Option<Box<Construction<kinds::Frame>>> {
-        let frame = match crate::placement::placement_matrix(self.placements.get(object)?) {
-            Ok(frame) => frame?,
-            Err(error) => {
-                losses.push(
-                    FreecadLossCode::FeaturePlacementUnresolved
-                        .note(format!("object {object} states no placement: {error}")),
-                );
-                return None;
-            }
-        };
+    /// stated for (§2.4). The product layer refuses an unreadable
+    /// `Placement` before this projection runs.
+    fn placement(&self, object: &str) -> Option<Box<Construction<kinds::Frame>>> {
+        let frame = crate::placement::placement_matrix_unreported(self.placements.get(object)?)?;
         if frame.transform() == Transform::identity() {
             return None;
         }
@@ -686,8 +673,9 @@ impl<'a> History<'a> {
 /// The feature of `legacy`. Its `refine` and `fuzzy_tolerance` are stated only
 /// where the object stores `Refine` and `FuzzyTolerance` (§2.4): the decoded
 /// definition fills the one the object lacks. A Part workbench feature that
-/// is no primitive states its `Placement` as its `placement` (§5.10).
-fn feature(legacy: &LegacyFeature, source: &Source<'_>, losses: &mut Vec<LossNote>) -> Feature {
+/// applies its `Placement` after its operation states it as its `placement`
+/// (§5.10); a primitive or a curve primitive places its own local frame.
+fn feature(legacy: &LegacyFeature, source: &Source<'_>) -> Feature {
     let (operation, refine, fuzzy_tolerance) = match legacy.evaluation.definition() {
         LegacyDefinition::PostProcess {
             operation,
@@ -709,26 +697,29 @@ fn feature(legacy: &LegacyFeature, source: &Source<'_>, losses: &mut Vec<LossNot
         LegacyDefinition::Operation(operation) => (operation, None, None),
     };
     let operation = self::operation(legacy, operation);
-    let placed = legacy
-        .source_tag
-        .as_deref()
-        .is_some_and(|kind| kind.starts_with("Part::"))
-        && !matches!(
-            operation,
+    let kind = legacy.source_tag.as_deref();
+    let placed = kind.is_some_and(|kind| kind.starts_with("Part::"))
+        && match &operation {
             FeatureOperation::Stored { .. }
-                | FeatureOperation::Unresolved {
-                    family: OperationFamily::Primitive
-                        | OperationFamily::Curve
-                        | OperationFamily::Datum
-                        | OperationFamily::Sketch
-                        | OperationFamily::SpatialSketch
-                }
-        );
+            | FeatureOperation::Unresolved {
+                family:
+                    OperationFamily::Primitive
+                    | OperationFamily::Datum
+                    | OperationFamily::Sketch
+                    | OperationFamily::SpatialSketch,
+            } => false,
+            // A section (a `Part::Boolean`) and a projection on a surface
+            // place their result; the other curves place their local frame.
+            FeatureOperation::Unresolved {
+                family: OperationFamily::Curve,
+            } => matches!(kind, Some("Part::Section" | "Part::ProjectOnSurface")),
+            _ => true,
+        };
     let placement = legacy
         .native_ref
         .as_deref()
         .filter(|_| placed)
-        .and_then(|object| source.placement(object, losses));
+        .and_then(|object| source.placement(object));
     Feature {
         id: legacy.id.clone(),
         name: legacy.name.clone(),

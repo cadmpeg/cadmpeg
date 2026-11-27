@@ -395,45 +395,6 @@ fn a_body_placement_is_its_container_placement() {
 }
 
 #[test]
-fn an_unreadable_body_placement_is_a_loss_naming_the_body() {
-    let property = crate::native::PropertyRecord {
-        id: "fcstd:native:property#Body:Placement".into(),
-        owner: "fcstd:native:object#Body".into(),
-        name: "Placement".into(),
-        type_name: "App::PropertyPlacement".into(),
-        family: crate::native::PropertyFamily::Unknown,
-        status: None,
-        body: crate::native::PropertyBody::Transient,
-        order: 0,
-        xml: crate::native::RetainedXml::from_text(
-            r#"<Property name="Placement" type="App::PropertyPlacement"/>"#.into(),
-            0,
-        )
-        .unwrap(),
-    };
-    let properties = [property];
-    let source = super::Source::of(&[], &properties);
-    let mut losses = Vec::new();
-    assert_eq!(
-        source.placement("fcstd:native:object#Body", &mut losses),
-        None
-    );
-    let [loss] = losses.as_slice() else {
-        panic!("{losses:?}");
-    };
-    assert_eq!(
-        loss.code,
-        crate::loss::FreecadLossCode::FeaturePlacementUnresolved
-            .note("")
-            .code
-    );
-    assert!(
-        loss.message.contains("fcstd:native:object#Body"),
-        "{loss:?}"
-    );
-}
-
-#[test]
 fn a_part_feature_states_its_placement() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Compound" name="Compound" id="1"/></Objects>
@@ -464,6 +425,49 @@ fn a_part_feature_states_its_placement() {
     // A stored identity with no binding is absent (§2.4).
     let identity = decode(&archive(&document.replace("PX", "0")), DecodeDepth::Design);
     assert_eq!(placement(&identity), None);
+}
+
+#[test]
+fn a_part_section_states_its_placement() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="Part::Box" name="First" id="1"/>
+ <Object type="Part::Box" name="Second" id="2"/>
+ <Object type="Part::Section" name="Section" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="First"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="Second"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="Section"><Properties Count="3">
+  <Property name="Base" type="App::PropertyLink"><Link value="First"/></Property>
+  <Property name="Tool" type="App::PropertyLink"><Link value="Second"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="3" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let ir = decode(&archive(document), DecodeDepth::Design);
+    let section = ir
+        .design
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "fcstd:design:feature#Section")
+        .unwrap_or_else(|| panic!("{:?}", ir.design.features));
+    assert!(matches!(
+        section.definition.operation,
+        FeatureOperation::Unresolved {
+            family: OperationFamily::Curve
+        }
+    ));
+    // A section applies its `Placement` to its result (§5.10).
+    let origin = section
+        .placement
+        .as_ref()
+        .expect("the section's Placement")
+        .resolved
+        .as_ref()
+        .expect("a resolved frame")
+        .origin
+        .get();
+    assert_eq!([origin.x, origin.y, origin.z], [0.0, 3.0, 0.0]);
 }
 
 #[test]
@@ -855,6 +859,41 @@ fn an_app_link_is_a_place_feature_of_the_group() {
     assert_eq!(place.base, Some(PlacementBase::OwnOccurrence));
     assert!(place.placement.is_some());
     assert_eq!(place.scale, None);
+    // A stated scale keeps the identity placement under the parent: `scale`
+    // is stated only with a `placement` (§6.7).
+    let place = instance_place(&decode(
+        &archive(
+            &document
+                .replace(r#"Px="5" Py="6" Pz="7""#, r#"Px="0" Py="0" Pz="0""#)
+                .replace("FOLLOWS", "false"),
+        ),
+        DecodeDepth::Design,
+    ));
+    assert_eq!(place.base, Some(PlacementBase::Parent));
+    let origin = place
+        .placement
+        .as_ref()
+        .expect("the link's identity Placement")
+        .resolved
+        .as_ref()
+        .expect("a resolved frame")
+        .origin
+        .get();
+    assert_eq!([origin.x, origin.y, origin.z], [0.0, 0.0, 0.0]);
+    let Some(ScaleFactors::PerAxis {
+        factors,
+        frame: None,
+    }) = &place.scale
+    else {
+        panic!("{:?}", place.scale);
+    };
+    assert_eq!(
+        factors.clone().map(|factor| match factor {
+            cadmpeg_ir::design::dimension::Dimension::Literal(value) => value.get(),
+            other => panic!("{other:?}"),
+        }),
+        [2.0, 3.0, 4.0]
+    );
 }
 
 #[test]
