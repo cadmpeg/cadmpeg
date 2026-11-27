@@ -16,6 +16,7 @@ use cadmpeg_parasolid::pointer::read_at as read_ref;
 
 pub(super) mod nodes;
 pub(super) mod schema;
+mod shell_containment;
 
 const BODY_TAG: [u8; 2] = [0x00, 0x0c];
 const SHELL_TAG: [u8; 2] = [0x00, 0x0d];
@@ -168,6 +169,8 @@ pub(super) struct FaceNode {
     pub(super) node_id: u32,
     /// `[next_face, previous_face, loop, shell, surface]`.
     pub(super) refs: [u32; 5],
+    /// `[next_front, previous_front, front_shell]` from the complete FACE.
+    pub(super) front: Option<[u32; 3]>,
     /// Stored face sense marker.
     pub(super) sense: Sense,
     /// Byte offset of the node tag.
@@ -971,13 +974,16 @@ fn parse_face_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<Face
     if refs[3] <= 1 {
         return None;
     }
+    let end = at + 1;
+    let front = super::topology::face_front_refs(bytes, payload, end);
     Some(FaceNode {
         attr,
         node_id,
         refs,
+        front,
         sense,
         offset,
-        end: at + 1,
+        end,
     })
 }
 
@@ -2083,6 +2089,7 @@ mod tests {
                 attr: 100,
                 node_id: 55,
                 refs: [1, 1, 1, 8, 12],
+                front: None,
                 sense: Sense::Forward,
                 offset: 9,
                 end: 10,
@@ -2182,6 +2189,7 @@ mod tests {
                     attr: 100,
                     node_id: 55,
                     refs: [1, 1, 1, 65_536, 12],
+                    front: None,
                     sense: Sense::Forward,
                     offset: 7,
                     end: 8,
@@ -2190,6 +2198,7 @@ mod tests {
                     attr: 101,
                     node_id: 56,
                     refs: [1, 1, 1, 8, 12],
+                    front: None,
                     sense: Sense::Forward,
                     offset: 9,
                     end: 10,
@@ -2319,7 +2328,7 @@ mod tests {
                 end: 4,
             },
         )]);
-        assert!(region_chain(&body, &regions).is_none_or(|chain| chain.is_empty()));
+        assert_eq!(region_chain(&body, &regions), Some(Vec::new()));
     }
 
     #[test]
@@ -2486,6 +2495,7 @@ mod tests {
             attr,
             node_id: attr,
             refs: [next, 1, 1, 5, 1],
+            front: None,
             sense: Sense::Forward,
             offset: 0,
             end: 0,
@@ -2519,6 +2529,7 @@ mod tests {
             attr,
             node_id: attr,
             refs: [next, 1, 1, 5, 1],
+            front: None,
             sense: Sense::Forward,
             offset: 0,
             end: 0,

@@ -3369,9 +3369,9 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
     let (into, from) = (&mut target.stats.derived_kind, source.stats.derived_kind);
-    into.unlinked_records |= from.unlinked_records;
-    into.stated |= from.stated;
-    into.from_faces |= from.from_faces;
+    into.agreed |= from.agreed;
+    into.disagree |= from.disagree;
+    into.absent |= from.absent;
     Ok(())
 }
 
@@ -5313,19 +5313,55 @@ pub(crate) fn brep_losses(
         )));
     }
     if s.synthetic_body_grouping {
-        let kind = s.derived_kind;
-        let text = if kind.stated && kind.from_faces {
-            "The body records do not link up with the faces; body/region/shell hierarchies were derived, with the kind the body records state where they agree, and classified from their faces elsewhere."
-        } else if kind.stated {
-            "The body records do not link up with the faces; one body/region/shell hierarchy was derived, with the kind they state."
-        } else if kind.unlinked_records {
-            "The body records do not link up with the faces and state more than one kind; one body/region/shell hierarchy was derived, classified from its faces."
-        } else {
-            "No body record names a region; one body/region/shell hierarchy was derived."
-        };
-        losses.push(SldprtLossCode::TopologyBodyHierarchyDerived.note(text.to_string()));
+        losses
+            .push(SldprtLossCode::TopologyBodyHierarchyDerived.note(derived_note(s.derived_kind)));
     }
     Ok(losses)
+}
+
+/// The note of the derived body hierarchies, naming where their bodies take
+/// their kind.
+fn derived_note(kind: crate::brep::graph::DerivedKind) -> String {
+    let crate::brep::graph::DerivedKind {
+        agreed,
+        disagree,
+        absent,
+    } = kind;
+    match (agreed, disagree, absent) {
+        (true, false, false) => {
+            return "The body records do not link up with the faces; one body/region/shell hierarchy was derived, with the kind they state.".to_owned();
+        }
+        (false, true, false) => {
+            return "The body records do not link up with the faces and state more than one kind; one body/region/shell hierarchy was derived, classified from its faces.".to_owned();
+        }
+        (false, false, _) => {
+            return "No body record names a region; one body/region/shell hierarchy was derived."
+                .to_owned();
+        }
+        _ => {}
+    }
+    let sources: Vec<&str> = [
+        (
+            agreed,
+            "with the kind the body records state where they agree",
+        ),
+        (
+            disagree,
+            "classified from their faces where the body records state more than one kind",
+        ),
+        (
+            absent,
+            "classified from their faces where no body record names a region",
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(present, text)| present.then_some(text))
+    .collect();
+    let (last, rest) = sources.split_last().unwrap_or((&"", &[]));
+    format!(
+        "The body records do not link up with the faces; body/region/shell hierarchies were derived, {}, and {last}.",
+        rest.join(", ")
+    )
 }
 
 /// The source metadata of a decode that projects no Parasolid geometry: the

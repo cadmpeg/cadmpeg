@@ -35,9 +35,10 @@ pub(super) fn first_lost_face(refs: &[u32], stated: &HashSet<String>) -> Option<
 /// States, in their partial form, the shells, regions, and bodies of
 /// `records` that the decode does not state, and marks each stated shell that
 /// lists a face the decode does not state (§3.3, §5.6). A shell none of whose
-/// faces is stated holds no face and says so; a stated region that gains such
-/// a shell leaves its shells unclassified, since which is the exterior is no
-/// longer stated; a body keeps its stored kind. A shell that lists a stated
+/// faces is stated holds no face and says so; a region it states with more
+/// than one such shell, and a stated region that gains one, leaves its shells
+/// unclassified, since no stored record says which is the exterior; a body
+/// keeps its stored kind. A shell that lists a stated
 /// face is the shell that holds that face, so nothing of its body is stated
 /// beside it.
 pub(super) fn state_unbuilt_records(
@@ -120,7 +121,7 @@ pub(super) fn state_unbuilt_records(
             super::admit_brep_entity(ctx)?;
             annotate(AnnotationKey::from(&id), region.offset, "00_51_region");
             out.regions
-                .push(region_of(id, body_id.clone(), added, true));
+                .push(region_of(id, body_id.clone(), added, None));
         }
         if body_new {
             super::admit_brep_entity(ctx)?;
@@ -149,23 +150,20 @@ pub(super) fn state_unbuilt_records(
     Ok(())
 }
 
-/// The region `id` of `body` bounded by `shells`, the exterior first. Where
-/// `faceless`, a shell holds no stated face, so which shell is the exterior
-/// is not stated, and a region of more than one shell leaves them
-/// unclassified (§5.6, Unstated children).
 pub(super) fn region_of(
     id: RegionId,
     body: BodyId,
-    shells: Vec<ShellId>,
-    faceless: bool,
+    mut shells: Vec<ShellId>,
+    exterior: Option<usize>,
 ) -> Region {
-    if faceless && shells.len() > 1 {
+    if let Some(exterior) = exterior {
+        shells[..=exterior].rotate_right(1);
+    } else if shells.len() > 1 {
         let mut region = Region::new(id, body, Vec::new());
         region.unstated = Some(RegionUnstated::Unclassified { shells });
-        region
-    } else {
-        Region::new(id, body, shells)
+        return region;
     }
+    Region::new(id, body, shells)
 }
 
 /// The body records of the typed `hierarchies`, sorted by attribute.

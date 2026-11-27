@@ -10,7 +10,9 @@ use cadmpeg_ir::topology::{BodyKind, RegionUnstated, Unstated};
 use cadmpeg_ir::CadIr;
 
 use crate::test_support::container::{make_block, outer_header};
-use crate::test_support::parasolid::sequence::{face_fields, loopless_nodes, sequence_of, F};
+use crate::test_support::parasolid::sequence::{
+    face_fields, loopless_nodes, sequence_of, F, NULL_REAL,
+};
 use crate::SldprtCodec;
 
 type Nodes = Vec<(u16, u16, Vec<F>)>;
@@ -72,6 +74,171 @@ fn second_shell(nodes: &mut Nodes, kind: u16) {
 fn loop_naming(nodes: &mut Nodes, attr: u16, face: u16) {
     use F::{I, P};
     nodes.push((15, attr, vec![I(30), P(1), P(1), P(face), P(1)]));
+}
+
+/// The nodes of a sheet SHELL 4 that lists a plane FACE 5 and a plane FACE
+/// 12, each bounded by an ellipse ring at its own centre, so they share no
+/// edge, and between them in the face chain a loopless sphere FACE 9 that a
+/// LOOP names, so it is bridged and given up.
+fn split_shell_nodes() -> Nodes {
+    use F::{C, I, P, R, V};
+    let mut nodes = loopless_nodes(50);
+    nodes[0].2[14] = F::B(3);
+    nodes[3].2[3] = P(9);
+    nodes[3].2[5] = P(6);
+    let mut sphere = face_fields();
+    sphere[0] = I(9);
+    sphere[3] = P(12);
+    sphere[4] = P(5);
+    sphere[5] = P(1);
+    sphere[7] = P(24);
+    let mut plane = face_fields();
+    plane[0] = I(10);
+    plane[4] = P(9);
+    plane[5] = P(13);
+    plane[7] = P(23);
+    #[rustfmt::skip]
+    nodes.extend([
+        (15, 6, vec![I(5), P(1), P(7), P(5), P(1)]),
+        (17, 7, vec![P(1), P(6), P(7), P(7), P(1), P(11), P(8), P(1), P(1), C(b'+')]),
+        (17, 11, vec![P(1), P(1), P(1), P(1), P(1), P(7), P(8), P(1), P(1), C(b'-')]),
+        (16, 8, vec![I(6), P(1), R(NULL_REAL), P(7), P(1), P(1), P(21), P(1), P(1), P(2)]),
+        (32, 21, vec![I(7), P(1), P(1), P(1), P(1), P(1), C(b'+'), V([0.0; 3]), V([0.0, 0.0, 1.0]), V([1.0, 0.0, 0.0]), R(0.007), R(0.002)]),
+        (14, 9, sphere),
+        (53, 24, vec![I(14), P(1), P(1), P(1), P(1), P(1), C(b'+'), V([0.0, 0.1, 0.0]), R(0.007), V([0.0, 0.0, 1.0]), V([1.0, 0.0, 0.0])]),
+        (15, 30, vec![I(30), P(1), P(1), P(9), P(1)]),
+        (14, 12, plane),
+        (50, 23, vec![I(15), P(1), P(1), P(1), P(1), P(1), C(b'+'), V([0.05, 0.0, 0.0]), V([0.0, 0.0, 1.0]), V([1.0, 0.0, 0.0])]),
+        (15, 13, vec![I(16), P(1), P(14), P(12), P(1)]),
+        (17, 14, vec![P(1), P(13), P(14), P(14), P(1), P(15), P(16), P(1), P(1), C(b'+')]),
+        (17, 15, vec![P(1), P(1), P(1), P(1), P(1), P(14), P(16), P(1), P(1), C(b'-')]),
+        (16, 16, vec![I(17), P(1), R(NULL_REAL), P(14), P(1), P(1), P(22), P(1), P(1), P(2)]),
+        (32, 22, vec![I(18), P(1), P(1), P(1), P(1), P(1), C(b'+'), V([0.05, 0.0, 0.0]), V([0.0, 0.0, 1.0]), V([1.0, 0.0, 0.0]), R(0.007), R(0.002)]),
+    ]);
+    nodes
+}
+
+/// One stored SHELL that a lost face splits into pieces states the pieces
+/// without saying which bounds the outside: no stored field says so, and
+/// none of them is a cavity (CADIR §5.6).
+#[test]
+fn a_shell_split_by_a_lost_face_leaves_its_pieces_unclassified() {
+    let (ir, messages) = decode(&split_shell_nodes());
+    let geometry = &ir.geometry;
+    let faces: Vec<_> = geometry.faces.iter().map(|face| face.id.as_str()).collect();
+    assert_eq!(
+        faces,
+        ["sldprt:brep:face#12", "sldprt:brep:face#5"],
+        "{messages:#?}"
+    );
+    let [region] = geometry.regions.as_slice() else {
+        panic!("one region: {messages:#?}");
+    };
+    let Some(RegionUnstated::Unclassified { shells }) = &region.unstated else {
+        panic!("unclassified shells: {region:#?}");
+    };
+    assert_eq!(
+        ids(shells),
+        ["sldprt:brep:shell#4", "sldprt:brep:shell#4.component-1"]
+    );
+    assert!(geometry
+        .shells
+        .iter()
+        .all(|shell| shell.unstated == Some(Unstated::Members)));
+    assert!(
+        messages.iter().any(|message| message.contains("face#9")),
+        "{messages:#?}"
+    );
+}
+
+/// A derived hierarchy whose faces form two disjoint pieces states both
+/// without saying which bounds the outside: no record states the region or
+/// its shells (CADIR §5.6).
+#[test]
+fn a_derived_region_of_disjoint_pieces_leaves_them_unclassified() {
+    let mut nodes = two_sphere_shells(false);
+    nodes.retain(|(kind, _, _)| *kind != 12);
+    let (ir, messages) = decode(&nodes);
+    let geometry = &ir.geometry;
+    assert_eq!(geometry.faces.len(), 2, "{messages:#?}");
+    assert_eq!(geometry.bodies[0].kind, BodyKind::Solid);
+    let [region] = geometry.regions.as_slice() else {
+        panic!("one region: {messages:#?}");
+    };
+    let Some(RegionUnstated::Unclassified { shells }) = &region.unstated else {
+        panic!("unclassified shells: {region:#?}");
+    };
+    assert_eq!(
+        ids(shells),
+        ["sldprt:brep:shell#0", "sldprt:brep:shell#0.component-1"]
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.starts_with("No body record names a region;")),
+        "{messages:#?}"
+    );
+}
+
+fn two_sphere_shells(nested: bool) -> Nodes {
+    use F::{C, I, P, R, V};
+    let mut nodes = loopless_nodes(53);
+    nodes[0].2[20] = P(30);
+    nodes[1].2[3] = P(if nested { 32 } else { 1 });
+    nodes[1].2[4] = P(30);
+    nodes[2].2[3] = P(7);
+    nodes[3].2[8] = C(if nested { b'-' } else { b'+' });
+    nodes[3].2[13] = P(33);
+    let mut outer_face = face_fields();
+    outer_face[0] = I(8);
+    outer_face[5] = P(1);
+    outer_face[6] = P(7);
+    outer_face[7] = P(21);
+    outer_face[13] = P(31);
+    let mut outer_surface = nodes[4].2.clone();
+    outer_surface[0] = I(9);
+    outer_surface[7] = V(if nested { [0.0; 3] } else { [0.05, 0.0, 0.0] });
+    outer_surface[8] = R(0.02);
+    #[rustfmt::skip]
+    nodes.extend([
+        (13, 7, vec![I(10), P(1), P(2), P(1), P(12), P(1), P(1), P(3), P(1)]),
+        (14, 12, outer_face),
+        (53, 21, outer_surface),
+        (19, 30, vec![I(11), P(1), P(2), P(3), P(1), P(31), C(b'V')]),
+        (13, 31, vec![I(12), P(1), P(1), P(if nested { 1 } else { 33 }), P(1), P(1), P(1), P(30), P(12)]),
+        (13, 33, vec![I(13), P(1), P(1), P(1), P(1), P(1), P(1), P(if nested { 32 } else { 30 }), P(5)]),
+    ]);
+    if nested {
+        nodes.push((19, 32, vec![I(14), P(1), P(2), P(1), P(3), P(33), C(b'V')]));
+    }
+    nodes
+}
+
+#[test]
+fn native_region_uses_the_boundary_toward_the_infinite_void_as_exterior() {
+    let (ir, messages) = decode(&two_sphere_shells(true));
+    assert_eq!(ir.geometry.faces.len(), 2, "{messages:#?}");
+    let [region] = ir.geometry.regions.as_slice() else {
+        panic!("one stated solid region: {messages:#?}");
+    };
+    assert_eq!(region.unstated, None);
+    assert_eq!(
+        ids(region.stated_shells()),
+        ["sldprt:brep:shell#7", "sldprt:brep:shell#4"]
+    );
+}
+
+#[test]
+fn native_region_leaves_disjoint_shells_unclassified_with_all_faces_stated() {
+    let (ir, messages) = decode(&two_sphere_shells(false));
+    assert_eq!(ir.geometry.faces.len(), 2, "{messages:#?}");
+    let [region] = ir.geometry.regions.as_slice() else {
+        panic!("one stated solid region: {messages:#?}");
+    };
+    let Some(RegionUnstated::Unclassified { shells }) = &region.unstated else {
+        panic!("unclassified shells: {region:#?}");
+    };
+    assert_eq!(ids(shells), ["sldprt:brep:shell#4", "sldprt:brep:shell#7"]);
 }
 
 /// A site whose only face is given up keeps its body, region, and shell, the

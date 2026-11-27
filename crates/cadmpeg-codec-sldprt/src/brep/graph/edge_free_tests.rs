@@ -650,6 +650,53 @@ fn a_loop_whose_unrecorded_edge_has_an_unresolved_end_names_the_vertex() {
     );
 }
 
+/// A body kept after all its faces are lost keeps its native identity
+/// values and is the target of its last modifying feature.
+#[test]
+fn a_body_whose_every_face_is_lost_keeps_its_identity_and_modifier() {
+    let (payload, offset) = sequence_of(&loopless_nodes(50));
+    let records = super::topology::nodes::sequence(&payload).unwrap();
+    let tables = super::topology::nodes::tables(&records, &payload, offset).unwrap();
+    let facts = super::typed::nodes::facts(&records, offset).unwrap();
+    let entity_facts = super::entity::Facts {
+        body_payloads: vec![(2, vec![77])],
+        body_modifiers: vec![super::attrib::BodyModifier {
+            body_attr: 2,
+            feature_source_id: crate::brep::feature_source::FeatureSourceId::try_from(5).unwrap(),
+            target: None,
+        }],
+        ..super::entity::Facts::default()
+    };
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let out = super::decode_graph(
+        &ctx,
+        &mut super::CarrierIndex::default(),
+        &tables,
+        entity_facts,
+        &facts,
+        &cadmpeg_ir::stream_name!("lost-faces"),
+    )
+    .unwrap();
+    assert!(out.faces.is_empty());
+    let [body] = out.bodies.as_slice() else {
+        panic!("one body: {:#?}", out.dropped);
+    };
+    assert_eq!(body.id.as_str(), "sldprt:brep:body#2");
+    let identities: Vec<_> = out
+        .native_body_identities
+        .iter()
+        .map(|identity| (identity.target.as_str(), identity.values.as_slice()))
+        .collect();
+    assert_eq!(identities, [("sldprt:brep:body#2", &[77][..])]);
+    let targets: Vec<_> = out
+        .body_modifiers
+        .iter()
+        .map(|modifier| modifier.target.as_deref())
+        .collect();
+    assert_eq!(targets, [Some("sldprt:brep:body#2")]);
+}
+
 /// The nodes of `nodes` without their BODY record, whose body the decode
 /// then derives.
 fn without_body(mut nodes: Vec<(u16, u16, Vec<F>)>) -> Vec<(u16, u16, Vec<F>)> {
@@ -687,8 +734,8 @@ fn body_records_that_do_not_link_up_still_state_the_derived_body_kind() {
     nodes[0].2[20] = F::P(9);
     let out = decode(&nodes);
     assert!(out.stats.synthetic_body_grouping);
-    assert!(out.stats.derived_kind.unlinked_records);
-    assert!(out.stats.derived_kind.stated);
+    let kind = out.stats.derived_kind;
+    assert!(kind.agreed && !kind.disagree && !kind.absent);
     let [body] = out.bodies.as_slice() else {
         panic!("one derived body");
     };
@@ -706,8 +753,8 @@ fn a_body_record_its_region_does_not_name_states_no_derived_kind() {
     nodes[1].2[2] = F::P(9);
     let out = decode(&nodes);
     assert!(out.stats.synthetic_body_grouping);
-    assert!(!out.stats.derived_kind.unlinked_records);
-    assert!(out.stats.derived_kind.from_faces);
+    let kind = out.stats.derived_kind;
+    assert!(!kind.agreed && !kind.disagree && kind.absent);
     let [body] = out.bodies.as_slice() else {
         panic!("one derived body");
     };
