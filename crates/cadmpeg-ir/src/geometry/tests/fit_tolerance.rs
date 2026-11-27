@@ -10,6 +10,7 @@ use crate::geometry::surface_curves::{
 };
 use crate::geometry::{ProceduralCurve, ProceduralSurface};
 use crate::ids::{ProceduralCurveId, ProceduralSurfaceId};
+use cadmpeg_core::serde_erase::json;
 
 fn surface_id() -> ProceduralSurfaceId {
     ProceduralSurfaceId::mint("synthetic:test:construction#0").expect("valid identity")
@@ -48,13 +49,13 @@ fn a_full_law_surface_tail_states_its_fit_tolerance() {
         Some(FitTolerance::try_new(0.25).expect("admissible fit tolerance"))
     );
     let surface = ProceduralSurface::new(surface_id(), definition, None);
-    let wire = cadmpeg_core::serde_erase::json::to_value(&surface).expect("serialize");
+    let wire = json::to_value(&surface).expect("serialize");
     assert_eq!(
         wire["definition"]["construction"]["tail"]["cache"]["fit_tolerance"],
         0.25
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurface>(wire).expect("read back"),
+        json::from_value::<ProceduralSurface>(wire).expect("read back"),
         surface
     );
 }

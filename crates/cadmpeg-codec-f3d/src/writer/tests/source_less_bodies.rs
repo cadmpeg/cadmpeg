@@ -35,7 +35,7 @@ fn generated_source_less_unit_cube_writes_body_transform() {
     source_less.geometry.bodies[0].transform = Some(expected);
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less transformed cube encode");
     let round_trip = F3dCodec
@@ -60,7 +60,7 @@ fn generated_source_less_unit_cube_writes_body_and_face_colors() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less colored cube encode");
     let round_trip = F3dCodec
@@ -101,7 +101,7 @@ fn generated_source_less_writes_an_empty_display_name_as_no_name() {
 
     let mut encoded = Vec::new();
     let report = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("an empty display name writes");
     assert!(report.losses.is_empty(), "{:#?}", report.losses);
@@ -208,7 +208,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     drop(native);
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less provenance attribute encode");
     let round_trip = F3dCodec
@@ -401,14 +401,6 @@ fn generated_source_less_drops_lossy_design_link_metadata() {
         &source_less,
         None,
         "export/native.records-omitted",
-        "one sketch-curve link per coedge",
-    );
-
-    f3d_native_mut(&mut source_less).sketch_curve_links.pop();
-    crate::test_support::assert_written_with_loss(
-        &source_less,
-        None,
-        "export/native.records-omitted",
         "contiguous ordinals",
     );
 }
@@ -463,7 +455,7 @@ fn generated_source_less_drops_collapsed_native_topology_metadata() {
         &source_less,
         None,
         "export/native.records-omitted",
-        "requires finite fields and a tolerant vertex",
+        "of tolerant-vertex records whose evaluated slot does not agree with the tolerance of their vertex",
     );
 }
 
@@ -531,7 +523,7 @@ fn generated_source_less_writes_two_independent_cube_bodies() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less two-body encode");
     let round_trip = F3dCodec
@@ -574,7 +566,7 @@ fn generated_source_less_writes_typed_asm_history_graph() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less history encode");
     let mut preambleless = source_less.clone();
@@ -586,7 +578,7 @@ fn generated_source_less_writes_typed_asm_history_graph() {
     F3dCodec
         .plan(
             EncodeInput::new(&preambleless, None),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .and_then(|plan| plan.write_to(&mut preambleless_bytes))
         .expect("source-less preambleless history encode");
@@ -652,7 +644,7 @@ fn generated_source_less_drops_lossy_asm_history_graphs() {
         .get_mut("asm_history_records")
         .expect("history-record arena")[0];
     let mut orphan_fields = orphan.fields().unwrap().clone();
-    orphan_fields.insert("parent".into(), serde_json::json!("missing-state"));
+    orphan_fields.insert("parent".into(), cadmpeg_core::json!("missing-state"));
     *orphan = cadmpeg_ir::NativeRecord::new(
         cadmpeg_ir::ids::Identity::new(orphan.id()).expect("valid identity"),
         orphan_fields,

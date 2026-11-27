@@ -931,6 +931,51 @@ pub(crate) fn check_items<'a>(
     Ok(())
 }
 
+/// Items of an edge collection, split by whether they store an index-reference list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ItemCounts {
+    /// Items that store a nonempty index-reference list.
+    pub(crate) listed: usize,
+    /// Items that store an empty index-reference list.
+    pub(crate) empty: usize,
+}
+
+/// Counts the items of an edge collection. `None` when the collection is not
+/// an edge collection, lists no item, or lists a record that is not an edge item.
+pub(crate) fn count_items<'a>(
+    collection: &PmDcFeatureProperty,
+    property: &impl Fn(crate::pmdc::PmDcReference) -> Option<&'a PmDcFeatureProperty>,
+) -> Option<ItemCounts> {
+    let PmDcFeaturePropertyKind::References {
+        family: super::PmDcFeatureReferenceFamily::EdgeCollection,
+        items,
+    } = &collection.kind
+    else {
+        return None;
+    };
+    if items.references().is_empty() {
+        return None;
+    }
+    let mut counts = ItemCounts {
+        listed: 0,
+        empty: 0,
+    };
+    for reference in items.references() {
+        let Some(PmDcFeaturePropertyKind::EdgeItem {
+            index_references, ..
+        }) = property(*reference).map(|p| &p.kind)
+        else {
+            return None;
+        };
+        if index_references.values().is_empty() {
+            counts.empty += 1;
+        } else {
+            counts.listed += 1;
+        }
+    }
+    Some(counts)
+}
+
 /// Whether an edge collection lists items and every item stores an empty
 /// index-reference list.
 pub(crate) fn all_items_empty<'a>(
@@ -1111,7 +1156,9 @@ fn empty_item_losses(
     }
 }
 
-/// Reports the projected fillets that omit an edge set with only empty items.
+/// Reports the projected fillets that omit an edge set with only empty items,
+/// and the projected fillets that omit the empty items of an edge set that also
+/// lists items.
 fn empty_set_losses(
     inventory: &super::FeatureInventory,
     features: &[cadmpeg_ir::features::Feature],
@@ -1140,29 +1187,65 @@ fn empty_set_losses(
             property,
         )
     }));
-    let count = inventory
-        .features
+    let projected_sources = || {
+        inventory
+            .features
+            .iter()
+            .filter(|source| projected.contains(source.id().as_str()))
+    };
+    let property_of = |source: &super::PmDcFeature| {
+        let token = source.identity.segment_token.clone();
+        let properties = &properties;
+        move |reference: crate::pmdc::PmDcReference| {
+            properties
+                .get(&(token.as_str(), reference.record_ordinal()?))?
+                .as_ref()
+                .copied()
+        }
+    };
+    let sets = projected_sources()
+        .filter(|source| super::fillet::empty_sets(source, property_of(source)) > 0)
+        .count();
+    // The omission is real only for a set whose typed selection is the
+    // resolved listed items; a native selection keeps every item.
+    let by_ref: HashMap<&str, &cadmpeg_ir::features::Feature> = features
         .iter()
-        .filter(|source| projected.contains(source.id().as_str()))
+        .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature)))
+        .collect();
+    let items = projected_sources()
         .filter(|source| {
-            super::fillet::empty_sets(source, |reference| {
-                properties
-                    .get(&(
-                        source.identity.segment_token.as_str(),
-                        reference.record_ordinal()?,
-                    ))?
-                    .as_ref()
-                    .copied()
-            }) > 0
+            let Some(feature) = by_ref.get(source.id().as_str()) else {
+                return false;
+            };
+            let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
+                feature.evaluation.definition()
+            else {
+                return false;
+            };
+            super::fillet::listed_set_forms(source, property_of(source))
+                .into_iter()
+                .zip(groups.iter())
+                .any(|(partial, group)| {
+                    partial
+                        && matches!(
+                            group.edges,
+                            EdgeSelection::Generated { .. } | EdgeSelection::Historical { .. }
+                        )
+                })
         })
         .count();
-    if count == 0 {
-        Vec::new()
-    } else {
-        vec![crate::loss::InventorLossCode::FeatureFilletEmptyEdgeSetsOmitted.note(format!(
-            "{count} fillet feature(s) omit an edge set whose items all store empty index-reference lists; the set selects no edge."
-        ))]
+    let mut losses = Vec::new();
+    if sets > 0 {
+        losses.push(crate::loss::InventorLossCode::FeatureFilletEmptyEdgeSetsOmitted.note(format!(
+            "{sets} fillet feature(s) omit an edge set whose items all store empty index-reference lists; the set selects no edge."
+        )));
     }
+    if items > 0 {
+        losses.push(crate::loss::InventorLossCode::FeatureFilletEmptyEdgeItemsOmitted.note(format!(
+            "{items} fillet feature(s) omit edge items that store empty index-reference lists beside listed items of the same edge set; an empty item selects no edge."
+        )));
+    }
+    losses
 }
 
 fn retain_producers(selection: &mut EdgeSelection, ordinal: u64, producers: &HashMap<String, u64>) {

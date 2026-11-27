@@ -61,7 +61,7 @@ fn assign(ir: &mut CadIr, policy: &DecodePolicy) -> Result<Vec<String>, CodecErr
         assert!(matches!(ctx.finish_session(),
             Err(CodecError::ResourceLimit(sticky)) if sticky == *first));
     }
-    result
+    result.map(|owned| owned.iter().map(|id| id.as_str().to_owned()).collect())
 }
 
 #[test]

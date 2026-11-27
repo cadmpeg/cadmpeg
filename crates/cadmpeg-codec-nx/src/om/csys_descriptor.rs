@@ -180,6 +180,7 @@ mod tests {
         CsysDescriptor, CsysDescriptorSlot, CsysIdentity, LocatedCsysDescriptor,
         CSYS_IDENTITY_INTO_WIRE_COUNT,
     };
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn identity_lengths_and_maximal_runs_are_checked_at_construction() {
@@ -221,8 +222,8 @@ mod tests {
         }
         let identity = CsysIdentity::try_from("a".repeat(30)).unwrap();
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&identity).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(&String::from(identity.clone())).unwrap()
+            json::to_vec(&identity).unwrap(),
+            json::to_vec(&String::from(identity.clone())).unwrap()
         );
         let record = Record {
             id: "nx:feature:csys-identity#0",
@@ -231,7 +232,7 @@ mod tests {
         CSYS_IDENTITY_INTO_WIRE_COUNT.with(|count| count.set(0));
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
-            serde_json::json!({"id":"nx:feature:csys-identity#0", "identity": "a".repeat(30)}),
+            cadmpeg_core::json!({"id":"nx:feature:csys-identity#0", "identity": "a".repeat(30)}),
         );
         CSYS_IDENTITY_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }

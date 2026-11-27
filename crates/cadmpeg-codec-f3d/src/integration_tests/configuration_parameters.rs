@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use std::io::{Cursor, Write};
 
 use super::{assert_valid, decode};
@@ -45,7 +46,7 @@ fn archive(table: &[u8], second_discriminator: u64) -> Vec<u8> {
 }
 
 fn width_table() -> Vec<u8> {
-    cadmpeg_core::serde_erase::json::to_vec(&table_document(
+    json::to_vec(&table_document(
         "1",
         &[("W", object_target("71", "UserParameterValue"))],
         &[

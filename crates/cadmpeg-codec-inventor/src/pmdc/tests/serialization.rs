@@ -5,6 +5,7 @@ use super::super::{
     PmDcListMetadata, PmDcPairedMap, PmDcPairedMapWire, PmDcReference, PmDcReferenceList,
     PmDcReferenceListWire, PmDcU32List, PmDcU32ListWire, PMDC_LIST_CLONE_COUNT,
 };
+use cadmpeg_core::serde_erase::json;
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -15,11 +16,11 @@ struct Record<'a, T> {
 
 fn assert_borrowed_wire<T: Serialize, W: Serialize>(id: &'static str, value: &T, wire: W) {
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(value).expect("borrowed wire"),
-        cadmpeg_core::serde_erase::json::to_vec(&wire).expect("owned wire")
+        json::to_vec(value).expect("borrowed wire"),
+        json::to_vec(&wire).expect("owned wire")
     );
     let record = Record { id, value };
-    let expected = serde_json::json!({"id": id, "value": wire});
+    let expected = cadmpeg_core::json!({"id": id, "value": wire});
     PMDC_LIST_CLONE_COUNT.with(|count| count.set(0));
     cadmpeg_test_support::native_serialization::assert_native_limit(&record, expected);
     PMDC_LIST_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));

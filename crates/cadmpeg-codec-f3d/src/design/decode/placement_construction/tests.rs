@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::records::placement_construction::DesignPlacementConstruction;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::native::bytes::NativeBytes;
 
 #[test]
@@ -9,10 +10,9 @@ fn placement_source_frames_preserve_versioned_members_and_absolute_offsets() {
         for fixture in crate::test_support::placement_construction::frames() {
             let fixture: serde_json::Value = serde_json::from_str(&fixture).unwrap();
             let raw: NativeBytes<Vec<u8>> =
-                cadmpeg_core::serde_erase::json::from_value(fixture["source_bytes"].clone())
-                    .unwrap();
+                json::from_value(fixture["source_bytes"].clone()).unwrap();
             let expected: DesignPlacementConstruction =
-                cadmpeg_core::serde_erase::json::from_value(fixture["native"].clone()).unwrap();
+                json::from_value(fixture["native"].clone()).unwrap();
             let mut bytes = vec![0; 17];
             bytes.extend_from_slice(&raw);
             let view = View::over_retained(&bytes).child(17, bytes.len()).unwrap();
@@ -39,10 +39,9 @@ fn placement_source_frames_preserve_versioned_members_and_absolute_offsets() {
 fn placement_registration_requires_semantic_identity_matching_headers_and_a_paired_bound() {
     use crate::test_support::placement_construction::{frames, metadata};
     let fixture: serde_json::Value = serde_json::from_str(&frames()[0]).unwrap();
-    let raw: NativeBytes<Vec<u8>> =
-        cadmpeg_core::serde_erase::json::from_value(fixture["source_bytes"].clone()).unwrap();
+    let raw: NativeBytes<Vec<u8>> = json::from_value(fixture["source_bytes"].clone()).unwrap();
     let expected: DesignPlacementConstruction =
-        cadmpeg_core::serde_erase::json::from_value(fixture["native"].clone()).unwrap();
+        json::from_value(fixture["native"].clone()).unwrap();
     let mut bytes = vec![0; 17];
     bytes.extend_from_slice(&raw);
     bytes[21..24].copy_from_slice(b"256");
@@ -107,10 +106,9 @@ fn placement_registration_requires_semantic_identity_matching_headers_and_a_pair
 fn placement_reader_refuses_invalid_identity_and_unbounded_reference_counts() {
     let fixture: serde_json::Value =
         serde_json::from_str(&crate::test_support::placement_construction::frames()[0]).unwrap();
-    let raw: NativeBytes<Vec<u8>> =
-        cadmpeg_core::serde_erase::json::from_value(fixture["source_bytes"].clone()).unwrap();
+    let raw: NativeBytes<Vec<u8>> = json::from_value(fixture["source_bytes"].clone()).unwrap();
     let expected: DesignPlacementConstruction =
-        cadmpeg_core::serde_erase::json::from_value(fixture["native"].clone()).unwrap();
+        json::from_value(fixture["native"].clone()).unwrap();
     let mut source = vec![0; 17];
     source.extend_from_slice(&raw);
     let identity = usize::try_from(expected.fields.identity.as_ref().unwrap().offset).unwrap();
@@ -181,45 +179,29 @@ fn placement_modern_versions_decode_explicit_and_identity_frames() {
                     assert_eq!(matrix.value.rows()[1][3], 3.0);
                     assert_eq!(matrix.value.rows()[2][3], 4.0);
                 }
-                let wire = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
-                let restored: DesignPlacementConstruction =
-                    cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+                let wire = json::to_value(&record).unwrap();
+                let restored: DesignPlacementConstruction = json::from_value(wire.clone()).unwrap();
                 assert_eq!(restored, record);
                 for field in ["periodic_face_mode", "arc_length_for_periodic_face"] {
                     let mut invalid = wire.clone();
                     invalid["fields"][field] = serde_json::Value::Null;
                     if (field == "periodic_face_mode") == (version == 16) {
-                        assert!(cadmpeg_core::serde_erase::json::from_value::<
-                            DesignPlacementConstruction,
-                        >(invalid)
-                        .is_err());
+                        assert!(json::from_value::<DesignPlacementConstruction>(invalid).is_err());
                     }
                 }
                 let mut wrong_version = wire.clone();
                 wrong_version["type_version"] =
-                    serde_json::json!(if version == 16 { 15 } else { 16 });
-                assert!(
-                    cadmpeg_core::serde_erase::json::from_value::<DesignPlacementConstruction>(
-                        wrong_version
-                    )
-                    .is_err()
-                );
+                    cadmpeg_core::json!(if version == 16 { 15 } else { 16 });
+                assert!(json::from_value::<DesignPlacementConstruction>(wrong_version).is_err());
                 if version == 16 {
                     let mut wrong_offset = wire.clone();
-                    wrong_offset["fields"]["periodic_face_mode"]["offset"] = serde_json::json!(47);
-                    assert!(cadmpeg_core::serde_erase::json::from_value::<
-                        DesignPlacementConstruction,
-                    >(wrong_offset)
-                    .is_err());
+                    wrong_offset["fields"]["periodic_face_mode"]["offset"] =
+                        cadmpeg_core::json!(47);
+                    assert!(json::from_value::<DesignPlacementConstruction>(wrong_offset).is_err());
                 }
                 let mut invalid = wire.clone();
-                invalid["type_version"] = serde_json::json!(17);
-                assert!(
-                    cadmpeg_core::serde_erase::json::from_value::<DesignPlacementConstruction>(
-                        invalid
-                    )
-                    .is_err()
-                );
+                invalid["type_version"] = cadmpeg_core::json!(17);
+                assert!(json::from_value::<DesignPlacementConstruction>(invalid).is_err());
                 let mut invalid = bytes.clone();
                 let identity_offset =
                     usize::try_from(record.fields.identity.unwrap().offset).unwrap();

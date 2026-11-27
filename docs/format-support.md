@@ -75,6 +75,7 @@ its result.
 | OpenUSD layers                                    | L2    |
 | STEP Part 21                                      | L8    |
 | Solid Edge `.par`, `.psm`, and `.asm`             | L2    |
+| IronCAD `.ics`                                    | L0    |
 | Onshape bundle                                    | L0    |
 
 <!-- /generated: ladder-table -->
@@ -172,7 +173,7 @@ See [`formats/asm.md`](formats/asm.md) and [`formats/asm-open-items.md`](formats
 The cumulative gate stops at L5; L9 write assertions pass individually and show as extras. Schema 4 / file 1 is the one synthesis target. Schema 2 and schema 3 are preservation-only input dialects. Each schema's own read and write disposition is the row above.
 
 - **Read profile:** Partial for the primary envelope relative to the cumulative L5 gate. Text and binary exact shapes, connected topology, sketches, constraints, core design operations, product links, TechDraw, semantic annotations, Mesh, Points, embedded assets, and inert extension data are implemented. See the generated coverage profile for the current cumulative result.
-- **Native write:** Partial for the declared write envelope; individual write assertions pass as extras above L5. The synthesis catalog is `fcstd:schema-4`, the one band an explicit write target may name. A retained-document write repacks the ZIP container deterministically with `Document.xml` first and the retained side entries in their physical order, preserves every unedited XML record and named side entry, and writes checked leaf property edits and side-entry replacements into `Document.xml` with XML escaping. It writes the band and the document facts that the retained `Document.xml` declares, so a preserving write reproduces schemas 2 and 3 as well. Recursive typed application graphs can be generated without a source archive. Writing uses the FCStd native document graph on `CadIr` (`ir.native["fcstd"]`); `Encoder::plan` ignores `SourceFidelity` and returns `NotConsumed`. An edit the patch cannot hold stays as the source stores it, and `export:edit.dropped` names its record: an edit of a nested value without a typed serializer, of a property, object, or extension declaration, or of a value whose written form does not read back as its record states it. Where the patched `Document.xml` does not read back, the write holds the stored `Document.xml`, and `export:edit.dropped` names each record whose edit it does not hold. An archive entry record that does not read, a repeated entry name, and a ZIP member without an entry record are left out, and `export:native.records-omitted` names each left-out member once; a physical ledger span that does not read orders no member, and the same code names it. A property whose side entry the archive does not hold is written with an empty `file` attribute in the patched and in the stored `Document.xml`, and `export:native.records-omitted` names the property. Its object is marked `Touched` in schemas 3 and 4. A schema-2 declaration has no recompute mark: an object with an input edit or an emptied `file` attribute is written beside its stored shape, and `export:evaluation.stale` names it. Cross-band transcoding is refused: the writer regenerates no `Document.xml`, so an explicit `fcstd:schema-4` target on a schema-2 or schema-3 source is refused by name. A source whose retained `Document.xml` does not read as a FreeCAD document is refused with the source's own dialect and the catalog.
+- **Native write:** Partial for the declared write envelope; individual write assertions pass as extras above L5. The synthesis catalog is `fcstd:schema-4`. An explicit write target may also name `fcstd:schema-2`, `fcstd:schema-3`, or `fcstd:unknown`, which the writer reaches by patching a retained `Document.xml` that declares them. A retained-document write repacks the ZIP container deterministically with `Document.xml` first and the retained side entries in their physical order, preserves every unedited XML record and named side entry, and writes checked leaf property edits and side-entry replacements into `Document.xml` with XML escaping. It writes the band and the document facts that the retained `Document.xml` declares, so a preserving write reproduces schemas 2 and 3 as well. `FcstdDocumentBuilder` builds a schema-4 document from typed objects, properties, and side entries: it assembles an archive and decodes it, so the document holds the retained entries the writer patches. Writing uses the FCStd native document graph on `CadIr` (`ir.native["fcstd"]`); `Encoder::plan` reads two things from `SourceFidelity` and returns `NotConsumed`: the uncarried codec digest, and the untyped retained records, which the patched file holds and `export:source.carried` and `export:source.unchecked` name. Where the sidecar records no digest, `export:edit.unverified` states that edits since decode are not known. Where the sidecar holds a digest that the document does not compute for a reason other than a resource limit, `export:edit.dropped` names the document. An edit the patch cannot hold stays as the source stores it, and `export:edit.dropped` names its record: an edit of a nested value without a typed serializer, of a property, object, or extension declaration, or of a value whose written form does not read back as its record states it. Where the patched `Document.xml` does not read back, the write holds the stored `Document.xml`, and `export:edit.dropped` names each record whose edit it does not hold. An archive entry record that does not read, a repeated entry name, and a ZIP member without an entry record are left out, and `export:native.records-omitted` names each left-out member on one line: by its entry record, else by the properties that name it, else by its ledger span; a physical ledger span that does not read orders no member, and the same code names it. A property whose side entry the archive does not hold is written with an empty `file` attribute in the patched and in the stored `Document.xml`, and `export:native.records-omitted` names the property. Its object is marked `Touched` in schemas 3 and 4. Where the patch cannot write such a property from its record, it writes the stored record with the empty `file` attribute. A property it cannot write either way is left out of `Document.xml`, its container's count is lowered, its object is marked `Touched` in schemas 3 and 4, and `export:native.records-omitted` names the property. Where the patch cannot remove that property's element, the property is written as stored, and `export:native.records-omitted` names the ledger span of the entry. A schema-2 declaration has no recompute mark: an object with an input edit, an emptied `file` attribute, or a left-out property is written beside its stored shape, and `export:evaluation.stale` names it. The writer regenerates no `Document.xml`: a request for another band writes the band the retained `Document.xml` declares, and `target.request-displaced` names both. On a document whose source is of another format, or that records no source, a request that names no target charges no loss and writes the band the retained `Document.xml` declares. `Inherit` resolves to `fcstd:schema-4` and charges `target.source-dialect-displaced`; where the retained `Document.xml` declares another band, the same code names both. A document that holds no retained `Document.xml` that reads as a FreeCAD document is refused with `UnsupportedTarget`, because the writer holds no source bytes of its format and has no synthesis path.
 - **Round trip:** Every manifested public fixture writes deterministically, decodes to the same semantic fingerprint, accepts a typed property edit, and retains every named entry by identity and digest. Optional FreeCAD 1.1.1 acceptance is environment-driven interop via [`tools/validate_fcstd_interop.py`](../tools/validate_fcstd_interop.py) and is not recorded in the checked-in profile.
 
 See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md), [`formats/freecad_fcstd-open-items.md`](formats/freecad_fcstd-open-items.md), and [`formats/freecad_fcstd-coverage.md`](formats/freecad_fcstd-coverage.md).
@@ -744,6 +745,32 @@ See [`formats/solidedge.md`](formats/solidedge.md) and
 | `solidedge:unknown` | refused  | none  |
 
 <!-- /generated: dialects solidedge -->
+
+## IronCAD `.ics`
+
+Detected by compound-file content: the scene root class and the `Brep Data`,
+`Shape Data`, and `Document Data` streams. The reader lists streams, inflates
+the framed `Brep Data` stream, and walks its record tree. Each Parasolid record
+contributes a Parasolid dialect layer with its schema token, and each ACIS
+record contributes an ACIS layer from its binary header. The ACIS record that
+follows a part's child node decodes into B-rep topology and geometry in the
+part frame; ACIS feature records are retained. Parasolid bodies, part
+placements, and feature history are pending, and each produces a loss, as does
+every other non-empty scene stream. The headline is L0. The codec is read-only.
+
+See [`formats/ironcad.md`](formats/ironcad.md) and
+[`formats/ironcad-open-items.md`](formats/ironcad-open-items.md).
+
+<!-- generated: dialects ironcad -->
+
+**Ladder: L0.**
+
+| Dialect           | Read     | Write |
+| ----------------- | -------- | ----- |
+| `ironcad:cfb`     | detected | none  |
+| `ironcad:unknown` | refused  | none  |
+
+<!-- /generated: dialects ironcad -->
 
 ## Onshape bundle
 

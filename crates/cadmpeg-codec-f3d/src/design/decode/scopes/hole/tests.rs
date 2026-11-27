@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use super::exact_hole_construction as exact_hole_construction_with_ctx;
 use super::exact_hole_face_selection;
@@ -978,26 +979,19 @@ fn a_standard_hole_reads_its_sizing_names_and_the_direction_after_them() {
 fn hole_type_metadata_roundtrips_and_rejects_an_unknown_type() {
     use crate::records::feature::hole::DesignHoleExtent;
     let legacy: DesignHoleExtent =
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"extent_control":0}))
-            .unwrap();
+        json::from_value(cadmpeg_core::json!({"extent_control":0})).unwrap();
     assert_eq!(legacy.hole_type, None);
     for value in [0, 1, 2] {
         let encoded =
-            serde_json::json!({"extent_control":0,"hole_type":{"value":value,"offset":17}});
-        let extent: DesignHoleExtent =
-            cadmpeg_core::serde_erase::json::from_value(encoded.clone()).unwrap();
+            cadmpeg_core::json!({"extent_control":0,"hole_type":{"value":value,"offset":17}});
+        let extent: DesignHoleExtent = json::from_value(encoded.clone()).unwrap();
         assert_eq!(extent.hole_type.as_ref().unwrap().value, value);
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(extent).unwrap(),
-            encoded
-        );
+        assert_eq!(json::to_value(extent).unwrap(), encoded);
     }
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<DesignHoleExtent>(
-            serde_json::json!({"hole_type":{"value":3,"offset":17}})
-        )
-        .is_err()
-    );
+    assert!(json::from_value::<DesignHoleExtent>(
+        cadmpeg_core::json!({"hole_type":{"value":3,"offset":17}})
+    )
+    .is_err());
 }
 
 #[test]
@@ -1117,7 +1111,7 @@ fn hole_construction_reads_version_two_tangent_data_without_a_prefix() {
         [1.25, -2.5, 3.75],
     );
     assert_eq!(construction.drilling_direction(0), Some([0.0, 0.0, -1.0]));
-    let wire = cadmpeg_core::serde_erase::json::to_string(&construction).unwrap();
+    let wire = json::to_string(&construction).unwrap();
     assert_eq!(
         serde_json::from_str::<crate::records::feature::hole::DesignHoleConstruction>(&wire)
             .unwrap(),

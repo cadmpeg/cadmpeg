@@ -3,6 +3,7 @@ use crate::geometry::laws::{LawExpression, LawFormula, LawSurfaceConstruction, L
 use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use crate::geometry::ProceduralSurface;
 use crate::ids::{ProceduralSurfaceId, SurfaceId};
+use cadmpeg_core::serde_erase::json;
 
 fn id() -> ProceduralSurfaceId {
     ProceduralSurfaceId::mint("synthetic:test:procedural_surface#payload").unwrap()
@@ -26,37 +27,29 @@ fn subset(
 fn surface_payload_admission_enforces_directed_nonzero_subset_ranges() {
     let definition = subset([[2.0, -1.0], [0.0, 1.0]]).unwrap();
     let surface = ProceduralSurface::new(id(), definition.clone(), None);
-    let wire = cadmpeg_core::serde_erase::json::to_value(&definition).unwrap();
+    let wire = json::to_value(&definition).unwrap();
     assert_eq!(
         wire["parameter_ranges"],
-        serde_json::json!([[2.0, -1.0], [0.0, 1.0]])
+        cadmpeg_core::json!([[2.0, -1.0], [0.0, 1.0]])
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
+        json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
         definition
     );
     let before = surface.clone();
     for range in [[0.0, 0.0], [f64::NAN, 1.0], [0.0, f64::INFINITY]] {
         assert!(subset([range, [0.0, 1.0]]).is_err());
-        let mut invalid = cadmpeg_core::serde_erase::json::to_value(&before).unwrap();
-        invalid["definition"]["parameter_ranges"][0] = serde_json::json!(range);
+        let mut invalid = json::to_value(&before).unwrap();
+        invalid["definition"]["parameter_ranges"][0] = cadmpeg_core::json!(range);
         assert!(
-            cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(
-                invalid["definition"].clone()
-            )
-            .is_err()
+            json::from_value::<ProceduralSurfaceDefinition>(invalid["definition"].clone()).is_err()
         );
-        assert!(cadmpeg_core::serde_erase::json::from_value::<ProceduralSurface>(invalid).is_err());
+        assert!(json::from_value::<ProceduralSurface>(invalid).is_err());
     }
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(&before).unwrap();
-    wire["definition"]["parameter_ranges"][0] = serde_json::json!([1.0, 1.0]);
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(
-            wire["definition"].clone()
-        )
-        .is_err()
-    );
-    assert!(cadmpeg_core::serde_erase::json::from_value::<ProceduralSurface>(wire).is_err());
+    let mut wire = json::to_value(&before).unwrap();
+    wire["definition"]["parameter_ranges"][0] = cadmpeg_core::json!([1.0, 1.0]);
+    assert!(json::from_value::<ProceduralSurfaceDefinition>(wire["definition"].clone()).is_err());
+    assert!(json::from_value::<ProceduralSurface>(wire).is_err());
 }
 
 #[test]
@@ -94,12 +87,10 @@ fn surface_law_admission_preserves_the_depth_boundary() {
     // A blank law text has no spelling: the member type refuses it on the wire,
     // so no construction can carry one. Whitespace alone is blank too.
     for blank in ["", " ", "\t"] {
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<LawExpression>(
-                serde_json::json!({"kind": "text", "value": blank})
-            )
-            .is_err()
-        );
+        assert!(json::from_value::<LawExpression>(
+            cadmpeg_core::json!({"kind": "text", "value": blank})
+        )
+        .is_err());
     }
     let _surface: ProceduralSurface = ProceduralSurface::new(
         id(),
@@ -124,13 +115,13 @@ fn linear_sweep_admission_requires_a_finite_nondegenerate_direction() {
     };
     let valid = sweep(Vector3::new(0.0, 0.0, 2.0)).unwrap();
     let surface = ProceduralSurface::new(id(), valid.clone(), None);
-    let wire = cadmpeg_core::serde_erase::json::to_value(&surface).unwrap();
+    let wire = json::to_value(&surface).unwrap();
     assert_eq!(
         wire["definition"]["direction"],
-        serde_json::json!({"x": 0.0, "y": 0.0, "z": 2.0})
+        cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 2.0})
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurface>(wire.clone()).unwrap(),
+        json::from_value::<ProceduralSurface>(wire.clone()).unwrap(),
         surface
     );
     assert!(sweep(Vector3::new(f64::EPSILON, 0.0, 0.0)).is_err());
@@ -142,15 +133,11 @@ fn linear_sweep_admission_requires_a_finite_nondegenerate_direction() {
     ] {
         assert!(sweep(direction).is_err());
         let mut invalid = wire.clone();
-        invalid["definition"]["direction"] =
-            cadmpeg_core::serde_erase::json::to_value(direction).unwrap();
+        invalid["definition"]["direction"] = json::to_value(direction).unwrap();
         assert!(
-            cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(
-                invalid["definition"].clone()
-            )
-            .is_err()
+            json::from_value::<ProceduralSurfaceDefinition>(invalid["definition"].clone()).is_err()
         );
-        assert!(cadmpeg_core::serde_erase::json::from_value::<ProceduralSurface>(invalid).is_err());
+        assert!(json::from_value::<ProceduralSurface>(invalid).is_err());
     }
 }
 
@@ -163,15 +150,12 @@ fn rejected_surface_definition_changes_preserve_serialized_owner() {
         ))
         .unwrap();
     let surface = ProceduralSurface::new(id(), definition, None);
-    let before = cadmpeg_core::serde_erase::json::to_vec(&surface).unwrap();
+    let before = json::to_vec(&surface).unwrap();
     for tolerance in [-1.0, f64::NAN, f64::INFINITY] {
         let mut replacement = subset([[2.0, 3.0], [4.0, 5.0]]).unwrap();
         assert!(crate::geometry::legacy_cache::LegacyCache::try_new(tolerance).is_err());
         assert!(replacement.set_cache_fit_tolerance(None).is_ok());
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&surface).unwrap(),
-            before
-        );
+        assert_eq!(json::to_vec(&surface).unwrap(), before);
     }
     let mut incompatible = ProceduralSurfaceDefinition::Law(
         crate::geometry::surface_payloads::LawSurfacePayload::try_new(Box::new(
@@ -190,8 +174,5 @@ fn rejected_surface_definition_changes_preserve_serialized_owner() {
             crate::geometry::legacy_cache::LegacyCache::try_new(0.5).unwrap()
         ))
         .is_err());
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&surface).unwrap(),
-        before
-    );
+    assert_eq!(json::to_vec(&surface).unwrap(), before);
 }

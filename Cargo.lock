@@ -253,7 +253,6 @@ dependencies = [
  "cadmpeg-test-support",
  "memchr",
  "serde",
- "serde-value",
  "serde_json",
 ]
 
@@ -297,7 +296,6 @@ dependencies = [
  "memchr",
  "roxmltree",
  "serde",
- "serde-value",
  "serde_json",
  "sha2",
  "tempfile",
@@ -350,6 +348,19 @@ dependencies = [
  "flate2",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "cadmpeg-codec-ironcad"
+version = "0.6.12"
+dependencies = [
+ "cadmpeg-asm",
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "cadmpeg-parasolid",
+ "cadmpeg-test-support",
+ "flate2",
 ]
 
 [[package]]
@@ -610,6 +621,7 @@ dependencies = [
  "cadmpeg-codec-freecad",
  "cadmpeg-codec-iges",
  "cadmpeg-codec-inventor",
+ "cadmpeg-codec-ironcad",
  "cadmpeg-codec-nx",
  "cadmpeg-codec-onshape",
  "cadmpeg-codec-pvz",

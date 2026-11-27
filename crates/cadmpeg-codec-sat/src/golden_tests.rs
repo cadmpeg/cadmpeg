@@ -4,6 +4,7 @@
 //! Inputs come from [`crate::test_support`] builders. Shared harness:
 //! [`cadmpeg_test_support::golden`]. `UPDATE_GOLDEN=1` rewrites goldens only.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use std::io::Cursor;
@@ -47,10 +48,8 @@ fn inputs() -> Vec<(String, Vec<u8>)> {
 
 fn inspect_snapshot(bytes: &[u8]) -> String {
     let value = match SatCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default()) {
-        Ok(summary) => {
-            cadmpeg_core::serde_erase::json::to_value(summary).expect("serialize inspect summary")
-        }
-        Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
+        Ok(summary) => json::to_value(summary).expect("serialize inspect summary"),
+        Err(error) => cadmpeg_core::json!({ "inspect_error": error.to_string() }),
     };
     snapshot_text(&value)
 }
@@ -59,13 +58,13 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match SatCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()) {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "ir": result.ir(),
                 "report": result.report(),
-                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
+                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.ir(), result.source_fidelity()),
             })
         }
-        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+        Err(error) => cadmpeg_core::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)
 }

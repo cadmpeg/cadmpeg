@@ -6,6 +6,7 @@ use super::{
 };
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::identity::Located;
+use cadmpeg_core::serde_erase::json;
 use std::collections::HashMap;
 
 const STREAM: &str = "f3d:Design/BulkStream.dat";
@@ -178,18 +179,17 @@ fn a_projected_derive_feature_lists_its_scopes_and_orders_its_outputs_by_scope()
 #[test]
 fn a_derived_base_owner_survives_cadir_and_must_sit_in_its_frame() {
     let scope = derived(70, 62, 77, Some(50));
-    let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
-    let read =
-        cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(wire.clone()).unwrap();
+    let wire = json::to_value(&scope).unwrap();
+    let read = json::from_value::<DesignParameterScope>(wire.clone()).unwrap();
     assert_eq!(read.derived_base_owner, scope.derived_base_owner);
 
     let mut moved = wire.clone();
-    moved["derived_base_owner"]["repeat_offset"] = serde_json::json!(0);
-    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(moved).is_err());
+    moved["derived_base_owner"]["repeat_offset"] = cadmpeg_core::json!(0);
+    assert!(json::from_value::<DesignParameterScope>(moved).is_err());
 
     let extrude = scope_with_owner_on_extrude();
-    let wire = cadmpeg_core::serde_erase::json::to_value(&extrude).unwrap();
-    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(wire).is_err());
+    let wire = json::to_value(&extrude).unwrap();
+    assert!(json::from_value::<DesignParameterScope>(wire).is_err());
 }
 
 fn scope_with_owner_on_extrude() -> DesignParameterScope {

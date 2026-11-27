@@ -17,7 +17,7 @@ fn a_cage_body_is_left_out_with_its_cage() {
 
     let mut bytes = Vec::new();
     let report = IgesCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the write succeeds");
     assert_cage_body_dropped(&report, &cage, "186_manifold_solid_brep", 1);

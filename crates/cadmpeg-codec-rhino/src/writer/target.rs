@@ -4,7 +4,7 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     output_empty, target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions,
-    Consumption, EncodeInput, ExportBody, WritePath,
+    Consumption, EncodeInput, ExportBody, NativeDisposition, NativeDispositions, WritePath,
 };
 
 use crate::loss::RhinoLossCode;
@@ -220,10 +220,28 @@ pub(crate) fn plan(
             consumption: Consumption::NotConsumed,
         },
         coverage: ArenaCoverage::Declared(COVERAGE),
+        native: native_dispositions(input.ir),
         losses,
         notes: vec![format!("3DM archive version {}", version.value())],
         written_row: None,
+        annotations: None,
     })
+}
+
+/// What the archive does with each native record (§3.4, Rule W3): it
+/// regenerates the `rhino` records [`super::omitted_native_records`] does not
+/// name, and holds no record of another format.
+fn native_dispositions(ir: &cadmpeg_ir::CadIr) -> NativeDispositions {
+    let mut native = NativeDispositions::dropped("which the Rhino writer does not write");
+    native.namespace("rhino", NativeDisposition::Regenerated);
+    if let Some(namespace) = ir.native.namespace("rhino") {
+        native.drop_records(
+            "rhino",
+            "that the 3DM writer does not regenerate",
+            super::omitted_native_records(namespace),
+        );
+    }
+    native
 }
 
 /// What `prepare_write` does with each model arena.

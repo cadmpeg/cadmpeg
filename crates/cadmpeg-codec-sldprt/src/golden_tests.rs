@@ -7,6 +7,7 @@
 //! `inspect` pins the container summary; `decode` pins the IR, losses, and
 //! source fidelity. Shared harness: [`cadmpeg_test_support::golden`].
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
@@ -49,9 +50,8 @@ fn branches() -> [Branch; 2] {
 fn inspect_snapshot(bytes: &[u8]) -> String {
     let value =
         match SldprtCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
-            Ok(summary) => cadmpeg_core::serde_erase::json::to_value(&summary)
-                .expect("serialize inspect summary"),
-            Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
+            Ok(summary) => json::to_value(&summary).expect("serialize inspect summary"),
+            Err(error) => cadmpeg_core::json!({ "inspect_error": error.to_string() }),
         };
     snapshot_text(&value)
 }
@@ -64,13 +64,13 @@ fn decode_snapshot(bytes: &[u8]) -> String {
         .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
         Ok(result) => {
-            serde_json::json!({
-                "ir": cadmpeg_core::serde_erase::json::to_value(result.ir()).expect("serialize ir"),
-                "report": cadmpeg_core::serde_erase::json::to_value(result.report()).expect("serialize report"),
-                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
+            cadmpeg_core::json!({
+                "ir": json::to_value(result.ir()).expect("serialize ir"),
+                "report": json::to_value(result.report()).expect("serialize report"),
+                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.ir(), result.source_fidelity()),
             })
         }
-        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+        Err(error) => cadmpeg_core::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)
 }
@@ -117,7 +117,7 @@ fn neutral_text(bytes: &[u8], decoded: &Result<DecodeResult, DecodeFailure>) -> 
                 section_identities(&scan).expect("unique admitted source member identities");
             normalized_document(result.ir(), &sections)
         }
-        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+        Err(error) => cadmpeg_core::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)
 }
@@ -217,13 +217,13 @@ fn fixtures_survive_the_semantic_write_path() {
                     assert_eq!(history(written.ir()), history(source.ir()));
                 }
                 SemanticOutcome::Refused { error } => {
-                    panic!("fixture `{name}`: a faceless part writes from its partition: {error}")
+                    panic!("fixture `{name}`: the legacy part writes from its partition: {error}")
                 }
             });
             continue;
         }
         if name == "document_envelope" {
-            // The faceless part keeps its `SWObjects` member, and with it
+            // The part keeps its `SWObjects` member, and with it
             // every metadata record.
             let values = |ir: &cadmpeg_ir::CadIr| {
                 ir.model
@@ -248,7 +248,7 @@ fn fixtures_survive_the_semantic_write_path() {
                     assert_eq!(values(written.ir()), values(source.ir()));
                 }
                 SemanticOutcome::Refused { error } => {
-                    panic!("fixture `{name}`: a faceless part writes: {error}")
+                    panic!("fixture `{name}`: the envelope part writes: {error}")
                 }
             });
             continue;
@@ -264,6 +264,12 @@ fn fixtures_survive_the_semantic_write_path() {
                     matches!(report.write_path(), WritePath::Patched { .. }),
                     "fixture `{name}`: retained records fed the write, so it patched rather than synthesized"
                 );
+                let expected = match &source {
+                    Ok(decoded) if omits_every_body(decoded.ir(), &report.losses) => {
+                        brep_free_text(fixture, decoded)
+                    }
+                    _ => expected,
+                };
                 let written = decode_container(bytes);
                 if let Err(mismatch) = snapshots_agree(&expected, &neutral_text(bytes, &written)) {
                     panic!("fixture `{name}`: the semantically written container decodes to a different document: {mismatch}");
@@ -331,6 +337,52 @@ fn assert_members_carried_or_named(
             ids.len()
         );
     }
+}
+
+/// Whether `losses` declare that the write omits every body of `source`,
+/// each of which holds a partial face.
+fn omits_every_body(
+    source: &cadmpeg_ir::CadIr,
+    losses: &[cadmpeg_ir::report::loss::LossNote],
+) -> bool {
+    let declared = losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "writer.bodies-omitted")
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    let geometry = &source.geometry;
+    let holds_partial_face = |body: &cadmpeg_ir::topology::Body| {
+        geometry.faces.iter().any(|face| {
+            face.loops.is_partial()
+                && geometry.shells.iter().any(|shell| {
+                    shell.id == face.shell
+                        && geometry
+                            .regions
+                            .iter()
+                            .any(|region| region.id == shell.region && region.body == body.id)
+                })
+        })
+    };
+    !geometry.bodies.is_empty()
+        && geometry.bodies.iter().all(|body| {
+            holds_partial_face(body)
+                && declared
+                    .iter()
+                    .any(|message| names_record(message, body.id.as_str()))
+        })
+}
+
+/// [`neutral_text`] of `decoded` without its B-rep: the document a write
+/// states when it omits every body.
+fn brep_free_text(bytes: &[u8], decoded: &DecodeResult) -> String {
+    let mut ir = decoded.ir().clone();
+    ir.geometry = cadmpeg_ir::document::Topology::default();
+    for definition in &mut ir.model.product_definitions {
+        definition.bodies.clear();
+    }
+    let scan = crate::test_support::container::scan(bytes);
+    let sections = section_identities(&scan).expect("unique admitted source member identities");
+    snapshot_text(&normalized_document(&ir, &sections))
 }
 
 /// Whether `message` names record `id` as a whole token.
@@ -564,8 +616,8 @@ fn frozen_invalid_cache_fixture(name: &str, bytes: &[u8]) -> bool {
     true
 }
 
-/// The original history bytes lack both an active configuration source index
-/// and a complete typed BODY ownership class. Keep the bytes and their raw
+/// The original history bytes lack an active configuration source index and a
+/// typed BODY record, and their loops do not decode. Keep the bytes and their raw
 /// replay coverage; do not turn their unsupported semantic write into a pass.
 fn assert_legacy_history_preconditions(bytes: &[u8]) {
     let scan = crate::test_support::container::scan(bytes);
@@ -604,8 +656,19 @@ fn assert_legacy_history_preconditions(bytes: &[u8]) {
     };
     assert!(configuration.active);
     assert_eq!(configuration.source_index, Some(0));
-    assert!(configuration.bodies.is_none());
-    assert_eq!(arena_sizes(result.ir()), [0; 8]);
+    // The FACE names a loop whose VERTEX records do not resolve, so the face
+    // stays in partial form under a derived body hierarchy.
+    let [face] = result.ir().geometry.faces.as_slice() else {
+        panic!("the one partial face");
+    };
+    assert!(face.loops.is_partial());
+    assert_eq!(face.loops.stated().count(), 0);
+    assert_eq!(arena_sizes(result.ir()), [1, 1, 1, 1, 0, 0, 0, 0]);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::SldprtLossCode::TopologyBodyHierarchyDerived.kind()));
     assert!(result.ir().source.is_some());
     let mut ir = result.ir().clone();
     assert!(
@@ -848,7 +911,7 @@ fn normalized_in_memory(
 
 /// The JSON form of `model`, with the arenas the wire omits where `omitted`.
 fn model_value(model: &cadmpeg_ir::document::Model, omitted: bool) -> serde_json::Value {
-    let mut value = cadmpeg_core::serde_erase::json::to_value(model).expect("serialize model");
+    let mut value = json::to_value(model).expect("serialize model");
     if omitted {
         let serde_json::Value::Object(arenas) = model
             .omitted_arenas_value()
@@ -870,8 +933,7 @@ fn normalized(
     omitted: bool,
 ) -> serde_json::Value {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let original_geometry = cadmpeg_core::serde_erase::json::to_value(&ir.geometry)
-        .expect("serialize original geometry");
+    let original_geometry = json::to_value(&ir.geometry).expect("serialize original geometry");
     let original_model = model_value(&ir.model, omitted);
     let mut opaque_references = BTreeMap::new();
     let mut declared_replacements = BTreeMap::new();
@@ -889,8 +951,7 @@ fn normalized(
     model
         .extend_rewritten(ir.model.clone(), &mut rewrite)
         .expect("rewrite only schema-declared source identities");
-    let mut normalized_geometry =
-        cadmpeg_core::serde_erase::json::to_value(&geometry).expect("serialize geometry");
+    let mut normalized_geometry = json::to_value(&geometry).expect("serialize geometry");
     let mut normalized_model = model_value(&model, omitted);
     for (original, normalized) in [
         (&original_geometry, &mut normalized_geometry),
@@ -903,11 +964,11 @@ fn normalized(
             &declared_replacements,
         );
     }
-    let mut document = serde_json::json!({
+    let mut document = cadmpeg_core::json!({
         "geometry": normalized_geometry,
         "model": normalized_model,
         "units": { "length": "millimeter" },
-        "tolerances": cadmpeg_core::serde_erase::json::to_value(ir.tolerances).expect("serialize tolerances"),
+        "tolerances": json::to_value(ir.tolerances).expect("serialize tolerances"),
     });
     canonicalize_model_arena_order(&mut document);
     document
@@ -1013,7 +1074,7 @@ fn normalized_comparison_preserves_references_depth_values_and_nested_order() {
         }) > 0
     );
     assert_ne!(original, normalized_in_memory(&changed, &sections));
-    let mut ordered = serde_json::json!({"model": {"entities": [
+    let mut ordered = cadmpeg_core::json!({"model": {"entities": [
         {"id": "b", "members": ["a", "b"]}, {"id": "a", "members": []}
     ]}});
     canonicalize_model_arena_order(&mut ordered);

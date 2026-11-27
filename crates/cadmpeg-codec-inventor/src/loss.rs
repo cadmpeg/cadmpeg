@@ -114,6 +114,8 @@ pub(crate) enum InventorLossCode {
     FeatureEdgeSelectionNative,
     /// A fillet omits an edge set whose items all store empty index-reference lists.
     FeatureFilletEmptyEdgeSetsOmitted,
+    /// A fillet omits edge items with empty index-reference lists beside listed items of an edge set.
+    FeatureFilletEmptyEdgeItemsOmitted,
     /// An edge-treatment input edge has several matched owners of identical geometry.
     FeatureEdgeOwnerIdenticalGeometry,
     /// An input edge rests on the assumption that extra selector generators do not change it.
@@ -247,6 +249,10 @@ pub(crate) enum InventorLossCode {
     FeatureLoftResultOperandsNative,
     /// Surface-loft section selections have no complete neutral construction.
     FeatureSurfaceLoftSectionsNative,
+    /// A surface loft keeps its face-loop section selection native.
+    FeatureSurfaceLoftFaceLoopNative,
+    /// A surface loft reads part-operation value 5 as a new-body creation.
+    FeatureSurfaceLoftOperationAssumed,
     /// Inventor operations retain unresolved suppression and dependency state.
     FeatureStateUnresolved,
     /// Derived components retain external source construction only natively.
@@ -400,6 +406,7 @@ impl InventorLossCode {
         Self::FeatureEdgeSelectionEmptyItemsNative,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureFilletEmptyEdgeSetsOmitted,
+        Self::FeatureFilletEmptyEdgeItemsOmitted,
         Self::FeatureEdgeOwnerIdenticalGeometry,
         Self::FeatureEdgeSelectorGeneratorsAssumed,
         Self::FeatureMoveFaceSelectionNative,
@@ -466,6 +473,8 @@ impl InventorLossCode {
         Self::FeatureLoftOperandsNative,
         Self::FeatureLoftResultOperandsNative,
         Self::FeatureSurfaceLoftSectionsNative,
+        Self::FeatureSurfaceLoftFaceLoopNative,
+        Self::FeatureSurfaceLoftOperationAssumed,
         Self::FeatureStateUnresolved,
         Self::FeatureDerivedSourceNative,
         Self::FeatureDerivedResultNative,
@@ -578,6 +587,7 @@ impl InventorLossCode {
             }
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureFilletEmptyEdgeSetsOmitted => "feature.fillet-empty-edge-sets-omitted",
+            Self::FeatureFilletEmptyEdgeItemsOmitted => "feature.fillet-empty-edge-items-omitted",
             Self::FeatureEdgeOwnerIdenticalGeometry => "feature.edge-owner-identical-geometry",
             Self::FeatureEdgeSelectorGeneratorsAssumed => {
                 "feature.edge-selector-generators-assumed"
@@ -664,6 +674,8 @@ impl InventorLossCode {
             Self::FeatureLoftOperandsNative => "feature.loft-operands-native",
             Self::FeatureLoftResultOperandsNative => "feature.loft-result-operands-native",
             Self::FeatureSurfaceLoftSectionsNative => "feature.surface-loft-sections-native",
+            Self::FeatureSurfaceLoftFaceLoopNative => "feature.surface-loft-face-loop-native",
+            Self::FeatureSurfaceLoftOperationAssumed => "feature.surface-loft-operation-assumed",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::FeatureDerivedSourceNative => "feature.derived-source-native",
             Self::FeatureDerivedResultNative => "feature.derived-result-native",
@@ -764,6 +776,7 @@ impl InventorLossCode {
             | Self::FeatureEdgeSelectionEmptyItemsNative
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureFilletEmptyEdgeSetsOmitted
+            | Self::FeatureFilletEmptyEdgeItemsOmitted
             | Self::FeatureEdgeOwnerIdenticalGeometry
             | Self::FeatureEdgeSelectorGeneratorsAssumed
             | Self::FeatureMoveFaceSelectionNative
@@ -832,6 +845,8 @@ impl InventorLossCode {
             | Self::FeatureLoftOperandsNative
             | Self::FeatureLoftResultOperandsNative
             | Self::FeatureSurfaceLoftSectionsNative
+            | Self::FeatureSurfaceLoftFaceLoopNative
+            | Self::FeatureSurfaceLoftOperationAssumed
             | Self::FeatureProfileBodyUndecoded
             | Self::SketchConstructionUnresolved
             | Self::SketchAxisDistanceNative
@@ -910,7 +925,7 @@ impl InventorLossCode {
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `inventor/<local>`. Severity comes from the local
-    /// code; the strict floor comes from the taxonomy.
+    /// code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -967,6 +982,7 @@ mod tests {
                 "feature.edge-selection-empty-items-native",
                 "feature.edge-selection-native",
                 "feature.fillet-empty-edge-sets-omitted",
+                "feature.fillet-empty-edge-items-omitted",
                 "feature.edge-owner-identical-geometry",
                 "feature.edge-selector-generators-assumed",
                 "feature.move-face-selection-native",
@@ -1033,6 +1049,8 @@ mod tests {
                 "feature.loft-operands-native",
                 "feature.loft-result-operands-native",
                 "feature.surface-loft-sections-native",
+                "feature.surface-loft-face-loop-native",
+                "feature.surface-loft-operation-assumed",
                 "feature.state-unresolved",
                 "feature.derived-source-native",
                 "feature.derived-result-native",

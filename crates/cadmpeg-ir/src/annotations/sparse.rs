@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transactions that copy only the identities selected for editing.
 
-use super::{AnnotationBuilder, Annotations};
+use super::{AnnotationBuilder, AnnotationKey, Annotations};
 use crate::provenance::Exactness;
 use std::collections::BTreeSet;
 
@@ -35,7 +35,7 @@ impl Annotations {
     pub fn prepare_overlay(&self, changes: Annotations) -> PreparedAnnotationDelta {
         let mut transaction = self.sparse_transaction();
         for id in changes.provenance.keys().chain(changes.exactness.keys()) {
-            transaction.selected.insert(id.to_owned());
+            transaction.selected.insert(id.as_str().to_owned());
         }
         transaction.changes = changes;
         transaction.prepare()
@@ -73,23 +73,31 @@ impl<'base> SparseAnnotationTransaction<'base> {
     /// Set a field override without copying other entity annotations.
     pub fn field_exactness(
         &mut self,
-        id: &str,
+        key: impl Into<AnnotationKey>,
         field: &str,
         exactness: Exactness,
     ) -> Result<(), super::AnnotationFieldError> {
-        self.edit(id, |annotations| {
+        let key = key.into();
+        self.edit(key.as_str(), |annotations| {
             let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-            let result = builder.field_exactness(id, field, exactness).map(|_| ());
+            let result = builder.field_exactness(&key, field, exactness).map(|_| ());
             *annotations = builder.build();
             result
         })
     }
 
     /// Replace provenance for one selected identity.
-    pub fn note(&mut self, id: &str, stream: &super::StreamHandle, offset: u64, tag: Option<&str>) {
-        self.edit(id, |annotations| {
+    pub fn note(
+        &mut self,
+        key: impl Into<AnnotationKey>,
+        stream: &super::StreamHandle,
+        offset: u64,
+        tag: Option<&str>,
+    ) {
+        let key = key.into();
+        self.edit(key.as_str(), |annotations| {
             let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-            builder.note(id, stream, offset, tag);
+            builder.note(&key, stream, offset, tag);
             *annotations = builder.build();
         });
     }
@@ -103,10 +111,11 @@ impl<'base> SparseAnnotationTransaction<'base> {
     }
 
     /// Set exactness while preserving existing field overrides at the selected identity.
-    pub fn exactness(&mut self, id: &str, exactness: Exactness) {
-        self.edit(id, |annotations| {
+    pub fn exactness(&mut self, key: impl Into<AnnotationKey>, exactness: Exactness) {
+        let key = key.into();
+        self.edit(key.as_str(), |annotations| {
             let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-            builder.exactness(id, exactness);
+            builder.exactness(&key, exactness);
             *annotations = builder.build();
         });
     }
@@ -126,26 +135,26 @@ impl PreparedAnnotationDelta {
     /// the base is permitted; intervening annotation edits are not.
     pub fn apply(mut self, annotations: &mut Annotations) {
         for id in self.selected {
-            if let Some((key, value)) = self.changes.provenance.remove_entry(&id) {
+            if let Some((key, value)) = self.changes.provenance.remove_entry(id.as_str()) {
                 annotations.provenance.insert(key, value);
             } else {
-                annotations.provenance.remove(&id);
+                annotations.provenance.remove(id.as_str());
             }
-            if let Some((key, value)) = self.changes.exactness.remove_entry(&id) {
+            if let Some((key, value)) = self.changes.exactness.remove_entry(id.as_str()) {
                 annotations.exactness.insert(key, value);
             } else {
-                annotations.exactness.remove(&id);
+                annotations.exactness.remove(id.as_str());
             }
         }
     }
 }
 
 fn copy_identity(base: &Annotations, changes: &mut Annotations, id: &str) {
-    if let Some(source) = base.provenance.get(id) {
-        changes.provenance.insert(id.to_owned(), source.clone());
+    if let Some((key, source)) = base.provenance.get_key_value(id) {
+        changes.provenance.insert(key.clone(), source.clone());
     }
-    if let Some(note) = base.exactness.get(id) {
-        changes.exactness.insert(id.to_owned(), note.clone());
+    if let Some((key, note)) = base.exactness.get_key_value(id) {
+        changes.exactness.insert(key.clone(), note.clone());
     }
 }
 

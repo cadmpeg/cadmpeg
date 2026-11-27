@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn affine_placement_preserves_shear_and_rejects_invalid_wire() {
     use crate::records::identity::DesignAffineTransform;
@@ -7,24 +9,19 @@ fn affine_placement_preserves_shear_and_rejects_invalid_wire() {
     rows[0][1] = 2.0;
     rows[2][2] = 0.0;
     let placement = DesignAffineTransform::try_from(rows).unwrap();
-    let wire = cadmpeg_core::serde_erase::json::to_value(rows).unwrap();
+    let wire = json::to_value(rows).unwrap();
+    assert_eq!(json::to_value(placement).unwrap(), wire);
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(placement).unwrap(),
-        wire
-    );
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<DesignAffineTransform>(wire).unwrap(),
+        json::from_value::<DesignAffineTransform>(wire).unwrap(),
         placement
     );
     rows[3][0] = 1.0;
     assert!(DesignAffineTransform::try_from(rows).is_err());
     assert!(
-        cadmpeg_core::serde_erase::json::from_value::<DesignAffineTransform>(
-            cadmpeg_core::serde_erase::json::to_value(rows).unwrap()
-        )
-        .unwrap_err()
-        .to_string()
-        .contains("transform")
+        json::from_value::<DesignAffineTransform>(json::to_value(rows).unwrap())
+            .unwrap_err()
+            .to_string()
+            .contains("transform")
     );
     rows[3][0] = 0.0;
     rows[0][0] = f64::INFINITY;

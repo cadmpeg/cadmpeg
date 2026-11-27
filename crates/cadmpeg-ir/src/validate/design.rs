@@ -23,6 +23,7 @@ mod fit;
 #[cfg(test)]
 pub(crate) mod fixture;
 mod folds;
+mod frames;
 pub(super) mod index;
 mod joins;
 mod linkage;
@@ -39,7 +40,7 @@ mod parameters;
 mod picked;
 mod programs;
 pub(super) mod records;
-pub(super) mod resolved;
+pub(crate) mod resolved;
 pub(super) mod selections;
 mod sheets;
 pub(super) mod states;

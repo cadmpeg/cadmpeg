@@ -2,6 +2,7 @@
 use super::*;
 use crate::test_support::root_part_ir;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::scalar::Length;
@@ -170,11 +171,10 @@ fn declared_unit_joins_native_parameter_and_unit_records() {
     raw.edit(|payload| payload.unit = PmDcReference::from_packed(2));
     legacy.expression = "1 in".into();
     let make_unit = |ordinal, kind| {
-        let payload: PmDcUnitPayload =
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-                "save_version_major":29, "header_value":0, "header_id":0, "kind":kind
-            }))
-            .expect("unit payload");
+        let payload: PmDcUnitPayload = json::from_value(cadmpeg_core::json!({
+            "save_version_major":29, "header_value":0, "header_id":0, "kind":kind
+        }))
+        .expect("unit payload");
         Located::new(
             payload,
             RecordTypeId::from_bytes(crate::pmdc::inventor_id(1)),
@@ -185,14 +185,14 @@ fn declared_unit_joins_native_parameter_and_unit_records() {
     let units = [
         make_unit(
             1,
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "form":"definition", "numerators":[PmDcReference::from_packed(3)], "numerator_metadata":[0,0],
                 "denominators":[], "denominator_metadata":null, "visible":true, "derived":PmDcReference::from_packed(0)
             }),
         ),
         make_unit(
             2,
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "form":"base", "dimension":"length", "symbol":"in", "scale_to_internal":2.54, "magnitude":1.0, "factor":1.0
             }),
         ),

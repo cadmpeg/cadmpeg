@@ -5,9 +5,9 @@ use std::fs::File;
 use std::path::Path;
 
 use anyhow::{anyhow, Context};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, View};
+use cadmpeg_core::decode::{ContentScope, DecodeArena, DecodeContext, View};
 use cadmpeg_ir::codec::{Confidence, DecodeOptions};
-use cadmpeg_ir::{CadIr, CadirRead, DecodeSidecar, ReadFailure, ReadOptions};
+use cadmpeg_ir::{CadIr, DecodeSidecar, ReadFailure, ReadOptions};
 
 use cadmpeg_registry::{
     ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource, Selection, DETECTION_PREFIX_LEN,
@@ -38,7 +38,8 @@ pub(crate) fn detection_failure(error: &ResolveSourceError) -> anyhow::Error {
 ///
 /// Every command loads through here, so here is where the load's notices go
 /// to stderr: a decode sidecar the load ignored, each entry of a CADIR read's
-/// report, and a detection below high confidence.
+/// report, a document whose scope is below full, and a detection below high
+/// confidence.
 pub(crate) fn load_artifact(
     catalog: &InputCatalog,
     path: &Path,
@@ -46,16 +47,19 @@ pub(crate) fn load_artifact(
     forced: Option<ForcedInput>,
 ) -> Result<LoadedDocument, ApplicationError> {
     let document = load(catalog, path, options, forced)?;
-    print_load_notice(&document);
+    print_load_notice(path, &document);
     Ok(document)
 }
 
-fn print_load_notice(document: &LoadedDocument) {
+fn print_load_notice(path: &Path, document: &LoadedDocument) {
     if let Some(loss) = &document.stale_sidecar {
         eprintln!("warning: {}: {}", loss.code, loss.message);
     }
     for entry in &document.read_report {
         eprintln!("warning: {}: {}", entry.code, entry.message);
+    }
+    if let Some(note) = scope_note(document.ir.scope()) {
+        eprintln!("note: {}: {note}", path.display());
     }
     let LoadOrigin::Decoded {
         selection: Selection::Detected { confidence },
@@ -71,6 +75,18 @@ fn print_load_notice(document: &LoadedDocument) {
             "warning: detected {format_id} with {confidence} confidence; use --input-format to override"
         );
     }
+}
+
+/// The note for a document whose scope is below full: the arenas of an
+/// excluded class state nothing about the source.
+fn scope_note(scope: ContentScope) -> Option<String> {
+    let excluded = scope.missing_from(ContentScope::full());
+    (!excluded.is_empty()).then(|| {
+        format!(
+            "the document's scope excludes {excluded}; the arenas of an excluded class state \
+             nothing about the source"
+        )
+    })
 }
 
 fn load(
@@ -155,23 +171,11 @@ fn load(
             }
             SidecarLoad::Matching(sidecar) => {
                 let DecodeSidecar {
-                    report,
-                    mut fidelity,
-                    ..
+                    report, fidelity, ..
                 } = *sidecar;
-                let CadirRead {
-                    document,
-                    report: read_report,
-                    fidelity: read,
-                } = read;
-                let (_, retained) = read.into_parts();
-                for (id, record) in retained {
-                    if fidelity.retained_record(id.as_str()).is_none() {
-                        fidelity
-                            .insert_retained_record(id, record)
-                            .map_err(|error| anyhow!("{}: {error}", path.display()))?;
-                    }
-                }
+                let (document, read_report, fidelity) = read
+                    .with_sidecar(fidelity)
+                    .map_err(|error| anyhow!("{}: {error}", path.display()))?;
                 LoadedDocument::restored(document, report, fidelity, input_bytes)
                     .with_read_report(read_report)
             }
@@ -192,10 +196,25 @@ fn names_decode_sidecar(path: &Path) -> bool {
 mod tests {
     use super::load_artifact;
     use crate::application::document::LoadOrigin;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::codec::DecodeOptions;
     use cadmpeg_ir::CadIr;
     use cadmpeg_ir::{report::decode::DecodeReport, DecodeSidecar, SourceFidelity};
     use cadmpeg_registry::{ForcedInput, InputCatalog};
+
+    #[test]
+    fn every_sub_full_scope_is_noted() {
+        use cadmpeg_core::decode::ContentScope;
+
+        assert_eq!(
+            super::scope_note(ContentScope::geometry()).as_deref(),
+            Some(
+                "the document's scope excludes design, process; the arenas of an excluded class \
+                 state nothing about the source"
+            )
+        );
+        assert_eq!(super::scope_note(ContentScope::full()), None);
+    }
 
     #[test]
     fn input_acquisition_resource_refusal_stays_typed() {
@@ -222,7 +241,7 @@ mod tests {
         let path = directory.path().join("part.cadir.json");
         let text = CadIr::empty().to_canonical_json().unwrap();
         std::fs::write(&path, &text).unwrap();
-        let report: DecodeReport = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        let report: DecodeReport = json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "transfer": {"kind": "full", "geometry_transferred": false},
             "coverage": {},
@@ -267,5 +286,72 @@ mod tests {
             .expect("the load reports the stale sidecar");
         assert_eq!(loss.code, cadmpeg_ir::source_fidelity::sidecar_stale_kind());
         assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
+    }
+    #[test]
+    fn a_record_the_read_gives_up_takes_its_sidecar_annotations() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("part.cadir.json");
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let given_up = ir.geometry.points[0].id.as_str();
+        let kept = ir.geometry.points[1].id.as_str();
+        let mut value = json::to_value(&ir).unwrap();
+        value["geometry"]["points"][0]["position"] = cadmpeg_core::json!("not a point");
+        let text = value.to_string();
+        std::fs::write(&path, &text).unwrap();
+        let report: DecodeReport = json::from_value(cadmpeg_core::json!({
+            "identity": {"kind": "unclassified", "format": "test"},
+            "transfer": {"kind": "full", "geometry_transferred": false},
+            "coverage": {},
+            "losses": [],
+            "notes": [],
+            "transfer_ledger": {"entries": []},
+        }))
+        .unwrap();
+        let stream =
+            cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:source"));
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        annotations.note(
+            cadmpeg_ir::ids::Identity::new(given_up).expect("identity grammar"),
+            &stream,
+            0,
+            None,
+        );
+        annotations.note(
+            cadmpeg_ir::ids::Identity::new(kept).expect("identity grammar"),
+            &stream,
+            0,
+            None,
+        );
+        let mut fidelity =
+            SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(b"source"));
+        fidelity.annotations = annotations.build();
+        let sidecar = DecodeSidecar::bind_sha256(
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(text.as_bytes()),
+            report,
+            fidelity,
+        );
+        std::fs::write(
+            cadmpeg_ir::decode_sidecar_path(&path).unwrap(),
+            sidecar.to_canonical_json().unwrap(),
+        )
+        .unwrap();
+
+        let outcome = load_artifact(
+            &InputCatalog::with_builtins(),
+            &path,
+            &DecodeOptions::default(),
+            Some(ForcedInput::Cadir),
+        )
+        .unwrap();
+        let LoadOrigin::Restored { fidelity, .. } = outcome.origin else {
+            panic!("the matching sidecar is restored: {:?}", outcome.origin);
+        };
+        let keys: Vec<&str> = fidelity
+            .annotations
+            .provenance
+            .keys()
+            .map(cadmpeg_ir::annotations::AnnotationKey::as_str)
+            .collect();
+        assert_eq!(keys, [kept]);
     }
 }

@@ -343,6 +343,39 @@ fn hollow_sphere_and_inner_ball_round_trip() {
 }
 
 #[test]
+fn a_hollow_sphere_names_its_solid_with_voids_after_its_body() {
+    let mut ir = CadIr::empty();
+    solid(
+        &mut ir,
+        vec![
+            (sphere(5.0), Sense::Forward),
+            (sphere(4.0), Sense::Reversed),
+        ],
+    );
+    ir.geometry.bodies[0].name = Some("Shell".to_owned());
+    let mut bytes = Vec::new();
+    write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write the hollow sphere");
+    let text = String::from_utf8(bytes).expect("Part 21 text");
+    assert!(text.contains(" = BREP_WITH_VOIDS('Shell',"), "{text}");
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(text.into_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode the hollow sphere");
+    assert_eq!(
+        decoded.ir().geometry.bodies[0].name.as_deref(),
+        Some("Shell")
+    );
+}
+
+#[test]
 fn closed_surface_sense_is_retained() {
     for geometry in [sphere(2.0), torus(1.0), nurbs(false, false)] {
         for sense in [Sense::Forward, Sense::Reversed] {

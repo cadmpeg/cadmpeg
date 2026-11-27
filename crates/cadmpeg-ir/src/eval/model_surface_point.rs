@@ -15,7 +15,7 @@ use super::model_native_revolution_point;
 use super::model_ruled_surface_jet;
 use super::model_sum_surface_jet;
 use super::model_surface_jet_by_id;
-use super::model_surface_point_in_index;
+use super::model_surface_point;
 use super::offset;
 use super::placed_reach;
 use super::placed_vectors;
@@ -702,7 +702,7 @@ pub(super) fn model_surface_point_by_id_inner(
             _ if procedural.is_some() => {
                 // A non-finite point enters the evaluation as a finite one
                 // does.
-                point_evaluation(model_surface_point_in_index(
+                point_evaluation(model_surface_point(
                     admission,
                     index,
                     &surface.geometry,
