@@ -567,3 +567,187 @@ fn a_joint_with_no_motion_record_is_rigid() {
     };
     assert_eq!(motion, &JointMotion::Rigid);
 }
+
+fn fixed() -> PairedJointKind {
+    PairedJointKind::Fixed {
+        angle: Some(finite(0.0)),
+        translation_offset: Some([finite(0.0); 3]),
+        angular_limits: None,
+        linear_limits: None,
+    }
+}
+
+fn on(name: &str) -> JointOperand {
+    JointOperand::occurrence(occurrence(name), format!("{name}-origin"), Vec::new())
+}
+
+#[test]
+fn an_as_built_group_states_its_members_and_keeps_their_locators() {
+    let first = joint(
+        "group",
+        80,
+        fixed(),
+        [connector(on("a"), STORED), connector(on("b"), STORED)],
+    );
+    let member = joint(
+        "group:2",
+        80,
+        fixed(),
+        [connector(on("a"), STORED), connector(on("c"), TURNED)],
+    );
+    let unbound = joint(
+        "group:3",
+        80,
+        fixed(),
+        [
+            connector(on("a"), STORED),
+            connector(
+                JointOperand::external(ExternalDocument::default(), "listed", Vec::new()),
+                STORED,
+            ),
+        ],
+    );
+    let mut features = [unresolved("group")];
+    let losses = restate(
+        &mut features,
+        &[legacy("group", &first)],
+        &[first, member, unbound],
+        &[(
+            80,
+            Source {
+                group: true,
+                ..Source::default()
+            },
+        )],
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    let FeatureOperation::RigidGroup(group) = &features[0].definition.operation else {
+        panic!("a rigid group: {:?}", features[0].definition.operation)
+    };
+    assert_eq!(
+        group.members,
+        [path(&["a"]), path(&["b"]), path(&["a", "c"])].into()
+    );
+    let text = |name: &str| match group.native_options.get(&codec_name(name).unwrap()) {
+        Some(NativeOption::Text(Dimension::Literal(text))) => text.as_str().to_owned(),
+        other => panic!("{name}: {other:?}"),
+    };
+    assert_eq!(
+        text("locator.2"),
+        format!(
+            "{}/{}: 1 0 0 1 0 0 1 2 0 -1 0 3",
+            occurrence("a"),
+            occurrence("c")
+        )
+    );
+    assert_eq!(text("unresolved_member.3"), "listed");
+    assert!(text("locator.3").starts_with("listed: "));
+}
+
+#[test]
+fn a_group_with_one_occurrence_member_stays_unresolved() {
+    let first = joint(
+        "lone",
+        81,
+        fixed(),
+        [
+            connector(on("a"), STORED),
+            connector(JointOperand::root("unlisted", Vec::new()), STORED),
+        ],
+    );
+    let mut features = [unresolved("lone")];
+    let losses = restate(
+        &mut features,
+        &[legacy("lone", &first)],
+        &[first],
+        &[(
+            81,
+            Source {
+                group: true,
+                ..Source::default()
+            },
+        )],
+    );
+    assert_eq!(
+        features[0].definition.operation,
+        FeatureOperation::Unresolved {
+            family: OperationFamily::Joint
+        }
+    );
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}")
+    };
+    assert!(
+        loss.message.contains("f3d:model:feature#lone"),
+        "{}",
+        loss.message
+    );
+}
+
+#[test]
+fn a_motion_link_couples_the_features_of_its_two_hinges() {
+    let hinge = |name: &str, ordinal: u32| {
+        joint(
+            name,
+            ordinal,
+            PairedJointKind::Revolute {
+                angle: Some(finite(0.0)),
+                angular_limits: None,
+            },
+            [connector(on("a"), STORED), connector(on("b"), STORED)],
+        )
+    };
+    let first = hinge("first", 90);
+    let second = hinge("second", 92);
+    let link = joint(
+        "link",
+        94,
+        PairedJointKind::Gears {
+            distance: None,
+            distance2: None,
+            ratio: cadmpeg_ir::scalar::NonZeroReal::new(-2.0),
+            coupled_joints: vec![first.id.clone(), second.id.clone()],
+        },
+        [connector(on("a"), STORED), connector(on("b"), STORED)],
+    );
+    let mut features = [
+        unresolved("first"),
+        unresolved("second"),
+        unresolved("link"),
+    ];
+    let losses = restate(
+        &mut features,
+        &[
+            legacy("first", &first),
+            legacy("second", &second),
+            legacy("link", &link),
+        ],
+        &[first, second, link],
+        &[],
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    let JointKind::Coupling { coupling, joints } = &the_joint(&features[2]).kind else {
+        panic!("a coupling")
+    };
+    assert_eq!(
+        coupling,
+        &Coupling::Gear {
+            ratio: Some(Dimension::Literal(finite(-2.0))),
+            radii: [None, None],
+        }
+    );
+    let Picks::Named(members) = &joints.as_ref().unwrap().picks else {
+        panic!("named picks")
+    };
+    assert_eq!(
+        members
+            .as_slice()
+            .iter()
+            .map(|pick| pick.target.clone())
+            .collect::<Vec<_>>(),
+        [
+            PickTarget::Feature(FeatureId::mint("f3d:model:feature#first").unwrap()),
+            PickTarget::Feature(FeatureId::mint("f3d:model:feature#second").unwrap()),
+        ]
+    );
+}
