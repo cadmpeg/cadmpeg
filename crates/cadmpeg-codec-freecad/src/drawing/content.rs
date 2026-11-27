@@ -27,7 +27,7 @@ pub(crate) fn enrich(
     for drawing in &mut model.drawings {
         let owned: Vec<_> = properties
             .iter()
-            .filter(|p| p.owner == drawing.object)
+            .filter(|p| p.owner == drawing.object.as_str())
             .collect();
         if drawing.kind == DrawingKind::Template {
             let mut fields = Vec::new();

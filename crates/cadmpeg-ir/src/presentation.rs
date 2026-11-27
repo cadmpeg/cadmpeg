@@ -55,7 +55,7 @@ pub struct PresentationState {
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub attributes: BTreeMap<NonBlankString, String>,
     /// Referenced display assets as global native entry ids.
-    pub assets: Vec<String>,
+    pub assets: Vec<crate::ids::Identity>,
 }
 
 /// Document-wide persisted GUI state.
@@ -199,7 +199,7 @@ pub struct ViewPresentation {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_object"
     )]
-    pub object: Option<String>,
+    pub object: Option<crate::ids::Identity>,
     /// Source order in the provider table.
     pub order: u32,
     /// Persisted tree expansion state.
@@ -316,7 +316,7 @@ pub enum PresentationItem {
     /// Tessellation identity.
     Tessellation {
         /// Assigned tessellation identity.
-        tessellation: String,
+        tessellation: crate::tessellation::TessellationId,
     },
     /// Point cloud.
     PointCloud {
@@ -793,7 +793,7 @@ mod tests {
 cadmpeg_core::named_optional_field!(deserialize_schema_version, u32, "schema_version");
 cadmpeg_core::named_optional_field!(deserialize_active_view, String, "active_view");
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
-cadmpeg_core::named_optional_field!(deserialize_object, String, "object");
+cadmpeg_core::named_optional_field!(deserialize_object, crate::ids::Identity, "object");
 cadmpeg_core::named_optional_field!(deserialize_expanded, bool, "expanded");
 cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
 cadmpeg_core::named_optional_field!(deserialize_display_mode, String, "display_mode");

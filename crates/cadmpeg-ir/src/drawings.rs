@@ -56,7 +56,7 @@ pub struct Drawing {
     /// Stable drawing identity.
     pub id: DrawingId,
     /// Application object persisting this drawing entity.
-    pub object: String,
+    pub object: crate::ids::Identity,
     /// Format-neutral semantic role.
     pub kind: DrawingKind,
     /// Exact runtime type for extension-safe classification.
@@ -171,7 +171,7 @@ pub struct Drawing {
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub parameters: BTreeMap<NonBlankString, String>,
     /// Template, image, symbol, or other retained assets.
-    pub assets: Vec<String>,
+    pub assets: Vec<crate::ids::Identity>,
     /// Native drawing record supplying this entity.
     #[serde(
         default,
@@ -186,7 +186,7 @@ impl Drawing {
     #[must_use]
     pub fn new(
         id: DrawingId,
-        object: String,
+        object: crate::ids::Identity,
         kind: DrawingKind,
         runtime_type: String,
         order: u32,
@@ -349,7 +349,7 @@ mod tests {
 
     #[test]
     fn sheet_and_curves_wire_admission() {
-        let wire = cadmpeg_core::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0, "native_ref": "native",
+        let wire = cadmpeg_core::json!({"id": "synthetic:test:drawing#view", "object": "test:source:object#source", "kind": "view", "runtime_type": "View", "order": 0, "native_ref": "native",
         "sheet": {"width_mm": 210.0, "height_mm": 297.0, "fields": [{"name": "Title", "value": "Test"}]},
         "curves": [
             {"geometry": {"kind": "line", "start": [0.0, 1.0], "end": [2.0, 3.0]}, "visibility": "hidden", "source": "projected_model_edge"},
@@ -385,7 +385,7 @@ mod tests {
 
     #[test]
     fn template_reference_preserves_string_wire_and_rejects_invalid_ids() {
-        let value = cadmpeg_core::json!({"id": "synthetic:test:drawing#page", "object": "source", "kind": "page", "runtime_type": "Page", "order": 0, "template": "synthetic:test:drawing#template", "native_ref": "native", "relationships": {}, "curves": [], "parameters": {}, "views": [], "assets": []});
+        let value = cadmpeg_core::json!({"id": "synthetic:test:drawing#page", "object": "test:source:object#source", "kind": "page", "runtime_type": "Page", "order": 0, "template": "synthetic:test:drawing#template", "native_ref": "native", "relationships": {}, "curves": [], "parameters": {}, "views": [], "assets": []});
         let drawing: Drawing = json::from_value(value.clone()).expect("valid drawing");
         assert_eq!(
             drawing.template.as_ref().map(DrawingId::as_str),
@@ -400,7 +400,7 @@ mod tests {
     }
     #[test]
     fn views_are_required_and_a_base_view_is_written_only_where_stated() {
-        let wire = cadmpeg_core::json!({"id": "synthetic:test:drawing#section", "object": "source", "kind": "section", "runtime_type": "Section", "order": 0,
+        let wire = cadmpeg_core::json!({"id": "synthetic:test:drawing#section", "object": "test:source:object#source", "kind": "section", "runtime_type": "Section", "order": 0,
             "relationships": {}, "views": ["synthetic:test:drawing#a", "synthetic:test:drawing#b"], "base_view": "synthetic:test:drawing#front",
             "curves": [], "parameters": {}, "assets": []});
         let drawing: Drawing = json::from_value(wire.clone()).expect("valid drawing");
@@ -429,7 +429,7 @@ mod tests {
 
     #[test]
     fn numeric_admission_names_fields_and_preserves_valid_values() {
-        let wire = cadmpeg_core::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0, "native_ref": "native", "position": [-2.0, 0.0], "scale": 0.5, "direction": [0.0, 0.0, 2.0], "rotation": -0.5, "relationships": {}, "curves": [], "parameters": {}, "views": [], "assets": []});
+        let wire = cadmpeg_core::json!({"id": "synthetic:test:drawing#view", "object": "test:source:object#source", "kind": "view", "runtime_type": "View", "order": 0, "native_ref": "native", "position": [-2.0, 0.0], "scale": 0.5, "direction": [0.0, 0.0, 2.0], "rotation": -0.5, "relationships": {}, "curves": [], "parameters": {}, "views": [], "assets": []});
         let drawing: Drawing = json::from_value(wire.clone()).expect("valid drawing");
         assert_eq!(json::to_value(drawing).expect("serialize"), wire);
         for (field, invalid) in [
@@ -446,7 +446,7 @@ mod tests {
 
     #[test]
     fn view_projection_fields_round_trip_and_name_their_fields() {
-        let wire = cadmpeg_core::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0,
+        let wire = cadmpeg_core::json!({"id": "synthetic:test:drawing#view", "object": "test:source:object#source", "kind": "view", "runtime_type": "View", "order": 0,
             "scale_from": "fit", "projection": "third", "perspective": 250.0, "hidden_line": "polygonal",
             "relationships": {}, "curves": [], "parameters": {}, "views": [], "assets": []});
         let drawing: Drawing = json::from_value(wire.clone()).expect("valid drawing");
@@ -474,7 +474,7 @@ mod tests {
     /// edges, with the iso-line count; a class is stated once.
     #[test]
     fn edge_classes_round_trip_as_a_set() {
-        let wire = cadmpeg_core::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0,
+        let wire = cadmpeg_core::json!({"id": "synthetic:test:drawing#view", "object": "test:source:object#source", "kind": "view", "runtime_type": "View", "order": 0,
             "edge_classes": {"drawn": ["visible_smooth", "visible_iso", "hidden_hard"], "iso_count": 3},
             "relationships": {}, "curves": [], "parameters": {}, "views": [], "assets": []});
         let drawing: Drawing = json::from_value(wire.clone()).expect("valid drawing");
@@ -511,7 +511,7 @@ mod tests {
     fn a_free_form_map_refuses_a_blank_key() {
         let wire = cadmpeg_core::json!({
             "id": "synthetic:test:drawing#view",
-            "object": "source",
+            "object": "test:source:object#source",
             "kind": "view",
             "runtime_type": "View",
             "order": 0,
@@ -523,7 +523,7 @@ mod tests {
 
         let relationships = cadmpeg_core::json!({
             "id": "synthetic:test:drawing#view",
-            "object": "source",
+            "object": "test:source:object#source",
             "kind": "view",
             "runtime_type": "View",
             "order": 0,
@@ -536,7 +536,7 @@ mod tests {
 
         let named = cadmpeg_core::json!({
             "id": "synthetic:test:drawing#view",
-            "object": "source",
+            "object": "test:source:object#source",
             "kind": "view",
             "runtime_type": "View",
             "order": 0,

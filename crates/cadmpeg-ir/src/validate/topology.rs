@@ -718,16 +718,16 @@ pub(super) fn check_references(
             }
             AppearanceTarget::Tessellation(tessellation)
                 if ids
-                    .tessellations(tessellation, crate::index::StandardIndex)
+                    .tessellations(tessellation.as_str(), crate::index::StandardIndex)
                     .is_none() =>
             {
-                ref_error(findings, &owner, "tessellation", tessellation);
+                ref_error(findings, &owner, "tessellation", tessellation.as_str());
             }
             AppearanceTarget::TriangleGroup {
                 tessellation,
                 group,
-            } => match ids.tessellations(tessellation, crate::index::StandardIndex) {
-                None => ref_error(findings, &owner, "tessellation", tessellation),
+            } => match ids.tessellations(tessellation.as_str(), crate::index::StandardIndex) {
+                None => ref_error(findings, &owner, "tessellation", tessellation.as_str()),
                 Some(mesh)
                     if !mesh
                         .triangle_groups()

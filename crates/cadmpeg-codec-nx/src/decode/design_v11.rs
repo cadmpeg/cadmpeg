@@ -22,6 +22,7 @@ use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::projection::fields::{
     ArrangementField, FeatureField, ModelConfigurationField, ModelFeatureField,
 };
+use cadmpeg_ir::design::projection::restated::Restater;
 use cadmpeg_ir::design::projection::Restatement;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
@@ -251,14 +252,18 @@ fn timeline(
 /// The NX arrangements, each a positional arrangement that states no
 /// overrides and restates the model configuration of its id, and the ones
 /// the part names as in use. An arrangement with no name has no design
-/// record.
+/// record. An arrangement restates the configuration without each field it
+/// holds that no arrangement field holds: its properties, material,
+/// parameter values and expressions, feature states and bodies, and a name
+/// the arrangement spells otherwise.
 fn arrangements(
-    ir: &CadIr,
+    ir: &mut CadIr,
     scope: &ProductDefinitionId,
     losses: &mut Vec<LossNote>,
 ) -> Result<(Vec<Arrangement>, BTreeSet<ArrangementId>), CodecError> {
     let mut arrangements = Vec::with_capacity(ir.model.configurations.len());
     let mut active = BTreeSet::new();
+    let mut restated = Vec::new();
     for configuration in &ir.model.configurations {
         let Some(name) = configuration.name.clone().and_then(NonBlankString::new) else {
             let stored = if configuration.name.is_some() {
@@ -276,6 +281,36 @@ fn arrangements(
         if configuration.active {
             active.insert(id.clone());
         }
+        let held = [
+            ("name", configuration.name.as_deref() != Some(name.as_str())),
+            ("properties", !configuration.properties.is_empty()),
+            ("material", configuration.material.is_some()),
+            (
+                "parameter_overrides",
+                !configuration.parameter_overrides.is_empty(),
+            ),
+            (
+                "bodies",
+                configuration
+                    .bodies
+                    .as_ref()
+                    .is_some_and(|bodies| !bodies.is_empty()),
+            ),
+            (
+                "parameter_values",
+                !configuration.parameter_values.is_empty(),
+            ),
+            ("feature_states", !configuration.feature_states.is_empty()),
+        ];
+        let cut = held
+            .into_iter()
+            .filter_map(|(field, cut)| cut.then_some(field))
+            .collect::<Vec<_>>();
+        restated.push((
+            configuration.id.as_str().to_owned(),
+            id.as_str().to_owned(),
+            cut,
+        ));
         arrangements.push(Arrangement {
             id,
             scope: scope.clone(),
@@ -288,6 +323,10 @@ fn arrangements(
             nested: Vec::new(),
             native_ref: configuration.native_ref.clone(),
         });
+    }
+    for (configuration, arrangement, cut) in restated {
+        let by = Restater::Record(arrangement);
+        ir.model.restated_mut().record(&configuration, by, cut);
     }
     Ok((arrangements, active))
 }
