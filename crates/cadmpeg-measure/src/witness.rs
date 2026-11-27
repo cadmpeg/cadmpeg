@@ -27,7 +27,8 @@
 //!   When exactly one holds beyond the errors, it is every linked face's
 //!   reading.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
+use crate::FastMap;
 
 use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_core::decode::ResourceLimit;
@@ -50,11 +51,11 @@ use crate::tolerance::TANGENT_WITNESS_ANGLE;
 /// What the witness passes read.
 pub(crate) struct WitnessInput<'a, 'ir> {
     pub(crate) owners: &'a Owners<'ir>,
-    pub(crate) edges: &'a HashMap<&'ir str, EdgeGeometry<'ir>>,
+    pub(crate) edges: &'a FastMap<&'ir str, EdgeGeometry<'ir>>,
     pub(crate) pass: &'a PassAllowance,
     pub(crate) eval: Eval<'a, 'ir>,
     /// The placement of each body.
-    pub(crate) placements: &'a HashMap<&'ir str, Outcome<Placement>>,
+    pub(crate) placements: &'a FastMap<&'ir str, Outcome<Placement>>,
 }
 
 /// The sign of an oriented normal reading.
@@ -113,7 +114,7 @@ impl<'ir> WitnessInput<'_, 'ir> {
     /// sign decides.
     pub(crate) fn run(
         &self,
-        faces: &mut HashMap<&'ir str, FaceResult<'ir>>,
+        faces: &mut FastMap<&'ir str, FaceResult<'ir>>,
     ) -> Result<(), ResourceLimit> {
         loop {
             let mut pending: Vec<&'ir str> = faces
@@ -142,7 +143,7 @@ impl<'ir> WitnessInput<'_, 'ir> {
     /// The tangent-edge verdict of one unconfirmed face, if its edges vote.
     fn tangent(
         &self,
-        faces: &HashMap<&'ir str, FaceResult<'ir>>,
+        faces: &FastMap<&'ir str, FaceResult<'ir>>,
         face_id: &'ir str,
     ) -> Result<Option<(Verdict, Witness)>, ResourceLimit> {
         let (Some(face), Some(result)) = (self.owners.face(face_id), faces.get(face_id)) else {
@@ -228,7 +229,7 @@ impl<'ir> WitnessInput<'_, 'ir> {
     /// link. Returns whether any face settled.
     fn shared_spheres(
         &self,
-        faces: &mut HashMap<&'ir str, FaceResult<'ir>>,
+        faces: &mut FastMap<&'ir str, FaceResult<'ir>>,
     ) -> Result<bool, ResourceLimit> {
         let mut groups: BTreeMap<&'ir str, &'ir str> = faces
             .iter()
@@ -364,7 +365,7 @@ impl<'ir> WitnessInput<'_, 'ir> {
 
     /// Settle the one unconfirmed face of each closed shell whose other
     /// faces are established, by the sign of the shell's volume.
-    fn shell_signs(&self, faces: &mut HashMap<&'ir str, FaceResult<'ir>>) {
+    fn shell_signs(&self, faces: &mut FastMap<&'ir str, FaceResult<'ir>>) {
         let mut shells: BTreeSet<&'ir str> = BTreeSet::new();
         for (id, result) in faces.iter() {
             if result.verdict == Verdict::Unconfirmed {
@@ -392,7 +393,7 @@ impl<'ir> WitnessInput<'_, 'ir> {
     /// The shell-sign verdict of a shell's one unconfirmed face.
     fn shell_sign(
         &self,
-        faces: &HashMap<&'ir str, FaceResult<'ir>>,
+        faces: &FastMap<&'ir str, FaceResult<'ir>>,
         shell_id: &'ir str,
     ) -> Option<(&'ir str, Verdict)> {
         let shell = self.owners.shell(shell_id)?;
@@ -474,7 +475,7 @@ fn same_sphere(first: &FaceResult<'_>, second: &FaceResult<'_>) -> bool {
 
 /// The reading the total area of linked faces of one sphere leaves.
 fn shared_sphere_verdict(
-    faces: &HashMap<&str, FaceResult<'_>>,
+    faces: &FastMap<&str, FaceResult<'_>>,
     members: &[&str],
 ) -> Option<Verdict> {
     let mut total = 0.0;

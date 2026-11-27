@@ -4,7 +4,8 @@
 
 mod volume;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
+use crate::FastMap;
 
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{Body, Sense, Shell};
@@ -33,12 +34,12 @@ const LISTED_OPEN_EDGES: usize = 16;
 /// What a body row reads.
 pub(crate) struct BodyInput<'a, 'ir> {
     pub(crate) owners: &'a Owners<'ir>,
-    pub(crate) faces: &'a HashMap<&'ir str, FaceResult<'ir>>,
-    pub(crate) edges: &'a HashMap<&'ir str, EdgeGeometry<'ir>>,
+    pub(crate) faces: &'a FastMap<&'ir str, FaceResult<'ir>>,
+    pub(crate) edges: &'a FastMap<&'ir str, EdgeGeometry<'ir>>,
     /// The reference point of each body's fluxes.
-    pub(crate) origins: &'a HashMap<&'ir str, Point3>,
+    pub(crate) origins: &'a FastMap<&'ir str, Point3>,
     /// The placement of each body.
-    pub(crate) placements: &'a HashMap<&'ir str, Outcome<Placement>>,
+    pub(crate) placements: &'a FastMap<&'ir str, Outcome<Placement>>,
     /// The material density of mass and inertia.
     pub(crate) density: Option<crate::session::Density>,
 }
@@ -426,8 +427,8 @@ impl Closure<'_> {
 /// region reaches a natural domain edge.
 pub(crate) fn closure<'ir>(
     owners: &Owners<'ir>,
-    faces: &HashMap<&'ir str, FaceResult<'_>>,
-    edges: &HashMap<&'ir str, EdgeGeometry<'_>>,
+    faces: &FastMap<&'ir str, FaceResult<'_>>,
+    edges: &FastMap<&'ir str, EdgeGeometry<'_>>,
     shell: &Shell,
 ) -> Closure<'ir> {
     let mut uses: BTreeMap<&'ir str, (usize, usize)> = BTreeMap::new();
