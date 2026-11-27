@@ -1257,13 +1257,17 @@ fn a_suppressed_feature_keeps_its_definition_and_charges_what_it_drops() {
             let context = format!("{suppression}, suppress_variable={suppress_variable}");
             assert_eq!(wire["features"][0]["suppressed"], suppress_variable);
             assert_eq!(wire["features"][3]["suppressed"], true);
+            let variable_id = id("parameter", "round-variable");
+            let parameter = wire["parameters"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|parameter| parameter["id"] == variable_id)
+                .unwrap();
+            let owner = id("feature", "round-variable");
             assert_eq!(
-                wire["parameters"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|p| { p["id"] == id("parameter", "round-variable") }),
-                !suppress_variable
+                parameter["owner"].as_str(),
+                suppress_variable.then_some(owner.as_str())
             );
             let history: Vec<_> = report
                 .losses()
@@ -1275,14 +1279,18 @@ fn a_suppressed_feature_keeps_its_definition_and_charges_what_it_drops() {
                 })
                 .collect();
             if suppress_variable {
-                for subject in ["round-variable", "Corner round"] {
-                    assert!(
-                        history
-                            .iter()
-                            .any(|loss| loss.detail.ends_with(&format!("subject: {subject}"))),
-                        "{context}: {history:?}"
-                    );
-                }
+                assert!(
+                    history
+                        .iter()
+                        .any(|loss| loss.detail.ends_with("subject: Corner round")),
+                    "{context}: {history:?}"
+                );
+                assert!(
+                    history
+                        .iter()
+                        .all(|loss| !loss.detail.ends_with("subject: round-variable")),
+                    "{context}: {history:?}"
+                );
             } else {
                 assert!(history.is_empty(), "{context}: {history:?}");
                 assert_eq!(kinds(&wire)[3], "fillet", "{context}");

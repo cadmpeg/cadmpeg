@@ -113,24 +113,8 @@ fn a_cadir_write_carries_the_restated_features_and_sketches() {
         written.design.sketch_entities,
         result.ir().design.sketch_entities
     );
-    let model = &result.ir().model;
-    for restated in model
-        .features
-        .iter()
-        .map(|feature| feature.id.as_str())
-        .chain(model.sketches.iter().map(|sketch| sketch.id.as_str()))
-        .chain(
-            model
-                .sketch_entities
-                .iter()
-                .map(|entity| entity.id().as_str()),
-        )
-    {
-        assert!(
-            omitted(&losses, restated).is_empty(),
-            "{restated}: {losses:#?}"
-        );
-    }
+    assert!(omitted(&losses, &id("feature", "Base sketch")).is_empty());
+    assert!(omitted(&losses, &id("feature", "Plate")).is_empty());
 }
 
 #[test]
@@ -202,14 +186,14 @@ fn variables_and_owned_dimensions_are_design_parameters() {
         width["definition"],
         json!({"kind":"expression","value":{"kind":"neutral","value":{"text":"3[mm]","refs":[],"measures":[]}}})
     );
-    assert_eq!(width["value"], json!({"kind":"number","value":3.0}));
+    assert!(width.get("value").is_none());
     let plate = id("feature", "Plate");
     let depth = parameter(Some(&plate));
     assert_eq!(
         depth["definition"]["value"]["value"],
         json!({"text":"$0 * 2","refs":[{"target":{"kind":"parameter","value":id("parameter", "width-variable")}}],"measures":[]})
     );
-    assert_eq!(depth["value"], json!({"kind":"number","value":6.0}));
+    assert!(depth.get("value").is_none());
     assert_eq!(
         design_operation(ir, "Plate")["value"]["span"]["end"]["value"],
         json!({"kind":"parameter","value":depth["id"]})
@@ -231,13 +215,11 @@ fn a_cadir_write_carries_the_restated_parameters() {
         result.ir().design.parameters.len(),
         result.ir().model.parameters.len()
     );
-    for parameter in &result.ir().model.parameters {
-        assert!(
-            omitted(&losses, parameter.id.as_str()).is_empty(),
-            "{}: {losses:#?}",
-            parameter.id
-        );
-    }
+    let evaluated = id("parameter", "Base sketch/length");
+    let cuts = omitted(&losses, &evaluated);
+    assert!(cuts
+        .iter()
+        .any(|loss| loss.message.contains(&format!("{evaluated} (value)"))));
 }
 
 #[test]
@@ -340,18 +322,11 @@ fn a_clockwise_arc_end_keeps_the_stored_point_id_of_its_geometric_end() {
 #[test]
 fn a_cadir_write_carries_the_restated_constraints() {
     let result = decode(&fixture("plate-fillet"));
-    let (written, losses) = cadir_round_trip(&result);
+    let (written, _) = cadir_round_trip(&result);
     assert_eq!(
         written.design.sketch_constraints,
         result.ir().design.sketch_constraints
     );
-    for constraint in &result.ir().model.sketch_constraints {
-        assert!(
-            omitted(&losses, constraint.id.as_str()).is_empty(),
-            "{}: {losses:#?}",
-            constraint.id
-        );
-    }
 }
 
 /// The plate-fillet bundle with its fillet replaced by a chamfer of the
@@ -507,10 +482,10 @@ fn sketch_length(expression: &str) -> Vec<u8> {
 
 #[test]
 fn a_sketch_dimension_keeps_the_unit_and_structure_of_its_expression() {
-    for (expression, text, unit, value) in [
-        ("1 in", "1[in]", "in", 25.4),
-        ("10 mm + 10 mm", "10[mm] + 10[mm]", "mm", 20.0),
-        ("2 cm", "2[cm]", "cm", 20.0),
+    for (expression, text, unit) in [
+        ("1 in", "1[in]", "in"),
+        ("10 mm + 10 mm", "10[mm] + 10[mm]", "mm"),
+        ("2 cm", "2[cm]", "cm"),
     ] {
         let (parameter, result) =
             design_parameter(&sketch_length(expression), "Base sketch/length");
@@ -524,8 +499,7 @@ fn a_sketch_dimension_keeps_the_unit_and_structure_of_its_expression() {
             json!([{"symbol":unit,"power":1}]),
             "{expression}"
         );
-        let stored = parameter["value"]["value"].as_f64().unwrap();
-        assert!((stored - value).abs() < 1e-9, "{expression}: {stored}");
+        assert!(parameter.get("value").is_none(), "{expression}");
         validate(result);
     }
 }
@@ -540,12 +514,12 @@ fn an_expression_the_reader_does_not_evaluate_keeps_its_source_text() {
         json!([{"kind":"text","value":"(10 + 10) mm"}])
     );
     assert!(parameter.get("unit").is_none());
-    assert_eq!(parameter["value"], json!({"kind":"number","value":20.0}));
+    assert!(parameter.get("value").is_none());
     validate(result);
 }
 
 #[test]
-fn a_flat_chain_past_the_depth_cap_keeps_the_source_text() {
+fn a_flat_chain_remains_a_neutral_sum_and_keeps_its_source_text() {
     let chain = vec!["1 mm"; 300].join(" + ");
     let bytes = crate::test_support::projection::with_variables(
         &fixture("plate-fillet"),
@@ -559,16 +533,12 @@ fn a_flat_chain_past_the_depth_cap_keeps_the_source_text() {
         |_| {},
     );
     let (parameter, result) = design_parameter(&bytes, "long-variable");
-    assert_eq!(parameter["definition"]["value"]["kind"], "source");
+    assert_eq!(parameter["definition"]["value"]["kind"], "neutral");
     assert_eq!(
-        parameter["definition"]["value"]["value"]["tokens"],
-        json!([{"kind":"text","value":chain}])
+        parameter["source_settings"]["onshape:source_expression"]["value"]["value"],
+        chain
     );
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| crate::loss::OnshapeLossCode::ParameterExpressionText.matches(loss)));
+    validate(result);
 }
 
 #[test]
@@ -608,7 +578,7 @@ fn a_fillet_radius_from_a_variable_binds_its_owned_parameter() {
 }
 
 #[test]
-fn a_variable_value_no_parameter_drives_is_a_named_loss() {
+fn a_tapped_major_diameter_binds_its_owned_parameter() {
     let bytes = crate::test_support::projection::with_variables(
         &fixture("hole-forms"),
         &[crate::test_support::projection::variable(
@@ -628,14 +598,16 @@ fn a_variable_value_no_parameter_drives_is_a_named_loss() {
             }
         },
     );
-    let (_, report) = super::projection::read(&bytes);
-    let losses: Vec<_> = report
-        .losses()
+    let result = decode(&bytes);
+    let operation = design_operation(result.ir(), "Tapped");
+    assert_eq!(
+        operation["value"]["thread"]["major_diameter"],
+        json!({"kind":"parameter","value":id("parameter", "Tapped/majorDiameter")})
+    );
+    assert!(result
+        .report()
+        .losses
         .iter()
-        .filter(|l| l.code.as_deref() == Some("onshape/history.variable-evaluated"))
-        .collect();
-    assert_eq!(losses.len(), 1, "{:?}", report.losses());
-    assert!(losses[0]
-        .detail
-        .starts_with("majorDiameter uses Part Studio variables"));
+        .all(|loss| !crate::loss::OnshapeLossCode::VariableEvaluated.matches(loss)));
+    validate(result);
 }

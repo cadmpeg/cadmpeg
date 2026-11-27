@@ -78,10 +78,6 @@ fn shell_controls_outside_the_stored_forms_keep_the_feature_native_with_a_named_
     type Edit = Box<dyn Fn(&mut Vec<Value>)>;
     let cases: Vec<(&str, Edit)> = vec![
         (
-            "outward",
-            Box::new(|p| p[2] = json!({"parameterId": "oppositeDirection", "value": true})),
-        ),
-        (
             "hollow",
             Box::new(|p| p.push(json!({"parameterId": "isHollow", "value": true}))),
         ),

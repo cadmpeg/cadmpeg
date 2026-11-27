@@ -746,6 +746,7 @@ fn studio_in(
     let mut assumed_sides = std::collections::BTreeSet::new();
     for (ordinal, feature) in features.iter().enumerate() {
         let mut thin_design = None;
+        let mut legacy_loss = None;
         let note_start = report.notes.len();
         let native = match text(feature, "featureId") {
             Ok(native) => match seen.entry(native) {
@@ -821,10 +822,8 @@ fn studio_in(
         let mut dependencies = Vec::new();
         let mapped = if let Err(reason) = &suppressed {
             Err(reason.clone())
-        } else if suppressed == Ok(true) && !bindings.is_empty() {
-            Err("a suppressed variable assigns no value, so later features cannot read its definition; the definition is not stated".into())
         } else if suppressed == Ok(true) && derived::is_derived(feature) {
-            Err("the captured design of a suppressed derived feature is not read".into())
+            derived::reference(feature).map(|_| definition("stored_geometry", json!({})))
         } else if derived::is_derived(feature) {
             match derived::map(session, feature, ordinal, &inputs, folder, depth, report) {
                 Ok(captured) => {
@@ -883,25 +882,7 @@ fn studio_in(
             })
         };
         let mut definition = match mapped {
-            Ok(definition) => {
-                if suppressed != Ok(true)
-                    && !matches!(
-                        feature.get("featureType").and_then(Value::as_str),
-                        Some("newSketch" | "assignVariable")
-                    )
-                {
-                    if let Err(reason) =
-                        features::report_evaluated_variables(feature, &model.ir.model, report)
-                    {
-                        report.push_coded(
-                            name,
-                            OnshapeLossCode::RecordMalformed,
-                            format!("{reason}; evaluated variable facts are not reported"),
-                        );
-                    }
-                }
-                definition
-            }
+            Ok(definition) => definition,
             Err(reason) => {
                 let mut tail = report.notes.split_off(note_start);
                 tail.retain(|note| !OnshapeLossCode::SketchPlaneAssumed.matches(note));
@@ -924,6 +905,9 @@ fn studio_in(
                     &reason,
                 );
                 loss(report, name, &reason, model.source_step.is_some(), code);
+                if design::Source::independently_projected(feature) && suppressed.is_ok() {
+                    legacy_loss = report.notes.pop();
+                }
                 definition(
                     "native",
                     json!({"kind": format!("Onshape {}: {reason}", feature.get("featureType").and_then(Value::as_str).unwrap_or("feature")), "parameters": {}}),
@@ -956,6 +940,35 @@ fn studio_in(
         {
             for name in &bindings {
                 unresolved_variables.remove(*name);
+            }
+        }
+        let mut source = design::Source::read(
+            feature,
+            ordinal,
+            thin_design.take(),
+            &model.ir.model,
+            &unresolved_variables,
+        );
+        source.legacy_loss = legacy_loss;
+        if suppressed.is_ok() && !features::is_custom(feature) {
+            if let Err(reason) = source.prepare_quantities(&model.ir.model, &unresolved_variables) {
+                report.push_coded(name, OnshapeLossCode::RecordMalformed, reason);
+            }
+        }
+        if suppressed == Ok(false)
+            && definition.pointer("/value/kind").and_then(Value::as_str) != Some("native")
+            && !matches!(
+                feature.get("featureType").and_then(Value::as_str),
+                Some("newSketch" | "assignVariable")
+            )
+        {
+            if let Err(reason) = features::report_evaluated_variables(
+                feature,
+                &model.ir.model,
+                &source.parameters,
+                report,
+            ) {
+                report.push_coded(name, OnshapeLossCode::RecordMalformed, reason);
             }
         }
         let mut source_properties = features::source_properties(feature, &definition)
@@ -1080,7 +1093,7 @@ fn studio_in(
             .chain(part_bodies.get(&ordinal))
             .filter(|_| suppressed == Ok(false))
             .filter(|_| {
-                (thin_design.is_some() && features::value(feature, "operationType") == Some("NEW"))
+                (source.thin.is_some() && features::value(feature, "operationType") == Some("NEW"))
                     || definition
                         .pointer("/value/value/shape/op")
                         .and_then(Value::as_str)
@@ -1119,22 +1132,10 @@ fn studio_in(
                 format!("{reason}; omitted the feature"),
             );
         } else {
-            sources.insert(
-                feature_id,
-                design::Source {
-                    feature_type: feature
-                        .get("featureType")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned),
-                    next: features::value(feature, "endBound") == Some("UP_TO_NEXT"),
-                    thin: thin_design,
-                    tangent: features::tangent_propagation(feature),
-                    seeds: features::edge_seeds(feature),
-                },
-            );
+            sources.insert(feature_id, source);
         }
     }
-    project_design(ctx, &mut model.ir, report, &bar, &sources)?;
+    project_design(ctx, &mut model.ir, report, &bar, &sources, &inputs)?;
     report
         .notes
         .extend(inputs.sampling_report.into_inner().notes);
@@ -1153,7 +1154,8 @@ fn project_design(
     ir: &mut cadmpeg_ir::CadIr,
     report: &mut Report,
     bar: &RollbackBar,
-    sources: &design::Sources,
+    sources: &design::Sources<'_>,
+    inputs: &topology::Inputs<'_>,
 ) -> Result<(), Error> {
     let mut refused = Vec::new();
     cadmpeg_ir::design::projection::project_layer(
@@ -1162,7 +1164,7 @@ fn project_design(
         ir,
         &mut report.notes,
         |ir, notes| {
-            refused = design::project(ctx, ir, notes, bar, sources)?;
+            refused = design::project(ctx, ir, notes, bar, sources, inputs)?;
             Ok(())
         },
     )?;
@@ -1376,6 +1378,43 @@ fn annotate(
             annotations
                 .field_exactness(&feature.id, thin::SIDE, Exactness::Inferred)
                 .map_err(cadmpeg_core::CodecError::from)?;
+        }
+        if let cadmpeg_ir::design::feature::FeatureOperation::Sweep(sweep) =
+            &feature.definition.operation
+        {
+            if sweep.controls.scaling.is_some() {
+                annotations
+                    .field_exactness(
+                        &feature.id,
+                        "definition.operation.value.controls.scaling",
+                        Exactness::Inferred,
+                    )
+                    .map_err(cadmpeg_core::CodecError::from)?;
+            }
+        }
+        if let cadmpeg_ir::design::feature::FeatureOperation::Chamfer(chamfer) =
+            &feature.definition.operation
+        {
+            use cadmpeg_ir::design::ops::dressup::ChamferSize;
+            for (index, set) in chamfer
+                .sets
+                .iter()
+                .enumerate()
+                .filter(|(_, set)| set.reference.is_none())
+            {
+                let side = match set.size {
+                    Some(ChamferSize::Distances { .. }) => "first",
+                    Some(ChamferSize::DistanceAngle { .. }) => "distance",
+                    _ => continue,
+                };
+                annotations
+                    .field_exactness(
+                        &feature.id,
+                        format!("definition.operation.value.sets.{index}.size.value.{side}"),
+                        Exactness::Inferred,
+                    )
+                    .map_err(cadmpeg_core::CodecError::from)?;
+            }
         }
     }
     model.source_fidelity.annotations = annotations.build();

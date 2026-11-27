@@ -51,26 +51,25 @@ pub(crate) fn definition(
                 expression: evaluated.expression,
                 dependencies: evaluated.dependencies,
             }),
-            Err(reason) if source.contains('#') => Err(reason),
             Err(_) => Ok(Definition {
                 expression: source.to_owned(),
                 dependencies: Vec::new(),
-                properties: cadmpeg_core::json!({}),
+                properties: cadmpeg_core::json!({"untranslated_expression": "true"}),
             }),
         };
     }
-    let unit = match super::text(parameter, "units")? {
-        "millimeter" | "mm" => "mm",
-        "centimeter" | "cm" => "cm",
-        "meter" | "m" => "m",
-        "inch" | "in" => "in",
-        "foot" | "ft" => "ft",
-        "radian" | "rad" => "rad",
-        "degree" | "deg" => "deg",
-        _ => return Err("quantity units are not supported yet".into()),
+    let unit = if dimension == Dimension::Scalar {
+        ""
+    } else {
+        unit(super::text(parameter, "units")?)
+            .filter(|(_, actual, _)| *actual == dimension)
+            .ok_or("quantity units are not supported yet")?
+            .2
     };
     Ok(Definition {
-        expression: format!("{} {unit}", number(parameter, "value")?),
+        expression: format!("{} {unit}", number(parameter, "value")?)
+            .trim_end()
+            .to_owned(),
         dependencies: Vec::new(),
         properties: cadmpeg_core::json!({}),
     })
@@ -83,6 +82,45 @@ pub(crate) fn source_text(source: &str, rendered: &str) -> Value {
         cadmpeg_core::json!({})
     } else {
         cadmpeg_core::json!({"source_expression": source})
+    }
+}
+
+pub(super) fn unit(unit: &str) -> Option<(f64, Dimension, &'static str)> {
+    Some(match unit {
+        "mm" | "millimeter" => (1.0, Dimension::Length, "mm"),
+        "cm" | "centimeter" => (10.0, Dimension::Length, "cm"),
+        "m" | "meter" => (1000.0, Dimension::Length, "m"),
+        "in" | "inch" => (25.4, Dimension::Length, "in"),
+        "ft" | "foot" => (304.8, Dimension::Length, "ft"),
+        "rad" | "radian" => (1.0, Dimension::Angle, "rad"),
+        "deg" | "degree" => (std::f64::consts::PI / 180.0, Dimension::Angle, "deg"),
+        _ => return None,
+    })
+}
+
+pub(super) fn stored(parameter: &Value, dimension: Dimension) -> Option<f64> {
+    let factor = if dimension == Dimension::Scalar {
+        1.0
+    } else {
+        let (factor, actual, _) = unit(super::text(parameter, "units").ok()?)?;
+        if actual != dimension {
+            return None;
+        }
+        factor
+    };
+    let value = number(parameter, "value").ok()? * factor;
+    value.is_finite().then_some(value)
+}
+
+/// Whether the source states one signed number with an optional unit suffix.
+pub(super) fn literal(source: &str) -> bool {
+    let mut words = source.split_whitespace();
+    match (words.next(), words.next(), words.next()) {
+        (Some(number), None, None) => number.parse::<f64>().is_ok(),
+        (Some(number), Some(suffix), None) => {
+            number.parse::<f64>().is_ok() && unit(suffix).is_some()
+        }
+        _ => false,
     }
 }
 
@@ -236,6 +274,14 @@ impl Parser<'_> {
             return Ok((number(value, "value")?, dim, param.name.clone()));
         }
         self.rest = self.rest.trim_start();
+        if self.rest.starts_with(|c: char| c.is_ascii_alphabetic()) {
+            let word = self.word()?;
+            let (factor, dimension, canonical) = unit(&word).ok_or(REFUSED)?;
+            if self.display_unit.is_none() {
+                self.display_unit = Some(canonical.to_owned());
+            }
+            return Ok((factor, dimension, format!("1 {canonical}")));
+        }
         let end = self
             .rest
             .char_indices()
@@ -280,16 +326,7 @@ impl Parser<'_> {
             .is_some_and(|c| c.is_ascii_alphabetic())
         {
             let unit = self.word()?;
-            let (factor, dim, canonical) = match unit.as_str() {
-                "mm" | "millimeter" => (1.0, Dimension::Length, "mm"),
-                "cm" | "centimeter" => (10.0, Dimension::Length, "cm"),
-                "m" | "meter" => (1000.0, Dimension::Length, "m"),
-                "in" | "inch" => (25.4, Dimension::Length, "in"),
-                "ft" | "foot" => (304.8, Dimension::Length, "ft"),
-                "rad" | "radian" => (1.0, Dimension::Angle, "rad"),
-                "deg" | "degree" => (std::f64::consts::PI / 180.0, Dimension::Angle, "deg"),
-                _ => return Err(REFUSED.into()),
-            };
+            let (factor, dim, canonical) = self::unit(&unit).ok_or(REFUSED)?;
             let value = value * factor;
             if !value.is_finite() {
                 return Err("the variable expression exceeds the finite range".into());

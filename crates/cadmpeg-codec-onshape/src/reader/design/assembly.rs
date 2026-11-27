@@ -24,6 +24,7 @@ use cadmpeg_ir::design::ops::shared::{
     Alignment, Joint, JointConnector, JointKind, JointMotion, JointOffset,
 };
 use cadmpeg_ir::design::options::NativeOptions;
+use cadmpeg_ir::design::projection::restated::Restater;
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::design::scope::{DesignScope, OccurrenceDesign};
 use cadmpeg_ir::design::selection::{
@@ -62,14 +63,15 @@ pub(in crate::reader) fn project(
     paths: &JointPaths,
 ) -> Result<(), CodecError> {
     let mut features = Vec::new();
-    let mut grounded = BTreeSet::new();
+    let mut grounded = BTreeMap::new();
+    let mut restated = Vec::new();
     for joint in &ir.model.assembly_joints {
         match joint.operands() {
             JointOperands::Grounded { connector, .. } => {
                 if let cadmpeg_ir::products::OperandContainer::Occurrence { occurrence, .. } =
                     &connector.operand.container
                 {
-                    grounded.insert(occurrence.clone());
+                    grounded.insert(occurrence.clone(), joint.id.clone());
                 }
             }
             JointOperands::Pair {
@@ -81,8 +83,17 @@ pub(in crate::reader) fn project(
                 let connector = |index: usize| -> Result<JointConnector, CodecError> {
                     frame_connector(&connectors[index].frame, &paths.connectors[index])
                 };
+                let feature = joint_feature(&joint.id)?;
+                let mut cut = Vec::new();
+                if joint.driving_parameter.is_some() {
+                    cut.push("driving_parameter");
+                }
+                if !joint.drives.is_empty() {
+                    cut.push("drives");
+                }
+                restated.push((joint.id.clone(), Restater::Record(feature.to_string()), cut));
                 features.push(Feature {
-                    id: joint_feature(&joint.id)?,
+                    id: feature,
                     name: None,
                     suppressed: Some(Dimension::Literal(joint.suppressed)),
                     definition: FeatureDefinition {
@@ -114,7 +125,7 @@ pub(in crate::reader) fn project(
                     placement: None,
                     component: paths.component.clone(),
                     driven_by: None,
-                    native_ref: None,
+                    native_ref: joint.native_ref.clone(),
                 });
             }
         }
@@ -158,7 +169,8 @@ pub(in crate::reader) fn project(
         .collect();
     let occurrences = grounded
         .into_iter()
-        .map(|occurrence| {
+        .map(|(occurrence, joint)| {
+            restated.push((joint, Restater::Record(root.to_string()), Vec::new()));
             (
                 occurrence,
                 OccurrenceDesign {
@@ -180,6 +192,9 @@ pub(in crate::reader) fn project(
         current: Vec::new(),
         unproduced,
     });
+    for (joint, by, cut) in restated {
+        ir.model.restated_mut().record(joint.as_str(), by, cut);
+    }
     Ok(())
 }
 

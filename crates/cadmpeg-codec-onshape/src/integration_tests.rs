@@ -22,6 +22,7 @@ mod review;
 mod rollback;
 mod second_review;
 mod shell;
+mod source_operands;
 mod sweep;
 mod thin_scope;
 mod thin_wall;

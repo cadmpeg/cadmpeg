@@ -151,24 +151,29 @@ Need: `importDerived` features that store a non-default value of one of these fi
 
 ## ONSHAPE-013 — Chamfer setback sides
 
-Question: On which face of each selected edge does a `chamfer` feature measure `width1` of a `TWO_OFFSETS` chamfer and `width` of a `DISTANCE_ANGLE` chamfer, and how does `oppositeDirection` change that face?
+Question: On which face of each selected edge does a `chamfer` feature measure `width1` of a `TWO_OFFSETS` chamfer and `width` of a `OFFSET_ANGLE` chamfer, and how does `oppositeDirection` change that face?
 
-Known: A `chamfer` feature stores `chamferType` (`EQUAL_OFFSETS`, `TWO_OFFSETS`, or `DISTANCE_ANGLE`), the setbacks `width`, `width1`, and `width2`, the angle `angle`, the Boolean `oppositeDirection`, and the edge selection `entities`. An `EQUAL_OFFSETS` chamfer has one setback on both faces. The feature record names no reference face.
+Known: A `chamfer` feature stores `chamferType` (`EQUAL_OFFSETS`, `TWO_OFFSETS`, or `OFFSET_ANGLE`), the setbacks `width`, `width1`, and `width2`, the angle `angle`, the Boolean `oppositeDirection`, and the edge selection `entities`. An `EQUAL_OFFSETS` chamfer has one setback on both faces. The feature record names no reference face.
 
-Need: Build a block and chamfer one edge with `TWO_OFFSETS`, `width1` twice `width2`. Save it with `oppositeDirection` false and then true. Repeat with `DISTANCE_ANGLE`. Compare the chamfer face's edges in the final body with the two faces of the selected edge in the rollback state before the chamfer, and with the edge's direction there.
+Need: Build a block and chamfer one edge with `TWO_OFFSETS`, `width1` twice `width2`. Save it with `oppositeDirection` false and then true. Repeat with `OFFSET_ANGLE`. Compare the chamfer face's edges in the final body with the two faces of the selected edge in the rollback state before the chamfer, and with the edge's direction there.
 
 Conflict: The two faces give mirrored chamfer faces.
 
 Note: The decoder reads the first setback on the face whose loop runs along the edge in the edge's own direction, swapped when `oppositeDirection` is true, and charges `history.chamfer-side-assumed`.
 
-## ONSHAPE-030 — Shell wall sense with opposite direction
 
-Question: Does a stored `oppositeDirection` of `true` on a `shell` feature grow the wall outward from the original boundary, and which side of an opening face carries the wall?
+## ONSHAPE-031 — Versioned hole dimensions and table paths
 
-Known: A `false` value places the wall inside the original boundary. The Onshape `shell` specification names the control "Opposite direction" and lists no other direction control.
+Question: How do the REST lookup table path rows resolve sizes, classes, diameters and depths for V2 and V3 hole definitions?
 
-Need: A stored shell with `oppositeDirection` set to `true`, its input body and its final STEP body.
+Known: The hole feature stores `isV2` and `holeVersion`. The standard library selects versioned rows such as `styleV2`, `endStyleV2`, `holeDiameterV2`, `holeDiameterV3`, `tapDrillDiameterV2` and `tapDrillDiameterV3`. ANSI and ISO tables carry separate lookup paths for clearance, threaded and thread-class controls. A path selects an entry from a standard and style.
 
-Conflict: None.
+Need: The public REST representation of each lookup path and the public table entries it identifies, including the version that takes each entry's dimensions.
 
-Note: The decoder retains a shell with `oppositeDirection` set to `true`, the hollow form or an unlisted parameter as Native with `shell.not-supported` or `history.not-supported`.
+## ONSHAPE-032 — Face selection witnesses
+
+Question: Which analytic frame or surface from a rollback face can accompany its deterministic id in a design selection?
+
+Known: A feature input selection can name a rollback face by its deterministic id. In the rollback body details, a planar face's surface has an origin and a normal in metres and model coordinates. The face's loops name edges of the same rollback body.
+
+Need: The public contract for the face surface and trim domains on the rollback body-details response and their frames in a Part Studio.

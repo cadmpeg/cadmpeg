@@ -96,6 +96,13 @@ fn a_cadir_write_carries_the_mates() {
     let result = decode(root);
     let (written, losses) = cadir_round_trip(&result);
     assert_eq!(written.design.features, result.ir().design.features);
+    assert!(omitted(&losses, &id("joint", "fixed:[\"first\"]")).is_empty());
+    assert!(result
+        .ir()
+        .model
+        .assembly_joints
+        .iter()
+        .any(|joint| joint.id.as_str() == id("joint", "fixed:[\"first\"]")));
     assert!(
         omitted(&losses, &id("joint", "[]:hinge")).is_empty(),
         "{losses:#?}"

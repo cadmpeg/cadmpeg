@@ -5,9 +5,14 @@ use cadmpeg_ir::design::expr::print;
 use cadmpeg_ir::features::ParameterId;
 
 use super::neutral;
+use crate::reader::expression::Dimension;
 
 fn text(rendered: &str, variables: &BTreeMap<&str, &ParameterId>) -> Option<String> {
-    neutral(rendered, variables).map(|tree| print(&tree).unwrap().text)
+    neutral(rendered, Dimension::Length, &|name| {
+        variables.get(name).map(|id| (*id, Dimension::Length))
+    })
+    .or_else(|| neutral(rendered, Dimension::Angle, &|_| None))
+    .map(|tree| print(&tree).unwrap().text)
 }
 
 #[test]
@@ -17,11 +22,11 @@ fn rendered_arithmetic_prints_as_its_canonical_tree() {
     for (rendered, canonical) in [
         ("20 mm", "20[mm]"),
         ("1.5 in", "1.5[in]"),
-        ("(width * 2)", "$0 * 2"),
-        ("((width * 2) + 3 mm)", "$0 * 2 + 3[mm]"),
+        ("(#width * 2)", "$0 * 2"),
+        ("((#width * 2) + 3 mm)", "$0 * 2 + 3[mm]"),
         ("((1 mm - 2 mm) - 3 mm)", "1[mm] - 2[mm] - 3[mm]"),
         ("(1 mm - (2 mm - 3 mm))", "1[mm] - (2[mm] - 3[mm])"),
-        ("(-(width / 4))", "-($0 / 4)"),
+        ("(-(#width / 4))", "-($0 / 4)"),
         ("(30 deg + 0.5 rad)", "30[deg] + 0.5[rad]"),
     ] {
         assert_eq!(

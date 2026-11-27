@@ -512,7 +512,7 @@ fn up_to_face_uses_analytic_boundaries_of_that_feature_input() {
     .unwrap();
     assert_eq!(
         design["value"]["span"]["end"],
-        json!({"kind":"to_geometry","value":{"target":{"at":{"kind":"input"},"picks":{"kind":"named","value":[
+        json!({"kind":"to_geometry","value":{"extend":{"kind":"literal","value":true},"target":{"at":{"kind":"input"},"picks":{"kind":"named","value":[
             {"target":{"kind":"native","value":{}},"native":{"codec":"onshape","value":{"kind":"text","value":"top"}}}]}}}})
     );
     assert_eq!(

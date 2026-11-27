@@ -11,13 +11,14 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::names::{NativeName, NativeNameValue};
 use cadmpeg_ir::design::selection::{
     Anchor, Continuity, MemberOrder, Members, NativeOwner, OrderedSelection, PickTarget, Picked,
-    Picks, Propagation, RuleTerm, Selection, SelectionRule, SetSelection, Witness,
+    Picks, Propagation, RuleTerm, Selection, SelectionRule, Witness,
 };
 use cadmpeg_ir::features::evaluation::FeatureInputTopology;
 use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, SketchProfileRegion};
-use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
 
 use super::Context;
+use crate::reader::{features, rows, Mapping as SourceMapping};
+use serde_json::Value;
 
 pub(super) type Mapping<T> = Result<T, &'static str>;
 
@@ -43,7 +44,7 @@ pub(super) fn selection<O: MemberOrder>(picks: Vec<Picked>) -> Mapping<Selection
 }
 
 /// A `Native` pick named by the Onshape id `id`.
-fn native(id: &str, within: Option<NativeOwner>) -> Mapping<Picked> {
+pub(super) fn native(id: &str, within: Option<NativeOwner>) -> Mapping<Picked> {
     let mut picked = pick(PickTarget::Native { within });
     picked.native = Some(NativeName {
         codec: cadmpeg_ir::codec_id!(crate::dialect::FORMAT),
@@ -52,112 +53,94 @@ fn native(id: &str, within: Option<NativeOwner>) -> Mapping<Picked> {
     Ok(picked)
 }
 
-/// The edges `ids` of the input state `state`, each with its stored sample
-/// as its witness.
-fn edge_picks<'i>(
-    state: &str,
-    ids: impl Iterator<Item = &'i str>,
-    inputs: &[FeatureInputTopology],
+/// The explicit ids in the query list, in source order.
+pub(super) fn ids<'a>(feature: &'a Value, key: &str) -> SourceMapping<Vec<&'a str>> {
+    let mut ids = Vec::new();
+    for query in rows(features::parameter(feature, key)?, "queries")? {
+        for value in rows(query, "deterministicIds")? {
+            ids.push(value.as_str().ok_or("a selected id is not a string")?);
+        }
+    }
+    Ok(ids)
+}
+
+pub(super) fn edge_picks(
+    ids: &[&str],
+    input: Option<&FeatureInputTopology>,
 ) -> Mapping<Vec<Picked>> {
-    let input = inputs
-        .iter()
-        .find(|input| input.id.as_str() == state)
-        .ok_or("the selected edge state is absent")?;
-    ids.map(|id| {
-        let mut picked = native(id, None)?;
-        picked.witness = input
-            .edge_geometry
-            .iter()
-            .find(|sample| sample.edge.as_str() == id)
-            .map(Witness::edge_sample);
-        Ok(picked)
-    })
-    .collect()
+    ids.iter()
+        .map(|id| {
+            let mut picked = native(id, None)?;
+            picked.witness = input
+                .and_then(|input| {
+                    input
+                        .edge_geometry
+                        .iter()
+                        .find(|sample| sample.edge.as_str() == *id)
+                })
+                .map(Witness::edge_sample);
+            Ok(picked)
+        })
+        .collect()
 }
 
-/// The historical edges of `value`.
-pub(super) fn edges(value: &EdgeSelection, context: &Context<'_>) -> Mapping<Vec<Picked>> {
-    let EdgeSelection::Historical { state, edges, .. } = value else {
-        return Err("the edge selection is not resolved in the input state");
-    };
-    edge_picks(
-        state.as_str(),
-        edges.iter().map(cadmpeg_ir::ids::HistoricalEdgeId::as_str),
-        context.inputs,
-    )
-}
-
-/// The edges of `value`, or, where the source propagates the selection
-/// along tangent edges, one `Explicit` term on the selected `seeds` with
-/// tangent propagation. `tangent` is the stored propagation flag.
-pub(super) fn blend_edges<O: MemberOrder>(
-    value: &EdgeSelection,
-    tangent: Option<bool>,
-    seeds: &[String],
-    context: &Context<'_>,
+pub(super) fn blend<O: MemberOrder>(
+    seeds: Vec<Picked>,
+    tangent: bool,
+    excluded: Vec<Picked>,
 ) -> Mapping<Selection<O>> {
-    let propagation = match tangent {
-        None => return selection(edges(value, context)?),
-        Some(false) => Propagation::Off,
-        Some(true) => Propagation::Connected {
-            continuity: Some(Continuity::G1),
-            angle: None,
-            gap: None,
-        },
-    };
-    let EdgeSelection::Historical { state, .. } = value else {
-        return Err("the edge selection is not resolved in the input state");
-    };
-    let seeds = if tangent == Some(true) {
-        edge_picks(
-            state.as_str(),
-            seeds.iter().map(String::as_str),
-            context.inputs,
-        )?
-    } else {
-        edges(value, context)?
-    };
     Ok(Selection {
         at: Anchor::Input,
         picks: Picks::Rule {
             terms: vec![RuleTerm {
                 rule: SelectionRule::Explicit,
-                seeds: Members::new(seeds).map_err(|_| "the seed edges are empty or repeat")?,
-                propagation: Some(propagation),
+                seeds: Members::new(seeds)?,
+                propagation: Some(if tangent {
+                    Propagation::Connected {
+                        continuity: Some(Continuity::G1),
+                        angle: None,
+                        gap: None,
+                    }
+                } else {
+                    Propagation::Off
+                }),
             }],
-            excluded: Vec::new(),
+            excluded: if excluded.is_empty() {
+                Vec::new()
+            } else {
+                vec![RuleTerm {
+                    rule: SelectionRule::Explicit,
+                    seeds: Members::new(excluded)?,
+                    propagation: Some(Propagation::Off),
+                }]
+            },
             resolved: None,
         },
         native: None,
     })
 }
 
-/// The historical faces of `value`.
-pub(super) fn faces(value: &FaceSelection) -> Mapping<SetSelection> {
-    let FaceSelection::Historical { faces, .. } = value else {
-        return Err("the face selection is not resolved in the input state");
-    };
-    selection(
-        faces
-            .iter()
-            .map(|face| native(face.as_str(), None))
-            .collect::<Mapping<_>>()?,
-    )
+pub(super) fn selected<O: MemberOrder>(feature: &Value, key: &str) -> SourceMapping<Selection<O>> {
+    let ids = ids(feature, key)?;
+    if ids.is_empty() {
+        return Err(format!("{key} has no selected ids"));
+    }
+    let picks = ids
+        .into_iter()
+        .map(|id| native(id, None))
+        .collect::<Mapping<_>>()?;
+    Ok(selection(picks)?)
 }
 
-/// The bodies of `value`, each within the feature that made it.
-pub(super) fn bodies<O: MemberOrder>(value: &BodySelection) -> Mapping<Selection<O>> {
-    let BodySelection::Generated { bodies, .. } = value else {
-        return Err("the body selection names no generating feature");
-    };
+/// The bodies in source order, each within the feature that made it.
+pub(super) fn bodies<O: MemberOrder>(values: &[(String, String)]) -> Mapping<Selection<O>> {
     selection(
-        bodies
+        values
             .iter()
-            .map(|body| {
-                native(
-                    body.local_id.as_str(),
-                    Some(NativeOwner::Feature(body.feature.clone())),
-                )
+            .map(|(body, producer)| {
+                let feature = cadmpeg_ir::features::FeatureId::mint(producer)
+                    .map_err(|_| "a selected body has an invalid producer identity")?;
+                native(body, Some(NativeOwner::Feature(feature)))
             })
             .collect::<Mapping<_>>()?,
     )
@@ -167,7 +150,7 @@ pub(super) fn bodies<O: MemberOrder>(value: &BodySelection) -> Mapping<Selection
 /// entities, of a sketch the design states earlier in the timeline.
 pub(super) fn profile(
     profile: &PlanarProfileRef,
-    context: &Context<'_>,
+    context: &Context<'_, '_>,
 ) -> Mapping<OrderedSelection> {
     let (sketch, picks) = match profile {
         PlanarProfileRef::Sketch(sketch) => {
@@ -222,7 +205,7 @@ pub(super) fn profile(
 }
 
 /// The sketch curves of the path `path`, in path order.
-pub(super) fn path(path: &PathRef, context: &Context<'_>) -> Mapping<OrderedSelection> {
+pub(super) fn path(path: &PathRef, context: &Context<'_, '_>) -> Mapping<OrderedSelection> {
     let PathRef::SketchCurves { sketch, curves } = path else {
         return Err("the path is no chain of sketch curves");
     };
@@ -242,7 +225,7 @@ pub(super) fn path(path: &PathRef, context: &Context<'_>) -> Mapping<OrderedSele
 }
 
 /// Whether the design states the sketch `sketch` earlier in the timeline.
-fn stated_before(sketch: &str, context: &Context<'_>) -> Mapping<()> {
+fn stated_before(sketch: &str, context: &Context<'_, '_>) -> Mapping<()> {
     if !context.sketches.contains(sketch) {
         return Err("the profile sketch is not stated in the design");
     }

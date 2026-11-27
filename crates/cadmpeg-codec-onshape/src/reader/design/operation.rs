@@ -1,45 +1,46 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The design operation of one Part Studio feature (§6).
 
-use std::collections::BTreeSet;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::design::construction::{
     kinds, AnyConstruction, AxisValue, Construction, ConstructionInput, InputReference, InputRole,
     PlaneValue, Relation, ScalarDimension, Subject,
 };
-use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::dimension::{Dimension, ParameterRef, RefTarget};
+use cadmpeg_ir::design::expr::{
+    Expression, Measure, MeasureKind, MeasureTarget, MulOp, Neutral, Node, UnaryOp,
+};
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::body::Combine;
 use cadmpeg_ir::design::ops::datum::{Datum, DatumElement};
 use cadmpeg_ir::design::ops::shared::ToolDisposition;
-use cadmpeg_ir::design::ops::shared::{Limit, Span};
+use cadmpeg_ir::design::ops::shared::{Law, Limit, Span};
 use cadmpeg_ir::design::ops::swept::{
-    Extrude, ExtrudeDirection, ExtrudeOrigin, Revolve, SpineLimits, Sweep, SweepControls,
-    SweepSection,
+    DraftNeutral, Extrude, ExtrudeDirection, ExtrudeDraft, ExtrudeOrigin, Revolve, ScalingLaw,
+    SpineLimits, Sweep, SweepControls, SweepOrientation, SweepSection, Twist,
 };
 use cadmpeg_ir::design::options::{
-    BodyForm, Boolean, BooleanOp, NativeOptions, SolidOutput, SymmetricMeasure, Targets,
+    BodyForm, Boolean, BooleanOp, LimitOffset, NativeOptions, SolidOutput, SymmetricMeasure,
+    Targets,
 };
+use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition, ParameterOwner};
 use cadmpeg_ir::design::selection::{PickTarget, Picks};
+use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use cadmpeg_ir::features as v10;
-use cadmpeg_ir::features::extents::{
-    AngularTermination, ExtrudeDirection as V10Direction, ExtrudeExtent, ExtrudeStart,
-    LinearTermination,
-};
 use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
-use cadmpeg_ir::features::operation_settings::BooleanOp as V10Op;
-use cadmpeg_ir::features::operation_settings::{BooleanKind, CombineDestination};
-use cadmpeg_ir::features::profiles::{PathRef, ProfileRef};
-use cadmpeg_ir::features::revolve::{RevolutionAxis, RevolveConstruction, RevolveExtent};
-use cadmpeg_ir::features::sweeps::{SolidSweepOperation, SweepSection as V10Section, SweepShape};
+use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef};
+use cadmpeg_ir::features::revolve::RevolutionAxis;
 use cadmpeg_ir::features::{FeatureDefinition, ParameterId};
-use cadmpeg_ir::scalar::{Angle, Length};
+use cadmpeg_ir::scalar::{Angle, FiniteReal, Length, NonNegativeReal};
 use cadmpeg_ir::units::UnitVector3;
 use serde_json::Value;
 
 use super::Source;
 use crate::loss::OnshapeLossCode;
+use crate::reader::{features, Mapping as SourceMapping};
 
 mod dressup;
 mod picks;
@@ -50,7 +51,7 @@ use picks::{pick, selection};
 const FULL_TURN_TOLERANCE_RAD: f64 = 1e-12;
 
 /// What the design states before a feature.
-pub(super) struct Context<'c> {
+pub(super) struct Context<'c, 'a> {
     /// The sketches the design states.
     pub(super) sketches: &'c BTreeSet<&'c str>,
     /// The sketch of each sketch entity the design states.
@@ -66,9 +67,20 @@ pub(super) struct Context<'c> {
     pub(super) model_entities: &'c [cadmpeg_ir::sketches::SketchEntity],
     /// The sketch arrangements built so far.
     pub(super) arrangements: &'c cadmpeg_ir::design::regions::Arrangements,
+    pub(super) topology: &'c crate::reader::topology::Inputs<'a>,
+    pub(super) model: &'c cadmpeg_ir::document::Model,
+    pub(super) scope: &'c cadmpeg_ir::ids::ProductDefinitionId,
+    pub(super) derived_parameters: &'c RefCell<Vec<DesignParameter>>,
 }
 
-impl Context<'_> {
+impl Context<'_, '_> {
+    fn input(
+        &self,
+        model: &v10::Feature,
+    ) -> Option<&cadmpeg_ir::features::evaluation::FeatureInputTopology> {
+        self.inputs.iter().find(|input| input.input_of == model.id)
+    }
+
     /// The parameter `feature` owns for the first of `roles` it states.
     fn owned(&self, feature: &v10::Feature, roles: &[&str]) -> Option<ParameterId> {
         roles
@@ -121,7 +133,7 @@ fn family(kind: &str) -> Option<OperationFamily> {
 /// The design operation of a thin extrude, admitted where every sketch
 /// entity its profile picks is a stated entity of a sketch earlier in the
 /// timeline.
-pub(super) fn thin(thin: &Value, context: &Context<'_>) -> Result<FeatureOperation, String> {
+pub(super) fn thin(thin: &Value, context: &Context<'_, '_>) -> Result<FeatureOperation, String> {
     let operation: FeatureOperation = json::from_value(thin.clone())
         .map_err(|error| format!("the thin design operation is not supported yet ({error})"))?;
     let FeatureOperation::Extrude(extrude) = &operation else {
@@ -148,10 +160,55 @@ pub(super) fn thin(thin: &Value, context: &Context<'_>) -> Result<FeatureOperati
 /// operation it falls back to.
 pub(super) fn project(
     model: &v10::Feature,
-    source: Option<&Source>,
-    context: &Context<'_>,
+    source: Option<&Source<'_>>,
+    context: &Context<'_, '_>,
 ) -> Result<(FeatureOperation, Option<&'static str>), Fallback> {
-    let kind = source.and_then(|source| source.feature_type.as_deref());
+    let kind = source.and_then(Source::kind);
+    if let Some(source) = source.filter(|source| !crate::reader::features::is_custom(source.record))
+    {
+        if Source::independently_projected(source.record) {
+            let mut seen = BTreeSet::new();
+            for parameter in crate::reader::rows(source.record, "parameters")
+                .map_err(|reason| unresolved(kind, None, &reason))?
+            {
+                let key = crate::reader::text(parameter, "parameterId")
+                    .map_err(|reason| unresolved(kind, None, &reason))?;
+                if !seen.insert(key) {
+                    return Err(unresolved(kind, None, "feature parameter keys repeat"));
+                }
+            }
+        }
+        let typed = match kind {
+            Some("extrude") => {
+                Some(extrude(model, source, context).map(|operation| (operation, None)))
+            }
+            Some("revolve") => {
+                Some(revolve(model, source, context).map(|operation| (operation, None)))
+            }
+            Some("fillet") => {
+                Some(dressup::fillet(model, source, context).map(|operation| (operation, None)))
+            }
+            Some("chamfer") => Some(
+                dressup::chamfer(model, source, context)
+                    .map(|(operation, sided)| (operation, sided.then_some(dressup::CHAMFER_SIDE))),
+            ),
+            Some("hole") => {
+                Some(dressup::hole(model, source, context).map(|operation| (operation, None)))
+            }
+            Some("sweep") => Some(sweep(model, source, context).map(|operation| (operation, None))),
+            Some("shell") => {
+                Some(dressup::shell(model, source, context).map(|operation| (operation, None)))
+            }
+            Some("booleanBodies") => {
+                Some(combine(source, context).map(|operation| (operation, None)))
+            }
+            Some("importDerived") => Some(linked(source).map(|operation| (operation, None))),
+            _ => None,
+        };
+        if let Some(typed) = typed {
+            return typed.map_err(|reason| unresolved(kind, None, &reason));
+        }
+    }
     let FeatureDefinition::Operation(operation) = model.evaluation.definition() else {
         return Err(unresolved(
             kind,
@@ -193,39 +250,8 @@ pub(super) fn project(
                 reason: "the derived feature's captured design stays in its model record".into(),
             });
         }
-        v10::FeatureOperation::Extrude { .. } => {
-            let depth = context.owned(model, &["AlongDistance", "TotalDistance"]);
-            extrude(
-                operation,
-                source.is_some_and(|source| source.next),
-                depth.as_ref(),
-                context,
-            )
-            .map(|extrude| FeatureOperation::Extrude(Box::new(extrude)))
-        }
-        v10::FeatureOperation::Revolve { construction, op } => revolve(
-            construction,
-            *op,
-            context.owned(model, &["AlongAngle"]),
-            context,
-        )
-        .map(|revolve| FeatureOperation::Revolve(Box::new(revolve))),
         v10::FeatureOperation::DatumOffsetPlane { .. } => {
             offset_plane(model).map(|datum| FeatureOperation::Datum(Box::new(datum)))
-        }
-        v10::FeatureOperation::Fillet { .. } => dressup::fillet(model, operation, source, context),
-        v10::FeatureOperation::Chamfer { .. } => {
-            return dressup::chamfer(model, operation, source, context)
-                .map(|(chamfer, sided)| (chamfer, sided.then_some(dressup::CHAMFER_SIDE)))
-                .map_err(|reason| unresolved(kind, None, reason));
-        }
-        v10::FeatureOperation::Shell { .. } => dressup::shell(model, operation, context),
-        v10::FeatureOperation::Hole { .. } => dressup::hole(model, operation, context),
-        v10::FeatureOperation::Sweep { .. } => {
-            sweep(operation, context).map(|sweep| FeatureOperation::Sweep(Box::new(sweep)))
-        }
-        v10::FeatureOperation::Combine { .. } => {
-            combine(operation).map(|combine| FeatureOperation::Combine(Box::new(combine)))
         }
         _ => Err("the design operation of this feature is not projected yet"),
     };
@@ -280,177 +306,341 @@ fn unresolved(kind: Option<&str>, family: Option<OperationFamily>, reason: &str)
     }
 }
 
-fn boolean(op: V10Op) -> Option<Boolean> {
-    let apply = |op| Boolean::Apply {
-        op,
-        targets: Some(Targets::All),
+fn boolean(source: &Source<'_>) -> SourceMapping<Boolean> {
+    let op = match source.tag("operationType") {
+        Some("NEW") => return Ok(Boolean::NewBody),
+        Some("ADD") => BooleanOp::Join,
+        Some("REMOVE") => BooleanOp::Cut,
+        Some("INTERSECT") => BooleanOp::Intersect,
+        _ => return Err("operationType does not name a supported Boolean".into()),
     };
-    match op {
-        V10Op::NewBody => Some(Boolean::NewBody),
-        V10Op::Join => Some(apply(BooleanOp::Join)),
-        V10Op::Cut => Some(apply(BooleanOp::Cut)),
-        V10Op::Intersect => Some(apply(BooleanOp::Intersect)),
-        V10Op::Unresolved => None,
+    Ok(Boolean::Apply {
+        op,
+        targets: Some(targets(source, "booleanScope")?),
+    })
+}
+
+fn targets(source: &Source<'_>, key: &str) -> SourceMapping<Targets> {
+    let default = if key == "booleanScope" {
+        "defaultScope"
+    } else {
+        "defaultSurfaceScope"
+    };
+    if source.flag(default)? {
+        return Ok(Targets::All);
+    }
+    if features::parameter(source.record, key).is_ok()
+        && !picks::ids(source.record, key)?.is_empty()
+    {
+        Ok(Targets::Selected(picks::selected(source.record, key)?))
+    } else {
+        Ok(Targets::All)
     }
 }
 
-fn length(value: f64) -> Result<Dimension<Length>, &'static str> {
-    Ok(Dimension::Literal(
-        Length::new(value).ok_or("the length is not finite")?,
-    ))
+fn source_profile(
+    source: &Source<'_>,
+    key: &str,
+    context: &Context<'_, '_>,
+) -> SourceMapping<cadmpeg_ir::design::selection::OrderedSelection> {
+    let profile: PlanarProfileRef = json::from_value(features::profile(
+        source.record,
+        key,
+        context.model,
+        context.topology,
+    )?)
+    .map_err(|error| format!("{key}: {error}"))?;
+    Ok(picks::profile(&profile, context)?)
 }
 
-fn linear_limit(
-    termination: &LinearTermination,
-    next: bool,
-    depth: Option<&ParameterId>,
-) -> Result<Limit<Length>, &'static str> {
-    Ok(match termination {
-        LinearTermination::Blind { .. } if depth.is_some() => Limit::Amount(Dimension::Parameter(
-            depth.cloned().ok_or("the depth is missing")?,
-        )),
-        LinearTermination::Blind { length: value } => Limit::Amount(length(value.get())?),
-        LinearTermination::ThroughAll {} => Limit::ThroughAll,
-        LinearTermination::ToFace { .. } if next => Limit::Next,
-        LinearTermination::ToFace { face, offset: None } => Limit::ToGeometry {
-            target: picks::faces(face)?,
-            offset: None,
-            extend: None,
-            far: None,
-        },
-        _ => {
-            return Err(
-                "the extrude limit is neither blind, through all, up to next, nor up to a face",
-            )
-        }
+fn signed<Q>(
+    parameter: Option<ParameterId>,
+    literal: impl FnOnce() -> SourceMapping<Q>,
+    reverse: bool,
+) -> SourceMapping<Dimension<Q>> {
+    Ok(match parameter {
+        Some(id) if reverse => Dimension::Negated(id),
+        Some(id) => Dimension::Parameter(id),
+        None => Dimension::Literal(literal()?),
     })
 }
 
 fn extrude(
-    operation: &v10::FeatureOperation,
-    next: bool,
-    depth: Option<&ParameterId>,
-    context: &Context<'_>,
-) -> Result<Extrude, &'static str> {
-    let v10::FeatureOperation::Extrude {
-        profile,
-        direction,
-        start,
-        extent,
-        op,
-        solid,
-        ..
-    } = operation
-    else {
-        return Err("the model record is no extrusion");
+    feature: &v10::Feature,
+    source: &Source<'_>,
+    context: &Context<'_, '_>,
+) -> SourceMapping<FeatureOperation> {
+    let body = match source.tag("bodyType") {
+        Some("SOLID") => BodyForm::Solid,
+        Some("SURFACE") => BodyForm::Sheet,
+        _ => return Err("bodyType is outside the solid and surface extrusion forms".into()),
     };
-    let ProfileRef::Planar(profile) = profile else {
-        return Err("the extrude profile is not planar");
-    };
-    let profile = picks::profile(profile, context)?;
-    let reversed = match direction {
-        V10Direction::ProfileNormal {} => false,
-        V10Direction::ReversedProfileNormal {} => true,
-        _ => return Err("the extrude direction is not the profile normal"),
-    };
-    if !matches!(start, ExtrudeStart::ProfilePlane {}) {
-        return Err("the extrude starts off the profile plane");
-    }
-    let span = match extent {
-        ExtrudeExtent::OneSided { side } if side.draft.is_none() => Span::Between {
-            start: Box::new(Limit::AtOrigin),
-            end: Box::new(linear_limit(&side.termination, next, depth)?),
+    let profile = source_profile(
+        source,
+        if matches!(body, BodyForm::Sheet) {
+            "surfaceEntities"
+        } else {
+            "entities"
         },
-        ExtrudeExtent::Symmetric { side } if side.draft.is_none() => {
-            match linear_limit(&side.termination, false, depth)? {
-                Limit::Amount(amount) => Span::Symmetric {
-                    amount,
-                    measure: Some(SymmetricMeasure::Total),
-                },
-                _ => return Err("the symmetric extrude limit is not blind"),
-            }
-        }
-        _ => return Err("the extrude extent is not projected yet"),
+        context,
+    )?;
+    let distance = |key, role, reverse| {
+        signed(
+            context.owned(feature, &[role]),
+            || {
+                source.quantity(key, |value| {
+                    Length::new(if reverse { -value } else { value })
+                })
+            },
+            reverse,
+        )
     };
-    Ok(Extrude {
+    let symmetric = source.flag("symmetric")?;
+    let end = match source.tag("endBound") {
+        Some("BLIND") => Limit::Amount(distance(
+            "depth",
+            if symmetric {
+                "TotalDistance"
+            } else {
+                "AlongDistance"
+            },
+            false,
+        )?),
+        Some("THROUGH_ALL") => Limit::ThroughAll,
+        Some("UP_TO_NEXT") => Limit::Next,
+        Some(bound @ ("UP_TO_SURFACE" | "UP_TO_BODY")) => Limit::ToGeometry {
+            target: picks::selected(
+                source.record,
+                if bound == "UP_TO_SURFACE" {
+                    "endBoundEntityFace"
+                } else {
+                    "endBoundEntityBody"
+                },
+            )?,
+            offset: source
+                .flag("hasOffset")?
+                .then(|| {
+                    distance(
+                        "offsetDistance",
+                        "LimitOffset",
+                        !source.flag("offsetOppositeDirection")?,
+                    )
+                    .map(LimitOffset::Translated)
+                })
+                .transpose()?,
+            extend: (bound == "UP_TO_SURFACE").then_some(Dimension::Literal(true)),
+            far: None,
+        },
+        _ => return Err("endBound is outside the admitted extrusion limits".into()),
+    };
+    let reversed = if features::parameter(source.record, "oppositeExtrudeDirection").is_ok() {
+        source.flag("oppositeExtrudeDirection")?
+    } else {
+        source.flag("oppositeDirection")?
+    };
+    let second = source.flag("hasSecondDirection")?;
+    let span = match end {
+        Limit::Amount(amount) if symmetric => Span::Symmetric {
+            amount,
+            measure: Some(SymmetricMeasure::Total),
+        },
+        end => Span::Between {
+            start: Box::new(if second {
+                match source.tag("secondDirectionBound") {
+                    Some("BLIND") => Limit::Amount(distance(
+                        "secondDirectionDepth",
+                        "AgainstDistance",
+                        source.flag("secondDirectionOppositeDirection")? != reversed,
+                    )?),
+                    Some("THROUGH_ALL") => Limit::ThroughAll,
+                    Some("UP_TO_NEXT") => Limit::Next,
+                    _ => {
+                        return Err(
+                            "secondDirectionBound is outside the admitted extrusion limits".into(),
+                        )
+                    }
+                }
+            } else if symmetric && matches!(end, Limit::ThroughAll) {
+                Limit::ThroughAll
+            } else {
+                Limit::AtOrigin
+            }),
+            end: Box::new(end),
+        },
+    };
+    let origin = if source.flag("startOffset")? {
+        match source.tag("startOffsetBound") {
+            Some("BLIND") => ExtrudeOrigin::Offset(distance(
+                "startOffsetDistance",
+                "StartOffset",
+                source.flag("startOffsetOppositeDirection")?,
+            )?),
+            Some("ENTITY") => ExtrudeOrigin::Faces {
+                faces: picks::selected(source.record, "startOffsetEntity")?,
+                offset: None,
+            },
+            _ => return Err("startOffsetBound does not name an admitted start".into()),
+        }
+    } else {
+        ExtrudeOrigin::ProfilePlane
+    };
+    let boolean = if matches!(body, BodyForm::Sheet) {
+        match source.tag("surfaceOperationType") {
+            None | Some("NEW") => Boolean::NewBody,
+            Some("ADD") => Boolean::Apply {
+                op: BooleanOp::Join,
+                targets: Some(targets(source, "booleanSurfaceScope")?),
+            },
+            _ => return Err("surfaceOperationType does not name a supported operation".into()),
+        }
+    } else {
+        boolean(source)?
+    };
+    let draft_angle = |key, role, inward: bool| {
+        signed(
+            context.owned(feature, &[role]),
+            || source.quantity(key, |value| Angle::new(if inward { value } else { -value })),
+            !inward,
+        )
+    };
+    let end_draft = source
+        .flag("hasDraft")?
+        .then(|| {
+            draft_angle(
+                "draftAngle",
+                "DraftAngle",
+                source.flag("draftPullDirection")?,
+            )
+        })
+        .transpose()?;
+    let start_draft = (second && source.flag("hasSecondDirectionDraft")?)
+        .then(|| {
+            draft_angle(
+                "secondDirectionDraftAngle",
+                "AgainstDraftAngle",
+                source.flag("secondDirectionDraftPullDirection")?,
+            )
+        })
+        .transpose()?;
+    let draft = (start_draft.is_some() || end_draft.is_some()).then_some(ExtrudeDraft {
+        end: end_draft,
+        start: start_draft,
+        neutral: Some(DraftNeutral::Origin),
+        holes: None,
+    });
+    Ok(FeatureOperation::Extrude(Box::new(Extrude {
         profile,
         loops: None,
         direction: Some(ExtrudeDirection::ProfileNormal {
             reversed: Some(Dimension::Literal(reversed)),
         }),
-        origin: Some(ExtrudeOrigin::ProfilePlane),
+        origin: Some(origin),
         span: Some(span),
-        draft: None,
+        draft,
         fit: None,
         outside: None,
         sheet_cut: None,
         output: SolidOutput {
-            body: solid.map(|solid| {
-                if solid {
-                    BodyForm::Solid
-                } else {
-                    BodyForm::Sheet
-                }
-            }),
-            boolean: boolean(*op),
+            body: Some(body),
+            boolean: Some(boolean),
         },
         native_options: NativeOptions::new(),
         source_settings: NativeOptions::new(),
-    })
+    })))
 }
 
 fn revolve(
-    construction: &RevolveConstruction,
-    op: V10Op,
-    bound: Option<ParameterId>,
-    context: &Context<'_>,
-) -> Result<Revolve, &'static str> {
-    let RevolveConstruction::Resolved {
-        profile,
-        axis,
-        extent,
-        solid,
-        ..
-    } = construction
-    else {
-        return Err("the revolve construction is unresolved");
-    };
-    let profile = picks::profile(profile, context)?;
-    let angle = match extent {
-        RevolveExtent::OneSided {
-            termination: AngularTermination::Angle { angle },
-        } => angle.get(),
-        _ => return Err("the revolve extent is not one angle"),
-    };
-    let end = if (angle.abs() - std::f64::consts::TAU).abs() <= FULL_TURN_TOLERANCE_RAD {
-        Limit::ThroughAll
-    } else if let (Some(parameter), true) = (bound, angle > 0.0) {
-        Limit::Amount(Dimension::Parameter(parameter))
+    feature: &v10::Feature,
+    source: &Source<'_>,
+    context: &Context<'_, '_>,
+) -> SourceMapping<FeatureOperation> {
+    if source.tag("bodyType") != Some("SOLID") {
+        return Err("bodyType is outside the solid revolve form".into());
+    }
+    let profile = source_profile(source, "entities", context)?;
+    let queries = features::queries(source.record, "axis")?;
+    let sketch_axis = queries.iter().any(|query| {
+        crate::reader::query::resolved(query)
+            .is_ok_and(|query| query["queryType"] == "SKETCH_ENTITY")
+    });
+    let axis: RevolutionAxis = json::from_value(if sketch_axis {
+        features::sketch_axis(source.record, context.model)?
     } else {
-        Limit::Amount(Dimension::Literal(
-            Angle::new(angle).ok_or("the revolve angle is not finite")?,
-        ))
+        context
+            .topology
+            .load(source.ordinal, source.record)?
+            .axis(source.record, "axis")?
+    })
+    .map_err(|error| format!("axis: {error}"))?;
+    let axis = axis_construction(&axis)?;
+    let reverse = source.flag("oppositeDirection")?;
+    let angle = |key, role, reverse| {
+        signed(
+            context.owned(feature, &[role]),
+            || {
+                source.quantity(key, |value| {
+                    Angle::new(if reverse { -value } else { value })
+                })
+            },
+            reverse,
+        )
     };
-    Ok(Revolve {
+    let full = source.tag("revolveType") == Some("FULL") || source.flag("fullRevolve")?;
+    let blind = source.tag("revolveType") == Some("ONE_DIRECTION")
+        || source.tag("endBound") == Some("BLIND")
+        || source.tag("endBound").is_none()
+            && features::parameter(source.record, "fullRevolve").is_ok();
+    if !full
+        && source
+            .quantity("angle", Some)
+            .is_ok_and(|angle| angle < 0.0)
+    {
+        return Err("the direction convention for a negative revolve angle is unresolved".into());
+    }
+    let end = if full {
+        Limit::ThroughAll
+    } else if blind {
+        let amount = angle("angle", "AlongAngle", reverse)?;
+        if matches!(amount, Dimension::Literal(angle) if
+            (angle.get().abs() - std::f64::consts::TAU).abs() <= FULL_TURN_TOLERANCE_RAD)
+        {
+            Limit::ThroughAll
+        } else {
+            Limit::Amount(amount)
+        }
+    } else {
+        return Err("endBound does not name a full or blind revolve".into());
+    };
+    let span = match end {
+        Limit::Amount(amount) if source.flag("symmetric")? => Span::Symmetric {
+            amount,
+            measure: Some(SymmetricMeasure::Total),
+        },
+        end => Span::Between {
+            start: Box::new(if !full && source.flag("hasStartBound")? {
+                if source.tag("startBound") != Some("BLIND") {
+                    return Err("startBound does not name a blind revolve".into());
+                }
+                Limit::Amount(angle("angleBack", "AgainstAngle", !reverse)?)
+            } else {
+                Limit::AtOrigin
+            }),
+            end: Box::new(end),
+        },
+    };
+    Ok(FeatureOperation::Revolve(Box::new(Revolve {
         profile,
         loops: None,
-        axis: Some(axis_construction(axis)?),
-        span: Some(Span::Between {
-            start: Box::new(Limit::AtOrigin),
-            end: Box::new(end),
-        }),
+        axis: Some(axis),
+        span: Some(span),
         fit: None,
         output: SolidOutput {
-            body: Some(if solid.unwrap_or(true) {
-                BodyForm::Solid
-            } else {
-                BodyForm::Sheet
-            }),
-            boolean: boolean(op),
+            body: Some(BodyForm::Solid),
+            boolean: Some(boolean(source)?),
         },
         native_options: NativeOptions::new(),
         source_settings: NativeOptions::new(),
-    })
+    })))
 }
 
 /// The revolve axis: its resolved line, and a `Coincident` pick of the
@@ -565,7 +755,9 @@ fn offset_plane(model: &v10::Feature) -> Result<Datum, &'static str> {
                 reference: Some(InputReference::Built(Box::new(AnyConstruction::Plane(
                     support,
                 )))),
-                value: Some(ScalarDimension::Length(length(distance)?)),
+                value: Some(ScalarDimension::Length(Dimension::Literal(
+                    Length::new(distance).ok_or("the plane offset is not finite")?,
+                ))),
                 reversed: None,
             }],
             after: Vec::new(),
@@ -582,40 +774,105 @@ fn offset_plane(model: &v10::Feature) -> Result<Datum, &'static str> {
 
 /// A solid sweep of one planar profile along a chain of sketch curves, with
 /// no orientation, twist, or scaling control.
-fn sweep(operation: &v10::FeatureOperation, context: &Context<'_>) -> Result<Sweep, &'static str> {
-    let v10::FeatureOperation::Sweep {
-        shape:
-            SweepShape::Solid {
-                op,
-                section: V10Section::Profile(profile),
-                sections,
-            },
-        path: Some(path),
-        orientation: None,
-        transition: None,
-        transformation: None,
-        path_tangent: false,
-        linearize: false,
-        twist: None,
-        path_extent: None,
-        guide_rail: None,
-        taper: None,
-        scale: None,
-        ..
-    } = operation
-    else {
-        return Err("the sweep states controls beyond a plain solid sweep");
-    };
-    if !sections.is_empty() {
-        return Err("the sweep has more than one section");
+fn sweep(
+    feature: &v10::Feature,
+    source: &Source<'_>,
+    context: &Context<'_, '_>,
+) -> SourceMapping<FeatureOperation> {
+    crate::reader::sweep::validate_record(source.record)?;
+    if source.tag("bodyType") != Some("SOLID") {
+        return Err("bodyType is outside the solid sweep form".into());
     }
-    Ok(Sweep {
-        section: SweepSection::Profile(picks::profile(profile, context)?),
-        path: picks::path(path, context)?,
+    let (profile, path) =
+        crate::reader::sweep::operands(source.record, "profiles", context.model, context.topology)?;
+    let profile = json::from_value(profile).map_err(|error| format!("profiles: {error}"))?;
+    let mut path: PathRef = json::from_value(path).map_err(|error| format!("path: {error}"))?;
+    if let PathRef::SketchCurves { curves, .. } = &mut path {
+        if source.flag("pathOppositeDirection")? {
+            *curves = curves
+                .iter()
+                .rev()
+                .cloned()
+                .collect::<Vec<_>>()
+                .try_into()
+                .map_err(|_| "path repeats a curve")?;
+        }
+    }
+    let path = picks::path(&path, context)?;
+    let orientation = match source.tag("profileControl") {
+        None => None,
+        Some("NONE") => Some(SweepOrientation::FollowPath),
+        Some("KEEP_ORIENTATION") => Some(SweepOrientation::Fixed),
+        Some("LOCK_FACES") => Some(SweepOrientation::Surface(picks::selected(
+            source.record,
+            "lockFaces",
+        )?)),
+        Some("LOCK_DIRECTION") => {
+            let axis: RevolutionAxis = json::from_value(
+                context
+                    .topology
+                    .load(source.ordinal, source.record)?
+                    .axis(source.record, "lockDirectionQuery")?,
+            )
+            .map_err(|error| format!("lockDirectionQuery: {error}"))?;
+            let direction = UnitVector3::normalized_nonzero(axis.direction.into())
+                .ok_or("lockDirectionQuery is degenerate")?;
+            Some(SweepOrientation::Direction(Construction {
+                inputs: vec![ConstructionInput {
+                    role: Some(InputRole {
+                        subject: Subject::Whole,
+                        relation: Relation::Parallel,
+                    }),
+                    reference: Some(InputReference::Picks(picks::selected(
+                        source.record,
+                        "lockDirectionQuery",
+                    )?)),
+                    value: None,
+                    reversed: None,
+                }],
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved: Some(direction),
+                resolved_in: BTreeMap::new(),
+            }))
+        }
+        _ => return Err("profileControl does not name a supported sweep orientation".into()),
+    };
+    let can_twist = !matches!(
+        orientation,
+        Some(SweepOrientation::Surface(_) | SweepOrientation::Direction(_))
+    );
+    let scaling = source
+        .flag("hasScale")?
+        .then(|| {
+            Ok::<_, String>(ScalingLaw::Law(Law::Linear {
+                start: Dimension::Literal(FiniteReal::new(1.0).expect("one is finite")),
+                end: signed(
+                    context.owned(feature, &["ScaleFactor"]),
+                    || source.quantity("scaleFactor", FiniteReal::new),
+                    false,
+                )?,
+            }))
+        })
+        .transpose()?;
+    let section = SweepSection::Profile(picks::profile(&profile, context)?);
+    let output = SolidOutput {
+        body: Some(BodyForm::Solid),
+        boolean: Some(boolean(source)?),
+    };
+    let twist = if can_twist && source.flag("hasTwist")? {
+        Some(sweep_twist(feature, source, context, &path)?)
+    } else {
+        None
+    };
+    Ok(FeatureOperation::Sweep(Box::new(Sweep {
+        section,
+        path,
         controls: SweepControls {
-            orientation: None,
-            twist: None,
-            scaling: None,
+            orientation,
+            twist,
+            scaling,
         },
         guides: Vec::new(),
         extent: None,
@@ -625,40 +882,144 @@ fn sweep(operation: &v10::FeatureOperation, context: &Context<'_>) -> Result<Swe
             end: None,
         },
         transition: None,
-        output: SolidOutput {
-            body: Some(BodyForm::Solid),
-            boolean: boolean(match op {
-                SolidSweepOperation::NewBody => V10Op::NewBody,
-                SolidSweepOperation::Join => V10Op::Join,
-                SolidSweepOperation::Cut => V10Op::Cut,
-                SolidSweepOperation::Intersect => V10Op::Intersect,
-            }),
-        },
+        output,
         native_options: NativeOptions::new(),
         source_settings: NativeOptions::new(),
+    })))
+}
+
+fn sweep_twist(
+    feature: &v10::Feature,
+    source: &Source<'_>,
+    context: &Context<'_, '_>,
+    path: &cadmpeg_ir::design::selection::OrderedSelection,
+) -> SourceMapping<Twist> {
+    let reverse = !source.flag("ccw")?;
+    let angle = |value: f64| Angle::new(if reverse { -value } else { value });
+    let kind = source.tag("twistType").unwrap_or("TURNS");
+    let revolutions = match kind {
+        "ANGLE" => {
+            return Ok(Twist::Angle(signed(
+                context.owned(feature, &["TwistAngle"]),
+                || source.quantity("angle", angle),
+                reverse,
+            )?))
+        }
+        "TURNS" => match context.owned(feature, &["TwistTurns"]) {
+            Some(id) => parameter_node(id),
+            None => {
+                return Ok(Twist::Angle(Dimension::Literal(
+                    source.quantity("turns", |turns| angle(turns * std::f64::consts::TAU))?,
+                )))
+            }
+        },
+        "PITCH" => {
+            let pitch = match context.owned(feature, &["TwistPitch"]) {
+                Some(id) => parameter_node(id),
+                None => number_node(
+                    source.quantity("pitch", NonNegativeReal::new)?,
+                    Some(UnitSymbol::Mm),
+                ),
+            };
+            let length = Node::Measure(Box::new(Measure {
+                kind: MeasureKind::Length,
+                of: MeasureTarget::Selection(path.clone()),
+                cached: None,
+            }));
+            Node::mul(length, MulOp::Divide, pitch)
+        }
+        _ => {
+            return Err(format!(
+                "twistType {kind} is outside the sweep twist definition"
+            ))
+        }
+    };
+    let turn = number_node(
+        NonNegativeReal::new(std::f64::consts::TAU).ok_or("the full turn is not finite")?,
+        Some(UnitSymbol::Rad),
+    );
+    let total = Node::mul(revolutions, MulOp::Multiply, turn);
+    let total = if reverse {
+        Node::Unary {
+            op: UnaryOp::Negate,
+            operand: Box::new(total),
+        }
+    } else {
+        total
+    };
+    let native = crate::reader::text(source.record, "featureId")?;
+    let id = ParameterId::mint(crate::reader::id(
+        "parameter",
+        &format!("{native}/total-twist"),
+    ))
+    .map_err(|error| error.to_string())?;
+    context
+        .derived_parameters
+        .borrow_mut()
+        .push(DesignParameter {
+            id: id.clone(),
+            scope: context.scope.clone(),
+            owner: Some(ParameterOwner::Feature(feature.id.clone())),
+            name: Some(cadmpeg_core::nonblank_const!("Total twist")),
+            kind: ValueKind::Quantity(Quantity::ANGLE),
+            unit: None,
+            definition: ParameterDefinition::Expression(Expression::Neutral(Neutral(total))),
+            value: None,
+            display: None,
+            tolerance: None,
+            decimals: None,
+            comment: None,
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
+            native_ref: None,
+        });
+    Ok(Twist::Angle(Dimension::Parameter(id)))
+}
+
+fn parameter_node(id: ParameterId) -> Node<ParameterRef> {
+    Node::Reference(ParameterRef {
+        target: RefTarget::Parameter(id),
+        through: None,
     })
 }
 
-/// A Boolean of generated bodies whose result stays with its target.
-fn combine(operation: &v10::FeatureOperation) -> Result<Combine, &'static str> {
-    let v10::FeatureOperation::Combine {
-        operands,
-        op,
-        keep_tools,
-        destination: CombineDestination::TargetComponent,
-    } = operation
-    else {
-        return Err("the Boolean makes a new component");
-    };
-    Ok(Combine {
-        target: Some(picks::bodies(operands.target())?),
-        tools: picks::bodies(operands.tools())?,
-        op: Some(match op {
-            BooleanKind::Join => BooleanOp::Join,
-            BooleanKind::Cut => BooleanOp::Cut,
-            BooleanKind::Intersect => BooleanOp::Intersect,
+fn number_node(value: NonNegativeReal, symbol: Option<UnitSymbol>) -> Node<ParameterRef> {
+    Node::Number {
+        value,
+        unit: Unit(
+            symbol
+                .into_iter()
+                .map(|symbol| UnitFactor {
+                    symbol,
+                    power: std::num::NonZeroI8::new(1).expect("one is nonzero"),
+                })
+                .collect(),
+        ),
+    }
+}
+
+fn combine(
+    source: &Source<'_>,
+    context: &Context<'_, '_>,
+) -> crate::reader::Mapping<FeatureOperation> {
+    let crate::reader::derived::BooleanInputs {
+        operation,
+        keep,
+        target,
+        tools,
+    } = crate::reader::derived::boolean_inputs(source.record, source.ordinal, context.topology)?;
+    Ok(FeatureOperation::Combine(Box::new(Combine {
+        target: (!target.is_empty())
+            .then(|| picks::bodies(&target))
+            .transpose()?,
+        tools: picks::bodies(&tools)?,
+        op: Some(match operation {
+            "UNION" => BooleanOp::Join,
+            "SUBTRACTION" => BooleanOp::Cut,
+            "INTERSECTION" => BooleanOp::Intersect,
+            _ => return Err("the Boolean operation is not supported yet".into()),
         }),
-        tools_after: Some(if *keep_tools {
+        tools_after: Some(if keep {
             ToolDisposition::Kept
         } else {
             ToolDisposition::Consumed
@@ -666,5 +1027,28 @@ fn combine(operation: &v10::FeatureOperation) -> Result<Combine, &'static str> {
         new_component: None,
         native_options: NativeOptions::new(),
         source_settings: NativeOptions::new(),
+    })))
+}
+
+fn linked(source: &Source<'_>) -> crate::reader::Mapping<FeatureOperation> {
+    use cadmpeg_ir::design::feature::{Link, StoredOrigin};
+    use cadmpeg_ir::design::selection::DefinitionRef;
+
+    let (document, version, element) = crate::reader::derived::reference(source.record)?;
+    Ok(FeatureOperation::Stored {
+        bodies: None,
+        tessellations: Vec::new(),
+        origin: StoredOrigin::Linked(Box::new(Link {
+            source: None,
+            document: Some(DefinitionRef {
+                definition: super::external_definition_id(document, version, element)?,
+                configuration: None,
+            }),
+            transform: None,
+            scale: None,
+            associative: None,
+            state: None,
+            native_ref: None,
+        })),
     })
 }

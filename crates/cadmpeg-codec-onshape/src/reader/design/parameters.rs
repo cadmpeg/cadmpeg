@@ -11,6 +11,11 @@
 use std::collections::BTreeMap;
 use std::num::NonZeroI8;
 
+use serde_json::Value;
+
+use super::{expression, Sources};
+use crate::reader::{features, id};
+
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::dimension::{Dimension, ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{
@@ -33,24 +38,34 @@ use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 pub(super) fn project(
     parameters: &[ModelParameter],
     scope: &ProductDefinitionId,
+    sources: &Sources<'_>,
 ) -> (Vec<DesignParameter>, Vec<ParameterId>) {
-    let variables: BTreeMap<&str, &ParameterId> = parameters
-        .iter()
-        .filter(|parameter| parameter.owner.is_none())
-        .map(|parameter| (parameter.name.as_str(), &parameter.id))
-        .collect();
+    let rows = quantity_rows(sources);
+    let variables = variables(sources, parameters);
     let mut texts = Vec::new();
     let projected = parameters
         .iter()
+        .chain(sources.values().flat_map(|source| &source.parameters))
         .map(|parameter| {
-            let tree = neutral(&parameter.expression, &variables);
-            let unit = tree.as_ref().and_then(declared);
-            let definition = match tree {
-                Some(tree) => Expression::Neutral(Neutral(tree)),
-                None => {
-                    texts.push(parameter.id.clone());
-                    source(parameter)
-                }
+            let property_value = |key: &str| {
+                parameter
+                    .properties
+                    .iter()
+                    .find(|(name, _)| name.as_str() == key)
+                    .map(|(_, value)| value.as_str())
+            };
+            let source = rows.get(parameter.id.as_str());
+            let row = source.map(|(row, _)| *row);
+            let raw = row
+                .and_then(|row| row.get("expression"))
+                .and_then(Value::as_str)
+                .or_else(|| property_value("source_expression"));
+            let ordinal = source.map(|(_, ordinal)| *ordinal);
+            let resolve = |name: &str| {
+                let bindings = variables.get(name)?;
+                let end =
+                    bindings.partition_point(|(at, _)| ordinal.is_none_or(|ordinal| *at < ordinal));
+                bindings.get(end.checked_sub(1)?)?.1
             };
             let (kind, value) = match parameter.value.as_ref() {
                 Some(ModelValue::Length(length)) => (
@@ -74,7 +89,43 @@ pub(super) fn project(
                 Some(ModelValue::String(text)) => {
                     (ValueKind::Text, Some(ParameterValue::Text(text.clone())))
                 }
-                None => (ValueKind::Quantity(Quantity::REAL), None),
+                None => (
+                    ValueKind::Quantity(match property_value("quantity_kind") {
+                        Some("length") => Quantity::LENGTH,
+                        Some("angle") => Quantity::ANGLE,
+                        _ => Quantity::REAL,
+                    }),
+                    None,
+                ),
+            };
+            let expected = match kind {
+                ValueKind::Quantity(Quantity::LENGTH) => Some(expression::Dimension::Length),
+                ValueKind::Quantity(Quantity::ANGLE) => Some(expression::Dimension::Angle),
+                ValueKind::Quantity(Quantity::REAL) => Some(expression::Dimension::Scalar),
+                _ => None,
+            };
+            let tree = expected
+                .and_then(|kind| neutral(raw.unwrap_or(&parameter.expression), kind, &resolve));
+            let unit = row
+                .and_then(|row| row.get("units"))
+                .and_then(Value::as_str)
+                .and_then(|unit| {
+                    expression::unit(unit).and_then(|(_, _, canonical)| symbol(canonical))
+                })
+                .map(unit)
+                .or_else(|| tree.as_ref().and_then(declared));
+            let definition = match tree {
+                Some(tree) => Expression::Neutral(Neutral(tree)),
+                None => {
+                    texts.push(parameter.id.clone());
+                    self::source(parameter, raw)
+                }
+            };
+            let value = match (expected, row) {
+                (Some(dimension), Some(row)) => expression::stored(row, dimension)
+                    .and_then(FiniteReal::new)
+                    .map(ParameterValue::Number),
+                _ => value,
             };
             let property = |key: &str| {
                 parameter
@@ -114,7 +165,14 @@ pub(super) fn project(
                 display: None,
                 tolerance: None,
                 decimals: None,
-                comment: None,
+                comment: source
+                    .and_then(|(_, ordinal)| {
+                        sources.values().find(|source| {
+                            source.ordinal == *ordinal && source.kind() == Some("assignVariable")
+                        })
+                    })
+                    .and_then(|source| source.tag("description"))
+                    .map(str::to_owned),
                 native_options: option(
                     "source_kind",
                     cadmpeg_ir::codec_name!("onshape:source_kind"),
@@ -126,12 +184,142 @@ pub(super) fn project(
                     cadmpeg_ir::codec_name!("onshape:display_unit"),
                 )
                 .into_iter()
+                .chain(raw.and_then(NonBlankString::new).map(|raw| {
+                    (
+                        cadmpeg_ir::codec_name!("onshape:source_expression"),
+                        NativeOption::Text(Dimension::Literal(raw)),
+                    )
+                }))
                 .collect(),
                 native_ref: parameter.native_ref.clone(),
             }
         })
         .collect();
     (projected, texts)
+}
+
+type Variable<'a> = (&'a ParameterId, expression::Dimension);
+type Bindings<'a> = BTreeMap<&'a str, Vec<(usize, Option<Variable<'a>>)>>;
+
+fn variables<'a>(sources: &'a Sources<'_>, parameters: &'a [ModelParameter]) -> Bindings<'a> {
+    let by_id: BTreeMap<&str, &ModelParameter> = parameters
+        .iter()
+        .filter(|parameter| parameter.owner.is_none())
+        .map(|parameter| (parameter.id.as_str(), parameter))
+        .collect();
+    let mut bindings = Bindings::new();
+    for source in sources
+        .values()
+        .filter(|source| source.kind() == Some("assignVariable"))
+    {
+        if super::super::suppression(source.record) != Ok(false) {
+            continue;
+        }
+        let Some(name) = source.tag("name") else {
+            continue;
+        };
+        let Some(feature) = source.record.get("featureId").and_then(Value::as_str) else {
+            continue;
+        };
+        let binding = by_id
+            .get(id("parameter", feature).as_str())
+            .and_then(|parameter| {
+                let dimension = match source.tag("variableType") {
+                    Some("LENGTH") => expression::Dimension::Length,
+                    Some("ANGLE") => expression::Dimension::Angle,
+                    Some("NUMBER") => expression::Dimension::Scalar,
+                    _ => return None,
+                };
+                Some((&parameter.id, dimension))
+            });
+        bindings
+            .entry(name)
+            .or_default()
+            .push((source.ordinal, binding));
+    }
+    for bindings in bindings.values_mut() {
+        bindings.sort_unstable_by_key(|(ordinal, _)| *ordinal);
+    }
+    bindings
+}
+
+fn quantity_rows<'a>(sources: &Sources<'a>) -> BTreeMap<String, (&'a Value, usize)> {
+    let mut result = BTreeMap::new();
+    for source in sources.values() {
+        let row = source.record;
+        let Some(feature) = row.get("featureId").and_then(Value::as_str) else {
+            continue;
+        };
+        for parameter in row
+            .get("parameters")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let Some(key) = parameter.get("parameterId").and_then(Value::as_str) else {
+                continue;
+            };
+            result.insert(
+                id("parameter", &format!("{feature}/{key}")),
+                (parameter, source.ordinal),
+            );
+        }
+        if source.kind() == Some("assignVariable") {
+            let key = match source.tag("variableType") {
+                Some("LENGTH") => "lengthValue",
+                Some("ANGLE") => "angleValue",
+                Some("NUMBER") => "numberValue",
+                _ => continue,
+            };
+            if let Ok(parameter) = features::parameter(row, key) {
+                result.insert(id("parameter", feature), (parameter, source.ordinal));
+            }
+        }
+        if source.kind() == Some("newSketch") {
+            for constraint in row
+                .get("constraints")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                let Some(name) = constraint.get("entityId").and_then(Value::as_str) else {
+                    continue;
+                };
+                let Some(key) = constraint.get("constraintType").and_then(Value::as_str) else {
+                    continue;
+                };
+                let parameter = match key {
+                    "LENGTH" => features::parameter(constraint, "length"),
+                    "DIAMETER" => features::parameter(constraint, "length")
+                        .or_else(|_| features::parameter(constraint, "diameter")),
+                    "DISTANCE" => features::parameter(constraint, "distance"),
+                    "RADIUS" => features::parameter(constraint, "radius"),
+                    "ANGLE" => features::parameter(constraint, "angle"),
+                    _ => continue,
+                };
+                if let Ok(parameter) = parameter {
+                    result.insert(
+                        id("parameter", &format!("{feature}/{name}")),
+                        (parameter, source.ordinal),
+                    );
+                }
+            }
+        }
+    }
+    result
+}
+
+fn symbol(unit: &str) -> Option<UnitSymbol> {
+    Some(match unit {
+        "mm" => UnitSymbol::Mm,
+        "cm" => UnitSymbol::Cm,
+        "m" => UnitSymbol::M,
+        "in" => UnitSymbol::In,
+        "ft" => UnitSymbol::Ft,
+        "rad" => UnitSymbol::Rad,
+        "deg" => UnitSymbol::Deg,
+        _ => return None,
+    })
 }
 
 /// The unit every literal of `tree` states, where its literals state one
@@ -166,13 +354,10 @@ fn declared(tree: &Node<ParameterRef>) -> Option<Unit> {
 
 /// The source text of `parameter`, with each variable it reads a
 /// reference.
-fn source(parameter: &ModelParameter) -> Expression {
-    let text = parameter
-        .properties
-        .iter()
-        .find(|(key, _)| key.as_str() == "source_expression")
-        .map_or(&parameter.expression, |(_, text)| text);
-    let mut tokens = vec![ExpressionToken::Text(text.clone())];
+fn source(parameter: &ModelParameter, raw: Option<&str>) -> Expression {
+    let mut tokens = vec![ExpressionToken::Text(
+        raw.unwrap_or(&parameter.expression).to_owned(),
+    )];
     tokens.extend(parameter.dependencies.iter().map(|id| {
         ExpressionToken::Reference(ParameterRef {
             target: RefTarget::Parameter(id.clone()),
@@ -185,28 +370,37 @@ fn source(parameter: &ModelParameter) -> Expression {
     }
 }
 
-/// The neutral tree of an expression the reader rendered: a number with an
-/// optional unit, a variable name, `(-e)`, or `(a op b)`.
-fn neutral(text: &str, variables: &BTreeMap<&str, &ParameterId>) -> Option<Node<ParameterRef>> {
-    let mut parser = Rendered {
+fn unit(symbol: UnitSymbol) -> Unit {
+    Unit(vec![UnitFactor {
+        symbol,
+        power: NonZeroI8::new(1).expect("one is nonzero"),
+    }])
+}
+
+/// Translate the syntax and dimensions of a quantity independently of its evaluation.
+fn neutral<'a>(
+    text: &str,
+    expected: expression::Dimension,
+    resolve: &impl Fn(&str) -> Option<Variable<'a>>,
+) -> Option<Node<ParameterRef>> {
+    let mut parser = Parser {
         rest: text,
-        variables,
-        depth: 0,
+        resolve,
+        nodes: 0,
     };
-    let tree = parser.node()?;
-    parser.rest.trim().is_empty().then_some(tree)
+    let (tree, dimension) = parser.sum(0)?;
+    (dimension == expected && parser.rest.trim().is_empty()).then_some(tree)
 }
 
-/// A nesting bound past every expression the reader admits.
-const MAX_DEPTH: usize = 256;
+type Term = (Node<ParameterRef>, expression::Dimension);
 
-struct Rendered<'t, 'v> {
+struct Parser<'t, 'r, R> {
     rest: &'t str,
-    variables: &'v BTreeMap<&'v str, &'v ParameterId>,
-    depth: usize,
+    resolve: &'r R,
+    nodes: usize,
 }
 
-impl<'t> Rendered<'t, '_> {
+impl<'a, 't, R: Fn(&str) -> Option<Variable<'a>>> Parser<'t, '_, R> {
     fn take(&mut self, prefix: &str) -> bool {
         self.rest = self.rest.trim_start();
         match self.rest.strip_prefix(prefix) {
@@ -235,55 +429,94 @@ impl<'t> Rendered<'t, '_> {
         Some(word)
     }
 
-    fn node(&mut self) -> Option<Node<ParameterRef>> {
-        self.depth += 1;
-        if self.depth > MAX_DEPTH {
-            return None;
-        }
-        let node = if self.take("(-") {
-            let operand = self.node()?;
-            Node::Unary {
-                op: UnaryOp::Negate,
-                operand: Box::new(operand),
-            }
-        } else if self.take("(") {
-            let left = self.node()?;
-            if self.take("+") {
-                Node::add(left, AddOp::Add, self.node()?)
+    fn sum(&mut self, depth: usize) -> Option<Term> {
+        let (mut node, dimension) = self.product(depth)?;
+        loop {
+            let op = if self.take("+") {
+                AddOp::Add
             } else if self.take("-") {
-                Node::add(left, AddOp::Subtract, self.node()?)
-            } else if self.take("*") {
-                Node::mul(left, MulOp::Multiply, self.node()?)
-            } else if self.take("/") {
-                Node::mul(left, MulOp::Divide, self.node()?)
+                AddOp::Subtract
             } else {
+                return Some((node, dimension));
+            };
+            let (next, actual) = self.product(depth)?;
+            if actual != dimension {
                 return None;
             }
-        } else if self
-            .rest
-            .trim_start()
-            .starts_with(|c: char| c.is_ascii_digit() || c == '.')
-        {
-            self.number()?
-        } else {
-            let name = self.word()?;
-            Node::Reference(ParameterRef {
-                target: RefTarget::Parameter((*self.variables.get(name)?).clone()),
-                through: None,
-            })
-        };
-        if matches!(
-            node,
-            Node::Unary { .. } | Node::Sum { .. } | Node::Product { .. }
-        ) && !self.take(")")
-        {
-            return None;
+            node = Node::add(node, op, next);
         }
-        self.depth -= 1;
-        Some(node)
     }
 
-    fn number(&mut self) -> Option<Node<ParameterRef>> {
+    fn product(&mut self, depth: usize) -> Option<Term> {
+        use expression::Dimension::Scalar;
+        let (mut node, mut dimension) = self.atom(depth)?;
+        loop {
+            let op = if self.take("*") {
+                MulOp::Multiply
+            } else if self.take("/") {
+                MulOp::Divide
+            } else {
+                return Some((node, dimension));
+            };
+            let (next, actual) = self.atom(depth)?;
+            dimension = match (op, dimension, actual) {
+                (MulOp::Multiply, Scalar, other) | (_, other, Scalar) => other,
+                (MulOp::Divide, a, b) if a == b => Scalar,
+                _ => return None,
+            };
+            node = Node::mul(node, op, next);
+        }
+    }
+
+    fn atom(&mut self, depth: usize) -> Option<Term> {
+        self.nodes += 1;
+        if depth > 64 || self.nodes > super::super::ROWS {
+            return None;
+        }
+        if self.take("+") {
+            return self.atom(depth + 1);
+        }
+        if self.take("-") {
+            let (operand, dimension) = self.atom(depth + 1)?;
+            return Some((
+                Node::Unary {
+                    op: UnaryOp::Negate,
+                    operand: Box::new(operand),
+                },
+                dimension,
+            ));
+        }
+        if self.take("(") {
+            let term = self.sum(depth + 1)?;
+            return self.take(")").then_some(term);
+        }
+        if self.take("#") {
+            let (id, dimension) = (self.resolve)(self.word()?)?;
+            return Some((
+                Node::Reference(ParameterRef {
+                    target: RefTarget::Parameter(id.clone()),
+                    through: None,
+                }),
+                dimension,
+            ));
+        }
+        if self
+            .rest
+            .starts_with(|c: char| c.is_ascii_digit() || c == '.')
+        {
+            return self.number();
+        }
+        let (_, dimension, canonical) = expression::unit(self.word()?)?;
+        Some((
+            Node::Number {
+                value: NonNegativeReal::new(1.0)?,
+                unit: unit(symbol(canonical)?),
+            },
+            dimension,
+        ))
+    }
+
+    fn number(&mut self) -> Option<Term> {
         self.rest = self.rest.trim_start();
         let bytes = self.rest.as_bytes();
         let mut end = 0;
@@ -302,29 +535,17 @@ impl<'t> Rendered<'t, '_> {
         let (digits, rest) = self.rest.split_at(end);
         self.rest = rest;
         let value = NonNegativeReal::new(digits.parse::<f64>().ok()?)?;
-        let unit = if self
+        let (unit, dimension) = if self
             .rest
             .trim_start()
             .starts_with(|c: char| c.is_ascii_alphabetic())
         {
-            let symbol = match self.word()? {
-                "mm" => UnitSymbol::Mm,
-                "cm" => UnitSymbol::Cm,
-                "m" => UnitSymbol::M,
-                "in" => UnitSymbol::In,
-                "ft" => UnitSymbol::Ft,
-                "rad" => UnitSymbol::Rad,
-                "deg" => UnitSymbol::Deg,
-                _ => return None,
-            };
-            Unit(vec![UnitFactor {
-                symbol,
-                power: NonZeroI8::new(1)?,
-            }])
+            let (_, dimension, canonical) = expression::unit(self.word()?)?;
+            (unit(symbol(canonical)?), dimension)
         } else {
-            Unit(Vec::new())
+            (Unit(Vec::new()), expression::Dimension::Scalar)
         };
-        Some(Node::Number { value, unit })
+        Some((Node::Number { value, unit }, dimension))
     }
 }
 

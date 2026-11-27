@@ -266,7 +266,7 @@ fn derived_subtraction_keeps_the_tools_choice_and_reads_the_targets() {
 }
 
 #[test]
-fn derived_union_and_intersection_over_peer_tools_stay_native_and_ignore_stale_targets() {
+fn derived_union_and_intersection_use_peer_tools_and_ignore_stale_targets() {
     for source in ["UNION", "INTERSECTION"] {
         for stale_targets in [false, true] {
             let bytes = changed(&fixture("derived"), |path, value| {
@@ -288,13 +288,13 @@ fn derived_union_and_intersection_over_peer_tools_stay_native_and_ignore_stale_t
                 "{source}: {:?}",
                 report.losses()
             );
-            assert!(
-                report.losses().iter().any(|loss| loss.code.as_deref()
-                    == Some("onshape/history.not-supported")
-                    && loss.detail.contains("as peers")),
-                "{source}: {:?}",
-                report.losses()
-            );
+            let op = crate::test_support::review::design_operation(&model.ir, "Cut");
+            assert_eq!(op["kind"], "combine");
+            assert!(op["value"].get("target").is_none());
+            assert!(!report
+                .losses()
+                .iter()
+                .any(|loss| loss.detail.contains("as peers")));
         }
     }
 }

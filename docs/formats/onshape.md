@@ -313,9 +313,10 @@ feature in source operand order. Feature ordinals give timeline order.
 A `shell` feature stores `entities`, the faces to remove, as deterministic
 IDs in the consuming rollback state, `thickness` as a quantity, and
 `oppositeDirection` as a Boolean. `isHollow` and `parts` select the hollow
-form, which has no removed faces. A `false` `oppositeDirection` places the
-wall inside the original boundary: the outer extents of the shelled body equal
-those of the input body, and the removed face leaves an opening.
+form, which has no removed faces. A `false` `oppositeDirection` grows the
+wall into the input body and keeps its original outer boundary. A `true` value
+grows the wall outward and keeps the original boundary as the inner boundary.
+A removed face leaves an opening in either direction.
 
 ## 5. Admission bounds
 

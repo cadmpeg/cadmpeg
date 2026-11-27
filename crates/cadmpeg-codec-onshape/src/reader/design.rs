@@ -1,52 +1,256 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The v11 design layer of a Part Studio, restated from the decoded history.
+//! The v11 design layer of a Part Studio, read from its stored feature definitions.
 //!
 //! Every Part Studio whose history the reader admits is one scope (§5.1) at
 //! its root definition, with one ordered `Timeline` container (§5.2) whose
 //! members are the features in `features.json` order. Each model feature has
 //! a design feature under its own id (§5.10). A feature takes its typed
-//! operation (§6) where the model record states every operand the design
-//! record needs, and otherwise its operation family, with a loss that names
-//! what the model record carries beyond it.
+//! operation (§6) from its stored controls and selections. A loss names
+//! each active input whose design field could not be stated.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::json;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{Feature, FeatureOperation, OperationFamily};
+use cadmpeg_ir::features::parameters::DesignParameter as SourceParameter;
+use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 use serde_json::Value;
 
-use super::{id, push, RollbackBar};
+use super::{expression, features, id, push, topology, RollbackBar};
 use crate::loss::OnshapeLossCode;
 
 pub(in crate::reader) mod assembly;
+mod audit;
 mod constraints;
 mod operation;
 mod parameters;
 mod sketches;
 
-/// What the design projection reads of a source feature that its model
-/// record does not keep.
-#[derive(Debug, Default)]
-pub(super) struct Source {
-    /// The source `featureType`.
-    pub(super) feature_type: Option<String>,
-    /// Whether an extrude ends at the next face (`UP_TO_NEXT`).
-    pub(super) next: bool,
-    /// The design operation of a thin extrude, built from the source record.
+/// The feature definition and its quantities evaluated in the preceding variable environment.
+#[derive(Debug)]
+pub(super) struct Source<'a> {
+    pub(super) record: &'a Value,
+    ordinal: usize,
     pub(super) thin: Option<Value>,
-    /// The stored `tangentPropagation` of a fillet or chamfer.
-    pub(super) tangent: Option<bool>,
-    /// The edge ids a fillet or chamfer selects before propagation.
-    pub(super) seeds: Vec<String>,
+    quantities: BTreeMap<&'static str, f64>,
+    pub(super) legacy_loss: Option<LossNote>,
+    pub(super) parameters: Vec<SourceParameter>,
 }
 
-/// The source facts of each admitted feature, by its model feature id.
-pub(super) type Sources = BTreeMap<String, Source>;
+impl<'a> Source<'a> {
+    pub(super) fn read(
+        record: &'a Value,
+        ordinal: usize,
+        thin: Option<Value>,
+        model: &cadmpeg_ir::document::Model,
+        unresolved: &BTreeSet<String>,
+    ) -> Self {
+        let mut source = Self {
+            record,
+            ordinal,
+            thin,
+            quantities: BTreeMap::new(),
+            legacy_loss: None,
+            parameters: Vec::new(),
+        };
+        for &(key, _, dimension) in quantity_roles(record) {
+            let Ok(row) = features::parameter(record, key) else {
+                continue;
+            };
+            if audit::dormant(&source, key, row) {
+                continue;
+            }
+            let value = row
+                .get("expression")
+                .and_then(Value::as_str)
+                .and_then(|text| expression::evaluate(text, dimension, model, unresolved).ok())
+                .map(|evaluated| evaluated.value)
+                .or_else(|| expression::stored(row, dimension));
+            if let Some(value) = value {
+                source.quantities.insert(key, value);
+            }
+        }
+        source
+    }
+
+    fn kind(&self) -> Option<&str> {
+        self.record.get("featureType").and_then(Value::as_str)
+    }
+
+    pub(super) fn independently_projected(record: &Value) -> bool {
+        !features::is_custom(record)
+            && matches!(
+                record.get("featureType").and_then(Value::as_str),
+                Some(
+                    "extrude"
+                        | "revolve"
+                        | "sweep"
+                        | "fillet"
+                        | "chamfer"
+                        | "shell"
+                        | "hole"
+                        | "booleanBodies"
+                )
+            )
+    }
+
+    fn restates_legacy_loss(operation: &FeatureOperation, loss: &LossNote) -> bool {
+        use cadmpeg_ir::design::ops::shared::{Limit, Span};
+        match operation {
+            FeatureOperation::Combine(combine) => {
+                combine.target.is_none() && loss.message.contains("as peers")
+            }
+            FeatureOperation::Shell(_) => {
+                loss.message.starts_with("shell: hollow shells")
+                    || loss
+                        .message
+                        .starts_with("shell: the legacy shell form supports inward walls")
+            }
+            FeatureOperation::Extrude(extrude) => {
+                loss.message.starts_with("hasOffset ")
+                    && matches!(extrude.span.as_ref(), Some(Span::Between { end, .. })
+                    if matches!(end.as_ref(), Limit::ToGeometry { offset: Some(_), .. }))
+            }
+            FeatureOperation::Sweep(sweep) => {
+                loss.message.starts_with("this sweep Boolean operation")
+                    || loss.message.starts_with("this sweep profile control")
+                        && sweep.controls.orientation.is_some()
+                    || loss.message.starts_with("sweep hasTwist ") && sweep.controls.twist.is_some()
+                    || loss.message.starts_with("sweep hasScale ")
+                        && sweep.controls.scaling.is_some()
+            }
+            _ => false,
+        }
+    }
+
+    fn tag(&self, key: &str) -> Option<&str> {
+        features::value(self.record, key)
+    }
+
+    fn flag(&self, key: &str) -> Result<bool, String> {
+        features::enabled(self.record, key)
+    }
+
+    fn quantity<Q>(
+        &self,
+        key: &'static str,
+        convert: impl FnOnce(f64) -> Option<Q>,
+    ) -> Result<Q, String> {
+        self.quantities
+            .get(key)
+            .copied()
+            .and_then(convert)
+            .ok_or_else(|| format!("{key} has no resolved quantity in range"))
+    }
+}
+
+/// The source definitions of the admitted features, by feature id.
+pub(super) type Sources<'a> = BTreeMap<String, Source<'a>>;
+
+type QuantityRole = (&'static str, &'static str, expression::Dimension);
+
+fn quantity_roles(record: &Value) -> &'static [QuantityRole] {
+    use expression::Dimension::{Angle, Length, Scalar};
+    match record.get("featureType").and_then(Value::as_str) {
+        Some("extrude") => &[
+            ("depth", "AlongDistance", Length),
+            ("thickness", "MidplaneThickness", Length),
+            ("thickness1", "FirstWallThickness", Length),
+            ("thickness2", "SecondWallThickness", Length),
+            ("offsetDistance", "LimitOffset", Length),
+            ("startOffsetDistance", "StartOffset", Length),
+            ("secondDirectionDepth", "AgainstDistance", Length),
+            ("draftAngle", "DraftAngle", Angle),
+            ("secondDirectionDraftAngle", "AgainstDraftAngle", Angle),
+        ],
+        Some("revolve") => &[
+            ("angle", "AlongAngle", Angle),
+            ("angleBack", "AgainstAngle", Angle),
+        ],
+        Some("fillet") => &[
+            ("radius", "Radius", Length),
+            ("otherRadius", "OtherRadius", Length),
+            ("nonCircularRadius", "NonCircularRadius", Length),
+            ("width", "Width", Length),
+        ],
+        Some("chamfer") => &[
+            ("width", "Distance", Length),
+            ("width1", "FirstDistance", Length),
+            ("width2", "SecondDistance", Length),
+            ("angle", "Angle", Angle),
+        ],
+        Some("hole") => &[
+            ("majorDiameter", "MajorDiameter", Length),
+            ("tappedDepth", "TappedDepth", Length),
+            ("holeDiameter", "Diameter", Length),
+            ("tapDrillDiameter", "Diameter", Length),
+            ("cBoreDiameter", "CounterboreDiameter", Length),
+            ("cBoreDepth", "CounterboreDepth", Length),
+            ("cSinkDiameter", "CountersinkDiameter", Length),
+            ("cSinkAngle", "CountersinkAngle", Angle),
+            ("holeDepth", "Depth", Length),
+            ("tipAngle", "TipAngle", Angle),
+        ],
+        Some("shell") => &[("thickness", "Thickness", Length)],
+        Some("sweep") => &[
+            ("angle", "TwistAngle", Angle),
+            ("turns", "TwistTurns", Scalar),
+            ("pitch", "TwistPitch", Length),
+            ("scaleFactor", "ScaleFactor", Scalar),
+        ],
+        _ => &[],
+    }
+}
+
+impl Source<'_> {
+    pub(super) fn prepare_quantities(
+        &mut self,
+        model: &cadmpeg_ir::document::Model,
+        unresolved: &BTreeSet<String>,
+    ) -> super::Mapping<()> {
+        let native = super::text(self.record, "featureId")?;
+        for &(key, role, dimension) in quantity_roles(self.record) {
+            let Ok(row) = features::parameter(self.record, key) else {
+                continue;
+            };
+            if audit::dormant(self, key, row) {
+                continue;
+            }
+            let parameter_id = id("parameter", &format!("{native}/{key}"));
+            if model
+                .parameters
+                .iter()
+                .any(|parameter| parameter.id.as_str() == parameter_id)
+            {
+                continue;
+            }
+            let role =
+                if self.kind() == Some("extrude") && key == "depth" && self.flag("symmetric")? {
+                    "TotalDistance"
+                } else {
+                    role
+                };
+            if let Some(parameter) = features::formula(
+                self.record,
+                self.ordinal,
+                key,
+                role,
+                dimension,
+                model,
+                unresolved,
+            )? {
+                self.parameters.push(parameter);
+            }
+        }
+        Ok(())
+    }
+}
 
 fn note(notes: &mut Vec<LossNote>, code: OnshapeLossCode, subject: &str, detail: &str) {
     notes.push(code.note(format!("{detail}; subject: {subject}")));
@@ -65,7 +269,8 @@ pub(super) fn project(
     ir: &mut CadIr,
     notes: &mut Vec<LossNote>,
     bar: &RollbackBar,
-    sources: &Sources,
+    sources: &Sources<'_>,
+    inputs: &topology::Inputs<'_>,
 ) -> Result<Vec<(String, String)>, CodecError> {
     let mut thin_refused = Vec::new();
     if ir.model.features.is_empty() {
@@ -88,6 +293,8 @@ pub(super) fn project(
         );
     }
     let sketch_failures = sketched.failures;
+    let definition = owner(ctx, ir)?;
+    let derived_parameters = std::cell::RefCell::new(Vec::new());
     let stated_sketches: BTreeSet<&str> = ir
         .design
         .sketches
@@ -104,6 +311,7 @@ pub(super) fn project(
         .model
         .parameters
         .iter()
+        .chain(sources.values().flat_map(|source| &source.parameters))
         .filter_map(|parameter| {
             let role = parameter
                 .properties
@@ -132,6 +340,10 @@ pub(super) fn project(
             inputs: &ir.model.feature_input_topologies,
             model_entities: &ir.model.sketch_entities,
             arrangements: &arrangements,
+            topology: inputs,
+            model: &ir.model,
+            scope: &definition,
+            derived_parameters: &derived_parameters,
         };
         let thin = source.and_then(|source| source.thin.as_ref());
         let typed = match (thin, sketch_failures.get(&model.id)) {
@@ -152,6 +364,16 @@ pub(super) fn project(
             (None, None) => operation::project(model, source, &context)
                 .map_err(|fallback| Some((fallback.operation, fallback.code, fallback.reason))),
         };
+        let legacy_loss = source.and_then(|source| source.legacy_loss.as_ref());
+        let restated = match (&typed, source, legacy_loss) {
+            (Ok((operation, _)), Some(_), Some(loss)) => {
+                Source::restates_legacy_loss(operation, loss)
+            }
+            _ => false,
+        };
+        if let Some(loss) = legacy_loss.filter(|_| !restated) {
+            notes.push(loss.clone());
+        }
         let operation = match typed {
             Ok((operation, assumed)) => {
                 if let Some(assumed) = assumed {
@@ -163,12 +385,43 @@ pub(super) fn project(
                 family: OperationFamily::Extrude,
             },
             Err(Some((operation, code, reason))) => {
-                if !reason.is_empty() {
+                if !reason.is_empty()
+                    && !legacy_loss.is_some_and(|loss| {
+                        loss.message.contains(
+                            reason
+                                .strip_suffix("; the model record carries the decoded operands")
+                                .unwrap_or(&reason),
+                        )
+                    })
+                {
                     note(notes, code, name, &reason);
                 }
                 operation
             }
         };
+        if let FeatureOperation::Sweep(sweep) = &operation {
+            if sweep.controls.scaling.is_some() {
+                note(
+                    notes,
+                    OnshapeLossCode::SweepScaleAssumed,
+                    name,
+                    "the sweep uses a linear ramp from unity to the stored end scale",
+                );
+            }
+        }
+        if let Some(source) = source {
+            let variable = source
+                .record
+                .get("featureId")
+                .and_then(Value::as_str)
+                .is_some_and(|native| {
+                    ir.model
+                        .parameters
+                        .iter()
+                        .any(|parameter| parameter.id.as_str() == id("parameter", native))
+                });
+            audit::report(source, &operation, variable, name, notes);
+        }
         if let FeatureOperation::Sketch(sketch) = &operation {
             preceding.insert(sketch.as_str().to_owned());
         }
@@ -189,8 +442,8 @@ pub(super) fn project(
         });
     }
     ir.design.features.extend(designed);
-    let definition = owner(ctx, ir)?;
-    let (parameters, texts) = parameters::project(&ir.model.parameters, &definition);
+    let (mut parameters, texts) = parameters::project(&ir.model.parameters, &definition, sources);
+    parameters.extend(derived_parameters.into_inner());
     ctx.charge_entities(
         cadmpeg_core::decode::u64_from_index(parameters.len()),
         "Onshape design parameters",
@@ -204,9 +457,47 @@ pub(super) fn project(
             "the parameter's expression stays Onshape source text",
         );
     }
+    for source in sources.values().filter(|source| {
+        source.kind() == Some("importDerived") && !features::is_custom(source.record)
+    }) {
+        let Ok((document, version, element)) = super::derived::reference(source.record) else {
+            continue;
+        };
+        let id = external_definition_id(document, version, element).map_err(malformed)?;
+        if ir
+            .model
+            .product_definitions
+            .iter()
+            .any(|definition| definition.id == id)
+        {
+            continue;
+        }
+        ctx.charge_entities(1, "Onshape linked definition")?;
+        ir.model.product_definitions.push(ProductDefinition::new(
+            id,
+            Storage::External(ExternalDocument {
+                document_id: NonBlankString::new(document),
+                version: NonBlankString::new(version),
+                object: NonBlankString::new(element),
+                ..ExternalDocument::default()
+            }),
+        ));
+    }
     let current = install_scope(ir, bar, &definition).map_err(malformed)?;
     name_bodies(ir, current);
     Ok(thin_refused)
+}
+
+fn external_definition_id(
+    document: &str,
+    version: &str,
+    element: &str,
+) -> super::Mapping<cadmpeg_ir::ids::ProductDefinitionId> {
+    cadmpeg_ir::ids::ProductDefinitionId::mint(id(
+        "definition",
+        &format!("{document}/{version}/{element}"),
+    ))
+    .map_err(|_| "the pinned Part Studio identity is invalid".into())
 }
 
 /// Name each body that one feature of the first `current` timeline members

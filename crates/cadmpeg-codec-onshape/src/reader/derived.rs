@@ -63,7 +63,7 @@ pub(super) fn is_derived(feature: &Value) -> bool {
 /// The pinned document, version and element of the `partStudio` reference parameter.
 /// It is a structured REST reference, never an evaluated `FeatureScript` query or a
 /// guessed URL.
-fn reference(feature: &Value) -> Mapping<(&str, &str, &str)> {
+pub(super) fn reference(feature: &Value) -> Mapping<(&str, &str, &str)> {
     let mut found = None;
     for parameter in rows(feature, "parameters")? {
         if parameter.get("parameterId").and_then(Value::as_str) != Some("partStudio") {
@@ -445,12 +445,18 @@ pub(super) fn map(
 
 /// A Boolean whose operands are bodies made by earlier features of a studio with a
 /// derived insert. The operands name the stored result topology of their producers.
-pub(super) fn boolean(
+pub(super) struct BooleanInputs {
+    pub operation: &'static str,
+    pub keep: bool,
+    pub target: Vec<(String, String)>,
+    pub tools: Vec<(String, String)>,
+}
+
+pub(super) fn boolean_inputs(
     feature: &Value,
     ordinal: usize,
     inputs: &topology::Inputs<'_>,
-    model: &cadmpeg_ir::document::Model,
-) -> Mapping<Value> {
+) -> Mapping<BooleanInputs> {
     if feature
         .get("namespace")
         .and_then(Value::as_str)
@@ -523,25 +529,48 @@ pub(super) fn boolean(
         }
         Ok(picked)
     };
-    // `targets` is visible only for SUBTRACTION. For UNION and INTERSECTION only `tools`
-    // is operative and a stored `targets` is stale. The combine form names one target
-    // body, so peer tools cannot be stated and the feature stays native.
-    if operation != "SUBTRACTION" {
-        let tools = selected("tools")?;
+    let tools = selected("tools")?;
+    let target = if operation == "SUBTRACTION" {
+        let target = selected("targets")?;
+        if target.len() != 1
+            || target
+                .iter()
+                .any(|(local, _)| tools.iter().any(|(tool, _)| tool == local))
+        {
+            return Err("this Boolean needs one target and disjoint tool bodies".into());
+        }
+        target
+    } else {
+        Vec::new()
+    };
+    if tools.is_empty() {
+        return Err("the Boolean names no tools".into());
+    }
+    Ok(BooleanInputs {
+        operation,
+        keep,
+        target,
+        tools,
+    })
+}
+
+pub(super) fn boolean(
+    feature: &Value,
+    ordinal: usize,
+    inputs: &topology::Inputs<'_>,
+    model: &cadmpeg_ir::document::Model,
+) -> Mapping<Value> {
+    let BooleanInputs {
+        operation,
+        keep,
+        target,
+        tools,
+    } = boolean_inputs(feature, ordinal, inputs)?;
+    if target.is_empty() {
         return Err(format!(
             "a {operation} Boolean combines its {} tool bodies as peers; the combine form names one target body, so the operands cannot be stated",
             tools.len()
         ));
-    }
-    let target = selected("targets")?;
-    let tools = selected("tools")?;
-    if target.len() != 1
-        || tools.is_empty()
-        || target
-            .iter()
-            .any(|(local, _)| tools.iter().any(|(tool, _)| tool == local))
-    {
-        return Err("this Boolean needs one target and disjoint tool bodies".into());
     }
     let generated = |selected: Vec<(String, String)>| -> Mapping<Value> {
         let mut references = Vec::new();

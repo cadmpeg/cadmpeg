@@ -706,7 +706,7 @@ fn constraint_row(
                     Err(reason)
                 }
             })?;
-            let value = quantity(dimension, kind == "ANGLE", model, unresolved)?;
+            let value = quantity(dimension, kind == "ANGLE", model, unresolved).ok();
             let pid = id(
                 "parameter",
                 &format!("{native}/{}", text(constraint, "entityId")?),
@@ -733,12 +733,18 @@ fn constraint_row(
                 model,
                 unresolved,
             )?;
-            push(
-                &mut model.parameters,
-                json!({"id": pid, "owner": owner, "ordinal": ordinal_in_owner, "name": format!("dimension{parameter_ordinal}"),
-                "dependencies": stated.dependencies, "properties": stated.properties, "expression": stated.expression,
-                "value": {"kind": if kind == "ANGLE" { "angle" } else { "length" }, "value": value}}),
-            )?;
+            let kind_name = if kind == "ANGLE" { "angle" } else { "length" };
+            let mut properties = stated.properties;
+            if value.is_none() {
+                properties["quantity_kind"] = json!(kind_name);
+            }
+            let mut record = json!({"id": pid, "owner": owner, "ordinal": ordinal_in_owner,
+                "name": format!("dimension{parameter_ordinal}"), "dependencies": stated.dependencies,
+                "properties": properties, "expression": stated.expression});
+            if let Some(value) = value {
+                record["value"] = json!({"kind":kind_name,"value":value});
+            }
+            push(&mut model.parameters, record)?;
             match kind {
                 "LENGTH" => {
                     json!({"kind": "distance", "entities": [entity("localFirst")?], "parameter": pid})

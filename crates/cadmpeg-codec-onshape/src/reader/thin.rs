@@ -141,13 +141,28 @@ pub(super) fn feature(
         Ok(value)
     };
     let literal = |value| json!({"kind":"literal","value":value});
+    let formula = |key| {
+        features::parameter(source, key)
+            .ok()
+            .and_then(|row| row.get("expression"))
+            .and_then(Value::as_str)
+            .is_some_and(|expression| !super::expression::literal(expression))
+    };
+    let native = text(source, "featureId")?;
+    let dimension = |key, value| {
+        if formula(key) {
+            json!({"kind":"parameter","value":id("parameter", &format!("{native}/{key}"))})
+        } else {
+            literal(value)
+        }
+    };
     let mut assumed = None;
     let thickness = if midplane {
         let value = length("thickness")?;
         if value == 0.0 {
             return Err("thin thickness is zero".into());
         }
-        json!({"kind":"symmetric","value":literal(value)})
+        json!({"kind":"symmetric","value":dimension("thickness", value)})
     } else {
         let first = length("thickness1")?;
         let second = length("thickness2")?;
@@ -155,7 +170,7 @@ pub(super) fn feature(
             return Err("thin thickness is zero".into());
         }
         let flip = flip ^ clockwise;
-        if first == second {
+        if first == second && !formula("thickness1") && !formula("thickness2") {
             let total = first + second;
             if !total.is_finite() {
                 return Err("thin thickness exceeds the finite range".into());
@@ -165,9 +180,9 @@ pub(super) fn feature(
             return Err("thin side over multiple curves is unresolved".into());
         } else if second == 0.0 || first == 0.0 {
             let (value, flip) = if first == 0.0 {
-                (second, !flip)
+                (dimension("thickness2", second), !flip)
             } else {
-                (first, flip)
+                (dimension("thickness1", first), flip)
             };
             let side = match (closed, flip) {
                 (true, false) => "outside",
@@ -180,14 +195,16 @@ pub(super) fn feature(
                     "the thin wall's {side} side over a line with endParam < startParam follows the stored line direction; the source convention for a reversed interval is unresolved (ONSHAPE-007)"
                 ));
             }
-            json!({"kind":"one_side","value":{"value":literal(value),"side":{"kind":side}}})
+            json!({"kind":"one_side","value":{"value":value,"side":{"kind":side}}})
         } else if closed {
+            let first = dimension("thickness1", first);
+            let second = dimension("thickness2", second);
             let (outside, inside) = if flip {
                 (second, first)
             } else {
                 (first, second)
             };
-            json!({"kind":"offsets","value":{"outside":literal(outside),"inside":literal(inside)}})
+            json!({"kind":"offsets","value":{"outside":outside,"inside":inside}})
         } else {
             return Err("two-sided open thin offsets are unresolved".into());
         }
@@ -197,12 +214,14 @@ pub(super) fn feature(
         .pointer("/side/termination")
         .ok_or("thin termination is missing")?;
     let limit = match text(termination, "kind")? {
-        "blind" => json!({"kind":"amount","value":literal(number(termination,"length")?)}),
+        "blind" => {
+            json!({"kind":"amount","value":dimension("depth", number(termination,"length")?)})
+        }
         "through_all" => json!({"kind":"through_all"}),
         _ => return Err("thin termination is unresolved".into()),
     };
     let span = if text(extent, "kind")? == "symmetric" {
-        json!({"kind":"symmetric","amount":literal(number(termination,"length")?),"measure":"total"})
+        json!({"kind":"symmetric","amount":dimension("depth", number(termination,"length")?),"measure":"total"})
     } else {
         json!({"kind":"between","start":{"kind":"at_origin"},"end":limit})
     };
