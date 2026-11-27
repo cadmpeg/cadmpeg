@@ -117,6 +117,9 @@ pub(crate) struct Brep {
     /// Per-face `DisplayLists` table keys resolved from Parasolid attributes.
     pub(crate) face_keys: Vec<(FaceId, u32)>,
     pub(crate) native_body_identities: Vec<attrib::NativeIdentity<BodyId>>,
+    /// The linear precision that the `res_linear` of each body emitted from a
+    /// BODY node states.
+    pub(crate) body_linear_precisions: Vec<cadmpeg_ir::scalar::PositiveLength>,
     /// Source-local sequence-to-attribute links carried by face bridge
     /// records. The decode boundary retains this map only for the active
     /// source because SWIFT identifiers resolve in that source namespace.
@@ -588,6 +591,7 @@ fn shell_face_components(out: &Brep, native_shell_id: &str) -> Vec<Vec<FaceId>> 
 struct BodyRecord {
     attr: u32,
     kind: BodyKind,
+    linear_resolution: f64,
     refs: Vec<u32>,
     offset: usize,
     regions: Vec<RegionRecord>,
@@ -3608,6 +3612,7 @@ fn typed_body_records(facts: &typed::Facts, tables: &topology::Tables) -> Option
         records.push(BodyRecord {
             attr: hierarchy.body.attr,
             kind: hierarchy.body.kind,
+            linear_resolution: hierarchy.body.linear_resolution,
             refs: body_refs,
             offset: hierarchy.body.offset,
             regions,
@@ -5471,6 +5476,23 @@ fn decode_graph_inner(
             }
         }
         admit_brep_entity(ctx)?;
+        let res_linear = body_record.map(|record| record.linear_resolution);
+        match res_linear.and_then(cadmpeg_parasolid::precision::linear_precision) {
+            Some(linear) => out.body_linear_precisions.push(linear),
+            None => {
+                let code = if res_linear.is_some() {
+                    crate::loss::SldprtLossCode::BodyResolutionInvalid
+                } else {
+                    crate::loss::SldprtLossCode::BodyResolutionUnread
+                };
+                out.losses.push(code.note(
+                    cadmpeg_parasolid::precision::unusable_resolution_message(
+                        body_id.as_str(),
+                        res_linear,
+                    ),
+                ));
+            }
+        }
         out.bodies.push(Body {
             id: body_id,
             kind: body_record.map_or(BodyKind::Solid, |record| record.kind),
@@ -10996,6 +11018,7 @@ mod tests {
                 topology_refs: [7, 8, 9, 10, 1, 12, 11],
                 ownership_refs: Vec::new(),
                 kind: BodyKind::Sheet,
+                linear_resolution: 1.0e-8,
                 offset: 1,
                 end: 2,
             }],
