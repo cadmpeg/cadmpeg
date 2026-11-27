@@ -68,10 +68,14 @@ pub(super) fn bind(
                 entry.insert(indexed)
             }
         };
-        let Some(selected) = indexed
-            .as_ref()
-            .and_then(|records| group_selection(records, group, stream, projection))
-        else {
+        let Some(selected) = indexed.as_ref().and_then(|records| {
+            group_selection(
+                group.members().iter().map(|member| member.value),
+                |member| records.member_body(member).ok(),
+                stream,
+                projection,
+            )
+        }) else {
             continue;
         };
         let Ok(members) = NativeSelections::try_from(selected.tessellations) else {
@@ -156,34 +160,37 @@ fn stream_records<'a>(
     Ok(meta.map(|meta| MeshOperationRecords::index(bytes, meta)))
 }
 
-/// The mesh bodies of `group`, when every member is a mesh operation member
-/// whose mesh body joins a tessellation.
+/// The mesh bodies of a group with `members` in the Design stream `stream`,
+/// when every member is a mesh operation member whose mesh body joins a
+/// tessellation. `member_body` gives the mesh body that a mesh operation
+/// member names. Members that name one body select it once.
 fn group_selection(
-    records: &MeshOperationRecords<'_>,
-    group: &DesignConstructionOperandGroup,
+    members: impl IntoIterator<Item = u32>,
+    member_body: impl Fn(u32) -> Option<u32>,
     stream: &str,
     projection: &MeshProjection,
 ) -> Option<MeshGroupSelection> {
-    let members = group.members();
-    if members.is_empty() {
-        return None;
-    }
     let mut selected = MeshGroupSelection {
-        tessellations: Vec::with_capacity(members.len()),
+        tessellations: Vec::new(),
         scopes: Vec::new(),
     };
     for member in members {
-        let body = records.member_body(member.value).ok()?;
+        let body = member_body(member)?;
         let joined = projection
             .tessellations_by_body
             .get(&(stream.to_owned(), body))?
             .as_ref()?;
-        selected.tessellations.push(joined.tessellation.clone());
+        if !selected.tessellations.contains(&joined.tessellation) {
+            selected.tessellations.push(joined.tessellation.clone());
+        }
         if let Some(scope) = joined.scope_record_index {
             if !selected.scopes.contains(&scope) {
                 selected.scopes.push(scope);
             }
         }
     }
-    Some(selected)
+    (!selected.tessellations.is_empty()).then_some(selected)
 }
+
+#[cfg(test)]
+mod tests;

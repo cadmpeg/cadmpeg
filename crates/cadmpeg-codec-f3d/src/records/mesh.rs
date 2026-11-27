@@ -2193,6 +2193,9 @@ impl DesignMeshFeature {
     pub(crate) fn removed_bodies(&self) -> &[DesignMeshBody] {
         &self.removed_bodies
     }
+    pub(crate) fn removed_bodies_mut(&mut self) -> &mut [DesignMeshBody] {
+        &mut self.removed_bodies
+    }
     /// The collection bodies and the removed bodies, which the feature
     /// scopes list.
     pub(crate) fn scope_bodies(&self) -> impl Iterator<Item = &DesignMeshBody> {
