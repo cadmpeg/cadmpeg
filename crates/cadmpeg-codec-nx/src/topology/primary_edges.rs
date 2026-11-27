@@ -79,8 +79,16 @@ fn body_linear_resolutions(primary: &PrimaryRecords<'_>, graph: &Graph) -> BTree
 impl Graph {
     /// Use primary record ownership when the header is supported.
     pub(crate) fn parse_source(stream: &[u8]) -> Result<Self, CodecError> {
+        Self::parse_source_with_primary(stream).map(|(graph, _)| graph)
+    }
+
+    /// Use primary record ownership when the header is supported, also returning
+    /// the parsed [`PrimaryRecords`] so downstream stream consumers avoid re-framing.
+    pub(crate) fn parse_source_with_primary(
+        stream: &[u8],
+    ) -> Result<(Self, Option<PrimaryRecords<'_>>), CodecError> {
         let Some(primary) = PrimaryRecords::read(stream)? else {
-            return Ok(Self::parse(stream));
+            return Ok((Self::parse(stream), None));
         };
         let limit_term_use = crate::intersection::limit_term_use(&primary);
         let frames = PrimaryFrames {
@@ -131,7 +139,7 @@ impl Graph {
         graph.primary_records = frames.terminated_records().map(<[_]>::to_vec);
         graph.primary_limit_term_use = limit_term_use;
         graph.body_linear_resolutions = body_linear_resolutions(&primary, &graph);
-        Ok(graph)
+        Ok((graph, Some(primary)))
     }
 
     /// The stored `res_linear` (metres) of each BODY node the primary
