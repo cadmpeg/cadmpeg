@@ -84,6 +84,7 @@ fn operation(
             .map(|(body_node, record_index)| DesignCombineBodySelection {
                 record_index,
                 external_identity: None,
+                legacy_external_identity: None,
                 body_node: *body_node,
             });
     DesignCombineOperation {
