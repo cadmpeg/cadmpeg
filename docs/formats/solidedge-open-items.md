@@ -31,11 +31,3 @@
 **Known.** A swept surface stores a `section` curve, a unit `sweep` direction, and `scale`. With a null `scale` the sweep parameter is the distance along the direction.
 
 **Need.** A part whose swept face stores a non-null `scale`, with its edge or pcurve parameters along the sweep.
-
-### DR-1012. Base of the decimal length options
-
-**Question.** Which length unit do the tenth, hundredth and thousandth options (length codes 68, 69 and 70) divide?
-
-**Known.** The three options are length unit options and store codes 68, 69 and 70 in `DefaultDistancePrimary`. The option selection changes no stored geometry. The dimension value is the same length in metres under every option.
-
-**Need.** The text that Solid Edge displays for a known length under each option, or a dimension text that includes the unit.

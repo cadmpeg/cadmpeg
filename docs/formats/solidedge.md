@@ -110,9 +110,9 @@ display forms has one code for each form.
 | 65 | foot |
 | 66 | yard |
 | 67 | mile |
-| 68 | tenth |
-| 69 | hundredth |
-| 70 | thousandth |
+| 68 | tenth of an inch |
+| 69 | hundredth of an inch |
+| 70 | thousandth of an inch |
 | 71 | rod |
 | 72 | pole |
 | 74 | chain |
