@@ -25,10 +25,10 @@ use crate::record_identity::{Located, RecordTypeId};
 use crate::records::MetaSection;
 use crate::rse::RseInventory;
 use crate::test_support::base_envelope::{
-    base_records, decode, design_records, fixtures, state_model, RESULT_KEY, SOURCE_INDEX,
+    decode, derived_at_version, fixtures, state_model, SyntheticRecords, RESULT_KEY, SOURCE_INDEX,
 };
 use crate::test_support::test_fixtures::{
-    acis_sphere_kernel_stream_with_body_key, base_envelope_fixture,
+    acis_sphere_kernel_stream_with_body_key, base_envelope_fixture, BaseEnvelopeRecords,
 };
 
 fn wrapper(body: u32) -> PmDcFeatureProperty {
@@ -297,11 +297,18 @@ fn holding(model: &CadIr) -> StateModel {
 /// Projects the two Base features of the fixture with a final model that
 /// holds no body key, and returns the transferred count and the losses.
 fn project_without_final_body(states: &Fixed) -> (usize, Vec<LossKind>) {
-    let (design, base) = fixtures();
+    project_records_without_final_body(fixtures(), states)
+}
+
+/// As `project_without_final_body`, for the given synthetic records.
+fn project_records_without_final_body(
+    (design_recs, base_recs): (SyntheticRecords, BaseEnvelopeRecords),
+    states: &Fixed,
+) -> (usize, Vec<LossKind>) {
     let bytes = base_envelope_fixture(
         &acis_sphere_kernel_stream_with_body_key(21_800, 7),
-        &design,
-        &base,
+        &design_recs,
+        &base_recs,
     );
     let arena = DecodeArena::new();
     let (ctx, root) =
@@ -310,7 +317,8 @@ fn project_without_final_body(states: &Fixed) -> (usize, Vec<LossKind>) {
     let document = RseInventory::build(&ctx, &snapshot).expect("RSe inventory");
     let features = crate::feature::inventory(&ctx, &document).expect("feature inventory");
     let design = crate::design::inventory(&ctx, &document).expect("design inventory");
-    let mut ir = decode(&design_records(), &base_records());
+    let sketches = crate::sketch::inventory(&ctx, &document).expect("sketch inventory");
+    let mut ir = decode(&design_recs, &base_recs);
     ir.model.feature_result_topologies.clear();
     for feature in &mut ir.model.features {
         feature
@@ -327,7 +335,7 @@ fn project_without_final_body(states: &Fixed) -> (usize, Vec<LossKind>) {
             document: &document,
             inventory: &features,
             design: &design,
-            transforms: &[],
+            transforms: &sketches.transforms,
             keys: &keys,
             states: Some(states),
         },
@@ -425,4 +433,26 @@ fn state_loss() -> LossKind {
     InventorLossCode::FeatureBaseResultStateNative
         .note("state")
         .code
+}
+
+#[test]
+fn a_derived_result_whose_state_does_not_decode_or_passed_its_cap_stays_native_with_its_loss() {
+    let loss = InventorLossCode::FeatureDerivedResultNative
+        .note("state")
+        .code;
+    for outcome in [
+        |_: &CadIr| StateModel::Failed,
+        |_: &CadIr| StateModel::Bounded,
+        |_: &CadIr| StateModel::Unavailable,
+    ] {
+        let states = Fixed {
+            introduces: true,
+            outcome,
+            model: CadIr::empty(),
+        };
+        let (transferred, codes) =
+            project_records_without_final_body(derived_at_version(false, 19), &states);
+        assert_eq!(transferred, 0);
+        assert_eq!(codes, vec![loss.clone()]);
+    }
 }
