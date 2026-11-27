@@ -198,6 +198,8 @@ loss_codes! {
     /// A current entity is a member of the result GROUPs of several
     /// features, and its name is the merge of their generated names.
     NameMergedFromGroups => ("history.name-merged-from-groups", Warning, FeatureHistoryRetained),
+    /// A stored Parasolid state is no design evaluation.
+    StoredStateUnread => ("history.stored-state-unread", Warning, FeatureHistoryRetained),
 }
 
 impl NxLossCode {
@@ -301,6 +303,7 @@ mod tests {
                 "body.resolution-unread",
                 "feature.recognition-tolerance-floor",
                 "history.name-merged-from-groups",
+                "history.stored-state-unread",
             ]
         );
     }

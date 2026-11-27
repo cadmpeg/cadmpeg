@@ -42,6 +42,7 @@ use crate::loss::NxLossCode;
 mod parameters;
 mod results;
 mod sketches;
+pub(super) mod states;
 
 /// The root definition of an NX part that states no assembly root.
 pub(super) const PART_ROOT: &str = "nx:document:product-definition#root";

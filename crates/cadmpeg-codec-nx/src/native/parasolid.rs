@@ -37,7 +37,7 @@ pub(super) mod named_fields;
 use named_fields::NamedField;
 pub(super) mod body_id;
 pub(super) mod deltas_instance;
-pub(super) mod deltas_metadata;
+pub(crate) mod deltas_metadata;
 pub(super) mod deltas_source;
 use deltas_instance::{ParasolidDeltasInstance, ParasolidDeltasSchema};
 use deltas_metadata::ParasolidDeltasMetadata;

@@ -216,6 +216,36 @@ impl ParasolidDeltasMetadata {
     }
 }
 
+/// A stored Parasolid state: a mark of a Deltas stream, named by its
+/// metadata record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StoredState {
+    pub(crate) id: String,
+    pub(crate) identifier: u32,
+    pub(crate) forward: bool,
+}
+
+/// The marks of the Deltas streams of `namespace`, in stream order.
+pub(crate) fn stored_states(
+    ctx: &DecodeContext<'_>,
+    namespace: &NativeNamespace,
+) -> Result<Vec<StoredState>, NativeConvertError> {
+    let mut records = namespace
+        .arena_as_for_decode::<ParasolidDeltasMetadata>(ctx, "parasolid_deltas_metadata")?;
+    records.sort_unstable_by_key(|record| (record.stream_ordinal, record.inflated_offset));
+    Ok(records
+        .into_iter()
+        .filter_map(|record| match record.production {
+            Production::Pmark { state } => Some(StoredState {
+                id: record.id,
+                identifier: state.identifier(),
+                forward: state.delta_is_forward(),
+            }),
+            _ => None,
+        })
+        .collect())
+}
+
 pub(in crate::native) fn admit(
     ctx: &DecodeContext<'_>,
     namespace: &NativeNamespace,
