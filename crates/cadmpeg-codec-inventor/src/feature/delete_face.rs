@@ -21,6 +21,8 @@ pub(crate) const CLASS_ID: ClassId =
 
 /// Record type of a surface-body wrapper.
 const WRAPPER_TYPE_ID: &str = "474d8790d011f8d10008cabc0663dc09";
+/// Record type of a face-selection item, the member type of a face collection.
+const FACE_ITEM_TYPE_ID: &str = "ccb59f50d1114f6b0008a1ba32a3dc09";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NativeReason {
@@ -38,7 +40,7 @@ impl NativeReason {
         match self {
             Self::Marker => "property vector marker differs from type 2",
             Self::Slots => "property vector differs from the four-slot form",
-            Self::Faces => "slot 0 is not a face collection without repeated members",
+            Self::Faces => "slot 0 is not a face collection of distinct face items",
             Self::Slot1 => "slot 1 is not a Boolean",
             Self::Slot2 => "slot 2 is not a Boolean",
             Self::Selection => "slot 3 is not a body selection of distinct surface-body wrappers",
@@ -86,7 +88,9 @@ pub(crate) fn refusal<'a>(
         }) if items
             .references()
             .iter()
-            .all(|member| member.index() != 0 && distinct.insert(member.index()))
+            .all(|member| member.index() != 0
+                && member.record_ordinal().and_then(&record_type) == Some(FACE_ITEM_TYPE_ID)
+                && distinct.insert(member.index()))
     );
     if !faces_valid {
         return NativeReason::Faces;
@@ -104,7 +108,7 @@ pub(crate) fn refusal<'a>(
         return NativeReason::Slot2;
     }
     // A null member selects no body; each non-null member names a distinct
-    // surface-body wrapper (section 13.4, ordered body selection).
+    // surface-body wrapper (section 13, ordered body selection).
     let mut wrappers = HashSet::new();
     let selection_valid = matches!(
         property(*selection).map(|property| &property.kind),
