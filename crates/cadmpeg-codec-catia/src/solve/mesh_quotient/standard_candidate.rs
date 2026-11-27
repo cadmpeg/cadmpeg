@@ -67,6 +67,7 @@ pub(crate) struct ParseStandardMeshCandidateOutcomeInputs<
     'input8,
     'input9,
     'input10,
+    'input11,
     'input12,
     FP,
     FC,
@@ -86,6 +87,7 @@ pub(crate) struct ParseStandardMeshCandidateOutcomeInputs<
     pub(crate) preferred_assignment_edges: &'input8 [bool],
     pub(crate) priority_edges: Option<&'input9 [bool]>,
     pub(crate) assignment_dependencies: Option<&'input10 [Vec<usize>]>,
+    pub(crate) mesh_cache: Option<&'input11 crate::solve::missing_edge::StandardMeshCache>,
     pub(crate) budget: &'input12 WorkBudget,
     pub(crate) partial_solution_valid: FP,
     pub(crate) complete_solution_valid: FC,
@@ -125,6 +127,7 @@ pub(crate) fn parse_standard_mesh_candidate_outcome<FP, FC>(
         '_,
         '_,
         '_,
+        '_,
         FP,
         FC,
     >,
@@ -140,6 +143,7 @@ where
 pub(super) fn solve_standard_mesh_candidate<FP, FC>(
     ctx: &DecodeContext<'_>,
     inputs: ParseStandardMeshCandidateOutcomeInputs<
+        '_,
         '_,
         '_,
         '_,
@@ -173,6 +177,7 @@ where
         preferred_assignment_edges,
         priority_edges,
         assignment_dependencies,
+        mesh_cache,
         budget,
         partial_solution_valid,
         complete_solution_valid,
@@ -192,11 +197,12 @@ where
             let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
                 return Ok(None);
             };
-            let boundary_context = StandardMeshBoundaryContext::parse_ports(
+            let boundary_context = StandardMeshBoundaryContext::parse_ports_with_cache(
                 ctx,
                 bytes,
                 edge_faces,
                 global_handle_ports,
+                mesh_cache,
             )?;
             let Some(boundary_context) = boundary_context else {
                 return Ok(None);
@@ -724,6 +730,7 @@ fn mesh_candidate_rejection_retains_the_failed_solver_stage() {
                 preferred_assignment_edges: &[],
                 priority_edges: None,
                 assignment_dependencies: None,
+                mesh_cache: None,
                 budget: &budget,
                 partial_solution_valid: |_| true,
                 complete_solution_valid: |_| true,
