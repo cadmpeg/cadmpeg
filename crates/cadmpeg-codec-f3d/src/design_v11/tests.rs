@@ -1811,3 +1811,49 @@ fn part_number_and_description_cells_of_other_rows_override_the_scope_definition
         );
     }
 }
+
+/// The merge of an archive member renumbers its features after those of the
+/// document that holds it, so a member's item is matched to its feature by the
+/// record that ends the feature's key.
+#[test]
+fn a_member_items_feature_is_matched_by_record_not_by_position() {
+    let member = "f3d:0574d3e0-934b-4a4e-a78b-7f54f53c2287.f3d@FusionAssetName[Active]/Design1/BulkStream.dat";
+    let mut feature = legacy(
+        "extrude:20",
+        41,
+        Some(false),
+        LegacyOperation::Unresolved {
+            family: UnresolvedFamily::Extrude,
+        },
+    );
+    feature.native_ref = Some(format!("{member}:design-parameter-scope#900"));
+    let documents = crate::test_support::with_decode_context(|ctx| {
+        super::timeline::project(
+            ctx,
+            std::slice::from_ref(&feature),
+            &[timeline(member, 0, &[10, 20])],
+            &[],
+            &super::timeline::ScopeInputs {
+                records: &[],
+                tail_flags: &super::timeline::TailFlags::new(),
+            },
+            &BTreeSet::new(),
+            &mut Vec::new(),
+        )
+    })
+    .unwrap();
+    let [unmatched, matched] = documents.values().next().unwrap().features.as_slice() else {
+        panic!("two features")
+    };
+    assert!(matches!(
+        &unmatched.definition.operation,
+        FeatureOperation::Native { kind, .. } if kind.as_str() == "f3d:timeline-item"
+    ));
+    assert_eq!(matched.id, feature.id);
+    assert_eq!(
+        matched.definition.operation,
+        FeatureOperation::Unresolved {
+            family: OperationFamily::Extrude
+        }
+    );
+}

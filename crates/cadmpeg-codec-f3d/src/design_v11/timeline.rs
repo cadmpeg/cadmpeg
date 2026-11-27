@@ -4,7 +4,9 @@
 //!
 //! The v10 projection orders the features of one Design stream by the item
 //! runs of its timeline records, in their `MetaStream` order, so the feature
-//! at an item's position in that run is the item's feature. An item the v10
+//! at an item's position in that run is the item's feature. The features of
+//! an archive member are renumbered by the merge, so an item of a member is
+//! matched to the feature whose key ends in the item's record. An item the v10
 //! projection did not resolve is a feature of the family its record type
 //! establishes, or a native feature named by that type.
 //!
@@ -105,6 +107,24 @@ pub(super) fn project(
                 .push(feature);
         }
     }
+    // The v10 features by the record that ends their key. The merge of an
+    // archive member renumbers its features after those already merged, so a
+    // member's features are matched to its items by record and not by
+    // position.
+    let mut by_record = HashMap::<(&str, u64), Vec<&LegacyFeature>>::new();
+    for feature in features {
+        let Some(stream) = feature.native_ref.as_deref().and_then(native_stream) else {
+            continue;
+        };
+        if let Some(record) = feature
+            .id
+            .as_str()
+            .rsplit_once(':')
+            .and_then(|(_, record)| record.parse::<u64>().ok())
+        {
+            by_record.entry((stream, record)).or_default().push(feature);
+        }
+    }
     let mut documents = BTreeMap::<String, Projected>::new();
     for (stream, mut records) in streams {
         records.sort_by_key(|timeline| timeline.source_ordinal);
@@ -124,10 +144,19 @@ pub(super) fn project(
                 ctx.charge_entities(1, "project F3D v11 timeline item")?;
                 let flags = tail_flags.get(&(stream, item.value)).copied();
                 rolled_back.push(flags.map(|flags| flags.rolled_back));
-                let feature = match positioned
-                    .get(&(stream, ordinal))
-                    .and_then(|candidates| item_feature(candidates, item.value))
-                {
+                let by_position = if document_prefix(stream).is_empty() {
+                    positioned
+                        .get(&(stream, ordinal))
+                        .and_then(|candidates| item_feature(candidates, item.value))
+                } else {
+                    None
+                };
+                let matched = by_position.or_else(|| {
+                    by_record
+                        .get(&(stream, item.value))
+                        .and_then(|candidates| item_feature(candidates, item.value))
+                });
+                let feature = match matched {
                     Some(feature) => resolved_item(feature, bodies, &scopes, losses),
                     None => unprojected_item(
                         stream,
