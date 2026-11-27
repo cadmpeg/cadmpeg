@@ -261,7 +261,7 @@ and a pattern each count once, as do a swept, lofted, revolved or sheet-metal
 feature. A feature-tree folder adds an entry and does not change `n`. In a
 document with no suppressed feature the word is `n` + 1. Each suppressed
 feature adds the number of non-folder items that follow it in the feature-tree
-order, except items whose recompute failed. The word is not a feature count.
+order. The word is not a feature count, and the reader does not use it.
 
 One more `u32` can follow the final word. The object then ends. The first
 three entries are the three base reference planes, of class
