@@ -161,7 +161,7 @@ fn the_give_up_of_a_definition_names_each_instance_that_needs_it() {
         assert!(
             given_up[0]
                 .message
-                .contains(&format!("D3 (Type {})", instance.0)),
+                .contains(&format!("iges:entity:directory#3 (Type {})", instance.0)),
             "{losses:#?}"
         );
         let native = result.ir().native.namespace("iges").unwrap();

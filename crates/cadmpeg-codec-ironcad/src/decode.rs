@@ -4,7 +4,9 @@
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::AsmBrep;
 use cadmpeg_asm::dialect::KernelHeaderRef;
-use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot};
+use cadmpeg_container::compound::{
+    CompoundDeviation, CompoundEntry, CompoundSnapshot, CompoundStreamEntry, CompoundStreamId,
+};
 use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::dialect::{DialectLayers, DuplicateDialectLayer, LayerInstance};
 use cadmpeg_core::CodecError;
@@ -36,10 +38,7 @@ use cadmpeg_ir::scalar::PositiveReal;
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let snapshot = container::open(ctx, root)?;
     let mut layers = dialect::layers();
-    let mut losses: Vec<LossNote> = snapshot
-        .deviations()
-        .map(|deviation| IronCadLossCode::ContainerNoncanonical.note(deviation.description()))
-        .collect();
+    let mut losses = deviation_losses(ctx, &snapshot);
     let mut bodies = Bodies::default();
     let mut scene = Scene::default();
     if !ctx.container_only() {
@@ -73,6 +72,28 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         });
     }
     transfer(ctx, ir, bodies, scene, losses, digest)
+}
+
+/// One loss per compound deviation. A decode gives up `Brep Data` and
+/// `Document Data` when their chains break, and the give-up charges the
+/// broken chain.
+fn deviation_losses(ctx: &DecodeContext<'_>, snapshot: &CompoundSnapshot<'_>) -> Vec<LossNote> {
+    let given_up: Vec<CompoundStreamId> = if ctx.container_only() {
+        Vec::new()
+    } else {
+        [BREP_DATA, DOCUMENT_DATA]
+            .iter()
+            .filter_map(|name| snapshot.stream(name))
+            .map(CompoundStreamEntry::id)
+            .collect()
+    };
+    snapshot
+        .deviations()
+        .filter(|deviation| {
+            !matches!(deviation, CompoundDeviation::StreamChainBroken(id) if given_up.contains(id))
+        })
+        .map(|deviation| IronCadLossCode::ContainerNoncanonical.note(deviation.description()))
+        .collect()
 }
 
 /// The part and assembly records, the scene units, and the assemblies of the

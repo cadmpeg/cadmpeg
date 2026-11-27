@@ -923,7 +923,7 @@ or Type 408 or Type 420 instance, loses its subfigure or network structure.
 The give-up at the end of its chain of needed entities states it: the
 give-up of the needed entity that charges its own give-up, or of the
 quarantine part that keeps the needed entity. The message names each such
-dependent by `D<n>` and its type.
+dependent by its record id `iges:entity:directory#<n>` and its type.
 
 An explicit B-rep vertex list, edge list, loop, or face that the projection
 parses is an input of each edge list, loop, face, or shell that reads it. When

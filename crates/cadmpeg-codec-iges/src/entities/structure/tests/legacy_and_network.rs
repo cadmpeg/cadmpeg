@@ -923,7 +923,12 @@ fn a_definition_whose_member_is_undecoded_is_dropped_with_it_and_not_unreadable(
             .contains("subfigure-instance placement is invalid"),
         "{losses:#?}"
     );
-    assert!(given_up[0].message.contains("D5 (Type 308)"), "{losses:#?}");
+    assert!(
+        given_up[0]
+            .message
+            .contains("iges:entity:directory#5 (Type 308)"),
+        "{losses:#?}"
+    );
 }
 
 #[test]

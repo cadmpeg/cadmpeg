@@ -454,7 +454,7 @@ fn unplaced_costing(dependents: &[String]) -> String {
     )
 }
 
-/// The names (`D<n> (Type <t>)`) of the dropped subfigure and network
+/// The record ids and types (`iges:entity:directory#<n> (Type <t>)`) of the dropped subfigure and network
 /// entities, by the Directory sequence of the entity whose give-up drops
 /// them.
 type Unplaced = BTreeMap<u32, Vec<String>>;
@@ -663,10 +663,10 @@ fn settle_needs(
                 _ => break,
             }
         }
-        unplaced
-            .entry(at)
-            .or_default()
-            .push(format!("D{entity} (Type {})", entry.entity_type));
+        unplaced.entry(at).or_default().push(format!(
+            "iges:entity:directory#{entity} (Type {})",
+            entry.entity_type
+        ));
     }
     let dropped = settled
         .into_iter()

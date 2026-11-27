@@ -4,10 +4,11 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions, DecodeResult};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeFailure, DecodeOptions, DecodeResult};
 
 use cadmpeg_ir::unknown::part::{gives_up, record_unreadable_kind};
 
+use crate::container::{BREP_DATA, DOCUMENT_DATA};
 use crate::loss::IronCadLossCode;
 use crate::test_support::corpus;
 use crate::IronCadCodec;
@@ -305,11 +306,11 @@ fn a_brep_data_frame_that_does_not_read_is_one_unreadable_give_up() {
         .expect_err("a pinned decode refuses an unreadable frame");
 }
 
-/// `BOX` with the start sector of its `Document Data` directory entry moved
-/// outside the allocation table, so that the stream does not open.
-fn box_without_document_data_chain() -> Vec<u8> {
+/// `BOX` with the start sector of its `stream` directory entry moved outside
+/// the allocation table, so that the chain of `stream` breaks.
+fn box_with_broken_chain(stream: &str) -> Vec<u8> {
     let mut bytes = corpus(BOX);
-    let name = "Document Data"
+    let name = stream
         .encode_utf16()
         .chain([0])
         .flat_map(u16::to_le_bytes)
@@ -321,10 +322,51 @@ fn box_without_document_data_chain() -> Vec<u8> {
         })
         .collect::<Vec<_>>();
     let [entry] = entries.as_slice() else {
-        panic!("one `Document Data` directory entry: {entries:?}");
+        panic!("one `{stream}` directory entry: {entries:?}");
     };
     bytes[entry + 116..entry + 120].copy_from_slice(&0x00ff_fff0_u32.to_le_bytes());
     bytes
+}
+
+/// The code and message of each loss of `result`.
+fn losses(result: &DecodeResult) -> Vec<(String, String)> {
+    result
+        .report()
+        .losses
+        .iter()
+        .map(|loss| (loss.code.to_string(), loss.message.clone()))
+        .collect()
+}
+
+/// Asserts that `bytes` decode with one `record.unreadable` give-up of
+/// `stream` and no deviation note, and that a pinned decode refuses that
+/// give-up.
+fn assert_one_unreadable_give_up(bytes: &[u8], stream: &str) -> DecodeResult {
+    let result = IronCadCodec
+        .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(count(&result, IronCadLossCode::ContainerNoncanonical), 0);
+    let given_up: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| gives_up(&loss.code))
+        .collect();
+    let [loss] = given_up.as_slice() else {
+        panic!("one give-up loss: {given_up:?}");
+    };
+    assert_eq!(loss.code, record_unreadable_kind());
+    assert!(loss.message.contains(stream), "{}", loss.message);
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    match IronCadCodec.decode(&mut Cursor::new(bytes.to_vec()), &options) {
+        Err(DecodeFailure::StrictRejected { rejection }) => {
+            assert_eq!(rejection.loss().code, record_unreadable_kind());
+        }
+        other => panic!("a pinned decode refuses the give-up: {:?}", other.err()),
+    }
+    result
 }
 
 #[test]
@@ -337,23 +379,11 @@ fn a_document_data_stream_that_does_not_open_is_one_unreadable_give_up() {
         .iter()
         .any(|definition| definition.is_root() && definition.units.is_some()));
 
-    let result = IronCadCodec
-        .decode(
-            &mut Cursor::new(box_without_document_data_chain()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let given_up: Vec<_> = result
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| gives_up(&loss.code))
-        .collect();
-    let [loss] = given_up.as_slice() else {
-        panic!("one give-up loss: {given_up:?}");
-    };
-    assert_eq!(loss.code, record_unreadable_kind());
-    assert!(loss.message.contains("Document Data"), "{}", loss.message);
+    let result =
+        assert_one_unreadable_give_up(&box_with_broken_chain(DOCUMENT_DATA), DOCUMENT_DATA);
+    let mut kept = losses(&result);
+    kept.retain(|(code, _)| *code != record_unreadable_kind().to_string());
+    assert_eq!(kept, losses(&intact));
     assert_eq!(result.ir().geometry.bodies.len(), 1);
     let root = result
         .ir()
@@ -363,6 +393,12 @@ fn a_document_data_stream_that_does_not_open_is_one_unreadable_give_up() {
         .find(|definition| definition.is_root())
         .unwrap();
     assert!(root.units.is_none());
+}
+
+#[test]
+fn a_brep_data_stream_that_does_not_open_is_one_unreadable_give_up() {
+    let result = assert_one_unreadable_give_up(&box_with_broken_chain(BREP_DATA), BREP_DATA);
+    assert!(result.ir().geometry.bodies.is_empty());
 }
 
 #[test]

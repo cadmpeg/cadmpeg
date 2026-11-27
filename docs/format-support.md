@@ -122,7 +122,7 @@ See [`formats/inventor.md`](formats/inventor.md), [`formats/inventor-open-items.
 
 **Model:** Standalone ShapeManager or Spatial ACIS B-rep stream outside any CAD container
 
-**Primary structural envelope:** `ASM BinaryFile4`, `ASM BinaryFile8`, `ACIS BinaryFile`, and text SAT/SMT streams that terminate with `End-of-ASM-data` or `End-of-ACIS-data`, at any save format. Stream content selects the decoder; file extensions do not. Spatial ACIS save-format majors 217 and 218 are the verified bands. An ACIS-branch stream outside them is framed and decoded with the nearer verified band's record grammar, reported as `Admission::Unverified`, and charged `source.dialect-unverified`.
+**Primary structural envelope:** `ASM BinaryFile4`, `ASM BinaryFile8`, `ACIS BinaryFile`, and text SAT/SMT streams. A text stream of save format 106 or later ends with `End-of-ASM-data` or `End-of-ACIS-data`; a text stream of an earlier save format can end after its last record. Stream content selects the decoder; file extensions do not. Spatial ACIS save-format majors 217 and 218 are the verified bands. An ACIS-branch stream outside them is framed and decoded with the nearer verified band's record grammar, reported as `Admission::Unverified`, and charged `source.dialect-unverified`.
 
 <!-- generated: dialects sat -->
 
