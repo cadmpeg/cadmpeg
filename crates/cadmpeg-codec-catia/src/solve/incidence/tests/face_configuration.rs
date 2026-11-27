@@ -225,6 +225,7 @@ fn incidence_forced_face_chain_does_not_consume_branch_budget() {
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -278,6 +279,7 @@ fn incidence_forced_face_configuration_closes_its_frontier_atomically() {
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -337,6 +339,7 @@ fn incidence_candidate_uses_a_separate_global_quotient_validation_budget() {
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -389,6 +392,7 @@ fn incidence_selection_validates_only_its_affected_faces() {
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 

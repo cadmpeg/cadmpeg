@@ -59,7 +59,94 @@ fn prune_incidence_choices(
         face_count,
         point_count,
         true,
+        None,
     )
+}
+
+/// Detect faces whose already-singleton edges give at least one vertex degree > 2
+/// (e.g. pinch vertices or self-touching boundary loops validated by explicit
+/// mesh boundary domains).
+fn singleton_pinch_faces(
+    ctx: &DecodeContext<'_>,
+    choices: &[Vec<[usize; 2]>],
+    edge_faces: &[[usize; 2]],
+    face_count: usize,
+) -> Result<Vec<bool>, CodecError> {
+    let mut degrees = ctx.alloc_filled(
+        face_count,
+        BTreeMap::<usize, usize>::new(),
+        "catia_incidence_pinch_degrees",
+    )?;
+    for (edge, pairs) in choices.iter().enumerate() {
+        let [pair] = pairs.as_slice() else {
+            continue;
+        };
+        let Some(&faces) = edge_faces.get(edge) else {
+            continue;
+        };
+        for (rank, face) in faces.into_iter().enumerate() {
+            if (rank > 0 && face == faces[0]) || face >= face_count {
+                continue;
+            }
+            for point in pair {
+                *degrees[face].entry(*point).or_default() += 1;
+            }
+        }
+    }
+    let mut pinch: Vec<bool> = degrees
+        .iter()
+        .map(|face_deg| face_deg.values().any(|&d| d > 2))
+        .collect();
+    // Also mark a face as a pinch face if any non-singleton incident edge has
+    // EVERY candidate pair exceeding degree 2 against that face's singletons.
+    for (edge, pairs) in choices.iter().enumerate() {
+        if pairs.len() <= 1 {
+            continue;
+        }
+        let Some(&faces) = edge_faces.get(edge) else {
+            continue;
+        };
+        for (rank, face) in faces.into_iter().enumerate() {
+            if (rank > 0 && face == faces[0]) || face >= face_count || pinch[face] {
+                continue;
+            }
+            let all_exceed = pairs.iter().all(|pair| {
+                pair.iter().enumerate().any(|(pr, &pt)| {
+                    let mult = 1 + usize::from(pr == 0 && pair[0] == pair[1]);
+                    degrees[face].get(&pt).copied().unwrap_or(0) + mult > 2
+                })
+            });
+            if all_exceed {
+                pinch[face] = true;
+            }
+        }
+    }
+    Ok(pinch)
+}
+
+fn all_face_vertex_degrees_even(
+    edge_faces: &[[usize; 2]],
+    points: &[[usize; 2]],
+    face_count: usize,
+) -> bool {
+    let mut degrees = HashMap::<(usize, usize), usize>::new();
+    for (edge, &pair) in points.iter().enumerate() {
+        let Some(&faces) = edge_faces.get(edge) else {
+            return false;
+        };
+        for (rank, face) in faces.into_iter().enumerate() {
+            if rank > 0 && face == faces[0] {
+                continue;
+            }
+            if face >= face_count {
+                return false;
+            }
+            for point in pair {
+                *degrees.entry((face, point)).or_default() += 1;
+            }
+        }
+    }
+    degrees.values().all(|&d| d % 2 == 0)
 }
 
 /// Prune endpoint pairs by face valency while retaining degree-one endpoints.
@@ -73,6 +160,7 @@ fn prune_incidence_choices_with_deferred_support(
     edge_faces: &[[usize; 2]],
     face_count: usize,
     point_count: usize,
+    pinch_faces: &[bool],
 ) -> Result<Option<()>, CodecError> {
     prune_incidence_choices_with_explicit_support(
         ctx,
@@ -81,6 +169,7 @@ fn prune_incidence_choices_with_deferred_support(
         face_count,
         point_count,
         false,
+        Some(pinch_faces),
     )
 }
 
@@ -91,6 +180,7 @@ fn prune_incidence_choices_with_explicit_support(
     face_count: usize,
     point_count: usize,
     explicit_support_complete: bool,
+    pinch_faces: Option<&[bool]>,
 ) -> Result<Option<()>, CodecError> {
     fn unique_faces(faces: [usize; 2]) -> impl Iterator<Item = usize> {
         faces
@@ -104,11 +194,21 @@ fn prune_incidence_choices_with_explicit_support(
         edge_faces: &[[usize; 2]],
         edge: usize,
         pair: [usize; 2],
+        pinch_faces: Option<&[bool]>,
     ) -> bool {
         unique_faces(edge_faces[edge]).all(|face| {
+            let allow_pinch = pinch_faces
+                .and_then(|pf| pf.get(face).copied())
+                .unwrap_or(false);
             pair.iter().enumerate().all(|(rank, &point)| {
                 let multiplicity = 1 + usize::from(rank == 0 && pair[0] == pair[1]);
-                usize::from(degrees[face].get(&point).copied().unwrap_or(0)) + multiplicity <= 2
+                let next =
+                    usize::from(degrees[face].get(&point).copied().unwrap_or(0)) + multiplicity;
+                if allow_pinch {
+                    next <= usize::from(u8::MAX)
+                } else {
+                    next <= 2
+                }
             })
         })
     }
@@ -240,7 +340,7 @@ fn prune_incidence_choices_with_explicit_support(
             let before = choices[edge].len();
             let mut retained = Vec::new();
             for pair in choices[edge].iter().copied() {
-                if fits(&degrees, edge_faces, edge, pair)
+                if fits(&degrees, edge_faces, edge, pair, pinch_faces)
                     && (!explicit_support_complete
                         || preserves_new_degree_support(
                             &supports,
@@ -749,6 +849,7 @@ struct IncidenceComponentSearch<'a, 'v> {
     pub(crate) constraints: Vec<(usize, usize)>,
     pub(crate) assignment: Vec<Option<[usize; 2]>>,
     pub(crate) degrees: Vec<BTreeMap<usize, u8>>,
+    pub(crate) pinch_faces: Vec<bool>,
     pub(crate) solutions: Vec<Vec<(usize, [usize; 2])>>,
     pub(crate) solution_filter: Option<MeshEndpointSolutionFilter<'a>>,
     pub(crate) solution_visitor: Option<MeshEndpointSolutionVisitor<'v>>,
@@ -2135,10 +2236,16 @@ impl IncidenceComponentSearch<'_, '_> {
     fn degree_candidate_fits(&self, edge: usize, pair: [usize; 2]) -> bool {
         let faces = self.edge_faces[edge];
         faces.into_iter().enumerate().all(|(rank, face)| {
+            let allow_pinch = self.pinch_faces.get(face).copied().unwrap_or(false);
             (rank > 0 && face == faces[0])
                 || pair.iter().enumerate().all(|(point_rank, &point)| {
                     let multiplicity = 1 + usize::from(point_rank == 0 && pair[0] == pair[1]);
-                    usize::from(self.degree(face, point)) + multiplicity <= 2
+                    let next = usize::from(self.degree(face, point)) + multiplicity;
+                    if allow_pinch {
+                        next <= usize::from(u8::MAX)
+                    } else {
+                        next <= 2
+                    }
                 })
         })
     }
@@ -2188,6 +2295,7 @@ impl IncidenceComponentSearch<'_, '_> {
         let supporting_pair_fits = |supporting_edge: usize, supporting_pair: [usize; 2]| {
             let faces = self.edge_faces[supporting_edge];
             faces.into_iter().enumerate().all(|(rank, face)| {
+                let allow_pinch = self.pinch_faces.get(face).copied().unwrap_or(false);
                 (rank > 0 && face == faces[0])
                     || supporting_pair
                         .iter()
@@ -2196,14 +2304,25 @@ impl IncidenceComponentSearch<'_, '_> {
                             let multiplicity = 1 + usize::from(
                                 point_rank == 0 && supporting_pair[0] == supporting_pair[1],
                             );
-                            degree_after_selection(face, point) + multiplicity <= 2
+                            let next = degree_after_selection(face, point) + multiplicity;
+                            if allow_pinch {
+                                next <= usize::from(u8::MAX)
+                            } else {
+                                next <= 2
+                            }
                         })
             })
         };
         let supporting_point_fits = |supporting_edge: usize, point: usize| {
             let faces = self.edge_faces[supporting_edge];
             faces.into_iter().enumerate().all(|(rank, face)| {
-                (rank > 0 && face == faces[0]) || degree_after_selection(face, point) < 2
+                let allow_pinch = self.pinch_faces.get(face).copied().unwrap_or(false);
+                (rank > 0 && face == faces[0])
+                    || if allow_pinch {
+                        degree_after_selection(face, point) < usize::from(u8::MAX)
+                    } else {
+                        degree_after_selection(face, point) < 2
+                    }
             })
         };
 
@@ -2300,7 +2419,7 @@ impl IncidenceComponentSearch<'_, '_> {
                 Ok(false)
             };
             for &(_, point) in constrained_points {
-                if degree_after_selection(face, point) == 1 && !support_exists(point)? {
+                if degree_after_selection(face, point) % 2 == 1 && !support_exists(point)? {
                     return Ok(false);
                 }
             }
@@ -2350,6 +2469,7 @@ impl IncidenceComponentSearch<'_, '_> {
         let supporting_pair_fits = |supporting_edge: usize, supporting_pair: [usize; 2]| {
             let faces = self.edge_faces[supporting_edge];
             faces.into_iter().enumerate().all(|(rank, face)| {
+                let allow_pinch = self.pinch_faces.get(face).copied().unwrap_or(false);
                 (rank > 0 && face == faces[0])
                     || supporting_pair
                         .iter()
@@ -2358,7 +2478,12 @@ impl IncidenceComponentSearch<'_, '_> {
                             let multiplicity = 1 + usize::from(
                                 point_rank == 0 && supporting_pair[0] == supporting_pair[1],
                             );
-                            degree_after_selection(face, point) + multiplicity <= 2
+                            let next = degree_after_selection(face, point) + multiplicity;
+                            if allow_pinch {
+                                next <= usize::from(u8::MAX)
+                            } else {
+                                next <= 2
+                            }
                         })
             })
         };
@@ -2374,7 +2499,7 @@ impl IncidenceComponentSearch<'_, '_> {
                 .partition_point(|&(constraint_face, _)| constraint_face == face)
                 + start;
             self.constraints[start..end].iter().all(|&(_, point)| {
-                degree_after_selection(face, point) != 1
+                degree_after_selection(face, point) % 2 == 0
                     || self.face_edges[face]
                         .iter()
                         .copied()
@@ -2620,7 +2745,7 @@ impl IncidenceComponentSearch<'_, '_> {
         let mut constrained = None::<Vec<(usize, [usize; 2])>>;
         let mut viability = HashMap::new();
         for &(face, point) in &self.constraints {
-            if self.degree(face, point) != 1 {
+            if self.degree(face, point) % 2 == 0 {
                 continue;
             }
             let limit = constrained.as_ref().map(Vec::len);
@@ -2660,7 +2785,7 @@ impl IncidenceComponentSearch<'_, '_> {
         if !self
             .constraints
             .iter()
-            .any(|&(face, point)| self.degree(face, point) == 1)
+            .any(|&(face, point)| self.degree(face, point) % 2 == 1)
             && self
                 .edges
                 .iter()
@@ -4129,6 +4254,14 @@ where
             outcome
         };
         let degree_support_budget = budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let pinch_faces: Vec<bool> = if mesh_assignments.is_some() {
+            degrees
+                .iter()
+                .map(|face_deg| face_deg.values().any(|&d| d > 2))
+                .collect()
+        } else {
+            vec![false; degrees.len()]
+        };
         let mut search = IncidenceComponentSearch {
             ctx,
             choices,
@@ -4145,6 +4278,7 @@ where
             constraints,
             assignment: assignment.to_vec(),
             degrees: degrees.to_vec(),
+            pinch_faces,
             solutions: Vec::new(),
             solution_filter: Some(&filter),
             solution_visitor,
@@ -5094,6 +5228,12 @@ where
         candidates.sort_unstable_by(Ord::cmp);
         candidates.dedup();
     }
+    let pinch_faces = if mesh_assignments.is_some() {
+        singleton_pinch_faces(ctx, &choices, edge_faces, face_count)?
+    } else {
+        Vec::new()
+    };
+    let has_pinch_face = pinch_faces.iter().any(|&is_pinch| is_pinch);
     let valid = if choices.iter().any(Vec::is_empty) {
         mesh_quotient.is_some()
             && choices.len() == edge_faces.len()
@@ -5110,6 +5250,7 @@ where
             edge_faces,
             face_count,
             vertex_points.len(),
+            &pinch_faces,
         )?
         .is_some()
     } else {
@@ -5134,6 +5275,9 @@ where
         let preferred = solution_valid(points)?;
         if !preferred {
             return Ok(false);
+        }
+        if mesh_assignments.is_some() && has_pinch_face {
+            return Ok(all_face_vertex_degrees_even(edge_faces, points, face_count));
         }
         Ok(reconstruct_incidence(
             ctx,

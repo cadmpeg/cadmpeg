@@ -250,7 +250,7 @@ fn incidence_deferred_support_retains_an_explicit_boundary_gap() {
     let mut choices = vec![vec![[0, 1]]];
     let edge_faces = [[0, 0]];
 
-    prune_incidence_choices_with_deferred_support(&ctx, &mut choices, &edge_faces, 1, 2)
+    prune_incidence_choices_with_deferred_support(&ctx, &mut choices, &edge_faces, 1, 2, &[])
         .expect("prune incidence choices with deferred support")
         .expect("deferred boundary support is not an explicit contradiction");
     assert_eq!(choices, vec![vec![[0, 1]]]);
@@ -326,6 +326,7 @@ fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -378,6 +379,7 @@ fn incidence_component_indexes_and_revalidates_frontier_support() {
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -435,6 +437,7 @@ fn incidence_component_caches_implicit_frontier_support() {
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -481,6 +484,7 @@ fn incidence_degree_support_budget_exhaustion_keeps_candidate_unknown() {
         degree_support_budget: &degree_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -526,6 +530,7 @@ fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -589,6 +594,7 @@ fn incidence_candidate_checks_ordered_faces_with_implicit_edge_domains() {
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -631,6 +637,7 @@ fn incidence_branch_reuses_candidate_viability_across_incident_face_frontiers() 
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -677,6 +684,7 @@ fn incidence_branch_stops_ranking_at_a_singleton_domain() {
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -732,6 +740,7 @@ fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -783,6 +792,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -840,6 +850,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -900,6 +911,7 @@ fn incidence_component_declines_when_its_work_budget_is_exhausted() {
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -952,6 +964,7 @@ fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -1007,6 +1020,7 @@ fn exhausted_boundary_lookahead_does_not_exhaust_exact_incidence_search() {
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -1067,6 +1081,7 @@ fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -1130,6 +1145,7 @@ fn incidence_face_configuration_branches_on_the_narrowest_projected_face() {
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -1195,6 +1211,7 @@ fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -1272,6 +1289,7 @@ fn incidence_face_factor_masks_roll_back_between_configuration_branches() {
         degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
+        pinch_faces: Vec::new(),
         state: IncidenceSearchState::Open,
     };
 
@@ -1373,4 +1391,39 @@ fn incidence_pruning_keeps_two_edges_closing_one_face() {
     )
     .expect("prune incidence choices")
     .is_some());
+}
+
+#[test]
+fn pinch_face_detection_admits_even_degree_four_vertex_with_mesh_domains() {
+    catia_test_context!(ctx);
+    // Two triangular loops sharing pinch vertex 0 on face 0.
+    let mut choices = vec![
+        vec![[0, 1]],
+        vec![[1, 2]],
+        vec![[0, 2]],
+        vec![[0, 3]],
+        vec![[3, 4]],
+        vec![[0, 4]],
+    ];
+    let edge_faces = [[0, 0]; 6];
+    let pinch_faces =
+        crate::solve::incidence::singleton_pinch_faces(&ctx, &choices, &edge_faces, 1)
+            .expect("detect pinch faces");
+    assert_eq!(pinch_faces, vec![true]);
+    assert!(prune_incidence_choices_with_deferred_support(
+        &ctx,
+        &mut choices,
+        &edge_faces,
+        1,
+        5,
+        &pinch_faces,
+    )
+    .expect("prune pinch face choices")
+    .is_some());
+    let points: Vec<[usize; 2]> = choices.iter().map(|c| c[0]).collect();
+    assert!(crate::solve::incidence::all_face_vertex_degrees_even(
+        &edge_faces,
+        &points,
+        1
+    ));
 }
