@@ -1,20 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The fields a design sketch or sketch entity leaves out of the model
-//! record of its identity, found by comparing the two records.
+//! The fields a design sketch, sketch entity or sketch constraint leaves out
+//! of the model record of its identity, found by comparing the two records.
 
-use std::collections::{BTreeSet, HashMap};
+use std::borrow::Cow;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
+use crate::design::dimension::Dimension;
 use crate::design::ops::sketch::{
-    DefiningRole, EntityDefinition, EntityForm, Planar, Sketch, SketchEntity, SketchPlane,
+    DefiningRole, EntityDefinition, EntityForm, Planar, Sketch, SketchConstraint, SketchEntity,
+    SketchPlane,
 };
+use crate::design::options::NativeOption;
+use crate::design::parameter::ParameterDefinition;
 use crate::document::CadIr;
 use crate::sketches::{
-    Sketch as ModelSketch, SketchEntity as ModelEntity, SketchGeometryDefinition,
+    Sketch as ModelSketch, SketchConstraint as ModelConstraint, SketchEntity as ModelEntity,
+    SketchGeometryDefinition,
 };
 use crate::units::UnitVector3;
 
-use super::super::fields::{Field, ModelSketchEntityField, ModelSketchField};
+use super::super::fields::{
+    Field, ModelSketchConstraintField, ModelSketchEntityField, ModelSketchField,
+};
 use super::super::sketch::planar_curve;
+use super::{json_strings, record_cut};
 
 /// The fields each model sketch and sketch entity of `ir` that `compared`
 /// accepts leaves out of the design record of its identity.
@@ -120,7 +129,7 @@ fn entity_cut(
     );
     leave(
         ModelSketchEntityField::Construction,
-        design.construction == Some(model.construction),
+        design.construction.unwrap_or(false) == model.construction,
     );
     leave(
         ModelSketchEntityField::NativeRef,
@@ -171,7 +180,7 @@ fn endpoints_carried(
 
 /// Whether the design states the solved geometry of `model`: its planar
 /// curve as the free curve or the solved curve, or its native kind as the
-/// native form.
+/// native form, alone or in the namespace of a codec.
 fn geometry_carried(model: &ModelEntity, design: &SketchEntity<Planar>) -> bool {
     match (planar_curve(&model.geometry), &design.definition) {
         (Some(curve), EntityDefinition::Free(stated)) => *stated == curve,
@@ -185,9 +194,118 @@ fn geometry_carried(model: &ModelEntity, design: &SketchEntity<Planar>) -> bool 
         (None, EntityDefinition::Defined { form, .. }) => matches!(
             (model.geometry.definition(), form.as_ref()),
             (SketchGeometryDefinition::Native { native_kind }, EntityForm::Native(stated))
-                if stated == native_kind
+                if names_kind(stated.as_str(), native_kind.as_str())
         ),
         (Some(_), EntityDefinition::Defined { solved: None, .. })
         | (None, EntityDefinition::Free(_)) => false,
     }
+}
+
+/// Whether the native kind `stated` is `kind`, or `kind` in the namespace of
+/// a codec (`<codec>:<kind>`).
+fn names_kind(stated: &str, kind: &str) -> bool {
+    stated == kind || stated.split_once(':').is_some_and(|(_, bare)| bare == kind)
+}
+
+/// The fields each model sketch constraint of `ir` that `compared` accepts
+/// leaves out of the design constraint of its identity: `driving`, `active`
+/// and `orientation` by what the design states of each, and every other
+/// field where the design constraint does not hold its value under its name.
+/// A constraint whose records do not serialize is left out, so the write
+/// charges it whole.
+pub(super) fn constraint_cuts<'ir>(
+    ir: &'ir CadIr,
+    compared: &dyn Fn(&str) -> bool,
+) -> Vec<(&'ir str, BTreeSet<Cow<'static, str>>)> {
+    let constraints = ir
+        .design
+        .sketch_constraints
+        .iter()
+        .map(|constraint| (constraint.id.as_str(), constraint))
+        .collect::<HashMap<_, _>>();
+    let driven = ir
+        .design
+        .parameters
+        .iter()
+        .filter(|parameter| matches!(parameter.definition, ParameterDefinition::Driven))
+        .map(|parameter| parameter.id.as_str())
+        .collect::<HashSet<_>>();
+    ir.model
+        .sketch_constraints
+        .iter()
+        .filter_map(|model| {
+            let id = model.id.as_str();
+            let design = constraints.get(id).filter(|_| compared(id))?;
+            Some((id, constraint_cut(model, design, &driven)?))
+        })
+        .collect()
+}
+
+/// The fields `design` leaves out of `model`. `driven` holds the identities
+/// of the `Driven` design parameters.
+fn constraint_cut(
+    model: &ModelConstraint,
+    design: &SketchConstraint<Planar>,
+    driven: &HashSet<&str>,
+) -> Option<BTreeSet<Cow<'static, str>>> {
+    let typed = [
+        (
+            ModelSketchConstraintField::Driving,
+            driving_carried(model, design, driven),
+        ),
+        (
+            ModelSketchConstraintField::Active,
+            model
+                .active
+                .is_none_or(|flag| design.active == Some(Dimension::Literal(flag))),
+        ),
+        (
+            ModelSketchConstraintField::Orientation,
+            orientation_carried(model, design),
+        ),
+    ];
+    let mut cut = record_cut(
+        &cadmpeg_core::serde_erase::json::to_value(model).ok()?,
+        &cadmpeg_core::serde_erase::json::to_value(design).ok()?,
+    );
+    for (field, carried) in typed {
+        cut.remove(field.key());
+        if !carried {
+            cut.insert(Cow::Borrowed(field.key()));
+        }
+    }
+    Some(cut)
+}
+
+/// Whether `design` states the driving flag of `model`: a relation is a
+/// reference where it binds a `Driven` parameter, and drives otherwise.
+fn driving_carried(
+    model: &ModelConstraint,
+    design: &SketchConstraint<Planar>,
+    driven: &HashSet<&str>,
+) -> bool {
+    model.driving.is_none_or(|driving| {
+        let reference = json_strings(&design.relation)
+            .iter()
+            .any(|id| driven.contains(id.as_str()));
+        driving != reference
+    })
+}
+
+/// Whether a native option `<codec>:orientation` of `design` holds the
+/// orientation of `model`.
+fn orientation_carried(model: &ModelConstraint, design: &SketchConstraint<Planar>) -> bool {
+    let key = ModelSketchConstraintField::Orientation.key();
+    model.orientation.is_none_or(|value| {
+        design.native_options.iter().any(|(name, option)| {
+            name.as_str()
+                .split_once(':')
+                .is_some_and(|(_, name)| name == key)
+                && matches!(
+                    option,
+                    NativeOption::Integer(Dimension::Literal(stated))
+                        if *stated == i64::from(value)
+                )
+        })
+    })
 }
