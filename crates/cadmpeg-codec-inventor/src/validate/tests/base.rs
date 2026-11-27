@@ -114,9 +114,12 @@ fn validation_trusts_bound_only_for_a_base_state() {
 }
 
 #[test]
-fn validation_refuses_a_derived_result_without_a_final_body() {
+fn validation_accepts_a_derived_result_only_on_a_body_creating_state() {
+    // A derived result with no final body needs a bound state of a
+    // body-creating kind; a Split state means consumed.
     let (design, base) = derived_at_version(false, 19);
     let ir = decoded(&design, &base).into_parts().0;
     assert!(!ir.geometry.bodies.is_empty());
-    assert!(!base_findings_of(ir, |_| {}).is_empty());
+    assert!(base_findings_of(ir.clone(), |_| {}).is_empty());
+    assert!(!base_findings_of(ir, |states| states[0].kind = SPLIT_TAG.into()).is_empty());
 }
