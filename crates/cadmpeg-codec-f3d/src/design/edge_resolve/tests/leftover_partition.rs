@@ -3,7 +3,8 @@
 
 use super::{group, identity, recipe_edge_operand};
 use crate::design::edge_resolve::{
-    partition_leftover_treatment_groups, EdgeTreatmentInputs, ScopeTreatmentGroup,
+    partition_leftover_treatment_groups, project_fixed_fillet_with_corners,
+    resolved_fillet_scope_groups, ScopeGroupSelection, ScopeTreatmentGroup, ScopeTreatmentInputs,
 };
 use crate::records::identity::Located;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
@@ -55,7 +56,15 @@ fn group_with_members(record_index: u32, members: &[u32]) -> DesignConstructionO
 }
 
 fn transition_identity(record_index: u32, group_record_index: u32) -> DesignEdgeIdentityOperand {
-    let candidates = TRANSITION.map(|edge| (edge, RADIUS));
+    transition_identity_at(record_index, group_record_index, RADIUS)
+}
+
+fn transition_identity_at(
+    record_index: u32,
+    group_record_index: u32,
+    radius: f64,
+) -> DesignEdgeIdentityOperand {
+    let candidates = TRANSITION.map(|edge| (edge, radius));
     let mut draft = identity(record_index, &candidates).into_draft();
     draft.group_record_index = group_record_index;
     draft.layout = DesignEdgeIdentityLayout::Full;
@@ -84,13 +93,20 @@ fn scope() -> Scope {
     }
 }
 
-fn partition(
-    scope: &Scope,
-    radii: [Option<f64>; 2],
-    selections: &mut [EdgeSelection; 2],
-) -> Vec<cadmpeg_ir::report::loss::LossNote> {
-    let feature = feature();
-    let groups = [
+fn inputs<'a>(scope: &'a Scope, feature: &'a FeatureId) -> ScopeTreatmentInputs<'a> {
+    ScopeTreatmentInputs {
+        groups: &scope.groups,
+        operands: &scope.operands,
+        identity_operands: &scope.identities,
+        vertex_operands: &[],
+        histories: &[],
+        previous_state_id: Some(7),
+        feature_id: feature,
+    }
+}
+
+fn scope_groups(scope: &Scope, radii: [Option<f64>; 2]) -> [ScopeTreatmentGroup<'_>; 2] {
+    [
         ScopeTreatmentGroup {
             group: Some(&scope.groups[0]),
             radius: radii[0],
@@ -99,24 +115,58 @@ fn partition(
             group: Some(&scope.groups[1]),
             radius: radii[1],
         },
-    ];
-    let mut losses = Vec::new();
+    ]
+}
+
+fn partition(
+    scope: &Scope,
+    radii: [Option<f64>; 2],
+    selections: &mut [EdgeSelection; 2],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let feature = feature();
+    let mut resolved = selections.each_mut().map(|edges| ScopeGroupSelection {
+        edges: std::mem::replace(edges, EdgeSelection::Unresolved),
+        losses: Vec::new(),
+    });
     partition_leftover_treatment_groups(
-        &groups,
-        selections,
-        EdgeTreatmentInputs {
-            groups: &scope.groups,
-            operands: &scope.operands,
-            identity_operands: &scope.identities,
-            vertex_operands: &[],
-            histories: &[],
-            previous_state_id: Some(7),
-            feature_id: &feature,
-            treatment_radius: None,
-        },
-        &mut losses,
+        &scope_groups(scope, radii),
+        &mut resolved,
+        inputs(scope, &feature),
     );
+    let mut losses = Vec::new();
+    for (selection, resolved) in selections.iter_mut().zip(resolved) {
+        *selection = resolved.edges;
+        losses.extend(resolved.losses);
+    }
     losses
+}
+
+/// The selections and losses of a scope read through the Fillet scope
+/// resolution.
+fn resolve_scope(scope: &Scope) -> ([EdgeSelection; 2], Vec<cadmpeg_ir::report::loss::LossNote>) {
+    let feature = feature();
+    let resolved = crate::test_support::with_decode_context(|ctx| {
+        resolved_fillet_scope_groups(
+            &scope_groups(scope, [Some(RADIUS), Some(RADIUS)]),
+            inputs(scope, &feature),
+            ctx,
+        )
+    })
+    .unwrap();
+    let mut losses = Vec::new();
+    let mut selections = Vec::new();
+    for selection in resolved {
+        let selection = selection.expect("every group is present");
+        losses.extend(selection.losses);
+        selections.push(selection.edges);
+    }
+    (selections.try_into().unwrap(), losses)
+}
+
+fn leftover_loss(native: &str) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::F3dLossCode::HistoricalEdgeSelectionLeftoverAssumed.note(format!(
+        "Group {native} is read with the assumption that it takes the transition edges that the other groups of its scope do not take."
+    ))
 }
 
 fn native(scope: &Scope) -> EdgeSelection {
@@ -247,31 +297,6 @@ fn leftover_partition_refuses_resolved_or_recipe_backed_target_members() {
 }
 
 #[test]
-fn shared_transition_does_not_prove_a_single_member_group_alone() {
-    let scope = scope();
-    let resolve = |identities: &[DesignEdgeIdentityOperand]| {
-        super::resolved_edge_treatment_group(
-            &scope.groups[0],
-            &scope.groups,
-            &scope.operands,
-            identities,
-            Some(7),
-            &feature(),
-            Some(RADIUS),
-        )
-        .unwrap()
-    };
-    assert_eq!(
-        resolve(&scope.identities[..1]),
-        historical(&scope.groups[0].id, &TRANSITION)
-    );
-    assert_ne!(
-        resolve(&scope.identities),
-        historical(&scope.groups[0].id, &TRANSITION)
-    );
-}
-
-#[test]
 fn bounded_face_group_keeps_the_edge_that_an_edge_group_selects() {
     let mut scope = scope();
     scope.identities[1].resolved_edge_slots = vec![101, 102, 103];
@@ -292,4 +317,150 @@ fn bounded_face_group_keeps_the_edge_that_an_edge_group_selects() {
     let losses = partition(&scope, [Some(RADIUS), Some(RADIUS)], &mut selections);
     assert_eq!(selections[1], face_selection);
     assert!(losses.is_empty());
+}
+
+#[test]
+fn leftover_partition_requires_a_constant_target_radius() {
+    let scope = scope();
+    let mut selections = [historical(&scope.groups[0].id, &[101]), native(&scope)];
+    let losses = partition(&scope, [Some(RADIUS), None], &mut selections);
+    assert_eq!(selections[1], native(&scope));
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn leftover_partition_requires_distinct_target_members() {
+    let mut scope = scope();
+    scope.groups[1]
+        .try_set_members([0, 11].map(|offset| Located { value: 20, offset }).to_vec())
+        .unwrap();
+    scope.identities.pop();
+    let mut selections = [historical(&scope.groups[0].id, &[101]), native(&scope)];
+    let losses = partition(&scope, [Some(RADIUS), Some(RADIUS)], &mut selections);
+    assert_eq!(selections[1], native(&scope));
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn lost_sibling_group_contributes_its_partial_selection() {
+    let mut scope = scope();
+    scope.groups[0].lost_edge_references = vec!["f3d:test:lost-edge-reference#1".to_owned()];
+    let partial = EdgeSelection::historical_partial(
+        crate::ids::feature_input_topology_id(&feature(), 7),
+        vec![crate::ids::history_input_edge_id(
+            &crate::ids::feature_input_prefix(&feature(), 7),
+            101,
+        )],
+        vec!["f3d:test:lost-edge-reference#1".to_owned()],
+        scope.groups[0].id.clone(),
+    )
+    .unwrap();
+    let mut selections = [partial, native(&scope)];
+    let losses = partition(&scope, [Some(RADIUS), Some(RADIUS)], &mut selections);
+    assert_eq!(
+        selections[1],
+        historical(&scope.groups[1].id, &[102, 103, 104, 105])
+    );
+    assert_eq!(losses, vec![leftover_loss(&scope.groups[1].id)]);
+}
+
+/// Two one-member groups whose identities carry the five-edge transition
+/// set; the first identity names edge 101 exactly when `exact` holds.
+fn one_member_scope(exact: bool) -> Scope {
+    let mut first = transition_identity(10, 2);
+    first.resolved_edge_slot = exact.then_some(101);
+    Scope {
+        groups: [group(2, 10), group(3, 20)],
+        operands: Vec::new(),
+        identities: vec![first, transition_identity(20, 3)],
+    }
+}
+
+#[test]
+fn fillet_scope_gives_the_native_group_the_leftover_of_a_shared_transition() {
+    let scope = one_member_scope(true);
+    let (selections, losses) = resolve_scope(&scope);
+    assert_eq!(
+        selections,
+        [
+            historical(&scope.groups[0].id, &[101]),
+            historical(&scope.groups[1].id, &[102, 103, 104, 105]),
+        ]
+    );
+    assert_eq!(losses, vec![leftover_loss(&scope.groups[1].id)]);
+}
+
+#[test]
+fn fillet_scope_without_a_leftover_partition_keeps_radius_candidate_proofs() {
+    let scope = one_member_scope(false);
+    let (selections, losses) = resolve_scope(&scope);
+    assert_eq!(
+        selections,
+        [
+            historical(&scope.groups[0].id, &TRANSITION),
+            historical(&scope.groups[1].id, &TRANSITION),
+        ]
+    );
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn fixed_fillet_pair_gives_the_face_group_the_leftover_of_a_shared_transition() {
+    let fixed = super::fixed_scope();
+    let feature = crate::ids::neutral_feature_id(&fixed);
+    let radius = 3.0;
+    let mut edge_group = group(2, 10);
+    edge_group.operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            crate::records::topology::extrude_selection::DesignOperandRole::BODIES_B,
+        );
+    let face_group = group(3, 20);
+    let mut edge_identity = transition_identity_at(10, 2, radius);
+    edge_identity.resolved_edge_slot = Some(101);
+    let groups = [edge_group, face_group];
+    let identities = [edge_identity, transition_identity_at(20, 3, radius)];
+    let mut losses = Vec::new();
+    let definition = crate::test_support::with_decode_context(|ctx| {
+        project_fixed_fillet_with_corners(
+            &fixed,
+            &groups,
+            &[],
+            &identities,
+            &[],
+            &[],
+            (ctx, &mut losses),
+        )
+    })
+    .unwrap()
+    .expect("fixed Fillet pair");
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Fillet { groups: fillet },
+    ) = definition
+    else {
+        panic!("expected Fillet");
+    };
+    let expected = |native: &str, slots: &[i64]| {
+        EdgeSelection::historical(
+            crate::ids::feature_input_topology_id(&feature, 7),
+            slots
+                .iter()
+                .map(|slot| {
+                    crate::ids::history_input_edge_id(
+                        &crate::ids::feature_input_prefix(&feature, 7),
+                        *slot,
+                    )
+                })
+                .collect(),
+            native.to_owned(),
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        fillet.iter().map(|group| &group.edges).collect::<Vec<_>>(),
+        [
+            &expected(&groups[0].id, &[101]),
+            &expected(&groups[1].id, &[102, 103, 104, 105]),
+        ]
+    );
+    assert_eq!(losses, vec![leftover_loss(&groups[1].id)]);
 }
