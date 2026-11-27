@@ -376,6 +376,10 @@ pub struct WireShellTopology {
 pub enum DecodePurpose {
     /// Transfer complete neutral geometry and retained native records.
     Model,
+    /// Transfer the graph [`DecodePurpose::Model`] transfers, for a caller
+    /// that reads one history state and gives up no record: withheld records
+    /// mark their shells, and `withheld` stays empty.
+    State,
     /// Transfer stable topology plus measurements used by history binding.
     History,
 }
@@ -600,9 +604,17 @@ pub fn decode_with_table(
         },
     )?;
     let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach, format)?;
-    if purpose == DecodePurpose::Model {
+    if matches!(purpose, DecodePurpose::Model | DecodePurpose::State) {
         emit_passthrough_unknowns(ctx, &mut out, records, bytes, &reach, format)?;
-        given_up::list_withheld(ctx, &mut out, records, bytes, &by_index, &reach, format)?;
+        given_up::list_withheld(
+            ctx,
+            &mut out,
+            records,
+            (purpose == DecodePurpose::Model).then_some(bytes),
+            &by_index,
+            &reach,
+            format,
+        )?;
         count_other_records(&mut out, records, &reach, &emitted_attributes)?;
         emit_annotation_records(ctx, &mut out, records, &by_index, &carriers, stream, format)?;
 

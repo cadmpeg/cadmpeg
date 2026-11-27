@@ -57,6 +57,15 @@ pub(crate) struct ActiveCarrier<'a> {
     pub(crate) history_reference: u32,
 }
 
+impl ActiveCarrier<'_> {
+    /// The offset in the expanded bulk stream of the carrier byte at
+    /// `within`.
+    pub(crate) fn stream_offset(&self, within: usize) -> u64 {
+        self.carrier_offset
+            .saturating_add(cadmpeg_core::decode::u64_from_index(within))
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum ActiveCarrierState<'a> {
     NotApplicable,
@@ -66,7 +75,7 @@ pub(crate) enum ActiveCarrierState<'a> {
     /// the record `record_ordinal` of the segment `segment_token`, whose
     /// `payload` starts at `payload_offset` in the expanded bulk stream.
     Unreadable {
-        segment_token: String,
+        segment_token: cadmpeg_ir::ids::IdentityKey,
         record_ordinal: u32,
         payload_offset: u64,
         payload: View<'a>,
@@ -208,7 +217,7 @@ pub(crate) fn select_active_carrier<'a>(
     ) {
         Ok(carrier) => ActiveCarrierState::Selected(carrier),
         Err(error) => ActiveCarrierState::Unreadable {
-            segment_token: segment.pair.token.as_str().to_owned(),
+            segment_token: segment.pair.token.key().clone(),
             record_ordinal: record.ordinal,
             payload_offset: record.payload_offset,
             payload: record.payload,

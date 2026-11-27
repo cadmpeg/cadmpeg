@@ -137,9 +137,65 @@ fn a_withheld_record_keeps_the_bytes_of_its_record() {
     assert_eq!(brep.withheld.len(), 1);
     let record = &brep.withheld[0];
     assert_eq!(record.kind, "face");
-    assert_eq!(record.offset, source.find(&format!("{face}\n")).unwrap());
-    assert!(record.bytes.starts_with(face.as_bytes()));
-    assert!(source.as_bytes()[record.offset..].starts_with(&record.bytes));
+    let offset = source.find(&format!("{face}\n")).unwrap();
+    assert_eq!(record.offset, offset);
+    assert_eq!(record.bytes, face.as_bytes());
+}
+
+/// A record framed in other bytes than the ones the decode reads leaves
+/// those bytes, and the decode refuses it.
+#[test]
+fn a_withheld_record_whose_span_leaves_the_bytes_is_refused() {
+    let face = "face $-1 -1 $-1 $-1 $6 $2 $-1 $99 forward single #";
+    let source = edited("face $-1 -1 $-1 $-1 $6 $2 $-1 $8 forward single #", face);
+    let offset = source.find(&format!("{face}\n")).unwrap();
+    let framed = source.as_bytes();
+    let read = &framed[..offset + face.len() - 1];
+    let result = crate::test_support::with_service_context(framed, |ctx| {
+        let parsed = crate::sat::parse(ctx, framed).expect("synthetic SAT stream");
+        let header = parsed.header.as_kernel_header();
+        decode_with_header(
+            ctx,
+            &parsed.records,
+            read,
+            Some(&header),
+            "stream",
+            FORMAT,
+            DecodePurpose::Model,
+        )
+    })
+    .expect("service decode context");
+    let Err(error) = result else {
+        panic!("the face record leaves the bytes the decode reads");
+    };
+    assert_eq!(
+        error.to_string(),
+        cadmpeg_core::CodecError::malformed(format_args!(
+            "record 4 at byte {offset} declares {} bytes, beyond the {} the stream holds",
+            face.len(),
+            read.len()
+        ))
+        .to_string()
+    );
+}
+
+/// A history-state decode withholds the same face, marks its shell, and
+/// lists no record.
+#[test]
+fn a_state_decode_marks_the_shell_and_lists_no_record() {
+    let source = edited(
+        "face $-1 -1 $-1 $-1 $6 $2 $-1 $8 forward single #",
+        "face $-1 -1 $-1 $-1 $6 $2 $-1 $99 forward single #",
+    );
+    let brep = decode(&source, DecodePurpose::State);
+    assert!(brep.withheld.is_empty());
+    assert_eq!(brep.shells.len(), 1);
+    assert_eq!(brep.shells[0].id.as_str(), "f3d:brep:entity#2");
+    assert_eq!(brep.shells[0].unstated, Some(Unstated::Members));
+    assert_eq!(
+        brep.faces.len(),
+        decode(&source, DecodePurpose::Model).faces.len()
+    );
 }
 
 /// The cone's face 3 stands on a surface reference that names no record.

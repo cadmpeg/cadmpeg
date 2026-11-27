@@ -74,11 +74,12 @@ impl WithheldRecord {
     }
 }
 
-/// Lists in `out.withheld` each record of `records` that the walk reached
-/// and no emit pass emitted, and each face that names a shell but no surface
-/// record. A record that one part names is named by no other part. The
-/// emitted shell of each listed face states unstated members. Each listed
-/// record keeps its bytes of `bytes`, the stream `records` were framed in.
+/// Withholds each record of `records` that the walk reached and no emit
+/// pass emitted, and each face that names a shell but no surface record. The
+/// emitted shell of each withheld face states unstated members. With
+/// `bytes`, the stream `records` were framed in, `out.withheld` lists each
+/// withheld record with its bytes, and a record that one listed record names
+/// is named by no other.
 ///
 /// # Errors
 ///
@@ -89,7 +90,7 @@ pub(super) fn list_withheld(
     ctx: &DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
-    bytes: &[u8],
+    bytes: Option<&[u8]>,
     by_index: &HashMap<i64, &Record>,
     reach: &Reachable,
     format: IdFormat,
@@ -159,19 +160,10 @@ pub(super) fn list_withheld(
                 }
             }
         }
-        let span = r
-            .offset
-            .checked_add(r.len)
-            .and_then(|end| bytes.get(r.offset..end))
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "{kind} record {} at byte {} declares {} bytes, beyond the {} the stream holds",
-                    r.index,
-                    r.offset,
-                    r.len,
-                    bytes.len()
-                ))
-            })?;
+        let Some(bytes) = bytes else {
+            continue;
+        };
+        let span = r.bytes_in(bytes)?;
         let mut record_bytes = ctx.alloc_filled(span.len(), 0_u8, "withheld ASM record bytes")?;
         record_bytes.copy_from_slice(span);
         out.withheld.push(WithheldRecord {
