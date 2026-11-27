@@ -89,7 +89,7 @@ fn reference(face: Option<i64>, edge: Option<i64>) -> DesignRecipeReference {
 /// A bounded-face operand with no parsed nodes that names `cap`, `edge` and
 /// `wall`, whose history fallback offers `fallback`.
 fn operand(cap: i64, edge: i64, wall: i64, fallback: i64) -> DesignFaceOperand {
-    let mut operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
+    let mut operand: DesignFaceOperand = cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
         "id": "f3d:test:face-operand#21", "scope_record_index": 10, "scope_reference_ordinal": 2,
         "group_record_index": 20, "group_member_ordinal": 0, "record_index": 21, "byte_offset": 0,
         "class_tag": "282", "paired_byte_offset": 12, "paired_class_tag": "259",
@@ -286,7 +286,7 @@ fn an_extrude_start_face_binds_the_edge_bounded_cap() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let group = serde_json::from_value(serde_json::json!({
+    let group = cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
         "id": "f3d:test:construction-group#20", "scope_record_index": 10,
         "scope_reference_ordinal": 2, "record_index": 20, "byte_offset": 0, "class_tag": "338",
         "members": [21], "member_offsets": [0],

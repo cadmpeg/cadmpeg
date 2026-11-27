@@ -6,7 +6,7 @@ use crate::records::topology::face::DesignFaceOperand;
 use cadmpeg_ir::features::selections::FaceSelection;
 
 fn group(face_role: &str) -> DesignConstructionOperandGroup {
-    serde_json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
         "id": "f3d:test:construction-group#20", "scope_record_index": 10,
         "scope_reference_ordinal": 2, "record_index": 20, "byte_offset": 0, "class_tag": "338",
         "members": [21], "member_offsets": [0],
@@ -26,7 +26,7 @@ fn group(face_role: &str) -> DesignConstructionOperandGroup {
 }
 
 fn operand() -> DesignFaceOperand {
-    serde_json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
         "id": "f3d:test:face-operand#21", "scope_record_index": 10, "scope_reference_ordinal": 2,
         "group_record_index": 20, "group_member_ordinal": 0, "record_index": 21, "byte_offset": 0,
         "class_tag": "282", "paired_byte_offset": 12, "paired_class_tag": "259",
