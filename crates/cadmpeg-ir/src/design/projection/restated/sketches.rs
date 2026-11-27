@@ -129,7 +129,7 @@ fn entity_cut(
     );
     leave(
         ModelSketchEntityField::Construction,
-        construction_carried(model, design.construction),
+        design.construction.unwrap_or(false) == model.construction,
     );
     leave(
         ModelSketchEntityField::NativeRef,
@@ -148,17 +148,6 @@ fn entity_cut(
         geometry_carried(model, design),
     );
     cut
-}
-
-/// Whether the design states the construction flag of `model`: the flag a
-/// stored record states as that flag, and an unread flag as `false` or
-/// unstated.
-fn construction_carried(model: &ModelEntity, stated: Option<bool>) -> bool {
-    if model.construction_read() {
-        stated == Some(model.construction)
-    } else {
-        stated.unwrap_or(false) == model.construction
-    }
 }
 
 /// Whether the design states the two endpoint records of `model`: each is

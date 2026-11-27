@@ -12,7 +12,7 @@ use super::state_zero::{entity, project};
 
 /// The fields a CADIR write of `ir` names for the record `id` of the model
 /// arena `arena`: none where it carries the record whole.
-fn charge(ir: &CadIr, arena: &str, id: &str) -> Vec<String> {
+pub(super) fn charge(ir: &CadIr, arena: &str, id: &str) -> Vec<String> {
     use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
 
     let plan = CadirEncoder

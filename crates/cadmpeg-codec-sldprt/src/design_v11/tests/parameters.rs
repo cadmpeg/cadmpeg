@@ -1772,3 +1772,60 @@ fn the_manager_length_decides_a_dimension_whose_classes_disagree() {
 }
 
 mod display_rounded;
+
+/// An angle dimension whose text is a literal in degrees and whose bound
+/// scalar stores the angle caches the stored value, which differs from the
+/// literal's exact conversion in its last digits, and a CADIR write carries
+/// the record's value.
+#[test]
+fn a_literal_dimension_caches_the_value_its_bound_scalar_stores() {
+    use crate::records::ArchiveParameterClass;
+    use cadmpeg_ir::design::parameter::ParameterValue;
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
+    use cadmpeg_ir::scalar::Angle;
+
+    let stored = 0.785_398_163_397_446_7;
+    assert_ne!(stored, 45f64.to_radians());
+    let (mut ir, parameters, _) = parameters_with_readings(
+        r#"<Keywords Name="Bracket">
+            <Feature Name="Chamfer" Type="Chamfer" id="7">
+                <Dimension Name="D1">45°</Dimension>
+            </Feature>
+        </Keywords>"#
+            .as_bytes(),
+        &[(
+            "Chamfer",
+            "D1",
+            V10::Angle(Angle::new(stored).unwrap()),
+            Some("scalar-angle"),
+        )],
+        &[("scalar-angle", ArchiveParameterClass::Angle)],
+        None,
+    );
+    let owner = feature_named(&ir, "Chamfer").id.clone();
+    let design = parameters
+        .iter()
+        .find(|parameter| {
+            parameter.owner
+                == Some(cadmpeg_ir::design::parameter::ParameterOwner::Feature(
+                    owner.clone(),
+                ))
+        })
+        .unwrap()
+        .clone();
+    assert!(
+        matches!(&design.value, Some(ParameterValue::Number(value)) if value.get() == stored),
+        "{design:#?}"
+    );
+    let model = ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.id == design.id)
+        .unwrap();
+    model.value = Some(V10::Angle(Angle::new(stored).unwrap()));
+    model.native_ref = Some("scalar-angle".to_owned());
+    ir.design.parameters = vec![design.clone()];
+    let fields = super::restated::charge(&ir, "parameters", design.id.as_str());
+    assert!(!fields.iter().any(|field| field == "value"), "{fields:?}");
+}
