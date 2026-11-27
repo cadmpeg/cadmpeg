@@ -108,7 +108,7 @@ impl B2ParameterPoint {
 }
 
 /// Layout-specific scalar lane of a class-`0x18` parameter-space record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum B2ParameterPointPayload {
     /// One retained scalar after two zero tuple fields are elided.
@@ -243,7 +243,7 @@ impl TryFrom<u8> for B2PlaneCarrierLayout {
 }
 
 /// Exact stored plane chart or an unclassified finite scalar lane.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum B2PlaneCarrierPayload {
     /// Point, unit U direction and increasing parameter bounds.
