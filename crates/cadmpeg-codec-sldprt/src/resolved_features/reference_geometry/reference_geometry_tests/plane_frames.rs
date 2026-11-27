@@ -350,7 +350,15 @@ fn a_tagged_plane_frame_read_in_two_forms_that_differ_is_unread() {
 
 #[test]
 fn a_tagged_plane_frame_is_read_within_its_object() {
-    let (payload, at) = tagged_plane_object(0x816d, &matrix_only(0.0125));
+    let (sine, cosine) = (0.5, 3.0_f64.sqrt() / 2.0);
+    let tilted = matrix_rows(
+        0.0125,
+        [0.0, -sine, cosine],
+        [[1.0, 0.0, 0.0], [0.0, cosine, -sine], [0.0, sine, cosine]],
+    );
+    let (payload, at) = tagged_plane_object(0x816d, &tilted);
+    let end = payload.len();
+    assert!(tagged_plane_data_frame(&plane_lane("lane", payload.clone()), 0, end).is_some());
     let lane = plane_lane("lane", payload);
     assert_eq!(
         tagged_plane_data_frame(&lane, 0, at + fixed_plane::LEN),
@@ -386,5 +394,62 @@ fn a_frame_another_lane_reads_without_a_token_precedes_a_tagged_frame() {
             Some("1,0,0".to_string()),
             Some("0,1,0".to_string()),
         ]
+    );
+}
+
+/// A 97-byte repeated-normal frame at origin `(0.0125, 0, 0)` m with normal
+/// `+z`, u-axis `+x` at `+49` and the normal repeated at `+73`.
+fn repeated_normal() -> [u8; fixed_plane::LEN] {
+    let mut frame = [0; fixed_plane::LEN];
+    for (offset, value) in [(0, 0.0125_f64), (40, 1.0), (49, 1.0), (89, 1.0)] {
+        frame[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    frame[48] = 1;
+    frame
+}
+
+/// A plane object whose tagged plane-data object stores `frame`, followed by
+/// a second, different frame in its interval.
+fn ambiguous_plane_with(frame: &[u8]) -> Vec<u8> {
+    let (mut payload, _) = tagged_plane_object(0x816d, frame);
+    payload.extend([0xaa; 40]);
+    payload.extend_from_slice(&matrix_only(0.5));
+    payload.extend([0xaa; 16]);
+    payload
+}
+
+#[test]
+fn a_tagged_plane_data_object_can_store_the_repeated_normal_frame() {
+    let up = Some((
+        Point3::new(12.5, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    ));
+    let (payload, _) = tagged_plane_object(0x816d, &repeated_normal());
+    let end = payload.len();
+    assert_eq!(
+        tagged_plane_data_frame(&plane_lane("lane", payload), 0, end),
+        up
+    );
+    assert_eq!(
+        enriched_plane(&[plane_lane("lane", ambiguous_plane_with(&repeated_normal()))]),
+        [
+            Some("12.5mm,0mm,0mm".to_string()),
+            Some("0,0,1".to_string()),
+            Some("1,0,0".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn a_plane_whose_tagged_forms_differ_in_an_ambiguous_interval_stays_unread() {
+    let frame = matrix_rows(
+        0.0125,
+        [0.0, 0.0, 1.0],
+        [[0.0, 1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
+    );
+    assert_eq!(
+        enriched_plane(&[plane_lane("lane", ambiguous_plane_with(&frame))]),
+        [None, None, None]
     );
 }

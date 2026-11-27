@@ -680,7 +680,7 @@ fn plane_data_head(lane: &FeatureInputLane, start: usize, end: usize) -> Option<
 /// whose object spans `start..end`, where that object follows a class token
 /// behind six zero bytes (`sldprt.md` §2): the one frame that the 121-byte
 /// matrix form, the 97-byte pairwise-orthogonal form and the 81-byte form
-/// read there within the object.
+/// read there within the object, else the 97-byte repeated-normal reading.
 fn tagged_plane_data_frame(
     lane: &FeatureInputLane,
     start: usize,
@@ -703,7 +703,9 @@ fn tagged_plane_data_frame(
     ]
     .into_iter()
     .flatten();
-    let frame = frames.next()?;
+    let Some(frame) = frames.next() else {
+        return bytes(fixed_plane::LEN).and_then(repeated_normal_reference_plane_frame);
+    };
     frames
         .all(|other| reference_plane_frame_key(&other) == reference_plane_frame_key(&frame))
         .then_some(frame)
