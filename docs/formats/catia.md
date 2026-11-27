@@ -1863,7 +1863,7 @@ The part root's other segments are its remaining fields:
 
 The root's other fields, such as `PartAlgoConfigs`, have the same segment form. The `_ReferencePlanes` list selects the same three `GSMPlane` records as the first three members of the root's `_FtrList`.
 
-A Boolean feature is a member of the body it combines into. Its `_FtrList` lists two members: the record of its result, then the body it combines into that body, its tool. No other `_FtrList` lists the tool. The Boolean's `ToolList` field lists the tool again.
+A Boolean feature's `_FtrList` starts with the result record. The list can end after the result or carry a second member. When that member is a body, it is the Boolean's tool. `ToolList` repeats this body, which stands outside the set member lists. A `Remove` can also store a record of class `Boolean` as the second member. A Boolean feature listed by a body targets that body.
 
 The compact class of a member names its feature kind. Each class below has the operation family of CADIR v11 §6:
 
