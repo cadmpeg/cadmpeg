@@ -588,13 +588,18 @@ pub(in crate::design::profile_select) fn removed_candidate(
     ) else {
         return Ok(None);
     };
-    let work = resolution.profile_work;
-    let Some(regions) =
-        atomic_sketch_regions(sketch, resolution.entities, tolerance, work, resolution.ctx)?
+    let work = ProfileGeometryWork::new();
+    let Some(regions) = atomic_sketch_regions(
+        sketch,
+        resolution.entities,
+        tolerance,
+        &work,
+        resolution.ctx,
+    )?
     else {
         return Ok(None);
     };
-    let Some(sampled) = sample_regions(&regions, tolerance, work) else {
+    let Some(sampled) = sample_regions(&regions, tolerance, resolution.profile_work) else {
         return Ok(None);
     };
     let selected: Vec<_> = sampled
@@ -1333,7 +1338,7 @@ pub(in crate::design::profile_select) fn intersect_candidate(
         .iter()
         .any(|index| sampled[*index].region.island_absence_assumed)
     {
-        work.note_island_absence_assumed();
+        resolution.profile_work.note_island_absence_assumed();
     }
     Ok(Some(candidate))
 }
