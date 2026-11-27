@@ -1030,36 +1030,36 @@ fn extent_interval(sweep: &Sweep<'_>) -> Option<(f64, f64)> {
     Some((first.min(second), first.max(second)))
 }
 
-/// Whether the changed planes show that `removed` are the regions an Intersect
-/// lost and nothing else: on each plane that held material before the
-/// transition, the regions whose material differs before and after are
-/// removed regions, and the outline between the differing and the unchanged
-/// material is the boundary of those regions. A plane that held no material
-/// before the transition is the end face of the tool.
+/// Whether the planes parallel to the sketch within the extent agree with the
+/// result of an Intersect: no plane holds material over a removed region after
+/// the transition, and no plane that held material before it gains material
+/// over a kept region. A plane that held no material before the transition is
+/// the end face of the tool. The body also extends beyond the regions of the
+/// sketch, so the outline of the changed material is not compared with the
+/// region boundaries.
 fn intersect_agrees(
     planes: &[PlaneSides],
     sampled: &[super::Sampled<'_>],
     removed: &[usize],
-    resolution: super::super::ScopedExtrudeProfileResolution<'_>,
-    tolerance: f64,
-) -> Result<bool, CodecError> {
-    for plane in planes.iter().filter(|plane| !plane.before.is_empty()) {
-        let covered: Vec<_> = sampled
+    kept: &[usize],
+) -> bool {
+    let removed_material = removed.iter().any(|index| {
+        planes
             .iter()
-            .enumerate()
-            .filter(|(_, region)| {
-                plane.before.iter().any(|cap| cap.contains(region.point))
-                    != plane.after.iter().any(|cap| cap.contains(region.point))
+            .flat_map(|plane| &plane.after)
+            .any(|cap| cap.contains(sampled[*index].point))
+    });
+    let kept_gain = kept.iter().any(|index| {
+        let point = sampled[*index].point;
+        planes
+            .iter()
+            .filter(|plane| !plane.before.is_empty())
+            .any(|plane| {
+                !plane.before.iter().any(|cap| cap.contains(point))
+                    && plane.after.iter().any(|cap| cap.contains(point))
             })
-            .map(|(index, _)| index)
-            .collect();
-        if covered.iter().any(|index| !removed.contains(index))
-            || changed_outline(plane, sampled, &covered, resolution, tolerance)?.is_none()
-        {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+    });
+    !removed_material && !kept_gain
 }
 
 /// Every cap that `topology` holds on the plane parallel to the sketch at
@@ -1182,7 +1182,7 @@ fn profile_faces(
 /// a plane within the extent has a changed face with no proven cap, when a
 /// region is both removed and held, when no removed region or no kept face
 /// remains, when a kept face encloses an island, or when the removed regions
-/// disagree with the changed planes.
+/// disagree with the planes.
 pub(in crate::design::profile_select) fn intersect_candidate(
     sketch: &cadmpeg_ir::sketches::Sketch,
     resolution: super::super::ScopedExtrudeProfileResolution<'_>,
@@ -1324,7 +1324,7 @@ pub(in crate::design::profile_select) fn intersect_candidate(
     let Ok(candidate) = PlanarProfileRef::sketch_regions(sketch.id.clone(), regions) else {
         return Ok(None);
     };
-    if !intersect_agrees(&planes, &sampled, &removed, resolution, tolerance)? {
+    if !intersect_agrees(&planes, &sampled, &removed, &kept) {
         return Ok(None);
     }
     let local = work.assumed_flags();
