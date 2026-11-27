@@ -4628,11 +4628,11 @@ fn native_revolution_carrier(
 /// construction of `surface` meets a knot of its NURBS directrix, rail or
 /// summand curve, along each surface parameter, in increasing order.
 pub(crate) fn procedural_surface_breaks(
+    admission: admission::EvaluationAdmission<'_, '_>,
     index: &crate::index::ModelIndex<'_>,
     surface: &crate::ids::SurfaceId,
     ranges: [[f64; 2]; 2],
 ) -> Result<[Vec<f64>; 2], ResourceLimit> {
-    let admission = admission::EvaluationAdmission::Standard;
     let mut breaks = [Vec::new(), Vec::new()];
     let Some(procedural) =
         index.procedural_surface_for_surface(surface.as_str(), crate::index::StandardIndex)

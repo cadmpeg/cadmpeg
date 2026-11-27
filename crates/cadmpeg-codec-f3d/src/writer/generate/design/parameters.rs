@@ -545,10 +545,11 @@ pub(in crate::writer::generate) fn plan(
 /// otherwise the root scope's parameters, and a loss naming each neutral
 /// parameter that no scope parameter restates. It never refuses.
 pub(in crate::writer::generate) fn native_or_neutral(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     native: &F3dNative,
 ) -> Result<ParameterSource, CodecError> {
-    if let Some(edits) = value_edits(&target.model.parameters, native)? {
+    if let Some(edits) = value_edits(ctx, &target.model.parameters, native)? {
         let losses = user_form(native, &edits)?.1;
         return Ok(ParameterSource::Native(NativeParameters { edits, losses }));
     }
@@ -581,12 +582,13 @@ pub(in crate::writer::generate) fn native_or_neutral(
 /// whose neutral parameter `neutral` edits, keyed by record id, when
 /// `neutral` equals the native records' projection in everything else.
 fn value_edits(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     neutral: &[cadmpeg_ir::features::parameters::DesignParameter],
     native: &F3dNative,
 ) -> Result<Option<ValueEdits>, CodecError> {
     use cadmpeg_ir::features::parameters::ParameterValue;
 
-    let projection = native_projection(native)?;
+    let projection = native_projection(ctx, native)?;
     if neutral.len() != projection.len() {
         return Ok(None);
     }
@@ -624,17 +626,12 @@ fn value_edits(
 
 /// The native records' parameters as the decoder projects them.
 fn native_projection(
+    decode_ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     native: &F3dNative,
 ) -> Result<Vec<cadmpeg_ir::features::parameters::DesignParameter>, CodecError> {
-    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &decode_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
     Ok(
         crate::design::feature_project::project_parameter_design_with_edge_identities(
-            &decode_ctx,
+            decode_ctx,
             &crate::design::feature_project::ProjectInputs {
                 native: &native.design_parameters,
                 source_parameters: &native.design_parameters,

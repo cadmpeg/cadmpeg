@@ -1,4 +1,3 @@
-f3d/source.preserved-image-unavailable Blocking preserved F3D source image is unavailable; regenerated from IR
 f3d/writer.subd-omitted Warning 1 subdivision surface record(s) were not written, because the source-less F3D generator has no T-spline form: f3d:tspline:subd#TSpline.synthetic; 1 body record(s) that hold only these cages are not written: f3d:tspline:body#TSpline.synthetic
 export/arena.omitted Warning the f3d write does not represent model arena `features`: 1 record(s) omitted: f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat4:Form1:1400
 export/arena.omitted Warning the f3d write does not represent model arena `appearance_bindings`: 1 record(s) omitted: f3d:appearance:binding#0_985:11111111-2222-3333-4444-555555555555
