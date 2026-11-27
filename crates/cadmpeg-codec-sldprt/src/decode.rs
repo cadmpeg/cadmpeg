@@ -5171,7 +5171,25 @@ fn build_geometry_report(
     classification: &crate::dialect::LayerClassification,
     notes: Vec<String>,
 ) -> Result<DecodeBody, CodecError> {
-    let mut brep_losses = decoded.take_losses()?;
+    let mut losses = brep_losses(decoded)?;
+    append_parasolid_container_losses(scan, &mut losses);
+    append_swift_pmi_losses(ctx, scan, &mut losses)?;
+    classification.append_losses(&mut losses);
+    Ok(DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: crate::archive::coverage(scan, ctx)?,
+        losses,
+        notes,
+        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
+    })
+}
+
+/// The losses of a decoded Parasolid B-rep: its withheld and untyped content,
+/// then the losses the builder charged.
+pub(crate) fn brep_losses(
+    decoded: &mut Brep,
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
+    let mut taken = decoded.take_losses()?;
     let s = &decoded.stats;
     let mut losses = Vec::new();
 
@@ -5195,7 +5213,7 @@ fn build_geometry_report(
         }
         losses.push(SldprtLossCode::GeometryFaceSupportSurfaceUntyped.note(message.join(" ")));
     }
-    losses.append(&mut brep_losses);
+    losses.append(&mut taken);
     if s.unknown_curve_edges > 0 {
         losses.push(
             SldprtLossCode::GeometryEdgeSupportCurveUntyped.note(format!(
@@ -5266,16 +5284,7 @@ fn build_geometry_report(
             ),
         );
     }
-    append_parasolid_container_losses(scan, &mut losses);
-    append_swift_pmi_losses(ctx, scan, &mut losses)?;
-    classification.append_losses(&mut losses);
-    Ok(DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
-        coverage: crate::archive::coverage(scan, ctx)?,
-        losses,
-        notes,
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
-    })
+    Ok(losses)
 }
 
 /// The source metadata of a decode that projects no Parasolid geometry: the
