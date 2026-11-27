@@ -1986,21 +1986,6 @@ impl F3dNative {
             + self.design_dimension_recipe_records.len()
     }
 
-    pub(crate) fn load(
-        namespace: &cadmpeg_ir::NativeNamespace,
-    ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
-        let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &decode_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .map_err(cadmpeg_ir::NativeConvertError::Resource)?;
-        let decode_ctx = &decode_ctx;
-
-        Self::load_inner(decode_ctx, namespace)
-    }
-
     /// Load the typed native records from `namespace` under `ctx`.
     pub(crate) fn load_inner(
         ctx: &DecodeContext<'_>,
@@ -2279,7 +2264,11 @@ impl F3dNative {
             act_table_references: read_arena!("act_table_references"),
             body_native_keys: read_arena!("body_native_keys"),
             body_visibilities: read_arena!("body_visibilities"),
-            design_types: read_arena!("design_types"),
+            design_types: {
+                let mut types: Vec<SegmentType> = read_arena!("design_types");
+                types.sort_by(|left, right| left.table_position().cmp(&right.table_position()));
+                types
+            },
             design_canvas_images: read_arena!("design_canvas_images"),
             design_decal_images: read_arena!("design_decal_images"),
             design_mesh_features: read_arena!("design_mesh_features"),

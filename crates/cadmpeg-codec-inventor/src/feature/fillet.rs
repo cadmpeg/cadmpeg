@@ -136,24 +136,15 @@ pub(crate) fn operands<'a>(
             }
         }
         let collection = property(*edges).ok_or(NativeReason::Edges)?;
-        let empty = match super::edge_selection::check_items(collection, &property) {
-            Ok(()) => false,
-            Err(super::edge_selection::ItemReason::Empty) => {
-                if !super::edge_selection::all_items_empty(collection, &property) {
-                    return Err(NativeReason::EmptyItems);
-                }
-                true
-            }
-            Err(super::edge_selection::ItemReason::Unresolved) => {
-                return Err(NativeReason::Edges);
-            }
-        };
+        let counts =
+            super::edge_selection::count_items(collection, &property).ok_or(NativeReason::Edges)?;
         let radius = length(*radius)
             .and_then(|value| PositiveLength::new(value.get()))
             .ok_or(NativeReason::Radius)?;
-        // An edge set whose items all store empty index-reference lists
-        // selects no edge and adds no blend.
-        if empty {
+        // An edge item that stores an empty index-reference list selects no
+        // edge. An edge set whose items all store empty lists selects no edge
+        // and adds no blend.
+        if counts.listed == 0 {
             continue;
         }
         operands.push(Operand {
@@ -200,6 +191,39 @@ pub(crate) fn empty_sets<'a>(
             })
         })
         .count()
+}
+
+/// For each edge set of a fillet that lists at least one item, in operand
+/// order, whether the set also stores items with empty index-reference lists.
+pub(crate) fn listed_set_forms<'a>(
+    source: &PmDcFeature,
+    property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
+) -> Vec<bool> {
+    let Some(PmDcFeaturePropertyKind::References {
+        family: PmDcFeatureReferenceFamily::FilletEdgeSets,
+        items,
+    }) = source
+        .properties
+        .references()
+        .first()
+        .and_then(|slot| property(*slot))
+        .map(|p| &p.kind)
+    else {
+        return Vec::new();
+    };
+    items
+        .references()
+        .iter()
+        .filter_map(|reference| {
+            let PmDcFeaturePropertyKind::FilletEdgeSet { edges, .. } =
+                property(*reference).map(|p| &p.kind)?
+            else {
+                return None;
+            };
+            let counts = super::edge_selection::count_items(property(*edges)?, &property)?;
+            (counts.listed > 0).then_some(counts.empty > 0)
+        })
+        .collect()
 }
 
 pub(crate) fn matches(expected: &[Operand<'_>], groups: &[FilletGroup]) -> bool {

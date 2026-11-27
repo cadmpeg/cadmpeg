@@ -13,6 +13,7 @@ pub(super) fn known_body_count(selection: &BodySelection) -> Option<usize> {
             Some(bodies.len())
         }
         BodySelection::Local { bodies, .. } => Some(bodies.len()),
+        BodySelection::Occurrence { bodies, .. } => Some(bodies.len()),
         BodySelection::ResolvedSet { members } => Some(members.count()),
         BodySelection::Historical { bodies, .. } => Some(bodies.len()),
         BodySelection::HistoricalSet { members, .. } => Some(members.count()),
