@@ -66,12 +66,7 @@ pub(super) fn transfer(
     };
     let has_pmi_attributes = [b"PTC_GTOL_TYPE\0".as_slice(), b"PTC_DIM_TYPE\0".as_slice()]
         .into_iter()
-        .any(|marker| {
-            neutral
-                .window()
-                .windows(marker.len())
-                .any(|bytes| bytes == marker)
-        });
+        .any(|marker| cadmpeg_core::bytes::contains(neutral.window(), marker));
     if !has_pmi_attributes {
         return Ok(BTreeMap::new());
     }

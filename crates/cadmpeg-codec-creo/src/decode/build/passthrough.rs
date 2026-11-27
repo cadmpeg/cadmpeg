@@ -112,10 +112,8 @@ pub(super) fn preserve_passthrough_sections(
                 let Some(expanded) = container::expanded_section_for(scan, section) else {
                     continue;
                 };
-                let Some(marker_offset) = expanded
-                    .data
-                    .windows(3)
-                    .position(|window| window == container::JPEG_MAGIC)
+                let Some(marker_offset) =
+                    cadmpeg_core::bytes::find(&expanded.data, container::JPEG_MAGIC)
                 else {
                     continue;
                 };
@@ -126,9 +124,8 @@ pub(super) fn preserve_passthrough_sections(
                     Exactness::Derived,
                 )
             } else {
-                let Some(marker_offset) = section_bytes
-                    .windows(3)
-                    .position(|window| window == container::JPEG_MAGIC)
+                let Some(marker_offset) =
+                    cadmpeg_core::bytes::find(section_bytes, container::JPEG_MAGIC)
                 else {
                     continue;
                 };

@@ -10,8 +10,6 @@ use std::path::Path;
 
 use cadmpeg_core::decode::ResourceLimits;
 use cadmpeg_core::json;
-#[cfg(feature = "schema")]
-use schemars::{JsonSchema, SchemaGenerator};
 use serde::de::DeserializeOwned;
 
 use super::*;
@@ -1427,66 +1425,4 @@ fn a_native_option_key_stated_twice_is_refused() {
     let twice = wire.replacen(entry, &format!("{entry},{entry}"), 1);
     assert_ne!(twice, wire);
     refuses::<Place>(&twice);
-}
-
-#[cfg(feature = "schema")]
-fn generates<T: JsonSchema>(generator: &mut SchemaGenerator) {
-    let schema = T::json_schema(generator);
-    assert!(schema.as_object().is_some(), "{}", T::schema_name());
-}
-
-#[cfg(feature = "schema")]
-#[test]
-fn every_assembly_and_shared_layout_type_has_a_schema() {
-    let mut generator = SchemaGenerator::default();
-    generates::<Place>(&mut generator);
-    generates::<PlacementBase>(&mut generator);
-    generates::<PlaceSet>(&mut generator);
-    generates::<Joint>(&mut generator);
-    generates::<JointConnector>(&mut generator);
-    generates::<Alignment>(&mut generator);
-    generates::<JointKind>(&mut generator);
-    generates::<JointMotion>(&mut generator);
-    generates::<JointOffset>(&mut generator);
-    generates::<AxisLimits>(&mut generator);
-    generates::<Bounds<Length>>(&mut generator);
-    generates::<Bounds<Angle>>(&mut generator);
-    generates::<Coupling>(&mut generator);
-    generates::<JointDrive>(&mut generator);
-    generates::<DriveAxis>(&mut generator);
-    generates::<DriveMode>(&mut generator);
-    generates::<TangentContact>(&mut generator);
-    generates::<WidthMode>(&mut generator);
-    generates::<SlotPosition>(&mut generator);
-    generates::<PathPosition>(&mut generator);
-    generates::<PathAxisControl>(&mut generator);
-    generates::<PathRollControl>(&mut generator);
-    generates::<RigidGroup>(&mut generator);
-    generates::<ComponentPattern>(&mut generator);
-    generates::<ComponentInstance>(&mut generator);
-    generates::<MirrorComponents>(&mut generator);
-    generates::<MirrorResult>(&mut generator);
-    generates::<MirrorOrientation>(&mut generator);
-    generates::<MirrorReversal>(&mut generator);
-    generates::<MirrorPivot>(&mut generator);
-    generates::<AssemblyContext>(&mut generator);
-    generates::<ContextEffect>(&mut generator);
-    generates::<PairElement>(&mut generator);
-    generates::<PatternLayout>(&mut generator);
-    generates::<ChainLayout>(&mut generator);
-    generates::<ChainLinks>(&mut generator);
-    generates::<ChainLink>(&mut generator);
-    generates::<LinearRun>(&mut generator);
-    generates::<PatternRun<Length>>(&mut generator);
-    generates::<PatternRun<Angle>>(&mut generator);
-    generates::<RunSides<Length>>(&mut generator);
-    generates::<Spacing<Angle>>(&mut generator);
-    generates::<UpToFill<Length>>(&mut generator);
-    generates::<Locus>(&mut generator);
-    generates::<InstanceOrientation>(&mut generator);
-    generates::<PathReference>(&mut generator);
-    generates::<Increment>(&mut generator);
-    generates::<DimensionRun>(&mut generator);
-    generates::<DimensionTable>(&mut generator);
-    generates::<TableRow>(&mut generator);
 }

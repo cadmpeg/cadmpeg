@@ -73,13 +73,7 @@ pub(crate) fn decode_component_occurrences(
         let scope = crate::ids::native_scope(&entry.name);
         let (frames, typed_frames, poses, path_carriers, source_entities, unadmitted_paths) =
             if let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? {
-                let meta_name = format!(
-                    "{}MetaStream.dat",
-                    entry
-                        .name
-                        .strip_suffix("BulkStream.dat")
-                        .unwrap_or_default()
-                );
+                let meta_name = meta_stream_name(&entry.name);
                 let magic =
                     crate::metastream::serializer_magic(scan.entry_bytes(&meta_name)?, &meta_name)?;
                 (
@@ -174,6 +168,16 @@ pub(crate) fn decode_component_occurrences(
         ambiguous_current_poses,
         paths,
     })
+}
+
+/// The `MetaStream.dat` entry paired with a Design `BulkStream.dat` entry.
+fn meta_stream_name(bulk_stream: &str) -> String {
+    format!(
+        "{}MetaStream.dat",
+        bulk_stream
+            .strip_suffix("BulkStream.dat")
+            .unwrap_or_default()
+    )
 }
 
 /// The admitted occurrences of one Design stream with their losses.
@@ -1440,6 +1444,9 @@ pub(crate) struct StreamComponents {
     pub(crate) revised_definitions: usize,
     /// Named empty-path root records without a decoded definition reference.
     pub(crate) unbound_root_instances: usize,
+    /// Component-path records of the stream that no local path form reads,
+    /// whatever their path elements are.
+    pub(crate) unadmitted_paths: usize,
 }
 
 impl StreamComponents {
@@ -1612,6 +1619,10 @@ pub(crate) fn decode_local_components(
                     .eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)
         });
         components.bind_roots(bytes, root_frames.map(|frame| (frame.start, frame.end)));
+        let meta_name = meta_stream_name(&entry.name);
+        let magic = crate::metastream::serializer_magic(scan.entry_bytes(&meta_name)?, &meta_name)?;
+        components.unadmitted_paths =
+            crate::xref::unread_component_paths(bytes, &meta, Some(magic))?;
         out.insert(scope, components);
     }
     Ok(out)

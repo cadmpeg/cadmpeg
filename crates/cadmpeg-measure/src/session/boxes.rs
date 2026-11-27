@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Body boxes from one box pass.
 
-use std::collections::{BTreeSet, HashMap};
+use crate::{fast_map, fast_map_with_capacity, FastMap};
+use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 
@@ -49,7 +50,8 @@ impl<'ir> Measurer<'ir> {
             }
         }
 
-        let mut edges: HashMap<&'ir str, EdgeGeometry<'ir>> = HashMap::new();
+        let mut edges: FastMap<&'ir str, EdgeGeometry<'ir>> =
+            fast_map_with_capacity(needed_edges.len());
         for edge_id in needed_edges {
             let Some(edge) = self.owners.edge(edge_id) else {
                 continue;
@@ -57,7 +59,7 @@ impl<'ir> Measurer<'ir> {
             let slice = pass.edge_slice();
             let eval = Eval {
                 ctx,
-                index: &self.index,
+                index: &self.owners.index,
                 work: &slice,
             };
             let placement = placement_of(self.owners.edge_body(edge_id));
@@ -67,7 +69,8 @@ impl<'ir> Measurer<'ir> {
             );
         }
 
-        let mut faces: HashMap<&'ir str, FaceResult<'ir>> = HashMap::new();
+        let mut faces: FastMap<&'ir str, FaceResult<'ir>> =
+            fast_map_with_capacity(needed_faces.len());
         for face_id in faces_by_inverted_boundary(&self.owners, &needed_faces) {
             let Some(face) = self.owners.face(face_id) else {
                 continue;
@@ -76,7 +79,7 @@ impl<'ir> Measurer<'ir> {
             let slice = pass.face_slice();
             let eval = Eval {
                 ctx,
-                index: &self.index,
+                index: &self.owners.index,
                 work: &slice,
             };
             let input = FaceInput {
@@ -97,7 +100,7 @@ impl<'ir> Measurer<'ir> {
             pass: &pass,
             eval: Eval {
                 ctx,
-                index: &self.index,
+                index: &self.owners.index,
                 work: &witness_slice,
             },
             placements: &placements,
@@ -107,11 +110,12 @@ impl<'ir> Measurer<'ir> {
             return Err(limit);
         }
 
+        let empty_origins = fast_map();
         let bodies = BodyInput {
             owners: &self.owners,
             faces: &faces,
             edges: &edges,
-            origins: &HashMap::new(),
+            origins: &empty_origins,
             placements: &placements,
             density: None,
         };
