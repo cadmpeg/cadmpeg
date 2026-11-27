@@ -545,7 +545,22 @@ fn a_parameter_only_design_stream_decodes_as_an_empty_design() {
     let native = crate::test_support::native_test::f3d_native(decoded.ir());
     assert_eq!(native.design_parameter_scopes.len(), 1);
     assert_eq!(native.design_parameters.len(), 1);
-    assert_eq!(native.design_parameter_owners.len(), 1);
+    assert_eq!(
+        native.design_parameter_owners.len(),
+        1,
+        "headers {:?}; losses {:?}",
+        native
+            .design_record_headers
+            .iter()
+            .map(|header| (header.record_index, header.class_tag.clone()))
+            .collect::<Vec<_>>(),
+        decoded
+            .report()
+            .losses
+            .iter()
+            .map(|loss| (loss.code.clone(), loss.message.clone()))
+            .collect::<Vec<_>>()
+    );
     assert_eq!(native.design_parameter_companions.len(), 1);
     assert!(native.design_feature_timelines.is_empty());
     assert_eq!(native.geometry_record_count(), 0);
