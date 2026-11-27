@@ -100,10 +100,9 @@ pub(super) fn give_up_record(
     node: &Node,
     why: &LossNote,
 ) -> Result<GivenUpPart, CodecError> {
-    give_up_stream_bytes(
-        ctx,
+    ctx.give_up_part(
         stream_part(stream, "parasolid-record", node.pos(), node.bytes())?,
-        why,
+        CodecError::malformed(format_args!("{}: {}", why.code, why.message)),
     )
 }
 
@@ -126,18 +125,6 @@ fn stream_part<'a>(
             .in_stream(stream.clone())
             .contained_in(cadmpeg_ir::ids::Identity::from(holder))
             .digest_only(),
-    )
-}
-
-/// Gives up `part` of a Parasolid stream for the codec loss `why`.
-fn give_up_stream_bytes(
-    ctx: &DecodeContext<'_>,
-    part: Part<'_>,
-    why: &LossNote,
-) -> Result<GivenUpPart, CodecError> {
-    ctx.give_up_part(
-        part,
-        CodecError::malformed(format_args!("{}: {}", why.code, why.message)),
     )
 }
 
@@ -362,7 +349,8 @@ pub(super) fn give_up_unread(
 /// The span of each record past `stop` of `stream` that the decode reads or
 /// gives up as a part of its own outside its node graph: the
 /// surface-intersection records, the NURBS arrays, control values and
-/// descriptors, and the charts.
+/// descriptors, the charts, and the LIMIT, blend-bound, and support-UV
+/// records that the readers scanning the whole stream read.
 fn records_read_past(
     stream: &crate::parasolid::Stream,
     view: &crate::native::substrate::StreamView<'_>,
@@ -383,14 +371,17 @@ fn records_read_past(
         )
         .collect::<Vec<_>>();
     read.extend(crate::nurbs::record_extents(source, stop));
-    if let crate::parasolid::StreamBody::Parasolid { subtype, .. } = &stream.body {
-        if let Some(layout) = subtype.chart_point_layout() {
-            read.extend((stop..source.len()).filter_map(|tag| {
-                crate::intersection::chart_source_record_at(source, tag, layout)
-                    .map(|(_, end)| tag..end)
-            }));
-        }
+    let layout = match &stream.body {
+        crate::parasolid::StreamBody::Parasolid { subtype, .. } => subtype.chart_point_layout(),
+        crate::parasolid::StreamBody::Preview => None,
+    };
+    if let Some(layout) = layout {
+        read.extend((stop..source.len()).filter_map(|tag| {
+            crate::intersection::chart_source_record_at(source, tag, layout)
+                .map(|(_, end)| tag..end)
+        }));
     }
+    read.extend(crate::intersection::scanned_record_extents(source, layout));
     read
 }
 
@@ -481,7 +472,6 @@ pub(super) fn try_decode_geometry(
     let mut body_node_ids = BTreeMap::new();
     let mut parsed = crate::native::substrate::ParsedStreams::parse(scan)?;
     let mut carrier_refusals: Vec<LossNote> = Vec::new();
-    let mut refused_carriers = BTreeSet::new();
     let mut given_up = Vec::new();
     let mut stream_parts = PendingParts::default();
     let mut topology_losses = Vec::new();
@@ -660,10 +650,11 @@ pub(super) fn try_decode_geometry(
                     .into_iter()
                     .map(|(node, note)| (Some(node), note)),
             );
+        let mut refused_carriers = BTreeMap::new();
         for (node, note) in refused {
             if let Some(node) = node {
                 let part = give_up_record(ctx, (si, &stream_name), node, &note)?;
-                refused_carriers.insert(part.id().clone());
+                refused_carriers.insert(node.xmt(), Identity::from(part.id().clone()));
                 given_up.push(part);
             }
             carrier_refusals.push(note);
@@ -1647,6 +1638,7 @@ pub(super) fn try_decode_geometry(
                 graph,
                 points: &points_by_xmt,
                 surfaces: &surfaces_by_xmt,
+                refused_carriers: &refused_carriers,
                 reversed_analytic_surfaces: &reversed_analytic_surfaces,
                 curves: &curves_by_xmt,
                 pcurves: &pcurves_by_xmt,
@@ -1786,7 +1778,6 @@ pub(super) fn try_decode_geometry(
     }
 
     if counts.points == 0 && counts.surfaces() == 0 && counts.curves() == 0 {
-        given_up.retain(|part| refused_carriers.contains(part.id()));
         return Ok(Err(RefusedCarriers {
             losses: carrier_refusals,
             given_up,

@@ -445,3 +445,26 @@ fn the_unframed_parts_past_a_primary_stop_hold_no_record_the_decode_reads() {
         assert!(!covers(offset), "{offset}: {unframed:?}");
     }
 }
+
+#[test]
+fn the_unframed_parts_past_a_primary_stop_leave_out_a_scanned_support_uv_record() {
+    let mut stream = primary_stopped_topology_stream(1.0e-6);
+    let at = stream.len();
+    let mut uv = record(204, 9 + 2 * 8);
+    uv[2..6].copy_from_slice(&2_u32.to_be_bytes());
+    put_ref(&mut uv, 6, 20);
+    uv[8] = 2;
+    stream.extend(&uv);
+    assert!(crate::intersection::support_uv_records(&stream)
+        .iter()
+        .any(|record| record.pos == at));
+
+    let result = decode(&stream);
+    let unframed = part_spans(&result.report().losses, "parasolid-unframed");
+    assert!(
+        unframed
+            .iter()
+            .all(|&(offset, length)| offset + length <= at),
+        "{unframed:?}"
+    );
+}

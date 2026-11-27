@@ -51,6 +51,13 @@ impl<'parts, 'stream> LeftOut<'parts, 'stream> {
         self.ids.get(&(kind, xmt))
     }
 
+    /// The id a charge names for the left-out record `xmt` of any kind.
+    pub(super) fn get_xmt(&self, xmt: u32) -> Option<&Identity> {
+        self.ids
+            .iter()
+            .find_map(|((_, left_out), id)| (*left_out == xmt).then_some(id))
+    }
+
     /// Gives up `node` for `why`, unless an earlier site left it out, and
     /// returns the id a charge names for it.
     pub(super) fn give_up(
@@ -117,16 +124,6 @@ impl<'parts, 'stream> LeftOut<'parts, 'stream> {
             }
         }
         Ok(())
-    }
-
-    /// Names `record`, which emission built for the left-out record `key`, as
-    /// dropped with the part that `key` maps to, so the records that
-    /// reference `record` leave the document with it.
-    pub(super) fn release_with_entry(&mut self, key: (NodeKind, u32), record: impl Into<Identity>) {
-        let record = record.into();
-        if let Some(entry) = self.ids.get(&key).filter(|entry| **entry != record) {
-            self.losses.push(dropped_with(record, entry));
-        }
     }
 
     /// Drops `record`, which emission built from no stream record of its

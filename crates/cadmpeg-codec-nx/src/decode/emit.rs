@@ -70,6 +70,8 @@ pub(super) struct TopologyStream<'inputs> {
     pub(super) graph: &'inputs Graph,
     pub(super) points: &'inputs BTreeMap<u32, PointId>,
     pub(super) surfaces: &'inputs BTreeMap<u32, SurfaceId>,
+    /// The stub id of each carrier record of the stream given up, by XMT.
+    pub(super) refused_carriers: &'inputs BTreeMap<u32, Identity>,
     pub(super) reversed_analytic_surfaces: &'inputs BTreeSet<SurfaceId>,
     pub(super) curves: &'inputs BTreeMap<u32, CurveId>,
     pub(super) pcurves: &'inputs BTreeMap<u32, PcurveId>,
@@ -126,6 +128,7 @@ pub(super) fn emit_topology(
         graph,
         points,
         surfaces,
+        refused_carriers,
         reversed_analytic_surfaces,
         curves,
         pcurves,
@@ -948,11 +951,28 @@ pub(super) fn emit_topology(
             .surface
             .and_then(|target| surfaces.get(&u32::from(target)))
         else {
-            left_out.give_up(
-                NodeKind::Face,
-                node,
-                unresolved(format!("FACE {} names no decoded SURFACE", node.xmt())),
-            )?;
+            let needs = fields.surface.map(u32::from).and_then(|xmt| {
+                left_out
+                    .get_xmt(xmt)
+                    .or_else(|| refused_carriers.get(&xmt))
+                    .cloned()
+            });
+            if let Some(needs) = needs {
+                left_out.drop_with(
+                    (NodeKind::Face, node.xmt()),
+                    scope.id_from_display::<Identity>(
+                        &cadmpeg_ir::identity_component!("face"),
+                        node.xmt(),
+                    )?,
+                    &needs,
+                );
+            } else {
+                left_out.give_up(
+                    NodeKind::Face,
+                    node,
+                    unresolved(format!("FACE {} names no decoded SURFACE", node.xmt())),
+                )?;
+            }
             continue;
         };
         let id: FaceId =
@@ -1493,7 +1513,6 @@ pub(super) fn emit_topology(
                             ))
                         },
                     )?;
-                    left_out.release_with_entry((NodeKind::Loop, *loop_xmt), id.clone());
                     left_out.mark((NodeKind::Loop, *loop_xmt), face.clone());
                 }
                 continue;

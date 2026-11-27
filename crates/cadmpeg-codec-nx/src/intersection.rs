@@ -1290,6 +1290,48 @@ fn uv_at(
     ))
 }
 
+/// The span of each LIMIT, blend-bound, and support-UV record that a reader
+/// scanning all of `stream` reads. A descriptor-inline record spans from its
+/// label. The LIMIT records need the stream's chart point `layout`.
+pub(crate) fn scanned_record_extents(
+    stream: &[u8],
+    layout: Option<ChartPointLayout>,
+) -> Vec<std::ops::Range<usize>> {
+    let mut extents = blend_bounds(stream)
+        .iter()
+        .filter_map(|bound| blend_bound_at(stream, bound.pos).map(|(_, end)| bound.pos..end))
+        .collect::<Vec<_>>();
+    extents.extend(support_uv_records(stream).iter().filter_map(|record| {
+        Some(match record.framing {
+            SupportUvFraming::DescriptorInline => {
+                let (_, end) = uv_at(stream, record.pos, record.framing, record.pos)?;
+                record
+                    .pos
+                    .checked_sub(b"values".len() + INLINE_UV_TAIL.len())?..end
+            }
+            SupportUvFraming::Direct | SupportUvFraming::Escaped => {
+                record.pos..support_uv_record_at(stream, record.pos)?.1
+            }
+        })
+    }));
+    let Some(layout) = layout else {
+        return extents;
+    };
+    extents.extend(term_use_records(stream, layout).iter().filter_map(|term| {
+        Some(match term.framing {
+            TermUseFraming::DescriptorInline => {
+                let (_, end) = term_at(stream, term.pos, term.framing, term.pos, layout, true)?;
+                term.pos
+                    .checked_sub(b"term_use".len() + INLINE_TERM_TAIL.len())?..end
+            }
+            TermUseFraming::Direct | TermUseFraming::Escaped => {
+                term.pos..term_use_at(stream, term.pos, layout, true)?.1
+            }
+        })
+    }));
+    extents
+}
+
 /// Parasolid `LIMIT` node type.
 const LIMIT: u16 = 41;
 
