@@ -447,7 +447,7 @@ pub(crate) struct Inputs<'a> {
 }
 
 /// Feature-label class whose wrappers a body-creating `kind` uses.
-fn class_of(kind: &str) -> super::ClassId {
+pub(crate) fn class_of(kind: &str) -> super::ClassId {
     if kind == DERIVED_TAG || kind.ends_with(&super::derived::CLASS_ID.to_string()) {
         super::derived::CLASS_ID
     } else {
@@ -462,7 +462,7 @@ fn body_checked(kind: &str) -> bool {
 
 /// Kind of a neutral feature: its source tag, with the native family of a
 /// feature that has no neutral construction.
-fn kind_of(feature: &Feature) -> String {
+pub(crate) fn kind_of(feature: &Feature) -> String {
     let tag = feature.source_tag.clone().unwrap_or_default();
     match feature.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if tag == "native" => {

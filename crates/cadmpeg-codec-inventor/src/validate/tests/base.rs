@@ -8,7 +8,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::Severity;
 
 use crate::feature::history_states::{
-    Binding, FeatureHistoryState, StateRef, UnboundReason, NATIVE_BASE_KIND, SPLIT_TAG,
+    Binding, FeatureHistoryState, StateRef, UnboundReason, BASE_TAG, NATIVE_BASE_KIND, SPLIT_TAG,
 };
 use crate::test_support::base_envelope::{decoded, derived_at_version, state_model, RESULT_KEY};
 use crate::InventorCodec;
@@ -121,5 +121,7 @@ fn validation_accepts_a_derived_result_only_on_a_body_creating_state() {
     let ir = decoded(&design, &base).into_parts().0;
     assert!(!ir.geometry.bodies.is_empty());
     assert!(base_findings_of(ir.clone(), |_| {}).is_empty());
-    assert!(!base_findings_of(ir, |states| states[0].kind = SPLIT_TAG.into()).is_empty());
+    assert!(!base_findings_of(ir.clone(), |states| states[0].body_key = Some(8)).is_empty());
+    // A Base state does not bind a derived feature: the kinds differ.
+    assert!(!base_findings_of(ir, |states| states[0].kind = BASE_TAG.into()).is_empty());
 }
