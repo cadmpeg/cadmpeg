@@ -4,7 +4,11 @@ use crate::feature::tests::{reference_list, test_feature, test_label, test_prope
 use std::collections::HashMap;
 
 fn types() -> HashMap<u32, &'static str> {
-    HashMap::from([(33, WRAPPER_TYPE_ID)])
+    HashMap::from([
+        (30, FACE_ITEM_TYPE_ID),
+        (31, FACE_ITEM_TYPE_ID),
+        (33, WRAPPER_TYPE_ID),
+    ])
 }
 
 fn boolean(ordinal: u32, value: bool) -> PmDcFeatureProperty {
@@ -99,6 +103,11 @@ fn delete_face_refusals_name_the_failing_slot() {
     let mut selection = ok.clone();
     selection[0] = collection(PmDcFeatureReferenceFamily::SelectionList, &[32]);
     assert_eq!(read(&source(), &selection, &all), NativeReason::Faces);
+    // Every face-collection member is a face-selection item; a surface-body
+    // wrapper member names slot 0.
+    let mut not_face_item = ok.clone();
+    not_face_item[0] = collection(faces, &[32, 34]);
+    assert_eq!(read(&source(), &not_face_item, &all), NativeReason::Faces);
     let not_boolean = |ordinal| {
         test_property(
             ordinal,
@@ -149,6 +158,18 @@ fn delete_face_refusals_name_the_failing_slot() {
     other_member[3] = body_selection(&[34, 35]);
     assert_eq!(
         read(&source(), &other_member, &all),
+        NativeReason::Selection
+    );
+    let mut wrong_family = ok.clone();
+    wrong_family[3] = test_property(
+        23,
+        PmDcFeaturePropertyKind::References {
+            family: PmDcFeatureReferenceFamily::FaceCollection,
+            items: reference_list(&[34]),
+        },
+    );
+    assert_eq!(
+        read(&source(), &wrong_family, &all),
         NativeReason::Selection
     );
     let mut foreign = all;
