@@ -850,6 +850,31 @@ pub(crate) fn sweep_document(
     feature_with_groups(body, extra, &SKETCH_CLASSES)
 }
 
+/// The first profile set of [`loft_document`]: section `k` is the group
+/// `LOFT_SET + 10 * k`.
+pub(crate) const LOFT_SET: u32 = 100;
+
+/// A document with one `JMLoftedProtrusionFunction` feature, object 10, whose
+/// section profiles are the groups given, in loft order. Section `k` is
+/// stored 72 + 20 `k` bytes after the name; the list ends with a word that
+/// names no profile.
+pub(crate) fn loft_document(sections: &[(ProfileFrame, Vec<Member2d>)]) -> Vec<u8> {
+    let mut body = part_body("JMLoftedProtrusionFunction");
+    let end = body.len();
+    body.resize(end + 72 + 20 * sections.len() + 4, 0);
+    let mut extra = Vec::new();
+    for (index, (frame, members)) in sections.iter().enumerate() {
+        let step = u32::try_from(index).unwrap();
+        let set = LOFT_SET + 10 * step;
+        let at = end + 72 + 20 * index;
+        body[at..at + 4].copy_from_slice(&(set + 1).to_le_bytes());
+        extra.extend(profile_group(set, frame, 1, 500 + 10 * step, members));
+    }
+    let after = end + 72 + 20 * sections.len();
+    body[after..after + 4].copy_from_slice(&0x8000_0010_u32.to_le_bytes());
+    feature_with_groups(body, extra, &SKETCH_CLASSES)
+}
+
 /// The class names of [`extent_document`], by form.
 pub(crate) const EXTENT_CLASSES: [&str; 17] = [
     "ReferencePlaneObject",

@@ -20,6 +20,7 @@ mod geometry;
 mod intersection;
 mod isocurve;
 mod layout;
+mod lofts;
 mod loss;
 mod partition;
 mod patterns;

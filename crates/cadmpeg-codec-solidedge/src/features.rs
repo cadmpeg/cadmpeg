@@ -466,6 +466,7 @@ pub(crate) fn project<'a>(
     crate::extents::project(&cluster, &types, &listed, ir, losses);
     crate::sweeps::project(&cluster, &types, &listed, ir, losses);
     crate::sheet_metal::project_base_tabs(&cluster, &types, &listed, ir, losses);
+    crate::lofts::project(&cluster, &types, &listed, ir, losses);
     crate::dressup::project(&cluster, &types, &listed, ir, losses);
     crate::patterns::project(&cluster, &types, &listed, ir, losses);
     crate::sketches::name_untyped_profiles(&listed, ir);
