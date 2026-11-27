@@ -25,6 +25,7 @@ fn streams_of_kinds(sheets: &[bool]) -> Vec<(String, Vec<u8>)> {
         active: "Default",
         features: &[],
         bodies: &bodies,
+        linear_resolution: cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
     })
     .expect("the skeleton writes")
 }
@@ -278,6 +279,7 @@ fn a_user_sketch_walks_to_the_end_and_holds_its_profile_body() {
         active: "Default",
         features: &features,
         bodies: &bodies,
+        linear_resolution: cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
     })
     .expect("the skeleton writes");
     let config = stream(&streams, "Contents/Config-0");
@@ -336,6 +338,7 @@ fn extruded_top_sketch_streams() -> (Vec<(String, Vec<u8>)>, crate::carchive::Wa
         active: "Default",
         features: &features,
         bodies: &[],
+        linear_resolution: cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
     })
     .expect("the skeleton writes");
     let config = stream(&streams, "Contents/Config-0");

@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 use crate::design::feature::{FeatureOperation, StoredOrigin};
 use crate::design::refs::ConfigurationRef;
 use crate::design::selection::{OccurrencePath, StepRef};
+use crate::design::units::{Quantity, UnitSystem};
 use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
 use crate::products::{
@@ -44,6 +45,9 @@ pub(super) fn check(ir: &CadIr, findings: &mut Vec<Finding>) {
         for entry in &definition.instance_bodies {
             check_path(&records, Some(id), &entry.occurrence, &moved, id, findings);
             check_unconfigured(&entry.occurrence, id, "an instance-body path", findings);
+        }
+        if let Some(units) = &definition.units {
+            check_units(id, units, findings);
         }
         check_representations(ir, &records, &moved, definition, findings);
         if let Some(generated) = &definition.generated_from {
@@ -85,6 +89,35 @@ pub(super) fn check(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     check_placements(ir, &records, findings);
+}
+
+/// Each unit of a definition's authoring unit system is a `UnitSymbol` of
+/// its quantity: a unit named outside an expression is one of the matching
+/// quantity (§5.12).
+fn check_units(id: &str, units: &UnitSystem, findings: &mut Vec<Finding>) {
+    let mass = Quantity::of(0, 1, 0, 0);
+    let time = Quantity::of(0, 0, 0, 1);
+    let named = [
+        ("length", Some(units.length), Quantity::LENGTH),
+        ("angle", Some(units.angle), Quantity::ANGLE),
+        ("mass", units.mass, mass),
+        ("time", units.time, time),
+    ];
+    for (what, unit, quantity) in named {
+        let Some(unit) = unit else { continue };
+        if unit.canonical().1 != quantity {
+            error(
+                findings,
+                Check::ParameterDomain,
+                id,
+                crate::rule!(
+                    "products.definition-unit-system-not-quantity",
+                    "the definition's {what} unit `{}` is no {what} unit",
+                    unit.name()
+                ),
+            );
+        }
+    }
 }
 
 fn error(findings: &mut Vec<Finding>, check: Check, entity: &str, message: Ruled<'_>) {
@@ -403,7 +436,7 @@ fn check_placements(ir: &CadIr, records: &DesignRecords<'_>, findings: &mut Vec<
             }
         }
     }
-    for (holder, definition) in records.feature_definitions() {
+    for (holder, _, definition) in records.feature_definitions() {
         if let FeatureOperation::Stored {
             origin: StoredOrigin::Linked(link),
             ..

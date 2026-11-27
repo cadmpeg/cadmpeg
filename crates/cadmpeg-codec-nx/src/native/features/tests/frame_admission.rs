@@ -16,6 +16,7 @@ use crate::native::features::{
     FeatureConstructionOwner, FeatureConstructionPayload, FeatureDatumCsysPayload,
     FeatureDatumPlanePayload, FeaturePayloadName, FeatureSketchConstructionInputs,
 };
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 
 #[derive(Clone, Copy)]
@@ -151,14 +152,14 @@ fn frame_fixture(route: FrameRoute) -> (crate::container::Container<'static>, Fr
                 let content: FeaturePayloadContent<Vec<FeaturePayloadBlock>> =
                     FeaturePayloadContent::from_source([id.clone()], &blocks)?
                         .expect("sketch named record payload");
-                let inputs = serde_json::json!({
+                let inputs = cadmpeg_core::json!({
                     "id": "nx:feature-history:sketch-construction-inputs#0-0000000000",
                     "operation_label": "operation", "sketch_record": "record",
                     "member_references": [], "member_data_blocks": [],
                     "terminal_reference": "terminal", "terminal_data_block": id,
                 });
                 let inputs: FeatureSketchConstructionInputs =
-                    serde_json::from_value(inputs).expect("sketch name inputs");
+                    json::from_value(inputs).expect("sketch name inputs");
                 let names =
                     feature_sketch_payload_names(&container, std::slice::from_ref(&inputs))?;
                 FramePayload::SketchInputs {

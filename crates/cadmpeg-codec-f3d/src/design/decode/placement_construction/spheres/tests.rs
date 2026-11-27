@@ -1,5 +1,6 @@
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayload};
 use crate::records::placement_construction::DesignPlacementConstruction;
+use cadmpeg_core::serde_erase::json;
 
 fn placement() -> DesignPlacementConstruction {
     let mut bytes = Vec::new();
@@ -45,7 +46,7 @@ fn scope() -> DesignParameterScope {
         DesignFeatureKind::SpherePrimitive,
         1,
     );
-    let sphere = serde_json::from_value(serde_json::json!({
+    let sphere = json::from_value(cadmpeg_core::json!({
         "placement_record_index": 255,
         "transform": [[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],
         "transform_offset": 20,
@@ -83,8 +84,7 @@ fn sphere_binds_solved_frame_and_projects_millimetres() {
         sphere.transform,
         crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY
     );
-    let restored: DesignParameterScope =
-        serde_json::from_value(serde_json::to_value(&scope).unwrap()).unwrap();
+    let restored: DesignParameterScope = json::from_value(json::to_value(&scope).unwrap()).unwrap();
     assert_eq!(restored, scope);
 }
 

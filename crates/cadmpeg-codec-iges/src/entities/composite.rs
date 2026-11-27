@@ -200,6 +200,17 @@ pub(super) fn curve_carrier_id(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
 ) -> Option<CurveId> {
+    curve_carrier_sequence(sequence, entries, records)
+        .map(|carrier| crate::ids::curve(&crate::ids::Stem::directory(carrier)))
+}
+
+/// The Directory sequence of the entity whose curve record is the
+/// model-space carrier of the curve entity `sequence`.
+pub(super) fn curve_carrier_sequence(
+    sequence: u32,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> Option<u32> {
     let entry = entries.get(&sequence).copied()?;
     let carrier_sequence = if entry.entity_type == 142 && entry.form == 0 {
         // Type 142 is a relationship entity. In a Type 102 constituent its
@@ -217,9 +228,7 @@ pub(super) fn curve_carrier_id(
     } else {
         sequence
     };
-    Some(crate::ids::curve(&crate::ids::Stem::directory(
-        carrier_sequence,
-    )))
+    Some(carrier_sequence)
 }
 
 #[derive(Clone)]
@@ -1727,6 +1736,8 @@ struct CompositeCarrier<'a> {
     entry: &'a DirectoryEntry,
     child_curves: &'a [CurveId],
     join_tolerance: f64,
+    /// The child whose curve has no projected record.
+    missing_child: Option<u32>,
 }
 
 enum CompositeRefusal {
@@ -1787,9 +1798,10 @@ fn project_degraded_composite(
             ),
         );
     } else {
-        super::push_geometry_loss(
+        super::push_geometry_loss_needing(
             losses,
             carrier.entry,
+            carrier.missing_child,
             format_args!("{reason}, and no ordered native composite carrier can be constructed"),
         );
     }
@@ -1981,15 +1993,16 @@ fn project_with_type_130_policy(
             );
             continue;
         }
-        if child_sequences.iter().any(|sequence| {
+        if let Some(child) = child_sequences.iter().find(|sequence| {
             entries.get(sequence).is_none_or(|child| {
                 !composite_child_type_allowed(child.entity_type, child.form, global.global_table())
                     || !child.status.is_physically_dependent()
             })
         }) {
-            super::push_geometry_loss(
+            super::push_geometry_loss_needing(
                 &mut losses,
                 entry,
+                (!entries.contains_key(child)).then_some(*child),
                 format_args!(
                     "composite child is missing, outside the effective specification family, \
                      or is not physically dependent"
@@ -2060,18 +2073,23 @@ fn project_with_type_130_policy(
             );
             continue;
         }
-        let carrier = CompositeCarrier {
+        let mut carrier = CompositeCarrier {
             entry,
             child_curves: &curve_ids,
             join_tolerance,
+            missing_child: None,
         };
 
         let mut children = Vec::new();
         let mut child_refusal = None;
-        for curve_id in &curve_ids {
+        for (curve_id, sequence) in curve_ids.iter().zip(&curve_sequences) {
             match bounded_nurbs(ir, &index, curve_id, join_tolerance, ctx) {
                 Ok(Some((curve, range))) => children.push((curve, range, curve_id.clone())),
                 Ok(None) => {
+                    if index.curve_by_id(ir, curve_id).is_none() {
+                        carrier.missing_child =
+                            curve_carrier_sequence(*sequence, &entries, &records);
+                    }
                     child_refusal = Some(CompositeRefusal::NoChildCarrier);
                     break;
                 }

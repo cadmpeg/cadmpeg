@@ -149,6 +149,7 @@ pub(super) fn read(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Structure, C
     Ok(Structure {
         definitions,
         residue,
+        given_up: Vec::new(),
     })
 }
 

@@ -26,7 +26,7 @@ fn source_less_round_trip(ir: &CadIr) -> cadmpeg_ir::codec::DecodeResult {
     assert!(checked.is_ok(), "fixture findings: {:?}", checked.findings);
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less solid encode");
     F3dCodec

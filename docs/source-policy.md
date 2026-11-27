@@ -91,6 +91,22 @@ CPU affinity mask, capped by `PYTHON_CPU_COUNT` when it is set. Set
   or a free `test_` function declared at or after the file's
   `if __name__ == "__main__":` block fails: discovery imports the module and
   never runs that block.
+- A typed JSON read uses `serde_json`'s `StrRead` deserializer:
+  `serde_json::from_str`, or `cadmpeg_core::serde_erase::json::from_value` and
+  `from_slice`, which read a `Value` or bytes as text
+  (`json_second_deserializer`). The rule rejects `serde_json::from_value`,
+  `serde_json::from_slice` and `Deserializer::from_slice` in production and
+  test code, and a read of `CadIr`, `Annotations`, `AsmBrep`, `Topology`,
+  `Model`, `Design` or `Process` through `T::deserialize` from anything but a
+  `deserializer` binding. Each deserializer type compiles the read tree of
+  every type it reads once more. Tests that check a reader agrees across
+  deserializer types are listed in `JSON_READ_EXEMPT_FILES`.
+- A typed JSON value is written through `SerAdapter`: build JSON with
+  `cadmpeg_core::json!` and `cadmpeg_core::serde_erase::json::to_value`
+  (`json_second_serializer`). The rule rejects `serde_json::json!` and
+  `serde_json::to_value` outside `cadmpeg-derive`, which has no
+  `cadmpeg-core` dependency. `serde_json`'s `Value` serializer compiles the
+  write tree of every type it writes once more.
 
 ## Numeric casts
 

@@ -37,6 +37,7 @@ use crate::design::selection::{
     Anchor, MemberOrder, Members, PickDomain, Picked, Picks, Propagation, RuleTerm, Selection,
     SelectionRule,
 };
+use crate::design::units::Quantity;
 use crate::features::{ConfigurationId, ParameterId};
 
 use super::dimensions::{value_type, Bound, ValueType};
@@ -52,10 +53,11 @@ pub(super) trait Walk {
 /// rule.
 #[derive(Clone, Copy)]
 pub(super) enum ExpressionPlace<'a> {
-    /// A `Law::Expression`.
-    Law,
-    /// An `AngleRange.value`.
-    BendAllowance,
+    /// A `Law::Expression`, with the quantity of its law's value type where
+    /// that type is a quantity.
+    Law(Option<Quantity>),
+    /// An `AngleRange.value`, with the quantity its rule's `yields` states.
+    BendAllowance(Option<Quantity>),
     /// A pattern instance's expression for the seed parameter it names.
     Seed(&'a str),
 }

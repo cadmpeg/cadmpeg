@@ -880,10 +880,10 @@ fn embedded_cage_projects_exact_construction_semantics() {
     .expect("cage semantics");
     let semantic: serde_json::Value = serde_json::from_str(&semantic).expect("required invariant");
     assert_eq!(semantic["kind"], "nurbs_cage");
-    assert_eq!(semantic["orders"], serde_json::json!([2, 2, 2]));
+    assert_eq!(semantic["orders"], cadmpeg_core::json!([2, 2, 2]));
     assert_eq!(
         semantic["control_points"][7],
-        serde_json::json!([70.0, 0.0, 0.0])
+        cadmpeg_core::json!([70.0, 0.0, 0.0])
     );
 
     let empty_subd = [0_u8];
@@ -902,7 +902,7 @@ fn embedded_cage_projects_exact_construction_semantics() {
     .expect("empty SubD semantics");
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&semantic).expect("required invariant"),
-        serde_json::json!({"kind": "subd", "empty": true})
+        cadmpeg_core::json!({"kind": "subd", "empty": true})
     );
 
     let brep = crate::test_support::test_archive::brep_payload(false);
@@ -1241,9 +1241,12 @@ fn history_hatch_writes_its_plane_in_millimetres() {
         serde_json::from_str(&admitted).expect("hatch semantics are JSON");
     assert_eq!(
         admitted["plane"]["origin"],
-        serde_json::json!([100.0, 200.0, 300.0])
+        cadmpeg_core::json!([100.0, 200.0, 300.0])
     );
-    assert_eq!(admitted["plane"]["equation"][3], serde_json::json!(-300.0));
+    assert_eq!(
+        admitted["plane"]["equation"][3],
+        cadmpeg_core::json!(-300.0)
+    );
 }
 
 /// An origin coordinate that overflows in millimetres is refused, where it
@@ -1294,7 +1297,7 @@ fn embedded_history_hatch_retains_base_geometry_after_malformed_gradient() {
     )
     .expect("hatch geometry survives malformed gradient");
     let semantic: serde_json::Value = serde_json::from_str(&semantic).expect("hatch JSON");
-    assert_eq!(semantic["basepoint"], serde_json::json!([3.0, 4.0]));
+    assert_eq!(semantic["basepoint"], cadmpeg_core::json!([3.0, 4.0]));
     assert!(semantic.get("gradient").is_none());
     assert!(warnings
         .messages()
@@ -1313,7 +1316,7 @@ fn embedded_cage_json_preserves_bytes() {
         )
     })
     .expect("valid embedded cage");
-    let baseline = serde_json::json!({
+    let baseline = cadmpeg_core::json!({
         "kind": "nurbs_cage",
         "dimension": cage.dimension,
         "rational": cage.rational(),
@@ -1332,7 +1335,7 @@ fn embedded_cage_json_preserves_bytes() {
 #[test]
 fn embedded_subd_diagnostics_stream_without_message_vector() {
     let diagnostics = [crate::subd::SubdEnumDiagnostic::SymmetryType(9)];
-    let surface = serde_json::json!({"source": "subd"});
+    let surface = cadmpeg_core::json!({"source": "subd"});
     let value = super::SubdJson {
         enum_diagnostics: super::SubdDiagnostics(&diagnostics),
         kind: "subd",
@@ -1393,7 +1396,7 @@ fn embedded_mesh_json_preserves_bytes() {
         )
     })
     .expect("valid embedded mesh");
-    let baseline = serde_json::json!({
+    let baseline = cadmpeg_core::json!({
         "id": "rhino:history:mesh#embedded",
         "kind": "mesh",
         "vertices": mesh.tessellation.vertices(),

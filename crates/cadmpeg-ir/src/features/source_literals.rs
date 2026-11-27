@@ -28,10 +28,10 @@ impl RewriteIdentities for Feature {
         self.evaluation.visit_local_members(ctx, visitor)
     }
 
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("feature identities")?;
         let preserve = matches!(

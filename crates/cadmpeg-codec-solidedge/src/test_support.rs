@@ -546,6 +546,45 @@ pub(crate) fn swept_ring_partition(scale: f64) -> Vec<u8> {
     ring_face_partition(Some(scale))
 }
 
+/// The ring face of `disc_partition` whose edge names no curve and whose fin
+/// names an `SP_CURVE` (type 137, node 10) on no surface: the edge has
+/// neither a vertex nor a carrier.
+pub(crate) fn uncarried_ring_partition() -> Vec<u8> {
+    uncarried(disc_partition())
+}
+
+/// The ring face of `swept_ring_partition` with the edge and fin of
+/// `uncarried_ring_partition`.
+pub(crate) fn uncarried_swept_ring_partition(scale: f64) -> Vec<u8> {
+    uncarried(swept_ring_partition(scale))
+}
+
+fn uncarried(mut bytes: Vec<u8>) -> Vec<u8> {
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&bytes)
+        .unwrap()
+        .unwrap();
+    let curve = |kind: u16| {
+        records
+            .nodes()
+            .find(|node| node.kind() == kind)
+            .unwrap()
+            .field_range("curve")
+            .unwrap()
+    };
+    let (edge, fin) = (curve(16), curve(17));
+    bytes[edge].copy_from_slice(&1u16.to_be_bytes());
+    bytes[fin].copy_from_slice(&10u16.to_be_bytes());
+    bytes.truncate(bytes.len() - 4);
+    node(&mut bytes, 137, 10);
+    integer(&mut bytes, 0);
+    pointers(&mut bytes, &[1; 5]);
+    bytes.push(b'+');
+    pointers(&mut bytes, &[1; 3]);
+    real(&mut bytes, 0.0);
+    bytes.extend_from_slice(&[0, 1, 0, 1]);
+    bytes
+}
+
 fn ring_face_partition(swept: Option<f64>) -> Vec<u8> {
     let sphere = sphere_partition();
     let records = cadmpeg_parasolid::records::PrimaryRecords::read(&sphere)

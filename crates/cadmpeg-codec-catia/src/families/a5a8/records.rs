@@ -826,7 +826,7 @@ fn parse_a5_nurbs_curve(
         };
         knots.extend(std::iter::repeat_with(|| knot).take(multiplicity));
     }
-    crate::nurbs::note_refusal(
+    crate::nurbs::give_up_refused(
         cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             degree,
             knots,
@@ -836,6 +836,10 @@ fn parse_a5_nurbs_curve(
         ),
         refusal,
         format_args!("a5 NURBS curve record at byte {}", frame.pos),
+        cadmpeg_ir::ids::Identity::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "cgm", "a5-nurbs-curve-frame"),
+            frame.pos,
+        ),
     )
     .map(|geometry| A5NurbsCurve {
         pos: frame.pos,
@@ -1902,7 +1906,7 @@ fn a5_surface(
     let weights = weights
         .map(|values| grid_rows(values, v_count))
         .transpose()?;
-    let geometry = crate::nurbs::note_refusal(
+    let geometry = crate::nurbs::give_up_refused(
         NurbsSurface::from_checked_lanes(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
@@ -1911,6 +1915,10 @@ fn a5_surface(
         ),
         refusal,
         format_args!("a5 NURBS surface record at byte {pos}"),
+        cadmpeg_ir::ids::Identity::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "cgm", "a5-surface-frame"),
+            pos,
+        ),
     );
     if geometry.is_some()
         && (parameters[..4] != full_limits || parameters[4..] != [1.0, 0.0, 1.0, 0.0])
@@ -2191,16 +2199,20 @@ fn a8_surface_from_parsed(
     let (u_knots, v_knots) = match header.expanded_knots() {
         Ok(knots) => knots,
         Err(error) => {
-            return Ok(crate::nurbs::note_refusal(
+            return Ok(crate::nurbs::give_up_refused(
                 Err(error),
                 refusal,
                 format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
+                cadmpeg_ir::ids::Identity::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "cgm", "surface"),
+                    object_id,
+                ),
             ))
         }
     };
     let control_points = grid_rows(control_points, v_count)?;
     let weights = rational.then(|| grid_rows(weights, v_count)).transpose()?;
-    Ok(crate::nurbs::note_refusal(
+    Ok(crate::nurbs::give_up_refused(
         NurbsSurface::from_checked_lanes(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
@@ -2209,6 +2221,10 @@ fn a8_surface_from_parsed(
         ),
         refusal,
         format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
+        cadmpeg_ir::ids::Identity::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "cgm", "surface"),
+            object_id,
+        ),
     )
     .map(|geometry| FreeformSurface {
         pos,
