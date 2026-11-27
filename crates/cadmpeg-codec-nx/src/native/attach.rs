@@ -8,7 +8,8 @@ use crate::loss::NxLossCode;
 use cadmpeg_core::decode::id_from_index;
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{dropped_with, record_given_up};
+use cadmpeg_ir::units::Tolerances;
+use cadmpeg_ir::unknown::part::{dropped_with, DecodeParts, GivenUpPart, Part};
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::ArenaClass;
@@ -62,13 +63,11 @@ use feature_projection::{
     hole_axis_placements_for_operations, hole_body_projection, hole_package_projection,
     native_feature_parameters, new_body_boolean_op, non_boolean_feature_definition_with_parameters,
     non_modeling_history_definition, offset_surface_feature_definition, primary_hole_outputs,
-    selection_indices_native, simple_hole_chamfers, simple_hole_native_properties,
-    simple_hole_operations, sphere_body_projection, thicken_feature_definition,
-    FeatureProjectionIndex, HolePackageSources, HoleProjection, NewBodyEvidence, ProjectionArenas,
+    recognition_tolerances, selection_indices_native, simple_hole_chamfers,
+    simple_hole_native_properties, simple_hole_operations, sphere_body_projection,
+    thicken_feature_definition, FeatureProjectionIndex, HolePackageSources, HoleProjection,
+    NewBodyEvidence, ProjectionArenas,
 };
-
-const MIN_LINEAR_TOLERANCE: f64 = 1.0e-9;
-const MIN_ANGULAR_TOLERANCE: f64 = 1.0e-12;
 
 fn push_native_unknown(
     ctx: &DecodeContext<'_>,
@@ -78,30 +77,6 @@ fn push_native_unknown(
     ctx.charge_entities(1, "NX native unknown record")?;
 
     unknowns.push(record);
-    Ok(())
-}
-
-/// Refuses a document tolerance finer than the hole recognisers resolve.
-///
-/// The recognisers below compare evaluated B-rep geometry against the document
-/// linear and angular tolerances and then state the hole they find as a native
-/// NX feature. Evaluated geometry carries no meaning below these bounds, so a
-/// document that states a finer tolerance names a precision the attach route
-/// does not have. The route refuses such a document by name here, once, and
-/// every recogniser below reads the stated tolerance as stated.
-fn admit_hole_recognition_tolerances(ir: &CadIr) -> Result<(), CodecError> {
-    let linear = ir.tolerances.linear.get();
-    if linear < MIN_LINEAR_TOLERANCE {
-        return Err(CodecError::InvalidInput(format!(
-            "document linear tolerance {linear} is finer than the NX hole recognition bound {MIN_LINEAR_TOLERANCE}"
-        )));
-    }
-    let angular = ir.tolerances.angular.get();
-    if angular < MIN_ANGULAR_TOLERANCE {
-        return Err(CodecError::InvalidInput(format!(
-            "document angular tolerance {angular} is finer than the NX hole recognition bound {MIN_ANGULAR_TOLERANCE}"
-        )));
-    }
     Ok(())
 }
 
@@ -271,34 +246,42 @@ pub(super) fn attach(
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<Option<GivenUpPart>, CodecError> {
     let snapshot = AttachSnapshot::capture(ir, annotations, unknowns, losses);
     match attach_records(ctx, ir, model, scan, annotations, unknowns, losses) {
-        Ok(()) => Ok(()),
+        Ok(()) => Ok(None),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
             let attached = snapshot.attached_records(ir, unknowns);
             snapshot.restore(ir, annotations, unknowns, losses);
-            let attachment = cadmpeg_ir::ids::Identity::compose(
-                &cadmpeg_ir::identity_namespace!("nx", "container", "object-model"),
-                0_u64,
-            );
-            losses.extend(record_given_up(
-                attachment.clone(),
-                NxLossCode::NativeAttachmentFailed.note(format!(
-                    "Native object-model attachment failed: {error}. Decoded geometry and \
-                     topology are kept. None of the attachment's features, sketches, \
-                     parameters, configurations, appearances, attributes, display \
-                     tessellations, native records, or container passthrough records are kept."
-                )),
+            let why = NxLossCode::NativeAttachmentFailed.note(format!(
+                "Native object-model attachment failed: {error}. Decoded geometry and \
+                 topology are kept. None of the attachment's features, sketches, \
+                 parameters, configurations, appearances, attributes, display \
+                 tessellations, native records, or container passthrough records are kept."
             ));
+            let bytes: &[u8] = &scan.container.data;
+            let part = Part::at(
+                "nx",
+                "object-model",
+                0,
+                bytes,
+                [ArenaClass::Model, ArenaClass::Design],
+            )
+            .in_stream(cadmpeg_ir::stream_name!("nx:container"));
+            let part = ctx.give_up_part(
+                crate::decode::within_retained_ceiling(ctx, part, bytes.len()),
+                CodecError::malformed(format_args!("{}: {}", why.code, why.message)),
+            )?;
+            let attachment = cadmpeg_ir::ids::Identity::from(part.id().clone());
+            losses.push(why);
             for record in attached {
                 losses.push(dropped_with(
                     cadmpeg_ir::ids::Identity::new(record)?,
                     attachment.clone(),
                 ));
             }
-            Ok(())
+            Ok(Some(part))
         }
     }
 }
@@ -393,9 +376,15 @@ impl AttachSnapshot {
         }
     }
 
-    /// The ids of the native and retained records that the attachment added
-    /// since the capture.
-    fn attached_records(&self, ir: &CadIr, unknowns: &[UnknownRecord]) -> BTreeSet<String> {
+    /// The ids of the document, native and retained records that the
+    /// attachment added since the capture.
+    fn attached_records(&self, ir: &mut CadIr, unknowns: &[UnknownRecord]) -> BTreeSet<String> {
+        fn document_ids(ir: &CadIr) -> BTreeSet<String> {
+            cadmpeg_ir::index::ModelIndex::new_model_only(ir)
+                .identities(cadmpeg_ir::index::StandardIndex)
+                .map(ToOwned::to_owned)
+                .collect()
+        }
         fn native_ids(ir: &CadIr) -> impl Iterator<Item = &str> {
             ir.native
                 .namespace("nx")
@@ -403,15 +392,21 @@ impl AttachSnapshot {
                 .flat_map(|namespace| namespace.arenas().values().flatten())
                 .map(cadmpeg_ir::native::NativeRecord::id)
         }
+        let geometry = GeometryArenas::take(&mut ir.geometry);
+        let written = document_ids(ir);
+        geometry.put(&mut ir.geometry);
+        let before = document_ids(&self.document);
         let (kept, added) = unknowns.split_at(self.unknowns.min(unknowns.len()));
         let held = native_ids(&self.document)
             .chain(kept.iter().map(|unknown| unknown.id().as_str()))
             .collect::<BTreeSet<_>>();
-        native_ids(ir)
+        let mut attached = native_ids(ir)
             .chain(added.iter().map(|unknown| unknown.id().as_str()))
             .filter(|id| !held.contains(id))
             .map(ToOwned::to_owned)
-            .collect()
+            .collect::<BTreeSet<_>>();
+        attached.extend(written.into_iter().filter(|id| !before.contains(id)));
+        attached
     }
 
     fn restore(
@@ -498,7 +493,7 @@ fn attach_records(
                 ir,
                 annotations,
                 &annotation_stream,
-                (tessellation.id.as_str(), source_offset),
+                (&tessellation.id, source_offset),
                 color,
             )?;
         }
@@ -794,10 +789,11 @@ fn attach_display_jt_color(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     annotation_stream: &cadmpeg_ir::annotations::StreamHandle,
-    (tessellation, source_offset): (&str, u64),
+    (tessellation, source_offset): (&cadmpeg_ir::tessellation::TessellationId, u64),
     color: Color,
 ) -> Result<(), CodecError> {
     let key = tessellation
+        .as_str()
         .split_once('#')
         .map(|(_, key)| key)
         .ok_or_else(|| CodecError::malformed("NX Display-JT tessellation id has no key"))?;
@@ -845,7 +841,7 @@ fn attach_display_jt_color(
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: binding_id,
-        target: AppearanceTarget::Tessellation(tessellation.to_owned()).into(),
+        target: AppearanceTarget::Tessellation(tessellation.clone()).into(),
         appearance: id,
         precedence: None,
         source_entity_id: None,
@@ -1287,6 +1283,22 @@ fn attach_initial_segment_bodies(
         product_definition: None,
     });
     Ok(Some(id))
+}
+
+/// The loss of a decode whose hole or block recognisers run, and so compare
+/// the evaluated geometry they reach at a floor coarser than the `document`
+/// tolerances.
+fn recognition_floor_loss(document: &Tolerances, recognisers_run: bool) -> Option<LossNote> {
+    let recognition = recognition_tolerances(document);
+    (recognisers_run && recognition != *document).then(|| {
+        NxLossCode::FeatureRecognitionToleranceFloor.note(format!(
+            "feature recognition raises the document tolerances {} mm and {} rad to {} mm and {} rad for the evaluated geometry it compares",
+            document.linear.get(),
+            document.angular.get(),
+            recognition.linear.get(),
+            recognition.angular.get(),
+        ))
+    })
 }
 
 fn attach_feature_operations(
@@ -2053,7 +2065,12 @@ fn attach_feature_operations(
     .unwrap_or_default();
     let mut hole_outputs = explicit_hole_outputs;
     let mut simple_hole_diameters = BTreeMap::new();
-    admit_hole_recognition_tolerances(ir)?;
+    let recognition = recognition_tolerances(&ir.tolerances);
+    let recognisers_run = !simple_hole_templates.is_empty()
+        || labels.iter().any(|label| {
+            label.value == "BLOCK" && block_dimensions_by_operation.contains_key(label.id.as_str())
+        });
+    losses.extend(recognition_floor_loss(&ir.tolerances, recognisers_run));
     if let Some(projection) = hole_body_projection(ir, &simple_hole_operations, &hole_outputs) {
         hole_outputs.extend(projection.outputs);
         simple_hole_diameters.extend(projection.diameters);
@@ -3722,7 +3739,7 @@ fn attach_feature_operations(
         let block_projection = if label.value == "BLOCK" {
             match block_dimension_values {
                 Some(dimensions) => {
-                    block_placement(&projection_index, &ir.tolerances, dimensions, &outputs)
+                    block_placement(&projection_index, &recognition, dimensions, &outputs)
                 }
                 None => None,
             }
@@ -5798,7 +5815,7 @@ fn text_semantic_annotation(
         assets: Vec::new(),
         ..SemanticAnnotation::new(
             id,
-            native_ref.to_owned(),
+            cadmpeg_ir::ids::Identity::try_from(native_ref).map_err(CodecError::malformed)?,
             SemanticAnnotationKind::Text,
             "TEXT".to_owned(),
             order,

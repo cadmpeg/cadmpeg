@@ -70,7 +70,8 @@ a `defaultFeatures` array. Each feature has a unique nonblank `featureId`.
 absent `name` leaves the `featureId` as the label.
 `parameters` is an array with unique `parameterId` keys; `btType` names each
 REST record class. `suppressed` and `parentSuppressed` are Boolean fields
-that mark inactive features. `rollbackIndex` is the number of features before the
+that mark inactive features. Either can be absent; a feature with neither
+does not state its suppression. `rollbackIndex` is the number of features before the
 rollback bar, from zero to the length of `features`. The bar stands before
 the feature at that position, or after the last feature at the length.
 
@@ -404,6 +405,20 @@ metres. The axes are the columns of the connector rotation matrix.
 The solved connector world frame is the occurrence transform multiplied by
 the connector frame. The sign of the dot product of the two world z axes
 gives aligned or opposed sense. A zero dot product leaves the sense unstated.
+
+CADIR decision: a decoder names each assembly record that it gives up by its
+source address, the definition member path and the JSON pointer of the record
+(`assemblies/<id>/definition.json#/rootAssembly/instances/1`). It gives up an
+instance without an `id`, an instance that it cannot map, and an instance
+whose `id` repeats at its level with different content. An instance whose
+`id` repeats with the same content drops nothing; the first instance stands.
+A mate whose connector path passes through a given-up instance drops with
+that instance; the give-up names the joint that the mate maps to. A mate
+whose `id` repeats at its level with different content is given up; the
+first joint stands. An `instances`, `features`, `occurrences`,
+`subAssemblies`, or `parts` field that holds no array is given up as one
+record. A field that holds more rows than the row limit is a bound, and the
+rows are not read.
 
 ### Part identity and final geometry
 

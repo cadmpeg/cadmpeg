@@ -276,7 +276,6 @@ pub(crate) struct UnchartedIntersection {
 pub(crate) struct RejectionCounts {
     /// The construction did not resolve a valid primary support relation.
     pub(crate) missing_support: usize,
-    pub(crate) duplicate_identity: usize,
     /// The construction's `CHART_s` reference did not resolve to a valid chart.
     pub(crate) missing_chart: usize,
     /// The start term-use reference did not resolve.
@@ -291,7 +290,6 @@ impl RejectionCounts {
     /// Total rejected construction count.
     pub(crate) fn total(self) -> usize {
         self.missing_support
-            + self.duplicate_identity
             + self.missing_chart
             + self.missing_start_term
             + self.missing_end_term
@@ -301,7 +299,6 @@ impl RejectionCounts {
     fn add(&mut self, rejection: Rejection) {
         match rejection {
             Rejection::MissingSupport => self.missing_support += 1,
-            Rejection::DuplicateIdentity => self.duplicate_identity += 1,
             Rejection::MissingChart => self.missing_chart += 1,
             Rejection::MissingStartTerm => self.missing_start_term += 1,
             Rejection::MissingEndTerm => self.missing_end_term += 1,
@@ -312,7 +309,6 @@ impl RejectionCounts {
     /// Add another stream's rejection census.
     pub(crate) fn extend(&mut self, other: Self) {
         self.missing_support += other.missing_support;
-        self.duplicate_identity += other.duplicate_identity;
         self.missing_chart += other.missing_chart;
         self.missing_start_term += other.missing_start_term;
         self.missing_end_term += other.missing_end_term;
@@ -333,12 +329,17 @@ pub(crate) struct CurveScan {
     pub(crate) uncharted: Vec<UnchartedIntersection>,
     /// Exact rejection census for the remaining parsed constructions.
     pub(crate) rejected: RejectionCounts,
+    /// Every construction whose identity another construction of the stream
+    /// also carries.
+    pub(crate) duplicates: Vec<CompositeCurve>,
+    /// The identity and framed bytes of each graph INTERSECTION record whose
+    /// references state no construction.
+    pub(crate) unread: Vec<(u32, std::ops::Range<usize>)>,
 }
 
 #[derive(Debug, Clone, Copy)]
 enum Rejection {
     MissingSupport,
-    DuplicateIdentity,
     MissingChart,
     MissingStartTerm,
     MissingEndTerm,
@@ -393,7 +394,16 @@ pub(crate) fn scan_with_graph(
     let uv = uv_records(stream, starts);
     let mut constructions = graph.composite_curves();
     append_declared_composite_curves(stream, &mut constructions);
-    scan_with_auxiliaries(
+    let read = constructions
+        .iter()
+        .map(|construction| construction.pos)
+        .collect::<BTreeSet<_>>();
+    let unread = graph
+        .of_kind(NodeKind::Intersection)
+        .filter(|node| !read.contains(&node.pos()))
+        .map(|node| (node.xmt(), node.pos()..node.end()))
+        .collect();
+    let mut scan = scan_with_auxiliaries(
         AuxiliaryMaps {
             charts: &chart_records(stream, point_layout, starts),
             terms: &term_records(stream, point_layout, starts),
@@ -402,7 +412,9 @@ pub(crate) fn scan_with_graph(
         },
         graph,
         constructions,
-    )
+    )?;
+    scan.unread = unread;
+    Ok(scan)
 }
 
 fn append_declared_composite_curves(stream: &[u8], constructions: &mut Vec<CompositeCurve>) {
@@ -435,15 +447,10 @@ fn scan_with_auxiliaries(
     for construction in &constructions {
         *counts.entry(construction.xmt).or_default() += 1;
     }
-    let mut constructions = constructions;
-    constructions.retain(|construction| {
-        if counts[&construction.xmt] == 1 {
-            true
-        } else {
-            result.rejected.add(Rejection::DuplicateIdentity);
-            false
-        }
-    });
+    let (constructions, duplicates): (Vec<_>, Vec<_>) = constructions
+        .into_iter()
+        .partition(|construction| counts[&construction.xmt] == 1);
+    result.duplicates = duplicates;
     for construction in constructions.iter().copied() {
         match enrich(construction, charts, terms, uv, bridges, graph) {
             Ok(curve) => {
@@ -1283,6 +1290,48 @@ fn uv_at(
     ))
 }
 
+/// The span of each LIMIT, blend-bound, and support-UV record that a reader
+/// scanning all of `stream` reads. A descriptor-inline record spans from its
+/// label. The LIMIT records need the stream's chart point `layout`.
+pub(crate) fn scanned_record_extents(
+    stream: &[u8],
+    layout: Option<ChartPointLayout>,
+) -> Vec<std::ops::Range<usize>> {
+    let mut extents = blend_bounds(stream)
+        .iter()
+        .filter_map(|bound| blend_bound_at(stream, bound.pos).map(|(_, end)| bound.pos..end))
+        .collect::<Vec<_>>();
+    extents.extend(support_uv_records(stream).iter().filter_map(|record| {
+        Some(match record.framing {
+            SupportUvFraming::DescriptorInline => {
+                let (_, end) = uv_at(stream, record.pos, record.framing, record.pos)?;
+                record
+                    .pos
+                    .checked_sub(b"values".len() + INLINE_UV_TAIL.len())?..end
+            }
+            SupportUvFraming::Direct | SupportUvFraming::Escaped => {
+                record.pos..support_uv_record_at(stream, record.pos)?.1
+            }
+        })
+    }));
+    let Some(layout) = layout else {
+        return extents;
+    };
+    extents.extend(term_use_records(stream, layout).iter().filter_map(|term| {
+        Some(match term.framing {
+            TermUseFraming::DescriptorInline => {
+                let (_, end) = term_at(stream, term.pos, term.framing, term.pos, layout, true)?;
+                term.pos
+                    .checked_sub(b"term_use".len() + INLINE_TERM_TAIL.len())?..end
+            }
+            TermUseFraming::Direct | TermUseFraming::Escaped => {
+                term.pos..term_use_at(stream, term.pos, layout, true)?.1
+            }
+        })
+    }));
+    extents
+}
+
 /// Parasolid `LIMIT` node type.
 const LIMIT: u16 = 41;
 
@@ -1301,14 +1350,22 @@ pub(crate) fn limit_term_use(primary: &cadmpeg_parasolid::records::PrimaryRecord
 /// # Errors
 ///
 /// Returns an error when the node sequence's embedded schema does not read.
+#[cfg(test)]
 pub(crate) fn stream_term_use_records(
     stream: &[u8],
     layout: ChartPointLayout,
 ) -> Result<Vec<TermUse>, CodecError> {
-    let Some(primary) = cadmpeg_parasolid::records::PrimaryRecords::read(stream)?
-        .filter(|primary| primary.stop_offset().is_none())
-    else {
-        return Ok(term_use_records(stream, layout));
+    let primary = cadmpeg_parasolid::records::PrimaryRecords::read(stream)?;
+    Ok(stream_term_use_records_in(stream, layout, primary.as_ref()))
+}
+
+pub(crate) fn stream_term_use_records_in(
+    stream: &[u8],
+    layout: ChartPointLayout,
+    primary: Option<&cadmpeg_parasolid::records::PrimaryRecords<'_>>,
+) -> Vec<TermUse> {
+    let Some(primary) = primary.filter(|primary| primary.stop_offset().is_none()) else {
+        return term_use_records(stream, layout);
     };
     let records: Vec<_> = primary
         .records()
@@ -1317,9 +1374,9 @@ pub(crate) fn stream_term_use_records(
         .collect();
     let starts = RecordStarts::Nodes {
         records: &records,
-        limit_term_use: limit_term_use(&primary),
+        limit_term_use: limit_term_use(primary),
     };
-    Ok(term_use_records_from(stream, layout, starts))
+    term_use_records_from(stream, layout, starts)
 }
 
 /// Where the auxiliary records of a stream start.

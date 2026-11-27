@@ -21,6 +21,8 @@ use crate::unknown::part::record_unreadable_kind;
 use self::fields::{FeatureField, Field, ModelFeatureField, ModelParameterField, ParameterField};
 
 pub mod fields;
+pub mod restated;
+pub mod sketch;
 
 /// Runs `project`, the `codec` decoder's projection of the v11 design layer
 /// of `ir`, as one part.
@@ -28,13 +30,17 @@ pub mod fields;
 /// Where `project` fails with an error that does not end the session, `ir`
 /// holds the design records and product definitions it held before the
 /// projection, `losses` holds the losses it held before the projection and
-/// one `record.unreadable` that names the layer. The geometry and the model
-/// records stand.
+/// one `record.unreadable` that names the layer, and the model holds the
+/// restatements it held before the projection. The geometry and the model
+/// records stand. Where `project` succeeds, each design feature that
+/// restates a model feature under its identity states the fields it leaves
+/// out ([`restated::restate_features`]).
 ///
 /// # Errors
 ///
 /// An error that ends the session: a refusal in force, a Session-scoped
-/// resource refusal, or an I/O error.
+/// resource refusal, or an I/O error; and a resource refusal while the
+/// restatements are stated.
 pub fn project_layer(
     ctx: &DecodeContext<'_>,
     codec: &str,
@@ -44,10 +50,12 @@ pub fn project_layer(
 ) -> Result<(), CodecError> {
     let design = ir.design.clone();
     let definitions = ir.model.product_definitions.clone();
+    let restated = ir.model.restated.clone();
     let reported = losses.len();
     if let Err(error) = ctx.run_part(|| project(ir, losses))? {
         ir.design = design;
         ir.model.product_definitions = definitions;
+        ir.model.restated = restated;
         losses.truncate(reported);
         losses.push(
             LossNote::new(
@@ -56,6 +64,8 @@ pub fn project_layer(
             )
             .with_severity(Severity::Error),
         );
+    } else {
+        restated::restate_features(ctx, ir)?;
     }
     Ok(())
 }
@@ -107,10 +117,12 @@ fn sub_marks<'n>(
 /// exactness) and the marks on its sub-paths. A stated design field takes the
 /// least exact of its model fields and the mark on its own name. Where that
 /// name is also a model field, the marks on its sub-paths fold into the field
-/// too, since the two records can shape the field differently; under a name
-/// only the design record has, a sub-path mark is kept at no more than its
-/// field. Marks on a design field the record does not state, and model marks
-/// no stated field reads, leave.
+/// too, since the two records can shape the field differently; and where
+/// `inputs` does not list that model field, those marks count at no more
+/// than the entity exactness, since they may describe the model field. Under
+/// a name only the design record has, a sub-path mark is kept at no more than
+/// its field. Marks on a design field the record does not state, and model
+/// marks no stated field reads, leave.
 fn restated_fields<D: Field, M: Field>(
     note: &ExactnessNote,
     stated: impl IntoIterator<Item = (D, bool)>,
@@ -131,11 +143,24 @@ fn restated_fields<D: Field, M: Field>(
         }
         let key = field.key();
         let shared = M::parse(key).is_some();
-        let own = note.fields().get(key).copied().into_iter().chain(
-            sub_marks(note, key)
-                .filter(|_| shared)
-                .map(|(_, exactness)| exactness),
-        );
+        let unlisted = shared && !inputs(field).iter().any(|model| model.key() == key);
+        let own = note
+            .fields()
+            .get(key)
+            .copied()
+            .into_iter()
+            .chain(
+                sub_marks(note, key)
+                    .filter(|_| shared)
+                    .map(|(_, exactness)| exactness),
+            )
+            .map(|mark| {
+                if unlisted {
+                    least_exact(mark, entity)
+                } else {
+                    mark
+                }
+            });
         let exactness = inputs(field)
             .iter()
             .map(input)

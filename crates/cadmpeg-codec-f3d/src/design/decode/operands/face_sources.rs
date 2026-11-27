@@ -4,7 +4,7 @@
 use super::extrude_selections::parse_extrude_identity_member;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
-use crate::design::decode::sketch::{cached_borrowed_record_offsets, IndexedRecordOffsets};
+use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::design_record_id;
 use crate::ids::native_stream;
 use crate::layout::{
@@ -32,7 +32,6 @@ pub(crate) fn decode_face_source_groups(
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignFaceSourceGroup>, CodecError> {
     let mut out = Vec::new();
-    let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
     for scope in scopes
         .iter()
         .filter(|scope| scope.kind() == crate::records::feature::scope::DesignFeatureKind::Face)
@@ -54,7 +53,7 @@ pub(crate) fn decode_face_source_groups(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
+        let records = scan.design_record_offsets(&entry.name)?;
         let Ok(scope_start) = usize::try_from(scope.byte_offset()) else {
             continue;
         };
@@ -62,7 +61,7 @@ pub(crate) fn decode_face_source_groups(
             bytes,
             scope_start,
             scope.reference_members().values(),
-            records,
+            &records,
         );
         for (carrier_ordinal, carrier) in reference_headers.iter().enumerate() {
             let Some(FaceSourceReferenceHeader {

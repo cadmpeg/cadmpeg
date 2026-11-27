@@ -22,20 +22,76 @@
     },
     "fragment": false,
     "geometry": {
-      "bodies": [],
+      "bodies": [
+        {
+          "id": "sldprt:brep:body#0",
+          "kind": "sheet"
+        }
+      ],
       "coedges": [],
       "curves": [],
       "edges": [],
-      "faces": [],
+      "faces": [
+        {
+          "id": "sldprt:brep:face#10",
+          "loops": {
+            "kind": "partial_unspecified",
+            "loops": []
+          },
+          "sense": "forward",
+          "shell": "sldprt:brep:shell#0",
+          "surface": "sldprt:brep:surf#10"
+        }
+      ],
       "loops": [],
       "pcurves": [],
       "points": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "regions": [],
-      "shells": [],
+      "regions": [
+        {
+          "body": "sldprt:brep:body#0",
+          "id": "sldprt:brep:region#0",
+          "shells": [
+            "sldprt:brep:shell#0"
+          ]
+        }
+      ],
+      "shells": [
+        {
+          "id": "sldprt:brep:shell#0",
+          "members": [],
+          "region": "sldprt:brep:region#0"
+        }
+      ],
       "subds": [],
-      "surfaces": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "cylinder",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "radius": 1000.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "sldprt:brep:surf#10"
+        }
+      ],
       "vertices": []
     },
     "ir_version": "11",
@@ -58,7 +114,9 @@
       "presentation_layers": [],
       "product_definitions": [
         {
-          "bodies": [],
+          "bodies": [
+            "sldprt:brep:body#0"
+          ],
           "bom_properties": {},
           "id": "sldprt:model:product-definition#root",
           "instance_bodies": [],
@@ -124,7 +182,9 @@
       "attributes": {
         "active_parasolid_block": "Contents/Config-0-Partition",
         "outer_version": "0x00000004",
-        "parasolid_schema": "SCH_SW_33103_11000"
+        "parasolid_description": "partition body",
+        "parasolid_schema": "SCH_SW_33103_11000",
+        "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#partition:0"
       },
       "identity": {
         "dialects": {
@@ -152,8 +212,8 @@
       }
     },
     "tolerances": {
-      "angular": 1e-10,
-      "linear": 1e-6
+      "angular": 1e-11,
+      "linear": 0.00001
     },
     "units": {
       "angle": "radian",
@@ -193,48 +253,12 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "geometry.parasolid-not-transferred",
-            "kind": "geometry_not_transferred",
+            "code": "body.resolution-unread",
+            "kind": "decode_diagnostic",
             "namespace": "sldprt"
           }
         },
-        "message": "Parasolid B-rep geometry was not transferred: no partition/deltas stream resolved into a topology graph. 1 payload source(s) were enumerated, 1 carrying Parasolid streams.",
-        "severity": "blocking"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "topology.graph-not-transferred",
-            "kind": "topology_not_transferred",
-            "namespace": "sldprt"
-          }
-        },
-        "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
-        "severity": "blocking"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "material.metadata-not-transferred",
-            "kind": "material_not_transferred",
-            "namespace": "sldprt"
-          }
-        },
-        "message": "Body-bound appearances and tessellation were not transferred because no body graph exists.",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "source.dialect-unverified",
-            "kind": "source_dialect_unverified",
-            "namespace": "sldprt"
-          }
-        },
-        "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
+        "message": "body sldprt:brep:body#0 stores no res_linear value the decoder reads; the part's linear tolerance excludes it",
         "severity": "warning"
       },
       {
@@ -247,10 +271,28 @@
             "strict_floor": "error"
           }
         },
-        "message": "record sldprt:brep:face#10 stream=\"Contents/Config-0-Partition\" offset=297 given up: sldprt/topology.face-withheld: no loop of the face decodes; dropped=[sldprt:brep:surf#10]",
+        "message": "record sldprt:brep:edge#40 stream=\"Contents/Config-0-Partition\" offset=414 given up: sldprt/topology.vertex-record-unresolved: an end vertex of the edge does not resolve; dropped=[sldprt:brep:coedge#30, sldprt:brep:loop#20]",
         "provenance": {
           "format": "sldprt",
-          "offset": 297,
+          "offset": 414,
+          "stream": "Contents/Config-0-Partition"
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record sldprt:brep:loop#21 stream=\"Contents/Config-0-Partition\" offset=352 given up: sldprt/topology.fin-partner-unresolved: an edge of the loop has no canonical FIN the decode reads; dropped=[sldprt:brep:coedge#31]",
+        "provenance": {
+          "format": "sldprt",
+          "offset": 352,
           "stream": "Contents/Config-0-Partition"
         },
         "severity": "error"
@@ -271,12 +313,36 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "topology.face-withheld",
-            "kind": "topology_not_transferred",
+            "code": "topology.body-hierarchy-derived",
+            "kind": "topology_gauge_substituted",
             "namespace": "sldprt"
           }
         },
-        "message": "1 face(s) were withheld with their surface because no loop of the face decodes.",
+        "message": "No body record names a region; one body/region/shell hierarchy was derived.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "source.dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "sldprt"
+          }
+        },
+        "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "config.inferred-without-native",
+            "kind": "feature_history_retained",
+            "namespace": "sldprt"
+          }
+        },
+        "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
         "severity": "warning"
       }
     ],
@@ -286,7 +352,7 @@
       "Parasolid body streams supply the typed topology and analytic carriers used by decode"
     ],
     "transfer": {
-      "geometry_transferred": false,
+      "geometry_transferred": true,
       "kind": "full"
     },
     "transfer_ledger": {
@@ -296,17 +362,58 @@
   "source_fidelity": {
     "annotations": {
       "exactness": {
-        "sldprt:file:block#8": {
-          "entity": "unknown",
+        "sldprt:brep:body#0": {
+          "entity": "derived",
           "fields": {},
           "kind": "entity"
+        },
+        "sldprt:brep:region#0": {
+          "entity": "derived",
+          "fields": {},
+          "kind": "entity"
+        },
+        "sldprt:brep:shell#0": {
+          "entity": "derived",
+          "fields": {},
+          "kind": "entity"
+        },
+        "sldprt:brep:surf#10": {
+          "fields": {
+            "geometry.value.ref_direction": "derived"
+          },
+          "kind": "fields"
         }
       },
       "provenance": {
-        "sldprt:file:block#8": {
+        "sldprt:brep:body#0": {
           "offset": 0,
           "stream": "Contents/Config-0-Partition",
-          "tag": "parasolid_stream"
+          "tag": "synthetic_grouping"
+        },
+        "sldprt:brep:face#10": {
+          "offset": 297,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "00_0e"
+        },
+        "sldprt:brep:region#0": {
+          "offset": 0,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "synthetic_grouping"
+        },
+        "sldprt:brep:shell#0": {
+          "offset": 0,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "synthetic_grouping"
+        },
+        "sldprt:brep:surf#10": {
+          "offset": 0,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "compact_surface"
+        },
+        "sldprt:file:block#8": {
+          "offset": 8,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "parasolid"
         },
         "sldprt:file:source-image#0": {
           "offset": 0,
@@ -319,6 +426,7 @@
       "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_linear_tolerance_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "sldprt_native_history_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -338,11 +446,9 @@
           "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMwBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHwBGAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAHwBHAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAADgAKAAAAAAAAwrySj5luAAAAAAAAABQAAABkKwAAAAAAAAAAAAAADwAUAAAAAAAAAB4ACgAVAA8AFQAAAAAAAAAfAAoAAAARAB4AAAAUAAAAHgAyAAAAKAAAAAArABEAHwAAABUAAAAfADMAAAApAAAAAC0AEAAoAAAAAAAAwrySj5luAAAAAAAAAAAARgAAAAAAEAApAAAAAAAAwrySj5luAAAAAAAAAAAARwAAAAAAEgAyAAAAAAAAAAAAAAAAADzCvJKPmW4AAAASADMAAAAAAAAAAAAAAAAAPcK8ko+ZbgAAAB0APAAAAAAAAAAAAAAAAL/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAdAD0AAAAAAAAAAAAAAAC/8AAAAAAAAAAAAAAAAAAAP/AAAAAAAAA=",
           "kind": "inline"
         },
-        "offset": 8,
+        "offset": 0,
         "stream": "Contents/Config-0-Partition",
-        "untyped": [
-          "model"
-        ]
+        "untyped": []
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -354,8 +460,6 @@
         "untyped": []
       }
     },
-    "unrepresented": [
-      "model"
-    ]
+    "unrepresented": []
   }
 }

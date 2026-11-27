@@ -10,6 +10,10 @@ use crate::{test_support, SolidEdgeCodec};
 
 const EPS_SPHERE_RADIUS_MM: f64 = 1.0e-12;
 const EPS_RESOLUTION_MM: f64 = 1.0e-15;
+/// The Parasolid modeller default linear precision (`parasolid.md` §4).
+const MODELLER_DEFAULT_LINEAR_MM: f64 = 1.0e-5;
+/// The Parasolid modeller angular precision (`parasolid.md` §4).
+const MODELLER_ANGULAR_RADIANS: f64 = 1.0e-11;
 const EPS_RING_VERTEX_MM: f64 = 1.0e-9;
 /// The null real of the kernel's binary encoding.
 const NULL_REAL: f64 = -3.14158e13;
@@ -385,12 +389,16 @@ fn a_face_that_states_no_orientation_drops_its_loops_and_coedges() {
     let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
         .unwrap()
         .unwrap();
-    let range = records
+    let face = records
         .nodes()
         .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::FACE)
-        .unwrap()
-        .field_range("sense")
         .unwrap();
+    let span = format!(
+        " stream=\"solidedge:PARASOLID/STREAM0.P_B\" offset={} length={} given up: ",
+        face.range().start,
+        face.range().len()
+    );
+    let range = face.field_range("sense").unwrap();
     partition[range].copy_from_slice(b"?");
     let bytes = test_support::with_partitions(&[partition]);
     let result = SolidEdgeCodec
@@ -410,6 +418,7 @@ fn a_face_that_states_no_orientation_drops_its_loops_and_coedges() {
         charge.starts_with("record solidedge:brep:face#"),
         "{charge}"
     );
+    assert!(charge.contains(&span), "{charge}");
     let dropped = charge
         .split_once("; dropped=[")
         .and_then(|(_, tail)| tail.split_once(']'))
@@ -754,7 +763,67 @@ fn body_resolution_sets_document_linear_tolerance_in_millimetres() {
         .unwrap();
     let expected_mm = 4.0e-5;
     assert!((result.ir().tolerances.linear.get() - expected_mm).abs() < EPS_RESOLUTION_MM);
+    assert_eq!(
+        result.ir().tolerances.angular.get(),
+        MODELLER_ANGULAR_RADIANS
+    );
     assert_geometry_valid(result.ir());
+}
+
+/// A sphere partition whose BODY stores `resolution` metres as `res_linear`.
+fn sphere_partition_with_resolution(resolution: f64) -> Vec<u8> {
+    let mut partition = test_support::sphere_partition();
+    let range = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap()
+        .nodes()
+        .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::BODY)
+        .unwrap()
+        .field_range("res_linear")
+        .unwrap();
+    partition[range].copy_from_slice(&resolution.to_be_bytes());
+    partition
+}
+
+#[test]
+fn an_invalid_body_resolution_leaves_the_largest_stored_resolution() {
+    let partitions = [
+        sphere_partition_with_resolution(1.0e-12),
+        sphere_partition_with_resolution(0.0),
+    ];
+    let result = SolidEdgeCodec
+        .decode(
+            &mut Cursor::new(test_support::with_partitions(&partitions)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().geometry.bodies.len(), 2);
+    assert!((result.ir().tolerances.linear.get() - 1.0e-9).abs() < EPS_RESOLUTION_MM);
+    assert_geometry_valid(result.ir());
+}
+
+#[test]
+fn a_container_decode_states_the_modeller_precision() {
+    let result = SolidEdgeCodec
+        .decode(
+            &mut Cursor::new(test_support::with_partitions(&[
+                test_support::sphere_partition(),
+            ])),
+            &DecodeOptions {
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    assert!(result.ir().geometry.bodies.is_empty());
+    assert_eq!(
+        result.ir().tolerances.linear.get(),
+        MODELLER_DEFAULT_LINEAR_MM
+    );
+    assert_eq!(
+        result.ir().tolerances.angular.get(),
+        MODELLER_ANGULAR_RADIANS
+    );
 }
 
 #[test]
@@ -778,13 +847,92 @@ fn invalid_body_resolution_keeps_geometry_and_reports_a_loss() {
         .unwrap();
     assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert_eq!(
-        result.ir().tolerances.linear,
-        cadmpeg_ir::CadIr::empty().tolerances.linear
+        result.ir().tolerances.linear.get(),
+        MODELLER_DEFAULT_LINEAR_MM
     );
+    let body = result.ir().geometry.bodies[0].id.as_str();
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::SolidEdgeLossCode::BodyResolutionInvalid
             .note("")
-            .code));
+            .code
+        && loss.message.contains(body)));
+    assert_geometry_valid(result.ir());
+}
+
+/// The sphere partition under an embedded schema whose BODY declaration
+/// deletes `res_linear`.
+fn sphere_partition_without_resolution() -> Vec<u8> {
+    let base = test_support::sphere_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&base)
+        .unwrap()
+        .unwrap();
+    let description = b": TRANSMIT FILE (partition)";
+    let schema = b"SCH_999_999_13006";
+    let mut bytes = b"PS".to_vec();
+    bytes.extend_from_slice(&u32::try_from(description.len()).unwrap().to_be_bytes());
+    bytes.extend_from_slice(description);
+    bytes.extend_from_slice(&u32::try_from(schema.len()).unwrap().to_be_bytes());
+    bytes.extend_from_slice(schema);
+    bytes.extend_from_slice(&250u16.to_be_bytes());
+    bytes.extend_from_slice(&0u32.to_be_bytes());
+    let mut declared = std::collections::BTreeSet::new();
+    let mut end = 0;
+    for node in records.nodes() {
+        let range = node.range();
+        bytes.extend_from_slice(&base[range.start..range.start + 2]);
+        let is_body = node.kind() == cadmpeg_parasolid::records::node_type::BODY;
+        if declared.insert(node.kind()) {
+            if is_body {
+                bytes.push(22);
+                bytes.extend_from_slice(&[b'C'; 8]);
+                bytes.push(b'D');
+                bytes.extend_from_slice(&[b'C'; 14]);
+                bytes.push(b'Z');
+            } else {
+                bytes.push(255);
+            }
+        }
+        if is_body {
+            let resolution = node.field_range("res_linear").unwrap();
+            bytes.extend_from_slice(&base[range.start + 2..resolution.start]);
+            bytes.extend_from_slice(&base[resolution.end..range.end]);
+        } else {
+            bytes.extend_from_slice(&base[range.start + 2..range.end]);
+        }
+        end = range.end;
+    }
+    bytes.extend_from_slice(&base[end..]);
+    bytes
+}
+
+#[test]
+fn a_body_without_a_stored_resolution_keeps_geometry_and_reports_a_loss() {
+    let result = SolidEdgeCodec
+        .decode(
+            &mut Cursor::new(test_support::with_partitions(&[
+                sphere_partition_without_resolution(),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(
+        result.ir().tolerances.linear.get(),
+        MODELLER_DEFAULT_LINEAR_MM
+    );
+    let body = result.ir().geometry.bodies[0].id.as_str();
+    let unread = crate::loss::SolidEdgeLossCode::BodyResolutionUnread
+        .note("")
+        .code;
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == unread && loss.message.contains(body)),
+        "{:?}",
+        result.report().losses
+    );
     assert_geometry_valid(result.ir());
 }
 
@@ -843,6 +991,101 @@ fn vertexless_ring_edge_is_bounded_by_one_vertex_on_its_carrier() {
         .get();
     assert!((range[1] - range[0] - std::f64::consts::TAU).abs() < EPS_RING_VERTEX_MM);
     assert_geometry_valid(ir);
+}
+
+/// A vertexless edge with no carrier is given up with its node's span in the
+/// partition stream, from the start of the node sequence after any text
+/// header, and drops its loop, coedge, and face.
+#[test]
+fn a_vertexless_edge_with_no_carrier_is_given_up_at_its_node() {
+    let partition = test_support::uncarried_ring_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let edge = records
+        .nodes()
+        .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::EDGE)
+        .unwrap()
+        .range();
+    let header = b"**END_OF_HEADER\n".to_vec();
+    for prefix in [Vec::new(), header] {
+        let mut stream = prefix.clone();
+        stream.extend_from_slice(&partition);
+        let result = decode_partition(stream);
+        let geometry = &result.ir().geometry;
+        assert!(geometry.edges.is_empty());
+        assert!(geometry.faces.is_empty());
+        assert!(geometry.loops.is_empty());
+        assert!(geometry.coedges.is_empty());
+        let charges: Vec<_> = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+            .collect();
+        let [charge] = charges.as_slice() else {
+            panic!("one record.unreadable: {charges:?}");
+        };
+        let offset = prefix.len() + edge.start;
+        let span = format!(
+            " stream=\"solidedge:PARASOLID/STREAM0.P_B\" offset={offset} length={} given up: \
+             a vertexless edge has no carrier; dropped=[",
+            edge.len()
+        );
+        assert!(
+            charge.message.starts_with("record solidedge:brep:edge#"),
+            "{charge:?}"
+        );
+        assert!(charge.message.contains(&span), "{charge:?}");
+        assert_eq!(
+            charge
+                .provenance
+                .as_ref()
+                .map(|provenance| provenance.offset),
+            Some(u64::try_from(offset).unwrap())
+        );
+        let dropped = charge
+            .message
+            .split_once("; dropped=[")
+            .and_then(|(_, tail)| tail.split_once(']'))
+            .map(|(list, _)| list.split(", ").collect::<Vec<_>>())
+            .unwrap();
+        for kind in [
+            "solidedge:brep:coedge#",
+            "solidedge:brep:face#",
+            "solidedge:brep:loop#",
+        ] {
+            assert!(dropped.iter().any(|id| id.starts_with(kind)), "{charge:?}");
+        }
+    }
+}
+
+/// A swept ring face whose edge has neither a vertex nor a carrier is
+/// dropped with its loop; its surface leaves with it, and the charge names
+/// the surface's procedural construction among the records dropped.
+#[test]
+fn a_dropped_swept_face_names_the_construction_of_its_surface() {
+    let kept = decode_partition(test_support::swept_ring_partition(NULL_REAL));
+    let [construction] = kept.ir().geometry.procedural_surfaces.as_slice() else {
+        panic!("the swept surface has one construction");
+    };
+    let result = decode_partition(test_support::uncarried_swept_ring_partition(NULL_REAL));
+    let geometry = &result.ir().geometry;
+    assert!(geometry.faces.is_empty());
+    assert!(geometry.procedural_surfaces.is_empty());
+    let id = construction.id.as_str();
+    assert!(
+        result.report().losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss
+                    .message
+                    .split_once("; dropped=[")
+                    .and_then(|(_, tail)| tail.split_once(']'))
+                    .is_some_and(|(list, _)| list.split(", ").any(|named| named == id))
+        }),
+        "{:#?}",
+        result.report().losses
+    );
 }
 
 fn swept_ring_direction(scale: f64) -> f64 {

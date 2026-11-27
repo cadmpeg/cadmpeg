@@ -830,7 +830,10 @@ fn give_up_statements(
         );
         let part = ctx.give_up_part(part, statement.cause.clone().into_error())?;
         for record in &statement.dropped {
-            dependents.push(dropped_with(statement_record(record), part.id().clone()));
+            dependents.push(dropped_with(
+                ids::omitted_record(record.offset),
+                part.id().clone(),
+            ));
         }
         parts.push(part);
     }
@@ -844,14 +847,24 @@ enum Lost {
     GivenUp(String),
     /// The instance is dropped because it needs instance `needs`, which is
     /// given up or dropped. `record` is the id the document would hold for
-    /// the instance.
-    Dropped { needs: u64, record: Identity },
+    /// the instance, and `None` where the instance is a value of no record.
+    Dropped {
+        needs: u64,
+        record: Option<Identity>,
+    },
 }
 
 /// The DATA instances the reader gives up or drops, each with the first
-/// cause the reader meets.
+/// cause the reader meets, and the records the reader would mint from a DATA
+/// instance and drops because they need a lost instance.
+#[derive(Debug, Clone, Default, PartialEq)]
+struct Lists {
+    instances: BTreeMap<u64, Lost>,
+    records: Vec<(Identity, u64)>,
+}
+
 #[derive(Debug, Default)]
-pub(crate) struct LostInstances(std::sync::Mutex<BTreeMap<u64, Lost>>);
+pub(crate) struct LostInstances(std::sync::Mutex<Lists>);
 
 impl Clone for LostInstances {
     fn clone(&self) -> Self {
@@ -866,7 +879,7 @@ impl PartialEq for LostInstances {
 }
 
 impl LostInstances {
-    fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<u64, Lost>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Lists> {
         self.0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -875,6 +888,7 @@ impl LostInstances {
     /// Gives up instance `id` for `error`.
     pub(crate) fn give_up(&self, id: u64, error: impl std::fmt::Display) {
         self.lock()
+            .instances
             .entry(id)
             .or_insert_with(|| Lost::GivenUp(error.to_string()));
     }
@@ -884,51 +898,63 @@ impl LostInstances {
         self.give_up(id, format_args!("{}: {}", why.code, why.message));
     }
 
-    /// Drops instance `id`, which the document holds as no record, because
-    /// it needs instance `needs`.
+    /// Drops instance `id`, a value of no record of the document, because it
+    /// needs instance `needs`.
     pub(crate) fn drop_with(&self, id: u64, needs: u64) {
-        self.drop_record_with(id, instance_record(id), needs);
+        self.lock().instances.entry(id).or_insert(Lost::Dropped {
+            needs,
+            record: None,
+        });
     }
 
-    /// Drops instance `id`, for which the document would hold `record`,
-    /// because it needs instance `needs`.
+    /// Drops `record`, which the document would hold for instance `id`,
+    /// because it needs instance `needs`. A second record of `id` drops
+    /// beside the first.
     pub(crate) fn drop_record_with(&self, id: u64, record: Identity, needs: u64) {
-        self.lock()
-            .entry(id)
-            .or_insert(Lost::Dropped { needs, record });
+        let mut lists = self.lock();
+        match lists.instances.entry(id) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(Lost::Dropped {
+                    needs,
+                    record: Some(record),
+                });
+            }
+            std::collections::btree_map::Entry::Occupied(entry) => {
+                if matches!(entry.get(), Lost::Dropped { record: Some(first), .. } if *first != record)
+                {
+                    lists.records.push((record, needs));
+                }
+            }
+        }
+    }
+
+    /// Drops `record`, which the document would hold for no single DATA
+    /// instance, because it needs instance `needs`.
+    pub(crate) fn drop_record(&self, record: Identity, needs: u64) {
+        self.lock().records.push((record, needs));
     }
 
     fn contains(&self, id: u64) -> bool {
-        self.lock().contains_key(&id)
+        self.lock().instances.contains_key(&id)
     }
 
-    fn take(&self) -> BTreeMap<u64, Lost> {
+    fn take(&self) -> Lists {
         std::mem::take(&mut *self.lock())
     }
 }
 
-/// The record that names DATA instance `id`, where the document holds no
-/// record minted from it.
-fn instance_record(id: u64) -> Identity {
-    ids::data(kind!("instance"), id)
-}
-
-/// The record that names the statement `name` (`#12` or `<anchor>`) a
-/// parser drop names.
-fn statement_record(name: &str) -> Identity {
-    if let Some(id) = name.strip_prefix('#').and_then(|key| key.parse().ok()) {
-        return instance_record(id);
-    }
-    ids::anchor(name)
+/// Whether the parser or the reader gave up or dropped instance `id`.
+fn instance_is_lost(exchange: &Exchange, id: u64) -> bool {
+    exchange.lost().contains(id)
+        || (!exchange.records().contains_key(&id) && exchange.lost_record(id).is_some())
 }
 
 /// Drops instance `id` with the first of `needs` that the parser or the
 /// reader gave up or dropped. Returns whether one was.
 fn drop_with_lost(exchange: &Exchange, id: u64, needs: impl IntoIterator<Item = u64>) -> bool {
-    let lost = needs.into_iter().find(|&needs| {
-        exchange.lost().contains(needs)
-            || (!exchange.records().contains_key(&needs) && exchange.lost_record(needs).is_some())
-    });
+    let lost = needs
+        .into_iter()
+        .find(|&needs| instance_is_lost(exchange, needs));
     if let Some(needs) = lost {
         exchange.lost().drop_with(id, needs);
     }
@@ -954,7 +980,10 @@ fn give_up_instances(
     statements: &[GivenUpPart],
     ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<GivenUpPart>, Vec<LossNote>), CodecError> {
-    let lost = exchange.lost().take();
+    let Lists {
+        instances: lost,
+        records,
+    } = exchange.lost().take();
     let mut parts = Vec::new();
     let mut losses = Vec::new();
     let mut stubs = BTreeMap::new();
@@ -962,8 +991,9 @@ fn give_up_instances(
         let Lost::GivenUp(error) = cause else {
             continue;
         };
+        // An instance with no DATA record is a statement the parser gave up
+        // or dropped, which its part names.
         let Some(instance) = exchange.records().get(&id) else {
-            losses.push(GivenUpRecord::new(instance_record(id), error).loss());
             continue;
         };
         let bytes = input
@@ -984,22 +1014,54 @@ fn give_up_instances(
         losses.push(part.loss());
         parts.push(part);
     }
-    let named = |id: u64| match lost.get(&id) {
-        Some(Lost::Dropped { record, .. }) => record.clone(),
-        _ => instance_record(id),
+    // The record that a dependent of instance `needs` needs: the stub of a
+    // given-up instance, the record of a dropped one, or the part of the
+    // statement the parser gave up. A value of no record passes the need
+    // on to the instance it needs.
+    let needed = |mut needs: u64| {
+        let mut visited = BTreeSet::new();
+        while visited.insert(needs) {
+            if let Some(stub) = stubs.get(&needs) {
+                return Some(stub.clone());
+            }
+            match lost.get(&needs) {
+                Some(Lost::Dropped {
+                    record: Some(record),
+                    ..
+                }) => return Some(record.clone()),
+                Some(Lost::Dropped {
+                    needs: next,
+                    record: None,
+                }) => needs = *next,
+                Some(Lost::GivenUp(_)) | None => {
+                    return exchange
+                        .lost_record(needs)
+                        .and_then(|statement| statements.get(statement))
+                        .map(|part| Identity::from(part.id().clone()));
+                }
+            }
+        }
+        None
     };
-    for (&id, cause) in &lost {
-        let &Lost::Dropped { needs, .. } = cause else {
-            continue;
-        };
-        let needs = stubs.get(&needs).cloned().unwrap_or_else(|| {
-            exchange
-                .lost_record(needs)
-                .filter(|_| !lost.contains_key(&needs))
-                .and_then(|statement| statements.get(statement))
-                .map_or_else(|| named(needs), |part| part.id().clone().into())
+    let dropped = lost
+        .values()
+        .filter_map(|cause| match cause {
+            Lost::Dropped {
+                needs,
+                record: Some(record),
+            } => Some((record, *needs)),
+            _ => None,
+        })
+        .chain(records.iter().map(|(record, needs)| (record, *needs)));
+    for (record, needs) in dropped {
+        losses.push(match needed(needs) {
+            Some(needed) => dropped_with(record.clone(), needed),
+            None => GivenUpRecord::new(
+                record.clone(),
+                format_args!("it needs instance #{needs}, which the decode holds as no record"),
+            )
+            .loss(),
         });
-        losses.push(dropped_with(named(id), needs));
     }
     Ok((parts, losses))
 }
@@ -1600,6 +1662,16 @@ fn byte_accounting(
         .cloned()
         .collect::<Vec<_>>();
     omitted.sort_unstable_by_key(|left| left.start);
+    // Every byte of a record span is claimed above, and the record lexed
+    // under the parser's admission, which this lexer's admission contains.
+    // Its tokens and trivia would claim nothing, so the walk resumes after it.
+    let mut record_spans = exchange
+        .records()
+        .values()
+        .map(|record| record.span.clone())
+        .collect::<Vec<_>>();
+    record_spans.sort_unstable_by_key(|span| span.start);
+    let mut next_record = 0;
     let mut cursor = 0;
     loop {
         let token = match lexer.next_token() {
@@ -1624,6 +1696,22 @@ fn byte_accounting(
                 break;
             }
         };
+        while record_spans
+            .get(next_record)
+            .is_some_and(|span| span.start < token.span.start)
+        {
+            next_record += 1;
+        }
+        if let Some(span) = record_spans
+            .get(next_record)
+            .filter(|span| span.start == token.span.start)
+        {
+            claim_trivia(input, cursor..span.start, &mut classes, draft)?;
+            lexer.seek(span.end);
+            cursor = span.end;
+            next_record += 1;
+            continue;
+        }
         claim_range(
             &mut classes,
             &token.span,
@@ -1710,7 +1798,10 @@ fn claim_trivia(
                 format_args!("trivia byte at {at}"),
             )?;
             at += 1;
-        } else if let Some(after_print_control) = crate::lex::print_control_end(input, at) {
+        } else if let Some(after_print_control) = (byte == b'\\')
+            .then(|| crate::lex::print_control_end(input, at))
+            .flatten()
+        {
             if after_print_control > end {
                 return Err(CodecError::malformed(format_args!(
                     "STEP print control directive at byte {at} ends at {after_print_control}, but its trivia run ends at {end}"

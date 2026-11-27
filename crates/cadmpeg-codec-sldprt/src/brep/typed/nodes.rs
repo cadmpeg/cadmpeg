@@ -97,6 +97,7 @@ fn body(node: &impl NodeFields, body_offset: usize) -> Option<Read<BodyNode>> {
             topology_refs,
             ownership_refs: Vec::new(),
             kind,
+            linear_resolution: linear,
             offset,
             end,
         })
@@ -166,6 +167,7 @@ fn face(node: &impl NodeFields, body_offset: usize) -> Option<Read<FaceNode>> {
             attr: node.index(),
             node_id,
             refs,
+            front: node.pointers(["next_front", "previous_front", "front_shell"]),
             sense,
             offset,
             end,

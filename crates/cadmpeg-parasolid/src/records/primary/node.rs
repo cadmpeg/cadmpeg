@@ -26,6 +26,17 @@ impl<'a> PrimaryRecords<'a> {
         })
     }
 
+    /// `record`, read by [`PrimaryRecords::read_at`], as a node of this
+    /// sequence.
+    #[must_use]
+    pub fn node<'r>(&'r self, record: &'r PrimaryRecord) -> Node<'r> {
+        Node {
+            source: self.source,
+            record,
+            version: self.version,
+        }
+    }
+
     /// Whether the node sequence ends at its terminator.
     #[must_use]
     pub const fn is_terminated(&self) -> bool {

@@ -91,15 +91,15 @@ fn a_given_up_instance_is_one_part_and_its_dependents_drop_with_it() {
         charge.contains("DIRECTION #1 is invalid or zero"),
         "{charge}"
     );
-    assert!(
-        charge.ends_with("; dropped=[step:data:instance#2]"),
-        "{charge}"
-    );
+    // The vector is a value of no record: it keeps its exact source as an
+    // opaque record, and the charge lists no record for it.
+    assert!(charge.ends_with("; dropped=[]"), "{charge}");
     let stub = charge[head.len()..]
         .split_once(": ")
         .map(|(stub, _)| stub.to_owned())
         .expect("the stub");
     let (_, _, fidelity) = decoded.into_parts();
+    assert!(fidelity.retained_record("step:data:vector#2").is_some());
     // The untyped instance keeps its exact source as an opaque record.
     assert_eq!(
         fidelity
@@ -120,15 +120,17 @@ fn an_anchor_whose_name_holds_a_space_drops_with_its_bounded_part() {
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<#x 23>);ENDSEC;END-ISO-10303-21;"
     );
+    // The parser keeps the exact source of the dropped anchor as an omitted
+    // record, and the charge names that record.
+    let anchor = source.find("<y z>=#1;").expect("the dropped anchor");
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("a permissive decode refuses no anchor name");
+    let dropped = format!("; dropped=[step:file:omitted#{anchor}]");
     assert!(
         decoded.report().losses.iter().any(|loss| {
             loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
-                && loss
-                    .message
-                    .ends_with("; dropped=[step:anchor:name#<y%20z>]")
+                && loss.message.ends_with(&dropped)
         }),
         "{:?}",
         decoded.report().losses
@@ -283,6 +285,45 @@ fn byte_accounting_reports_an_unrecognized_suffix() {
             && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains("1 byte(s) unclassified")
     }));
+}
+
+/// A record that holds literals only metadata admission reads stays a
+/// record. The accounting lexer, under metadata admission, reads each record
+/// token by token to its end, so the accounting walk reads past it.
+#[test]
+fn byte_accounting_reads_past_a_record_with_metadata_only_literals() {
+    let input = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=COLOUR_RGB('',1.E999,\"5F\",0.);\n#2=UNKNOWN_ITEM(2);\nENDSEC;END-ISO-10303-21;\n";
+    let (exchange, _) = crate::test_support::with_service_context(input, crate::parse::parse_inner)
+        .expect("parse the exchange");
+    assert!(exchange.records().contains_key(&1));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, &policy)
+        .expect("context");
+    for record in exchange.records().values() {
+        let mut lexer = crate::lex::Lexer::new(input, &ctx);
+        lexer.set_literal_admission(crate::lex::LiteralAdmission::Metadata);
+        lexer.seek(record.span.start);
+        let mut end = record.span.start;
+        while end < record.span.end {
+            end = lexer
+                .next_token()
+                .expect("the record lexes")
+                .expect("the record holds a token")
+                .span
+                .end;
+        }
+        assert_eq!(end, record.span.end);
+    }
+
+    let counts =
+        byte_accounting(input, &exchange, &HashSet::new(), &[], &ctx).expect("byte classes");
+
+    assert_eq!(counts.unclassified, 0);
+    assert_eq!(
+        counts.structural + counts.typed + counts.opaque,
+        input.len()
+    );
 }
 
 #[test]

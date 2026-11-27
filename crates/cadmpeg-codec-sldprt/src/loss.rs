@@ -28,7 +28,8 @@ pub(crate) enum SldprtLossCode {
     MetadataPartRootUnsupported,
     /// Configuration-manager class has no proven scalar roles or serializer.
     MetadataConfigurationManagerOpaque,
-    /// Default-property carrier has no complete supported reading.
+    /// Default-property carrier stores its properties in a form the decoder
+    /// does not read.
     MetadataDefaultCarrierUnsupported,
     /// Default properties have multiple physical namespace owners.
     MetadataDefaultOwnerAmbiguous,
@@ -40,7 +41,8 @@ pub(crate) enum SldprtLossCode {
     MetadataMassPropertiesNotCompared,
     /// Configuration-property namespace has multiple physical owners.
     MetadataConfigurationPropertyOwnerAmbiguous,
-    /// Configuration-property XML has no complete unambiguous reading.
+    /// Configuration-property carrier stores its properties in a form the
+    /// decoder does not read.
     MetadataConfigurationPropertyCarrierUnsupported,
     /// Configuration-property record has no supported literal scalar fact.
     MetadataConfigurationPropertyValueUnsupported,
@@ -331,12 +333,16 @@ pub(crate) enum SldprtLossCode {
     TessellationReusedTagAmbiguous,
     /// `DisplayLists` meshes transferred without B-rep geometry ownership.
     TessellationDisplayWithoutGeometry,
-    /// No body record was available; a body hierarchy was derived.
+    /// No body record links up with the faces; a body hierarchy was derived.
     TopologyBodyHierarchyDerived,
     /// A canonical face has no explicit body relation.
     TopologyFaceUnclaimed,
-    /// A face has no decoded loop, so the face and its surface are withheld.
+    /// A face names no loop and does not cover a whole closed surface, so
+    /// the face and its surface are withheld.
     TopologyFaceWithheld,
+    /// A face's loop chain names a loop that is missing or that another face
+    /// owns; the face keeps the loops before it and is stated partial.
+    TopologyLoopChainCut,
     /// Current typed ownership nodes are absent from the decoded topology.
     TopologyOwnershipWithheld,
     /// Referenced FIN records have conflicting complete frames.
@@ -345,17 +351,18 @@ pub(crate) enum SldprtLossCode {
     /// reciprocal partner corroboration of both ring-order endpoints, or a
     /// mutual twin FIN contradicts the ring-order endpoint.
     TopologyFinPartnerUnresolved,
-    /// A FIN forward link names no reciprocal same-loop backward link, so
-    /// its ring is withheld instead of walked on doubt.
+    /// A FIN ring does not close, or a FIN forward link names no reciprocal
+    /// same-loop backward link, so its loop is withheld instead of walked on
+    /// doubt; the face keeps its other loops.
     TopologyFinLinkUnresolved,
     /// Vertexless ring FINs fail reciprocal closed-carrier single-loop
     /// admission, so no vertex is invented for them.
     TopologyRingEdgeWithheld,
-    /// A vertex loop names no resolved vertex, so its face and surface are
-    /// withheld.
+    /// A vertex loop names no resolved vertex, so the loop is withheld; the
+    /// face keeps its other loops.
     TopologyVertexLoopWithheld,
-    /// A loop of a face holds an ambiguous FIN, so the face and its surface
-    /// are withheld.
+    /// The ring of a loop holds an ambiguous FIN, so the loop is withheld;
+    /// the face keeps its other loops.
     TopologyAmbiguousFinFaceWithheld,
     /// Referenced LOOP records have conflicting complete frames.
     TopologyLoopRecordAmbiguous,
@@ -370,6 +377,12 @@ pub(crate) enum SldprtLossCode {
     /// Imported-feature body streams of the active configuration that do not
     /// decode or that the decode does not take.
     GeometryImportedBodiesNotTransferred,
+    /// A body's stored `res_linear` states no linear precision
+    /// (`parasolid.md` §4).
+    BodyResolutionInvalid,
+    /// A body whose BODY node does not read states no `res_linear`, and the
+    /// part tolerance does not count it (`parasolid.md` §4).
+    BodyResolutionUnread,
     /// B-rep topology graph was not built for this file.
     TopologyGraphNotTransferred,
     /// Materials, tessellation, and metadata were not transferred.
@@ -462,6 +475,9 @@ pub(crate) enum SldprtLossCode {
     WriterActiveConfigurationAssumed,
     /// Export writes no history record for the named design records.
     WriterFeaturesOmitted,
+    /// Export writes no history record for the named features, whose result
+    /// body the output does not hold, nor for the records that need them.
+    WriterFeatureResultAbsent,
     /// Export writes the sketches without the named constraints.
     WriterSketchConstraintsOmitted,
     /// Export bounds the named edges by their vertices, without their range.
@@ -547,8 +563,8 @@ pub(crate) enum SldprtLossCode {
     /// Suppressed component instances, and the instances below them, are
     /// omitted from the occurrence tree.
     AssemblySuppressedComponentsOmitted,
-    /// A component instance has no valid placement or names no component
-    /// model; the instance and the instances below it are omitted.
+    /// A component instance has no valid identity, placement, or component
+    /// model; the instance is omitted.
     AssemblyPlacementUnresolved,
     /// Assembly configurations other than the active one are not transferred.
     AssemblyConfigurationsNotTransferred,
@@ -775,6 +791,7 @@ impl SldprtLossCode {
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyFaceUnclaimed,
         Self::TopologyFaceWithheld,
+        Self::TopologyLoopChainCut,
         Self::TopologyOwnershipWithheld,
         Self::TopologyFinRecordAmbiguous,
         Self::TopologyFinPartnerUnresolved,
@@ -788,6 +805,8 @@ impl SldprtLossCode {
         Self::GeometryParasolidNotTransferred,
         Self::GeometryMeshBodyNotTransferred,
         Self::GeometryImportedBodiesNotTransferred,
+        Self::BodyResolutionInvalid,
+        Self::BodyResolutionUnread,
         Self::TopologyGraphNotTransferred,
         Self::MaterialMetadataNotTransferred,
         Self::ContainerNoParasolidStream,
@@ -825,6 +844,7 @@ impl SldprtLossCode {
         Self::WriterSubdOmitted,
         Self::WriterActiveConfigurationAssumed,
         Self::WriterFeaturesOmitted,
+        Self::WriterFeatureResultAbsent,
         Self::WriterSketchConstraintsOmitted,
         Self::WriterEdgeRangesOmitted,
         Self::WriterPmiOmitted,
@@ -1015,6 +1035,7 @@ impl SldprtLossCode {
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
             Self::TopologyOwnershipWithheld => "topology.ownership-withheld",
             Self::TopologyFaceWithheld => "topology.face-withheld",
+            Self::TopologyLoopChainCut => "topology.loop-chain-cut",
             Self::TopologyFinRecordAmbiguous => "topology.fin-record-ambiguous",
             Self::TopologyFinPartnerUnresolved => "topology.fin-partner-unresolved",
             Self::TopologyFinLinkUnresolved => "topology.fin-link-unresolved",
@@ -1029,6 +1050,8 @@ impl SldprtLossCode {
             Self::GeometryImportedBodiesNotTransferred => {
                 "geometry.imported-bodies-not-transferred"
             }
+            Self::BodyResolutionInvalid => "body.resolution-invalid",
+            Self::BodyResolutionUnread => "body.resolution-unread",
             Self::TopologyGraphNotTransferred => "topology.graph-not-transferred",
             Self::MaterialMetadataNotTransferred => "material.metadata-not-transferred",
             Self::ContainerNoParasolidStream => "container.no-parasolid-stream",
@@ -1070,6 +1093,7 @@ impl SldprtLossCode {
             Self::WriterSubdOmitted => "writer.subd-omitted",
             Self::WriterActiveConfigurationAssumed => "writer.active-configuration-assumed",
             Self::WriterFeaturesOmitted => "writer.features-omitted",
+            Self::WriterFeatureResultAbsent => "writer.feature-result-absent",
             Self::WriterSketchConstraintsOmitted => "writer.sketch-constraints-omitted",
             Self::WriterEdgeRangesOmitted => "writer.edge-ranges-omitted",
             Self::WriterPmiOmitted => "writer.pmi-omitted",
@@ -1158,6 +1182,7 @@ impl SldprtLossCode {
     const fn severity(self) -> Severity {
         match self {
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
+            Self::BodyResolutionInvalid | Self::BodyResolutionUnread => Severity::Warning,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
             Self::WriterUnitsMemberGenerated => Severity::Warning,
             Self::WriterNativeHistorySummary => Severity::Warning,
@@ -1177,6 +1202,7 @@ impl SldprtLossCode {
             Self::WriterSubdOmitted => Severity::Warning,
             Self::WriterActiveConfigurationAssumed => Severity::Warning,
             Self::WriterFeaturesOmitted => Severity::Warning,
+            Self::WriterFeatureResultAbsent => Severity::Warning,
             Self::WriterSketchConstraintsOmitted => Severity::Warning,
             Self::WriterEdgeRangesOmitted => Severity::Warning,
             Self::WriterPmiOmitted => Severity::Warning,
@@ -1325,6 +1351,7 @@ impl SldprtLossCode {
             | Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
             | Self::TopologyFaceWithheld
+            | Self::TopologyLoopChainCut
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
             | Self::TopologyFinLinkUnresolved
@@ -1395,6 +1422,8 @@ impl SldprtLossCode {
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::BodyResolutionInvalid => LossTaxonomy::SourceTopologyInvalid,
+            Self::BodyResolutionUnread => LossTaxonomy::DecodeDiagnostic,
             Self::WriterNativeEnvelopeAuxiliaryOmitted
             | Self::WriterHistoryNameNotWritten
             | Self::WriterHistoryRegenerationRefused => LossTaxonomy::MetadataNotTransferred,
@@ -1416,6 +1445,7 @@ impl SldprtLossCode {
             Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
             Self::WriterActiveConfigurationAssumed => LossTaxonomy::MetadataNotTransferred,
             Self::WriterFeaturesOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterFeatureResultAbsent => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterSketchConstraintsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterEdgeRangesOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterPmiOmitted => LossTaxonomy::PmiOmitted,
@@ -1504,6 +1534,7 @@ impl SldprtLossCode {
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
             | Self::TopologyFaceWithheld
+            | Self::TopologyLoopChainCut
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
             | Self::TopologyFinLinkUnresolved
@@ -1943,6 +1974,7 @@ mod tests {
                 "topology.body-hierarchy-derived",
                 "topology.face-unclaimed",
                 "topology.face-withheld",
+                "topology.loop-chain-cut",
                 "topology.ownership-withheld",
                 "topology.fin-record-ambiguous",
                 "topology.fin-partner-unresolved",
@@ -1956,6 +1988,8 @@ mod tests {
                 "geometry.parasolid-not-transferred",
                 "geometry.mesh-body-not-transferred",
                 "geometry.imported-bodies-not-transferred",
+                "body.resolution-invalid",
+                "body.resolution-unread",
                 "topology.graph-not-transferred",
                 "material.metadata-not-transferred",
                 "container.no-parasolid-stream",
@@ -1993,6 +2027,7 @@ mod tests {
                 "writer.subd-omitted",
                 "writer.active-configuration-assumed",
                 "writer.features-omitted",
+                "writer.feature-result-absent",
                 "writer.sketch-constraints-omitted",
                 "writer.edge-ranges-omitted",
                 "writer.pmi-omitted",

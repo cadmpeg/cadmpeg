@@ -493,10 +493,11 @@ fn a_record_that_needs_a_given_up_record_is_dropped_and_named() {
     }
 }
 
-/// The entry that gives a record up names each native record that links to
-/// it, and the document keeps no link to it (§3.3).
+/// A native record holds no reference into the neutral model (§2): one
+/// whose value states the id of a given-up record keeps its place, and the
+/// entry that gives the record up does not name it.
 #[test]
-fn a_native_record_that_links_to_a_given_up_record_is_named() {
+fn a_native_record_that_states_a_given_up_id_is_kept() {
     const ANNOTATION: &str = "test:native:annotation#1";
     let mut ir = unit_cube().unwrap();
     let point = ir.geometry.points[0].id.as_str().to_owned();
@@ -513,6 +514,7 @@ fn a_native_record_that_links_to_a_given_up_record_is_named() {
             vec![annotation],
         );
     let mut value = json::to_value(&ir).unwrap();
+    let annotations = value["native"]["test"].clone();
     points(&mut value)[0]["position"] = json!("not a point");
     let read = read(value.to_string().as_bytes());
     let entry = read
@@ -521,15 +523,47 @@ fn a_native_record_that_links_to_a_given_up_record_is_named() {
         .find(|entry| entry.code == crate::unknown::part::record_unreadable_kind())
         .unwrap_or_else(|| panic!("{:?}", read.report));
     assert!(
-        listed(&entry.message, "dropped")
+        !listed(&entry.message, "dropped")
             .into_iter()
             .chain(listed(&entry.message, "marked"))
             .any(|id| id == ANNOTATION),
         "{}",
         entry.message
     );
-    let native = json::to_string(&read.document.native).unwrap();
-    assert!(!native.contains(&format!("\"{point}\"")), "{native}");
+    assert_eq!(
+        json::to_value(&read.document.native).unwrap()["test"],
+        annotations
+    );
+}
+
+/// A label names nothing: a surface whose source object states the id of a
+/// given-up point keeps its place, and so do the faces on it (§3.3).
+#[test]
+fn a_record_whose_label_states_a_given_up_id_is_kept() {
+    const LOOSE: &str = "test:geometry:point#loose";
+    let (ir, mut value) = wire();
+    let mut loose = points(&mut value)[0].clone();
+    loose["id"] = json!(LOOSE);
+    loose["position"] = json!("not a point");
+    points(&mut value).push(loose);
+    value["geometry"]["surfaces"][0]["source_object"] =
+        json!({"format": "test", "object_id": LOOSE, "instance_path": []});
+    let read = read(value.to_string().as_bytes());
+    let document = &read.document;
+    assert!(document
+        .geometry
+        .points
+        .iter()
+        .all(|kept| kept.id.as_str() != LOOSE));
+    assert_eq!(document.geometry.surfaces.len(), ir.geometry.surfaces.len());
+    assert_eq!(document.geometry.faces.len(), ir.geometry.faces.len());
+    assert_eq!(
+        document.geometry.surfaces[0]
+            .source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some(LOOSE)
+    );
 }
 
 /// A record nested past the depth bound is given up without a reading of
@@ -773,4 +807,146 @@ fn a_key_restated_with_different_values_in_a_kept_record_is_given_up_as_parts() 
     assert_eq!(read.document.geometry, ir.geometry);
     assert_eq!(codes(&read.report), ["read/record.repeated"]);
     assert_eq!(read.document.native_unknowns("cadir").unwrap().len(), 2);
+}
+
+/// The `object` of the view presentations in `read`.
+fn view_objects(read: &CadirRead) -> Vec<Option<String>> {
+    read.document
+        .model
+        .view_presentations
+        .iter()
+        .map(|view| {
+            view.object
+                .as_ref()
+                .map(|object| object.as_str().to_owned())
+        })
+        .collect()
+}
+
+/// A view presentation whose `object` names a neutral record the read gives
+/// up keeps no link to it (§3.3).
+#[test]
+fn a_view_presentation_keeps_no_object_of_a_given_up_point() {
+    let (_, mut value) = wire();
+    let point = points(&mut value)[0]["id"].as_str().unwrap().to_owned();
+    value["model"]["view_presentations"] = json!([{
+        "id": "test:model:view#1", "object": point, "order": 0, "properties": {}
+    }]);
+    points(&mut value)[0]["position"] = json!("not a point");
+    let read = read(value.to_string().as_bytes());
+    assert!(read
+        .document
+        .geometry
+        .points
+        .iter()
+        .all(|kept| kept.id.as_str() != point));
+    assert!(
+        view_objects(&read)
+            .iter()
+            .flatten()
+            .all(|object| *object != point),
+        "{:?}",
+        read.report
+    );
+}
+
+/// A drawing whose `object` is `object` and whose `assets` are `assets`.
+fn drawing(object: &str, assets: &[&str]) -> Value {
+    json!({
+        "id": "test:model:drawing#1", "object": object, "kind": "page",
+        "runtime_type": "Page", "order": 0, "relationships": {}, "curves": [],
+        "parameters": {}, "views": [], "assets": assets
+    })
+}
+
+/// The drawings the read keeps, by id, with their `object` and `assets`.
+fn drawings(read: &CadirRead) -> Vec<(String, String, Vec<String>)> {
+    read.document
+        .model
+        .drawings
+        .iter()
+        .map(|drawing| {
+            (
+                drawing.id.to_string(),
+                drawing.object.to_string(),
+                drawing.assets.iter().map(ToString::to_string).collect(),
+            )
+        })
+        .collect()
+}
+
+/// A drawing whose required `object` names a record the read gives up
+/// cannot be stated without it, so the read drops the drawing (§3.3).
+#[test]
+fn a_drawing_whose_object_is_given_up_is_dropped() {
+    let (_, mut value) = wire();
+    let point = points(&mut value)[0]["id"].as_str().unwrap().to_owned();
+    value["model"]["drawings"] = json!([drawing(&point, &[])]);
+    let kept = read(value.to_string().as_bytes());
+    assert_eq!(drawings(&kept).len(), 1, "{:?}", kept.report);
+    points(&mut value)[0]["position"] = json!("not a point");
+    let read = read(value.to_string().as_bytes());
+    assert!(drawings(&read).is_empty(), "{:?}", read.report);
+}
+
+/// A drawing whose `assets` name a record the read gives up keeps no link
+/// to it (§3.3).
+#[test]
+fn a_drawing_keeps_no_asset_that_is_given_up() {
+    let (_, mut value) = wire();
+    let point = points(&mut value)[0]["id"].as_str().unwrap().to_owned();
+    let object = points(&mut value)[1]["id"].as_str().unwrap().to_owned();
+    value["model"]["drawings"] = json!([drawing(&object, &[&point])]);
+    let kept = read(value.to_string().as_bytes());
+    assert_eq!(
+        drawings(&kept),
+        [(
+            "test:model:drawing#1".to_owned(),
+            object.clone(),
+            vec![point.clone()]
+        )],
+        "{:?}",
+        kept.report
+    );
+    points(&mut value)[0]["position"] = json!("not a point");
+    let read = read(value.to_string().as_bytes());
+    assert!(
+        drawings(&read)
+            .iter()
+            .all(|(_, object, assets)| *object != point && !assets.contains(&point)),
+        "{:?}",
+        read.report
+    );
+}
+
+/// A view presentation whose `object` names a native record that the read
+/// gives up for an id stated twice with different values keeps no link to
+/// it (§3.3).
+#[test]
+fn a_view_presentation_keeps_no_object_of_a_repeated_native_record() {
+    const OBJECT: &str = "test:native:object#1";
+    let (_, mut value) = wire();
+    value["native"]["test"] = json!({"objects": [
+        {"id": OBJECT, "label": "a"},
+        {"id": OBJECT, "label": "b"}
+    ]});
+    value["model"]["view_presentations"] = json!([{
+        "id": "test:model:view#1", "object": OBJECT, "order": 0, "properties": {}
+    }]);
+    let read = read(value.to_string().as_bytes());
+    assert!(
+        codes(&read.report)
+            .iter()
+            .any(|code| code == "read/record.repeated"),
+        "{:?}",
+        read.report
+    );
+    assert!(
+        view_objects(&read)
+            .iter()
+            .flatten()
+            .all(|object| object != OBJECT),
+        "{:?}",
+        read.report
+    );
 }

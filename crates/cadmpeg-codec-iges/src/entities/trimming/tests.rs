@@ -78,7 +78,8 @@ const EPS_SOURCE_BOUND_REPRESENTATION: f64 = 5.0e-7;
 
 #[test]
 fn decode_skips_a_boundary_over_its_endpoint_cluster_limit() {
-    let segment_count = 8_193_usize;
+    let cluster_limit = 16;
+    let segment_count = cluster_limit / 2 + 1;
     let mut entities = Vec::new();
     entities.push(OwnedTestEntity {
         entity_type: 108,
@@ -129,20 +130,23 @@ fn decode_skips_a_boundary_over_its_endpoint_cluster_limit() {
         parameters: format!("143,0,1,1,{boundary_sequence};"),
     });
 
-    let decoded = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file(&entities)),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+    let decoded = crate::reader::decode_with_test_limits(
+        &owned_test_file(&entities),
+        &DecodeOptions::default(),
+        crate::reader::DecodeLimits::with_projection(crate::entities::geometry::ProjectionLimits {
+            boundary_cluster_endpoints: cluster_limit,
+            ..crate::entities::geometry::ProjectionLimits::DEFAULT
+        }),
+    )
+    .unwrap();
 
     assert!(decoded.ir().geometry.faces.is_empty());
     assert!(decoded.ir().geometry.bodies.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::GeometryNotProjected.kind()
-            && loss
-                .message
-                .contains("endpoint clustering is limited to 16384")
+            && loss.message.contains(&format!(
+                "endpoint clustering is limited to {cluster_limit}"
+            ))
     }));
 }
 
@@ -161,7 +165,7 @@ fn decode_skips_a_trimmed_face_whose_linear_boundary_exceeds_the_pair_budget() {
             form: 0,
             label: "RING".into(),
             status: "00010000",
-            parameters: closed_ring_linear_nurbs_parameters(32_770),
+            parameters: closed_ring_linear_nurbs_parameters(9),
         },
         OwnedTestEntity {
             entity_type: 142,
@@ -179,12 +183,16 @@ fn decode_skips_a_trimmed_face_whose_linear_boundary_exceeds_the_pair_budget() {
         },
     ];
 
-    let decoded = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file(&entities)),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+    // The 9 ring points need 9² pairs, over the pass's 80.
+    let decoded = crate::reader::decode_with_test_limits(
+        &owned_test_file(&entities),
+        &DecodeOptions::default(),
+        crate::reader::DecodeLimits::with_projection(crate::entities::geometry::ProjectionLimits {
+            planar_point_pairs: 80,
+            ..crate::entities::geometry::ProjectionLimits::DEFAULT
+        }),
+    )
+    .unwrap();
 
     assert!(decoded.ir().geometry.faces.is_empty());
     assert!(
@@ -1771,4 +1779,62 @@ fn linear_boundary_relationship_accepts_corner_touching_rings_and_rejects_a_non_
         ),
         Some(false)
     );
+}
+
+#[test]
+fn a_trimmed_face_on_a_surface_over_the_pole_limit_is_dropped_with_the_surface() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+
+    let boundary = "106,1,5,0,0.2,0.2,0.2,0.8,0.8,0.8,0.8,0.2,0.2,0.2;";
+    let entity = |entity_type, form, label: &str, status, parameters: &str| OwnedTestEntity {
+        entity_type,
+        form,
+        label: label.into(),
+        status,
+        parameters: parameters.into(),
+    };
+    // The surface declares a 1001 by 1001 pole grid.
+    let bytes = owned_test_file(&[
+        entity(
+            128,
+            0,
+            "SURFACE",
+            "00010000",
+            "128,1000,1000,1,1,0,0,1,0,0;",
+        ),
+        entity(106, 63, "MODEL", "00010000", boundary),
+        entity(106, 63, "PCURVE", "00010500", boundary),
+        entity(142, 0, "ONSURF", "00010000", "142,0,1,5,3,3;"),
+        entity(144, 0, "TRIMMED", "00000000", "144,1,1,0,7;"),
+    ]);
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    crate::test_support::assert_gives_up(result.report(), &[("entity", 1)]);
+    let given_up = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .unwrap();
+    assert!(
+        given_up.message.contains("surface pole count exceeds"),
+        "{}",
+        given_up.message
+    );
+    let dropped = given_up
+        .message
+        .split("dropped=[")
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .unwrap_or_default();
+    assert_eq!(dropped, "iges:model:face#D9", "{}", given_up.message);
+    assert!(result.ir().geometry.faces.is_empty());
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| cadmpeg_ir::unknown::part::needs(loss).is_some()));
 }

@@ -796,6 +796,7 @@ fn combine_external_scope() -> crate::records::feature::scope::DesignParameterSc
         crate::records::feature::combine::DesignCombineBodySelection {
             record_index,
             external_identity: Some(identity(occurrence_reference)),
+            legacy_external_identity: None,
             body_node: None,
         }
     };
@@ -836,6 +837,7 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
         crate::records::feature::combine::DesignCombineBodySelection {
             record_index,
             external_identity: Some(combine_external_identity(occurrence_reference)),
+            legacy_external_identity: None,
             body_node: None,
         }
     };
@@ -855,6 +857,61 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
         .expect("Combine operation")
         .tools
         .additional[0] = tool(13, 500);
+    assert!(super::super::body_selections::combine_external_local_tools(&scope).is_none());
+}
+
+#[test]
+fn combine_legacy_external_tools_retain_occurrence_local_identities() {
+    use cadmpeg_ir::features::selections::BodySelection;
+
+    let tool = |record_index, browser_node_entity| {
+        crate::records::feature::combine::DesignCombineBodySelection {
+            record_index,
+            external_identity: None,
+            legacy_external_identity: Some(
+                crate::records::feature::combine::DesignCombineLegacyExternalBodyIdentity {
+                    selector_asset_id: "11111111-1111-4111-8111-111111111111"
+                        .to_owned()
+                        .try_into()
+                        .expect("GUID"),
+                    selector_asset_id_offset: 44,
+                    selector_context_id: "22222222-2222-4222-8222-222222222222"
+                        .to_owned()
+                        .try_into()
+                        .expect("GUID"),
+                    selector_context_id_offset: 120,
+                    occurrence_reference: 500,
+                    occurrence_reference_offset: 205,
+                    browser_node_entity,
+                    browser_node_entity_offset: 220,
+                    source_occurrence_identity: 0x0123_4567_89ab_cdef,
+                    source_occurrence_identity_offset: 229,
+                    tail_values: [0, 0],
+                    tail_value_offsets: [285, 297],
+                },
+            ),
+            body_node: None,
+        }
+    };
+    let mut scope = combine_external_scope();
+    let operation = scope.combine_operation_mut().expect("Combine operation");
+    operation.tools.first = tool(12, 700);
+    operation.tools.additional = vec![tool(13, 701)];
+    let BodySelection::Local { bodies, native } =
+        super::super::body_selections::combine_external_local_tools(&scope)
+            .expect("complete legacy local tool identity")
+    else {
+        panic!("local body selection");
+    };
+    assert_eq!(bodies.len(), 2);
+    assert_ne!(bodies[0], bodies[1]);
+    assert_eq!(native.as_str(), scope.id);
+
+    scope
+        .combine_operation_mut()
+        .expect("Combine operation")
+        .tools
+        .additional[0] = tool(13, 700);
     assert!(super::super::body_selections::combine_external_local_tools(&scope).is_none());
 }
 

@@ -99,7 +99,7 @@ impl Hvec {
 }
 
 /// Complete physical storage; the form separately fixes its row count.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "layout", content = "hvecs", rename_all = "snake_case")]
 pub(crate) enum LimitState {
     Xyz3(LimitRows<FiniteVector<3>>),

@@ -10,7 +10,7 @@ pub(crate) const PRESENTATION_GUID: &str = "6CCF41D5-40BE-48ED-A834-18F3EAED6C57
 pub(crate) const PAIRED_GUID: &str = "CB844AB6-240D-4FC9-9C9F-3679DC896D6F";
 
 /// The version fixes the number of optional input references.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "version", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum DesignSheetMetalSettingsInputs {
     V2 {

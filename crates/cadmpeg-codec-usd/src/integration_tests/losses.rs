@@ -426,6 +426,70 @@ fn physics_losses_are_emitted() {
     assert!(emitted(&report.losses, UsdLossCode::ExportJointNotWritten));
 }
 
+/// A joint that the decoder reads and leaves out is given up by its id, one
+/// `record.unreadable` per joint with its own cause, and each cause has a
+/// `physics.joint-rejected` note of its own.
+#[test]
+fn a_rejected_joint_is_given_up_with_its_cause() {
+    let cases = [
+        ("", "names no body"),
+        (
+            "rel physics:body1 = </Missing>",
+            "names a body that is not a transferred prim",
+        ),
+        (
+            "rel physics:body1 = </B>\n    quatf physics:localRot0 = (0, 0, 0, 0)",
+            "has a malformed frame",
+        ),
+    ];
+    for (body, cause) in cases {
+        let text = format!(
+            "#usda 1.0\ndef Xform \"B\"\n{{\n}}\ndef PhysicsFixedJoint \"J\"\n{{\n    {body}\n}}\n"
+        );
+        let result = decode(&text);
+        let joint = crate::ids::joint("/J");
+        assert!(
+            result
+                .ir()
+                .model
+                .assembly_joints
+                .iter()
+                .all(|record| record.id != joint),
+            "{text}"
+        );
+        let feature = crate::ids::joint_feature("/J");
+        assert!(result
+            .ir()
+            .design
+            .features
+            .iter()
+            .all(|record| record.id != feature));
+        let losses = &result.report().losses;
+        let charges: Vec<&str> = losses
+            .iter()
+            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+            .map(|loss| loss.message.as_str())
+            .collect();
+        assert_eq!(
+            charges,
+            [format!(
+                "record {joint} given up: usd/physics.joint-rejected: the joint {cause}; dropped=[]"
+            )],
+            "{text}"
+        );
+        let notes: Vec<&str> = losses
+            .iter()
+            .filter(|loss| loss.code == UsdLossCode::JointRejected.kind())
+            .map(|loss| loss.message.as_str())
+            .collect();
+        let [note] = notes.as_slice() else {
+            panic!("one physics.joint-rejected note: {notes:?}");
+        };
+        assert!(note.starts_with("1 joints "), "{note}");
+        assert!(note.ends_with(": /J"), "{note}");
+    }
+}
+
 #[test]
 fn design_state_beside_the_joints_is_reported_on_write() {
     let source = decode("#usda 1.0\ndef Xform \"A\"\n{\n}\ndef Xform \"B\"\n{\n}\ndef PhysicsFixedJoint \"J\"\n{\n    rel physics:body0 = </A>\n    rel physics:body1 = </B>\n}\n");
@@ -547,5 +611,39 @@ fn an_occurrence_of_a_prototype_left_out_is_left_out() {
         decoded.ir().model.occurrences.len(),
         source.ir().model.occurrences.len() - 2,
         "{text}"
+    );
+}
+
+/// A `BrepArray` whose arrays read and do not decode gives up each B-rep
+/// that `brep:regionCount` counts, not only the first.
+#[test]
+fn a_brep_array_that_does_not_decode_gives_up_each_brep_it_counts() {
+    let text = std::fs::read_to_string(format!(
+        "{}/tests/golden/fixtures/brep_array_box.usda",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .expect("fixture");
+    let broken = text.replacen(
+        "uniform uint[] brep:regionCount = [2]",
+        "uniform uint[] brep:regionCount = [2, 1]",
+        1,
+    );
+    assert_ne!(broken, text);
+    let result = decode(&broken);
+    let prefix = format!("{}:", UsdLossCode::BrepRejected.kind());
+    let given_up: Vec<&str> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.message.contains(&prefix))
+        .map(|loss| loss.message.as_str())
+        .collect();
+    assert_eq!(given_up.len(), 2, "{given_up:#?}");
+    assert!(
+        given_up
+            .iter()
+            .any(|message| message.contains("brep1 given up")),
+        "{given_up:#?}"
     );
 }

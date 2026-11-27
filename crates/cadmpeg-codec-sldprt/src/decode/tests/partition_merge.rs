@@ -99,13 +99,8 @@ fn conflicting_missing_partition_point_has_one_counted_loss() {
                 .collect();
             assert_eq!(losses.len(), 1);
             assert!(losses[0].message.starts_with("1 referenced POINT"));
-            if metadata_fallback {
-                assert!(result
-                    .report()
-                    .losses
-                    .iter()
-                    .any(|loss| loss.code.local_code() == "topology.graph-not-transferred"));
-            }
+            let faces = &result.ir().geometry.faces;
+            assert!(!faces.is_empty() && faces.iter().all(|face| face.loops.is_partial()));
         }
     }
 }
@@ -204,7 +199,10 @@ fn conflicting_first_delta_fin_remains_referenced_on_both_decode_paths() {
                     &DecodeOptions::default(),
                 )
                 .unwrap();
-            assert!(result.ir().geometry.faces.is_empty());
+            let [face] = &result.ir().geometry.faces[..] else {
+                panic!("the face is kept");
+            };
+            assert!(face.loops.is_partial());
             let losses: Vec<_> = result
                 .report()
                 .losses
@@ -213,13 +211,6 @@ fn conflicting_first_delta_fin_remains_referenced_on_both_decode_paths() {
                 .collect();
             assert_eq!(losses.len(), 1);
             assert!(losses[0].message.starts_with("1 referenced FIN"));
-            if metadata_fallback {
-                assert!(result
-                    .report()
-                    .losses
-                    .iter()
-                    .any(|loss| loss.code.local_code() == "topology.graph-not-transferred"));
-            }
         }
     }
 }
@@ -264,7 +255,10 @@ fn conflicting_fin_framing_keeps_one_loss_through_empty_and_metadata_paths() {
                     &DecodeOptions::default(),
                 )
                 .unwrap();
-            assert!(result.ir().geometry.faces.is_empty());
+            let [face] = &result.ir().geometry.faces[..] else {
+                panic!("the face is kept");
+            };
+            assert!(face.loops.is_partial());
             let losses: Vec<_> = result
                 .report()
                 .losses
@@ -273,13 +267,6 @@ fn conflicting_fin_framing_keeps_one_loss_through_empty_and_metadata_paths() {
                 .collect();
             assert_eq!(losses.len(), 1);
             assert!(losses[0].message.starts_with("1 referenced FIN"));
-            if metadata_fallback {
-                assert!(result
-                    .report()
-                    .losses
-                    .iter()
-                    .any(|loss| loss.code.local_code() == "topology.graph-not-transferred"));
-            }
         }
     }
 }
@@ -300,7 +287,10 @@ fn conflicting_first_partition_fin_retains_loop_reference_for_loss() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert!(result.ir().geometry.faces.is_empty());
+    let [face] = &result.ir().geometry.faces[..] else {
+        panic!("the face is kept");
+    };
+    assert!(face.loops.is_partial());
     assert_eq!(
         result
             .report()
@@ -385,13 +375,8 @@ fn conflicting_loop_node_ids_keep_one_loss_through_empty_and_metadata_paths() {
                 .collect();
             assert_eq!(losses.len(), 1);
             assert!(losses[0].message.starts_with("1 referenced LOOP"));
-            if metadata_fallback {
-                assert!(result
-                    .report()
-                    .losses
-                    .iter()
-                    .any(|loss| loss.code.local_code() == "topology.graph-not-transferred"));
-            }
+            let faces = &result.ir().geometry.faces;
+            assert!(!faces.is_empty() && faces.iter().all(|face| face.loops.is_partial()));
         }
     }
 }
@@ -449,7 +434,7 @@ fn typed_ownership_can_close_across_partition_and_deltas() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.message.contains("No body record was available")));
+        .any(|loss| loss.message.contains("No body record names a region")));
 }
 
 #[test]
@@ -1002,7 +987,10 @@ fn conflicting_current_start_vertex_has_one_loss_on_both_decode_paths() {
                     &DecodeOptions::default(),
                 )
                 .unwrap();
-            assert!(result.ir().geometry.faces.is_empty());
+            let [face] = &result.ir().geometry.faces[..] else {
+                panic!("the face is kept");
+            };
+            assert!(face.loops.is_partial());
             let losses: Vec<_> = result
                 .report()
                 .losses
@@ -1011,13 +999,6 @@ fn conflicting_current_start_vertex_has_one_loss_on_both_decode_paths() {
                 .collect();
             assert_eq!(losses.len(), 1);
             assert!(losses[0].message.starts_with("1 referenced VERTEX"));
-            if fallback {
-                assert!(result
-                    .report()
-                    .losses
-                    .iter()
-                    .any(|loss| loss.code.local_code() == "topology.graph-not-transferred"));
-            }
         }
     }
 }
@@ -1073,7 +1054,10 @@ fn finite_vertex_tolerance_transfers_in_millimetres_and_nonpositive_is_counted()
             assert_eq!(values.len(), 1);
             assert!((values[0] - 0.1).abs() < f64::EPSILON);
         } else {
-            assert!(result.ir().geometry.faces.is_empty());
+            let [face] = &result.ir().geometry.faces[..] else {
+                panic!("the face is kept");
+            };
+            assert!(face.loops.is_partial());
             assert!(result
                 .report()
                 .losses

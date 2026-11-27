@@ -2217,6 +2217,188 @@ sha256 = "c300050a3bb5f741b68245e08db942c239fa74c7b05dccd26e7f8aba3ced5da5"
 notes = "STEP AP214 ground-truth export of sldprt/extrude_up_to_vertex_high.SLDPRT. 8 x 8 mm boss on Front plane (x 12..20) extruded Up To Vertex (10, 10, 22) on step edge (DI-15)."
 
 [[file]]
+filename = "alibre/box.AD_PRT"
+format = "alibre"
+dialect = "alibre:cfb-acis-binary"
+author = "cadmpeg project contributors"
+authoring_app = "Alibre Design Expert"
+authoring_app_version = "28.1.1"
+generator = "alibre/scrub_cc0.py"
+acquisition_date = "2026-11-23"
+license = "CC0-1.0"
+sha256 = "3748e1ccaa7813ef7fb868eac6fe0afdd1c76938c3fc3f84b83b401ad1bcfb26"
+notes = "Blank part, one rectangle extruded: six planar faces. Authored by the repository owner from a blank part through the Alibre Design API; CC0-1.0. The ACIS key string in SAB_DATA, the repository GUID in VERSION and all local times (normalised to UTC) were overwritten in place at the same length."
+
+[[file]]
+filename = "alibre/box.stp"
+format = "step"
+dialect = "step:ap214"
+author = "cadmpeg project contributors"
+authoring_app = "Alibre Design Expert"
+authoring_app_version = "28.1.1"
+generator = "alibre/scrub_cc0.py"
+acquisition_date = "2026-11-23"
+license = "CC0-1.0"
+sha256 = "c02a45a94f16cde1111b76c75bb7cf56b211a3911a64193c09cfd402ab97d9e3"
+notes = "Blank part, one rectangle extruded: six planar faces. Alibre-exported STEP twin of the part. Authored by the repository owner from a blank part through the Alibre Design API; CC0-1.0. The ACIS key string in SAB_DATA, the repository GUID in VERSION and all local times (normalised to UTC) were overwritten in place at the same length."
+
+[[file]]
+filename = "alibre/box_hole.AD_PRT"
+format = "alibre"
+dialect = "alibre:cfb-acis-binary"
+author = "cadmpeg project contributors"
+authoring_app = "Alibre Design Expert"
+authoring_app_version = "28.1.1"
+generator = "alibre/scrub_cc0.py"
+acquisition_date = "2026-11-23"
+license = "CC0-1.0"
+sha256 = "a7fddcdb0d293a96783dae2f0a1ae0a2ac11c4fec864c4a4acdd675117ab45c2"
+notes = "Box with a through hole: six planes and one cylinder. Authored by the repository owner from a blank part through the Alibre Design API; CC0-1.0. The ACIS key string in SAB_DATA, the repository GUID in VERSION and all local times (normalised to UTC) were overwritten in place at the same length."
+
+[[file]]
+filename = "alibre/box_hole.stp"
+format = "step"
+dialect = "step:ap214"
+author = "cadmpeg project contributors"
+authoring_app = "Alibre Design Expert"
+authoring_app_version = "28.1.1"
+generator = "alibre/scrub_cc0.py"
+acquisition_date = "2026-11-23"
+license = "CC0-1.0"
+sha256 = "21e0daae3112b020b7305476dc7f4e25623fade86b95f0356b420bbcd185d187"
+notes = "Box with a through hole: six planes and one cylinder. Alibre-exported STEP twin of the part. Authored by the repository owner from a blank part through the Alibre Design API; CC0-1.0. The ACIS key string in SAB_DATA, the repository GUID in VERSION and all local times (normalised to UTC) were overwritten in place at the same length."
+
+[[file]]
+filename = "alibre/cone.AD_PRT"
+format = "alibre"
+dialect = "alibre:cfb-acis-binary"
+author = "cadmpeg project contributors"
+authoring_app = "Alibre Design Expert"
+authoring_app_version = "28.1.1"
+generator = "alibre/scrub_cc0.py"
+acquisition_date = "2026-11-23"
+license = "CC0-1.0"
+sha256 = "280a3641d93431b621ae25c16ef4e3354dcdcc805991e68874cd75f46497eadd"
+notes = "Right triangle revolved about Z: plane, cylinder, and cone faces. Authored by the repository owner from a blank part through the Alibre Design API; CC0-1.0. The ACIS key string in SAB_DATA, the repository GUID in VERSION and all local times (normalised to UTC) were overwritten in place at the same length."
+
+[[file]]
+filename = "alibre/cone.stp"
+format = "step"
+dialect = "step:ap214"
+author = "cadmpeg project contributors"
+authoring_app = "Alibre Design Expert"
+authoring_app_version = "28.1.1"
+generator = "alibre/scrub_cc0.py"
+acquisition_date = "2026-11-23"
+license = "CC0-1.0"
+sha256 = "c0ae4ddf4d94b30c3c2d9b90d039ce8e269e70fea0eaaadd594a1849041fd6f1"
+notes = "Right triangle revolved about Z: plane, cylinder, and cone faces. Alibre-exported STEP twin of the part. Authored by the repository owner from a blank part through the Alibre Design API; CC0-1.0. The ACIS key string in SAB_DATA, the repository GUID in VERSION and all local times (normalised to UTC) were overwritten in place at the same length."
+
+[[file]]
+filename = "alibre/cylinder.AD_PRT"
+format = "alibre"
+dialect = "alibre:cfb-acis-binary"
+author = "cadmpeg project contributors"
+authoring_app = "Alibre Design Expert"
+authoring_app_version = "28.1.1"
+generator = "alibre/scrub_cc0.py"
+acquisition_date = "2026-11-23"
+license = "CC0-1.0"
+sha256 = "f89c07eb29466302d8aa7994905573b3dcb5261b44e5304f0cba2ba0b5e843bf"
+notes = "Circle extruded: two planes and one cylinder. Authored by the repository owner from a blank part through the Alibre Design API; CC0-1.0. The ACIS key string in SAB_DATA, the repository GUID in VERSION and all local times (normalised to UTC) were overwritten in place at the same length."
+
+[[file]]
+filename = "alibre/cylinder.stp"
+format = "step"
+dialect = "step:ap214"
+author = "cadmpeg project contributors"
+authoring_app = "Alibre Design Expert"
+authoring_app_version = "28.1.1"
+generator = "alibre/scrub_cc0.py"
+acquisition_date = "2026-11-23"
+license = "CC0-1.0"
+sha256 = "b704fbe1d8b334af2a88a968210692cee34dad9ee711d920a8bed69dcc65ee2b"
+notes = "Circle extruded: two planes and one cylinder. Alibre-exported STEP twin of the part. Authored by the repository owner from a blank part through the Alibre Design API; CC0-1.0. The ACIS key string in SAB_DATA, the repository GUID in VERSION and all local times (normalised to UTC) were overwritten in place at the same length."
+
+[[file]]
+filename = "alibre/cylinder_fillet.AD_PRT"
+format = "alibre"
+dialect = "alibre:cfb-acis-binary"
+author = "cadmpeg project contributors"
+authoring_app = "Alibre Design Expert"
+authoring_app_version = "28.1.1"
+generator = "alibre/scrub_cc0.py"
+acquisition_date = "2026-11-23"
+license = "CC0-1.0"
+sha256 = "a2d5b839460a8e33cd680fe58d5c48a436e6d3964538a51edb591f83bb6725ee"
+notes = "Cylinder with a constant-radius fillet on the top edge: torus face. Authored by the repository owner from a blank part through the Alibre Design API; CC0-1.0. The ACIS key string in SAB_DATA, the repository GUID in VERSION and all local times (normalised to UTC) were overwritten in place at the same length."
+
+[[file]]
+filename = "alibre/cylinder_fillet.stp"
+format = "step"
+dialect = "step:ap214"
+author = "cadmpeg project contributors"
+authoring_app = "Alibre Design Expert"
+authoring_app_version = "28.1.1"
+generator = "alibre/scrub_cc0.py"
+acquisition_date = "2026-11-23"
+license = "CC0-1.0"
+sha256 = "ceac1c38af5127dd6684fdbf1c7397c83ff6a4d302a2073caa04bb97aa28cad4"
+notes = "Cylinder with a constant-radius fillet on the top edge: torus face. Alibre-exported STEP twin of the part. Authored by the repository owner from a blank part through the Alibre Design API; CC0-1.0. The ACIS key string in SAB_DATA, the repository GUID in VERSION and all local times (normalised to UTC) were overwritten in place at the same length."
+
+[[file]]
+filename = "alibre/loft.AD_PRT"
+format = "alibre"
+dialect = "alibre:cfb-acis-binary"
+author = "cadmpeg project contributors"
+authoring_app = "Alibre Design Expert"
+authoring_app_version = "28.1.1"
+generator = "alibre/scrub_cc0.py"
+acquisition_date = "2026-11-23"
+license = "CC0-1.0"
+sha256 = "fd43d82345eca4cb065d5390bd60c7d3569f6428dedb0baa639986feebfc3f46"
+notes = "Square loft to a circle: two planes and four spline faces on skinning surfaces. Authored by the repository owner from a blank part through the Alibre Design API; CC0-1.0. The ACIS key string in SAB_DATA, the repository GUID in VERSION and all local times (normalised to UTC) were overwritten in place at the same length."
+
+[[file]]
+filename = "alibre/loft.stp"
+format = "step"
+dialect = "step:ap214"
+author = "cadmpeg project contributors"
+authoring_app = "Alibre Design Expert"
+authoring_app_version = "28.1.1"
+generator = "alibre/scrub_cc0.py"
+acquisition_date = "2026-11-23"
+license = "CC0-1.0"
+sha256 = "88eec89bb1339b0aa2914a491fbf04b04d27a77df1fda26eea7c4b8437e6b08f"
+notes = "Square loft to a circle: two planes and four spline faces on skinning surfaces. Alibre-exported STEP twin of the part. Authored by the repository owner from a blank part through the Alibre Design API; CC0-1.0. The ACIS key string in SAB_DATA, the repository GUID in VERSION and all local times (normalised to UTC) were overwritten in place at the same length."
+
+[[file]]
+filename = "alibre/smp_box.AD_SMP"
+format = "alibre"
+dialect = "alibre:cfb-acis-binary"
+author = "cadmpeg project contributors"
+authoring_app = "Alibre Design Expert"
+authoring_app_version = "28.1.1"
+generator = "alibre/scrub_cc0.py"
+acquisition_date = "2026-11-27"
+license = "CC0-1.0"
+sha256 = "2c59fb42c87dfd04875a8ad95fa7a20d0594d308525482bbba21893a894b7d2e"
+notes = "Sheet-metal part, one 20 x 30 mm rectangle extruded 1.5 mm: six planar faces, volume 900 mm3, thickness 1 mm, K-factor 0.33. Authored by the repository owner from a blank sheet-metal part through the Alibre Design API; CC0-1.0. The ACIS key string in SAB_DATA, the repository GUID in VERSION and all local times (normalised to UTC) were overwritten in place at the same length."
+
+[[file]]
+filename = "alibre/smp_box.stp"
+format = "step"
+dialect = "step:ap214"
+author = "cadmpeg project contributors"
+authoring_app = "Alibre Design Expert"
+authoring_app_version = "28.1.1"
+generator = "alibre/scrub_cc0.py"
+acquisition_date = "2026-11-27"
+license = "CC0-1.0"
+sha256 = "98b7e7243a6475bc0ef451d5f84cb76fd9f53c6637a4a75008569d64bc937ce1"
+notes = "Sheet-metal part, one 20 x 30 mm rectangle extruded 1.5 mm: six planar faces, volume 900 mm3. Alibre-exported STEP twin of the part. Authored by the repository owner from a blank sheet-metal part through the Alibre Design API; CC0-1.0. The ACIS key string in SAB_DATA, the repository GUID in VERSION and all local times (normalised to UTC) were overwritten in place at the same length."
+
+[[file]]
 filename = "ironcad/Ironcad_2025_simple_test_parts.sat"
 format = "sat"
 dialect = "sat:text"
@@ -2246,11 +2428,17 @@ format = "ironcad"
 dialect = "ironcad:cfb"
 author = "cadmpeg project contributors"
 authoring_app = "IronCAD"
-authoring_app_version = "2025"
+authoring_app_version = "2025 27.0 Product Update 1 Service Pack 2"
 acquisition_date = "2026-11-25"
 license = "CC0-1.0"
 sha256 = "7ecf075d0e83a221c2c79a6ec97ae4434c9cc5cd46d9ea457f24a3da65eaed2f"
-notes = "One 100 x 50 x 20 mm block part with the ACIS kernel; kernel record identity."
+notes = "One 100 x 50 x 20 mm block part with the ACIS kernel at the scene origin; kernel record identity. IronCAD states volume 100000 mm3, area 16000 mm2, density 7800 kg/m3, mass 0.780 kg."
+
+[file.expected_topology]
+bodies = 1
+faces = 6
+edges = 12
+vertices = 8
 
 [[file]]
 filename = "ironcad/Block_Parasolid_100x50x20.ics"
@@ -2258,11 +2446,17 @@ format = "ironcad"
 dialect = "ironcad:cfb"
 author = "cadmpeg project contributors"
 authoring_app = "IronCAD"
-authoring_app_version = "2025"
+authoring_app_version = "2025 27.0 Product Update 1 Service Pack 2"
 acquisition_date = "2026-11-25"
 license = "CC0-1.0"
 sha256 = "0a5686523915c6a76eed6c84d8c9380764229f527c15162cfac1a2d6000939b0"
-notes = "One 100 x 50 x 20 mm block part with the Parasolid kernel; kernel record identity."
+notes = "One 100 x 50 x 20 mm block part with the Parasolid kernel at the scene origin; kernel record identity. IronCAD states volume 100000 mm3, area 16000 mm2, density 7800 kg/m3, mass 0.780 kg."
+
+[file.expected_topology]
+bodies = 1
+faces = 6
+edges = 12
+vertices = 8
 
 [[file]]
 filename = "ironcad/Box_50x40x25.ics"
@@ -2270,11 +2464,17 @@ format = "ironcad"
 dialect = "ironcad:cfb"
 author = "cadmpeg project contributors"
 authoring_app = "IronCAD"
-authoring_app_version = "2025"
+authoring_app_version = "2025 27.0 Product Update 1 Service Pack 2"
 acquisition_date = "2026-11-25"
 license = "CC0-1.0"
 sha256 = "54e42f20aaf773ba32b0c5744ca3ce824e1e4c31c1a6adea80a36c25a5f3122e"
-notes = "One 50 x 40 x 25 mm block part with the Parasolid kernel; planar faces."
+notes = "One 50 x 40 x 25 mm block part with the Parasolid kernel at the scene origin; planar faces. IronCAD states volume 50000 mm3, area 8500 mm2, density 7800 kg/m3, mass 0.390 kg."
+
+[file.expected_topology]
+bodies = 1
+faces = 6
+edges = 12
+vertices = 8
 
 [[file]]
 filename = "ironcad/Cylinder_50x50.ics"
@@ -2282,11 +2482,15 @@ format = "ironcad"
 dialect = "ironcad:cfb"
 author = "cadmpeg project contributors"
 authoring_app = "IronCAD"
-authoring_app_version = "2025"
+authoring_app_version = "2025 27.0 Product Update 1 Service Pack 2"
 acquisition_date = "2026-11-25"
 license = "CC0-1.0"
 sha256 = "9ef6166cbf7c9e3f3841a4f931f7d0c78e06e155e26911b6ca500d66f120eb6c"
-notes = "One cylinder part, diameter 50 mm and height 50 mm, with the Parasolid kernel; cylindrical and planar faces."
+notes = "One cylinder part, diameter 50 mm and height 50 mm, with the Parasolid kernel at the scene origin; cylindrical and planar faces. IronCAD states volume 98174.770 mm3, area 11780.972 mm2, density 7800 kg/m3, mass 0.766 kg, and shows 2 edges; the stored body adds a seam edge with two vertices."
+
+[file.expected_topology]
+bodies = 1
+faces = 3
 
 [[file]]
 filename = "ironcad/Ironcad_2025_simple_test_parts.ics"
@@ -2294,8 +2498,140 @@ format = "ironcad"
 dialect = "ironcad:cfb"
 author = "cadmpeg project contributors"
 authoring_app = "IronCAD"
-authoring_app_version = "2025"
+authoring_app_version = "2025 27.0 Product Update 1 Service Pack 2"
 acquisition_date = "2026-11-25"
 license = "CC0-1.0"
 sha256 = "03c05ecf71888373235c49c01568f4930ee66ef907a791c00cfac59510b3e8c0"
 notes = "Five parts and one assembly; Parasolid and ACIS kernel records in one scene; a part with a through hole and a blend; nested assembly records."
+
+[[file]]
+filename = "ironcad/Block_moved.ics"
+format = "ironcad"
+dialect = "ironcad:cfb"
+author = "cadmpeg project contributors"
+authoring_app = "IronCAD"
+authoring_app_version = "2025 27.0 Product Update 1 Service Pack 2"
+acquisition_date = "2026-11-26"
+license = "CC0-1.0"
+sha256 = "353402c113bcacbd838057cdf073c16443e6b65452cc19c4ac965781b8f258d5"
+notes = "One 100 x 50 x 20 mm Parasolid block part moved by the TriBall to (30, -20, 10) mm; part record translation."
+
+[[file]]
+filename = "ironcad/Block_rotated.ics"
+format = "ironcad"
+dialect = "ironcad:cfb"
+author = "cadmpeg project contributors"
+authoring_app = "IronCAD"
+authoring_app_version = "2025 27.0 Product Update 1 Service Pack 2"
+acquisition_date = "2026-11-26"
+license = "CC0-1.0"
+sha256 = "11916661d1cc9e07fb6574249ad89d01ccb4015c094dc03f3fc8b0b80c5779e8"
+notes = "One 100 x 50 x 20 mm Parasolid block part turned by the TriBall 30 degrees about Z at the scene origin; part record rotation."
+
+[[file]]
+filename = "ironcad/Assembly_moved.ics"
+format = "ironcad"
+dialect = "ironcad:cfb"
+author = "cadmpeg project contributors"
+authoring_app = "IronCAD"
+authoring_app_version = "2025 27.0 Product Update 1 Service Pack 2"
+acquisition_date = "2026-11-26"
+license = "CC0-1.0"
+sha256 = "d05b429a8b45bf384abf6d2b0d3e6a2af780253578529c9dfa8b9e424f3bb4cc"
+notes = "Two 50 x 40 x 25 mm Parasolid block parts stacked in one assembly, the second 25 mm above the first; the assembly is moved to (30, -20, 10) mm. Assembly record matrix and assembly-relative part matrices."
+
+[[file]]
+filename = "ironcad/Block_inch.ics"
+format = "ironcad"
+dialect = "ironcad:cfb"
+author = "cadmpeg project contributors"
+authoring_app = "IronCAD"
+authoring_app_version = "2025 27.0 Product Update 1 Service Pack 2"
+acquisition_date = "2026-11-26"
+license = "CC0-1.0"
+sha256 = "00f3692044d8f6f3f02f56cebb5f70bd728e55a67e08b11ffaec9e20fc9e73e7"
+notes = "One 4 x 2 x 1 in Parasolid block part in a scene set to inches, degrees, and kilograms; Document Data unit entries."
+
+[[file]]
+filename = "ironcad/Ironcad_2025_simple_test_parts.stp"
+format = "step"
+dialect = "step:ap214"
+author = "cadmpeg project contributors"
+authoring_app = "IronCAD"
+authoring_app_version = "2025 27.0 Product Update 1 Service Pack 2"
+acquisition_date = "2026-11-26"
+license = "CC0-1.0"
+sha256 = "933de4b9fd23eb83659d576a76afcdf75d68653d09af8cf306a5e85350465433"
+notes = "AP214 export of Ironcad_2025_simple_test_parts.ics from IronCAD; product tree, part placements, and per-body geometry for cross-checking the .ics decode."
+
+[[file]]
+filename = "ironcad/Assembly_moved.stp"
+format = "step"
+dialect = "step:ap214"
+author = "cadmpeg project contributors"
+authoring_app = "IronCAD"
+authoring_app_version = "2025 27.0 Product Update 1 Service Pack 2"
+acquisition_date = "2026-11-26"
+license = "CC0-1.0"
+sha256 = "cad52e551709be32e9ce2d64deefb385375c3db2aa949ffc6033fe9b9b35a7c2"
+notes = "AP214 export of Assembly_moved.ics from IronCAD; the assembly is the root product and its offset is part of each part placement."
+
+[[file]]
+filename = "ironcad/Assembly_nested.ics"
+format = "ironcad"
+dialect = "ironcad:cfb"
+author = "cadmpeg project contributors"
+authoring_app = "IronCAD"
+authoring_app_version = "2025 27.0 Product Update 1 Service Pack 2"
+acquisition_date = "2026-11-27"
+license = "CC0-1.0"
+sha256 = "313906d232b0e96606584e52381fd0a9695f4fba58e9fbb392b6d0d2c2b6854f"
+notes = "Assembly Outer holds the 20 x 10 x 5 mm Parasolid block part PartC and the member assembly Inner, which holds the blocks PartA and PartB, PartB 25 mm above PartA. Inner sits 10 mm above the Outer origin; Outer is moved to (30, -20, 10) mm. Member assembly record matrix."
+
+[[file]]
+filename = "ironcad/Assembly_nested_moved.ics"
+format = "ironcad"
+dialect = "ironcad:cfb"
+author = "cadmpeg project contributors"
+authoring_app = "IronCAD"
+authoring_app_version = "2025 27.0 Product Update 1 Service Pack 2"
+acquisition_date = "2026-11-27"
+license = "CC0-1.0"
+sha256 = "40ec7923dd4ac6d1aa5a128e9d20a65ab77013cba4c751c437b6376e126b3f0f"
+notes = "Assembly_nested.ics with only Outer moved to (100, 50, 10) mm and turned 90 degrees about Z. The Inner record matrix is unchanged."
+
+[[file]]
+filename = "ironcad/Assembly_nested.stp"
+format = "step"
+dialect = "step:ap214"
+author = "cadmpeg project contributors"
+authoring_app = "IronCAD"
+authoring_app_version = "2025 27.0 Product Update 1 Service Pack 2"
+acquisition_date = "2026-11-27"
+license = "CC0-1.0"
+sha256 = "d045546e3028a397edef197bb7894f82f2ce828560d83141958fdc80646f2702"
+notes = "AP214 export of Assembly_nested.ics from IronCAD; Outer is the root product and holds PartC and Inner."
+
+[[file]]
+filename = "ironcad/Assembly_nested_moved.stp"
+format = "step"
+dialect = "step:ap214"
+author = "cadmpeg project contributors"
+authoring_app = "IronCAD"
+authoring_app_version = "2025 27.0 Product Update 1 Service Pack 2"
+acquisition_date = "2026-11-27"
+license = "CC0-1.0"
+sha256 = "82b4ee9c6a8756c7855817efde9c6b00e43fbc79b2fe0394bbcd5eccbb991e17"
+notes = "AP214 export of Assembly_nested_moved.ics from IronCAD; Outer is the root product and holds PartC and Inner."
+
+[[file]]
+filename = "f3d/extrude_two_sided_signs.f3d"
+format = "f3d"
+dialect = "f3d:manifest-3-2-0-0"
+author = "tommrazek"
+authoring_app = "Autodesk Fusion"
+authoring_app_version = "unknown"
+acquisition_date = "2026-11-27"
+license = "CC0-1.0"
+sha256 = "0678d40fc6400ae87e866b438c323bf4b52ebd602ee72d6fd197fbd14dd49f25"
+notes = "CC0 Part Design. Sketch1 on XY holds four squares, each extruded as a new body with Two Sides: side one / side two = +20/-5 (Extrude 1), -20/+5 (Extrude 2), -20/-5 (Extrude 3) and +20/+5 mm (Extrude 4); final bodies span z 5..20, -20..-5, -20..5 and -5..20. Sketch2 holds two open L chains, thin-extruded (wall 1 mm, side 1) +20/-5 (Extrude 5, z 5..20) and -20/+5 (Extrude 6, z -20..-5), and a square extruded -20/+5 with a 5 degree draft on side one (Extrude 7, z -20..0)."

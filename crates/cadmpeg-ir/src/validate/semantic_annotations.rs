@@ -11,24 +11,35 @@ use crate::report::{
     Severity,
 };
 
+#[cfg(test)]
 pub(super) fn check_semantic_annotations(
     ir: &CadIr,
     all_ids: &dyn IdentitySet,
     findings: &mut Vec<Finding>,
 ) {
+    let doc_records = std::cell::OnceCell::new();
+    check_semantic_annotations_with(ir, all_ids, &doc_records, findings);
+}
+
+pub(super) fn check_semantic_annotations_with<'ir>(
+    ir: &'ir CadIr,
+    all_ids: &dyn IdentitySet,
+    doc_records: &std::cell::OnceCell<DesignRecords<'ir>>,
+    findings: &mut Vec<Finding>,
+) {
     if ir.model.semantic_annotations.is_empty() {
         return;
     }
-    let records = DesignRecords::of(ir);
+    let records = doc_records.get_or_init(|| DesignRecords::of(ir));
     let named = crate::references::ReferenceRecords::of(&ir.model);
     for annotation in &ir.model.semantic_annotations {
         let native = |target: &str| {
             super::annotations_native::native_link_resolves(ir, |id| all_ids.contains(id), target)
         };
-        let mut refs_valid = native(&annotation.object) && native(&annotation.native_ref);
+        let mut refs_valid = native(annotation.object.as_str()) && native(&annotation.native_ref);
         if refs_valid {
             for id in &annotation.assets {
-                if !native(id) {
+                if !native(id.as_str()) {
                     refs_valid = false;
                     break;
                 }
@@ -37,7 +48,7 @@ pub(super) fn check_semantic_annotations(
         if refs_valid {
             'groups: for targets in annotation.references.values() {
                 for target in targets {
-                    if !target.resolves(&records, &named, |id| all_ids.contains(id)) {
+                    if !target.resolves(records, &named, |id| all_ids.contains(id)) {
                         refs_valid = false;
                         break 'groups;
                     }

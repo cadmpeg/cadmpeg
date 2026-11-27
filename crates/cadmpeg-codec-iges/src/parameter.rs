@@ -2756,13 +2756,35 @@ fn layout_hollerith(bytes: &[u8], start: usize) -> Result<Option<(usize, usize)>
     Ok(Some((cursor + 1, payload_end)))
 }
 
+fn push_card_slice(
+    card: &mut [u8; 64],
+    card_len: &mut usize,
+    mut rest: &[u8],
+    emit: &mut impl FnMut(&[u8]) -> Result<(), CodecError>,
+) -> Result<(), CodecError> {
+    while !rest.is_empty() {
+        if *card_len == 64 {
+            emit(card)?;
+            *card_len = 0;
+        }
+        let take = (64 - *card_len).min(rest.len());
+        card[*card_len..*card_len + take].copy_from_slice(&rest[..take]);
+        *card_len += take;
+        rest = &rest[take..];
+    }
+    Ok(())
+}
+
 /// Lay out an entity's logical Parameter Data into 64-column payloads.
 ///
 /// A Hollerith header is kept together while its counted payload may cross a
 /// card. Numeric fields are moved to the next card when their delimiter would
 /// otherwise cross the card boundary. Bytes after the record delimiter are
 /// comment payload and may use the remaining card space without token rules.
-pub(crate) fn layout_parameter_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, CodecError> {
+pub(crate) fn for_each_parameter_card(
+    bytes: &[u8],
+    mut emit: impl FnMut(&[u8]) -> Result<(), CodecError>,
+) -> Result<(), CodecError> {
     let mut fields = Vec::new();
     let mut cursor = 0_usize;
     loop {
@@ -2785,8 +2807,9 @@ pub(crate) fn layout_parameter_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, Codec
         }
     }
 
-    let mut cards = Vec::new();
-    let mut card = Vec::new();
+    let mut card = [b' '; 64];
+    let mut card_len = 0_usize;
+
     for field in fields.iter().map(|range| &bytes[range.clone()]) {
         let leading = field
             .iter()
@@ -2803,27 +2826,28 @@ pub(crate) fn layout_parameter_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, Codec
                 "IGES generated Parameter Data field exceeds one card".into(),
             ));
         }
-        if card.len() + minimum > 64 {
-            card.extend(std::iter::repeat_with(|| b' ').take(64 - card.len()));
-            cards.push(std::mem::take(&mut card));
+        if card_len + minimum > 64 {
+            card[card_len..].fill(b' ');
+            emit(&card)?;
+            card_len = 0;
         }
-        for byte in field.iter().copied() {
-            if card.len() == 64 {
-                cards.push(std::mem::take(&mut card));
-            }
-            card.push(byte);
-        }
+        push_card_slice(&mut card, &mut card_len, field, &mut emit)?;
     }
 
-    for byte in bytes[cursor..].iter().copied() {
-        if card.len() == 64 {
-            cards.push(std::mem::take(&mut card));
-        }
-        card.push(byte);
+    push_card_slice(&mut card, &mut card_len, &bytes[cursor..], &mut emit)?;
+    if card_len > 0 {
+        emit(&card[..card_len])?;
     }
-    if !card.is_empty() {
-        cards.push(card);
-    }
+    Ok(())
+}
+
+/// Lay out an entity's logical Parameter Data into 64-column payloads.
+pub(crate) fn layout_parameter_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, CodecError> {
+    let mut cards = Vec::with_capacity(bytes.len() / 64 + 1);
+    for_each_parameter_card(bytes, |card| {
+        cards.push(card.to_vec());
+        Ok(())
+    })?;
     Ok(cards)
 }
 

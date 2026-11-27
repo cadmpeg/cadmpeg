@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The `DesignConfigurationRoot` record of a generated Design stream, which
 //! names the row of the document's active configuration (cadir-v11.md
-//! §5.11, f3d.md §1.2).
+//! §5.11, f3d.md §1.2), and the ids it renames in the configuration table
+//! documents written beside it.
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;
@@ -10,13 +11,15 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::capacity::{TextCapacity, TextUnit};
 use cadmpeg_ir::codec::write::{record_residual_unavailable, value_unwritable};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::parameters::DesignConfiguration as Configuration;
 use cadmpeg_ir::report::loss::LossNote;
 
+use super::configuration_table::Written;
 use super::presentation::{GeneratedDesignRegistry, TypeRow};
 use super::records::{encode_configuration_root, EncodedDesignBulkStream};
 use crate::design::configurations::root_document;
 use crate::records::configuration::table::{rename_ids, ConfigurationTable};
-use crate::records::configuration::{encode_configuration_payload, DesignConfiguration, ID_WIDTH};
+use crate::records::configuration::{DesignConfiguration, ID_WIDTH};
 
 /// The type the record is registered under when the source registers none
 /// for it (f3d-open-items.md DR-1063). The writer generates the type GUID,
@@ -47,9 +50,11 @@ pub(in crate::writer) const ROW_ID: TextCapacity = TextCapacity::new(
 );
 
 /// The root record to write, the source's root record it replaces, and the
-/// losses of the active configurations it does not write as active.
+/// losses of what the write states otherwise than the configurations.
 pub(super) struct Plan {
     root: Option<ConfigurationRoot>,
+    /// The configuration whose row `root` names.
+    active: Option<String>,
     /// The record index of the source's root record.
     source: Option<u32>,
     losses: Vec<LossNote>,
@@ -86,17 +91,25 @@ struct Candidate<'a> {
     row: &'a str,
 }
 
-/// Plan the root record of the configuration that `target` states active,
-/// among the rows of the populated table of `documents`, the one table whose
-/// rows the neutral configurations project. With no such configuration, the
-/// record is the one a table document states, when that record names a row
-/// of a table that holds no rows (f3d.md §1.2) and reads back as the
-/// document's row.
+/// Plan the root record of the configuration of `configurations` that
+/// `target` states active, among the rows of the table whose rows the
+/// written documents project. With no such configuration, the record is the
+/// one a `source` table document states, when that record names a row of a
+/// table that the configurations do not project (f3d.md §1.2) and reads back
+/// as the document's row. `projected` is the position of the document and of
+/// the table whose rows `source` projects.
 ///
 /// A design scope's active configuration takes precedence over the row that
 /// the earlier arena states active. A Design stream holds one root record, so
 /// a second active row is written inactive.
-pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
+pub(super) fn plan(
+    target: &CadIr,
+    source: &[DesignConfiguration],
+    projected: Option<(usize, usize)>,
+    written: &Written<'_>,
+    configurations: &[Configuration],
+) -> Plan {
+    let documents = written.documents.as_ref();
     let scoped = target
         .design
         .scopes
@@ -104,40 +117,29 @@ pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
         .filter_map(|scope| scope.active_configuration.as_ref())
         .map(ToString::to_string)
         .collect::<BTreeSet<_>>();
-    let flagged = target
-        .model
-        .configurations
+    let flagged = configurations
         .iter()
         .filter(|configuration| configuration.active)
         .map(|configuration| configuration.id.to_string())
         .collect::<BTreeSet<_>>();
-    let rows = documents
-        .iter()
-        .enumerate()
-        .flat_map(|(index, document)| {
-            document
-                .tables()
-                .iter()
-                .map(move |table| (index, document, table))
-        })
-        .find(|(_, _, table)| !table.rows.is_empty())
-        .map(|(index, document, table)| {
-            table
-                .rows
-                .iter()
-                .map(|row| Candidate {
-                    configuration: crate::ids::neutral_configuration_id(
-                        document.entry_name(),
-                        &row.id,
-                    )
-                    .to_string(),
+    let rows = crate::design::configurations::table_at(documents, written.projection.table)
+        .map(|(index, table)| {
+            table.rows.iter().map(move |row| {
+                let id =
+                    crate::ids::neutral_configuration_id(documents[index].entry_name(), &row.id)
+                        .to_string();
+                Candidate {
+                    configuration: written.generated.get(&id).cloned().unwrap_or(id),
                     document: index,
                     table,
                     row: &row.id,
-                })
-                .collect::<Vec<_>>()
+                }
+            })
         })
-        .unwrap_or_default();
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let mut losses = Vec::new();
     let matched = rows
         .iter()
         .map(|row| row.configuration.clone())
@@ -162,14 +164,17 @@ pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
     let inactive = candidates.map(|row| row.configuration).collect::<Vec<_>>();
     let unmatched = scoped
         .iter()
-        .chain(&flagged)
-        .filter(|id| !matched.contains(*id))
+        .filter(|id| {
+            !matched.contains(*id)
+                && !configurations
+                    .iter()
+                    .any(|configuration| configuration.id.as_str() == id.as_str())
+        })
         .cloned()
         .collect::<BTreeSet<_>>();
-    let mut losses = Vec::new();
     losses.extend(value_unwritable(
         "F3D",
-        "writes no active row for these active configurations: no written configuration table holds their row",
+        "writes no active row for these active configurations: the document holds no such configuration",
         unmatched,
     ));
     losses.extend(value_unwritable(
@@ -182,7 +187,33 @@ pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
         "writes these active configurations inactive: the Design stream holds one DesignConfigurationRoot record, which names another row",
         inactive,
     ));
-    let mut root = first.and_then(|row| root(row, documents, &mut losses));
+    let active = first.as_ref().map(|row| row.configuration.clone());
+    let root = first.and_then(|row| root(row, documents, &mut losses));
+    let active = active.filter(|_| root.is_some());
+    let root = stated_root(source, projected, root, &mut losses);
+    Plan {
+        root,
+        active,
+        source: source
+            .iter()
+            .find_map(DesignConfiguration::active_row)
+            .map(|row| row.record_index),
+        losses,
+    }
+}
+
+/// `root`, else the root record that a table document states, when that
+/// record names a row of a table that the configurations do not project
+/// (f3d.md §1.2) and reads back as the document's row. A stated row of the
+/// projected table is the configurations' own. Each other stated row that
+/// the write drops is charged. `projected` is the position of the document
+/// and of the table whose rows the configurations project.
+fn stated_root(
+    documents: &[DesignConfiguration],
+    projected: Option<(usize, usize)>,
+    mut root: Option<ConfigurationRoot>,
+    losses: &mut Vec<LossNote>,
+) -> Option<ConfigurationRoot> {
     let mut holds_rows = Vec::new();
     let mut displaced = Vec::new();
     let mut unread = Vec::new();
@@ -190,15 +221,6 @@ pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
         let Some(active) = document.active_row() else {
             continue;
         };
-        let tables = || {
-            document
-                .tables()
-                .iter()
-                .filter(|table| table.id == active.table_id)
-        };
-        if tables().any(|table| table.rows.iter().any(|row| row.id == active.row_id)) {
-            continue;
-        }
         let entry = format!(
             "{} table id {} row id {}",
             document.id(),
@@ -206,8 +228,13 @@ pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
             active.row_id
         );
         let fits = |capacity: TextCapacity, id: &str| !id.is_empty() && !capacity.fit(id).was_cut();
-        if tables().any(|table| !table.rows.is_empty()) {
-            holds_rows.push(entry);
+        let configured = document.tables().iter().find(|table| {
+            table.id == active.table_id && Some((index, table.position)) == projected
+        });
+        if let Some(table) = configured {
+            if !table.rows.iter().any(|row| row.id == active.row_id) {
+                holds_rows.push(entry);
+            }
         } else if root.is_some() {
             displaced.push(entry);
         } else if !fits(TABLE_ID, &active.table_id)
@@ -225,7 +252,10 @@ pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
         }
     }
     for (reason, entries) in [
-        ("a table of its table id holds other rows", holds_rows),
+        (
+            "the configurations project the table of its table id, which holds other rows",
+            holds_rows,
+        ),
         (
             "the Design stream holds one DesignConfigurationRoot record, which names another row",
             displaced,
@@ -241,14 +271,7 @@ pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
             entries,
         ));
     }
-    Plan {
-        root,
-        source: documents
-            .iter()
-            .find_map(DesignConfiguration::active_row)
-            .map(|row| row.record_index),
-        losses,
-    }
+    root
 }
 
 /// The root record that names `row`, with its ids fitted to [`TABLE_ID`]
@@ -300,7 +323,7 @@ fn root(
                 })
                 .map(|(_, table)| table.id.as_str())
                 .collect::<BTreeSet<_>>();
-            let unique = unique(TABLE_ID, &row.table.id, &taken);
+            let unique = unique(&row.table.id, &taken);
             losses.extend(value_unwritable(
                 "F3D",
                 "writes the table id of this active configuration renamed, in the DesignConfigurationRoot record and in its configuration table document: another configuration table document holds the id, and the record names its table by id alone",
@@ -321,7 +344,7 @@ fn root(
         .map(|other| other.id.as_str())
         .collect::<BTreeSet<_>>();
     let written_row_id = if taken.contains(row_id.text) {
-        let unique = unique(ROW_ID, row.row, &taken);
+        let unique = unique(row.row, &taken);
         losses.extend(value_unwritable(
             "F3D",
             &format!("writes the row id of this active configuration renamed, in the DesignConfigurationRoot record and in its configuration table document: its cut to {ID_WIDTH} UTF-16 units names another row of its table"),
@@ -367,18 +390,19 @@ fn root(
 const LONGEST_SUFFIX: &str = "-18446744073709551615";
 const _: () = assert!(ID_WIDTH > LONGEST_SUFFIX.len());
 
-/// The first id `stated` fitted to `capacity` with the suffix `-n`, for `n`
-/// from 1, that `taken` does not hold. The text after the last `-` of a
-/// candidate is `n`, so the candidates are distinct, and one of the first
-/// `taken.len() + 1` is free.
-fn unique(capacity: TextCapacity, stated: &str, taken: &BTreeSet<&str>) -> String {
+/// The first id `stated` fitted to [`ID_WIDTH`] UTF-16 units with the suffix
+/// `-n`, for `n` from 1, that `taken` does not hold. The text after the last
+/// `-` of a candidate is `n`, so the candidates are distinct, and one of the
+/// first `taken.len() + 1` is free.
+fn unique(stated: &str, taken: &BTreeSet<&str>) -> String {
     let candidate = |ordinal: usize| {
         let suffix = format!("-{ordinal}");
-        let width = capacity.width - suffix.len();
-        format!(
-            "{}{suffix}",
-            TextCapacity { width, ..capacity }.fit(stated).text
-        )
+        let capacity = TextCapacity::new(
+            "DesignConfigurationRoot id",
+            TextUnit::Utf16CodeUnit,
+            ID_WIDTH - suffix.len(),
+        );
+        format!("{}{suffix}", capacity.fit(stated).text)
     };
     (1..=taken.len())
         .map(candidate)
@@ -387,32 +411,40 @@ fn unique(capacity: TextCapacity, stated: &str, taken: &BTreeSet<&str>) -> Strin
 }
 
 impl Plan {
-    /// The bytes of `configuration`, the document at `index`, with the ids
-    /// the root record cuts or renames written as the record writes them.
-    pub(super) fn payload(
+    /// The configuration whose row the root record names.
+    pub(super) fn active(&self) -> Option<&str> {
+        self.active.as_deref()
+    }
+
+    /// Table and row identifiers carried by the written root record.
+    pub(super) fn active_ids(&self) -> Option<(&str, &str)> {
+        let root = self.root.as_ref()?;
+        Some((&root.table_id, &root.row_id))
+    }
+
+    /// The payload of `configuration`, the written document at `index`, with
+    /// the ids the root record cuts or renames written as the record writes
+    /// them.
+    pub(super) fn payload<'a>(
         &self,
         index: usize,
-        configuration: &DesignConfiguration,
-    ) -> Result<Vec<u8>, CodecError> {
+        configuration: &'a DesignConfiguration,
+    ) -> Cow<'a, serde_json::Map<String, serde_json::Value>> {
         let renamed = self
             .root
             .as_ref()
             .and_then(|root| Some((root, root.renamed.as_ref()?)))
             .filter(|(_, renamed)| renamed.document == index);
-        let payload = match renamed {
-            Some((root, renamed)) => {
-                let mut payload = configuration.payload().clone();
-                rename_ids(
-                    &mut payload,
-                    renamed.table,
-                    (&renamed.table_id, &root.table_id),
-                    (&renamed.row_id, &root.row_id),
-                );
-                Cow::Owned(payload)
-            }
-            None => Cow::Borrowed(configuration.payload()),
-        };
-        encode_configuration_payload(configuration.entry_name(), &payload)
+        let mut payload = Cow::Borrowed(configuration.payload());
+        if let Some((root, renamed)) = renamed {
+            rename_ids(
+                payload.to_mut(),
+                renamed.table,
+                (&renamed.table_id, &root.table_id),
+                (&renamed.row_id, &root.row_id),
+            );
+        }
+        payload
     }
 
     /// Append the root record to `bulk` under the source's type of the
