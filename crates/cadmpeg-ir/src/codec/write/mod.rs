@@ -964,7 +964,7 @@ fn within_the_bounds(
 
 /// The CADIR empty file of `ir` (§3.4): no records, with the document-level
 /// fields of `ir`, its `fragment` flag, `repro` metadata, scope, source
-/// metadata and tolerances. Its `repro` has no root, manifest row or
+/// metadata, tolerances and up axis. Its `repro` has no root, manifest row or
 /// incomplete reason, since the file holds no record they describe.
 fn without_records(ir: &CadIr) -> CadIr {
     let mut empty = CadIr::empty();
@@ -977,6 +977,7 @@ fn without_records(ir: &CadIr) -> CadIr {
     }
     empty.source.clone_from(&ir.source);
     empty.tolerances = ir.tolerances;
+    empty.up_axis = ir.up_axis;
     empty.set_scope(ir.scope());
     empty
 }
