@@ -113,6 +113,7 @@ pub(super) fn check_typed_references(
                 let owner = entity.identity();
                 let walk = entity.visit_references(ctx, &mut |target| {
                     if index.contains(target) { return Ok(()); }
+                    if input_nest_contains(entity, ir, target) { return Ok(()); }
                     if owned.names(findings, owner, target) { return Ok(()); }
                     match &not_read {
                         Some((omitted, design)) if targets_omitted_arena() => {
@@ -134,6 +135,39 @@ pub(super) fn check_typed_references(
     }
     crate::document::arena_registry!(check_arenas);
     Ok(())
+}
+
+fn input_nest_contains<T: EntitySchema>(entity: &T, ir: &CadIr, target: &str) -> bool {
+    T::KIND == crate::schema::EntityKind::FeatureInputTopology
+        && ir
+            .model
+            .feature_input_topologies
+            .iter()
+            .filter(|state| state.id.as_str() == entity.identity())
+            .flat_map(|state| &state.edge_geometry)
+            .filter_map(|geometry| geometry.topology.as_ref())
+            .filter_map(|reference| {
+                ir.model
+                    .history_bodies
+                    .iter()
+                    .find(|body| body.id == reference.history_body)
+            })
+            .any(|body| {
+                body.topology
+                    .edges
+                    .iter()
+                    .any(|edge| edge.id.as_str() == target)
+                    || body
+                        .topology
+                        .loops
+                        .iter()
+                        .any(|ring| ring.id.as_str() == target)
+                    || body
+                        .topology
+                        .faces
+                        .iter()
+                        .any(|face| face.id.as_str() == target)
+            })
 }
 
 #[cfg(test)]

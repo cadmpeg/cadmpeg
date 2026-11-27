@@ -849,8 +849,6 @@ pub(super) fn project_input_edge_geometry(
             let mut faces = edge_faces.get(slot).cloned().unwrap_or_default();
             faces.sort_unstable();
             Some(cadmpeg_ir::features::evaluation::HistoricalEdgeGeometry {
-                edge: crate::ids::history_input_edge_id(prefix, *slot),
-                interior: cadmpeg_ir::features::geometry::FinitePoint3::new(sample.interior)?,
                 tangent: sample.tangent.and_then(cadmpeg_ir::units::UnitVector3::new),
                 start,
                 end,
@@ -859,6 +857,10 @@ pub(super) fn project_input_edge_geometry(
                 })?,
                 carrier: sample.carrier.clone(),
                 supports: Vec::new(),
+                ..cadmpeg_ir::features::evaluation::HistoricalEdgeGeometry::new(
+                    crate::ids::history_input_edge_id(prefix, *slot),
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(sample.interior)?,
+                )
             })
         })
         .collect()

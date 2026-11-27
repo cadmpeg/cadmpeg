@@ -317,6 +317,53 @@ mod tests {
     }
 
     #[test]
+    fn graph_follows_input_edge_into_history_body_nest() {
+        let body = "test:history:nest#0";
+        let edge = "test:history:edge#0";
+        let curve = "test:history:curve#0";
+        let face = "test:history:face#0";
+        let input = "test:input:state#0";
+        let document = doc(&json!({
+            "model": {"history_bodies": [{"id": body, "topology": {
+                "edges": [{"id": edge, "carrier": {"curve": curve}}],
+                "curves": [{"id": curve}],
+                "faces": [{"id": face}]
+            }}], "feature_input_topologies": [{"id": input, "edge_geometry": [{
+                "topology": {"history_body": body, "path": {"kind": "edge", "edge": edge},
+                    "faces": [{"face": "local", "topology_faces": [face]}]}
+            }]}]}
+        }));
+        let results = walk_ids(
+            &document,
+            "feature_input_topologies",
+            &[input],
+            1,
+            None,
+            false,
+        );
+        assert_eq!(
+            paths_to(&results, edge),
+            vec![vec!["edge_geometry.topology.path.edge"]]
+        );
+        assert_eq!(
+            paths_to(&results, face),
+            vec![vec!["edge_geometry.topology.faces.topology_faces"]]
+        );
+        let results = walk_ids(
+            &document,
+            "feature_input_topologies",
+            &[input],
+            2,
+            Some(&[
+                "edge_geometry.topology.path.edge".into(),
+                "carrier.curve".into(),
+            ]),
+            false,
+        );
+        assert!(reached_ids(&results).contains(&curve.to_owned()));
+    }
+
+    #[test]
     fn graph_follows_links_across_arenas() {
         let document = doc(&json!({
             "model": {"features": [{"id": "f1", "links": ["n1"]}]},

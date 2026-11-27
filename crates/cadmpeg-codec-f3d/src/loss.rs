@@ -435,6 +435,7 @@ pub(crate) enum F3dLossCode {
     FeatureHistoryBodyBounded,
     FeatureHistoryBodyUndecoded,
     FeatureHistoryBodyConsumedWithheld,
+    FeatureHistoricalEdgeTopologyUnbound,
     /// Later body changes retain a native operation after the linked feature history.
     FeatureBodyHistoryIncomplete,
     FeatureBodyHistoryOwnerUnresolved,
@@ -1718,6 +1719,7 @@ impl F3dLossCode {
         Self::FeatureHistoryBodyBounded,
         Self::FeatureHistoryBodyUndecoded,
         Self::FeatureHistoryBodyConsumedWithheld,
+        Self::FeatureHistoricalEdgeTopologyUnbound,
         Self::FeatureBodyHistoryIncomplete,
         Self::FeatureBodyHistoryOwnerUnresolved,
         Self::FeatureBodyHistoryUnread,
@@ -2540,6 +2542,9 @@ impl F3dLossCode {
             Self::FeatureStoredBodiesEmpty => "feature.stored-bodies-empty",
             Self::FeatureHistoryBodyBounded => "feature.history-body-bounded",
             Self::FeatureHistoryBodyUndecoded => "feature.history-body-undecoded",
+            Self::FeatureHistoricalEdgeTopologyUnbound => {
+                "feature.historical-edge-topology-unbound"
+            }
             Self::FeatureHistoryBodyConsumedWithheld => "feature.history-body-consumed-withheld",
             Self::FeatureBodyHistoryIncomplete => "feature.body-history-incomplete",
             Self::FeatureBodyHistoryOwnerUnresolved => "feature.body-history-owner-unresolved",
@@ -3783,6 +3788,7 @@ impl F3dLossCode {
             | Self::FeatureHistoryBodyBounded
             | Self::FeatureHistoryBodyUndecoded
             | Self::FeatureHistoryBodyConsumedWithheld
+            | Self::FeatureHistoricalEdgeTopologyUnbound
             | Self::FeatureOwnedBodyPairingAssumed
             | Self::FeatureOutputBodyUnbound
             | Self::FeatureOutputStateChainUnbound
@@ -4574,6 +4580,7 @@ impl F3dLossCode {
             | Self::FeatureHistoryBodyBounded
             | Self::FeatureHistoryBodyUndecoded
             | Self::FeatureHistoryBodyConsumedWithheld
+            | Self::FeatureHistoricalEdgeTopologyUnbound
             | Self::FeatureOwnedBodyPairingAssumed
             | Self::FeatureOutputBodyUnbound
             | Self::FeatureOutputStateChainUnbound
@@ -5623,6 +5630,7 @@ mod tests {
                 "feature.history-body-bounded",
                 "feature.history-body-undecoded",
                 "feature.history-body-consumed-withheld",
+                "feature.historical-edge-topology-unbound",
                 "feature.body-history-incomplete",
                 "feature.body-history-owner-unresolved",
                 "feature.body-history-unread",

@@ -6,8 +6,8 @@ use super::membership;
 use super::selections::{BodySelectionError, DistinctMembers, NonEmptyMembers};
 use super::{FeatureDefinition, FeatureId};
 use crate::ids::{
-    BodyId, FeatureInputTopologyId, FeatureResultTopologyId, HistoricalBodyId, HistoricalEdgeId,
-    HistoricalFaceId, HistoricalVertexId,
+    BodyId, EdgeId, FaceId, FeatureInputTopologyId, FeatureResultTopologyId, HistoricalBodyId,
+    HistoricalEdgeId, HistoricalFaceId, HistoricalVertexId, HistoryBodyId, LoopId,
 };
 use crate::units::UnitVector3;
 use cadmpeg_core::text::NonBlankString;
@@ -174,6 +174,14 @@ pub struct EdgeSupport {
 pub struct HistoricalEdgeGeometry {
     /// Edge of the owning input state.
     pub edge: HistoricalEdgeId,
+    /// Exact topology in the consumed history-body nest.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_edge_geometry_topology"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "HistoricalEdgeTopologyRef"))]
+    pub topology: Option<HistoricalEdgeTopologyRef>,
     /// Point on the edge at the midpoint of its carrier parameter interval.
     pub interior: FinitePoint3,
     /// Unit carrier tangent at `interior`, in the carrier's parameter
@@ -537,3 +545,72 @@ impl FeatureResultTopology {
         &self.members.vertices
     }
 }
+
+impl HistoricalEdgeGeometry {
+    /// Construct a sampled edge with its local identity and interior point.
+    #[must_use]
+    pub fn new(edge: HistoricalEdgeId, interior: FinitePoint3) -> Self {
+        Self {
+            edge,
+            topology: None,
+            carrier: None,
+            interior,
+            tangent: None,
+            start: None,
+            end: None,
+            faces: DistinctMembers::default(),
+            supports: Vec::new(),
+        }
+    }
+}
+
+/// Exact carrier path and adjacent-face correspondence in a consumed body.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct HistoricalEdgeTopologyRef {
+    /// Body that holds the selected input state.
+    #[cfg_attr(feature = "schema", schemars(extend("x-cadir-reference" = "model.history_bodies")))]
+    pub history_body: HistoryBodyId,
+    /// Exact edge or ordered outline.
+    pub path: HistoricalEdgePath,
+    /// Correspondence of state-local support faces to nest faces.
+    pub faces: Vec<HistoricalFaceTopologyRef>,
+}
+
+/// Exact edge or ordered coedge ring inside one history-body nest.
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum HistoricalEdgePath {
+    /// One edge and its admitted carrier interval.
+    Edge {
+        /// Edge in the selected nest.
+        #[cfg_attr(feature = "schema", schemars(extend("x-cadir-reference" = "history_body.topology.edges")))]
+        edge: EdgeId,
+    },
+    /// One closed ordered ring.
+    Loop {
+        /// Loop in the selected nest.
+        #[cfg_attr(feature = "schema", schemars(extend("x-cadir-reference" = "history_body.topology.loops")))]
+        loop_id: LoopId,
+    },
+}
+
+/// Topology faces that represent one historical adjacent face.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct HistoricalFaceTopologyRef {
+    /// Face in the owning input state.
+    pub face: HistoricalFaceId,
+    /// Faces in the selected history-body nest.
+    #[cfg_attr(feature = "schema", schemars(extend("x-cadir-reference" = "history_body.topology.faces")))]
+    pub topology_faces: NonEmptyMembers<FaceId>,
+}
+
+cadmpeg_core::named_optional_field!(
+    deserialize_edge_geometry_topology,
+    HistoricalEdgeTopologyRef,
+    "topology"
+);

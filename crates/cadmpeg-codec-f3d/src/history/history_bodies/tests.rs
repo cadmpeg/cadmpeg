@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
+use cadmpeg_ir::document::Model;
 
 mod final_bodies;
 mod historical_split;
@@ -286,6 +287,8 @@ fn run_roles(
     let feature = feature("base");
     let wants = (0..count)
         .map(|_| Want {
+            input: None,
+            bindings: RefCell::default(),
             origin: &feature,
             producer: roles.0.then_some(&feature),
             consumer: roles.1.then_some(&feature),
@@ -640,6 +643,8 @@ fn a_consumed_snapshot_keeps_the_input_geometry_and_consumer() {
                     state: 12,
                     slot: 1,
                     consumed: true,
+                    input: None,
+                    bindings: RefCell::default(),
                     capture_current: false,
                 }],
                 &mut bodies,
@@ -693,15 +698,15 @@ fn consumed_fixture(
         design_parameter_scopes: vec![scope.clone()],
         ..F3dNative::default()
     };
-    let mut model = Model::default();
-    model.features = features;
+    let mut ir = CadIr::empty();
+    ir.model.features = features;
     let mut losses = Vec::new();
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         assert_eq!(container::history_breps(scan).count(), 1);
         fill_consumed(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             scan,
-            &mut model,
+            &mut ir,
             &native,
             Some(name),
             &ConsumerContext {
@@ -712,7 +717,7 @@ fn consumed_fixture(
         )
         .unwrap();
     });
-    (model, losses)
+    (ir.model, losses)
 }
 
 #[test]
@@ -1008,6 +1013,8 @@ fn a_captured_derived_result_preserves_the_current_body() {
             slot: 1,
             capture_current: true,
             consumed: false,
+            input: None,
+            bindings: RefCell::default(),
         }],
         &mut bodies,
         &WorkBudget::new(MAX_HISTORY_BODY_WORK),
@@ -1628,6 +1635,8 @@ fn a_split_identity_that_matches_two_bodies_reports_the_undecoded_input() {
         &bytes,
         (&history, None),
         &[Want {
+            input: None,
+            bindings: RefCell::default(),
             origin: &feature,
             producer: None,
             consumer: Some(&feature),
@@ -1946,3 +1955,5 @@ fn a_native_split_target_names_its_body_by_the_recipe_identity() {
     };
     assert!(split_identity_target(&feature, bare).is_none());
 }
+
+mod historical_topology;

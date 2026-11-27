@@ -67,6 +67,8 @@ fn final_body_of(history: &AsmHistory) -> Option<cadmpeg_ir::ids::BodyId> {
         capture_current: false,
         consumed: false,
         identity: None,
+        input: None,
+        bindings: std::cell::RefCell::default(),
     };
     final_body(
         history,

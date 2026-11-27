@@ -27,14 +27,16 @@ fn spline() -> NurbsCurve {
 
 fn geometry(carrier: Option<HistoricalEdgeCarrier>) -> HistoricalEdgeGeometry {
     HistoricalEdgeGeometry {
-        edge: HistoricalEdgeId::mint("test:model:historical-edge#one").unwrap(),
-        interior: crate::features::geometry::FinitePoint3::new(Point3::new(5.0, 4.0, 0.0)).unwrap(),
         tangent: None,
         start: None,
         end: None,
         faces: crate::features::selections::DistinctMembers::default(),
         carrier,
         supports: Vec::new(),
+        ..HistoricalEdgeGeometry::new(
+            HistoricalEdgeId::mint("test:model:historical-edge#one").unwrap(),
+            crate::features::geometry::FinitePoint3::new(Point3::new(5.0, 4.0, 0.0)).unwrap(),
+        )
     }
 }
 

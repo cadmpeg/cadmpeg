@@ -1332,14 +1332,16 @@ fn input_edge_geometry_names_its_own_state_members_once() {
     let edge = HistoricalEdgeId::mint("test:model:historical-edge#1").expect("valid identity");
     let face = HistoricalFaceId::mint("test:model:historical-face#1").expect("valid identity");
     let geometry = |edge: &str, face: &str| HistoricalEdgeGeometry {
-        edge: HistoricalEdgeId::mint(edge).unwrap(),
-        interior: FinitePoint3::new(Point3::new(0.0, 0.0, 5.0)).unwrap(),
         tangent: Some(crate::units::UnitVector3::Z_AXIS),
         start: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)),
         end: FinitePoint3::new(Point3::new(0.0, 0.0, 10.0)),
         faces: DistinctMembers::try_from(vec![HistoricalFaceId::mint(face).unwrap()]).unwrap(),
         carrier: None,
         supports: Vec::new(),
+        ..HistoricalEdgeGeometry::new(
+            HistoricalEdgeId::mint(edge).unwrap(),
+            FinitePoint3::new(Point3::new(0.0, 0.0, 5.0)).unwrap(),
+        )
     };
     let mut ir = CadIr::empty();
     ir.model

@@ -1254,6 +1254,39 @@ pub enum FuzzyTolerance { KernelDefault, Automatic, Explicit(Dimension<PositiveL
 
 `FeatureInputTopology.edge_geometry` states samples of edges in the feature's input state. A `HistoricalEdgeGeometry.carrier` holds the edge's curve and its finite ordered parameter interval in the frame of `interior`. The curve is a line, circle, ellipse, parabola, hyperbola, or NURBS. The interval's lower endpoint is first; it does not state edge traversal direction. An absent carrier leaves the samples available.
 
+`HistoricalEdgeGeometry.topology` is an optional `HistoricalEdgeTopologyRef`;
+an absent field is omitted.
+
+```text
+HistoricalEdgeTopologyRef { history_body: HistoryBodyId,
+  path: HistoricalEdgePath, faces: [HistoricalFaceTopologyRef] }
+HistoricalEdgePath = Edge { edge: EdgeId } | Loop { loop_id: LoopId }
+HistoricalFaceTopologyRef { face: HistoricalFaceId,
+  topology_faces: NonEmptyMembers<FaceId> }
+```
+
+The path tags are `edge` and `loop`. `history_body` resolves in
+`model.history_bodies`; its `consumed_by` equals the input state's `input_of`.
+The source history, previous state and body slot identify that snapshot. State
+identifiers are scoped to their source history. The path and its face targets
+resolve inside the selected body's topology nest.
+
+An edge path selects one solved curve with a finite admitted parameter interval.
+A loop path selects one closed ordered coedge ring. Its edge domains cover the
+source outline once in its segment order and direction. Each selected
+edge has two incident coedge uses. Seam uses retain their multiplicity. Each
+adjacent face has a solved surface. Face binding keys are distinct, belong to the
+sample's local adjacent faces, and cover that set. Targets within each binding
+are distinct. Their union equals the selected path's adjacent-face incidence.
+Several target faces represent the parts of one split source face.
+
+Samples agree with the referenced carriers and mapped surfaces within the
+document's geometric tolerances. The referenced body transform maps carrier
+positions into the comparison frame. The carrier identities and parameter
+domains are those of the source state. Body, path and topology-face targets are
+typed identity references. Local edge and face keys are members of the input
+state.
+
 `FeatureInputTopology.face_owners` states the body of the input state that holds a face of that state, for faces the state's features select where the state has more than one body. A `HistoricalFaceOwner` names a face of `faces` and a body of `bodies`, and a face has at most one entry. A face with no entry has an owner the state does not state.
 
 `FeatureInputTopology.face_geometry` states the carrier surfaces of faces in the feature's input state. A `HistoricalFaceGeometry` names a face of `faces`, and a face has at most one entry. Its `surface` is a plane, cylinder, cone, sphere, torus, or NURBS surface in the frame of the body that the feature evaluates, before the feature applies. `reversed` is true when the face normal is opposite to the natural normal of `surface`.
