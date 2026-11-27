@@ -68,7 +68,7 @@ fn named_by_prototype(instance: bool) -> CadIr {
     ir.design
         .features
         .push(unresolved("proto", OperationFamily::Extrude));
-    let name: TopoName = json::from_value(serde_json::json!({
+    let name: TopoName = json::from_value(cadmpeg_core::json!({
         "kind": "generated",
         "value": {"kind": "face", "feature": feature("proto")},
     }))

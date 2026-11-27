@@ -255,8 +255,8 @@
         }
       },
       "tolerances": {
-        "angular": 1e-10,
-        "linear": 1e-6
+        "angular": 1e-11,
+        "linear": 0.00001
       },
       "units": {
         "angle": "radian",
@@ -317,23 +317,6 @@
             "entity": "derived",
             "fields": {},
             "kind": "entity"
-          },
-          "nx:om-entry-0:feature#equations-70": {
-            "entity": "derived",
-            "fields": {
-              "source_content": "derived"
-            },
-            "kind": "entity"
-          },
-          "nx:om-entry-0:parameter#97": {
-            "fields": {
-              "native_ref": "derived",
-              "ordinal": "derived",
-              "owner": "derived",
-              "properties": "derived",
-              "value": "derived"
-            },
-            "kind": "fields"
           }
         },
         "provenance": {
@@ -361,16 +344,6 @@
             "offset": 167,
             "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_REFERENCE"
-          },
-          "nx:om-entry-0:feature#equations-70": {
-            "offset": 173,
-            "stream": "nx:container",
-            "tag": "hostglobalvariables"
-          },
-          "nx:om-entry-0:parameter#97": {
-            "offset": 173,
-            "stream": "nx:container",
-            "tag": "Number"
           },
           "nx:om-section-0:block#0": {
             "offset": 122,

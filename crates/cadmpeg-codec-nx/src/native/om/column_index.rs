@@ -144,7 +144,7 @@ mod tests {
                 id: "nx:om:column-index-rows#0",
                 rows: &rows,
             },
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "id": "nx:om:column-index-rows#0",
                 "target_rows": ["target"], "linked_rows": ["linked"],
                 "first_target_index": 4, "last_target_index": 2

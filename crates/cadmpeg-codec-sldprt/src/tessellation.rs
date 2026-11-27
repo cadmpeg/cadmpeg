@@ -1281,7 +1281,7 @@ pub(crate) fn assign_unique_surface_owners(
     ir: &mut CadIr,
     stored: &HashSet<BodyId>,
     losses: &mut Vec<LossNote>,
-) -> Result<Vec<String>, cadmpeg_core::CodecError> {
+) -> Result<Vec<cadmpeg_ir::tessellation::TessellationId>, cadmpeg_core::CodecError> {
     let work_limit = tessellation_owner_work_limit(tessellation_owner_rows(ir));
     assign_unique_surface_owners_within(ctx, ir, stored, losses, work_limit)
 }
@@ -1292,7 +1292,7 @@ fn assign_unique_surface_owners_within(
     stored: &HashSet<BodyId>,
     losses: &mut Vec<LossNote>,
     work_limit: usize,
-) -> Result<Vec<String>, cadmpeg_core::CodecError> {
+) -> Result<Vec<cadmpeg_ir::tessellation::TessellationId>, cadmpeg_core::CodecError> {
     for face in &ir.geometry.faces {
         if let Some(stated) = face.tolerance {
             if stated.get() < EPS_DISPLAY_QUANTIZATION {
@@ -1500,7 +1500,7 @@ fn assign_unique_surface_owners_within(
                 (owner.face, owner.body, Some(deflection))
             }
         };
-        let assigned_id = mesh.id.as_str().to_owned();
+        let assigned_id = mesh.id.clone();
         mesh.of = cadmpeg_ir::tessellation::Meshed::Body {
             body: body.clone(),
             faces: vec![face.clone()],
@@ -1698,7 +1698,7 @@ pub(crate) fn assign_persistent_owners(
     face_identities: &[(FaceId, PersistentFaceIdentity)],
     bindings: &[PersistentFaceBinding],
     stored: &HashSet<BodyId>,
-) -> Vec<String> {
+) -> Vec<cadmpeg_ir::tessellation::TessellationId> {
     let face_bodies = face_bodies(&ir.geometry);
     let mut faces_by_identity = HashMap::<&PersistentFaceIdentity, Option<&FaceId>>::new();
     for (target, identity) in face_identities
@@ -1747,7 +1747,7 @@ pub(crate) fn assign_persistent_owners(
         let Some(body) = face_bodies.get(*face) else {
             continue;
         };
-        let assigned_id = mesh.id.as_str().to_owned();
+        let assigned_id = mesh.id.clone();
         mesh.of = cadmpeg_ir::tessellation::Meshed::Body {
             body: body.clone(),
             faces: vec![(*face).clone()],
@@ -1767,7 +1767,7 @@ pub(crate) fn assign_face_key_owners(
     face_keys: &[(FaceId, u32)],
     bindings: &[FaceKeyBinding],
     stored: &HashSet<BodyId>,
-) -> Vec<String> {
+) -> Vec<cadmpeg_ir::tessellation::TessellationId> {
     let face_bodies = face_bodies(&ir.geometry);
     let faces_by_key = unique_by_key(
         face_keys
@@ -1801,7 +1801,7 @@ pub(crate) fn assign_face_key_owners(
             body: (*body).clone(),
             faces: vec![(*face).clone()],
         };
-        assigned.push(mesh.id.as_str().to_owned());
+        assigned.push(mesh.id.clone());
     }
     assigned
 }
@@ -3279,13 +3279,17 @@ fn polygon_boundary_within(polygon: &[Point2], point: Point2, tolerance: f64) ->
 }
 
 /// [`polygon_boundary_within`] over the edges of `polygon` that start at
-/// `edges`.
+/// `edges`. No distance is within a negative or NaN tolerance, so no edge is
+/// measured for one.
 fn edges_within(
     polygon: &[Point2],
     edges: impl IntoIterator<Item = usize>,
     point: Point2,
     tolerance: f64,
 ) -> bool {
+    if tolerance.is_nan() || tolerance < 0.0 {
+        return false;
+    }
     edges.into_iter().any(|index| {
         let start = polygon[index];
         let end = polygon[(index + 1) % polygon.len()];

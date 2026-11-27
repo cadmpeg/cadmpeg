@@ -411,19 +411,19 @@ mod tests {
         let graph: FeatureFsetReferenceGraph = serde_json::from_str(json)?;
         assert_eq!(json::to_string(&graph)?, json);
         for (field, value) in [
-            ("selector", serde_json::json!("")),
-            ("selector", serde_json::json!("a b")),
-            ("selector", serde_json::json!(">")),
-            ("selector", serde_json::json!("é")),
-            ("selector", serde_json::json!("s".repeat(248))),
+            ("selector", cadmpeg_core::json!("")),
+            ("selector", cadmpeg_core::json!("a b")),
+            ("selector", cadmpeg_core::json!(">")),
+            ("selector", cadmpeg_core::json!("é")),
+            ("selector", cadmpeg_core::json!("s".repeat(248))),
             (
                 "raw_first_object_indices",
-                serde_json::json!(["f001", "900002"]),
+                cadmpeg_core::json!(["f001", "900002"]),
             ),
-            ("first_object_indices", serde_json::json!([65536, 2])),
-            ("first_source_offsets", serde_json::json!([11, 14])),
-            ("second_source_offsets", serde_json::json!([20, 23, 26])),
-            ("source_offset", serde_json::json!(u64::MAX)),
+            ("first_object_indices", cadmpeg_core::json!([65536, 2])),
+            ("first_source_offsets", cadmpeg_core::json!([11, 14])),
+            ("second_source_offsets", cadmpeg_core::json!([20, 23, 26])),
+            ("source_offset", cadmpeg_core::json!(u64::MAX)),
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(json)?;
             wire[field] = value;

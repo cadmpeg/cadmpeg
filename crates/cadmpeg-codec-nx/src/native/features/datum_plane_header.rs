@@ -581,7 +581,7 @@ mod tests {
 
     #[test]
     fn datum_plane_columns_stream_once_with_native_retained_limit() {
-        let expected = serde_json::json!({
+        let expected = cadmpeg_core::json!({
             "id": "nx:feature-history:datum-plane-header#1",
             "operation_label": "operation", "control": 1,
             "declared_count": 2, "branch_tag": 27,
@@ -670,7 +670,8 @@ mod tests {
             ("raw_object_indices", vec![240, 1]),
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-            wire[column][0] = serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(raw));
+            wire[column][0] =
+                cadmpeg_core::json!(cadmpeg_ir::native::bytes::NativeBytes::from(raw));
             let error = json::from_value::<FeatureDatumPlaneHeader>(wire).unwrap_err();
             let field = if column == "raw_descriptor_indices" {
                 "descriptor_indices"
@@ -707,7 +708,7 @@ mod tests {
             }
         }
         for count in [0, 1] {
-            let wire = serde_json::json!({
+            let wire = cadmpeg_core::json!({
                 "id": "header", "operation_label": "operation", "control": 0,
                 "declared_count": count, "branch_tag": 255, "source_offset": 0
             });

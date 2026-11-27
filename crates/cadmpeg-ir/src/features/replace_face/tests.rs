@@ -12,7 +12,7 @@ fn tangent_chain_schema_is_optional_boolean() {
     assert!(!schema["required"]
         .as_array()
         .unwrap()
-        .contains(&serde_json::json!("tangent_chain")));
+        .contains(&cadmpeg_core::json!("tangent_chain")));
 }
 
 #[test]
@@ -24,12 +24,12 @@ fn optional_tangent_chain_preserves_legacy_wire_forms_and_refuses_null() {
         )
         .unwrap()
         .with_tangent_chain(tangent_chain);
-        let mut expected = serde_json::json!({
+        let mut expected = cadmpeg_core::json!({
             "targets": {"kind": "native", "value": "native:target"},
             "replacements": {"kind": "native", "value": "native:replacement"}
         });
         if let Some(value) = tangent_chain {
-            expected["tangent_chain"] = serde_json::json!(value);
+            expected["tangent_chain"] = cadmpeg_core::json!(value);
         }
         let wire = json::to_value(&operands).unwrap();
         assert_eq!(wire, expected);
@@ -38,7 +38,7 @@ fn optional_tangent_chain_preserves_legacy_wire_forms_and_refuses_null() {
             operands
         );
         let mut unknown = wire.clone();
-        unknown["unknown"] = serde_json::json!(true);
+        unknown["unknown"] = cadmpeg_core::json!(true);
         assert!(json::from_value::<ReplaceFaceOperands>(unknown).is_err());
         let mut null = wire;
         null["tangent_chain"] = serde_json::Value::Null;

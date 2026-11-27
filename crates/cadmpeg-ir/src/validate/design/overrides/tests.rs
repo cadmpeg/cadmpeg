@@ -2,8 +2,9 @@
 //! D16: a configuration's definition override restates every dimension at a
 //! place of the base definition with the base's value.
 
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::super::fixture::{design_findings, document, feature, on_the_smallest_default_stack};
 use crate::design::configuration::FeatureStateOverride;

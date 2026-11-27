@@ -228,14 +228,14 @@ mod tests {
 
     #[test]
     fn a_target_is_a_state_or_a_bare_unresolved_tag() {
-        let state = serde_json::json!({
+        let state = cadmpeg_core::json!({
             "kind": "state",
             "of": {"kind": "tool", "value": "test:design:feature#3"}
         });
         let target = json::from_value::<DeclaredTarget>(state.clone()).unwrap();
         assert!(matches!(target, DeclaredTarget::State(_)));
         assert_eq!(json::to_value(&target).unwrap(), state);
-        let unresolved = serde_json::json!({"kind": "unresolved"});
+        let unresolved = cadmpeg_core::json!({"kind": "unresolved"});
         assert_eq!(
             json::from_value::<DeclaredTarget>(unresolved.clone()).unwrap(),
             DeclaredTarget::Unresolved
@@ -245,10 +245,10 @@ mod tests {
             unresolved
         );
         for wire in [
-            serde_json::json!({"kind": "unresolved", "value": null}),
-            serde_json::json!({"kind": "unresolved", "bodies": []}),
-            serde_json::json!({"kind": "state", "value": {"of": {"kind": "tool", "value": "test:design:feature#3"}}}),
-            serde_json::json!({"kind": "state", "configuration": null, "of": {"kind": "tool", "value": "test:design:feature#3"}}),
+            cadmpeg_core::json!({"kind": "unresolved", "value": null}),
+            cadmpeg_core::json!({"kind": "unresolved", "bodies": []}),
+            cadmpeg_core::json!({"kind": "state", "value": {"of": {"kind": "tool", "value": "test:design:feature#3"}}}),
+            cadmpeg_core::json!({"kind": "state", "configuration": null, "of": {"kind": "tool", "value": "test:design:feature#3"}}),
         ] {
             assert!(
                 json::from_value::<DeclaredTarget>(wire.clone()).is_err(),
@@ -261,7 +261,7 @@ mod tests {
     fn precision_rejects_negative_values() {
         let json = json::to_value(measure()).expect("serialize measure");
         let mut invalid = json;
-        invalid["precision"] = serde_json::json!(-0.5);
+        invalid["precision"] = cadmpeg_core::json!(-0.5);
         assert!(json::from_value::<DeclaredMeasure>(invalid).is_err());
     }
 
@@ -279,7 +279,7 @@ mod tests {
             assert_eq!(json::from_value::<DeclaredMeasure>(json).unwrap(), stated);
         }
         let mut unknown = unstated;
-        unknown["basis"] = serde_json::json!("saved_cache");
+        unknown["basis"] = cadmpeg_core::json!("saved_cache");
         assert!(json::from_value::<DeclaredMeasure>(unknown).is_err());
     }
 }

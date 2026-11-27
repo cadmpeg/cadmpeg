@@ -1512,7 +1512,7 @@
               "const": "tessellation"
             },
             "value": {
-              "type": "string"
+              "$ref": "#/$defs/TessellationId"
             }
           },
           "required": [
@@ -1534,7 +1534,7 @@
               "properties": {
                 "tessellation": {
                   "description": "The tessellation.",
-                  "type": "string"
+                  "$ref": "#/$defs/TessellationId"
                 },
                 "group": {
                   "description": "The `source_id` of the group.",
@@ -1571,7 +1571,7 @@
                 },
                 "id": {
                   "description": "The record's id.",
-                  "type": "string"
+                  "$ref": "#/$defs/Identity"
                 }
               },
               "additionalProperties": false,
@@ -2535,7 +2535,7 @@
               "const": "tessellation"
             },
             "value": {
-              "type": "string"
+              "$ref": "#/$defs/TessellationId"
             }
           },
           "required": [
@@ -2651,7 +2651,7 @@
                 },
                 "id": {
                   "description": "The record's id.",
-                  "type": "string"
+                  "$ref": "#/$defs/Identity"
                 }
               },
               "additionalProperties": false,
@@ -15234,7 +15234,7 @@
         },
         "object": {
           "description": "Application object persisting this drawing entity.",
-          "type": "string"
+          "$ref": "#/$defs/Identity"
         },
         "kind": {
           "description": "Format-neutral semantic role.",
@@ -15351,7 +15351,7 @@
           "description": "Template, image, symbol, or other retained assets.",
           "type": "array",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/Identity"
           }
         },
         "native_ref": {
@@ -40616,7 +40616,7 @@
             },
             "tessellation": {
               "description": "Assigned tessellation identity.",
-              "type": "string"
+              "$ref": "#/$defs/TessellationId"
             }
           },
           "additionalProperties": false,
@@ -40736,7 +40736,7 @@
           "description": "Referenced display assets as global native entry ids.",
           "type": "array",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/Identity"
           }
         }
       },
@@ -50491,7 +50491,7 @@
         },
         "object": {
           "description": "Application object persisting this annotation.",
-          "type": "string"
+          "$ref": "#/$defs/Identity"
         },
         "kind": {
           "description": "Format-neutral semantic role.",
@@ -50604,7 +50604,7 @@
           "description": "Symbol, image, font, or other retained assets.",
           "type": "array",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/Identity"
           }
         },
         "native_ref": {
@@ -67744,7 +67744,7 @@
         },
         "object": {
           "description": "Owning application object identity, if resolved.",
-          "type": "string"
+          "$ref": "#/$defs/Identity"
         },
         "order": {
           "description": "Source order in the provider table.",

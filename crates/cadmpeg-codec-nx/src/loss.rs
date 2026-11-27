@@ -179,18 +179,17 @@ loss_codes! {
     DisplayJtTessellationsDropped => ("carrier.display-jt-tessellations-dropped", Warning, ObjectRecordsUntransferred),
     /// Native object-model attachment failed; none of its records were kept.
     NativeAttachmentFailed => ("native.attachment-failed", Error, DecodeDiagnostic),
+    /// A BODY stores a `res_linear` that states no linear precision
+    /// (`parasolid.md` §4).
+    BodyResolutionInvalid => ("body.resolution-invalid", Warning, SourceTopologyInvalid),
+    /// A BODY's `res_linear` is in a node the primary records do not read.
+    BodyResolutionUnread => ("body.resolution-unread", Warning, DecodeDiagnostic),
+    /// The feature recognisers compare evaluated geometry at a floor coarser
+    /// than the document tolerances.
+    FeatureRecognitionToleranceFloor => ("feature.recognition-tolerance-floor", Warning, DecodeDiagnostic),
 }
 
 impl NxLossCode {
-    /// The strict floor `siemens_nx.md` §10 states: a given-up native object
-    /// model pins Error.
-    const fn strict_floor(self) -> Option<Severity> {
-        match self {
-            Self::NativeAttachmentFailed => Some(Severity::Error),
-            _ => None,
-        }
-    }
-
     /// Namespaced [`LossKind`] for this local code.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
@@ -204,7 +203,6 @@ impl NxLossCode {
             self.code(),
             self.shared_taxonomy(),
         )
-        .with_strict_floor(self.strict_floor())
         .into()
     }
 
@@ -285,6 +283,9 @@ mod tests {
                 "container.display-jt-arithmetic-lane-bounded",
                 "carrier.display-jt-tessellations-dropped",
                 "native.attachment-failed",
+                "body.resolution-invalid",
+                "body.resolution-unread",
+                "feature.recognition-tolerance-floor",
             ]
         );
     }
@@ -317,18 +318,14 @@ mod tests {
         }
     }
 
-    /// `siemens_nx.md` §10 states a strict floor for an attachment failure
-    /// and for no other code.
+    /// An attachment failure is refused through `record.unreadable`, so no
+    /// NX code pins a strict floor.
     #[test]
-    fn only_an_attachment_failure_pins_a_strict_floor() {
+    fn no_code_pins_a_strict_floor() {
         for code in NxLossCode::ALL {
-            let expected = match code {
-                NxLossCode::NativeAttachmentFailed => Some(cadmpeg_ir::report::Severity::Error),
-                _ => None,
-            };
-            assert_eq!(code.kind().strict_floor(), expected, "{}", code.code());
+            assert_eq!(code.kind().strict_floor(), None, "{}", code.code());
         }
-        assert!(cadmpeg_ir::report::strictness::Strictness {
+        assert!(!cadmpeg_ir::report::strictness::Strictness {
             pinned: true,
             ..Default::default()
         }

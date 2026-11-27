@@ -3,7 +3,7 @@
 
 use super::curve_conversion::angularly_equal;
 use super::geometry::{resolve_transform, source_object, WireProjectionOutcome};
-use super::push_geometry_loss;
+use super::{push_geometry_loss, push_geometry_loss_needing};
 
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
@@ -214,7 +214,12 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };

@@ -5,8 +5,9 @@ use super::{
     CONFIGURATION_CLONE_COUNT,
 };
 use crate::test_support::configuration_table::{object_target, table_document};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 fn wire(kind: &str, payload: &Value) -> Value {
     let name = if kind == "rule" {
@@ -115,7 +116,10 @@ fn configuration_payload_is_retained_and_encoded_verbatim() {
         let admitted: DesignConfiguration = json::from_value(expected.clone()).unwrap();
         assert_eq!(json::to_value(&admitted).unwrap(), expected);
         assert_eq!(
-            json::from_slice::<Value>(&encode_configuration_payload(&admitted).unwrap()).unwrap(),
+            json::from_slice::<Value>(
+                &encode_configuration_payload(admitted.entry_name(), admitted.payload()).unwrap()
+            )
+            .unwrap(),
             payload
         );
     }

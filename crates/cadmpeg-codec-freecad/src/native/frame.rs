@@ -58,7 +58,7 @@ mod tests {
         let mut matrix = Transform::identity().rows();
         matrix[0][0] = 2.0;
         assert!(FiniteFrame::try_from(matrix).is_err());
-        assert!(json::from_value::<FiniteFrame>(serde_json::json!(matrix)).is_err());
+        assert!(json::from_value::<FiniteFrame>(cadmpeg_core::json!(matrix)).is_err());
         assert!(FiniteVector::new([-1.0, 0.0, 2.0]).is_some());
     }
 }

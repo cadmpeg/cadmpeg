@@ -2,8 +2,8 @@
 //! The joint connectors, kinds, and alignment that body mates and joints
 //! share, and the pair element.
 
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 use super::{
     angle, axis_construction, direction_construction, frame_construction, length, literal, ordered,

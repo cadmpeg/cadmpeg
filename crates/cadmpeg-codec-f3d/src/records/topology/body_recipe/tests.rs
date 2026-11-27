@@ -3,8 +3,8 @@
 
 use super::DesignBodyRecipeOperand;
 use crate::records::topology::test_support::rejects_changed_fields;
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 #[test]
 fn body_recipe_operand_borrowed_wire_matches_owned_wire_bytes() {

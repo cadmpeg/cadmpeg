@@ -29,7 +29,7 @@ pub(crate) fn check_wire<T: serde::de::DeserializeOwned + Serialize + std::fmt::
             continue;
         }
         let mut invalid = original.clone();
-        invalid[field] = serde_json::json!(u64::MAX);
+        invalid[field] = cadmpeg_core::json!(u64::MAX);
         let error = json::from_value::<T>(invalid).unwrap_err();
         assert!(error.to_string().contains(field), "{error}");
     }
@@ -39,7 +39,7 @@ pub(crate) fn check_wire<T: serde::de::DeserializeOwned + Serialize + std::fmt::
     {
         for index in 0..offsets.len() {
             let mut invalid = original.clone();
-            invalid["index_source_offsets"][index] = serde_json::json!(u64::MAX);
+            invalid["index_source_offsets"][index] = cadmpeg_core::json!(u64::MAX);
             let error = json::from_value::<T>(invalid).unwrap_err();
             assert!(
                 error.to_string().contains("index_source_offsets"),

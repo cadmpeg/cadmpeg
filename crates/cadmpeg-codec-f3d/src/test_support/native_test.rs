@@ -118,6 +118,18 @@ pub(crate) fn f3d_native_mut(ir: &mut cadmpeg_ir::document::CadIr) -> F3dNativeM
     F3dNativeMut { ir, native }
 }
 
+/// Give `ir`, which holds no F3D native namespace, an empty one, as a
+/// decoded design with no native record holds.
+pub(crate) fn add_empty_f3d_native(ir: &mut cadmpeg_ir::document::CadIr) {
+    assert!(ir.native.namespace("f3d").is_none());
+    crate::native::F3dNative::default()
+        .store(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")),
+        )
+        .unwrap();
+}
+
 pub(crate) fn update_f3d_native<R>(
     ir: &mut cadmpeg_ir::document::CadIr,
     update: impl FnOnce(&mut crate::native::F3dNative) -> R,
@@ -135,7 +147,7 @@ pub(crate) fn reject_changed_id<T: Serialize + DeserializeOwned + std::fmt::Debu
     assert_eq!(json::to_value(restored).unwrap(), wire);
     for id in alternatives {
         let mut invalid = wire.clone();
-        invalid["id"] = serde_json::json!(id);
+        invalid["id"] = cadmpeg_core::json!(id);
         let error = json::from_value::<T>(invalid).expect_err("invalid id");
         assert!(error.to_string().contains("id"), "{error}");
     }
