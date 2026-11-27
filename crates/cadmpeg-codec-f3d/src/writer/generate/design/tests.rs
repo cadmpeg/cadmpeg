@@ -1428,6 +1428,7 @@ fn a_base_feature_design_checks_a_body_visibility_before_it_rekeys_the_bodies() 
                 asm_body_key_offset: 0,
                 asm_body_key: 1,
                 entity_suffix: 42,
+                browser_node_entity: 43,
                 visible: true,
             },
         )
@@ -1439,6 +1440,7 @@ fn a_base_feature_design_checks_a_body_visibility_before_it_rekeys_the_bodies() 
         true,
         MissingStateForm::GeometryTrue,
         &super::Fallback::default(),
+        &super::super::reduce::DroppedRecords::default(),
         &mut bytes,
     )
     .expect("the Base Feature design is written with the native visibility");
