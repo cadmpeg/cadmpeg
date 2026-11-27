@@ -25,7 +25,7 @@ use cadmpeg_ir::features::patterns::{
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::PositiveLength;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 
 const SUPPRESSION_TYPE: [u8; 16] = [
@@ -54,7 +54,7 @@ pub(crate) struct Operands {
     lengths: HashMap<(String, u32), u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum Operand {
     Unresolved,
