@@ -109,12 +109,15 @@ pub(super) fn bend_faces(bytes: &[u8]) -> Option<BendFaces> {
     let (first_radius, first_width, first_angle) = layer_face(bytes, GROUP_STARTS[0])?;
     let (second_radius, second_width, second_angle) = layer_face(bytes, GROUP_STARTS[1])?;
     let valid = |value: f64| value.is_finite() && value > 0.0;
-    if !(valid(first_radius) && valid(second_radius) && valid(first_width))
-        || !(valid(first_angle) && first_angle < std::f64::consts::TAU)
-        || (first_angle - second_angle).abs() > EPS_SAME_ANGLE
-        || (first_width - second_width).abs() > EPS_SAME_LENGTH
-        || (first_radius - second_radius).abs() <= EPS_SAME_LENGTH
-    {
+    let consistent = valid(first_radius)
+        && valid(second_radius)
+        && valid(first_width)
+        && valid(first_angle)
+        && first_angle < std::f64::consts::TAU
+        && (first_angle - second_angle).abs() <= EPS_SAME_ANGLE
+        && (first_width - second_width).abs() <= EPS_SAME_LENGTH
+        && (first_radius - second_radius).abs() > EPS_SAME_LENGTH;
+    if !consistent {
         return None;
     }
     Some(BendFaces {
