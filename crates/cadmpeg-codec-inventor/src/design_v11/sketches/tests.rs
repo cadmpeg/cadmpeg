@@ -3,7 +3,7 @@ use super::*;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::design::ops::datum::DatumElement;
-use cadmpeg_ir::design::ops::sketch::SketchRelation;
+use cadmpeg_ir::design::ops::sketch::{PlanarCurve, SketchRelation};
 use cadmpeg_ir::design::selection::{PickTarget, Picks};
 use cadmpeg_ir::features::datums::{DatumPointConstruction, SketchPointSelection};
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
