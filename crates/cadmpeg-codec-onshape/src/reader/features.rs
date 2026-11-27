@@ -455,11 +455,13 @@ fn owned_variable(
     } else {
         "length"
     };
+    let mut properties = super::expression::source_text(expression, &evaluated.expression);
+    properties["source_kind"] = json!(source_kind);
     push(
         &mut model.parameters,
         json!({"id":id("parameter",&format!("{native}/{key}")),"owner":id("feature",native),"ordinal":0,
         "name":format!("{key}{ordinal}"),"expression":evaluated.expression,"value":{"kind":kind,"value":evaluated.value},
-        "dependencies":evaluated.dependencies,"properties":{"source_kind":source_kind}}),
+        "dependencies":evaluated.dependencies,"properties":properties}),
     )
 }
 pub(super) fn report_evaluated_variables(
@@ -822,10 +824,11 @@ pub(super) fn map(
                 .iter()
                 .filter(|p| p.owner.is_none())
                 .count();
-            let properties = evaluated.display_unit.as_ref().map_or_else(
-                || json!({"retain_without_sketches":"true"}),
-                |unit| json!({"display_unit": unit,"retain_without_sketches":"true"}),
-            );
+            let mut properties = super::expression::source_text(expression, &evaluated.expression);
+            properties["retain_without_sketches"] = json!("true");
+            if let Some(unit) = &evaluated.display_unit {
+                properties["display_unit"] = json!(unit);
+            }
             push(
                 &mut model.parameters,
                 json!({"id":id("parameter",text(feature,"featureId")?),"ordinal":ordinal,"name":name,

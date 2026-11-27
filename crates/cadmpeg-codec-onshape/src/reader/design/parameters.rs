@@ -43,7 +43,9 @@ pub(super) fn project(
     let projected = parameters
         .iter()
         .map(|parameter| {
-            let definition = match neutral(&parameter.expression, &variables) {
+            let tree = neutral(&parameter.expression, &variables);
+            let unit = tree.as_ref().and_then(declared);
+            let definition = match tree {
                 Some(tree) => Expression::Neutral(Neutral(tree)),
                 None => {
                     texts.push(parameter.id.clone());
@@ -88,8 +90,25 @@ pub(super) fn project(
                 scope: scope.clone(),
                 owner: parameter.owner.clone().map(ParameterOwner::Feature),
                 name: NonBlankString::new(parameter.name.clone()),
+                unit: unit.filter(|unit| {
+                    matches!(
+                        (&kind, unit.0.first().map(|factor| factor.symbol)),
+                        (
+                            ValueKind::Quantity(Quantity::LENGTH),
+                            Some(
+                                UnitSymbol::Mm
+                                    | UnitSymbol::Cm
+                                    | UnitSymbol::M
+                                    | UnitSymbol::In
+                                    | UnitSymbol::Ft
+                            )
+                        ) | (
+                            ValueKind::Quantity(Quantity::ANGLE),
+                            Some(UnitSymbol::Rad | UnitSymbol::Deg)
+                        )
+                    )
+                }),
                 kind,
-                unit: None,
                 definition: ParameterDefinition::Expression(definition),
                 value,
                 display: None,
@@ -115,10 +134,45 @@ pub(super) fn project(
     (projected, texts)
 }
 
-/// The expression text of `parameter` as Onshape source text, with each
-/// variable it reads a reference.
+/// The unit every literal of `tree` states, where its literals state one
+/// unit.
+fn declared(tree: &Node<ParameterRef>) -> Option<Unit> {
+    fn literals<'n>(node: &'n Node<ParameterRef>, units: &mut Vec<&'n Unit>) {
+        match node {
+            Node::Number { unit, .. } if !unit.0.is_empty() => units.push(unit),
+            Node::Unary { operand, .. } => literals(operand, units),
+            Node::Sum { first, rest } => {
+                literals(first, units);
+                for (_, node) in rest {
+                    literals(node, units);
+                }
+            }
+            Node::Product { first, rest } => {
+                literals(first, units);
+                for (_, node) in rest {
+                    literals(node, units);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut units = Vec::new();
+    literals(tree, &mut units);
+    let (first, rest) = units.split_first()?;
+    rest.iter()
+        .all(|unit| unit == first)
+        .then(|| (*first).clone())
+}
+
+/// The source text of `parameter`, with each variable it reads a
+/// reference.
 fn source(parameter: &ModelParameter) -> Expression {
-    let mut tokens = vec![ExpressionToken::Text(parameter.expression.clone())];
+    let text = parameter
+        .properties
+        .iter()
+        .find(|(key, _)| key.as_str() == "source_expression")
+        .map_or(&parameter.expression, |(_, text)| text);
+    let mut tokens = vec![ExpressionToken::Text(text.clone())];
     tokens.extend(parameter.dependencies.iter().map(|id| {
         ExpressionToken::Reference(ParameterRef {
             target: RefTarget::Parameter(id.clone()),

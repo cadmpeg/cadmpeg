@@ -711,32 +711,20 @@ fn constraint_row(
                         .is_some_and(|scope| scope.as_str() == owner)
                 })
                 .count();
-            let evaluated = dimension
-                .get("expression")
-                .and_then(Value::as_str)
-                .filter(|s| s.contains('#'))
-                .map(|source| {
-                    super::expression::evaluate(
-                        source,
-                        if kind == "ANGLE" {
-                            super::expression::Dimension::Angle
-                        } else {
-                            super::expression::Dimension::Length
-                        },
-                        model,
-                        unresolved,
-                    )
-                })
-                .transpose()?;
-            let expression = evaluated.as_ref().map_or_else(
-                || format!("{value} {}", if kind == "ANGLE" { "rad" } else { "mm" }),
-                |v| v.expression.clone(),
-            );
-            let dependencies = evaluated.map(|v| v.dependencies).unwrap_or_default();
+            let stated = super::expression::definition(
+                dimension,
+                if kind == "ANGLE" {
+                    super::expression::Dimension::Angle
+                } else {
+                    super::expression::Dimension::Length
+                },
+                model,
+                unresolved,
+            )?;
             push(
                 &mut model.parameters,
                 json!({"id": pid, "owner": owner, "ordinal": ordinal_in_owner, "name": format!("dimension{parameter_ordinal}"),
-                "dependencies": dependencies, "properties": {}, "expression": expression,
+                "dependencies": stated.dependencies, "properties": stated.properties, "expression": stated.expression,
                 "value": {"kind": if kind == "ANGLE" { "angle" } else { "length" }, "value": value}}),
             )?;
             match kind {

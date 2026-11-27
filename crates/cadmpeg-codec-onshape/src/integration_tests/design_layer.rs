@@ -429,3 +429,93 @@ fn holes_state_their_bore_head_extent_and_thread() {
     assert!(tapped["value"]["standard"].is_null());
     validate(result);
 }
+
+/// The design parameter `native` of the decode of `bytes`, and the decode.
+fn design_parameter(bytes: &[u8], native: &str) -> (Value, cadmpeg_ir::codec::DecodeResult) {
+    let result = decode(bytes);
+    let parameter = wire(&result)["design"]["parameters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["id"] == id("parameter", native))
+        .unwrap_or_else(|| panic!("{native}: {:?}", result.report().losses))
+        .clone();
+    (parameter, result)
+}
+
+/// The plate-fillet bundle with the sketch length dimension stored as
+/// `expression`.
+fn sketch_length(expression: &str) -> Vec<u8> {
+    crate::test_support::review::edit(&fixture("plate-fillet"), |path, value| {
+        if path.ends_with("/features.json") {
+            value["features"][0]["constraints"][1]["parameters"][1]["expression"] =
+                json!(expression);
+        }
+    })
+}
+
+#[test]
+fn a_sketch_dimension_keeps_the_unit_and_structure_of_its_expression() {
+    for (expression, text, unit, value) in [
+        ("1 in", "1[in]", "in", 25.4),
+        ("10 mm + 10 mm", "10[mm] + 10[mm]", "mm", 20.0),
+        ("2 cm", "2[cm]", "cm", 20.0),
+    ] {
+        let (parameter, result) =
+            design_parameter(&sketch_length(expression), "Base sketch/length");
+        assert_eq!(
+            parameter["definition"],
+            json!({"kind":"expression","value":{"kind":"neutral","value":{"text":text,"refs":[],"measures":[]}}}),
+            "{expression}"
+        );
+        assert_eq!(
+            parameter["unit"],
+            json!([{"symbol":unit,"power":1}]),
+            "{expression}"
+        );
+        let stored = parameter["value"]["value"].as_f64().unwrap();
+        assert!((stored - value).abs() < 1e-9, "{expression}: {stored}");
+        validate(result);
+    }
+}
+
+#[test]
+fn an_expression_the_reader_does_not_evaluate_keeps_its_source_text() {
+    let (parameter, result) =
+        design_parameter(&sketch_length("(10 + 10) mm"), "Base sketch/length");
+    assert_eq!(parameter["definition"]["value"]["kind"], "source");
+    assert_eq!(
+        parameter["definition"]["value"]["value"]["tokens"],
+        json!([{"kind":"text","value":"(10 + 10) mm"}])
+    );
+    assert!(parameter.get("unit").is_none());
+    assert_eq!(parameter["value"], json!({"kind":"number","value":20.0}));
+    validate(result);
+}
+
+#[test]
+fn a_flat_chain_past_the_depth_cap_keeps_the_source_text() {
+    let chain = vec!["1 mm"; 300].join(" + ");
+    let bytes = crate::test_support::projection::with_variables(
+        &fixture("plate-fillet"),
+        &[crate::test_support::projection::variable(
+            "long-variable",
+            "long",
+            "LENGTH",
+            "lengthValue",
+            &chain,
+        )],
+        |_| {},
+    );
+    let (parameter, result) = design_parameter(&bytes, "long-variable");
+    assert_eq!(parameter["definition"]["value"]["kind"], "source");
+    assert_eq!(
+        parameter["definition"]["value"]["value"]["tokens"],
+        json!([{"kind":"text","value":chain}])
+    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| crate::loss::OnshapeLossCode::ParameterExpressionText.matches(loss)));
+}

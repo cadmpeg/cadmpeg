@@ -22,6 +22,70 @@ pub(crate) struct Evaluated {
     pub display_unit: Option<String>,
 }
 
+/// The definition of a stored quantity: its text, the variables it reads,
+/// and the model properties that keep its source text where the text is
+/// the reader's rendering.
+pub(crate) struct Definition {
+    pub expression: String,
+    pub dependencies: Vec<String>,
+    pub properties: Value,
+}
+
+/// The definition of the stored quantity `parameter` of `dimension`. An
+/// expression the reader evaluates is its rendering. An expression with no
+/// variable that the reader does not evaluate is its source text. A
+/// quantity with no expression is its stored value in its stored unit.
+pub(crate) fn definition(
+    parameter: &Value,
+    dimension: Dimension,
+    model: &Model,
+    unresolved: &BTreeSet<String>,
+) -> Mapping<Definition> {
+    if let Some(source) = parameter.get("expression") {
+        let source = source
+            .as_str()
+            .ok_or("quantity expression must be a string")?;
+        return match evaluate(source, dimension, model, unresolved) {
+            Ok(evaluated) => Ok(Definition {
+                properties: source_text(source, &evaluated.expression),
+                expression: evaluated.expression,
+                dependencies: evaluated.dependencies,
+            }),
+            Err(reason) if source.contains('#') => Err(reason),
+            Err(_) => Ok(Definition {
+                expression: source.to_owned(),
+                dependencies: Vec::new(),
+                properties: serde_json::json!({}),
+            }),
+        };
+    }
+    let unit = match super::text(parameter, "units")? {
+        "millimeter" | "mm" => "mm",
+        "centimeter" | "cm" => "cm",
+        "meter" | "m" => "m",
+        "inch" | "in" => "in",
+        "foot" | "ft" => "ft",
+        "radian" | "rad" => "rad",
+        "degree" | "deg" => "deg",
+        _ => return Err("quantity units are not supported yet".into()),
+    };
+    Ok(Definition {
+        expression: format!("{} {unit}", number(parameter, "value")?),
+        dependencies: Vec::new(),
+        properties: serde_json::json!({}),
+    })
+}
+
+/// The model properties that keep the source text `source` of an
+/// expression the reader rendered as `rendered`.
+pub(crate) fn source_text(source: &str, rendered: &str) -> Value {
+    if source == rendered {
+        serde_json::json!({})
+    } else {
+        serde_json::json!({"source_expression": source})
+    }
+}
+
 pub(crate) fn evaluate(
     source: &str,
     dimension: Dimension,

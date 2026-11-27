@@ -1415,14 +1415,15 @@ fn parameter_inputs(field: ParameterField) -> &'static [ModelParameterField] {
         ParameterField::Definition => &[
             ModelParameterField::ExpressionText,
             ModelParameterField::Dependencies,
+            ModelParameterField::Properties,
         ],
+        ParameterField::Unit => &[ModelParameterField::ExpressionText],
         ParameterField::Value => &[ModelParameterField::Value],
         ParameterField::NativeOptions | ParameterField::SourceSettings => {
             &[ModelParameterField::Properties]
         }
         ParameterField::NativeRef => &[ModelParameterField::NativeRef],
         ParameterField::Scope
-        | ParameterField::Unit
         | ParameterField::Display
         | ParameterField::Tolerance
         | ParameterField::Decimals
