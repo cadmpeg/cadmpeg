@@ -143,6 +143,9 @@ pub(crate) enum FreecadLossCode {
     /// A sketch's attachment offset has no post steps; the resolved frame
     /// holds it.
     DesignSketchOffsetUnstated,
+    /// An expression binds a component of a sketch's attachment offset that
+    /// no post step binds; the step holds the stored value.
+    DesignSketchOffsetUnbound,
     /// A sketch entity has no planar curve and states its native kind.
     DesignSketchEntityNative,
     /// A sketch constraint states its native kind where its kind has a typed
@@ -213,6 +216,7 @@ impl FreecadLossCode {
         Self::DesignSketchSupportUnread,
         Self::DesignSketchSourceUnread,
         Self::DesignSketchOffsetUnstated,
+        Self::DesignSketchOffsetUnbound,
         Self::DesignSketchEntityNative,
         Self::DesignSketchRelationNative,
         Self::DesignSketchLocusUnplaced,
@@ -288,6 +292,7 @@ impl FreecadLossCode {
             Self::DesignSketchSupportUnread => "design.sketch-support-unread",
             Self::DesignSketchSourceUnread => "design.sketch-source-unread",
             Self::DesignSketchOffsetUnstated => "design.sketch-offset-unstated",
+            Self::DesignSketchOffsetUnbound => "design.sketch-offset-unbound",
             Self::DesignSketchEntityNative => "design.sketch-entity-native",
             Self::DesignSketchRelationNative => "design.sketch-relation-native",
             Self::DesignSketchLocusUnplaced => "design.sketch-locus-unplaced",
@@ -354,6 +359,7 @@ impl FreecadLossCode {
             | Self::DesignSketchSupportUnread
             | Self::DesignSketchSourceUnread
             | Self::DesignSketchOffsetUnstated
+            | Self::DesignSketchOffsetUnbound
             | Self::DesignSketchEntityNative
             | Self::DesignSketchRelationNative
             | Self::DesignSketchLocusUnplaced => Severity::Warning,
@@ -417,6 +423,7 @@ impl FreecadLossCode {
             Self::DesignSketchSupportUnread
             | Self::DesignSketchSourceUnread
             | Self::DesignSketchOffsetUnstated
+            | Self::DesignSketchOffsetUnbound
             | Self::DesignSketchEntityNative
             | Self::DesignSketchRelationNative
             | Self::DesignSketchLocusUnplaced => LossTaxonomy::FeatureHistoryRetained,
@@ -510,6 +517,7 @@ mod tests {
                 "design.sketch-support-unread",
                 "design.sketch-source-unread",
                 "design.sketch-offset-unstated",
+                "design.sketch-offset-unbound",
                 "design.sketch-entity-native",
                 "design.sketch-relation-native",
                 "design.sketch-locus-unplaced",

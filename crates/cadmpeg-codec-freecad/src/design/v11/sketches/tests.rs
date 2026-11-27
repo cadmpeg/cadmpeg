@@ -4,7 +4,9 @@ use std::collections::BTreeSet;
 use std::f64::consts::FRAC_PI_2;
 use std::io::Cursor;
 
-use cadmpeg_ir::design::construction::{FrameAxis, PostStep};
+use cadmpeg_ir::design::construction::{
+    kinds, Construction, FrameAxis, PostStep, Relation, Subject,
+};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::design::feature::{FeatureOperation, LinkState};
@@ -20,7 +22,7 @@ use cadmpeg_ir::design::selection::{PickTarget, Picks, PrincipalEntity};
 use cadmpeg_ir::sketches::SketchEntityId;
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 
-use super::offset_steps;
+use super::{offset_steps, OffsetBindings};
 use crate::test_support::test_archive::{archive, assert_valid_document};
 use crate::FcstdCodec;
 
@@ -359,8 +361,8 @@ fn a_detached_sketch_has_no_input() {
     assert!(plane.mode.is_none());
 }
 
-/// The single pick of the plane of the sketch read from `object`.
-fn support(ir: &CadIr, object: &str) -> PickTarget {
+/// The plane of the sketch read from `object`.
+fn placement<'a>(ir: &'a CadIr, object: &str) -> &'a Construction<kinds::Frame> {
     let id = format!("fcstd:design:sketch#{object}");
     let sketch = ir
         .design
@@ -371,20 +373,113 @@ fn support(ir: &CadIr, object: &str) -> PickTarget {
     let SketchPlane::Placed(plane) = &sketch.plane else {
         panic!("{:?}", sketch.plane);
     };
-    let [input] = plane.inputs.as_slice() else {
-        panic!("{:?}", plane.inputs);
-    };
-    let Some(cadmpeg_ir::design::construction::InputReference::Picks(selection)) = &input.reference
-    else {
-        panic!("{input:?}");
-    };
-    let Picks::Named(members) = &selection.picks else {
-        panic!("{selection:?}");
-    };
-    let [picked] = members.as_slice() else {
-        panic!("{members:?}");
-    };
-    picked.target.clone()
+    plane
+}
+
+/// The pick targets of each input of the plane of the sketch read from
+/// `object`.
+fn input_picks(ir: &CadIr, object: &str) -> Vec<Vec<PickTarget>> {
+    placement(ir, object)
+        .inputs
+        .iter()
+        .map(|input| {
+            let Some(cadmpeg_ir::design::construction::InputReference::Picks(selection)) =
+                &input.reference
+            else {
+                panic!("{input:?}");
+            };
+            let Picks::Named(members) = &selection.picks else {
+                panic!("{selection:?}");
+            };
+            members
+                .as_slice()
+                .iter()
+                .map(|picked| picked.target.clone())
+                .collect()
+        })
+        .collect()
+}
+
+/// The single pick of the plane of the sketch read from `object`.
+fn support(ir: &CadIr, object: &str) -> PickTarget {
+    let [input] = input_picks(ir, object)
+        .try_into()
+        .unwrap_or_else(|inputs| panic!("{inputs:?}"));
+    let [picked] = input.try_into().unwrap_or_else(|picks| panic!("{picks:?}"));
+    picked
+}
+
+/// The subject and relation of each input of the plane of the sketch read
+/// from `object`.
+fn roles(ir: &CadIr, object: &str) -> Vec<Option<(Subject, Relation)>> {
+    placement(ir, object)
+        .inputs
+        .iter()
+        .map(|input| {
+            input
+                .role
+                .as_ref()
+                .map(|role| (role.subject, role.relation.clone()))
+        })
+        .collect()
+}
+
+/// `BODY_SKETCH` with one more sketch in the Body for each of `attached`:
+/// its name, the `<Link>` elements of its support, and its `MapMode` index.
+fn attached_sketches(attached: &[(&str, &str, u32)]) -> String {
+    let objects = attached
+        .iter()
+        .enumerate()
+        .map(|(index, (name, _, _))| {
+            format!(
+                "\n <Object type=\"Sketcher::SketchObject\" name=\"{name}\" id=\"{}\"/>",
+                index + 5
+            )
+        })
+        .collect::<Vec<_>>()
+        .concat();
+    let data = attached
+        .iter()
+        .map(|(name, links, mode)| {
+            format!(
+                r#"<Object name="{name}"><Properties Count="3">
+  <Property name="AttachmentSupport" type="App::PropertyLinkSubList"><LinkSubList count="{}">{links}</LinkSubList></Property>
+  <Property name="MapMode" type="App::PropertyEnumeration"><Integer value="{mode}"/></Property>
+  <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+ </Properties></Object>
+"#,
+                links.matches("<Link ").count()
+            )
+        })
+        .collect::<Vec<_>>()
+        .concat();
+    let group = attached
+        .iter()
+        .map(|(name, _, _)| format!(r#"<Link value="{name}"/>"#))
+        .collect::<Vec<_>>()
+        .concat();
+    let count = 4 + attached.len();
+    BODY_SKETCH
+        .replace(
+            r#"<Objects Count="4">"#,
+            &format!(r#"<Objects Count="{count}">"#),
+        )
+        .replace(
+            r#" <Object type="Sketcher::SketchObject" name="Sketch" id="4"/>"#,
+            &format!(r#" <Object type="Sketcher::SketchObject" name="Sketch" id="4"/>{objects}"#),
+        )
+        .replace(
+            r#"<ObjectData Count="4">"#,
+            &format!(r#"<ObjectData Count="{count}">"#),
+        )
+        .replace(
+            r#"<LinkList count="1"><Link value="Sketch"/></LinkList>"#,
+            &format!(
+                r#"<LinkList count="{}"><Link value="Sketch"/>{group}</LinkList>"#,
+                1 + attached.len()
+            ),
+        )
+        .replace("</ObjectData>", &format!("{data}</ObjectData>"))
 }
 
 #[test]
@@ -576,12 +671,13 @@ fn an_offset_rotation_is_a_yaw_about_z() {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
+    let steps = offset_steps(rows, &OffsetBindings::default());
     let [PostStep::Rotate {
         axis: FrameAxis::Z,
         angle: Dimension::Literal(angle),
-    }] = offset_steps(rows)[..]
+    }] = steps[..]
     else {
-        panic!("{:?}", offset_steps(rows));
+        panic!("{steps:?}");
     };
     assert!((angle.get() - FRAC_PI_2).abs() < 1e-12);
 }
@@ -702,5 +798,245 @@ fn a_constraint_on_a_point_the_curve_does_not_store_states_the_curve() {
         &document,
         crate::loss::FreecadLossCode::DesignSketchLocusUnplaced,
         "fcstd:design:sketch-constraint#Sketch:8"
+    ));
+}
+
+#[test]
+fn a_sketch_attached_by_the_shape_of_a_sketch_picks_the_sketch_with_no_role() {
+    let whole = r#"<Link obj="Sketch" sub=""/>"#;
+    let document = attached_sketches(&[("Inertial", whole, 45), ("Normal", whole, 7)]);
+    let ir = decode(&document);
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("fcstd:design:sketch#Sketch").unwrap();
+    for (object, mode) in [("Inertial", "InertialCS"), ("Normal", "NormalToEdge")] {
+        assert_eq!(roles(&ir, object), [None], "{object}");
+        assert_eq!(support(&ir, object), PickTarget::Sketch(sketch.clone()));
+        assert!(
+            charges(
+                &document,
+                crate::loss::FreecadLossCode::DesignSketchSupportUnread,
+                &format!("fcstd:design:sketch#{object} is attached in mode {mode}")
+            ),
+            "{object}"
+        );
+    }
+}
+
+#[test]
+fn parallel_plane_and_folding_attachments_state_their_relations() {
+    let document = attached_sketches(&[
+        (
+            "Parallel",
+            r#"<Link obj="Sketch" sub=""/><Link obj="Sketch" sub="Vertex1"/>"#,
+            53,
+        ),
+        (
+            "Folded",
+            r#"<Link obj="Sketch" sub="Edge1"/><Link obj="Sketch" sub="Edge2"/><Link obj="Sketch" sub="Edge3"/><Link obj="Sketch" sub="Edge4"/>"#,
+            15,
+        ),
+    ]);
+    let ir = decode(&document);
+    assert_eq!(
+        roles(&ir, "Parallel"),
+        [
+            Some((Subject::Whole, Relation::Parallel)),
+            Some((Subject::Whole, Relation::Coincident)),
+        ]
+    );
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("fcstd:design:sketch#Sketch").unwrap();
+    let picks = input_picks(&ir, "Parallel");
+    assert_eq!(
+        picks[0],
+        [PickTarget::SketchFrame {
+            sketch,
+            entity: PrincipalEntity::XyPlane
+        }]
+    );
+    assert!(
+        matches!(picks[1][..], [PickTarget::Native { .. }]),
+        "{picks:?}"
+    );
+    assert_eq!(
+        roles(&ir, "Folded"),
+        [Some((Subject::Whole, Relation::Fold))]
+    );
+    assert_eq!(input_picks(&ir, "Folded")[0].len(), 4);
+}
+
+#[test]
+fn an_attachment_mode_with_no_support_is_a_source_setting() {
+    let document = BODY_SKETCH.replace(
+        r#"<LinkSubList count="1"><Link obj="XY_Plane" sub=""/></LinkSubList>"#,
+        r#"<LinkSubList count="0"/>"#,
+    );
+    let ir = decode(&document);
+    let sketch = &ir.design.sketches[0];
+    assert!(placement(&ir, "Sketch").inputs.is_empty());
+    assert_eq!(
+        sketch
+            .source_settings
+            .get(&cadmpeg_ir::codec_name!("fcstd:MapMode")),
+        Some(&NativeOption::Text(Dimension::Literal(
+            cadmpeg_core::nonblank_literal!("FlatFace")
+        )))
+    );
+}
+
+#[test]
+fn an_offset_component_an_expression_binds_binds_its_step() {
+    let document = BODY_SKETCH
+        .replace(r#"<Properties Count="7">"#, r#"<Properties Count="8">"#)
+        .replace(
+            r#"Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>"#,
+            r#"Pz="6" Q0="0" Q1="0" Q2="0.25881904510252074" Q3="0.9659258262890683" A="0.5235987755982988" Ox="0" Oy="0" Oz="1"/></Property>
+  <Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="2">
+   <Expression path=".AttachmentOffset.Base.z" expression="2 * 3"/>
+   <Expression path=".AttachmentOffset.Rotation.Angle" expression="30"/>
+  </ExpressionEngine></Property>"#,
+        );
+    let ir = decode(&document);
+    let named = |name: &str| {
+        ir.design
+            .parameters
+            .iter()
+            .find(|parameter| {
+                parameter
+                    .name
+                    .as_ref()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    == Some(name)
+            })
+            .unwrap_or_else(|| panic!("{name}: {:?}", ir.design.parameters))
+            .id
+            .clone()
+    };
+    let (z, angle) = (
+        named("AttachmentOffset.Base.z"),
+        named("AttachmentOffset.Rotation.Angle"),
+    );
+    let length = |value: f64| Dimension::Literal(cadmpeg_ir::scalar::Length::new(value).unwrap());
+    let zero = || Dimension::Literal(cadmpeg_ir::scalar::Angle::new(0.0).unwrap());
+    assert_eq!(
+        placement(&ir, "Sketch").after,
+        [
+            PostStep::Flip(Dimension::Literal(true)),
+            PostStep::Translate {
+                axis: FrameAxis::X,
+                distance: length(1.0),
+            },
+            PostStep::Translate {
+                axis: FrameAxis::Y,
+                distance: length(0.0),
+            },
+            PostStep::Translate {
+                axis: FrameAxis::Z,
+                distance: Dimension::Parameter(z),
+            },
+            PostStep::Rotate {
+                axis: FrameAxis::Z,
+                angle: Dimension::Parameter(angle),
+            },
+            PostStep::Rotate {
+                axis: FrameAxis::Y,
+                angle: zero(),
+            },
+            PostStep::Rotate {
+                axis: FrameAxis::X,
+                angle: zero(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn an_offset_axis_an_expression_binds_stays_its_stored_value() {
+    let document = BODY_SKETCH
+        .replace(r#"<Properties Count="7">"#, r#"<Properties Count="8">"#)
+        .replace(
+            r#"Q0="0" Q1="0" Q2="0" Q3="1"/></Property>"#,
+            r#"Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1">
+   <Expression path=".AttachmentOffset.Rotation.Axis.x" expression="0"/>
+  </ExpressionEngine></Property>"#,
+        );
+    assert!(charges(
+        &document,
+        crate::loss::FreecadLossCode::DesignSketchOffsetUnbound,
+        ".AttachmentOffset.Rotation.Axis.x"
+    ));
+}
+
+#[test]
+fn an_external_geometry_that_stores_no_link_has_an_unread_source() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+<Property name="ExternalGeo" type="Part::PropertyGeometryList"><GeometryList count="3">
+<Geometry type="Part::GeomLineSegment" id="-1"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="" Flags="0"/></GeoExtensions><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
+<Geometry type="Part::GeomLineSegment" id="-2"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="" Flags="0"/></GeoExtensions><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
+<Geometry type="Part::GeomLineSegment" id="1"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="" Flags="0"/></GeoExtensions><LineSegment StartX="2" StartY="3" EndX="4" EndY="3"/></Geometry>
+</GeometryList></Property>
+</Properties></Object></ObjectData></Document>"#;
+    assert!(charges(
+        document,
+        crate::loss::FreecadLossCode::DesignSketchSourceUnread,
+        "stores no link to its source"
+    ));
+}
+
+#[test]
+fn a_deactivated_or_named_internal_alignment_is_a_native_relation() {
+    let document = BODY_SKETCH
+        .replace(r#"<GeometryList count="3">"#, r#"<GeometryList count="5">"#)
+        .replace(
+            "</GeometryList>",
+            r#"<Geometry type="Part::GeomEllipse"><Ellipse CenterX="20" CenterY="0" MajorRadius="4" MinorRadius="2" MajorAxisX="1" MajorAxisY="0"/><Construction value="0"/></Geometry>
+   <Geometry type="Part::GeomLineSegment"><LineSegment StartX="16" StartY="0" EndX="24" EndY="0"/><Construction value="1"/></Geometry>
+  </GeometryList>"#,
+        )
+        .replace(r#"<ConstraintList count="7">"#, r#"<ConstraintList count="8">"#)
+        .replace(
+            "</ConstraintList>",
+            r#"<Constrain Name="" Type="15" First="4" FirstPos="0" Second="3" SecondPos="0" InternalAlignmentType="1" IsActive="0"/></ConstraintList>"#,
+        );
+    let ir = decode(&document);
+    assert!(
+        !entity(&ir, "5")
+            .roles
+            .iter()
+            .any(|role| role.role == DefiningRole::MajorAxis),
+        "{:?}",
+        entity(&ir, "5")
+    );
+    let constraint = ir
+        .design
+        .sketch_constraints
+        .iter()
+        .find(|constraint| matches!(&constraint.relation, SketchRelation::Native { kind, .. } if kind.as_str() == "fcstd:internal_alignment"))
+        .unwrap_or_else(|| panic!("{:?}", relations(&ir)));
+    assert_eq!(constraint.active, Some(Dimension::Literal(false)));
+    assert_eq!(
+        constraint
+            .native_options
+            .get(&cadmpeg_ir::codec_name!("fcstd:alignment")),
+        Some(&NativeOption::Text(Dimension::Literal(
+            cadmpeg_core::nonblank_literal!("EllipseMajorDiameter")
+        )))
+    );
+}
+
+#[test]
+fn a_dimension_that_stores_no_value_names_the_missing_value() {
+    let document = BODY_SKETCH
+        .replace(r#"<ConstraintList count="7">"#, r#"<ConstraintList count="8">"#)
+        .replace(
+            "</ConstraintList>",
+            r#"<Constrain Name="" Type="6" First="0" FirstPos="1" Second="2" SecondPos="3"/></ConstraintList>"#,
+        );
+    assert!(charges(
+        &document,
+        crate::loss::FreecadLossCode::DesignSketchRelationNative,
+        "fcstd:design:sketch-constraint#Sketch:8 stores no readable Value"
     ));
 }

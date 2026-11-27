@@ -67,6 +67,7 @@ use crate::brep::ShapePayloadRecord;
 use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
 
 mod first_feature;
+mod offset_parameters;
 pub(crate) mod primitive_placement;
 mod sketch_cache;
 pub(crate) mod v11;
@@ -596,6 +597,7 @@ pub(crate) fn transfer(
         objects,
         &properties_by_owner,
     )?;
+    offset_parameters::append(&mut ir.model.parameters, objects, &properties_by_owner)?;
     let parameter_cycle_features = bind_parameter_dependencies(
         &mut ir.model.parameters,
         objects,

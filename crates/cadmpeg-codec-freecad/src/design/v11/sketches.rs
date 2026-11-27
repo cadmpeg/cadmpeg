@@ -9,7 +9,7 @@
 //! projection states the relations from it. Each design record keeps the id
 //! of the decoded record it restates.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::text::NonBlankString;
@@ -29,7 +29,7 @@ use cadmpeg_ir::design::ops::sketch::{
 };
 use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use cadmpeg_ir::design::projection::sketch::{
-    native_entity_kind, planar_curve, stored_frame, DimensionValue, LocusPoints, StoredPoints,
+    native_entity_kind, planar_curve, stored_frame, LocusPoints, StoredPoints,
 };
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::design::selection::{
@@ -38,13 +38,12 @@ use cadmpeg_ir::design::selection::{
 };
 use cadmpeg_ir::design::units::Quantity;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::parameters::ParameterValue as StoredValue;
 use cadmpeg_ir::features::{
     FeatureDefinition as LegacyDefinition, FeatureId, FeatureOperation as LegacyOperation,
     ParameterId,
 };
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::{Angle, FiniteReal, Length, PositiveReal};
+use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
 use cadmpeg_ir::sketches::{
     Sketch as LegacySketch, SketchConstraint as LegacyConstraint,
     SketchConstraintDefinitionInput as Kind, SketchConstraintId, SketchEntity as LegacyEntity,
@@ -59,10 +58,6 @@ use crate::design::{
 };
 use crate::loss::FreecadLossCode;
 use crate::native::{LinkTarget, ObjectRecord, PropertyRecord};
-
-/// The tolerance `FreeCAD`'s `Rotation::getYawPitchRoll` uses to detect the
-/// poles of the pitch angle of a rotation.
-const EPS_PITCH_POLE: f64 = 16.0 * f64::EPSILON;
 
 /// The facts of a document's sketches that the decoded sketch records do
 /// not keep.
@@ -147,6 +142,8 @@ struct Targets {
     origins: HashMap<String, PickTarget>,
     /// The sketches by the object they were read from.
     sketches: HashMap<String, SketchId>,
+    /// The `PartDesign::Plane` objects.
+    planes: HashSet<String>,
 }
 
 /// The sketch of each sketch feature among `features` and its records. Each
@@ -207,6 +204,12 @@ pub(super) fn project(
             .filter_map(|feature| {
                 Some((feature.native_ref.clone()?, projected(feature)?.id.clone()))
             })
+            .collect(),
+        planes: scope
+            .objects
+            .iter()
+            .filter(|object| object.type_name == "PartDesign::Plane")
+            .map(|object| object.id().clone())
             .collect(),
     };
     let mut out = Projected::default();
@@ -291,26 +294,47 @@ fn sketch(
     }
     out.entities.extend(minted);
     for constraint in constraints {
-        if matches!(constraint.definition.kind(), Kind::InternalAlignment { .. }) {
-            continue;
-        }
-        let Some(stored) = scope.stored.constraints.get(&constraint.id) else {
-            continue;
-        };
-        let stated = relation(&view, stored);
-        if stated.native {
-            losses.push(FreecadLossCode::DesignSketchRelationNative.note(format!(
-                "sketch constraint {} has no typed relation of its stored operands; it states its native kind",
-                constraint.id
-            )));
-        }
-        if stated.unplaced {
-            losses.push(FreecadLossCode::DesignSketchLocusUnplaced.note(format!(
-                "sketch constraint {} names the start, end, or center of a curve that stores no position there; it states the curve",
-                constraint.id
-            )));
-        }
         let mut native_options = NativeOptions::new();
+        let stated = if let Kind::InternalAlignment {
+            helper,
+            parent,
+            alignment,
+        } = constraint.definition.kind()
+        {
+            // The role states an active, unnamed alignment.
+            if constraint.active != Some(false)
+                && constraint.name.as_deref().is_none_or(str::is_empty)
+            {
+                continue;
+            }
+            alignment_relation(helper, parent, *alignment, &mut native_options)
+        } else {
+            let stored = scope
+                .stored
+                .constraints
+                .get(&constraint.id)
+                .unwrap_or(&UNSTORED);
+            let stated = relation(&view, stored);
+            if stated.native {
+                let cause =
+                    if stored.code.and_then(quantity).is_some() && stored.parameter.is_none() {
+                        "stores no readable Value"
+                    } else {
+                        "has no typed relation of its stored operands"
+                    };
+                losses.push(FreecadLossCode::DesignSketchRelationNative.note(format!(
+                    "sketch constraint {} {cause}; it states its native kind",
+                    constraint.id
+                )));
+            }
+            if stated.unplaced {
+                losses.push(FreecadLossCode::DesignSketchLocusUnplaced.note(format!(
+                    "sketch constraint {} names the start, end, or center of a curve that stores no position there; it states the curve",
+                    constraint.id
+                )));
+            }
+            stated
+        };
         if let Some(orientation) = constraint.orientation.filter(|value| *value != 0) {
             option(
                 &mut native_options,
@@ -373,13 +397,21 @@ fn sketch(
         });
     }
     let object = record.native_ref.as_deref();
+    let mut source_settings = NativeOptions::new();
+    let placed = plane(
+        scope,
+        targets,
+        &feature.id,
+        record,
+        &anchor,
+        &mut source_settings,
+        losses,
+    );
     out.sketches.push(Sketch {
         id: record.id.clone(),
         owner: feature.id.clone(),
         name: record.name.clone(),
-        plane: SketchPlane::Placed(Box::new(plane(
-            scope, targets, object, record, anchor, losses,
-        ))),
+        plane: SketchPlane::Placed(Box::new(placed)),
         solve: SketchSolve {
             state: object
                 .and_then(|object| scope.source.property(object, "FullyConstrained"))
@@ -396,7 +428,7 @@ fn sketch(
             }),
         },
         native_options: NativeOptions::new(),
-        source_settings: NativeOptions::new(),
+        source_settings,
         native_ref: record.native_ref.clone(),
     });
     Ok(())
@@ -414,10 +446,14 @@ fn builtin(id: &SketchEntityId) -> bool {
     .any(|suffix| id.as_str().ends_with(suffix))
 }
 
-/// The roles that the internal alignments of a sketch give their helpers.
+/// The roles that the active internal alignments of a sketch give their
+/// helpers.
 fn roles(constraints: &[&LegacyConstraint]) -> BTreeMap<SketchEntityId, Vec<EntityRole<Planar>>> {
     let mut roles = BTreeMap::<_, Vec<_>>::new();
-    for constraint in constraints {
+    for constraint in constraints
+        .iter()
+        .filter(|constraint| constraint.active != Some(false))
+    {
         let Kind::InternalAlignment {
             helper,
             parent,
@@ -447,6 +483,67 @@ fn roles(constraints: &[&LegacyConstraint]) -> BTreeMap<SketchEntityId, Vec<Enti
         });
     }
     roles
+}
+
+/// The stored form of a constraint that the decoder holds no record of.
+static UNSTORED: StoredConstraint = StoredConstraint {
+    code: None,
+    operands: Vec::new(),
+    parameter: None,
+    value: None,
+};
+
+/// A deactivated or named internal alignment as the relation
+/// `fcstd:internal_alignment` of its helper and its parent, with the
+/// `InternalAlignmentType` name and the pole or knot index in
+/// `native_options`.
+fn alignment_relation(
+    helper: &SketchEntityId,
+    parent: &SketchEntityId,
+    alignment: SketchInternalAlignment,
+    native_options: &mut NativeOptions,
+) -> Stated {
+    let (name, index) = match alignment {
+        SketchInternalAlignment::EllipseMajorDiameter => ("EllipseMajorDiameter", None),
+        SketchInternalAlignment::EllipseMinorDiameter => ("EllipseMinorDiameter", None),
+        SketchInternalAlignment::EllipseFocus1 => ("EllipseFocus1", None),
+        SketchInternalAlignment::EllipseFocus2 => ("EllipseFocus2", None),
+        SketchInternalAlignment::HyperbolaMajor => ("HyperbolaMajor", None),
+        SketchInternalAlignment::HyperbolaMinor => ("HyperbolaMinor", None),
+        SketchInternalAlignment::HyperbolaFocus => ("HyperbolaFocus", None),
+        SketchInternalAlignment::ParabolaFocus => ("ParabolaFocus", None),
+        SketchInternalAlignment::BsplineControlPoint(index) => ("BSplineControlPoint", Some(index)),
+        SketchInternalAlignment::BsplineKnotPoint(index) => ("BSplineKnotPoint", Some(index)),
+        SketchInternalAlignment::ParabolaFocalAxis => ("ParabolaFocalAxis", None),
+    };
+    if let Some(name) = NonBlankString::new(name.to_owned()) {
+        option(
+            native_options,
+            "alignment",
+            NativeOption::Text(Dimension::Literal(name)),
+        );
+    }
+    if let Some(index) = index {
+        option(
+            native_options,
+            "alignment_index",
+            NativeOption::Integer(Dimension::Literal(i64::from(index))),
+        );
+    }
+    Stated {
+        relation: SketchRelation::Native {
+            kind: cadmpeg_core::nonblank_literal!("fcstd:internal_alignment"),
+            operands: vec![
+                Operand::Entity(helper.clone()),
+                Operand::Entity(parent.clone()),
+            ],
+            values: Vec::new(),
+        },
+        native: false,
+        bound: false,
+        unplaced: false,
+        angle_at_point: None,
+    }
 }
 
 /// The end points of the line whose length or coordinate extent `stored`
@@ -586,8 +683,7 @@ fn relation(view: &View<'_>, stored: &StoredConstraint) -> Stated {
     let value = stored
         .code
         .and_then(quantity)
-        .zip(stored.parameter.as_ref())
-        .map(|(quantity, parameter)| (quantity, DimensionValue::Parameter(parameter.clone())));
+        .zip(stored.parameter.as_ref());
     // A pointwise tangency or perpendicularity stores the angle at its
     // point, which the solver keeps.
     let at_point = stored
@@ -599,7 +695,7 @@ fn relation(view: &View<'_>, stored: &StoredConstraint) -> Stated {
             view,
             code,
             stored,
-            value.as_ref().map(|(_, value)| value),
+            value.map(|(_, parameter)| parameter),
             at_point,
         )
     });
@@ -616,8 +712,8 @@ fn relation(view: &View<'_>, stored: &StoredConstraint) -> Stated {
         .code
         .map_or("missing_type", crate::design::constraint_kind);
     let mut values = Vec::new();
-    match &value {
-        Some((quantity, value)) => values.extend(value.scalar(*quantity)),
+    match value {
+        Some((quantity, parameter)) => values.push(bound_scalar(quantity, parameter)),
         None if matches!(stored.code, Some(5 | 10)) => {
             values.extend(at_point.map(|angle| ScalarDimension::Angle(Dimension::Literal(angle))));
         }
@@ -640,13 +736,28 @@ fn relation(view: &View<'_>, stored: &StoredConstraint) -> Stated {
     }
 }
 
-/// The typed relation of a constraint of type `code`, and the angle a
-/// pointwise form stores, where §6.1 types the form `Sketch.cpp` reads.
+/// The dimension of `quantity` that binds `parameter`.
+fn bound_scalar(quantity: Quantity, parameter: &ParameterId) -> ScalarDimension {
+    match quantity {
+        Quantity::ANGLE => ScalarDimension::Angle(Dimension::Parameter(parameter.clone())),
+        Quantity::REAL => ScalarDimension::Ratio(Dimension::Parameter(parameter.clone())),
+        _ => ScalarDimension::Length(Dimension::Parameter(parameter.clone())),
+    }
+}
+
+/// The dimension that binds `parameter`.
+fn bind<T>(parameter: Option<&ParameterId>) -> Option<Dimension<T>> {
+    parameter.cloned().map(Dimension::Parameter)
+}
+
+/// The typed relation of a constraint of type `code` whose value
+/// `parameter` holds, and the angle a pointwise form stores, where §6.1
+/// types the form `Sketch.cpp` reads.
 fn typed(
     view: &View<'_>,
     code: i64,
     stored: &StoredConstraint,
-    value: Option<&DimensionValue>,
+    parameter: Option<&ParameterId>,
     at_point: Option<Angle>,
 ) -> Option<(SketchRelation<Planar>, Option<Angle>)> {
     let operands = stored.operands.as_slice();
@@ -665,25 +776,10 @@ fn typed(
         .map(|operand| operand.position)
         .collect::<Vec<_>>();
     let relation = match (code, positions.as_slice()) {
-        (1, [_, _]) => {
-            for (middle, point) in [(0, 1), (1, 0)] {
-                if let OperandTarget::Locus(SketchLocus::Center(line)) = &operands[middle].target {
-                    if view.is_line(line) {
-                        return Some((
-                            SketchRelation::Midpoint {
-                                point: view.point(&operands[point])?,
-                                of: Operand::Entity(line.clone()),
-                            },
-                            None,
-                        ));
-                    }
-                }
-            }
-            SketchRelation::Coincident {
-                a: at(0)?,
-                b: at(1)?,
-            }
-        }
+        (1, [_, _]) => SketchRelation::Coincident {
+            a: at(0)?,
+            b: at(1)?,
+        },
         (2, [_]) => SketchRelation::Horizontal { a: at(0)?, b: None },
         (2, [_, _]) => SketchRelation::Horizontal {
             a: at(0)?,
@@ -735,7 +831,7 @@ fn typed(
         }
         (6, [0]) => {
             let id = entity(0)?;
-            let length = value?.length()?;
+            let length = bind(parameter)?;
             if view.is_line(&id) {
                 SketchRelation::Distance {
                     a: view.end(&id, false)?,
@@ -758,7 +854,7 @@ fn typed(
             b: at(1)?,
             along: (*second != 0).then_some(DistanceAxis::Aligned),
             doubled: None,
-            value: value?.length()?,
+            value: bind(parameter)?,
         },
         (7 | 8, [_] | [_, _]) => {
             let (a, b) = match operands {
@@ -782,12 +878,12 @@ fn typed(
                     DistanceAxis::Vertical
                 }),
                 doubled: None,
-                value: value?.length()?,
+                value: bind(parameter)?,
             }
         }
         (9, [_]) => {
             let id = entity(0)?;
-            let angle = value?.angle()?;
+            let angle = bind(parameter)?;
             if view.is_line(&id) {
                 SketchRelation::Angle {
                     between: AngleOperands::Between([
@@ -810,7 +906,7 @@ fn typed(
         (9, [first, second]) => SketchRelation::Angle {
             between: AngleOperands::Between([curve(0)?, curve(1)?]),
             sector: Some(directed(*second != 0 && ((*first == 2) != (*second == 2)))),
-            value: value?.angle()?,
+            value: bind(parameter)?,
         },
         (11 | 18, [0]) => SketchRelation::Radial {
             of: entity(0)?,
@@ -819,7 +915,7 @@ fn typed(
             } else {
                 RadialMeasure::Diameter
             },
-            value: value?.length()?,
+            value: bind(parameter)?,
         },
         (12, [_, _]) => SketchRelation::Equal {
             members: vec![at(0)?, at(1)?],
@@ -841,13 +937,7 @@ fn typed(
             }
             SketchRelation::Weight {
                 pole,
-                value: match value? {
-                    DimensionValue::Parameter(parameter) => Dimension::Parameter(parameter.clone()),
-                    DimensionValue::Stored(StoredValue::Real(real)) => {
-                        Dimension::Literal(PositiveReal::new(real.get())?)
-                    }
-                    DimensionValue::Stored(_) => return None,
-                },
+                value: bind(parameter)?,
             }
         }
         _ => return None,
@@ -878,6 +968,12 @@ fn definition(
 ) -> (EntityDefinition<Planar>, Option<bool>) {
     let curve = planar_curve(&entity.geometry);
     if let Some(stored) = scope.stored.externals.get(entity.id()) {
+        if stored.link.is_none() {
+            losses.push(FreecadLossCode::DesignSketchSourceUnread.note(format!(
+                "external geometry {} stores no link to its source; its source is unread",
+                entity.id()
+            )));
+        }
         let (source, piece) = sources.get(entity.id()).cloned().unwrap_or_else(|| {
             (
                 Selection {
@@ -955,7 +1051,8 @@ fn sources<'e>(
     }
     let mut out = BTreeMap::new();
     for (link, members) in by_link {
-        let Some(selection) = picks(targets, std::slice::from_ref(link), anchor, None) else {
+        let Some(selection) = picks(targets, std::slice::from_ref(link), anchor, Reading::Shape)
+        else {
             losses.push(FreecadLossCode::DesignSketchSourceUnread.note(format!(
                 "external geometry {} links an object that no design record restates; its source is unread",
                 members
@@ -975,16 +1072,25 @@ fn sources<'e>(
     out
 }
 
-/// The selection of the objects and subelements `links` name, in order: an
-/// origin entity as `Principal`, a sketch as the principal entity `plane` of
-/// its frame, else as the sketch, a datum feature as `Datum`, another feature
-/// as its result, and a subelement of a feature by its native name. `None`
-/// where a link names an object that no design record restates.
+/// How a link reads the object it names.
+#[derive(Clone, Copy)]
+enum Reading {
+    /// One principal plane of the object's placement: `FreeCAD`'s `ObjectXY`,
+    /// `ObjectXZ`, and `ObjectYZ` modes, and the plane of `ParallelPlane`.
+    Frame(PrincipalEntity),
+    /// The plane the object's shape lies in: `FlatFace`.
+    Plane,
+    /// The object's shape.
+    Shape,
+}
+
+/// The selection of the objects and subelements `links` name, in order, as
+/// `reading` reads each (`pick_link`). `None` where one has no pick.
 fn picks(
     targets: &Targets,
     links: &[(String, Vec<String>)],
     at: &Anchor,
-    plane: Option<PrincipalEntity>,
+    reading: Reading,
 ) -> Option<OrderedSelection> {
     let mut picked = Vec::new();
     for (object, subelements) in links {
@@ -992,47 +1098,93 @@ fn picks(
             .iter()
             .filter(|sub| !sub.is_empty())
             .collect::<Vec<_>>();
-        if let Some(origin) = targets.origins.get(object) {
-            if !subelements.is_empty() {
-                return None;
-            }
-            picked.push(pick(origin.clone(), None));
-            continue;
-        }
-        let (feature, datum) = targets.features.get(object)?;
         if subelements.is_empty() {
-            picked.push(pick(
-                if let Some(sketch) = targets.sketches.get(object) {
-                    plane.map_or_else(
-                        || PickTarget::Sketch(sketch.clone()),
-                        |entity| PickTarget::SketchFrame {
-                            sketch: sketch.clone(),
-                            entity,
-                        },
-                    )
-                } else if *datum {
-                    PickTarget::Datum {
-                        feature: feature.clone(),
-                        part: None,
-                    }
-                } else {
-                    PickTarget::FeatureResult(feature.clone())
-                },
-                None,
-            ));
+            picked.push(pick_link(targets, object, None, reading)?);
         }
         for sub in subelements {
-            picked.push(pick(
-                PickTarget::Native {
-                    within: Some(NativeOwner::Feature(feature.clone())),
-                },
-                Some(NativeName {
-                    codec: cadmpeg_core::codec_id!("fcstd"),
-                    value: NativeNameValue::Text(NonBlankString::new(sub.clone())?),
-                }),
-            ));
+            picked.push(pick_link(targets, object, Some(sub), reading)?);
         }
     }
+    selection(at, picked)
+}
+
+/// The pick of the object `object`, or of its subelement `sub`, as `reading`
+/// reads it: an origin entity as `Principal`, a sketch as the sketch, or as
+/// a principal plane of its frame where `reading` reads a plane, a datum
+/// feature as `Datum`, another feature as its result, and a subelement by
+/// its native name. A frame reading picks the XY plane of an origin plane
+/// and of a datum plane, which is the plane itself, and a plane of a
+/// sketch's frame. `None` where the link names an object that no design
+/// record restates, or one that `reading` has no pick of.
+fn pick_link(
+    targets: &Targets,
+    object: &str,
+    sub: Option<&String>,
+    reading: Reading,
+) -> Option<Picked> {
+    if let Some(origin) = targets.origins.get(object) {
+        let plane = matches!(
+            origin,
+            PickTarget::Principal {
+                entity: PrincipalEntity::XyPlane
+                    | PrincipalEntity::XzPlane
+                    | PrincipalEntity::YzPlane,
+                ..
+            }
+        );
+        return match reading {
+            _ if sub.is_some() => None,
+            Reading::Frame(entity) if entity != PrincipalEntity::XyPlane || !plane => None,
+            _ => Some(pick(origin.clone(), None)),
+        };
+    }
+    let (feature, datum) = targets.features.get(object)?;
+    if let Some(sub) = sub {
+        if matches!(reading, Reading::Frame(_)) {
+            return None;
+        }
+        return Some(pick(
+            PickTarget::Native {
+                within: Some(NativeOwner::Feature(feature.clone())),
+            },
+            Some(NativeName {
+                codec: cadmpeg_core::codec_id!("fcstd"),
+                value: NativeNameValue::Text(NonBlankString::new(sub.clone())?),
+            }),
+        ));
+    }
+    let target = if let Some(sketch) = targets.sketches.get(object) {
+        match reading {
+            Reading::Frame(entity) => PickTarget::SketchFrame {
+                sketch: sketch.clone(),
+                entity,
+            },
+            Reading::Plane => PickTarget::SketchFrame {
+                sketch: sketch.clone(),
+                entity: PrincipalEntity::XyPlane,
+            },
+            Reading::Shape => PickTarget::Sketch(sketch.clone()),
+        }
+    } else if *datum {
+        if matches!(reading, Reading::Frame(entity) if entity != PrincipalEntity::XyPlane || !targets.planes.contains(object))
+        {
+            return None;
+        }
+        PickTarget::Datum {
+            feature: feature.clone(),
+            part: None,
+        }
+    } else {
+        if matches!(reading, Reading::Frame(_)) {
+            return None;
+        }
+        PickTarget::FeatureResult(feature.clone())
+    };
+    Some(pick(target, None))
+}
+
+/// The selection of `picked`, in order. `None` where it repeats a pick.
+fn selection(at: &Anchor, picked: Vec<Picked>) -> Option<OrderedSelection> {
     Some(Selection {
         at: at.clone(),
         picks: Picks::Named(Members::new(picked).ok()?),
@@ -1113,16 +1265,19 @@ fn origins(scope: &Scope<'_>) -> HashMap<String, PickTarget> {
     out
 }
 
-/// The plane of the sketch object `object` (§6.1 Placement): no input where
-/// its attachment is off, else the support as one `Whole` `Coincident`
-/// input in the attachment mode, then `MapReversed` and the
-/// `AttachmentOffset` steps (§5.9).
+/// The plane of the sketch `record` of `feature` (§6.1 Placement): no input
+/// where its attachment is off, else the inputs of its support in the
+/// attachment mode (`support`), then `MapReversed` and the
+/// `AttachmentOffset` steps (§5.9). An attachment mode with no support is
+/// the sketch's source setting `fcstd:MapMode`, as `FreeCAD` places the
+/// sketch by its placement whatever the mode.
 fn plane(
     scope: &Scope<'_>,
     targets: &Targets,
-    object: Option<&str>,
+    feature: &FeatureId,
     record: &LegacySketch,
-    anchor: Anchor,
+    anchor: &Anchor,
+    settings: &mut NativeOptions,
     losses: &mut Vec<LossNote>,
 ) -> Construction<kinds::Frame> {
     let mut construction = Construction {
@@ -1133,10 +1288,11 @@ fn plane(
         resolved: stored_frame(record.placement),
         resolved_in: BTreeMap::new(),
     };
-    let Some(object) = object else {
+    let Some(object) = record.native_ref.as_deref() else {
         return construction;
     };
     let property = |name| scope.source.property(object, name);
+    // `FreeCAD` reads each subelement of a link as one reference.
     let links = property("AttachmentSupport")
         .or_else(|| property("Support"))
         .map(|support| {
@@ -1144,41 +1300,39 @@ fn plane(
                 .links()
                 .iter()
                 .flatten()
-                .filter_map(|link| Some((link.object()?.to_owned(), link.subelements().to_vec())))
+                .filter_map(|link| {
+                    let object = link.object()?;
+                    let subelements = link
+                        .subelements()
+                        .iter()
+                        .filter(|sub| !sub.is_empty())
+                        .map(|sub| (object.to_owned(), vec![sub.clone()]))
+                        .collect::<Vec<_>>();
+                    Some(if subelements.is_empty() {
+                        vec![(object.to_owned(), Vec::new())]
+                    } else {
+                        subelements
+                    })
+                })
+                .flatten()
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
     let mode = property("MapMode").and_then(crate::attachment::map_mode_name);
-    let Some(mode) = mode.filter(|mode| !links.is_empty() && *mode != "Deactivated") else {
+    let Some(mode) = mode.filter(|mode| *mode != "Deactivated") else {
         return construction;
     };
-    // The `Object` modes align the sketch with one plane of the support's
-    // own frame; every other mode lies it on the support's plane.
-    let plane = match mode {
-        "ObjectXZ" => PrincipalEntity::XzPlane,
-        "ObjectYZ" => PrincipalEntity::YzPlane,
-        _ => PrincipalEntity::XyPlane,
-    };
-    let selection = picks(targets, &links, &anchor, Some(plane));
-    if selection.is_none() {
-        losses.push(FreecadLossCode::DesignSketchSupportUnread.note(format!(
-            "sketch {} is attached to an object that no design record restates; its support is unread",
-            record.id
-        )));
+    if links.is_empty() {
+        if let Some(mode) = NonBlankString::new(mode.to_owned()) {
+            option(
+                settings,
+                "MapMode",
+                NativeOption::Text(Dimension::Literal(mode)),
+            );
+        }
+        return construction;
     }
-    construction.inputs.push(ConstructionInput {
-        role: selection.is_some().then_some(InputRole {
-            subject: Subject::Whole,
-            relation: Relation::Coincident,
-        }),
-        reference: Some(InputReference::Picks(selection.unwrap_or(Selection {
-            at: anchor,
-            picks: Picks::Unread,
-            native: None,
-        }))),
-        value: None,
-        reversed: None,
-    });
+    construction.inputs = support(targets, &links, mode, anchor, record, losses);
     let reversed = property("MapReversed").and_then(stored_bool);
     let mut source_settings = NativeOptions::new();
     match (mode, reversed) {
@@ -1193,16 +1347,22 @@ fn plane(
             .push(PostStep::Flip(Dimension::Literal(true))),
         _ => {}
     }
-    match property("AttachmentOffset").map(crate::placement::placement_matrix_unreported) {
-        Some(Some(offset)) if mode == "Translate" => {
-            if offset.transform() != Transform::identity() {
+    let offset = property("AttachmentOffset");
+    match offset.map(crate::placement::placement_matrix_unreported) {
+        Some(Some(matrix)) if mode == "Translate" => {
+            if matrix.transform() != Transform::identity() {
                 losses.push(FreecadLossCode::DesignSketchOffsetUnstated.note(format!(
                     "sketch {} offsets its Translate attachment along axes the decoder does not state; its resolved frame holds the offset",
                     record.id
                 )));
             }
         }
-        Some(Some(offset)) => construction.after.extend(offset_steps(offset.rows())),
+        Some(Some(matrix)) => {
+            let bindings = offset_bindings(scope, feature, object, offset, record, losses);
+            construction
+                .after
+                .extend(offset_steps(matrix.rows(), &bindings));
+        }
         Some(None) => losses.push(FreecadLossCode::DesignSketchOffsetUnstated.note(format!(
             "sketch {} stores an AttachmentOffset the decoder cannot read; its resolved frame holds the offset",
             record.id
@@ -1218,62 +1378,262 @@ fn plane(
     construction
 }
 
-/// The steps of a `FreeCAD` `AttachmentOffset` whose matrix rows are
-/// `rows`: `Translate` along X, Y, and Z, then `Rotate` about Z (yaw), Y
-/// (pitch), and X (roll), each left out where its literal is zero (§5.9).
-fn offset_steps(rows: [[f64; 4]; 4]) -> Vec<PostStep> {
+/// The inputs that attach a sketch to the references `links` in the
+/// attachment mode `mode` (§6.1 Placement; `Part/App/Attacher.cpp`):
+/// - `ObjectXY`, `ObjectXZ`, `ObjectYZ`: a `Whole` `Coincident` input that
+///   picks that plane of the reference's placement;
+/// - `FlatFace`: a `Whole` `Coincident` input that picks the reference's
+///   plane;
+/// - `Translate` and `ThreePointsPlane`: a `Whole` `Coincident` input for
+///   each reference, which the plane passes through;
+/// - `ParallelPlane`: a `Whole` `Parallel` input that picks the XY plane of
+///   the first reference's placement, and a `Whole` `Coincident` input that
+///   picks the vertex;
+/// - `Folding`: a `Whole` `Fold` input that picks the four edges.
+///
+/// Every other mode, and a reference these readings have no pick of, is one
+/// input with no role that picks each reference's shape (§5.9, Unread
+/// roles).
+fn support(
+    targets: &Targets,
+    links: &[(String, Vec<String>)],
+    mode: &str,
+    anchor: &Anchor,
+    record: &LegacySketch,
+    losses: &mut Vec<LossNote>,
+) -> Vec<ConstructionInput> {
+    let read = |link: &(String, Vec<String>), reading| {
+        picks(targets, std::slice::from_ref(link), anchor, reading)
+    };
+    let input = |role, selection| ConstructionInput {
+        role,
+        reference: Some(InputReference::Picks(selection)),
+        value: None,
+        reversed: None,
+    };
+    let whole = |relation, selection| {
+        input(
+            Some(InputRole {
+                subject: Subject::Whole,
+                relation,
+            }),
+            selection,
+        )
+    };
+    let unread = || Selection {
+        at: anchor.clone(),
+        picks: Picks::Unread,
+        native: None,
+    };
+    let Some(shapes) = links
+        .iter()
+        .map(|link| read(link, Reading::Shape))
+        .collect::<Option<Vec<_>>>()
+    else {
+        losses.push(FreecadLossCode::DesignSketchSupportUnread.note(format!(
+            "sketch {} is attached to an object that no design record restates; its support is unread",
+            record.id
+        )));
+        return vec![input(None, unread())];
+    };
+    let typed =
+        match (mode, links) {
+            ("ObjectXY" | "ObjectXZ" | "ObjectYZ", [link]) => {
+                let entity = match mode {
+                    "ObjectXZ" => PrincipalEntity::XzPlane,
+                    "ObjectYZ" => PrincipalEntity::YzPlane,
+                    _ => PrincipalEntity::XyPlane,
+                };
+                read(link, Reading::Frame(entity))
+                    .map(|selection| vec![whole(Relation::Coincident, selection)])
+            }
+            ("FlatFace", [link]) => read(link, Reading::Plane)
+                .map(|selection| vec![whole(Relation::Coincident, selection)]),
+            ("Translate", [_]) | ("ThreePointsPlane", [_, _] | [_, _, _]) => Some(
+                shapes
+                    .iter()
+                    .map(|selection| whole(Relation::Coincident, selection.clone()))
+                    .collect(),
+            ),
+            ("ParallelPlane", [plane, _]) => read(plane, Reading::Frame(PrincipalEntity::XyPlane))
+                .map(|selection| {
+                    vec![
+                        whole(Relation::Parallel, selection),
+                        whole(Relation::Coincident, shapes[1].clone()),
+                    ]
+                }),
+            ("Folding", [_, _, _, _]) => picks(targets, links, anchor, Reading::Shape)
+                .map(|selection| vec![whole(Relation::Fold, selection)]),
+            _ => None,
+        };
+    typed.unwrap_or_else(|| {
+        losses.push(FreecadLossCode::DesignSketchSupportUnread.note(format!(
+            "sketch {} is attached in mode {mode}, which no input role of its references states; its support input has no role",
+            record.id
+        )));
+        vec![input(
+            None,
+            picks(targets, links, anchor, Reading::Shape).unwrap_or_else(unread),
+        )]
+    })
+}
+
+/// The parameters that bind the components of a sketch's `AttachmentOffset`
+/// (§5.9 After).
+#[derive(Debug, Default)]
+struct OffsetBindings {
+    /// The translations along X, Y, and Z.
+    base: [Option<ParameterId>; 3],
+    /// The rotations about Z (yaw), Y (pitch), and X (roll).
+    rotation: [Option<ParameterId>; 3],
+    /// The rotation is one about the axis whose rotation `rotation` binds:
+    /// a bound `Rotation.Angle` about X, Y, or Z.
+    about_axis: bool,
+}
+
+/// The parameter that binds each component of the `AttachmentOffset`
+/// `offset` of the sketch object `object` of `feature`: `Base.x`, `.y`, and
+/// `.z` bind the translations, `Rotation.Yaw`, `.Pitch`, and `.Roll` the
+/// rotations, and `Rotation.Angle` the rotation about the axis the property
+/// stores where that axis is X, Y, or Z and no other rotation component is
+/// bound. Every other bound component stays a literal, charged.
+fn offset_bindings(
+    scope: &Scope<'_>,
+    feature: &FeatureId,
+    object: &str,
+    offset: Option<&PropertyRecord>,
+    record: &LegacySketch,
+    losses: &mut Vec<LossNote>,
+) -> OffsetBindings {
+    let paths = scope
+        .source
+        .property(object, "ExpressionEngine")
+        .map(|engine| {
+            engine
+                .values()
+                .iter()
+                .filter(|value| value.tag == "Expression")
+                .filter_map(|value| value.attributes.get("path"))
+                .filter_map(|path| {
+                    let component = path.strip_prefix(".AttachmentOffset")?;
+                    (component.is_empty() || component.starts_with('.'))
+                        .then(|| (path.as_str(), component.trim_start_matches('.')))
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let parameter = |path: &str| {
+        let name = format!("AttachmentOffset.{path}");
+        scope
+            .ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.owner.as_ref() == Some(feature) && parameter.name == name)
+            .map(|parameter| parameter.id.clone())
+    };
+    let mut bindings = OffsetBindings::default();
+    let mut unbound = Vec::new();
+    let rotations = paths
+        .iter()
+        .map(|(_, component)| *component)
+        .filter(|component| component.starts_with("Rotation"))
+        .collect::<Vec<_>>();
+    let euler = rotations.iter().all(|component| {
+        matches!(
+            *component,
+            "Rotation.Yaw" | "Rotation.Pitch" | "Rotation.Roll"
+        )
+    });
+    let axis = match rotations.as_slice() {
+        ["Rotation.Angle"] => offset
+            .and_then(crate::placement::placement_axis_angle)
+            .and_then(|(axis, _)| match axis {
+                [0.0, 0.0, 1.0] => Some(0),
+                [0.0, 1.0, 0.0] => Some(1),
+                [1.0, 0.0, 0.0] => Some(2),
+                _ => None,
+            }),
+        _ => None,
+    };
+    for (path, component) in &paths {
+        let slot = match *component {
+            "Base.x" => Some(&mut bindings.base[0]),
+            "Base.y" => Some(&mut bindings.base[1]),
+            "Base.z" => Some(&mut bindings.base[2]),
+            "Rotation.Yaw" if euler => Some(&mut bindings.rotation[0]),
+            "Rotation.Pitch" if euler => Some(&mut bindings.rotation[1]),
+            "Rotation.Roll" if euler => Some(&mut bindings.rotation[2]),
+            "Rotation.Angle" => axis.map(|axis| &mut bindings.rotation[axis]),
+            _ => None,
+        };
+        match (slot, parameter(component)) {
+            (Some(slot), Some(parameter)) => *slot = Some(parameter),
+            _ => unbound.push(*path),
+        }
+    }
+    bindings.about_axis = axis.is_some() && bindings.rotation.iter().any(Option::is_some);
+    if !unbound.is_empty() {
+        losses.push(FreecadLossCode::DesignSketchOffsetUnbound.note(format!(
+            "sketch {} binds AttachmentOffset {} by an expression that no offset step states; each step holds its stored value",
+            record.id,
+            unbound.join(", ")
+        )));
+    }
+    bindings
+}
+
+/// The steps of a `FreeCAD` `AttachmentOffset` whose matrix rows are `rows`
+/// and whose components `bindings` binds: `Translate` along X, Y, and Z,
+/// then `Rotate` about Z (yaw), Y (pitch), and X (roll), each the
+/// parameter that binds it or the stored value, a zero value left out where
+/// no step of its kind is bound (§5.9).
+fn offset_steps(rows: [[f64; 4]; 4], bindings: &OffsetBindings) -> Vec<PostStep> {
     let mut steps = Vec::new();
-    for (axis, distance) in [
+    let translated = bindings.base.iter().any(Option::is_some);
+    for ((axis, distance), parameter) in [
         (FrameAxis::X, rows[0][3]),
         (FrameAxis::Y, rows[1][3]),
         (FrameAxis::Z, rows[2][3]),
-    ] {
-        if let Some(distance) = Length::new(distance).filter(|_| distance != 0.0) {
-            steps.push(PostStep::Translate {
-                axis,
-                distance: Dimension::Literal(distance),
-            });
+    ]
+    .into_iter()
+    .zip(&bindings.base)
+    {
+        let distance = match parameter {
+            Some(parameter) => Some(Dimension::Parameter(parameter.clone())),
+            None => Length::new(distance)
+                .filter(|_| translated || distance != 0.0)
+                .map(Dimension::Literal),
+        };
+        if let Some(distance) = distance {
+            steps.push(PostStep::Translate { axis, distance });
         }
     }
-    let (yaw, pitch, roll) = yaw_pitch_roll(rows);
-    for (axis, angle) in [
+    let rotated = bindings.rotation.iter().any(Option::is_some);
+    let (yaw, pitch, roll) = if bindings.about_axis {
+        (0.0, 0.0, 0.0)
+    } else {
+        crate::placement::yaw_pitch_roll(rows)
+    };
+    for ((axis, angle), parameter) in [
         (FrameAxis::Z, yaw),
         (FrameAxis::Y, pitch),
         (FrameAxis::X, roll),
-    ] {
-        if let Some(angle) = Angle::new(angle).filter(|_| angle != 0.0) {
-            steps.push(PostStep::Rotate {
-                axis,
-                angle: Dimension::Literal(angle),
-            });
+    ]
+    .into_iter()
+    .zip(&bindings.rotation)
+    {
+        let angle = match parameter {
+            Some(parameter) => Some(Dimension::Parameter(parameter.clone())),
+            None => Angle::new(angle)
+                .filter(|_| rotated || angle != 0.0)
+                .map(Dimension::Literal),
+        };
+        if let Some(angle) = angle {
+            steps.push(PostStep::Rotate { axis, angle });
         }
     }
     steps
-}
-
-/// The intrinsic Z, Y, X angles of the rotation in `rows`, as `FreeCAD`'s
-/// `Rotation::getYawPitchRoll` gives them: at a pole of the pitch the yaw is zero.
-fn yaw_pitch_roll(rows: [[f64; 4]; 4]) -> (f64, f64, f64) {
-    let sine = -rows[2][0];
-    if (sine - 1.0).abs() <= EPS_PITCH_POLE {
-        (
-            0.0,
-            std::f64::consts::FRAC_PI_2,
-            rows[0][1].atan2(rows[1][1]),
-        )
-    } else if (sine + 1.0).abs() <= EPS_PITCH_POLE {
-        (
-            0.0,
-            -std::f64::consts::FRAC_PI_2,
-            (-rows[0][1]).atan2(rows[1][1]),
-        )
-    } else {
-        (
-            rows[1][0].atan2(rows[0][0]),
-            sine.clamp(-1.0, 1.0).asin(),
-            rows[2][1].atan2(rows[2][2]),
-        )
-    }
 }
 
 /// The value of an `App::PropertyBool`.
