@@ -15,6 +15,7 @@ use std::rc::Rc;
 use crate::design::selection::{BoundaryUse, Fragment, SketchRegion};
 use crate::features::profiles::SketchProfileBoundaryUse;
 use crate::features::selections::NonEmptyMembers;
+use crate::math::portable::Portable;
 use crate::math::Point2;
 use crate::sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchId};
 
@@ -160,11 +161,11 @@ impl Curve {
             } => {
                 // The box of the whole ellipse holds every bounded part of it.
                 let (major, minor) = (radii.major().get(), radii.minor().get());
-                let (sin, cos) = major_angle.get().sin_cos();
+                let (sin, cos) = major_angle.get().portable_sin_cos();
                 Kind::Unread(Some(Bounds::about(
                     center.get(),
-                    (major * cos).hypot(minor * sin),
-                    (major * sin).hypot(minor * cos),
+                    (major * cos).portable_hypot(minor * sin),
+                    (major * sin).portable_hypot(minor * cos),
                 )))
             }
             SketchGeometryDefinition::Nurbs { curve } => Kind::Unread(Bounds::of_points(
@@ -313,7 +314,8 @@ impl Curve {
             Self::Arc { center, radius, .. } | Self::Circle { center, radius } => {
                 radius * radius * (to - from)
                     + radius
-                        * (center.u * (to.sin() - from.sin()) - center.v * (to.cos() - from.cos()))
+                        * (center.u * (to.portable_sin() - from.portable_sin())
+                            - center.v * (to.portable_cos() - from.portable_cos()))
             }
         }
     }
@@ -321,13 +323,13 @@ impl Curve {
 
 fn polar(center: Point2, radius: f64, angle: f64) -> Point2 {
     Point2::new(
-        radius.mul_add(angle.cos(), center.u),
-        radius.mul_add(angle.sin(), center.v),
+        radius.mul_add(angle.portable_cos(), center.u),
+        radius.mul_add(angle.portable_sin(), center.v),
     )
 }
 
 fn distance(left: Point2, right: Point2) -> f64 {
-    (left.u - right.u).hypot(left.v - right.v)
+    (left.u - right.u).portable_hypot(left.v - right.v)
 }
 
 fn on_circle(point: Point2, center: Point2, radius: f64) -> Option<()> {
@@ -337,7 +339,7 @@ fn on_circle(point: Point2, center: Point2, radius: f64) -> Option<()> {
 /// The counterclockwise angle in `[0, TAU)` from `base` to the direction of
 /// `point` about `center`.
 fn angle_about(point: Point2, center: Point2, base: f64) -> f64 {
-    ((point.v - center.v).atan2(point.u - center.u) - base).rem_euclid(TAU)
+    ((point.v - center.v).portable_atan2(point.u - center.u) - base).rem_euclid(TAU)
 }
 
 fn line_line(first: Curve, second: Curve) -> Vec<Point2> {
@@ -359,7 +361,7 @@ fn line_line(first: Curve, second: Curve) -> Vec<Point2> {
         (b_end.u - b.u, b_end.v - b.v),
     );
     let cross = d1.0 * d2.1 - d1.1 * d2.0;
-    if cross.abs() <= EPS_PARALLEL_SINE * d1.0.hypot(d1.1) * d2.0.hypot(d2.1) {
+    if cross.abs() <= EPS_PARALLEL_SINE * d1.0.portable_hypot(d1.1) * d2.0.portable_hypot(d2.1) {
         return Vec::new();
     }
     let along = ((b.u - a.u) * d2.1 - (b.v - a.v) * d2.0) / cross;

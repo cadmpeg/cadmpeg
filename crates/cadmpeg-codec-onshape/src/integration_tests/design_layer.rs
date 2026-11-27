@@ -570,3 +570,72 @@ fn a_flat_chain_past_the_depth_cap_keeps_the_source_text() {
         .iter()
         .any(|loss| crate::loss::OnshapeLossCode::ParameterExpressionText.matches(loss)));
 }
+
+#[test]
+fn a_fillet_radius_from_a_variable_binds_its_owned_parameter() {
+    let bytes = crate::test_support::projection::with_variables(
+        &fixture("plate-fillet"),
+        &[crate::test_support::projection::variable(
+            "round-variable",
+            "round",
+            "LENGTH",
+            "lengthValue",
+            "1 mm",
+        )],
+        |response| {
+            for p in response["features"][2]["parameters"]
+                .as_array_mut()
+                .unwrap()
+            {
+                if p["parameterId"] == "radius" {
+                    p["expression"] = json!("#round");
+                }
+            }
+        },
+    );
+    let result = crate::test_support::review::decode(&bytes);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|l| l.code.to_string() == "onshape/history.variable-evaluated"));
+    let fillet = crate::test_support::review::design_operation(result.ir(), "Corner round");
+    assert_eq!(
+        fillet["value"]["sets"][0]["section"]["size"],
+        json!({"kind":"radius","value":{"kind":"parameter","value":id("parameter", "Corner round/radius")}})
+    );
+    crate::test_support::review::validate(result);
+}
+
+#[test]
+fn a_variable_value_no_parameter_drives_is_a_named_loss() {
+    let bytes = crate::test_support::projection::with_variables(
+        &fixture("hole-forms"),
+        &[crate::test_support::projection::variable(
+            "major-variable",
+            "major",
+            "LENGTH",
+            "lengthValue",
+            "4 mm",
+        )],
+        |response| {
+            for feature in response["features"].as_array_mut().unwrap() {
+                for p in feature["parameters"].as_array_mut().into_iter().flatten() {
+                    if p["parameterId"] == "majorDiameter" {
+                        p["expression"] = json!("#major");
+                    }
+                }
+            }
+        },
+    );
+    let (_, report) = super::projection::read(&bytes);
+    let losses: Vec<_> = report
+        .losses()
+        .iter()
+        .filter(|l| l.code.as_deref() == Some("onshape/history.variable-evaluated"))
+        .collect();
+    assert_eq!(losses.len(), 1, "{:?}", report.losses());
+    assert!(losses[0]
+        .detail
+        .starts_with("majorDiameter uses Part Studio variables"));
+}

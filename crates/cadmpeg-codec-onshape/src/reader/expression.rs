@@ -55,7 +55,7 @@ pub(crate) fn definition(
             Err(_) => Ok(Definition {
                 expression: source.to_owned(),
                 dependencies: Vec::new(),
-                properties: serde_json::json!({}),
+                properties: cadmpeg_core::json!({}),
             }),
         };
     }
@@ -72,7 +72,7 @@ pub(crate) fn definition(
     Ok(Definition {
         expression: format!("{} {unit}", number(parameter, "value")?),
         dependencies: Vec::new(),
-        properties: serde_json::json!({}),
+        properties: cadmpeg_core::json!({}),
     })
 }
 
@@ -80,9 +80,9 @@ pub(crate) fn definition(
 /// expression the reader rendered as `rendered`.
 pub(crate) fn source_text(source: &str, rendered: &str) -> Value {
     if source == rendered {
-        serde_json::json!({})
+        cadmpeg_core::json!({})
     } else {
-        serde_json::json!({"source_expression": source})
+        cadmpeg_core::json!({"source_expression": source})
     }
 }
 
