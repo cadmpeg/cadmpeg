@@ -10,6 +10,7 @@ use crate::test_support::test_owned::{
     owned_test_file_with_global_and_line_fonts, OwnedTestEntity,
 };
 pub(crate) mod test_boundary_direction;
+pub(crate) mod test_legacy_plane_children;
 pub(crate) mod test_mixed_sense;
 pub(crate) mod test_surface_domains;
 

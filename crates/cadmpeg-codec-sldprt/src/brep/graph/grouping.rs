@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The faces and kind of each body that the decode derives where the source
-//! states no body hierarchy.
+//! The body hierarchy of a decoded graph: the bodies the decode derives where
+//! no body record links up with the faces, the body, region, and shell
+//! records it states in their partial form where their faces are lost, and
+//! the count of the typed ownership nodes it withholds.
 
 use std::collections::{HashMap, HashSet};
 
@@ -41,6 +43,7 @@ pub(super) fn first_lost_face(refs: &[u32], stated: &HashSet<String>) -> Option<
 pub(super) fn state_unbuilt_records(
     ctx: &DecodeContext<'_>,
     out: &mut Brep,
+    annotations: &mut AnnotationBuilder,
     records: &[BodyRecord],
     stream: &StreamName,
 ) -> Result<(), CodecError> {
@@ -54,7 +57,6 @@ pub(super) fn state_unbuilt_records(
         out.regions.iter().map(|region| region.id.clone()).collect();
     let built_bodies: HashSet<BodyId> = out.bodies.iter().map(|body| body.id.clone()).collect();
     let source = StreamHandle::new(stream.clone());
-    let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut out.annotations));
     let mut annotate = |key: AnnotationKey, offset: usize, tag: &str| {
         annotations.note(key.clone(), &source, u64_from_index(offset), Some(tag));
         annotations.exactness(key, Exactness::ByteExact);
@@ -117,7 +119,8 @@ pub(super) fn state_unbuilt_records(
             }
             super::admit_brep_entity(ctx)?;
             annotate(AnnotationKey::from(&id), region.offset, "00_51_region");
-            out.regions.push(Region::new(id, body_id.clone(), added));
+            out.regions
+                .push(region_of(id, body_id.clone(), added, true));
         }
         if body_new {
             super::admit_brep_entity(ctx)?;
@@ -143,8 +146,26 @@ pub(super) fn state_unbuilt_records(
     out.shells.sort_by(|a, b| a.id.cmp(&b.id));
     out.regions.sort_by(|a, b| a.id.cmp(&b.id));
     out.bodies.sort_by(|a, b| a.id.cmp(&b.id));
-    out.annotations = annotations.build();
     Ok(())
+}
+
+/// The region `id` of `body` bounded by `shells`, the exterior first. Where
+/// `faceless`, a shell holds no stated face, so which shell is the exterior
+/// is not stated, and a region of more than one shell leaves them
+/// unclassified (§5.6, Unstated children).
+pub(super) fn region_of(
+    id: RegionId,
+    body: BodyId,
+    shells: Vec<ShellId>,
+    faceless: bool,
+) -> Region {
+    if faceless && shells.len() > 1 {
+        let mut region = Region::new(id, body, Vec::new());
+        region.unstated = Some(RegionUnstated::Unclassified { shells });
+        region
+    } else {
+        Region::new(id, body, shells)
+    }
 }
 
 /// The body records of the typed `hierarchies`, sorted by attribute.
@@ -243,20 +264,35 @@ pub(super) fn note_body_precision(out: &mut Brep, body: &BodyId, res_linear: Opt
     }
 }
 
-/// The bodies and shells of the typed `hierarchies` that the decode neither
-/// states nor names in a dropped record.
+/// The bodies, regions, and shells of the typed `hierarchies` that the decode
+/// neither states nor names in a dropped record. The regions are those of
+/// `records`, the body records of `hierarchies`.
 pub(super) fn withheld_counts(
     out: &Brep,
     hierarchies: &[crate::brep::typed::Hierarchy],
+    records: &[BodyRecord],
     accounted: &HashSet<String>,
-) -> (usize, usize) {
+) -> (usize, usize, usize) {
     let body_ids: HashSet<_> = out.bodies.iter().map(|body| body.id.as_str()).collect();
+    let region_ids: HashSet<_> = out
+        .regions
+        .iter()
+        .map(|region| region.id.as_str())
+        .collect();
     let shell_ids: HashSet<_> = out.shells.iter().map(|shell| shell.id.as_str()).collect();
     let bodies = hierarchies
         .iter()
         .filter(|hierarchy| {
             let id = BodyId::compose(&super::body_namespace(), hierarchy.body.attr);
             !body_ids.contains(id.as_str()) && !accounted.contains(id.as_str())
+        })
+        .count();
+    let regions = records
+        .iter()
+        .flat_map(|record| &record.regions)
+        .filter(|region| {
+            let id = RegionId::compose(&super::region_namespace(), region.attr);
+            !region_ids.contains(id.as_str()) && !accounted.contains(id.as_str())
         })
         .count();
     let shells = hierarchies
@@ -267,7 +303,7 @@ pub(super) fn withheld_counts(
             !shell_ids.contains(id.as_str()) && !accounted.contains(id.as_str())
         })
         .count();
-    (bodies, shells)
+    (bodies, regions, shells)
 }
 
 /// Marks each shell of a derived body hierarchy as not stating all its

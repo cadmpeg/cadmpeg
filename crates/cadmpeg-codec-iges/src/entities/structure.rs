@@ -1217,18 +1217,29 @@ fn predefined_associativity_valid(
         }
         9 => {
             let child_count = record.count(2).filter(|count| *count > 0);
+            let linked = |index: usize| {
+                existing_pointer(record, index, entries)
+                    .and_then(|sequence| records.get(&sequence))
+                    .is_some_and(|member| {
+                        has_association_back_pointer(
+                            member,
+                            entry.sequence,
+                            trailing_pointer_analysis,
+                        )
+                    })
+            };
+            // The legacy bounded-plane face gives up the slot of a child
+            // pointer that names no entry and keeps its other holes.
+            let plane_parent = existing_pointer(record, 3, entries)
+                .and_then(|parent| entries.get(&parent))
+                .is_some_and(|parent| parent.entity_type == 108 && parent.form == 1);
+            let dangling = |index: usize| {
+                plane_parent
+                    && record.integer(index).is_some()
+                    && existing_pointer(record, index, entries).is_none()
+            };
             let members_valid = child_count.is_some_and(|count| {
-                (3..4 + count).all(|index| {
-                    existing_pointer(record, index, entries)
-                        .and_then(|sequence| records.get(&sequence))
-                        .is_some_and(|member| {
-                            has_association_back_pointer(
-                                member,
-                                entry.sequence,
-                                trailing_pointer_analysis,
-                            )
-                        })
-                })
+                linked(3) && (4..4 + count).all(|index| linked(index) || dangling(index))
             });
             record.integer(1) == Some(1)
                 && child_count.is_some_and(|count| end == 4 + count)
@@ -1886,10 +1897,10 @@ struct LegacyPlaneSource<'a> {
 }
 
 /// A child of a Type 402 Form 9 relation that bounds no hole of the
-/// relation's face: the loop it would state, the child, and why.
+/// relation's face: the loop it would state, the child pointer, and why.
 struct LostHole {
     loop_id: cadmpeg_ir::ids::LoopId,
-    child: u32,
+    child: i64,
     why: &'static str,
 }
 
@@ -1910,6 +1921,7 @@ fn legacy_single_parent_face(
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<Option<LegacyFace>, LegacyPlaneError> {
+    const INVALID_CHILD: &str = "legacy single-parent plane hole has an invalid child pointer";
     let LegacyPlaneSource {
         entry,
         record,
@@ -1920,17 +1932,21 @@ fn legacy_single_parent_face(
     };
     let mut children = Vec::new();
     for offset in 0..child_count {
-        let Some(child) = existing_pointer(record, 4 + offset, entries) else {
-            return Err("legacy single-parent plane hole has an invalid child pointer".into());
+        let Some(pointer) = record.integer(4 + offset) else {
+            return Err(INVALID_CHILD.into());
         };
-        children.push(child);
+        children.push((pointer, existing_pointer(record, 4 + offset, entries)));
     }
-    if !children.iter().any(|sequence| {
-        entries
-            .get(sequence)
+    if !children.iter().any(|(_, sequence)| {
+        sequence
+            .and_then(|sequence| entries.get(&sequence))
             .is_some_and(|child| child.entity_type == 108)
     }) {
-        return Ok(None);
+        return if children.iter().any(|(_, sequence)| sequence.is_none()) {
+            Err(INVALID_CHILD.into())
+        } else {
+            Ok(None)
+        };
     }
 
     let index = ModelIndex::new_model_only(ir);
@@ -1963,8 +1979,16 @@ fn legacy_single_parent_face(
     // Each child bounds its own hole: one that does not leaves the holes of
     // the others stated (§3.3).
     let mut lost = Vec::new();
-    for (offset, child) in children.into_iter().enumerate() {
+    for (offset, (pointer, child)) in children.into_iter().enumerate() {
         let boundary_index = offset + 1;
+        let Some(child) = child else {
+            lost.push(LostHole {
+                loop_id: crate::ids::r#loop(&stem.slot(boundary_index)),
+                child: pointer,
+                why: INVALID_CHILD,
+            });
+            continue;
+        };
         let hole = entries
             .get(&child)
             .filter(|child| child.entity_type == 108)
@@ -1992,7 +2016,7 @@ fn legacy_single_parent_face(
             }
             Err(LegacyPlaneError::Invalid(why)) => lost.push(LostHole {
                 loop_id: crate::ids::r#loop(&stem.slot(boundary_index)),
-                child,
+                child: i64::from(child),
                 why,
             }),
             Err(resource) => return Err(resource),
@@ -2378,6 +2402,9 @@ pub(super) fn project(
     let mut legacy_plane_sequences = BTreeSet::new();
     let mut failed_holes = Vec::<(&DirectoryEntry, u32, cadmpeg_ir::report::loss::LossNote)>::new();
     let mut lost_holes = Vec::<(&DirectoryEntry, FaceId, LostHole)>::new();
+    // The Type 402 Form 9 relation that names each Type 108 child of a
+    // Type 108 Form 1 parent.
+    let mut hole_relations = BTreeMap::<u32, u32>::new();
     let mut flows = BTreeMap::new();
     for entry in directory
         .iter()
@@ -2937,6 +2964,12 @@ pub(super) fn project(
                     .is_some_and(|parent| parent.entity_type == 108 && parent.form == 1)
             });
             if let (9, Some(parent)) = (entry.form, parent) {
+                let count = record.count(2).unwrap_or(0);
+                hole_relations.extend(
+                    (4..4 + count)
+                        .filter_map(|index| existing_pointer(record, index, &entries))
+                        .map(|child| (child, entry.sequence)),
+                );
                 match legacy_single_parent_face(
                     ir,
                     LegacyPlaneSource {
@@ -3080,13 +3113,24 @@ pub(super) fn project(
                 boundary_rules,
                 ctx,
             ) {
-                Ok(_) => super::push_entity_finding(
-                    &mut losses,
-                    entry,
-                    format_args!(
-                        "negative bounded plane requires an enclosing positive plane face"
+                Ok(_) => match hole_relations.get(&entry.sequence) {
+                    Some(relation) => super::push_entity_finding(
+                        &mut losses,
+                        entry,
+                        format_args!(
+                            "negative bounded plane is a child of the Type 402 Form 9 \
+                             relation at Directory sequence {relation}, whose face does not \
+                             state its hole"
+                        ),
                     ),
-                ),
+                    None => super::push_entity_finding(
+                        &mut losses,
+                        entry,
+                        format_args!(
+                            "negative bounded plane requires an enclosing positive plane face"
+                        ),
+                    ),
+                },
                 Err(reason) => super::push_entity_finding(
                     &mut losses,
                     entry,

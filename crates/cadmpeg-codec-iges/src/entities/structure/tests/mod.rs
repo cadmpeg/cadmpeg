@@ -20,6 +20,9 @@ use crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_
 use crate::test_support::test_drawing_and_trimming::legacy_mixed_single_parent_file;
 use crate::test_support::test_drawing_and_trimming::legacy_perforated_plane_file;
 use crate::test_support::test_drawing_and_trimming::legacy_two_hole_single_parent_file;
+use crate::test_support::test_drawing_and_trimming::test_legacy_plane_children::{
+    legacy_dangling_child_single_parent_file, legacy_independent_hole_single_parent_file,
+};
 use crate::test_support::test_owned::owned_test_file;
 use crate::test_support::test_owned::owned_test_file_with_global;
 use crate::test_support::test_owned::OwnedTestEntity;
@@ -1703,6 +1706,46 @@ fn a_legacy_hole_that_fails_beside_another_hole_keeps_the_other() {
         legacy_face_with_a_lost_hole(legacy_two_hole_single_parent_file(global), 2);
     assert_eq!(roles, [LoopBoundaryRole::Outer, LoopBoundaryRole::Inner]);
     assert!(message.contains("Directory sequence 11"), "{message}");
+}
+
+/// A legacy single-parent relation one of whose child pointers names no
+/// entry keeps the hole of its other child, and gives up the slot of that
+/// pointer (CADIR §3.3, §5.6).
+#[test]
+fn a_legacy_child_pointer_that_names_no_entry_gives_up_only_its_slot() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let (roles, message) =
+        legacy_face_with_a_lost_hole(legacy_dangling_child_single_parent_file(global), 2);
+    assert_eq!(roles, [LoopBoundaryRole::Outer, LoopBoundaryRole::Inner]);
+    assert!(message.contains("Directory sequence 99"), "{message}");
+    assert!(message.contains("invalid child pointer"), "{message}");
+}
+
+/// A negative bounded plane that a legacy single-parent relation names, and
+/// whose hole the relation's face does not state, is charged naming that
+/// relation.
+#[test]
+fn a_legacy_hole_the_face_does_not_state_names_its_relation() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let file = legacy_independent_hole_single_parent_file(global);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let notes = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.message.contains("negative bounded plane"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one negative-plane note: {:#?}", result.report().losses);
+    };
+    assert!(
+        note.message
+            .contains("child of the Type 402 Form 9 relation at Directory sequence 9"),
+        "{}",
+        note.message
+    );
 }
 
 mod flow;

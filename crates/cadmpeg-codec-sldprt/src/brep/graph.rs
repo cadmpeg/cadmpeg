@@ -63,8 +63,8 @@ mod prune;
 
 use grouping::{
     body_records_of, chain_cut_note, first_lost_face, mark_derived_shells, note_body_precision,
-    shell_face_components, state_unbuilt_records, stated_face_ids, unclassified_body_kind,
-    withheld_counts,
+    region_of, shell_face_components, state_unbuilt_records, stated_face_ids,
+    unclassified_body_kind, withheld_counts,
 };
 use prune::{prune_rejected_topology, RingLoss};
 
@@ -582,11 +582,21 @@ pub(crate) struct Stats {
     /// No body record links up with the faces, so one body hierarchy was
     /// derived.
     pub(crate) synthetic_body_grouping: bool,
+    /// Where the derived bodies take their kind.
+    pub(crate) derived_kind: DerivedKind,
+}
+
+/// Where the bodies of the derived hierarchies take their kind, over one
+/// graph or over merged graphs.
+#[derive(Default, Clone, Copy)]
+pub(crate) struct DerivedKind {
     /// BODY records link to stored REGION records but do not link up with
-    /// the faces, so the hierarchy is derived beside them.
-    pub(crate) unlinked_body_records: bool,
-    /// Those BODY records agree on one kind, which the derived body takes.
-    pub(crate) unlinked_body_kind: bool,
+    /// the faces, so a hierarchy is derived beside them.
+    pub(crate) unlinked_records: bool,
+    /// A derived body takes the one kind those BODY records agree on.
+    pub(crate) stated: bool,
+    /// A derived body is classified from its faces.
+    pub(crate) from_faces: bool,
 }
 
 /// The `sldprt:brep` shell namespace, which three routes mint under.
@@ -3545,20 +3555,23 @@ fn report_withheld_ownership(
             &[id_surf(attr)],
         ));
     }
-    let (mut bodies, mut shells) = (0, 0);
+    let (mut bodies, mut regions, mut shells) = (0, 0, 0);
     if let Some(hierarchies) = facts.hierarchies(&attrs) {
+        let records = body_records_of(&hierarchies);
         // A derived hierarchy holds the faces of every typed body, so a typed
         // record stated beside it would state those bodies twice.
         if !out.stats.synthetic_body_grouping {
-            state_unbuilt_records(ctx, out, &body_records_of(&hierarchies), stream)?;
+            let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut out.annotations));
+            state_unbuilt_records(ctx, out, &mut annotations, &records, stream)?;
+            out.annotations = annotations.build();
         }
-        (bodies, shells) = withheld_counts(out, &hierarchies, &accounted);
+        (bodies, regions, shells) = withheld_counts(out, &hierarchies, &records, &accounted);
     }
     out.dropped.extend(given_up);
-    let withheld = bodies + shells + faces;
+    let withheld = bodies + regions + shells + faces;
     if withheld > 0 {
         out.losses.push(crate::loss::SldprtLossCode::TopologyOwnershipWithheld.note(format!(
-            "{withheld} current typed ownership node(s) are withheld: {bodies} body node(s), {shells} shell node(s), and {faces} face node(s)."
+            "{withheld} current typed ownership node(s) are withheld: {bodies} body node(s), {regions} region node(s), {shells} shell node(s), and {faces} face node(s)."
         )));
     }
     Ok(typed_face_unstated)
@@ -5335,18 +5348,10 @@ fn decode_graph_inner(
         .filter(|edge| edge.curve().is_none() && tolerant_edges.contains(&edge.id))
         .count();
 
-    if out.faces.is_empty() {
-        let mut kept = Brep {
-            approximations: out.approximations,
-            losses: out.losses,
-            dropped: out.dropped,
-            stats: out.stats,
-            ..Brep::default()
-        };
-        state_unbuilt_records(ctx, &mut kept, &body_records, stream)?;
-        return Ok(kept);
-    }
-    let synthetic_grouping = body_records.is_empty();
+    // Where no face is stated, the body records are stated in their partial
+    // form and the graph keeps the geometry it built (§3.3).
+    let faces_stated = !out.faces.is_empty();
+    let synthetic_grouping = faces_stated && body_records.is_empty();
     out.stats.synthetic_body_grouping = synthetic_grouping;
     // BODY records that do not link up with the faces still classify the
     // derived body when they agree.
@@ -5355,16 +5360,20 @@ fn decode_graph_inner(
     } else {
         typed::StoredBodyKind::Absent
     };
-    out.stats.unlinked_body_records = stored != typed::StoredBodyKind::Absent;
     let stored_kind = match stored {
         typed::StoredBodyKind::Agreed(kind) => Some(kind),
         typed::StoredBodyKind::Absent | typed::StoredBodyKind::Disagree => None,
     };
-    out.stats.unlinked_body_kind = stored_kind.is_some();
+    out.stats.derived_kind = DerivedKind {
+        unlinked_records: stored != typed::StoredBodyKind::Absent,
+        stated: stored_kind.is_some(),
+        from_faces: synthetic_grouping && stored_kind.is_none(),
+    };
     let stated_faces = stated_face_ids(&out);
 
     for (group, body_record) in body_records
         .iter()
+        .filter(|_| faces_stated)
         .map(Some)
         .chain(std::iter::once(None).take(usize::from(synthetic_grouping)))
         .enumerate()
@@ -5435,6 +5444,7 @@ fn decode_graph_inner(
                     Some((region.offset, "00_51_region")),
                 )?;
                 let mut region_shells = Vec::new();
+                let mut faceless = false;
                 for shell in &region.shells {
                     let native_shell_id = ShellId::compose(&shell_namespace(), shell.attr);
                     let lost_face = first_lost_face(&shell.refs, &stated_faces);
@@ -5483,11 +5493,16 @@ fn decode_graph_inner(
                         kept.unstated = Some(Unstated::Members);
                         out.shells.push(kept);
                         region_shells.push(native_shell_id);
+                        faceless = true;
                     }
                 }
                 admit_brep_entity(ctx)?;
-                out.regions
-                    .push(Region::new(region_id, body_id.clone(), region_shells));
+                out.regions.push(region_of(
+                    region_id,
+                    body_id.clone(),
+                    region_shells,
+                    faceless,
+                ));
             }
         }
         admit_brep_entity(ctx)?;
@@ -5510,6 +5525,9 @@ fn decode_graph_inner(
             native_ref: None,
             unstated: None,
         });
+    }
+    if !faces_stated {
+        state_unbuilt_records(ctx, &mut out, &mut annotations, &body_records, stream)?;
     }
 
     let mut body_ids_by_attr = HashMap::<u32, Option<&str>>::new();

@@ -393,6 +393,46 @@ fn a_malformed_chained_continuation_keeps_the_frames_before_it() {
     assert_eq!(extracted.unread, [cut]);
 }
 
+/// A chained section whose first frame holds the whole stream keeps it when
+/// a second frame does not read: one whose member does not inflate, or one
+/// whose member runs past the section. The second frame is reported unread.
+#[test]
+fn a_second_chained_frame_that_does_not_read_keeps_the_first() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let stream = parasolid_payload("partition body", "SCH_SW_33103_11000");
+    let member = zlib_member(&stream);
+    for past_section in [false, true] {
+        let mut section = WRAPPED_MAGIC.to_vec();
+        section.extend_from_slice(&u32::try_from(stream.len()).unwrap().to_le_bytes());
+        section.extend_from_slice(&u32::try_from(member.len()).unwrap().to_le_bytes());
+        section.extend_from_slice(&member);
+        let second = b"not a zlib member";
+        let declared = if past_section {
+            second.len() + 1
+        } else {
+            second.len()
+        };
+        section.extend_from_slice(&64_u32.to_le_bytes());
+        section.extend_from_slice(&u32::try_from(declared).unwrap().to_le_bytes());
+        section.extend_from_slice(second);
+        let mut payload = u32::try_from(section.len()).unwrap().to_le_bytes().to_vec();
+        payload.extend_from_slice(&section);
+
+        let extracted = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap();
+        let [read] = extracted.streams.as_slice() else {
+            panic!("one stream: {:?}", extracted.streams.len());
+        };
+        assert_eq!(read.payload, stream);
+        let second_frame = payload.len() - second.len() - 8..payload.len();
+        assert_eq!(
+            extracted.unread,
+            [second_frame],
+            "past section: {past_section}"
+        );
+    }
+}
+
 /// A frame of a chained section whose sizes are zero holds an empty stream:
 /// the frames on either side of it make the section's stream.
 #[test]

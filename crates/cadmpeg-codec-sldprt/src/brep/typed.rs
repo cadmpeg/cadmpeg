@@ -194,19 +194,12 @@ type OwnershipMaps = (
 
 impl Facts {
     /// The kind the BODY records that link to a stored REGION state. A BODY
-    /// links when one of its region-head references names a REGION, directly
-    /// or as the predecessor sentinel a REGION's previous reference holds, or
-    /// when a REGION names it as its body. A BODY that links to no region,
-    /// such as one that owns only vertices, says nothing of the faces' body.
+    /// links when a REGION names it as its body. A BODY that links to no
+    /// region, such as one that owns only vertices, says nothing of the
+    /// faces' body.
     pub(super) fn stored_body_kind(&self) -> StoredBodyKind {
-        let regions: HashSet<u32> = self.regions.iter().map(|region| region.attr).collect();
         let links = |body: &&BodyNode| {
-            body.region_head_candidates().any(|head| {
-                head > 1
-                    && (node_ref(head).is_some_and(|attr| regions.contains(&attr))
-                        || self.regions.iter().any(|region| region.refs[3] == head))
-            }) || self
-                .regions
+            self.regions
                 .iter()
                 .any(|region| region.refs[1] == body.attr)
         };
@@ -687,41 +680,20 @@ fn region_chain_from_head(
         return Some(Vec::new());
     }
 
-    // A BODY may store either the first REGION attribute or the predecessor
-    // sentinel used by the REGION doubly-linked list.  Both forms carry the
-    // same closure: the first region's previous reference is the stored head
-    // in the sentinel form, and each later region points back to its source.
-    let (mut next, first_previous) =
-        if let Some(attr) = node_ref(head).filter(|attr| regions.contains_key(attr)) {
-            let first = regions.get(&attr)?;
-            // A direct region head names the first node.  A later region in
-            // the chain is not another valid head: its previous pointer must
-            // point back to the preceding region.  The sentinel form below
-            // is the only form that admits a non-null first previous link.
-            (first.refs[3] <= 1).then_some((attr, None))?
-        } else {
-            let mut candidates = regions
-                .values()
-                .filter(|region| region.refs[3] == head)
-                .map(|region| region.attr);
-            let attr = candidates.next()?;
-            if candidates.next().is_some() {
-                return None;
-            }
-            (attr, Some(head))
-        };
-
+    // The BODY names its first REGION, whose previous reference is null.
+    let first = node_ref(head).and_then(|attr| regions.get(&attr))?;
+    if first.refs[3] > 1 {
+        return None;
+    }
+    let mut next = first.attr;
     let mut out = Vec::new();
     let mut seen = HashSet::new();
-    let mut expected_previous = first_previous;
     loop {
         if !seen.insert(next) {
             return None;
         }
         let region = regions.get(&next)?;
-        if region.refs[1] != body.attr
-            || expected_previous.is_some_and(|previous| region.refs[3] != previous)
-        {
+        if region.refs[1] != body.attr {
             return None;
         }
         let following = region.refs[2];
@@ -734,7 +706,6 @@ fn region_chain_from_head(
         if following_region.refs[3] != region.attr {
             return None;
         }
-        expected_previous = Some(region.attr);
         next = following_attr;
     }
     Some(out)
@@ -2312,8 +2283,10 @@ mod tests {
         assert!(facts.hierarchies(&HashSet::new()).is_none());
     }
 
+    /// A region-chain head that names no REGION selects no REGION, also
+    /// where a REGION's previous reference holds that value (§6).
     #[test]
-    fn region_chain_accepts_body_predecessor_sentinel() {
+    fn a_region_chain_head_that_names_no_region_selects_no_chain() {
         let body = BodyNode {
             attr: 3,
             node_id: 7,
@@ -2335,11 +2308,7 @@ mod tests {
                 end: 4,
             },
         )]);
-        let chain = region_chain(&body, &regions).expect("sentinel-linked region");
-        assert_eq!(
-            chain.iter().map(|region| region.attr).collect::<Vec<_>>(),
-            vec![35]
-        );
+        assert!(region_chain(&body, &regions).is_none_or(|chain| chain.is_empty()));
     }
 
     #[test]

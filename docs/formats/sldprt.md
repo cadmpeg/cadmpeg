@@ -388,9 +388,11 @@ bytes of the sectors its chain reached before it stopped. A native block
 that a ZIP central entry names and whose DEFLATE member, size or CRC fails is
 given up; the directory and its other members are read.
 
-A Parasolid site whose streams frame entity records that build no geometry is
-given up as a `parasolid-site` part. A component tree gives no occurrence
-when its XML does not parse, when it repeats a model or file id, when it
+A Parasolid site whose streams frame entity records that build no face,
+surface, point or body is given up as a `parasolid-site` part. A site that
+states a body whose faces are all lost keeps that body. A component tree
+gives no occurrence when its XML does not parse, when it repeats a model or
+file id, when it
 names no active configuration or more than one, when its active model has no
 valid identity or no definition, and when the document holds two different
 trees. Each tree section is then given up as a `component-tree` part. The
@@ -2681,10 +2683,10 @@ The loss `geometry.carrier-approximated` counts intersection chart curves, fitte
 A framed FACE record with no decoded loop is the loss `topology.face-withheld`.
 A vertex loop decodes to a vertex boundary on its vertex-use. A vertex loop whose vertex-use does not resolve is given up with the loss `topology.vertex-loop-withheld`; its FACE keeps its other loops in the partial form.
 A FACE with a loop whose FIN is ambiguous is the loss `topology.ambiguous-fin-face-withheld`.
-The loss `topology.ownership-withheld` counts current typed ownership nodes with no decoded node of the same kind and identity. The face count covers every valid typed ownership face. When hierarchy selection from the full typed face set resolves, the body and shell counts cover the nodes in that hierarchy set. A body, region or shell stated in its partial form (below) is not counted. One loss note gives the count for each kind.
+The loss `topology.ownership-withheld` counts current typed ownership nodes with no decoded node of the same kind and identity. The face count covers every valid typed ownership face. When hierarchy selection from the full typed face set resolves, the body, region and shell counts cover the nodes in that hierarchy set; the region count leaves out a void REGION that owns no face in a BODY with a solid REGION or a REGION that owns a face. A body, region or shell stated in its partial form (below) is not counted. One loss note gives the count for each kind.
 A FACE whose loop chain names a loop record that is missing, or one that another FACE owns, keeps the loops before it in the partial form and carries the loss `topology.loop-chain-cut`.
-A SHELL that lists a FACE the decode does not state states its members in the partial form. A SHELL with none of its faces stated is kept in that form with no face, so no SHELL, REGION or BODY is dropped for a child it lost: the REGION lists the SHELL, and the BODY keeps the kind it stores. A REGION that the decode states and that gains such a SHELL from the typed ownership nodes leaves its shells unclassified, since which is the exterior is not stated.
-Where the BODY, REGION and SHELL nodes do not link up with the faces, the decode derives one body, region and shell (`topology.body-hierarchy-derived`). The derived body takes the kind that the BODY nodes linked to a REGION state when they agree, and is classified from its faces otherwise. A BODY node is linked to a REGION when its region-chain head (§6) resolves, as a REGION attribute or as the predecessor sentinel that a REGION's previous field holds, or when a REGION names it in its body field. A BODY node linked to no REGION, such as one that owns only vertices, says nothing of the faces' body. Once a face is given up, or a typed FACE node is not stated, each derived shell states its members in the partial form, since no node says which shell held that face.
+A SHELL that lists a FACE the decode does not state states its members in the partial form. A SHELL with none of its faces stated is kept in that form with no face, so no SHELL, REGION or BODY is dropped for a child it lost: the REGION lists the SHELL, and the BODY keeps the kind it stores. A REGION with more than one SHELL, one of which holds no stated face, leaves its shells unclassified, since which is the exterior is not stated. This holds for a REGION that the decode states and that gains such a SHELL from the typed ownership nodes.
+Where the BODY, REGION and SHELL nodes do not link up with the faces, the decode derives one body, region and shell (`topology.body-hierarchy-derived`). The derived body takes the kind that the BODY nodes linked to a REGION state when they agree, and is classified from its faces otherwise. A BODY node is linked to a REGION when that REGION names it in its body field. Where one stream or site derives a body with the kind its BODY nodes state and another derives one classified from its faces, one note names both. A BODY node linked to no REGION, such as one that owns only vertices, says nothing of the faces' body. Once a face is given up, or a typed FACE node is not stated, each derived shell states its members in the partial form, since no node says which shell held that face.
 
 ### 4.1 XT ownership nodes
 
@@ -3178,10 +3180,10 @@ A face belongs to a body only when this closure is complete:
 FACE.refs[3] → SHELL.refs[6] → REGION.refs[1] → BODY
 ```
 
-The BODY region-chain head is the first REGION attribute or a null-like
-predecessor sentinel. In the sentinel form, exactly one REGION has
-`previous_region` equal to the stored head. Follow `next_region` and require
-the following REGION's `previous_region` to equal the current REGION. The
+The BODY region-chain head is the attribute of its first REGION, whose
+`previous_region` is null-like; a null-like head names no REGION. Follow
+`next_region` and require the following REGION's `previous_region` to equal
+the current REGION. The
 chain ends at a null-like value and may not repeat an attribute. A SHELL's
 region and body links must agree with the REGION closure. A shell with a
 non-null-like body reference must name that same BODY; a null-like shell body

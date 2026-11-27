@@ -233,8 +233,10 @@ enum Wrapped {
     Stream(ExtractedStream),
     /// The wrapper's frames do not read: a zlib member does not inflate to
     /// its declared size or declares more than the frame ceiling, or a frame
-    /// runs past its section. The range spans the wrapper in the outer
-    /// payload.
+    /// runs past its section. A chained section is also unread when it is
+    /// cut at its first frame, or when it is cut and the frames before the
+    /// cut do not inflate to a Parasolid stream. The range spans the wrapper
+    /// in the outer payload.
     Unread(Range<usize>),
     /// A chained section is cut at a frame that does not read; the frames
     /// before it inflate to `stream`, and `unread` spans the cut frame to the

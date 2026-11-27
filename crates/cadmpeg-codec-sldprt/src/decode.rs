@@ -2839,6 +2839,15 @@ fn untaken_local_bodies_losses(
 
 /// Gives up the Parasolid site `part` whose entity records frame and build
 /// no geometry. A site that holds no entity record gives up nothing.
+/// A site states content when it holds a face, a surface, a point, or a body
+/// whose faces were lost.
+fn states_content(decoded: &Brep) -> bool {
+    !decoded.faces.is_empty()
+        || !decoded.surfaces.is_empty()
+        || !decoded.points.is_empty()
+        || !decoded.bodies.is_empty()
+}
+
 fn give_up_unbuilt_site(
     ctx: &DecodeContext<'_>,
     part: Part<'_>,
@@ -2941,12 +2950,10 @@ fn try_decode_brep(
         && sites[&decoded_sites[selected_site].0].iter().any(|index| {
             contains_ascii_case_insensitive(&streams[*index].header.description, "deltas")
         });
-    let selected_has_geometry = !decoded_sites[selected_site].2.faces.is_empty()
-        || !decoded_sites[selected_site].2.surfaces.is_empty()
-        || !decoded_sites[selected_site].2.points.is_empty();
-    let any_site_has_geometry = decoded_sites.iter().any(|(_, _, decoded)| {
-        !decoded.faces.is_empty() || !decoded.surfaces.is_empty() || !decoded.points.is_empty()
-    });
+    let selected_has_geometry = states_content(&decoded_sites[selected_site].2);
+    let any_site_has_geometry = decoded_sites
+        .iter()
+        .any(|(_, _, decoded)| states_content(decoded));
     // Imported bodies stand in for an empty partition/deltas model (spec §3.3).
     let takes_local_bodies =
         selected_is_empty_model && (resolved_active_site.is_some() || !any_site_has_geometry);
@@ -3361,8 +3368,10 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.withheld_fin_links += source.stats.withheld_fin_links;
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
-    target.stats.unlinked_body_records |= source.stats.unlinked_body_records;
-    target.stats.unlinked_body_kind |= source.stats.unlinked_body_kind;
+    let (into, from) = (&mut target.stats.derived_kind, source.stats.derived_kind);
+    into.unlinked_records |= from.unlinked_records;
+    into.stated |= from.stated;
+    into.from_faces |= from.from_faces;
     Ok(())
 }
 
@@ -5274,9 +5283,12 @@ pub(crate) fn brep_losses(
         )));
     }
     if s.synthetic_body_grouping {
-        let text = if s.unlinked_body_kind {
+        let kind = s.derived_kind;
+        let text = if kind.stated && kind.from_faces {
+            "The body records do not link up with the faces; body/region/shell hierarchies were derived, with the kind the body records state where they agree, and classified from their faces elsewhere."
+        } else if kind.stated {
             "The body records do not link up with the faces; one body/region/shell hierarchy was derived, with the kind they state."
-        } else if s.unlinked_body_records {
+        } else if kind.unlinked_records {
             "The body records do not link up with the faces and state more than one kind; one body/region/shell hierarchy was derived, classified from its faces."
         } else {
             "No body record names a region; one body/region/shell hierarchy was derived."
