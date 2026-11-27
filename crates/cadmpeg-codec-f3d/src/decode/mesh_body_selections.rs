@@ -121,7 +121,7 @@ pub(super) fn bind(
     for (import, motions) in moved {
         let motions = motions.join(", ");
         losses.push(F3dLossCode::FeatureMeshImportPlacementCombined.note(format!(
-            "Mesh import {import} stores its mesh at the current placement, which includes the motions of {motions}; the import placement before them is not stored."
+            "Mesh import {import} states its mesh at the current placement, which includes the motions of {motions}; its import placement is that placement premultiplied by the inverse motions, the last first."
         )));
     }
     Ok(())
