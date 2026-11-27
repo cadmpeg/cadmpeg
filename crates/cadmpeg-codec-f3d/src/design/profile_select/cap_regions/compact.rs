@@ -3,9 +3,10 @@
 
 use super::super::ResolvedProfileSelection;
 use super::{
-    changed_planes, covered_regions, distance, face_cap, intervals_cover, oriented_loops,
-    outlines_agree, parallel_plane, sample_regions, unique_state, Agreement, Cap, ParallelPlane,
-    Piece, PlaneFrame, PlaneSides, PARALLEL_CAP, SIDE_OFFSET, STRAIGHT_CARRIER,
+    changed_planes, changed_planes_with_gaps, covered_regions, distance, face_cap,
+    face_cap_indexed, intervals_cover, oriented_loops, outlines_agree, parallel_plane,
+    parallel_plane_indexed, sample_regions, unique_state, Agreement, Cap, HistoricalTopologyIndex,
+    ParallelPlane, Piece, PlaneFrame, PlaneSides, PARALLEL_CAP, SIDE_OFFSET, STRAIGHT_CARRIER,
 };
 use crate::design::geometry::{atomic_sketch_regions, ProfileGeometryWork};
 use crate::history_records::AsmHistoricalTopology;
@@ -1061,17 +1062,42 @@ fn intersect_agrees(
     Ok(true)
 }
 
+/// Every cap that `topology` holds on the plane parallel to the sketch at
+/// `offset`, whether or not a transition changed its face. `None` when a face
+/// on the plane has no proven cap or a face has an unreadable plane.
+fn plane_material(
+    frame: &PlaneFrame,
+    topology: &AsmHistoricalTopology,
+    offset: f64,
+    tolerance: f64,
+) -> Option<Vec<Cap>> {
+    let index = HistoricalTopologyIndex::new(topology);
+    let mut caps = Vec::new();
+    for face in &topology.faces {
+        let point = match parallel_plane_indexed(&index, *face, frame.normal) {
+            ParallelPlane::At(point) => point,
+            ParallelPlane::Elsewhere => continue,
+            ParallelPlane::Unreadable => return None,
+        };
+        if (frame.height(point) - offset).abs() <= tolerance {
+            caps.push(face_cap_indexed(frame, &index, *face, tolerance)?);
+        }
+    }
+    Some(caps)
+}
+
 /// The regions of an Intersect that its transition kept, when the transition
 /// removed at least one other region. An Intersect keeps the body inside the
 /// profile. Among the planes parallel to the sketch that the transition
-/// changed within the extent of the Intersect, a region is removed when a
-/// plane held its interior before the transition and not after it, and kept
-/// when a plane holds it on both sides. A region that no such plane holds is
-/// not selected. `None` when a region is both removed and kept, when a kept
-/// region encloses an island, when a plane within the extent has a cap that
-/// is not proven, when the removed regions disagree with the changed planes,
-/// or when a curve the selection names bounds no kept region or a kept region
-/// has no named boundary curve.
+/// changed within the extent of the Intersect, a region is removed when the
+/// material of a plane held its interior before the transition and not after
+/// it, and kept when the material of a plane holds it on both sides. The
+/// material of a plane is every face on it, changed or not. A region that no
+/// such plane holds is not selected. `None` when a plane within the extent
+/// has a changed face with no proven cap, when a region is both removed and
+/// kept, when a kept region encloses an island, when the removed regions
+/// disagree with the changed planes, or when a curve the selection names
+/// bounds no kept region or a kept region has no named boundary curve.
 pub(in crate::design::profile_select) fn intersect_candidate(
     sketch: &cadmpeg_ir::sketches::Sketch,
     resolution: super::super::ScopedExtrudeProfileResolution<'_>,
@@ -1099,7 +1125,7 @@ pub(in crate::design::profile_select) fn intersect_candidate(
         return Ok(None);
     };
     let tolerance = resolution.linear_tolerance;
-    let Some(mut planes) = changed_planes(
+    let Some((mut planes, gaps)) = changed_planes_with_gaps(
         sketch,
         (before, after),
         &transition.topology.faces,
@@ -1107,13 +1133,23 @@ pub(in crate::design::profile_select) fn intersect_candidate(
     ) else {
         return Ok(None);
     };
-    planes.retain(|plane| plane.offset >= low - tolerance && plane.offset <= high + tolerance);
-    if planes
-        .iter()
-        .flat_map(|plane| plane.before.iter().chain(&plane.after))
-        .any(Cap::assumed)
-    {
+    let within = |offset: f64| offset >= low - tolerance && offset <= high + tolerance;
+    if gaps.iter().any(|offset| within(*offset)) {
         return Ok(None);
+    }
+    planes.retain(|plane| within(plane.offset));
+    let Some(frame) = PlaneFrame::of_sketch(sketch) else {
+        return Ok(None);
+    };
+    for plane in &mut planes {
+        let (Some(held_before), Some(held_after)) = (
+            plane_material(&frame, before, plane.offset, tolerance),
+            plane_material(&frame, after, plane.offset, tolerance),
+        ) else {
+            return Ok(None);
+        };
+        plane.before = held_before;
+        plane.after = held_after;
     }
     let work = ProfileGeometryWork::new();
     let Some(regions) = atomic_sketch_regions(

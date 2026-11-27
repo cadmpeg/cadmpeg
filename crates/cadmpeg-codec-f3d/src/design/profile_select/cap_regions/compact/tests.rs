@@ -917,3 +917,30 @@ fn an_intersect_refuses_a_kept_region_that_encloses_an_island() {
     );
     assert!(selected.is_none());
 }
+
+/// A face that the transition leaves unchanged holds material before and
+/// after it. The squares side by side have separate body faces, and only the
+/// faces over the first square are deleted.
+#[test]
+fn an_intersect_reads_the_material_of_the_faces_it_left_unchanged() {
+    let mut lines = rectangle("outer", 0.0, 2.0).to_vec();
+    lines.push(("middle", (1.0, 0.0), (1.0, 1.0)));
+    let before = [
+        strip(1, 0.0, 0.0, 1.0),
+        strip(2, 0.0, 1.0, 2.0),
+        strip(3, -2.0, 0.0, 1.0),
+        strip(4, -2.0, 1.0, 2.0),
+    ];
+    let after = [strip(2, 0.0, 1.0, 2.0), strip(4, -2.0, 1.0, 2.0)];
+    let (selected, _) = run_intersect(
+        &lines,
+        &before,
+        &after,
+        BooleanOp::Intersect,
+        &["middle", "right", "bottom", "top"],
+        two_down(),
+    );
+    let curves = selected_curves(selected);
+    assert!(curves.iter().any(|curve| curve.ends_with("#right")));
+    assert!(!curves.iter().any(|curve| curve.ends_with("#left")));
+}
