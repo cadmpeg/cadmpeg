@@ -289,19 +289,19 @@
                             1.0,
                             0.0,
                             0.0,
-                            0.0
+                            20.0
                           ],
                           [
                             0.0,
                             1.0,
                             0.0,
-                            0.0
+                            6.0
                           ],
                           [
                             0.0,
                             0.0,
                             1.0,
-                            0.5
+                            3.0
                           ]
                         ]
                       }
@@ -329,45 +329,19 @@
                                       }
                                     ]
                                   },
-                                  "native": {
-                                    "codec": "fcstd",
-                                    "value": {
-                                      "kind": "text",
-                                      "value": "Face1"
-                                    }
-                                  },
                                   "target": {
-                                    "kind": "native",
-                                    "value": {}
-                                  }
-                                },
-                                {
-                                  "context": {
-                                    "kind": "occurrence",
-                                    "value": [
-                                      {
-                                        "occurrence": {
-                                          "kind": "occurrence",
-                                          "value": "fcstd:model:occurrence#BracketOccurrence:instance"
-                                        }
-                                      }
-                                    ]
-                                  },
-                                  "native": {
-                                    "codec": "fcstd",
-                                    "value": {
-                                      "kind": "text",
-                                      "value": "Edge1"
-                                    }
-                                  },
-                                  "target": {
-                                    "kind": "native",
-                                    "value": {}
+                                    "kind": "component"
                                   }
                                 }
                               ]
                             }
                           }
+                        },
+                        "role": {
+                          "relation": {
+                            "kind": "coincident"
+                          },
+                          "subject": "whole"
                         }
                       }
                     ],
@@ -543,15 +517,78 @@
                   }
                 },
                 "native_options": {
+                  "fcstd:Offset1.px": {
+                    "kind": "real",
+                    "value": {
+                      "kind": "literal",
+                      "value": 0.0
+                    }
+                  },
+                  "fcstd:Offset1.py": {
+                    "kind": "real",
+                    "value": {
+                      "kind": "literal",
+                      "value": 0.0
+                    }
+                  },
+                  "fcstd:Offset1.pz": {
+                    "kind": "real",
+                    "value": {
+                      "kind": "literal",
+                      "value": 0.5
+                    }
+                  },
+                  "fcstd:Offset1.qw": {
+                    "kind": "real",
+                    "value": {
+                      "kind": "literal",
+                      "value": 1.0
+                    }
+                  },
+                  "fcstd:Offset1.qx": {
+                    "kind": "real",
+                    "value": {
+                      "kind": "literal",
+                      "value": 0.0
+                    }
+                  },
+                  "fcstd:Offset1.qy": {
+                    "kind": "real",
+                    "value": {
+                      "kind": "literal",
+                      "value": 0.0
+                    }
+                  },
+                  "fcstd:Offset1.qz": {
+                    "kind": "real",
+                    "value": {
+                      "kind": "literal",
+                      "value": 0.0
+                    }
+                  },
+                  "fcstd:Reference1.sub0": {
+                    "kind": "text",
+                    "value": {
+                      "kind": "literal",
+                      "value": "Face1"
+                    }
+                  },
+                  "fcstd:Reference1.sub1": {
+                    "kind": "text",
+                    "value": {
+                      "kind": "literal",
+                      "value": "Edge1"
+                    }
+                  }
+                },
+                "source_settings": {
                   "fcstd:Angle": {
                     "kind": "angle",
                     "value": {
                       "kind": "literal",
                       "value": 0.20943951023931956
                     }
-                  }
-                },
-                "source_settings": {
+                  },
                   "fcstd:Detach1": {
                     "kind": "bool",
                     "value": {

@@ -635,7 +635,7 @@ its expression gives from the kinds of its references. Where those kinds are unk
 a real number, it emits `parameter.quantity-assumed`, and an expression that references it takes it
 as a real number. A display unit whose quantity is the cell's and whose words each have a symbol is
 the parameter's `unit`. Alignment, style, foreground and background colors, and every other display
-unit are source settings of the cell parameter: `fcstd:alignment`, `fcstd:style`,
+unit are source settings of the cell parameter (Rule N case (b)): `fcstd:alignment`, `fcstd:style`,
 `fcstd:foregroundColor`, `fcstd:backgroundColor`, and `fcstd:displayUnit`, each as Text.
 Only positive row and column spans define a neutral merged range. Nonpositive span attributes remain
 native cell metadata and do not create a neutral range.
@@ -861,19 +861,19 @@ with `Placement1` or `Placement2` as its fixed step and its resolved frame. Each
 sub-names is the native option `fcstd:Reference1.sub<i>` or `fcstd:Reference2.sub<i>` (Text, `i`
 counting from zero in stored order), and an offset that is not the identity is the native options
 `fcstd:Offset1.<c>` or `fcstd:Offset2.<c>` (Real) for `c` in `px`, `py`, `pz`, `qx`, `qy`, `qz`,
-and `qw`, the stored position and quaternion. Fixed, revolute, cylindrical, slider, and ball joints
+and `qw`, the stored position and quaternion (Rule N case (a)). Fixed, revolute, cylindrical, slider, and ball joints
 are motions about the connector frame's z axis, with their enabled limits: angle limits on
 revolute and cylindrical joints, and length limits on cylindrical and slider joints. Distance,
 parallel, perpendicular, and angle joints are relations of those kinds. An angle joint's angle is
 the magnitude of `Angle`, or of a float `Distance`. A distance joint's distance is a nonnegative
-`Distance`; a negative `Distance` is the native option `fcstd:Distance` (Length), and the joint
-states no distance. Rack-pinion, screw, gears, and belt joints are couplings whose pitch radius,
+`Distance`; a negative `Distance` is the native option `fcstd:Distance` (Length, Rule N case (a)),
+and the joint states no distance. Rack-pinion, screw, gears, and belt joints are couplings whose pitch radius,
 pitch, or radii are `Distance` and `Distance2`. Another family is a native kind with its source
 label. `Suppressed` is the feature's suppression. Each other stored joint value is a source setting
 under its property name, `fcstd:<name>` (Rule N case (b)): a value the kind does not use, a limit
 whose enable flag is false and that flag, a negative angle whose magnitude is the joint angle, and
 `Detach1` and `Detach2`. An angle is an `Angle` option in radians, a length a `Length` option in
-millimetres, and a flag a `Bool` option. A native kind keeps these values as native options. A
+millimetres, and a flag a `Bool` option. A native kind keeps these values as native options (Rule N case (a)). A
 `JointGroup` is an unordered `Group` of its joints; the document's `Group` holds each other joint.
 A grounded object is grounded occurrence state. A joint that names no object for a connector, that
 stores a blank joint type, or that grounds an object with no occurrence in the scope emits
