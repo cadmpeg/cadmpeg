@@ -13,6 +13,8 @@ use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
 
+mod oracle;
+
 const CONSTRAINT_BOUND: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../corpus/freecad_fcstd/fixtures/named_constraint_1.1.4_N10a.FCStd"
@@ -600,7 +602,7 @@ fn charge_count(
 
 #[test]
 fn spreadsheet_formulas_keep_proven_kinds_and_distinguish_syntax_from_errors() {
-    use crate::loss::FreecadLossCode::{ParameterIntegerAssumed, ParameterQuantityAssumed};
+    use crate::loss::FreecadLossCode::ParameterQuantityAssumed;
 
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3"><Object name="Sheet" type="Spreadsheet::Sheet"/><Object name="Vars" type="App::VarSet"/><Object name="Stock" type="Part::Feature"/></Objects>
@@ -696,11 +698,6 @@ fn spreadsheet_formulas_keep_proven_kinds_and_distinguish_syntax_from_errors() {
         assert_eq!(
             charge_count(&losses, ParameterQuantityAssumed, &id),
             assumed,
-            "{address}"
-        );
-        assert_eq!(
-            charge_count(&losses, ParameterIntegerAssumed, &id),
-            0,
             "{address}"
         );
     }
@@ -887,31 +884,20 @@ fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecad
         )
     };
 
-    let integer = |address: &str| {
-        charged(
-            &losses,
-            crate::loss::FreecadLossCode::ParameterIntegerAssumed,
-            &id(address),
-        )
-    };
-
     // Python repeats text by an integer or a bool, and a link property's
     // label is the named object's label. An integer property and a whole
     // value cell are integers.
-    for address in ["B1", "B2", "B3", "B4", "B5", "G1", "G2"] {
+    for address in ["B1", "B2", "B3", "B4", "B5"] {
         assert_eq!(cell(address).kind, ValueKind::Text, "{address}");
         assert!(!assumed(address), "{address}: {losses:?}");
-        assert!(!integer(address), "{address}: {losses:?}");
     }
 
     // The referenced quotient folds to a whole number and FreeCAD stores
     // it as an integer before the repetition.
     assert_eq!(cell("G3").kind, ValueKind::Text);
     assert!(!assumed("G3"), "{losses:?}");
-    assert!(!integer("G3"), "{losses:?}");
     assert_eq!(cell("G7").kind, ValueKind::Text);
     assert!(!assumed("G7"), "{losses:?}");
-    assert!(!integer("G7"), "{losses:?}");
 
     // A comparison, a truth constant, and a Bool property are bools. `==`
     // compares any two values `FreeCAD` evaluates.
@@ -933,10 +919,11 @@ fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecad
     // FreeCAD raises on a range with a text cell, text times a length or a
     // float, the label of a link with sub-names, text ordered against a
     // number, a length ordered against a dimensionless function result, and
-    // a comparison with a tuple or `None`. It reads another property of a
+    // a comparison with a tuple or `None`. A repeat with an unbounded
+    // string length has an undetermined result. FreeCAD reads another property of a
     // linked object at run time, which may hold `None`.
     for address in [
-        "B9", "D1", "D2", "E4", "E5", "E6", "E7", "E8", "G4", "G5", "G6",
+        "B9", "D1", "D2", "E4", "E5", "E6", "E7", "E8", "G1", "G2", "G4", "G5", "G6",
     ] {
         assert_eq!(
             cell(address).kind,
@@ -1009,7 +996,7 @@ fn a_comparison_freecad_refuses_an_aggregate_and_a_remainder_take_freecads_kind(
     // in error and holds no value. A Python object property that stores no
     // JSON and no class holds `None`. Python refuses text times a `float`.
     for address in [
-        "H1", "H2", "H3", "H4", "H5", "H6", "H7", "J3", "L4", "L7", "M1", "M3",
+        "H1", "H2", "H3", "H4", "H5", "H6", "H7", "J3", "L3", "L4", "L7", "M1", "M3",
     ] {
         assert_eq!(
             cell(address).kind,
@@ -1041,7 +1028,6 @@ fn a_comparison_freecad_refuses_an_aggregate_and_a_remainder_take_freecads_kind(
     for (address, kind) in [
         ("L1", ValueKind::Boolean),
         ("L2", ValueKind::Boolean),
-        ("L3", ValueKind::Text),
         ("L5", ValueKind::Text),
         ("L6", ValueKind::Boolean),
         ("M4", ValueKind::Boolean),

@@ -19,7 +19,7 @@ fn value(content: &str) -> (Option<Quantity>, Option<String>, f64, Option<String
 fn content_that_is_no_value_is_text() {
     for content in [
         "3 bolts", "-abc", "2*3", "-5 mm", "+5 mm", "1 m*s", "1/2/3", "1ft 2in", "note", "5. mm",
-        "mm", "1 mm2", "",
+        "mm", "1 mm2", "1 mm^2", "1 (m/s)", "",
     ] {
         assert!(
             matches!(read(content), CellContent::Text(text) if text == content),
@@ -66,8 +66,6 @@ fn a_number_with_a_unit_is_a_quantity_in_canonical_units() {
         ("2in", Quantity::LENGTH, 50.8, Some("2[in]")),
         ("2\"", Quantity::LENGTH, 50.8, Some("2[in]")),
         ("3 dm", Quantity::LENGTH, 300.0, None),
-        ("1 mm^2", Quantity::AREA, 1.0, Some("1[mm^2]")),
-        ("1 (m/s)", speed, 1000.0, Some("1[m*s^-1]")),
         ("1 m/s", speed, 1000.0, Some("1[m] / 1[s]")),
         ("1/2", Quantity::REAL, 0.5, Some("1 / 2")),
         ("3 mm / 2", Quantity::LENGTH, 1.5, Some("3[mm] / 2")),

@@ -117,7 +117,10 @@ fn check(conversion: u8, value: &Value, class: Option<Class>) -> Option<bool> {
             },
             b'd' | b'i' | b'u' => match class {
                 Int | Boolean => Some(true),
-                Float | Class::Quantity(_) => value.numeric_fact().map(f64::is_finite),
+                Float => value.numeric_fact().map(f64::is_finite),
+                Class::Quantity(_) => value.numeric_fact().and_then(|number| {
+                    (number.is_finite() && Value::number(number.trunc()) == Int).then_some(true)
+                }),
                 Object => None,
                 _ => Some(false),
             },

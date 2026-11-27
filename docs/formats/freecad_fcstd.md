@@ -605,12 +605,12 @@ parameter whose identity includes its sheet and address. Address and alias remai
 content, display unit, alignment, style, colors, and spans are retained independently. Cell content
 that starts with `=` is a formula, and content that starts with `'` is the text after the mark.
 Other content is a value where, after its surrounding white space, it is a number, a number with a
-unit, or a division whose numerator is a number or a number with a unit and whose denominator is a
-number, a number with a unit, or a unit. A number is unsigned and takes a `.` or `,` decimal mark
-and an exponent, and content that is one signed number in the C library's form is also a value. A
-unit is a word of `FreeCAD`'s unit vocabulary, a parenthesized product or quotient of units, or a
-unit with an integer power. Every other content is text, including content that starts with a
-digit or a sign (`3 bolts`, `2*3`, `-5 mm`). A text cell's value is its text. A value cell's value
+simple unit, or a division whose numerator is a number or a number with a unit and whose
+denominator is a number, a number with a unit, or a simple unit. A simple unit is one word or
+symbol of `FreeCAD`'s unit vocabulary, optionally in parentheses. A number takes a `.` or `,`
+decimal mark and an exponent. A complete number in the C library's form can have a sign.
+Nonempty ASCII space, tab, and line-ending content gives zero. Other content is text, including
+`3 bolts`, `2*3`, `-5 mm` and `2 mm^2`. A text cell's value is its text. A value cell's value
 is a length in millimetres, an angle in radians, or a dimensionless real; a value of another
 quantity has no legacy value. A formula states its own value where it is a number with an optional
 length unit (`nm`, `um`, `mm`, `cm`, `dm`, `m`, `km`, `in`, `"`, `ft`, `'`, `thou`, `mil`, `yd`) or
@@ -633,8 +633,10 @@ translates. An expression names a cell by its alias or its address, unqualified 
 and as `Sheet.name` elsewhere. A reference to an object property that is no parameter stays the
 source's text in the expression, and the parameter emits `parameter.dependency-dropped`. A cell
 whose formula is rejected by `FreeCAD`'s expression grammar retains its content as text. A
-value cell whose number is not finite has no value and emits `parameter.value-non-finite`. A
-formula cell stores no value. Its result kind follows `FreeCAD`'s expression rules. A
+value cell whose number is not finite has no value and emits `parameter.value-non-finite`.
+Cells store their input. The decoder can carry a numeric literal already in the formula text
+as a value. Computed values are absent from the file. A formula's kind follows `FreeCAD`'s
+expression rules. A
 reference to a cell uses the runtime type and any value determined by its content. A
 conditional evaluates the branch selected by the condition's Python truth value.
 
@@ -646,16 +648,16 @@ conditional evaluates the branch selected by the condition's Python truth value.
 - A `<<…>>` literal, a successful `str()` or `address()` call, string concatenation and
   successful string `%` formatting give text. `address()` requires an integer row and
   column and takes an optional integer reference type from 1 through 4. Multiplying a
-  string by an integer or Boolean repeats it. When the multiplier can be an `int` or a
-  `float`, the parameter carries a text kind and `parameter.integer-assumed`.
+  string or list by an integer or Boolean repeats it. The decoder infers a result kind
+  when the operand type, index conversion, and result size establish success.
 - Equality and ordering use the operands' Python comparison methods. The arithmetic
   operand guard refuses `None`, tuples and sets. String formatting uses its own
   right-operand rules. Plain Python division and numeric remainder raise on zero
   divisors. A cell whose formula raises holds the error text at runtime. A call with
   an unknown name or invalid argument count stays literal cell text.
 - Addition and subtraction of quantities require the same units. Multiplication and
-  division add and subtract all native unit exponents. A unit exponent outside −8 through
-  7 raises. A quantity's remainder preserves its unit. A plain number's remainder by a
+  division add and subtract all native unit exponents. Every intermediate unit requires
+  exponents from −8 through 7. A quantity's remainder preserves its unit. A plain number's remainder by a
   quantity raises. For a quantity `x`, `x ^ n` with a plain numeric exponent and
   `pow(x; n)` multiply each unit exponent by `n` where each product is an integer.
   With a dimensionless quantity exponent, `x ^ n` uses the integer part of `n` for the

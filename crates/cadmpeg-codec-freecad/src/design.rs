@@ -1096,6 +1096,7 @@ fn spreadsheet_cell_value(content: &str) -> Option<ParameterValue> {
     let text = match cell_content::read(content) {
         CellContent::Formula(formula) => formula,
         CellContent::Text(text) => return Some(ParameterValue::String(text.to_owned())),
+        CellContent::Error | CellContent::Unmodeled => return None,
         CellContent::Value(value) => {
             return match value.kind {
                 CellKind::Quantity(Quantity::LENGTH) => {

@@ -106,9 +106,6 @@ pub(crate) enum FreecadLossCode {
     /// A spreadsheet formula's quantity is not found; its parameter is a
     /// dimensionless real.
     ParameterQuantityAssumed,
-    /// A formula's kind repeats a string by a plain number whose value the
-    /// file does not store; the kind takes the number as an integer.
-    ParameterIntegerAssumed,
     /// A spreadsheet cell holds a number that is not finite; its parameter
     /// has no value.
     ParameterValueNonFinite,
@@ -208,7 +205,6 @@ impl FreecadLossCode {
         Self::FeatureJointFlagUnread,
         Self::ParameterExpressionEmpty,
         Self::ParameterQuantityAssumed,
-        Self::ParameterIntegerAssumed,
         Self::ParameterValueNonFinite,
         Self::ParameterDependencyDropped,
         Self::SketchNativeGeometry,
@@ -280,7 +276,6 @@ impl FreecadLossCode {
             Self::FeatureRevolutionNotTransferred => "feature.revolution-not-transferred",
             Self::ParameterExpressionEmpty => "parameter.expression-empty",
             Self::ParameterQuantityAssumed => "parameter.quantity-assumed",
-            Self::ParameterIntegerAssumed => "parameter.integer-assumed",
             Self::ParameterValueNonFinite => "parameter.value-non-finite",
             Self::ParameterDependencyDropped => "parameter.dependency-dropped",
             Self::FeatureRemovalWithoutBase => "feature.removal-without-base",
@@ -358,7 +353,6 @@ impl FreecadLossCode {
             | Self::SketchProfileMatchingBounded
             | Self::ParameterExpressionEmpty
             | Self::ParameterQuantityAssumed
-            | Self::ParameterIntegerAssumed
             | Self::ParameterValueNonFinite
             | Self::ParameterDependencyDropped
             | Self::FeatureLinkPlacementUnresolved
@@ -433,7 +427,6 @@ impl FreecadLossCode {
             | Self::SketchProfileMatchingBounded
             | Self::ParameterExpressionEmpty
             | Self::ParameterQuantityAssumed
-            | Self::ParameterIntegerAssumed
             | Self::ParameterValueNonFinite
             | Self::ParameterDependencyDropped
             | Self::SourceGuiPropertyKeyBlank
@@ -521,7 +514,6 @@ mod tests {
                 "feature.joint-flag-unread",
                 "parameter.expression-empty",
                 "parameter.quantity-assumed",
-                "parameter.integer-assumed",
                 "parameter.value-non-finite",
                 "parameter.dependency-dropped",
                 "sketch.native-geometry",

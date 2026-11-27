@@ -113,11 +113,14 @@ pub(super) fn project(
         .filter_map(
             |parameter| match cell_content::read(&parameter.expression) {
                 CellContent::Formula(text) => Some((&parameter.id, formula::parse(text))),
-                CellContent::Text(_) | CellContent::Value(_) => None,
+                CellContent::Text(_)
+                | CellContent::Value(_)
+                | CellContent::Error
+                | CellContent::Unmodeled => None,
             },
         )
         .collect::<BTreeMap<_, _>>();
-    let (values, assumed) = cell_values(&by_id, &formulas, &catalog, &is_cell);
+    let values = cell_values(&by_id, &formulas, &catalog, &is_cell);
     let mut projected = Vec::new();
     for parameter in all() {
         let Some(owner) = owners.get(&parameter.id) else {
@@ -134,7 +137,6 @@ pub(super) fn project(
         let context = Context {
             catalog: &catalog,
             values: &values,
-            assumed: &assumed,
             minted: &minted,
         };
         let (kind, value, parameter_definition) = if sheet {
@@ -746,26 +748,20 @@ impl CellValue {
     fn of(value: Value) -> Self {
         Self {
             kind: value.kind(),
-            value,
+            value: value.into_stored(),
         }
     }
 }
 
 /// The values of the cells of each sheet, each formula after the cells it
-/// references, and the formula cells whose kind takes a plain number of
-/// unstated value as an `int`. A value cell's number is an `int` where it is
-/// whole. A formula in a cycle has no kind the file determines.
+/// references. A formula in a cycle has no kind the file determines.
 fn cell_values<'a>(
     parameters: &BTreeMap<&'a ParameterId, &'a LegacyParameter>,
     formulas: &BTreeMap<&'a ParameterId, Result<formula::Node<'a>, Unparsed>>,
     catalog: &Catalog<'a, '_>,
     is_cell: &dyn Fn(&LegacyParameter) -> bool,
-) -> (
-    HashMap<&'a ParameterId, CellValue>,
-    BTreeSet<&'a ParameterId>,
-) {
+) -> HashMap<&'a ParameterId, CellValue> {
     let mut values = HashMap::new();
-    let mut assumed = BTreeSet::new();
     for parameter in parameters.values().filter(|parameter| is_cell(parameter)) {
         let value = match cell_content::read(&parameter.expression) {
             CellContent::Text(text) => Value::text(text),
@@ -777,9 +773,11 @@ fn cell_values<'a>(
                 },
                 value.freecad_number,
             ),
+            CellContent::Error => Value::of(&[Class::Raises]),
+            CellContent::Unmodeled => Value::any(),
             CellContent::Formula(_) => match formulas.get(&parameter.id) {
                 Some(Err(Unparsed::Syntax)) => Value::text(parameter.expression.as_str()),
-                Some(Ok(_) | Err(Unparsed::Limit)) | None => continue,
+                Some(Ok(_) | Err(Unparsed::Limit | Unparsed::Unmodeled)) | None => continue,
             },
         };
         values.insert(&parameter.id, CellValue::of(value));
@@ -827,19 +825,9 @@ fn cell_values<'a>(
             values: &values,
             owner,
             projected: false,
-            assumed: false,
         };
         let value = pending[id].value(&mut lookup);
-        if lookup.assumed {
-            assumed.insert(id);
-        }
-        values.insert(
-            id,
-            CellValue {
-                kind: value.kind(),
-                value: value.stored(),
-            },
-        );
+        values.insert(id, CellValue::of(value));
         for dependent in dependents.get(id).into_iter().flatten() {
             if let Some(count) = waiting.get_mut(dependent) {
                 *count -= 1;
@@ -855,7 +843,7 @@ fn cell_values<'a>(
             value: Value::any(),
         });
     }
-    (values, assumed)
+    values
 }
 
 /// The values a formula's paths take: a parameter's from its cell's value
@@ -867,9 +855,6 @@ struct Lookup<'c, 'a, 'data> {
     /// A cell of no kind the file determines is the real it is projected
     /// as.
     projected: bool,
-    /// The formula's kind takes a plain number of unstated value as an
-    /// `int`.
-    assumed: bool,
 }
 
 impl Lookup<'_, '_, '_> {
@@ -932,19 +917,12 @@ impl Scope for Lookup<'_, '_, '_> {
         let ids = self.catalog.range(self.owner, from, to)?;
         Some(ids.into_iter().map(|id| self.parameter(id, None)).collect())
     }
-
-    fn assume_integer(&mut self) {
-        self.assumed = true;
-    }
 }
 
 /// What the projection of a parameter's expression reads.
 struct Context<'c, 'a, 'data> {
     catalog: &'c Catalog<'a, 'data>,
     values: &'c HashMap<&'a ParameterId, CellValue>,
-    /// The formula cells whose kind takes a plain number of unstated value
-    /// as an `int`.
-    assumed: &'c BTreeSet<&'a ParameterId>,
     /// The parameters that have no model record, and so no stored
     /// dependencies: their references, and each reference to them, bind.
     minted: &'c BTreeSet<&'a ParameterId>,
@@ -978,9 +956,18 @@ fn cell(
     losses: &mut Vec<LossNote>,
 ) -> (ValueKind, Option<ParameterValue>, Expression) {
     let content = parameter.expression.as_str();
+    let fallback = |text: &str, losses: &mut Vec<LossNote>| {
+        assumed(parameter, losses);
+        (
+            ValueKind::Quantity(Quantity::REAL),
+            None,
+            source(text, Vec::new()),
+        )
+    };
     let text = match cell_content::read(content) {
         CellContent::Formula(text) => text,
         CellContent::Text(text) => return text_cell(text),
+        CellContent::Error | CellContent::Unmodeled => return fallback(content, losses),
         CellContent::Value(value) => {
             let kind = match value.kind {
                 CellKind::Quantity(quantity) => ValueKind::Quantity(quantity),
@@ -1009,23 +996,13 @@ fn cell(
     };
     let node = match formula {
         Some(Ok(node)) => node,
-        Some(Err(Unparsed::Limit)) => {
-            assumed(parameter, losses);
-            return (
-                ValueKind::Quantity(Quantity::REAL),
-                None,
-                source(text, Vec::new()),
-            );
-        }
+        Some(Err(Unparsed::Limit | Unparsed::Unmodeled)) => return fallback(text, losses),
         Some(Err(Unparsed::Syntax)) | None => return text_cell(content),
     };
     let kind = context
         .values
         .get(&parameter.id)
         .map_or(Kind::Unknown, |value| value.kind);
-    if kind != Kind::Unknown && context.assumed.contains(&parameter.id) {
-        integer_assumed(parameter, losses);
-    }
     let expression = translated(parameter, text, node, context, kind, None, losses);
     match kind {
         Kind::Quantity(quantity) => {
@@ -1057,16 +1034,8 @@ fn text_cell(text: &str) -> (ValueKind, Option<ParameterValue>, Expression) {
 
 fn assumed(parameter: &LegacyParameter, losses: &mut Vec<LossNote>) {
     losses.push(FreecadLossCode::ParameterQuantityAssumed.note(format!(
-        "FCStd cell {} has a formula whose kind the file does not determine; its kind is \
+        "FCStd cell {} has content whose kind the file does not determine; its kind is \
          a dimensionless real",
-        parameter.id.as_str()
-    )));
-}
-
-fn integer_assumed(parameter: &LegacyParameter, losses: &mut Vec<LossNote>) {
-    losses.push(FreecadLossCode::ParameterIntegerAssumed.note(format!(
-        "FCStd parameter {} repeats a string by a plain number whose value the file does not \
-         store; its kind takes that number as an integer",
         parameter.id.as_str()
     )));
 }
@@ -1162,12 +1131,8 @@ fn expression(
         values: context.values,
         owner: parameter.owner.as_ref(),
         projected: true,
-        assumed: false,
     };
     let stated = node.kind(&mut lookup);
-    if stated != Kind::Unknown && lookup.assumed {
-        integer_assumed(parameter, losses);
-    }
     translated(parameter, text, &node, context, stated, Some(kind), losses)
 }
 

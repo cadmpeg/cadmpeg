@@ -11,13 +11,11 @@ const LENGTH: Kind = Kind::Quantity(Quantity::LENGTH);
 const ANGLE: Kind = Kind::Quantity(Quantity::ANGLE);
 const AREA: Kind = Kind::Quantity(Quantity::AREA);
 
-/// Properties by their components joined with `.`, one range, and whether a
-/// formula took a number of unstated value as an `int`.
+/// Properties by their components joined with `.`, and one range.
 #[derive(Default)]
 struct Names {
     paths: HashMap<String, Value>,
     range: Option<Vec<Value>>,
-    assumed: bool,
 }
 
 impl Names {
@@ -36,10 +34,6 @@ impl Scope for Names {
 
     fn range(&mut self, _from: &str, _to: &str) -> Option<Vec<Value>> {
         self.range.clone()
-    }
-
-    fn assume_integer(&mut self) {
-        self.assumed = true;
     }
 }
 
@@ -73,7 +67,7 @@ fn numbers_and_units_take_their_quantity() {
     assert_eq!(kind("2*3"), REAL);
     assert_eq!(kind("5 mm"), LENGTH);
     assert_eq!(kind("1,5 mm"), LENGTH);
-    assert_eq!(kind("mm"), LENGTH);
+    assert_eq!(parse("mm").err(), Some(Unparsed::Syntax));
     assert_eq!(kind("5 mm^2"), AREA);
     assert_eq!(kind("5 mm * 2 mm"), AREA);
     assert_eq!(kind("6 / mm"), Kind::Quantity(Quantity::of(-1, 0, 0, 0)));
@@ -151,8 +145,13 @@ fn text_times_a_number_repeats_only_for_an_int() {
     let mut scope = Names::default();
     scope.insert("Flag", &[Boolean]);
     scope.insert("Ratio", &[Float]);
-    scope.insert("Count", &[Int]);
-    scope.insert("Whole", &[Int]);
+    scope
+        .paths
+        .insert("Count".into(), Value::numeric(Int, Some(3.0)));
+    scope
+        .paths
+        .insert("Whole".into(), Value::numeric(Int, Some(4.0)));
+    scope.insert("Unstated", &[Int]);
     for text in [
         "<<a>> * 2",
         "3 * <<a>>",
@@ -171,13 +170,13 @@ fn text_times_a_number_repeats_only_for_an_int() {
         "<<a>> * sum(<<b>>)",
     ] {
         assert_eq!(kind_in(text, &mut scope), Kind::Text, "{text:?}");
-        assert!(!scope.assumed, "{text:?}");
     }
     for text in [
         "<<a>> * 1.5",
         "<<a>> * pi",
         "<<a>> * (4 / 2)",
         "<<a>> * Ratio",
+        "<<a>> * Unstated",
         "<<a>> * (Count + Ratio)",
         "<<a>> * abs(2)",
         "<<a>> * 2 mm",
@@ -188,11 +187,10 @@ fn text_times_a_number_repeats_only_for_an_int() {
     ] {
         assert_eq!(kind_in(text, &mut scope), Kind::Unknown, "{text:?}");
     }
-    assert!(!scope.assumed);
 }
 
 #[test]
-fn text_times_a_number_of_unstated_value_takes_it_as_an_int() {
+fn repetition_requires_a_proved_integer_count() {
     for text in [
         "<<a>> * Cell",
         "<<a>> * average(Cell; 3)",
@@ -201,8 +199,7 @@ fn text_times_a_number_of_unstated_value_takes_it_as_an_int() {
     ] {
         let mut scope = Names::default();
         scope.insert("Cell", &[Int, Float]);
-        assert_eq!(kind_in(text, &mut scope), Kind::Text, "{text:?}");
-        assert!(scope.assumed, "{text:?}");
+        assert_eq!(kind_in(text, &mut scope), Kind::Unknown, "{text:?}");
     }
 }
 
@@ -219,7 +216,6 @@ fn an_aggregate_of_constants_is_its_value() {
     ] {
         assert_eq!(kind_in(text, &mut scope), Kind::Text, "{text:?}");
     }
-    assert!(!scope.assumed);
 }
 
 #[test]
@@ -371,7 +367,7 @@ fn a_cell_that_raises_holds_text() {
     let node = parse("cos(5 mm)").unwrap();
     let value = node.value(&mut Names::default());
     assert_eq!(value, Value::of(&[Class::Raises]));
-    assert_eq!(value.stored(), Value::of(&[Text]));
+    assert_eq!(value.into_stored(), Value::of(&[Text]));
 }
 
 #[test]
@@ -510,7 +506,6 @@ fn formula_results_require_a_proven_operation() {
         ("Operand == 1", Kind::Unknown),
     ] {
         assert_eq!(kind_in(text, &mut scope), expected, "{text}");
-        assert!(!scope.assumed, "{text}");
     }
 }
 

@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use cadmpeg_ir::design::units::Quantity;
 
-use super::{unit_word, Cursor, Dimensions, Unit};
+use super::{decimal_out_of_range, unit_word, Cursor, Dimensions, Unit, UnitState};
 
 mod formatting;
 
@@ -41,6 +41,8 @@ pub(in crate::design) enum Unparsed {
     Syntax,
     /// The text is larger or deeper than the reader parses.
     Limit,
+    /// The reader has no proof for a lexeme.
+    Unmodeled,
 }
 
 /// The kind of a formula's result (§5.12, Kind).
@@ -284,7 +286,7 @@ impl Value {
         found.map_or(Kind::Unknown, Kind::Quantity)
     }
 
-    pub(in crate::design) fn stored(&self) -> Self {
+    pub(in crate::design) fn into_stored(self) -> Self {
         let number = self.numeric_fact();
         let mut stored = Self::default();
         for class in &self.0 {
@@ -314,7 +316,7 @@ impl Value {
             return stored.with_number(number);
         }
         if !self.contains(Raises) {
-            stored.1.clone_from(&self.1);
+            stored.1 = self.1;
         }
         stored
     }
@@ -328,7 +330,7 @@ pub(in crate::design) enum Node<'a> {
         text: &'a str,
         unit: Option<Unit>,
     },
-    /// A unit with no number: a whole formula, or the divisor of `x / unit`.
+    /// The divisor of `x / unit`.
     Unit(Unit),
     /// `pi`, `e`, `True`, `False`, `true`, `false`, or `None`.
     Constant {
@@ -420,14 +422,11 @@ pub(in crate::design) trait Scope {
     /// The values of the used cells from `from` to `to` of the formula's
     /// sheet, where the range resolves.
     fn range(&mut self, from: &str, to: &str) -> Option<Vec<Value>>;
-    /// The formula's kind takes a plain number whose value the file does not
-    /// store as an `int`.
-    fn assume_integer(&mut self);
 }
 
 /// The tree of `text`, a formula without its `=`.
 pub(in crate::design) fn parse(text: &str) -> Result<Node<'_>, Unparsed> {
-    let lexemes = lex(text).ok_or(Unparsed::Syntax)?;
+    let lexemes = lex(text)?;
     if lexemes.len() > MAX_TOKENS {
         return Err(Unparsed::Limit);
     }
@@ -436,12 +435,6 @@ pub(in crate::design) fn parse(text: &str) -> Result<Node<'_>, Unparsed> {
         at: 0,
         nesting: 0,
     };
-    if let Some(unit) = parser.attempt(Parser::unit_expression) {
-        if parser.done() {
-            return Ok(Node::Unit(unit));
-        }
-        parser.at = 0;
-    }
     let node = parser.expression()?;
     if parser.done() {
         Ok(node)
@@ -473,8 +466,7 @@ impl<'a> Node<'a> {
             Node::Constant { name: "None", .. } => Value::none(),
             Node::Constant { name, value } => Value::numeric(
                 match *name {
-                    "True" | "False" => Boolean,
-                    "true" | "false" => Int,
+                    "True" | "False" | "true" | "false" => Boolean,
                     _ => Float,
                 },
                 Some(*value),
@@ -497,7 +489,7 @@ impl<'a> Node<'a> {
             Node::Group(inner) => inner.value(scope),
             Node::Binary { op, left, right } => {
                 let (left, right) = (left.value(scope), right.value(scope));
-                binary(*op, left, right, scope)
+                binary(*op, &left, &right)
             }
             Node::Conditional {
                 condition,
@@ -598,7 +590,7 @@ impl Dimensions {
         self.zip(Self::REAL, |exponent, _| operation(exponent))
     }
 
-    fn in_range(self) -> bool {
+    pub(super) fn in_range(self) -> bool {
         self.0
             .into_iter()
             .all(|power| exponent(i32::from(power)).is_some())
@@ -607,12 +599,14 @@ impl Dimensions {
 
 /// A number with a unit, or a unit alone.
 fn literal(unit: &Unit, number: Option<f64>) -> Value {
-    let dimensions = unit.dimensions();
-    if !dimensions.in_range() {
-        return Value::of(&[Raises]);
+    match unit.state {
+        UnitState::Known => {
+            let number = number.map(|number| number * unit.freecad_scale());
+            Value::numeric(Class::Quantity(Some(unit.dimensions())), number)
+        }
+        UnitState::Error => Value::of(&[Raises]),
+        UnitState::Unmodeled => Value::any(),
     }
-    let number = number.map(|number| number * unit.freecad_scale());
-    Value::numeric(Class::Quantity(Some(dimensions)), number)
 }
 
 impl Operator {
@@ -654,8 +648,12 @@ impl Operator {
             {
                 return None;
             }
+            let (left, right) = (left.numeric_fact()?, right.numeric_fact()?);
+            if left.is_nan() || right.is_nan() {
+                return None;
+            }
             return self
-                .compare(left.numeric_fact()?, right.numeric_fact()?)
+                .compare(left, right)
                 .map(|result| f64::from(u8::from(result)));
         }
         let (left, right) = (left.numeric_fact()?, right.numeric_fact()?);
@@ -702,20 +700,20 @@ fn signed(class: Class) -> Value {
     }
 }
 
-/// `left op right`: the join of `pair` over each class of each operand. A
-/// text times a number of unstated value takes that number as an `int`, the
-/// one value with which the formula evaluates.
-fn binary(op: Operator, mut left: Value, mut right: Value, scope: &mut dyn Scope) -> Value {
-    if op == Operator::Multiply {
-        settle(&mut left, &right, scope);
-        settle(&mut right, &left, scope);
-    }
+/// `left op right`: join the results of every pair of operand classes.
+fn binary(op: Operator, left: &Value, right: &Value) -> Value {
     let mut value = Value::default();
     for lhs in &left.0 {
         for rhs in &right.0 {
             let result = match (op, *lhs, *rhs) {
                 (Operator::Remainder, Text, class) if class != Raises => {
-                    formatting::remainder(left.text_fact(), &right, class)
+                    formatting::remainder(left.text_fact(), right, class)
+                }
+                (Operator::Multiply, sequence @ (Text | List), count @ (Int | Boolean)) => {
+                    repeat(sequence, left, count, right)
+                }
+                (Operator::Multiply, count @ (Int | Boolean), sequence @ (Text | List)) => {
+                    repeat(sequence, right, count, left)
                 }
                 _ => pair(op, *lhs, *rhs, left.numeric_fact(), right.numeric_fact()),
             };
@@ -733,7 +731,7 @@ fn binary(op: Operator, mut left: Value, mut right: Value, scope: &mut dyn Scope
             }
         }
     }
-    if let Some(number) = op.fold(&left, &right, &value.0) {
+    if let Some(number) = op.fold(left, right, &value.0) {
         return value.with_number(Some(number));
     }
     value
@@ -741,12 +739,22 @@ fn binary(op: Operator, mut left: Value, mut right: Value, scope: &mut dyn Scope
 
 const MAX_TRACKED_TEXT: usize = 4096;
 
-/// A plain number of unstated value that repeats a text: an `int`.
-fn settle(number: &mut Value, other: &Value, scope: &mut dyn Scope) {
-    if other.0 == [Text] && number.0.len() == 2 && number.contains(Int) && number.contains(Float) {
-        number.0.retain(|class| *class != Float);
-        scope.assume_integer();
-    }
+fn repeat(sequence: Class, items: &Value, count: Class, multiplier: &Value) -> Value {
+    let proved = count == Boolean
+        || multiplier.numeric_fact().is_some_and(|number| {
+            if number <= 1.0 {
+                return true;
+            }
+            let size = match sequence {
+                Text => items.text_fact().map(str::len),
+                List => items.item_facts().map(<[Value]>::len),
+                _ => None,
+            };
+            size.and_then(|len| u32::try_from(len).ok())
+                .zip(u32::try_from(MAX_TRACKED_TEXT).ok())
+                .is_some_and(|(len, bound)| f64::from(len) * number <= f64::from(bound))
+        });
+    outcomes(sequence, proved.then_some(true))
 }
 
 /// `left op right` for one class of each operand (`calc`): `calc` refuses a
@@ -824,20 +832,9 @@ fn arithmetic(op: Operator, left: Class, right: Class, rhs: Option<f64>) -> Valu
             Value::of(&[Vector])
         }
         (List, List) if op == Operator::Add => Value::of(&[List]),
-        (List, Int | Boolean) | (Int | Boolean, List) if op == Operator::Multiply => {
-            Value::of(&[List])
-        }
         (Text, Text) => Value::of(&[if op == Operator::Add { Text } else { Raises }]),
-        (Text, Int | Boolean) | (Int | Boolean, Text) => {
-            Value::of(&[if op == Operator::Multiply {
-                Text
-            } else {
-                Raises
-            }])
-        }
-        (Text, Class::Quantity(_) | Float) | (Class::Quantity(_) | Float, Text) => {
-            Value::of(&[Raises])
-        }
+        (Text, Class::Quantity(_) | Int | Float | Boolean)
+        | (Class::Quantity(_) | Int | Float | Boolean, Text) => Value::of(&[Raises]),
         (Int | Boolean, Int | Boolean) if op != Operator::Divide => Value::of(&[Int]),
         (Int | Float | Boolean, Int | Float | Boolean) if op == Operator::Divide => {
             nonzero_divisor(rhs, Float)
@@ -1767,7 +1764,7 @@ impl Folded {
 enum Token<'a> {
     Number {
         text: &'a str,
-        integer: Option<i8>,
+        integer: Option<i64>,
     },
     Unit(Unit),
     /// `'` or `"`.
@@ -1795,7 +1792,7 @@ struct Lexeme<'a> {
 
 /// The tokens of `text` as `FreeCAD`'s lexer reads them: the longest match,
 /// and on a tie the earlier rule.
-fn lex(text: &str) -> Option<Vec<Lexeme<'_>>> {
+fn lex(text: &str) -> Result<Vec<Lexeme<'_>>, Unparsed> {
     let mut lexemes = Vec::new();
     let mut at = 0;
     while let Some(ch) = text[at..].chars().next() {
@@ -1811,14 +1808,14 @@ fn lex(text: &str) -> Option<Vec<Lexeme<'_>>> {
         });
         at += length;
     }
-    Some(lexemes)
+    Ok(lexemes)
 }
 
-fn lexeme(rest: &str) -> Option<(Token<'_>, usize)> {
-    let ch = rest.chars().next()?;
+fn lexeme(rest: &str) -> Result<(Token<'_>, usize), Unparsed> {
+    let ch = rest.chars().next().ok_or(Unparsed::Syntax)?;
     if rest.starts_with("<<") {
         if let Some(length) = string(rest) {
-            return Some((Token::Text(&rest[..length]), length));
+            return Ok((Token::Text(&rest[..length]), length));
         }
     }
     for (symbol, operator) in [
@@ -1830,25 +1827,33 @@ fn lexeme(rest: &str) -> Option<(Token<'_>, usize)> {
         (">", Operator::Greater),
     ] {
         if rest.starts_with(symbol) {
-            return Some((Token::Compare(operator), symbol.len()));
+            return Ok((Token::Compare(operator), symbol.len()));
         }
     }
-    match ch {
-        '-' | '\u{2212}' => Some((Token::Minus, ch.len_utf8())),
-        '\'' | '"' => Some((Token::UsUnit(unit_word(&rest[..1])?), 1)),
-        '°' | '′' | '″' => Some((
-            Token::Unit(unit_word(&rest[..ch.len_utf8()])?),
+    let lexeme = match ch {
+        '-' | '\u{2212}' => (Token::Minus, ch.len_utf8()),
+        '\'' | '"' => (
+            Token::UsUnit(unit_word(&rest[..1]).ok_or(Unparsed::Syntax)?),
+            1,
+        ),
+        '°' | '′' | '″' => (
+            Token::Unit(unit_word(&rest[..ch.len_utf8()]).ok_or(Unparsed::Syntax)?),
             ch.len_utf8(),
-        )),
-        '$' => cell_address(rest).map(|length| (Token::Cell(&rest[..length]), length)),
-        '.' | ',' | '0'..='9' => {
-            number(rest).or_else(|| (!ch.is_ascii_digit()).then_some((Token::Symbol(ch), 1)))
+        ),
+        '$' => {
+            let length = cell_address(rest).ok_or(Unparsed::Syntax)?;
+            (Token::Cell(&rest[..length]), length)
         }
+        '.' | ',' | '0'..='9' => number(rest)?.unwrap_or((Token::Symbol(ch), 1)),
         '%' | '+' | '(' | ')' | '=' | '/' | '*' | '^' | '{' | '}' | '[' | ']' | ':' | ';' | '@'
-        | '?' | '#' => Some((Token::Symbol(ch), 1)),
-        ch if ch.is_alphabetic() || ch == '_' => Some(word(rest)),
-        _ => None,
+        | '?' | '#' => (Token::Symbol(ch), 1),
+        ch if ch.is_alphabetic() || ch == '_' => word(rest),
+        _ => return Err(Unparsed::Unmodeled),
+    };
+    if matches!(&lexeme.0, Token::Unit(unit) if unit.state == UnitState::Unmodeled) {
+        return Err(Unparsed::Unmodeled);
     }
+    Ok(lexeme)
 }
 
 /// The length of a `<<…>>` string at the start of `rest`.
@@ -1867,16 +1872,42 @@ fn string(rest: &str) -> Option<usize> {
     None
 }
 
-fn number(rest: &str) -> Option<(Token<'_>, usize)> {
+fn number(rest: &str) -> Result<Option<(Token<'_>, usize)>, Unparsed> {
     let mut cursor = Cursor { text: rest, at: 0 };
-    cursor.number()?;
+    let Some(value) = cursor.number() else {
+        return Ok(None);
+    };
     let text = &rest[..cursor.at];
-    let integer = text
-        .bytes()
-        .all(|byte| byte.is_ascii_digit())
-        .then(|| text.parse().ok())
-        .flatten();
-    Some((Token::Number { text, integer }, cursor.at))
+    let integer = if text.bytes().all(|byte| byte.is_ascii_digit()) {
+        Some(
+            text.parse::<i64>()
+                .ok()
+                .filter(|integer| *integer < i64::MAX)
+                .ok_or(Unparsed::Syntax)?,
+        )
+    } else {
+        // FreeCAD's decimal conversion gives zero after its 39-byte buffer.
+        if text.len() > 39 {
+            return Err(Unparsed::Unmodeled);
+        }
+        if decimal_out_of_range(text, value) {
+            return Err(Unparsed::Syntax);
+        }
+        unit_integer(text, value)
+    };
+    Ok(Some((Token::Number { text, integer }, cursor.at)))
+}
+
+pub(super) fn unit_integer(text: &str, value: f64) -> Option<i64> {
+    if value == 1.0 {
+        Some(1)
+    } else if text.bytes().all(|byte| byte.is_ascii_digit()) {
+        text.parse::<i64>()
+            .ok()
+            .filter(|integer| *integer < i64::MAX)
+    } else {
+        None
+    }
 }
 
 /// The length of `$A$1`, `$A1`, or `A$1` at the start of `rest`.
@@ -2173,7 +2204,7 @@ impl<'a> Parser<'a> {
                 *power
             };
             self.at += 1;
-            unit = unit.power(power)?;
+            unit = unit.power(power);
             bare = false;
         }
         Some((unit, bare))
@@ -2190,7 +2221,7 @@ impl<'a> Parser<'a> {
             } else {
                 return Some(unit);
             };
-            unit = unit.times(self.unit_suffix()?.0, sign)?;
+            unit = unit.times(self.unit_suffix()?.0, sign);
         }
     }
 

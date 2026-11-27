@@ -18,6 +18,10 @@ pub(super) enum CellContent<'a> {
     Text(&'a str),
     /// A number, a number with a unit, or a fraction of those.
     Value(CellValue),
+    /// An admitted literal expression that raises when evaluated.
+    Error,
+    /// A literal expression with version-dependent syntax or value.
+    Unmodeled,
 }
 
 /// The value of a cell whose content is a value.
@@ -49,7 +53,15 @@ pub(super) fn read(content: &str) -> CellContent<'_> {
     if let Some(text) = content.strip_prefix('\'') {
         return CellContent::Text(text);
     }
-    let trimmed = content.trim();
+    if content.is_empty() {
+        return CellContent::Text(content);
+    }
+    let trimmed = content
+        .trim_start_matches([' ', '\t', '\n', '\r', '\u{000b}', '\u{000c}'])
+        .trim_end_matches([' ', '\t', '\n', '\r']);
+    if trimmed.is_empty() && content.contains(['\u{000b}', '\u{000c}']) {
+        return CellContent::Text(content);
+    }
     if let Some(number) = c_number(trimmed) {
         return CellContent::Value(CellValue {
             number,
@@ -59,13 +71,44 @@ pub(super) fn read(content: &str) -> CellContent<'_> {
             freecad_number: Some(number),
         });
     }
-    value(trimmed).map_or(CellContent::Text(content), CellContent::Value)
+    value(trimmed).unwrap_or(CellContent::Text(content))
 }
 
 /// `text` as C's `strtod` reads a whole number: a decimal, a hexadecimal
 /// such as `0x1.8p1`, an infinity, or a NaN.
 fn c_number(text: &str) -> Option<f64> {
-    text.parse().ok().or_else(|| hexadecimal(text))
+    if text.is_empty() {
+        return Some(0.0);
+    }
+    let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
+    if unsigned.eq_ignore_ascii_case("inf") || unsigned.eq_ignore_ascii_case("infinity") {
+        return text.parse().ok();
+    }
+    if unsigned.eq_ignore_ascii_case("nan")
+        || unsigned
+            .get(..4)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("nan("))
+            && unsigned[4..].strip_suffix(')').is_some_and(|payload| {
+                payload
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+            })
+    {
+        return Some(f64::NAN);
+    }
+    text.parse()
+        .ok()
+        .filter(|number| !decimal_out_of_range(text, *number))
+        .or_else(|| hexadecimal(text).filter(|number| number.is_finite()))
+}
+
+fn decimal_out_of_range(text: &str, number: f64) -> bool {
+    !number.is_finite()
+        || number == 0.0
+            && text
+                .split(['e', 'E'])
+                .next()
+                .is_some_and(|mantissa| mantissa.bytes().any(|byte| matches!(byte, b'1'..=b'9')))
 }
 
 fn hexadecimal(text: &str) -> Option<f64> {
@@ -101,10 +144,10 @@ pub(super) fn neutral_unit(text: &str) -> Option<(Quantity, IrUnit)> {
     cursor.skip_space();
     let unit = cursor.unit_expression()?;
     cursor.skip_space();
-    if !cursor.done() || unit.native {
+    if !cursor.done() || unit.state != UnitState::Known {
         return None;
     }
-    let quantity = unit.quantity();
+    let quantity = unit.dimensions().quantity()?;
     let factors = unit
         .symbols?
         .into_iter()
@@ -198,7 +241,7 @@ fn quantity_literal(text: &str) -> Option<(f64, Dimensions)> {
 /// `NUM [UNIT] [/ (NUM [UNIT] | UNIT)]`, the forms `FreeCAD` takes as a
 /// value: a number with a unit, and a division whose numerator is a number
 /// or a number with a unit.
-fn value(text: &str) -> Option<CellValue> {
+fn value(text: &str) -> Option<CellContent<'_>> {
     let mut cursor = Cursor { text, at: 0 };
     let numerator = cursor.term()?;
     cursor.skip_space();
@@ -206,13 +249,15 @@ fn value(text: &str) -> Option<CellValue> {
         cursor.skip_space();
         Some(match cursor.term() {
             Some(term) => term,
-            None => (1.0, Some(cursor.unit()?)),
+            None => (1.0, Some(cursor.unit().filter(|unit| !unit.compound)?)),
         })
     } else {
         None
     };
     cursor.skip_space();
-    if !cursor.done() {
+    if !cursor.done()
+        || denominator.is_none() && numerator.1.as_ref().is_some_and(|unit| unit.compound)
+    {
         return None;
     }
     let one = Unit::one();
@@ -220,24 +265,36 @@ fn value(text: &str) -> Option<CellValue> {
     let (bottom, bottom_unit) = denominator.as_ref().map_or((1.0, &one), |(number, unit)| {
         (*number, unit.as_ref().unwrap_or(&one))
     });
-    let unit = top_unit.clone().times(bottom_unit.clone(), -1)?;
+    if numerator.1.is_none()
+        && denominator.as_ref().is_some_and(|(_, unit)| unit.is_none())
+        && bottom == 0.0
+    {
+        return Some(CellContent::Error);
+    }
+    let unit = top_unit.clone().times(bottom_unit.clone(), -1);
+    match unit.state {
+        UnitState::Error => return Some(CellContent::Error),
+        UnitState::Unmodeled => return Some(CellContent::Unmodeled),
+        UnitState::Known => {}
+    }
     let freecad_number =
         Some((top * top_unit.freecad_scale()) / (bottom * bottom_unit.freecad_scale()));
-    if unit.native {
+    let dimensions = unit.dimensions();
+    let Some(quantity) = dimensions.quantity() else {
         let name = match (&numerator.1, &denominator) {
             (Some(top), Some((_, Some(bottom)))) => format!("{}/{}", top.text, bottom.text),
             (None, Some((_, Some(bottom)))) => format!("1/{}", bottom.text),
             (Some(top), _) => top.text.clone(),
             (None, _) => return None,
         };
-        return Some(CellValue {
+        return Some(CellContent::Value(CellValue {
             number: top / bottom,
             kind: CellKind::Native(NonBlankString::new(name)?),
             neutral: None,
-            dimensions: unit.dimensions(),
+            dimensions,
             freecad_number,
-        });
-    }
+        }));
+    };
     let number = (top * top_unit.scale) / (bottom * bottom_unit.scale);
     let spell = |number: f64, unit: Option<&Unit>| -> Option<String> {
         match unit {
@@ -255,13 +312,13 @@ fn value(text: &str) -> Option<CellValue> {
             }
         })
         .flatten();
-    Some(CellValue {
+    Some(CellContent::Value(CellValue {
         number,
-        kind: CellKind::Quantity(unit.quantity()),
+        kind: CellKind::Quantity(quantity),
         neutral,
-        dimensions: unit.dimensions(),
+        dimensions,
         freecad_number,
-    })
+    }))
 }
 
 /// A unit as `FreeCAD` writes it: its exponents of length, mass, angle, and
@@ -270,12 +327,19 @@ fn value(text: &str) -> Option<CellValue> {
 pub(in crate::design) struct Unit {
     exponents: [i8; 4],
     scale: f64,
-    /// A word of the unit has a dimension other than the four.
-    native: bool,
     extra: [i8; 4],
     /// The symbol and power of each word, where each word has a symbol.
     symbols: Option<Vec<(UnitSymbol, i32)>>,
     text: String,
+    compound: bool,
+    state: UnitState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UnitState {
+    Known,
+    Error,
+    Unmodeled,
 }
 
 /// `FreeCAD`'s length, mass, angle, time, current, temperature, amount and
@@ -302,16 +366,12 @@ impl Unit {
         Self {
             exponents: [0; 4],
             scale: 1.0,
-            native: false,
             extra: [0; 4],
             symbols: Some(Vec::new()),
             text: String::new(),
+            compound: false,
+            state: UnitState::Known,
         }
-    }
-
-    fn quantity(&self) -> Quantity {
-        let [length, mass, angle, time] = self.exponents;
-        Quantity::of(length, mass, angle, time)
     }
 
     fn dimensions(&self) -> Dimensions {
@@ -334,34 +394,41 @@ impl Unit {
     }
 
     /// The product of the unit and `other` to the power `sign`, 1 or -1.
-    fn times(self, other: Self, sign: i8) -> Option<Self> {
+    fn times(self, other: Self, sign: i8) -> Self {
+        match (self.state, other.state) {
+            (UnitState::Unmodeled, _) | (_, UnitState::Unmodeled) => {
+                return self.with_state(UnitState::Unmodeled);
+            }
+            (UnitState::Error, _) | (_, UnitState::Error) => {
+                return self.with_state(UnitState::Error);
+            }
+            (UnitState::Known, UnitState::Known) => {}
+        }
         let mut exponents = self.exponents;
         for (slot, other) in exponents.iter_mut().zip(other.exponents) {
-            *slot = slot.checked_add(other.checked_mul(sign)?)?;
+            *slot += other * sign;
         }
         let mut extra = self.extra;
         for (slot, other) in extra.iter_mut().zip(other.extra) {
-            *slot = slot.checked_add(other.checked_mul(sign)?)?;
+            *slot += other * sign;
         }
         let symbols = match (self.symbols, other.symbols) {
-            (Some(mut left), Some(right)) => {
-                left.extend(
-                    right
-                        .into_iter()
-                        .map(|(symbol, power)| (symbol, power * i32::from(sign))),
-                );
-                Some(left)
-            }
+            (Some(mut left), Some(right)) => right
+                .into_iter()
+                .try_for_each(|(symbol, power)| {
+                    left.push((symbol, power.checked_mul(i32::from(sign))?));
+                    Some(())
+                })
+                .map(|()| left),
             _ => None,
         };
-        Some(Self {
+        Self {
             exponents,
             scale: if sign < 0 {
                 self.scale / other.scale
             } else {
                 self.scale * other.scale
             },
-            native: self.native || other.native,
             extra,
             symbols,
             text: format!(
@@ -370,31 +437,61 @@ impl Unit {
                 if sign < 0 { '/' } else { '*' },
                 other.text
             ),
-        })
+            compound: true,
+            state: UnitState::Known,
+        }
+        .check_exponents()
     }
 
-    fn power(self, power: i8) -> Option<Self> {
-        let mut exponents = self.exponents;
-        for slot in &mut exponents {
-            *slot = slot.checked_mul(power)?;
+    fn power(self, power: i64) -> Self {
+        if self.state != UnitState::Known {
+            let state = self.state;
+            return self.with_state(state);
         }
-        let mut extra = self.extra;
-        for slot in &mut extra {
-            *slot = slot.checked_mul(power)?;
+        let Ok(power) = i32::try_from(power) else {
+            return self.with_state(UnitState::Unmodeled);
+        };
+        let mut result = self.dimensions().0;
+        for slot in &mut result {
+            let Some(exponent) = i32::from(*slot)
+                .checked_mul(power)
+                .and_then(|value| i8::try_from(value).ok())
+            else {
+                return self.with_state(UnitState::Unmodeled);
+            };
+            *slot = exponent;
         }
-        Some(Self {
-            exponents,
-            scale: self.scale.powi(i32::from(power)),
-            native: self.native,
-            extra,
-            symbols: self.symbols.map(|symbols| {
+        let [length, mass, angle, time, current, temperature, amount, intensity] = result;
+        Self {
+            exponents: [length, mass, angle, time],
+            scale: self.scale.powi(power),
+            extra: [current, temperature, amount, intensity],
+            symbols: self.symbols.and_then(|symbols| {
                 symbols
                     .into_iter()
-                    .map(|(symbol, exponent)| (symbol, exponent * i32::from(power)))
+                    .map(|(symbol, exponent)| Some((symbol, exponent.checked_mul(power)?)))
                     .collect()
             }),
             text: format!("{}^{power}", self.text),
-        })
+            compound: true,
+            state: UnitState::Known,
+        }
+        .check_exponents()
+    }
+
+    fn with_state(mut self, state: UnitState) -> Self {
+        self.compound = true;
+        self.state = state;
+        self.symbols = None;
+        self
+    }
+
+    fn check_exponents(self) -> Self {
+        if self.dimensions().in_range() {
+            self
+        } else {
+            self.with_state(UnitState::Error)
+        }
     }
 
     /// The unit in neutral expression syntax.
@@ -475,7 +572,12 @@ impl Cursor<'_> {
 
     /// A number and the unit that follows it.
     fn term(&mut self) -> Option<(f64, Option<Unit>)> {
+        let start = self.at;
         let number = self.number()?;
+        if decimal_out_of_range(&self.text[start..self.at], number) {
+            self.at = start;
+            return None;
+        }
         let before = self.at;
         self.skip_space();
         let unit = self.unit();
@@ -514,18 +616,15 @@ impl Cursor<'_> {
             return Some(atom);
         }
         self.skip_space();
-        let negative = self.eat('-');
-        if !negative {
-            self.eat('+');
-        }
-        let digits_start = self.at;
-        self.digits();
-        let power = self.text[digits_start..self.at].parse::<i8>().ok()?;
-        atom.power(if negative {
+        let negative = self.eat('-') || self.eat('\u{2212}');
+        let start = self.at;
+        let value = self.number()?;
+        let power = formula::unit_integer(&self.text[start..self.at], value)?;
+        Some(atom.power(if negative {
             power.checked_neg()?
         } else {
             power
-        })
+        }))
     }
 
     /// Units joined by `*` and `/`.
@@ -543,7 +642,7 @@ impl Cursor<'_> {
                 return Some(unit);
             };
             self.skip_space();
-            unit = unit.times(self.unit()?, sign)?;
+            unit = unit.times(self.unit()?, sign);
         }
     }
 
@@ -592,7 +691,7 @@ fn unit_word(word: &str) -> Option<Unit> {
     use UnitSymbol as S;
     let (exponents, scale, symbol) = match word {
         "nm" => (LENGTH, MICRO, Some(S::Nm)),
-        "um" | "µm" | "μm" => (LENGTH, 1e-3, Some(S::Um)),
+        "um" | "µm" => (LENGTH, 1e-3, Some(S::Um)),
         "mm" => (LENGTH, 1.0, Some(S::Mm)),
         "cm" => (LENGTH, 10.0, Some(S::Cm)),
         "dm" => (LENGTH, 100.0, None),
@@ -607,7 +706,7 @@ fn unit_word(word: &str) -> Option<Unit> {
         "cft" => ([3, 0, 0, 0], 28_316_846.592, None),
         "l" => ([3, 0, 0, 0], 1e6, None),
         "ml" => ([3, 0, 0, 0], 1e3, None),
-        "ug" | "µg" | "μg" => (MASS, NANO, None),
+        "ug" | "µg" => (MASS, NANO, None),
         "mg" => (MASS, MICRO, None),
         "g" => (MASS, 1e-3, Some(S::G)),
         "kg" => (MASS, 1.0, Some(S::Kg)),
@@ -638,12 +737,12 @@ fn unit_word(word: &str) -> Option<Unit> {
         "mbar" => (PRESSURE, 1e-1, None),
         "Torr" => (PRESSURE, 101_325.0 / 760.0 * 1e-3, None),
         "mTorr" => (PRESSURE, 101_325.0 / 760.0 * MICRO, None),
-        "uTorr" | "µTorr" | "μTorr" => (PRESSURE, 101_325.0 / 760.0 * NANO, None),
+        "uTorr" | "µTorr" => (PRESSURE, 101_325.0 / 760.0 * NANO, None),
         "psi" => (PRESSURE, PSI * 1e-3, None),
         "ksi" => (PRESSURE, PSI, None),
         "Mpsi" => (PRESSURE, PSI * 1e3, None),
         "nW" => (POWER, 1e-3, None),
-        "uW" | "µW" | "μW" => (POWER, 1.0, None),
+        "uW" | "µW" => (POWER, 1.0, None),
         "mW" => (POWER, 1e3, None),
         "W" | "VA" => (POWER, 1e6, None),
         "kW" => (POWER, 1e9, None),
@@ -654,8 +753,8 @@ fn unit_word(word: &str) -> Option<Unit> {
         "eV" => (ENERGY, ELECTRONVOLT * 1e6, None),
         "keV" => (ENERGY, ELECTRONVOLT * 1e9, None),
         "MeV" => (ENERGY, ELECTRONVOLT * 1e12, None),
-        "cal" => (ENERGY, 4.184e6, None),
-        "kcal" => (ENERGY, 4.184e9, None),
+        "cal" => (ENERGY, 4.1868e6, None),
+        "kcal" => (ENERGY, 4.1868e9, None),
         "°" | "deg" => (ANGLE, PI / 180.0, Some(S::Deg)),
         "rad" => (ANGLE, 1.0, Some(S::Rad)),
         "gon" => (ANGLE, PI / 200.0, Some(S::Grad)),
@@ -666,10 +765,15 @@ fn unit_word(word: &str) -> Option<Unit> {
     Some(Unit {
         exponents,
         scale,
-        native: false,
         extra: [0; 4],
         symbols: symbol.map(|symbol| vec![(symbol, 1)]),
         text: word.to_owned(),
+        compound: false,
+        state: if matches!(word, "nW" | "uW" | "µW") {
+            UnitState::Unmodeled
+        } else {
+            UnitState::Known
+        },
     })
 }
 
@@ -690,16 +794,16 @@ fn native_unit_word(word: &str) -> Option<Unit> {
     let (exponents, scale) = match word {
         "A" => (CURRENT, 1.0),
         "nA" => (CURRENT, NANO),
-        "uA" | "µA" | "μA" => (CURRENT, MICRO),
+        "uA" | "µA" => (CURRENT, MICRO),
         "mA" => (CURRENT, 1e-3),
         "kA" => (CURRENT, 1e3),
         "MA" => (CURRENT, 1e6),
         "K" => (TEMPERATURE, 1.0),
         "mK" => (TEMPERATURE, 1e-3),
-        "uK" | "µK" | "μK" => (TEMPERATURE, MICRO),
+        "uK" | "µK" => (TEMPERATURE, MICRO),
         "mol" => (AMOUNT, 1.0),
         "nmol" => (AMOUNT, NANO),
-        "umol" | "µmol" | "μmol" => (AMOUNT, MICRO),
+        "umol" | "µmol" => (AMOUNT, MICRO),
         "mmol" => (AMOUNT, 1e-3),
         "cd" => (INTENSITY, 1.0),
         "V" => (POTENTIAL, 1e6),
@@ -709,7 +813,7 @@ fn native_unit_word(word: &str) -> Option<Unit> {
         "kS" => (CONDUCTANCE, 1e-3),
         "S" => (CONDUCTANCE, MICRO),
         "mS" => (CONDUCTANCE, NANO),
-        "uS" | "µS" | "μS" => (CONDUCTANCE, PICO),
+        "uS" | "µS" => (CONDUCTANCE, PICO),
         "Ohm" => (RESISTANCE, 1e6),
         "kOhm" => (RESISTANCE, 1e9),
         "MOhm" => (RESISTANCE, 1e12),
@@ -720,12 +824,12 @@ fn native_unit_word(word: &str) -> Option<Unit> {
         "Wb" => (FLUX, 1e6),
         "F" => (CAPACITANCE, MICRO),
         "mF" => (CAPACITANCE, NANO),
-        "uF" | "µF" | "μF" => (CAPACITANCE, PICO),
+        "uF" | "µF" => (CAPACITANCE, PICO),
         "nF" => (CAPACITANCE, 1e-15),
         "pF" => (CAPACITANCE, 1e-18),
         "H" => (INDUCTANCE, 1e6),
         "mH" => (INDUCTANCE, 1e3),
-        "uH" | "µH" | "μH" => (INDUCTANCE, 1.0),
+        "uH" | "µH" => (INDUCTANCE, 1.0),
         "nH" => (INDUCTANCE, 1e-3),
         _ => return None,
     };
@@ -733,10 +837,11 @@ fn native_unit_word(word: &str) -> Option<Unit> {
     Some(Unit {
         exponents: [length, mass, angle, time],
         scale,
-        native: true,
         extra: [current, temperature, amount, intensity],
         symbols: None,
         text: word.to_owned(),
+        compound: false,
+        state: UnitState::Known,
     })
 }
 
