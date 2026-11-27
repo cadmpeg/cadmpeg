@@ -27,7 +27,9 @@ mod sequential {
         scope: PhantomData<&'scope ()>,
     }
 
-    impl<'scope, 'env> Scope<'scope, 'env> {
+    impl<'scope> Scope<'scope, '_> {
+        // `&self` and the `Result` are `std::thread::scope`'s own signatures.
+        #[allow(clippy::unused_self)]
         pub(crate) fn spawn<F, T>(&'scope self, work: F) -> ScopedJoinHandle<'scope, T>
         where
             F: FnOnce() -> T + Send + 'scope,
@@ -41,6 +43,7 @@ mod sequential {
     }
 
     impl<T> ScopedJoinHandle<'_, T> {
+        #[allow(clippy::unnecessary_wraps)]
         pub(crate) fn join(self) -> std::thread::Result<T> {
             Ok(self.result)
         }
@@ -65,7 +68,7 @@ mod tests {
     /// mutate disjoint data, and `join` returns each closure's value.
     #[test]
     fn spawned_work_runs_to_completion_and_joins_with_its_value() {
-        let words = vec!["a".to_owned(), "bc".to_owned()];
+        let words = ["a".to_owned(), "bc".to_owned()];
         let mut total = 0_usize;
         let (lengths, doubled) = sequential::scope(|scope| {
             let lengths = scope.spawn(|| words.iter().map(String::len).collect::<Vec<_>>());
