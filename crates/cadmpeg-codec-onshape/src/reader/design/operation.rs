@@ -28,7 +28,7 @@ use cadmpeg_ir::design::options::{
 };
 use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition, ParameterOwner};
 use cadmpeg_ir::design::selection::{PickTarget, Picks};
-use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
+use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
 use cadmpeg_ir::features as v10;
 use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef};
@@ -847,7 +847,7 @@ fn sweep(
         .flag("hasScale")?
         .then(|| {
             Ok::<_, String>(ScalingLaw::Law(Law::Linear {
-                start: Dimension::Literal(FiniteReal::new(1.0).expect("one is finite")),
+                start: Dimension::Literal(FiniteReal::ONE),
                 end: signed(
                     context.owned(feature, &["ScaleFactor"]),
                     || source.quantity("scaleFactor", FiniteReal::new),
@@ -918,8 +918,8 @@ fn sweep_twist(
                 Some(id) => parameter_node(id),
                 None => number_node(
                     source.quantity("pitch", NonNegativeReal::new)?,
-                    Some(UnitSymbol::Mm),
-                ),
+                    UnitSymbol::Mm,
+                )?,
             };
             let length = Node::Measure(Box::new(Measure {
                 kind: MeasureKind::Length,
@@ -936,8 +936,8 @@ fn sweep_twist(
     };
     let turn = number_node(
         NonNegativeReal::new(std::f64::consts::TAU).ok_or("the full turn is not finite")?,
-        Some(UnitSymbol::Rad),
-    );
+        UnitSymbol::Rad,
+    )?;
     let total = Node::mul(revolutions, MulOp::Multiply, turn);
     let total = if reverse {
         Node::Unary {
@@ -983,19 +983,11 @@ fn parameter_node(id: ParameterId) -> Node<ParameterRef> {
     })
 }
 
-fn number_node(value: NonNegativeReal, symbol: Option<UnitSymbol>) -> Node<ParameterRef> {
-    Node::Number {
+fn number_node(value: NonNegativeReal, symbol: UnitSymbol) -> SourceMapping<Node<ParameterRef>> {
+    Ok(Node::Number {
         value,
-        unit: Unit(
-            symbol
-                .into_iter()
-                .map(|symbol| UnitFactor {
-                    symbol,
-                    power: std::num::NonZeroI8::new(1).expect("one is nonzero"),
-                })
-                .collect(),
-        ),
-    }
+        unit: super::parameters::unit(symbol).ok_or("the literal unit power is invalid")?,
+    })
 }
 
 fn combine(

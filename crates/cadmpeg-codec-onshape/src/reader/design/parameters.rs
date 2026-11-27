@@ -112,7 +112,7 @@ pub(super) fn project(
                 .and_then(|unit| {
                     expression::unit(unit).and_then(|(_, _, canonical)| symbol(canonical))
                 })
-                .map(unit)
+                .and_then(unit)
                 .or_else(|| tree.as_ref().and_then(declared));
             let definition = match tree {
                 Some(tree) => Expression::Neutral(Neutral(tree)),
@@ -370,12 +370,11 @@ fn source(parameter: &ModelParameter, raw: Option<&str>) -> Expression {
     }
 }
 
-fn unit(symbol: UnitSymbol) -> Unit {
-    Unit(vec![UnitFactor {
-        symbol,
-        power: NonZeroI8::new(1).expect("one is nonzero"),
-    }])
+pub(super) fn unit(symbol: UnitSymbol) -> Option<Unit> {
+    NonZeroI8::new(1).map(|power| Unit(vec![UnitFactor { symbol, power }]))
 }
+
+const MAX_DEPTH: usize = 64;
 
 /// Translate the syntax and dimensions of a quantity independently of its evaluation.
 fn neutral<'a>(
@@ -470,7 +469,7 @@ impl<'a, 't, R: Fn(&str) -> Option<Variable<'a>>> Parser<'t, '_, R> {
 
     fn atom(&mut self, depth: usize) -> Option<Term> {
         self.nodes += 1;
-        if depth > 64 || self.nodes > super::super::ROWS {
+        if depth > MAX_DEPTH || self.nodes > super::super::ROWS {
             return None;
         }
         if self.take("+") {
@@ -510,7 +509,7 @@ impl<'a, 't, R: Fn(&str) -> Option<Variable<'a>>> Parser<'t, '_, R> {
         Some((
             Node::Number {
                 value: NonNegativeReal::new(1.0)?,
-                unit: unit(symbol(canonical)?),
+                unit: unit(symbol(canonical)?)?,
             },
             dimension,
         ))
@@ -541,7 +540,7 @@ impl<'a, 't, R: Fn(&str) -> Option<Variable<'a>>> Parser<'t, '_, R> {
             .starts_with(|c: char| c.is_ascii_alphabetic())
         {
             let (_, dimension, canonical) = expression::unit(self.word()?)?;
-            (unit(symbol(canonical)?), dimension)
+            (unit(symbol(canonical)?)?, dimension)
         } else {
             (Unit(Vec::new()), expression::Dimension::Scalar)
         };
