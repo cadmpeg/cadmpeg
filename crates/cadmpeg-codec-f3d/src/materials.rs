@@ -258,6 +258,7 @@ pub(crate) fn patch_protein_appearances(
     protein: &[u8],
     edits: &BTreeMap<String, ProteinAppearanceEdit>,
     notes: &mut Vec<String>,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<(Vec<u8>, std::collections::BTreeSet<String>), CodecError> {
     let mut archive = zip::ZipArchive::new(Cursor::new(protein)).map_err(|error| {
         CodecError::malformed(format_args!("cannot open nested Protein ZIP: {error}"))
@@ -299,6 +300,7 @@ pub(crate) fn patch_protein_appearances(
                     &mut entry,
                     &name,
                     cadmpeg_core::decode::u64_from_index(protein.len()),
+                    limits,
                 )?
             } else {
                 crate::container::read_entry_bounded(&mut entry, declared_size, &name)?
@@ -973,9 +975,12 @@ pub(crate) fn decode_design_assignments(
             continue;
         };
         let body_map = crate::design::decode::body::body_bindings(bytes, &metadata)?;
-        for presentation in
-            crate::design::decode::presentation::body_presentations(bytes, &metadata)?
-        {
+        for presentation in crate::design::decode::presentation::scan_body_presentations(
+            scan,
+            &entry.name,
+            bytes,
+            &metadata,
+        )? {
             let Some(material) = presentation.material else {
                 continue;
             };
@@ -1054,9 +1059,12 @@ fn decode_body_appearance_overrides(
         };
         let body_map = crate::design::decode::body::body_bindings(bytes, &metadata)?;
         let mut appearances = browser_body_appearances(ctx, bytes)?;
-        for presentation in
-            crate::design::decode::presentation::body_presentations(bytes, &metadata)?
-        {
+        for presentation in crate::design::decode::presentation::scan_body_presentations(
+            scan,
+            &entry.name,
+            bytes,
+            &metadata,
+        )? {
             if presentation.owner
                 != crate::design::decode::presentation::BodyPresentationOwner::Bare
                 || presentation.browser_node.is_none()

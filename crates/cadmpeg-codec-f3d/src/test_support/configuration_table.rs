@@ -378,6 +378,30 @@ impl Natives {
         }
     }
 
+    /// Run the decoder's configuration pass over `documents` and these
+    /// records: the configurations it states, with the neutral features in
+    /// the state that the pass leaves them.
+    pub(crate) fn attach(
+        &mut self,
+        documents: &[crate::records::configuration::DesignConfiguration],
+    ) -> Vec<cadmpeg_ir::features::parameters::DesignConfiguration> {
+        let native = crate::native::F3dNative {
+            design_configurations: documents.to_vec(),
+            design_parameters: self.parameters.clone(),
+            design_parameter_owners: self.owners.clone(),
+            design_parameter_scopes: self.scopes.clone(),
+            ..Default::default()
+        };
+        let mut model = cadmpeg_ir::document::Model::default();
+        model.parameters = self.neutral_parameters.clone();
+        model.features = std::mem::take(&mut self.neutral_features);
+        let producers = crate::design::configurations::body_producers(&model.features);
+        crate::design::configurations::attach(&native, &mut model, &producers, &mut Vec::new())
+            .unwrap();
+        self.neutral_features = model.features;
+        model.configurations
+    }
+
     pub(crate) fn targets(&self) -> ConfigurationTargets<'_> {
         ConfigurationTargets {
             parameters: &self.parameters,

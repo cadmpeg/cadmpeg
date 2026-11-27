@@ -203,6 +203,7 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
 /// estimate does not fit keeps only its state headers. `binding_work` bounds
 /// the topology binding of the history; a history that exhausts it has no
 /// historical topology.
+#[cfg(test)]
 pub(crate) fn decode(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
@@ -211,8 +212,27 @@ pub(crate) fn decode(
     remaining_retained_bytes: &mut u64,
     binding_work: &cadmpeg_core::decode::WorkBudget,
 ) -> Result<Option<AsmHistory>, cadmpeg_core::CodecError> {
+    decode_with_senses(
+        ctx,
+        bytes,
+        stream,
+        width,
+        remaining_retained_bytes,
+        binding_work,
+        None,
+    )
+}
+
+pub(crate) fn decode_with_senses(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    stream: &str,
+    width: RefWidth,
+    remaining_retained_bytes: &mut u64,
+    binding_work: &cadmpeg_core::decode::WorkBudget,
+    chamfer_senses: Option<&mut chamfer_supports::ChamferSenses>,
+) -> Result<Option<AsmHistory>, cadmpeg_core::CodecError> {
     let framing = HistoryFraming::scan(bytes, stream);
-    let _chamfer_orientation = chamfer_supports::HistoryScope::enter(&framing.history_id);
     let mut states = Vec::new();
     let mut preframed_records = Vec::new();
     for (ordinal, &offset) in framing.delta_offsets.iter().enumerate() {
@@ -252,6 +272,9 @@ pub(crate) fn decode(
     bind_snapshot_revision_ids(&mut states);
     let binding_budget_exceeded = admit_history_binding(ctx, &states, remaining_retained_bytes)?
         == HistoryBindingAdmission::Skipped;
+    let mut stream_senses = chamfer_senses
+        .as_ref()
+        .map(|_| chamfer_supports::StreamChamferSenses::default());
     let cached_archive = if binding_budget_exceeded {
         drop(preframed_records);
         for state in &mut states {
@@ -271,6 +294,7 @@ pub(crate) fn decode(
             width,
             binding_work,
             Some(&mut preframed),
+            stream_senses.as_mut(),
         )?
     };
     if states.is_empty() {
@@ -279,6 +303,9 @@ pub(crate) fn decode(
     let history = framing.into_history(bytes, width, binding_budget_exceeded, states);
     if let Some(archive) = cached_archive {
         history.cache_record_archive(archive);
+    }
+    if let (Some(out), Some(senses)) = (chamfer_senses, stream_senses) {
+        out.record_history(history.id.clone(), senses);
     }
     Ok(Some(history))
 }
@@ -318,10 +345,7 @@ pub(crate) fn decode_header_index(
     Some(framing.into_history(bytes, width, false, states))
 }
 
-/// Drop chamfer face senses recorded for the design decode that just finished.
-pub(crate) fn clear_chamfer_orientation() {
-    chamfer_supports::clear();
-}
+pub(crate) use chamfer_supports::ChamferSenses;
 
 /// Stream-level layout of one ASM history: its preamble and `delta_state` offsets.
 struct HistoryFraming {
@@ -580,9 +604,18 @@ fn bind_complete_record_tables(
     width: RefWidth,
     work: &cadmpeg_core::decode::WorkBudget,
     preframed: Option<&mut HashMap<usize, cadmpeg_asm::sab::Record>>,
+    chamfer_senses: Option<&mut chamfer_supports::StreamChamferSenses>,
 ) -> Result<Option<crate::history_records::CachedRecordArchive>, cadmpeg_core::CodecError> {
-    binding::bind_with_cache_and_preframed(ctx, states, bytes, width, work, preframed)
-        .map(|(_, cache)| cache)
+    binding::bind_with_cache_and_preframed_senses(
+        ctx,
+        states,
+        bytes,
+        width,
+        work,
+        preframed,
+        chamfer_senses,
+    )
+    .map(|(_, cache)| cache)
 }
 
 pub(crate) fn decode_record_archive(

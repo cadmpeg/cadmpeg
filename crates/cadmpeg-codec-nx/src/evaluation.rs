@@ -145,7 +145,7 @@ impl BodyCensusEvaluation {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum BodyCensusEvaluationWire {
     Verified {

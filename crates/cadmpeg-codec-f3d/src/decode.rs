@@ -3305,7 +3305,8 @@ fn store_bodyless_design(
 
 /// Bind the stored design's sketches and features to their product
 /// definitions, then project the configuration tables from the features as
-/// these passes leave them.
+/// these passes leave them, and with the output bodies the body history
+/// bound.
 pub(crate) fn attach_design(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
@@ -3313,9 +3314,10 @@ pub(crate) fn attach_design(
     ir: &mut CadIr,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
+    let producers = crate::design::configurations::body_producers(&ir.model.features);
     crate::design::decode::sketch_owners::attach(ctx, scan, native, &mut ir.model, losses)?;
     crate::design::owners::attach(scan, native, ir, losses)?;
-    crate::design::configurations::attach(native, &mut ir.model, losses)
+    crate::design::configurations::attach(native, &mut ir.model, &producers, losses)
 }
 
 /// Phase-2 outcome as product projection and finalization see it.
@@ -4278,7 +4280,7 @@ impl<'a> F3dDecodeSession<'a> {
         self.note_uninterpreted_design();
         let mut f3d_namespace =
             std::mem::take(self.ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")));
-        let (store_res, annotations_res) = std::thread::scope(|scope| {
+        let (store_res, annotations_res) = crate::scoped::scope(|scope| {
             let ir = &self.ir;
             let native = &self.native;
             let unknowns = &self.unknowns;
@@ -6970,8 +6972,12 @@ pub(crate) fn apply_body_presentation_names(
         else {
             continue;
         };
-        let presentations =
-            crate::design::decode::presentation::body_presentations(bytes, &metadata)?;
+        let presentations = crate::design::decode::presentation::scan_body_presentations(
+            scan,
+            &entry.name,
+            bytes,
+            &metadata,
+        )?;
         for presentation in presentations {
             let Some(name) = presentation.name.as_deref() else {
                 continue;

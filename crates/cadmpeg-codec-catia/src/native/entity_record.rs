@@ -63,6 +63,24 @@ pub(crate) enum CatiaEntityRecordSuffix {
     Framing(CatiaEntitySuffixFraming),
 }
 
+/// Cached tokenized value fields and packets populated once during native
+/// projection so reporting and wire serialization do not re-parse the payload.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct CachedValueViews(
+    Option<(
+        Vec<value_block::ValueField>,
+        Vec<entity_table::EntityValuePacket>,
+    )>,
+);
+
+impl PartialEq for CachedValueViews {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for CachedValueViews {}
+
 /// One `7C05` entity-table record paired with a `7C09` object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "CatiaEntityRecordWire", into = "CatiaEntityRecordWire")]
@@ -99,6 +117,8 @@ pub(crate) struct CatiaEntityRecord {
     pub(crate) suffix: Option<CatiaEntityRecordSuffix>,
     /// Fixed-width suffix selector resolved through the containing graph's catalog.
     pub(crate) suffix_schema_selection: Option<CatiaEntitySuffixSchemaSelection>,
+    /// Cached value fields and packets populated after native value projection.
+    pub(crate) cached_value_views: CachedValueViews,
 }
 
 impl CatiaEntityRecordBody {
@@ -321,6 +341,26 @@ impl CatiaEntityRecord {
         value_block::tokenize(self.value_payload())
     }
 
+    pub(crate) fn cache_value_views(
+        &mut self,
+        fields: Vec<value_block::ValueField>,
+        packets: Vec<entity_table::EntityValuePacket>,
+    ) {
+        self.cached_value_views = CachedValueViews(Some((fields, packets)));
+    }
+
+    pub(crate) fn cached_value_views(
+        &self,
+    ) -> Option<(
+        &[value_block::ValueField],
+        &[entity_table::EntityValuePacket],
+    )> {
+        self.cached_value_views
+            .0
+            .as_ref()
+            .map(|(fields, packets)| (fields.as_slice(), packets.as_slice()))
+    }
+
     pub(super) fn record_suffix(&self) -> &[u8] {
         match &self.body {
             CatiaEntityRecordBody::Inline(_) => &[],
@@ -488,12 +528,18 @@ pub(super) struct CatiaEntityRecordWire {
 
 impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
     fn from(mut value: CatiaEntityRecord) -> Self {
-        let payload = match &value.body {
-            CatiaEntityRecordBody::Inline(_) => &[][..],
-            CatiaEntityRecordBody::Nested { value_payload, .. } => value_payload.as_slice(),
+        let (value_fields, value_packets) = if let Some(cached) = value.cached_value_views.0.take()
+        {
+            cached
+        } else {
+            let payload = match &value.body {
+                CatiaEntityRecordBody::Inline(_) => &[][..],
+                CatiaEntityRecordBody::Nested { value_payload, .. } => value_payload.as_slice(),
+            };
+            let fields = value_block::tokenize(payload);
+            let packets = entity_table::value_packets(payload, &fields);
+            (fields, packets)
         };
-        let value_fields = value_block::tokenize(payload);
-        let value_packets = entity_table::value_packets(payload, &value_fields);
         let signature = match value.value_production.as_ref() {
             Some(CatiaEntityValueProduction::RelationExpression(expression)) => {
                 expression.signature()
@@ -785,6 +831,7 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
                 .transpose()?,
             suffix,
             suffix_schema_selection: wire.suffix_schema_selection,
+            cached_value_views: CachedValueViews::default(),
         })
     }
 }

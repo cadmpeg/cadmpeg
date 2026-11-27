@@ -33,7 +33,7 @@ pub(crate) struct InlineSchemaPath {
 }
 
 /// Schema dialect with no inferred mapping for the compact tokens.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum InlineSchema {
     Compact,

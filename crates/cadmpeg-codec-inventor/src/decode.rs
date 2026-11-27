@@ -1200,7 +1200,7 @@ fn decode_container<'a>(
         }
         if unresolved.features != 0 {
             losses.push(InventorLossCode::FeatureOperationGraphOpen.note(format!(
-                "Retained {} typed Inventor feature record(s) whose operation graph is not closed.",
+                "{} typed Inventor feature record(s) have an operation graph that is not closed: each is retained as a native record, has no history placement, has a chamfer edge group that is unresolved, or is typed with a native profile or section selection.",
                 unresolved.features
             )));
         }
@@ -1216,6 +1216,15 @@ fn decode_container<'a>(
         losses.extend(composite_losses);
         losses.extend(crate::feature::unrecognized_class_losses(
             &ir.model.features,
+        ));
+        losses.extend(crate::feature::stitch::losses(
+            ir.model
+                .features
+                .iter()
+                .filter(|feature| {
+                    feature.source_tag.as_deref() == Some(crate::feature::stitch::TAG)
+                })
+                .count(),
         ));
         losses.extend(crate::feature::sheet_metal::native_kind_losses(
             &feature_inventory,
@@ -1258,10 +1267,13 @@ fn decode_container<'a>(
             ));
         }
         losses.extend(crate::feature::loft_sweep::retained_control_losses(
-            ir.model
-                .features
-                .iter()
-                .map(|feature| feature.evaluation.definition()),
+            ir.model.features.iter().map(|feature| {
+                (
+                    feature.evaluation.definition(),
+                    feature.native_ref.as_deref(),
+                )
+            }),
+            &unresolved.refused_surface_lofts,
         ));
         let partial_threads = ir
             .model
@@ -1938,6 +1950,7 @@ struct UnresolvedDesign {
     revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     edge_treatment_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     loft_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    refused_surface_lofts: std::collections::HashSet<String>,
     split_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     thicken_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     plate_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -2027,6 +2040,7 @@ fn project_design(
         revolve_losses: features.revolve_losses,
         edge_treatment_losses: features.edge_treatment_losses,
         loft_losses: features.loft_losses,
+        refused_surface_lofts: features.refused_surface_lofts,
         split_losses: features.split_losses,
         thicken_losses: features.thicken_losses,
         plate_losses: features.plate_losses,
