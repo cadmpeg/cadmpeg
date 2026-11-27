@@ -190,7 +190,7 @@ fn seed_documents() -> Vec<(&'static str, Value)> {
             ),
         ),
         (
-            "neutral parameter expression",
+            "neutral parameter expression with a blank native option",
             design_document(
                 "parameters",
                 json!({
@@ -207,7 +207,7 @@ fn seed_documents() -> Vec<(&'static str, Value)> {
                     },
                     "id": "test:sweep:parameter#1",
                     "kind": {"kind": "boolean"},
-                    "native_options": {},
+                    "native_options": {"test:note": {"kind": "blank", "value": " "}},
                     "scope": "test:sweep:product-definition#0",
                     "source_settings": {},
                 }),

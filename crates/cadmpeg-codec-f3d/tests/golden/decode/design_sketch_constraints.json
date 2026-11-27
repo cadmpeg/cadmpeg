@@ -593,6 +593,32 @@
               "kind": "f3d:Linear Dimension",
               "operands": [
                 {
+                  "kind": "model",
+                  "value": {
+                    "at": {
+                      "kind": "current"
+                    },
+                    "picks": {
+                      "kind": "named",
+                      "value": [
+                        {
+                          "target": {
+                            "kind": "native",
+                            "value": {}
+                          },
+                          "native": {
+                            "codec": "f3d",
+                            "value": {
+                              "kind": "text",
+                              "value": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-dimension-recipe-record#4243"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
                   "kind": "entity",
                   "value": "f3d:model:sketch-entity#83:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat%40277p501"
                 },
@@ -634,6 +660,27 @@
               "value": {
                 "kind": "literal",
                 "value": "Linear Dimension-1"
+              }
+            },
+            "f3d:operand.0.field": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "recipe"
+              }
+            },
+            "f3d:operand.0.index": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 1305
+              }
+            },
+            "f3d:operand.0.kind": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "construction_recipe"
               }
             }
           },
@@ -682,6 +729,14 @@
                 {
                   "kind": "entity",
                   "value": "f3d:model:sketch-entity#83:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat%40277p501"
+                },
+                {
+                  "kind": "entity",
+                  "value": "f3d:model:sketch-entity#83:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat%40277p501"
+                },
+                {
+                  "kind": "entity",
+                  "value": "f3d:model:sketch-entity#83:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat%40277p500"
                 }
               ],
               "values": []
@@ -693,6 +748,90 @@
               "value": {
                 "kind": "literal",
                 "value": 16
+              }
+            },
+            "f3d:operand.0.field": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "member"
+              }
+            },
+            "f3d:operand.0.index": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 100
+              }
+            },
+            "f3d:operand.0.kind": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "point"
+              }
+            },
+            "f3d:operand.1.field": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "member"
+              }
+            },
+            "f3d:operand.1.index": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 200
+              }
+            },
+            "f3d:operand.1.kind": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "point"
+              }
+            },
+            "f3d:operand.2.field": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "return"
+              }
+            },
+            "f3d:operand.2.index": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 200
+              }
+            },
+            "f3d:operand.2.kind": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "point"
+              }
+            },
+            "f3d:operand.3.field": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "return"
+              }
+            },
+            "f3d:operand.3.index": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 100
+              }
+            },
+            "f3d:operand.3.kind": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "point"
               }
             }
           },
@@ -714,6 +853,14 @@
                 {
                   "kind": "entity",
                   "value": "f3d:model:sketch-entity#83:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat%40277p503"
+                },
+                {
+                  "kind": "entity",
+                  "value": "f3d:model:sketch-entity#83:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat%40277p503"
+                },
+                {
+                  "kind": "entity",
+                  "value": "f3d:model:sketch-entity#83:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat%40277p502"
                 }
               ],
               "values": []
@@ -725,6 +872,90 @@
               "value": {
                 "kind": "literal",
                 "value": 4
+              }
+            },
+            "f3d:operand.0.field": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "member"
+              }
+            },
+            "f3d:operand.0.index": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 300
+              }
+            },
+            "f3d:operand.0.kind": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "point"
+              }
+            },
+            "f3d:operand.1.field": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "member"
+              }
+            },
+            "f3d:operand.1.index": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 400
+              }
+            },
+            "f3d:operand.1.kind": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "point"
+              }
+            },
+            "f3d:operand.2.field": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "return"
+              }
+            },
+            "f3d:operand.2.index": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 400
+              }
+            },
+            "f3d:operand.2.kind": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "point"
+              }
+            },
+            "f3d:operand.3.field": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "return"
+              }
+            },
+            "f3d:operand.3.index": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 300
+              }
+            },
+            "f3d:operand.3.kind": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "point"
               }
             }
           },
