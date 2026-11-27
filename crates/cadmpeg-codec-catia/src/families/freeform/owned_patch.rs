@@ -494,6 +494,17 @@ pub(super) struct Stream<'a> {
     pub(super) selection: Option<&'a crate::container::body_selection::BodySelection>,
 }
 
+pub(super) struct OwnedPatchOutcome {
+    pub(super) loss: Option<LossNote>,
+    pub(super) complete_exact: bool,
+}
+
+pub(super) fn has_sheet_group_root(data: &[u8], records: &[ConsolidatedRecord]) -> bool {
+    records
+        .iter()
+        .any(|frame| sheet_group::root(frame, data) || sheet_group::backward_root(frame, data))
+}
+
 pub(super) fn append(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl AnnotationStorage>,
@@ -501,7 +512,7 @@ pub(super) fn append(
     carriers: &BTreeMap<usize, usize>,
     refusal: &mut crate::nurbs::LaneRefusals,
     admission: &mut FamilyEntityAdmission<'_, '_>,
-) -> Result<Option<LossNote>, CodecError> {
+) -> Result<OwnedPatchOutcome, CodecError> {
     let &Stream {
         data,
         sources,
@@ -514,7 +525,10 @@ pub(super) fn append(
             .iter()
             .any(|frame| sheet_group::root(frame, data) || sheet_group::backward_root(frame, data))
     {
-        return Ok(None);
+        return Ok(OwnedPatchOutcome {
+            loss: None,
+            complete_exact: false,
+        });
     }
     let sheets = sheet_group::patches(admission.context(), ir, stream, carriers, refusal)?;
     if let Some(selected) = &sheets.selection {
@@ -529,6 +543,7 @@ pub(super) fn append(
             }
         }
     }
+    let selected_face_count = sheets.selected_face_count;
     let mut patches = sheets.patches;
     let sheet_members = sheets.members;
     let recovered = patches
@@ -581,7 +596,19 @@ pub(super) fn append(
             }
         }
     }
-    transfer::append(ir, annotations, patches, refusal, admission, &sheets.roots)
+    let outcome = transfer::append(
+        ir,
+        annotations,
+        patches,
+        refusal,
+        admission,
+        &sheets.roots,
+        selected_face_count,
+    )?;
+    Ok(OwnedPatchOutcome {
+        loss: outcome.loss,
+        complete_exact: outcome.complete_exact,
+    })
 }
 
 #[cfg(test)]

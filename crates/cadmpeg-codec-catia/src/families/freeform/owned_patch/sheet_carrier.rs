@@ -433,6 +433,11 @@ impl SpatialPlane {
         if let Some(plane) = Self::read(bytes) {
             return Some(plane);
         }
+        if let Some((surface, bounds)) =
+            super::super::standard_carriers::decode_bitmask_plane_with_bounds(bytes)
+        {
+            return Some(Self { surface, bounds });
+        }
         let carrier = b2_plane_carriers_from_records(data, std::slice::from_ref(record)).pop()?;
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(surface)) =
             b2_plane_geometry(&carrier)?

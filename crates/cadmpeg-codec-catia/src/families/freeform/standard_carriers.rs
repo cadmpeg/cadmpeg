@@ -2255,6 +2255,12 @@ fn read_u32_nurbs_axis(view: &mut View<'_>) -> Option<(u32, Vec<f64>, usize)> {
 /// Unbounded planes use `layout == 0x08`, `mask`, and `frame` where
 /// `(frame - 0x18) << 4` supplies the V-axis zero-component mask.
 fn decode_bitmask_plane(bytes: &[u8]) -> Option<PlaneSurface> {
+    decode_bitmask_plane_with_bounds(bytes).map(|(plane, _)| plane)
+}
+
+pub(in crate::families::freeform) fn decode_bitmask_plane_with_bounds(
+    bytes: &[u8],
+) -> Option<(PlaneSurface, Option<[[f64; 2]; 2]>)> {
     let mut view = View::over_retained(bytes);
     let layout = view.u8()?;
     let mask = view.u8()?;
@@ -2306,20 +2312,23 @@ fn decode_bitmask_plane(bytes: &[u8]) -> Option<PlaneSurface> {
 
     let u = read_axis(u_mask)?;
     let v = read_axis(v_mask)?;
-    if has_bounds {
+    let bounds = if has_bounds {
         let u0 = view.f64_le()?;
         let u1 = view.f64_le()?;
         let v0 = view.f64_le()?;
         let v1 = view.f64_le()?;
-        IncreasingParameterInterval::new([u0, u1])?;
-        IncreasingParameterInterval::new([v0, v1])?;
-    }
+        let u_iv = IncreasingParameterInterval::new([u0, u1])?.endpoints();
+        let v_iv = IncreasingParameterInterval::new([v0, v1])?.endpoints();
+        Some([u_iv, v_iv])
+    } else {
+        None
+    };
     if !view.is_empty() {
         return None;
     }
-    Some(PlaneSurface::new(
-        origin,
-        OrthonormalFrame3::completing(u, v)?,
+    Some((
+        PlaneSurface::new(origin, OrthonormalFrame3::completing(u, v)?),
+        bounds,
     ))
 }
 

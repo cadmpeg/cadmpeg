@@ -94,9 +94,11 @@ fn owned_sheet_emits_one_shared_edge_and_reports_partial_transfer() {
             &mut crate::nurbs::LaneRefusals::new(),
             &mut FamilyEntityAdmission::new(ctx),
             &BodyRoots::new(),
+            0,
         )
     })
     .expect("sheet transfer succeeds")
+    .loss
     .expect("sheet transfer reports partial recovery");
 
     assert_eq!(loss.code.local_code(), "topology.owned-patch-subset");
@@ -292,6 +294,7 @@ fn transfer_fit_patches(patches: Vec<Patch>, faces: usize) -> Vec<LossNote> {
             &mut refusal,
             &mut FamilyEntityAdmission::new(ctx),
             &BodyRoots::new(),
+            0,
         )
     })
     .expect("transfer the sheet");
@@ -398,6 +401,7 @@ fn planar_transfer_preserves_pcurves_with_native_accuracy() {
             &mut crate::nurbs::LaneRefusals::new(),
             &mut FamilyEntityAdmission::new(ctx),
             &BodyRoots::new(),
+            0,
         )
     })
     .expect("transfer");
@@ -432,6 +436,7 @@ fn reused_native_faces_keep_distinct_owner_occurrences() {
             &mut LaneRefusals::new(),
             &mut FamilyEntityAdmission::new(ctx),
             &BodyRoots::new(),
+            0,
         )
     })
     .expect("transfer shared native faces");
@@ -462,6 +467,7 @@ fn disconnected_recovered_shells_keep_their_native_body_owner() {
             &mut LaneRefusals::new(),
             &mut FamilyEntityAdmission::new(ctx),
             &BodyRoots::new(),
+            0,
         )
     })
     .expect("transfer disconnected native body subsets");
@@ -495,6 +501,7 @@ fn one_native_body_keeps_multiple_face_rosters() {
             &mut LaneRefusals::new(),
             &mut FamilyEntityAdmission::new(ctx),
             &roots,
+            0,
         )
     })
     .expect("transfer body with two face rosters");
@@ -520,6 +527,7 @@ fn reused_face_roster_keeps_each_native_body_instance() {
             &mut LaneRefusals::new(),
             &mut FamilyEntityAdmission::new(ctx),
             &roots,
+            0,
         )
     })
     .expect("transfer reused roster instances");
@@ -530,5 +538,157 @@ fn reused_face_roster_keeps_each_native_body_instance() {
     assert_eq!(ir.geometry.edges.len(), 14);
     cadmpeg_ir::examples::add_document_root(&mut ir);
     let report = cadmpeg_ir::validate_neutral(&ir, vec![]).expect("validate roster instances");
+    assert!(report.is_ok(), "{:?}", report.findings);
+}
+
+#[test]
+fn closed_manifold_shell_promotes_to_solid_with_exact_orientation() {
+    let corners = [
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(1.0, 1.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+        Point3::new(0.0, 0.0, 1.0),
+        Point3::new(1.0, 0.0, 1.0),
+        Point3::new(1.0, 1.0, 1.0),
+        Point3::new(0.0, 1.0, 1.0),
+    ];
+    let edge_defs = [
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 0),
+        (4, 5),
+        (5, 6),
+        (6, 7),
+        (7, 4),
+        (0, 4),
+        (1, 5),
+        (2, 6),
+        (3, 7),
+    ];
+    let make_face = |face_id: usize,
+                     origin: Point3,
+                     normal: Vector3,
+                     u_axis: Vector3,
+                     loop_edges: [(usize, bool); 4]| {
+        let plane = PlaneSurface::try_new(origin, normal, u_axis).expect("box plane");
+        let v_axis = normal.cross(u_axis);
+        let sides = loop_edges
+            .into_iter()
+            .map(|(edge_idx, forward)| {
+                let (a, b) = edge_defs[edge_idx];
+                let pts = [corners[a], corners[b]];
+                let uv = pts.map(|p| {
+                    let d = p.vector_from(origin);
+                    [d.dot(u_axis), d.dot(v_axis)]
+                });
+                Use {
+                    edge: edge_idx,
+                    vertices: [(a, pts[0]), (b, pts[1])],
+                    curve: NurbsCurve::from_lanes(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        pts.to_vec(),
+                        None,
+                        false,
+                    )
+                    .expect("box edge curve"),
+                    pcurve: line_pcurve([0.0, 1.0], uv).expect("box edge pcurve"),
+                    forward,
+                    inferred_accuracy: None,
+                    lift_error_mm: 0.0,
+                }
+            })
+            .collect();
+        Patch {
+            face: face_id,
+            body: (0, 10),
+            forward: true,
+            sense_inferred: true,
+            surface_fit: None,
+            surface: SolvedSurfaceGeometry::Plane(plane),
+            priority: 0,
+            sides,
+            inner_starts: Vec::new(),
+            recovery: SheetBoundaryRecovery::default(),
+        }
+    };
+    let patches = vec![
+        make_face(
+            1,
+            corners[0],
+            Vector3::new(0.0, 0.0, -1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            [(3, false), (2, false), (1, false), (0, false)],
+        ),
+        make_face(
+            2,
+            corners[4],
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            [(4, true), (5, true), (6, true), (7, true)],
+        ),
+        make_face(
+            3,
+            corners[0],
+            Vector3::new(0.0, -1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            [(0, true), (9, true), (4, false), (8, false)],
+        ),
+        make_face(
+            4,
+            corners[3],
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(-1.0, 0.0, 0.0),
+            [(2, true), (11, true), (6, false), (10, false)],
+        ),
+        make_face(
+            5,
+            corners[0],
+            Vector3::new(-1.0, 0.0, 0.0),
+            Vector3::new(0.0, -1.0, 0.0),
+            [(3, true), (8, true), (7, false), (11, false)],
+        ),
+        make_face(
+            6,
+            corners[1],
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            [(1, true), (10, true), (5, false), (9, false)],
+        ),
+    ];
+    let mut ir = CadIr::empty();
+    let mut annotations = AnnotationBuilder::new();
+    let mut refusal = LaneRefusals::new();
+    let outcome = crate::test_support::with_service_context(|ctx| {
+        append(
+            &mut ir,
+            &mut annotations,
+            patches,
+            &mut refusal,
+            &mut FamilyEntityAdmission::new(ctx),
+            &BodyRoots::new(),
+            6,
+        )
+    })
+    .expect("closed box transfer");
+    assert!(outcome.complete_exact);
+    assert!(outcome.loss.is_none());
+    assert!(refusal.take_notes().is_empty());
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    assert_eq!(ir.geometry.bodies[0].kind, BodyKind::Solid);
+    assert_eq!(ir.geometry.faces.len(), 6);
+    assert_eq!(ir.geometry.edges.len(), 12);
+    let annotations = annotations.build();
+    for face in &ir.geometry.faces {
+        assert!(!annotations
+            .exactness()
+            .get(face.id.as_str())
+            .is_some_and(|e| e.fields().contains_key("sense")));
+    }
+    ir.finalize();
+    cadmpeg_ir::examples::add_document_root(&mut ir);
+    let report = cadmpeg_ir::validate_neutral(&ir, vec![]).expect("validate solid box");
     assert!(report.is_ok(), "{:?}", report.findings);
 }

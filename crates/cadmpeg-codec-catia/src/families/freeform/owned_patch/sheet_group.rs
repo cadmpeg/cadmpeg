@@ -17,8 +17,8 @@ use crate::wire::records::{
 };
 
 use super::roster::{
-    allocation_width, legacy_body, logical_bytes, payload, sheet_references, wide_roster,
-    BodyRoots, Member, SheetMembers,
+    allocation_width, legacy_body, logical_bytes, payload, sheet_references,
+    sheet_references_with_flags, wide_roster, BodyRoots, Member, SheetMembers,
 };
 use super::trimmed_face::Source;
 use super::{boundary, fit, CadIr, Patch, Stream};
@@ -63,7 +63,12 @@ pub(super) fn backward_root(record: &ConsolidatedRecord, bytes: &[u8]) -> bool {
         && allocation_width(bytes, record).is_some()
 }
 
-fn increasing_slots(bytes: &[u8], count: usize, at: &mut usize) -> Option<Vec<usize>> {
+fn increasing_slots(
+    bytes: &[u8],
+    count: usize,
+    at: &mut usize,
+    require_zero_start: bool,
+) -> Option<Vec<usize>> {
     if count == 0 || count > bytes.len().checked_sub(*at)? {
         return None;
     }
@@ -84,13 +89,13 @@ fn increasing_slots(bytes: &[u8], count: usize, at: &mut usize) -> Option<Vec<us
         }
         slots.push(slot);
     }
-    (slots.first() == Some(&0)).then_some(slots)
+    (!require_zero_start || slots.first() == Some(&0)).then_some(slots)
 }
 
 fn shell_slots(bytes: &[u8]) -> Option<Vec<usize>> {
     let count = bytes.first()?.checked_sub(0x80)?;
     let mut at = 1;
-    let slots = increasing_slots(bytes, usize::from(count), &mut at)?;
+    let slots = increasing_slots(bytes, usize::from(count), &mut at, true)?;
     bounds_trailer(bytes.get(at..)?, count)?;
     Some(slots)
 }
@@ -135,7 +140,7 @@ fn roster(bytes: &[u8], family: Family) -> Option<(Vec<usize>, &[u8])> {
         (0x08, Family::A) => (usize::from(*bytes.get(1)?), 2),
         (lead, _) => (usize::from(lead.checked_sub(0x80)?), 1),
     };
-    let slots = increasing_slots(bytes, count, &mut at)?;
+    let slots = increasing_slots(bytes, count, &mut at, false)?;
     let bits = bytes.get(at..)?.strip_prefix(&[0])?.strip_suffix(&[3])?;
     let used = (count + 4) % 8;
     if bits.len() != (count + 4).div_ceil(8)
@@ -224,10 +229,7 @@ impl Allocations {
             | AllocationReferenceEncoding::WidthCoded
                 if value != 0 =>
             {
-                if end_anchored {
-                    return self.backward_target(index, value);
-                }
-                self.starts.get(index)?.checked_sub(value)?
+                return self.backward_target(index, value);
             }
             _ => return None,
         };
@@ -253,9 +255,47 @@ impl Allocations {
         self.starts.get(index + 1).copied().unwrap_or(self.limit)
     }
 
+    #[cfg(test)]
     fn faces(&self, bytes: &[u8], shells: &[usize]) -> Option<Vec<(usize, usize, bool)>> {
+        self.faces_in_range(bytes, shells, 0, self.limit)
+    }
+
+    fn faces_from_group(
+        &self,
+        bytes: &[u8],
+        group: &ConsolidatedRecord,
+    ) -> Option<Vec<(usize, usize, bool)>> {
+        let group_index = self
+            .records
+            .binary_search_by_key(&group.source_range().start, |r| r.source_range().start)
+            .ok()?;
+        let shells = payload(bytes, &self.records[group_index]).and_then(shell_slots)?;
+        let base = self.after(group_index);
+        let group_limit = self
+            .records
+            .iter()
+            .enumerate()
+            .skip(group_index + 1)
+            .find(|(_, frame)| {
+                (frame.family() == Family::B
+                    && frame.flag() == Flag::Flag13
+                    && frame.class() == 0x5b)
+                    || frame.class() == 0x65
+            })
+            .map_or(self.limit, |(index, _)| self.starts[index]);
+        self.faces_in_range(bytes, &shells, base, group_limit)
+    }
+
+    fn faces_in_range(
+        &self,
+        bytes: &[u8],
+        shells: &[usize],
+        base: usize,
+        group_limit: usize,
+    ) -> Option<Vec<(usize, usize, bool)>> {
         let mut output = Vec::new();
-        for (s, &slot) in shells.iter().enumerate() {
+        for (s, &rel_slot) in shells.iter().enumerate() {
+            let slot = base.checked_add(rel_slot)?;
             let shell = self.starts.binary_search(&slot).ok()?;
             let frame = &self.records[shell];
             if frame.class() != 0x61 || frame.flag() != Flag::Flag03 {
@@ -263,7 +303,10 @@ impl Allocations {
             }
             let (members, bits) = roster(payload(bytes, frame)?, frame.family())?;
             let first = self.after(shell);
-            let end = shells.get(s + 1).copied().unwrap_or(self.limit);
+            let end = shells
+                .get(s + 1)
+                .and_then(|&next| base.checked_add(next))
+                .unwrap_or(group_limit);
             let end_index = self.starts.partition_point(|&start| start < end);
             if self
                 .records
@@ -306,12 +349,31 @@ impl Allocations {
             return None;
         }
         let distance = backward_shell_distance(payload(bytes, &self.records[index])?)?;
-        let shell = self.backward_target(index, distance)?;
-        let frame = &self.records[shell];
+        let target = self.backward_target(index, distance)?;
+        let target_frame = &self.records[target];
+        let (shell, expected_flags) = if target_frame.family() == Family::B
+            && target_frame.flag() == Flag::Flag03
+            && target_frame.class() == 0x65
+            && payload(bytes, target_frame) == Some(&[0x81, 0x03, 0x05, 0x0d])
+        {
+            let lump = self.records.get(target + 1)?;
+            if lump.family() != Family::B
+                || lump.flag() != Flag::Flag03
+                || lump.class() != 0x60
+                || payload(bytes, lump) != Some(&[0x81, 0x03])
+            {
+                return None;
+            }
+            (target + 2, 1_u8)
+        } else {
+            (target, 3_u8)
+        };
+        let frame = self.records.get(shell)?;
         if frame.class() != 0x61 || frame.flag() != Flag::Flag03 {
             return None;
         }
-        let (references, bits) = sheet_references(payload(bytes, frame)?, frame.family())?;
+        let (references, bits) =
+            sheet_references_with_flags(payload(bytes, frame)?, frame.family(), expected_flags)?;
         let mut seen = BTreeSet::new();
         references
             .into_iter()
@@ -426,6 +488,7 @@ pub(super) struct Sheets {
     pub(super) members: SheetMembers,
     pub(super) selection: Option<SelectedGroups>,
     pub(super) roots: BodyRoots,
+    pub(super) selected_face_count: usize,
 }
 
 fn selected_indices(alloc: &Allocations, ends: &[usize]) -> Option<Vec<usize>> {
@@ -532,7 +595,8 @@ pub(super) fn patches(
     let mut sheet_members = SheetMembers::new();
     let mut allocation_starts = BTreeMap::new();
     let mut source_bytes = BTreeMap::new();
-    let mut mixed_allocations = BTreeMap::new();
+    let mut run_allocations = BTreeMap::new();
+    let mut run_tensors: BTreeMap<(usize, usize), Rc<BTreeMap<usize, _>>> = BTreeMap::new();
     let mut groups = records
         .iter()
         .filter(|frame| {
@@ -556,6 +620,7 @@ pub(super) fn patches(
         }
     }
     let mut excluded_groups = 0;
+    let mut selected_face_count = 0usize;
     for ((source, start), group_position) in groups {
         let extents = &sources[source];
         let bytes = match source_bytes.entry(source) {
@@ -579,15 +644,17 @@ pub(super) fn patches(
         }
         let backward = backward_root(group, bytes);
         let mut end_anchored = backward;
-        let (alloc, members) = if backward {
-            let Some(seed) = records.windows(3).find(|frames| {
-                frames[0].source_index() == source
-                    && frames[0].source_range().start < group.source_range().start
-                    && legacy_body(frames, data)
-            }) else {
-                continue;
-            };
-            let seed = seed[0].source_range().start;
+        let (run_key, alloc, members) = if backward {
+            let seed = records
+                .windows(3)
+                .find(|frames| {
+                    frames[0].source_index() == source
+                        && frames[0].source_range().start < group.source_range().start
+                        && legacy_body(frames, data)
+                })
+                .map_or(group.source_range().start, |frames| {
+                    frames[0].source_range().start
+                });
             let start = *allocation_starts.entry((source, seed)).or_insert_with(|| {
                 allocation_run_start(bytes, records, source, seed).unwrap_or(seed)
             });
@@ -597,77 +664,104 @@ pub(super) fn patches(
                 Some(group.source_range().end),
             ));
             let members = alloc.backward_faces(bytes, group);
-            (alloc, members)
+            (None, alloc, members)
         } else {
-            let alloc = Rc::new(Allocations::read(bytes, group.source_range().end, None));
-            let members = payload(bytes, group)
-                .and_then(shell_slots)
-                .and_then(|shells| alloc.faces(bytes, &shells));
-            if members.is_some() {
-                (alloc, members)
-            } else {
-                let mixed = alloc.records.first().is_some_and(|frame| {
-                    frame.class() == 0x61
-                        && payload(bytes, frame)
-                            .and_then(|p| sheet_references(p, frame.family()))
-                            .is_some_and(|(refs, _)| {
-                                refs.iter().any(|r| {
-                                    matches!(
-                                        r.encoding,
-                                        AllocationReferenceEncoding::BackwardDistance
-                                            | AllocationReferenceEncoding::WidthCoded
-                                    )
-                                })
-                            })
+            let run_start = *allocation_starts
+                .entry((source, group.source_range().start))
+                .or_insert_with(|| {
+                    allocation_run_start(bytes, records, source, group.source_range().start)
+                        .unwrap_or(group.source_range().start)
                 });
+            let alloc = Rc::clone(run_allocations.entry((source, run_start)).or_insert_with(
+                || Rc::new(Allocations::read(bytes, run_start, Some(bytes.len()))),
+            ));
+            let members = alloc.faces_from_group(bytes, group);
+            if members.is_some() {
+                (Some((source, run_start)), alloc, members)
+            } else {
+                let group_index = alloc
+                    .records
+                    .binary_search_by_key(&group.source_range().start, |r| r.source_range().start)
+                    .ok();
+                let mixed = group_index
+                    .and_then(|idx| alloc.records.get(idx + 1))
+                    .is_some_and(|frame| {
+                        frame.class() == 0x61
+                            && payload(bytes, frame)
+                                .and_then(|p| sheet_references(p, frame.family()))
+                                .is_some_and(|(refs, _)| {
+                                    refs.iter().any(|r| {
+                                        matches!(
+                                            r.encoding,
+                                            AllocationReferenceEncoding::BackwardDistance
+                                                | AllocationReferenceEncoding::WidthCoded
+                                        )
+                                    })
+                                })
+                    });
                 if !mixed {
                     continue;
                 }
-                let Some(seed) = records.windows(3).find(|frames| {
-                    frames[0].source_index() == source
-                        && frames[0].source_range().start < group.source_range().start
-                        && legacy_body(frames, data)
-                }) else {
-                    continue;
-                };
-                let seed = seed[0].source_range().start;
-                let start = *allocation_starts.entry((source, seed)).or_insert_with(|| {
-                    allocation_run_start(bytes, records, source, seed).unwrap_or(seed)
-                });
-                let alloc =
-                    Rc::clone(mixed_allocations.entry((source, start)).or_insert_with(|| {
-                        Rc::new(Allocations::read(bytes, start, Some(bytes.len())))
-                    }));
                 let members = alloc.mixed_faces(bytes, group);
                 end_anchored = true;
-                (alloc, members)
+                (Some((source, run_start)), alloc, members)
             }
         };
         let Some(members) = members else {
             continue;
         };
+        selected_face_count += members.len();
         let resolve = |index, reference, family, class| {
             let target = alloc.resolve(index, reference, end_anchored)?;
             let frame = alloc.records.get(target)?;
             (frame.family() == family && frame.class() == class).then_some(target)
         };
         let physical = |position| file_offset(extents, position);
-        let uncached = alloc
-            .records
-            .iter()
-            .filter(|frame| {
-                frame.family() == Family::A
-                    && frame.class() == 0x34
-                    && physical(frame.byte_offset()).is_some_and(|pos| !carriers.contains_key(&pos))
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        let tensors = crate::families::a5a8::records::a5_owned_surfaces_from_records(
-            bytes, &uncached, refusal,
-        )?
-        .into_iter()
-        .map(|surface| (surface.pos, surface.geometry))
-        .collect();
+        let tensors = if let Some(key) = run_key {
+            match run_tensors.entry(key) {
+                Entry::Occupied(entry) => Rc::clone(entry.get()),
+                Entry::Vacant(entry) => {
+                    let uncached = alloc
+                        .records
+                        .iter()
+                        .filter(|frame| {
+                            frame.family() == Family::A
+                                && frame.class() == 0x34
+                                && physical(frame.byte_offset())
+                                    .is_some_and(|pos| !carriers.contains_key(&pos))
+                        })
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let decoded = crate::families::a5a8::records::a5_owned_surfaces_from_records(
+                        bytes, &uncached, refusal,
+                    )?
+                    .into_iter()
+                    .map(|surface| (surface.pos, surface.geometry))
+                    .collect();
+                    Rc::clone(entry.insert(Rc::new(decoded)))
+                }
+            }
+        } else {
+            let uncached = alloc
+                .records
+                .iter()
+                .filter(|frame| {
+                    frame.family() == Family::A
+                        && frame.class() == 0x34
+                        && physical(frame.byte_offset())
+                            .is_some_and(|pos| !carriers.contains_key(&pos))
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            Rc::new(
+                crate::families::a5a8::records::a5_owned_surfaces_from_records(
+                    bytes, &uncached, refusal,
+                )?
+                .into_iter()
+                .map(|surface| (surface.pos, surface.geometry))
+                .collect(),
+            )
+        };
         let trim_source = Source {
             bytes,
             records: &alloc.records,
@@ -845,6 +939,7 @@ pub(super) fn patches(
         members: sheet_members,
         selection: selected,
         roots,
+        selected_face_count,
     })
 }
 

@@ -19,6 +19,7 @@ pub(super) fn transfer_with_notes(patches: Vec<Patch>) -> (CadIr, Vec<LossNote>)
             &mut refusal,
             &mut FamilyEntityAdmission::new(ctx),
             &BodyRoots::new(),
+            0,
         )
     })
     .expect("transfer generated sheets");
