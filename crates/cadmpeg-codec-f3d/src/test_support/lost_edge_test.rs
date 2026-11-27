@@ -10,7 +10,9 @@
 //! group's operand list.
 #![allow(clippy::unwrap_used)]
 
-use super::streams_test::generated_design_bulkstream;
+use super::streams_test::{
+    generated_design_bulkstream, generated_design_class_tag, GeneratedDesignMetastreamVariant,
+};
 use crate::test_support::{lp_ascii, lp_utf16, push_reference_u64};
 
 const SCOPE: u32 = 1_400;
@@ -28,6 +30,11 @@ fn header(out: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
     out.extend_from_slice(&3_u32.to_le_bytes());
     out.extend_from_slice(class_tag);
     out.extend_from_slice(&record_index.to_le_bytes());
+}
+
+/// The class tag of the type row that registers [`GROUP`].
+fn group_class_tag() -> [u8; 3] {
+    generated_design_class_tag(GeneratedDesignMetastreamVariant::RemoveBody, GROUP.into())
 }
 
 fn offset(out: &[u8]) -> u64 {
@@ -58,7 +65,7 @@ pub(super) fn remove_body_lost_edge_bulkstream(run: u32) -> (Vec<u8>, Vec<(u64, 
     header(&mut out, b"261", SCOPE);
 
     records.push((u64::from(GROUP), offset(&out)));
-    header(&mut out, b"264", GROUP);
+    header(&mut out, &group_class_tag(), GROUP);
     out.extend_from_slice(&[0; 10]);
     out.extend_from_slice(&2_u32.to_le_bytes());
     for operand in OPERANDS {
@@ -181,7 +188,7 @@ pub(super) fn remove_body_tracking_path_bulkstream(
     header(&mut out, b"261", SCOPE);
 
     records.push((u64::from(GROUP), offset(&out)));
-    header(&mut out, b"264", GROUP);
+    header(&mut out, &group_class_tag(), GROUP);
     out.extend_from_slice(&[0; 10]);
     out.extend_from_slice(&2_u32.to_le_bytes());
     for operand in OPERANDS {

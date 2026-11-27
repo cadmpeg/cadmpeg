@@ -239,6 +239,22 @@ fn offset_plane_with_properties(
     stored_origin: &str,
     extra: &[(&str, &str)],
 ) -> (f64, Vec<cadmpeg_ir::report::loss::LossKind>) {
+    let mut properties = vec![
+        ("Reference", "2"),
+        ("Origin", stored_origin),
+        ("Normal", "0,0,1"),
+        ("UAxis", "1,0,0"),
+    ];
+    properties.extend_from_slice(extra);
+    offset_plane_stating(&properties)
+}
+
+/// Projects an offset plane at `D1 = 6mm` after the three principal planes,
+/// whose record states `properties`, and returns its distance and the loss
+/// codes installed.
+fn offset_plane_stating(
+    properties: &[(&str, &str)],
+) -> (f64, Vec<cadmpeg_ir::report::loss::LossKind>) {
     let native = |id: &str, source, ordinal| Feature {
         id: id.into(),
         parent: "history".into(),
@@ -260,15 +276,7 @@ fn offset_plane_with_properties(
     offset
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D1"), "6mm".into());
-    for (key, value) in [
-        (cadmpeg_core::nonblank_literal!("Reference"), "2"),
-        (cadmpeg_core::nonblank_literal!("Origin"), stored_origin),
-        (cadmpeg_core::nonblank_literal!("Normal"), "0,0,1"),
-        (cadmpeg_core::nonblank_literal!("UAxis"), "1,0,0"),
-    ] {
-        offset.properties.insert(key, value.into());
-    }
-    for (key, value) in extra {
+    for (key, value) in properties {
         offset.properties.insert(
             cadmpeg_core::text::NonBlankString::new((*key).to_owned()).expect("key"),
             (*value).to_owned(),
@@ -309,6 +317,28 @@ fn offset_plane_with_properties(
 #[test]
 fn offset_plane_without_a_side_stating_frame_reports_its_side() {
     let (distance, codes) = offset_plane_with_stored_origin("0mm,0mm,0mm");
+    assert_eq!(distance, 6.0);
+    let kind = crate::loss::SldprtLossCode::FeatureOffsetPlaneSideAssumed.kind();
+    assert_eq!(
+        codes.iter().filter(|code| **code == kind).count(),
+        1,
+        "{codes:?}"
+    );
+}
+
+/// An offset plane from a legacy face alias whose face plane the decoder does
+/// not read states no side, whatever side its plane-data point lies on: the
+/// projection keeps its `D1` and reports the assumption.
+#[test]
+fn offset_plane_from_a_face_with_an_unread_plane_reports_its_side() {
+    let (distance, codes) = offset_plane_stating(&[
+        (
+            "ReferenceFaceNative",
+            "sldprt:feature-input:legacy-face-alias#7:120:1279372437:31",
+        ),
+        ("PlanePoint", "0mm,0mm,-6mm"),
+        ("PlaneNormal", "0,0,1"),
+    ]);
     assert_eq!(distance, 6.0);
     let kind = crate::loss::SldprtLossCode::FeatureOffsetPlaneSideAssumed.kind();
     assert_eq!(

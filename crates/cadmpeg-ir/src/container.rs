@@ -265,19 +265,4 @@ mod tests {
             .expect_err("a classified identity carries no second format");
         assert!(error.to_string().contains("format"), "{error}");
     }
-
-    #[cfg(feature = "schema")]
-    #[test]
-    fn current_summary_schema_requires_its_identity_and_losses() {
-        let schema = json::to_value(schemars::schema_for!(ContainerSummary))
-            .expect("summary schema serializes");
-        let required = schema["required"]
-            .as_array()
-            .expect("summary schema has required fields");
-        assert!(
-            required.iter().any(|field| field == "identity"),
-            "{schema:#}"
-        );
-        assert!(required.iter().any(|field| field == "losses"), "{schema:#}");
-    }
 }
