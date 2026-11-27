@@ -23,9 +23,12 @@ fn zero_length_edge_parameter_range_is_a_writer_limit() {
     ir.geometry.edges[0].carrier =
         EdgeCarrier::new(Some(curve), Some([0.0, 0.0])).expect("equal endpoints are admitted");
 
-    let error = WritableModel::try_new(&ir)
-        .err()
-        .expect("Rhino cannot write a zero-length domain");
+    let error = WritableModel::try_new(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &ir,
+    )
+    .err()
+    .expect("Rhino cannot write a zero-length domain");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
 
@@ -44,9 +47,12 @@ fn admitted_unit_direction_outside_rhino_bound_is_a_writer_limit() {
         .expect("the IR unit-direction bound admits this direction"),
     ));
 
-    let error = WritableModel::try_new(&ir)
-        .err()
-        .expect("Rhino uses a tighter direction bound");
+    let error = WritableModel::try_new(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &ir,
+    )
+    .err()
+    .expect("Rhino uses a tighter direction bound");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
 
@@ -66,9 +72,12 @@ fn admitted_frame_outside_rhino_bound_is_a_writer_limit() {
         .expect("the IR orthonormal-frame bound admits this frame"),
     ));
 
-    let error = WritableModel::try_new(&ir)
-        .err()
-        .expect("Rhino uses a tighter frame bound");
+    let error = WritableModel::try_new(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &ir,
+    )
+    .err()
+    .expect("Rhino uses a tighter frame bound");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
 
@@ -81,15 +90,22 @@ fn single_face_resolves_arena_permutations_in_traversal_order() {
     ]);
     let expected = super::super::brep_payload(
         &cadmpeg_core::decode::test_support::service_decode_context(),
-        &WritableModel::try_new(&ir).expect("writable triangle"),
+        &WritableModel::try_new(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &ir,
+        )
+        .expect("writable triangle"),
         crate::RhinoArchiveVersion::V8,
     )
     .expect("triangle payload");
     ir.geometry.vertices.reverse();
     ir.geometry.edges.reverse();
     ir.geometry.coedges.reverse();
-    let model =
-        WritableModel::try_new(&ir).expect("references resolve independently of arena order");
+    let model = WritableModel::try_new(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &ir,
+    )
+    .expect("references resolve independently of arena order");
     let actual = super::super::brep_payload(
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &model,
@@ -109,7 +125,11 @@ fn single_face_resolves_arena_permutations_in_traversal_order() {
 #[test]
 fn multi_face_resolves_domains_and_incidence_in_arena_order() {
     let ir = adjacent_quad_sheet();
-    let model = WritableModel::try_new(&ir).expect("writable adjacent faces");
+    let model = WritableModel::try_new(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &ir,
+    )
+    .expect("writable adjacent faces");
     for (position, edge) in model.edges.iter().enumerate() {
         assert_eq!(edge.source.id, ir.geometry.edges[position].id);
         assert_eq!(
@@ -136,11 +156,18 @@ fn a_face_of_another_shell_is_an_inconsistent_ownership_graph() {
     for face in &mut ir.geometry.faces {
         face.name = None;
     }
-    assert!(WritableModel::try_new(&ir).is_ok());
+    assert!(WritableModel::try_new(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &ir
+    )
+    .is_ok());
     ir.geometry.faces[0].shell =
         cadmpeg_ir::ids::ShellId::mint("test:model:shell#other").expect("identity grammar");
-    let error = WritableModel::try_new(&ir)
-        .err()
-        .expect("a face of another shell is inconsistent");
+    let error = WritableModel::try_new(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &ir,
+    )
+    .err()
+    .expect("a face of another shell is inconsistent");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
 }

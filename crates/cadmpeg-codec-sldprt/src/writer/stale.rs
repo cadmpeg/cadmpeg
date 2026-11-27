@@ -5,6 +5,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+
 use cadmpeg_ir::codec::write::evaluation_stale;
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::document::CadIr;
@@ -113,14 +116,37 @@ impl StaleStates {
     }
 }
 
+/// A payload with the stale mark, and the names of the rows that carry it.
+type Marked = (Vec<u8>, Vec<String>);
+
 /// `payload` with `swConfigurationNeedsUpdate="YES"` on each `swConfiguration`
 /// row whose `swName` is in `names`, and the names of the rows that carry the
-/// mark. `None` where `payload` is no `swSolidWorks` document or holds no such
-/// row.
-pub(super) fn mark(payload: &[u8], names: &BTreeSet<String>) -> Option<(Vec<u8>, Vec<String>)> {
+/// mark, parsed in the session `ctx`. `None` where `payload` is no
+/// `swSolidWorks` document or holds no such row.
+pub(super) fn mark(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    names: &BTreeSet<String>,
+) -> Result<Option<Marked>, CodecError> {
+    let Some(text) = crate::container::xml_text(payload) else {
+        return Ok(None);
+    };
+    match ctx.parse_input_xml(&text, "SLDPRT stale configuration mark") {
+        Ok(document) => Ok(marked(&document, &text, payload, names)),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(_) => Ok(None),
+    }
+}
+
+/// `text`, parsed as `document`, with the stale mark on each row of `names`
+/// ([`mark`]).
+fn marked(
+    document: &roxmltree::Document<'_>,
+    text: &str,
+    payload: &[u8],
+    names: &BTreeSet<String>,
+) -> Option<Marked> {
     const MARK: &str = "swConfigurationNeedsUpdate=\"YES\"";
-    let text = crate::container::xml_text(payload)?;
-    let document = roxmltree::Document::parse(&text).ok()?;
     if document.root_element().tag_name().name() != "swSolidWorks" {
         return None;
     }
@@ -155,7 +181,7 @@ pub(super) fn mark(payload: &[u8], names: &BTreeSet<String>) -> Option<(Vec<u8>,
         return Some((payload.to_vec(), marked));
     }
     edits.sort_by_key(|(range, _)| std::cmp::Reverse(range.start));
-    let mut output = text.clone();
+    let mut output = text.to_owned();
     for (range, replacement) in edits {
         output.replace_range(range, &replacement);
     }
@@ -166,18 +192,19 @@ pub(super) fn mark(payload: &[u8], names: &BTreeSet<String>) -> Option<(Vec<u8>,
 /// `swSolidWorks` documents of `sections`, and returns the names of the rows
 /// that carry it.
 pub(super) fn mark_sections(
+    ctx: &DecodeContext<'_>,
     sections: &mut [(String, Vec<u8>)],
     names: &BTreeSet<String>,
-) -> Vec<String> {
+) -> Result<Vec<String>, CodecError> {
     if names.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let mut marked = Vec::new();
     for (_, payload) in sections {
-        if let Some((patched, rows)) = mark(payload, names) {
+        if let Some((patched, rows)) = mark(ctx, payload, names)? {
             *payload = patched;
             marked.extend(rows);
         }
     }
-    marked
+    Ok(marked)
 }

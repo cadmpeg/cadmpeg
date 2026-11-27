@@ -20,7 +20,7 @@ pub(crate) mod shell_slots;
 
 use std::io::Write;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::{report::export::WritePath, CadIr, SourceFidelity};
 
 use crate::F3dCodec;
@@ -87,7 +87,7 @@ pub(crate) fn plan_inherited_write(
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
 ) -> Result<WritePath, cadmpeg_ir::codec::write::EncodeError> {
-    let plan = F3dCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Unnamed)?;
+    let plan = F3dCodec.plan(EncodeInput::new(ir, Some(fidelity)))?;
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
@@ -101,16 +101,7 @@ pub(crate) fn assert_written_with_loss(
     code: &str,
     fragment: &str,
 ) -> cadmpeg_ir::report::export::ExportReport {
-    use cadmpeg_ir::codec::{Codec, DecodeOptions};
-    let mut bytes = Vec::new();
-    let report = F3dCodec
-        .plan(EncodeInput::new(ir, fidelity), TargetRequest::Unnamed)
-        .and_then(|plan| plan.write_to(&mut bytes))
-        .expect("the writer writes what it can encode");
-    let decoded = F3dCodec
-        .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
-        .expect("the written file decodes");
-    assert_decodes_back(&report, decoded.report());
+    let report = written_and_decoded(ir, fidelity);
     assert!(
         report
             .losses
@@ -119,6 +110,46 @@ pub(crate) fn assert_written_with_loss(
         "expected a {code} loss naming {fragment:?}: {:#?}",
         report.losses
     );
+    report
+}
+
+/// Writes `ir` with `fidelity` as a synthesis whose cause states that the
+/// patch declined for a reason that contains `fragment`, and decodes the
+/// file back.
+pub(crate) fn assert_patch_declined(
+    ir: &CadIr,
+    fidelity: Option<&SourceFidelity>,
+    fragment: &str,
+) -> cadmpeg_ir::report::export::ExportReport {
+    let report = written_and_decoded(ir, fidelity);
+    let Some(cadmpeg_ir::report::export::SynthesisCause::PatchDeclined { reason }) =
+        report.synthesis_cause()
+    else {
+        panic!(
+            "the write states no synthesis cause: {:#?}",
+            report.write_path()
+        );
+    };
+    assert!(reason.contains(fragment), "{reason:?} names {fragment:?}");
+    report
+}
+
+/// The report of writing `ir` with `fidelity`, where the written file
+/// decodes back ([`assert_decodes_back`]).
+fn written_and_decoded(
+    ir: &CadIr,
+    fidelity: Option<&SourceFidelity>,
+) -> cadmpeg_ir::report::export::ExportReport {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let mut bytes = Vec::new();
+    let report = F3dCodec
+        .plan(EncodeInput::new(ir, fidelity))
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("the writer writes what it can encode");
+    let decoded = F3dCodec
+        .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("the written file decodes");
+    assert_decodes_back(&report, decoded.report());
     report
 }
 

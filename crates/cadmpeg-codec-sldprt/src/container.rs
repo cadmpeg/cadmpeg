@@ -432,7 +432,8 @@ fn completed_scan<'a>(
                 .xml_payload()
                 .map(|payload| (section.name(), payload))
         }),
-        &ScanAdmission::Decode(ctx),
+        ctx,
+        "SLDPRT envelope XML tree",
     )?;
     scan.solidworks = solidworks;
     Ok(scan)
@@ -440,11 +441,6 @@ fn completed_scan<'a>(
 
 /// Every marker hit is tried as a block first (the CRC gate is effectively
 /// false-positive-free), then as a cache cell, then as a directory entry.
-enum ScanAdmission<'a, 'ctx> {
-    Probe,
-    Decode(&'ctx DecodeContext<'a>),
-}
-
 #[derive(Default)]
 struct NativeMarkers {
     blocks: Vec<Block>,
@@ -1544,25 +1540,23 @@ impl ManifestActiveConfiguration {
     }
 }
 
+/// Scans the `swSolidWorks` envelopes of `sections`, each parsed in the
+/// session `ctx` under `operation`. A resource refusal ends the scan; a
+/// section that does not parse holds no envelope.
 fn scan_solidworks_envelopes<'a>(
     sections: impl IntoIterator<Item = (Option<&'a str>, &'a [u8])>,
-    admission: &ScanAdmission<'_, '_>,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
 ) -> Result<SolidWorksEnvelopeScan, CodecError> {
     let mut scan = SolidWorksEnvelopeScan::default();
     for (section, payload) in sections {
         let Some(text) = xml_text(payload) else {
             continue;
         };
-        let document = match admission {
-            ScanAdmission::Decode(ctx) => match ctx.parse_xml(&text, "SLDPRT envelope XML tree") {
-                Ok(tree) => tree,
-                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                Err(_) => continue,
-            },
-            ScanAdmission::Probe => match roxmltree::Document::parse(&text) {
-                Ok(document) => document,
-                Err(_) => continue,
-            },
+        let document = match ctx.parse_xml(&text, operation) {
+            Ok(tree) => tree,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => continue,
         };
         let root = document.root_element();
         if is_features_manifest_name(section) && root.tag_name().name() == "swSolidWorks" {
@@ -1657,16 +1651,23 @@ fn scan_solidworks_envelopes<'a>(
     Ok(scan)
 }
 
-/// Returns the first parsed `swSolidWorks` envelope even if an attribute is absent.
+/// Returns the first parsed `swSolidWorks` envelope of `payloads` even if
+/// an attribute is absent, each payload parsed in the session `ctx`.
+///
+/// # Errors
+///
+/// Returns [`CodecError::ResourceLimit`] where a parse meets a ceiling of
+/// `ctx`.
 pub(crate) fn first_solidworks_envelope<'a>(
+    ctx: &DecodeContext<'_>,
     payloads: impl IntoIterator<Item = &'a [u8]>,
-) -> Option<SolidWorksEnvelope> {
-    scan_solidworks_envelopes(
+) -> Result<Option<SolidWorksEnvelope>, CodecError> {
+    Ok(scan_solidworks_envelopes(
         payloads.into_iter().map(|payload| (None, payload)),
-        &ScanAdmission::Probe,
-    )
-    .ok()
-    .and_then(|scan| scan.first)
+        ctx,
+        "SLDPRT retained envelope XML tree",
+    )?
+    .first)
 }
 
 pub(crate) fn solidworks_envelope<'a>(
