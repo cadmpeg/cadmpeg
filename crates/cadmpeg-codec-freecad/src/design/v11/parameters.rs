@@ -30,6 +30,19 @@ use crate::loss::FreecadLossCode;
 /// in millimetres and radians.
 const CONSTRAINT_LIST: &str = "Sketcher::PropertyConstraintList";
 
+/// The property type of a placement, whose base components the decoder
+/// generates as parameters.
+const PLACEMENT: &str = "App::PropertyPlacement";
+
+/// The list a `FreeCAD` object lists a parameter in.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum List {
+    /// The object's property list.
+    Properties,
+    /// A sketch's constraint list.
+    Constraints,
+}
+
 /// Each parameter the decoder read that one of `features` or a Body owns, in
 /// the scope of `definition`. `containers` maps a Body's feature to its
 /// container, and `carriers` a property record to its type.
@@ -69,9 +82,27 @@ pub(super) fn project(
         .filter(|parameter| owners.contains_key(&parameter.id))
         .map(|parameter| (&parameter.id, parameter))
         .collect::<BTreeMap<_, _>>();
+    let mut lists = BTreeMap::<&FeatureId, BTreeSet<List>>::new();
+    let listed = by_id
+        .values()
+        .filter_map(|parameter| {
+            let list = list(parameter, carriers)?;
+            lists
+                .entry(parameter.owner.as_ref()?)
+                .or_default()
+                .insert(list);
+            Some(&parameter.id)
+        })
+        .collect::<BTreeSet<_>>();
     let mut parameters = Vec::new();
     for (id, owner) in &owners {
         let parameter = by_id[id];
+        let one_list = parameter
+            .owner
+            .as_ref()
+            .and_then(|owner| lists.get(owner))
+            .is_some_and(|kinds| kinds.len() == 1);
+        let position = (one_list && listed.contains(id)).then_some(parameter.ordinal);
         let (kind, value) = kind_and_value(parameter.value.as_ref());
         let parameter_definition = if property(parameter, "is_driving") == Some("0") {
             ParameterDefinition::Driven
@@ -82,7 +113,7 @@ pub(super) fn project(
             id: parameter.id.clone(),
             scope: definition.clone(),
             owner: Some(owner.clone()),
-            position: None,
+            position,
             name: name(parameter),
             kind,
             unit: None,
@@ -99,6 +130,17 @@ pub(super) fn project(
     }
     parameters.sort_by(|a, b| a.id.cmp(&b.id));
     parameters
+}
+
+/// The list `parameter`'s ordinal places it in: a sketch's constraint list,
+/// or its object's property list for a property the source stores. A
+/// placement's base component is generated, so it has none.
+fn list(parameter: &LegacyParameter, carriers: &HashMap<&str, &str>) -> Option<List> {
+    match carriers.get(parameter.native_ref.as_deref()?).copied()? {
+        CONSTRAINT_LIST => Some(List::Constraints),
+        PLACEMENT => None,
+        _ => Some(List::Properties),
+    }
 }
 
 fn property<'a>(parameter: &'a LegacyParameter, key: &str) -> Option<&'a str> {
