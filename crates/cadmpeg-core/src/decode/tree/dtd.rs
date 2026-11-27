@@ -60,6 +60,20 @@ struct Roots {
     value: u64,
 }
 
+#[derive(Clone, Copy)]
+enum Use {
+    Text,
+    Attribute,
+}
+
+impl Use {
+    const ALL: [Self; 2] = [Self::Text, Self::Attribute];
+
+    fn index(self, entity: usize) -> usize {
+        entity * Self::ALL.len() + usize::from(matches!(self, Self::Attribute))
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Visit {
     New,
@@ -329,13 +343,13 @@ impl<'text> Doctype<'text> {
         let per_entity = size_of::<Declared<'_>>()
             + size_of::<usize>()
             + size_of::<Roots>()
-            + size_of::<Plan>()
-            + size_of::<(usize, usize)>();
+            + Use::ALL.len() * (size_of::<Plan>() + size_of::<(usize, usize)>());
         let analysis = u64_from_index(entities)
             .checked_mul(u64_from_index(per_entity))
             .and_then(|bytes| {
                 bytes.checked_add(
-                    u64_from_index(references).checked_mul(u64_from_index(size_of::<usize>()))?,
+                    u64_from_index(references)
+                        .checked_mul(u64_from_index(Use::ALL.len() * size_of::<usize>()))?,
                 )
             })
             .ok_or(Stop::Unbounded)?;
@@ -398,63 +412,67 @@ impl<'text> Doctype<'text> {
         let bytes = text.as_bytes();
         let capacity =
             memchr::memchr_iter(b'&', bytes.get(self.range.clone()).unwrap_or_default()).count();
-        let mut references = Vec::with_capacity(capacity);
-        let mut plans = Vec::with_capacity(self.declared.len());
+        let mut references = Vec::with_capacity(capacity * Use::ALL.len());
+        let plan_count = self.declared.len() * Use::ALL.len();
+        let mut plans = Vec::with_capacity(plan_count);
         for entity in &self.declared {
-            let first = references.len();
-            let (counts, bytes_held) = match &entity.value {
-                Some(value) => {
-                    for at in value.clone() {
-                        if let Some(index) = bytes
-                            .get(at..value.end)
-                            .and_then(reference)
-                            .and_then(|name| self.find(name))
-                        {
-                            references.push(index);
+            for usage in Use::ALL {
+                let first = references.len();
+                let mut counts = XmlCounts {
+                    balanced: true,
+                    ..XmlCounts::default()
+                };
+                let mut bytes_held = 0;
+                if let Some(value) = &entity.value {
+                    bytes_held = u64_from_index(value.len());
+                    let mut refer = |name, usage: Use| {
+                        if let Some(index) = self.find(name) {
+                            references.push(usage.index(index));
+                        }
+                    };
+                    match usage {
+                        Use::Text => {
+                            let scope = XmlScope {
+                                range: value.clone(),
+                                skip: 0..0,
+                                open: 1,
+                            };
+                            counts = xml_counts_checked(
+                                text,
+                                &scope,
+                                prefixes,
+                                &mut check,
+                                &mut admit_prefix,
+                                |name, in_text| {
+                                    let usage = if in_text { Use::Text } else { Use::Attribute };
+                                    refer(name, usage);
+                                },
+                            )
+                            .map_err(Stop::Refused)?;
+                        }
+                        Use::Attribute => {
+                            for at in value.clone() {
+                                check().map_err(Stop::Refused)?;
+                                if let Some(name) = reference(&bytes[at..value.end]) {
+                                    refer(name, Use::Attribute);
+                                }
+                            }
                         }
                     }
-                    let scope = XmlScope {
-                        range: value.clone(),
-                        skip: 0..0,
-                        open: 1,
-                    };
-                    let counts = xml_counts_checked(
-                        text,
-                        &scope,
-                        prefixes,
-                        &mut check,
-                        &mut admit_prefix,
-                        |_, _| {},
-                    )
-                    .map_err(Stop::Refused)?;
-                    (counts, u64_from_index(value.len()))
                 }
-                None => (
-                    XmlCounts {
-                        balanced: true,
-                        ..XmlCounts::default()
-                    },
-                    0,
-                ),
-            };
-            plans.push(Plan {
-                counts,
-                references: (first, references.len()),
-                bytes: bytes_held,
-                nested: 0,
-                levels: 1,
-                depth: counts.depth.max(2) - 2,
-                external: u64::from(entity.value.is_none()),
-                visit: Visit::New,
-            });
-        }
-        let mut stack = Vec::with_capacity(self.declared.len());
-        for (root, roots) in self.roots.iter().enumerate() {
-            if roots.text == 0 && roots.value == 0 {
-                continue;
+                plans.push(Plan {
+                    counts,
+                    references: (first, references.len()),
+                    bytes: bytes_held,
+                    nested: 0,
+                    levels: 1,
+                    depth: counts.depth.max(2) - 2,
+                    external: u64::from(entity.value.is_none()),
+                    visit: Visit::New,
+                });
             }
-            self.fold(root, &references, &mut plans, &mut stack)?;
         }
+        let mut stack = Vec::with_capacity(plan_count);
         let names = self
             .declared
             .iter()
@@ -473,17 +491,16 @@ impl<'text> Doctype<'text> {
             unread: self.unread,
         };
         let mut levels = 0;
-        for ((roots, plan), entity) in self.roots.iter().zip(&plans).zip(&self.declared) {
-            let count = roots.text.checked_add(roots.value).ok_or(Stop::Unbounded)?;
+        let root_counts = self
+            .roots
+            .iter()
+            .flat_map(|roots| [roots.text, roots.value]);
+        for (root, count) in root_counts.enumerate() {
             if count == 0 {
                 continue;
             }
-            if roots.text != 0 && !plan.counts.balanced {
-                return Err(Stop::Malformed(format!(
-                    "entity {:?} expands to content that does not nest",
-                    String::from_utf8_lossy(entity.name)
-                )));
-            }
+            self.fold(root, &references, &mut plans, &mut stack)?;
+            let plan = plans[root];
             let mut counts = expanded
                 .counts
                 .plus(&plan.counts, count)
@@ -550,7 +567,7 @@ impl<'text> Doctype<'text> {
                     Visit::Open => {
                         return Err(Stop::Malformed(format!(
                             "entity {:?} refers to itself",
-                            String::from_utf8_lossy(self.declared[target].name)
+                            String::from_utf8_lossy(self.declared[target / Use::ALL.len()].name)
                         )))
                     }
                     Visit::Done => {}
@@ -559,6 +576,12 @@ impl<'text> Doctype<'text> {
             }
             stack.pop();
             let mut plan = plans[entity];
+            if !plan.counts.balanced {
+                return Err(Stop::Malformed(format!(
+                    "entity {:?} expands to content that does not nest",
+                    String::from_utf8_lossy(self.declared[entity / Use::ALL.len()].name)
+                )));
+            }
             let (first, last) = plan.references;
             let mut deepest = 0;
             let mut levels = 0;

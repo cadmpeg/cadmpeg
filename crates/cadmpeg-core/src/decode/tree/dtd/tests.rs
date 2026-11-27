@@ -182,6 +182,72 @@ fn internal_entities_expand_in_text_and_values() {
 }
 
 #[test]
+fn literal_markup_in_an_entity_does_not_create_a_cycle() {
+    with_session(|ctx| {
+        let document = ctx
+            .parse_xml(
+                "<!DOCTYPE r [<!ENTITY a '<!-- &a; -->ok'>]><r>&a;</r>",
+                "XML",
+            )
+            .expect("the comment contains a literal ampersand");
+        let root = document.root_element();
+        let comment = root.first_child().expect("expanded comment");
+        assert!(comment.is_comment());
+        assert_eq!(comment.text(), Some(" &a; "));
+        assert_eq!(
+            comment.next_sibling().and_then(|node| node.text()),
+            Some("ok")
+        );
+        assert!(ctx.take_xml_notes().is_empty());
+    });
+}
+
+#[test]
+fn external_references_follow_the_context_of_each_expansion() {
+    with_session(|ctx| {
+        let document = ctx
+            .parse_xml(
+                "<!DOCTYPE r [<!ENTITY ext SYSTEM 'https://example.invalid/entity'>\
+                 <!ENTITY fragment '<!-- &ext; --><![CDATA[&ext;]]><?tag &ext;?>'>\
+                 <!ENTITY leaf '&ext;'><!ENTITY element '<a v=\"&leaf;\"/>'>]>\
+                 <r attr='&fragment;'>&fragment;&element;</r>",
+                "XML",
+            )
+            .expect("both uses of the replacement");
+        let root = document.root_element();
+        assert_eq!(
+            root.attribute("attr"),
+            Some("<!--  --><![CDATA[]]><?tag ?>")
+        );
+        let comment = root.first_child().expect("expanded comment");
+        assert_eq!(comment.text(), Some(" &ext; "));
+        let cdata = comment.next_sibling().expect("expanded CDATA");
+        assert_eq!(cdata.text(), Some("&ext;"));
+        assert_eq!(
+            cdata
+                .next_sibling()
+                .and_then(|node| node.pi())
+                .and_then(|pi| pi.value),
+            Some("&ext;")
+        );
+        assert_eq!(
+            root.first_element_child()
+                .and_then(|node| node.attribute("v")),
+            Some("")
+        );
+        assert_eq!(
+            ctx.take_xml_notes(),
+            [XmlNote {
+                operation: "XML",
+                unread: XmlUnread::ExternalEntity,
+                documents: 1,
+                references: 4,
+            }]
+        );
+    });
+}
+
+#[test]
 fn billion_laughs_is_refused_before_it_expands() {
     with_session(|ctx| {
         let (result, peak) =
