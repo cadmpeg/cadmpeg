@@ -17,8 +17,8 @@ use crate::native::{DatabaseIssueRecord, DatabaseRecord, VersionTupleRecord};
 use crate::property_set::PropertyValue;
 use crate::test_support::test_fixtures::{
     acis_kernel_stream, acis_sphere_kernel_stream, fixture, primary_envelope_fixture,
-    primary_envelope_fixture_with_design, primary_envelope_fixture_with_kernel,
-    EnvelopeDeclarations,
+    primary_envelope_fixture_with_design, primary_envelope_fixture_with_drawing,
+    primary_envelope_fixture_with_kernel, EnvelopeDeclarations,
 };
 use crate::InventorCodec;
 
@@ -253,6 +253,57 @@ fn design_records_project_from_design_depth() {
         &[("design", source.clone())],
     );
     assert_eq!(summary.cut, 1, "{summary:?}");
+}
+
+#[test]
+fn drawing_records_are_delivered_at_geometry_depth() {
+    let source = primary_envelope_fixture_with_drawing(
+        &acis_sphere_kernel_stream(21_800),
+        &[([0x71; 16], vec![0_u8; 8])],
+    );
+    let decode = |depth| {
+        InventorCodec
+            .decode(
+                &mut std::io::Cursor::new(&source),
+                &DecodeOptions {
+                    depth,
+                    ..DecodeOptions::default()
+                },
+            )
+            .expect("synthetic drawing envelope decodes")
+    };
+    let drawing = |result: &cadmpeg_ir::codec::DecodeResult| {
+        let records = result
+            .ir()
+            .native
+            .namespace("inventor")
+            .expect("Inventor namespace")
+            .arenas()
+            .iter()
+            .filter(|(name, _)| name.as_str().starts_with("drawing_"))
+            .map(|(name, records)| (name.as_str().to_owned(), records.clone()))
+            .collect::<Vec<_>>();
+        let losses = result
+            .report()
+            .losses
+            .iter()
+            .map(|loss| (loss.code.to_string(), loss.message.clone()))
+            .filter(|(code, _)| code.starts_with("inventor/drawing."))
+            .collect::<Vec<_>>();
+        (records, losses)
+    };
+    let geometry = decode(DecodeDepth::Geometry);
+    let design = decode(DecodeDepth::Design);
+
+    assert_eq!(geometry.report().depth(), DecodeDepth::Geometry);
+    let (records, losses) = drawing(&geometry);
+    assert!(
+        losses
+            .iter()
+            .any(|(code, _)| code == "inventor/drawing.native-only"),
+        "{losses:?}"
+    );
+    assert_eq!((records, losses), drawing(&design));
 }
 
 #[test]
@@ -572,7 +623,7 @@ fn an_unverified_acis_carrier_recovers_the_same_solid_as_a_verified_one() {
 }
 
 #[test]
-fn a_kernel_carrier_kept_without_decoding_is_untyped_model_content() {
+fn an_undecoded_kernel_carrier_is_given_up_as_untyped_model_content() {
     let marks = |kernel: &[u8]| {
         let bytes = primary_envelope_fixture_with_kernel(EnvelopeDeclarations::default(), kernel);
         let (_, _, fidelity) = InventorCodec
@@ -592,11 +643,8 @@ fn a_kernel_carrier_kept_without_decoding_is_untyped_model_content() {
     };
     let sphere = acis_sphere_kernel_stream(21_800);
     assert!(marks(&sphere).is_empty());
-    assert_eq!(
-        marks(&sphere[..sphere.len() / 2]),
-        [(
-            "inventor:kernel:carrier#seg-0".to_owned(),
-            vec![cadmpeg_core::decode::ArenaClass::Model]
-        )]
-    );
+    let given_up = marks(&sphere[..sphere.len() / 2]);
+    assert_eq!(given_up.len(), 1);
+    assert!(given_up[0].0.starts_with("inventor:source:part#"));
+    assert_eq!(given_up[0].1, [cadmpeg_core::decode::ArenaClass::Model]);
 }

@@ -1021,6 +1021,12 @@ pub enum BodySelection {
         /// Format-native persistent selection reference.
         native: SelectionReference,
     },
+    /// Bodies in intermediate regenerated feature results from independently
+    /// retained native selection members.
+    GeneratedSet {
+        /// Checked rows in native member order.
+        members: BodyMembers<GeneratedBodyRef>,
+    },
     /// Persistent bodies in the consuming feature's regeneration input state.
     Local {
         /// Ordered feature-input-local body identities.

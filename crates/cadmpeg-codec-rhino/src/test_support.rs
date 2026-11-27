@@ -24,6 +24,76 @@ pub(crate) fn positive(value: f64) -> cadmpeg_ir::scalar::PositiveReal {
     cadmpeg_ir::scalar::PositiveReal::new(value).expect("positive fixture scalar")
 }
 
+/// An open cage of two quads that share the edge from vertex 1 to vertex 4.
+/// Its components state every vertex and edge tag and unequal end sharpness.
+pub(crate) fn two_quad_cage() -> cadmpeg_ir::subd::SubdCage {
+    use cadmpeg_ir::subd::{
+        SubdCage, SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdVertex, SubdVertexTag,
+    };
+    let vertex = |x: f64, y: f64, tag| {
+        SubdVertex::new(cadmpeg_ir::math::Point3::new(x, y, 0.25 * x), tag, None).unwrap()
+    };
+    let vertices = vec![
+        vertex(0.0, 0.0, SubdVertexTag::Corner),
+        vertex(1.0, 0.0, SubdVertexTag::Crease),
+        vertex(2.0, 0.0, SubdVertexTag::Corner),
+        vertex(0.0, 1.0, SubdVertexTag::Dart),
+        vertex(1.0, 1.0, SubdVertexTag::Smooth),
+        vertex(2.0, 1.0, SubdVertexTag::Corner),
+    ];
+    let edge = |ends, sharpness, tag, coefficients| {
+        SubdEdge::new(ends, sharpness, tag, None, coefficients).unwrap()
+    };
+    let edges = vec![
+        edge([0, 1], [0.0, 0.0], SubdEdgeTag::Crease, [0.0, 0.0]),
+        edge([1, 2], [0.0, 0.0], SubdEdgeTag::Crease, [0.0, 0.0]),
+        edge([2, 5], [0.0, 0.0], SubdEdgeTag::Crease, [0.0, 0.0]),
+        edge([5, 4], [0.0, 0.0], SubdEdgeTag::SmoothX, [0.0, 0.5]),
+        edge([4, 3], [0.0, 0.0], SubdEdgeTag::Crease, [0.0, 0.0]),
+        edge([3, 0], [0.0, 0.0], SubdEdgeTag::Crease, [0.0, 0.0]),
+        edge([1, 4], [0.5, 1.5], SubdEdgeTag::Smooth, [0.25, 0.75]),
+    ];
+    let face = |uses: [(u32, bool); 4]| {
+        SubdFace::from_edge_uses(
+            uses.map(|(edge, reversed)| SubdEdgeUse { edge, reversed })
+                .to_vec(),
+        )
+        .unwrap()
+    };
+    let faces = vec![
+        face([(0, false), (6, false), (4, false), (5, false)]),
+        face([(1, false), (2, false), (3, false), (6, true)]),
+    ];
+    SubdCage::new(vertices, edges, faces, Vec::new()).unwrap()
+}
+
+/// `cage` as an archive before version 80 holds it: each edge with its start
+/// sharpness at both ends.
+pub(crate) fn start_sharpness_cage(
+    cage: &cadmpeg_ir::subd::SubdCage,
+) -> cadmpeg_ir::subd::SubdCage {
+    let mut expected = cage.clone();
+    expected
+        .edit_edges(|edges| {
+            for edge in edges.iter_mut() {
+                let [start, _] = edge
+                    .sharpness()
+                    .map(cadmpeg_ir::scalar::NonNegativeReal::get);
+                *edge = cadmpeg_ir::subd::SubdEdge::new(
+                    edge.vertices(),
+                    [start, start],
+                    edge.tag,
+                    None,
+                    edge.sector_coefficients()
+                        .map(cadmpeg_ir::scalar::FiniteReal::get),
+                )?;
+            }
+            Ok(())
+        })
+        .expect("the edges stay valid");
+    expected
+}
+
 /// A positive fixture angle.
 pub(crate) fn positive_angle(value: f64) -> cadmpeg_ir::scalar::PositiveAngle {
     cadmpeg_ir::scalar::PositiveAngle::new(value).expect("positive fixture angle")
@@ -72,11 +142,78 @@ pub(crate) fn millimeter_scale(millimeters_per_unit: f64) -> crate::settings::Mi
 pub(crate) fn plan_at(
     version: crate::RhinoArchiveVersion,
     ir: &cadmpeg_ir::document::CadIr,
-) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 
     crate::RhinoCodec.plan(
         EncodeInput::new(ir, None),
         TargetRequest::Explicit(version.descriptor().id.as_str()),
     )
+}
+
+/// The start and end positions of `coedge` in its own direction.
+pub(crate) fn coedge_ends(
+    ir: &cadmpeg_ir::CadIr,
+    coedge: &cadmpeg_ir::topology::Coedge,
+) -> [cadmpeg_ir::math::Point3; 2] {
+    let geometry = &ir.geometry;
+    let edge = geometry
+        .edges
+        .iter()
+        .find(|edge| edge.id == coedge.edge)
+        .expect("coedge edge");
+    let [start, end] = [edge.start(), edge.end()].map(|id| {
+        let id = id.expect("edge vertex");
+        let vertex = geometry
+            .vertices
+            .iter()
+            .find(|vertex| vertex.id == *id)
+            .expect("vertex");
+        geometry
+            .points
+            .iter()
+            .find(|point| point.id == vertex.point)
+            .expect("vertex point")
+            .position()
+            .get()
+    });
+    if coedge.sense == cadmpeg_ir::topology::Sense::Reversed {
+        [end, start]
+    } else {
+        [start, end]
+    }
+}
+
+/// Twice the area of the polygon through the start of each coedge of
+/// `loop_`, about `normal`: positive where the loop runs counterclockwise
+/// about `normal`, and exact for a loop of straight edges.
+pub(crate) fn loop_twice_area_about(
+    ir: &cadmpeg_ir::CadIr,
+    loop_: &cadmpeg_ir::topology::Loop,
+    normal: cadmpeg_ir::math::Vector3,
+) -> f64 {
+    let corners = loop_
+        .coedges()
+        .iter()
+        .map(|id| {
+            let coedge = ir
+                .geometry
+                .coedges
+                .iter()
+                .find(|coedge| coedge.id == *id)
+                .expect("loop coedge");
+            coedge_ends(ir, coedge)[0]
+        })
+        .collect::<Vec<_>>();
+    let origin = corners[0];
+    corners
+        .iter()
+        .zip(corners.iter().cycle().skip(1))
+        .map(|(point, next)| {
+            point
+                .vector_from(origin)
+                .cross(next.vector_from(origin))
+                .dot(normal)
+        })
+        .sum()
 }

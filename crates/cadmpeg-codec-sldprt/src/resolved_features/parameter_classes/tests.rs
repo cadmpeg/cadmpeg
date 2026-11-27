@@ -3,7 +3,9 @@
 use super::super::names::{class_declarations, object_names};
 use super::super::scalars::named_scalars;
 use super::super::{COMPACT_SCALAR_HEADER, SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER};
-use super::{stated_parameters, ConfigurationMap, StatedParameter, Statement};
+use super::{
+    only_assignments, stated_parameters, ClassSlot, ConfigurationMap, StatedParameter, Statement,
+};
 use crate::records::FeatureInputLane;
 use crate::test_support::carchive::{config_object_stream, config_object_stream_declaring};
 use crate::test_support::container::{make_block, outer_header, scan};
@@ -161,7 +163,7 @@ fn continued_lane(config: &[u8], stream: &Stream) -> (FeatureInputLane, Option<C
     ));
     let scan = scan(&file);
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let (mut lanes, _, _, _, mut maps) = super::super::assembly::lanes(
+    let (mut lanes, _, _, _, mut maps, _) = super::super::assembly::lanes(
         &ctx,
         &scan,
         &mut cadmpeg_ir::annotations::Annotations::default(),
@@ -830,5 +832,43 @@ fn a_compound_lane_token_only_its_declarations_name_is_assumed() {
             .all(|(_, statement)| matches!(statement, Some(Statement::Parameter(_)))),
         "{:?}",
         statements_in(&own.lane(), None)
+    );
+}
+
+#[test]
+fn a_token_takes_the_one_declaration_every_ordered_assignment_gives_it() {
+    use ClassSlot::{Parameter, Relation};
+    // Token 10, first used at 100, can take only the declaration at 50;
+    // token 12, used at 200, then takes the declaration at 150.
+    assert_eq!(
+        only_assignments(
+            &[(10, 100, Relation), (12, 200, Relation)],
+            &[(50, Relation), (150, Relation), (250, Relation)]
+        ),
+        vec![Some(0), Some(1)]
+    );
+    // Two declarations precede the one token's first use.
+    assert_eq!(
+        only_assignments(&[(10, 300, Relation)], &[(50, Relation), (150, Relation)]),
+        vec![None]
+    );
+    // No assignment gives the second token a declaration before its use.
+    assert_eq!(
+        only_assignments(
+            &[(10, 100, Relation), (12, 120, Relation)],
+            &[(50, Relation), (150, Relation)]
+        ),
+        vec![None, None]
+    );
+    // A parameter token after a relation token takes a parameter declaration
+    // after the relation token's: of the two relation declarations before
+    // the first use, only the one before the parameter declaration leaves
+    // the parameter token one.
+    assert_eq!(
+        only_assignments(
+            &[(10, 300, Relation), (12, 300, Parameter)],
+            &[(50, Relation), (100, Parameter), (150, Relation)]
+        ),
+        vec![Some(0), Some(1)]
     );
 }

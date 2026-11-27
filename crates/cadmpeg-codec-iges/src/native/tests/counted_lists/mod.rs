@@ -298,7 +298,7 @@ fn decode_definition_levels_stop_before_trailing_property_group() {
     assert_eq!(levels.fields().unwrap()["declared_count"], 3);
     assert_eq!(
         levels.fields().unwrap()["levels"],
-        serde_json::json!([7, 0, 1])
+        cadmpeg_core::json!([7, 0, 1])
     );
 }
 
@@ -655,7 +655,7 @@ fn decode_flow_form18_keeps_zero_class_lists_before_trailing_groups() {
         source.fields().unwrap()["association_links"]
             .as_array()
             .unwrap(),
-        &[serde_json::json!("iges:entity:directory#1")]
+        &[cadmpeg_core::json!("iges:entity:directory#1")]
     );
     let flow = native.arenas()["associativities"]
         .iter()
@@ -924,7 +924,7 @@ fn decode_text_score_forms_uses_counted_ranges_before_trailing_associations() {
             .unwrap();
         assert_eq!(
             entity.fields().unwrap()["association_links"],
-            serde_json::json!(["iges:entity:directory#1"])
+            cadmpeg_core::json!(["iges:entity:directory#1"])
         );
     }
     assert!(

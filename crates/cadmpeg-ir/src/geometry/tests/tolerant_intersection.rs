@@ -4,7 +4,8 @@ use super::super::intersection_curves::{
 use super::super::procedural_curves::ProceduralCurveDefinition;
 use super::super::PcurveGeometry;
 use crate::{ids::SurfaceId, math::Point3};
-use serde_json::json;
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 
 fn supports() -> [SurfaceId; 2] {
     ["test:model:surface#1", "test:model:surface#2"].map(|id| SurfaceId::mint(id).unwrap())
@@ -95,14 +96,14 @@ fn tolerant_intersection_wire_retains_flat_fields_and_rejects_invalid_admission(
             "tolerance": 0.0
         }
     });
-    let value: ProceduralCurveDefinition = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(value).unwrap(), wire);
+    let value: ProceduralCurveDefinition = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(value).unwrap(), wire);
     let mut invalid = wire.clone();
     invalid["construction"]["supports"][1] = invalid["construction"]["supports"][0].clone();
-    assert!(serde_json::from_value::<ProceduralCurveDefinition>(invalid).is_err());
+    assert!(json::from_value::<ProceduralCurveDefinition>(invalid).is_err());
     let mut invalid = wire;
     invalid["construction"]["tolerance"] = json!(-1.0);
-    assert!(serde_json::from_value::<ProceduralCurveDefinition>(invalid).is_err());
+    assert!(json::from_value::<ProceduralCurveDefinition>(invalid).is_err());
     let parameterization = TolerantIntersectionParameterization::try_new(
         [
             PcurveGeometry::Line(crate::geometry::pcurve::LinePcurve::U_AXIS),
@@ -111,9 +112,9 @@ fn tolerant_intersection_wire_retains_flat_fields_and_rejects_invalid_admission(
         [0.0, 1.0],
     )
     .unwrap();
-    let mut invalid = serde_json::to_value(parameterization).unwrap();
+    let mut invalid = json::to_value(parameterization).unwrap();
     invalid["parameter_range"] = json!([1.0, 1.0]);
-    assert!(serde_json::from_value::<TolerantIntersectionParameterization>(invalid).is_err());
+    assert!(json::from_value::<TolerantIntersectionParameterization>(invalid).is_err());
 }
 
 #[test]
@@ -144,7 +145,7 @@ fn a_tolerant_intersection_holds_its_admitted_endpoints() {
         endpoints.map(|point| FinitePoint3::new(point).unwrap())
     );
     assert_eq!(
-        serde_json::to_value(&construction).unwrap()["endpoints"],
+        json::to_value(&construction).unwrap()["endpoints"],
         json!(endpoints)
     );
 }

@@ -800,7 +800,7 @@ fn names(relation: &SketchRelation<Planar>, entity: &SketchEntityId) -> bool {
             _ => false,
         }
     }
-    match serde_json::to_value(relation) {
+    match cadmpeg_core::serde_erase::to_json_value(relation) {
         Ok(value) => mentions(&value, entity.as_str()),
         Err(_) => true,
     }
@@ -1457,7 +1457,7 @@ fn native(
 
 /// The serialized tag of a decoded relation kind.
 fn kind_name(kind: &Kind) -> String {
-    serde_json::to_value(kind)
+    cadmpeg_core::serde_erase::to_json_value(kind)
         .ok()
         .and_then(|value| value.get("kind")?.as_str().map(str::to_owned))
         .unwrap_or_else(|| "sketch_relation".to_owned())

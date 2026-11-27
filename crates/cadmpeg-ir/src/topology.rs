@@ -10,10 +10,12 @@
 
 use crate::features::geometry::FinitePoint3;
 use crate::features::selections::NonEmptyMembers;
+use crate::geometry::SurfaceGeometry;
 use crate::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, IdentityNamespace, LoopId, PcurveId,
     PointId, RegionId, ShellId, SubdId, SurfaceId, VertexId,
 };
+use crate::index::identities::FastBuildHasher;
 use crate::math::Point3;
 use crate::scalar::{Fraction, UnitBinary32};
 use crate::transform::Transform;
@@ -305,6 +307,41 @@ impl Region {
             Some(RegionUnstated::Voids) | None => {}
         }
     }
+
+    /// States the region without `shell`, which the document no longer
+    /// holds, in its partial form (§5.6, Unstated children): a region that
+    /// loses its exterior states `Exterior` with the voids it keeps, and one
+    /// that loses a void states `Voids`. Returns whether it named `shell`.
+    pub(crate) fn lose_shell(&mut self, shell: &str) -> bool {
+        match &mut self.unstated {
+            Some(
+                RegionUnstated::Exterior { voids: listed }
+                | RegionUnstated::Unclassified { shells: listed },
+            ) => {
+                let before = listed.len();
+                listed.retain(|listed| listed.as_str() != shell);
+                listed.len() != before
+            }
+            Some(RegionUnstated::Voids) | None => {
+                let Some(at) = self
+                    .shells
+                    .iter()
+                    .position(|listed| listed.as_str() == shell)
+                else {
+                    return false;
+                };
+                if at == 0 {
+                    let mut voids = std::mem::take(&mut self.shells).split_off(1);
+                    voids.retain(|listed| listed.as_str() != shell);
+                    self.unstated = Some(RegionUnstated::Exterior { voids });
+                } else {
+                    self.shells.retain(|listed| listed.as_str() != shell);
+                    self.unstated = Some(RegionUnstated::Voids);
+                }
+                true
+            }
+        }
+    }
 }
 
 impl crate::schema::EntitySchema for Region {
@@ -476,6 +513,19 @@ impl Shell {
         shell
     }
 
+    /// States the shell without its member `member`, which the document no
+    /// longer holds, and marks it (§5.6, Unstated children). Returns whether
+    /// it listed `member`.
+    pub(crate) fn lose_member(&mut self, member: &str) -> bool {
+        let before = self.members.len();
+        self.members.retain(|listed| listed.as_str() != member);
+        let lost = self.members.len() != before;
+        if lost {
+            self.unstated = Some(Unstated::Members);
+        }
+        lost
+    }
+
     /// Constructs a shell with one wire edge.
     #[must_use]
     pub fn with_wire_edge(id: ShellId, region: RegionId, edge: EdgeId) -> Self {
@@ -625,10 +675,10 @@ impl crate::document::Topology {
 /// its records' parent pointers. Each list holds its children in arena order.
 #[derive(Debug, Default)]
 pub struct ChildLists<'a> {
-    faces: std::collections::HashMap<&'a ShellId, Vec<&'a Face>>,
-    regions: std::collections::HashMap<&'a BodyId, Vec<&'a Region>>,
-    marked_shells: std::collections::HashSet<&'a ShellId>,
-    marked_bodies: std::collections::HashSet<&'a BodyId>,
+    faces: std::collections::HashMap<&'a ShellId, Vec<&'a Face>, FastBuildHasher>,
+    regions: std::collections::HashMap<&'a BodyId, Vec<&'a Region>, FastBuildHasher>,
+    marked_shells: std::collections::HashSet<&'a ShellId, FastBuildHasher>,
+    marked_bodies: std::collections::HashSet<&'a BodyId, FastBuildHasher>,
 }
 
 impl<'a> ChildLists<'a> {
@@ -766,12 +816,15 @@ pub enum FaceLoops {
         /// Inner loops in source order.
         inner: Vec<LoopId>,
     },
-    /// A loop is not stated, and the source does not classify the loops.
+    /// The boundary is not stated in full, and the source does not classify
+    /// the loops: a loop is not stated, or the source states none on a
+    /// surface whose domain is unbounded and the face lists none (§5.6).
     PartialUnspecified {
         /// The loops stated, in source order.
         loops: Vec<LoopId>,
     },
-    /// A loop is not stated, and the source classifies the loops.
+    /// The boundary is not stated in full, and the source classifies the
+    /// loops: a loop is not stated.
     PartialClassified {
         /// The outer loop, where it is stated.
         #[serde(
@@ -854,6 +907,30 @@ impl FaceLoops {
         Self::Unspecified { loops: ids }
     }
 
+    /// The loops a source states for a face, in source order, where it does
+    /// not classify them, on `surface`. A face whose source states no loop on
+    /// a solved surface whose domain is unbounded (a plane, a cylinder, or a
+    /// cone, through every placement) has no extent to state, so it is stated
+    /// in its partial form with no loop (§5.6, Faces and loops), and the
+    /// second value names that surface for the
+    /// `topology.face-boundary-unstated` loss the decoder charges naming the
+    /// face. A procedural surface has the domain its construction gives it,
+    /// so a face on one keeps its unclassified form.
+    #[must_use]
+    pub fn unspecified_on(
+        loops: Vec<LoopId>,
+        surface: Option<&SurfaceGeometry>,
+    ) -> (Self, Option<&'static str>) {
+        let unbounded = match surface {
+            Some(SurfaceGeometry::Solved(solved)) => solved.plane_cylinder_or_cone(),
+            Some(SurfaceGeometry::Procedural { .. }) | None => None,
+        };
+        match unbounded {
+            Some(kind) if loops.is_empty() => (Self::PartialUnspecified { loops }, Some(kind)),
+            _ => (Self::unspecified(loops), None),
+        }
+    }
+
     /// Classified loops. Loop order is outer then inner.
     #[must_use]
     pub const fn classified(outer: LoopId, inner: Vec<LoopId>) -> Self {
@@ -882,13 +959,46 @@ impl FaceLoops {
         }
     }
 
-    /// Whether a loop of the face is not stated.
+    /// Whether the face's boundary is not stated in full: a loop of it is not
+    /// stated, or its source states none on a surface whose domain is
+    /// unbounded (§5.6).
     #[must_use]
     pub const fn is_partial(&self) -> bool {
         matches!(
             self,
             Self::PartialUnspecified { .. } | Self::PartialClassified { .. }
         )
+    }
+
+    /// States the face without the loop `id`, which the document no longer
+    /// holds, in the partial arm of its classification (§5.6, Unstated
+    /// children). Returns whether the face named `id`.
+    pub(crate) fn lose(&mut self, id: &str) -> bool {
+        if !self.stated().any(|listed| listed.as_str() == id) {
+            return false;
+        }
+        let kept = |loops: &mut Vec<LoopId>| loops.retain(|listed| listed.as_str() != id);
+        *self = match std::mem::replace(self, Self::PartialUnspecified { loops: Vec::new() }) {
+            Self::Unspecified { mut loops } | Self::PartialUnspecified { mut loops } => {
+                kept(&mut loops);
+                Self::PartialUnspecified { loops }
+            }
+            Self::Classified { outer, mut inner } => {
+                kept(&mut inner);
+                Self::PartialClassified {
+                    outer: (outer.as_str() != id).then_some(outer),
+                    inner,
+                }
+            }
+            Self::PartialClassified { outer, mut inner } => {
+                kept(&mut inner);
+                Self::PartialClassified {
+                    outer: outer.filter(|outer| outer.as_str() != id),
+                    inner,
+                }
+            }
+        };
+        true
     }
 
     /// Whether `id` is a loop of this face.
@@ -1863,6 +1973,8 @@ cadmpeg_core::named_optional_field!(deserialize_ends, EdgeEnds, "ends");
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::serde_erase::json;
+
     #[test]
     fn color_from_unit_binary32_preserves_admitted_components() {
         use super::Color;
@@ -1920,9 +2032,9 @@ mod tests {
             .expect("strictly increasing endpoints");
         assert_eq!(interval.lower().to_bits(), (-0.0_f64).to_bits());
         assert_eq!(interval.upper().to_bits(), f64::MAX.to_bits());
-        let wire = serde_json::to_value(interval).expect("an interval serializes");
+        let wire = json::to_value(interval).expect("an interval serializes");
         assert_eq!(wire[0].as_f64().map(f64::to_bits), Some(0));
-        let wire = serde_json::to_value(super::ParameterInterval::from(interval))
+        let wire = json::to_value(super::ParameterInterval::from(interval))
             .expect("an interval serializes");
         assert_eq!(wire[0].as_f64().map(f64::to_bits), Some(0));
         assert!(IncreasingParameterInterval::from_finite_endpoints(
@@ -1969,10 +2081,10 @@ mod tests {
         let interval = IncreasingParameterInterval::new([-1.0, 2.5]).expect("increasing");
         assert_eq!(interval.endpoints(), [-1.0, 2.5]);
         assert_eq!([interval.lower(), interval.upper()], [-1.0, 2.5]);
-        let wire = serde_json::to_value(interval).unwrap();
-        assert_eq!(wire, serde_json::json!([-1.0, 2.5]));
+        let wire = json::to_value(interval).unwrap();
+        assert_eq!(wire, cadmpeg_core::json!([-1.0, 2.5]));
         assert_eq!(
-            serde_json::from_value::<IncreasingParameterInterval>(wire).unwrap(),
+            json::from_value::<IncreasingParameterInterval>(wire).unwrap(),
             interval
         );
         for refused in [
@@ -1989,7 +2101,7 @@ mod tests {
             );
         }
         assert!(
-            serde_json::from_value::<IncreasingParameterInterval>(serde_json::json!([1.0, 1.0]))
+            json::from_value::<IncreasingParameterInterval>(cadmpeg_core::json!([1.0, 1.0]))
                 .is_err()
         );
     }
@@ -2001,30 +2113,30 @@ mod tests {
 
         // The old per-member `role` key has no spelling, so a document that
         // pairs a loop with a role is refused as an unknown shape.
-        assert!(serde_json::from_value::<FaceLoops>(serde_json::json!([
+        assert!(json::from_value::<FaceLoops>(cadmpeg_core::json!([
             {"id": "t:b:loop#1", "role": "outer"},
             {"id": "t:b:loop#2", "role": "unspecified"}
         ]))
         .is_err());
 
         for wire in [
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "unspecified", "loops": ["t:b:loop#1", "t:b:loop#2"]
             }),
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "classified", "outer": "t:b:loop#1",
                 "inner": ["t:b:loop#2"]
             }),
         ] {
-            let loops: FaceLoops = serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(&loops).unwrap(), wire);
+            let loops: FaceLoops = json::from_value(wire.clone()).unwrap();
+            assert_eq!(json::to_value(&loops).unwrap(), wire);
         }
 
         // A classification states an outer loop. The outer-less spelling is
         // refused for the missing key, so it is not a second spelling of an
         // unclassified face.
-        let error = serde_json::from_value::<FaceLoops>(
-            serde_json::json!({"kind": "classified", "inner": ["t:b:loop#2"]}),
+        let error = json::from_value::<FaceLoops>(
+            cadmpeg_core::json!({"kind": "classified", "inner": ["t:b:loop#2"]}),
         )
         .unwrap_err()
         .to_string();
@@ -2056,11 +2168,12 @@ mod tests {
         assert!(DirectedParameterRange::new([1.0, 1.0]).is_err());
         assert!(serde_json::from_str::<ParameterInterval>("[2,1]").is_err());
         assert!(serde_json::from_str::<DirectedParameterRange>("[1,1]").is_err());
-        let wire = serde_json::json!({"param_range": [2.0, 1.0]});
-        let carrier: EdgeCarrier = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(carrier).unwrap(), wire);
-        let attributed = serde_json::json!({"curve":"test:model:curve#1", "param_range":[2.0,1.0]});
-        assert!(serde_json::from_value::<EdgeCarrier>(attributed).is_err());
+        let wire = cadmpeg_core::json!({"param_range": [2.0, 1.0]});
+        let carrier: EdgeCarrier = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(carrier).unwrap(), wire);
+        let attributed =
+            cadmpeg_core::json!({"curve":"test:model:curve#1", "param_range":[2.0,1.0]});
+        assert!(json::from_value::<EdgeCarrier>(attributed).is_err());
     }
 
     #[test]
@@ -2138,8 +2251,8 @@ mod tests {
         assert_eq!(free.get(), [4.0, -4.0]);
         assert_eq!(free.iter().copied().collect::<Vec<_>>(), [4.0, -4.0]);
         assert_eq!(
-            serde_json::to_value(&edge.carrier).unwrap(),
-            serde_json::json!({"param_range": [4.0, -4.0]})
+            json::to_value(&edge.carrier).unwrap(),
+            cadmpeg_core::json!({"param_range": [4.0, -4.0]})
         );
     }
 
@@ -2174,7 +2287,7 @@ mod tests {
         );
         assert_eq!(shell.wire_edges().collect::<Vec<_>>(), [&edge]);
         assert_eq!(shell.free_vertices().collect::<Vec<_>>(), [&vertex]);
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": id,
             "region": region,
             "members": [
@@ -2182,24 +2295,21 @@ mod tests {
                 {"kind": "free_vertex", "id": vertex},
             ],
         });
-        assert_eq!(serde_json::to_value(&shell).unwrap(), wire);
-        assert_eq!(serde_json::from_value::<super::Shell>(wire).unwrap(), shell);
+        assert_eq!(json::to_value(&shell).unwrap(), wire);
+        assert_eq!(json::from_value::<super::Shell>(wire).unwrap(), shell);
 
         let face_only = super::Shell::new(id.clone(), region.clone());
-        let wire = serde_json::json!({"id": id, "region": region, "members": []});
-        assert_eq!(serde_json::to_value(&face_only).unwrap(), wire);
-        assert_eq!(
-            serde_json::from_value::<super::Shell>(wire).unwrap(),
-            face_only
-        );
+        let wire = cadmpeg_core::json!({"id": id, "region": region, "members": []});
+        assert_eq!(json::to_value(&face_only).unwrap(), wire);
+        assert_eq!(json::from_value::<super::Shell>(wire).unwrap(), face_only);
 
         let face = super::FaceId::mint("test:model:face#1").unwrap();
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": id,
             "region": region,
             "members": [{"kind": "face", "id": face}],
         });
-        assert!(serde_json::from_value::<super::Shell>(wire).is_err());
+        assert!(json::from_value::<super::Shell>(wire).is_err());
     }
 
     #[test]
@@ -2212,14 +2322,14 @@ mod tests {
             }
         }
         for field in ["r", "g", "b", "a"] {
-            let mut value = serde_json::json!({"r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0});
-            value[field] = serde_json::json!(-1.0);
-            assert!(serde_json::from_value::<super::Color>(value).is_err());
+            let mut value = cadmpeg_core::json!({"r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0});
+            value[field] = cadmpeg_core::json!(-1.0);
+            assert!(json::from_value::<super::Color>(value).is_err());
         }
         let color = super::Color::new(0.0, 0.25, 0.5, 1.0).expect("valid color");
         assert_eq!(
-            serde_json::to_value(color).expect("serialize"),
-            serde_json::json!({"r": 0.0, "g": 0.25, "b": 0.5, "a": 1.0})
+            json::to_value(color).expect("serialize"),
+            cadmpeg_core::json!({"r": 0.0, "g": 0.25, "b": 0.5, "a": 1.0})
         );
         assert!(color.with_alpha(-1.0).is_none());
         assert_eq!(color.a(), 1.0);
@@ -2360,7 +2470,7 @@ mod tests {
     }
 
     fn coedge_json() -> serde_json::Value {
-        serde_json::json!({
+        cadmpeg_core::json!({
             "id": "test:model:coedge#0",
             "owner_loop": "test:model:loop#0",
             "edge": "test:model:edge#0",
@@ -2375,7 +2485,7 @@ mod tests {
 
     #[test]
     fn the_coedge_use_curve_is_one_nested_key() {
-        let coedge: Coedge = serde_json::from_value(coedge_json()).unwrap();
+        let coedge: Coedge = json::from_value(coedge_json()).unwrap();
         assert_eq!(
             coedge.use_curve,
             Some(CoedgeUseCurve {
@@ -2395,16 +2505,16 @@ mod tests {
             coedge_ring_neighbors(std::slice::from_ref(&loop_), &coedge),
             Some((coedge.id.clone(), coedge.id.clone()))
         );
-        let encoded = serde_json::to_value(&coedge).unwrap();
+        let encoded = json::to_value(&coedge).unwrap();
         assert_eq!(
             encoded["use_curve"],
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "curve": "test:model:curve#0",
                 "parameter_range": [0.25, 0.75]
             })
         );
         assert_eq!(
-            serde_json::from_value::<Coedge>(encoded).unwrap().use_curve,
+            json::from_value::<Coedge>(encoded).unwrap().use_curve,
             coedge.use_curve
         );
     }
@@ -2415,21 +2525,21 @@ mod tests {
             .expect("valid unit cube fixture")
             .geometry;
         let coedge = &geometry.coedges[0];
-        let wire = serde_json::to_value(coedge).unwrap();
+        let wire = json::to_value(coedge).unwrap();
         assert!(wire.get("next").is_none(), "{wire}");
         assert!(wire.get("previous").is_none(), "{wire}");
 
         let mut with_next = wire.clone();
-        with_next["next"] = serde_json::json!(coedge.id.as_str());
-        let error = serde_json::from_value::<Coedge>(with_next)
+        with_next["next"] = cadmpeg_core::json!(coedge.id.as_str());
+        let error = json::from_value::<Coedge>(with_next)
             .expect_err("the ring order is the loop's, not the coedge's")
             .to_string();
         assert!(error.contains("next"), "{error}");
-        assert_eq!(&serde_json::from_value::<Coedge>(wire).unwrap(), coedge);
+        assert_eq!(&json::from_value::<Coedge>(wire).unwrap(), coedge);
 
         let before = coedge_ring_neighbors(&geometry.loops, coedge).expect("a ring neighbor pair");
         let round_tripped: crate::document::Topology =
-            serde_json::from_value(serde_json::to_value(&geometry).unwrap()).unwrap();
+            json::from_value(json::to_value(&geometry).unwrap()).unwrap();
         let after = coedge_ring_neighbors(&round_tripped.loops, &round_tripped.coedges[0])
             .expect("a ring neighbor pair");
         assert_eq!(before, after);
@@ -2442,20 +2552,18 @@ mod tests {
             .as_object_mut()
             .expect("a use-curve object")
             .remove("parameter_range");
-        assert!(serde_json::from_value::<Coedge>(without_range).is_err());
+        assert!(json::from_value::<Coedge>(without_range).is_err());
 
         let mut without_curve = coedge_json();
         without_curve["use_curve"]
             .as_object_mut()
             .expect("a use-curve object")
             .remove("curve");
-        assert!(serde_json::from_value::<Coedge>(without_curve).is_err());
+        assert!(json::from_value::<Coedge>(without_curve).is_err());
 
         let mut bogus = coedge_json();
-        bogus["use_curve"]["zz_bogus"] = serde_json::json!(1);
-        let error = serde_json::from_value::<Coedge>(bogus)
-            .unwrap_err()
-            .to_string();
+        bogus["use_curve"]["zz_bogus"] = cadmpeg_core::json!(1);
+        let error = json::from_value::<Coedge>(bogus).unwrap_err().to_string();
         assert!(error.contains("zz_bogus"), "{error}");
 
         let mut absent = coedge_json();
@@ -2463,15 +2571,12 @@ mod tests {
             .as_object_mut()
             .expect("a coedge object")
             .remove("use_curve");
-        assert_eq!(
-            serde_json::from_value::<Coedge>(absent).unwrap().use_curve,
-            None
-        );
+        assert_eq!(json::from_value::<Coedge>(absent).unwrap().use_curve, None);
     }
 
     #[test]
     fn the_vertex_loop_boundary_is_one_nested_tagged_object() {
-        let json = serde_json::json!({
+        let json = cadmpeg_core::json!({
             "id": "test:model:loop#0",
             "face": "test:model:face#0",
             "boundary": {
@@ -2480,18 +2585,18 @@ mod tests {
                 "pcurves": []
             }
         });
-        let loop_: Loop = serde_json::from_value(json.clone()).unwrap();
+        let loop_: Loop = json::from_value(json.clone()).unwrap();
         assert!(matches!(
             loop_.boundary,
             LoopBoundary::Vertex { ref vertex, ref pcurves }
                 if vertex.as_str() == "test:model:vertex#0" && pcurves.is_empty()
         ));
-        assert_eq!(serde_json::to_value(loop_).unwrap(), json);
+        assert_eq!(json::to_value(loop_).unwrap(), json);
     }
 
     #[test]
     fn the_ring_loop_boundary_is_one_nested_tagged_object() {
-        let json = serde_json::json!({
+        let json = cadmpeg_core::json!({
             "id": "test:model:loop#0",
             "face": "test:model:face#0",
             "boundary": {
@@ -2504,14 +2609,14 @@ mod tests {
                 }]
             }
         });
-        let loop_: Loop = serde_json::from_value(json.clone()).unwrap();
+        let loop_: Loop = json::from_value(json.clone()).unwrap();
         assert!(matches!(loop_.boundary, LoopBoundary::Ring(_)));
-        assert_eq!(serde_json::to_value(loop_).unwrap(), json);
+        assert_eq!(json::to_value(loop_).unwrap(), json);
     }
 
     #[test]
     fn a_loop_boundary_carries_no_key_of_the_other_form() {
-        let anchored_vertex = serde_json::json!({
+        let anchored_vertex = cadmpeg_core::json!({
             "id": "test:model:loop#0",
             "face": "test:model:face#0",
             "boundary": {
@@ -2520,12 +2625,12 @@ mod tests {
                 "after": "test:model:coedge#0"
             }
         });
-        let error = serde_json::from_value::<Loop>(anchored_vertex)
+        let error = json::from_value::<Loop>(anchored_vertex)
             .unwrap_err()
             .to_string();
         assert!(error.contains("after"), "{error}");
 
-        let ring_without_anchor = serde_json::json!({
+        let ring_without_anchor = cadmpeg_core::json!({
             "id": "test:model:loop#0",
             "face": "test:model:face#0",
             "boundary": {
@@ -2534,9 +2639,9 @@ mod tests {
                 "vertex_uses": [{ "vertex": "test:model:vertex#0", "pcurves": [] }]
             }
         });
-        assert!(serde_json::from_value::<Loop>(ring_without_anchor).is_err());
+        assert!(json::from_value::<Loop>(ring_without_anchor).is_err());
 
-        let bogus = serde_json::json!({
+        let bogus = cadmpeg_core::json!({
             "id": "test:model:loop#0",
             "face": "test:model:face#0",
             "boundary": {
@@ -2545,9 +2650,7 @@ mod tests {
                 "zz_bogus": 1
             }
         });
-        let error = serde_json::from_value::<Loop>(bogus)
-            .unwrap_err()
-            .to_string();
+        let error = json::from_value::<Loop>(bogus).unwrap_err().to_string();
         assert!(error.contains("zz_bogus"), "{error}");
     }
 
@@ -2561,11 +2664,11 @@ mod tests {
         let outer = members.next().expect("a cube face states a loop");
         let inner = members.collect();
         face.loops = FaceLoops::classified(outer.clone(), inner);
-        let wire = serde_json::to_value(&*face).unwrap();
-        assert_eq!(wire["loops"]["kind"], serde_json::json!("classified"));
-        assert_eq!(wire["loops"]["outer"], serde_json::json!(outer.as_str()));
+        let wire = json::to_value(&*face).unwrap();
+        assert_eq!(wire["loops"]["kind"], cadmpeg_core::json!("classified"));
+        assert_eq!(wire["loops"]["outer"], cadmpeg_core::json!(outer.as_str()));
         assert!(wire["loops"].get("loops").is_none());
-        let restored: Face = serde_json::from_value(wire).unwrap();
+        let restored: Face = json::from_value(wire).unwrap();
         assert_eq!(restored.loop_role(&outer), LoopBoundaryRole::Outer);
         let FaceLoops::Classified {
             outer: restored_outer,
@@ -2587,8 +2690,8 @@ mod tests {
             .geometry;
         let face = &geometry.faces[0];
         assert!(matches!(face.loops, FaceLoops::Unspecified { .. }));
-        let wire = serde_json::to_value(face).unwrap();
-        assert_eq!(wire["loops"]["kind"], serde_json::json!("unspecified"));
+        let wire = json::to_value(face).unwrap();
+        assert_eq!(wire["loops"]["kind"], cadmpeg_core::json!("unspecified"));
         assert!(wire["loops"].get("outer").is_none());
         assert_eq!(
             wire["loops"]["loops"]
@@ -2597,21 +2700,21 @@ mod tests {
                 .len(),
             face.loops.boundary().expect("a complete face").len()
         );
-        let restored: Face = serde_json::from_value(wire).unwrap();
+        let restored: Face = json::from_value(wire).unwrap();
         assert!(matches!(restored.loops, FaceLoops::Unspecified { .. }));
     }
 
     #[test]
     fn a_face_states_either_a_classification_or_a_loop_order() {
         for wire in [
-            serde_json::json!({"kind": "classified", "outer": "test:model:loop#0", "inner": []}),
-            serde_json::json!({"kind": "unspecified", "loops": ["test:model:loop#0"]}),
+            cadmpeg_core::json!({"kind": "classified", "outer": "test:model:loop#0", "inner": []}),
+            cadmpeg_core::json!({"kind": "unspecified", "loops": ["test:model:loop#0"]}),
         ] {
-            let loops: FaceLoops = serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(&loops).unwrap(), wire);
+            let loops: FaceLoops = json::from_value(wire.clone()).unwrap();
+            assert_eq!(json::to_value(&loops).unwrap(), wire);
         }
         // Mixing the two arms' keys names no shape.
-        assert!(serde_json::from_value::<FaceLoops>(serde_json::json!({
+        assert!(json::from_value::<FaceLoops>(cadmpeg_core::json!({
             "kind": "classified", "outer": "test:model:loop#0",
             "loops": ["test:model:loop#0"]
         }))
@@ -2619,8 +2722,7 @@ mod tests {
         // A face with no boundary has a spelling: nx, sat, step and freecad
         // each produce one, so `loops` is a plain list.
         let none: FaceLoops =
-            serde_json::from_value(serde_json::json!({"kind": "unspecified", "loops": []}))
-                .unwrap();
+            json::from_value(cadmpeg_core::json!({"kind": "unspecified", "loops": []})).unwrap();
         assert!(none.boundary().expect("a complete face").is_empty());
     }
 
@@ -2643,31 +2745,31 @@ mod tests {
         let loop_id = |key: &str| LoopId::mint(format!("test:model:loop#{key}")).expect("identity");
         for (wire, stated) in [
             (
-                serde_json::json!({"kind": "partial_classified", "outer": "test:model:loop#0", "inner": ["test:model:loop#1"]}),
+                cadmpeg_core::json!({"kind": "partial_classified", "outer": "test:model:loop#0", "inner": ["test:model:loop#1"]}),
                 vec![loop_id("0"), loop_id("1")],
             ),
             (
-                serde_json::json!({"kind": "partial_classified", "inner": ["test:model:loop#1"]}),
+                cadmpeg_core::json!({"kind": "partial_classified", "inner": ["test:model:loop#1"]}),
                 vec![loop_id("1")],
             ),
             (
-                serde_json::json!({"kind": "partial_unspecified", "loops": ["test:model:loop#2"]}),
+                cadmpeg_core::json!({"kind": "partial_unspecified", "loops": ["test:model:loop#2"]}),
                 vec![loop_id("2")],
             ),
         ] {
-            let loops: FaceLoops = serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(&loops).unwrap(), wire);
+            let loops: FaceLoops = json::from_value(wire.clone()).unwrap();
+            assert_eq!(json::to_value(&loops).unwrap(), wire);
             assert!(loops.is_partial());
             assert!(loops.boundary().is_none());
             assert_eq!(loops.stated().cloned().collect::<Vec<_>>(), stated);
             assert!(stated.iter().all(|id| loops.contains(id)));
         }
-        let classified: FaceLoops = serde_json::from_value(serde_json::json!(
+        let classified: FaceLoops = json::from_value(cadmpeg_core::json!(
             {"kind": "partial_classified", "inner": ["test:model:loop#1"]}
         ))
         .unwrap();
         assert_eq!(classified.role(&loop_id("1")), LoopBoundaryRole::Inner);
-        assert!(serde_json::from_value::<FaceLoops>(serde_json::json!(
+        assert!(json::from_value::<FaceLoops>(cadmpeg_core::json!(
             {"kind": "partial_classified", "outer": null, "inner": []}
         ))
         .is_err());
@@ -2684,27 +2786,27 @@ mod tests {
         region.unstated = Some(RegionUnstated::Exterior {
             voids: vec![shell("1")],
         });
-        let wire = serde_json::to_value(&region).unwrap();
+        let wire = json::to_value(&region).unwrap();
         assert_eq!(
             wire["unstated"],
-            serde_json::json!({"kind": "exterior", "voids": ["test:model:shell#1"]})
+            cadmpeg_core::json!({"kind": "exterior", "voids": ["test:model:shell#1"]})
         );
-        assert_eq!(wire["shells"], serde_json::json!([]));
-        let restored: Region = serde_json::from_value(wire).unwrap();
+        assert_eq!(wire["shells"], cadmpeg_core::json!([]));
+        let restored: Region = json::from_value(wire).unwrap();
         assert_eq!(restored, region);
         assert_eq!(
             restored.stated_shells().cloned().collect::<Vec<_>>(),
             vec![shell("1")]
         );
-        let voids = serde_json::json!({"kind": "voids"});
+        let voids = cadmpeg_core::json!({"kind": "voids"});
         assert_eq!(
-            serde_json::from_value::<RegionUnstated>(voids.clone()).unwrap(),
+            json::from_value::<RegionUnstated>(voids.clone()).unwrap(),
             RegionUnstated::Voids
         );
-        assert_eq!(serde_json::to_value(RegionUnstated::Voids).unwrap(), voids);
+        assert_eq!(json::to_value(RegionUnstated::Voids).unwrap(), voids);
         assert_eq!(
-            serde_json::to_value(Unstated::Members).unwrap(),
-            serde_json::json!("members")
+            json::to_value(Unstated::Members).unwrap(),
+            cadmpeg_core::json!("members")
         );
     }
 
@@ -2740,7 +2842,7 @@ mod tests {
     fn a_face_with_two_outer_loops_has_no_encoding() {
         // A face states one outer loop in one key, so a second has nowhere to
         // go: the wire has no shape for it.
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "test:model:face#0",
             "shell": "test:model:shell#0",
             "surface": "test:model:surface#0",
@@ -2750,12 +2852,12 @@ mod tests {
                 "inner": []
             }
         });
-        assert!(serde_json::from_value::<Face>(wire).is_err());
+        assert!(json::from_value::<Face>(wire).is_err());
     }
 
     #[test]
     fn a_face_loop_list_rejects_an_unknown_key_by_name() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "test:model:face#0",
             "shell": "test:model:shell#0",
             "surface": "test:model:surface#0",
@@ -2766,23 +2868,19 @@ mod tests {
                 "zz_bogus": 1
             }
         });
-        let error = serde_json::from_value::<Face>(wire)
-            .unwrap_err()
-            .to_string();
+        let error = json::from_value::<Face>(wire).unwrap_err().to_string();
         assert!(error.contains("zz_bogus"), "{error}");
     }
 
     #[test]
     fn a_loop_record_states_no_role_of_its_own() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "test:model:loop#0",
             "face": "test:model:face#0",
             "boundary_role": "outer",
             "boundary": { "kind": "vertex", "vertex": "test:model:vertex#0", "pcurves": [] }
         });
-        let error = serde_json::from_value::<Loop>(wire)
-            .unwrap_err()
-            .to_string();
+        let error = json::from_value::<Loop>(wire).unwrap_err().to_string();
         assert!(error.contains("boundary_role"), "{error}");
     }
 
@@ -2849,7 +2947,7 @@ mod tests {
         .expect("a finite position reads");
         assert_eq!(point.position().get(), Point3::new(1.0, 2.0, 3.0));
         assert_eq!(
-            serde_json::to_string(&point).expect("a point writes"),
+            json::to_string(&point).expect("a point writes"),
             r#"{"id":"t:model:point#0","position":{"x":1.0,"y":2.0,"z":3.0}}"#
         );
         assert!(serde_json::from_str::<Point>(

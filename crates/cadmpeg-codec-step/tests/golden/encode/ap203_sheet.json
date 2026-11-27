@@ -47,10 +47,21 @@
           "code": {
             "kind": "namespaced",
             "value": {
+              "code": "target.source-dialect-displaced",
+              "kind": "source_dialect_displaced",
+              "namespace": "step"
+            }
+          },
+          "message": "source dialect step:ap203-e1 was displaced by target dialect step:ap242-e3; the source dialect identity is not preserved",
+          "severity": "warning"
+        },
+        {
+          "code": {
+            "kind": "namespaced",
+            "value": {
               "code": "geometry.carrier-not-written",
               "kind": "geometry_not_transferred",
-              "namespace": "step",
-              "strict_floor": "warning"
+              "namespace": "step"
             }
           },
           "message": "1 geometry carrier(s) were not written: 'step:data:surface#28'",
@@ -65,21 +76,8 @@
               "namespace": "step"
             }
           },
-          "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers",
+          "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers: step:construction:curve_bounded_surface#37",
           "severity": "info"
-        },
-        {
-          "code": {
-            "kind": "namespaced",
-            "value": {
-              "code": "target.source-dialect-displaced",
-              "kind": "source_dialect_displaced",
-              "namespace": "step",
-              "strict_floor": "warning"
-            }
-          },
-          "message": "source dialect step:ap203-e1 was displaced by target dialect step:ap242-e3; the source dialect identity is not preserved",
-          "severity": "warning"
         }
       ],
       "notes": [],
@@ -139,10 +137,21 @@
           "code": {
             "kind": "namespaced",
             "value": {
+              "code": "target.source-dialect-displaced",
+              "kind": "source_dialect_displaced",
+              "namespace": "step"
+            }
+          },
+          "message": "source dialect step:ap203-e1 was displaced by target dialect step:ap214; the source dialect identity is not preserved",
+          "severity": "warning"
+        },
+        {
+          "code": {
+            "kind": "namespaced",
+            "value": {
               "code": "geometry.carrier-not-written",
               "kind": "geometry_not_transferred",
-              "namespace": "step",
-              "strict_floor": "warning"
+              "namespace": "step"
             }
           },
           "message": "1 geometry carrier(s) were not written: 'step:data:surface#28'",
@@ -157,21 +166,8 @@
               "namespace": "step"
             }
           },
-          "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers",
+          "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers: step:construction:curve_bounded_surface#37",
           "severity": "info"
-        },
-        {
-          "code": {
-            "kind": "namespaced",
-            "value": {
-              "code": "target.source-dialect-displaced",
-              "kind": "source_dialect_displaced",
-              "namespace": "step",
-              "strict_floor": "warning"
-            }
-          },
-          "message": "source dialect step:ap203-e1 was displaced by target dialect step:ap214; the source dialect identity is not preserved",
-          "severity": "warning"
         }
       ],
       "notes": [],
@@ -233,8 +229,7 @@
             "value": {
               "code": "geometry.carrier-not-written",
               "kind": "geometry_not_transferred",
-              "namespace": "step",
-              "strict_floor": "warning"
+              "namespace": "step"
             }
           },
           "message": "1 geometry carrier(s) were not written: 'step:data:surface#28'",
@@ -249,7 +244,7 @@
               "namespace": "step"
             }
           },
-          "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers",
+          "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to their solved STEP carriers: step:construction:curve_bounded_surface#37",
           "severity": "info"
         }
       ],

@@ -479,6 +479,74 @@ fn decode_builds_a_connected_manifold_tetrahedron() {
 }
 
 #[test]
+fn topology_that_needs_a_quarantined_edge_list_is_dropped_with_its_part() {
+    let mut bytes = explicit_tetrahedron_solid_file();
+    let edge_list = bytes
+        .windows(8)
+        .position(|window| window == b"504,6,21")
+        .expect("edge-list Parameter Data");
+    bytes[edge_list..edge_list + 3].copy_from_slice(b"505");
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result.ir().geometry.bodies.is_empty());
+    let native = result.ir().native.namespace("iges").unwrap();
+    let mut dependents = Vec::new();
+    let mut bodies = Vec::new();
+    for record in &native.arenas()["entities"] {
+        let fields = record.fields().unwrap();
+        let sequence = fields["directory_sequence"].as_u64().unwrap();
+        if matches!(fields["entity_type"].as_i64(), Some(508 | 510 | 514 | 186)) {
+            dependents.push(sequence);
+        }
+        if fields["entity_type"].as_i64() == Some(186) {
+            bodies.push(format!("iges:model:body#D{sequence}"));
+        }
+    }
+    assert_eq!(dependents.len(), 10);
+    assert_eq!(bodies.len(), 1);
+    let given_up = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    for sequence in &dependents {
+        assert!(
+            !given_up.iter().any(|loss| loss
+                .message
+                .starts_with(&format!("part entity \"D{sequence}\" "))),
+            "D{sequence}: {given_up:#?}"
+        );
+    }
+    let edges = given_up
+        .iter()
+        .find(|loss| loss.message.starts_with("part parameter-data "))
+        .expect("the give-up of the edge list");
+    let dropped = edges
+        .message
+        .split("dropped=[")
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .unwrap()
+        .split(", ")
+        .collect::<Vec<_>>();
+    // The loop, face and shell entities mint no single id; the body names
+    // the solid.
+    assert_eq!(dropped, bodies, "{}", edges.message);
+    for record in &native.arenas()["entities"] {
+        assert!(!dropped.contains(&record.id()), "{}", edges.message);
+    }
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| cadmpeg_ir::unknown::part::needs(loss).is_some()));
+}
+
+#[test]
 fn decode_builds_shared_explicit_open_shell_topology() {
     let result = IgesCodec
         .decode(
@@ -1047,7 +1115,7 @@ fn reversed_face_use_lists_parameter_curves_in_traversal_order() {
             .get();
             cadmpeg_ir::eval::model_surface_point(
                 EvaluationAdmission::Standard,
-                ir,
+                &cadmpeg_ir::index::ModelIndex::new_model_only(ir),
                 &surface.geometry,
                 uv.u,
                 uv.v,

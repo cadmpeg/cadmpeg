@@ -82,17 +82,10 @@ pub(super) fn encode_without_unwritable_bodies<T>(
             if all.is_empty() {
                 return Err(error);
             }
-            entries.extend(
-                all.iter()
-                    .map(|body| format!("{} ({reason})", body.as_str())),
-            );
+            entries.extend(all.iter().map(|body| entry(current, body, &reason)));
             Vec::new()
         } else {
-            entries.extend(
-                named
-                    .iter()
-                    .map(|body| format!("{} ({reason})", body.as_str())),
-            );
+            entries.extend(named.iter().map(|body| entry(current, body, &reason)));
             current
                 .geometry
                 .bodies
@@ -102,12 +95,37 @@ pub(super) fn encode_without_unwritable_bodies<T>(
                 .collect()
         };
         let mut subset = super::body_subset(current, &kept)?;
+        subset
+            .model
+            .tessellations
+            .retain(|mesh| mesh.of.body().is_none_or(|body| kept.contains(body)));
         for configuration in &mut subset.model.configurations {
             if let Some(bodies) = &mut configuration.bodies {
                 bodies.retain(|body| kept.contains(body));
             }
         }
         reduced = Some(subset);
+    }
+}
+
+/// The note entry of `body`, left out of `ir` with its tessellations for
+/// `reason`.
+fn entry(ir: &CadIr, body: &BodyId, reason: &str) -> String {
+    let meshes = ir
+        .model
+        .tessellations
+        .iter()
+        .filter(|mesh| mesh.of.body() == Some(body))
+        .map(|mesh| mesh.id.as_str())
+        .collect::<Vec<_>>();
+    if meshes.is_empty() {
+        format!("{} ({reason})", body.as_str())
+    } else {
+        format!(
+            "{} with tessellation {} ({reason})",
+            body.as_str(),
+            meshes.join(", ")
+        )
     }
 }
 

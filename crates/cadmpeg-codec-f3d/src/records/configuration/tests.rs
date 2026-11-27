@@ -5,7 +5,9 @@ use super::{
     CONFIGURATION_CLONE_COUNT,
 };
 use crate::test_support::configuration_table::{object_target, table_document};
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
+use serde_json::Value;
 
 fn wire(kind: &str, payload: &Value) -> Value {
     let name = if kind == "rule" {
@@ -47,13 +49,13 @@ fn configuration_borrowed_wire_matches_owned_wire_bytes() {
         with_row,
         wire("rule", &json!({"when": {"x": [1, 2]}, "activate": "a"})),
     ] {
-        let record: DesignConfiguration = serde_json::from_value(value.clone()).unwrap();
+        let record: DesignConfiguration = json::from_value(value.clone()).unwrap();
         let owned = DesignConfigurationWire::from(record.clone());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&owned).unwrap()
         );
-        assert_eq!(serde_json::to_value(&record).unwrap(), value);
+        assert_eq!(json::to_value(&record).unwrap(), value);
     }
     let name = "a 😀# b.dsgcfg";
     let mut escaped = wire("table", &json!({}));
@@ -62,11 +64,11 @@ fn configuration_borrowed_wire_matches_owned_wire_bytes() {
         name,
         &cadmpeg_ir::identity_component!("configuration")
     ));
-    let record: DesignConfiguration = serde_json::from_value(escaped).unwrap();
+    let record: DesignConfiguration = json::from_value(escaped).unwrap();
     let owned = DesignConfigurationWire::from(record.clone());
     assert_eq!(
-        serde_json::to_vec(&record).unwrap(),
-        serde_json::to_vec(&owned).unwrap()
+        json::to_vec(&record).unwrap(),
+        json::to_vec(&owned).unwrap()
     );
 }
 
@@ -74,9 +76,9 @@ fn configuration_borrowed_wire_matches_owned_wire_bytes() {
 fn configuration_native_retained_limit_refuses_before_record_clone() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    let record: DesignConfiguration = serde_json::from_value(wire("table", &populated())).unwrap();
+    let record: DesignConfiguration = json::from_value(wire("table", &populated())).unwrap();
     let arena_name = "design_configurations";
-    let needed = serde_json::to_vec(&record).unwrap().len();
+    let needed = json::to_vec(&record).unwrap().len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -111,11 +113,13 @@ fn configuration_payload_is_retained_and_encoded_verbatim() {
         json!({"nested": [1, null, {"x": -0.0}], "text": "é"}),
     ] {
         let expected = wire("table", &payload.clone());
-        let admitted: DesignConfiguration = serde_json::from_value(expected.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&admitted).unwrap(), expected);
+        let admitted: DesignConfiguration = json::from_value(expected.clone()).unwrap();
+        assert_eq!(json::to_value(&admitted).unwrap(), expected);
         assert_eq!(
-            serde_json::from_slice::<Value>(&encode_configuration_payload(&admitted).unwrap())
-                .unwrap(),
+            json::from_slice::<Value>(
+                &encode_configuration_payload(admitted.entry_name(), admitted.payload()).unwrap()
+            )
+            .unwrap(),
             payload
         );
     }
@@ -124,15 +128,13 @@ fn configuration_payload_is_retained_and_encoded_verbatim() {
 #[test]
 fn configuration_table_members_outside_the_table_form_are_counted() {
     let admitted: DesignConfiguration =
-        serde_json::from_value(wire("table", &json!({"configurations": {}, "active": "v"})))
-            .unwrap();
+        json::from_value(wire("table", &json!({"configurations": {}, "active": "v"}))).unwrap();
     assert!(admitted.tables().is_empty());
     assert_eq!(admitted.unknown_member_count(), 2);
-    let admitted: DesignConfiguration =
-        serde_json::from_value(wire("table", &populated())).unwrap();
+    let admitted: DesignConfiguration = json::from_value(wire("table", &populated())).unwrap();
     assert_eq!(admitted.tables().len(), 1);
     assert_eq!(admitted.unknown_member_count(), 0);
-    let rule: DesignConfiguration = serde_json::from_value(wire(
+    let rule: DesignConfiguration = json::from_value(wire(
         "rule",
         &json!({"when": "x", "activate": "y", "configurations": {}}),
     ))
@@ -145,13 +147,13 @@ fn configuration_table_members_outside_the_table_form_are_counted() {
 fn configuration_active_row_belongs_to_a_table_document() {
     let mut value = wire("table", &populated());
     value["active_row"] = active_row();
-    let record: DesignConfiguration = serde_json::from_value(value.clone()).unwrap();
+    let record: DesignConfiguration = json::from_value(value.clone()).unwrap();
     assert_eq!(record.active_row().unwrap().row_id, "r");
-    assert_eq!(serde_json::to_value(&record).unwrap(), value);
+    assert_eq!(json::to_value(&record).unwrap(), value);
 
     let mut rule = wire("rule", &json!({}));
     rule["active_row"] = active_row();
-    assert!(serde_json::from_value::<DesignConfiguration>(rule)
+    assert!(json::from_value::<DesignConfiguration>(rule)
         .unwrap_err()
         .to_string()
         .contains("active row"));
@@ -168,7 +170,7 @@ fn configuration_active_row_belongs_to_a_table_document() {
         let mut value = wire("table", &populated());
         value[field] = invalid;
         assert!(
-            serde_json::from_value::<DesignConfiguration>(value).is_err(),
+            json::from_value::<DesignConfiguration>(value).is_err(),
             "{field}"
         );
     }

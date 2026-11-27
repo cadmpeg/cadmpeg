@@ -5,7 +5,9 @@ use std::num::NonZeroI8;
 use cadmpeg_ir::codec::write::saved::HistoryText;
 use cadmpeg_ir::design::units::{Unit, UnitFactor, UnitSymbol};
 
-use super::SolidWorksText;
+use super::{unwritten_losses, SolidWorksText};
+use cadmpeg_ir::codec::write::edit_dropped_note;
+use cadmpeg_ir::schema::EntityKind;
 
 fn unit(symbol: UnitSymbol) -> Unit {
     Unit(vec![UnitFactor {
@@ -43,5 +45,42 @@ fn a_unit_with_no_suffix_has_no_literal() {
     assert_eq!(
         SolidWorksText.literal(1.0, &unit(UnitSymbol::Kg), "1"),
         None
+    );
+}
+
+#[test]
+fn each_arena_of_design_records_has_its_loss() {
+    let losses = unwritten_losses(&[
+        "design.features[f].name: no history feature restates it".into(),
+        "design.parameters[p].comment".into(),
+        "design.parameters[q].comment".into(),
+        "design.scopes[s].active_configuration".into(),
+    ]);
+    let codes = losses
+        .iter()
+        .map(|loss| {
+            (
+                loss.code.clone(),
+                loss.message.rsplit_once("state: ").map(|(_, paths)| paths),
+            )
+        })
+        .collect::<Vec<_>>();
+    let code = |kind| edit_dropped_note(kind, "").code;
+    assert_eq!(
+        codes,
+        [
+            (
+                code(EntityKind::DesignFeature),
+                Some("design.features[f].name: no history feature restates it")
+            ),
+            (
+                code(EntityKind::DesignParameter),
+                Some("design.parameters[p].comment; design.parameters[q].comment")
+            ),
+            (
+                code(EntityKind::DesignScope),
+                Some("design.scopes[s].active_configuration")
+            ),
+        ]
     );
 }

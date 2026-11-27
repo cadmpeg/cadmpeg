@@ -3,7 +3,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::code_count;
@@ -431,13 +430,8 @@ fn decode_new_general_note_overdeclared_count_reads_no_string_and_charges_the_lo
         );
     }
 
-    let strict = DecodeOptions {
-        policy: DecodePolicy {
-            mode: DecodeMode::Strict,
-            ..DecodePolicy::default()
-        },
-        ..DecodeOptions::default()
-    };
+    let mut strict = DecodeOptions::default();
+    strict.strictness.pinned = true;
     let error = IgesCodec
         .decode(&mut Cursor::new(bytes), &strict)
         .unwrap_err();

@@ -13,6 +13,7 @@ use crate::geometry::{
 use crate::math::{Point3, Vector3};
 use crate::scalar::PositiveReal;
 use crate::transform::Transform;
+use cadmpeg_core::serde_erase::json;
 
 const SCALE_TO_TINY_LENGTH: f64 = 1.0e-10;
 
@@ -326,8 +327,8 @@ fn an_inline_placement_scales_as_its_solved_spelling() {
         .expect("fixture scaling admission")
         .expect("a finite scaled placement");
     assert_eq!(
-        serde_json::to_value(&scaled_inline).unwrap(),
-        serde_json::to_value(&scaled_solved).unwrap()
+        json::to_value(&scaled_inline).unwrap(),
+        json::to_value(&scaled_solved).unwrap()
     );
 
     let line = |x: f64| {

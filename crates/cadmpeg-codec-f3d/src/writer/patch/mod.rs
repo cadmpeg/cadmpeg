@@ -14,7 +14,7 @@ use cadmpeg_ir::geometry::{
 
 use crate::loss::F3dLossCode;
 use crate::writer::primitives::{
-    f3d_native, validate_assembly_projection, validate_configuration_projection,
+    configuration_targets, f3d_native, projects, validate_assembly_projection,
 };
 use crate::{decode, F3dCodec};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
@@ -87,7 +87,17 @@ pub(crate) fn write_semantic(
     )?;
     let target_native = f3d_native(target)?;
     if let Some(native) = target_native.as_ref() {
-        validate_configuration_projection(target, native)?;
+        if !projects(
+            &target.model.configurations,
+            &native.design_configurations,
+            &configuration_targets(target, native),
+        )? {
+            return Err(CodecError::NotImplemented(
+                "the neutral configurations differ from the projection of the configuration \
+                 tables, and the patch carries the configuration tables as stored"
+                    .into(),
+            ));
+        }
         validate_assembly_projection(target, Some(native))?;
     } else {
         validate_assembly_projection(target, None)?;

@@ -7,6 +7,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_ir::report::loss::LossNote;
 use serde::Serialize;
 
 use crate::reason::{Category, CaveatCode};
@@ -40,6 +41,8 @@ pub struct MeasureReport {
     pub(crate) edges: Vec<EdgeMeasures>,
     pub(crate) surfaces: Vec<SurfaceMeasures>,
     pub(crate) document: DocumentMeasures,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) losses: Vec<LossNote>,
 }
 
 accessors!(MeasureReport {
@@ -60,6 +63,8 @@ accessors!(MeasureReport {
     surfaces: Vec<SurfaceMeasures>;
     /// Document totals.
     document: DocumentMeasures;
+    /// The losses of the pass (`measure:output.empty`).
+    losses: Vec<LossNote>;
 });
 
 /// The document tolerances, in millimetres and radians.

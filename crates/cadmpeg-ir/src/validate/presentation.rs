@@ -24,7 +24,7 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
         let mut assets_valid = true;
         'states: for state in document.states() {
             for asset in &state.assets {
-                if !all_ids.contains(asset) {
+                if !all_ids.contains(asset.as_str()) {
                     assets_valid = false;
                     break 'states;
                 }
@@ -47,7 +47,7 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
 
     for view in &ir.model.view_presentations {
         let mut references_valid = match &view.object {
-            Some(object) => all_ids.contains(object),
+            Some(object) => all_ids.contains(object.as_str()),
             None => true,
         };
         if references_valid {

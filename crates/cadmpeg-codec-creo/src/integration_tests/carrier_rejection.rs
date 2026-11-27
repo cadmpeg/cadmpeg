@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::wire;
 
 use std::io::Cursor;
@@ -104,9 +105,9 @@ fn compact_plane_decode_and_validation_use_the_same_finite_frame() {
         <[f64; 3]>::from(*plane.frame().reference().as_raw()),
         [1.0, 0.0, 0.0]
     );
-    let encoded = serde_json::to_value(result.ir()).expect("serialize decoded frame");
+    let encoded = json::to_value(result.ir()).expect("serialize decoded frame");
     let roundtrip: cadmpeg_ir::document::CadIr =
-        serde_json::from_value(encoded).expect("validate serialized frame");
+        json::from_value(encoded).expect("validate serialized frame");
     let report = cadmpeg_ir::validate_neutral(&roundtrip, result.report().losses.clone())
         .expect("validate decoded frame");
     assert!(report.is_ok(), "{report:?}");

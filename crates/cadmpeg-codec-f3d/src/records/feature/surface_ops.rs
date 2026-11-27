@@ -553,6 +553,7 @@ mod tests {
         DesignSurfaceTrimCellEntry, DesignSurfaceTrimChainRecord, DesignSurfaceTrimOperation,
         DesignSurfaceTrimOperationWire, SURFACE_TRIM_OPERATION_CLONE_COUNT,
     };
+    use cadmpeg_core::serde_erase::json;
 
     fn record(count: u32) -> DesignSurfaceTrimOperation {
         let cell_entries = (0..count)
@@ -592,8 +593,8 @@ mod tests {
         for operation in [record(1), record(2)] {
             let owned = DesignSurfaceTrimOperationWire::from(operation.clone());
             assert_eq!(
-                serde_json::to_vec(&operation).unwrap(),
-                serde_json::to_vec(&owned).unwrap()
+                json::to_vec(&operation).unwrap(),
+                json::to_vec(&owned).unwrap()
             );
         }
     }

@@ -491,7 +491,7 @@ fn legacy_geom_depend_discriminator_withholds_distinct_values() {
                     offset: 2,
                 },
             ],
-            unresolved_count: 0,
+            unresolved: Vec::new(),
         },
         ..Default::default()
     };

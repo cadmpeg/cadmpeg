@@ -4,8 +4,9 @@
 
 use std::io::Cursor;
 
+use cadmpeg_core::json;
 use cadmpeg_ir::{Codec, DecodeOptions};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::loss::F3dLossCode;
 use crate::F3dCodec;

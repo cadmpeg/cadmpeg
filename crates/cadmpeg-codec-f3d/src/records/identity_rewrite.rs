@@ -4,12 +4,10 @@
 macro_rules! rewrite_native_scalar {
     ($type:ty) => {
         impl cadmpeg_ir::schema::rewrite::typed::RewriteIdentities for $type {
-            fn rewrite_native_value<
-                RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
-            >(
+            fn rewrite_native_value(
                 _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
                 _value: &mut serde_json::Value,
-                _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>,
+                _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>,
             ) -> Result<(), cadmpeg_core::CodecError> {
                 Ok(())
             }
@@ -20,12 +18,10 @@ macro_rules! rewrite_native_scalar {
             ) -> Result<(), cadmpeg_core::CodecError> {
                 Ok(())
             }
-            fn rewrite_identities<
-                RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
-            >(
+            fn rewrite_identities(
                 self,
                 _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-                _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>,
+                _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>,
             ) -> Result<Self, cadmpeg_core::CodecError> {
                 Ok(self)
             }
@@ -36,7 +32,7 @@ macro_rules! rewrite_native_scalar {
 macro_rules! rewrite_native_record {
     ($type:ty, [$($generic:ident),*]; {$($field:ident),* $(,)?} $(; native $native:expr)?) => {
         impl<$($generic: cadmpeg_ir::schema::rewrite::typed::RewriteIdentities),*> cadmpeg_ir::schema::rewrite::typed::RewriteIdentities for $type {
-            fn rewrite_native_value<RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<(), cadmpeg_core::CodecError> {
+            fn rewrite_native_value(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>) -> Result<(), cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("walk native typed fields")?;
                 rewrite_native_wire!(ctx, value, map, Self, {$($field),*}, [$($native)?])
             }
@@ -45,7 +41,7 @@ macro_rules! rewrite_native_record {
                 $(cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.$field, ctx, visitor)?;)*
                 Ok(())
             }
-            fn rewrite_identities<RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(mut self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<Self, cadmpeg_core::CodecError> {
+            fn rewrite_identities(mut self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>) -> Result<Self, cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("rewrite native typed fields")?;
                 $(self.$field = cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.$field, ctx, map)?;)*
                 Ok(self)
@@ -54,7 +50,7 @@ macro_rules! rewrite_native_record {
     };
     ($type:ty, [$($generic:ident),*]; ($($field:ident),* $(,)?)) => {
         impl<$($generic: cadmpeg_ir::schema::rewrite::typed::RewriteIdentities),*> cadmpeg_ir::schema::rewrite::typed::RewriteIdentities for $type {
-            fn rewrite_native_value<RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(_ctx: &cadmpeg_core::decode::DecodeContext<'_>, _value: &mut serde_json::Value, _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<(), cadmpeg_core::CodecError> {
+            fn rewrite_native_value(_ctx: &cadmpeg_core::decode::DecodeContext<'_>, _value: &mut serde_json::Value, _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>) -> Result<(), cadmpeg_core::CodecError> {
                 Ok(())
             }
             fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
@@ -63,7 +59,7 @@ macro_rules! rewrite_native_record {
                 $(cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::visit_identity_references($field, ctx, visitor)?;)*
                 Ok(())
             }
-            fn rewrite_identities<RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<Self, cadmpeg_core::CodecError> {
+            fn rewrite_identities(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>) -> Result<Self, cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("rewrite native typed fields")?;
                 let Self($($field),*) = self;
                 Ok(Self($(cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::rewrite_identities($field, ctx, map)?),*))
@@ -75,7 +71,7 @@ macro_rules! rewrite_native_record {
 macro_rules! rewrite_native_enum {
     ($type:ty, [$($generic:ident),*]; {$($variant:ident $(($($tuple:ident),*))? $({$($field:ident),*})?),* $(,)?} $(; native $native:expr)?) => {
         impl<$($generic: cadmpeg_ir::schema::rewrite::typed::RewriteIdentities),*> cadmpeg_ir::schema::rewrite::typed::RewriteIdentities for $type {
-            fn rewrite_native_value<RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, _value: &mut serde_json::Value, _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<(), cadmpeg_core::CodecError> {
+            fn rewrite_native_value(ctx: &cadmpeg_core::decode::DecodeContext<'_>, _value: &mut serde_json::Value, _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>) -> Result<(), cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("walk native typed variant")?;
                 rewrite_native_wire!(ctx, _value, _map, Self, {}, [$($native)?])
             }
@@ -89,7 +85,7 @@ macro_rules! rewrite_native_enum {
                     },)*
                 }
             }
-            fn rewrite_identities<RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<Self, cadmpeg_core::CodecError> {
+            fn rewrite_identities(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>) -> Result<Self, cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("rewrite native typed fields")?;
                 match self {
                     $(Self::$variant $(($($tuple),*))? $({$($field),*})? => Ok(Self::$variant
@@ -115,7 +111,7 @@ macro_rules! rewrite_native_wire {
 macro_rules! rewrite_native_identity_record {
     ($type:ty; $($field:ident),* $(,)?) => {
         impl cadmpeg_ir::schema::rewrite::typed::RewriteIdentities for $type {
-            fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<(), cadmpeg_core::CodecError> {
+            fn rewrite_native_value(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>) -> Result<(), cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("rewrite F3D native identity fields")?;
                 if let Some(serde_json::Value::String(id)) = value.get_mut("id") {
                     *id = map.identity(id)?;
@@ -130,7 +126,7 @@ macro_rules! rewrite_native_identity_record {
                 $(cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.$field, ctx, visitor)?;)*
                 Ok(())
             }
-            fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(mut self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<Self, cadmpeg_core::CodecError> {
+            fn rewrite_identities(mut self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>) -> Result<Self, cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("rewrite F3D native identity fields")?;
                 self.id = map.identity(&self.id)?;
                 $(self.$field = cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.$field, ctx, map)?;)*
