@@ -19,6 +19,7 @@ use cadmpeg_ir::design::evaluation::{
 use cadmpeg_ir::design::ids::{ContainerId, EvaluationId};
 use cadmpeg_ir::design::projection::restated::Restater;
 use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
+use cadmpeg_ir::document::Topology;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::history_body::HistoryBody;
 use cadmpeg_ir::ids::{HistoryBodyId, ProductDefinitionId};
@@ -67,6 +68,7 @@ pub(crate) fn project(
         at,
         id: container,
         members,
+        mut records,
     }) = timeline(ir)
     else {
         for body in &ir.model.history_bodies {
@@ -116,18 +118,6 @@ pub(crate) fn project(
         charge(&unplaced, losses);
         return Ok(());
     }
-    let Ok(mut records) = ir
-        .resolved_current_state(&scope, &at)
-        .map(|state| state.records().clone())
-    else {
-        for body in &ir.model.history_bodies {
-            if !unplaced.iter().any(|(charged, _)| charged.id == body.id) {
-                unplaced.push((body, "the current state does not resolve"));
-            }
-        }
-        charge(&unplaced, losses);
-        return Ok(());
-    };
     let mut restated = Vec::new();
     // A Base feature whose state is the current state restates its body
     // through its stored bodies where the decoded state is the current
@@ -197,6 +187,8 @@ struct Timeline {
     at: Position,
     id: ContainerId,
     members: Vec<Member>,
+    /// The records of the current state.
+    records: Topology,
 }
 
 fn timeline(ir: &CadIr) -> Option<Timeline> {
@@ -205,11 +197,17 @@ fn timeline(ir: &CadIr) -> Option<Timeline> {
     let Container::Ordered { id, members, .. } = super::timeline_of(ir, &at)? else {
         return None;
     };
+    let records = ir
+        .resolved_current_state(&scope.definition, &at)
+        .ok()?
+        .records()
+        .clone();
     Some(Timeline {
         scope: scope.definition.clone(),
         at,
         id: id.clone(),
         members: members.clone(),
+        records,
     })
 }
 

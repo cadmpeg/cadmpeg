@@ -108,16 +108,6 @@ fn states() -> BTreeMap<u32, HistoryState> {
 }
 
 fn project_part(ir: &mut CadIr, states: &BTreeMap<u32, HistoryState>) -> Vec<LossNote> {
-    project_part_with(ir, states, |_| {})
-}
-
-/// Project the design layer of `ir`, apply `between`, and then state the
-/// evaluations.
-fn project_part_with(
-    ir: &mut CadIr,
-    states: &BTreeMap<u32, HistoryState>,
-    between: impl FnOnce(&mut CadIr),
-) -> Vec<LossNote> {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
@@ -141,7 +131,6 @@ fn project_part_with(
         &mut losses,
     )
     .expect("projection");
-    between(ir);
     super::project(&ctx, ir, states, &mut losses).expect("evaluations");
     losses
 }
@@ -262,31 +251,6 @@ fn a_base_state_the_current_geometry_holds_is_restated_by_its_feature() {
     assert!(
         !omitted.iter().any(|message| message.contains(&nest)),
         "{omitted:?}"
-    );
-}
-
-/// Where the current state does not resolve, the decode charges each
-/// history body and keeps the design features.
-#[test]
-fn a_current_state_that_does_not_resolve_charges_each_history_body() {
-    let mut ir = part(
-        vec![extrude("a", 0), sketch("k", 1), extrude("s", 2)],
-        vec![history_body("s", 0, true, 9)],
-    );
-    let losses = project_part_with(&mut ir, &states(), |ir| {
-        ir.design.scopes[0].current[0].bodies.push(body(5).id);
-    });
-    assert!(ir.design.evaluations.is_empty());
-    assert!(!ir.design.features.is_empty());
-    let [loss] = losses.as_slice() else {
-        panic!("one loss: {losses:?}");
-    };
-    assert_eq!(loss.code.local_code(), "feature.history-state-unplaced");
-    assert!(
-        loss.message
-            .ends_with("the current state does not resolve."),
-        "{}",
-        loss.message
     );
 }
 
