@@ -229,8 +229,11 @@ impl Holder {
     /// by ids, or a `native_ref` names an id that `lookup` finds (§3.3), so
     /// that a label that equals an id names nothing; for a native record,
     /// by [`Self::of`]. A walk that reads no native record
-    /// ([`NativeLinks::Unread`]) asks for no native holder.
+    /// ([`NativeLinks::Unread`]) asks for no native holder. A walk that
+    /// reads them ([`NativeLinks::Read`]) also names by [`Self::of`] for a
+    /// record of an arena the schema does not hold.
     pub(crate) fn named<'k, T: Serialize>(
+        native_links: NativeLinks,
         arena: &Arena,
         id: &str,
         entity: &T,
@@ -239,8 +242,12 @@ impl Holder {
         let Arena::Home { home, field } = arena else {
             return Self::of(arena, id, entity, lookup);
         };
+        let schema = restate::Schema::cadir()?;
+        if native_links == NativeLinks::Read && !schema.holds(home, field) {
+            return Self::of(arena, id, entity, lookup);
+        }
         let value = crate::hash::finite_json::to_json_value(entity).ok()?;
-        let names = restate::Schema::cadir()?.references(home, field, &value, &lookup);
+        let names = schema.references(home, field, &value, &lookup);
         (!names.is_empty()).then(|| Self {
             arena: arena.clone(),
             id: id.to_owned(),
@@ -303,9 +310,10 @@ pub(crate) enum NativeLinks {
     /// (`dropped_with`).
     #[default]
     Unread,
-    /// A native record names each id its values state: the drop of a write,
-    /// which omits a native record that holds a reference the write does
-    /// not resolve (Rule W1).
+    /// A native record, and a record of an arena the CADIR schema does not
+    /// hold, names each id its values state: the drop of a write, which
+    /// omits a native record that holds a reference the write does not
+    /// resolve (Rule W1).
     Read,
 }
 
@@ -338,7 +346,7 @@ impl References {
     /// counted so far. The caller counts every record first.
     pub(crate) fn add<T: Serialize>(&mut self, arena: &Arena, id: &str, entity: &T) {
         let held = &self.held;
-        let Some(holder) = Holder::named(arena, id, entity, |text| {
+        let Some(holder) = Holder::named(self.native_links, arena, id, entity, |text| {
             held.get_key_value(text).map(|(key, _)| key.as_str())
         }) else {
             return;
