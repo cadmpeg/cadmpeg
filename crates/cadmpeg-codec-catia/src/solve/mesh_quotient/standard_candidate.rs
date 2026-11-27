@@ -364,13 +364,15 @@ where
     }
     let symmetric_class_pairs = verified_symmetric_edge_class_pairs(
         &class_constraint.ordered,
-        &edge_rows,
-        edge_faces,
-        edge_geometry,
-        edge_identity_evidence,
-        edge_direction_evidence,
-        &port_identities,
-        &mesh_domains,
+        &SymmetricEdgeClassContext {
+            edge_rows: &edge_rows,
+            edge_faces,
+            edge_geometry,
+            edge_identity_evidence,
+            edge_direction_evidence,
+            port_identities: &port_identities,
+            mesh_domains: &mesh_domains,
+        },
     );
     let symmetric_pairs_ordered = |pairs: &[Option<[usize; 2]>]| -> bool {
         symmetric_class_pairs.iter().all(|&(left, right)| {
@@ -633,6 +635,16 @@ where
     })
 }
 
+struct SymmetricEdgeClassContext<'a> {
+    edge_rows: &'a [crate::families::standard::topology::EdgeRow],
+    edge_faces: &'a [[usize; 2]],
+    edge_geometry: &'a [MeshEdgeGeometry],
+    edge_identity_evidence: &'a [bool],
+    edge_direction_evidence: &'a [bool],
+    port_identities: &'a [[u32; 2]],
+    mesh_domains: &'a [MeshFaceBoundaryDomain],
+}
+
 /// Return the subset of `ordered` edge-class pairs `(left, right)` (`left < right`)
 /// for which swapping `left <-> right` is a proven gauge automorphism of edge
 /// metadata, port identities, and incident face boundary domains, so enforcing
@@ -640,14 +652,17 @@ where
 /// gauge permutations without discarding any distinct topology solution.
 fn verified_symmetric_edge_class_pairs(
     ordered: &[(usize, usize)],
-    edge_rows: &[crate::families::standard::topology::EdgeRow],
-    edge_faces: &[[usize; 2]],
-    edge_geometry: &[MeshEdgeGeometry],
-    edge_identity_evidence: &[bool],
-    edge_direction_evidence: &[bool],
-    port_identities: &[[u32; 2]],
-    mesh_domains: &[MeshFaceBoundaryDomain],
+    ctx: &SymmetricEdgeClassContext<'_>,
 ) -> Vec<(usize, usize)> {
+    let SymmetricEdgeClassContext {
+        edge_rows,
+        edge_faces,
+        edge_geometry,
+        edge_identity_evidence,
+        edge_direction_evidence,
+        port_identities,
+        mesh_domains,
+    } = *ctx;
     if ordered.is_empty() {
         return Vec::new();
     }
@@ -768,8 +783,10 @@ fn verified_symmetric_edge_class_pairs(
                 swapped.sort_unstable();
                 orig == swapped
             }
-            Some(MeshFaceBoundaryDomain::UnorderedFullCycle(_))
-            | Some(MeshFaceBoundaryDomain::DeferredValidation(_)) => true,
+            Some(
+                MeshFaceBoundaryDomain::UnorderedFullCycle(_)
+                | MeshFaceBoundaryDomain::DeferredValidation(_),
+            ) => true,
             None => false,
         }
     };

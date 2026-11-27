@@ -205,7 +205,7 @@ fn prune_incidence_choices_with_explicit_support(
                 let next =
                     usize::from(degrees[face].get(&point).copied().unwrap_or(0)) + multiplicity;
                 if allow_pinch {
-                    next <= usize::from(u8::MAX)
+                    u8::try_from(next).is_ok()
                 } else {
                     next <= 2
                 }
@@ -2242,7 +2242,7 @@ impl IncidenceComponentSearch<'_, '_> {
                     let multiplicity = 1 + usize::from(point_rank == 0 && pair[0] == pair[1]);
                     let next = usize::from(self.degree(face, point)) + multiplicity;
                     if allow_pinch {
-                        next <= usize::from(u8::MAX)
+                        u8::try_from(next).is_ok()
                     } else {
                         next <= 2
                     }
@@ -2306,7 +2306,7 @@ impl IncidenceComponentSearch<'_, '_> {
                             );
                             let next = degree_after_selection(face, point) + multiplicity;
                             if allow_pinch {
-                                next <= usize::from(u8::MAX)
+                                u8::try_from(next).is_ok()
                             } else {
                                 next <= 2
                             }
@@ -2480,7 +2480,7 @@ impl IncidenceComponentSearch<'_, '_> {
                             );
                             let next = degree_after_selection(face, point) + multiplicity;
                             if allow_pinch {
-                                next <= usize::from(u8::MAX)
+                                u8::try_from(next).is_ok()
                             } else {
                                 next <= 2
                             }
@@ -2745,7 +2745,7 @@ impl IncidenceComponentSearch<'_, '_> {
         let mut constrained = None::<Vec<(usize, [usize; 2])>>;
         let mut viability = HashMap::new();
         for &(face, point) in &self.constraints {
-            if self.degree(face, point) % 2 == 0 {
+            if self.degree(face, point).is_multiple_of(2) {
                 continue;
             }
             let limit = constrained.as_ref().map(Vec::len);

@@ -1710,8 +1710,12 @@ pub(crate) fn boundary_cycles(triangles: &[[u32; 3]]) -> Option<Vec<Vec<u32>>> {
     // Map each oriented edge `(a, b)` to the third vertex `c` of its unique
     // oriented triangle `[a, b, c]` so pinch vertices can be decomposed by
     // walking the local triangle fan.
-    let mut half_edge_opp =
-        HashMap::<(u32, u32), u32>::with_capacity(triangles.len().saturating_mul(3));
+    let mut half_edge_opp = HashMap::<(u32, u32), u32>::with_capacity(
+        triangles
+            .len()
+            .checked_mul(3)
+            .map_or(triangles.len(), |edges| edges),
+    );
     for &[a, b, c] in triangles {
         for (start, end, opp) in [(a, b, c), (b, c, a), (c, a, b)] {
             if start == end {
