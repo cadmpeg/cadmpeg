@@ -137,7 +137,7 @@ pub(super) fn state(
                 place(
                     presentation,
                     PresentationItem::Tessellation {
-                        tessellation: tessellation.id.to_string(),
+                        tessellation: tessellation.id.clone(),
                     },
                 );
             }
@@ -318,8 +318,8 @@ fn appearance_id(color: Color) -> AppearanceId {
     )
 }
 
-/// Each body with the object its faces, wire edges, or free vertices were
-/// decoded from.
+/// Each body with the object its faces, wire edges, free vertices, or cage
+/// were decoded from.
 fn body_objects<'p>(
     ir: &CadIr,
     lookup: &dyn Fn(Option<&SourceObjectAssociation>) -> Option<&'p ObjectPresentation>,

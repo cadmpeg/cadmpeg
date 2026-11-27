@@ -16,7 +16,7 @@ use cadmpeg_test_support::{edit, EditableDecodeResult};
 use std::io::Cursor;
 
 #[test]
-fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
+fn a_support_lane_whose_solved_value_equals_the_null_value_is_complete() {
     crate::test_support::with_decode_context(|geometry_ctx| {
         let stream = two_support_ext11_charted_intersection_curve_stream(false);
         let partition =
@@ -69,6 +69,14 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
                 .unwrap();
             });
         }
+        let stated_lane = {
+            let ProceduralCurveDefinition::Intersection { context, .. } =
+                &result.ir().geometry.procedural_curves[0].definition()
+            else {
+                panic!("typed intersection");
+            };
+            context.sides()[0].pcurve.clone()
+        };
         let pending = vec![(
             procedural_id,
             crate::intersection::chart_samples::ChartSamples::from_test_values(
@@ -95,21 +103,8 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
         else {
             panic!("typed intersection");
         };
-        let Some(support) = context.sides()[0].pcurve.as_ref() else {
-            panic!("NURBS support lane");
-        };
-        let PcurveGeometry::Nurbs { nurbs } = &support.geometry else {
-            panic!("NURBS support lane");
-        };
-        assert!(nurbs.control_points().iter().all(|point| {
-            point.u.to_bits() != crate::decode::MISSING_TOLERANCE.to_bits()
-                && point.v.to_bits() != crate::decode::MISSING_TOLERANCE.to_bits()
-        }));
-        assert!(
-            cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
-                .expect("validate the neutral model")
-                .is_ok()
-        );
+        assert!(stated_lane.is_some());
+        assert_eq!(context.sides()[0].pcurve, stated_lane);
     });
 }
 

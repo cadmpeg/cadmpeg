@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Solid Edge document decode.
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::SourceMeta;
@@ -9,12 +9,14 @@ use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition};
 use cadmpeg_ir::report::decode::DecodeTransfer;
+use cadmpeg_ir::unknown::part::{DecodeParts, Part};
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
 use crate::{
     assembly, brep, container, dialect, features, loss::SolidEdgeLossCode, partition, settings,
 };
 use cadmpeg_container::compound::CompoundEntry;
+use cadmpeg_parasolid::precision;
 use cadmpeg_parasolid::records::PrimaryRecords;
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
@@ -25,11 +27,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         std::collections::BTreeMap::default(),
     ));
     let mut body = DecodeBody::new(DecodeTransfer::at(ctx.depth(), false));
+    let mut fidelity = SourceFidelity::new(Sha256Digest::digest(root.window()));
     body.losses.extend(
         snapshot.deviations().map(|deviation| {
             SolidEdgeLossCode::ContainerNoncanonical.note(deviation.description())
         }),
     );
+    let mut stored_resolutions = std::collections::BTreeMap::new();
     if !ctx.container_only() {
         let definition = root_definition();
         let mut product = ProductDefinition::root(definition.clone(), ExternalDocument::default());
@@ -81,6 +85,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         }
         let mut found = false;
         let mut kernels = Vec::new();
+        let mut given_up = Vec::new();
         for (ordinal, entry) in snapshot.entries().iter().enumerate() {
             let CompoundEntry::Stream(entry) = entry else {
                 continue;
@@ -94,9 +99,38 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             let mut partition_losses = vec![SolidEdgeLossCode::PrimaryStateAssumed.note(
                 "primary partition supplies the saved body state; delta selection is unresolved",
             )];
-            let result = (|| {
-                let source = snapshot.open(ctx, entry)?;
+            let source = match ctx.run_part(|| snapshot.open(ctx, entry))? {
+                Ok(source) => source,
+                Err(error) => {
+                    body.losses
+                        .extend(cadmpeg_ir::unknown::part::record_given_up(
+                            cadmpeg_ir::ids::Identity::compose(
+                                &cadmpeg_ir::identity_namespace!(
+                                    "solidedge",
+                                    "container",
+                                    "stream"
+                                ),
+                                cadmpeg_ir::ids::IdentityKey::encode_key_text(entry.path()),
+                            ),
+                            SolidEdgeLossCode::PartitionUnreadable
+                                .note(format!("partition stream does not open: {error}")),
+                        ));
+                    continue;
+                }
+            };
+            let stream_name = cadmpeg_ir::stream_name!("solidedge:").with_suffix(entry.path());
+            let result = ctx.run_part(|| {
                 let payload = partition::payload(source).map_err(CodecError::from)?;
+                let origin = brep::Origin::new(
+                    stream_name.clone(),
+                    cadmpeg_core::decode::u64_from_index(
+                        payload.start().checked_sub(source.start()).ok_or_else(|| {
+                            CodecError::Malformed(
+                                "Parasolid payload lies before its partition stream".into(),
+                            )
+                        })?,
+                    ),
+                );
                 let records = PrimaryRecords::read(payload.window())?.ok_or_else(|| {
                     CodecError::Malformed("unsupported Parasolid partition header".into())
                 })?;
@@ -112,8 +146,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 }
                 let stream = u32::try_from(ordinal)
                     .map_err(|_| CodecError::Malformed("too many partition streams".into()))?;
-                let mut candidate = brep::project(ctx, &records, stream, &mut partition_losses)?;
+                let (mut candidate, resolutions) =
+                    brep::project(ctx, &records, stream, &origin, &mut partition_losses)?;
                 candidate.finalize();
+                // A partition is admitted as a document of its own; the decoded
+                // document states one root over the bodies of every partition.
                 candidate.state_root_definition(
                     ctx,
                     root_definition(),
@@ -142,30 +179,31 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                     cadmpeg_core::decode::u64_from_index(candidate.geometry.entity_count()),
                     "admit Solid Edge partition entities",
                 )?;
-                if !candidate.geometry.bodies.is_empty()
-                    && (ir.geometry.bodies.is_empty()
-                        || candidate.tolerances.linear > ir.tolerances.linear)
-                {
-                    ir.tolerances.linear = candidate.tolerances.linear;
-                }
                 ir.try_append(
                     candidate.geometry,
                     candidate.model,
                     candidate.native,
                     |_| Ok(Ok::<_, CodecError>(())),
                 )??;
+                stored_resolutions.extend(resolutions);
                 Ok::<_, CodecError>(())
-            })();
+            })?;
             match result {
                 Ok(()) => body.losses.extend(partition_losses),
                 Err(error) => {
-                    if matches!(error, CodecError::ResourceLimit(_)) {
-                        return Err(error);
-                    }
                     body.losses.push(
                         SolidEdgeLossCode::PartitionUnreadable
                             .note(format!("partition could not be decoded: {error}")),
                     );
+                    let part = Part::at(
+                        "solidedge",
+                        "partition",
+                        0,
+                        source.window(),
+                        [ArenaClass::Model],
+                    )
+                    .in_stream(stream_name);
+                    given_up.push(ctx.give_up_part(part, error)?);
                 }
             }
         }
@@ -193,16 +231,38 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             std::collections::BTreeMap::default(),
         ));
         ir.state_root_definition(ctx, root_definition(), ExternalDocument::default())?;
+        for part in given_up {
+            body.losses.push(part.commit(ctx, &mut ir, &mut fidelity)?);
+        }
         body.losses.push(
             SolidEdgeLossCode::AttributesPending
                 .note("body names, colours, and visibility remain undecoded"),
         );
     }
+    let mut precisions = Vec::new();
+    for held in &ir.geometry.bodies {
+        let res_linear = stored_resolutions.get(&held.id).copied().flatten();
+        if let Some(linear) = res_linear.and_then(precision::linear_precision) {
+            precisions.push(linear);
+            continue;
+        }
+        let code = if res_linear.is_some() {
+            SolidEdgeLossCode::BodyResolutionInvalid
+        } else {
+            SolidEdgeLossCode::BodyResolutionUnread
+        };
+        body.losses
+            .push(code.note(precision::unusable_resolution_message(
+                held.id.as_str(),
+                res_linear,
+            )));
+    }
+    ir.tolerances = precision::part_tolerances(precisions);
     body.transfer = DecodeTransfer::at(ctx.depth(), !ir.geometry.bodies.is_empty());
     Ok(Decoded {
         ir,
         body,
-        source_fidelity: SourceFidelity::new(Sha256Digest::digest(root.window())),
+        source_fidelity: fidelity,
     })
 }
 

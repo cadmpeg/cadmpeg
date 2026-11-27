@@ -16,6 +16,7 @@
 //! configuration is the active one (§5.5, §5.11).
 
 use std::borrow::Cow;
+use std::cell::Cell;
 
 use super::EditError;
 use crate::appearance::AppearanceTarget;
@@ -71,22 +72,41 @@ struct Level<'a> {
     arrangements: Vec<&'a Arrangement>,
 }
 
+/// The resolved occurrences of a path and their ids, outermost first.
+type Levels<'a> = (Vec<Level<'a>>, Vec<&'a OccurrenceId>);
+
 /// The records an occurrence path resolves through: the design, and the
 /// occurrences and product definitions of the document (§4, §5.1, §5.11).
-struct PathResolver<'a> {
+pub(crate) struct PathResolver<'a> {
     design: &'a Design,
     occurrences: &'a [Occurrence],
     definitions: &'a [ProductDefinition],
+    /// Whether resolution passed over a selection it cannot apply: a
+    /// configuration or an arrangement named by name, or one of another
+    /// scope, or a configuration selected for a prototype that has no scope
+    /// of its own.
+    passed_over: Cell<bool>,
 }
 
 impl<'a> PathResolver<'a> {
-    fn of(ir: &'a CadIr) -> Self {
+    pub(crate) fn of(ir: &'a CadIr) -> Self {
         Self {
             design: &ir.design,
             occurrences: &ir.model.occurrences,
             definitions: &ir.model.product_definitions,
+            passed_over: Cell::new(false),
         }
     }
+}
+
+/// What the instance at a path shows (§8, part 9): the prototype in force
+/// at its last occurrence, the scope that states that prototype's design,
+/// and the configuration of that scope that the instance selects.
+#[derive(Debug)]
+pub(crate) struct Selected<'a> {
+    pub(crate) prototype: &'a ProductDefinitionId,
+    pub(crate) scope: &'a DesignScope,
+    pub(crate) configuration: Option<ConfigurationId>,
 }
 
 /// The occurrence ids of a path, outermost first; `None` where a step is
@@ -118,7 +138,7 @@ fn same_record(item: &PresentationItem, entity: &AppearanceTarget) -> bool {
         (PresentationItem::Curve { curve }, AppearanceTarget::Curve(id)) => curve == id,
         (PresentationItem::Surface { surface }, AppearanceTarget::Surface(id)) => surface == id,
         (PresentationItem::Tessellation { tessellation }, AppearanceTarget::Tessellation(id)) => {
-            tessellation.as_str() == id
+            tessellation == id
         }
         _ => false,
     }
@@ -377,8 +397,133 @@ impl PathResolver<'_> {
         };
         Ok(match selected {
             Some(ConfigurationRef::Local(configuration)) => Some(configuration),
-            Some(ConfigurationRef::Named(_)) | None => None,
+            Some(ConfigurationRef::Named(_)) => {
+                self.passed_over.set(true);
+                None
+            }
+            None => None,
         })
+    }
+
+    /// The configuration of `scope`, the scope that states the design of an
+    /// occurrence below `parent`, that applies to that occurrence: where
+    /// `scope` is the scope of `parent`'s prototype, the configuration
+    /// `parent` selects of it, else that scope's active one; otherwise the
+    /// configuration that applies to `parent`.
+    fn applies_below(
+        &self,
+        parent: &Level<'_>,
+        stated: Option<&ConfigurationRef>,
+        scope: Option<&DesignScope>,
+    ) -> Result<Option<ConfigurationId>, EditError> {
+        let Some(scope) = scope.filter(|scope| &scope.definition == parent.prototype) else {
+            if stated.is_some() || !matches!(self.selected_configuration(parent, None), Ok(None)) {
+                self.passed_over.set(true);
+            }
+            return Ok(parent.configuration.clone());
+        };
+        match self.selected_configuration(parent, stated)? {
+            Some(selected) if self.holds(scope, &selected) => Ok(Some(selected)),
+            other => {
+                if other.is_some() {
+                    self.passed_over.set(true);
+                }
+                Ok(scope.active_configuration.clone())
+            }
+        }
+    }
+
+    /// Whether `configuration` is a configuration of `scope`.
+    fn holds(&self, scope: &DesignScope, configuration: &ConfigurationId) -> bool {
+        self.design
+            .configurations
+            .iter()
+            .any(|candidate| &candidate.id == configuration && candidate.scope == scope.definition)
+    }
+
+    /// Whether `configuration` resolves through its parents and is a
+    /// configuration of `scope`; no configuration applies in every scope.
+    fn applies_in(
+        &self,
+        scope: Option<&DesignScope>,
+        configuration: Option<&ConfigurationId>,
+    ) -> bool {
+        configuration.is_none_or(|configuration| {
+            scope.is_some_and(|scope| self.holds(scope, configuration))
+                && self.design.configuration_chain(configuration).is_ok()
+        })
+    }
+
+    /// Whether a scope entry, or an override of a configuration or an
+    /// arrangement, states a value for `occurrence`.
+    fn mentioned(&self, occurrence: &OccurrenceId) -> bool {
+        self.design
+            .scopes
+            .iter()
+            .any(|scope| scope.occurrences.contains_key(occurrence))
+            || self
+                .design
+                .configurations
+                .iter()
+                .any(|configuration| configuration.overrides.occurrences.contains_key(occurrence))
+            || self
+                .design
+                .arrangements
+                .iter()
+                .any(|arrangement| arrangement.overrides.occurrences.contains_key(occurrence))
+    }
+
+    /// What the instance at `path` shows, where the path establishes it: the
+    /// prototype in force at its last occurrence, the scope of that
+    /// prototype (its own, else the scope of its occurrence, which spans
+    /// it), and the configuration of that scope that the instance selects,
+    /// each occurrence resolved as [`PathResolver::levels`] resolves it.
+    /// `None` where the path does not establish it: an empty path; a step
+    /// that is `Native` or states a configuration; an occurrence that the
+    /// document holds other than once, that no definition owns, or that the
+    /// prototype in force above it does not own; an occurrence whose scope
+    /// is not established and that a record states a value for; a
+    /// configuration that does not resolve or is not one of the scope it
+    /// applies in; and a selection that resolution passes over.
+    pub(crate) fn selected<'x>(&'x self, path: &'x OccurrencePath) -> Option<Selected<'x>> {
+        if path.0.is_empty() || path.0.iter().any(|step| step.configuration.is_some()) {
+            return None;
+        }
+        self.passed_over.set(false);
+        let (levels, _) = self.levels(path).ok()??;
+        let mut above: Option<&ProductDefinitionId> = None;
+        for level in &levels {
+            let once = self
+                .occurrences
+                .iter()
+                .filter(|record| &record.id == level.occurrence)
+                .take(2)
+                .count()
+                == 1;
+            let owned = self.definitions.iter().any(|definition| {
+                above.is_none_or(|parent| &definition.id == parent)
+                    && definition.occurrences.contains(level.occurrence)
+            });
+            let scoped = level.scope.is_some() || !self.mentioned(level.occurrence);
+            if !once
+                || !owned
+                || !scoped
+                || !self.applies_in(level.scope, level.configuration.as_ref())
+            {
+                return None;
+            }
+            above = Some(level.prototype);
+        }
+        let last = levels.last()?;
+        let scope = self.design.design_scope(last.prototype).or(last.scope)?;
+        let configuration = self.applies_below(last, None, Some(scope)).ok()?;
+        (!self.passed_over.get() && self.applies_in(Some(scope), configuration.as_ref())).then_some(
+            Selected {
+                prototype: last.prototype,
+                scope,
+                configuration,
+            },
+        )
     }
 
     /// The arrangements in force in the configuration of an occurrence's
@@ -394,6 +539,22 @@ impl PathResolver<'_> {
     /// Resolves every occurrence of a path, outermost first; `None` where a
     /// step is `Native` or names an occurrence the document does not hold.
     fn resolve_path(&self, path: &OccurrencePath) -> Result<Option<Vec<Resolved>>, EditError> {
+        let Some((levels, ids)) = self.levels(path)? else {
+            return Ok(None);
+        };
+        let mut resolved = Vec::with_capacity(levels.len());
+        for at in 0..levels.len() {
+            resolved.push(self.resolve_level(&levels, &ids, at)?);
+        }
+        Ok(Some(resolved))
+    }
+
+    /// Each occurrence of a path, outermost first, with the scope that
+    /// states its design, the configuration of that scope that applies to
+    /// it, its prototype in force there, and the arrangements in force for
+    /// it; `None` where a step is `Native` or names an occurrence the
+    /// document does not hold.
+    fn levels<'x>(&'x self, path: &'x OccurrencePath) -> Result<Option<Levels<'x>>, EditError> {
         let Some(ids) = occurrence_ids(path) else {
             return Ok(None);
         };
@@ -411,23 +572,7 @@ impl PathResolver<'_> {
             let configuration = match parent {
                 None => scope.and_then(|scope| scope.active_configuration.clone()),
                 Some(parent) => {
-                    let own_scope =
-                        scope.is_some_and(|scope| &scope.definition == parent.prototype);
-                    if own_scope {
-                        let stated = path.0[at - 1].configuration.as_ref();
-                        let selected = self.selected_configuration(parent, stated)?;
-                        selected
-                            .filter(|selected| {
-                                self.design.configurations.iter().any(|candidate| {
-                                    &candidate.id == selected
-                                        && Some(&candidate.scope)
-                                            == scope.map(|scope| &scope.definition)
-                                })
-                            })
-                            .or_else(|| scope.and_then(|scope| scope.active_configuration.clone()))
-                    } else {
-                        parent.configuration.clone()
-                    }
+                    self.applies_below(parent, path.0[at - 1].configuration.as_ref(), scope)?
                 }
             };
             let prototype = self.prototype_in_force(occurrence, record, configuration.as_ref())?;
@@ -441,11 +586,7 @@ impl PathResolver<'_> {
             });
             levels[at].arrangements = self.arranged_for(&levels, &ids, at)?;
         }
-        let mut resolved = Vec::with_capacity(levels.len());
-        for at in 0..levels.len() {
-            resolved.push(self.resolve_level(&levels, &ids, at)?);
-        }
-        Ok(Some(resolved))
+        Ok(Some((levels, ids)))
     }
 
     /// The prototype of an occurrence in `configuration`, the configuration
@@ -585,19 +726,15 @@ impl PathResolver<'_> {
                         .filter(|entry| {
                             occurrence_ids(&entry.path).is_some_and(|path| path == instance)
                         })
-                        .filter_map(|entry| match &entry.arrangement {
-                            ArrangementRef::Local(id) => Some(id),
-                            ArrangementRef::Named(_) => None,
-                        });
-                    for id in chosen {
-                        if let Some(arrangement) =
-                            self.design.arrangements.iter().find(|candidate| {
-                                &candidate.id == id && candidate.scope == scope.definition
-                            })
-                        {
-                            if !in_force.iter().any(|held| held.kind == arrangement.kind) {
-                                in_force.push(arrangement);
+                        .map(|entry| &entry.arrangement);
+                    for reference in chosen {
+                        match self.arrangement_of(reference, scope) {
+                            Some(arrangement) => {
+                                if !in_force.iter().any(|held| held.kind == arrangement.kind) {
+                                    in_force.push(arrangement);
+                                }
                             }
+                            None => self.passed_over.set(true),
                         }
                     }
                 }
@@ -607,15 +744,13 @@ impl PathResolver<'_> {
                     .map(|design| design.arrangements.as_slice())
                     .unwrap_or_default();
                 for reference in named {
-                    let ArrangementRef::Local(id) = reference else {
-                        continue;
-                    };
-                    if let Some(arrangement) = self.design.arrangements.iter().find(|candidate| {
-                        &candidate.id == id && candidate.scope == scope.definition
-                    }) {
-                        if !in_force.iter().any(|held| held.kind == arrangement.kind) {
-                            in_force.push(arrangement);
+                    match self.arrangement_of(reference, scope) {
+                        Some(arrangement) => {
+                            if !in_force.iter().any(|held| held.kind == arrangement.kind) {
+                                in_force.push(arrangement);
+                            }
                         }
+                        None => self.passed_over.set(true),
                     }
                 }
             }
@@ -626,6 +761,22 @@ impl PathResolver<'_> {
             }
         }
         Ok(in_force)
+    }
+
+    /// The arrangement of `scope` that `reference` names; `None` for one
+    /// named by name or one the scope does not hold.
+    fn arrangement_of(
+        &self,
+        reference: &ArrangementRef,
+        scope: &DesignScope,
+    ) -> Option<&Arrangement> {
+        let ArrangementRef::Local(id) = reference else {
+            return None;
+        };
+        self.design
+            .arrangements
+            .iter()
+            .find(|candidate| &candidate.id == id && candidate.scope == scope.definition)
     }
 
     /// The pose a current state of the occurrence's scope states for it, by

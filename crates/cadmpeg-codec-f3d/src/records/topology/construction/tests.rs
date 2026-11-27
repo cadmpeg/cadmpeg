@@ -8,8 +8,9 @@ use super::{
 };
 use crate::records::identity::Located;
 use crate::records::topology::test_support::rejects_changed_fields;
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::refusal::{refusal, states_the_key};
-use serde_json::json;
 fn frame_wire() -> DesignConstructionOperandGroupFrameWire {
     let matrix = [
         [1.0, 0.0, 0.0, 0.0],
@@ -17,7 +18,7 @@ fn frame_wire() -> DesignConstructionOperandGroupFrameWire {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    serde_json::from_value(json!({
+    json::from_value(json!({
         "member_count_offset": 21,
         "opaque_index": 1, "opaque_index_offset": 118,
         "opaque_scalar": 0.0, "opaque_scalar_offset": 122, "variant": false,
@@ -34,8 +35,8 @@ fn construction_transform_borrowed_wire_matches_owned_wire_bytes() {
     let transform = frame_wire().trailing_transforms.into_iter().next().unwrap();
     let owned = super::DesignConstructionOperandTransformDraft::from(transform.clone());
     assert_eq!(
-        serde_json::to_vec(&transform).unwrap(),
-        serde_json::to_vec(&owned).unwrap()
+        json::to_vec(&transform).unwrap(),
+        json::to_vec(&owned).unwrap()
     );
 }
 
@@ -73,19 +74,17 @@ fn construction_frame_rejects_invalid_scalars_offsets_and_trailing_arity() {
         ("opaque_index_offset", json!(u64::MAX)),
         ("opaque_scalar_offset", json!(123)),
     ] {
-        let mut wire = serde_json::to_value(frame_wire()).unwrap();
+        let mut wire = json::to_value(frame_wire()).unwrap();
         wire[field] = value;
-        assert!(serde_json::from_value::<DesignConstructionOperandGroupFrame>(wire).is_err());
+        assert!(json::from_value::<DesignConstructionOperandGroupFrame>(wire).is_err());
     }
     let mut wire = frame_wire();
     wire.trailing_record_indices.push(301);
     wire.trailing_record_offsets.push(101);
     assert!(DesignConstructionOperandGroupFrame::try_from(wire.clone()).is_err());
     assert!(
-        serde_json::from_value::<DesignConstructionOperandGroupFrame>(
-            serde_json::to_value(wire).unwrap()
-        )
-        .is_err()
+        json::from_value::<DesignConstructionOperandGroupFrame>(json::to_value(wire).unwrap())
+            .is_err()
     );
 }
 
@@ -96,7 +95,7 @@ fn construction_frame_accepts_a_set_closing_flag() {
     let frame = DesignConstructionOperandGroupFrame::try_from(wire.clone()).unwrap();
     assert!(frame.closing_flag);
     let decoded: DesignConstructionOperandGroupFrame =
-        serde_json::from_value(serde_json::to_value(wire).unwrap()).unwrap();
+        json::from_value(json::to_value(wire).unwrap()).unwrap();
     assert!(decoded.closing_flag);
 }
 
@@ -108,12 +107,10 @@ fn construction_frame_collections_reject_duplicates_and_keep_failed_edits_atomic
             let mut wire = frame_wire();
             wire.$field.push(wire.$field[0].clone());
             assert!(DesignConstructionOperandGroupFrame::try_from(wire.clone()).is_err());
-            assert!(
-                serde_json::from_value::<DesignConstructionOperandGroupFrame>(
-                    serde_json::to_value(&wire).unwrap()
-                )
-                .is_err()
-            );
+            assert!(cadmpeg_core::serde_erase::json::from_value::<
+                DesignConstructionOperandGroupFrame,
+            >(cadmpeg_core::serde_erase::json::to_value(&wire).unwrap())
+            .is_err());
             let mut edited = frame.clone();
             assert!(edited.$setter(wire.$field).is_err());
             assert_eq!(edited, frame);
@@ -123,26 +120,23 @@ fn construction_frame_collections_reject_duplicates_and_keep_failed_edits_atomic
     check_collection!(trailing_transforms, try_set_trailing_transforms);
     check_collection!(trailing_dual_transforms, try_set_trailing_dual_transforms);
     check_collection!(auxiliary_paths, try_set_auxiliary_paths);
-    let wire = serde_json::to_value(frame_wire()).unwrap();
-    assert_eq!(serde_json::to_value(frame).unwrap(), wire);
+    let wire = json::to_value(frame_wire()).unwrap();
+    assert_eq!(json::to_value(frame).unwrap(), wire);
 }
 
 #[test]
 fn construction_frame_borrowed_wire_matches_owned_wire_bytes() {
     for wire in [
-        serde_json::json!({
+        cadmpeg_core::json!({
             "member_count_offset": 20,
             "opaque_index": 1, "opaque_index_offset": 80,
             "opaque_scalar": 0.0, "opaque_scalar_offset": 84, "variant": false
         }),
-        serde_json::to_value(frame_wire()).unwrap(),
+        json::to_value(frame_wire()).unwrap(),
     ] {
-        let frame: DesignConstructionOperandGroupFrame = serde_json::from_value(wire).unwrap();
+        let frame: DesignConstructionOperandGroupFrame = json::from_value(wire).unwrap();
         let owned = DesignConstructionOperandGroupFrameWire::from(frame.clone());
-        assert_eq!(
-            serde_json::to_vec(&frame).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
-        );
+        assert_eq!(json::to_vec(&frame).unwrap(), json::to_vec(&owned).unwrap());
     }
 }
 
@@ -175,7 +169,7 @@ fn construction_group_borrowed_wire_matches_owned_wire_bytes() {
         "lost_edge_references":["edge#1"], "frame":frame_wire(),
         "role":0,"role_offset":100,"paired_class_tag":"278","paired_byte_offset":200
     });
-    let mut group: DesignConstructionOperandGroup = serde_json::from_value(wire).unwrap();
+    let mut group: DesignConstructionOperandGroup = json::from_value(wire).unwrap();
     for role in [
         super::DesignConstructionOperandRole::Other(super::DesignOperandRole::from_raw(0)),
         super::DesignConstructionOperandRole::ExtrudeBodiesA,
@@ -187,10 +181,7 @@ fn construction_group_borrowed_wire_matches_owned_wire_bytes() {
     ] {
         group.operand_role = role;
         let owned = super::DesignConstructionOperandGroupSerde::from(group.clone());
-        assert_eq!(
-            serde_json::to_vec(&group).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
-        );
+        assert_eq!(json::to_vec(&group).unwrap(), json::to_vec(&owned).unwrap());
     }
 }
 
@@ -210,9 +201,9 @@ fn construction_group_retains_sketch_profile_flags() {
             "compact_tail_flags":[true,false]
         }
     });
-    let group: DesignConstructionOperandGroup = serde_json::from_value(wire).unwrap();
-    let serialized = serde_json::to_value(group).unwrap();
-    let decoded: DesignConstructionOperandGroup = serde_json::from_value(serialized).unwrap();
+    let group: DesignConstructionOperandGroup = json::from_value(wire).unwrap();
+    let serialized = json::to_value(group).unwrap();
+    let decoded: DesignConstructionOperandGroup = json::from_value(serialized).unwrap();
     assert_eq!(
         decoded.sketch_profile.unwrap().compact_tail_flags,
         Some([true, false])
@@ -228,7 +219,7 @@ fn construction_group_native_retained_limit_refuses_before_clone() {
         "frame":frame_wire(), "role":0,"role_offset":100,
         "paired_class_tag":"278","paired_byte_offset":200
     });
-    let group: DesignConstructionOperandGroup = serde_json::from_value(wire).unwrap();
+    let group: DesignConstructionOperandGroup = json::from_value(wire).unwrap();
     crate::test_support::native_test::assert_borrowed_native_retained_limit(
         &group,
         "design_construction_operand_groups",
@@ -245,16 +236,16 @@ fn construction_group_owns_member_stride_and_derives_role_offset() {
         "members":[10,11],"member_offsets":[26,37],"frame":frame_wire(),
         "role":0,"role_offset":100,"paired_class_tag":"278","paired_byte_offset":200
     });
-    let mut group: DesignConstructionOperandGroup = serde_json::from_value(wire.clone()).unwrap();
+    let mut group: DesignConstructionOperandGroup = json::from_value(wire.clone()).unwrap();
     assert_eq!(group.role_offset(), 100);
     for offsets in [json!([26, 36]), json!([u64::MAX, u64::MAX])] {
         let mut invalid = wire.clone();
         invalid["member_offsets"] = offsets;
-        assert!(serde_json::from_value::<DesignConstructionOperandGroup>(invalid).is_err());
+        assert!(json::from_value::<DesignConstructionOperandGroup>(invalid).is_err());
     }
     let mut invalid = wire.clone();
     invalid["role_offset"] = json!(101);
-    assert!(serde_json::from_value::<DesignConstructionOperandGroup>(invalid).is_err());
+    assert!(json::from_value::<DesignConstructionOperandGroup>(invalid).is_err());
     let before = group.clone();
     assert!(group
         .try_set_members(vec![
@@ -269,7 +260,7 @@ fn construction_group_owns_member_stride_and_derives_role_offset() {
         ])
         .is_err());
     assert_eq!(group, before);
-    assert_eq!(serde_json::to_value(group).unwrap(), wire);
+    assert_eq!(json::to_value(group).unwrap(), wire);
 }
 
 #[test]
@@ -281,7 +272,7 @@ fn tracking_identities_preserve_wire_and_reject_partial_locations() {
         let suffix = if fields.is_empty() { suffix.replace("130", "114") } else { suffix.to_owned() };
         let wire = format!("{prefix}{fields}{suffix}");
         let value: super::DesignConstructionTrackingPath = serde_json::from_str(&wire).expect("tracking path");
-        assert_eq!(serde_json::to_string(&value).expect("tracking wire"), wire);
+        assert_eq!(json::to_string(&value).expect("tracking wire"), wire);
     }
     for field in [
         "first_related_identity",
@@ -307,7 +298,7 @@ fn construction_tracking_path_borrowed_wire_matches_owned_wire_bytes() {
         let wire = format!("{prefix}{fields},\"following_record_index\":302,\"following_byte_offset\":{end},\"following_class_tag\":\"363\"}}");
         let path: DesignConstructionTrackingPath = serde_json::from_str(&wire).unwrap();
         let owned = super::DesignConstructionTrackingPathWire::from(path.clone());
-        assert_eq!(serde_json::to_vec(&path).unwrap(), serde_json::to_vec(&owned).unwrap());
+        assert_eq!(json::to_vec(&path).unwrap(), json::to_vec(&owned).unwrap());
     }
 }
 
@@ -365,8 +356,7 @@ fn construction_path_preserves_layout_wire_and_rejects_mixed_forms() {
         let result = serde_json::from_str::<super::DesignConstructionOperandPath>(&wire);
         if mask == 3 || mask == 4 {
             assert_eq!(
-                serde_json::to_string(&result.expect("complete placement form"))
-                    .expect("path wire"),
+                json::to_string(&result.expect("complete placement form")).expect("path wire"),
                 wire
             );
         } else {
@@ -386,10 +376,7 @@ fn construction_path_borrowed_wire_matches_owned_wire_bytes() {
     ] {
         let path: super::DesignConstructionOperandPath = serde_json::from_str(wire).unwrap();
         let owned = super::DesignConstructionOperandPathWire::from(path.clone());
-        assert_eq!(
-            serde_json::to_vec(&path).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
-        );
+        assert_eq!(json::to_vec(&path).unwrap(), json::to_vec(&owned).unwrap());
     }
 }
 
@@ -431,8 +418,7 @@ fn identity_wrapper_rows_preserve_wire_and_reject_unequal_arrays() {
                     serde_json::from_str::<super::DesignConstructionOperandIdentity>(&wire);
                 if count == offsets && count == tags {
                     assert_eq!(
-                        serde_json::to_string(&parsed.expect("complete rows"))
-                            .expect("identity wire"),
+                        json::to_string(&parsed.expect("complete rows")).expect("identity wire"),
                         wire
                     );
                 } else {
@@ -460,8 +446,8 @@ fn construction_identity_borrowed_wire_matches_owned_wire_bytes() {
             serde_json::from_str(&wire).unwrap();
         let owned = super::DesignConstructionOperandIdentityWire::from(identity.clone());
         assert_eq!(
-            serde_json::to_vec(&identity).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            json::to_vec(&identity).unwrap(),
+            json::to_vec(&owned).unwrap()
         );
     }
 }
@@ -490,10 +476,7 @@ fn construction_auxiliary_rows_preserve_wire_and_reject_unequal_offsets() {
         );
         let frame: super::DesignConstructionOperandGroupFrame =
             serde_json::from_str(&wire).expect("construction frame");
-        assert_eq!(
-            serde_json::to_string(&frame).expect("construction wire"),
-            wire
-        );
+        assert_eq!(json::to_string(&frame).expect("construction wire"), wire);
     }
     for fields in [
         r#", "auxiliary_record_indices":[103]"#,
@@ -522,10 +505,7 @@ fn construction_trailing_rows_preserve_wire_and_reject_unequal_offsets() {
         );
         let frame: super::DesignConstructionOperandGroupFrame =
             serde_json::from_str(&wire).expect("construction frame");
-        assert_eq!(
-            serde_json::to_string(&frame).expect("construction wire"),
-            wire
-        );
+        assert_eq!(json::to_string(&frame).expect("construction wire"), wire);
     }
     for fields in [
         r#","trailing_record_indices":[300]"#,
@@ -551,10 +531,7 @@ fn construction_member_rows_preserve_wire_and_reject_unequal_offsets() {
         );
         let group: super::DesignConstructionOperandGroup =
             serde_json::from_str(&wire).expect("construction group");
-        assert_eq!(
-            serde_json::to_string(&group).expect("construction wire"),
-            wire
-        );
+        assert_eq!(json::to_string(&group).expect("construction wire"), wire);
         let invalid = wire.replace(
             &format!("\"member_offsets\":{offsets}"),
             "\"member_offsets\":[1,2,3]",
@@ -586,7 +563,7 @@ fn construction_member_rows_preserve_wire_and_reject_unequal_offsets() {
             let parsed = serde_json::from_str::<super::DesignConstructionOperandGroup>(&tagged);
             if valid {
                 assert_eq!(
-                    serde_json::to_string(&parsed.expect("tagged construction group"))
+                    json::to_string(&parsed.expect("tagged construction group"))
                         .expect("tagged construction wire"),
                     tagged
                 );
@@ -603,7 +580,7 @@ fn construction_member_rows_preserve_wire_and_reject_unequal_offsets() {
 #[test]
 fn construction_group_wire_requires_source_and_extrude_roles_to_agree() {
     use super::super::extrude_selection::DesignOperandRole;
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "group", "scope_record_index": 1, "scope_reference_ordinal": 0,
         "record_index": 2, "byte_offset": 10, "class_tag": "256",
         "members": [], "member_offsets": [],
@@ -613,12 +590,12 @@ fn construction_group_wire_requires_source_and_extrude_roles_to_agree() {
         "role": DesignOperandRole::PROFILE.raw(), "extrude_role": "profile",
         "role_offset": 40, "paired_class_tag": "257", "paired_byte_offset": 50
     });
-    let group: DesignConstructionOperandGroup = serde_json::from_value(wire.clone()).unwrap();
-    let encoded = serde_json::to_value(&group).unwrap();
+    let group: DesignConstructionOperandGroup = json::from_value(wire.clone()).unwrap();
+    let encoded = json::to_value(&group).unwrap();
     assert_eq!(encoded["role"], wire["role"]);
     assert_eq!(encoded["extrude_role"], wire["extrude_role"]);
     assert_eq!(
-        serde_json::from_value::<DesignConstructionOperandGroup>(encoded).unwrap(),
+        json::from_value::<DesignConstructionOperandGroup>(encoded).unwrap(),
         group
     );
     for (role, extrude_role, face_role) in [
@@ -629,12 +606,12 @@ fn construction_group_wire_requires_source_and_extrude_roles_to_agree() {
         (DesignOperandRole::PROFILE, "profile", Some("termination")),
     ] {
         let mut invalid = wire.clone();
-        invalid["role"] = serde_json::json!(role.raw());
-        invalid["extrude_role"] = serde_json::json!(extrude_role);
+        invalid["role"] = cadmpeg_core::json!(role.raw());
+        invalid["extrude_role"] = cadmpeg_core::json!(extrude_role);
         if let Some(face_role) = face_role {
-            invalid["extrude_face_role"] = serde_json::json!(face_role);
+            invalid["extrude_face_role"] = cadmpeg_core::json!(face_role);
         }
-        let error = serde_json::from_value::<DesignConstructionOperandGroup>(invalid).unwrap_err();
+        let error = json::from_value::<DesignConstructionOperandGroup>(invalid).unwrap_err();
         assert!(error.to_string().contains("role"));
     }
 }
@@ -659,13 +636,12 @@ fn trailing_transform_rejects_displaced_frames_and_overflow() {
     for index in [0, 6, 7] {
         let mut invalid = wire.clone();
         invalid["following_record_index"] = index.into();
-        assert!(serde_json::from_value::<DesignConstructionOperandTransform>(invalid).is_err());
+        assert!(json::from_value::<DesignConstructionOperandTransform>(invalid).is_err());
     }
     for index in [9, 10, 4000] {
         let mut independent = wire.clone();
         independent["following_record_index"] = index.into();
-        let parsed: DesignConstructionOperandTransform =
-            serde_json::from_value(independent).unwrap();
+        let parsed: DesignConstructionOperandTransform = json::from_value(independent).unwrap();
         assert_eq!(parsed.following_record_index(), index);
     }
     let mut boundary = wire;
@@ -674,13 +650,12 @@ fn trailing_transform_rejects_displaced_frames_and_overflow() {
     boundary["byte_offset"] = (u64::MAX - 152).into();
     boundary["transform_offset"] = (u64::MAX - 130).into();
     boundary["following_byte_offset"] = u64::MAX.into();
-    let admitted: DesignConstructionOperandTransform =
-        serde_json::from_value(boundary.clone()).unwrap();
+    let admitted: DesignConstructionOperandTransform = json::from_value(boundary.clone()).unwrap();
     let mut draft = admitted.into_draft();
     draft.record_index = u32::MAX;
     assert!(DesignConstructionOperandTransform::try_new(draft).is_err());
     boundary["byte_offset"] = (u64::MAX - 151).into();
-    assert!(serde_json::from_value::<DesignConstructionOperandTransform>(boundary).is_err());
+    assert!(json::from_value::<DesignConstructionOperandTransform>(boundary).is_err());
 }
 
 #[test]
@@ -739,7 +714,7 @@ fn persistent_identity_admits_both_tail_extents_and_rejects_displaced_offsets() 
 #[test]
 fn persistent_identity_borrowed_wire_matches_owned_wire_bytes() {
     for (tail, next) in [(0, 190), (185, 200)] {
-        let value: DesignConstructionPersistentIdentity = serde_json::from_value(json!({
+        let value: DesignConstructionPersistentIdentity = json::from_value(json!({
             "local_id": 1, "local_id_offset": 21,
             "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 33,
             "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 109,
@@ -748,10 +723,7 @@ fn persistent_identity_borrowed_wire_matches_owned_wire_bytes() {
         }))
         .unwrap();
         let owned = super::DesignConstructionPersistentIdentityDraft::from(value.clone());
-        assert_eq!(
-            serde_json::to_vec(&value).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
-        );
+        assert_eq!(json::to_vec(&value).unwrap(), json::to_vec(&owned).unwrap());
     }
 }
 
@@ -762,7 +734,7 @@ fn persistent_identity_native_retained_limit_refuses_before_clone() {
         id: &'static str,
         value: &'a DesignConstructionPersistentIdentity,
     }
-    let value: DesignConstructionPersistentIdentity = serde_json::from_value(json!({
+    let value: DesignConstructionPersistentIdentity = json::from_value(json!({
         "local_id": 1, "local_id_offset": 21,
         "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 33,
         "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 109,
@@ -812,14 +784,14 @@ fn tracking_fragment_domain_rejects_nonpositive_and_out_of_range_ordinals() {
         let mut wire = base.clone();
         wire["selector"] = json!(selector);
         wire["kind"] = json!(kind);
-        let value: DesignConstructionTrackingPath = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(value).unwrap(), wire);
+        let value: DesignConstructionTrackingPath = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(value).unwrap(), wire);
     }
     for (selector, kind) in [(-1, 3), (0, 3), (4, 3), (1, 0), (i32::MIN, u32::MAX)] {
         let mut wire = base.clone();
         wire["selector"] = json!(selector);
         wire["kind"] = json!(kind);
-        let error = serde_json::from_value::<DesignConstructionTrackingPath>(wire).unwrap_err();
+        let error = json::from_value::<DesignConstructionTrackingPath>(wire).unwrap_err();
         assert!(error
             .to_string()
             .contains(if kind == 0 { "kind" } else { "selector" }));

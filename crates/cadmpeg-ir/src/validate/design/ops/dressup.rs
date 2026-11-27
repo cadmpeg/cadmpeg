@@ -34,6 +34,7 @@ pub(super) fn check_fillet(site: Site<'_>, fillet: &Fillet, findings: &mut Vec<F
         check_fillet_set(site, set, findings);
     }
     check_controls(site, &fillet.controls, fillet.sets.len(), findings);
+    check_swept_around(site, fillet, findings);
     for set in &fillet.sets {
         if let (Some(keep), FilletSet::Edges { edges, .. }) = (&fillet.controls.keep, set) {
             if picks::share_pick(keep, edges) {
@@ -47,6 +48,45 @@ pub(super) fn check_fillet(site: Site<'_>, fillet: &Fillet, findings: &mut Vec<F
                 );
             }
         }
+    }
+}
+
+/// The radius a set's section states.
+fn set_radius(set: &FilletSet) -> Option<&Dimension<PositiveLength>> {
+    let (FilletSet::Edges { section, .. } | FilletSet::Faces { section, .. }) = set else {
+        return None;
+    };
+    match &section.size {
+        Some(FilletSize::Radius(radius)) => Some(radius),
+        _ => None,
+    }
+}
+
+/// On a `SweptAround` with three members a single listed piece is the
+/// largest (§6.4), read from the radii the three sets state.
+fn check_swept_around(site: Site<'_>, fillet: &Fillet, findings: &mut Vec<Finding>) {
+    for (at, transition) in fillet.controls.transitions.iter().enumerate() {
+        if !matches!(transition.kind, Some(TransitionKind::SweptAround { .. })) {
+            continue;
+        }
+        let radii: Option<Vec<&Dimension<PositiveLength>>> = transition
+            .between
+            .iter()
+            .map(|&set| set_radius(fillet.sets.get(usize::try_from(set).ok()?)?))
+            .collect();
+        let Some(radii) = radii.filter(|radii| radii.len() == 3) else {
+            continue;
+        };
+        site.bound(findings, |values| {
+            let radii: Vec<f64> = radii
+                .iter()
+                .map(|radius| Some(values.get(radius)?.get()))
+                .collect::<Option<_>>()?;
+            let largest = radii.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            (radii.iter().filter(|&&radius| radius >= largest).count() > 1).then(|| {
+                format!("transition {at} is a SweptAround of three members with no single largest piece")
+            })
+        });
     }
 }
 

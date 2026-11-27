@@ -3,9 +3,11 @@
 use crate::test_support::review::{decode, edit, members, parameter, validate, wire};
 use crate::test_support::{codec, fixture};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::CodecBackend;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 fn kind(wire: &Value, ordinal: usize) -> &Value {
     &wire["model"]["features"][ordinal]["definition"]["value"]["kind"]
@@ -213,12 +215,12 @@ fn deterministic_historical_operands_keep_their_producer_across_an_independent_s
         validate(result);
         let bracketed = members(&ambiguous, |members| {
             let mut before: Value =
-                serde_json::from_slice(&members["partstudios/studio/bodydetails/3.json"]).unwrap();
+                json::from_slice(&members["partstudios/studio/bodydetails/3.json"]).unwrap();
             before["bodies"][0]["edges"] = json!([]);
             before["bodies"][0]["faces"] = json!([]);
             members.insert(
                 "partstudios/studio/bodydetails/2.json".into(),
-                serde_json::to_vec(&before).unwrap(),
+                json::to_vec(&before).unwrap(),
             );
             members.insert(
                 "partstudios/studio/bodydetails/index.json".into(),
@@ -257,14 +259,14 @@ fn deterministic_historical_operands_keep_their_producer_across_an_independent_s
         validate(result);
         let unchanged = members(&bracketed, |members| {
             let mut before: Value =
-                serde_json::from_slice(&members["partstudios/studio/bodydetails/3.json"]).unwrap();
+                json::from_slice(&members["partstudios/studio/bodydetails/3.json"]).unwrap();
             before["bodies"][0]["edges"][0]["curve"]["origin"]["x"] = json!(0);
             if operand == "face" {
                 before["bodies"][0]["faces"][0]["surface"]["normal"]["z"] = json!(1);
             }
             members.insert(
                 "partstudios/studio/bodydetails/2.json".into(),
-                serde_json::to_vec(&before).unwrap(),
+                json::to_vec(&before).unwrap(),
             );
         });
         let result = decode(&unchanged);
@@ -290,7 +292,7 @@ fn deterministic_historical_operands_keep_their_producer_across_an_independent_s
         validate(result);
         let changed = members(&bracketed, |members| {
             let mut before: Value =
-                serde_json::from_slice(&members["partstudios/studio/bodydetails/3.json"]).unwrap();
+                json::from_slice(&members["partstudios/studio/bodydetails/3.json"]).unwrap();
             if operand == "face" {
                 for edge in before["bodies"][0]["edges"].as_array_mut().unwrap() {
                     let x = edge["curve"]["origin"]["x"].as_f64().unwrap();
@@ -307,7 +309,7 @@ fn deterministic_historical_operands_keep_their_producer_across_an_independent_s
             }
             members.insert(
                 "partstudios/studio/bodydetails/2.json".into(),
-                serde_json::to_vec(&before).unwrap(),
+                json::to_vec(&before).unwrap(),
             );
         });
         let result = decode(&changed);

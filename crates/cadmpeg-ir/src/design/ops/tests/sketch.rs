@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::num::NonZeroU32;
 
-use serde_json::json;
+use cadmpeg_core::json;
 
 use super::shared::{angle_sides, angle_spacings, length_sides, length_spacings};
 use super::{

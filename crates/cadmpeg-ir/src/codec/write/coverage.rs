@@ -226,9 +226,16 @@ macro_rules! declare_arena_dispositions {
                 self.charged_omissions(ir)
                     .into_iter()
                     .map(|(kind, label, ids)| {
+                        // A write that omits the cages writes nothing of the
+                        // bodies that hold only cages (§5.6).
+                        let bodies = if kind == EntityKind::SubdSurface {
+                            super::cages::cage_bodies_clause(&super::cages::cage_bodies(ir))
+                        } else {
+                            String::new()
+                        };
                         ExportLossCode::ArenaOmitted(kind).note(format!(
                             "the {format} write does not represent model arena `{label}`: \
-                             {} record(s) omitted: {}",
+                             {} record(s) omitted: {}{bodies}",
                             ids.len(),
                             ids.join(", "),
                         ))

@@ -342,6 +342,7 @@ pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
+        | BodySelection::GeneratedSet { .. }
         | BodySelection::Native(_)
         | BodySelection::NativeSet(_) => true,
     }

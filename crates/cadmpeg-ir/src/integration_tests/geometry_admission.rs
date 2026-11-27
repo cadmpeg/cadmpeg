@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::test_support::edit;
+use cadmpeg_core::serde_erase::json;
 
 use crate::geometry::analytic::EllipseCurve;
 use crate::geometry::pcurve::{
@@ -16,9 +17,9 @@ use crate::test_support::nurbs::{curve, pcurve, polar, surface};
 #[test]
 fn construction_rejects_invalid_knots_and_non_finite_poles() {
     fn rejects_descending_knots<T: serde::Serialize + serde::de::DeserializeOwned>(carrier: T) {
-        let mut wire = serde_json::to_value(carrier).unwrap();
-        wire["knots"] = serde_json::json!([2.0, 5.0, 2.0, 5.0]);
-        assert!(serde_json::from_value::<T>(wire).is_err());
+        let mut wire = json::to_value(carrier).unwrap();
+        wire["knots"] = cadmpeg_core::json!([2.0, 5.0, 2.0, 5.0]);
+        assert!(json::from_value::<T>(wire).is_err());
     }
 
     for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
@@ -97,9 +98,9 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
     rejects_descending_knots(pcurve());
     rejects_descending_knots(polar());
     for axis in ["u_knots", "v_knots"] {
-        let mut wire = serde_json::to_value(surface()).unwrap();
-        wire[axis] = serde_json::json!([0.0, 1.0, 0.0, 1.0]);
-        assert!(serde_json::from_value::<NurbsSurface>(wire).is_err());
+        let mut wire = json::to_value(surface()).unwrap();
+        wire[axis] = cadmpeg_core::json!([0.0, 1.0, 0.0, 1.0]);
+        assert!(json::from_value::<NurbsSurface>(wire).is_err());
     }
 }
 
@@ -202,40 +203,40 @@ fn weight_rules_admit_a_signed_nonzero_weight_in_every_nurbs_carrier() {
     assert!(pcurve_weights(&pcurve, vec![-1.0, 1.0]).is_ok());
     assert!(polar_weights(&polar, vec![-1.0, 1.0]).is_ok());
     assert_eq!(
-        serde_json::from_value::<NurbsCurve>(serde_json::to_value(&curve).unwrap()).unwrap(),
+        json::from_value::<NurbsCurve>(json::to_value(&curve).unwrap()).unwrap(),
         curve
     );
     assert_eq!(
-        serde_json::from_value::<NurbsSurface>(serde_json::to_value(&surface).unwrap()).unwrap(),
+        json::from_value::<NurbsSurface>(json::to_value(&surface).unwrap()).unwrap(),
         surface
     );
     assert_eq!(
-        serde_json::from_value::<PcurveNurbs>(serde_json::to_value(&pcurve).unwrap()).unwrap(),
+        json::from_value::<PcurveNurbs>(json::to_value(&pcurve).unwrap()).unwrap(),
         pcurve
     );
     assert_eq!(
-        serde_json::from_value::<PolarPcurveNurbs>(serde_json::to_value(&polar).unwrap()).unwrap(),
+        json::from_value::<PolarPcurveNurbs>(json::to_value(&polar).unwrap()).unwrap(),
         polar
     );
 
     // A weight travels in its pole row, so a weight list beside the poles is
     // an unknown key and a zero weight is refused at the pole's own scalar
     // mint.
-    let mut wire = serde_json::to_value(&curve).unwrap();
-    wire["weights"] = serde_json::json!([0.0, 1.0]);
-    assert!(serde_json::from_value::<NurbsCurve>(wire).is_err());
-    let mut wire = serde_json::to_value(&curve).unwrap();
-    wire["poles"]["points"][0]["weight"] = serde_json::json!(0.0);
-    assert!(serde_json::from_value::<NurbsCurve>(wire).is_err());
-    let mut wire = serde_json::to_value(&surface).unwrap();
-    wire["poles"]["rows"][0][0]["weight"] = serde_json::json!(0.0);
-    assert!(serde_json::from_value::<NurbsSurface>(wire).is_err());
-    let mut wire = serde_json::to_value(&pcurve).unwrap();
-    wire["poles"]["points"][0]["weight"] = serde_json::json!(0.0);
-    assert!(serde_json::from_value::<PcurveNurbs>(wire).is_err());
-    let mut wire = serde_json::to_value(&polar).unwrap();
-    wire["poles"]["poles"][0]["weight"] = serde_json::json!(0.0);
-    assert!(serde_json::from_value::<PolarPcurveNurbs>(wire).is_err());
+    let mut wire = json::to_value(&curve).unwrap();
+    wire["weights"] = cadmpeg_core::json!([0.0, 1.0]);
+    assert!(json::from_value::<NurbsCurve>(wire).is_err());
+    let mut wire = json::to_value(&curve).unwrap();
+    wire["poles"]["points"][0]["weight"] = cadmpeg_core::json!(0.0);
+    assert!(json::from_value::<NurbsCurve>(wire).is_err());
+    let mut wire = json::to_value(&surface).unwrap();
+    wire["poles"]["rows"][0][0]["weight"] = cadmpeg_core::json!(0.0);
+    assert!(json::from_value::<NurbsSurface>(wire).is_err());
+    let mut wire = json::to_value(&pcurve).unwrap();
+    wire["poles"]["points"][0]["weight"] = cadmpeg_core::json!(0.0);
+    assert!(json::from_value::<PcurveNurbs>(wire).is_err());
+    let mut wire = json::to_value(&polar).unwrap();
+    wire["poles"]["poles"][0]["weight"] = cadmpeg_core::json!(0.0);
+    assert!(json::from_value::<PolarPcurveNurbs>(wire).is_err());
 }
 
 #[test]
@@ -430,9 +431,9 @@ fn analytic_pcurve_admission_preserves_nonunit_axes_and_unordered_radii() {
     assert!(TrimmedPcurve::try_new([1.0, 1.0], false, Box::new(line.clone())).is_ok());
     assert!(OffsetPcurve::try_new(f64::INFINITY, Box::new(line.clone())).is_err());
     let offset = PcurveGeometry::Offset(OffsetPcurve::try_new(-2.0, Box::new(line)).unwrap());
-    let mut wire = serde_json::to_value(offset).unwrap();
-    wire["basis"]["direction"] = serde_json::json!({"u": 0.0, "v": 0.0});
-    assert!(serde_json::from_value::<PcurveGeometry>(wire).is_err());
+    let mut wire = json::to_value(offset).unwrap();
+    wire["basis"]["direction"] = cadmpeg_core::json!({"u": 0.0, "v": 0.0});
+    assert!(json::from_value::<PcurveGeometry>(wire).is_err());
 }
 
 #[test]

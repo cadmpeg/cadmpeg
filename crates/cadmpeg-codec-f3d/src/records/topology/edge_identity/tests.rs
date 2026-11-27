@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Edge operand wire: the resolved axis is whole or absent.
 
+use cadmpeg_core::serde_erase::json;
+
 fn edge_identity_operand(compact: bool, local_id_offset: u64) -> super::DesignEdgeIdentityOperand {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "identity", "scope_record_index": 4, "group_record_index": 1,
         "group_member_ordinal": 0, "record_index": 2, "byte_offset": 10,
         "class_tag": "346", "compact_layout": compact, "local_id": 17,
@@ -12,7 +14,7 @@ fn edge_identity_operand(compact: bool, local_id_offset: u64) -> super::DesignEd
         "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
         "context_id_offset": local_id_offset + 94
     });
-    serde_json::from_value(wire).unwrap()
+    json::from_value(wire).unwrap()
 }
 
 #[test]
@@ -25,8 +27,8 @@ fn edge_identity_operand_borrowed_wire_matches_owned_wire_bytes() {
             operand.resolved_edge_slots = vec![7];
             let owned = super::DesignEdgeIdentityOperandWire::from(operand.clone());
             assert_eq!(
-                serde_json::to_vec(&operand).unwrap(),
-                serde_json::to_vec(&owned).unwrap()
+                json::to_vec(&operand).unwrap(),
+                json::to_vec(&owned).unwrap()
             );
         }
     }
@@ -56,15 +58,15 @@ fn edge_identity_operand_native_retained_limit_refuses_before_clone() {
 fn edge_operand_wire_rejects_partial_resolved_axis() {
     let prefix = r#"{"id":"edge","scope_record_index":1,"scope_reference_ordinal":0,"record_index":2,"byte_offset":10,"class_tag":"346","paired_byte_offset":20,"paired_class_tag":"262","recipe_record_index":5,"recipe_record_byte_offset":30,"recipe_id":"recipe","recipe_prefix_offset":41,"recipe_prefix_bytes":"","recipe_references":[],"recipe_program_offset":50,"recipe_program":[]"#;
     let suffix = r#","next_record_index":4,"next_byte_offset":100}"#;
-    let origin = serde_json::to_string(&cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)).unwrap();
-    let direction = serde_json::to_string(&cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)).unwrap();
+    let origin = json::to_string(&cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)).unwrap();
+    let direction = json::to_string(&cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)).unwrap();
     for fields in [
         String::new(),
         format!(",\"resolved_axis_origin\":{origin},\"resolved_axis_direction\":{direction}"),
     ] {
         let wire = format!("{prefix}{fields}{suffix}");
         let operand: super::DesignEdgeOperand = serde_json::from_str(&wire).unwrap();
-        assert_eq!(serde_json::to_string(&operand).unwrap(), wire);
+        assert_eq!(json::to_string(&operand).unwrap(), wire);
     }
     for (field, value) in [
         ("resolved_axis_origin", origin),
@@ -80,7 +82,7 @@ fn edge_operand_wire_rejects_partial_resolved_axis() {
 }
 
 fn edge_operand_for_borrowed(axis: bool) -> super::DesignEdgeOperand {
-    let mut wire = serde_json::json!({
+    let mut wire = cadmpeg_core::json!({
         "id":"f3d:native:edge-operand#0", "scope_record_index":1,
         "scope_reference_ordinal":0, "record_index":2,"byte_offset":10,
         "class_tag":"346","paired_byte_offset":20,"paired_class_tag":"262",
@@ -91,11 +93,11 @@ fn edge_operand_for_borrowed(axis: bool) -> super::DesignEdgeOperand {
     });
     if axis {
         wire["resolved_axis_origin"] =
-            serde_json::to_value(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)).unwrap();
+            json::to_value(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)).unwrap();
         wire["resolved_axis_direction"] =
-            serde_json::to_value(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)).unwrap();
+            json::to_value(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)).unwrap();
     }
-    serde_json::from_value(wire).unwrap()
+    json::from_value(wire).unwrap()
 }
 
 #[test]
@@ -104,8 +106,8 @@ fn edge_operand_borrowed_wire_matches_owned_wire_bytes() {
         let operand = edge_operand_for_borrowed(axis);
         let owned = super::DesignEdgeOperandDraft::from(operand.clone());
         assert_eq!(
-            serde_json::to_vec(&operand).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            json::to_vec(&operand).unwrap(),
+            json::to_vec(&owned).unwrap()
         );
     }
 }

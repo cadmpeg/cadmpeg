@@ -26,6 +26,8 @@ pub(crate) struct FamilyOutput {
     pub(crate) report: DecodeBody,
     pub(crate) annotations: Annotations,
     pub(crate) unknowns: Vec<UnknownRecord>,
+    /// Parts the route gave up, committed with the retained unknowns.
+    pub(crate) given_up: Vec<cadmpeg_ir::unknown::part::GivenUpPart>,
     pub(crate) admitted_model_entities: u64,
 }
 

@@ -44,6 +44,7 @@ pub(crate) enum SolidEdgeLossCode {
     IntersectionFrameFromSupportsAssumed,
     TopologyToleranceInvalid,
     BodyResolutionInvalid,
+    BodyResolutionUnread,
     IntersectionPlanarSupportAssumed,
     IntersectionNurbsBoundaryAssumed,
     IntersectionNurbsIsolineAssumed,
@@ -51,6 +52,7 @@ pub(crate) enum SolidEdgeLossCode {
     SurfaceUnresolved,
     CurveUnresolved,
     LoopUnreadable,
+    TopologyFaceBoundaryUnstated,
     FaceSenseUnresolved,
     ChainTruncated,
     VertexUnresolved,
@@ -149,6 +151,9 @@ impl SolidEdgeLossCode {
                 "body.resolution-invalid",
                 LossTaxonomy::SourceTopologyInvalid,
             ),
+            Self::BodyResolutionUnread => {
+                ("body.resolution-unread", LossTaxonomy::DecodeDiagnostic)
+            }
             Self::TopologyToleranceInvalid => (
                 "topology.tolerance-invalid",
                 LossTaxonomy::SourceTopologyInvalid,
@@ -177,6 +182,10 @@ impl SolidEdgeLossCode {
             Self::SurfaceUnresolved => ("surface.unresolved", LossTaxonomy::GeometryNotTransferred),
             Self::CurveUnresolved => ("curve.unresolved", LossTaxonomy::GeometryNotTransferred),
             Self::LoopUnreadable => ("loop.unreadable", LossTaxonomy::TopologyNotTransferred),
+            Self::TopologyFaceBoundaryUnstated => (
+                "topology.face-boundary-unstated",
+                LossTaxonomy::TopologyNotTransferred,
+            ),
             Self::FaceSenseUnresolved => {
                 ("face.sense-unresolved", LossTaxonomy::SourceTopologyInvalid)
             }

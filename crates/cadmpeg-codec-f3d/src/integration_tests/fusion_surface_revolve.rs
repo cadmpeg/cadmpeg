@@ -3,8 +3,8 @@
 
 use std::io::Cursor;
 
+use cadmpeg_core::json;
 use cadmpeg_ir::{Codec, DecodeOptions};
-use serde_json::json;
 
 use crate::F3dCodec;
 

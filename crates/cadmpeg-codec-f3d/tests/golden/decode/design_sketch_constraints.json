@@ -1900,7 +1900,7 @@
           }
         },
         "severity": "warning",
-        "message": "sketch entity f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277c440:0: curve is not part of any closed profile loop"
+        "message": "sketch entity f3d:model:sketch-entity#83:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat%40277c440:0: curve is not part of any closed profile loop"
       },
       {
         "code": {
@@ -2461,66 +2461,6 @@
           "offset": 0,
           "stream": "f3d:FusionAssetName[Active]/ProteinAssets.BlobParts/ProteinAsset.0.protein",
           "tag": "GenericSchema"
-        },
-        "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277": {
-          "offset": 0,
-          "stream": "f3d:native",
-          "tag": "sketch"
-        },
-        "f3d:model:sketch-constraint#dimension:59:52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat12044:pair": {
-          "offset": 52,
-          "stream": "f3d:native",
-          "tag": "sketch_constraint"
-        },
-        "f3d:model:sketch-constraint#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@33": {
-          "offset": 0,
-          "stream": "f3d:native",
-          "tag": "sketch_constraint"
-        },
-        "f3d:model:sketch-constraint#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@44": {
-          "offset": 0,
-          "stream": "f3d:native",
-          "tag": "sketch_constraint"
-        },
-        "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277c440:0": {
-          "offset": 0,
-          "stream": "f3d:native",
-          "tag": "sketch_entity"
-        },
-        "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p500": {
-          "offset": 0,
-          "stream": "f3d:native",
-          "tag": "sketch_entity"
-        },
-        "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p501": {
-          "offset": 0,
-          "stream": "f3d:native",
-          "tag": "sketch_entity"
-        },
-        "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p502": {
-          "offset": 0,
-          "stream": "f3d:native",
-          "tag": "sketch_entity"
-        },
-        "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p503": {
-          "offset": 0,
-          "stream": "f3d:native",
-          "tag": "sketch_entity"
-        },
-        "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p600": {
-          "offset": 0,
-          "stream": "f3d:native",
-          "tag": "sketch_entity"
-        },
-        "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p800": {
-          "offset": 0,
-          "stream": "f3d:native",
-          "tag": "sketch_entity"
-        },
-        "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p801": {
-          "offset": 0,
-          "stream": "f3d:native",
-          "tag": "sketch_entity"
         }
       }
     },

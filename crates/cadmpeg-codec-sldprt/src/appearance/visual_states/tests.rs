@@ -5,6 +5,7 @@
 use super::{body_identity, merge, Choice};
 use crate::appearance::AppearanceDefinition;
 use crate::layout::visual_component_body_prefix as prefix;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::topology::Color;
 use std::collections::BTreeMap;
@@ -66,7 +67,7 @@ fn higher_scope_and_conflicting_equal_scope_remain_unresolved_in_both_orders() {
 fn feature_scope_keeps_distinct_four_word_owners_and_requires_unique_history_object() {
     use crate::brep::attrib::NativeIdentity;
     use crate::records::{FeatureHistory, FeatureInputLane, FeatureInputName, ObjectId};
-    let feature: crate::records::Feature = serde_json::from_value(serde_json::json!({
+    let feature: crate::records::Feature = json::from_value(cadmpeg_core::json!({
         "id":"history:corner", "parent":"history", "source_id":"47", "ordinal":0,
         "name":"Corner", "kind":"Fillet"
     }))
@@ -110,7 +111,7 @@ fn feature_scope_keeps_distinct_four_word_owners_and_requires_unique_history_obj
         })
         .collect();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.features.push(serde_json::from_value(serde_json::json!({
+    ir.model.features.push(json::from_value(cadmpeg_core::json!({
         "id":"sldprt:model:feature#47", "ordinal":0, "name":"Corner", "suppressed":false,
         "definition":{"kind": "operation", "value": {"kind": "stored_geometry", "value": {}}}, "outputs":[], "native_ref":"history:corner", "dependencies": [], "source_properties": {}, "source_content": []})).unwrap());
     let run = |histories: &[FeatureHistory], lanes: &[FeatureInputLane], timestamp| {
@@ -142,8 +143,8 @@ fn configuration(
     name: &str,
     active: bool,
 ) -> cadmpeg_ir::features::parameters::DesignConfiguration {
-    serde_json::from_value(
-        serde_json::json!({"id":format!("sldprt:model:configuration#{id}"),
+    json::from_value(
+        cadmpeg_core::json!({"id":format!("sldprt:model:configuration#{id}"),
         "ordinal":id,"active":active,"name":name,"bodies":[format!("sldprt:brep:body#{id}")],
         "feature_states":{},"parameter_overrides":{},"parameter_values":{},"properties":{}}),
     )

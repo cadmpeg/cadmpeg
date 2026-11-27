@@ -28,6 +28,7 @@ use crate::records::sketch_links::{
     DesignPersistentIdText, PersistentDesignLink, PersistentSubentityTag,
 };
 use crate::writer::generate::presentation::{deterministic_guid, GeneratedDesignRegistry, TypeRow};
+use crate::writer::generate::records::ParameterRecords;
 
 /// The first value of the persistent-identity counter: a `Sketch` or
 /// `WorkPlane` scope owns one identity and the `Base Feature` scope the
@@ -96,15 +97,6 @@ fn persistent_id(items: usize) -> Result<u64, CodecError> {
     u64::try_from(items)
         .ok()
         .and_then(|items| FIRST_IDENTITY.checked_add(items))
-        .ok_or_else(|| CodecError::NotImplemented("persistent identity overflow".into()))
-}
-
-/// The next value of the persistent-identity counter after `items` `Sketch`
-/// and `WorkPlane` items and the `Base Feature`, or the geometry item with
-/// its two identities.
-pub(super) fn next_identity(items: usize, item: bool) -> Result<u64, CodecError> {
-    persistent_id(items)?
-        .checked_add(if item { 2 } else { 1 })
         .ok_or_else(|| CodecError::NotImplemented("persistent identity overflow".into()))
 }
 
@@ -222,8 +214,6 @@ struct Classes {
     /// The classes of the `Base Feature` item's own types, which a design
     /// with a geometry item in its place does not register.
     item: Option<ItemClasses>,
-    tracked_results: DesignClassTag,
-    item_companion: DesignClassTag,
     timestamps: DesignClassTag,
     owner_collection: DesignClassTag,
     component: DesignClassTag,
@@ -240,13 +230,21 @@ struct Classes {
     collection: DesignClassTag,
     collection_companion: DesignClassTag,
     aggregate: DesignClassTag,
-    body_reference: DesignClassTag,
+    /// The class of the body-reference records, which a design with no
+    /// result body does not register.
+    body_reference: Option<DesignClassTag>,
     object: DesignClassTag,
     tracking_entry: DesignClassTag,
     collection_base: DesignClassTag,
 }
 
 impl BaseFeaturePlan<'_> {
+    /// The plan of a design that writes no `Base Feature`.
+    pub(super) fn without_bodies(mut self) -> Self {
+        self.bodies.clear();
+        self
+    }
+
     /// Whether the design has a `Base Feature` item: the B-rep stream writes
     /// a body.
     pub(super) fn has_item(&self) -> bool {
@@ -317,12 +315,12 @@ impl BaseFeaturePlan<'_> {
         &self,
         parameters: &ParameterPlan,
         registry: &mut GeneratedDesignRegistry,
-    ) -> Result<(Vec<u8>, DesignRecords, Vec<LossNote>), CodecError> {
+    ) -> Result<(ParameterRecords, DesignRecords, Vec<LossNote>), CodecError> {
         let bodies = self.body_records(registry)?;
         let parameter_indices = parameters.allocate(registry)?;
         let indices = Indices::allocate(registry)?;
         let classes = Classes::register(registry, &indices, &bodies)?;
-        let parameter_bytes =
+        let parameter_records =
             parameters.encode(registry, &parameter_indices, Some(indices.collection))?;
         let mut out = DesignRecords::default();
         let writer = Writer {
@@ -334,7 +332,7 @@ impl BaseFeaturePlan<'_> {
             sketches: &[],
             planes: &[],
             persistent_id: self.persistent_id,
-            item: None,
+            geometry: Vec::new(),
             context_value: 0,
         };
         writer.timeline(&mut out)?;
@@ -344,7 +342,7 @@ impl BaseFeaturePlan<'_> {
         writer.parameter_collection(&mut out, &parameter_indices)?;
         out.record(&classes.aggregate, indices.aggregate);
         writer.body_references(&mut out)?;
-        Ok((parameter_bytes, out, residual_losses(&indices, &bodies)))
+        Ok((parameter_records, out, residual_losses(&indices, &bodies)))
     }
 
     /// Each result body as the roster writes it.
@@ -379,10 +377,9 @@ impl BaseFeaturePlan<'_> {
         out: &mut DesignRecords,
     ) -> Result<(), CodecError> {
         let mut indices = Indices::roster();
-        let item = ctx
+        let geometry = ctx
             .roster
-            .item
-            .as_ref()
+            .geometry()
             .map(|records| {
                 let profile = ctx
                     .roster
@@ -399,8 +396,8 @@ impl BaseFeaturePlan<'_> {
                     })?;
                 Ok::<_, CodecError>(GeometryItem { records, profile })
             })
-            .transpose()?;
-        if item.is_some() {
+            .collect::<Result<Vec<_>, _>>()?;
+        if !ctx.roster.base_feature {
             indices.item = None;
         }
         let classes = Classes::of(ctx)?;
@@ -429,7 +426,7 @@ impl BaseFeaturePlan<'_> {
             persistent_id: persistent_id(
                 ctx.roster.sketches.items.len() + ctx.roster.planes.len(),
             )?,
-            item,
+            geometry,
             context_value: ctx.timeline_value.value(),
         };
         writer.timeline(out)?;
@@ -571,17 +568,17 @@ impl Classes {
         Ok(Self {
             timeline: class(types::TIMELINE)?,
             context: class(types::TIMELINE_CONTEXT)?,
-            item: if ctx.roster.item.is_some() {
-                None
-            } else {
+            item: if ctx.roster.base_feature {
                 Some(ItemClasses {
                     scope: class(types::BASE_FEATURE)?,
                     result_owner: class(types::RESULT_OWNER)?,
                     tracking: class(types::BODY_TRACKING)?,
+                    tracked_results: class(types::TRACKED_RESULTS)?,
+                    item_companion: class(types::ITEM_TAIL_COMPANION)?,
                 })
+            } else {
+                None
             },
-            tracked_results: class(types::TRACKED_RESULTS)?,
-            item_companion: class(types::ITEM_TAIL_COMPANION)?,
             timestamps: class(types::RECORD_TIMESTAMPS)?,
             owner_collection: class(types::OWNER_COLLECTION)?,
             component: class(types::COMPONENT_RECORD)?,
@@ -598,7 +595,11 @@ impl Classes {
             collection: class(types::PARAMETER_COLLECTION)?,
             collection_companion: class(types::COLLECTION_COMPANION)?,
             aggregate: class(types::COMPONENT_AGGREGATE)?,
-            body_reference: class(types::BODY_REFERENCE)?,
+            body_reference: if ctx.roster.bodies.is_empty() {
+                None
+            } else {
+                Some(class(types::BODY_REFERENCE)?)
+            },
             object: class(types::DATA_MODEL_OBJECT)?,
             tracking_entry: class(types::TRACKING_ENTRY)?,
             collection_base: class(types::COLLECTION)?,
@@ -641,15 +642,15 @@ impl Classes {
                 scope: register(types::BASE_FEATURE, &item_ids(|item| item.scope))?,
                 result_owner: register(types::RESULT_OWNER, &item_ids(|item| item.result_owner))?,
                 tracking: register(types::BODY_TRACKING, &tracking)?,
+                tracked_results: register(
+                    types::TRACKED_RESULTS,
+                    &item_ids(|item| item.tracked_results),
+                )?,
+                item_companion: register(
+                    types::ITEM_TAIL_COMPANION,
+                    &item_ids(|item| item.item_companion),
+                )?,
             }),
-            tracked_results: register(
-                types::TRACKED_RESULTS,
-                &item_ids(|item| item.tracked_results),
-            )?,
-            item_companion: register(
-                types::ITEM_TAIL_COMPANION,
-                &item_ids(|item| item.item_companion),
-            )?,
             timestamps: register(types::RECORD_TIMESTAMPS, &timestamps)?,
             owner_collection: register(types::OWNER_COLLECTION, &[indices.owner_collection])?,
             component: register(types::COMPONENT_RECORD, &[indices.component])?,
@@ -669,7 +670,7 @@ impl Classes {
                 &[indices.collection_companion],
             )?,
             aggregate: register(types::COMPONENT_AGGREGATE, &[indices.aggregate])?,
-            body_reference: register(types::BODY_REFERENCE, &body_references)?,
+            body_reference: Some(register(types::BODY_REFERENCE, &body_references)?),
         };
         register(types::AGGREGATE, &[])?;
         Ok(classes)
@@ -681,6 +682,8 @@ struct ItemClasses {
     scope: DesignClassTag,
     result_owner: DesignClassTag,
     tracking: DesignClassTag,
+    tracked_results: DesignClassTag,
+    item_companion: DesignClassTag,
 }
 
 /// Writes the records of one design.
@@ -698,8 +701,9 @@ struct Writer<'a> {
     planes: &'a [PlaneRecords],
     /// The `Base Feature` scope's persistent identity.
     persistent_id: u64,
-    /// The geometry item written in place of the `Base Feature`.
-    item: Option<GeometryItem<'a>>,
+    /// The geometry items in timeline order: the item written in place of
+    /// the `Base Feature`, then the items after the timeline marker.
+    geometry: Vec<GeometryItem<'a>>,
     /// The timeline context value.
     context_value: u64,
 }
@@ -721,14 +725,14 @@ impl Writer<'_> {
     /// The `Sketch`, `WorkPlane` and geometry items in timeline order.
     fn items(&self) -> Vec<TimelineItem<'_>> {
         let mut items = Vec::with_capacity(self.sketches.len() + self.planes.len() + 1);
+        let geometry = |position: usize| {
+            self.geometry
+                .iter()
+                .filter(move |item| item.records.after() == position)
+                .map(TimelineItem::Geometry)
+        };
         for (position, sketch) in self.sketches.iter().enumerate() {
-            if let Some(item) = self
-                .item
-                .as_ref()
-                .filter(|item| item.records.after() == position)
-            {
-                items.push(TimelineItem::Geometry(item));
-            }
+            items.extend(geometry(position));
             items.extend(
                 self.planes
                     .iter()
@@ -737,13 +741,7 @@ impl Writer<'_> {
             );
             items.push(TimelineItem::Sketch(sketch));
         }
-        if let Some(item) = self
-            .item
-            .as_ref()
-            .filter(|item| item.records.after() == self.sketches.len())
-        {
-            items.push(TimelineItem::Geometry(item));
-        }
+        items.extend(geometry(self.sketches.len()));
         items
     }
 }
@@ -834,23 +832,40 @@ impl Writer<'_> {
         members
     }
 
-    /// The timeline context: the browser nodes of the result bodies, the
-    /// family counter, context value `0`, the component link, the seven
-    /// context records, and the component aggregate after the paired header.
+    /// The timeline context: the browser nodes of the result bodies and of
+    /// the rolled-back bodies, the family counters, the context value, the
+    /// component link, the seven context records, and the component
+    /// aggregate after the paired header.
     fn context(&self, out: &mut DesignRecords) -> Result<(), CodecError> {
         let indices = self.indices;
+        let nodes = self
+            .bodies
+            .iter()
+            .map(|body| body.node)
+            .chain(
+                self.geometry
+                    .iter()
+                    .filter_map(|item| item.records.place.rolled().map(|body| body.node)),
+            )
+            .collect::<Vec<_>>();
         out.record(&self.classes.context, indices.context)
             .zeros(10)
-            .u32(count(self.bodies.len())?);
-        for body in self.bodies {
-            out.reference(body.node);
+            .u32(count(nodes.len())?);
+        for node in nodes {
+            out.reference(node);
         }
-        let mut counters = Vec::new();
+        let mut counters = Vec::<(&str, u64)>::new();
         if indices.item.is_some() {
             counters.push((FAMILY_COUNTER, 1));
         }
-        if let Some(item) = &self.item {
-            counters.push((item.records.counter(), 1));
+        for item in &self.geometry {
+            match counters
+                .iter_mut()
+                .find(|(name, _)| *name == item.records.counter())
+            {
+                Some((_, value)) => *value += 1,
+                None => counters.push((item.records.counter(), 1)),
+            }
         }
         if !self.sketches.is_empty() {
             counters.push((
@@ -974,7 +989,7 @@ impl Writer<'_> {
             (item.result_owner, self.stamps.result),
         )?;
 
-        out.record(&classes.tracked_results, item.tracked_results)
+        out.record(&item_classes.tracked_results, item.tracked_results)
             .zeros(10)
             .u32(bodies);
         for (key, body) in (1u64..).zip(self.bodies) {
@@ -990,7 +1005,7 @@ impl Writer<'_> {
                 .header(&classes.tracking_entry, body.tracking)
                 .zeros(9);
         }
-        out.record(&classes.item_companion, item.item_companion)
+        out.record(&item_classes.item_companion, item.item_companion)
             .zeros(9)
             .byte(1)
             .zeros(8)
@@ -1206,7 +1221,7 @@ impl Writer<'_> {
                     .collect(),
             ));
         }
-        if self.item.is_none() {
+        if self.geometry.is_empty() {
             inputs.sort_by_key(|&(record, _)| record);
         }
         dependents.sort_by_key(|&(record, _)| record);
@@ -1281,6 +1296,9 @@ impl Writer<'_> {
     /// naming the other.
     fn body_references(&self, out: &mut DesignRecords) -> Result<(), CodecError> {
         for body in self.bodies {
+            let class = self.classes.body_reference.as_ref().ok_or_else(|| {
+                CodecError::Malformed("a result body with no body-reference class".into())
+            })?;
             for (record, property, other) in [
                 (
                     body.design_reference,
@@ -1293,7 +1311,7 @@ impl Writer<'_> {
                     body.design_reference,
                 ),
             ] {
-                out.record(&self.classes.body_reference, record)
+                out.record(class, record)
                     .zeros(9)
                     .byte(1)
                     .u32(1)
