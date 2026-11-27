@@ -2,7 +2,9 @@ use super::{is_guid_hyphenated, lp_u32_bytes_at, lp_utf16_raw, Reference, Utf16V
 use cadmpeg_core::decode::View;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged,
+)]
 #[serde(
     tag = "state",
     content = "value",
@@ -34,7 +36,13 @@ impl<T> ReadField<T> {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "G: Serialize, L: Serialize",
+        deserialize = "G: ::serde::de::DeserializeOwned, L: ::serde::de::DeserializeOwned"
+    )
+)]
 pub(crate) struct ReferenceFields<G, L> {
     pub(crate) complete: bool,
     pub(crate) present: ReadField<u8>,

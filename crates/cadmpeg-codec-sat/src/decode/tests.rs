@@ -404,6 +404,37 @@ fn an_unverified_acis_binary_band_is_decoded_and_marked() {
 }
 
 #[test]
+fn binary_base_extension_integers_are_dropped_and_charged() {
+    // The extended entity base stores an integer in every record and one more
+    // in `body`. The decoder reads the shared fields at their usual offsets,
+    // so the solid is the sphere of the stream without them.
+    let extensions = |result: &DecodeResult| {
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == SatLossCode::SourceRecordExtensionsUnprojected.kind())
+            .count()
+    };
+    let plain = decode_bytes(&binary_sphere_stream(BinaryFixtureKind::Acis));
+    assert_eq!(extensions(&plain), 0);
+    let source = binary_sphere_stream(BinaryFixtureKind::AcisExtendedBase);
+    let result = decode_bytes(&source);
+    assert!((sphere_radius(&result) - 25.0).abs() < 1.0e-9);
+    assert_eq!(extensions(&result), 1);
+    let result = cadmpeg_test_support::EditableDecodeResult::from(result);
+    assert_eq!(result.ir().geometry, plain.ir().geometry);
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record("sat:source:record-extensions#0")
+            .unwrap()
+            .data(),
+        Some(source.as_slice())
+    );
+}
+
+#[test]
 fn an_unverified_acis_text_band_is_decoded_and_marked() {
     let result = decode_bytes(&acis_text_sphere_stream(UNVERIFIED_SAVE_FORMAT));
     assert!(result.report().geometry_transferred());
@@ -1113,6 +1144,7 @@ fn omitted_use_curve_interval_has_a_sat_loss_code() {
         Some((
             graph,
             super::Unprojected {
+                stream: &bytes,
                 whole_stream: false,
                 face_children: std::collections::BTreeMap::new(),
             },

@@ -38,6 +38,9 @@ pub struct AsmTransferRemainder {
     /// Faces stated partial because their record states no loop on an
     /// unbounded surface; the embedding codec charges one loss for each.
     pub unbounded_faces: Vec<UnboundedFace>,
+    /// Records the model decode read and left out; the embedding codec
+    /// gives each up as a part.
+    pub withheld: Vec<super::given_up::WithheldRecord>,
 }
 
 /// Moves one complete ASM graph into the IR and serializes every ASM-native arena.
@@ -100,6 +103,7 @@ pub fn transfer_into_ir<'ir>(
         annotation_records,
         unbounded_faces,
         chain_order: _,
+        withheld,
     } = brep;
     super::subsets::localize_subsets(&mut curves, &mut edges, &mut coedges, &procedural_curves)?;
 
@@ -172,6 +176,7 @@ pub fn transfer_into_ir<'ir>(
             stats,
             annotation_records,
             unbounded_faces,
+            withheld,
         },
     ))
 }

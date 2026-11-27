@@ -1218,8 +1218,10 @@ pub(crate) fn decode_design_body_bindings(
         else {
             continue;
         };
-        let memberships = super::component_bodies::owners(ctx, bytes, &metadata)?;
-        let hidden_by_entity = typed_browser_node_hidden_flags(bytes, &metadata)?;
+        let memberships =
+            super::component_bodies::owners_from_scan(ctx, scan, &entry.name, bytes, &metadata)?;
+        let hidden_by_entity =
+            typed_browser_node_hidden_flags_from_scan(scan, &entry.name, bytes, &metadata)?;
         let consumed = match scan.entry_view(&entry.name) {
             Some(root) => super::body_consumers::consumed_body_entities(root, &metadata)?,
             None => std::collections::HashMap::new(),
@@ -1362,7 +1364,8 @@ pub(crate) fn decode_all_body_visibility(
         else {
             continue;
         };
-        let hidden_by_entity = typed_browser_node_hidden_flags(bytes, &metadata)?;
+        let hidden_by_entity =
+            typed_browser_node_hidden_flags_from_scan(scan, &entry.name, bytes, &metadata)?;
         for record in selected_body_map_records(bytes, &metadata)? {
             for binding in record.bindings {
                 let Some(node) = hidden_by_entity.get(&binding.entity_suffix) else {
@@ -1395,14 +1398,43 @@ struct BrowserNodeVisibility {
     hidden: bool,
 }
 
+#[cfg(test)]
 fn typed_browser_node_hidden_flags(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<HashMap<u64, BrowserNodeVisibility>, CodecError> {
     let nodes = crate::design::decode::presentation::browser_node_records(bytes, meta)?;
     let presentations = crate::design::decode::presentation::body_presentations(bytes, meta)?;
+    Ok(typed_browser_node_hidden_flags_from_parts(
+        &nodes,
+        &presentations,
+    ))
+}
+
+fn typed_browser_node_hidden_flags_from_scan(
+    scan: &ContainerScan<'_>,
+    entry_name: &str,
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<HashMap<u64, BrowserNodeVisibility>, CodecError> {
+    let nodes = crate::design::decode::presentation::scan_browser_node_records(
+        scan, entry_name, bytes, meta,
+    )?;
+    let presentations = crate::design::decode::presentation::scan_body_presentations(
+        scan, entry_name, bytes, meta,
+    )?;
+    Ok(typed_browser_node_hidden_flags_from_parts(
+        &nodes,
+        &presentations,
+    ))
+}
+
+fn typed_browser_node_hidden_flags_from_parts(
+    nodes: &[crate::design::decode::presentation::BrowserNodeRecord],
+    presentations: &[crate::design::decode::presentation::BodyPresentation],
+) -> HashMap<u64, BrowserNodeVisibility> {
     let mut nodes_by_entity = HashMap::<u64, Vec<_>>::new();
-    for node in &nodes {
+    for node in nodes {
         nodes_by_entity
             .entry(node.entity_suffix)
             .or_default()
@@ -1450,7 +1482,7 @@ fn typed_browser_node_hidden_flags(
             );
         }
     }
-    Ok(out)
+    out
 }
 
 /// Map each browser-node GUID to its Design entity suffix.

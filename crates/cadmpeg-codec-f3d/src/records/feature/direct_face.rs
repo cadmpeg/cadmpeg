@@ -14,7 +14,7 @@ cadmpeg_core::named_optional_field!(deserialize_opposite_angle, Angle, "opposite
 cadmpeg_core::named_optional_field!(deserialize_two_sided, DesignDraftTwoSided, "two_sided");
 
 /// Exact fixed-form construction data of a direct-face feature scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(rename_all = "snake_case", tag = "operation")]
 pub(crate) enum DesignDirectFaceOperation {
     /// Signed normal offset applied to selected faces.
@@ -201,7 +201,7 @@ pub(crate) struct DesignMovePrefix {
     pub(crate) leading: Option<DesignMoveLeading>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub(crate) enum DesignMoveReference {
     Null,
