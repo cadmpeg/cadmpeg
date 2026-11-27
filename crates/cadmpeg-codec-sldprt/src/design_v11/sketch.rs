@@ -28,7 +28,9 @@
 //! no value, and an entity that has no planar curve states its native kind.
 //!
 //! A relation on the start, end, or center of a curve where no point record
-//! lies names a point entity minted there, with that role on the curve.
+//! lies names a point entity minted there, with that role on the curve, and
+//! so does a relation on a center where two point records lie; a loss names
+//! each such center.
 //! A reference dimension whose parameter is no parameter of the design binds
 //! a `Driven` parameter minted for it, with the value its parameter record
 //! stores where the record stores one of its quantity.
@@ -123,6 +125,15 @@ pub(super) struct Sketches {
     /// The relations on a curve's start, end, or center that state the curve
     /// itself, where no position of that point is stored.
     pub(super) unplaced: Vec<SketchConstraintId>,
+    /// The points of curves where two or more point entities lie that the
+    /// curve records name alike, each named with its curve and those point
+    /// entities.
+    pub(super) ambiguous: Vec<String>,
+    /// The relations that name one point entity for both operands of a
+    /// coincidence, which the point states.
+    pub(super) single_point: Vec<SketchConstraintId>,
+    /// The relations stated by their native kind.
+    pub(super) native_relations: Vec<SketchConstraintId>,
     /// The spatial sketches, each the operation of its owner.
     pub(super) spatial: Vec<spatial_sketch::Restated>,
 }
@@ -571,7 +582,18 @@ fn restate(
         .filter(|(_, reading)| reading.is_none())
         .map(|(entity, _)| *entity)
         .collect::<Vec<_>>();
-    let points_of = StoredPoints::new(context.ctx, &stored, names_point, coincident)?;
+    let points_of = StoredPoints::new(context.ctx, &stored, standing, coincident)?;
+    out.ambiguous
+        .extend(points_of.ambiguous().map(|(curve, point, candidates)| {
+            format!(
+                "the {point} of {curve} ({})",
+                candidates
+                    .iter()
+                    .map(SketchEntityId::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }));
     for ((entity, form), reading) in entities
         .iter()
         .zip(forms.iter().cloned())
@@ -635,7 +657,14 @@ fn restate(
             entities: &entities,
         };
         let (relation, binding, unbound) = relations.relation(constraint, &driven);
-        if matches!(&relation, SketchRelation::Coincident { a, b } if a == b) {
+        if matches!(
+            &relation,
+            SketchRelation::Coincident {
+                a: Operand::Entity(a),
+                b: Operand::Entity(b),
+            } if a == b
+        ) {
+            out.single_point.push(constraint.id.clone());
             continue;
         }
         if unbound {
@@ -657,7 +686,10 @@ fn restate(
             relation,
             name: constraint.name.clone(),
             active: constraint.active.map(Dimension::Literal),
-            native_options: NativeOptions::new(),
+            native_options: relation::native_options(
+                &cadmpeg_core::nonblank_literal!("sldprt"),
+                constraint.definition.kind(),
+            ),
             source_settings: NativeOptions::new(),
             native_ref: constraint.native_ref.clone(),
         });
@@ -714,6 +746,12 @@ fn restate(
                 )),
                 _ => None,
             }),
+    );
+    out.native_relations.extend(
+        constraints
+            .iter()
+            .filter(|constraint| matches!(constraint.relation, SketchRelation::Native { .. }))
+            .map(|constraint| constraint.id.clone()),
     );
     out.constraints.extend(constraints);
     Ok(())
@@ -817,20 +855,21 @@ pub(super) fn selection(picks: Vec<Picked>) -> Result<OrderedSelection, &'static
     })
 }
 
-/// Whether `curve` names `point` as the point `locus` names on it: the
-/// native record the curve names as that end, and any point at its center.
-fn names_point(
+/// The standing of `point` as the point `locus` names on `curve`: first for
+/// the native record the curve names as that end and for any point at its
+/// center, which the decoded curve names by its position alone.
+fn standing(
     curve: &cadmpeg_ir::sketches::SketchEntity,
     locus: &SketchLocus,
     point: &cadmpeg_ir::sketches::SketchEntity,
-) -> bool {
+) -> Option<u8> {
     let named = match (locus, curve.endpoint_refs.as_slice()) {
         (SketchLocus::Start(_), [first, _]) => first,
         (SketchLocus::End(_), [_, second]) => second,
-        (SketchLocus::Center(_), _) => return true,
-        _ => return false,
+        (SketchLocus::Center(_), _) => return Some(0),
+        _ => return None,
     };
-    point.native_ref.as_deref() == Some(named.as_str())
+    (point.native_ref.as_deref() == Some(named.as_str())).then_some(0)
 }
 
 /// What the sketch and the solid say of `entities[index]` where it is a
