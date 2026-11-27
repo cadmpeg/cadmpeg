@@ -421,6 +421,22 @@ fn document_with_placement(role: &str, mut placement: Vec<u8>) -> Vec<u8> {
     for record in &records {
         placement[record.offset + 4..record.offset + 7].copy_from_slice(b"256");
     }
+    let meta = design_metastream_with_records(
+        &[(
+            super::OCCURRENCE_PLACEMENT_TYPE_GUID,
+            "",
+            2,
+            "Component",
+            &entities,
+        )],
+        &offsets,
+    );
+    document_with_streams(role, &meta, &placement)
+}
+
+/// A document whose table names `role` and whose Design segment stores
+/// `meta` and `bulk`.
+fn document_with_streams(role: &str, meta: &[u8], bulk: &[u8]) -> Vec<u8> {
     let properties =
         br#"{"docstruct":{"version":"1.0.0","type":"assembly-design","subtype":"synthetic","attributes":{}}}"#;
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -437,20 +453,10 @@ fn document_with_placement(role: &str, mut placement: Vec<u8>) -> Vec<u8> {
         .unwrap();
     zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
         .unwrap();
-    zip.write_all(&design_metastream_with_records(
-        &[(
-            super::OCCURRENCE_PLACEMENT_TYPE_GUID,
-            "",
-            2,
-            "Component",
-            &entities,
-        )],
-        &offsets,
-    ))
-    .unwrap();
+    zip.write_all(meta).unwrap();
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
         .unwrap();
-    zip.write_all(&placement).unwrap();
+    zip.write_all(bulk).unwrap();
     zip.finish().unwrap().into_inner()
 }
 
@@ -1988,3 +1994,4 @@ mod reference_rows;
 mod compact_generation;
 
 mod compact_legacy_placement;
+mod partial_tables;

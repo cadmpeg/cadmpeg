@@ -46,9 +46,7 @@ fn authored_box_and_cylinder_have_their_scripted_measures() {
         ),
     ] {
         let bytes = std::fs::read(fixtures.join(format!("{name}.FCStd"))).unwrap();
-        let decoded = FcstdCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .unwrap();
+        let decoded = crate::test_support::cached_full_decode(&bytes).unwrap();
         let report = measured(name, decoded.ir()).unwrap();
         assert_eq!(report.bodies().len(), 1, "{name}");
         let body = &report.bodies()[0];
@@ -159,8 +157,7 @@ fn patched_corpus_documents_keep_measured_geometry() {
                             .expect("fixture name")
                             .to_owned();
                         let bytes = std::fs::read(path).expect("fixture bytes");
-                        let decoded = FcstdCodec
-                            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                        let decoded = crate::test_support::cached_full_decode(&bytes)
                             .unwrap_or_else(|_| panic!("{label}: the fixture does not decode"));
                         let Some(report) =
                             measures_decide(&label, decoded.ir()).expect("the fixture is measured")

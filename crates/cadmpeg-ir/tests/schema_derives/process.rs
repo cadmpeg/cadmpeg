@@ -2,55 +2,52 @@
 //! The schema feature generates a schema for every process type.
 
 use cadmpeg_core::serde_erase::json;
-use schemars::{schema_for, JsonSchema, SchemaGenerator};
+use schemars::{schema_for, SchemaGenerator};
 
-use crate::design::construction::kinds;
-use crate::document::Process;
-use crate::process::cycle::{Cycle, CycleKind, CycleReturn, PlaneAxis, ProbeTarget};
-use crate::process::feature::{MachiningFeature, MachiningFeatureClass};
-use crate::process::groups::{
+use cadmpeg_ir::design::construction::kinds;
+use cadmpeg_ir::document::Process;
+use cadmpeg_ir::process::cycle::{Cycle, CycleKind, CycleReturn, PlaneAxis, ProbeTarget};
+use cadmpeg_ir::process::feature::{MachiningFeature, MachiningFeatureClass};
+use cadmpeg_ir::process::groups::{
     GroupKind, ProcessDefinition, ProcessGroup, ProcessOwner, ProcessParameter,
 };
-use crate::process::limits::{
+use cadmpeg_ir::process::limits::{
     AxialFrom, AxialLimit, AxialRole, Height, HeightFrom, HeightRole, LimitPoint, RadialLimit,
     RadiusFrom, RadiusRole,
 };
-use crate::process::operation::{
+use cadmpeg_ir::process::operation::{
     DrillingClass, GeometryCombine, GeometryRole, GeometrySource, MillingClass, ModifierKind,
     Operation, OperationClass, OperationKind, Phase, ProcessGeometry, ProfileCurve,
     ToolAxisControl, Tooling, TurningClass,
 };
-use crate::process::settings::{
+use cadmpeg_ir::process::settings::{
     CycleSettings, HoleDepth, Lead, LeadAlong, LeadAngleFrom, Leads, LineTurn, Linking,
     PassClearance, PlungeKind, PlungeStrategy, ProbeAt, RetractPolicy,
 };
-use crate::process::setup::{
+use cadmpeg_ir::process::setup::{
     AxisClass, FunctionStep, JobKind, NcFunction, Program, ProgramOutput, ProgramStep, Setup, Step,
     WorkOffset, WorkpieceSetup,
 };
-use crate::process::state::{ProcessBase, ProcessContent, ProcessState, ProcessStateOf};
-use crate::process::stock::{
+use cadmpeg_ir::process::state::{ProcessBase, ProcessContent, ProcessState, ProcessStateOf};
+use cadmpeg_ir::process::stock::{
     AxisSpec, BoxAlignment, BoxOffsets, BoxPoint, BoxSide, CylinderOffsets, StockPlacement,
     StockRule, StockShape, Wcs, WcsOrientation, WcsOrigin,
 };
-use crate::process::technology::{
+use cadmpeg_ir::process::technology::{
     ChamferCut, Compensation, Coolant, CornerMode, CutMode, FeedRate, FeedRole, FinishingSteps,
     HelixRise, JetCut, PassTransition, RestSource, Spindle, SpindleDirection, StepRule,
     TabPlacement, TabShape, Tabs, Technology, TurningSide,
 };
-use crate::process::tool::{
+use cadmpeg_ir::process::tool::{
     Cutter, HolderProfile, HolderSection, LibraryRef, Machine, NcNumbers, Preset, RotaryAxes, Tool,
     ToolCatalog, ToolClass, ToolPocket, TurningInsert, Uuid,
 };
-use crate::process::toolpath::{
+use cadmpeg_ir::process::toolpath::{
     Heater, Motion, MotionClass, MotionValue, MovementClass, Toolpath, ToolpathContent,
 };
-use crate::process::{Choice, ProcessConstruction, WorkpieceSelection};
+use cadmpeg_ir::process::{Choice, ProcessConstruction, WorkpieceSelection};
 
-fn generates<T: JsonSchema>(generator: &mut SchemaGenerator) {
-    let schema = T::json_schema(generator);
-    assert!(schema.as_object().is_some(), "{}", T::schema_name());
-}
+use crate::generates;
 
 #[test]
 fn every_process_type_has_a_schema() {

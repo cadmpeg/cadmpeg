@@ -625,6 +625,46 @@ fn combine_keeps_target_tools_operation_and_retention() {
 }
 
 #[test]
+fn stitch_keeps_operand_elements_tolerance_and_output() {
+    use cadmpeg_ir::features::selections::{BodySelection, NativeSelections};
+    let names = vec![
+        "inventor:wrapper#a".to_owned(),
+        "inventor:wrapper#b".to_owned(),
+    ];
+    let bodies = old::SewBodySelection::try_from(BodySelection::NativeSet(
+        NativeSelections::try_from(names).expect("distinct operands"),
+    ))
+    .expect("sew operands");
+    let operation = typed(
+        &LegacyOperation::SewBodies {
+            bodies,
+            gap_tolerance: Some(positive(2.5)),
+        },
+        selections::SketchData::default(),
+        &[],
+    )
+    .expect("typed knit");
+    let wire = json::to_value(&operation).expect("v11 wire");
+    let decoded: FeatureOperation = json::from_value(wire).expect("admitted v11 operation");
+    assert_eq!(operation, decoded);
+    let FeatureOperation::Knit(knit) = operation else {
+        panic!("knit");
+    };
+    assert_eq!(
+        knit.tolerance,
+        Some(Dimension::Literal(
+            cadmpeg_ir::scalar::NonNegativeLength::from(positive(2.5))
+        ))
+    );
+    assert_eq!(knit.output.solid, None);
+    assert_eq!(knit.output.boolean, None);
+    assert!(matches!(
+        &knit.elements.picks,
+        cadmpeg_ir::design::selection::Picks::Named(members) if members.as_slice().len() == 2
+    ));
+}
+
+#[test]
 fn trim_keeps_unknown_and_reverse_sides() {
     for (side, expected) in [
         ("unresolved", None),
@@ -1213,6 +1253,40 @@ fn split_face_path_keeps_native_projection_controls() {
         losses[0].code,
         InventorLossCode::FeatureDesignOperationNative.kind()
     );
+}
+
+#[test]
+fn an_extrude_to_a_native_face_projects_a_geometry_limit_and_validates() {
+    let mut operation = extrude();
+    let LegacyOperation::Extrude { extent, .. } = &mut operation else {
+        panic!("extrude");
+    };
+    *extent = cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+        side: cadmpeg_ir::features::extents::ExtrudeSide {
+            termination: cadmpeg_ir::features::extents::LinearTermination::ToFace {
+                face: cadmpeg_ir::features::selections::FaceSelection::Native(
+                    "inventor:pmdc:selection#synthetic".into(),
+                ),
+                offset: None,
+            },
+            draft: None,
+        },
+    };
+    let FeatureOperation::Extrude(value) =
+        typed(&operation, selections::SketchData::default(), &[]).expect("extrude")
+    else {
+        panic!("extrude");
+    };
+    let Some(Span::Between { end, .. }) = value.span else {
+        panic!("span");
+    };
+    assert!(matches!(*end, Limit::ToGeometry { offset: None, .. }));
+    let mut ir = part(operation);
+    project_part(&mut ir);
+    assert!(validate(&ir).expect("v11 validation").is_empty());
+    let neutral =
+        cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).expect("neutral validation");
+    assert_eq!(neutral.error_count(), 0, "{:?}", neutral.findings);
 }
 
 mod review;

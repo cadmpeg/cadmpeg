@@ -699,25 +699,61 @@ pub(crate) fn parse(
     parse_inner(input, ctx).map_err(ParseError::into_codec_error)
 }
 
+/// Parse only the `HEADER` section of one exchange structure for lightweight
+/// dialect classification.
+pub(crate) fn parse_header(input: &[u8], ctx: &DecodeContext<'_>) -> Result<Exchange, CodecError> {
+    parse_header_inner(input, ctx).map_err(ParseError::into_codec_error)
+}
+
+fn parse_header_inner(input: &[u8], budget: &DecodeContext<'_>) -> Result<Exchange, ParseError> {
+    let mut parser = Parser::new(input, budget);
+    parser.current = parser.lex_next()?;
+    let ParsedHeader {
+        header,
+        admission: header_admission,
+        ..
+    } = parser.parse_header_section()?;
+    Ok(Exchange {
+        header,
+        anchors: Vec::new(),
+        references: Vec::new(),
+        data: Vec::new(),
+        signatures: Vec::new(),
+        records: BTreeMap::new(),
+        omitted_spans: Vec::new(),
+        given_up: Vec::new(),
+        lost_records: BTreeMap::new(),
+        lost: crate::reader::LostInstances::default(),
+        schema_identifiers: header_admission.schema_identifiers,
+        implementation_level: header_admission.implementation_level,
+        entity_ids: EntityIndex::default(),
+    })
+}
+
 pub(crate) fn parse_inner(
     input: &[u8],
     budget: &DecodeContext<'_>,
 ) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
-    let lexer = Lexer::new(input, budget);
-    let mut parser = Parser {
-        current: None,
-        lexer,
-        last_end: 0,
-        diagnostics: Vec::new(),
-        given_up: Vec::new(),
-        given_up_names: BTreeMap::new(),
-        given_up_anchors: BTreeMap::new(),
-        omitted_entity_names: None,
-        defer_lexical_errors: false,
-        budget,
-    };
+    let mut parser = Parser::new(input, budget);
     parser.current = parser.lex_next()?;
     parser.exchange()
+}
+
+impl<'input, 'ctx, 'arena> Parser<'input, 'ctx, 'arena> {
+    fn new(input: &'input [u8], budget: &'ctx DecodeContext<'arena>) -> Self {
+        Self {
+            current: None,
+            lexer: Lexer::new(input, budget),
+            last_end: 0,
+            diagnostics: Vec::new(),
+            given_up: Vec::new(),
+            given_up_names: BTreeMap::new(),
+            given_up_anchors: BTreeMap::new(),
+            omitted_entity_names: None,
+            defer_lexical_errors: false,
+            budget,
+        }
+    }
 }
 
 impl ParseError {
@@ -905,8 +941,14 @@ fn omitted_entity_name(partial: &PartialRecord) -> bool {
         )
 }
 
+struct ParsedHeader {
+    header: Vec<HeaderRecord>,
+    admission: HeaderAdmission,
+    omitted_spans: Vec<Range<usize>>,
+}
+
 impl Parser<'_, '_, '_> {
-    fn exchange(mut self) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
+    fn parse_header_section(&mut self) -> Result<ParsedHeader, ParseError> {
         let draft = self.lexer.is_draft();
         let mut omitted_spans = Vec::new();
         if let Some(offset) =
@@ -956,9 +998,22 @@ impl Parser<'_, '_, '_> {
             Err(ValidationError::Invalid(message)) => return self.err(message),
             Err(ValidationError::Resource(error)) => return Err(ParseError::Resource(error)),
         };
-        let implementation_level = header_admission.implementation_level.level();
-
         self.diagnostics.extend(header_diagnostics);
+        Ok(ParsedHeader {
+            header,
+            admission: header_admission,
+            omitted_spans,
+        })
+    }
+
+    fn exchange(mut self) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
+        let ParsedHeader {
+            mut header,
+            admission: header_admission,
+            mut omitted_spans,
+        } = self.parse_header_section()?;
+        let draft = self.lexer.is_draft();
+        let implementation_level = header_admission.implementation_level.level();
         let schema_names_for_matching =
             schema_names_for_matching(&header_admission.schema_identifiers);
         let header_data_references = match validate_header_sections(
