@@ -29,13 +29,14 @@ mod records;
 mod reduce;
 mod smbh;
 use preconditions::{
-    body_members_naming, replaced_by_stamp, shared_body_visibilities, sketch_curve_links_naming,
-    sketch_records_naming, unowned_sketch_records, unreachable_record_headers,
-    unwritable_link_records, unwritable_tolerant_coedges, unwritable_tolerant_tails,
-    validate_source_less_auxiliary_geometry, validate_source_less_design_links,
-    validate_source_less_design_ownership, validate_source_less_history_graph,
-    validate_source_less_procedural_carriers, validate_source_less_recipes,
-    validate_source_less_sketch_graph, validate_source_less_topology_tolerances, StampMark,
+    body_members_naming, replaced_by_stamp, shadowing_record_headers, shared_body_visibilities,
+    sketch_curve_links_naming, sketch_records_naming, typed_sketch_indices, unowned_sketch_records,
+    unreachable_record_headers, unwritable_link_records, unwritable_tolerant_coedges,
+    unwritable_tolerant_tails, validate_source_less_auxiliary_geometry,
+    validate_source_less_design_links, validate_source_less_design_ownership,
+    validate_source_less_history_graph, validate_source_less_procedural_carriers,
+    validate_source_less_recipes, validate_source_less_sketch_graph,
+    validate_source_less_topology_tolerances, StampMark,
 };
 use presentation::{BodySelection, GeneratedDesignRegistry};
 use records::{encode_design_bulkstream, encode_design_metastream};
@@ -194,13 +195,20 @@ fn attempt<W: Write + Seek>(
     let loaded_native = f3d_native(target).map_err(Failure::design)?;
     let has_native = loaded_native.is_some();
     let mut native = loaded_native.unwrap_or_default();
+    // A record index that a written record still holds names that record.
+    let held = typed_sketch_indices(&native);
+    let gone = dropped
+        .sketch_records
+        .difference(&held)
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
     for header in &mut native.design_entity_headers {
         if let Some(list) = header.sketch_references_mut() {
             list.references
-                .retain(|reference| !dropped.sketch_records.contains(&reference.value));
+                .retain(|reference| !gone.contains(&reference.value));
             if list
                 .record_reference
-                .is_some_and(|index| dropped.sketch_records.contains(&index))
+                .is_some_and(|index| gone.contains(&index))
             {
                 list.record_reference = None;
             }
@@ -280,7 +288,8 @@ fn attempt<W: Write + Seek>(
     let mut native_parameters = None;
     if write_design {
         if let Some(unwritable) = unowned_sketch_records(&native)
-            .or_else(|| sketch_records_naming(&native, &dropped.sketch_records))
+            .or_else(|| sketch_records_naming(&native, &gone))
+            .or_else(|| shadowing_record_headers(&native))
             .or_else(|| unreachable_record_headers(&native))
         {
             return Err(Failure::unwritable(Stage::Design, unwritable));

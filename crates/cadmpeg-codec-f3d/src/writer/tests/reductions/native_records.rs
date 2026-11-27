@@ -244,6 +244,37 @@ fn a_body_visibility_under_another_asm_key_keeps_its_entity_and_takes_the_body_k
 }
 
 #[test]
+fn a_body_that_stores_no_asm_key_keeps_its_visibility_under_its_ordinal() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    ir.geometry.bodies[0].visible = Some(false);
+    let row = body_visibility(&ir, 0, false);
+    let body = ir.geometry.bodies[0].id.clone();
+    let mut native = f3d_native_mut(&mut ir);
+    native.body_visibilities = vec![row];
+    native.body_native_keys = vec![cadmpeg_asm::brep::records::BodyNativeKey {
+        source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+        body,
+        record_index: 1,
+        body_ordinal: 0,
+        source_brep: None,
+        asm_body_key: None,
+    }];
+    drop(native);
+
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_whole_drop(&report);
+    assert_no_loss_naming(&report, "body visibilit");
+    assert_eq!(decoded.geometry.bodies[0].visible, Some(false));
+    let native = f3d_native(&decoded);
+    let [row] = native.body_visibilities.as_slice() else {
+        panic!("one body visibility: {:#?}", native.body_visibilities)
+    };
+    assert_eq!(row.entity_suffix, 985);
+    assert_eq!(row.asm_body_key(), 0);
+    assert_eq!(native.body_native_keys[0].asm_body_key, None);
+}
+
+#[test]
 fn a_second_visibility_of_a_body_is_dropped_with_the_bodies_root_member_of_its_entity() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.bodies[0].visible = Some(true);
@@ -394,6 +425,42 @@ fn a_record_header_outside_the_sketch_graph_is_dropped_alone() {
         .map(|header| header.record_index)
         .collect::<Vec<_>>();
     assert_eq!(indices, [33]);
+}
+
+#[test]
+fn a_record_header_that_shadows_a_typed_sketch_record_is_dropped_alone() {
+    use crate::records::decal::DesignRecordHeader;
+    use crate::records::references::DesignClassTag;
+
+    let mut ir = crate::writer::tests::source_less_design::sketch_graph_cube();
+    let point = f3d_native(&ir).sketch_points[0].record_index;
+    f3d_native_mut(&mut ir)
+        .design_record_headers
+        .push(DesignRecordHeader {
+            id: "f3d:generated:record-header#9".into(),
+            record_index: point,
+            class_tag: DesignClassTag::try_from("350".to_owned()).expect("class tag"),
+            byte_offset: 0,
+        });
+
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_whole_drop(&report);
+    let messages = omitted(&report);
+    assert!(
+        messages.iter().any(|message| message.contains(
+            "of Design record headers that use the record index of a typed sketch record"
+        ) && message.ends_with(": f3d:generated:record-header#9")),
+        "{messages:#?}"
+    );
+    assert_eq!(messages.len(), 1, "{messages:#?}");
+    let native = f3d_native(&decoded);
+    assert!(native
+        .design_record_headers
+        .iter()
+        .all(|header| header.record_index != point));
+    assert_eq!(native.sketch_points.len(), 1);
+    assert_eq!(native.sketch_curve_identities.len(), 3);
+    assert_eq!(native.sketch_relations.len(), 1);
 }
 
 #[test]

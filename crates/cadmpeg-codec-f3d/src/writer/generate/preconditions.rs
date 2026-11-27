@@ -272,6 +272,43 @@ pub(super) fn unreachable_record_headers(native: &F3dNative) -> Option<Unwritabl
     )
 }
 
+/// The record indices of the typed sketch records.
+pub(super) fn typed_sketch_indices(native: &F3dNative) -> BTreeSet<u32> {
+    native
+        .sketch_points
+        .iter()
+        .map(|record| record.record_index)
+        .chain(
+            native
+                .sketch_curve_identities
+                .iter()
+                .map(|record| record.record_index),
+        )
+        .chain(
+            native
+                .sketch_relations
+                .iter()
+                .map(|record| record.record_index),
+        )
+        .chain(native.sketch_texts.iter().map(|record| record.record_index))
+        .collect()
+}
+
+/// The Design record headers that use the record index of a typed sketch
+/// record. The typed record is written at that index.
+pub(super) fn shadowing_record_headers(native: &F3dNative) -> Option<Unwritable> {
+    let typed = typed_sketch_indices(native);
+    Unwritable::of(
+        "of Design record headers that use the record index of a typed sketch record (the Design stream writes the typed record at that index)",
+        native
+            .design_record_headers
+            .iter()
+            .filter(|header| typed.contains(&header.record_index))
+            .map(|header| header.id.clone())
+            .collect(),
+    )
+}
+
 /// The sketch records whose sketch owner the document does not hold: the
 /// written record names its owner, and no written sketch header holds it.
 pub(super) fn unowned_sketch_records(native: &F3dNative) -> Option<Unwritable> {
@@ -1016,12 +1053,6 @@ pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
             return Err(CodecError::InvalidInput(format!(
                 "multiple F3D Design record headers use index {}",
                 header.record_index
-            )));
-        }
-        if typed_indices.contains_key(&header.record_index) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D Design record header {} shadows a typed sketch record",
-                header.id
             )));
         }
     }
