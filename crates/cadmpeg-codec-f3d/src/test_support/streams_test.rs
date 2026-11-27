@@ -1742,7 +1742,7 @@ pub(super) fn append_companion(
 }
 
 /// A parameter scope of a native feature name that no feature grammar claims:
-/// it has no reference and states no geometry.
+/// it names one reference and states no geometry.
 pub(super) fn append_parameter_scope(
     out: &mut Vec<u8>,
     records: &mut Vec<(u64, u64)>,
@@ -1757,7 +1757,10 @@ pub(super) fn append_parameter_scope(
     out.extend_from_slice(b"268");
     out.extend_from_slice(&scope_record.to_le_bytes());
     out.extend_from_slice(&[0; 10]);
-    out.extend_from_slice(&0_u32.to_le_bytes());
+    out.extend_from_slice(&1_u32.to_le_bytes());
+    out.push(1);
+    out.extend_from_slice(&277_u32.to_le_bytes());
+    out.extend_from_slice(&[0; 6]);
     out.extend_from_slice(&1_u32.to_le_bytes());
     lp_utf16(out, name);
     let mut tail = [0_u8; 78];
