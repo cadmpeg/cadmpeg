@@ -595,7 +595,10 @@ fn extract_streams_for_owner(
                 given_up.push(ctx.give_up_part(
                     member,
                     CodecError::malformed(
-                        "the ZLB-wrapped zlib member does not inflate to its declared size",
+                        "the ZLB-wrapped frames from this offset do not read: a zlib member \
+                         does not inflate to its declared size or passes the frame ceiling, a \
+                         frame runs past its section, or bytes after the frames are neither a \
+                         frame nor zero padding",
                     ),
                 )?);
             }
