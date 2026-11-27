@@ -1096,3 +1096,71 @@ fn a_joined_loft_with_split_caps_is_proved_by_the_preceding_state() {
     };
     assert!(join_proof(Some(&states)).is_ok());
 }
+
+/// `model()` with its last face moved into a second solid body.
+fn two_bodies() -> CadIr {
+    let mut model = model();
+    let mut geometry = json::to_value(&model.geometry).expect("topology");
+    let object = geometry.as_object_mut().expect("topology object");
+    let push = |object: &mut serde_json::Map<String, serde_json::Value>, key: &str, value| {
+        object
+            .get_mut(key)
+            .and_then(|array| array.as_array_mut())
+            .expect("arena")
+            .push(value);
+    };
+    push(
+        object,
+        "bodies",
+        json!({"id":"test:model:body#b2", "kind":"solid"}),
+    );
+    push(
+        object,
+        "regions",
+        json!({"id":"test:model:region#r2", "body":"test:model:body#b2", "shells":["test:model:shell#s2"]}),
+    );
+    push(
+        object,
+        "shells",
+        json!({"id":"test:model:shell#s2", "region":"test:model:region#r2", "members":[]}),
+    );
+    object["faces"][2]["shell"] = json!("test:model:shell#s2");
+    model.geometry = json::from_value(geometry).expect("two bodies");
+    model
+}
+
+/// `legacy_model` with two more faces that the loft does not name.
+fn three_foreign_faces() -> CadIr {
+    let mut model = legacy_model();
+    for id in ["f4", "f5"] {
+        let mut face = model.geometry.faces[3].clone();
+        face.id = json::from_value(json!(format!("test:model:face#{id}"))).expect("id");
+        model.geometry.faces.push(face);
+    }
+    model
+}
+
+#[test]
+fn a_joined_loft_needs_one_solid_before_it_with_the_foreign_faces() {
+    let proof = |before: CadIr| {
+        join_proof(Some(&PairStates {
+            after: (three_foreign_faces(), held),
+            before: (before, held),
+        }))
+    };
+    assert!(proof(model()).is_ok());
+    // Two solid bodies of two and one faces hold three faces together, and
+    // neither holds the three foreign faces.
+    assert!(matches!(proof(two_bodies()), Err(Unproved::NotJoined)));
+}
+
+#[test]
+fn a_joined_loft_whose_source_no_state_lists_stays_unproved() {
+    struct Unlisted;
+    impl ResultStates for Unlisted {
+        fn after(&self, _: &DecodeContext<'_>, _: u32) -> Result<Rc<StateModel>, CodecError> {
+            Ok(Rc::new(StateModel::Unavailable))
+        }
+    }
+    assert!(matches!(join_proof(Some(&Unlisted)), Err(Unproved::Result)));
+}

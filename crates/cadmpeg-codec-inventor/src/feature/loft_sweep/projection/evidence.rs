@@ -614,32 +614,37 @@ pub(in crate::feature::loft_sweep) fn loft_join_proof(
     }
     let before = states.before(ctx, generator).map_err(Unproved::Codec)?;
     match &*before {
-        StateModel::Model(model) if solid_faces(model) >= foreign => Ok(()),
+        StateModel::Model(model) if largest_solid_faces(model) >= foreign => Ok(()),
         StateModel::Model(_) | StateModel::Unavailable => Err(Unproved::NotJoined),
         StateModel::Failed => Err(Unproved::StateFailed),
         StateModel::Bounded => Err(Unproved::Bounded),
     }
 }
 
-/// Faces of the solid bodies of `ir`.
-fn solid_faces(ir: &CadIr) -> usize {
-    ir.geometry
-        .faces
-        .iter()
-        .filter(|face| {
-            ir.geometry
-                .shells
-                .iter()
-                .find(|shell| shell.id == face.shell)
-                .and_then(|shell| ir.geometry.regions.iter().find(|r| r.id == shell.region))
-                .is_some_and(|region| {
-                    ir.geometry
-                        .bodies
-                        .iter()
-                        .any(|body| body.id == region.body && body.kind == BodyKind::Solid)
-                })
-        })
-        .count()
+/// Faces of the solid body of `ir` with the most faces. The state before the
+/// loft holds the joined body as one solid body. The states do not carry a body
+/// identity across the history, so the size of the body stands for it.
+fn largest_solid_faces(ir: &CadIr) -> usize {
+    let mut per_body: HashMap<&str, usize> = HashMap::new();
+    for face in &ir.geometry.faces {
+        let body = ir
+            .geometry
+            .shells
+            .iter()
+            .find(|shell| shell.id == face.shell)
+            .and_then(|shell| ir.geometry.regions.iter().find(|r| r.id == shell.region))
+            .and_then(|region| {
+                ir.geometry
+                    .bodies
+                    .iter()
+                    .find(|body| body.id == region.body)
+            })
+            .filter(|body| body.kind == BodyKind::Solid);
+        if let Some(body) = body {
+            *per_body.entry(body.id.as_str()).or_default() += 1;
+        }
+    }
+    per_body.into_values().max().unwrap_or(0)
 }
 
 /// Number of faces of the result body that the loft does not name, when the
