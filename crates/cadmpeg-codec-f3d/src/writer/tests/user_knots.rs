@@ -109,6 +109,7 @@ fn the_patch_reads_the_archive_in_the_write_session() {
             &source,
             &mut Vec::new(),
             &mut Vec::new(),
+            &mut Vec::new(),
         )
     };
     let Err(CodecError::ResourceLimit(limit)) = patch(length) else {

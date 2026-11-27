@@ -63,7 +63,7 @@ fn write_scoped<'a>(
         &written,
         configurations,
     );
-    losses.extend(written.read_back(plan.active(), &targets).unwrap());
+    losses.extend(written.compare_in_memory(plan.active(), &targets).unwrap());
     (written, losses)
 }
 
@@ -758,10 +758,19 @@ fn ordinals_the_row_order_cannot_hold_are_charged() {
 }
 
 #[test]
-fn configurations_with_no_table_to_hold_their_rows_are_charged_dropped() {
+fn configurations_with_an_empty_table_document_are_written_into_a_new_table() {
     let natives = natives();
     let documents = documents();
     let decoded = project(&documents, &natives.targets()).unwrap();
+    let mut configurations = decoded.configurations;
+    for configuration in &mut configurations {
+        configuration
+            .properties
+            .retain(|key, _| key.as_str().starts_with("property:"));
+    }
+    assert!(configurations.iter().all(|configuration| configuration
+        .properties
+        .contains_key("property:Part Number")));
     let empty = vec![DesignConfiguration::try_new(
         ENTRY.into(),
         DesignConfigurationKind::Table,
@@ -771,13 +780,38 @@ fn configurations_with_no_table_to_hold_their_rows_are_charged_dropped() {
     let (written, losses) = write(
         &empty,
         &crate::design::configurations::Projection::default(),
-        &decoded.configurations,
+        &configurations,
         &natives,
     );
-    assert!(matches!(written.documents, Cow::Borrowed(_)));
-    assert_eq!(losses.len(), 1, "{losses:#?}");
-    assert_eq!(losses[0].code.to_string(), "export/edit.dropped");
-    assert!(losses[0].message.contains(id("tall").as_str()));
+    assert!(!losses.is_empty());
+    for loss in &losses {
+        assert_eq!(
+            loss.code.to_string(),
+            "export/record.residual-unavailable",
+            "{losses:#?}"
+        );
+        assert!(loss.message.contains("DR-1069"), "{losses:#?}");
+    }
+    let tables = written.documents[0].tables();
+    assert_eq!(tables.len(), 1);
+    let mut rows = tables[0]
+        .rows
+        .iter()
+        .map(|row| row.id.as_str())
+        .collect::<Vec<_>>();
+    rows.sort_unstable();
+    assert_eq!(rows, ["c1", "tall"]);
+    assert!(projects(&configurations, &written.documents, &natives.targets()).unwrap());
+    for configuration in &configurations {
+        let read = written
+            .projection
+            .configurations
+            .iter()
+            .find(|read| read.id == configuration.id)
+            .unwrap();
+        assert_eq!(read.parameter_overrides, configuration.parameter_overrides);
+        assert_eq!(read.properties, configuration.properties);
+    }
 }
 
 #[test]
@@ -1352,3 +1386,79 @@ fn configurations_decoded_after_an_owner_conflict_are_written_as_stated() {
         assert!(losses.is_empty(), "edited {edited}: {losses:#?}");
     }
 }
+
+/// A move of the active row from `c1` to `tall` writes the stored
+/// `testRowData` entry with the value of row `tall`, and charges the rewrite.
+#[test]
+fn a_moved_active_row_writes_the_test_rows_of_its_row() {
+    let natives = natives();
+    let targets = natives.targets();
+    let mut documents = active_in_source("c1");
+    let mut payload = documents[0].payload().clone();
+    payload.insert(
+        "testRowData".into(),
+        json!([json!({
+            "DataType": "StringOptionValue",
+            "ColumnUniqueID": "P",
+            "Value": "Configuration 1",
+            "Option": 1
+        })
+        .to_string()]),
+    );
+    documents[0] = documents[0].with_payload(payload).unwrap();
+    let decoded = project(&documents, &targets).unwrap();
+    let mut configurations = decoded.configurations.clone();
+    configuration(&mut configurations, "c1").active = false;
+    configuration(&mut configurations, "tall").active = true;
+    let (written, _) = regenerate(&documents, &decoded, &configurations, &targets).unwrap();
+    let tall = id("tall");
+    let stored = id("c1");
+    let mut losses = Vec::new();
+    let test_rows = written
+        .test_rows(
+            Some(tall.as_str()),
+            &targets,
+            None,
+            &BTreeSet::new(),
+            &mut losses,
+        )
+        .expect("rewritten testRowData");
+    assert_eq!(test_rows.index, 0);
+    let payload = test_rows.payload.unwrap();
+    let entries = payload["testRowData"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| serde_json::from_str::<serde_json::Value>(entry.as_str().unwrap()).unwrap())
+        .map(|entry| (entry["ColumnUniqueID"].as_str().unwrap().to_owned(), entry))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(
+        entries["P"],
+        json!({
+            "ColumnUniqueID": "P",
+            "DataType": "StringOptionValue",
+            "Option": 1,
+            "Value": "Tall"
+        })
+    );
+    assert_eq!(entries["H"]["Expression"], "35 mm");
+    assert_eq!(entries["D"]["Expression"], "10.00 mm");
+    assert_eq!(entries["F"]["Value"], false);
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.message.contains("writes testRowData entries")),
+        "{losses:#?}"
+    );
+    assert!(written
+        .test_rows(
+            Some(stored.as_str()),
+            &targets,
+            None,
+            &BTreeSet::new(),
+            &mut Vec::new()
+        )
+        .is_none());
+}
+
+mod target;
