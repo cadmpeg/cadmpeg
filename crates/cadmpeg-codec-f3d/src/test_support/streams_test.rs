@@ -1670,6 +1670,7 @@ pub(super) fn generated_design_form_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
 pub(super) fn append_owner(
     out: &mut Vec<u8>,
     records: &mut Vec<(u64, u64)>,
+    class_tag: &[u8; 3],
     owner_record_index: u32,
     parameter_record_index: u32,
     companion_record_index: u32,
@@ -1681,7 +1682,7 @@ pub(super) fn append_owner(
         u64::try_from(out.len()).expect("synthetic dimension owner offset"),
     ));
     let mut owner = crate::design::test_support::parameter_owner_frame();
-    owner[4..7].copy_from_slice(b"270");
+    owner[4..7].copy_from_slice(class_tag);
     owner[7..11].copy_from_slice(&owner_record_index.to_le_bytes());
     owner[25..29].copy_from_slice(&scope_record_index.to_le_bytes());
     owner[40..48].copy_from_slice(&1.0_f64.to_le_bytes());
@@ -1692,13 +1693,14 @@ pub(super) fn append_owner(
     owner[94..98].copy_from_slice(&scope_record_index.to_le_bytes());
     out.extend_from_slice(&owner);
     out.extend_from_slice(&3_u32.to_le_bytes());
-    out.extend_from_slice(b"270");
+    out.extend_from_slice(class_tag);
     out.extend_from_slice(&owner_record_index.to_le_bytes());
 }
 
 pub(super) fn append_parameter(
     out: &mut Vec<u8>,
     records: &mut Vec<(u64, u64)>,
+    class_tag: &[u8; 3],
     owner_record_index: u32,
     parameter_record_index: u32,
     name: &str,
@@ -1716,7 +1718,7 @@ pub(super) fn append_parameter(
         name,
         1.0,
     );
-    parameter[4..7].copy_from_slice(b"271");
+    parameter[4..7].copy_from_slice(class_tag);
     parameter[7..11].copy_from_slice(&parameter_record_index.to_le_bytes());
     out.extend_from_slice(&parameter);
 }
@@ -1724,6 +1726,7 @@ pub(super) fn append_parameter(
 pub(super) fn append_companion(
     out: &mut Vec<u8>,
     records: &mut Vec<(u64, u64)>,
+    class_tag: &[u8; 3],
     owner_record_index: u32,
     companion_record_index: u32,
 ) {
@@ -1733,7 +1736,7 @@ pub(super) fn append_companion(
     ));
     let mut companion = vec![0_u8; 58];
     companion[0..4].copy_from_slice(&3_u32.to_le_bytes());
-    companion[4..7].copy_from_slice(b"272");
+    companion[4..7].copy_from_slice(class_tag);
     companion[7..11].copy_from_slice(&companion_record_index.to_le_bytes());
     companion[31] = 1;
     companion[32..36].copy_from_slice(&owner_record_index.to_le_bytes());
@@ -1742,11 +1745,13 @@ pub(super) fn append_companion(
 }
 
 /// A parameter scope of a native feature name that no feature grammar claims:
-/// it names one reference and states no geometry.
+/// its reference table names the owner record and it states no geometry.
 pub(super) fn append_parameter_scope(
     out: &mut Vec<u8>,
     records: &mut Vec<(u64, u64)>,
+    class_tag: &[u8; 3],
     scope_record: u32,
+    owner_record: u32,
     name: &str,
 ) {
     records.push((
@@ -1754,12 +1759,12 @@ pub(super) fn append_parameter_scope(
         u64::try_from(out.len()).expect("synthetic parameter scope offset"),
     ));
     out.extend_from_slice(&3_u32.to_le_bytes());
-    out.extend_from_slice(b"268");
+    out.extend_from_slice(class_tag);
     out.extend_from_slice(&scope_record.to_le_bytes());
     out.extend_from_slice(&[0; 10]);
     out.extend_from_slice(&1_u32.to_le_bytes());
     out.push(1);
-    out.extend_from_slice(&277_u32.to_le_bytes());
+    out.extend_from_slice(&owner_record.to_le_bytes());
     out.extend_from_slice(&[0; 6]);
     out.extend_from_slice(&1_u32.to_le_bytes());
     lp_utf16(out, name);
@@ -1768,7 +1773,7 @@ pub(super) fn append_parameter_scope(
     tail[30..34].copy_from_slice(&u32::MAX.to_le_bytes());
     out.extend_from_slice(&tail);
     out.extend_from_slice(&3_u32.to_le_bytes());
-    out.extend_from_slice(b"268");
+    out.extend_from_slice(class_tag);
     out.extend_from_slice(&scope_record.to_le_bytes());
 }
 
@@ -1832,6 +1837,7 @@ pub(super) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u
     append_owner(
         &mut out,
         &mut records,
+        b"270",
         1200,
         1201,
         1202,
@@ -1841,12 +1847,13 @@ pub(super) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u
     append_parameter(
         &mut out,
         &mut records,
+        b"271",
         1200,
         1201,
         "d1",
         "Linear Dimension-1",
     );
-    append_companion(&mut out, &mut records, 1200, 1202);
+    append_companion(&mut out, &mut records, b"272", 1200, 1202);
 
     let mut locus_pair = vec![0_u8; 80];
     locus_pair[0..4].copy_from_slice(&3_u32.to_le_bytes());
@@ -1881,6 +1888,7 @@ pub(super) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u
     append_owner(
         &mut out,
         &mut records,
+        b"270",
         1203,
         1204,
         1205,
@@ -1890,12 +1898,13 @@ pub(super) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u
     append_parameter(
         &mut out,
         &mut records,
+        b"271",
         1203,
         1204,
         "d2",
         "Linear Dimension-2",
     );
-    append_companion(&mut out, &mut records, 1203, 1205);
+    append_companion(&mut out, &mut records, b"272", 1203, 1205);
     out.extend_from_slice(&3_u32.to_le_bytes());
     out.extend_from_slice(b"272");
     out.extend_from_slice(&1205_u32.to_le_bytes());

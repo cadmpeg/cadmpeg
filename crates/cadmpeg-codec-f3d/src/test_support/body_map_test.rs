@@ -184,16 +184,20 @@ fn empty_model_maps_archive(
     ];
     let mut records = vec![(10, 0), (20, snapshot_offset)];
     if parameters {
+        // Type-table rows 4 to 7 give the class tags 260 to 263.
         let scope_record = 1_100_u32;
         super::streams_test::append_parameter_scope(
             &mut bulk,
             &mut records,
+            b"260",
             scope_record,
+            1200,
             "Parameter Group",
         );
         super::streams_test::append_owner(
             &mut bulk,
             &mut records,
+            b"261",
             1200,
             1201,
             1202,
@@ -203,20 +207,14 @@ fn empty_model_maps_archive(
         super::streams_test::append_parameter(
             &mut bulk,
             &mut records,
+            b"262",
             1200,
             1201,
             "d1",
             "Linear Dimension-1",
         );
-        super::streams_test::append_companion(&mut bulk, &mut records, 1200, 1202);
+        super::streams_test::append_companion(&mut bulk, &mut records, b"263", 1200, 1202);
         let base = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
-        types.push((
-            "33333333-4444-5555-6666-777777777777",
-            "",
-            5,
-            "Dimension",
-            &[270, 271],
-        ));
         types.push((
             "00000000-0000-0000-0000-000000001100",
             base,
@@ -225,7 +223,7 @@ fn empty_model_maps_archive(
             &[1100],
         ));
         types.push((
-            "00000000-0000-0000-0000-000000001200",
+            "D91D429C-1BB5-4640-B49F-69AF14F463E9",
             base,
             1,
             "Dimension",
