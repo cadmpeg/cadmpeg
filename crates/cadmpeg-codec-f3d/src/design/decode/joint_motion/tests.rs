@@ -439,3 +439,49 @@ fn zero_lane_match_in_a_partner_record_is_not_a_freedom() {
     bytes.extend_from_slice(&0f64.to_le_bytes());
     assert!(codes(&bytes, &HashMap::from([(11, true)])).is_empty());
 }
+
+#[test]
+fn only_an_aligned_scope_of_the_stream_without_a_motion_takes_its_kinds_motion() {
+    use crate::records::feature::assembly::DesignAssemblyAlignment;
+    use crate::records::feature::scope::{
+        DesignFeatureKind, DesignParameterScope, DesignScopePayload,
+    };
+    let stream = "f3d:Design/BulkStream.dat";
+    let scope = |stream: &str, record_index: u32, aligned: bool| {
+        let mut scope = DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#{record_index}"),
+            DesignFeatureKind::Assemble,
+            record_index,
+        );
+        if aligned {
+            scope
+                .try_edit(|draft| {
+                    draft.payload = DesignScopePayload::Assemble(Some(
+                        DesignAssemblyAlignment::try_new(0.0, [0.0; 3], Vec::new(), None).unwrap(),
+                    ));
+                })
+                .unwrap();
+        }
+        scope
+    };
+    let scopes = [
+        scope(stream, 3, true),
+        scope(stream, 5, true),
+        scope(stream, 7, false),
+        scope("f3d:Design/Other.dat", 9, true),
+    ];
+    let motion = super::DesignJointMotion {
+        id: format!("{stream}:design-joint-motion#0"),
+        joint_record_index: 4,
+        joint_byte_offset: 0,
+        motion_record_index: 6,
+        motion_byte_offset: 0,
+        freedoms: Vec::new(),
+        entry_words: Vec::new(),
+        limits: None,
+    };
+    assert_eq!(
+        super::scopes_without_motion(&scopes, stream, &[motion]),
+        [scopes[0].id.as_str()]
+    );
+}

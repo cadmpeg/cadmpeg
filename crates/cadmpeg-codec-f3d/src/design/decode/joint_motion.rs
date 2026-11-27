@@ -9,7 +9,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 
 use crate::container::ContainerScan;
-use crate::design::assembly::compact_placement_as_built_scope;
+use crate::design::assembly::{compact_placement_as_built_scope, rigid_as_built_scope};
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::layout::assembly_motion_parent_entry as parent_entry;
 use crate::layout::assembly_motion_parent_run as parents;
@@ -67,6 +67,7 @@ pub(crate) fn decode_joint_motions(
 ) -> Result<(Vec<DesignJointMotion>, Vec<LossNote>), CodecError> {
     let mut out = Vec::new();
     let mut unbound = Vec::new();
+    let mut unmoved = Vec::new();
     for entry in scan
         .entries
         .iter()
@@ -104,20 +105,49 @@ pub(crate) fn decode_joint_motions(
             joints,
         };
         let (motions, skipped) = decode_stream(bytes, &entry.name, &assemble_scopes, &as_built);
+        if !skipped.is_empty() {
+            let named = unmoved.len();
+            unmoved.extend(scopes_without_motion(scopes, &stream, &motions));
+            if unmoved.len() > named {
+                unbound.extend(skipped.into_iter().map(|index| format!("{stream}#{index}")));
+            }
+        }
         out.extend(motions);
-        unbound.extend(skipped.into_iter().map(|index| format!("{stream}#{index}")));
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
-    let losses = if unbound.is_empty() {
+    let losses = if unmoved.is_empty() {
         Vec::new()
     } else {
         vec![F3dLossCode::AssemblyJointMotionAssumedRigid.note(format!(
-            "{} record(s) of freedom entries bind no joint record; a joint of their stream with no motion record is stated rigid: {}",
+            "{} joint scope(s) bind no motion record and take the motion of their joint kind, rigid for a fixed joint, where {} record(s) of freedom entries of their stream bind no joint record: {}; {}",
+            unmoved.len(),
             unbound.len(),
+            unmoved.join(", "),
             unbound.join(", ")
         ))]
     };
     Ok((out, losses))
+}
+
+/// The scopes of `stream` that hold a joint alignment and no rigid-group
+/// layout, and that no motion of `motions` binds.
+fn scopes_without_motion<'s>(
+    scopes: &'s [DesignParameterScope],
+    stream: &str,
+    motions: &[DesignJointMotion],
+) -> Vec<&'s str> {
+    scopes
+        .iter()
+        .filter(|scope| {
+            crate::ids::native_stream(&scope.id) == Some(stream)
+                && scope.assembly_alignment().is_some()
+                && !rigid_as_built_scope(scope)
+                && !motions.iter().any(|motion| {
+                    motion.joint_record_index.checked_add(1) == Some(scope.record_index)
+                })
+        })
+        .map(|scope| scope.id.as_str())
+        .collect()
 }
 
 /// The motions of one stream, and the index of each record of π freedom

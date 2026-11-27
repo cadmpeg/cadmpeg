@@ -270,8 +270,9 @@ pub(crate) enum F3dLossCode {
     /// active because the scope-tail booleans' activation meaning is unknown.
     AssemblyJointActivationAssumed,
     /// Design joints stated rigid where the motion record of their scope is
-    /// unread: two motion records bind the scope, or a record of freedom
-    /// entries binds no joint record of its stream.
+    /// unread: two motion records bind the scope, or the scope binds none
+    /// where a record of freedom entries binds no joint record of its
+    /// stream.
     AssemblyJointMotionAssumedRigid,
     /// Rotation limits retained natively because the zero-lane freedom value is unsettled.
     AssemblyJointAngularLimitsNative,
