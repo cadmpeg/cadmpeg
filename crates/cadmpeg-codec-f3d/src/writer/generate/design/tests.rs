@@ -347,6 +347,45 @@ fn every_feature_not_written_is_charged_evaluation_missing() {
     .is_empty());
 }
 
+/// A rigid group of the timeline is charged by name with the reason the
+/// writer leaves it out.
+#[test]
+fn a_rigid_group_is_charged_evaluation_missing_as_no_joint_written() {
+    const GROUP: &str = "test:design:feature#group";
+    let mut ir = scoped_cube();
+    let path = |name: &str| {
+        OccurrencePath(vec![PathStep {
+            occurrence: StepRef::Occurrence(
+                OccurrenceId::mint(format!("test:model:occurrence#{name}"))
+                    .expect("identity grammar"),
+            ),
+            configuration: None,
+        }])
+    };
+    let mut group = feature(GROUP, OperationFamily::Joint);
+    group.definition.operation =
+        FeatureOperation::RigidGroup(Box::new(cadmpeg_ir::design::ops::assembly::RigidGroup {
+            members: [path("a"), path("b")].into(),
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
+        }));
+    ir.design.features.push(group);
+    let Container::Ordered { members, .. } = &mut ir.design.containers[0] else {
+        panic!("the timeline")
+    };
+    members.push(Member::Feature(
+        FeatureId::mint(GROUP).expect("identity grammar"),
+    ));
+    let (report, _) = write(&ir);
+    let missing = loss(&report, "export/evaluation.missing");
+    assert!(
+        missing.iter().any(|message| message.contains(GROUP)
+            && message.contains("the writer writes no joint or rigid group")),
+        "{:#?}",
+        report.losses
+    );
+}
+
 #[test]
 fn an_illegal_name_is_renamed() {
     let mut ir = scoped_cube();

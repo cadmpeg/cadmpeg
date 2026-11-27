@@ -54,6 +54,7 @@ use cadmpeg_ir::codec::write::{
 };
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
+use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::parameter::ParameterOwner;
 use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
@@ -701,6 +702,18 @@ pub(super) fn plan<'a>(
             }
         }
     }
+    let joints = target
+        .design
+        .features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.definition.operation,
+                FeatureOperation::Joint(_) | FeatureOperation::RigidGroup(_)
+            )
+        })
+        .map(|feature| &feature.id)
+        .collect::<BTreeSet<_>>();
     let unwritten = features
         .iter()
         .filter(|feature| {
@@ -719,6 +732,9 @@ pub(super) fn plan<'a>(
             }
             if let Some(reason) = unstated(feature).filter(|reason| rolled_reason != Some(reason)) {
                 notes.push(format!("the writer writes it without its state: {reason}"));
+            }
+            if joints.contains(*feature) {
+                notes.push("the writer writes no joint or rigid group".to_owned());
             }
             if let Some(reason) = sketches.unwritten.get(*feature) {
                 notes.push(format!("its sketch {reason}"));
