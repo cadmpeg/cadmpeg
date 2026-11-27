@@ -7,8 +7,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::sheet_metal::{
-    Flange, FlangeHeight, FlangeWidth, HeightDatum, RadiusSide, ReliefShape, SheetMetal,
-    SheetMetalKind,
+    BendPosition, Flange, FlangeHeight, FlangeWidth, HeightDatum, RadiusSide, ReliefShape,
+    SheetMetal, SheetMetalKind,
 };
 use cadmpeg_ir::design::options::NativeOption;
 use cadmpeg_ir::design::selection::Picks;
@@ -82,6 +82,7 @@ fn full_edge_flange_states_its_fields() {
     assert!((millimetres(flange.bend.radius.as_ref()) - 3.0).abs() <= EPS_VALUE);
     assert_eq!(flange.bend.radius_side, Some(RadiusSide::Inside));
     assert!(flange.bend.relief.is_none());
+    assert_eq!(flange.position, Some(BendPosition::MaterialInside));
     let Picks::Named(picks) = &flange.edges.picks else {
         panic!("expected a stated edge");
     };
@@ -228,6 +229,33 @@ fn side_other_than_two_adds_a_loss() {
         ..FlangeSpec::default()
     }]);
     assert!(codes(&result).contains(&"sheet-metal.flange-field-unread".to_owned()));
+}
+
+#[test]
+fn material_side_states_the_bend_position() {
+    let outside = decode(&[FlangeSpec {
+        material_side: 2.0,
+        ..FlangeSpec::default()
+    }]);
+    assert_eq!(
+        flange(&outside, 0).position,
+        Some(BendPosition::MaterialOutside)
+    );
+    assert!(codes(&outside)
+        .iter()
+        .all(|code| !code.starts_with("sheet-metal.flange")));
+}
+
+#[test]
+fn bend_outside_and_unlisted_material_sides_add_a_loss() {
+    for code in [9.0, 5.0] {
+        let result = decode(&[FlangeSpec {
+            material_side: code,
+            ..FlangeSpec::default()
+        }]);
+        assert!(flange(&result, 0).position.is_none());
+        assert!(codes(&result).contains(&"sheet-metal.flange-field-unread".to_owned()));
+    }
 }
 
 #[test]

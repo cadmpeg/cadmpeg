@@ -14,8 +14,8 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::sheet_metal::{
-    BendSpec, Flange, FlangeHeight, FlangeWidth, HeightDatum, RadiusSide, Relief, ReliefShape,
-    SheetMetal, SheetMetalKind,
+    BendPosition, BendSpec, Flange, FlangeHeight, FlangeWidth, HeightDatum, RadiusSide, Relief,
+    ReliefShape, SheetMetal, SheetMetalKind,
 };
 use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use cadmpeg_ir::design::selection::OrderedSelection;
@@ -43,6 +43,7 @@ const EDGE_AFTER_NAME: usize = 72;
 const LENGTH_AFTER_NAME: usize = 100;
 const ANGLE_AFTER_NAME: usize = 128;
 const EXTENT_AFTER_NAME: usize = 184;
+const MATERIAL_SIDE_AFTER_NAME: usize = 212;
 const SIDE_AFTER_NAME: usize = 240;
 const RADIUS_AFTER_NAME: usize = 296;
 const RELIEF_WIDTH_AFTER_NAME: usize = 380;
@@ -58,6 +59,12 @@ const EXTENT_FULL: f64 = 134.0;
 const EXTENT_CENTRED: f64 = 135.0;
 /// The side value that turns the flange towards the base face normal.
 const SIDE_TOWARDS_NORMAL: f64 = 2.0;
+/// The side value that turns the flange against the base face normal.
+const SIDE_AGAINST_NORMAL: f64 = 1.0;
+/// The material side values.
+const MATERIAL_INSIDE: f64 = 1.0;
+const MATERIAL_OUTSIDE: f64 = 2.0;
+const MATERIAL_BEND_OUTSIDE: f64 = 9.0;
 /// The relief types.
 const RELIEF_NONE: f64 = 53.0;
 const RELIEF_SQUARE: f64 = 51.0;
@@ -278,13 +285,40 @@ fn flange(
         overrides.push("bend_radius");
     }
     let side = take(losses, object, slots.double(SIDE_AFTER_NAME, "side"));
-    if let Some(side) = side.filter(|side| !is(*side, SIDE_TOWARDS_NORMAL)) {
-        unread(
+    match side {
+        Some(side) if is(side, SIDE_TOWARDS_NORMAL) => {}
+        Some(side) if is(side, SIDE_AGAINST_NORMAL) => unread(
             losses,
             object,
-            &format!("the side value {side} is not established"),
-        );
+            "the side value 1 turns the flange against the base face normal, which the flange does not state",
+        ),
+        Some(side) => unread(
+            losses,
+            object,
+            &format!("the side value {side} is not 1 or 2"),
+        ),
+        None => {}
     }
+    let position = take(
+        losses,
+        object,
+        slots.double(MATERIAL_SIDE_AFTER_NAME, "material side"),
+    )
+    .and_then(|code| {
+        if is(code, MATERIAL_INSIDE) {
+            Some(BendPosition::MaterialInside)
+        } else if is(code, MATERIAL_OUTSIDE) {
+            Some(BendPosition::MaterialOutside)
+        } else {
+            let what = if is(code, MATERIAL_BEND_OUTSIDE) {
+                "the material side 9 (bend outside) has no stated bend position".to_owned()
+            } else {
+                format!("the material side {code} is not 1, 2 or 9")
+            };
+            unread(losses, object, &what);
+            None
+        }
+    });
     let extent = take(
         losses,
         object,
@@ -347,7 +381,7 @@ fn flange(
                 .first()
                 .map(|rule| rule.id.clone()),
             height_datum: Some(HeightDatum::OuterSharp),
-            position: None,
+            position,
             outline: None,
         }),
         native_options,

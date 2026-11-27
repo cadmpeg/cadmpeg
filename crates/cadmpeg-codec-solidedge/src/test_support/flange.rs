@@ -51,6 +51,8 @@ pub(crate) struct FlangeSpec {
     /// The entered angle.
     pub(crate) angle: f64,
     pub(crate) side: f64,
+    /// The material side: 1 inside, 2 outside, 9 bend outside.
+    pub(crate) material_side: f64,
     pub(crate) radius: f64,
     pub(crate) relief_width: f64,
     pub(crate) relief_length: f64,
@@ -72,6 +74,7 @@ impl Default for FlangeSpec {
             length: 0.01,
             angle: std::f64::consts::FRAC_PI_2,
             side: 2.0,
+            material_side: 1.0,
             radius: 0.003,
             relief_width: 0.001,
             relief_length: 0.0,
@@ -182,6 +185,14 @@ pub(crate) fn flange_document(specs: &[FlangeSpec], streams: &[(&str, Vec<u8>)])
             base,
             184,
             Slot::Double(spec.extent),
+            &mut objects,
+        );
+        put_slot(
+            &mut body,
+            end,
+            base,
+            212,
+            Slot::Double(spec.material_side),
             &mut objects,
         );
         put_slot(

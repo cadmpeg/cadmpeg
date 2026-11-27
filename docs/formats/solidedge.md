@@ -667,6 +667,7 @@ object identifiers after the end of its function name (§4.2):
 | 128 | `CLSID_JDim` entered angle |
 | 156 | `Double Value Object` material thickness, the document variable of §10.1 index 4 |
 | 184 | `Double Value Object` extent kind |
+| 212 | `Double Value Object` material side |
 | 240 | `Double Value Object` side |
 | 296 | `Double Value Object` inside bend radius |
 | 324 | `Double Value Object` neutral factor |
@@ -689,8 +690,10 @@ The extent kind is `134` for the full length of the edge and `135` for a
 width centred on the edge. The partial width is the stored whole-edge proxy
 and a `CLSID_JDim` at offset 492; the file stores no offset from either end
 of the edge. The side value `2` turns the flange towards the normal of the
-base face. The relief type is `53` for no relief, `51` for a square relief
-and `52` for a round relief.
+base face and the side value `1` turns it against that normal. The material
+side is `1` for material inside, `2` for material outside and `9` for bend
+outside. The flange stores no thickness side. The relief type is `53` for no
+relief, `51` for a square relief and `52` for a round relief.
 
 The length `CLSID_JDim` stores the flange length. The length runs from the
 outer sharp, the intersection of the outer faces of the base and the flange,
@@ -704,7 +707,9 @@ Relation implementation` object of 161 bytes. The `u32` at object offset 99
 is the identifier of the flange object. The `u32` at object offset 127 is
 the identifier of the document variable object (§10.1). A value that has a
 relation follows the document variable. A value that has no relation is set
-on the flange and holds its own number.
+on the flange and holds its own number. The `u16` at object offset 18 of the
+objects at offsets 296, 324, 380 and 408 is `149` where a relation binds the
+object and `157` where none does.
 
 A `JMBendTable` object stores 362 bytes and one 93-byte record per bend. In
 record `k`, the `f64` at object offset 374 + 93`k` is the inside bend radius
