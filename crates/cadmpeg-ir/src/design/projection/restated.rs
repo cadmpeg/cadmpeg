@@ -292,7 +292,7 @@ fn wire_strings(feature: &Feature) -> HashSet<String> {
         }
     }
     let mut strings = HashSet::new();
-    if let Ok(value) = serde_json::to_value(feature) {
+    if let Ok(value) = cadmpeg_core::serde_erase::json::to_value(feature) {
         collect(value, &mut strings);
     }
     strings
@@ -303,7 +303,7 @@ fn holds_content(operation: &ModelOperation) -> bool {
     match operation {
         ModelOperation::Unresolved { .. } => false,
         ModelOperation::Native { parameters, .. } => !parameters.is_empty(),
-        other => match serde_json::to_value(other) {
+        other => match cadmpeg_core::serde_erase::json::to_value(other) {
             Ok(serde_json::Value::Object(fields)) => fields.get("value").is_some_and(|value| {
                 !matches!(value, serde_json::Value::Null)
                     && value.as_object().is_none_or(|fields| !fields.is_empty())
