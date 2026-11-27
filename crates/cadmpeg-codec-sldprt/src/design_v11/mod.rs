@@ -113,7 +113,8 @@ pub(crate) struct Projection {
 /// be stated, a sketch, extrude or revolve that cannot be typed, a parameter
 /// whose literal is a rounded display, and a dimension whose bare-number text
 /// has no value add their reasons to `losses`. A part whose timeline is empty
-/// states only its sketches, and its equation-manager lines go to `losses`.
+/// states only its sketches. A part that states no scope has its
+/// equation-manager lines go to `losses`.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -138,11 +139,9 @@ pub(crate) fn project(
     let listed = !timeline.features.is_empty();
     if listed {
         losses.extend(order::regeneration_order(&mut timeline, &ir.model));
-    } else {
+    } else if ir.model.sketches.is_empty() && ir.model.spatial_sketches.is_empty() {
         losses.extend(equations::without_design(&managers, active));
-        if ir.model.sketches.is_empty() && ir.model.spatial_sketches.is_empty() {
-            return Ok(Projection::default());
-        }
+        return Ok(Projection::default());
     }
     let definition = root_definition();
     let entries = parameters::Entries::new(histories, &timeline)?;
@@ -153,6 +152,7 @@ pub(crate) fn project(
         &mut timeline,
         &entries,
         &typed::Scope {
+            ctx,
             definition: &definition,
             outside_profile,
             surfaces: &ir.geometry.surfaces,
@@ -177,6 +177,7 @@ pub(crate) fn project(
     let mut sketches = typed.sketches;
     let group = group(std::mem::take(&mut sketches.outside));
     if !listed && group.is_none() {
+        losses.extend(equations::without_design(&managers, active));
         return Ok(Projection::default());
     }
     let mut readings = parameters::Readings {
@@ -205,25 +206,21 @@ pub(crate) fn project(
     let (mut parameters, mut notes, mut bare) = entries.parameters(&definition, &readings);
     let entered = parameters.len();
     parameters.extend(std::mem::take(&mut sketches.driven));
-    if listed {
-        readings.confirmed = equations::results(&parameters, &readings.manager, &linking);
-        if !readings.confirmed.is_empty() {
-            let driven = parameters.split_off(entered);
-            (parameters, notes, bare) = entries.parameters(&definition, &readings);
-            parameters.extend(driven);
-        }
+    readings.confirmed = equations::results(&parameters, &readings.manager, &linking);
+    if !readings.confirmed.is_empty() {
+        let driven = parameters.split_off(entered);
+        (parameters, notes, bare) = entries.parameters(&definition, &readings);
+        parameters.extend(driven);
     }
     losses.extend(notes);
-    if listed {
-        losses.extend(equations::bare_references(
-            &mut parameters,
-            &bare,
-            &timeline.features,
-            length,
-            &ir.tolerances,
-        ));
-        losses.extend(equations::link(&mut parameters, &linking));
-    }
+    losses.extend(equations::bare_references(
+        &mut parameters,
+        &bare,
+        &timeline.features,
+        length,
+        &ir.tolerances,
+    ));
+    losses.extend(equations::link(&mut parameters, &linking));
     let configurations =
         configurations::configurations(histories, ir.source.as_ref(), &definition)?;
     let mut containers = Vec::new();

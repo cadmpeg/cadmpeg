@@ -205,6 +205,7 @@ fn typed_with_lanes(
         &mut timeline,
         &entries,
         &super::super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
             definition: &ir.design.scopes[0].definition,
             outside_profile: &HashSet::new(),
             surfaces: &ir.geometry.surfaces,

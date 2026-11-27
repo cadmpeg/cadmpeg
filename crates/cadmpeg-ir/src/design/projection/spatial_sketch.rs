@@ -10,11 +10,12 @@ use crate::design::construction::ScalarDimension;
 use crate::design::dimension::Dimension;
 use crate::design::evaluation::EvaluationStatus;
 use crate::design::ids::SpatialSketchConstraintId;
+use crate::design::names::CodecName;
 use crate::design::ops::sketch::{
     BoundedCurve, DistanceAxis, EntityDefinition, EntityForm, Operand, SketchConstraint,
     SketchEntity, SketchRelation, SketchSolve, Spatial, SpatialCurve, SpatialSketch,
 };
-use crate::design::options::NativeOptions;
+use crate::design::options::{NativeOption, NativeOptions};
 use crate::design::units::Quantity;
 use crate::document::Model;
 use crate::features::geometry::FiniteVector3;
@@ -80,11 +81,12 @@ pub fn restate(
         native_relations: Vec::new(),
         unbound: Vec::new(),
     };
-    for entity in model
+    let entities = model
         .spatial_sketch_entities
         .iter()
         .filter(|entity| entity.sketch == record.id)
-    {
+        .collect::<Vec<_>>();
+    for entity in &entities {
         let definition = match spatial_curve(&entity.geometry) {
             Some(curve) => EntityDefinition::Free(curve),
             None => {
@@ -136,7 +138,7 @@ pub fn restate(
             Some(relation) => relation,
             None => {
                 out.native_relations.push(name.to_owned());
-                native(codec, kind, dimension)
+                native(codec, kind, dimension, &entities)
             }
         };
         out.constraints.push(SketchConstraint {
@@ -145,7 +147,7 @@ pub fn restate(
             relation,
             name: None,
             active: None,
-            native_options: NativeOptions::new(),
+            native_options: native_state(codec, kind),
             source_settings: NativeOptions::new(),
             native_ref: constraint.native_ref.clone(),
         });
@@ -303,21 +305,66 @@ fn relation(
     })
 }
 
+/// The state a native relation `kind` stores, as the native option
+/// `<codec>:native_state`.
+fn native_state(codec: &NonBlankString, kind: &SpatialKind) -> NativeOptions {
+    let mut options = NativeOptions::new();
+    let Kind::Native {
+        native_state: Some(state),
+        ..
+    } = kind
+    else {
+        return options;
+    };
+    let name = cadmpeg_core::text::CodecId::new(codec.as_str())
+        .and_then(|codec| CodecName::new(&codec, "native_state"));
+    let value = match i64::try_from(*state) {
+        Ok(state) => Some(NativeOption::Integer(Dimension::Literal(state))),
+        Err(_) => NonBlankString::new(state.to_string())
+            .map(|state| NativeOption::Text(Dimension::Literal(state))),
+    };
+    if let (Some(name), Some(value)) = (name, value) {
+        options.insert(name, value);
+    }
+    options
+}
+
 /// The relation that states `kind` by its native kind, named
 /// `<codec>:<native class>` for a native relation and `<codec>:<decoded
 /// kind>` otherwise, on the entities it names and with the value of its
-/// `dimension` and the values it stores.
+/// `dimension` and the values it stores. A native relation's operand is the
+/// entity of `entities` whose record it names.
 fn native(
     codec: &NonBlankString,
     kind: &SpatialKind,
     dimension: Option<(Quantity, Option<DimensionValue>)>,
+    entities: &[&crate::sketches::SpatialSketchEntity],
 ) -> SketchRelation<Spatial> {
     let mut values = dimension
         .and_then(|(quantity, value)| value?.scalar(quantity))
         .into_iter()
         .collect::<Vec<_>>();
     let (name, entities): (&str, Vec<&SpatialSketchEntityId>) = match kind {
-        Kind::Native { native_kind, .. } => (native_kind.as_str(), Vec::new()),
+        Kind::Native {
+            native_kind,
+            operands,
+            ..
+        } => (
+            native_kind.as_str(),
+            operands
+                .iter()
+                .filter_map(|operand| {
+                    let native = operand.native_ref.as_deref()?;
+                    let mut named = entities
+                        .iter()
+                        .filter(|entity| entity.native_ref.as_deref() == Some(native));
+                    match (named.next(), named.next()) {
+                        (Some(entity), None) => Some(entity.id()),
+                        _ => None,
+                    }
+                })
+                .collect(),
+        ),
         Kind::Coincident { first, second } => ("coincident", vec![first, second]),
         Kind::Symmetric {
             first,

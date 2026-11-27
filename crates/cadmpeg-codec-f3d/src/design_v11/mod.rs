@@ -16,10 +16,11 @@
 //! Each planar and spatial sketch is the operation of the feature that owns
 //! it (§6.1). A sketch whose owner has no item of a listing timeline is the
 //! operation of a member of one unordered `Group` of its document's scope, a
-//! root after the timelines; a document whose streams list no item
-//! and hold such a sketch has a scope whose roots are that group, with its
-//! construction planes, axes, and points as members, and whose
-//! bodies are unproduced (§5.2, §5.5). A document with neither has no scope.
+//! root after the timelines; a document whose streams list no item and hold
+//! such a sketch, or a construction plane, axis, or point, has a scope whose
+//! roots are that group, with its sketches and construction features as
+//! members, and whose bodies are unproduced (§5.2, §5.5). A document with
+//! neither has no scope.
 //!
 //! A scope spans its definition and the embedded component definitions below
 //! it; where it spans several, each feature names the component the decoder
@@ -96,6 +97,11 @@ pub(crate) fn project(
         && timelines
             .iter()
             .all(|timeline| timeline.frame().items().is_empty())
+        && !ir
+            .model
+            .features
+            .iter()
+            .any(|feature| sketch::construction(feature.evaluation.definition().operation()))
     {
         return Ok(());
     }
@@ -216,6 +222,10 @@ pub(crate) fn project(
             losses,
         );
     }
+    let incidence = sketch::Incidence::new(
+        &namespace.arena_as_for_decode::<sketch::CurveRecord>(ctx, "sketch_curve_identities")?,
+        &namespace.arena_as_for_decode::<sketch::PointRecord>(ctx, "sketch_points")?,
+    );
     let mut spans = span(&ir.model.product_definitions, &placers, &scopes);
     let mut sketches = sketch::Sketches::default();
     let owners = ir
@@ -279,7 +289,10 @@ pub(crate) fn project(
             .collect::<Vec<_>>();
         sketch::project(
             &sketch::Scope {
+                ctx,
                 model: &ir.model,
+                incidence: &incidence,
+                linear: ir.tolerances.linear.get(),
                 definition: &definition,
                 unordered: &unordered,
                 parameters: &in_scope,

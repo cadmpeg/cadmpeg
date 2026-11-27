@@ -6,13 +6,15 @@
 //! scope (§5.2), and so is each construction plane, axis, and point of a
 //! document whose streams list no timeline item.
 //!
-//! A relation on the start, end, or center of a curve names a point entity
-//! minted there, with that role on the curve. A dimension that binds no
-//! parameter of its scope states the value that its parameter record
-//! stores, and a reference dimension binds a `Driven` parameter minted for
-//! it. An entity with no curve states its native kind; a loss names each.
+//! A point entity that a curve's record names as its start, end, or center,
+//! and that lies there, holds that role on the curve. A relation on such a
+//! point of a curve names that point entity, else a point entity minted
+//! there. A dimension that binds no parameter of its scope states the value
+//! that its parameter record stores, and a reference dimension binds a
+//! `Driven` parameter minted for it. An entity with no curve states its
+//! native kind; a loss names each.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
@@ -31,7 +33,7 @@ use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::design::parameter::DesignParameter;
 use cadmpeg_ir::design::projection::sketch::{
     self as relation, native_entity_kind, native_relation, planar_curve, stored_frame,
-    stored_quantity, stored_value, DimensionValue, Loci, LocusPoints,
+    stored_quantity, stored_value, DimensionValue, Loci, LocusPoints, StoredPoints,
 };
 use cadmpeg_ir::design::projection::spatial_sketch;
 use cadmpeg_ir::design::refs::Member;
@@ -65,10 +67,9 @@ pub(super) struct Sketches {
 
 /// The members of `model` that no item of a listing timeline lists, keyed
 /// by the document prefix of each: the owners of the planar and spatial
-/// sketches that no feature of `features` owns, and, in a document that
-/// holds such a sketch and is not `listing`, one of the prefixes of the
-/// documents whose streams list an item, its construction planes, axes, and
-/// points. A sketch's
+/// sketches that no feature of `features` owns, and, in a document that is
+/// not `listing`, one of the prefixes of the documents whose streams list an
+/// item, its construction planes, axes, and points. A sketch's
 /// owner is the v10 feature whose operation names the sketch, where no
 /// feature of `features` has its id, else a feature minted for the sketch,
 /// and holds the sketch as its operation.
@@ -141,17 +142,19 @@ pub(super) fn outside(
         !features.contains(&feature.id) && construction(feature.evaluation.definition().operation())
     }) {
         let document = prefix(Some(feature), None);
-        let Some(members) = out
-            .get_mut(&document)
-            .filter(|_| !listing.contains(&document))
-        else {
+        if listing.contains(&document) {
             continue;
-        };
+        }
         let operation =
             super::datum::project(feature, losses).unwrap_or(FeatureOperation::Unresolved {
                 family: OperationFamily::Datum,
             });
-        members.push(owner(feature.id.clone(), Some(feature), None, operation));
+        out.entry(document).or_default().push(owner(
+            feature.id.clone(),
+            Some(feature),
+            None,
+            operation,
+        ));
     }
     Ok(out)
 }
@@ -198,7 +201,7 @@ fn owner(
 
 /// Whether a v10 operation is a construction plane, axis, point, or
 /// coordinate system other than an origin plane.
-fn construction(operation: &LegacyOperation) -> bool {
+pub(super) fn construction(operation: &LegacyOperation) -> bool {
     !matches!(operation, LegacyOperation::DatumPrincipalPlane { .. })
         && matches!(
             super::operation::family(operation),
@@ -287,13 +290,95 @@ fn spatial_sketch(operation: &LegacyOperation) -> Option<&SpatialSketchId> {
 
 /// What a sketch's relations read of its scope.
 pub(super) struct Scope<'a> {
+    pub(super) ctx: &'a DecodeContext<'a>,
     pub(super) model: &'a Model,
+    /// The point records each curve record names.
+    pub(super) incidence: &'a Incidence,
+    /// The document's linear tolerance, in millimetres.
+    pub(super) linear: f64,
     /// The definition whose design holds the scope.
     pub(super) definition: &'a ProductDefinitionId,
     /// The features that are members of an unordered container.
     pub(super) unordered: &'a BTreeSet<FeatureId>,
     /// The design parameters of the scope.
     pub(super) parameters: &'a [&'a DesignParameter],
+}
+
+/// The identity and record index of a sketch curve record.
+#[derive(serde::Deserialize)]
+pub(super) struct CurveRecord {
+    id: String,
+    record_index: u32,
+}
+
+/// A sketch point record and the curve records that name it.
+#[derive(serde::Deserialize)]
+pub(super) struct PointRecord {
+    id: String,
+    #[serde(default)]
+    companion: PointCompanion,
+}
+
+#[derive(Default, serde::Deserialize)]
+struct PointCompanion {
+    #[serde(default)]
+    incident_curves: Vec<u32>,
+}
+
+/// The point records that each curve record names as its start, end, or
+/// center, read from the reverse incidence each point record stores.
+#[derive(Default)]
+pub(super) struct Incidence {
+    points: HashMap<String, Vec<String>>,
+}
+
+impl Incidence {
+    pub(super) fn new(curves: &[CurveRecord], points: &[PointRecord]) -> Self {
+        let curve_ids = curves
+            .iter()
+            .filter_map(|curve| {
+                Some((
+                    (crate::ids::native_stream(&curve.id)?, curve.record_index),
+                    curve.id.as_str(),
+                ))
+            })
+            .collect::<HashMap<_, _>>();
+        let mut out = Self::default();
+        for point in points {
+            let Some(stream) = crate::ids::native_stream(&point.id) else {
+                continue;
+            };
+            for record in &point.companion.incident_curves {
+                if let Some(curve) = curve_ids.get(&(stream, *record)) {
+                    out.points
+                        .entry((*curve).to_owned())
+                        .or_default()
+                        .push(point.id.clone());
+                }
+            }
+        }
+        out
+    }
+
+    /// Whether `curve` names `point`: the curve's record names the point's
+    /// record, or no point record names the curve's record.
+    fn names(
+        &self,
+        curve: &cadmpeg_ir::sketches::SketchEntity,
+        point: &cadmpeg_ir::sketches::SketchEntity,
+    ) -> bool {
+        match curve
+            .native_ref
+            .as_deref()
+            .and_then(|curve| self.points.get(curve))
+        {
+            Some(points) => point
+                .native_ref
+                .as_ref()
+                .is_some_and(|point| points.contains(point)),
+            None => true,
+        }
+    }
 }
 
 /// Restate the sketch of each feature of `features` that owns one: a feature
@@ -417,6 +502,12 @@ fn restate(
         .iter()
         .filter(|entity| entity.sketch == record.id)
         .collect::<Vec<_>>();
+    let stored = StoredPoints::new(
+        scope.ctx,
+        &entities,
+        |curve, _, point| scope.incidence.names(curve, point),
+        |a, b| (a[0] - b[0]).hypot(a[1] - b[1]) <= scope.linear,
+    );
     for entity in &entities {
         let definition = match planar_curve(&entity.geometry) {
             Some(form) => EntityDefinition::Free(form),
@@ -438,7 +529,7 @@ fn restate(
             id: entity.id().clone(),
             sketch: record.id.clone(),
             definition,
-            roles: Vec::new(),
+            roles: stored.roles(entity.id()),
             construction: entity.construction.then_some(true),
             centerline: None,
             native: None,
@@ -453,11 +544,12 @@ fn restate(
         .filter(|constraint| constraint.sketch == record.id)
         .collect::<Vec<_>>();
     let loci = LocusPoints::new(
+        scope.ctx,
         constraints
             .iter()
             .map(|constraint| constraint.definition.kind()),
         &entities,
-        |_| false,
+        &stored,
     );
     out.entities.extend(loci.entities(&record.id));
     let points = Points {
@@ -478,7 +570,7 @@ fn restate(
         }
         if loci.unplaced(kind) {
             losses.push(F3dLossCode::DesignSketchLocusUnplaced.note(format!(
-                "sketch relation {} names the start, end, or center of a curve whose position there is not stored; it states the curve",
+                "sketch relation {} names an end of a closed curve, the center of a curve that has none, or a point whose minted id another entity holds; it states the curve",
                 constraint.id
             )));
         }

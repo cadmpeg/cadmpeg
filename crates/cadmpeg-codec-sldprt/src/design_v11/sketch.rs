@@ -52,15 +52,14 @@ use cadmpeg_ir::design::feature::{
     Feature, FeatureDefinition as DesignDefinition, FeatureOperation, OperationFamily,
 };
 use cadmpeg_ir::design::ops::sketch::{
-    DefiningRole, EntityDefinition, EntityForm, EntityRole, Operand, Planar, PlanarCurve,
-    RadialMeasure, Sketch, SketchConstraint, SketchEntity, SketchPlane, SketchRelation,
-    SketchSolve,
+    EntityDefinition, EntityForm, Operand, Planar, PlanarCurve, RadialMeasure, Sketch,
+    SketchConstraint, SketchEntity, SketchPlane, SketchRelation, SketchSolve,
 };
 use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::design::parameter::{DesignParameter, DimensionDisplay};
 use cadmpeg_ir::design::projection::sketch::{
     self as relation, driven_parameter, native_entity_kind, native_relation, planar_curve,
-    stored_frame, stored_quantity, stored_value, DimensionValue, Loci, LocusPoints,
+    stored_frame, stored_quantity, stored_value, DimensionValue, Loci, LocusPoints, StoredPoints,
 };
 use cadmpeg_ir::design::projection::spatial_sketch;
 use cadmpeg_ir::design::selection::{
@@ -244,6 +243,7 @@ impl DimensionCircle {
 
 /// What the projection reads besides the v10 sketch records.
 pub(super) struct Context<'a> {
+    pub(super) ctx: &'a cadmpeg_core::decode::DecodeContext<'a>,
     pub(super) model: &'a cadmpeg_ir::document::Model,
     pub(super) entries: &'a Entries<'a>,
     pub(super) scope: &'a ProductDefinitionId,
@@ -543,7 +543,6 @@ fn restate(
         .iter()
         .filter(|entity| entity.sketch == record.id)
         .collect::<Vec<_>>();
-    let roles = Roles::new(&entities);
     let mut sketch_entities = Vec::with_capacity(entities.len());
     let mut outside_profile = Vec::new();
     let forms = entities
@@ -556,6 +555,13 @@ fn restate(
         readings.push(reading);
     }
     let needed = needed_state_zero(&entities, &forms, &readings, context.outside_profile);
+    let stored = entities
+        .iter()
+        .zip(&readings)
+        .filter(|(_, reading)| reading.is_none())
+        .map(|(entity, _)| *entity)
+        .collect::<Vec<_>>();
+    let points_of = StoredPoints::new(context.ctx, &stored, names_point, coincident);
     for ((entity, form), reading) in entities
         .iter()
         .zip(forms.iter().cloned())
@@ -583,7 +589,7 @@ fn restate(
             id: entity.id().clone(),
             sketch: record.id.clone(),
             definition,
-            roles: roles.of(entity.id()),
+            roles: points_of.roles(entity.id()),
             construction: (entity.construction || outside || reading.is_some()).then_some(true),
             centerline: None,
             native: None,
@@ -592,24 +598,15 @@ fn restate(
             native_ref: entity.native_ref.clone(),
         });
     }
-    let stored = entities
-        .iter()
-        .zip(&readings)
-        .filter(|(_, reading)| reading.is_none())
-        .map(|(entity, _)| *entity)
-        .collect::<Vec<_>>();
     let points = LocusPoints::new(
+        context.ctx,
         model
             .sketch_constraints
             .iter()
             .filter(|constraint| constraint.sketch == record.id)
             .map(|constraint| constraint.definition.kind()),
         &stored,
-        |locus| match locus {
-            SketchLocus::Start(curve) => roles.end(curve, true).is_some(),
-            SketchLocus::End(curve) => roles.end(curve, false).is_some(),
-            SketchLocus::Entity(_) | SketchLocus::Center(_) => false,
-        },
+        &points_of,
     );
     sketch_entities.extend(points.entities(&record.id));
     let mut constraints = Vec::new();
@@ -624,7 +621,6 @@ fn restate(
         let relations = Relations {
             context,
             owner,
-            roles: &roles,
             points: &points,
             entities: &entities,
         };
@@ -810,75 +806,20 @@ pub(super) fn selection(picks: Vec<Picked>) -> Result<OrderedSelection, &'static
     })
 }
 
-/// The point entity at each end of the sketch's lines and arcs: the point
-/// whose native record the curve names as that end and whose position is the
-/// end's.
-struct Roles {
-    ends: HashMap<(SketchEntityId, bool), SketchEntityId>,
-}
-
-impl Roles {
-    fn new(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> Self {
-        let mut points = HashMap::<&str, Option<&cadmpeg_ir::sketches::SketchEntity>>::new();
-        for entity in entities {
-            if let (Some(native), Geometry::Point { .. }) =
-                (entity.native_ref.as_deref(), entity.geometry.definition())
-            {
-                points
-                    .entry(native)
-                    .and_modify(|found| *found = None)
-                    .or_insert(Some(entity));
-            }
-        }
-        let mut ends = HashMap::new();
-        for curve in entities {
-            let Some([start, end]) = curve_ends(&curve.geometry) else {
-                continue;
-            };
-            let [first, second] = curve.endpoint_refs.as_slice() else {
-                continue;
-            };
-            for (native, at, is_start) in [(first, start, true), (second, end, false)] {
-                let Some(Some(point)) = points.get(native.as_str()) else {
-                    continue;
-                };
-                let Geometry::Point { position } = point.geometry.definition() else {
-                    continue;
-                };
-                if coincident([position.u, position.v], at) {
-                    ends.insert((curve.id().clone(), is_start), point.id().clone());
-                }
-            }
-        }
-        Self { ends }
-    }
-
-    /// The roles of the point entity `point`.
-    fn of(&self, point: &SketchEntityId) -> Vec<EntityRole<Planar>> {
-        let mut roles = self
-            .ends
-            .iter()
-            .filter(|(_, at)| *at == point)
-            .map(|((curve, is_start), _)| EntityRole {
-                of: curve.clone(),
-                role: if *is_start {
-                    DefiningRole::Start
-                } else {
-                    DefiningRole::End
-                },
-            })
-            .collect::<Vec<_>>();
-        roles.sort_by(|a: &EntityRole<Planar>, b: &EntityRole<Planar>| {
-            (a.of.as_str(), matches!(a.role, DefiningRole::End))
-                .cmp(&(b.of.as_str(), matches!(b.role, DefiningRole::End)))
-        });
-        roles
-    }
-
-    /// The point entity at the start (`true`) or end of `curve`.
-    fn end(&self, curve: &SketchEntityId, start: bool) -> Option<&SketchEntityId> {
-        self.ends.get(&(curve.clone(), start))
-    }
+/// Whether `curve` names `point` as the point `locus` names on it: the
+/// native record the curve names as that end, and any point at its center.
+fn names_point(
+    curve: &cadmpeg_ir::sketches::SketchEntity,
+    locus: &SketchLocus,
+    point: &cadmpeg_ir::sketches::SketchEntity,
+) -> bool {
+    let named = match (locus, curve.endpoint_refs.as_slice()) {
+        (SketchLocus::Start(_), [first, _]) => first,
+        (SketchLocus::End(_), [_, second]) => second,
+        (SketchLocus::Center(_), _) => return true,
+        _ => return false,
+    };
+    point.native_ref.as_deref() == Some(named.as_str())
 }
 
 /// What the sketch and the solid say of `entities[index]` where it is a
@@ -1257,7 +1198,6 @@ type Binding = (ParameterId, Quantity, Option<DesignParameter>);
 struct Relations<'a> {
     context: &'a Context<'a>,
     owner: &'a FeatureId,
-    roles: &'a Roles,
     points: &'a LocusPoints,
     entities: &'a [&'a cadmpeg_ir::sketches::SketchEntity],
 }
@@ -1359,29 +1299,20 @@ impl Relations<'_> {
 
 impl Loci for Relations<'_> {
     /// The point entity or curve a locus names: the point record at a
-    /// curve's end, else the point minted there.
+    /// curve's end or center, else the point minted there.
     fn operand(&self, locus: &SketchLocus) -> Option<Operand<Planar>> {
-        let stored = match locus {
-            SketchLocus::Entity(id) => Some(id),
-            SketchLocus::Start(curve) => self.roles.end(curve, true),
-            SketchLocus::End(curve) => self.roles.end(curve, false),
-            SketchLocus::Center(_) => None,
-        };
-        match stored {
-            Some(id) => Some(Operand::Entity(id.clone())),
-            None => self.points.operand(locus),
+        match locus {
+            SketchLocus::Entity(id) => Some(Operand::Entity(id.clone())),
+            _ => self.points.operand(locus),
         }
     }
 
     /// The position of a point locus.
     fn position(&self, locus: &SketchLocus) -> Option<[f64; 2]> {
-        if let Some(position) = self.points.position(locus) {
-            return Some(position);
-        }
-        let Some(Operand::Entity(id)) = self.operand(locus) else {
-            return None;
+        let SketchLocus::Entity(id) = locus else {
+            return self.points.position(locus);
         };
-        let entity = self.entities.iter().find(|entity| entity.id() == &id)?;
+        let entity = self.entities.iter().find(|entity| entity.id() == id)?;
         match entity.geometry.definition() {
             Geometry::Point { position } => Some([position.u, position.v]),
             _ => None,

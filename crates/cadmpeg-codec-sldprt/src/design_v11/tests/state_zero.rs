@@ -59,6 +59,7 @@ pub(super) fn project(
         &mut timeline,
         &entries,
         &super::super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
             definition: &definition,
             outside_profile: outside,
             surfaces: &ir.geometry.surfaces,

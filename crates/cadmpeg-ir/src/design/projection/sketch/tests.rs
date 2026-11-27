@@ -5,7 +5,7 @@ use serde_json::json;
 
 use super::{
     dimension, dimension_parameter, is_dimension, native_entity_kind, native_relation,
-    planar_curve, stored_frame, DimensionValue, Loci, LocusPoints,
+    planar_curve, stored_frame, DimensionValue, Loci, LocusPoints, StoredPoints,
 };
 use crate::design::construction::ScalarDimension;
 use crate::design::dimension::Dimension;
@@ -223,7 +223,9 @@ fn a_relation_on_a_line_end_names_a_point_minted_there_with_its_role() {
     let on = kind(json!({"kind": "coincident_loci", "loci": [
         {"kind": "end", "value": "test:model:sketch-entity#l"},
         {"kind": "entity", "value": "test:model:sketch-entity#p"}]}));
-    let points = LocusPoints::new([&on], &[&line, &point], |_| false);
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let stored = StoredPoints::new(&ctx, &[&line, &point], |_, _, _| false, |a, b| a == b);
+    let points = LocusPoints::new(&ctx, [&on], &[&line, &point], &stored);
     let end = SketchLocus::End(line.id().clone());
     let minted = SketchEntityId::mint("test:model:sketch-entity#l:end").unwrap();
     assert_eq!(points.operand(&end), Some(Operand::Entity(minted.clone())));
@@ -256,15 +258,155 @@ fn a_relation_on_the_end_of_an_unbounded_curve_is_unplaced() {
     let on = kind(json!({"kind": "point_on_object",
         "point": {"kind": "start", "value": "test:model:sketch-entity#c"},
         "entity": "test:model:sketch-entity#c"}));
-    let points = LocusPoints::new([&on], &[&circle], |_| false);
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let none = StoredPoints::default();
+    let points = LocusPoints::new(&ctx, [&on], &[&circle], &none);
     assert!(points.unplaced(&on));
     assert!(points.entities(&sketch).is_empty());
     let center = kind(json!({"kind": "coincident_loci", "loci": [
         {"kind": "center", "value": "test:model:sketch-entity#c"},
         {"kind": "entity", "value": "test:model:sketch-entity#c"}]}));
-    let centers = LocusPoints::new([&center], &[&circle], |_| false);
+    let centers = LocusPoints::new(&ctx, [&center], &[&circle], &none);
     assert_eq!(
         centers.position(&SketchLocus::Center(circle.id().clone())),
         Some([0.0, 0.0])
+    );
+}
+
+fn entity(id: &str, value: serde_json::Value) -> SketchEntity {
+    SketchEntity::new(
+        SketchEntityId::mint(format!("test:model:sketch-entity#{id}")).unwrap(),
+        SketchId::mint("test:model:sketch#s").unwrap(),
+        geometry(value),
+    )
+}
+
+#[test]
+fn a_relation_on_a_stored_end_or_center_names_the_stored_point_with_its_roles() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let line = entity(
+        "l",
+        json!({"kind": "line", "start": {"u": 0.0, "v": 0.0}, "end": {"u": 2.0, "v": 0.0}}),
+    );
+    let arc = entity(
+        "a",
+        json!({"kind": "arc", "center": {"u": 0.0, "v": 0.0}, "radius": 2.0,
+            "start_angle": 0.0, "end_angle": 1.5}),
+    );
+    let origin = entity(
+        "o",
+        json!({"kind": "point", "position": {"u": 0.0, "v": 0.0}}),
+    );
+    let shared = entity(
+        "e",
+        json!({"kind": "point", "position": {"u": 2.0, "v": 0.0}}),
+    );
+    let entities = [&line, &arc, &origin, &shared];
+    let stored = StoredPoints::new(&ctx, &entities, |_, _, _| true, |a, b| a == b);
+    let relations = [
+        kind(json!({"kind": "coincident_loci", "loci": [
+            {"kind": "start", "value": "test:model:sketch-entity#l"},
+            {"kind": "center", "value": "test:model:sketch-entity#a"}]})),
+        kind(json!({"kind": "coincident_loci", "loci": [
+            {"kind": "end", "value": "test:model:sketch-entity#l"},
+            {"kind": "start", "value": "test:model:sketch-entity#a"}]})),
+    ];
+    let points = LocusPoints::new(&ctx, &relations, &entities, &stored);
+    let operand = |locus| points.operand(&locus);
+    assert_eq!(
+        operand(SketchLocus::Start(line.id().clone())),
+        Some(Operand::Entity(origin.id().clone()))
+    );
+    assert_eq!(
+        operand(SketchLocus::Center(arc.id().clone())),
+        Some(Operand::Entity(origin.id().clone()))
+    );
+    assert_eq!(
+        operand(SketchLocus::Start(arc.id().clone())),
+        Some(Operand::Entity(shared.id().clone()))
+    );
+    assert!(points
+        .entities(&SketchId::mint("test:model:sketch#s").unwrap())
+        .is_empty());
+    let role = |of: &SketchEntity, role| EntityRole {
+        of: of.id().clone(),
+        role,
+    };
+    assert_eq!(
+        stored.roles(origin.id()),
+        vec![
+            role(&arc, DefiningRole::Center),
+            role(&line, DefiningRole::Start)
+        ]
+    );
+    assert_eq!(
+        stored.roles(shared.id()),
+        vec![
+            role(&arc, DefiningRole::Start),
+            role(&line, DefiningRole::End)
+        ]
+    );
+}
+
+#[test]
+fn two_stored_points_at_one_end_leave_the_end_to_a_minted_point() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let line = entity(
+        "l",
+        json!({"kind": "line", "start": {"u": 0.0, "v": 0.0}, "end": {"u": 2.0, "v": 0.0}}),
+    );
+    let first = entity(
+        "p",
+        json!({"kind": "point", "position": {"u": 2.0, "v": 0.0}}),
+    );
+    let second = entity(
+        "q",
+        json!({"kind": "point", "position": {"u": 2.0, "v": 0.0}}),
+    );
+    let entities = [&line, &first, &second];
+    let stored = StoredPoints::new(&ctx, &entities, |_, _, _| true, |a, b| a == b);
+    assert!(stored.at(&SketchLocus::End(line.id().clone())).is_none());
+    assert!(stored.roles(first.id()).is_empty());
+}
+
+#[test]
+fn a_relation_on_a_nurbs_end_names_a_point_at_the_end_of_its_knot_domain() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let curve = crate::geometry::pcurve::PcurveNurbs::from_lanes(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
+            crate::math::Point2::new(0.0, 0.0),
+            crate::math::Point2::new(1.0, 2.0),
+            crate::math::Point2::new(3.0, 1.0),
+        ],
+        Some(vec![1.0, 2.0, 1.0]),
+        false,
+    )
+    .unwrap();
+    let nurbs = SketchEntity::new(
+        SketchEntityId::mint("test:model:sketch-entity#n").unwrap(),
+        SketchId::mint("test:model:sketch#s").unwrap(),
+        SketchGeometry::nurbs(curve),
+    );
+    let on = kind(json!({"kind": "coincident_loci", "loci": [
+        {"kind": "start", "value": "test:model:sketch-entity#n"},
+        {"kind": "end", "value": "test:model:sketch-entity#n"}]}));
+    let points = LocusPoints::new(&ctx, [&on], &[&nurbs], &StoredPoints::default());
+    assert!(!points.unplaced(&on));
+    let close = |locus, [u, v]: [f64; 2]| {
+        let [pu, pv] = points.position(&locus).expect("a position");
+        assert!(
+            (pu - u).abs() < 1e-12 && (pv - v).abs() < 1e-12,
+            "{pu} {pv}"
+        );
+    };
+    close(SketchLocus::Start(nurbs.id().clone()), [0.0, 0.0]);
+    close(SketchLocus::End(nurbs.id().clone()), [3.0, 1.0]);
+    assert_eq!(
+        points
+            .entities(&SketchId::mint("test:model:sketch#s").unwrap())
+            .len(),
+        2
     );
 }

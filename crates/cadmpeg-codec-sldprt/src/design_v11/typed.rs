@@ -81,6 +81,7 @@ pub(super) struct Typed {
 /// The scope the typed records belong to, and what the decoder read of
 /// their sketches' profiles.
 pub(super) struct Scope<'a> {
+    pub(super) ctx: &'a cadmpeg_core::decode::DecodeContext<'a>,
     pub(super) definition: &'a ProductDefinitionId,
     /// The sketch entities read from a curve record of state `0`.
     pub(super) outside_profile: &'a HashSet<SketchEntityId>,
@@ -103,6 +104,7 @@ pub(super) fn project(
     let mut sketches = sketch::project(
         &mut timeline.features,
         &sketch::Context {
+            ctx: scope.ctx,
             model,
             entries,
             scope: scope.definition,
@@ -269,8 +271,8 @@ fn sketch_notes(sketches: &Sketches) -> Vec<LossNote> {
     }
     if !unplaced.is_empty() {
         notes.push(SldprtLossCode::DesignSketchLocusUnplaced.note(format!(
-            "{} sketch relations name the start, end, or center of a curve whose position \
-             there is not stored, and state the curve: {}",
+            "{} sketch relations name an end of a closed curve, the center of a curve that \
+             has none, or a point whose minted id another entity holds, and state the curve: {}",
             unplaced.len(),
             listed(unplaced.into_iter()),
         )));
