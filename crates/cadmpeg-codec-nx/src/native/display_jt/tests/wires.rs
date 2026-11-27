@@ -6,7 +6,9 @@ use super::super::{
     DisplayJtPartitionNodeWire, DisplayJtPolygonMesh, DisplayJtPolygonMeshWire,
     DisplayJtTriStripShapeNode, DisplayJtTriStripShapeNodeWire,
 };
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
+use serde_json::Value;
 
 fn polygon_mesh_wire() -> Value {
     json!({
@@ -68,68 +70,68 @@ fn partition_wire() -> Value {
 
 #[test]
 fn polygon_mesh_borrowed_wire_matches_owned_bytes() {
-    let record: DisplayJtPolygonMesh = serde_json::from_value(polygon_mesh_wire()).unwrap();
+    let record: DisplayJtPolygonMesh = json::from_value(polygon_mesh_wire()).unwrap();
     let owned = DisplayJtPolygonMeshWire::from(record.clone());
     assert_eq!(
-        serde_json::to_vec(&record).unwrap(),
-        serde_json::to_vec(&owned).unwrap()
+        json::to_vec(&record).unwrap(),
+        json::to_vec(&owned).unwrap()
     );
 }
 
 #[test]
 fn polygon_mesh_native_limit_refuses_before_wire_columns() {
     let wire = polygon_mesh_wire();
-    let record: DisplayJtPolygonMesh = serde_json::from_value(wire.clone()).unwrap();
+    let record: DisplayJtPolygonMesh = json::from_value(wire.clone()).unwrap();
     cadmpeg_test_support::native_serialization::assert_native_limit(&record, wire);
 }
 
 #[test]
 fn tri_strip_borrowed_wire_matches_owned_bytes() {
-    let record: DisplayJtTriStripShapeNode = serde_json::from_value(tri_strip_wire()).unwrap();
+    let record: DisplayJtTriStripShapeNode = json::from_value(tri_strip_wire()).unwrap();
     let owned = DisplayJtTriStripShapeNodeWire::from(record.clone());
     assert_eq!(
-        serde_json::to_vec(&record).unwrap(),
-        serde_json::to_vec(&owned).unwrap()
+        json::to_vec(&record).unwrap(),
+        json::to_vec(&owned).unwrap()
     );
 }
 
 #[test]
 fn tri_strip_native_limit_refuses_before_wire_strings() {
     let wire = tri_strip_wire();
-    let record: DisplayJtTriStripShapeNode = serde_json::from_value(wire.clone()).unwrap();
+    let record: DisplayJtTriStripShapeNode = json::from_value(wire.clone()).unwrap();
     cadmpeg_test_support::native_serialization::assert_native_limit(&record, wire);
 }
 
 #[test]
 fn material_borrowed_wire_matches_owned_bytes() {
-    let record: DisplayJtMaterialAttribute = serde_json::from_value(material_wire()).unwrap();
+    let record: DisplayJtMaterialAttribute = json::from_value(material_wire()).unwrap();
     let owned = DisplayJtMaterialAttributeWire::from(record.clone());
     assert_eq!(
-        serde_json::to_vec(&record).unwrap(),
-        serde_json::to_vec(&owned).unwrap()
+        json::to_vec(&record).unwrap(),
+        json::to_vec(&owned).unwrap()
     );
 }
 
 #[test]
 fn material_native_limit_refuses_before_wire_strings() {
     let wire = material_wire();
-    let record: DisplayJtMaterialAttribute = serde_json::from_value(wire.clone()).unwrap();
+    let record: DisplayJtMaterialAttribute = json::from_value(wire.clone()).unwrap();
     cadmpeg_test_support::native_serialization::assert_native_limit(&record, wire);
 }
 
 #[test]
 fn partition_borrowed_wire_matches_owned_bytes() {
-    let record: DisplayJtPartitionNode = serde_json::from_value(partition_wire()).unwrap();
+    let record: DisplayJtPartitionNode = json::from_value(partition_wire()).unwrap();
     let owned = DisplayJtPartitionNodeWire::from(record.clone());
     assert_eq!(
-        serde_json::to_vec(&record).unwrap(),
-        serde_json::to_vec(&owned).unwrap()
+        json::to_vec(&record).unwrap(),
+        json::to_vec(&owned).unwrap()
     );
 }
 
 #[test]
 fn partition_native_limit_refuses_before_utf16_copy() {
     let wire = partition_wire();
-    let record: DisplayJtPartitionNode = serde_json::from_value(wire.clone()).unwrap();
+    let record: DisplayJtPartitionNode = json::from_value(wire.clone()).unwrap();
     cadmpeg_test_support::native_serialization::assert_native_limit(&record, wire);
 }

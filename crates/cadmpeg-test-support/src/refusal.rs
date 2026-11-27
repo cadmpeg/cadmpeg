@@ -4,15 +4,17 @@
 //! A native wire type states the key it refuses. These helpers read one key
 //! through the type's own `Deserialize` implementation and check the message.
 
+use cadmpeg_core::serde_erase::json;
+
 /// The message `T` states when `key` is present and null.
 ///
 /// # Panics
 ///
 /// Panics when `T` admits the null value.
 pub fn refusal<T: serde::de::DeserializeOwned>(key: &str) -> String {
-    let mut wire = serde_json::json!({});
+    let mut wire = cadmpeg_core::json!({});
     wire[key] = serde_json::Value::Null;
-    let Err(refused) = serde_json::from_value::<T>(wire) else {
+    let Err(refused) = json::from_value::<T>(wire) else {
         panic!("{key}: null was admitted")
     };
     refused.to_string()

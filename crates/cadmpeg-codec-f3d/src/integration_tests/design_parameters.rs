@@ -311,7 +311,7 @@ fn derived_instance_with_unresolved_sources_keeps_a_neutral_component_selection(
             })
             .unwrap()
             .clone();
-        scope.id = format!("f3d:xref/fixture/{}", scope.id.trim_start_matches("f3d:"));
+        scope.id = format!("f3d:fixture@{}", scope.id.trim_start_matches("f3d:"));
         let mut feature = feature.clone();
         feature.native_ref = Some(scope.id.clone());
         assert!(
@@ -343,7 +343,7 @@ fn commented_document_parameter_keeps_its_comment_through_a_rewrite() {
     fn write(ir: &cadmpeg_ir::document::CadIr) -> Vec<u8> {
         let mut bytes = Vec::new();
         crate::F3dCodec
-            .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("source-less document parameter encode");
         bytes

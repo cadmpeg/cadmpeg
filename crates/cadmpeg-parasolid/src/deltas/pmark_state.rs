@@ -108,6 +108,7 @@ impl PmarkState {
 #[cfg(test)]
 mod tests {
     use super::PmarkState;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn primary_fields_keep_the_logical_byte_before_the_full_identifier() {
@@ -128,8 +129,8 @@ mod tests {
         assert_eq!(state.first_following.get(), 3);
         assert_eq!(state.identifier, 0x1234_5678);
         assert_eq!(
-            serde_json::to_value(state).unwrap(),
-            serde_json::json!({
+            json::to_value(state).unwrap(),
+            cadmpeg_core::json!({
                 "xmt": 2, "preceding": 1, "first_following": 3,
                 "next_sibling": 4, "prev_sibling": 1,
                 "n_new_nodes": 0, "n_del_nodes": 1, "n_copy_mod_nodes": 2,
@@ -151,14 +152,14 @@ mod tests {
 
     #[test]
     fn wire_preserves_null_links_and_rejects_zero_or_null_identity() {
-        let value = serde_json::json!({
+        let value = cadmpeg_core::json!({
             "xmt": 2, "preceding": 1, "first_following": 1,
             "next_sibling": 1, "prev_sibling": 1,
             "n_new_nodes": 0, "n_del_nodes": 0, "n_copy_mod_nodes": 0,
             "delta_key": 0, "delta_is_forward": false, "identifier": u32::MAX,
         });
-        let state: PmarkState = serde_json::from_value(value.clone()).unwrap();
-        assert_eq!(serde_json::to_value(state).unwrap(), value);
+        let state: PmarkState = json::from_value(value.clone()).unwrap();
+        assert_eq!(json::to_value(state).unwrap(), value);
         for (field, invalid) in [
             ("xmt", 0),
             ("xmt", 1),
@@ -169,7 +170,7 @@ mod tests {
         ] {
             let mut invalid_value = value.clone();
             invalid_value[field] = invalid.into();
-            assert!(serde_json::from_value::<PmarkState>(invalid_value).is_err());
+            assert!(json::from_value::<PmarkState>(invalid_value).is_err());
         }
     }
 

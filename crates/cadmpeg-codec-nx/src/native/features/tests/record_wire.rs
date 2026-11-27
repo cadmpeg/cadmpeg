@@ -21,6 +21,7 @@ use crate::native::features::OffsetStoreNamedPoint;
 use crate::native::features::{
     FeatureInputBlock, FeatureInputBlockIdentityGroup, FeatureOperationLabel,
 };
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn object_reference_retains_tagged_and_untagged_wire() {
@@ -29,7 +30,7 @@ fn object_reference_retains_tagged_and_untagged_wire() {
         r#"{"id":"reference","operation_label":"operation","operation_record":"record","ordinal":0,"object_index":3,"raw_object_index":"03","object_index_source_offset":10,"byte_len":10,"source_offset":7}"#,
     ] {
         let reference: FeatureOperationObjectReference = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&reference).unwrap(), json);
+        assert_eq!(json::to_string(&reference).unwrap(), json);
     }
 }
 
@@ -40,7 +41,7 @@ fn body_reference_retains_primary_and_ordered_wire() {
         r#"{"id":"reference","operation_label":"operation","ordinal":0,"body_object_index":3,"raw_body_object_index":"03","source_offset":10}"#,
     ] {
         let reference: FeatureBodyReference = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&reference).unwrap(), json);
+        assert_eq!(json::to_string(&reference).unwrap(), json);
     }
 }
 
@@ -51,7 +52,7 @@ fn body_write_retains_labeled_and_unlabeled_wire() {
         r#"{"id":"write","operation_record":"record","ordinal":0,"body_identity":1,"group_node":2,"raw_group_node":"02","group_node_source_offset":11,"endpoint_class_index":16,"body_image_object_index":3,"raw_body_image_object_index":"03","body_image_object_index_source_offset":17,"byte_len":11,"source_offset":8}"#,
     ] {
         let write: FeatureOperationBodyWrite = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&write).unwrap(), json);
+        assert_eq!(json::to_string(&write).unwrap(), json);
     }
 }
 
@@ -62,7 +63,7 @@ fn payload_scalar_preserves_each_payload_owner_key() {
         r#"{"id":"scalar","operation_label":"operation","construction_payload":"payload","ordinal":0,"field_code":100,"value":2.0,"raw_value":"3000000000000000","payload_offset":10,"source_offset":20}"#,
     ] {
         let scalar: FeaturePayloadScalar = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&scalar).unwrap(), json);
+        assert_eq!(json::to_string(&scalar).unwrap(), json);
     }
 }
 
@@ -75,7 +76,7 @@ fn scalar_pair_preserves_payload_key_and_discriminator_presence() {
         r#"{"id":"pair","operation_label":"operation","surface_construction_payload":"payload","ordinal":0,"values":[1.0,2.0],"raw_values":["2ff0000000000000","3000000000000000"],"payload_offset":10,"value_payload_offsets":[25,34],"source_offset":30,"value_source_offsets":[31,39],"discriminator":"080203010301c04504008086020003"}"#,
     ] {
         let pair: FeaturePayloadScalarPair = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&pair).unwrap(), json);
+        assert_eq!(json::to_string(&pair).unwrap(), json);
     }
 }
 
@@ -96,7 +97,7 @@ fn construction_payload_preserves_each_ownership_form() {
             r#"{{"id":"payload","operation_label":"operation",{owner},"data_blocks":["block"],"byte_len":8,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10]}}"#
         );
         let payload: FeatureConstructionPayload = serde_json::from_str(&json).unwrap();
-        assert_eq!(serde_json::to_string(&payload).unwrap(), json);
+        assert_eq!(json::to_string(&payload).unwrap(), json);
     }
 }
 
@@ -111,7 +112,7 @@ fn construction_payload_rejects_untyped_operation_kinds() {
 fn datum_plane_payload_derives_terminal_index_count() {
     let json = r#"{"id":"payload","operation_label":"operation","datum_plane_header":"header","data_blocks":["block"],"byte_len":8,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10],"index_lane_offset":2,"index_lane_declared_count":2,"index_lane_values":[1],"index_lane_raw_indices":["01"],"index_lane_value_offsets":[4],"index_lane_trailer":0}"#;
     let payload: FeatureDatumPlanePayload = serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&payload).unwrap(), json);
+    assert_eq!(json::to_string(&payload).unwrap(), json);
     for count in [0, 1, 3, 256] {
         let invalid = json.replace(
             "\"index_lane_declared_count\":2",
@@ -126,25 +127,25 @@ fn datum_plane_payload_derives_terminal_index_count() {
 fn datum_plane_payload_retains_checked_compact_tokens() {
     let json = r#"{"id":"payload","operation_label":"operation","datum_plane_header":"header","data_blocks":["block"],"byte_len":8,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10],"index_lane_offset":2,"index_lane_declared_count":3,"index_lane_values":[4096,1],"index_lane_raw_indices":["9000","8001"],"index_lane_value_offsets":[4,6],"index_lane_trailer":0}"#;
     let payload: FeatureDatumPlanePayload = serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&payload).unwrap(), json);
+    assert_eq!(json::to_string(&payload).unwrap(), json);
     for raw in [vec![255], vec![144], vec![144, 0, 0], vec![1]] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["index_lane_raw_indices"][0] =
-            serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(raw));
-        let error = serde_json::from_value::<FeatureDatumPlanePayload>(wire).unwrap_err();
+            cadmpeg_core::json!(cadmpeg_ir::native::bytes::NativeBytes::from(raw));
+        let error = json::from_value::<FeatureDatumPlanePayload>(wire).unwrap_err();
         assert!(error.to_string().contains("index_lane_values[0]"));
     }
     for count in [0, 254, 255] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-        wire["index_lane_declared_count"] = serde_json::json!(count + 1);
-        wire["index_lane_values"] = serde_json::json!(vec![2; count]);
-        wire["index_lane_raw_indices"] = serde_json::json!(vec![
+        wire["index_lane_declared_count"] = cadmpeg_core::json!(count + 1);
+        wire["index_lane_values"] = cadmpeg_core::json!(vec![2; count]);
+        wire["index_lane_raw_indices"] = cadmpeg_core::json!(vec![
                 cadmpeg_ir::native::bytes::NativeBytes::from(vec![2]);
                 count
             ]);
-        wire["index_lane_value_offsets"] = serde_json::json!((4..4 + count).collect::<Vec<_>>());
+        wire["index_lane_value_offsets"] = cadmpeg_core::json!((4..4 + count).collect::<Vec<_>>());
         assert_eq!(
-            serde_json::from_value::<FeatureDatumPlanePayload>(wire).is_ok(),
+            json::from_value::<FeatureDatumPlanePayload>(wire).is_ok(),
             count == 254
         );
     }
@@ -154,11 +155,11 @@ fn datum_plane_payload_retains_checked_compact_tokens() {
 fn sketch_construction_members_preserve_wire_and_reject_unpaired_blocks() {
     let json = r#"{"id":"inputs","operation_label":"operation","sketch_record":"sketch","member_references":["reference"],"member_data_blocks":["block"],"terminal_reference":"terminal","terminal_data_block":"last"}"#;
     let inputs: FeatureSketchConstructionInputs = serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&inputs).unwrap(), json);
+    assert_eq!(json::to_string(&inputs).unwrap(), json);
     for field in ["member_references", "member_data_blocks"] {
         let mut invalid: serde_json::Value = serde_json::from_str(json).unwrap();
-        invalid[field] = serde_json::json!([]);
-        let error = serde_json::from_value::<FeatureSketchConstructionInputs>(invalid).unwrap_err();
+        invalid[field] = cadmpeg_core::json!([]);
+        let error = json::from_value::<FeatureSketchConstructionInputs>(invalid).unwrap_err();
         assert!(error.to_string().contains(field));
     }
 }
@@ -166,15 +167,14 @@ fn sketch_construction_members_preserve_wire_and_reject_unpaired_blocks() {
 #[test]
 fn block_construction_members_have_eighteen_paired_entries() {
     let references =
-        serde_json::to_string(&(0..18).map(|n| format!("reference{n}")).collect::<Vec<_>>())
-            .unwrap();
+        json::to_string(&(0..18).map(|n| format!("reference{n}")).collect::<Vec<_>>()).unwrap();
     let blocks =
-        serde_json::to_string(&(0..18).map(|n| format!("block{n}")).collect::<Vec<_>>()).unwrap();
+        json::to_string(&(0..18).map(|n| format!("block{n}")).collect::<Vec<_>>()).unwrap();
     let json = format!(
         r#"{{"id":"construction","operation_label":"operation","control":38,"member_references":{references},"member_data_blocks":{blocks},"terminal_reference":"terminal","terminal_data_block":"last"}}"#
     );
     let construction: FeatureBlockConstruction = serde_json::from_str(&json).unwrap();
-    assert_eq!(serde_json::to_string(&construction).unwrap(), json);
+    assert_eq!(json::to_string(&construction).unwrap(), json);
     for fields in [
         vec!["member_references"],
         vec!["member_data_blocks"],
@@ -184,7 +184,7 @@ fn block_construction_members_have_eighteen_paired_entries() {
         for field in fields {
             invalid[field].as_array_mut().unwrap().pop();
         }
-        let error = serde_json::from_value::<FeatureBlockConstruction>(invalid).unwrap_err();
+        let error = json::from_value::<FeatureBlockConstruction>(invalid).unwrap_err();
         assert!(error.to_string().contains("member_references"));
     }
 }
@@ -200,7 +200,7 @@ fn surface_branch_counts_are_derived_on_the_wire() {
         r#"{{"id":"group","operation_label":"operation","declared_count":2,"branches":[{branch}],"terminator":"000000000000ff00ff01","source_offset":4}}"#
     );
     let decoded: crate::native::features::thru_curve_branches::FeatureThruCurveConstructionBranchGroup = serde_json::from_str(&group).unwrap();
-    assert_eq!(serde_json::to_string(&decoded).unwrap(), group);
+    assert_eq!(json::to_string(&decoded).unwrap(), group);
     let invalid = group.replace(
         "\"state_lane\":\"0000000000\"",
         "\"state_lane\":\"00000000\"",
@@ -232,7 +232,7 @@ fn surface_branch_counts_are_derived_on_the_wire() {
     );
     let decoded: crate::native::features::surface_branches::FeatureSurfaceConstructionBranch =
         serde_json::from_str(&surface).unwrap();
-    assert_eq!(serde_json::to_string(&decoded).unwrap(), surface);
+    assert_eq!(json::to_string(&decoded).unwrap(), surface);
     let invalid = surface.replace("\"declared_count\":2", "\"declared_count\":3");
     assert!(serde_json::from_str::<
         crate::native::features::surface_branches::FeatureSurfaceConstructionBranch,
@@ -263,7 +263,7 @@ fn swp104_state_wire_preserves_independent_witness_and_absence() {
         );
         let branch: crate::native::features::swp104_branch::FeatureSwp104LeadingBranch =
             serde_json::from_str(&json).unwrap();
-        assert_eq!(serde_json::to_string(&branch).unwrap(), json);
+        assert_eq!(json::to_string(&branch).unwrap(), json);
         let invalid = json.replace("\"declared_count\":2", "\"declared_count\":3");
         assert!(serde_json::from_str::<
             crate::native::features::swp104_branch::FeatureSwp104LeadingBranch,
@@ -279,12 +279,12 @@ fn swp104_state_wire_preserves_independent_witness_and_absence() {
         .to_string()
         .contains("scalars"));
         for (path, bad) in [
-            (vec!["byte_len"], serde_json::json!(byte_len + 1)),
-            (vec!["source_offset"], serde_json::json!(u64::MAX)),
-            (vec!["successor", "ordinal"], serde_json::json!(0)),
+            (vec!["byte_len"], cadmpeg_core::json!(byte_len + 1)),
+            (vec!["source_offset"], cadmpeg_core::json!(u64::MAX)),
+            (vec!["successor", "ordinal"], cadmpeg_core::json!(0)),
             (
                 vec!["successor", "source_offset"],
-                serde_json::json!(successor_offset + 1),
+                cadmpeg_core::json!(successor_offset + 1),
             ),
         ] {
             let mut invalid: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -293,24 +293,24 @@ fn swp104_state_wire_preserves_independent_witness_and_absence() {
                 field = &mut field[key];
             }
             *field = bad;
-            assert!(serde_json::from_value::<
+            assert!(json::from_value::<
                 crate::native::features::swp104_branch::FeatureSwp104LeadingBranch,
             >(invalid)
             .is_err());
         }
         for field in ["ordinal", "source_offset"] {
             let mut invalid: serde_json::Value = serde_json::from_str(&json).unwrap();
-            invalid["members"][0][field] = serde_json::json!(99);
-            assert!(serde_json::from_value::<
+            invalid["members"][0][field] = cadmpeg_core::json!(99);
+            assert!(json::from_value::<
                 crate::native::features::swp104_branch::FeatureSwp104LeadingBranch,
             >(invalid)
             .is_err());
         }
         for (value, raw) in [(0, "f000"), (1, "f001"), (3, "f003")] {
             let mut invalid: serde_json::Value = serde_json::from_str(&json).unwrap();
-            invalid["successor"]["object_index"] = serde_json::json!(value);
-            invalid["successor"]["raw_object_index"] = serde_json::json!(raw);
-            assert!(serde_json::from_value::<
+            invalid["successor"]["object_index"] = cadmpeg_core::json!(value);
+            invalid["successor"]["raw_object_index"] = cadmpeg_core::json!(raw);
+            assert!(json::from_value::<
                 crate::native::features::swp104_branch::FeatureSwp104LeadingBranch,
             >(invalid)
             .unwrap_err()
@@ -318,9 +318,9 @@ fn swp104_state_wire_preserves_independent_witness_and_absence() {
             .contains("consecutive column indices"));
         }
         let mut invalid: serde_json::Value = serde_json::from_str(&json).unwrap();
-        invalid["members"][0]["object_index"] = serde_json::json!(0);
-        invalid["members"][0]["raw_object_index"] = serde_json::json!("f000");
-        assert!(serde_json::from_value::<
+        invalid["members"][0]["object_index"] = cadmpeg_core::json!(0);
+        invalid["members"][0]["raw_object_index"] = cadmpeg_core::json!("f000");
+        assert!(json::from_value::<
             crate::native::features::swp104_branch::FeatureSwp104LeadingBranch,
         >(invalid)
         .unwrap_err()
@@ -328,8 +328,8 @@ fn swp104_state_wire_preserves_independent_witness_and_absence() {
         .contains("consecutive column indices"));
         for field in ["parameter_class_index", "profile_class_index"] {
             let mut invalid: serde_json::Value = serde_json::from_str(&json).unwrap();
-            invalid[field] = serde_json::json!(0);
-            assert!(serde_json::from_value::<
+            invalid[field] = cadmpeg_core::json!(0);
+            assert!(json::from_value::<
                 crate::native::features::swp104_branch::FeatureSwp104LeadingBranch,
             >(invalid)
             .is_err());
@@ -344,7 +344,7 @@ fn construction_scalar_wire_derives_the_number_from_its_atom() {
             r#"{{"id":"scalar","operation_label":"operation","{payload}":"payload","ordinal":0,"field_code":100,"value":1.0,"raw_value":"2ff0000000000000","payload_offset":8,"source_offset":108}}"#
         );
         let scalar: FeaturePayloadScalar = serde_json::from_str(&json).unwrap();
-        assert_eq!(serde_json::to_string(&scalar).unwrap(), json);
+        assert_eq!(json::to_string(&scalar).unwrap(), json);
         for invalid in [json.replace("1.0", "2.0"), json.replace("2ff0", "00f0")] {
             let error = serde_json::from_str::<FeaturePayloadScalar>(&invalid).unwrap_err();
             assert!(error.to_string().contains("value/raw_value"));
@@ -356,7 +356,7 @@ fn construction_scalar_wire_derives_the_number_from_its_atom() {
 fn named_point_wire_preserves_scalar_atoms_and_frame_offsets() {
     let json = r#"{"id":"point","name":"Point1","data_blocks":["first","second"],"values":[1.0,2.0],"raw_values":["2ff0000000000000","3000000000000000"],"value_source_offsets":[10,20],"source_offset":5}"#;
     let point: OffsetStoreNamedPoint = serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&point).unwrap(), json);
+    assert_eq!(json::to_string(&point).unwrap(), json);
     let invalid = json.replace("1.0", "3.0");
     assert!(serde_json::from_str::<OffsetStoreNamedPoint>(&invalid)
         .unwrap_err()
@@ -386,7 +386,7 @@ fn binary64_pair_wire_preserves_all_payload_owner_forms() {
             r#"{{"id":"pair","operation_label":"operation","{payload}":"payload","ordinal":0,"values":[1.0,2.0],"raw_values":["2ff0000000000000","3000000000000000"],"payload_offset":5,"value_payload_offsets":[{positions}],"source_offset":105,"value_source_offsets":[120,129]{discriminator}}}"#
         );
         let pair: FeaturePayloadScalarPair = serde_json::from_str(&json).unwrap();
-        assert_eq!(serde_json::to_string(&pair).unwrap(), json);
+        assert_eq!(json::to_string(&pair).unwrap(), json);
         let invalid = json.replace("1.0", "3.0");
         assert!(serde_json::from_str::<FeaturePayloadScalarPair>(&invalid)
             .unwrap_err()
@@ -395,7 +395,7 @@ fn binary64_pair_wire_preserves_all_payload_owner_forms() {
     }
     let json = r#"{"id":"header","operation_label":"operation","scalars":[1.0,2.0],"raw_scalars":["2ff0000000000000","3000000000000000"],"source_offset":100}"#;
     let header: FeatureExtrudePayloadHeader = serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&header).unwrap(), json);
+    assert_eq!(json::to_string(&header).unwrap(), json);
     let invalid = json.replace("1.0", "3.0");
     assert!(
         serde_json::from_str::<FeatureExtrudePayloadHeader>(&invalid)
@@ -410,7 +410,7 @@ fn body_scalar_triple_wire_checks_the_atom_value_and_width() {
     let json = r#"{"id":"triple","operation_label":"operation","body_reference_ordinal":0,"body_object_index":10,"branch":28,"values":[0.0,3.0,1.0],"encodings":["zero","binary32","binary64"],"raw_values":["00","50400000","2ff0000000000000"],"source_offsets":[100,101,105]}"#;
     let triple: crate::native::features::body_scalar_triple::FeatureOperationBodyScalarTriple =
         serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&triple).unwrap(), json);
+    assert_eq!(json::to_string(&triple).unwrap(), json);
     for invalid in [
         json.replace("3.0", "4.0"),
         json.replacen("\"binary32\"", "\"binary64\"", 1),
@@ -428,11 +428,11 @@ fn payload_text_records_preserve_unicode_and_reject_control_text() {
     let json =
         r#"{"id":"text","operation_record":"record","ordinal":0,"value":" × ","source_offset":10}"#;
     let record: FeaturePayloadString = serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&record).unwrap(), json);
+    assert_eq!(json::to_string(&record).unwrap(), json);
     for value in ["", "\0", "\n", "\u{85}"] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["value"] = value.into();
-        assert!(serde_json::from_value::<FeaturePayloadString>(wire)
+        assert!(json::from_value::<FeaturePayloadString>(wire)
             .unwrap_err()
             .to_string()
             .contains("value"));
@@ -443,18 +443,18 @@ fn payload_text_records_preserve_unicode_and_reject_control_text() {
 fn construction_reference_records_preserve_wire_and_check_tokens() {
     fn check<T: serde::Serialize + serde::de::DeserializeOwned>(json: &str) {
         let record: T = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&record).unwrap(), json);
+        assert_eq!(json::to_string(&record).unwrap(), json);
         let wire: serde_json::Value = serde_json::from_str(json).unwrap();
         for (field, invalid) in [
-            ("object_index", serde_json::json!(256)),
-            ("raw_object_index", serde_json::json!("f0")),
-            ("raw_object_index", serde_json::json!("f00100")),
-            ("raw_object_index", serde_json::json!("ff")),
-            ("raw_object_index", serde_json::json!("f10001")),
+            ("object_index", cadmpeg_core::json!(256)),
+            ("raw_object_index", cadmpeg_core::json!("f0")),
+            ("raw_object_index", cadmpeg_core::json!("f00100")),
+            ("raw_object_index", cadmpeg_core::json!("ff")),
+            ("raw_object_index", cadmpeg_core::json!("f10001")),
         ] {
             let mut malformed = wire.clone();
             malformed[field] = invalid;
-            match serde_json::from_value::<T>(malformed) {
+            match json::from_value::<T>(malformed) {
                 Err(error) => assert!(error.to_string().contains(field)),
                 Ok(_) => panic!("invalid reference token accepted"),
             }
@@ -490,12 +490,12 @@ fn construction_reference_records_preserve_wire_and_check_tokens() {
 fn fixed_reference_groups_preserve_wire_and_check_each_token() {
     fn check<T: serde::Serialize + serde::de::DeserializeOwned>(json: &str, raw_field: &str) {
         let record: T = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&record).unwrap(), json);
+        assert_eq!(json::to_string(&record).unwrap(), json);
         let wire: serde_json::Value = serde_json::from_str(json).unwrap();
         for slot in 0..wire[raw_field].as_array().unwrap().len() {
             let mut malformed = wire.clone();
-            malformed[raw_field][slot] = serde_json::json!("ff");
-            match serde_json::from_value::<T>(malformed) {
+            malformed[raw_field][slot] = cadmpeg_core::json!("ff");
+            match json::from_value::<T>(malformed) {
                 Err(error) => assert!(error.to_string().contains(raw_field)),
                 Ok(_) => panic!("invalid grouped reference token accepted"),
             }
@@ -512,8 +512,8 @@ fn fixed_reference_groups_preserve_wire_and_check_each_token() {
     );
     for field in ["selector", "branch"] {
         let mut invalid: serde_json::Value = serde_json::from_str(hole).unwrap();
-        invalid[field] = serde_json::json!(0);
-        assert!(serde_json::from_value::<
+        invalid[field] = cadmpeg_core::json!(0);
+        assert!(json::from_value::<
             crate::native::features::holes::FeatureHolePackageConstructionGroupLane,
         >(invalid)
         .is_err());
@@ -531,7 +531,7 @@ fn fixed_reference_groups_preserve_wire_and_check_each_token() {
 
 #[test]
 fn delete_reference_fields_preserve_wire_and_reject_invalid_null_slots() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "delete", "operation_label": "operation", "control": 12,
         "object_indices": [32, null, 520, 521, null],
         "raw_object_indices": ["f020","ff","f10208","f10209","ff"],
@@ -540,29 +540,35 @@ fn delete_reference_fields_preserve_wire_and_reject_invalid_null_slots() {
         "object_index_source_offsets": [107, 109, 110, 113, 116]
     });
     let field: crate::native::features::delete::FeatureDeleteReferenceField =
-        serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(field).unwrap(), wire);
+        json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(field).unwrap(), wire);
     for slot in [1, 4] {
         let mut invalid = wire.clone();
-        invalid["raw_object_indices"][slot] = serde_json::json!("");
-        assert!(serde_json::from_value::<
-            crate::native::features::delete::FeatureDeleteReferenceField,
-        >(invalid)
-        .is_err());
+        invalid["raw_object_indices"][slot] = cadmpeg_core::json!("");
+        assert!(
+            json::from_value::<crate::native::features::delete::FeatureDeleteReferenceField>(
+                invalid
+            )
+            .is_err()
+        );
         let mut invalid = wire.clone();
-        invalid["data_blocks"][slot] = serde_json::json!("block");
-        assert!(serde_json::from_value::<
-            crate::native::features::delete::FeatureDeleteReferenceField,
-        >(invalid)
-        .is_err());
+        invalid["data_blocks"][slot] = cadmpeg_core::json!("block");
+        assert!(
+            json::from_value::<crate::native::features::delete::FeatureDeleteReferenceField>(
+                invalid
+            )
+            .is_err()
+        );
     }
     for slot in [0, 2, 3] {
         let mut invalid = wire.clone();
-        invalid["object_indices"][slot] = serde_json::json!(999);
-        assert!(serde_json::from_value::<
-            crate::native::features::delete::FeatureDeleteReferenceField,
-        >(invalid)
-        .is_err());
+        invalid["object_indices"][slot] = cadmpeg_core::json!(999);
+        assert!(
+            json::from_value::<crate::native::features::delete::FeatureDeleteReferenceField>(
+                invalid
+            )
+            .is_err()
+        );
     }
 }
 
@@ -571,21 +577,19 @@ fn body_11_continuation_preserves_wire_and_checks_both_token_grammars() {
     let wire = r#"{"id":"continuation","operation_label":"operation","body_reference_ordinal":0,"body_object_index":114,"continuation_index":67,"raw_continuation_index":"8043","continuation_source_offset":126,"terminal_object_index":113,"raw_terminal_object_index":"71","terminal_source_offset":131}"#;
     let record: super::super::FeatureOperationBody11Continuation =
         serde_json::from_str(wire).unwrap();
-    assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+    assert_eq!(json::to_string(&record).unwrap(), wire);
     for field in ["continuation_index", "terminal_object_index"] {
         let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
-        invalid[field] = serde_json::json!(999);
-        let error =
-            serde_json::from_value::<super::super::FeatureOperationBody11Continuation>(invalid)
-                .unwrap_err();
+        invalid[field] = cadmpeg_core::json!(999);
+        let error = json::from_value::<super::super::FeatureOperationBody11Continuation>(invalid)
+            .unwrap_err();
         assert!(error.to_string().contains(field));
     }
     for field in ["raw_continuation_index", "raw_terminal_object_index"] {
         let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
-        invalid[field] = serde_json::json!("ff");
+        invalid[field] = cadmpeg_core::json!("ff");
         assert!(
-            serde_json::from_value::<super::super::FeatureOperationBody11Continuation>(invalid)
-                .is_err()
+            json::from_value::<super::super::FeatureOperationBody11Continuation>(invalid).is_err()
         );
     }
 }
@@ -597,24 +601,22 @@ fn operation_body_member_preserves_exact_compact_token_and_rejects_invalid_wire(
             r#"{{"id":"member","operation_label":"operation","body_reference_ordinal":0,"body_object_index":66,"ordinal":0,"member_index":{value},"raw_member_index":{raw},"source_offset":122}}"#
         );
         let record: super::super::FeatureOperationBodyMember = serde_json::from_str(&wire).unwrap();
-        assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+        assert_eq!(json::to_string(&record).unwrap(), wire);
         for invalid_raw in [
-            serde_json::json!(""),
-            serde_json::json!("ff"),
-            serde_json::json!("80"),
-            serde_json::json!("900001"),
+            cadmpeg_core::json!(""),
+            cadmpeg_core::json!("ff"),
+            cadmpeg_core::json!("80"),
+            cadmpeg_core::json!("900001"),
         ] {
             let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
             invalid["raw_member_index"] = invalid_raw;
-            let error = serde_json::from_value::<super::super::FeatureOperationBodyMember>(invalid)
-                .unwrap_err();
+            let error =
+                json::from_value::<super::super::FeatureOperationBodyMember>(invalid).unwrap_err();
             assert!(error.to_string().contains("member_index"));
         }
         let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
-        invalid["member_index"] = serde_json::json!(value + 1);
-        assert!(
-            serde_json::from_value::<super::super::FeatureOperationBodyMember>(invalid).is_err()
-        );
+        invalid["member_index"] = cadmpeg_core::json!(value + 1);
+        assert!(json::from_value::<super::super::FeatureOperationBodyMember>(invalid).is_err());
     }
 }
 
@@ -635,19 +637,18 @@ fn operation_body_operand_preserves_exact_token_and_optional_relations() {
         .replace(", ", ",");
         let record: super::super::FeatureOperationBodyOperand =
             serde_json::from_str(&wire).unwrap();
-        assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+        assert_eq!(json::to_string(&record).unwrap(), wire);
         for raw in [
-            serde_json::json!(""),
-            serde_json::json!("ff"),
-            serde_json::json!("90"),
-            serde_json::json!("900001"),
-            serde_json::json!("01"),
+            cadmpeg_core::json!(""),
+            cadmpeg_core::json!("ff"),
+            cadmpeg_core::json!("90"),
+            cadmpeg_core::json!("900001"),
+            cadmpeg_core::json!("01"),
         ] {
             let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
             invalid["raw_operand_object_index"] = raw;
             let error =
-                serde_json::from_value::<super::super::FeatureOperationBodyOperand>(invalid)
-                    .unwrap_err();
+                json::from_value::<super::super::FeatureOperationBodyOperand>(invalid).unwrap_err();
             assert!(error.to_string().contains("operand_object_index"));
         }
     }
@@ -664,28 +665,26 @@ fn operation_object_reference_requires_canonical_feature_token() {
             r#"{{"id":"reference","operation_label":"operation","operation_record":"record","ordinal":0,"object_index":{value},"raw_object_index":{raw},"object_index_source_offset":10,"byte_len":{byte_len},"source_offset":7}}"#
         );
         let record: FeatureOperationObjectReference = serde_json::from_str(&wire).unwrap();
-        assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+        assert_eq!(json::to_string(&record).unwrap(), wire);
         for invalid_raw in [
-            serde_json::json!(""),
-            serde_json::json!("ff"),
-            serde_json::json!("8000"),
-            serde_json::json!("900000"),
-            serde_json::json!("f000"),
-            serde_json::json!("9010"),
-            serde_json::json!("0000"),
+            cadmpeg_core::json!(""),
+            cadmpeg_core::json!("ff"),
+            cadmpeg_core::json!("8000"),
+            cadmpeg_core::json!("900000"),
+            cadmpeg_core::json!("f000"),
+            cadmpeg_core::json!("9010"),
+            cadmpeg_core::json!("0000"),
         ] {
             let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
             invalid["raw_object_index"] = invalid_raw;
-            assert!(
-                serde_json::from_value::<FeatureOperationObjectReference>(invalid)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("object_index/raw_object_index")
-            );
+            assert!(json::from_value::<FeatureOperationObjectReference>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("object_index/raw_object_index"));
         }
         let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
-        invalid["object_index"] = serde_json::json!(value + 1);
-        assert!(serde_json::from_value::<FeatureOperationObjectReference>(invalid).is_err());
+        invalid["object_index"] = cadmpeg_core::json!(value + 1);
+        assert!(json::from_value::<FeatureOperationObjectReference>(invalid).is_err());
     }
 }
 
@@ -701,46 +700,44 @@ fn body_reference_preserves_alternate_widths_and_rejects_invalid_tokens() {
             r#"{{"id":"reference","operation_label":"operation","body_object_index":{value},"raw_body_object_index":{raw},"source_offset":10}}"#
         );
         let record: FeatureBodyReference = serde_json::from_str(&wire).unwrap();
-        assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+        assert_eq!(json::to_string(&record).unwrap(), wire);
         for raw in [
-            serde_json::json!(""),
-            serde_json::json!("ff"),
-            serde_json::json!("9000"),
-            serde_json::json!("f000"),
-            serde_json::json!("0000"),
+            cadmpeg_core::json!(""),
+            cadmpeg_core::json!("ff"),
+            cadmpeg_core::json!("9000"),
+            cadmpeg_core::json!("f000"),
+            cadmpeg_core::json!("0000"),
         ] {
             let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
             invalid["raw_body_object_index"] = raw;
-            assert!(serde_json::from_value::<FeatureBodyReference>(invalid)
+            assert!(json::from_value::<FeatureBodyReference>(invalid)
                 .unwrap_err()
                 .to_string()
                 .contains("body_object_index/raw_body_object_index"));
         }
         let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
-        invalid["body_object_index"] = serde_json::json!(value + 1);
-        assert!(serde_json::from_value::<FeatureBodyReference>(invalid).is_err());
+        invalid["body_object_index"] = cadmpeg_core::json!(value + 1);
+        assert!(json::from_value::<FeatureBodyReference>(invalid).is_err());
     }
 }
 
 #[test]
 fn direct_reference_wire_rejects_tag_and_position_drift() {
-    let wire = serde_json::json!({"id":"reference", "operation_label":"operation", "operation_record":"record",
+    let wire = cadmpeg_core::json!({"id":"reference", "operation_label":"operation", "operation_record":"record",
         "ordinal":0, "tag":23, "object_index":1, "raw_object_index":"01",
         "object_index_source_offset":10, "byte_len":9, "source_offset":7});
     for (field, value) in [
-        ("tag", serde_json::json!(2)),
-        ("byte_len", serde_json::json!(4)),
-        ("object_index_source_offset", serde_json::json!(11)),
-        ("source_offset", serde_json::json!(u64::MAX)),
+        ("tag", cadmpeg_core::json!(2)),
+        ("byte_len", cadmpeg_core::json!(4)),
+        ("object_index_source_offset", cadmpeg_core::json!(11)),
+        ("source_offset", cadmpeg_core::json!(u64::MAX)),
     ] {
         let mut invalid = wire.clone();
         invalid[field] = value;
-        assert!(
-            serde_json::from_value::<FeatureOperationObjectReference>(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains(field)
-        );
+        assert!(json::from_value::<FeatureOperationObjectReference>(invalid)
+            .unwrap_err()
+            .to_string()
+            .contains(field));
     }
 }
 
@@ -756,26 +753,26 @@ fn input_block_reference_preserves_header_encodings_and_rejects_invalid_pairs() 
             r#"{{"id":"input","operation_label":"operation","input_slot":0,"object_index":{value},"raw_object_index":{raw},"data_block":"block","source_offset":10}}"#
         );
         let record: FeatureInputBlock = serde_json::from_str(&wire).unwrap();
-        assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+        assert_eq!(json::to_string(&record).unwrap(), wire);
         assert_eq!(record.object.value(), value);
         for raw in [
-            serde_json::json!(""),
-            serde_json::json!("ff"),
-            serde_json::json!("9000"),
-            serde_json::json!("f000"),
-            serde_json::json!("f10100"),
-            serde_json::json!("0000"),
+            cadmpeg_core::json!(""),
+            cadmpeg_core::json!("ff"),
+            cadmpeg_core::json!("9000"),
+            cadmpeg_core::json!("f000"),
+            cadmpeg_core::json!("f10100"),
+            cadmpeg_core::json!("0000"),
         ] {
             let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
             invalid["raw_object_index"] = raw;
-            assert!(serde_json::from_value::<FeatureInputBlock>(invalid)
+            assert!(json::from_value::<FeatureInputBlock>(invalid)
                 .unwrap_err()
                 .to_string()
                 .contains("raw_object_index"));
         }
         let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
-        invalid["object_index"] = serde_json::json!(value + 1);
-        assert!(serde_json::from_value::<FeatureInputBlock>(invalid)
+        invalid["object_index"] = cadmpeg_core::json!(value + 1);
+        assert!(json::from_value::<FeatureInputBlock>(invalid)
             .unwrap_err()
             .to_string()
             .contains("object_index"));
@@ -789,20 +786,20 @@ fn operation_label_wire_preserves_nullable_header_tokens() {
             r#"{{"id":"label","section_link":"section","ordinal":0,"value":"EXTRUDE","object_indices":[null,0,0,0],"raw_object_indices":["ff","00","8000","900000"]{identity},"source_offset":19}}"#
         );
         let label: FeatureOperationLabel = serde_json::from_str(&wire).unwrap();
-        assert_eq!(serde_json::to_string(&label).unwrap(), wire);
+        assert_eq!(json::to_string(&label).unwrap(), wire);
         for (field, slot, value) in [
-            ("object_indices", 0, serde_json::json!(0)),
-            ("object_indices", 1, serde_json::json!(null)),
-            ("object_indices", 2, serde_json::json!(1)),
-            ("raw_object_indices", 0, serde_json::json!("")),
-            ("raw_object_indices", 0, serde_json::json!("00")),
-            ("raw_object_indices", 3, serde_json::json!("9000")),
-            ("raw_object_indices", 3, serde_json::json!("f000")),
-            ("raw_object_indices", 3, serde_json::json!("0000")),
+            ("object_indices", 0, cadmpeg_core::json!(0)),
+            ("object_indices", 1, cadmpeg_core::json!(null)),
+            ("object_indices", 2, cadmpeg_core::json!(1)),
+            ("raw_object_indices", 0, cadmpeg_core::json!("")),
+            ("raw_object_indices", 0, cadmpeg_core::json!("00")),
+            ("raw_object_indices", 3, cadmpeg_core::json!("9000")),
+            ("raw_object_indices", 3, cadmpeg_core::json!("f000")),
+            ("raw_object_indices", 3, cadmpeg_core::json!("0000")),
         ] {
             let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
             invalid[field][slot] = value;
-            assert!(serde_json::from_value::<FeatureOperationLabel>(invalid)
+            assert!(json::from_value::<FeatureOperationLabel>(invalid)
                 .unwrap_err()
                 .to_string()
                 .contains("object_indices"));
@@ -817,23 +814,21 @@ fn operation_input_wire_requires_one_of_the_four_header_slots() {
             r#"{{"id":"input","operation_label":"operation","input_slot":{slot},"object_index":0,"raw_object_index":"00","data_block":"block","source_offset":10}}"#
         );
         let input: FeatureInputBlock = serde_json::from_str(&wire).unwrap();
-        assert_eq!(serde_json::to_string(&input).unwrap(), wire);
+        assert_eq!(json::to_string(&input).unwrap(), wire);
     }
     for slot in [4, 255] {
-        let wire = serde_json::json!({"id":"input","operation_label":"operation","input_slot":slot,
+        let wire = cadmpeg_core::json!({"id":"input","operation_label":"operation","input_slot":slot,
             "object_index":0,"raw_object_index":"00","data_block":"block","source_offset":10});
-        assert!(serde_json::from_value::<FeatureInputBlock>(wire)
+        assert!(json::from_value::<FeatureInputBlock>(wire)
             .unwrap_err()
             .to_string()
             .contains("input_slot"));
-        let group = serde_json::json!({"id":"group","data_block":"block","input_blocks":["input"],
+        let group = cadmpeg_core::json!({"id":"group","data_block":"block","input_blocks":["input"],
             "operation_labels":["operation"],"input_slots":[slot],"source_offsets":[10]});
-        assert!(
-            serde_json::from_value::<FeatureInputBlockIdentityGroup>(group)
-                .unwrap_err()
-                .to_string()
-                .contains("input_slots")
-        );
+        assert!(json::from_value::<FeatureInputBlockIdentityGroup>(group)
+            .unwrap_err()
+            .to_string()
+            .contains("input_slots"));
     }
 }
 
@@ -846,16 +841,16 @@ fn sketch_reference_wire_derives_terminal_and_retains_zero_count_form() {
                 r#"{{"id":"reference","operation_label":"sketch","ordinal":{ordinal},"declared_count":{count},"terminal":{terminal},"object_index":66,"raw_object_index":"f042"{target},"source_offset":100}}"#
             );
             let reference: FeatureSketchReference = serde_json::from_str(&wire).unwrap();
-            assert_eq!(serde_json::to_string(&reference).unwrap(), wire);
-            let mut invalid = serde_json::to_value(&reference).unwrap();
-            invalid["ordinal"] = serde_json::json!(count.max(1));
-            assert!(serde_json::from_value::<FeatureSketchReference>(invalid)
+            assert_eq!(json::to_string(&reference).unwrap(), wire);
+            let mut invalid = json::to_value(&reference).unwrap();
+            invalid["ordinal"] = cadmpeg_core::json!(count.max(1));
+            assert!(json::from_value::<FeatureSketchReference>(invalid)
                 .unwrap_err()
                 .to_string()
                 .contains("ordinal"));
-            let mut invalid = serde_json::to_value(&reference).unwrap();
-            invalid["terminal"] = serde_json::json!(!terminal);
-            assert!(serde_json::from_value::<FeatureSketchReference>(invalid)
+            let mut invalid = json::to_value(&reference).unwrap();
+            invalid["terminal"] = cadmpeg_core::json!(!terminal);
+            assert!(json::from_value::<FeatureSketchReference>(invalid)
                 .unwrap_err()
                 .to_string()
                 .contains("terminal"));
@@ -868,19 +863,19 @@ fn datum_plane_payload_rejects_detached_member_positions_and_frame_overflow() {
     let json = r#"{"id":"payload","operation_label":"operation","datum_plane_header":"header","data_blocks":["block"],"byte_len":8,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10],"index_lane_offset":2,"index_lane_declared_count":3,"index_lane_values":[4096,1],"index_lane_raw_indices":["9000","8001"],"index_lane_value_offsets":[4,6],"index_lane_trailer":0}"#;
     for offsets in [[3, 6], [4, 5], [4, u64::MAX]] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-        wire["index_lane_value_offsets"] = serde_json::json!(offsets);
-        let error = serde_json::from_value::<FeatureDatumPlanePayload>(wire).unwrap_err();
+        wire["index_lane_value_offsets"] = cadmpeg_core::json!(offsets);
+        let error = json::from_value::<FeatureDatumPlanePayload>(wire).unwrap_err();
         assert!(error.to_string().contains("index_lane_value_offsets"));
     }
     let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
     let origin = u64::MAX - 11;
-    wire["index_lane_offset"] = serde_json::json!(origin);
-    wire["index_lane_value_offsets"] = serde_json::json!([origin + 2, origin + 4]);
-    let payload: FeatureDatumPlanePayload = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(payload).unwrap(), wire);
-    wire["index_lane_offset"] = serde_json::json!(origin + 1);
-    wire["index_lane_value_offsets"] = serde_json::json!([origin + 3, origin + 5]);
-    let error = serde_json::from_value::<FeatureDatumPlanePayload>(wire).unwrap_err();
+    wire["index_lane_offset"] = cadmpeg_core::json!(origin);
+    wire["index_lane_value_offsets"] = cadmpeg_core::json!([origin + 2, origin + 4]);
+    let payload: FeatureDatumPlanePayload = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(payload).unwrap(), wire);
+    wire["index_lane_offset"] = cadmpeg_core::json!(origin + 1);
+    wire["index_lane_value_offsets"] = cadmpeg_core::json!([origin + 3, origin + 5]);
+    let error = json::from_value::<FeatureDatumPlanePayload>(wire).unwrap_err();
     assert!(error.to_string().contains("index_lane_offset"));
 }
 
@@ -913,7 +908,7 @@ fn binary64_pair_wire_requires_owner_form_and_complete_payload_extent() {
     ];
     for (owner, discriminator, prefix, separator) in forms {
         let origin = u64::MAX - prefix - 16 - separator;
-        let mut wire = serde_json::json!({
+        let mut wire = cadmpeg_core::json!({
             "id": "pair", "operation_label": "operation", "ordinal": 0,
             "values": [1.0,2.0], "raw_values": ["2ff0000000000000","3000000000000000"],
             "payload_offset": origin, "value_payload_offsets": [origin + prefix, origin + prefix + 8 + separator],
@@ -922,21 +917,21 @@ fn binary64_pair_wire_requires_owner_form_and_complete_payload_extent() {
         wire[owner] = "payload".into();
         if let Some(discriminator) = discriminator {
             wire["discriminator"] =
-                serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(discriminator));
+                cadmpeg_core::json!(cadmpeg_ir::native::bytes::NativeBytes::from(discriminator));
         }
-        let record: FeaturePayloadScalarPair = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        let record: FeaturePayloadScalarPair = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(record).unwrap(), wire);
         for slot in 0..2 {
             let mut invalid = wire.clone();
-            invalid["value_payload_offsets"][slot] = serde_json::json!(origin);
-            assert!(serde_json::from_value::<FeaturePayloadScalarPair>(invalid)
+            invalid["value_payload_offsets"][slot] = cadmpeg_core::json!(origin);
+            assert!(json::from_value::<FeaturePayloadScalarPair>(invalid)
                 .unwrap_err()
                 .to_string()
                 .contains("value_payload_offsets"));
         }
         let mut invalid = wire.clone();
-        invalid["payload_offset"] = serde_json::json!(origin + 1);
-        assert!(serde_json::from_value::<FeaturePayloadScalarPair>(invalid)
+        invalid["payload_offset"] = cadmpeg_core::json!(origin + 1);
+        assert!(json::from_value::<FeaturePayloadScalarPair>(invalid)
             .unwrap_err()
             .to_string()
             .contains("payload_offset"));
@@ -947,9 +942,10 @@ fn binary64_pair_wire_requires_owner_form_and_complete_payload_extent() {
                 vec![0, 0, 65, 0, 3, 1, 3, 1, 192, 69, 4, 0, 128, 134, 2, 0, 3],
             ] {
                 let mut invalid = wire.clone();
-                invalid["discriminator"] =
-                    serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(discriminator));
-                assert!(serde_json::from_value::<FeaturePayloadScalarPair>(invalid)
+                invalid["discriminator"] = cadmpeg_core::json!(
+                    cadmpeg_ir::native::bytes::NativeBytes::from(discriminator)
+                );
+                assert!(json::from_value::<FeaturePayloadScalarPair>(invalid)
                     .unwrap_err()
                     .to_string()
                     .contains("discriminator"));
@@ -959,7 +955,7 @@ fn binary64_pair_wire_requires_owner_form_and_complete_payload_extent() {
             let mut invalid = wire.clone();
             invalid.as_object_mut().unwrap().remove(owner);
             invalid["datum_csys_payload"] = "payload".into();
-            assert!(serde_json::from_value::<FeaturePayloadScalarPair>(invalid)
+            assert!(json::from_value::<FeaturePayloadScalarPair>(invalid)
                 .unwrap_err()
                 .to_string()
                 .contains("discriminator"));
@@ -971,21 +967,21 @@ fn binary64_pair_wire_requires_owner_form_and_complete_payload_extent() {
 fn datum_csys_wire_derives_offsets_from_the_complete_payload_frame() {
     let wire = r#"{"id":"c","operation_label":"o","control":255,"object_indices":[0,256,1,512,2,768,3,1024],"raw_object_indices":["f000","f10100","f001","f10200","f002","f10300","f003","f10400"],"data_blocks":["","b","c","d","e","f","g","h"],"source_offsets":[114,116,119,121,124,126,129,131]}"#;
     let parsed: FeatureDatumCsysConstruction = serde_json::from_str(wire).unwrap();
-    assert_eq!(serde_json::to_string(&parsed).unwrap(), wire);
+    assert_eq!(json::to_string(&parsed).unwrap(), wire);
     for slot in 0..8 {
         let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
-        invalid["source_offsets"][slot] = serde_json::json!(1000);
-        let error = serde_json::from_value::<FeatureDatumCsysConstruction>(invalid).unwrap_err();
+        invalid["source_offsets"][slot] = cadmpeg_core::json!(1000);
+        let error = json::from_value::<FeatureDatumCsysConstruction>(invalid).unwrap_err();
         assert!(error.to_string().contains("source_offsets"));
     }
     for origin in [0, u64::MAX - 20] {
         let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
-        invalid["source_offsets"][0] = serde_json::json!(origin);
-        assert!(serde_json::from_value::<FeatureDatumCsysConstruction>(invalid).is_err());
+        invalid["source_offsets"][0] = cadmpeg_core::json!(origin);
+        assert!(json::from_value::<FeatureDatumCsysConstruction>(invalid).is_err());
     }
     let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
-    invalid["raw_object_indices"][0] = serde_json::json!("00");
-    let error = serde_json::from_value::<FeatureDatumCsysConstruction>(invalid).unwrap_err();
+    invalid["raw_object_indices"][0] = cadmpeg_core::json!("00");
+    let error = json::from_value::<FeatureDatumCsysConstruction>(invalid).unwrap_err();
     assert!(error.to_string().contains("raw_object_indices[0]"));
 }
 
@@ -993,10 +989,10 @@ fn datum_csys_wire_derives_offsets_from_the_complete_payload_frame() {
 fn surface_reference_requires_the_payload_token_grammar() {
     let wire = r#"{"id":"r","operation_label":"o","ordinal":0,"object_index":0,"raw_object_index":"f000","data_block":"","source_offset":10}"#;
     let reference: FeatureSurfaceConstructionReference = serde_json::from_str(wire).unwrap();
-    assert_eq!(serde_json::to_string(&reference).unwrap(), wire);
+    assert_eq!(json::to_string(&reference).unwrap(), wire);
     let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
-    invalid["raw_object_index"] = serde_json::json!("00");
-    assert!(serde_json::from_value::<FeatureSurfaceConstructionReference>(invalid).is_err());
+    invalid["raw_object_index"] = cadmpeg_core::json!("00");
+    assert!(json::from_value::<FeatureSurfaceConstructionReference>(invalid).is_err());
 }
 
 #[test]
@@ -1004,22 +1000,22 @@ fn draft_reference_requires_the_payload_token_grammar() {
     use crate::native::features::draft::FeatureDraftConstructionReference;
     let wire = r#"{"id":"r","operation_label":"o","ordinal":0,"object_index":0,"raw_object_index":"f000","data_block":"","source_offset":10}"#;
     let reference: FeatureDraftConstructionReference = serde_json::from_str(wire).unwrap();
-    assert_eq!(serde_json::to_string(&reference).unwrap(), wire);
+    assert_eq!(json::to_string(&reference).unwrap(), wire);
     let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
-    invalid["raw_object_index"] = serde_json::json!("00");
-    assert!(serde_json::from_value::<FeatureDraftConstructionReference>(invalid).is_err());
+    invalid["raw_object_index"] = cadmpeg_core::json!("00");
+    assert!(json::from_value::<FeatureDraftConstructionReference>(invalid).is_err());
 }
 
 #[test]
 fn point_header_mode_admits_only_two_wire_bytes() {
     for mode in 0..=u8::MAX {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "header", "operation_label": "operation", "object_index": 1,
             "raw_object_index": "f001", "mode": mode, "source_offset": 10
         });
-        let header = serde_json::from_value::<FeaturePointConstructionHeader>(wire.clone());
+        let header = json::from_value::<FeaturePointConstructionHeader>(wire.clone());
         if matches!(mode, 2 | 3) {
-            assert_eq!(serde_json::to_value(header.unwrap()).unwrap(), wire);
+            assert_eq!(json::to_value(header.unwrap()).unwrap(), wire);
         } else {
             assert!(header.unwrap_err().to_string().contains("mode"));
         }

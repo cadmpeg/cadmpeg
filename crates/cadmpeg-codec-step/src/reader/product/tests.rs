@@ -80,31 +80,29 @@ fn product_descriptions_transfer_from_product_and_definition() {
     );
 
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.model
-        .product_definitions
-        .push(cadmpeg_ir::products::ProductDefinition {
-            sketches: Vec::default(),
+    ir.model.product_definitions = vec![cadmpeg_ir::products::ProductDefinition {
+        sketches: Vec::default(),
 
-            id: "test:model:product#described"
-                .try_into()
-                .expect("valid identity"),
-            kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
-            source_name: Some("Described part".into()),
-            label: Some("Described part".into()),
-            description: Some("Round-tripped description".into()),
-            part_number: Some("DESCRIBED".into()),
-            bom_properties: std::collections::BTreeMap::new(),
-            bodies: vec![ir.geometry.bodies[0].id.clone()],
-            native_ref: None,
-            generated_from: None,
-            storage: cadmpeg_ir::products::Storage::Embedded,
-            occurrences: Vec::new(),
-            instance_bodies: Vec::new(),
-            representations: Vec::new(),
-            units: None,
-            general_tolerance: None,
-            active: None,
-        });
+        id: "test:model:product#described"
+            .try_into()
+            .expect("valid identity"),
+        kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
+        source_name: Some("Described part".into()),
+        label: Some("Described part".into()),
+        description: Some("Round-tripped description".into()),
+        part_number: Some("DESCRIBED".into()),
+        bom_properties: std::collections::BTreeMap::new(),
+        bodies: vec![ir.geometry.bodies[0].id.clone()],
+        native_ref: None,
+        generated_from: None,
+        storage: cadmpeg_ir::products::Storage::Embedded,
+        occurrences: Vec::new(),
+        instance_bodies: Vec::new(),
+        representations: Vec::new(),
+        units: None,
+        general_tolerance: None,
+        active: None,
+    }];
     let mut output = Vec::new();
     write_step(
         &ir,
@@ -425,10 +423,13 @@ fn ps07_duplicate_context_placements_remain_opaque_in_any_order() {
             .iter()
             .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
         let unknowns = result.ir().native_unknowns("step").unwrap();
-        let unknown_ids = unknowns
-            .iter()
-            .map(|record| record.id.as_str())
-            .collect::<std::collections::BTreeSet<_>>();
+        let (stubs, unknown_ids): (std::collections::BTreeSet<_>, std::collections::BTreeSet<_>) =
+            unknowns
+                .iter()
+                .map(|record| record.id.as_str())
+                .partition(|id| id.starts_with("step:source:part#"));
+        // The usage given up for its ambiguous placements is one part.
+        assert_eq!(stubs.len(), 1);
         assert_eq!(
             unknown_ids,
             std::collections::BTreeSet::from([
@@ -492,10 +493,13 @@ fn ps08_mixed_placement_mechanisms_remain_opaque_in_any_order() {
             .iter()
             .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
         let unknowns = result.ir().native_unknowns("step").unwrap();
-        let unknown_ids = unknowns
-            .iter()
-            .map(|record| record.id.as_str())
-            .collect::<std::collections::BTreeSet<_>>();
+        let (stubs, unknown_ids): (std::collections::BTreeSet<_>, std::collections::BTreeSet<_>) =
+            unknowns
+                .iter()
+                .map(|record| record.id.as_str())
+                .partition(|id| id.starts_with("step:source:part#"));
+        // The usage given up for its ambiguous placements is one part.
+        assert_eq!(stubs.len(), 1);
         assert_eq!(
             unknown_ids,
             std::collections::BTreeSet::from([
@@ -983,10 +987,13 @@ fn ps09_ambiguous_occurrence_owned_placements_remain_opaque() {
         .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
 
     let unknowns = result.ir().native_unknowns("step").unwrap();
-    let unknown_ids = unknowns
-        .iter()
-        .map(|record| record.id.as_str())
-        .collect::<std::collections::BTreeSet<_>>();
+    let (stubs, unknown_ids): (std::collections::BTreeSet<_>, std::collections::BTreeSet<_>) =
+        unknowns
+            .iter()
+            .map(|record| record.id.as_str())
+            .partition(|id| id.starts_with("step:source:part#"));
+    // The usage given up for its ambiguous placements is one part.
+    assert_eq!(stubs.len(), 1);
     assert_eq!(
         unknown_ids,
         std::collections::BTreeSet::from([

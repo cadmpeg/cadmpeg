@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::frame;
-use serde_json::json;
+use cadmpeg_core::json;
 
 #[test]
 fn deterministic_face_precedes_top_feature_id() {

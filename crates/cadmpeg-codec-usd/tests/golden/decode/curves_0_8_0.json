@@ -1238,8 +1238,7 @@
           "value": {
             "code": "curves.rejected",
             "kind": "geometry_not_transferred",
-            "namespace": "usd",
-            "strict_floor": "warning"
+            "namespace": "usd"
           }
         },
         "message": "1 curves do not satisfy their topology and were not transferred",

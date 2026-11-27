@@ -7,7 +7,7 @@ pub(in crate::design::ops) mod fixtures;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use serde_json::json;
+use cadmpeg_core::json;
 
 use super::*;
 use crate::design::ops::sketch::{TextAlign, TextContent, TextHorizontalBox, TextVerticalBox};

@@ -36,46 +36,42 @@ pub(super) enum SourceRoute {
 
 impl CompactReferencePlaneIndex {
     pub(super) fn new(payload: &[u8]) -> Self {
-        let mut class_end = None;
+        let class_end = memchr::memmem::find(payload, COMPACT_REFERENCE_PLANE_CLASS)
+            .map(|offset| offset + COMPACT_REFERENCE_PLANE_CLASS.len());
         let mut declared = Vec::new();
-        let mut components = Vec::new();
-        let mut component_frames = Vec::new();
-        let mut principal_components = Vec::new();
-        for (offset, byte) in payload.iter().enumerate() {
-            if *byte == COMPACT_REFERENCE_PLANE_CLASS[0]
-                && payload.get(offset..offset + COMPACT_REFERENCE_PLANE_CLASS.len())
-                    == Some(COMPACT_REFERENCE_PLANE_CLASS)
-            {
-                class_end.get_or_insert(offset + COMPACT_REFERENCE_PLANE_CLASS.len());
-            }
-            if *byte == 0x3f {
-                if let Some(start) = offset.checked_sub(46) {
-                    if let Some(bytes) =
-                        payload.get(start..start + COMPACT_REFERENCE_PLANE_RECORD_LEN)
-                    {
-                        if let Some(source) = compact_declared_reference_plane_record(bytes) {
-                            declared.push((start, source));
-                        }
+        for offset in memchr::memchr_iter(0x3f, payload) {
+            if let Some(start) = offset.checked_sub(46) {
+                if let Some(bytes) = payload.get(start..start + COMPACT_REFERENCE_PLANE_RECORD_LEN)
+                {
+                    if let Some(source) = compact_declared_reference_plane_record(bytes) {
+                        declared.push((start, source));
                     }
                 }
             }
-            // The trailer count word (2 to 4) and the sentinel of a 138-byte record.
-            if matches!(*byte, 2..=4)
-                && payload.get(offset + 1..offset + 8) == Some(&[0, 0, 0, 0xff, 0xff, 0xff, 0xff])
-            {
-                if let Some(start) = offset.checked_sub(122) {
-                    if let Some(bytes) =
-                        payload.get(start..start + COMPACT_COMPONENT_PLANE_RECORD_LEN)
-                    {
-                        if let Some(plane) = compact_principal_reference_plane_record(bytes) {
-                            principal_components.push((start, plane));
-                        }
-                        if let Some(source) = compact_component_reference_plane_record(bytes) {
-                            components.push((start, source));
-                        }
-                        if let Some(frame) = compact_component_plane_frame_record(bytes) {
-                            component_frames.push((start, frame));
-                        }
+        }
+        let mut components = Vec::new();
+        let mut component_frames = Vec::new();
+        let mut principal_components = Vec::new();
+        // The trailer count word (2 to 4) and the sentinel of a 138-byte record.
+        let sentinel: &[u8] = &[0, 0, 0, 0xff, 0xff, 0xff, 0xff];
+        for sentinel_offset in memchr::memmem::find_iter(payload, sentinel) {
+            let Some(offset) = sentinel_offset.checked_sub(1) else {
+                continue;
+            };
+            if !matches!(payload[offset], 2..=4) {
+                continue;
+            }
+            if let Some(start) = offset.checked_sub(122) {
+                if let Some(bytes) = payload.get(start..start + COMPACT_COMPONENT_PLANE_RECORD_LEN)
+                {
+                    if let Some(plane) = compact_principal_reference_plane_record(bytes) {
+                        principal_components.push((start, plane));
+                    }
+                    if let Some(source) = compact_component_reference_plane_record(bytes) {
+                        components.push((start, source));
+                    }
+                    if let Some(frame) = compact_component_plane_frame_record(bytes) {
+                        component_frames.push((start, frame));
                     }
                 }
             }

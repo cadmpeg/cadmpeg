@@ -291,16 +291,15 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
             || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     assert_eq!(
-        decoded.source_fidelity().annotations.exactness()[input.id.as_str()].fields()["expression"],
+        decoded.source_fidelity().annotations.exactness()[input.id.as_str()].fields()["definition"],
         cadmpeg_ir::Exactness::Derived
     );
     assert_eq!(
-        decoded.source_fidelity().annotations.exactness()[input.id.as_str()].fields()["properties"],
+        decoded.source_fidelity().annotations.exactness()[input.id.as_str()].fields()["kind"],
         cadmpeg_ir::Exactness::Derived
     );
     assert_eq!(
-        decoded.source_fidelity().annotations.exactness()[output.id.as_str()].fields()
-            ["properties"],
+        decoded.source_fidelity().annotations.exactness()[output.id.as_str()].fields()["kind"],
         cadmpeg_ir::Exactness::Derived
     );
     assert!(
@@ -626,7 +625,7 @@ fn decode_transfers_dimensionless_real_formula() {
     for parameter in [input, output] {
         assert_eq!(
             decoded.source_fidelity().annotations.exactness()[parameter.id.as_str()].fields()
-                ["properties"],
+                ["kind"],
             cadmpeg_ir::Exactness::Derived
         );
     }

@@ -16,6 +16,7 @@ fn frame_decorations_keep_first_values_and_reject_unknown_logicals() {
         owner_type: Some(3),
         unit: b"",
         offset: 17,
+        end: 18,
     };
     let mut tolerance = Tolerance::default();
     add_attribute(

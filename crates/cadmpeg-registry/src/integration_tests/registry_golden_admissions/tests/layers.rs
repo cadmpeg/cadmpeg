@@ -3,7 +3,7 @@ use super::{
     assert_rejected, kernel_loss, layer, layers, native_admission_compatible, nx_13006,
     registry_rows, report_view, validate, Admission, Grammar, ReadDisposition,
 };
-use serde_json::json;
+use cadmpeg_core::json;
 
 #[test]
 fn malformed_or_orphaned_layer_sets_are_rejected() {

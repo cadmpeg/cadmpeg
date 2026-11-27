@@ -5,6 +5,7 @@ use cadmpeg_core::decode::ArenaClass;
 use super::{carried_source_losses, edit_unverified};
 use crate::codec::write::{Consumption, PatchConsumption, WritePath};
 use crate::report::Severity;
+use crate::schema::EntityKind;
 use crate::source_fidelity::{RetainedSourceRecord, SourceFidelity};
 
 #[test]
@@ -32,6 +33,54 @@ fn the_carried_source_and_unverified_edit_codes_have_their_section_3_2_spelling_
             ("edit.unverified", Severity::Warning),
         ]
     );
+}
+
+/// §3.2 states no strict floor for an `export:` code, whatever the category
+/// of the content it names.
+#[test]
+fn no_export_code_pins_a_strict_floor() {
+    use super::ExportLossCode as Code;
+    let mut codes = vec![
+        Code::NativeRecordsOmitted,
+        Code::OutputEmpty,
+        Code::FacePartial,
+        Code::SolidPartial,
+        Code::EvaluationMissing,
+        Code::EvaluationStale,
+        Code::ParameterFlattened,
+        Code::ParameterRenamed,
+        Code::RecordResidualUnavailable,
+        Code::ValueUnwritable,
+        Code::RuleInvalid,
+        Code::SourceCarried,
+        Code::SourceUnchecked,
+        Code::EditUnverified,
+        Code::ValueQuantized,
+        Code::SourceDropped,
+        Code::LinkUnwritten,
+        Code::DefinitionPlaced,
+        Code::FitRestated,
+        Code::FitDropped,
+        Code::GeneralToleranceRestated,
+        Code::GeneralToleranceDropped,
+        Code::FeatureLowered,
+        Code::DependencyCycleBroken,
+    ];
+    for kind in EntityKind::ALL {
+        codes.extend([
+            Code::ArenaOmitted(kind),
+            Code::EditDropped(kind),
+            Code::RecordInvalid(kind),
+        ]);
+    }
+    for code in codes {
+        assert_eq!(
+            code.note("message").code.strict_floor(),
+            None,
+            "{}",
+            code.code()
+        );
+    }
 }
 
 fn marked_fidelity() -> SourceFidelity {

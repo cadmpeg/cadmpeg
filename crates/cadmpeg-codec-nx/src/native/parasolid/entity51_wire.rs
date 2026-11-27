@@ -94,33 +94,34 @@ impl TryFrom<Entity51Wire> for ParasolidEntity51Record {
 #[cfg(test)]
 mod tests {
     use super::ParasolidEntity51Record;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn entity51_wire_derives_count_and_rejects_mismatched_or_unbounded_counts() {
         let json = r#"{"id":"entity","stream_ordinal":0,"xmt":50,"flags":2,"sequence":7,"definition_xmt":34,"leading_references":[60,61,70,71,72],"trailing_references":[70,71],"byte_len":28,"inflated_offset":200}"#;
         let record: ParasolidEntity51Record = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&record).unwrap(), json);
+        assert_eq!(json::to_string(&record).unwrap(), json);
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&super::Entity51Wire::from(record.clone())).unwrap()
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&super::Entity51Wire::from(record.clone())).unwrap()
         );
         for (field, invalid) in [("xmt", 0), ("xmt", 1), ("sequence", 0)] {
-            let mut wire = serde_json::to_value(&record).unwrap();
+            let mut wire = json::to_value(&record).unwrap();
             wire[field] = invalid.into();
-            let error = serde_json::from_value::<ParasolidEntity51Record>(wire).unwrap_err();
+            let error = json::from_value::<ParasolidEntity51Record>(wire).unwrap_err();
             assert!(error.to_string().contains(field));
         }
-        let mut wire = serde_json::to_value(&record).unwrap();
+        let mut wire = json::to_value(&record).unwrap();
         wire["flags"] = 1.into();
-        assert!(serde_json::from_value::<ParasolidEntity51Record>(wire)
+        assert!(json::from_value::<ParasolidEntity51Record>(wire)
             .unwrap_err()
             .to_string()
             .contains("flags"));
         for count in [0, 1, 32, 33] {
-            let mut wire = serde_json::to_value(&record).unwrap();
+            let mut wire = json::to_value(&record).unwrap();
             wire["flags"] = count.into();
             wire["trailing_references"] = (0..count).map(serde_json::Value::from).collect();
-            let decoded = serde_json::from_value::<ParasolidEntity51Record>(wire);
+            let decoded = json::from_value::<ParasolidEntity51Record>(wire);
             if matches!(count, 1 | 32) {
                 assert_eq!(
                     decoded.unwrap().trailing_references.values().len(),

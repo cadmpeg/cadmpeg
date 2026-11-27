@@ -7,7 +7,9 @@ use crate::test_support::review::{
     decode, edit, members, parameter, two_body_step, validate, wire,
 };
 use base64::Engine;
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
+use serde_json::Value;
 use std::io::Write;
 
 fn kind(wire: &Value, ordinal: usize) -> &Value {
@@ -181,12 +183,12 @@ fn changed_edge(producer: Option<&str>, compact: bool) -> Vec<u8> {
         let current = members
             .remove("partstudios/studio/bodydetails/2.json")
             .unwrap();
-        let mut before: Value = serde_json::from_slice(&current).unwrap();
+        let mut before: Value = json::from_slice(&current).unwrap();
         before["bodies"][0]["edges"][0]["geometry"]["endPoint"]["z"] = json!(0.001);
         before["bodies"][0]["edges"][0]["geometry"]["midPoint"]["z"] = json!(0.0005);
         members.insert(
             "partstudios/studio/bodydetails/3.json".into(),
-            serde_json::to_vec(&before).unwrap(),
+            json::to_vec(&before).unwrap(),
         );
         members.insert("partstudios/studio/bodydetails/4.json".into(), current);
         members.insert(
@@ -258,7 +260,7 @@ fn cap_frame(start: bool, sense: f64, missing: Option<&str>) -> Vec<u8> {
             );
             query["queryString"] = json!(format!(
                 "query=qCompressed(1.0,{},id);",
-                serde_json::to_string(&encoded).unwrap()
+                json::to_string(&encoded).unwrap()
             ));
             if let Some(missing) = missing {
                 if missing == "plane" {

@@ -1178,7 +1178,7 @@ mod tests {
             let value = ctx
                 .parse_json_value(r#"{"a":[1,2]}"#, "JSON")
                 .expect("valid JSON");
-            assert_eq!(value, serde_json::json!({"a": [1, 2]}));
+            assert_eq!(value, crate::json!({"a": [1, 2]}));
             let record: JsonRecord = ctx
                 .parse_json(r#"{"name":"r","values":[3]}"#, "JSON")
                 .expect("valid JSON");
@@ -1238,7 +1238,7 @@ mod tests {
             let value = ctx
                 .parse_json_value(raw, "JSON")
                 .expect("valid raw carrier");
-            assert_eq!(value, serde_json::json!([0]));
+            assert_eq!(value, crate::json!([0]));
         });
     }
 }
