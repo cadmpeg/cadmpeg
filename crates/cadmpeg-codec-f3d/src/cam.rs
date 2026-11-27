@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Manufacture workspace definitions from Iron.Document XML.
 
-use std::collections::BTreeMap;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -62,16 +63,45 @@ fn read(
             );
             continue;
         };
-        match parse(ctx, view, &entry.name, target, losses) {
-            Ok(()) => {}
-            Err(CodecError::Malformed(error)) => losses.push(
-                F3dLossCode::CamDocumentUnreadable
-                    .note(format!("CAM document {}: {error}", entry.name)),
-            ),
-            Err(error) => return Err(error),
-        }
+        read_entry(ctx, view, &entry.name, target, losses)?;
     }
     Ok(())
+}
+
+/// Reads one CAM document. A document that cannot be read or exceeds the
+/// per-expansion budget is a loss and contributes no records; resource
+/// exhaustion of the whole decode propagates.
+fn read_entry(
+    ctx: &DecodeContext<'_>,
+    view: View<'_>,
+    name: &str,
+    target: &mut Manufacturing,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    let mut part = Manufacturing::default();
+    let mut part_losses = Vec::new();
+    match parse(ctx, view, name, &mut part, &mut part_losses) {
+        Ok(()) => {
+            target.setups.append(&mut part.setups);
+            target.operations.append(&mut part.operations);
+            target.tools.append(&mut part.tools);
+            losses.append(&mut part_losses);
+            Ok(())
+        }
+        Err(CodecError::Malformed(error)) => {
+            losses.push(
+                F3dLossCode::CamDocumentUnreadable.note(format!("CAM document {name}: {error}")),
+            );
+            Ok(())
+        }
+        Err(CodecError::NotImplemented(error)) => {
+            losses.push(
+                F3dLossCode::CamDocumentUnreadable.note(format!("CAM document {name}: {error}")),
+            );
+            Ok(())
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn owned(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
@@ -104,13 +134,152 @@ fn record(node: XmlNode<'_>) -> bool {
     )
 }
 
-fn local_nodes(node: XmlNode<'_>) -> impl Iterator<Item = XmlNode<'_>> {
-    node.descendants().skip(1).filter(move |child| {
-        child
-            .ancestors()
-            .skip(1)
-            .take_while(|parent| *parent != node)
-            .all(|parent| !record(parent))
+/// Per-document classification facts, computed in one pass so no record
+/// test rescans a subtree or an ancestor chain.
+struct Index<'a> {
+    /// Local descendant elements of each record, in document order.
+    locals: HashMap<usize, Vec<XmlNode<'a>>>,
+    setup: Vec<bool>,
+    under_container: Vec<bool>,
+    setup_ancestor: Vec<Option<XmlNode<'a>>>,
+}
+
+fn id(node: XmlNode<'_>) -> usize {
+    node.id().get_usize()
+}
+
+fn object_operation(node: XmlNode<'_>) -> bool {
+    node.has_tag_name("object")
+        && node.attribute("parent").is_some()
+        && node
+            .attribute("strategy")
+            .is_some_and(|strategy| !strategy.is_empty() && strategy != "folder")
+}
+
+impl<'a> Index<'a> {
+    fn new(
+        ctx: &DecodeContext<'_>,
+        document: &'a roxmltree::Document<'a>,
+    ) -> Result<Self, CodecError> {
+        let count = document.descendants().count();
+        let mut owner = ctx.alloc_filled(count, None::<usize>, "index CAM owners")?;
+        let mut locals: HashMap<usize, Vec<XmlNode<'a>>> = HashMap::new();
+        let mut job_owner = HashSet::new();
+        for node in document.descendants() {
+            let Some(parent) = node.parent() else {
+                continue;
+            };
+            let near = if record(parent) {
+                Some(id(parent))
+            } else {
+                owner[id(parent)]
+            };
+            owner[id(node)] = near;
+            if let (Some(near), true) = (near, node.is_element()) {
+                locals.entry(near).or_default().push(node);
+                if node.has_tag_name("Parameter")
+                    && node
+                        .attribute("name")
+                        .is_some_and(|name| name.starts_with("job_"))
+                {
+                    job_owner.insert(near);
+                }
+            }
+        }
+        let mut setup = ctx.alloc_filled(count, false, "index CAM setups")?;
+        for node in document.descendants() {
+            setup[id(node)] = node.has_tag_name("setup")
+                || node.has_tag_name("job")
+                || (node.has_tag_name("object") && node.attribute("strategy") == Some("setup"))
+                || (node.has_tag_name("section")
+                    && (matches!(node.attribute("type"), Some("setup" | "job"))
+                        || job_owner.contains(&id(node))));
+        }
+        let mut container = ctx.alloc_filled(count, false, "index CAM containers")?;
+        let mut under_container = ctx.alloc_filled(count, false, "index CAM operations")?;
+        let mut setup_ancestor = ctx.alloc_filled(count, None, "index CAM setup ancestors")?;
+        for node in document.descendants() {
+            let own = id(node);
+            container[own] = node.has_tag_name("operation")
+                || (!setup[own] && (node.has_tag_name("section") || object_operation(node)));
+            if let Some(parent) = node.parent() {
+                let up = id(parent);
+                under_container[own] = under_container[up] || container[up];
+                setup_ancestor[own] = if setup[up] {
+                    Some(parent)
+                } else {
+                    setup_ancestor[up]
+                };
+            }
+        }
+        Ok(Self {
+            locals,
+            setup,
+            under_container,
+            setup_ancestor,
+        })
+    }
+
+    fn is_setup(&self, node: XmlNode<'_>) -> bool {
+        self.setup[id(node)]
+    }
+
+    fn is_operation(&self, node: XmlNode<'a>) -> bool {
+        let own = id(node);
+        node.has_tag_name("operation")
+            || (object_operation(node) && !self.setup[own])
+            || (node.has_tag_name("section")
+                && !self.setup[own]
+                && (node.attribute("strategy").is_some()
+                    || node.children().any(|child| child.has_tag_name("toolpath"))))
+            || (node.has_tag_name("toolpath") && !self.under_container[own])
+    }
+
+    fn setup_of(&self, node: XmlNode<'a>) -> Option<XmlNode<'a>> {
+        self.setup_ancestor[id(node)]
+    }
+
+    /// The elements below `node` that no nested record owns.
+    fn local(&self, node: XmlNode<'a>) -> Cow<'_, [XmlNode<'a>]> {
+        if record(node) {
+            return Cow::Borrowed(self.locals.get(&id(node)).map_or(&[], Vec::as_slice));
+        }
+        Cow::Owned(
+            node.descendants()
+                .skip(1)
+                .filter(|child| {
+                    child.is_element()
+                        && child
+                            .ancestors()
+                            .skip(1)
+                            .take_while(|parent| *parent != node)
+                            .all(|parent| !record(parent))
+                })
+                .collect(),
+        )
+    }
+}
+
+/// The unit an `expression` literal names: a number followed by a unit
+/// suffix (`2mm`, `1000mmpm`, `10000rpm`). The parameter's `value` is the
+/// number in that unit. An expression of any other form names no unit.
+fn expression_unit(expression: &str) -> Option<&'static str> {
+    let expression = expression.trim();
+    let split = expression.find(|c: char| c.is_ascii_alphabetic())?;
+    expression[..split].replace(',', ".").parse::<f64>().ok()?;
+    Some(match &expression[split..] {
+        "mm" => "mm",
+        "cm" => "cm",
+        "m" => "m",
+        "in" => "in",
+        "deg" => "deg",
+        "rad" => "rad",
+        "rpm" => "rpm",
+        "mmpm" => "mm/min",
+        "cmpm" => "cm/min",
+        "mpm" => "m/min",
+        "inpm" => "in/min",
+        _ => return None,
     })
 }
 
@@ -127,19 +296,22 @@ fn parameter_value(node: XmlNode<'_>) -> &str {
         .unwrap_or("")
 }
 
-fn parameters(
+fn parameters<'a>(
     ctx: &DecodeContext<'_>,
-    node: XmlNode<'_>,
+    index: &Index<'a>,
+    node: XmlNode<'a>,
 ) -> Result<Vec<ManufacturingParameter>, CodecError> {
-    local_nodes(node)
+    index
+        .local(node)
+        .iter()
         .filter(|child| child.has_tag_name("Parameter"))
         .map(|parameter| {
             Ok(ManufacturingParameter {
                 name: owned(ctx, parameter.attribute("name").unwrap_or(""))?,
-                value: owned(ctx, parameter_value(parameter))?,
+                value: owned(ctx, parameter_value(*parameter))?,
                 unit: parameter
-                    .attribute("unit")
-                    .or_else(|| parameter.attribute("units"))
+                    .attribute("expression")
+                    .and_then(expression_unit)
                     .map(|text| owned(ctx, text))
                     .transpose()?,
                 kind: parameter
@@ -147,19 +319,20 @@ fn parameters(
                     .or_else(|| parameter.attribute("kind"))
                     .map(|text| owned(ctx, text))
                     .transpose()?,
-                native_xml: owned(ctx, xml(parameter))?,
+                native_xml: owned(ctx, xml(*parameter))?,
             })
         })
         .collect()
 }
 
-fn selections(
+fn selections<'a>(
     ctx: &DecodeContext<'_>,
-    node: XmlNode<'_>,
+    index: &Index<'a>,
+    node: XmlNode<'a>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<ManufacturingSelection>, CodecError> {
     let mut result = Vec::new();
-    for child in local_nodes(node).filter(|child| {
+    for child in index.local(node).iter().filter(|child| {
         matches!(
             child.tag_name().name(),
             "CadRef" | "CadChain" | "CadContours2D"
@@ -180,7 +353,7 @@ fn selections(
         }
         result.push(ManufacturingSelection {
             kind: owned(ctx, child.tag_name().name())?,
-            native_xml: owned(ctx, xml(child))?,
+            native_xml: owned(ctx, xml(*child))?,
         });
     }
     if !result.is_empty() {
@@ -252,6 +425,14 @@ fn wcs(parameters: &[ManufacturingParameter]) -> ManufacturingWcs {
     }
 }
 
+/// The record's name: `displayName`, or `name`, where it is not blank.
+fn record_name(node: XmlNode<'_>) -> Option<&str> {
+    ["displayName", "name"]
+        .into_iter()
+        .filter_map(|attribute| node.attribute(attribute))
+        .find(|text| !text.trim().is_empty())
+}
+
 fn identity(member: &str, node: XmlNode<'_>, kind: &str) -> String {
     let digest = cadmpeg_ir::hash::digest::Sha256Digest::digest(member.as_bytes());
     format!("f3d:cam:{kind}#{digest}:{}", node.range().start)
@@ -271,53 +452,35 @@ fn family(strategy: &str) -> ManufacturingStrategy {
     }
 }
 
-fn is_setup(node: XmlNode<'_>) -> bool {
-    node.has_tag_name("setup")
-        || node.has_tag_name("job")
-        || (node.has_tag_name("object") && node.attribute("strategy") == Some("setup"))
-        || (node.has_tag_name("section")
-            && (matches!(node.attribute("type"), Some("setup" | "job"))
-                || local_nodes(node).any(|child| {
-                    child.has_tag_name("Parameter")
-                        && child
-                            .attribute("name")
-                            .is_some_and(|name| name.starts_with("job_"))
-                })))
-}
-
-fn is_operation(node: XmlNode<'_>) -> bool {
-    node.has_tag_name("operation")
-        || (node.has_tag_name("object")
-            && !is_setup(node)
-            && node.attribute("parent").is_some()
-            && node
-                .attribute("strategy")
-                .is_some_and(|strategy| !strategy.is_empty() && strategy != "folder"))
-        || (node.has_tag_name("section")
-            && !is_setup(node)
-            && (node.attribute("strategy").is_some()
-                || node.children().any(|child| child.has_tag_name("toolpath"))))
-        || (node.has_tag_name("toolpath")
-            && !node.ancestors().skip(1).any(|parent| {
-                parent.has_tag_name("operation")
-                    || (parent.has_tag_name("section") && !is_setup(parent))
-            }))
-}
-
-fn object_setup(
-    node: XmlNode<'_>,
-    objects: &BTreeMap<&str, XmlNode<'_>>,
+fn object_setup<'a>(
+    node: XmlNode<'a>,
+    objects: &BTreeMap<&'a str, XmlNode<'a>>,
     setups: &BTreeMap<usize, SetupId>,
+    memo: &mut HashMap<&'a str, Option<SetupId>>,
 ) -> Option<SetupId> {
+    let mut visited = Vec::new();
+    let mut found = None;
     let mut parent = node.attribute("parent");
     for _ in 0..objects.len() {
-        let object = objects.get(parent?)?;
+        let Some(key) = parent else { break };
+        if let Some(known) = memo.get(key) {
+            found.clone_from(known);
+            break;
+        }
+        let Some(object) = objects.get(key) else {
+            break;
+        };
+        visited.push(*objects.get_key_value(key).map(|(key, _)| key)?);
         if let Some(setup) = setups.get(&object.range().start) {
-            return Some(setup.clone());
+            found = Some(setup.clone());
+            break;
         }
         parent = object.attribute("parent");
     }
-    None
+    for key in visited {
+        memo.insert(key, found.clone());
+    }
+    found
 }
 
 fn parse(
@@ -348,7 +511,9 @@ fn parse(
     if document.descendants().any(|node| record(node)) {
         losses.push(F3dLossCode::CamStructureAssumed.note("CAM section nesting, strategy and tool attributes, and named parameter metadata use the source-definition reading; native XML retains all source fields"));
     }
+    let index = Index::new(ctx, &document)?;
     let mut setups = BTreeMap::new();
+    let mut memo = HashMap::new();
     let objects: BTreeMap<_, _> = document
         .descendants()
         .filter(|node| node.has_tag_name("object"))
@@ -356,8 +521,9 @@ fn parse(
         .collect();
     let mut tools = BTreeMap::new();
     let mut tool_nodes = BTreeMap::new();
-    for node in document.descendants().filter(|node| is_setup(*node)) {
-        let parameters = parameters(ctx, node)?;
+    let mut tool_numbers = BTreeMap::<String, Vec<(usize, ToolId)>>::new();
+    for node in document.descendants().filter(|node| index.is_setup(*node)) {
+        let parameters = parameters(ctx, &index, node)?;
         let id = SetupId::mint(identity(member, node, "cam_setup"))
             .map_err(|error| CodecError::malformed(format_args!("CAM setup identity: {error}")))?;
         if parameters.iter().any(|parameter| parameter.name.is_empty()) {
@@ -369,14 +535,10 @@ fn parse(
         setups.insert(node.range().start, id.clone());
         target.setups.push(ManufacturingSetup {
             id,
-            name: node
-                .attribute("name")
-                .or_else(|| node.attribute("displayName"))
-                .map(|text| owned(ctx, text))
-                .transpose()?,
+            name: record_name(node).map(|text| owned(ctx, text)).transpose()?,
             stock: stock(&parameters),
             wcs: wcs(&parameters),
-            model_refs: selections(ctx, node, losses)?,
+            model_refs: selections(ctx, &index, node, losses)?,
             parameters,
             source: source(ctx, node, member)?,
         });
@@ -385,7 +547,7 @@ fn parse(
         .descendants()
         .filter(|node| node.has_tag_name("tool"))
     {
-        let parameters = tools::parameters(ctx, node)?;
+        let parameters = tools::parameters(ctx, &index, node)?;
         let id = ToolId::mint(identity(member, node, "cam_tool"))
             .map_err(|error| CodecError::malformed(format_args!("CAM tool identity: {error}")))?;
         tool_nodes.insert(node.range().start, id.clone());
@@ -406,7 +568,7 @@ fn parse(
         let holder = node
             .children()
             .filter(|child| child.has_tag_name("holder"))
-            .map(|child| self::parameters(ctx, child))
+            .map(|child| self::parameters(ctx, &index, child))
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .flatten()
@@ -420,12 +582,19 @@ fn parse(
                     .cloned(),
             )
             .collect();
+        let number = value(&parameters, "tool_number")
+            .or_else(|| value(&parameters, "nc.number"))
+            .or_else(|| node.attribute("number"))
+            .map(str::to_owned);
+        if let Some(number) = &number {
+            tool_numbers
+                .entry(number.clone())
+                .or_default()
+                .push((node.range().start, id.clone()));
+        }
         target.tools.push(ManufacturingTool {
             id,
-            number: value(&parameters, "tool_number")
-                .or_else(|| value(&parameters, "nc.number"))
-                .or_else(|| node.attribute("number"))
-                .map(str::to_owned),
+            number,
             tool_type: value(&parameters, "tool_type")
                 .or_else(|| node.attribute("type"))
                 .map(str::to_owned),
@@ -437,13 +606,15 @@ fn parse(
         });
     }
     let mut orders = BTreeMap::<SetupId, u64>::new();
-    for node in document.descendants().filter(|node| is_operation(*node)) {
-        let setup = if let Some(setup) = node
-            .ancestors()
-            .skip(1)
-            .find_map(|parent| setups.get(&parent.range().start))
+    for node in document
+        .descendants()
+        .filter(|node| index.is_operation(*node))
+    {
+        let setup = if let Some(setup) = index
+            .setup_of(node)
+            .and_then(|parent| setups.get(&parent.range().start))
             .cloned()
-            .or_else(|| object_setup(node, &objects, &setups))
+            .or_else(|| object_setup(node, &objects, &setups, &mut memo))
         {
             setup
         } else {
@@ -473,7 +644,7 @@ fn parse(
                 id
             }
         };
-        let mut parameters = parameters(ctx, node)?;
+        let mut parameters = parameters(ctx, &index, node)?;
         let path = if node.has_tag_name("toolpath") {
             Some(node)
         } else {
@@ -482,7 +653,7 @@ fn parse(
             })
         };
         if let Some(path) = path.filter(|path| *path != node) {
-            parameters.extend(self::parameters(ctx, path)?);
+            parameters.extend(self::parameters(ctx, &index, path)?);
         }
         if parameters.iter().any(|parameter| parameter.name.is_empty()) {
             losses.push(
@@ -521,9 +692,13 @@ fn parse(
         };
         let tool_key = node
             .attribute("tool")
+            .filter(|key| !key.is_empty())
             .or_else(|| node.attribute("toolId").filter(|key| !key.is_empty()))
-            .or_else(|| path.and_then(|path| path.attribute("tool")))
-            .or_else(|| value(&parameters, "tool_id"));
+            .or_else(|| {
+                path.and_then(|path| path.attribute("tool"))
+                    .filter(|key| !key.is_empty())
+            })
+            .or_else(|| value(&parameters, "tool_id").filter(|key| !key.is_empty()));
         let mut tool = if let Some(key) = tool_key {
             tools.get(key).cloned()
         } else {
@@ -537,16 +712,13 @@ fn parse(
         };
         if tool_key.is_none() && tool.is_none() {
             if let Some(number) = value(&parameters, "tool_number") {
-                let candidates = target.tools.iter().filter(|tool| {
-                    tool.source.member == member && tool.number.as_deref() == Some(number)
-                });
-                let preceding = candidates
-                    .clone()
-                    .filter(|tool| tool.source.start <= u64_from_index(node.range().start))
-                    .max_by_key(|tool| tool.source.start);
-                tool = preceding
-                    .or_else(|| candidates.min_by_key(|tool| tool.source.start))
-                    .map(|tool| tool.id.clone());
+                let candidates = tool_numbers.get(number).map_or(&[][..], Vec::as_slice);
+                let split = candidates.partition_point(|(start, _)| *start <= node.range().start);
+                tool = split
+                    .checked_sub(1)
+                    .and_then(|last| candidates.get(last))
+                    .or_else(|| candidates.first())
+                    .map(|(_, id)| id.clone());
                 if tool.is_some() {
                     losses.push(F3dLossCode::CamToolNumberReferenceAssumed.note("CAM operation tool number selects the nearest preceding tool definition, or the first following definition"));
                 } else {
@@ -562,9 +734,9 @@ fn parse(
                 F3dLossCode::CamToolUnreadable.note("CAM operation tool reference is unresolved"),
             );
         }
-        let mut geometry = selections(ctx, node, losses)?;
+        let mut geometry = selections(ctx, &index, node, losses)?;
         if let Some(path) = path.filter(|path| *path != node) {
-            geometry.extend(selections(ctx, path, losses)?);
+            geometry.extend(selections(ctx, &index, path, losses)?);
         }
         let order = orders.entry(setup.clone()).or_default();
         target.operations.push(ManufacturingOperation {
@@ -573,11 +745,7 @@ fn parse(
             })?,
             setup,
             order: *order,
-            name: node
-                .attribute("name")
-                .or_else(|| node.attribute("displayName"))
-                .map(|text| owned(ctx, text))
-                .transpose()?,
+            name: record_name(node).map(|text| owned(ctx, text)).transpose()?,
             family: family(&strategy),
             strategy,
             tool,

@@ -4415,7 +4415,7 @@ impl F3dLossCode {
             Self::CamSetupUnreadable => LossTaxonomy::ProcessRecordOmitted,
             Self::CamOperationUnreadable => LossTaxonomy::ProcessRecordOmitted,
             Self::CamToolUnreadable => LossTaxonomy::ProcessRecordOmitted,
-            Self::CamSelectionUnresolved => LossTaxonomy::ProcessRecordOmitted,
+            Self::CamSelectionUnresolved => LossTaxonomy::SourceAssociationOmitted,
             Self::SceneOverrideRefused => LossTaxonomy::RecordNotTyped,
             Self::BendStationaryRoleAssumed
             | Self::BendAngleUnresolved
