@@ -45,6 +45,15 @@ fn the_first_length_entry_is_the_scene_length_unit() {
     assert_eq!(units.angle, UnitSymbol::Deg);
     assert_eq!(units.mass, Some(UnitSymbol::Kg));
     assert!(scene.unrecognized.is_empty());
+    assert!(scene.conflicts.is_empty());
+}
+
+#[test]
+fn a_listed_name_selects_the_unit_and_a_contradicting_scale_is_noted() {
+    let scene = scene_units(&document(entry(0.0254, "Millimeters", "mm")));
+    assert_eq!(scene.units.unwrap().length, UnitSymbol::Mm);
+    assert_eq!(scene.conflicts.len(), 1);
+    assert!(scene.unrecognized.is_empty());
 }
 
 #[test]
@@ -62,8 +71,8 @@ fn an_unlisted_length_entry_never_takes_the_second_length_entry() {
 }
 
 #[test]
-fn a_stream_without_unit_entries_states_no_unit_system() {
+fn a_stream_without_unit_entries_states_no_unit_system_and_is_noted() {
     let scene = scene_units(&name("Degrees"));
     assert!(scene.units.is_none());
-    assert!(scene.unrecognized.is_empty());
+    assert_eq!(scene.unrecognized.len(), 1);
 }

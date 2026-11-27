@@ -75,11 +75,13 @@ The second `u32` of an item selects its kind. The value `0x0009b401` starts a
 kernel record. A node length is less than 2³², so the second `u32` of a node is
 zero.
 
-The payload node is the scene root. A **pair** is a node followed by a kernel
-record. A node below the scene root that holds pairs is an **assembly**: each
-pair that it holds is a part of the assembly, and each assembly node that it
-holds is a member assembly. The pairs that the scene root holds are the parts of
-the scene.
+The payload node is the scene root. A **pair** is a child node that holds a
+kernel record at any depth, directly followed by a kernel record. In the child
+node of a part, each kernel record follows a node that holds one empty node, so
+the child node of a part holds no pair. A node below the scene root that holds
+pairs is an **assembly**: each pair that it holds is a part of the assembly, and
+each assembly node that it holds is a member assembly. The pairs that the scene
+root holds are the parts of the scene.
 
 ### 3.1 Parasolid kernel bytes
 
@@ -150,8 +152,9 @@ Rows 1 to 3 of `matrix` hold a 3 × 3 block and the value `0`. Row 4 holds a
 translation in metres and the value `1`. The matrix of a part record places
 the part frame in the frame of its parent: a point `p` of the part frame lies
 at `p · R + t`, where `R` is the 3 × 3 block and `t` the translation. The
-parent of a part that an assembly holds is that assembly, and the matrix of an
-assembly record places the assembly in the scene in the same form. A part at
+parent of a part that an assembly holds is that assembly. The matrix of the
+record of an assembly that the scene root holds places the assembly in the
+scene in the same form. A part at
 the scene origin stores the identity matrix. A part turned by 30° about the
 scene Z axis stores the rows `(cos 30°, sin 30°, 0)` and `(-sin 30°, cos 30°, 0)`
 in the first two rows of `R`.

@@ -339,3 +339,65 @@ fn assembly_records_that_do_not_match_the_tree_are_flattened() {
         .iter()
         .all(|definition| definition.source_name.as_deref() != Some("asm")));
 }
+
+#[test]
+fn a_member_assembly_is_placed_in_the_assembly_that_holds_it() {
+    let scene = [
+        scene_record("a", true, 1.0),
+        scene_record("b", true, 2.0),
+        scene_record("inner", false, 10.0),
+        scene_record("outer", false, 100.0),
+    ];
+    let tree = [
+        crate::tree::Assembly { parent: Some(1) },
+        crate::tree::Assembly { parent: None },
+    ];
+    let payload = plane_face_body();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let mut ir = CadIr::empty();
+    let mut losses = Vec::new();
+    let results = vec![(Some(1), Vec::new()), (Some(0), Vec::new())];
+    let placed = super::place(&ctx, &mut ir, results, &scene, &tree, &mut losses).unwrap();
+    assert_eq!(count(&losses, IronCadLossCode::AssemblyNestedFrame), 1);
+    assert_eq!(count(&losses, IronCadLossCode::AssemblyFlattened), 0);
+    let name = |id: &cadmpeg_ir::ids::OccurrenceId| {
+        let occurrence = ir.model.occurrences.iter().find(|o| &o.id == id).unwrap();
+        occurrence.name.clone().unwrap()
+    };
+    let members = |assembly: &str| -> Vec<String> {
+        let definition = ir
+            .model
+            .product_definitions
+            .iter()
+            .find(|definition| definition.source_name.as_deref() == Some(assembly))
+            .unwrap();
+        definition.occurrences.iter().map(name).collect()
+    };
+    assert_eq!(placed.iter().map(name).collect::<Vec<_>>(), ["outer"]);
+    assert_eq!(members("outer"), ["a", "inner"]);
+    assert_eq!(members("inner"), ["b"]);
+}
+
+#[test]
+fn a_record_with_an_unread_property_is_charged() {
+    let mut record = scene_record("Part1", true, 0.0);
+    record.unread_property = Some("Odd".to_owned());
+    let mut losses = Vec::new();
+    super::property_losses(&[record, scene_record("Part2", true, 0.0)], &mut losses);
+    assert_eq!(count(&losses, IronCadLossCode::PropertyUnread), 1);
+}
+
+#[test]
+fn unit_notes_are_charged_by_kind() {
+    let scene = crate::units::SceneUnits {
+        units: None,
+        unrecognized: vec!["unlisted".to_owned()],
+        conflicts: vec!["contradicting".to_owned(), "contradicting".to_owned()],
+    };
+    let mut losses = Vec::new();
+    assert!(super::unit_losses(scene, &mut losses).is_none());
+    assert_eq!(count(&losses, IronCadLossCode::UnitsUnrecognized), 1);
+    assert_eq!(count(&losses, IronCadLossCode::UnitsScaleConflict), 2);
+}

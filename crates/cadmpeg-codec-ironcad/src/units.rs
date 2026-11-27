@@ -76,12 +76,14 @@ struct Entry {
     name: String,
 }
 
-/// The scene units, and a note for each scene entry whose name the table
-/// does not hold.
+/// The scene units, a note for each scene entry whose name the table does
+/// not hold, and a note for each scene entry whose stored scale contradicts
+/// its name.
 #[derive(Debug, Default)]
 pub(crate) struct SceneUnits {
     pub(crate) units: Option<UnitSystem>,
     pub(crate) unrecognized: Vec<String>,
+    pub(crate) conflicts: Vec<String>,
 }
 
 /// The scene unit system: the units of the first length entry, the angle
@@ -89,6 +91,12 @@ pub(crate) struct SceneUnits {
 pub(crate) fn scene_units(payload: &[u8]) -> SceneUnits {
     let entries = entries(payload);
     let mut scene = SceneUnits::default();
+    if entries.is_empty() {
+        scene
+            .unrecognized
+            .push("the stream holds no unit entry; the units are not stated".to_owned());
+        return scene;
+    }
     let mut resolved = [None; 3];
     for ((position, quantity), slot) in SCENE_ENTRIES.into_iter().zip(&mut resolved) {
         let Some(entry) = entries.get(position) else {
@@ -98,18 +106,22 @@ pub(crate) fn scene_units(payload: &[u8]) -> SceneUnits {
             .iter()
             .find(|(name, of, _)| *name == entry.name && *of == quantity)
             .map(|(.., symbol)| *symbol);
-        if by_name.is_some() {
+        let by_scale = entry.scale.and_then(|scale| unit_of_scale(scale, quantity));
+        if let Some(symbol) = by_name {
             *slot = by_name;
+            if by_scale != Some(symbol) {
+                scene.conflicts.push(format!(
+                    "the {} entry names `{}` and stores the SI scale {}; the name selects `{}`",
+                    quantity.label(),
+                    entry.name,
+                    entry
+                        .scale
+                        .map_or_else(|| "none".to_owned(), |scale| scale.to_string()),
+                    symbol.name()
+                ));
+            }
             continue;
         }
-        let by_scale = entry.scale.and_then(|scale| {
-            UNIT_SCALES
-                .iter()
-                .find(|(si, of, _)| {
-                    *of == quantity && (scale - si).abs() <= EPS_SCALE_RELATIVE * si.abs()
-                })
-                .map(|(.., symbol)| *symbol)
-        });
         *slot = by_scale;
         scene.unrecognized.push(match by_scale {
             Some(symbol) => format!(
@@ -133,6 +145,14 @@ pub(crate) fn scene_units(payload: &[u8]) -> SceneUnits {
         time: None,
     });
     scene
+}
+
+/// The unit of `quantity` whose SI scale is `scale`.
+fn unit_of_scale(scale: f64, quantity: Quantity) -> Option<UnitSymbol> {
+    UNIT_SCALES
+        .iter()
+        .find(|(si, of, _)| *of == quantity && (scale - si).abs() <= EPS_SCALE_RELATIVE * si.abs())
+        .map(|(.., symbol)| *symbol)
 }
 
 /// The unit entries in stored order: each run of three adjacent strings,

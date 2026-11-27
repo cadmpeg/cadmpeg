@@ -756,11 +756,13 @@ record contributes an ACIS layer from its binary header. The ACIS or
 Parasolid record that follows a part's child node decodes into B-rep topology
 and geometry in the part frame; feature records are retained. Each part is
 placed by the matrix of its `Public Access` part record and carries its
-properties and mass density. Each assembly node of the record tree becomes an
+properties and mass density. When the assembly records and the assembly
+nodes of the record tree agree in count, each assembly node becomes an
 assembly definition, placed by the matrix of its assembly record, that holds
-its parts and member assemblies. The scene units come from `Document Data`.
-Feature history is pending, and each non-empty scene stream other than
-`Brep Data`, `Public Access`, and `Document Data` produces a loss. The headline is L0. The codec is read-only.
+its parts and member assemblies; otherwise every part is placed in the scene.
+The scene units come from `Document Data`. Feature history is pending, and
+each non-empty scene stream other than `Brep Data`, `Public Access`, and
+`Document Data` produces a loss. The headline is L0. The codec is read-only.
 
 See [`formats/ironcad.md`](formats/ironcad.md) and
 [`formats/ironcad-open-items.md`](formats/ironcad-open-items.md).

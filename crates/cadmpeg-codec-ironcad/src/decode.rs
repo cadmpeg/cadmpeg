@@ -520,6 +520,19 @@ fn feature_shape(carrier: &str) -> LossNote {
     ))
 }
 
+/// Charges each record that holds a property the reader does not read.
+fn property_losses(records: &[SceneRecord], losses: &mut Vec<LossNote>) {
+    for record in records {
+        if let Some(name) = &record.unread_property {
+            losses.push(IronCadLossCode::PropertyUnread.note(format!(
+                "record `{}`: property `{name}` stores a value type that is not read; it and \
+                 the properties after it are not transferred",
+                record.name
+            )));
+        }
+    }
+}
+
 /// Reads the part and assembly records of `Public Access`, or charges the
 /// reason they are absent.
 fn scene_records(
@@ -540,15 +553,7 @@ fn scene_records(
     {
         Ok(payload) => {
             let records = placement::records(payload.window());
-            for record in &records {
-                if let Some(name) = &record.unread_property {
-                    losses.push(IronCadLossCode::PropertyUnread.note(format!(
-                        "record `{}`: property `{name}` stores a value type that is not read; \
-                         it and the properties after it are not transferred",
-                        record.name
-                    )));
-                }
-            }
+            property_losses(&records, losses);
             Ok(Some(records))
         }
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
@@ -654,7 +659,8 @@ fn place(
         ir.model.product_definitions.push(definition);
         if part.transform.is_none() {
             losses.push(IronCadLossCode::PlacementUnbound.note(format!(
-                "part record `{}` stores no affine matrix; the part stays in its part frame",
+                "part record `{}` stores no affine matrix; the part frame is placed at its \
+                 parent origin",
                 part.name
             )));
         }
@@ -690,7 +696,14 @@ fn place(
         occurrence.name = Some(record.name.clone());
         ir.model.occurrences.push(occurrence);
         match tree_assemblies[index].parent {
-            Some(parent) => assemblies[parent].occurrences.push(occurrence_id),
+            Some(parent) => {
+                losses.push(IronCadLossCode::AssemblyNestedFrame.note(format!(
+                    "the matrix of member assembly record `{}` places it in the frame of the \
+                     assembly that holds it",
+                    record.name
+                )));
+                assemblies[parent].occurrences.push(occurrence_id);
+            }
             None => placed.push(occurrence_id),
         }
     }
@@ -783,11 +796,18 @@ fn document_units(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
     };
-    let scene = units::scene_units(stream.window());
+    Ok(unit_losses(units::scene_units(stream.window()), losses))
+}
+
+/// Charges the notes of `scene` and returns its unit system.
+fn unit_losses(scene: units::SceneUnits, losses: &mut Vec<LossNote>) -> Option<UnitSystem> {
     for note in scene.unrecognized {
         losses.push(IronCadLossCode::UnitsUnrecognized.note(format!("`{DOCUMENT_DATA}`: {note}")));
     }
-    Ok(scene.units)
+    for note in scene.conflicts {
+        losses.push(IronCadLossCode::UnitsScaleConflict.note(format!("`{DOCUMENT_DATA}`: {note}")));
+    }
+    scene.units
 }
 
 /// Retains the kernel bytes of `record` as a native record.
