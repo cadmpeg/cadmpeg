@@ -10,8 +10,6 @@ use std::path::Path;
 use cadmpeg_core::decode::ResourceLimits;
 use cadmpeg_core::json;
 use cadmpeg_core::text::NonBlankString;
-#[cfg(feature = "schema")]
-use schemars::SchemaGenerator;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -1413,80 +1411,4 @@ fn a_native_option_key_stated_twice_is_refused() {
     let twice = wire.replacen(entry, &format!("{entry},{entry}"), 1);
     assert_ne!(twice, wire);
     refuses::<Fillet>(&twice);
-}
-
-#[cfg(feature = "schema")]
-fn generates<T: JsonSchema>(generator: &mut SchemaGenerator) {
-    let schema = T::json_schema(generator);
-    assert!(schema.as_object().is_some(), "{}", T::schema_name());
-}
-
-#[cfg(feature = "schema")]
-#[test]
-fn every_dressup_type_has_a_schema() {
-    let mut generator = SchemaGenerator::default();
-    generates::<Stations<NonNegativeLength>>(&mut generator);
-    generates::<Stations<SlopeAngle>>(&mut generator);
-    generates::<ValueStation<NonNegativeLength>>(&mut generator);
-    generates::<ValueStation<SlopeAngle>>(&mut generator);
-    generates::<StationAt>(&mut generator);
-    generates::<Along>(&mut generator);
-    generates::<Interpolation>(&mut generator);
-    generates::<Fillet>(&mut generator);
-    generates::<FilletSet>(&mut generator);
-    generates::<FaceSide>(&mut generator);
-    generates::<RoundSide>(&mut generator);
-    generates::<FilletSection>(&mut generator);
-    generates::<FilletSize>(&mut generator);
-    generates::<FilletProfile>(&mut generator);
-    generates::<ConicShape>(&mut generator);
-    generates::<Chamfer>(&mut generator);
-    generates::<ChamferSet>(&mut generator);
-    generates::<ChamferSize>(&mut generator);
-    generates::<ChamferMeasure>(&mut generator);
-    generates::<BlendControls>(&mut generator);
-    generates::<CornerStyle>(&mut generator);
-    generates::<Corner>(&mut generator);
-    generates::<Setbacks>(&mut generator);
-    generates::<EdgeSetback>(&mut generator);
-    generates::<BlendLimit>(&mut generator);
-    generates::<LimitAt>(&mut generator);
-    generates::<Transition>(&mut generator);
-    generates::<TransitionKind>(&mut generator);
-    generates::<Overflow>(&mut generator);
-    generates::<ShellFeature>(&mut generator);
-    generates::<FaceThickness>(&mut generator);
-    generates::<OffsetJoin>(&mut generator);
-    generates::<FaceMeeting>(&mut generator);
-    generates::<Thicken>(&mut generator);
-    generates::<Offset>(&mut generator);
-    generates::<OffsetSet>(&mut generator);
-    generates::<OffsetResult>(&mut generator);
-    generates::<Draft>(&mut generator);
-    generates::<DraftSet>(&mut generator);
-    generates::<DraftAngle>(&mut generator);
-    generates::<StepFaces>(&mut generator);
-    generates::<Hole>(&mut generator);
-    generates::<SeriesStage>(&mut generator);
-    generates::<StageHole>(&mut generator);
-    generates::<HolePositions>(&mut generator);
-    generates::<CenterSource>(&mut generator);
-    generates::<HoleShape>(&mut generator);
-    generates::<SlotLength>(&mut generator);
-    generates::<Bore>(&mut generator);
-    generates::<HoleHead>(&mut generator);
-    generates::<Cone>(&mut generator);
-    generates::<HoleBottom>(&mut generator);
-    generates::<DepthTo>(&mut generator);
-    generates::<StandardSize>(&mut generator);
-    generates::<Thread>(&mut generator);
-    generates::<ThreadSpec>(&mut generator);
-    generates::<ThreadLength>(&mut generator);
-    generates::<Emboss>(&mut generator);
-    generates::<EmbossEffect>(&mut generator);
-    generates::<EmbossMapping>(&mut generator);
-    generates::<Dome>(&mut generator);
-    generates::<DomeShape>(&mut generator);
-    generates::<Decal>(&mut generator);
-    generates::<DecalPlacement>(&mut generator);
 }

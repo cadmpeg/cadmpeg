@@ -51,6 +51,7 @@ GENERATORS = (
 # crash artifacts promoted into the tree, one per line so a new one is a
 # deliberate edit here and drift cannot hide behind a wildcard.
 AUTHORED = (
+    "alibre_codec/cylinder",
     "decode_pipeline_mutated/iges_point",
     "decode_pipeline_mutated/sat_sphere",
     "decode_pipeline_mutated/step_minimal",

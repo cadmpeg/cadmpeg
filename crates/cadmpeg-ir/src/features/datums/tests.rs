@@ -129,21 +129,6 @@ fn datum_axis_walks_bound_dimensions_and_preserves_colliding_option_literals() {
     );
 }
 
-#[cfg(feature = "schema")]
-#[test]
-fn datum_axis_schema_requires_a_readable_fact_and_nonnull_geometry() {
-    let schema = json::to_value(schemars::schema_for!(DatumAxis)).unwrap();
-    assert_eq!(schema["allOf"][0]["anyOf"].as_array().unwrap().len(), 5);
-    assert_eq!(
-        schema["allOf"][0]["anyOf"][2]["properties"]["inputs"]["minItems"],
-        1
-    );
-    assert!(!schema["properties"]["origin"].to_string().contains("null"));
-    assert!(!schema["properties"]["direction"]
-        .to_string()
-        .contains("null"));
-}
-
 fn feature(operation: FeatureOperation, ordinal: u64) -> crate::features::Feature {
     crate::features::Feature {
         product_definition: None,

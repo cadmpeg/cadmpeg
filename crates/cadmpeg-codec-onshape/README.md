@@ -5,7 +5,7 @@ STEP decoder. Both decoders share one decode context.
 
 <!-- generated: capability onshape -->
 
-Support: L0 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#onshape-bundle)).
+Support: L4 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#onshape-bundle)).
 
 <!-- /generated: capability onshape -->
 

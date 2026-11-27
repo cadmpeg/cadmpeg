@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Framing and identity decode for outer `7C05` entity-table records.
 
-use std::collections::HashSet;
-
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
@@ -628,50 +626,55 @@ pub(crate) fn value_packets(
     payload: &[u8],
     fields: &[value_block::ValueField],
 ) -> Vec<EntityValuePacket> {
-    let mut opcode_offsets = HashSet::new();
-    let mut e8_opcode_offsets = HashSet::new();
-    let mut marker_offsets = HashSet::new();
-    let mut atom_offsets = HashSet::new();
+    let mut opcode_offsets = Vec::new();
+    let mut e8_opcode_offsets = Vec::new();
+    let mut marker_offsets = Vec::new();
+    let mut atom_offsets = Vec::new();
     for field in fields {
         match field {
             value_block::ValueField::Opcode { code, offset } => {
-                opcode_offsets.insert(*offset);
+                opcode_offsets.push(*offset);
                 if *code == 0xe8 {
-                    e8_opcode_offsets.insert(*offset);
+                    e8_opcode_offsets.push(*offset);
                 }
             }
             value_block::ValueField::Marker { code: 0xe8, offset } => {
-                marker_offsets.insert(*offset);
+                marker_offsets.push(*offset);
             }
             value_block::ValueField::Atom { offset, .. } => {
-                atom_offsets.insert(*offset);
+                atom_offsets.push(*offset);
             }
             _ => {}
         }
     }
+    opcode_offsets.sort_unstable();
+    opcode_offsets.dedup();
+    e8_opcode_offsets.sort_unstable();
+    e8_opcode_offsets.dedup();
+    marker_offsets.sort_unstable();
+    marker_offsets.dedup();
+    atom_offsets.sort_unstable();
+    atom_offsets.dedup();
     let mut packets =
         numeric_value_packets(payload, &e8_opcode_offsets, &marker_offsets, &atom_offsets);
     packets.extend(e9_scalar_packets(payload, &opcode_offsets, &atom_offsets));
-    for packet in (0..payload.len())
-        .filter(|index| opcode_offsets.contains(index))
-        .filter_map(|index| {
-            if let Some([0xe9, _, _, layout, 0x37, 0xfe, 0xfe]) = payload.get(index..index + 7) {
-                return Some(EntityValuePacket::Layout {
-                    offset: index,
-                    type_selector: View::u16_le_at(payload, index + 1)?,
-                    layout: *layout,
-                    layout_offset: index + 3,
-                });
-            }
-            match payload.get(index..index + 6) {
-                Some([0xe8, _, _, 0x37, 0xfe, 0xfe]) => Some(EntityValuePacket::Compact {
-                    offset: index,
-                    value_selector: View::u16_le_at(payload, index + 1)?,
-                }),
-                _ => None,
-            }
-        })
-    {
+    for packet in opcode_offsets.iter().copied().filter_map(|index| {
+        if let Some([0xe9, _, _, layout, 0x37, 0xfe, 0xfe]) = payload.get(index..index + 7) {
+            return Some(EntityValuePacket::Layout {
+                offset: index,
+                type_selector: View::u16_le_at(payload, index + 1)?,
+                layout: *layout,
+                layout_offset: index + 3,
+            });
+        }
+        match payload.get(index..index + 6) {
+            Some([0xe8, _, _, 0x37, 0xfe, 0xfe]) => Some(EntityValuePacket::Compact {
+                offset: index,
+                value_selector: View::u16_le_at(payload, index + 1)?,
+            }),
+            _ => None,
+        }
+    }) {
         packets.push(packet);
     }
     packets.sort_by_key(|packet| match packet {
@@ -686,18 +689,19 @@ pub(crate) fn value_packets(
 
 fn e9_scalar_packets<'a>(
     payload: &'a [u8],
-    opcode_offsets: &'a HashSet<usize>,
-    atom_offsets: &'a HashSet<usize>,
+    opcode_offsets: &'a [usize],
+    atom_offsets: &'a [usize],
 ) -> impl Iterator<Item = EntityValuePacket> + 'a {
     const PREFIX: [u8; 7] = [0x83, 0xe9, 0xc0, 0x07, 0x01, 0xe1, 0xe6];
     const TRAILER: [u8; 10] = [0x88, 0x81, 0x81, 0x81, 0x81, 0x81, 0x82, 0xe7, 0x81, 0xfe];
 
-    (0..payload.len())
+    atom_offsets
+        .iter()
+        .copied()
         .filter(|offset| {
-            atom_offsets.contains(offset)
-                && offset
-                    .checked_add(1)
-                    .is_some_and(|opcode| opcode_offsets.contains(&opcode))
+            offset
+                .checked_add(1)
+                .is_some_and(|opcode| opcode_offsets.binary_search(&opcode).is_ok())
         })
         .filter_map(|offset| {
             let scalar_offset = offset.checked_add(6)?;
@@ -719,24 +723,22 @@ fn e9_scalar_packets<'a>(
 
 fn numeric_value_packets(
     payload: &[u8],
-    opcode_offsets: &HashSet<usize>,
-    marker_offsets: &HashSet<usize>,
-    atom_offsets: &HashSet<usize>,
+    opcode_offsets: &[usize],
+    marker_offsets: &[usize],
+    atom_offsets: &[usize],
 ) -> Vec<EntityValuePacket> {
     let mut candidates = Vec::new();
-    for offset in (0..payload.len()).filter(|offset| {
-        if !atom_offsets.contains(offset) {
-            return false;
-        }
+    for offset in atom_offsets.iter().copied().filter(|offset| {
         let Some((_, prefix1_offset)) = compact_atom(payload, *offset) else {
             return false;
         };
-        if marker_offsets.contains(&prefix1_offset) {
+        if marker_offsets.binary_search(&prefix1_offset).is_ok() {
             return true;
         }
-        atom_offsets.contains(&prefix1_offset)
-            && compact_atom(payload, prefix1_offset)
-                .is_some_and(|(_, opcode_offset)| opcode_offsets.contains(&opcode_offset))
+        atom_offsets.binary_search(&prefix1_offset).is_ok()
+            && compact_atom(payload, prefix1_offset).is_some_and(|(_, opcode_offset)| {
+                opcode_offsets.binary_search(&opcode_offset).is_ok()
+            })
     }) {
         if let Some(candidate) = parse_numeric_value_packet(payload, offset) {
             candidates.push(candidate);

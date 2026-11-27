@@ -81,7 +81,7 @@ fn serialize_type_id<S: Serializer>(
     serializer.serialize_str(value.as_str())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum Fields {
     CachedView {

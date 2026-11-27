@@ -42,11 +42,21 @@ pub(crate) fn deflate_stored_block(plain: &[u8]) -> Vec<u8> {
     block
 }
 
-/// `plain` as one GZIP member (RFC 1952) whose DEFLATE body is one stored
-/// block, so the bytes depend on no compressor.
+/// `plain` as one GZIP member (RFC 1952) whose DEFLATE body is stored
+/// blocks of at most 65535 bytes, so the bytes depend on no compressor.
 pub(crate) fn gzip(plain: &[u8]) -> Vec<u8> {
     let mut member = vec![0x1f, 0x8b, 0x08, 0x00, 0, 0, 0, 0, 0x00, 0xff];
-    member.extend(deflate_stored_block(plain));
+    let mut blocks = plain.chunks(usize::from(u16::MAX)).peekable();
+    if blocks.peek().is_none() {
+        member.extend(deflate_stored_block(plain));
+    }
+    while let Some(block) = blocks.next() {
+        let mut stored = deflate_stored_block(block);
+        if blocks.peek().is_some() {
+            stored[0] = 0x00;
+        }
+        member.extend(stored);
+    }
     member.extend_from_slice(&crc32(plain).to_le_bytes());
     member.extend_from_slice(&u32::try_from(plain.len()).unwrap().to_le_bytes());
     member

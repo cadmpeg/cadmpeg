@@ -2,7 +2,7 @@
 //! Typed user datums: a reference plane, axis, point or coordinate system
 //! whose decoded record states its geometry is a datum whose construction
 //! resolves to that geometry, and an offset plane is a datum offset from its
-//! reference plane by its distance.
+//! reference plane or face by its distance.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -12,9 +12,12 @@ use cadmpeg_ir::design::construction::{
 };
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{Feature, FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::names::{NativeName, NativeNameValue};
 use cadmpeg_ir::design::ops::datum::{Datum, DatumElement};
 use cadmpeg_ir::design::options::NativeOptions;
-use cadmpeg_ir::design::selection::{Anchor, Members, PickTarget, Picked, Picks, Selection};
+use cadmpeg_ir::design::selection::{
+    Anchor, Members, OrderedSelection, PickTarget, Picked, Picks, Selection,
+};
 use cadmpeg_ir::features as v10;
 use cadmpeg_ir::features::datums::DatumPlaneReference;
 use cadmpeg_ir::features::geometry::{FeatureDatumPlaneFrame, FeatureDirection3};
@@ -28,7 +31,7 @@ use crate::classification::{classify, FeatureClass};
 use crate::history::literals::parse_angle_rad;
 use crate::records::{
     FeatureHistory, FeatureInputLane, CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE,
-    REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
+    LEGACY_FACE_ALIAS_NATIVE, REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
 };
 use crate::resolved_features::scalars::FeatureObjectNames;
 
@@ -93,7 +96,8 @@ pub(super) fn project(
             .native_ref
             .as_deref()
             .is_some_and(|native| reading.fixed.contains(native));
-        let Some(element) = element(definition, fixed, &reading) else {
+        let alias = legacy_face_alias(source);
+        let Some(element) = element(definition, fixed, alias, &reading) else {
             projected.unresolved.push(named);
             return;
         };
@@ -115,7 +119,8 @@ pub(super) fn project(
                     .feature_states
                     .get(&feature.id)
                     .is_some_and(|state| {
-                        self::element(&state.definition, fixed, &reading).as_ref() != Some(&element)
+                        self::element(&state.definition, fixed, alias, &reading).as_ref()
+                            != Some(&element)
                     })
         }) {
             projected.configured.push(named);
@@ -190,10 +195,17 @@ fn fixed_reference_planes(
 }
 
 /// The datum element of a decoded definition that states its geometry or its
-/// offset from a reference plane. A plane whose plane data is `fixed` states
-/// its frame as its definition; every other element states its geometry as
-/// the cache of the references it follows, which the decoder does not read.
-fn element(definition: &FeatureDefinition, fixed: bool, reading: &Reading) -> Option<DatumElement> {
+/// offset from a reference plane or face. A plane whose plane data is `fixed`
+/// states its frame as its definition; every other element states its
+/// geometry as the cache of the references it follows, which the decoder does
+/// not read. `alias` is the type identity and the owner identifier of the
+/// plane's legacy face-alias reference.
+fn element(
+    definition: &FeatureDefinition,
+    fixed: bool,
+    alias: Option<[u32; 2]>,
+    reading: &Reading,
+) -> Option<DatumElement> {
     let FeatureDefinition::Operation(operation) = definition else {
         return None;
     };
@@ -214,7 +226,7 @@ fn element(definition: &FeatureDefinition, fixed: bool, reading: &Reading) -> Op
                     subject: Subject::Whole,
                     relation: Relation::Offset,
                 }),
-                reference: Some(plane_reference(reference)?),
+                reference: Some(plane_reference(reference, alias)?),
                 value: Some(ScalarDimension::Length(Dimension::Literal(*distance))),
                 reversed: None,
             }],
@@ -244,8 +256,12 @@ fn element(definition: &FeatureDefinition, fixed: bool, reading: &Reading) -> Op
 }
 
 /// The input reference of an offset plane's reference: the datum feature it
-/// names, or the plane the decoder resolved for it.
-fn plane_reference(reference: &DatumPlaneReference) -> Option<InputReference> {
+/// names, the plane the decoder resolved for it, or the face of the legacy
+/// face-alias reference `alias`.
+fn plane_reference(
+    reference: &DatumPlaneReference,
+    alias: Option<[u32; 2]>,
+) -> Option<InputReference> {
     Some(match reference {
         DatumPlaneReference::Feature { feature } => {
             let pick = Picked {
@@ -272,7 +288,38 @@ fn plane_reference(reference: &DatumPlaneReference) -> Option<InputReference> {
                 x_axis: unit(frame.u_axis())?,
             }))))
         }
-        DatumPlaneReference::Face { .. } => return None,
+        DatumPlaneReference::Face { .. } => InputReference::Picks(face_alias(alias?)?),
+    })
+}
+
+/// The type identity and the owner identifier of the legacy face-alias
+/// reference that `source`'s record stores.
+fn legacy_face_alias(source: &v10::Feature) -> Option<[u32; 2]> {
+    let native = source.source_properties.get("ReferenceFaceNative")?;
+    let mut fields = native.strip_prefix(LEGACY_FACE_ALIAS_NATIVE)?.rsplit(':');
+    let owner = fields.next()?.parse().ok()?;
+    let identity = fields.next()?.parse().ok()?;
+    Some([identity, owner])
+}
+
+/// The `Native` pick of a legacy face-alias reference, named by its type
+/// identity and its owner identifier (`sldprt.md` §2).
+fn face_alias(alias: [u32; 2]) -> Option<OrderedSelection> {
+    let pick = Picked {
+        target: PickTarget::Native { within: None },
+        context: None,
+        native: Some(NativeName {
+            codec: cadmpeg_ir::codec_id!("sldprt"),
+            value: NativeNameValue::Integers(alias.map(i64::from).to_vec()),
+        }),
+        domain: None,
+        witness: None,
+        resolved: None,
+    };
+    Some(Selection {
+        at: Anchor::Input,
+        picks: Picks::Named(Members::new(vec![pick]).ok()?),
+        native: None,
     })
 }
 

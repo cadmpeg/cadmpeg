@@ -10,7 +10,13 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use crate::bytes::{is_guid_prefix, lp_utf16_bytes, take_reference};
+use crate::container::ContainerScan;
+#[cfg(test)]
 use crate::design::decode::meta::typed_primary_frames;
+use crate::design::decode::meta::{
+    scan_design_primary_frames, scan_typed_primary_frames, typed_primary_frames_from,
+    TypedPrimaryFrame,
+};
 use crate::design::decode::sketch::{
     parse_genesis_entity_header, parse_settled_entity_header, NamedEntityHeader,
 };
@@ -76,12 +82,38 @@ pub(crate) enum BodyPresentationOwner {
 /// Decode every browser node whose dynamic class resolves to the registered
 /// browser-node type. The record body is ten zero bytes, an LP-UTF16 GUID, the
 /// hidden flag, `01 01`, and the owning Design entity suffix.
+#[cfg(test)]
 pub(super) fn browser_node_records(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BrowserNodeRecord>, CodecError> {
+    let frames = typed_primary_frames(bytes, meta, BROWSER_NODE_TYPE_GUID, "browser-node")?;
+    browser_node_records_from_frames(bytes, &frames)
+}
+
+/// Cached `ContainerScan` counterpart of [`browser_node_records`].
+pub(super) fn scan_browser_node_records(
+    scan: &ContainerScan,
+    entry_name: &str,
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<Vec<BrowserNodeRecord>, CodecError> {
+    let frames = scan_typed_primary_frames(
+        scan,
+        entry_name,
+        meta,
+        BROWSER_NODE_TYPE_GUID,
+        "browser-node",
+    )?;
+    browser_node_records_from_frames(bytes, &frames)
+}
+
+fn browser_node_records_from_frames(
+    bytes: &[u8],
+    frames: &[TypedPrimaryFrame<'_>],
+) -> Result<Vec<BrowserNodeRecord>, CodecError> {
     let mut out = Vec::new();
-    for frame in typed_primary_frames(bytes, meta, BROWSER_NODE_TYPE_GUID, "browser-node")? {
+    for frame in frames {
         if frame.design_type.version != BROWSER_NODE_TYPE_VERSION {
             continue;
         }
@@ -154,17 +186,42 @@ fn browser_node_guid(record: &[u8]) -> Option<(String, usize)> {
 /// GUID, in lower case. The GUID is the LP-UTF16 GUID before the node tail
 /// `01 01` and nine zero bytes, which precedes the LP-UTF16 physical-material
 /// GUID and the physical material library identifier.
+#[cfg(test)]
 pub(super) fn presentation_scene_node_guids(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<HashMap<u64, String>, CodecError> {
-    let mut out = HashMap::new();
-    for frame in typed_primary_frames(
+    let frames = typed_primary_frames(
         bytes,
         meta,
         BODY_PRESENTATION_TYPE_GUID,
         "body-presentation",
-    )? {
+    )?;
+    presentation_scene_node_guids_from_frames(bytes, &frames)
+}
+
+pub(super) fn scan_presentation_scene_node_guids(
+    scan: &ContainerScan,
+    entry_name: &str,
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<HashMap<u64, String>, CodecError> {
+    let frames = scan_typed_primary_frames(
+        scan,
+        entry_name,
+        meta,
+        BODY_PRESENTATION_TYPE_GUID,
+        "body-presentation",
+    )?;
+    presentation_scene_node_guids_from_frames(bytes, &frames)
+}
+
+fn presentation_scene_node_guids_from_frames(
+    bytes: &[u8],
+    frames: &[TypedPrimaryFrame<'_>],
+) -> Result<HashMap<u64, String>, CodecError> {
+    let mut out = HashMap::new();
+    for frame in frames {
         if frame.design_type.version != BODY_PRESENTATION_TYPE_VERSION {
             continue;
         }
@@ -218,18 +275,43 @@ fn scene_node_guid(bytes: &[u8], start: usize, end: usize) -> Result<Option<Stri
 /// Design entity suffix. A GUID that two typed browser-node frames of any
 /// version store maps to no suffix, and a typed frame without a readable GUID
 /// leaves the map empty.
+#[cfg(test)]
 pub(super) fn browser_node_suffixes(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<HashMap<String, Option<u64>>, CodecError> {
+    let typed_frames = typed_primary_frames(bytes, meta, BROWSER_NODE_TYPE_GUID, "browser-node")?;
+    browser_node_suffixes_from_frames(bytes, &typed_frames)
+}
+
+pub(super) fn scan_browser_node_suffixes(
+    scan: &ContainerScan,
+    entry_name: &str,
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<HashMap<String, Option<u64>>, CodecError> {
+    let typed_frames = scan_typed_primary_frames(
+        scan,
+        entry_name,
+        meta,
+        BROWSER_NODE_TYPE_GUID,
+        "browser-node",
+    )?;
+    browser_node_suffixes_from_frames(bytes, &typed_frames)
+}
+
+fn browser_node_suffixes_from_frames(
+    bytes: &[u8],
+    typed_frames: &[TypedPrimaryFrame<'_>],
+) -> Result<HashMap<String, Option<u64>>, CodecError> {
     let mut frames = HashMap::<String, usize>::new();
-    for frame in typed_primary_frames(bytes, meta, BROWSER_NODE_TYPE_GUID, "browser-node")? {
+    for frame in typed_frames {
         let Some((guid, _)) = browser_node_guid(&bytes[frame.start..frame.end]) else {
             return Ok(HashMap::new());
         };
         *frames.entry(guid.to_ascii_lowercase()).or_default() += 1;
     }
-    Ok(browser_node_records(bytes, meta)?
+    Ok(browser_node_records_from_frames(bytes, typed_frames)?
         .into_iter()
         .map(|node| {
             let guid = node.guid.to_ascii_lowercase();
@@ -240,20 +322,55 @@ pub(super) fn browser_node_suffixes(
 }
 
 /// Decode every typed body presentation in one Design stream.
+#[cfg(test)]
 pub(crate) fn body_presentations(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyPresentation>, CodecError> {
     let nodes = browser_node_records(bytes, meta)?;
-    let entity_types = entity_types(meta)?;
-
-    let mut out = Vec::new();
-    for frame in typed_primary_frames(
+    let frames = typed_primary_frames(
         bytes,
         meta,
         BODY_PRESENTATION_TYPE_GUID,
         "body-presentation",
-    )? {
+    )?;
+    body_presentations_from_frames(bytes, meta, &nodes, &frames)
+}
+
+/// Cached `ContainerScan` counterpart of [`body_presentations`].
+pub(crate) fn scan_body_presentations(
+    scan: &ContainerScan,
+    entry_name: &str,
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<Vec<BodyPresentation>, CodecError> {
+    let primary_frames = scan_design_primary_frames(scan, entry_name, meta)?;
+    let node_frames = typed_primary_frames_from(
+        &primary_frames,
+        meta,
+        BROWSER_NODE_TYPE_GUID,
+        "browser-node",
+    )?;
+    let nodes = browser_node_records_from_frames(bytes, &node_frames)?;
+    let frames = typed_primary_frames_from(
+        &primary_frames,
+        meta,
+        BODY_PRESENTATION_TYPE_GUID,
+        "body-presentation",
+    )?;
+    body_presentations_from_frames(bytes, meta, &nodes, &frames)
+}
+
+fn body_presentations_from_frames(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    nodes: &[BrowserNodeRecord],
+    frames: &[TypedPrimaryFrame<'_>],
+) -> Result<Vec<BodyPresentation>, CodecError> {
+    let entity_types = entity_types(meta)?;
+
+    let mut out = Vec::new();
+    for frame in frames {
         if frame.design_type.version != BODY_PRESENTATION_TYPE_VERSION {
             continue;
         }
@@ -295,7 +412,7 @@ pub(crate) fn body_presentations(
                 frame.end,
                 entity_suffix,
                 &entity_types,
-                &nodes,
+                nodes,
             )?;
             let name = material.as_ref().and_then(|m| m.body_name.clone());
             (
@@ -326,7 +443,7 @@ pub(crate) fn body_presentations(
                 frame.start + 15,
                 frame.end,
                 entity_suffix,
-                &nodes,
+                nodes,
             )?
             else {
                 continue;
@@ -341,7 +458,7 @@ pub(crate) fn body_presentations(
         };
         let browser_node = material
             .as_ref()
-            .and_then(|material| matching_browser_node(&nodes, entity_suffix, &material.node_guid))
+            .and_then(|material| matching_browser_node(nodes, entity_suffix, &material.node_guid))
             .cloned();
         out.push(BodyPresentation {
             byte_offset: u64_from_index(frame.start),
