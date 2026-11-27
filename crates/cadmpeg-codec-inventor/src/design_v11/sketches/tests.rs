@@ -491,14 +491,24 @@ fn endpoint_roles_keep_reference_names_in_their_own_sketch() {
     let roles = endpoint_roles(&entities);
     for (index, sketch) in sketches.iter().enumerate() {
         assert_eq!(
-            roles[&(sketch, "shared-start")],
+            roles_at(
+                &roles,
+                (sketch, "shared-start"),
+                FinitePoint2::new(Point2::new(0.0, 0.0)).expect("start"),
+                0.0
+            ),
             vec![EntityRole {
                 of: entity_id(&format!("curve-{index}")),
                 role: DefiningRole::Start
             }]
         );
         assert_eq!(
-            roles[&(sketch, "shared-end")],
+            roles_at(
+                &roles,
+                (sketch, "shared-end"),
+                FinitePoint2::new(Point2::new(1.0, 0.0)).expect("end"),
+                0.0
+            ),
             vec![EntityRole {
                 of: entity_id(&format!("curve-{index}")),
                 role: DefiningRole::End
@@ -647,6 +657,50 @@ fn decoded_open_spline_carries_both_endpoint_records() {
         );
     }
     assert!(!entity_charge(&ir, curve.as_str())
+        .iter()
+        .any(|field| field == "endpoint_refs"));
+}
+
+#[test]
+fn conflicting_endpoint_positions_keep_the_unstated_role_charged() {
+    let mut ir = fixture();
+    for (name, start, end, refs) in [
+        ("a", 0.0, 2.0, ["first", "shared"]),
+        ("b", 3.0, 4.0, ["shared", "last"]),
+    ] {
+        add_entity(
+            &mut ir,
+            name,
+            Geometry::Line {
+                start: Point2::new(start, 0.0),
+                end: Point2::new(end, 0.0),
+            },
+            false,
+        );
+        ir.model
+            .sketch_entities
+            .last_mut()
+            .expect("line")
+            .endpoint_refs = Vec::from(refs.map(|name| format!("inventor:pmdc:point#{name}")));
+    }
+    run(&mut ir);
+    let shared = ir
+        .design
+        .sketch_entities
+        .iter()
+        .find(|point| point.native_ref.as_deref() == Some("inventor:pmdc:point#shared"))
+        .expect("shared point");
+    assert_eq!(
+        shared.roles,
+        [EntityRole {
+            of: entity_id("a"),
+            role: DefiningRole::End
+        }]
+    );
+    assert!(!entity_charge(&ir, entity_id("a").as_str())
+        .iter()
+        .any(|field| field == "endpoint_refs"));
+    assert!(entity_charge(&ir, entity_id("b").as_str())
         .iter()
         .any(|field| field == "endpoint_refs"));
 }
