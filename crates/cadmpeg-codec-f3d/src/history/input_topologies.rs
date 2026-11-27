@@ -236,8 +236,10 @@ pub(super) fn project_input_topology_with_geometry(
     })?;
     let (edge_geometry, face_owners, face_geometry) = if include_geometry {
         let mut edge_geometry = project_input_edge_geometry(topology, &prefix);
+        let empty_senses = super::chamfer_supports::ChamferSenses::default();
         super::chamfer_supports::attach(
             feature,
+            &empty_senses,
             &history.id,
             topology,
             &prefix,
@@ -514,6 +516,7 @@ pub(crate) fn populate_selected_input_geometry(
     features: &[cadmpeg_ir::features::Feature],
     histories: &mut [AsmHistory],
     sources: &[ProjectedTopologySource],
+    chamfer_senses: &super::chamfer_supports::ChamferSenses,
     input_topologies: &mut [cadmpeg_ir::features::evaluation::FeatureInputTopology],
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
@@ -601,6 +604,7 @@ pub(crate) fn populate_selected_input_geometry(
             );
             super::chamfer_supports::attach(
                 feature,
+                chamfer_senses,
                 &history.id,
                 topology,
                 &prefix,
