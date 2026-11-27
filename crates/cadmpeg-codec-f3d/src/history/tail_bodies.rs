@@ -14,7 +14,7 @@ use cadmpeg_ir::features::FeatureId;
 /// The body browser nodes that the members of the native body group
 /// `group_id` of `scope` name through their reference tails. Every member is
 /// one tail record that names nodes.
-fn group_nodes(
+pub(super) fn group_nodes(
     group_id: &str,
     scope: &DesignParameterScope,
     inputs: &FeatureBodySelectionInputs<'_>,
@@ -261,7 +261,7 @@ pub(super) fn bind_tail_model_bodies(
 
 /// The loss notes of the Pattern and Remove Body selections in `features`
 /// whose tail-named bodies stay native after binding.
-pub(super) fn unbound_tail_notes(
+pub(crate) fn unbound_tail_notes(
     features: &[cadmpeg_ir::features::Feature],
     inputs: &FeatureBodySelectionInputs<'_>,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {

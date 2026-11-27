@@ -1074,6 +1074,15 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             replaced_tools,
         ),
     );
+    crate::history::tail_generated_bodies::bind(
+        &mut model.features,
+        &body_selection_inputs,
+        &model.feature_result_topologies,
+    );
+    losses.extend(crate::history::tail_bodies::unbound_tail_notes(
+        &model.features,
+        &body_selection_inputs,
+    ));
     // After the body selections: a Split names its input-state bodies there.
     let (history_bodies, remaining_work) = crate::history::history_bodies::fill(
         ctx,

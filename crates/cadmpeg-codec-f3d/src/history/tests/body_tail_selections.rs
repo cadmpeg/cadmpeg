@@ -220,6 +220,84 @@ fn a_tail_node_whose_body_pair_is_unsolved_leaves_the_selection_native_with_a_lo
     );
 }
 
+/// A pair of entity `entity` that no solved body backs.
+fn history_only_binding(entity: u64) -> crate::records::bodies::DesignBodyBinding {
+    let mut value =
+        cadmpeg_core::serde_erase::json::to_value(binding(entity, None, "BREP.a.smbh")).unwrap();
+    value["history_only"] = true.into();
+    cadmpeg_core::serde_erase::json::from_value(value).unwrap()
+}
+
+/// Bind a Remove Body of ordinal `ordinal` whose tail node names the body of
+/// the history-only pair of entity 7, created by scope record 3.
+fn bind_remove_history_only(
+    ordinal: u64,
+) -> (Vec<Feature>, Vec<cadmpeg_ir::report::loss::LossNote>) {
+    let remove_scope = scope(10, DesignFeatureKind::RemoveBody, None);
+    let creator_scope = scope(3, DesignFeatureKind::Extrude, None);
+    let group = group(&[21]);
+    let mut creator = feature(
+        &creator_scope,
+        FeatureOperation::DeleteBody {
+            bodies: BodySelection::Unresolved,
+            mode: cadmpeg_ir::features::operation_settings::BodyRetentionMode::DeleteSelected,
+        },
+    );
+    creator.id = FeatureId::mint("f3d:test:feature#creator").unwrap();
+    creator.ordinal = 1;
+    let mut remove = feature(
+        &remove_scope,
+        FeatureOperation::DeleteBody {
+            bodies: BodySelection::Native(group.id.clone()),
+            mode: cadmpeg_ir::features::operation_settings::BodyRetentionMode::DeleteSelected,
+        },
+    );
+    remove.ordinal = ordinal;
+    let mut features = vec![creator, remove];
+    let scopes = [creator_scope, remove_scope];
+    let tails = [tail(21, 7, 3)];
+    let bindings = [history_only_binding(7)];
+    let inputs = FeatureBodySelectionInputs {
+        scopes: &scopes,
+        groups: std::slice::from_ref(&group),
+        body_recipe_operands: &[],
+        construction_recipes: &[],
+        persistent_design_links: &[],
+        histories: &[],
+        scope_histories: &std::collections::HashMap::new(),
+        bodies: &[],
+        regions: &[],
+        shells: &[],
+        faces: &[],
+        body_tail_nodes: &tails,
+        body_bindings: &bindings,
+    };
+    let losses = bind_feature_body_selections(&mut features, &inputs);
+    (features, losses)
+}
+
+#[test]
+fn a_remove_body_naming_a_history_only_body_selects_the_body_its_creator_generates() {
+    let (features, losses) = bind_remove_history_only(2);
+    assert!(losses.is_empty(), "{losses:?}");
+    let BodySelection::Generated { bodies, .. } = remove_selection(&features[1]) else {
+        panic!("generated body: {:?}", remove_selection(&features[1]));
+    };
+    assert_eq!(bodies.len(), 1);
+    assert_eq!(bodies.iter().next().unwrap().feature, features[0].id);
+    assert!(features[1].dependencies.contains(&features[0].id));
+}
+
+#[test]
+fn a_history_only_body_of_a_creator_after_the_remove_body_stays_native() {
+    let (features, losses) = bind_remove_history_only(1);
+    assert!(matches!(
+        remove_selection(&features[1]),
+        BodySelection::Native(_)
+    ));
+    assert_eq!(losses.len(), 1);
+}
+
 #[test]
 fn a_tail_node_naming_another_entity_leaves_the_selection_native() {
     let (feature, _) = bind_remove(

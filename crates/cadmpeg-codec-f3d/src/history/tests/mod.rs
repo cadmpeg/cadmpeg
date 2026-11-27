@@ -47,5 +47,7 @@ pub(super) fn bind_feature_body_selections(
     let (mut losses, refusals) =
         super::body_selections::bind_feature_body_selections_with_refusals(features, inputs);
     losses.extend(super::body_selections::native_combine_operand_refusal_notes(features, refusals));
+    super::tail_generated_bodies::bind(features, inputs, &[]);
+    losses.extend(super::tail_bodies::unbound_tail_notes(features, inputs));
     losses
 }

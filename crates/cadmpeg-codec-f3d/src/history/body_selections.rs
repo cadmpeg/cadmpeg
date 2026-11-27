@@ -464,7 +464,6 @@ pub(crate) fn bind_feature_body_selections_with_refusals(
         });
     }
 
-    losses.extend(super::tail_bodies::unbound_tail_notes(features, inputs));
     (losses, operand_refusals)
 }
 
