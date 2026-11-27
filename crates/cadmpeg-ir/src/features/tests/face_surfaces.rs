@@ -38,9 +38,9 @@ fn a_historical_face_surface_round_trips_through_json() {
 #[test]
 fn a_face_surface_that_refers_to_a_record_is_refused_on_wire() {
     let mut json = json::to_value(geometry()).unwrap();
-    json["surface"] = serde_json::json!({"kind": "unknown"});
+    json["surface"] = cadmpeg_core::json!({"kind": "unknown"});
     assert!(json::from_value::<HistoricalFaceGeometry>(json.clone()).is_err());
-    json["surface"] = serde_json::json!({"kind": "polygonal"});
+    json["surface"] = cadmpeg_core::json!({"kind": "polygonal"});
     assert!(json::from_value::<HistoricalFaceGeometry>(json).is_err());
 }
 

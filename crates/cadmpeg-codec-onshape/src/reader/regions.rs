@@ -2,8 +2,9 @@
 use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::json;
 use cadmpeg_ir::document::Model;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::intersection::ROUNDOFF_FACTOR;
 use super::{id, query, rows, text, topology, Mapping};

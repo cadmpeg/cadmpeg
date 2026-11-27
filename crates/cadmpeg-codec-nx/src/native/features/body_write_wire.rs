@@ -208,10 +208,10 @@ mod tests {
     #[test]
     fn body_write_listed_positions_admit_only_ordered_nonoverlapping_tokens() {
         let mut wire: serde_json::Value = serde_json::from_str(WIRE).unwrap();
-        wire["id"] = serde_json::json!("nx:feature:body-write#0");
-        wire["group_node_source_offset"] = serde_json::json!(101);
-        wire["body_image_object_index_source_offset"] = serde_json::json!(120);
-        wire["byte_len"] = serde_json::json!(24);
+        wire["id"] = cadmpeg_core::json!("nx:feature:body-write#0");
+        wire["group_node_source_offset"] = cadmpeg_core::json!(101);
+        wire["body_image_object_index_source_offset"] = cadmpeg_core::json!(120);
+        wire["byte_len"] = cadmpeg_core::json!(24);
         let write: FeatureOperationBodyWrite = json::from_value(wire.clone()).unwrap();
         assert_eq!(write.frame.group_node_offset(), 101);
         assert_eq!(write.frame.body_image_offset(), 120);
@@ -224,7 +224,7 @@ mod tests {
             ("source_offset", u64::MAX),
         ] {
             let mut invalid = wire.clone();
-            invalid[field] = serde_json::json!(value);
+            invalid[field] = cadmpeg_core::json!(value);
             assert!(json::from_value::<FeatureOperationBodyWrite>(invalid).is_err());
         }
     }
@@ -235,23 +235,23 @@ mod tests {
         assert_eq!(json::to_string(&write).unwrap(), WIRE);
         for index in [1, 17, 20, 255] {
             let mut wire: serde_json::Value = serde_json::from_str(WIRE).unwrap();
-            wire["endpoint_class_index"] = serde_json::json!(index);
+            wire["endpoint_class_index"] = cadmpeg_core::json!(index);
             let write: FeatureOperationBodyWrite = json::from_value(wire).unwrap();
             assert_eq!(write.frame.endpoint_class_index().get(), index);
         }
         for (field, value) in [
-            ("group_node", serde_json::json!(1)),
-            ("raw_group_node", serde_json::json!("8000")),
-            ("endpoint_class_index", serde_json::json!(0)),
-            ("body_image_object_index", serde_json::json!(1)),
-            ("raw_body_image_object_index", serde_json::json!("ff")),
-            ("group_node_source_offset", serde_json::json!(104)),
+            ("group_node", cadmpeg_core::json!(1)),
+            ("raw_group_node", cadmpeg_core::json!("8000")),
+            ("endpoint_class_index", cadmpeg_core::json!(0)),
+            ("body_image_object_index", cadmpeg_core::json!(1)),
+            ("raw_body_image_object_index", cadmpeg_core::json!("ff")),
+            ("group_node_source_offset", cadmpeg_core::json!(104)),
             (
                 "body_image_object_index_source_offset",
-                serde_json::json!(112),
+                cadmpeg_core::json!(112),
             ),
-            ("byte_len", serde_json::json!(14)),
-            ("source_offset", serde_json::json!(u64::MAX)),
+            ("byte_len", cadmpeg_core::json!(14)),
+            ("source_offset", cadmpeg_core::json!(u64::MAX)),
         ] {
             let mut invalid: serde_json::Value = serde_json::from_str(WIRE).unwrap();
             invalid[field] = value;

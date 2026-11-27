@@ -1817,5 +1817,27 @@ class JsonSecondDeserializerTests(TempSourceCase):
         self.assertEqual(self.findings("json_second_deserializer"), [])
 
 
+class JsonSecondSerializerTests(TempSourceCase):
+    def test_value_writes_through_serde_json_fail(self) -> None:
+        self.write("crates/cadmpeg-ir/src/write.rs",
+                   "fn f(t: &T) { serde_json::to_value(t); }\n"
+                   "#[cfg(test)]\nmod tests {\n    use serde_json::{json, Value};\n"
+                   "    fn g() { serde_json::json!({\"a\": 1}); }\n}\n")
+        findings = self.findings("json_second_serializer")
+        self.assertEqual([(item.path, item.line) for item in findings],
+                         [("crates/cadmpeg-ir/src/write.rs", 1),
+                          ("crates/cadmpeg-ir/src/write.rs", 4),
+                          ("crates/cadmpeg-ir/src/write.rs", 5)])
+
+    def test_core_writers_comments_and_the_derive_crate_pass(self) -> None:
+        self.write("crates/cadmpeg-ir/src/write.rs",
+                   "// serde_json::json! writes through Value.\n"
+                   "use cadmpeg_core::json;\nuse serde_json::Value;\n"
+                   "fn f(t: &T) { cadmpeg_core::serde_erase::json::to_value(t); json!(1); }\n")
+        self.write("crates/cadmpeg-derive/tests/name.rs",
+                   "use serde_json::json;\nfn f() { serde_json::to_value(1); }\n")
+        self.assertEqual(self.findings("json_second_serializer"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

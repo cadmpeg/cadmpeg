@@ -280,10 +280,10 @@ mod tests {
         let definition: PartColorDefinition = serde_json::from_str(json).unwrap();
         assert_eq!(json::to_string(&definition).unwrap(), json);
         for (field, invalid) in [
-            ("rgb", serde_json::json!([0.0, 1.0, 0.25])),
-            ("raw_color_index", serde_json::json!("8080")),
-            ("color_index", serde_json::json!(0)),
-            ("raw_components", serde_json::json!(["00", "01", "02"])),
+            ("rgb", cadmpeg_core::json!([0.0, 1.0, 0.25])),
+            ("raw_color_index", cadmpeg_core::json!("8080")),
+            ("color_index", cadmpeg_core::json!(0)),
+            ("raw_components", cadmpeg_core::json!(["00", "01", "02"])),
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
             wire[field] = invalid;
@@ -308,9 +308,9 @@ mod tests {
             table
         );
         for (field, invalid) in [
-            ("definitions", serde_json::json!([])),
-            ("background_name", serde_json::json!("background")),
-            ("background_rgb", serde_json::json!([0.0, 1.0, 1.0])),
+            ("definitions", cadmpeg_core::json!([])),
+            ("background_name", cadmpeg_core::json!("background")),
+            ("background_rgb", cadmpeg_core::json!([0.0, 1.0, 1.0])),
         ] {
             let mut invalid_wire = wire.clone();
             invalid_wire[field] = invalid;

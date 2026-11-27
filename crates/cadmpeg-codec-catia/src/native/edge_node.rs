@@ -363,8 +363,8 @@ mod tests {
         let native = CatiaNative::decode(&a5_native_edge_run_stream(6, 139, 142));
         let mut wire =
             json::to_value(&native).expect("native wire")["consolidated_edge_nodes"][0].clone();
-        wire["width"] = serde_json::json!(1);
-        wire["header_token"] = serde_json::json!(256);
+        wire["width"] = cadmpeg_core::json!(1);
+        wire["header_token"] = cadmpeg_core::json!(256);
         let wire =
             json::from_value::<super::CatiaConsolidatedEdgeNodeWire>(wire).expect("wire shape");
         assert!(super::CatiaConsolidatedEdgeNode::try_from(wire)
@@ -418,7 +418,7 @@ mod tests {
         let mut wire = json::to_value(&native).expect("serialize native arenas");
         assert_eq!(
             wire["consolidated_edge_nodes"][0]["vertices"],
-            serde_json::json!([
+            cadmpeg_core::json!([
                 "catia:consolidated:vertex-identity#0",
                 "catia:consolidated:vertex-identity#1"
             ])
@@ -428,7 +428,7 @@ mod tests {
             native
         );
         wire["consolidated_edge_nodes"][0]["vertices"][0] =
-            serde_json::json!("catia:consolidated:vertex-identity#1");
+            cadmpeg_core::json!("catia:consolidated:vertex-identity#1");
         let error =
             json::from_value::<CatiaNative>(wire).expect_err("reject conflicting vertex join");
         assert!(error.to_string().contains("vertices differ"));

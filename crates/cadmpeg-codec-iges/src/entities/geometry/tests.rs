@@ -142,6 +142,7 @@ fn plane_normal_match_uses_direction_on_both_sides() {
 fn transform_entry(sequence: u32, transform: i64) -> crate::directory::DirectoryEntry {
     crate::directory::DirectoryEntry {
         source_offset: 0,
+        source_length: Some(160),
         sequence,
         entity_type: 124,
         parameter_start: 0,
@@ -821,7 +822,7 @@ fn type_123_accepts_a_finite_non_unit_direction() {
     let direction = &result.ir().native.namespace("iges").unwrap().arenas()["directions"][0];
     assert_eq!(
         direction.fields().unwrap()["components"],
-        serde_json::json!([2.0, -3.0, 4.0])
+        cadmpeg_core::json!([2.0, -3.0, 4.0])
     );
     assert_eq!(result.report().losses.len(), 1);
     assert_eq!(

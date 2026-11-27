@@ -15,7 +15,7 @@ use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn group(record: u32, member: u32, ordinal: u32, role: u64) -> DesignConstructionOperandGroup {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("f3d:Design/BulkStream.dat:group#{record}"),
         "scope_record_index": 42, "scope_reference_ordinal": ordinal,
         "record_index": record, "byte_offset": 1000, "class_tag": "256",
@@ -109,6 +109,7 @@ fn split_face_binding_requires_target_membership_through_final_admission() {
     let mut input_topologies = vec![FeatureInputTopology {
         face_owners: Vec::new(),
         face_geometry: Vec::new(),
+        body_writers: Vec::new(),
         id: crate::ids::feature_input_topology_id(&feature_id, 7),
         input_of: feature_id,
         bodies: Vec::new().try_into().unwrap(),

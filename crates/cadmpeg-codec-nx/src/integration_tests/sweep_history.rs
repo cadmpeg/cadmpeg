@@ -46,7 +46,7 @@ fn sweep_history_keeps_branches_and_body_links_without_inventing_policies() {
     for branch in branches.as_array().unwrap() {
         assert_eq!(
             branch["raw_scalars"],
-            serde_json::json!([
+            cadmpeg_core::json!([
                 "2f03ec460ed80a18",
                 "2f60624dd2f1a9fc",
                 "2f14f8b588e368f1",
@@ -55,7 +55,7 @@ fn sweep_history_keeps_branches_and_body_links_without_inventing_policies() {
         );
         assert_eq!(
             branch["scalars"],
-            serde_json::json!([0.000_038, 0.002, 0.00008, 0.00004])
+            cadmpeg_core::json!([0.000_038, 0.002, 0.00008, 0.00004])
         );
     }
 }

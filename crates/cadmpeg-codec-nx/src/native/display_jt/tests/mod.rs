@@ -66,13 +66,16 @@ fn numerical_followup_jt_transform_accepts_extreme_finite_scales() {
 fn range_limits_admit_only_finite_nonnegative_increasing_values() {
     for valid in [vec![], vec![0.0], vec![0.0, 1.0, 2.0]] {
         let admitted = super::JtRangeLimits::try_from(valid.clone()).unwrap();
-        assert_eq!(json::to_value(&admitted).unwrap(), serde_json::json!(valid));
+        assert_eq!(
+            json::to_value(&admitted).unwrap(),
+            cadmpeg_core::json!(valid)
+        );
         assert_eq!(
             json::to_vec(&admitted).unwrap(),
             json::to_vec(&Vec::<f32>::from(admitted.clone())).unwrap()
         );
         assert_eq!(
-            json::from_value::<super::JtRangeLimits>(serde_json::json!(valid)).unwrap(),
+            json::from_value::<super::JtRangeLimits>(cadmpeg_core::json!(valid)).unwrap(),
             admitted
         );
     }
@@ -103,14 +106,14 @@ fn jt_range_limits_native_limit_refuses_before_owned_wire_conversion() {
     super::JT_RANGE_LIMITS_INTO_WIRE_COUNT.with(|count| count.set(0));
     cadmpeg_test_support::native_serialization::assert_native_limit(
         &record,
-        serde_json::json!({"id":"nx:jt:range-limits#0", "limits":[0.0,1.0,2.0]}),
+        cadmpeg_core::json!({"id":"nx:jt:range-limits#0", "limits":[0.0,1.0,2.0]}),
     );
     super::JT_RANGE_LIMITS_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
 }
 
 #[test]
 fn compression_wire_checks_constants_and_length_without_changing_evidence() {
-    let valid = serde_json::json!({
+    let valid = cadmpeg_core::json!({
         "flag": 2, "algorithm": 2, "compressed_data_byte_len": 4,
         "compressed_byte_len": 3, "inflated_sha256": cadmpeg_ir::hash::sha256_hex(b"hash")
     });
@@ -139,7 +142,7 @@ fn jt_compression_native_limit_refuses_before_owned_wire_conversion() {
         id: &'static str,
         compression: &'a super::DisplayJtCompression,
     }
-    let value: super::DisplayJtCompression = json::from_value(serde_json::json!({
+    let value: super::DisplayJtCompression = json::from_value(cadmpeg_core::json!({
         "flag": 2, "algorithm": 2, "compressed_data_byte_len": 4,
         "compressed_byte_len": 3, "inflated_sha256": cadmpeg_ir::hash::sha256_hex(b"hash")
     }))
@@ -151,14 +154,14 @@ fn jt_compression_native_limit_refuses_before_owned_wire_conversion() {
     super::JT_COMPRESSION_INTO_WIRE_COUNT.with(|count| count.set(0));
     cadmpeg_test_support::native_serialization::assert_native_limit(
         &record,
-        serde_json::json!({"id":"nx:jt:compression#0", "compression": value}),
+        cadmpeg_core::json!({"id":"nx:jt:compression#0", "compression": value}),
     );
     super::JT_COMPRESSION_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
 }
 
 #[test]
 fn jt_shape_lod_element_borrowed_wire_and_native_limit() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "nx:jt:shape-lod-element#0", "segment": "nx:jt:segment#0",
         "ordinal": 0, "object_type_id": cadmpeg_ir::native::bytes::NativeBytes::from(vec![7; 16]), "object_base_type": 4,
         "object_id": 9, "body_byte_len": 3,
@@ -176,7 +179,7 @@ fn jt_shape_lod_element_borrowed_wire_and_native_limit() {
 
 #[test]
 fn jt_compressed_element_borrowed_wire_and_native_limit() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "nx:jt:compressed-element#0", "segment": "nx:jt:segment#0",
         "segment_type": 7, "ordinal": 0, "object_type_id": cadmpeg_ir::native::bytes::NativeBytes::from(vec![7; 16]),
         "object_base_type": 4, "object_id": 9, "body_byte_len": 3,
@@ -195,7 +198,7 @@ fn jt_compressed_element_borrowed_wire_and_native_limit() {
 
 #[test]
 fn jt_compressed_sequence_borrowed_wire_and_native_limit() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "nx:jt:compressed-sequence#0", "segment": "nx:jt:segment#0",
         "segment_type": 7, "elements": ["nx:jt:compressed-element#0"],
         "framed_byte_len": 48, "tail": "0605",
@@ -256,7 +259,7 @@ fn index_native_limit_refuses_before_clone() {
 
 #[test]
 fn document_wire_derives_version_numbers_and_rejects_disagreement() {
-    let mut wire = serde_json::json!({
+    let mut wire = cadmpeg_core::json!({
         "id": "document", "index_row": "row",
         "version_field": format!("{:<80}", "Version +0009.005"),
         "format_major": 9, "format_minor": 5, "byte_order": 0,
@@ -270,15 +273,15 @@ fn document_wire_derives_version_numbers_and_rejects_disagreement() {
         json::to_vec(&super::DisplayJtDocumentWire::from(document.clone())).unwrap()
     );
     let mut invalid = wire.clone();
-    invalid["byte_order"] = serde_json::json!(1);
+    invalid["byte_order"] = cadmpeg_core::json!(1);
     assert!(json::from_value::<super::DisplayJtDocument>(invalid).is_err());
-    wire["format_minor"] = serde_json::json!(6);
+    wire["format_minor"] = cadmpeg_core::json!(6);
     assert!(json::from_value::<super::DisplayJtDocument>(wire).is_err());
 }
 
 #[test]
 fn document_native_limit_refuses_before_clone() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "nx:jt:document#1", "index_row": "nx:jt:row#1",
         "version_field": format!("{:<80}", "Version +0009.005"),
         "format_major": 9, "format_minor": 5, "byte_order": 0,
@@ -309,7 +312,7 @@ fn string_property_wire_derives_exact_utf16_and_rejects_disagreement() {
 
 #[test]
 fn jt_string_property_native_limit_refuses_before_code_unit_allocation() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "nx:jt:string-property#0", "element": "nx:jt:compressed-element#0",
         "object_id": 1, "code_units": [78, 88, 55357, 56960],
         "value": "NX🚀", "source_offset": 0
@@ -567,7 +570,7 @@ fn display_jt_shape_lod_requires_canonical_end_marker_and_tail() {
     let wire = json::to_value(&elements[0]).unwrap();
     for length in [15, 17] {
         let mut invalid = wire.clone();
-        invalid["object_type_id"] = serde_json::json!(vec![0; length]);
+        invalid["object_type_id"] = cadmpeg_core::json!(vec![0; length]);
         assert!(json::from_value::<super::DisplayJtShapeLodElement>(invalid).is_err());
     }
 
@@ -742,7 +745,7 @@ fn display_jt9_tri_strip_header_requires_supported_versions() {
 
 #[test]
 fn polygon_mesh_wire_preserves_corner_pairs_and_rejects_unequal_rings() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "mesh",
         "topology": "topology",
         "coordinate_header": "coordinates",
@@ -1039,7 +1042,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
     for (version, reflectivity) in [(1, Some(0.5)), (2, None), (3, None), (2, Some(-0.5))] {
         let mut wire = material_wire.clone();
         wire["version"] = version.into();
-        wire["reflectivity"] = serde_json::json!(reflectivity);
+        wire["reflectivity"] = cadmpeg_core::json!(reflectivity);
         assert!(json::from_value::<DisplayJtMaterialAttribute>(wire).is_err());
     }
     let node = DisplayJtTriStripShapeNode {
@@ -1069,12 +1072,12 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
     );
     for level in [0.0, 1.0] {
         let mut wire = node_wire.clone();
-        wire["compression_level"] = serde_json::json!(level);
+        wire["compression_level"] = cadmpeg_core::json!(level);
         assert!(json::from_value::<DisplayJtTriStripShapeNode>(wire).is_ok());
     }
     for level in [-0.25, 1.25] {
         let mut wire = node_wire.clone();
-        wire["compression_level"] = serde_json::json!(level);
+        wire["compression_level"] = cadmpeg_core::json!(level);
         assert!(json::from_value::<DisplayJtTriStripShapeNode>(wire)
             .unwrap_err()
             .to_string()
@@ -1086,7 +1089,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
     for (version, bindings) in [(1, Some(4)), (2, None), (3, None)] {
         let mut wire = node_wire.clone();
         wire["vertex_version"] = version.into();
-        wire["version_2_vertex_bindings"] = serde_json::json!(bindings);
+        wire["version_2_vertex_bindings"] = cadmpeg_core::json!(bindings);
         assert!(json::from_value::<DisplayJtTriStripShapeNode>(wire).is_err());
     }
     let vertex_header = DisplayJtCompressedVertexRecordsHeader {

@@ -176,7 +176,7 @@ fn segment_type_rejects_unbound_native_identity() {
         wire.id = id.into();
         assert!(SegmentType::try_from(wire).is_err());
         let mut wire = json::to_value(&valid).unwrap();
-        wire["id"] = serde_json::json!(id);
+        wire["id"] = cadmpeg_core::json!(id);
         assert!(json::from_value::<SegmentType>(wire).is_err());
     }
 }

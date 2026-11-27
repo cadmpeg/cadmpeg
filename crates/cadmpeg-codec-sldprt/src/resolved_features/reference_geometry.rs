@@ -2,8 +2,7 @@
 
 use super::compact_reference_planes::principal_sketch_frame;
 use super::curves::{
-    sketch_plane_frames, SketchPlaneUAxisSource, CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE,
-    REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
+    sketch_plane_frames, SketchPlaneUAxisSource, REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
 };
 use super::scalars::FeatureObjectNames;
 use super::selections::{
@@ -23,6 +22,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::layout::constructed_reference_plane_fixed_frame as fixed_plane;
 use crate::layout::constructed_reference_plane_matrix_frame as matrix_plane;
+use crate::layout::constructed_reference_plane_minimal_frame as minimal_plane;
 use crate::layout::coordinate_system_component_path_prefix as cs_path_pre;
 use crate::layout::coordinate_system_component_path_suffix as cs_path_suf;
 use crate::layout::coordinate_system_component_point as cs_pt;
@@ -541,7 +541,7 @@ pub(crate) fn enrich_history_reference_planes(
         {
             feature.properties.insert(
                 cadmpeg_core::nonblank_const!(REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY),
-                CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE.to_owned(),
+                crate::records::CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE.to_owned(),
             );
         } else {
             feature
@@ -1922,41 +1922,39 @@ pub(crate) fn enrich_history_reference_axes(
             for class in &lane.classes {
                 if matches!(
                     class.name.as_str(),
-                    "moPlaneInterAxisData_c" | "moSurfaceAxisData_c" | "moTwoPtsAxisData_c"
+                    "moLineAxisData_c"
+                        | "moPlaneInterAxisData_c"
+                        | "moSurfaceAxisData_c"
+                        | "moTwoPtsAxisData_c"
                 ) && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
                 {
                     axis_data_classes.push(class);
                 }
             }
+            let line_axes_only = axis_data_classes
+                .iter()
+                .all(|class| class.name == "moLineAxisData_c");
             let mut anchored_frames = Vec::new();
             for class in &axis_data_classes {
-                let Some(body) = usize::try_from(class.offset)
+                let Some(frame) = usize::try_from(class.offset)
                     .ok()
-                    .and_then(|offset| offset.checked_add(6 + class.name.len()))
+                    .and_then(|offset| offset.checked_sub(start)?.checked_add(6 + class.name.len()))
+                    .and_then(|body| bytes.get(body..body.checked_add(88)?))
+                    .and_then(explicit_reference_axis_frame)
                 else {
                     continue;
                 };
-                let Some(end) = body.checked_add(88) else {
-                    continue;
-                };
-                let Some(payload) = lane.native_payload.get(body..end) else {
-                    continue;
-                };
-                if let Some(frame) = explicit_reference_axis_frame(payload) {
-                    anchored_frames.push(frame);
-                }
+                anchored_frames.push(frame);
             }
             anchored_frames.sort_by(|left, right| {
                 reference_axis_frame_key(left).cmp(&reference_axis_frame_key(right))
             });
             anchored_frames.dedup_by_key(|frame| reference_axis_frame_key(frame));
-            let explicit_frame = if axis_data_classes.is_empty() {
-                explicit_reference_axis_frame(bytes)
-            } else {
-                let [frame] = anchored_frames.as_slice() else {
-                    continue;
-                };
-                Some(*frame)
+            let explicit_frame = match anchored_frames.as_slice() {
+                _ if axis_data_classes.is_empty() => explicit_reference_axis_frame(bytes),
+                [frame] => Some(*frame),
+                _ if line_axes_only => explicit_reference_axis_frame(bytes),
+                _ => continue,
             };
             if let Some((origin, direction)) = explicit_frame {
                 let feature = &mut histories[history_index].features[feature_index];
@@ -2600,7 +2598,7 @@ fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u32)> {
     unique
 }
 
-const MINIMAL_REFERENCE_PLANE_FRAME_LEN: usize = 81;
+const MINIMAL_REFERENCE_PLANE_FRAME_LEN: usize = minimal_plane::LEN;
 const COMPACT_REFERENCE_PLANE_FRAME_LEN: usize = 82;
 const ANGLED_REFERENCE_PLANE_FRAME_LEN: usize = 121;
 const REFERENCE_PLANE_FRAME_TOLERANCE: f64 = 1.0e-9;
@@ -2713,9 +2711,16 @@ fn constraint_reference_plane_frame(
 ) -> Option<(Point3, Vector3, Vector3)> {
     let body = class_offset.checked_add(6 + class_name.len())?;
     match class_name {
-        "moConstraintCoincLineAtAnglePlaneRefplaneData_c" => {
+        "moConstraintCoincLineAtAnglePlaneRefplaneData_c"
+        | "moConstraintCoincLinePerpPlaneRefplaneData_c" => {
             matrix_reference_plane_frame(payload.get(body..body + matrix_plane::LEN)?)
         }
+        "moPerLinePtRefPlnData_c" => payload
+            .get(body..body + matrix_plane::LEN)
+            .and_then(matrix_reference_plane_frame)
+            .or_else(|| {
+                minimal_reference_plane_frame(payload.get(body..body + minimal_plane::LEN)?)
+            }),
         "moConstraintCoincLineParallelPlaneRefplaneData_c"
         | "moConstraintPerpPlnTanOneCylinderRefplaneData_c"
         | "moFacePtRefPlnData_c"
@@ -3169,34 +3174,46 @@ fn matrix_reference_plane_frame_candidates(
 
 fn minimal_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
     const NATIVE_TO_IR: f64 = 1000.0;
-    let scalar = |bytes: &[u8], relative| {
-        let value = View::f64_le_at(bytes, relative)?;
-        value.is_finite().then_some(value)
-    };
-    let mut frames = marked_windows(payload, 56, 0x80, MINIMAL_REFERENCE_PLANE_FRAME_LEN)
+    let mut frames = marked_windows(payload, minimal_plane::SCALE + 6, 0xf0, minimal_plane::LEN)
         .filter_map(|(_, bytes)| {
-            if bytes[48..56].iter().any(|byte| *byte != 0) {
+            let scalar = |relative| {
+                let value = View::f64_le_at(bytes, relative)?;
+                value.is_finite().then_some(value)
+            };
+            let triple = |relative| {
+                Some([
+                    scalar(relative)?,
+                    scalar(relative + 8)?,
+                    scalar(relative + 16)?,
+                ])
+            };
+            if bytes[minimal_plane::FRAME_MARKER] != 0 || scalar(minimal_plane::SCALE)? != 1.0 {
                 return None;
             }
-            let origin = Point3::new(scalar(bytes, 0)?, scalar(bytes, 8)?, scalar(bytes, 16)?);
-            let normal = Vector3::new(scalar(bytes, 24)?, scalar(bytes, 32)?, scalar(bytes, 40)?);
-            let tail = [scalar(bytes, 57)?, scalar(bytes, 65)?, scalar(bytes, 73)?];
-            if normal != Vector3::new(0.0, 0.0, 1.0)
-                || tail[0].to_bits() != (-0.0_f64).to_bits()
-                || tail[1].to_bits() != (-origin.z).to_bits()
-                || tail[2] != 1.0
+            let origin = triple(minimal_plane::ORIGIN)?;
+            let normal = triple(minimal_plane::NORMAL)?;
+            let translation = triple(minimal_plane::TRANSLATION)?;
+            if normal != [0.0, 0.0, 1.0]
+                || origin
+                    .iter()
+                    .zip(translation)
+                    .any(|(origin, translation)| translation.to_bits() != (-origin).to_bits())
             {
                 return None;
             }
-            Some((
-                Point3::new(
-                    origin.x * NATIVE_TO_IR,
-                    origin.y * NATIVE_TO_IR,
-                    origin.z * NATIVE_TO_IR,
-                ),
-                normal,
-                Vector3::new(1.0, 0.0, 0.0),
-            ))
+            let origin = Point3::new(
+                origin[0] * NATIVE_TO_IR,
+                origin[1] * NATIVE_TO_IR,
+                origin[2] * NATIVE_TO_IR,
+            );
+            [origin.x, origin.y, origin.z]
+                .iter()
+                .all(|value| value.is_finite())
+                .then_some((
+                    origin,
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                ))
         });
     let frame = frames.next()?;
     frames.all(|candidate| candidate == frame).then_some(frame)

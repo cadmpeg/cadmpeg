@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Assembly placement, reference, and bounded-work regressions.
 use crate::test_support::{assembly::*, read_bytes, Report};
+use cadmpeg_core::json;
 use cadmpeg_ir::products::{Occurrence, PlaneSense};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::path::Path;
 
 fn decode(bytes: &[u8]) -> (crate::reader::Model, Report) {
@@ -191,7 +192,7 @@ fn missing_definition_or_root_and_duplicate_instances_remain_partial() {
         .push(first);
     let (model, report) = read(definition);
     assert_eq!(model.ir.model.occurrences.len(), 2);
-    assert!(loss(&report, "onshape/assembly.record-unsupported"));
+    assert!(loss(&report, "onshape/assembly.record-repeated"));
 }
 #[test]
 fn repeated_subassembly_has_distinct_paths_and_local_joints() {

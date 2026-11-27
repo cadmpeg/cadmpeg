@@ -19,7 +19,9 @@ fn parsed_configurations(payload: &[u8]) -> Vec<Configuration> {
     .unwrap();
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
     let mut losses = Vec::new();
-    let histories = crate::history::histories(&ctx, &scan, &mut annotations, &mut losses).unwrap();
+    let histories =
+        crate::history::histories(&ctx, &scan, &mut annotations, &mut losses, &mut Vec::new())
+            .unwrap();
     assert_eq!(histories.len(), 1);
     assert!(losses.is_empty());
     histories.into_iter().next().unwrap().configurations

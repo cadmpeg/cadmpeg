@@ -141,7 +141,7 @@ fn a_triangle_group_binding_names_a_group_of_its_tessellation() {
         TessellationTriangleGroup::new(None, vec![1]),
     ])
     .unwrap();
-    let tessellation = mesh.id.to_string();
+    let tessellation = mesh.id.clone();
     ir.model.tessellations.push(mesh);
     let appearance = AppearanceId::mint("synthetic:test:appearance#paint").expect("valid identity");
     ir.model.appearances.push(Appearance {
@@ -203,7 +203,8 @@ fn a_triangle_group_binding_names_a_group_of_its_tessellation() {
 fn occurrence_and_record_targets_and_native_refs_read_back() {
     use crate::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_core::decode::ResourceLimits;
-    use serde_json::{json, Value};
+    use cadmpeg_core::json;
+    use serde_json::Value;
 
     let read = |wire: &Value| {
         crate::design::read::from_str::<AppearanceBinding>(
@@ -256,7 +257,7 @@ fn occurrence_and_record_targets_and_native_refs_read_back() {
 #[test]
 fn a_binding_states_its_precedence_and_a_definition_target_by_name() {
     use super::{AppearanceBinding, AppearancePrecedence, AppearanceTarget};
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "test:model:appearance-binding#1",
         "target": {"entity": {"kind": "definition", "value": "test:model:product#assembly"}},
         "appearance": "test:model:appearance#1",
@@ -272,7 +273,7 @@ fn a_binding_states_its_precedence_and_a_definition_target_by_name() {
     assert_eq!(json::to_value(&binding).unwrap(), wire);
 
     let mut nearest = wire.clone();
-    nearest["precedence"] = serde_json::json!("nearest");
+    nearest["precedence"] = cadmpeg_core::json!("nearest");
     let binding: AppearanceBinding = json::from_value(nearest).unwrap();
     assert_eq!(binding.precedence, Some(AppearancePrecedence::Nearest));
 
@@ -282,7 +283,7 @@ fn a_binding_states_its_precedence_and_a_definition_target_by_name() {
     assert_eq!(binding.precedence, None);
     assert_eq!(json::to_value(&binding).unwrap(), unstated);
 
-    for refused in [serde_json::Value::Null, serde_json::json!("closest")] {
+    for refused in [serde_json::Value::Null, cadmpeg_core::json!("closest")] {
         let mut wire = wire.clone();
         wire["precedence"] = refused;
         assert!(json::from_value::<AppearanceBinding>(wire).is_err());
@@ -292,8 +293,8 @@ fn a_binding_states_its_precedence_and_a_definition_target_by_name() {
 #[test]
 fn an_arrangement_appearance_states_its_precedence_with_its_appearance() {
     use crate::design::configuration::ArrangementAppearance;
-    let path = serde_json::json!([{"occurrence": {"kind": "occurrence", "value": "test:model:occurrence#0"}}]);
-    let wire = serde_json::json!({
+    let path = cadmpeg_core::json!([{"occurrence": {"kind": "occurrence", "value": "test:model:occurrence#0"}}]);
+    let wire = cadmpeg_core::json!({
         "path": path,
         "appearance": {"appearance": "test:model:appearance#1", "precedence": "outer"},
     });
@@ -306,13 +307,12 @@ fn an_arrangement_appearance_states_its_precedence_with_its_appearance() {
     );
     assert_eq!(json::to_value(&read).unwrap(), wire);
 
-    let transparency_only = serde_json::json!({"path": path, "transparency": 0.5});
+    let transparency_only = cadmpeg_core::json!({"path": path, "transparency": 0.5});
     let read: ArrangementAppearance = json::from_value(transparency_only).unwrap();
     assert!(read.appearance.is_none());
 
-    let bare = serde_json::json!({"path": path, "appearance": "test:model:appearance#1"});
+    let bare = cadmpeg_core::json!({"path": path, "appearance": "test:model:appearance#1"});
     assert!(json::from_value::<ArrangementAppearance>(bare).is_err());
-    let unordered =
-        serde_json::json!({"path": path, "appearance": {"appearance": "test:model:appearance#1"}});
+    let unordered = cadmpeg_core::json!({"path": path, "appearance": {"appearance": "test:model:appearance#1"}});
     assert!(json::from_value::<ArrangementAppearance>(unordered).is_err());
 }

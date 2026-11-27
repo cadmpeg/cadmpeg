@@ -4481,7 +4481,7 @@ mod detached_legacy_sketch_tests {
         let mut builder = cadmpeg_ir::AnnotationBuilder::new();
         let stream =
             cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:profile"));
-        builder.note(sketch.id.as_str(), &stream, 1, Some("profile"));
+        builder.note(&sketch.id, &stream, 1, Some("profile"));
         let annotations = builder.build();
         let mut admitted = [feature.clone()];
         super::bind_sketch_profiles(
@@ -4568,7 +4568,7 @@ mod detached_legacy_sketch_tests {
         let mut builder = cadmpeg_ir::AnnotationBuilder::new();
         let stream =
             cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:profile"));
-        builder.note(sketch.id.as_str(), &stream, 1, Some("profile"));
+        builder.note(&sketch.id, &stream, 1, Some("profile"));
         let annotations = builder.build();
         for _ in 0..32 {
             let mut admitted = neutral.clone();

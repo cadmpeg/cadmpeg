@@ -52,7 +52,7 @@ fn scope(kind: DesignFeatureKind) -> DesignParameterScope {
 }
 
 pub(super) fn group(role: DesignOperandRole) -> DesignConstructionOperandGroup {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "f3d:test:group#100",
         "scope_record_index": 12,
         "scope_reference_ordinal": 0,
@@ -1067,7 +1067,7 @@ fn owner_in(
     local_ordinal: u32,
     value: f64,
 ) -> DesignParameterOwner {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("{stream}:design-parameter-owner#{record_index}"),
         "byte_offset": 2000 + record_index,
         "frame_length": 104,

@@ -20,7 +20,6 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::CadIr;
 
-use super::super::native_record_losses;
 use super::super::pcurve_entity;
 use super::super::records::TopologyIndex;
 use crate::test_support::decoded_with;
@@ -48,8 +47,8 @@ fn decoded(bytes: &[u8]) -> CadIr {
 fn written(ir: &CadIr, version: IgesVersion) -> (Vec<LossNote>, Vec<u8>) {
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(ir, None),
-            TargetRequest::Explicit(version.descriptor().id.as_str()),
+            EncodeInput::new(ir, None)
+                .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
         )
         .expect("the document is written");
     let losses = plan.report().losses.clone();
@@ -560,6 +559,7 @@ fn a_face_without_a_boundary_loop_writes_an_untrimmed_type_144() {
 
 #[test]
 fn a_line_pcurve_writes_as_a_degree_1_type_126() {
+    test_ctx!(ctx);
     let pcurve = Pcurve {
         id: "test:model:pcurve#line".try_into().expect("valid identity"),
         geometry: PcurveGeometry::Line(
@@ -572,14 +572,14 @@ fn a_line_pcurve_writes_as_a_degree_1_type_126() {
     let mut ir = CadIr::empty();
     ir.geometry.pcurves.push(pcurve.clone());
     let index = TopologyIndex::new(&ir);
-    let entity = pcurve_entity(&index, &pcurve).expect("a line pcurve is written");
+    let entity = pcurve_entity(&ctx, &index, &pcurve).expect("a line pcurve is written");
     assert_eq!(entity.type_code, 126);
     let parameters = String::from_utf8(entity.parameter_body).expect("ASCII parameters");
     assert!(parameters.starts_with("1,1,"), "{parameters}");
 }
 
 #[test]
-fn a_native_curve_without_a_directory_sequence_names_that_cause() {
+fn a_native_curve_without_a_directory_sequence_is_listed_with_that_cause() {
     let mut ir = CadIr::empty();
     let mut fields = serde_json::Map::new();
     fields.insert("entity_type".into(), 126.into());
@@ -595,16 +595,14 @@ fn a_native_curve_without_a_directory_sequence_names_that_cause() {
         .namespace_mut(cadmpeg_ir::codec_id!("iges"))
         .set_arena_records("entities", vec![record])
         .expect("a valid arena name");
-    let messages = native_record_losses(&ir)
-        .into_iter()
-        .map(|loss| loss.message)
-        .collect::<Vec<_>>();
-    assert!(
-        messages.contains(
-            &"the IGES write omits 1 native record(s) whose record states no Directory sequence that ties it to a neutral geometry record: iges:native:entity#unsequenced"
-                .to_owned()
-        ),
-        "{messages:#?}"
+    let (losses, _) = written(&ir, IgesVersion::V5_3);
+    assert_eq!(
+        charged(&losses, "export/native.records-omitted"),
+        [
+            "the IGES write omits 1 native record(s) of `iges` arena `entities` whose record \
+          states no Directory sequence that ties it to a neutral geometry record: \
+          iges:native:entity#unsequenced"
+        ]
     );
 }
 

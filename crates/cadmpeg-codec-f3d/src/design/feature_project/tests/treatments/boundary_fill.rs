@@ -49,10 +49,13 @@ fn boundary_fill_projects_body_region_groups() {
             )]
     ));
     let wire = json::to_value(&projected).unwrap();
-    assert_eq!(wire["value"]["value"]["plane_tools"], serde_json::json!([]));
+    assert_eq!(
+        wire["value"]["value"]["plane_tools"],
+        cadmpeg_core::json!([])
+    );
     assert_eq!(
         wire["value"]["value"]["cells"][0],
-        serde_json::json!({"kind":"body_region","value":{"kind":"native","value":cell.id}})
+        cadmpeg_core::json!({"kind":"body_region","value":{"kind":"native","value":cell.id}})
     );
     let mut missing_planes = wire;
     missing_planes["value"]["value"]
@@ -106,7 +109,7 @@ fn boundary_fill_projects_recorded_cells_and_removal_control() {
         fill_scope
     );
     let mut invalid_wire = native_wire;
-    invalid_wire["boundary_fill"]["operands"]["suffix"] = serde_json::json!("00".repeat(140));
+    invalid_wire["boundary_fill"]["operands"]["suffix"] = cadmpeg_core::json!("00".repeat(140));
     assert!(json::from_value::<DesignParameterScope>(invalid_wire).is_err());
     let projected = crate::test_support::with_decode_context(|ctx| {
         crate::design::feature_project::boundary_fill::project(
@@ -128,11 +131,11 @@ fn boundary_fill_projects_recorded_cells_and_removal_control() {
     assert_eq!(operation["remove_tools"], false);
     assert_eq!(
         operation["plane_tools"],
-        serde_json::json!(["f3d:native/BulkStream.dat:design-record#301", null])
+        cadmpeg_core::json!(["f3d:native/BulkStream.dat:design-record#301", null])
     );
     assert_eq!(
         operation["cells"],
-        serde_json::json!([
+        cadmpeg_core::json!([
             {"kind":"recorded","value":{"record":"f3d:native/BulkStream.dat:design-record#777"}},
             {"kind":"recorded","value":{}}
         ])

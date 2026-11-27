@@ -1075,9 +1075,12 @@ fn expanded_sections(
         // A section above the expansion ceiling or the per-expansion
         // allowance is left compressed.
         let per_expand_allowance = ctx.per_expand_allowance();
-        let expansion = if expected_length > MAX_EXPANDED_SECTION {
+        let over_ceiling = expected_length > MAX_EXPANDED_SECTION;
+        let over_allowance =
+            cadmpeg_core::decode::u64_from_index(expected_length) > per_expand_allowance;
+        let expansion = if over_ceiling {
             Err("declared expansion exceeds the 256 MiB section ceiling".into())
-        } else if cadmpeg_core::decode::u64_from_index(expected_length) > per_expand_allowance {
+        } else if over_allowance {
             Err(format!(
                 "declared expansion of {expected_length} bytes exceeds the \
                  {per_expand_allowance}-byte per-expansion allowance"

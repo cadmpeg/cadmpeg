@@ -141,7 +141,7 @@ fn pointers(entity: &WrittenEntity) -> Vec<u32> {
             let count = usize::try_from(token(1)).expect("count");
             indices.extend((0..count).map(|face| 2 + 2 * face));
         }
-        100 | 104 | 110 | 116 | 123 | 124 | 126 | 128 | 502 => {}
+        100 | 104 | 110 | 116 | 123 | 124 | 126 | 128 | 314 | 502 => {}
         _ => panic!("the written file has an entity type this check does not read"),
     }
     let mut pointers = indices
@@ -188,7 +188,8 @@ fn assert_dependents_have_parents(ir: &CadIr) {
     let validation =
         cadmpeg_ir::validate_neutral(ir, Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok());
-    let generated = super::super::synthesize(ir, IgesVersion::V5_3).expect("write the model");
+    let generated =
+        crate::writer::tests::synthesize(ir, IgesVersion::V5_3).expect("write the model");
     let (dependents, orphans) = dependents_without_parents(&generated.bytes);
     assert!(dependents > 0);
     assert_eq!(orphans, 0, "a physically dependent entity has a parent");
@@ -228,7 +229,7 @@ fn every_regenerated_fixture_writes_no_dependent_entity_without_a_parent() {
         else {
             continue;
         };
-        let Ok(generated) = super::super::synthesize(result.ir(), IgesVersion::V5_3) else {
+        let Ok(generated) = crate::writer::tests::synthesize(result.ir(), IgesVersion::V5_3) else {
             continue;
         };
         let name = file
@@ -308,7 +309,8 @@ fn native_constructions_write_their_support_curves_as_constituents() {
         crate::test_support::test_procedural_surfaces::cacheless_line_tabulated_surface_file(),
     ] {
         let ir = decoded(file);
-        let generated = super::super::synthesize(&ir, IgesVersion::V5_3).expect("write the model");
+        let generated =
+            crate::writer::tests::synthesize(&ir, IgesVersion::V5_3).expect("write the model");
         assert!(generated.losses.iter().all(|loss| loss.code
             != crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()));
         assert_eq!(dependents_without_parents(&generated.bytes).1, 0);
