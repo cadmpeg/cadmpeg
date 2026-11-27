@@ -1088,6 +1088,7 @@ struct Cap {
     sense: f64,
     vertices: Vec<Point3>,
     triangles: Vec<CapTriangle>,
+    triangle_bounds: Option<(Point3, Point3)>,
     polygons: Option<Vec<Vec<Point3>>>,
     transform: Transform,
 }
@@ -1261,6 +1262,7 @@ fn evidence(ir: &CadIr, work: &WorkBudget, with_solid: bool) -> Option<Witness> 
             },
             vertices: Vec::new(),
             triangles: Vec::new(),
+            triangle_bounds: None,
             polygons: Some(Vec::new()),
             transform,
         };
@@ -1344,9 +1346,25 @@ fn evidence(ir: &CadIr, work: &WorkBudget, with_solid: bool) -> Option<Witness> 
                     if [a, b, c].iter().all(|p| {
                         p.vector_from(cap.origin).dot(cap.normal).abs() <= EPS_CAP_MESH_DISTANCE
                     }) {
-                        cap.triangles.push(CapTriangle::new([a, b, c].map(|p| {
+                        let triangle = CapTriangle::new([a, b, c].map(|p| {
                             p.translated(cap.normal, -p.vector_from(cap.origin).dot(cap.normal))
-                        })));
+                        }));
+                        cap.triangle_bounds = Some(match cap.triangle_bounds {
+                            None => (triangle.bounds_min, triangle.bounds_max),
+                            Some((min, max)) => (
+                                Point3::new(
+                                    min.x.min(triangle.bounds_min.x),
+                                    min.y.min(triangle.bounds_min.y),
+                                    min.z.min(triangle.bounds_min.z),
+                                ),
+                                Point3::new(
+                                    max.x.max(triangle.bounds_max.x),
+                                    max.y.max(triangle.bounds_max.y),
+                                    max.z.max(triangle.bounds_max.z),
+                                ),
+                            ),
+                        });
+                        cap.triangles.push(triangle);
                     }
                 }
             }
@@ -1389,6 +1407,17 @@ impl Cap {
             return true;
         }
         if !self.triangles.is_empty() {
+            if self.triangle_bounds.is_some_and(|(min, max)| {
+                p.x < min.x
+                    || p.x > max.x
+                    || p.y < min.y
+                    || p.y > max.y
+                    || p.z < min.z
+                    || p.z > max.z
+            }) {
+                let _ = work.charge_by(self.triangles.len());
+                return false;
+            }
             return self
                 .triangles
                 .iter()
@@ -1452,6 +1481,8 @@ struct CapTriangle {
     mixed: f64,
     determinant: f64,
     slack: f64,
+    bounds_min: Point3,
+    bounds_max: Point3,
 }
 
 impl CapTriangle {
@@ -1461,6 +1492,21 @@ impl CapTriangle {
         let first_squared = first_edge.dot(first_edge);
         let second_squared = second_edge.dot(second_edge);
         let mixed = first_edge.dot(second_edge);
+        let min_x = origin.x.min(first.x).min(second.x);
+        let min_y = origin.y.min(first.y).min(second.y);
+        let min_z = origin.z.min(first.z).min(second.z);
+        let max_x = origin.x.max(first.x).max(second.x);
+        let max_y = origin.y.max(first.y).max(second.y);
+        let max_z = origin.z.max(first.z).max(second.z);
+        let coord_scale = min_x
+            .abs()
+            .max(max_x.abs())
+            .max(min_y.abs())
+            .max(max_y.abs())
+            .max(min_z.abs())
+            .max(max_z.abs())
+            .max(1.0);
+        let margin = 4.0 * EPS_BOUNDARY_DISTANCE + EPS_CARRIER_DISTANCE + 1.0e-6 * coord_scale;
         Self {
             origin,
             first_edge,
@@ -1470,6 +1516,8 @@ impl CapTriangle {
             mixed,
             determinant: first_squared * second_squared - mixed * mixed,
             slack: EPS_BOUNDARY_DISTANCE / first_edge.norm().max(second_edge.norm()).max(1.0),
+            bounds_min: Point3::new(min_x - margin, min_y - margin, min_z - margin),
+            bounds_max: Point3::new(max_x + margin, max_y + margin, max_z + margin),
         }
     }
 
@@ -1477,6 +1525,15 @@ impl CapTriangle {
     /// within its slack of an edge. A degenerate triangle holds no point.
     fn contains(&self, point: Point3) -> bool {
         if self.determinant.abs() < MIN_TRIANGLE_DETERMINANT {
+            return false;
+        }
+        if point.x < self.bounds_min.x
+            || point.x > self.bounds_max.x
+            || point.y < self.bounds_min.y
+            || point.y > self.bounds_max.y
+            || point.z < self.bounds_min.z
+            || point.z > self.bounds_max.z
+        {
             return false;
         }
         let offset = point.vector_from(self.origin);
