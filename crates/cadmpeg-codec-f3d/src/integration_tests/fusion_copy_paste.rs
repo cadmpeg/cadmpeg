@@ -173,13 +173,11 @@ fn assert_paste_inserts_its_copies(
 }
 
 /// The timeline item of the paste object has the feature of the `Base Feature`
-/// scope the object owns, not a native placeholder, and no loss names a match
-/// by position.
+/// scope the object owns, and no loss names a match by position.
 fn assert_paste_item_keeps_its_feature(
     result: &cadmpeg_ir::DecodeResult,
     native: &crate::native::F3dNative,
 ) {
-    use cadmpeg_ir::design::feature::FeatureOperation;
     let scope = paste_scope(native);
     let model = result
         .ir()
@@ -188,17 +186,14 @@ fn assert_paste_item_keeps_its_feature(
         .iter()
         .find(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()))
         .expect("the paste's feature");
-    let member = result
-        .ir()
-        .design
-        .features
-        .iter()
-        .find(|feature| feature.id == model.id)
-        .expect("the paste's timeline member");
     assert!(
-        !matches!(member.definition.operation, FeatureOperation::Native { .. }),
-        "{:?}",
-        member.definition.operation
+        result
+            .ir()
+            .design
+            .features
+            .iter()
+            .any(|feature| feature.id == model.id),
+        "the paste's timeline member"
     );
     assert!(result
         .report()

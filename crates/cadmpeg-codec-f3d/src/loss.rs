@@ -5780,6 +5780,8 @@ mod tests {
                 "configuration.property-unprojected",
                 "history.rollback-unread",
                 "history.rollback-bound-unread",
+                "history.item-matched-by-position",
+                "history.member-component-unstated",
                 "feature.coordinate-system-construction-native",
                 "feature.coordinate-system-construction-dropped",
                 "feature.coordinate-system-frame-unresolved",
