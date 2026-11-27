@@ -104,21 +104,21 @@
 
 **Need.** Flanges at two angles under bend method `1`, and documents set to each other bend method the software offers.
 
-### DR-1055. Bend relief length and shape
+### DR-1073. Flange offset end and slots after the offset extent
 
-**Question.** Which dimension of a bend relief does the relief length (§10.1) set?
+**Question.** From which end of the edge does the offset of extent kind `138` (§10.3) count, and where do the bend method, bend deduction and bend allowance slots lie for that kind?
 
-**Known.** The relief width and relief length variables hold the values set as the document defaults. A flange stores its own relief width, relief length and relief type (§10.3).
+**Known.** The offset and the width are two `CLSID_JDim` slots at offsets 492 and 512. The relief type is at offset 540. The offset equals the remaining edge length less the width in every stored flange of this kind, so both ends have the same setback.
 
-**Need.** A flange with a bend relief at two relief lengths, and the flat pattern of each.
+**Need.** A flange of extent kind `138` whose offset differs from the remaining edge length less the width, on an edge of known direction.
 
 ### DR-1034. Flange constants and options
 
-**Question.** Which options set the flange object slots that hold the same value in every stored flange, and which values can the side, the relief type and the object header flag take?
+**Question.** Which options set the flange object slots that hold the same value in every stored flange, and which values can the offset kind, the dimension side and the corner relief take?
 
-**Known.** The `Double Value Object` slots at offsets 212, 268, 352 and 460 of §10.3, the constants that follow the relief type, and the zero-valued `CLSID_JDim` that follows them hold the same value in every stored flange. The side is `2` in every stored flange. The relief type is `51`, `52` or `53`. The `u16` at object offset 18 of a flange object is `149` where the object has a relation and `157` where it has none. The field that selects the 8-byte header extension of a 563-byte edge proxy (§7.6) is not established.
+**Known.** The `Double Value Object` slots at offsets 268, 352 and 460 of §10.3, the constants that follow the relief type, and the zero-valued `CLSID_JDim` that follows them hold the same value in every stored flange. The field that selects the 8-byte header extension of a 563-byte edge proxy (§7.6) is not established.
 
-**Need.** Flanges with the side reversed, each other relief type, each other measure-point and material-side option, and the corner relief option, and a flange of each kind with its radius, relief width and relief length set on the flange.
+**Need.** A flange with each offset type, the dimension side, the corner relief option, and a flange of each kind created by the Flange command.
 
 ### DR-1043. Member record fields and activation in larger families
 
