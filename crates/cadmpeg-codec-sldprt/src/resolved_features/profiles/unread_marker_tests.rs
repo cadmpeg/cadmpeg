@@ -10,7 +10,7 @@ use cadmpeg_ir::sketches::{
 
 use super::{
     finalize_unread_marker_entities, project_marker_backed_sketches, ChordConflict,
-    HeldMarkerGeometry, ListedEntity, MarkerSketchEntities,
+    HeldListedEntity, HeldMarkerGeometry, ListedEntity, MarkerSketchEntities,
 };
 use crate::loss::SldprtLossCode;
 use crate::records::{
@@ -364,21 +364,23 @@ fn a_placeholder_with_held_record_geometry_charges_the_losses_held_with_it() {
     let mut held = HeldMarkerGeometry::default();
     held.listed.insert(
         (entities[0].sketch.clone(), "marker-off-chord".to_owned()),
-        (
+        HeldListedEntity::new(
             ListedEntity {
                 geometry: arc.clone(),
                 endpoints: None,
-                center: None,
+                center: Some(64),
                 construction: false,
                 outside_profile: false,
                 index_basis_loss: None,
             },
+            |offset| (offset == 64).then(|| "stored-center".to_owned()),
             vec![SldprtLossCode::SketchArcRecordOffChord.note("off chord")],
         ),
     );
     let mut losses = Vec::new();
     finalize_unread_marker_entities(&mut entities, held, &mut losses);
     assert_eq!(entities[0].geometry, arc);
+    assert_eq!(entities[0].center_ref.as_deref(), Some("stored-center"));
     assert_eq!(
         losses
             .iter()
@@ -404,7 +406,7 @@ fn a_placeholder_with_held_record_geometry_takes_it_without_a_loss() {
     let mut held = HeldMarkerGeometry::default();
     held.listed.insert(
         (read.sketch.clone(), "marker-read".to_owned()),
-        (
+        HeldListedEntity::new(
             ListedEntity {
                 geometry: line.clone(),
                 endpoints: None,
@@ -413,6 +415,7 @@ fn a_placeholder_with_held_record_geometry_takes_it_without_a_loss() {
                 outside_profile: false,
                 index_basis_loss: None,
             },
+            |_| None,
             Vec::new(),
         ),
     );
@@ -442,7 +445,7 @@ fn a_placeholder_with_held_state_zero_record_geometry_is_outside_the_profile() {
     let mut held = HeldMarkerGeometry::default();
     held.listed.insert(
         (read.sketch.clone(), "marker-read".to_owned()),
-        (
+        HeldListedEntity::new(
             ListedEntity {
                 geometry: line,
                 endpoints: None,
@@ -451,6 +454,7 @@ fn a_placeholder_with_held_state_zero_record_geometry_is_outside_the_profile() {
                 outside_profile: true,
                 index_basis_loss: None,
             },
+            |_| None,
             Vec::new(),
         ),
     );
