@@ -55,7 +55,11 @@ pub(in crate::feature) fn project<'a>(
         },
         _ => return None,
     };
-    typed(ctx, source, label, index, family, operation, losses)
+    let projected = typed(ctx, source, label, index, family, operation, losses);
+    if matches!(projected, Some(Ok(_))) {
+        losses.extend(pending_loss);
+    }
+    projected
 }
 
 /// Whether an earlier feature names the result wrapper of a surface loft. The
@@ -114,7 +118,6 @@ fn typed(
     if let Err(error) = ctx.charge_entities(1, "project Inventor loft or sweep") {
         return Some(Err(error));
     }
-    losses.extend(pending_loss);
     if matches!(family, FeatureFamily::SurfaceLoft) {
         losses.push(crate::loss::InventorLossCode::FeatureSurfaceLoftOperationAssumed.note(
             "Surface loft reads part-operation value 5 as a new-body creation; the creation-or-combination rule is open.",
