@@ -131,70 +131,84 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7.0.1
 
-      - name: Specification reference check
-        # Open-items documents cite the specification by section and paragraph
-        # start. Catches a reference that names no paragraph or several.
-        run: python3 scripts/check-doc-anchors.py
-
-      - name: Open-item IDs
-        # An ID repeated in one open-items document. A PR run checks the PR
-        # merged into its base at the time of the run. Two PRs that take one ID
-        # can both pass and merge; the main run then fails here.
-        run: python3 scripts/preflight_open_items.py
-
-      - name: Python tooling tests
-        run: python3 -m unittest discover -q -s scripts -p 'test_*.py'
-
-      - name: Source policy
-        if: needs.changes.outputs.prose_only != 'true'
+      - name: Policy checks
+        # The checks are independent single-process scans, so they run at
+        # once on the runner's cores; each one's output follows in its own
+        # group. A `#` line documents the check below it.
+        env:
+          PROSE_ONLY: ${{ needs.changes.outputs.prose_only }}
         run: |
           set -euo pipefail
+          logs="$(mktemp -d)"
+          count=0
+          launch() {
+            while IFS= read -r check; do
+              case "$check" in ''|'#'*) continue ;; esac
+              count=$((count + 1))
+              printf '%s\n' "$check" > "$logs/$count.command"
+              ( start=$SECONDS
+                if bash -c "$check" > "$logs/$count.log" 2>&1; then status=0; else status=$?; fi
+                echo "$((SECONDS - start))" > "$logs/$count.seconds"
+                echo "$status" > "$logs/$count.status" ) &
+            done
+          }
+          launch <<'CHECKS'
+          # Open-items documents cite the specification by section and paragraph
+          # start. Catches a reference that names no paragraph or several.
+          python3 scripts/check-doc-anchors.py
+          # An ID repeated in one open-items document. A PR run checks the PR
+          # merged into its base at the time of the run. Two PRs that take one
+          # ID can both pass and merge; the main run then fails here.
+          python3 scripts/preflight_open_items.py
+          python3 -m unittest discover -q -s scripts -p 'test_*.py'
+          # Mesh-size floors in docs/golden-coverage-floors.toml. Counts may
+          # only rise when fixtures are added; they must never silently fall.
+          python3 scripts/check-golden-coverage-floors.py
+          # Crate-root pub items must match docs/codec-facade.toml.
+          python3 scripts/check-codec-facade.py
+          # Every validation finding states its rule (rule!/rule_name!), and
+          # every rule an admission route lists is stated by a finding.
+          python3 scripts/name-validation-rules.py --check
+          # Schema, id grammar, witness form, and the IGES admission lattice in
+          # crates/cadmpeg-registry/docs/dialects.toml. Ids are pinned from the
+          # commit that adds them.
+          python3 scripts/check-dialects.py
+          # crates/cadmpeg-registry/docs/dialect-support.toml against the
+          # identity registry, the fixture tree, the golden snapshots that pin
+          # each fixture's emitted dialect id, and the encoders' write-target
+          # catalogs. Fixture gating lives here: a row with no fixture cannot
+          # claim a read score.
+          python3 scripts/check-dialect-support.py
+          # Every score table in docs/format-support.md, the root README, each
+          # codec crate README, and each codec lib.rs doc header is rendered
+          # from the two registries. --check re-renders and compares byte for
+          # byte, so a registry edit without a re-render fails here.
+          python3 scripts/render-format-support.py --check
+          CHECKS
+          if [ "$PROSE_ONLY" = true ]; then
+            launch <<'CHECKS'
+          python3 scripts/check-source-policy.py --authoring-paths-only
+          CHECKS
+          else
+            launch <<'CHECKS'
           python3 scripts/check-source-policy.py
           python3 scripts/check-resource-caps.py
           python3 scripts/check-deny-census.py
           python3 scripts/census-panic-calls.py --check
-
-      - name: Source policy for documentation
-        if: needs.changes.outputs.prose_only == 'true'
-        run: python3 scripts/check-source-policy.py --authoring-paths-only
-
-      - name: Golden coverage floors
-        # Mesh-size floors in docs/golden-coverage-floors.toml. Counts may only
-        # rise when fixtures are added; they must never silently fall.
-        run: |
-          set -euo pipefail
-          python3 scripts/check-golden-coverage-floors.py
-
-      - name: Codec facade
-        # Crate-root pub items must match docs/codec-facade.toml.
-        run: |
-          set -euo pipefail
-          python3 scripts/check-codec-facade.py
-
-      - name: Dialect identity registry
-        # Schema, id grammar, witness form, and the IGES admission lattice in
-        # crates/cadmpeg-registry/docs/dialects.toml. Ids are pinned from the commit that adds them.
-        run: |
-          set -euo pipefail
-          python3 scripts/check-dialects.py
-
-      - name: Dialect capability registry
-        # crates/cadmpeg-registry/docs/dialect-support.toml against the identity registry, the fixture
-        # tree, the golden snapshots that pin each fixture's emitted dialect
-        # id, and the encoders' write-target catalogs. Fixture gating lives
-        # here: a row with no fixture cannot claim a read score.
-        run: |
-          set -euo pipefail
-          python3 scripts/check-dialect-support.py
-
-      - name: Rendered capability tables
-        # Every score table in docs/format-support.md, the root README, each
-        # codec crate README, and each codec lib.rs doc header is rendered from
-        # the two registries. --check re-renders and compares byte for byte, so
-        # a registry edit without a re-render fails here.
-        run: |
-          set -euo pipefail
-          python3 scripts/render-format-support.py --check
+          CHECKS
+          fi
+          wait
+          failed=0
+          for index in $(seq "$count"); do
+            echo "::group::$(cat "$logs/$index.command") ($(cat "$logs/$index.seconds")s)"
+            cat "$logs/$index.log"
+            echo "::endgroup::"
+            if [ "$(cat "$logs/$index.status")" != 0 ]; then
+              echo "::error::$(cat "$logs/$index.command") failed"
+              failed=1
+            fi
+          done
+          exit "$failed"
 
   # The stable gate is three jobs rather than one long one. Clippy compiles the
   # workspace through `clippy-driver`, whose artifacts are separate from the
@@ -223,9 +237,6 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
-
       - name: Hash the Cargo profiles
         id: profiles
         uses: ./.github/actions/cargo-profile-key
@@ -237,17 +248,36 @@ jobs:
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Format check
-        run: cargo fmt --all --check
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
 
-      - name: Clippy
+      - name: Format check and clippy
+        # rustfmt takes one core for most of a minute; it runs beside clippy
+        # instead of before it.
         # Lint levels come from `[workspace.lints]` in Cargo.toml, so no
         # trailing flags here. Trailing flags are part of the compilation
         # fingerprint, and a flagged run and a bare run evict each other's
         # cached artifacts.
         # `--all-targets` covers lib, bins, tests, and benches so test-only
         # style debt cannot hide behind crate-root cfg(test) mute lists.
-        run: python3 scripts/ci_cargo.py clippy --all-targets
+        run: |
+          set +e
+          format_check() {
+            cargo fmt --all --check
+          }
+          format_check > "$RUNNER_TEMP/format.log" 2>&1 &
+          formatter=$!
+          python3 scripts/ci_cargo.py clippy --all-targets
+          lint=$?
+          wait "$formatter"
+          format=$?
+          echo "::group::cargo fmt --all --check"
+          cat "$RUNNER_TEMP/format.log"
+          echo "::endgroup::"
+          if [ "$format" != 0 ]; then
+            echo "::error::cargo fmt --all --check failed"
+          fi
+          [ "$lint" = 0 ] && [ "$format" = 0 ]
 
   test:
     needs: changes
@@ -269,19 +299,6 @@ jobs:
       - name: Install pinned toolchain
         uses: ./.github/actions/pinned-rust
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
-
-      - name: Limit broad test builds
-        # A one-codec build peaks near 10 GB at four jobs. Broader builds
-        # swap at three or four jobs on the 16 GB runner, so they keep two.
-        shell: bash
-        run: |
-          codecs="$(python3 -c 'import json, os; print(len(json.loads(os.environ["CI_CODEC_FEATURES"])))')"
-          if [ "$CI_FULL" = true ] || [ "$codecs" -ne 1 ]; then
-            echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
-          fi
-
       - name: Hash the Cargo profiles
         id: profiles
         uses: ./.github/actions/cargo-profile-key
@@ -296,10 +313,8 @@ jobs:
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2.90.5
-        with:
-          tool: cargo-nextest
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
 
       - name: Unit and integration tests
         # Compile selected packages and their dependencies before running.
@@ -307,8 +322,18 @@ jobs:
         # memory line every 30 seconds stays in the log if the runner stops.
         shell: bash
         run: |
-          (while sleep 30; do free -m | awk 'NR==2 {print "memory used " $3 " of " $2 " MiB"}'; done) &
-          python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
+          (while sleep 30; do free -m | awk 'NR==2 {m=$3} NR==3 {print "memory used " m " MiB, swap used " $3 " MiB"}'; done) &
+          python3 scripts/ci_cargo.py run-tests --timings
+
+      - name: Upload build timings
+        # Cargo's per-unit compile report: which crates sit on the critical
+        # path and how many units ran at once.
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: cargo-timing-linux
+          path: target/cargo-timings/cargo-timing.html
+          if-no-files-found: ignore
 
       - name: Inventor CLI evidence tests
         if: needs.changes.outputs.inventor_cli == 'true'
@@ -361,9 +386,6 @@ jobs:
       - name: Install pinned toolchain
         uses: ./.github/actions/pinned-rust
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
-
       - name: Hash the Cargo profiles
         id: profiles
         uses: ./.github/actions/cargo-profile-key
@@ -375,17 +397,24 @@ jobs:
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
+
       - name: Schema feature
         if: needs.changes.outputs.schema == 'true'
-        # No other build compiles the JsonSchema derives. This gate runs the
-        # schema tests, which compare the committed crates/cadmpeg-ir/schema
-        # files with the derives, and checks the core/assembly feature
-        # combinations.
+        # No other build compiles the JsonSchema derives. The core and
+        # assembly crates have no target but their library, so the unit test
+        # build covers each of their targets under the feature; the assembly
+        # library also lints outside `cfg(test)`. `committed_schema` compares
+        # the committed crates/cadmpeg-ir/schema files with the derives, as
+        # text in declared property order. `schema-order` changes serde_json's
+        # map for the whole build, so that build is separate; as an integration
+        # test it compiles no unit test of the crate.
         run: |
           set -euo pipefail
           cargo test -q -p cadmpeg-core -p cadmpeg-ir -p cadmpeg-asm --features cadmpeg-ir/schema,cadmpeg-asm/schema --lib
-          cargo check -q -p cadmpeg-core -p cadmpeg-asm --all-targets \
-            --features cadmpeg-core/schema,cadmpeg-asm/schema
+          cargo check -q -p cadmpeg-asm --lib --features cadmpeg-asm/schema
+          cargo test -q -p cadmpeg-ir --features schema-order --test committed_schema
 
       - name: Annex A
         if: needs.changes.outputs.schema == 'true'
@@ -425,15 +454,15 @@ jobs:
       - name: Install pinned toolchain
         uses: ./.github/actions/pinned-rust
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
-
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: fuzz
           workspaces: crates/cadmpeg-fuzz -> target
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
 
       - name: Fuzz targets compile
         run: python3 scripts/ci_fuzz.py
@@ -476,9 +505,6 @@ jobs:
         with:
           toolchain: "1.88"
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
-
       - name: Hash the Cargo profiles
         id: profiles
         uses: ./.github/actions/cargo-profile-key
@@ -488,6 +514,9 @@ jobs:
         with:
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
 
       - name: Check
         run: python3 scripts/ci_cargo.py check
@@ -505,9 +534,9 @@ jobs:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
     runs-on: ${{ matrix.os }}
-    # macos-latest is sometimes a 5-core runner and sometimes a 3-core one.
-    # On 5 cores the full test build took 18 minutes and the tests 6. On 3
-    # cores the build was still compiling at 60 minutes, and Windows took 57.
+    # macos-latest is a 5-core, 14 GiB runner or a 3-core, 7 GiB one. On the
+    # 3-core runner the test build takes about 50 minutes when it stays in
+    # memory, and the tests about 20; on the 5-core runner, 13 and 9.
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -523,9 +552,6 @@ jobs:
       - name: Install pinned toolchain
         uses: ./.github/actions/pinned-rust
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
-
       - name: Hash the Cargo profiles
         id: profiles
         uses: ./.github/actions/cargo-profile-key
@@ -535,14 +561,54 @@ jobs:
         with:
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          # The cache holds the dependencies. A main run whose tests fail
+          # still saves them.
+          cache-on-failure: true
 
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2.90.5
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
+
+      # Each step's timeout ends it before the job's, so the job fails rather
+      # than being cancelled, and the report and cache steps run.
+      - name: Build tests
+        timeout-minutes: 75
+        run: python3 scripts/ci_cargo.py test --no-run --bins --tests --timings
+
+      - name: Upload build timings
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
         with:
-          tool: cargo-nextest
+          name: cargo-timing-${{ runner.os }}
+          path: target/cargo-timings/cargo-timing.html
+          if-no-files-found: ignore
 
       - name: Unit and integration tests
-        run: python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
+        timeout-minutes: 40
+        run: python3 scripts/ci_cargo.py run-tests
+
+      # A step timeout stops only the step's shell: cargo, rustc and the test
+      # binaries keep running. Name them, then stop them before the cache step.
+      - name: Report swap and unfinished work
+        if: ${{ always() && runner.os == 'macOS' }}
+        shell: bash
+        run: |
+          sysctl vm.swapusage
+          ps -axo etime=,rss=,args= | awk '
+            $3 ~ /(^|\/)rustc$/ {
+              name = "?"
+              for (i = 4; i < NF; i++) if ($i == "--crate-name") name = $(i + 1)
+              kind = / --test( |$)/ ? "tests" : "lib"
+              printf "still compiling %s (%s) after %s, %d MiB\n", name, kind, $1, $2 / 1024
+            }
+            $3 ~ /\/target\/debug\/deps\// {
+              args = $0
+              sub(/^ *[^ ]+ +[^ ]+ +/, "", args)
+              printf "still running %s after %s, %d MiB\n", substr(args, 1, 300), $1, $2 / 1024
+            }'
+          pkill -f ci_cargo.py || true
+          pkill -x cargo || true
+          pkill -x rustc || true
+          pkill -f '/target/debug/deps/' || true
 
   # RustSec advisory scan of a changed dependency tree; audit.yml scans daily.
   audit:

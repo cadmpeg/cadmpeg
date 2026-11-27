@@ -279,6 +279,7 @@ impl CadIr {
     ) -> Result<(), EditError> {
         let record = self.design_parameter(parameter)?;
         let drivers = match &record.definition {
+            ParameterDefinition::Unset => None,
             ParameterDefinition::Driven => Some(ParameterDrivers::Geometry),
             ParameterDefinition::Assigned(program) => {
                 Some(ParameterDrivers::Program(program.clone()))
@@ -314,7 +315,7 @@ impl CadIr {
 
     /// [`Editor::set_parameter_expression`](super::Editor::set_parameter_expression)
     /// on the document itself.
-    pub(super) fn set_parameter_expression(
+    pub(crate) fn set_parameter_expression(
         &mut self,
         parameter: &ParameterId,
         expression: Expression,
@@ -581,9 +582,9 @@ impl CadIr {
                             self.cache_in(target, None)
                         })
                     }
-                    ParameterDefinition::Driven | ParameterDefinition::Assigned(_) => {
-                        Attempt::Done(None)
-                    }
+                    ParameterDefinition::Driven
+                    | ParameterDefinition::Assigned(_)
+                    | ParameterDefinition::Unset => Attempt::Done(None),
                 };
                 if let Attempt::Done(value) = outcome {
                     done.push((parameter.clone(), value));

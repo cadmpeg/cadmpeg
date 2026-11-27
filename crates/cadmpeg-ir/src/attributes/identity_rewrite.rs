@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{
-    AttributeExpression, AttributeJson, AttributeMapEntry, AttributeTarget, AttributeValue,
-    SourceAttribute,
-};
+use super::{AttributeJson, AttributeMapEntry, AttributeTarget, AttributeValue, SourceAttribute};
 use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -23,7 +20,20 @@ macro_rules! rewrite_native_target {
                     _ => None,
                 },
             ),)*
-            Some("document" | "tessellation" | "record") => Ok(()),
+            Some("document") => Ok(()),
+            Some("record") => match $value.get_mut("value") {
+                Some(record) => crate::schema::rewrite::typed::native_fields::rewrite_field(
+                    $ctx,
+                    record,
+                    "id",
+                    $map,
+                    |owner: &Self| match owner {
+                        Self::Record { id, .. } => Some(id),
+                        _ => None,
+                    },
+                ),
+                None => Ok(()),
+            },
             _ => Err(CodecError::malformed(
                 "native attribute target has an invalid kind",
             )),
@@ -32,10 +42,10 @@ macro_rules! rewrite_native_target {
 }
 
 impl RewriteIdentities for AttributeTarget {
-    fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_native_value(
         ctx: &DecodeContext<'_>,
         value: &mut serde_json::Value,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<(), CodecError> {
         let _depth = ctx.enter_nested("walk native attribute target")?;
 
@@ -63,6 +73,7 @@ impl RewriteIdentities for AttributeTarget {
             "drawing" => Drawing,
             "view_presentation" => ViewPresentation,
             "configuration" => Configuration,
+            "tessellation" => Tessellation,
         )
     }
     fn visit_identity_references(
@@ -102,10 +113,10 @@ impl RewriteIdentities for AttributeTarget {
             }
         }
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &DecodeContext<'_>,
-        map: &mut IdentityMap<'_, F>,
+        map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
         let _depth = ctx.enter_nested("typed rewrite variant")?;
 
@@ -154,14 +165,12 @@ rewrite_enum!(AttributeValue, []; {
     Parameter(field0),
     Vector(field0),
     Map(field0),
-    Expression(field0),
     SubReference {object, subelements},
     ExternalReference {document, object, subelements},
     EmptyReference,
     Json(field0),
 });
 rewrite_record!(AttributeMapEntry, []; {key, value});
-rewrite_record!(AttributeExpression, []; {path, expression, comment});
 rewrite_enum!(AttributeJson, []; {
     Null,
     Boolean(field0),

@@ -94,11 +94,21 @@ pub(crate) fn transfer(
     Ok(records)
 }
 
+pub(crate) fn neutral_annotation_id(object: &str) -> Result<SemanticAnnotationId, CodecError> {
+    SemanticAnnotationId::mint(crate::native::model_id(
+        "semantic-annotation",
+        object,
+        "content",
+    ))
+    .map_err(CodecError::malformed)
+}
+
 pub(crate) fn transfer_neutral(
     ctx: &DecodeContext<'_>,
     model: &mut Model,
     records: &[SemanticAnnotationRecord],
     properties: &[PropertyRecord],
+    link_targets: &crate::drawing::LinkTargets,
 ) -> Result<(), CodecError> {
     for (order, record) in records.iter().enumerate() {
         let schema = annotation_schema(record.kind);
@@ -113,7 +123,10 @@ pub(crate) fn transfer_neutral(
         for (role, targets) in &record.references {
             let mut selections = Vec::new();
             for link in targets {
-                selections.extend(crate::drawing::link_references(link.as_ref())?);
+                selections.extend(crate::drawing::link_references(
+                    link.as_ref(),
+                    link_targets,
+                )?);
             }
             references.insert(role.to_owned(), selections);
         }
@@ -123,7 +136,10 @@ pub(crate) fn transfer_neutral(
         }
         let mut assets = Vec::new();
         for name in &record.side_entries {
-            assets.push(crate::native::native_id("entry", name));
+            assets.push(
+                cadmpeg_ir::ids::Identity::try_from(crate::native::native_id("entry", name))
+                    .map_err(CodecError::malformed)?,
+            );
         }
         model.semantic_annotations.push(SemanticAnnotation {
             text: record.text.clone(),
@@ -139,13 +155,9 @@ pub(crate) fn transfer_neutral(
             parameters: cadmpeg_core::text::named_entries(&record.object, parameters)?,
             assets,
             ..SemanticAnnotation::new(
-                SemanticAnnotationId::mint(crate::native::model_id(
-                    "semantic-annotation",
-                    &record.object,
-                    "content",
-                ))
-                .map_err(CodecError::malformed)?,
-                record.object.clone(),
+                neutral_annotation_id(&record.object)?,
+                cadmpeg_ir::ids::Identity::try_from(record.object.as_str())
+                    .map_err(CodecError::malformed)?,
                 schema.kind.clone(),
                 record.kind.as_str().to_owned(),
                 u32::try_from(order).map_err(|_| {
@@ -749,7 +761,7 @@ pub(crate) fn enrich_dimensions(
         }
         let owned: Vec<_> = properties
             .iter()
-            .filter(|p| p.owner == annotation.object)
+            .filter(|p| p.owner == annotation.object.as_str())
             .collect();
         if let Some(property) = typed_property(&owned, "Type", &["App::PropertyEnumeration"])? {
             let xml = ctx.parse_xml(property.xml.text(), "dimension type")?;
@@ -1401,7 +1413,7 @@ pub(crate) mod tests {
             .model
             .drawings
             .iter()
-            .find(|drawing| drawing.object.ends_with("#Dimension"))
+            .find(|drawing| drawing.object.as_str().ends_with("#Dimension"))
             .expect("neutral drawing dimension");
         assert_eq!(
             neutral_dimension.kind,
@@ -1415,7 +1427,7 @@ pub(crate) mod tests {
             .model
             .semantic_annotations
             .iter()
-            .find(|annotation| annotation.object.ends_with("#Dimension"))
+            .find(|annotation| annotation.object.as_str().ends_with("#Dimension"))
             .expect("semantic dimension");
         assert_eq!(
             semantic_dimension.kind,
@@ -1439,7 +1451,7 @@ pub(crate) mod tests {
             .model
             .semantic_annotations
             .iter()
-            .find(|annotation| annotation.object.ends_with("#Note"))
+            .find(|annotation| annotation.object.as_str().ends_with("#Note"))
             .expect("semantic note");
         assert_eq!(
             semantic_note.kind,
@@ -1451,12 +1463,27 @@ pub(crate) mod tests {
             .model
             .drawings
             .iter()
-            .find(|drawing| drawing.object.ends_with("#View"))
+            .find(|drawing| drawing.object.as_str().ends_with("#View"))
             .expect("neutral view");
         assert_eq!(
-            semantic_note.references["View"][0].native_text(),
-            Some(crate::native::id_key(&neutral_view.object))
+            semantic_note.references["View"],
+            [cadmpeg_ir::ReferenceSelection::new(
+                cadmpeg_ir::ReferenceTarget::Drawing {
+                    drawing: neutral_view.id.clone(),
+                    part: None,
+                }
+            )]
         );
+        assert_eq!(
+            neutral_dimension.relationships["BaseView"],
+            [cadmpeg_ir::ReferenceSelection::new(
+                cadmpeg_ir::ReferenceTarget::Drawing {
+                    drawing: neutral_view.id.clone(),
+                    part: None,
+                }
+            )]
+        );
+        assert!(neutral_dimension.base_view.is_none());
         assert!(crate::test_support::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
     }
@@ -1505,8 +1532,8 @@ pub(crate) mod tests {
             .model
             .semantic_annotations
             .iter()
-            .all(|annotation| !annotation.object.ends_with("#Datum")
-                && !annotation.object.ends_with("#Tolerance")));
+            .all(|annotation| !annotation.object.as_str().ends_with("#Datum")
+                && !annotation.object.as_str().ends_with("#Tolerance")));
         let balloon = &result.ir().model.semantic_annotations[0];
         assert_eq!(balloon.text, ["7"]);
         assert_eq!(
@@ -1524,7 +1551,7 @@ pub(crate) mod tests {
             .find(|annotation| annotation.kind == Kind::Symbol)
             .expect("semantic symbol");
         assert_eq!(symbol.assets.len(), 1);
-        assert!(symbol.assets[0].ends_with("symbol.svg"));
+        assert!(symbol.assets[0].as_str().ends_with("symbol.svg"));
         assert!(crate::test_support::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
     }

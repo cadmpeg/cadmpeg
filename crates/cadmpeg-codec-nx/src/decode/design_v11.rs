@@ -17,6 +17,9 @@ use cadmpeg_ir::design::feature::{
     Feature, FeatureDefinition, FeatureOperation, Link, OperationFamily, StoredOrigin,
 };
 use cadmpeg_ir::design::ids::{ArrangementId, ContainerId};
+use cadmpeg_ir::design::names::CodecName;
+use cadmpeg_ir::design::projection::fields::{FeatureField, ModelFeatureField};
+use cadmpeg_ir::design::projection::Restatement;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
@@ -61,6 +64,7 @@ pub(super) fn project(ir: &mut CadIr, definition: ProductDefinitionId) -> Result
             suppressed: feature.suppressed.map(Dimension::Literal),
             definition: FeatureDefinition {
                 operation: operation(feature)?,
+                assembly: None,
                 refine: None,
                 fuzzy_tolerance: None,
             },
@@ -93,6 +97,31 @@ pub(super) fn project(ir: &mut CadIr, definition: ProductDefinitionId) -> Result
     design.features.sort_by(|a, b| a.id.cmp(&b.id));
     design.arrangements.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(())
+}
+
+/// The model fields [`project`] reads to build each design field.
+pub(super) const RESTATEMENT: Restatement = Restatement {
+    feature: feature_inputs,
+    parameter: parameters::inputs,
+};
+
+/// The model feature fields [`project`] reads to build `field`: the
+/// operation reads the definition, the stored outputs and the source tag.
+#[deny(clippy::wildcard_enum_match_arm)]
+fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
+    match field {
+        FeatureField::Suppressed => &[ModelFeatureField::Suppressed],
+        FeatureField::Definition => &[
+            ModelFeatureField::Definition,
+            ModelFeatureField::Outputs,
+            ModelFeatureField::SourceTag,
+        ],
+        FeatureField::NativeRef => &[ModelFeatureField::NativeRef],
+        FeatureField::Name
+        | FeatureField::Placement
+        | FeatureField::Component
+        | FeatureField::DrivenBy => &[],
+    }
 }
 
 /// The root definition of the document: the one the placement attachment
@@ -215,7 +244,7 @@ fn arrangements(
 
 fn native(kind: &str) -> Result<FeatureOperation, CodecError> {
     Ok(FeatureOperation::Native {
-        kind: NonBlankString::new(format!("nx:{kind}"))
+        kind: CodecName::new(&cadmpeg_ir::codec_id!("nx"), kind)
             .ok_or_else(|| CodecError::malformed("NX v11 operation kind is blank"))?,
         native_options: BTreeMap::default(),
         source_settings: BTreeMap::default(),

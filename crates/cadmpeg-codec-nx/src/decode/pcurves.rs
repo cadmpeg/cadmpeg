@@ -23,7 +23,7 @@ use super::offset::{
 };
 use super::support_uv::{
     blend_spine_cache_fit_tolerance_with_index, linear_knots,
-    parameterization_equivalent_surfaces_with_index, pcurve_requires_completion,
+    parameterization_equivalent_surfaces_with_index, pcurve_holds_null_parameter,
 };
 use crate::framing::node_kind::NodeKind;
 use crate::topology::{Graph, Node};
@@ -305,6 +305,7 @@ impl IntersectionIncidenceIndex {
                         .pcurves
                         .get(*carrier_index)
                         .map(|carrier| carrier.geometry.clone())
+                        .filter(|geometry| !pcurve_holds_null_parameter(geometry))
                     else {
                         continue;
                     };
@@ -490,7 +491,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                 continue;
             };
             let Some(endpoint_tolerance) =
-                edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get)
+                edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get)
             else {
                 continue;
             };
@@ -645,7 +646,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             }
             edge.set_param_range(Some(cadmpeg_ir::topology::ParameterInterval::from(range)));
             annotations
-                .derived(&edge.id, "param_range")
+                .derived(&edge.id, "carrier.param_range")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
@@ -1199,7 +1200,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
     for edge in &ir.geometry.edges {
         let (Some(curve), Some(tolerance)) = (
             edge.curve(),
-            edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
+            edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
         ) else {
             continue;
         };
@@ -1225,9 +1226,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
         else {
             continue;
         };
-        let missing = context.sides().each_ref().map(|side| {
-            pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
-        });
+        let missing = context.sides().each_ref().map(|side| side.pcurve.is_none());
         if transfer_budget_exhausted(transfer_budget) {
             continue;
         }
@@ -1284,9 +1283,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                 if transfer_budget_exhausted(transfer_budget) {
                     return Ok(None);
                 }
-                let missing = context.sides().each_ref().map(|side| {
-                    pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
-                });
+                let missing = context.sides().each_ref().map(|side| side.pcurve.is_none());
                 let target = match missing {
                     [true, false] => 0,
                     [false, true] => 1,
@@ -1378,12 +1375,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                 return false;
             };
-            if pcurve_requires_completion(
-                context.sides()[side]
-                    .pcurve
-                    .as_ref()
-                    .map(|pcurve| &pcurve.geometry),
-            ) {
+            if context.sides()[side].pcurve.is_none() {
                 context.set_unmapped_pcurve(side, Some(pcurve));
                 true
             } else {
@@ -1525,9 +1517,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         };
         let (supports, endpoints, range, admitted_tolerance) = match procedural.definition() {
             ProceduralCurveDefinition::Intersection { context, .. } => {
-                if !context.sides().iter().all(|side| {
-                    pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
-                }) {
+                if !context.sides().iter().all(|side| side.pcurve.is_none()) {
                     continue;
                 }
                 let [Some(first_support), Some(second_support)] =
@@ -1540,10 +1530,11 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 }) else {
                     continue;
                 };
-                let Some(tolerance) = edge
-                    .tolerance
-                    .map(cadmpeg_ir::scalar::NonNegativeReal::from)
-                else {
+                let Some(tolerance) = edge.tolerance.map(|tolerance| {
+                    cadmpeg_ir::scalar::NonNegativeReal::from(
+                        cadmpeg_ir::scalar::PositiveReal::from_assigned_length(tolerance),
+                    )
+                }) else {
                     continue;
                 };
                 (
@@ -1728,9 +1719,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         let mut tolerant_range = None;
         let completed = procedural.edit_definition(|definition| match definition {
             ProceduralCurveDefinition::Intersection { context, .. }
-                if context.sides().iter().all(|side| {
-                    pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
-                }) =>
+                if context.sides().iter().all(|side| side.pcurve.is_none()) =>
             {
                 for (side, pcurve) in pcurves.into_iter().enumerate() {
                     context.set_unmapped_pcurve(side, Some(pcurve));
@@ -1770,7 +1759,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         if let Some(edge) = ir.geometry.edges.get_mut(*edge_index) {
             edge.set_param_range(Some(cadmpeg_ir::topology::ParameterInterval::from(range)));
             annotations
-                .derived(&edge.id, "param_range")
+                .derived(&edge.id, "carrier.param_range")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
@@ -4054,7 +4043,7 @@ fn nurbs_surface_control_bounds(surface: &NurbsSurface) -> Option<([f64; 3], [f6
 
 fn point_outside_nurbs_control_bounds(
     point: Point3,
-    tolerance: cadmpeg_ir::scalar::PositiveReal,
+    tolerance: cadmpeg_ir::scalar::PositiveLength,
     bounds: ([f64; 3], [f64; 3]),
 ) -> bool {
     if !point.is_finite() {
@@ -4315,7 +4304,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
         edge.set_curve(Some(curve_id.clone()))
             .map_err(cadmpeg_core::CodecError::malformed)?;
         annotations
-            .derived(&edge_id, "curve")
+            .derived(&edge_id, "carrier.curve")
             .map_err(cadmpeg_core::CodecError::from)?;
         if let Some(node) = graph.get(NodeKind::Edge, xmt) {
             annotations.note(
@@ -4506,7 +4495,7 @@ pub(super) fn pcurve_edge_endpoint_contract_with_index(
     let allowance = [edge.tolerance, start_tolerance, end_tolerance]
         .into_iter()
         .flatten()
-        .map(cadmpeg_ir::scalar::PositiveReal::get)
+        .map(cadmpeg_ir::scalar::PositiveLength::get)
         .fold(0.0_f64, f64::max);
     Ok(Some(([start, end], allowance)))
 }

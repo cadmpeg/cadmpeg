@@ -175,6 +175,9 @@ pub(crate) enum CreoLossCode {
     CrossSectionCurveBodyOpaque,
     /// A generated round entry has no independently owned surface carrier.
     RoundCarrierOwnerUnresolved,
+    /// A surface carrier of the non-visible geometry namespace states no
+    /// visibility: it has no color for an appearance binding to hold it.
+    NonVisibleCarrierVisibilityNotStated,
     /// A legacy ASCII surface carrier refused a lane, so its geometry stays a
     /// structural record.
     LegacySurfaceCarrierUnresolved,
@@ -243,6 +246,8 @@ pub(crate) enum CreoLossCode {
     TopologyExplicitUnownedSurface,
     /// A half-edge orbit is past the stated topological vertex identifier width.
     TopologyVertexIdentifierUnstatable,
+    /// A face states no loop on a plane, cylinder, or cone and is stated partial.
+    TopologyFaceBoundaryUnstated,
     /// Neutral feature, configuration, graph, material, and display data remain open.
     FeatureNeutralSemanticsIncomplete,
     /// Profile sweep history features retain incomplete required operands.
@@ -415,6 +420,9 @@ impl CreoLossCode {
             Self::VisibGeomCurveUntransferred => "geometry.visibgeom-curve-untransferred",
             Self::CrossSectionCurveBodyOpaque => "curve.cross-section-body-opaque",
             Self::RoundCarrierOwnerUnresolved => "geometry.round-carrier-owner-unresolved",
+            Self::NonVisibleCarrierVisibilityNotStated => {
+                "presentation.non-visible-carrier-visibility-not-stated"
+            }
             Self::LegacySurfaceCarrierUnresolved => "geometry.legacy-surface-carrier-unresolved",
             Self::NurbsBoundaryCarrierUnresolved => "geometry.nurbs-boundary-carrier-unresolved",
             Self::VisibGeomSurfaceAmbiguous => "geometry.visibgeom-surface-ambiguous",
@@ -448,6 +456,7 @@ impl CreoLossCode {
             Self::TopologyUnownedComponent => "topology.unowned-component",
             Self::TopologyExplicitUnownedSurface => "topology.explicit-unowned-surface",
             Self::TopologyVertexIdentifierUnstatable => "topology.vertex-identifier-unstatable",
+            Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::FeatureNeutralSemanticsIncomplete => "feature.neutral-semantics-incomplete",
             Self::FeatureSweepIncomplete => "feature.sweep-incomplete",
             Self::FeatureSurfaceOperationIncomplete => "feature.surface-operation-incomplete",
@@ -632,7 +641,9 @@ impl CreoLossCode {
             | Self::AssemblyPlacementUnresolved
             | Self::AssemblyMemberReferenceUnresolved
             | Self::AssemblyConstraintsNotTransferred
-            | Self::DesignParameterReferenceAsText => Severity::Warning,
+            | Self::DesignParameterReferenceAsText
+            | Self::TopologyFaceBoundaryUnstated
+            | Self::NonVisibleCarrierVisibilityNotStated => Severity::Warning,
         }
     }
 
@@ -746,6 +757,7 @@ impl CreoLossCode {
             | Self::TopologyUnownedComponent
             | Self::TopologyExplicitUnownedSurface
             | Self::TopologyVertexIdentifierUnstatable
+            | Self::TopologyFaceBoundaryUnstated
             | Self::ExtrusionBodyRejected => LossTaxonomy::TopologyNotTransferred,
             Self::FeatureNeutralSemanticsIncomplete
             | Self::FeatureSweepIncomplete
@@ -778,6 +790,7 @@ impl CreoLossCode {
                 LossTaxonomy::AssemblyComponentsExternal
             }
             Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
+            Self::NonVisibleCarrierVisibilityNotStated => LossTaxonomy::MetadataNotTransferred,
             Self::AssemblyMemberTableIncomplete
             | Self::AssemblyPlacementUnresolved
             | Self::AssemblyConstraintsNotTransferred => {
@@ -804,7 +817,7 @@ impl CreoLossCode {
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `creo/<local>`. Severity comes from the local
-    /// code; the strict floor comes from the taxonomy.
+    /// code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -899,6 +912,7 @@ mod tests {
                 "geometry.visibgeom-curve-untransferred",
                 "curve.cross-section-body-opaque",
                 "geometry.round-carrier-owner-unresolved",
+                "presentation.non-visible-carrier-visibility-not-stated",
                 "geometry.legacy-surface-carrier-unresolved",
                 "geometry.nurbs-boundary-carrier-unresolved",
                 "geometry.visibgeom-surface-ambiguous",
@@ -932,6 +946,7 @@ mod tests {
                 "topology.unowned-component",
                 "topology.explicit-unowned-surface",
                 "topology.vertex-identifier-unstatable",
+                "topology.face-boundary-unstated",
                 "feature.neutral-semantics-incomplete",
                 "feature.sweep-incomplete",
                 "feature.surface-operation-incomplete",

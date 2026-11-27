@@ -424,7 +424,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
     native
         .store(
             &cadmpeg_core::decode::test_support::service_decode_context(),
-            ir.native.namespace_mut("f3d"),
+            ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")),
         )
         .unwrap();
     let findings = crate::test_support::with_decode_context(|ctx| {
@@ -453,7 +453,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
     duplicate_type_owner
         .store(
             &cadmpeg_core::decode::test_support::service_decode_context(),
-            ir.native.namespace_mut("f3d"),
+            ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")),
         )
         .unwrap();
     assert!(crate::test_support::with_decode_context(|ctx| {
@@ -493,7 +493,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
     native
         .store(
             &cadmpeg_core::decode::test_support::service_decode_context(),
-            ir.native.namespace_mut("f3d"),
+            ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")),
         )
         .unwrap();
     assert!(crate::test_support::with_decode_context(|ctx| {
@@ -622,6 +622,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                             operand_record_index + 1
                         },
                         external_identity: None,
+                        legacy_external_identity: None,
                         body_node: None,
                     },
                     additional: vec![],
@@ -1804,7 +1805,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     native
         .store(
             &cadmpeg_core::decode::test_support::service_decode_context(),
-            ir.native.namespace_mut("f3d"),
+            ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")),
         )
         .unwrap();
 
@@ -1828,7 +1829,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     native
         .store(
             &cadmpeg_core::decode::test_support::service_decode_context(),
-            ir.native.namespace_mut("f3d"),
+            ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")),
         )
         .unwrap();
     assert!(crate::test_support::with_decode_context(|ctx| {

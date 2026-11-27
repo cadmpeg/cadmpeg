@@ -5,7 +5,7 @@ use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 crate::ids::id_type!(
     /// Stable presentation-document identity.
@@ -33,7 +33,7 @@ pub struct CameraState {
 /// Closed set of document GUI state families.
 #[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum PresentationStateKind {
     /// Persisted camera pose.
@@ -55,7 +55,7 @@ pub struct PresentationState {
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub attributes: BTreeMap<NonBlankString, String>,
     /// Referenced display assets as global native entry ids.
-    pub assets: Vec<String>,
+    pub assets: Vec<crate::ids::Identity>,
 }
 
 /// Document-wide persisted GUI state.
@@ -199,7 +199,7 @@ pub struct ViewPresentation {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_object"
     )]
-    pub object: Option<String>,
+    pub object: Option<crate::ids::Identity>,
     /// Source order in the provider table.
     pub order: u32,
     /// Persisted tree expansion state.
@@ -253,8 +253,8 @@ pub struct ViewPresentation {
 // Named presentation layers and their model-item membership.
 
 use crate::ids::{
-    BodyId, CurveId, EdgeId, FaceId, LayerId, OccurrenceId, PmiId, PointId, ProductDefinitionId,
-    SurfaceId, VertexId,
+    BodyId, CurveId, EdgeId, FaceId, LayerId, OccurrenceId, PmiId, PointCloudId, PointId,
+    ProductDefinitionId, SurfaceId, VertexId,
 };
 
 /// A model or presentation object assigned to a layer.
@@ -316,7 +316,12 @@ pub enum PresentationItem {
     /// Tessellation identity.
     Tessellation {
         /// Assigned tessellation identity.
-        tessellation: String,
+        tessellation: crate::tessellation::TessellationId,
+    },
+    /// Point cloud.
+    PointCloud {
+        /// Assigned point cloud.
+        point_cloud: PointCloudId,
     },
     /// Source item whose neutral target type is not modeled.
     Source {
@@ -335,6 +340,14 @@ pub struct PresentationLayer {
     pub id: LayerId,
     /// Layer name.
     pub name: String,
+    /// The layer this layer is a sublayer of. A hidden layer hides the items
+    /// of the layers below it.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_parent"
+    )]
+    pub parent: Option<LayerId>,
     /// Optional layer description.
     #[serde(
         default,
@@ -352,6 +365,13 @@ pub struct PresentationLayer {
     /// Assigned items, each in the placed instance and the state that hold
     /// it, in deterministic projection order; order has no semantic meaning.
     pub items: Vec<crate::references::InstanceTarget<PresentationItem>>,
+    /// Identifier of the full-fidelity source record.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 cadmpeg_core::named_optional_field!(
@@ -372,6 +392,57 @@ cadmpeg_core::named_optional_field!(
     "line_width"
 );
 
+cadmpeg_core::named_optional_field!(deserialize_parent, LayerId, "parent");
+
+/// The layers that are hidden, each by its own `visible` or by that of a
+/// layer above it through `parent` (§8). A walk ends at a parent the
+/// document does not hold, and a parent cycle is the set of layers on it.
+#[must_use]
+pub fn hidden_layers(layers: &[PresentationLayer]) -> HashSet<&LayerId> {
+    let by_id: HashMap<&LayerId, &PresentationLayer> = layers
+        .iter()
+        .rev()
+        .map(|layer| (&layer.id, layer))
+        .collect();
+    let mut known: HashMap<&LayerId, bool> = HashMap::new();
+    for layer in layers {
+        let mut chain: Vec<&PresentationLayer> = Vec::new();
+        let mut on_chain: HashMap<&LayerId, usize> = HashMap::new();
+        let mut above = None;
+        let mut next = Some(layer);
+        while let Some(current) = next {
+            if let Some(&hidden) = known.get(&current.id) {
+                above = Some(hidden);
+                break;
+            }
+            if let Some(&start) = on_chain.get(&current.id) {
+                let cycle = chain.split_off(start);
+                let hidden = cycle.iter().any(|held| held.visible == Some(false));
+                for held in cycle {
+                    known.insert(&held.id, hidden);
+                }
+                above = Some(hidden);
+                break;
+            }
+            on_chain.insert(&current.id, chain.len());
+            chain.push(current);
+            next = current
+                .parent
+                .as_ref()
+                .and_then(|parent| by_id.get(parent).copied());
+        }
+        let mut hidden = above.unwrap_or(false);
+        for held in chain.into_iter().rev() {
+            hidden |= held.visible == Some(false);
+            known.insert(&held.id, hidden);
+        }
+    }
+    known
+        .into_iter()
+        .filter_map(|(id, hidden)| hidden.then_some(id))
+        .collect()
+}
+
 cadmpeg_core::named_optional_field!(
     deserialize_point_size,
     crate::scalar::NonNegativeReal,
@@ -386,11 +457,13 @@ crate::units::named_field!(
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::serde_erase::json;
+
     #[test]
     fn a_named_optional_key_states_a_value_or_is_left_out() {
         use super::ViewPresentation;
 
-        let refusal = serde_json::from_value::<ViewPresentation>(serde_json::json!({
+        let refusal = json::from_value::<ViewPresentation>(cadmpeg_core::json!({
             "id": "freecad:presentation:view#1",
             "order": 0,
             "properties": {},
@@ -403,7 +476,7 @@ mod tests {
                 && text.contains("this key states a value or is left out; it does not state null"),
             "{text}"
         );
-        let absent = serde_json::from_value::<ViewPresentation>(serde_json::json!({
+        let absent = json::from_value::<ViewPresentation>(cadmpeg_core::json!({
             "id": "freecad:presentation:view#1",
             "order": 0,
             "properties": {}
@@ -433,7 +506,7 @@ mod tests {
         ];
         let mut states = Vec::new();
         for (order, kind) in kinds.into_iter().enumerate() {
-            let json = serde_json::to_string(&kind).unwrap();
+            let json = json::to_string(&kind).unwrap();
             assert_eq!(
                 serde_json::from_str::<PresentationStateKind>(&json).unwrap(),
                 kind
@@ -444,7 +517,7 @@ mod tests {
                 attributes: BTreeMap::new(),
                 assets: Vec::new(),
             };
-            let json = serde_json::to_string(&state).unwrap();
+            let json = json::to_string(&state).unwrap();
             assert_eq!(
                 serde_json::from_str::<PresentationState>(&json).unwrap(),
                 state
@@ -455,7 +528,7 @@ mod tests {
             PresentationId::mint("synthetic:test:presentation#presentation").unwrap(),
         );
         document.set_states(states).expect("distinct orders");
-        let json = serde_json::to_string(&document).unwrap();
+        let json = json::to_string(&document).unwrap();
         assert_eq!(
             serde_json::from_str::<PresentationDocument>(&json).unwrap(),
             document
@@ -479,14 +552,17 @@ mod tests {
         ir.model.presentation_layers.push(PresentationLayer {
             id: LayerId::mint("test:presentation:layer#construction").expect("valid identity"),
             name: "construction".into(),
+            parent: None,
             description: None,
             visible: None,
             items: vec![PresentationItem::Source {
                 source_id: cadmpeg_core::nonblank_literal!("#{}", 42),
             }
             .into()],
+            native_ref: None,
         });
 
+        crate::examples::add_document_root(&mut ir);
         assert!(validate_neutral(&ir, Vec::new())
             .expect("validate the neutral model")
             .is_ok());
@@ -498,14 +574,17 @@ mod tests {
         ir.model.presentation_layers.push(PresentationLayer {
             id: LayerId::mint("test:presentation:layer#unnamed").expect("valid identity"),
             name: String::new(),
+            parent: None,
             description: None,
             visible: None,
             items: vec![PresentationItem::Source {
                 source_id: cadmpeg_core::nonblank_literal!("#{}", 42),
             }
             .into()],
+            native_ref: None,
         });
 
+        crate::examples::add_document_root(&mut ir);
         assert!(validate_neutral(&ir, Vec::new())
             .expect("validate the neutral model")
             .is_ok());
@@ -517,12 +596,14 @@ mod tests {
         ir.model.presentation_layers.push(PresentationLayer {
             id: LayerId::mint("test:presentation:layer#missing").expect("valid identity"),
             name: "missing".into(),
+            parent: None,
             description: None,
             visible: None,
             items: vec![PresentationItem::Face {
                 face: FaceId::mint("test:model:face#missing").expect("valid identity"),
             }
             .into()],
+            native_ref: None,
         });
 
         assert!(validate_neutral(&ir, Vec::new())
@@ -532,18 +613,145 @@ mod tests {
             .any(|finding| finding.check == Check::Presentation));
     }
 
+    fn layer(key: &str, parent: Option<&str>, visible: Option<bool>) -> PresentationLayer {
+        let id = |key: &str| LayerId::mint(format!("test:presentation:layer#{key}")).unwrap();
+        PresentationLayer {
+            id: id(key),
+            name: key.into(),
+            parent: parent.map(id),
+            description: None,
+            visible,
+            items: Vec::new(),
+            native_ref: None,
+        }
+    }
+
+    /// A layer is hidden by its own `visible` or by a layer above it; a
+    /// missing parent ends the walk, and a cycle is hidden where one of its
+    /// layers is.
+    #[test]
+    fn a_hidden_layer_hides_the_layers_below_it() {
+        let layers = vec![
+            layer("grandchild", Some("child"), None),
+            layer("child", Some("root"), Some(true)),
+            layer("root", None, Some(false)),
+            layer("orphan", Some("absent"), None),
+            layer("a", Some("b"), None),
+            layer("b", Some("a"), Some(false)),
+            layer("c", Some("d"), None),
+            layer("d", Some("c"), None),
+            layer("below-cycle", Some("a"), Some(true)),
+        ];
+        let mut hidden: Vec<&str> = super::hidden_layers(&layers)
+            .into_iter()
+            .map(LayerId::as_str)
+            .collect();
+        hidden.sort_unstable();
+        assert_eq!(
+            hidden,
+            [
+                "test:presentation:layer#a",
+                "test:presentation:layer#b",
+                "test:presentation:layer#below-cycle",
+                "test:presentation:layer#child",
+                "test:presentation:layer#grandchild",
+                "test:presentation:layer#root",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_layer_parent_resolves() {
+        let unresolved = |ir: &CadIr| {
+            validate_neutral(ir, Vec::new())
+                .expect("validate the neutral model")
+                .findings
+                .iter()
+                .any(|finding| finding.message == "unresolved presentation-layer parent")
+        };
+        let mut ir = CadIr::empty();
+        ir.model.presentation_layers = vec![layer("b", Some("a"), None)];
+        assert!(unresolved(&ir));
+        ir.model
+            .presentation_layers
+            .insert(0, layer("a", None, None));
+        assert!(!unresolved(&ir));
+    }
+
+    #[test]
+    fn layer_parents_form_no_cycle() {
+        let on_cycle = |ir: &CadIr| {
+            let mut layers: Vec<String> = validate_neutral(ir, Vec::new())
+                .expect("validate the neutral model")
+                .findings
+                .into_iter()
+                .filter(|finding| {
+                    finding.severity == crate::report::Severity::Error
+                        && finding.message
+                            == "presentation layer is its own ancestor through `parent`"
+                })
+                .filter_map(|finding| finding.entity)
+                .collect();
+            layers.sort_unstable();
+            layers
+        };
+        let mut ir = CadIr::empty();
+        ir.model.presentation_layers = vec![
+            layer("a", Some("c"), None),
+            layer("b", Some("a"), None),
+            layer("c", Some("b"), None),
+            layer("d", Some("a"), None),
+        ];
+        assert_eq!(
+            on_cycle(&ir),
+            [
+                "test:presentation:layer#a",
+                "test:presentation:layer#b",
+                "test:presentation:layer#c",
+            ]
+        );
+        ir.model.presentation_layers[0].parent = None;
+        assert!(on_cycle(&ir).is_empty());
+        ir.model.presentation_layers[3].parent =
+            Some(LayerId::mint("test:presentation:layer#d".to_owned()).unwrap());
+        assert_eq!(on_cycle(&ir), ["test:presentation:layer#d"]);
+    }
+
     #[test]
     fn source_identity_admission_preserves_nonempty_wire() {
-        let wire = serde_json::json!({"kind": "source", "source_id": "#42"});
-        let value: PresentationItem =
-            serde_json::from_value(wire.clone()).expect("nonempty source_id");
-        assert_eq!(serde_json::to_value(value).expect("serialize"), wire);
-        let error = serde_json::from_value::<PresentationItem>(
-            serde_json::json!({"kind": "source", "source_id": ""}),
+        let wire = cadmpeg_core::json!({"kind": "source", "source_id": "#42"});
+        let value: PresentationItem = json::from_value(wire.clone()).expect("nonempty source_id");
+        assert_eq!(json::to_value(value).expect("serialize"), wire);
+        let error = json::from_value::<PresentationItem>(
+            cadmpeg_core::json!({"kind": "source", "source_id": ""}),
         )
         .expect_err("empty source_id");
         assert!(error.to_string().contains("source_id"));
         assert!(cadmpeg_core::text::NonBlankString::new("").is_none());
+    }
+
+    #[test]
+    fn documents_and_view_orders_may_repeat_across_sources() {
+        let mut ir = CadIr::empty();
+        for key in ["assembly", "part"] {
+            ir.model
+                .presentation_documents
+                .push(PresentationDocument::new(
+                    PresentationId::mint(format!("test:presentation:document#{key}"))
+                        .expect("valid identity"),
+                ));
+            ir.model.view_presentations.push(
+                json::from_value(cadmpeg_core::json!({
+                    "id": format!("test:presentation:view#{key}"),
+                    "order": 1,
+                    "properties": {}
+                }))
+                .expect("valid wire"),
+            );
+        }
+        crate::examples::add_document_root(&mut ir);
+        let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
+        assert!(report.is_ok(), "{:?}", report.findings);
     }
 
     #[test]
@@ -564,17 +772,16 @@ mod tests {
             .set_states(states.clone())
             .expect("distinct orders");
         assert_eq!(document.states(), states);
-        let wire = serde_json::to_value(&document).expect("serialize");
+        let wire = json::to_value(&document).expect("serialize");
         assert_eq!(
-            serde_json::from_value::<PresentationDocument>(wire.clone()).expect("valid wire"),
+            json::from_value::<PresentationDocument>(wire.clone()).expect("valid wire"),
             document
         );
         assert!(document.set_states(vec![state(2), state(2)]).is_err());
         assert_eq!(document.states(), states);
         let mut repeated = wire;
-        repeated["states"] =
-            serde_json::to_value(vec![state(2), state(2)]).expect("serialize states");
-        let read = serde_json::from_value::<PresentationDocument>(repeated)
+        repeated["states"] = json::to_value(vec![state(2), state(2)]).expect("serialize states");
+        let read = json::from_value::<PresentationDocument>(repeated)
             .expect("reading admits a repeated state order (§2.8)");
         assert_eq!(read.states(), [state(2), state(2)]);
         document.set_states(Vec::new()).expect("empty states");
@@ -586,7 +793,7 @@ mod tests {
 cadmpeg_core::named_optional_field!(deserialize_schema_version, u32, "schema_version");
 cadmpeg_core::named_optional_field!(deserialize_active_view, String, "active_view");
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
-cadmpeg_core::named_optional_field!(deserialize_object, String, "object");
+cadmpeg_core::named_optional_field!(deserialize_object, crate::ids::Identity, "object");
 cadmpeg_core::named_optional_field!(deserialize_expanded, bool, "expanded");
 cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
 cadmpeg_core::named_optional_field!(deserialize_display_mode, String, "display_mode");

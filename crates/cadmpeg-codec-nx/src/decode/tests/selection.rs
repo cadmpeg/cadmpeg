@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::features::patterns::PatternKind;
@@ -16,7 +17,7 @@ use cadmpeg_core::decode::ResourceDimension;
 
 use cadmpeg_test_support::EditableDecodeResult;
 
-use crate::decode::tests::options_in;
+use crate::decode::tests::options_at;
 use crate::test_support::extract_streams;
 use crate::test_support::test_bytes::put_f64;
 use crate::test_support::test_bytes::put_ref;
@@ -66,7 +67,7 @@ use std::{collections::BTreeSet, io::Cursor};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::ids::BodyId;
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
+use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::geometry::{
     pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
     SurfaceGeometry,
@@ -561,8 +562,8 @@ fn decode_preserves_primary_bspline_surface_with_unselected_deltas() {
         )
         .unwrap();
     assert_eq!(
-        serde_json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
-        serde_json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
+        json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
+        json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
@@ -586,8 +587,8 @@ fn decode_preserves_primary_bspline_curve_with_unselected_deltas() {
         )
         .unwrap();
     assert_eq!(
-        serde_json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
-        serde_json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
+        json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
+        json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
@@ -709,7 +710,7 @@ fn decode_tracks_extended_face_reference_shift() {
     assert_eq!(
         result.ir().geometry.faces[0]
             .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.2)
     );
     assert_eq!(
@@ -734,7 +735,7 @@ fn decode_tracks_extended_edge_reference_shift() {
     assert_eq!(
         result.ir().geometry.edges[0]
             .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.3)
     );
     assert_eq!(
@@ -760,7 +761,7 @@ fn decode_tracks_all_extended_topology_reference_shifts() {
     assert_eq!(
         result.ir().geometry.vertices[0]
             .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.1)
     );
     assert_eq!(result.ir().geometry.points[0].position().get().x, 10.0);
@@ -1137,10 +1138,7 @@ fn decode_keeps_bodies_when_rmfastload_overlap_is_weak() {
 #[test]
 fn container_only_preserves_streams_without_geometry() {
     let mut cur = Cursor::new(single_part_prt());
-    let opts = options_in(
-        DecodeMode::Salvage,
-        cadmpeg_core::decode::DecodeDepth::Container,
-    );
+    let opts = options_at(cadmpeg_core::decode::DecodeDepth::Container);
     let result = NxCodec.decode(&mut cur, &opts).unwrap();
     assert!(!result.report().geometry_transferred());
     assert!(result.report().container_only());
@@ -1151,10 +1149,7 @@ fn container_only_preserves_streams_without_geometry() {
 #[test]
 fn container_only_does_not_decode_bounded_object_model_records() {
     let mut cur = Cursor::new(prt_with_indexed_om_section());
-    let opts = options_in(
-        DecodeMode::Salvage,
-        cadmpeg_core::decode::DecodeDepth::Container,
-    );
+    let opts = options_at(cadmpeg_core::decode::DecodeDepth::Container);
     let result = NxCodec.decode(&mut cur, &opts).unwrap();
 
     assert_eq!(result.ir().entity_count(), 0);
@@ -1337,10 +1332,7 @@ fn container_only_retains_typed_saved_toggle_payload() {
         NxCodec
             .decode(
                 &mut Cursor::new(file),
-                &options_in(
-                    DecodeMode::Salvage,
-                    cadmpeg_core::decode::DecodeDepth::Container,
-                ),
+                &options_at(cadmpeg_core::decode::DecodeDepth::Container),
             )
             .unwrap(),
     );
@@ -1503,7 +1495,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             FeatureOperation::Sweep {
                 shape: cadmpeg_ir::features::sweeps::SweepShape::sheet_sections(
                     cadmpeg_ir::features::sweeps::SweepMode::Unresolved {},
-                    cadmpeg_ir::features::sweeps::SweepSection::Unresolved(None),
+                    cadmpeg_ir::features::sweeps::SweepSection::Unresolved,
                     Vec::new(),
                 ),
 

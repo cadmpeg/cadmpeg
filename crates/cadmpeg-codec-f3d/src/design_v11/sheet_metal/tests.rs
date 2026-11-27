@@ -5,6 +5,7 @@ use crate::records::feature::{
     scope::{DesignFeatureKind, DesignScopePayloadMut},
     sheet_metal::DesignBaseFlangeOperation,
 };
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, OperationFamily};
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::selections::DistinctMembers;
@@ -66,6 +67,7 @@ fn fixture(ctx: &DecodeContext<'_>, rule_thickness: Option<f64>) -> CadIr {
             operation: FeatureOperation::Unresolved {
                 family: OperationFamily::SheetMetal,
             },
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },
@@ -75,11 +77,11 @@ fn fixture(ctx: &DecodeContext<'_>, rule_thickness: Option<f64>) -> CadIr {
         native_ref: Some(scope.id.clone()),
     });
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(ctx, "design_parameter_scopes", &[scope])
         .unwrap();
     if let Some(value) = rule_thickness {
-        let settings: DesignSheetMetalSettings = serde_json::from_value(serde_json::json!({
+        let settings: DesignSheetMetalSettings = json::from_value(cadmpeg_core::json!({
             "id": format!("{STREAM}:design-sheet-metal-settings#300"),
             "record_index": 103, "byte_offset": 300, "paired_byte_offset": 400, "mask": 0,
             "inputs": {"version": "v2", "slots": [null, null, null, null, null, null, null]},
@@ -87,7 +89,7 @@ fn fixture(ctx: &DecodeContext<'_>, rule_thickness: Option<f64>) -> CadIr {
             "rule_thickness": value, "rule_thickness_offset": 850,
         })).unwrap();
         ir.native
-            .namespace_mut("f3d")
+            .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
             .set_arena(ctx, "design_sheet_metal_settings", &[settings])
             .unwrap();
     }
@@ -182,12 +184,12 @@ fn same_numbered_settings_in_another_stream_preserve_the_scope_thickness() {
             .unwrap()
             .arena_as::<DesignSheetMetalSettings>("design_sheet_metal_settings")
             .unwrap();
-        let mut value = serde_json::to_value(&settings[0]).unwrap();
+        let mut value = json::to_value(&settings[0]).unwrap();
         value["id"] =
-            serde_json::json!("f3d:other/Design1/BulkStream.dat:design-sheet-metal-settings#300");
-        let foreign: DesignSheetMetalSettings = serde_json::from_value(value).unwrap();
+            cadmpeg_core::json!("f3d:other/Design1/BulkStream.dat:design-sheet-metal-settings#300");
+        let foreign: DesignSheetMetalSettings = json::from_value(value).unwrap();
         ir.native
-            .namespace_mut("f3d")
+            .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
             .set_arena(ctx, "design_sheet_metal_settings", &[foreign])
             .unwrap();
         let definitions = BTreeMap::from([(String::new(), crate::tree::file_root_id())]);
@@ -286,7 +288,7 @@ fn native_region_profiles_keep_owned_rules_and_unresolved_sides() {
         let mut scope = DesignParameterScope::empty(&id, DesignFeatureKind::Face, 10);
         crate::design::test_support::name_scope_references(&mut scope, [100, 101, 102, 103]);
         ir.native
-            .namespace_mut("f3d")
+            .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
             .set_arena(ctx, "design_parameter_scopes", &[scope])
             .unwrap();
         ir.model.features[0].evaluation.edit(|definition, _| {

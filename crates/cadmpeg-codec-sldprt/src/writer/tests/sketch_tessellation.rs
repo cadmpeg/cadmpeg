@@ -36,7 +36,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::SldprtCodec;
 
 #[test]
-fn semantic_writer_rejects_retained_sketch_constraint_edits() {
+fn semantic_writer_patch_declines_retained_sketch_constraint_edits() {
     use cadmpeg_ir::sketches::{
         SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
     };
@@ -70,22 +70,14 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
             metadata: None,
             native_ref: None,
         });
-    assert_ne!(
-        decoded.ir().source.as_ref().unwrap().attributes["document_local_sha256"],
-        crate::decode::document_local_sha256(decoded.ir()).unwrap()
-    );
+    assert!(decoded.source_fidelity().edited(decoded.ir()).unwrap());
 
-    let error = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error
-        .to_string()
-        .contains("SLDPRT native sketch relation editing is not implemented"));
+    let error =
+        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
+    assert!(
+        error.contains("SLDPRT native sketch relation editing is not implemented"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -284,7 +276,7 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
 }
 
 #[test]
-fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
+fn semantic_writer_patch_declines_conflicting_shared_sketch_point_edits() {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let decoded = SldprtCodec
@@ -312,17 +304,9 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
         .unwrap();
     }
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::Malformed(message)
-            if message.contains("conflicting positions")
-    ));
+    let error =
+        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
+    assert!(error.contains("conflicting positions"), "{error}");
 }
 
 #[test]
@@ -827,7 +811,7 @@ fn semantic_writer_preserves_display_list_geometry() {
 }
 
 #[test]
-fn semantic_writer_rejects_tessellation_f32_overflow() {
+fn semantic_writer_keeps_stored_tessellations_past_f32_range() {
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_display_list(&triangle_body())),
@@ -841,15 +825,46 @@ fn semantic_writer_rejects_tessellation_f32_overflow() {
             Ok(())
         })
         .unwrap();
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("tessellation position exceeds f32 range"));
+    let mut output = Vec::new();
+    let report = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Unnamed,
+        )
+        .unwrap()
+        .write_to(&mut output)
+        .unwrap();
+    let kept = report
+        .losses
+        .iter()
+        .find(|loss| crate::test_support::is_edit_dropped(&loss.code))
+        .unwrap_or_else(|| panic!("{:?}", report.losses));
+    assert!(
+        kept.message
+            .contains("tessellation position exceeds f32 range")
+            && kept
+                .message
+                .contains(decoded.ir().model.tessellations[0].id.as_str()),
+        "{}",
+        kept.message
+    );
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    let stored = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_display_list(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let vertices = |ir: &cadmpeg_ir::CadIr| {
+        ir.model
+            .tessellations
+            .iter()
+            .map(cadmpeg_ir::tessellation::Tessellation::vertices)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(vertices(written.ir()), vertices(stored.ir()));
 }
 
 #[test]
@@ -945,14 +960,13 @@ fn semantic_writer_writes_default_channels_for_more_auxiliary_channels_than_the_
     )
     .unwrap();
     extended.id = original.id.clone();
-    extended.body = original.body.clone();
-    extended.faces = original.faces.clone();
+    extended.of = original.of.clone();
     decoded.ir_mut().model.tessellations[0] = extended;
 
     let report = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap()
         .report()

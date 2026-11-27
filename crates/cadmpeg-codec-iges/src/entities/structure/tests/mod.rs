@@ -6,7 +6,6 @@ use crate::directory::SourceStatus;
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
 
@@ -73,6 +72,7 @@ fn signal_string_geometry_accepts_composite_constituents_and_copious_forms() {
 fn flow_join_targets_use_geometry_classification_or_subfigure_instance_type() {
     let target = |entity_type, use_flag| DirectoryEntry {
         source_offset: 0,
+        source_length: Some(160),
         sequence: 1,
         entity_type,
         parameter_start: 0,
@@ -436,7 +436,7 @@ fn strict_decode_refuses_an_unresolved_pointer_loss() {
         },
     ]);
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
 
     let error = IgesCodec
         .decode(&mut Cursor::new(bytes), &options)
@@ -1204,7 +1204,7 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
     assert_eq!(basic["property_kind"], "basic_dimension");
     assert_eq!(
         basic["corners"],
-        serde_json::json!([[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0]])
+        cadmpeg_core::json!([[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0]])
     );
     assert!(
         dimensions.report().losses.is_empty(),
@@ -1540,10 +1540,10 @@ fn decode_projects_legacy_single_parent_plane_holes_in_v4_and_v5_profiles() {
             face.surface,
             "iges:model:surface#D1".try_into().expect("valid identity")
         );
-        assert_eq!(face.loops.len(), 2, "IGES {version}");
+        assert_eq!(face.loops.stated().count(), 2, "IGES {version}");
         let loop_roles = face
             .loops
-            .iter()
+            .stated()
             .map(|loop_id| face.loop_role(loop_id))
             .collect::<Vec<_>>();
         assert_eq!(
@@ -1565,6 +1565,65 @@ fn decode_projects_legacy_single_parent_plane_holes_in_v4_and_v5_profiles() {
             "IGES {version} legacy hole topology is invalid"
         );
     }
+}
+
+/// A legacy hole whose plane is not coplanar with its parent: the parent
+/// face is kept with its outer loop in partial form, and the hole's face is
+/// given up naming the parent face it marks (CADIR §3.3, §5.6).
+#[test]
+fn a_legacy_hole_that_fails_marks_its_parent_face_partial() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let file = String::from_utf8(legacy_perforated_plane_file(global))
+        .unwrap()
+        .replacen("108,0,0,1,0,7,", "108,0,1,0,0,7,", 1);
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(file.into_bytes()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let parent = crate::ids::face(&crate::ids::Stem::word_directory(
+        crate::ids::Word::BoundedPlane,
+        1_u32,
+    ));
+    let hole = crate::ids::face(&crate::ids::Stem::word_directory(
+        crate::ids::Word::LegacySingleParent,
+        9_u32,
+    ));
+    let [face] = result.ir().geometry.faces.as_slice() else {
+        panic!("one face: {:#?}", result.report().losses);
+    };
+    assert_eq!(face.id, parent);
+    assert!(face.loops.is_partial(), "{:?}", face.loops);
+    let roles = face
+        .loops
+        .stated()
+        .map(|loop_id| face.loop_role(loop_id))
+        .collect::<Vec<_>>();
+    assert_eq!(roles, [cadmpeg_ir::topology::LoopBoundaryRole::Outer]);
+    let charges = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| {
+            loss.message
+                .starts_with(&format!("record {} ", hole.as_str()))
+        })
+        .collect::<Vec<_>>();
+    let [charge] = charges.as_slice() else {
+        panic!("one charge names the hole: {:#?}", result.report().losses);
+    };
+    assert!(
+        charge
+            .message
+            .ends_with(&format!("; marked=[{}]", parent.as_str())),
+        "{}",
+        charge.message
+    );
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("validate the neutral model")
+        .is_ok());
 }
 
 mod flow;

@@ -12,20 +12,8 @@ B-rep side entries. GUI state, thumbnails, persistent element maps, and string-h
 independently optional. Each archive entry is one part. A Geometry property needs the side entry
 that holds its payload.
 
-The synthesis catalog is `fcstd:schema-4`, the one band an explicit write target may name. A
-retained document write regenerates the ZIP container deterministically, writes `Document.xml`
-first, preserves the physical order of the retained side entries, preserves every unedited XML
-record and every named side entry, and serializes checked
-leaf-value edits with XML escaping. It writes the band the retained `Document.xml` already
-declares, so a preserving write reproduces schemas 2 and 3 as well. An edit to a nested value
-without a typed serializer is refused rather than flattening or discarding children.
-Retained-document transcoding across bands is explicitly refused: the writer regenerates no
-`Document.xml`, so an explicit `fcstd:schema-4` target on a schema-2 or schema-3 source is refused
-by name rather than emitted. A schema-2 object-input edit that requires recomputation is refused because its `Feature`
-declaration has no persisted pending-recompute flag. Document and cosmetic label edits remain
-available. A preserving write of a source whose retained document graph is
-unusable is refused with the source's own dialect and the catalog, never silently rewritten to
-schema 4.
+Outside the XLink properties, a non-empty `file` or `File` value attribute names one side entry,
+and an empty one names none.
 
 Source-less construction declares application objects, runtime types, ordered dependencies,
 recursive typed property values, and named side entries. New object declarations carry
@@ -419,6 +407,8 @@ CADIR decision: non-boundary edges transfer as shell wire geometry. An edge that
 uses retains its boundary ownership. Repeated non-boundary uses share one shell wire edge. Their
 face incidence and native orientation remain in the native shape record, with
 `fcstd/topology.non-boundary-incidence-retained`.
+A face with no boundary wire on a plane, cylinder, or cone states no boundary; its neutral face is
+partial (CADIR §5.6), with `fcstd/topology.face-boundary-unstated`.
 
 An edge endpoint accessor visits the edge's direct child uses in serialized order. Its endpoint
 incidence has exactly one `Forward` vertex use and exactly one `Reversed` vertex use: `Forward`
@@ -654,7 +644,9 @@ it is in the `Group` of a `PartDesign::Body` or in the `ElementList` of the obje
 `LinkCopyOnChangeGroup` names; such a prototype is a definition placed only by its links. An
 `App::LinkGroup` applies its placement to each object of its `ElementList`. The bodies of a
 definition come only from the `Shape` property of its object. Other shape payloads, such as
-`AddSubShape` and `InternalShape`, are not definition bodies. When `Shape` holds a non-null shape
+`AddSubShape` and `InternalShape`, are not definition bodies. A datum (`PartDesign::Plane`,
+`Line`, `Point`, or `CoordinateSystem`) is a feature: a container that lists it holds it as a
+member, and its `Shape` is its display shape, kept in its shape payload record. When `Shape` holds a non-null shape
 whose root location is a rigid transform, that transform is the restored `Placement` of the object
 and replaces the persisted `Placement` value. Otherwise the persisted `Placement` value applies. The
 bodies of a definition that an occurrence uses are in the frame of their object, and the occurrence
@@ -734,6 +726,13 @@ The chain resolves each local product target through its unique product record. 
 no product record contributes its persisted `LinkPlacement` matrix or its restored `Placement`
 matrix directly.
 Prototype cycles are invalid in both the native and neutral product graphs.
+
+CADIR decision: a scalar link whose `LinkTransform` is true and whose linked object has no own
+occurrence in the document's scope emits `feature.link-placement-unresolved`; its v11 `Place`
+states no placement. The occurrence's transform holds the link's placement and scale composed
+after the linked object's placement where the document holds that object, and the link's
+placement and scale alone where the object is in a document that was not read.
+
 Component identity keeps the stable source object name separately from its user-visible label,
 description, part number, and additional named BOM fields. Generated BOM spreadsheets remain
 spreadsheet objects; they are not treated as the authoritative identity of their source component.
@@ -850,11 +849,19 @@ state rather than being collapsed into one enabled flag. Validation rejects dupl
 inconsistent parentage, missing members, and an active tip outside the body's ordered membership.
 A body displays its active `Tip` result through its own `Shape`, with visibility set by the body's
 own GUI view provider. Shapes of members in `Group` or legacy `Model`, including the `Tip`, and
-all shape properties other than `Shape` (such as `AddSubShape`) are intermediate topology. They
-remain available for history selections and carry `visible: false`. Structural membership and
-auxiliary shape roles take precedence over GUI visibility; a member's visible view provider does
-not make its stored shape an independent output body. A free feature outside a body retains the
-GUI visibility of its own `Shape`.
+all shape properties other than `Shape` (such as `AddSubShape`) are intermediate topology, held
+outside the current geometry. The `Shape` of a member that stores `BaseFeature` holds the
+body's state after that member: each such state other than the `Tip`'s is an evaluation of the
+state after the member, based on the nearest earlier stored state of the body. The `Tip`'s
+`Shape` repeats the body's own `Shape`; where the body's own `Shape` holds no shape, the `Tip`'s
+holds the body's current state. The `AddSubShape` of `Pad`, `Pocket`, `Revolution`, `Groove`,
+`Hole`, and every `Additive` and `Subtractive` feature holds the feature's tool body, an
+evaluation of its own; a document that names the tool shape by the feature's effect stores it as
+`AddShape` or `SubShape`. Every other intermediate shape (a sketch's or a datum's shape, a binder's
+copy, a suppressed member's shape, a dress-up's or a pattern's `AddSubShape`) stays in its shape
+payload record. A persistent element name binds a record of the current geometry only. A
+selection of an intermediate shape's sub-element keeps its source property. A free feature
+outside a body retains the GUI visibility of its own `Shape`.
 
 Revolution and groove operations retain their linked profile, explicit base point and axis,
 one-angle or two-angle extent, and additive or subtractive effect. Fillet operations retain a
@@ -1424,9 +1431,17 @@ types do not supply page template or page-view carriers. CADIR decision: only
 field.
 
 For a page, the persisted `Template` link is represented as an optional local template identity only
-when its nonempty target resolves to a registered template drawing. Its typed relationship retains an
-explicit null, external target, or non-drawing target. The persisted `Views` link list is represented
-by an ordered typed relationship, including null, external, and non-drawing targets.
+when its nonempty target resolves to a registered template drawing; the relationship map then holds no
+`Template` entry, and otherwise retains the explicit null, external target, or non-template target. The
+`Views` link list of a page or a view collection (`DrawProjGroup`, `DrawViewClip`,
+`DrawViewCollection`) is represented by `Drawing.views`, in serialized order, for each target that is
+a drawing record other than a page or a template; the relationship map retains the other entries. The
+`BaseView` link of a section or a detail is `Drawing.base_view` when it names a view, projection,
+section, or detail record. Every other local link that names a drawing record is a drawing reference,
+and one that names an `App::Annotation` or `App::AnnotationLabel` a semantic-annotation reference; a
+dimension object, which is both, is named as its drawing record. A subelement of a drawing record
+(`Front.Edge3`) is an unread part of it, its name retained: TechDraw numbers projected edges and
+vertices that are runtime geometry, so no drawing curve holds them.
 
 The format-neutral semantic-annotation arena maps an exact core runtime-type registry. Text records
 are `App::Annotation`, `App::AnnotationLabel`, `TechDraw::DrawViewAnnotation`,
@@ -2154,3 +2169,11 @@ A TechDraw annotation's `TextSize` has physical millimetre units with the
 `App::PropertyLength` carrier. A positive value gives `text_style.height`.
 Its `App::PropertyFont` `Font` string gives `text_style.font_family` with that
 height. GUI point and pixel sizes are distinct from physical em height.
+
+## 13. Codec digests
+
+The `SourceFidelity.codec_digests` of a `Full` FCStd decode (CADIR §3.1, Rule B) holds one SHA-256 digest. It covers the records outside the `entries`, `extensions`, `objects`, and `properties` native arenas, whose content the archive entries store directly.
+
+| Key | Records |
+| --- | --- |
+| `fcstd_uncarried_local_sha256` | Every neutral record, the source metadata, and every native record outside the `entries`, `extensions`, `objects`, and `properties` arenas, without `scope`. |

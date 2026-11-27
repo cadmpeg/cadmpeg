@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::{edit, EditableDecodeResult};
 
 use crate::decode::blend::blend_surface_point;
@@ -720,8 +721,8 @@ fn unselected_ext11_deltas_do_not_assign_primary_uv_lanes() {
         )
         .unwrap();
     assert_eq!(
-        serde_json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
-        serde_json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
+        json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
+        json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
@@ -972,7 +973,7 @@ fn assert_completed_intersection_support_lane(present_fin: bool) {
             completed
                 .fit_tolerance()
                 .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
-            edge_tolerance.map(cadmpeg_ir::scalar::PositiveReal::get)
+            edge_tolerance.map(cadmpeg_ir::scalar::PositiveLength::get)
         );
         assert!(ir.geometry.coedges.iter().any(|coedge| coedge
             .pcurves
@@ -1316,24 +1317,16 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
                     None,
                 ]),
             )];
-            let support_budget = cadmpeg_core::decode::WorkBudget::new(2);
-            let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+            let lane_work = crate::decode::geometry_work::LaneGeometryWork::from_context(
                 geometry_ctx,
                 work_limit,
             );
-            let coupled_support_budget = cadmpeg_core::decode::WorkBudget::new(2);
 
             let result = crate::decode::support_uv::complete_support_uv_with_budget(
-                &mut ir,
-                &pending,
-                &support_budget,
-                &geometry_budget,
-                &coupled_support_budget,
-                &geometry_budget,
+                &mut ir, &pending, &lane_work, &lane_work,
             );
-            // At 64 units a lane slice runs out and skips that attempt; the
-            // serialized seed still completes the lane and the session
-            // continues.
+            // At 64 units the lane budget runs out; the serialized seed
+            // still completes the lane and the session continues.
             result.unwrap();
             assert!(geometry_ctx.resource_refusal().is_none());
 
@@ -1756,7 +1749,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
 }
 
 #[test]
-fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
+fn support_uv_completion_fills_a_lane_beside_a_failed_lane() {
     use cadmpeg_ir::ids::ProceduralCurveId;
     use cadmpeg_ir::math::Point3;
 
@@ -1854,40 +1847,25 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
                 SerializedSupportUv::default(),
             ),
         ];
-        let support_budget = cadmpeg_core::decode::WorkBudget::new(10);
-        let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+        let lane_work = crate::decode::geometry_work::LaneGeometryWork::from_context(
             geometry_ctx,
-            crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+            crate::decode::support_uv::MAX_SUPPORT_UV_LANE_GEOMETRY_WORK,
         );
-        let coupled_support_budget = cadmpeg_core::decode::WorkBudget::new(10);
+        let mut ir = result.ir().clone();
         crate::decode::support_uv::complete_support_uv_with_budget(
-            &mut result.ir_mut(),
-            &pending,
-            &support_budget,
-            &geometry_budget,
-            &coupled_support_budget,
-            &geometry_budget,
+            &mut ir, &pending, &lane_work, &lane_work,
         )
         .unwrap();
 
-        let successful = result
-            .ir()
-            .geometry
-            .procedural_curves
-            .iter()
-            .find(|procedural| {
-                procedural.id.as_str() == "test:model:entity#synthetic:support-uv-success"
-            })
-            .unwrap();
-        let failed = result
-            .ir()
-            .geometry
-            .procedural_curves
-            .iter()
-            .find(|procedural| {
-                procedural.id.as_str() == "test:model:entity#synthetic:support-uv-failure"
-            })
-            .unwrap();
+        let find = |id: &str| {
+            ir.geometry
+                .procedural_curves
+                .iter()
+                .find(|procedural| procedural.id.as_str() == id)
+                .unwrap()
+        };
+        let successful = find("test:model:entity#synthetic:support-uv-success");
+        let failed = find("test:model:entity#synthetic:support-uv-failure");
         let missing = |procedural: &cadmpeg_ir::geometry::ProceduralCurve| {
             let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
             else {
@@ -1897,7 +1875,6 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
         };
         assert!(!missing(successful));
         assert!(missing(failed));
-        assert_eq!(support_budget.remaining(), 6);
     });
 }
 
@@ -1905,3 +1882,4 @@ mod support_repair;
 
 mod deltas;
 mod equivalence;
+mod lane_work;

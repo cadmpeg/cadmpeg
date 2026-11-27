@@ -835,6 +835,17 @@ fn encode_face_topology_smbh(
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
     let geometry = &target.geometry;
+    let lists = geometry.child_lists();
+    let partial = |id: &str| {
+        CodecError::malformed(format_args!(
+            "{id} does not state every child; F3D writes no partial body"
+        ))
+    };
+    let complete_regions = |body: &cadmpeg_ir::ids::BodyId| {
+        lists
+            .complete_body_regions(body)
+            .ok_or_else(|| partial(body.as_str()))
+    };
     let region_ordinals: HashMap<_, _> = geometry
         .regions
         .iter()
@@ -921,9 +932,8 @@ fn encode_face_topology_smbh(
     native_string(&mut records, "231.6.3.65535")?;
     records.push(0x11);
     for (body_ordinal, body) in geometry.bodies.iter().enumerate() {
-        let first_region = geometry
-            .body_regions(&body.id)
-            .next()
+        let first_region = complete_regions(&body.id)?
+            .first()
             .map(|region| &region.id)
             .ok_or_else(|| CodecError::malformed(format_args!("body {} has no region", body.id)))?;
         let region_ordinal = region_ordinals.get(first_region).copied().ok_or_else(|| {
@@ -935,9 +945,16 @@ fn encode_face_topology_smbh(
             .iter()
             .filter(|candidate| candidate.transform.is_some())
             .count();
-        let first_wire = geometry
-            .body_regions(&body.id)
-            .flat_map(|region| &region.shells)
+        let first_wire = complete_regions(&body.id)?
+            .iter()
+            .map(|region| {
+                lists
+                    .complete_shells(region)
+                    .ok_or_else(|| partial(region.id.as_str()))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
             .find_map(|shell_id| {
                 shell_ordinals
                     .get(shell_id)
@@ -986,8 +1003,8 @@ fn encode_face_topology_smbh(
                 CodecError::malformed(format_args!("region {} has no body", region.id))
             })?;
         let body = &geometry.bodies[body_ordinal];
-        let siblings = geometry
-            .body_regions(&body.id)
+        let siblings = complete_regions(&body.id)?
+            .iter()
             .map(|sibling| &sibling.id)
             .collect::<Vec<_>>();
         let ordinal = siblings
@@ -996,9 +1013,13 @@ fn encode_face_topology_smbh(
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("body does not own region {}", region.id))
             })?;
-        let first_shell = region.shells.first().ok_or_else(|| {
-            CodecError::malformed(format_args!("region {} has no shell", region.id))
-        })?;
+        let first_shell = lists
+            .complete_shells(region)
+            .ok_or_else(|| partial(region.id.as_str()))?
+            .first()
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("region {} has no shell", region.id))
+            })?;
         let shell_ordinal = shell_positions.get(first_shell).copied().ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "region references missing shell {first_shell}"
@@ -1038,8 +1059,10 @@ fn encode_face_topology_smbh(
                 CodecError::malformed(format_args!("shell {} has no region", shell.id))
             })?;
         let region = &geometry.regions[region_ordinal];
-        let ordinal = region
-            .shells
+        let region_shells = lists
+            .complete_shells(region)
+            .ok_or_else(|| partial(region.id.as_str()))?;
+        let ordinal = region_shells
             .iter()
             .position(|id| *id == shell.id)
             .ok_or_else(|| {
@@ -1051,10 +1074,10 @@ fn encode_face_topology_smbh(
             .map(|ordinal| native_record_index(face_start, *ordinal))
             .transpose()?
             .unwrap_or(-1);
-        let next = if ordinal + 1 == region.shells.len() {
+        let next = if ordinal + 1 == region_shells.len() {
             -1
         } else {
-            let id = &region.shells[ordinal + 1];
+            let id = &region_shells[ordinal + 1];
             let position = shell_positions.get(id).copied().ok_or_else(|| {
                 CodecError::malformed(format_args!("region references missing shell {id}"))
             })?;
@@ -1103,11 +1126,17 @@ fn encode_face_topology_smbh(
         let ordinal = siblings.binary_search(&face_ordinal_global).map_err(|_| {
             CodecError::malformed(format_args!("shell does not own face {}", face.id))
         })?;
-        let first_loop = face.loops.iter().next().ok_or_else(|| {
-            CodecError::NotImplemented(
-                "source-less F3D face generation requires every face to own a loop".into(),
-            )
-        })?;
+        let first_loop = face
+            .loops
+            .boundary()
+            .ok_or_else(|| partial(face.id.as_str()))?
+            .iter()
+            .next()
+            .ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "source-less F3D face generation requires every face to own a loop".into(),
+                )
+            })?;
         let loop_position = loop_positions.get(first_loop).copied().ok_or_else(|| {
             CodecError::malformed(format_args!("face references missing loop {first_loop}"))
         })?;
@@ -1179,8 +1208,11 @@ fn encode_face_topology_smbh(
         native_i64(&mut records, -1);
         native_ref(&mut records, -1);
         let face = &geometry.faces[face_position];
-        let ordinal = face
+        let face_loops = face
             .loops
+            .boundary()
+            .ok_or_else(|| partial(face.id.as_str()))?;
+        let ordinal = face_loops
             .iter()
             .position(|id| *id == loop_.id)
             .ok_or_else(|| {
@@ -1189,7 +1221,7 @@ fn encode_face_topology_smbh(
                     face.id, loop_.id
                 ))
             })?;
-        let next_loop = if let Some(next_id) = face.loops.iter().nth(ordinal + 1) {
+        let next_loop = if let Some(next_id) = face_loops.iter().nth(ordinal + 1) {
             let position = loop_positions.get(next_id).copied().ok_or_else(|| {
                 CodecError::malformed(format_args!("face references missing loop {next_id}"))
             })?;
@@ -1711,7 +1743,7 @@ fn encode_source_less_edges_vertices_points(
                 let tolerance = [edge.tolerance, vertex.tolerance]
                     .into_iter()
                     .flatten()
-                    .map(cadmpeg_ir::scalar::PositiveReal::get)
+                    .map(cadmpeg_ir::scalar::PositiveLength::get)
                     .fold(0.0, f64::max);
                 edge.curve()
                     .and_then(|curve_id| curve_ordinals.get(curve_id))
@@ -2103,6 +2135,7 @@ fn apply_native_edge_owners(
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_ir::codec::write::MissingStateForm;
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use std::io::Cursor;
 
@@ -2176,7 +2209,8 @@ mod tests {
     fn invalid_wire_membership_is_dropped_and_the_rest_written() {
         let target = decoded_wire(&synthetic_free_vertex_body_smbh());
         let mut valid_output = Vec::new();
-        write_new(&target, &mut valid_output).expect("unmodified free wire writes");
+        write_new(&target, MissingStateForm::GeometryTrue, &mut valid_output)
+            .expect("unmodified free wire writes");
         assert!(!valid_output.is_empty());
 
         let mut missing = target.clone();
@@ -2211,8 +2245,8 @@ mod tests {
             (endpoint, "is both free and an edge endpoint"),
         ] {
             let mut output = Vec::new();
-            let generated =
-                write_new(&target, &mut output).expect("invalid wire ownership still writes");
+            let generated = write_new(&target, MissingStateForm::GeometryTrue, &mut output)
+                .expect("invalid wire ownership still writes");
             crate::F3dCodec
                 .decode(&mut Cursor::new(&output), &DecodeOptions::default())
                 .expect("the written file decodes");

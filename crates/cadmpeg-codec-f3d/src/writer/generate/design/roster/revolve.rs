@@ -20,8 +20,8 @@ use super::super::types;
 use super::owned::Owned;
 use super::sketches::{item_companion, matrix, point_identity, NULL_GUID};
 use super::swept::{
-    allocator, GroupRecords, ResultRecords, ScopeRecords, SelectionRecords, StartRecords, Swept,
-    AXIS_ROLE, PROFILE_ROLE,
+    allocator, GroupRecords, Place, ResultRecords, ScopeRecords, SelectionRecords, StartRecords,
+    Swept, AXIS_ROLE, PROFILE_ROLE,
 };
 use super::Context;
 use crate::writer::generate::presentation::TypeRow;
@@ -282,9 +282,10 @@ pub(super) fn write(
     ctx: &Context<'_>,
     plan: &RevolvePlan<'_>,
     records: &RevolveRecords,
+    place: &Place,
     out: &mut DesignRecords,
 ) -> Result<(), CodecError> {
-    let swept = Swept::new(ctx, FAMILY, &records.scope, plan.sketch, plan.preceding)?;
+    let swept = Swept::new(ctx, FAMILY, &records.scope, plan.sketch, place)?;
     scope(ctx, &swept, records, out)?;
     swept.group(
         out,
@@ -512,6 +513,7 @@ pub(super) fn losses(
     ctx: &Context<'_>,
     plan: &RevolvePlan<'_>,
     records: &RevolveRecords,
+    stated: bool,
 ) -> Vec<LossNote> {
     let mut entries = vec![
         format!(
@@ -550,9 +552,6 @@ pub(super) fn losses(
             "record {} (region identity record: the class of its paired header)",
             records.selection.regions
         ),
-        "the Revolve's result body (browser-node member, body-presentation owner and Body owner in the forms of an Extrude's result body, f3d-open-items.md DR-1044)".to_owned(),
-        "generic_tag_attrib_def body group of the Revolve's body (Design reference 1)".to_owned(),
-        "records 193, 215, 219 to 222 (the second Body owner and the parameter-side records of the import roster, kept where f3d-open-items.md DR-916 states the presentation owner as the result body's only presentation record)".to_owned(),
         format!(
             "records 198 to 203 (timeline context counter {COUNTER} = 1, owner collection, B65B5682, dependency table and persistent-id table: the Revolve's members, edges and two persistent identities in the orders f3d-open-items.md DR-882 and DR-891 state for an Extrude)"
         ),
@@ -562,6 +561,13 @@ pub(super) fn losses(
             records.carrier.points[1]
         ),
     ];
+    if stated {
+        entries.extend([
+            "the Revolve's result body (browser-node member, body-presentation owner and Body owner in the forms of an Extrude's result body, f3d-open-items.md DR-1044)".to_owned(),
+            "generic_tag_attrib_def body group of the Revolve's body (Design reference 1)".to_owned(),
+            "records 193, 215, 219 to 222 (the second Body owner and the parameter-side records of the import roster, kept where f3d-open-items.md DR-916 states the presentation owner as the result body's only presentation record)".to_owned(),
+        ]);
+    }
     let arcs = plan.profile.iter().any(|profile_loop| {
         profile_loop.entries.iter().any(|entry| {
             ctx.sketches

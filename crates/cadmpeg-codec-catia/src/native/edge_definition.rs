@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native edge-definition wire projection from its class and raw payload.
 
+use cadmpeg_ir::hash::finite_json::to_json_value;
 use cadmpeg_ir::native::bytes::NativeBytes;
 
 use crate::families::consolidated::records::{
@@ -123,8 +124,8 @@ impl TryFrom<EdgeDefinitionWire> for CatiaConsolidatedEdgeDefinition {
             data,
         };
         let derived = data_from_frame(value.class, &value.frame);
-        if serde_json::to_vec(&value.data).map_err(|error| error.to_string())?
-            != serde_json::to_vec(&derived).map_err(|error| error.to_string())?
+        if to_json_value(&value.data).map_err(|error| error.to_string())?
+            != to_json_value(&derived).map_err(|error| error.to_string())?
         {
             return Err("edge-definition data differs from its class and payload".to_owned());
         }
@@ -151,6 +152,7 @@ mod tests {
     use crate::wire::records::ConsolidatedFrameFlag;
     use crate::wire::records::ConsolidatedFrameWidth;
     use crate::wire::records::ConsolidatedRawFrame;
+    use cadmpeg_core::serde_erase::json;
 
     fn edge_definition() -> CatiaConsolidatedEdgeDefinition {
         CatiaConsolidatedEdgeDefinition {
@@ -200,8 +202,8 @@ mod tests {
         let value = edge_definition();
         let owned: EdgeDefinitionWire = value.clone().into();
         assert_eq!(
-            serde_json::to_vec(&value).expect("borrowed definition JSON"),
-            serde_json::to_vec(&owned).expect("owned definition JSON")
+            json::to_vec(&value).expect("borrowed definition JSON"),
+            json::to_vec(&owned).expect("owned definition JSON")
         );
     }
 
@@ -220,7 +222,7 @@ mod tests {
             definition: &value,
         };
         let arena_name = "edge_definitions";
-        let json_len = serde_json::to_vec(&record).expect("definition JSON").len();
+        let json_len = json::to_vec(&record).expect("definition JSON").len();
         let limit = u64::try_from(json_len - 1).expect("small JSON");
         let refused = crate::test_support::with_retained_limit(limit, |ctx| {
             let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -293,24 +295,22 @@ mod tests {
                 },
             ),
         };
-        let mut wire = serde_json::to_value(&value).expect("serialize definition");
-        assert_eq!(wire["class"], serde_json::json!(0x24));
+        let mut wire = json::to_value(&value).expect("serialize definition");
+        assert_eq!(wire["class"], cadmpeg_core::json!(0x24));
         assert_eq!(
             wire["data"],
-            serde_json::json!({"kind": "compact24", "operand": 1})
+            cadmpeg_core::json!({"kind": "compact24", "operand": 1})
         );
         assert_eq!(
-            serde_json::from_value::<CatiaConsolidatedEdgeDefinition>(wire.clone())
+            json::from_value::<CatiaConsolidatedEdgeDefinition>(wire.clone())
                 .expect("load derived data"),
             value
         );
-        wire["data"]["operand"] = serde_json::json!(2);
-        assert!(
-            serde_json::from_value::<CatiaConsolidatedEdgeDefinition>(wire)
-                .expect_err("reject conflicting data")
-                .to_string()
-                .contains("data differs")
-        );
+        wire["data"]["operand"] = cadmpeg_core::json!(2);
+        assert!(json::from_value::<CatiaConsolidatedEdgeDefinition>(wire)
+            .expect_err("reject conflicting data")
+            .to_string()
+            .contains("data differs"));
     }
     #[test]
     fn native_affine23_wire_rejects_data_that_differs_from_the_frame() {
@@ -342,25 +342,67 @@ mod tests {
         let value = crate::test_support::with_service_context(|_ctx| {
             CatiaConsolidatedEdgeDefinition::from_source(source)
         });
-        let wire = serde_json::to_value(&value).expect("serialize affine map");
+        let wire = json::to_value(&value).expect("serialize affine map");
         assert_eq!(wire["data"]["kind"], "affine23");
-        assert_eq!(wire["data"]["target_range"], serde_json::json!([4.0, 8.0]));
         assert_eq!(
-            serde_json::from_value::<CatiaConsolidatedEdgeDefinition>(wire.clone())
+            wire["data"]["target_range"],
+            cadmpeg_core::json!([4.0, 8.0])
+        );
+        assert_eq!(
+            json::from_value::<CatiaConsolidatedEdgeDefinition>(wire.clone())
                 .expect("load affine map"),
             value
         );
         for (field, replacement) in [
-            ("offset", serde_json::json!(3.0)),
-            ("scale", serde_json::json!(3.0)),
-            ("slots", serde_json::json!([2, 1])),
+            ("offset", cadmpeg_core::json!(3.0)),
+            ("scale", cadmpeg_core::json!(3.0)),
+            ("slots", cadmpeg_core::json!([2, 1])),
         ] {
             let mut contradictory = wire.clone();
             contradictory["data"][field] = replacement;
-            assert!(
-                serde_json::from_value::<CatiaConsolidatedEdgeDefinition>(contradictory).is_err()
-            );
+            assert!(json::from_value::<CatiaConsolidatedEdgeDefinition>(contradictory).is_err());
         }
+    }
+
+    #[test]
+    fn native_affine23_wire_reads_the_one_zero_written_for_a_negative_zero_offset() {
+        const MAP_TOLERANCE: f64 = 1.0e-12;
+        let mut payload = vec![0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d];
+        for value in [
+            4.0_f64,
+            8.0,
+            MAP_TOLERANCE,
+            4.0,
+            8.0,
+            1.0,
+            -0.0,
+            MAP_TOLERANCE,
+        ] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        let source = crate::families::consolidated::records::ConsolidatedEdgeDefinition {
+            frame: ConsolidatedRawFrame::new(
+                12,
+                ConsolidatedFrameWidth::One,
+                ConsolidatedFrameFlag::Flag03,
+                5,
+                payload.clone(),
+            )
+            .expect("checked map frame"),
+            class: ConsolidatedEdgeDefinitionClass::Class23,
+        };
+        let value = crate::test_support::with_service_context(|_ctx| {
+            CatiaConsolidatedEdgeDefinition::from_source(source)
+        });
+        let written =
+            cadmpeg_ir::hash::finite_json::to_json_value(&value).expect("write affine map");
+        assert_eq!(written["data"]["offset"].to_string(), "0.0");
+        let read = json::from_value::<CatiaConsolidatedEdgeDefinition>(written.clone())
+            .expect("read the written affine map");
+        assert_eq!(&*read.frame.payload, payload.as_slice());
+        let mut moved = written;
+        moved["data"]["offset"] = cadmpeg_core::json!(0.5);
+        assert!(json::from_value::<CatiaConsolidatedEdgeDefinition>(moved).is_err());
     }
 }
 

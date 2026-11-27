@@ -189,6 +189,15 @@ impl CreoArena {
     }
 }
 
+/// The annotation key of the native record `id`.
+pub(super) fn native_key(
+    id: impl std::fmt::Display,
+) -> Result<cadmpeg_ir::annotations::AnnotationKey, CodecError> {
+    cadmpeg_ir::ids::Identity::new(id.to_string())
+        .map(cadmpeg_ir::annotations::AnnotationKey::from)
+        .map_err(CodecError::malformed)
+}
+
 /// Record one native-source provenance annotation.
 ///
 /// Names the source stream `creo:{source_stream}`, tags the note at `offset`, and
@@ -196,14 +205,14 @@ impl CreoArena {
 /// arena emission.
 pub(super) fn annotate(
     annotations: &mut AnnotationBuilder,
-    id: impl std::fmt::Display,
+    key: impl Into<cadmpeg_ir::annotations::AnnotationKey>,
     source_stream: &str,
     offset: u64,
     tag: &str,
     exactness: Exactness,
 ) -> Result<(), CodecError> {
     annotations.annotate(
-        id,
+        key,
         format_args!("creo:{source_stream}"),
         offset,
         tag,
@@ -226,7 +235,7 @@ pub(super) fn store_arena<T: Serialize>(
     if records.is_empty() {
         return Ok(());
     }
-    let namespace = ir.native.namespace_mut("creo");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("creo"));
     namespace.set_arena(ctx, key.as_str(), records)?;
     Ok(())
 }
@@ -277,7 +286,7 @@ pub(super) fn emit_uniform<T: Serialize>(
         |annotations, record| {
             annotate(
                 annotations,
-                (arena.id)(record),
+                native_key((arena.id)(record))?,
                 (arena.stream)(record),
                 (arena.offset)(record),
                 arena.tag,

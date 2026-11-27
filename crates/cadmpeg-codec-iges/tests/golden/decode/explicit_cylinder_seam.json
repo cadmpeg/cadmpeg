@@ -64,10 +64,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "SEAMUV0",
-            "object_id": "D13",
-            "visible": true
+            "object_id": "D13"
           }
         },
         {
@@ -96,10 +93,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "SEAMEDGE",
-            "object_id": "D7",
-            "visible": true
+            "object_id": "D7"
           }
         }
       ],
@@ -142,10 +136,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "CYLINDER",
-            "object_id": "D5",
-            "visible": true
+            "object_id": "D5"
           }
         }
       ],
@@ -156,26 +147,93 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:model:attribute#curve.D13",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D13"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "SEAMUV0"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D7",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D7"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "SEAMEDGE"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#surface.D5",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D5"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "CYLINDER"
+            }
+          ]
+        }
+      ],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
-      "presentation_layers": [],
+      "presentation_layers": [
+        {
+          "id": "iges:model:layer#0",
+          "items": [
+            {
+              "entity": {
+                "curve": "iges:model:curve#D7",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D13",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D5"
+              }
+            }
+          ],
+          "name": "0"
+        }
+      ],
       "product_definitions": [
         {
           "bodies": [],
@@ -184,24 +242,15 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -1785,18 +1834,6 @@
         "product_occurrences": [],
         "product_properties": [],
         "properties": [],
-        "quarantined_directory_records": [],
-        "quarantined_parameter_records": [
-          {
-            "bytes": "3132362c312c312c312c302c312c302c302c302c312c312c312c312c362e3238333138353330373137393538362c312c302c362e323833313835333037313739202020202020313550202020202020383538362c302c302c302c312c302c302c313b2020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202031355020202020202039",
-            "cards": 2,
-            "defect": "numeric-crosses-card",
-            "id": "iges:quarantine:parameter#15",
-            "section": "parameter-data",
-            "sequence": 15,
-            "source_offset": 2592
-          }
-        ],
         "rectangular_arrays": [],
         "segmented_visibility": [],
         "selected_components": [],
@@ -1808,6 +1845,12 @@
         "text_templates": [],
         "transformations": [],
         "units_data": [],
+        "unknowns": [
+          {
+            "id": "iges:source:part#d1b39779ab38c28cae32b243954999707b58cdb260d52e91c5c5f8418bc228c7",
+            "links": []
+          }
+        ],
         "view_visibility": [],
         "views": []
       }
@@ -1833,7 +1876,6 @@
     "source": {
       "attributes": {
         "author": "author",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "drafting_standard": "0",
         "iges_version_flag": "11",
         "model_scale": "1",
@@ -1903,8 +1945,7 @@
           "value": {
             "code": "geometry.not-projected",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "IGES entity type 508 form 1 geometry was not projected: loop edge-use tuple is invalid",
@@ -1922,8 +1963,7 @@
           "value": {
             "code": "geometry.not-projected",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "IGES entity type 510 form 1 geometry was not projected: face loop is missing",
@@ -1941,8 +1981,7 @@
           "value": {
             "code": "geometry.not-projected",
             "kind": "geometry_not_transferred",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "IGES entity type 514 form 2 geometry was not projected: shell face-use tuple is invalid",
@@ -1960,8 +1999,7 @@
           "value": {
             "code": "parameter.data-quarantined",
             "kind": "noncanonical_source_syntax",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "IGES Parameter Data of D15 (P8 through P9) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
@@ -1972,6 +2010,24 @@
           "tag": "D15:parameter"
         },
         "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "part parameter-data \"D15\" stream=\"\" offset=2592 length=161 record=iges:source:part#d1b39779ab38c28cae32b243954999707b58cdb260d52e91c5c5f8418bc228c7: malformed container: iges/parameter.data-quarantined: IGES Parameter Data of D15 (P8 through P9) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted; dropped=[iges:model:shell#D21]",
+        "provenance": {
+          "format": "iges",
+          "offset": 2592,
+          "tag": "parameter-data"
+        },
+        "severity": "error"
       },
       {
         "code": {
@@ -2123,8 +2179,8 @@
         {
           "outcome": {
             "kind": "retained",
-            "note": "quarantined parameter data retained; tokens were not recovered",
-            "target": "iges:quarantine:parameter#15"
+            "note": "quarantined parameter data given up; its part keeps the cards",
+            "target": "iges:source:part#d1b39779ab38c28cae32b243954999707b58cdb260d52e91c5c5f8418bc228c7"
           },
           "source": "D15:parameter"
         }
@@ -2136,6 +2192,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "396faaae4f1c999329bf7bd97ffb9359d773bc289cc97c6c8010c73e9a814662",
     "file_digests": {},
     "retained_records": {
@@ -2146,6 +2204,17 @@
         },
         "offset": 0,
         "stream": "iges",
+        "untyped": [
+          "model"
+        ]
+      },
+      "iges:source:part#d1b39779ab38c28cae32b243954999707b58cdb260d52e91c5c5f8418bc228c7": {
+        "bytes": {
+          "data": "MTI2LDEsMSwxLDAsMSwwLDAsMCwxLDEsMSwxLDYuMjgzMTg1MzA3MTc5NTg2LDEsMCw2LjI4MzE4NTMwNzE3OSAgICAgIDE1UCAgICAgIDgKNTg2LDAsMCwwLDEsMCwwLDE7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDE1UCAgICAgIDk=",
+          "kind": "inline"
+        },
+        "offset": 2592,
+        "stream": "",
         "untyped": [
           "model"
         ]

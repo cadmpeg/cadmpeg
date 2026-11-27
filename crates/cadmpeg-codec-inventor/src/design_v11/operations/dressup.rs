@@ -10,8 +10,8 @@ use cadmpeg_ir::design::ops::dressup as new;
 use cadmpeg_ir::design::options::{Thickness, WallSide};
 use cadmpeg_ir::features::{self as old, FeatureOperation as LegacyOperation};
 use cadmpeg_ir::scalar::PositiveReal;
-use cadmpeg_ir::sketches::Sketch;
 
+use super::selections::SketchData;
 use super::{selections, swept, Projected};
 
 fn controls() -> new::BlendControls {
@@ -80,7 +80,7 @@ fn thickness(value: cadmpeg_ir::scalar::PositiveLength, outward: Option<bool>) -
 
 pub(super) fn operation(
     value: &LegacyOperation,
-    sketches: &[Sketch],
+    sketches: SketchData<'_>,
     inputs: &[old::evaluation::FeatureInputTopology],
 ) -> Option<Projected<FeatureOperation>> {
     if !matches!(
@@ -414,7 +414,7 @@ pub(super) fn operation(
                 let mut settings = BTreeMap::default();
                 swept::setting(
                     &mut settings,
-                    cadmpeg_core::nonblank_literal!("inventor:allow_multi_profile_faces"),
+                    cadmpeg_ir::codec_name!("inventor:allow_multi_profile_faces"),
                     *allow_multi_profile_faces,
                 );
                 FeatureOperation::Hole(Box::new(new::Hole {

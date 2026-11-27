@@ -918,10 +918,10 @@ fn decode_classifies_explicit_outer_and_inner_trimmed_surface_loops() {
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D15")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
-    assert_eq!(face.loops.len(), 2);
+    assert_eq!(face.loops.stated().count(), 2);
     let roles = face
         .loops
-        .iter()
+        .stated()
         .map(|id| face.loop_role(id))
         .collect::<Vec<_>>();
     assert_eq!(
@@ -936,7 +936,7 @@ fn decode_classifies_explicit_outer_and_inner_trimmed_surface_loops() {
     let cadmpeg_ir::topology::FaceLoops::Classified { outer, inner } = &face.loops else {
         panic!("an explicit outer boundary states a classified face");
     };
-    assert_eq!(Some(outer), face.loops.iter().next());
+    assert_eq!(Some(outer), face.loops.stated().next());
     assert_eq!(inner.len(), 1);
     assert!(
         result.report().losses.is_empty(),
@@ -969,7 +969,7 @@ fn decode_preserves_parameter_domain_as_implicit_outer_boundary() {
                     result.report().losses
                 )
             });
-        assert!(face.loops.is_empty());
+        assert!(face.loops.stated().next().is_none());
         // A parameter-domain outer boundary is no classification: the face
         // states an empty loop list, not a classified face with no outer.
         assert!(matches!(
@@ -985,6 +985,79 @@ fn decode_preserves_parameter_domain_as_implicit_outer_boundary() {
             .expect("validate the neutral model");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
+}
+
+#[test]
+fn a_trimmed_cylinder_with_no_boundary_is_a_partial_face_with_no_loop() {
+    // A Type 144 whose outer boundary is the support's own domain, on a
+    // cylinder: the domain is unbounded along the axis, so the face states
+    // no extent and is partial, with the loss naming it.
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "ORIGIN".into(),
+            status: "00010000",
+            parameters: "116,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 123,
+            form: 0,
+            label: "AXIS".into(),
+            status: "00010000",
+            parameters: "123,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 192,
+            form: 0,
+            label: "CYLINDER".into(),
+            status: "00010000",
+            parameters: "192,1,3,10;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 144,
+            form: 0,
+            label: "DOMAIN".into(),
+            status: "00000000",
+            parameters: "144,5,0,0,0;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let face = result
+        .ir()
+        .geometry
+        .faces
+        .iter()
+        .find(|face| face.id.as_str() == "iges:model:face#D7")
+        .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
+    assert_eq!(
+        face.loops,
+        cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops: Vec::new() }
+    );
+    let unstated: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::TopologyFaceBoundaryUnstated.kind())
+        .collect();
+    assert_eq!(unstated.len(), 1, "{:#?}", result.report().losses);
+    assert!(unstated[0].message.contains("a cylinder"));
+    assert!(unstated[0]
+        .message
+        .split_whitespace()
+        .any(|word| word == face.id.as_str()));
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
+    assert!(
+        !validation.findings.iter().any(|finding| finding
+            .rule
+            .to_string()
+            .starts_with("topology.loopless-face")),
+        "{:#?}",
+        validation.findings
+    );
 }
 
 #[test]
@@ -1018,13 +1091,13 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D15")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
-    assert_eq!(face.loops.len(), 1);
+    assert_eq!(face.loops.stated().count(), 1);
     let loop_ = result
         .ir()
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .unwrap();
     // The face states no outer boundary, so it states no classification: the
     // parameter domain supplies the exterior, and the procedural surface
@@ -1226,7 +1299,7 @@ fn decode_does_not_blame_a_boundary_for_its_owning_surface_failure() {
         .unwrap();
     assert_eq!(
         result.report().losses.len(),
-        1,
+        2,
         "{:#?}",
         result.report().losses
     );
@@ -1234,6 +1307,7 @@ fn decode_does_not_blame_a_boundary_for_its_owning_surface_failure() {
         result.report().losses[0].code,
         IgesLossCode::GeometryNotProjected.kind()
     );
+    crate::test_support::assert_given_up(&result.report().losses[1], ("entity", 13));
     // D13 is the Type 144 owner, the seventh entity in the fixture. Pinning
     // the provenance tag is what separates this test from the bug it guards
     // against: the loss must land on the trimmed surface, never on the Type
@@ -1316,7 +1390,7 @@ fn decode_uses_model_curve_when_type_142_prefers_it() {
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .expect("outer loop");
     assert!(outer_loop.coedges().iter().all(|id| result
         .ir()
@@ -1697,4 +1771,62 @@ fn linear_boundary_relationship_accepts_corner_touching_rings_and_rejects_a_non_
         ),
         Some(false)
     );
+}
+
+#[test]
+fn a_trimmed_face_on_a_surface_over_the_pole_limit_is_dropped_with_the_surface() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+
+    let boundary = "106,1,5,0,0.2,0.2,0.2,0.8,0.8,0.8,0.8,0.2,0.2,0.2;";
+    let entity = |entity_type, form, label: &str, status, parameters: &str| OwnedTestEntity {
+        entity_type,
+        form,
+        label: label.into(),
+        status,
+        parameters: parameters.into(),
+    };
+    // The surface declares a 1001 by 1001 pole grid.
+    let bytes = owned_test_file(&[
+        entity(
+            128,
+            0,
+            "SURFACE",
+            "00010000",
+            "128,1000,1000,1,1,0,0,1,0,0;",
+        ),
+        entity(106, 63, "MODEL", "00010000", boundary),
+        entity(106, 63, "PCURVE", "00010500", boundary),
+        entity(142, 0, "ONSURF", "00010000", "142,0,1,5,3,3;"),
+        entity(144, 0, "TRIMMED", "00000000", "144,1,1,0,7;"),
+    ]);
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    crate::test_support::assert_gives_up(result.report(), &[("entity", 1)]);
+    let given_up = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .unwrap();
+    assert!(
+        given_up.message.contains("surface pole count exceeds"),
+        "{}",
+        given_up.message
+    );
+    let dropped = given_up
+        .message
+        .split("dropped=[")
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .unwrap_or_default();
+    assert_eq!(dropped, "iges:model:face#D9", "{}", given_up.message);
+    assert!(result.ir().geometry.faces.is_empty());
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| cadmpeg_ir::unknown::part::needs(loss).is_some()));
 }

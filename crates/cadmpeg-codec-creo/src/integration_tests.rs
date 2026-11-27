@@ -15,7 +15,6 @@ use crate::test_support::visibgeom_payload;
 use cadmpeg_core::container::ContainerRole;
 
 use std::io::Cursor;
-use std::sync::LazyLock;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
@@ -45,13 +44,25 @@ fn assert_valid(result: &EditableDecodeResult) {
     assert!(result.ir().native.namespace("creo").is_some());
 }
 
-static NIST_CTC_01: LazyLock<EditableDecodeResult> = LazyLock::new(|| {
+/// One decode of the part serves every check of its B-rep.
+#[test]
+fn nist_ctc_01_brep_agrees_with_its_step_twin() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
     let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
     assert_valid(&result);
-    result
-});
+    nist_ctc_01_surface_frames_and_boundary_vertex_match_source(&result);
+    nist_ctc_01_rounded_hexagon_has_oblique_cylinder_intersection(&result);
+    nist_ctc_01_cylinder_intersections_have_surface_curves(&result);
+    nist_ctc_01_cone_seams_follow_the_stored_generators(&result);
+    nist_ctc_01_top_plane_keeps_its_boundary_and_holes(&result);
+    nist_ctc_01_end_face_keeps_its_cut_boundaries(&result);
+    nist_ctc_01_planar_face_keeps_both_bores(&result);
+    nist_ctc_01_boundary_planes_keep_step_orientation(&result);
+    nist_ctc_01_cut_caps_keep_disjoint_boundaries(&result);
+    nist_ctc_01_disjoint_planar_regions_keep_their_bores(&result);
+    nist_ctc_01_closed_solid_volume_accounts_for_native_blind_cut(&result);
+}
 
 fn closed_plane_brep() -> Vec<u8> {
     let mut payload = b"srf_array\0\xf8\x04".to_vec();
@@ -133,9 +144,7 @@ fn visible_geometry_pipeline_places_a_complete_analytic_prototype() {
     assert_valid(&result);
 }
 
-#[test]
-fn nist_ctc_01_surface_frames_and_boundary_vertex_match_source() {
-    let result = &*NIST_CTC_01;
+fn nist_ctc_01_surface_frames_and_boundary_vertex_match_source(result: &EditableDecodeResult) {
     let geometry = &result.ir().geometry;
     let face = geometry
         .faces
@@ -724,8 +733,9 @@ fn compact_rotation_cylinder_decode_and_validation_share_admission() {
                 .into_iter()
                 .flatten()
                 .any(|row| {
-                    row.fields()
-                        .is_ok_and(|fields| fields.get("curve_id") == Some(&serde_json::json!(21)))
+                    row.fields().is_ok_and(|fields| {
+                        fields.get("curve_id") == Some(&cadmpeg_core::json!(21))
+                    })
                 });
             assert_eq!(promoted, agrees || section == "VisibGeom");
             if agrees {
@@ -1389,9 +1399,7 @@ fn positive_lower_bend_pipeline_reconciles_named_and_inline_carriers() {
         }
     }
 }
-#[test]
-fn nist_ctc_01_rounded_hexagon_has_oblique_cylinder_intersection() {
-    let result = &*NIST_CTC_01;
+fn nist_ctc_01_rounded_hexagon_has_oblique_cylinder_intersection(result: &EditableDecodeResult) {
     let geometry = &result.ir().geometry;
     for (curve_id, faces) in [
         (2445, [2283, 2308]),
@@ -1426,9 +1434,7 @@ fn nist_ctc_01_rounded_hexagon_has_oblique_cylinder_intersection() {
     }
 }
 
-#[test]
-fn nist_ctc_01_cylinder_intersections_have_surface_curves() {
-    let result = &*NIST_CTC_01;
+fn nist_ctc_01_cylinder_intersections_have_surface_curves(result: &EditableDecodeResult) {
     let geometry = &result.ir().geometry;
     for (curve_id, face_id) in [
         (1797, 1053),
@@ -1473,9 +1479,7 @@ fn nist_ctc_01_cylinder_intersections_have_surface_curves() {
     }
 }
 
-#[test]
-fn nist_ctc_01_cone_seams_follow_the_stored_generators() {
-    let result = &*NIST_CTC_01;
+fn nist_ctc_01_cone_seams_follow_the_stored_generators(result: &EditableDecodeResult) {
     let geometry = &result.ir().geometry;
     for (curve_id, faces) in [(2146, [2151, 2169]), (2187, [2192, 2210])] {
         let curve = geometry
@@ -1500,9 +1504,7 @@ fn nist_ctc_01_cone_seams_follow_the_stored_generators() {
     }
 }
 
-#[test]
-fn nist_ctc_01_top_plane_keeps_its_boundary_and_holes() {
-    let result = &*NIST_CTC_01;
+fn nist_ctc_01_top_plane_keeps_its_boundary_and_holes(result: &EditableDecodeResult) {
     let geometry = &result.ir().geometry;
     let surface = geometry
         .surfaces
@@ -1518,7 +1520,7 @@ fn nist_ctc_01_top_plane_keeps_its_boundary_and_holes() {
         .iter()
         .find(|face| face.id.as_str() == "creo:visibgeom:face#106")
         .expect("top plane");
-    assert_eq!(face.loops.iter().count(), 12);
+    assert_eq!(face.loops.stated().count(), 12);
     let outer = geometry
         .loops
         .iter()
@@ -1537,16 +1539,14 @@ fn nist_ctc_01_top_plane_keeps_its_boundary_and_holes() {
     assert!(point.z.abs() < 1.0e-9);
 }
 
-#[test]
-fn nist_ctc_01_end_face_keeps_its_cut_boundaries() {
-    let result = &*NIST_CTC_01;
+fn nist_ctc_01_end_face_keeps_its_cut_boundaries(result: &EditableDecodeResult) {
     let geometry = &result.ir().geometry;
     let face = geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "creo:visibgeom:face#254")
         .expect("end plane");
-    assert_eq!(face.loops.iter().count(), 3);
+    assert_eq!(face.loops.stated().count(), 3);
     for face_id in [3741, 3743, 3745, 3765] {
         assert!(geometry
             .faces
@@ -1555,9 +1555,7 @@ fn nist_ctc_01_end_face_keeps_its_cut_boundaries() {
     }
 }
 
-#[test]
-fn nist_ctc_01_planar_face_keeps_both_bores() {
-    let result = &*NIST_CTC_01;
+fn nist_ctc_01_planar_face_keeps_both_bores(result: &EditableDecodeResult) {
     let geometry = &result.ir().geometry;
     let face = geometry
         .faces
@@ -1565,10 +1563,10 @@ fn nist_ctc_01_planar_face_keeps_both_bores() {
         .find(|face| face.id.as_str() == "creo:visibgeom:face#240")
         .expect("planar face between the two bores");
     assert_eq!(face.surface.as_str(), "creo:visibgeom:surface#240");
-    assert_eq!(face.loops.iter().count(), 3);
+    assert_eq!(face.loops.stated().count(), 3);
     let edges: std::collections::BTreeSet<_> = face
         .loops
-        .iter()
+        .stated()
         .flat_map(|loop_id| {
             let lp = geometry
                 .loops
@@ -1610,9 +1608,7 @@ fn nist_ctc_01_planar_face_keeps_both_bores() {
     }
 }
 
-#[test]
-fn nist_ctc_01_boundary_planes_keep_step_orientation() {
-    let result = &*NIST_CTC_01;
+fn nist_ctc_01_boundary_planes_keep_step_orientation(result: &EditableDecodeResult) {
     let geometry = &result.ir().geometry;
     for id in [228, 252] {
         let face = geometry
@@ -1642,9 +1638,7 @@ fn nist_ctc_01_boundary_planes_keep_step_orientation() {
     }
 }
 
-#[test]
-fn nist_ctc_01_cut_caps_keep_disjoint_boundaries() {
-    let result = &*NIST_CTC_01;
+fn nist_ctc_01_cut_caps_keep_disjoint_boundaries(result: &EditableDecodeResult) {
     let geometry = &result.ir().geometry;
     let faces: Vec<_> = geometry
         .faces
@@ -1659,7 +1653,7 @@ fn nist_ctc_01_cut_caps_keep_disjoint_boundaries() {
             .find(|lp| {
                 faces
                     .iter()
-                    .any(|face| face.loops.iter().any(|id| id == &lp.id))
+                    .any(|face| face.loops.stated().any(|id| id == &lp.id))
                     && lp.coedges().iter().any(|id| {
                         geometry.coedges.iter().any(|coedge| {
                             &coedge.id == id
@@ -1672,9 +1666,7 @@ fn nist_ctc_01_cut_caps_keep_disjoint_boundaries() {
     }
 }
 
-#[test]
-fn nist_ctc_01_disjoint_planar_regions_keep_their_bores() {
-    let result = &*NIST_CTC_01;
+fn nist_ctc_01_disjoint_planar_regions_keep_their_bores(result: &EditableDecodeResult) {
     let geometry = &result.ir().geometry;
     let faces: Vec<_> = geometry
         .faces
@@ -1688,7 +1680,7 @@ fn nist_ctc_01_disjoint_planar_regions_keep_their_bores() {
             .filter(|face| {
                 let edge_ids: std::collections::BTreeSet<_> = face
                     .loops
-                    .iter()
+                    .stated()
                     .flat_map(|loop_id| {
                         let lp = geometry
                             .loops
@@ -1714,21 +1706,19 @@ fn nist_ctc_01_disjoint_planar_regions_keep_their_bores() {
             })
             .collect();
         assert_eq!(matching.len(), 1);
-        assert_eq!(matching[0].loops.iter().count(), 2);
+        assert_eq!(matching[0].loops.stated().count(), 2);
     }
 }
 
 /// The native model has a 2 mm blind cut that its STEP twin lacks. The cut
 /// removes its bottom faces' area times its depth from the STEP volume.
-#[test]
-fn nist_ctc_01_closed_solid_volume_accounts_for_native_blind_cut() {
+fn nist_ctc_01_closed_solid_volume_accounts_for_native_blind_cut(result: &EditableDecodeResult) {
     const UNOWNED_SOURCE_FACES: [u32; 4] = [336, 409, 476, 543];
     const STEP_TWIN_VOLUME_MM3: f64 = 14_644_820.506;
     const CUT_BOTTOM_SURFACE: &str = "creo:visibgeom:surface#3682";
     const NATIVE_CUT_DEPTH_MM: f64 = 2.0;
     const FEATURE_LENGTH_TOLERANCE_MM: f64 = 1.0e-12;
 
-    let result = &*NIST_CTC_01;
     assert!(result.report().geometry_transferred());
 
     let ir = result.ir();
@@ -1754,11 +1744,11 @@ fn nist_ctc_01_closed_solid_volume_accounts_for_native_blind_cut() {
     assert_eq!(unowned_surface_losses.len(), UNOWNED_SOURCE_FACES.len());
     for face_id in UNOWNED_SOURCE_FACES {
         let face_identity = format!("creo:visibgeom:face#{face_id}");
-        for region in ir.geometry.body_regions(&body.id) {
-            for shell_id in &region.shells {
+        for region in ir.geometry.stated_body_regions(&body.id) {
+            for shell_id in &region.stated_shells().cloned().collect::<Vec<_>>() {
                 assert!(ir
                     .geometry
-                    .shell_faces(shell_id)
+                    .stated_shell_faces(shell_id)
                     .all(|shell_face| shell_face.id.as_str() != face_identity));
             }
         }

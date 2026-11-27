@@ -24,6 +24,7 @@ use crate::design::names::InstanceIndex;
 use crate::design::ops::shared::{
     Alignment, JointConnector, JointKind, Locus, PatternLayout, ToolDisposition,
 };
+use crate::design::ops::surface::ExtendMethod;
 use crate::design::options::{BooleanOp, NativeOptions, ProjectionDirection};
 use crate::design::selection::{OrderedSelection, SetSelection};
 use crate::features::{FeatureId, ParameterId};
@@ -359,8 +360,14 @@ pub struct Split {
 pub enum SplitMode {
     /// Cuts `targets` with `tools` and leaves the tools unchanged.
     ByTools {
-        /// The bodies or faces cut.
-        targets: SetSelection,
+        /// The bodies or faces cut. `None` where the definition states
+        /// `assembly`, whose participants are cut.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_targets"
+        )]
+        targets: Option<SetSelection>,
         /// The tools that cut them.
         tools: SplitTool,
         /// How the tools meet the targets.
@@ -401,8 +408,44 @@ pub enum SplitMode {
 pub enum SplitTool {
     /// A datum, an origin plane, or a constructed plane.
     Plane(Box<Construction<kinds::Plane>>),
-    /// Faces, sheet or solid bodies, curves, or sketches.
-    Geometry(SetSelection),
+    /// Faces, sheet or solid bodies, curves, or sketches, and datum or
+    /// origin planes beside them, each plane cutting as its whole plane.
+    Geometry {
+        /// The tools.
+        tools: SetSelection,
+        /// Whether the cut continues past where a tool reaches until it
+        /// divides the targets. `None` where the source does not state it.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_extend"
+        )]
+        extend: Option<ToolExtension>,
+    },
+    /// Each target's outline seen along the direction: on each target face,
+    /// the curves where the face's normal is perpendicular to the direction.
+    Silhouette(Box<Construction<kinds::Direction>>),
+}
+
+/// Whether a split's cut continues past where its tool reaches.
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ToolExtension {
+    /// The cut stops where the tool reaches.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Off,
+    /// The cut continues until it divides the targets.
+    Extended {
+        /// The law by which the cut continues. `None` where the source
+        /// stores no law.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_method"
+        )]
+        method: Option<ExtendMethod>,
+    },
 }
 
 /// How a split's tools meet its targets.
@@ -424,14 +467,17 @@ pub enum SplitMethod {
 
 /// The pieces a split keeps. `S` is the side flag of the tools, or one per
 /// element.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
     content = "value",
     rename_all = "snake_case",
     deny_unknown_fields,
-    bound(serialize = "S: Serialize", deserialize = "S: Deserialize<'de>")
+    bound(
+        serialize = "S: Serialize",
+        deserialize = "S: ::serde::de::DeserializeOwned"
+    )
 )]
 pub enum Kept<S> {
     /// Every piece.
@@ -926,6 +972,7 @@ cadmpeg_core::named_optional_field!(deserialize_against<T>, T, "against");
 cadmpeg_core::named_optional_field!(deserialize_alignment<T>, T, "alignment");
 cadmpeg_core::named_optional_field!(deserialize_center<T>, T, "center");
 cadmpeg_core::named_optional_field!(deserialize_divisions<T>, T, "divisions");
+cadmpeg_core::named_optional_field!(deserialize_extend<T>, T, "extend");
 cadmpeg_core::named_optional_field!(deserialize_flip<T>, T, "flip");
 cadmpeg_core::named_optional_field!(deserialize_form<T>, T, "form");
 cadmpeg_core::named_optional_field!(deserialize_frame<T>, T, "frame");
@@ -948,5 +995,6 @@ cadmpeg_core::named_optional_field!(deserialize_role<T>, T, "role");
 cadmpeg_core::named_optional_field!(deserialize_simplify<T>, T, "simplify");
 cadmpeg_core::named_optional_field!(deserialize_tangent<T>, T, "tangent");
 cadmpeg_core::named_optional_field!(deserialize_target<T>, T, "target");
+cadmpeg_core::named_optional_field!(deserialize_targets<T>, T, "targets");
 cadmpeg_core::named_optional_field!(deserialize_tools_after<T>, T, "tools_after");
 cadmpeg_core::named_optional_field!(deserialize_variant<T>, T, "variant");

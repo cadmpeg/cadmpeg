@@ -20,11 +20,13 @@ use std::io::Cursor;
 use crate::F3dCodec;
 
 fn source_less_round_trip(ir: &CadIr) -> cadmpeg_ir::codec::DecodeResult {
-    let checked = cadmpeg_ir::validate::validate_neutral(ir, Vec::new()).unwrap();
+    let mut rooted = ir.clone();
+    cadmpeg_ir::examples::add_document_root(&mut rooted);
+    let checked = cadmpeg_ir::validate::validate_neutral(&rooted, Vec::new()).unwrap();
     assert!(checked.is_ok(), "fixture findings: {:?}", checked.findings);
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less solid encode");
     F3dCodec
@@ -71,7 +73,7 @@ fn a_solid_with_a_collapsed_edge_loop_round_trips_as_a_solid() {
     let coedge = CoedgeId::mint("test:model:coedge#apex").unwrap();
     let apex_loop = LoopId::mint("test:model:loop#apex").unwrap();
     let top = &mut ir.geometry.faces[1];
-    let outer = top.loops.iter().next().unwrap().clone();
+    let outer = top.loops.stated().next().unwrap().clone();
     top.loops = FaceLoops::unspecified(vec![outer, apex_loop.clone()]);
     let top = top.id.clone();
     ir.geometry.points.push(Point::new(

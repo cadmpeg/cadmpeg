@@ -160,7 +160,7 @@ fn no_editable_parameter_stands_for_a_driven_dimension_in_a_written_part() {
     let ir = sketch_with_a_driven_dimension();
     let plan = crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .unwrap();
     let charged = plan
@@ -250,19 +250,19 @@ fn a_kept_history_writes_a_reader_of_a_driven_parameter_with_its_value() {
     let result = id_of(decoded.ir(), "Result");
     let spare = id_of(decoded.ir(), "Spare");
     {
-        let mut ir = decoded.ir_mut();
-        // Decode stamps the sketch baselines; a document without them that
+        // Decode records the sketch baselines; a document without them that
         // keeps the history baseline is one whose sketches the write
         // generates, which leaves driven parameters out.
-        let attributes = &mut ir.source.as_mut().expect("source").attributes;
+        let digests = &mut decoded.source_fidelity_mut().codec_digests;
         for baseline in [
             "sldprt_neutral_sketch_local_sha256",
             "sldprt_native_sketch_sha256",
             "sldprt_neutral_sketch_constraint_local_sha256",
         ] {
-            attributes.remove(baseline);
+            digests.remove(baseline);
         }
-        assert!(attributes.contains_key("sldprt_native_history_sha256"));
+        assert!(digests.contains_key("sldprt_native_history_sha256"));
+        let mut ir = decoded.ir_mut();
         // The design states `Input` driven (D11).
         ir.design
             .parameters
@@ -298,7 +298,7 @@ fn a_kept_history_writes_a_reader_of_a_driven_parameter_with_its_value() {
     }
     let plan = crate::test_support::plan_fixture_with_native_envelope(
         cadmpeg_ir::codec::write::EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
     )
     .unwrap();
     let losses = plan.report().losses.clone();

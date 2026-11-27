@@ -88,6 +88,7 @@ mod tests {
     // Wire fixtures use checked positions; failure assertions exercise deserialization.
     #![allow(clippy::unwrap_used)]
     use super::{BlockReferencePosition, FeatureBlockConstructionReference};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn block_positions_follow_the_fixed_field_and_preserve_native_wire() {
@@ -113,11 +114,11 @@ mod tests {
                 );
                 let reference: FeatureBlockConstructionReference =
                     serde_json::from_str(&wire).unwrap();
-                assert_eq!(serde_json::to_string(&reference).unwrap(), wire);
-                let mut invalid = serde_json::to_value(reference).unwrap();
-                invalid["terminal"] = serde_json::json!(!terminal);
+                assert_eq!(json::to_string(&reference).unwrap(), wire);
+                let mut invalid = json::to_value(reference).unwrap();
+                invalid["terminal"] = cadmpeg_core::json!(!terminal);
                 assert!(
-                    serde_json::from_value::<FeatureBlockConstructionReference>(invalid)
+                    json::from_value::<FeatureBlockConstructionReference>(invalid)
                         .unwrap_err()
                         .to_string()
                         .contains("terminal")
@@ -127,8 +128,8 @@ mod tests {
         let invalid = r#"{"id":"reference","operation_label":"block-op","control":38,"ordinal":0,"terminal":false,"object_index":66,"raw_object_index":"42","source_offset":100}"#;
         assert!(serde_json::from_str::<FeatureBlockConstructionReference>(invalid).is_err());
         for ordinal in [19, u32::MAX] {
-            let wire = serde_json::json!({"ordinal":ordinal,"terminal":false});
-            assert!(serde_json::from_value::<BlockReferencePosition>(wire)
+            let wire = cadmpeg_core::json!({"ordinal":ordinal,"terminal":false});
+            assert!(json::from_value::<BlockReferencePosition>(wire)
                 .unwrap_err()
                 .to_string()
                 .contains("ordinal"));

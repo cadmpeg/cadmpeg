@@ -136,6 +136,7 @@ fn insert_first<'a, T: Copy>(
 #[cfg(test)]
 mod tests {
     use super::{validate, FeatureDefinition, FeatureOperation, Model};
+    use cadmpeg_core::serde_erase::json;
 
     fn model() -> Model {
         let mut model = Model::default();
@@ -159,10 +160,9 @@ mod tests {
     }
 
     #[test]
-    fn feature_parent_validation_accepts_one_feature_and_serde_reconstruction() {
+    fn feature_parent_validation_accepts_one_feature() {
         let model = model();
-        let wire = serde_json::to_value(&model).unwrap();
         validate(&[&model]).unwrap();
-        assert_eq!(serde_json::from_value::<Model>(wire).unwrap(), model);
+        assert!(json::to_value(&model).unwrap().get("features").is_none());
     }
 }

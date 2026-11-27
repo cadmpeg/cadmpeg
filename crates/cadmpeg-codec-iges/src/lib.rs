@@ -43,8 +43,6 @@ use cadmpeg_ir::codec::write::{
     EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
-use cadmpeg_ir::hash::document_local_sha256;
-use cadmpeg_ir::CadIr;
 use cadmpeg_ir::ContainerSummary;
 
 const SOURCE_IMAGE_ID: &str = "iges:file:source-image#0";
@@ -126,15 +124,6 @@ impl IgesVersion {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct IgesCodec;
 
-fn document_digest(ir: &CadIr) -> Result<String, cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let digest = document_local_sha256(&ctx, ir, ir.source.as_ref(), "iges", SOURCE_IMAGE_ID)?;
-    ctx.finish_session()?;
-    Ok(digest)
-}
-
 impl CodecBackend for IgesCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
@@ -197,10 +186,10 @@ impl CodecBackend for IgesCodec {
             representation::Representation::CompressedAscii => {
                 let (normalized, repeated) = compressed::expand(root.window())?;
                 let mut decoded = reader::decode(&normalized, root.window(), representation, ctx)?;
-                decoded
-                    .body
-                    .losses
-                    .extend(repeated.iter().map(compressed::RepeatedDataRecord::loss));
+                for record in &repeated {
+                    let losses = record.give_up(ctx, root, &mut decoded)?;
+                    decoded.body.losses.extend(losses);
+                }
                 Ok(decoded)
             }
             representation::Representation::Binary => {
@@ -213,6 +202,7 @@ impl CodecBackend for IgesCodec {
 
 impl EncoderBackend for IgesCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    const NAME: &'static str = "IGES";
     /// Writes B-rep and product data only; design arenas are refused, not
     /// read.
     const REQUEST: DecodeDepth = DecodeDepth::Geometry;

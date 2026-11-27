@@ -4,14 +4,17 @@
 //! `value` on a unit arm, and a restated object key.
 
 use cadmpeg_core::decode::ResourceLimits;
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 
-use super::{AttributeExpression, AttributeJson, AttributeTarget, AttributeValue, SourceAttribute};
-use crate::design::dimension::{ParameterRef, RefTarget};
-use crate::design::expr::{BinaryOp, Constant, Expression, Neutral, Node};
+use super::{AttributeJson, AttributeTarget, AttributeValue, SourceAttribute};
+use crate::bounds::MAX_DOCUMENT_DEPTH;
+use crate::design::dimension::ParameterRef;
+use crate::design::expr::{Constant, Expression, Neutral, Node};
 use crate::features::ParameterId;
 
 fn read<T: DeserializeOwned>(wire: &Value) -> Result<T, CodecError> {
@@ -21,7 +24,7 @@ fn read<T: DeserializeOwned>(wire: &Value) -> Result<T, CodecError> {
 /// `wire` reads, and prints back as itself.
 fn reads_back<T: DeserializeOwned + Serialize + std::fmt::Debug>(wire: &Value) -> T {
     let value = read::<T>(wire).unwrap_or_else(|error| panic!("{wire} refused: {error}"));
-    assert_eq!(&serde_json::to_value(&value).unwrap(), wire);
+    assert_eq!(&json::to_value(&value).unwrap(), wire);
     value
 }
 
@@ -68,19 +71,19 @@ fn every_target_arm_reads_back() {
 fn target_order_agrees_with_equality() {
     let targets = [
         AttributeTarget::Document,
-        AttributeTarget::Tessellation("test:model:tessellation#1".into()),
-        AttributeTarget::Tessellation("test:model:tessellation#2".into()),
+        AttributeTarget::Tessellation("test:model:tessellation#1".try_into().unwrap()),
+        AttributeTarget::Tessellation("test:model:tessellation#2".try_into().unwrap()),
         AttributeTarget::Record {
             arena: cadmpeg_core::text::NonBlankString::new("point_clouds").unwrap(),
-            id: "test:model:cloud#1".into(),
+            id: "test:model:cloud#1".try_into().unwrap(),
         },
         AttributeTarget::Record {
             arena: cadmpeg_core::text::NonBlankString::new("point_clouds").unwrap(),
-            id: "test:model:cloud#2".into(),
+            id: "test:model:cloud#2".try_into().unwrap(),
         },
         AttributeTarget::Record {
             arena: cadmpeg_core::text::NonBlankString::new("assets").unwrap(),
-            id: "test:model:cloud#1".into(),
+            id: "test:model:cloud#1".try_into().unwrap(),
         },
     ];
     for a in &targets {
@@ -129,33 +132,17 @@ fn every_value_arm_reads_back() {
     .is_err());
 }
 
-fn mass() -> ParameterId {
-    ParameterId::mint("test:design:parameter#mass").unwrap()
-}
-
-fn expression() -> AttributeExpression {
-    AttributeExpression {
-        path: "Length".into(),
-        expression: Expression::Neutral(Neutral(Node::Binary {
-            op: BinaryOp::Multiply,
-            left: Box::new(Node::Reference(ParameterRef {
-                target: RefTarget::Parameter(mass()),
-                through: None,
-            })),
-            right: Box::new(Node::Constant(Constant::Pi)),
-        })),
-        comment: Some("doubled".into()),
-    }
-}
-
 #[test]
-fn an_expression_value_reads_back() {
-    let value = AttributeValue::Expression(expression());
-    let wire = serde_json::to_value(&value).unwrap();
+fn a_parameter_value_reads_back_and_an_expression_value_is_refused() {
+    let value = AttributeValue::Parameter(ParameterId::mint("test:design:parameter#mass").unwrap());
+    let wire = json::to_value(&value).unwrap();
     assert_eq!(reads_back::<AttributeValue>(&wire), value);
-    let mut without_comment = wire.clone();
-    without_comment["value"]["comment"] = Value::Null;
-    refused::<AttributeValue>(&without_comment);
+    let expression = Expression::Neutral(Neutral(Node::<ParameterRef>::Constant(Constant::Pi)));
+    read::<Expression>(&json::to_value(&expression).unwrap()).unwrap();
+    refused::<AttributeValue>(&json!({
+        "kind": "expression",
+        "value": {"path": "Length", "expression": expression}
+    }));
 }
 
 #[test]
@@ -185,12 +172,12 @@ fn on_a_default_thread<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'sta
         .unwrap()
 }
 
-/// A JSON tree has no ceiling of its own; the JSON depth limit bounds it.
-/// One level past the deepest nesting the reader admits is refused by that
-/// limit, and the deepest reads, prints the same bytes, clones, compares,
-/// and drops on a default thread.
+/// The document's depth bound (§2.5) bounds a JSON tree. One level past the
+/// deepest nesting the reader admits is refused by that bound, and the
+/// deepest reads, prints the same bytes, clones, compares, and drops on a
+/// default thread.
 #[test]
-fn json_trees_nest_to_the_json_depth_limit_on_a_default_thread() {
+fn json_trees_nest_to_the_document_depth_bound_on_a_default_thread() {
     fn nested(depth: usize) -> String {
         let tree = (0..depth).fold(AttributeJson::Null, |tree, level| {
             if level % 2 == 0 {
@@ -199,21 +186,21 @@ fn json_trees_nest_to_the_json_depth_limit_on_a_default_thread() {
                 AttributeJson::Object([("k".to_owned(), tree)].into())
             }
         });
-        serde_json::to_string(&AttributeValue::Json(tree)).unwrap()
+        json::to_string(&AttributeValue::Json(tree)).unwrap()
     }
     let read = |text: &str| {
         crate::design::read::from_str::<AttributeValue>(text, &ResourceLimits::desktop())
     };
-    let past = (1..128)
+    let past = (1..=MAX_DOCUMENT_DEPTH + 1)
         .find(|&depth| read(&nested(depth)).is_err())
-        .expect("the reader refuses some depth below the JSON limit");
+        .expect("the reader refuses a depth past the document bound");
     assert!(past > 1, "a single level is refused");
     let refusal = on_a_default_thread({
         let text = nested(past);
         move || read(&text).err()
     });
     assert!(
-        matches!(&refusal, Some(CodecError::Malformed(message)) if message.contains("recursion limit exceeded")),
+        matches!(&refusal, Some(CodecError::Malformed(message)) if message.contains("levels of a CADIR document")),
         "depth {past}: {refusal:?}"
     );
     let deepest = nested(past - 1);
@@ -221,7 +208,7 @@ fn json_trees_nest_to_the_json_depth_limit_on_a_default_thread() {
         let deepest = deepest.clone();
         move || {
             let value = read(&deepest).unwrap();
-            let printed = serde_json::to_string(&value).unwrap();
+            let printed = json::to_string(&value).unwrap();
             let cloned = value.clone();
             assert_eq!(cloned, value);
             drop(cloned);

@@ -4,6 +4,7 @@ use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::feature_project::hole::project_hole;
 use crate::design::test_support::parameter_record;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
@@ -107,13 +108,13 @@ fn set_carrier(
         .iter()
         .enumerate()
         .map(|(index, (reference_type, position))| {
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "record_index": index, "position": position,
                 "position_offset": index, "reference_type": reference_type
             })
         })
         .collect();
-    let mut construction = serde_json::json!({
+    let mut construction = cadmpeg_core::json!({
         "point_record_index": 1, "point_record_byte_offset": 2,
         "position": position, "position_offset": 3,
         "direction": [0.0, 0.0, 1.0], "direction_offset": 4,
@@ -123,7 +124,7 @@ fn set_carrier(
         "locations": locations
     });
     if face_selection {
-        construction["face_selection"] = serde_json::json!({
+        construction["face_selection"] = cadmpeg_core::json!({
             "record_index": 1, "byte_offset": 2, "class_tag": "451",
             "asset_id": "11111111-1111-1111-1111-111111111111",
             "asset_id_offset": 3,
@@ -135,7 +136,7 @@ fn set_carrier(
         });
     }
     if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
-        slot.point = Some(serde_json::from_value(construction).unwrap());
+        slot.point = Some(json::from_value(construction).unwrap());
     }
 }
 
@@ -300,14 +301,13 @@ fn hole_placement_without_an_admitted_form_stays_native_with_its_loss() {
         32,
     );
     set_extent(&mut scope, 0, false);
-    let cases: [CarrierCase; 4] = [
+    let cases: [CarrierCase; 3] = [
         (13, [0.0; 3], &[]),
         (
             13,
             [0.0; 3],
             &[(10, [1.0, 1.5, 2.0]), (17, [3.0, 1.5, 2.0])],
         ),
-        (19, [1.0, 1.5, 2.0], &[(17, [3.0, 1.5, 2.0])]),
         (18, [1.0, 1.5, 2.0], &[(17, [1.0, 1.5, 2.0])]),
     ];
     for (reference_type, position, locations) in cases {
@@ -320,6 +320,46 @@ fn hole_placement_without_an_admitted_form_stays_native_with_its_loss() {
             crate::loss::F3dLossCode::HolePlacementUnproven.kind()
         );
     }
+}
+
+#[test]
+fn face_point_carrier_with_records_off_its_position_charges_the_unselected_point() {
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#32",
+        DesignFeatureKind::Hole,
+        32,
+    );
+    set_extent(&mut scope, 0, false);
+    // A sole `refType` 17 record off the carrier without a reconstructed plane, and
+    // a `refType` 17 record with a `refType` 5 record at one point off a zero carrier.
+    let cases: [CarrierCase; 2] = [
+        (19, [1.0, 1.5, 2.0], &[(17, [3.0, 1.5, 2.0])]),
+        (19, [0.0; 3], &[(17, [3.0, 1.5, 2.0]), (5, [3.0, 1.5, 2.0])]),
+    ];
+    for (reference_type, position, locations) in cases {
+        set_carrier(&mut scope, reference_type, position, locations, false);
+        let (placements, losses) = projected_placements(&scope);
+        assert_eq!(placements, None);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::HolePlacementPointUnselected.kind()
+        );
+    }
+    // Records at the carrier position place the Hole and charge no placement loss.
+    set_carrier(
+        &mut scope,
+        19,
+        [1.0, 1.5, 2.0],
+        &[(17, [1.0, 1.5, 2.0])],
+        false,
+    );
+    let (placements, losses) = projected_placements(&scope);
+    assert!(placements.is_some());
+    assert!(!losses.iter().any(|loss| {
+        loss.code == crate::loss::F3dLossCode::HolePlacementPointUnselected.kind()
+            || loss.code == crate::loss::F3dLossCode::HolePlacementUnproven.kind()
+    }));
 }
 
 #[test]
@@ -788,7 +828,7 @@ fn extent_group(
     let member_offsets: Vec<u64> = (0..u64::try_from(members.len()).unwrap())
         .map(|ordinal| 1026 + ordinal * 11)
         .collect();
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "f3d:Design/BulkStream.dat:group#40",
         "scope_record_index": 32,
         "scope_reference_ordinal": 8,

@@ -7,7 +7,6 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::design::expr::Expression;
 use crate::drawings::DrawingId;
 use crate::features::{ConfigurationId, FeatureId, ParameterId};
 use crate::ids::{
@@ -65,7 +64,7 @@ pub enum AttributeTarget {
     /// Attribute is owned by an occurrence.
     Occurrence(OccurrenceId),
     /// Attribute is owned by a tessellation, by its id.
-    Tessellation(String),
+    Tessellation(crate::tessellation::TessellationId),
     /// Attribute is owned by a PMI annotation.
     Pmi(PmiId),
     /// Attribute is owned by a semantic annotation.
@@ -84,7 +83,7 @@ pub enum AttributeTarget {
         /// The arena's field name.
         arena: NonBlankString,
         /// The record's id.
-        id: String,
+        id: crate::ids::Identity,
     },
 }
 
@@ -104,16 +103,13 @@ pub enum AttributeValue {
     Boolean(bool),
     /// A link to a local object, by the source's object name.
     Reference(String),
-    /// The design parameter that a property linked to a dimension or a
-    /// measure is.
+    /// The design parameter that a property is where the source states its
+    /// value by an expression.
     Parameter(ParameterId),
     /// A fixed- or variable-length numeric vector value.
     Vector(#[cfg_attr(feature = "schema", schemars(with = "Vec<f64>"))] Vec<FiniteReal>),
     /// An ordered map, repeated keys kept.
     Map(Vec<AttributeMapEntry>),
-    /// An expression the source states on the property that no parameter
-    /// holds.
-    Expression(AttributeExpression),
     /// A link to sub-elements of a local object.
     SubReference {
         /// The source's object name, or `None` for the attribute's own
@@ -160,28 +156,10 @@ pub struct AttributeMapEntry {
     pub value: String,
 }
 
-/// An expression that a source states on a property.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct AttributeExpression {
-    /// The source's path of the property the expression drives.
-    pub path: String,
-    /// The expression.
-    pub expression: Expression,
-    /// The source's comment on the expression.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_comment"
-    )]
-    pub comment: Option<String>,
-}
-
 /// A typed JSON value.
 ///
 /// Its nesting has no ceiling of its own: the JSON depth limit bounds it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -253,6 +231,7 @@ pub struct SourceAttribute {
 #[cfg(test)]
 mod tests {
     use super::AttributeTarget;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn attribute_target_copy_preserves_the_target() {
@@ -266,19 +245,17 @@ mod tests {
         let target = AttributeTarget::Configuration(
             crate::features::ConfigurationId::mint("test:design:configuration#large").unwrap(),
         );
-        let wire = serde_json::json!({"kind": "configuration", "value": "test:design:configuration#large"});
-        assert_eq!(serde_json::to_value(&target).unwrap(), wire);
-        assert_eq!(
-            serde_json::from_value::<AttributeTarget>(wire).unwrap(),
-            target
-        );
+        let wire = cadmpeg_core::json!({"kind": "configuration", "value": "test:design:configuration#large"});
+        assert_eq!(json::to_value(&target).unwrap(), wire);
+        assert_eq!(json::from_value::<AttributeTarget>(wire).unwrap(), target);
         let value = super::AttributeValue::Parameter(
             crate::features::ParameterId::mint("test:design:parameter#mass").unwrap(),
         );
-        let wire = serde_json::json!({"kind": "parameter", "value": "test:design:parameter#mass"});
-        assert_eq!(serde_json::to_value(&value).unwrap(), wire);
+        let wire =
+            cadmpeg_core::json!({"kind": "parameter", "value": "test:design:parameter#mass"});
+        assert_eq!(json::to_value(&value).unwrap(), wire);
         assert_eq!(
-            serde_json::from_value::<super::AttributeValue>(wire).unwrap(),
+            json::from_value::<super::AttributeValue>(wire).unwrap(),
             value
         );
     }
@@ -325,7 +302,6 @@ mod wire_forms;
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_object, String, "object");
-cadmpeg_core::named_optional_field!(deserialize_comment, String, "comment");
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 
 mod identity_rewrite;

@@ -2,13 +2,14 @@
 
 use crate::test_support::{test_prt, with_decode_context};
 use crate::NxCodec;
+use cadmpeg_core::json;
 use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::check::{Check, Finding};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::{CadIr, DecodeSidecar, RetainedBytes, RetainedSourceRecord, SourceFidelity};
 use cadmpeg_parasolid::test_support::{owned_deltas, test_pmarks};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 const STREAM: &str = "nx:container:parasolid#0";
 const SCHEMAS: &str = "parasolid_deltas_schemas";
@@ -63,7 +64,7 @@ fn findings(ir: &CadIr, source: Option<&SourceFidelity>) -> Vec<Finding> {
 }
 
 fn edit(ir: &mut CadIr, arena: &str, change: impl FnOnce(&mut Vec<Value>)) {
-    let namespace = ir.native.namespace_mut("nx");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("nx"));
     let mut records = namespace.arena_as::<Value>(arena).unwrap();
     change(&mut records);
     with_decode_context(|ctx| namespace.set_arena(ctx, arena, &records)).unwrap();
@@ -258,9 +259,9 @@ fn deleting_an_ordinary_instance_or_standalone_prefix_schema_is_detected() {
 #[test]
 fn deleting_every_record_for_one_stream_is_detected_from_retained_streams() {
     let (mut ir, _, fidelity) = decoded(&[body_stream(), custom_stream()]);
-    let namespace = ir.native.namespace_mut("nx");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("nx"));
     for (arena, records) in namespace.arenas_mut() {
-        if arena.starts_with("parasolid_deltas_") {
+        if arena.as_str().starts_with("parasolid_deltas_") {
             records.retain(|record| record.fields().unwrap()["stream_ordinal"] != 1);
         }
     }
@@ -331,9 +332,9 @@ fn unavailable_source_is_reported_once_for_each_claimed_stream() {
 fn an_empty_deltas_claim_has_no_source_finding() {
     let (mut ir, _, fidelity) = decoded(&[body_stream()]);
     ir.native
-        .namespace_mut("nx")
+        .namespace_mut(cadmpeg_ir::codec_id!("nx"))
         .arenas_mut()
-        .retain(|arena, _| !arena.starts_with("parasolid_deltas_"));
+        .retain(|arena, _| !arena.as_str().starts_with("parasolid_deltas_"));
     assert!(findings(&ir, None).is_empty());
     assert!(findings(&ir, Some(&fidelity)).is_empty());
 }
@@ -511,9 +512,9 @@ fn metadata_values_digests_identity_and_complete_record_sets_are_authenticated()
 fn metadata_claim_alone_enrolls_the_stream_and_all_seven_arenas() {
     let (mut ir, _, fidelity) = decoded(&[metadata_stream()]);
     ir.native
-        .namespace_mut("nx")
+        .namespace_mut(cadmpeg_ir::codec_id!("nx"))
         .arenas_mut()
-        .retain(|arena, _| !arena.starts_with("parasolid_deltas_") || arena == METADATA);
+        .retain(|arena, _| !arena.as_str().starts_with("parasolid_deltas_") || arena == METADATA);
     structurally_valid(&ir);
     source_error(&ir, &fidelity);
 }

@@ -144,13 +144,13 @@ fn face_geometry() -> (
         color: None,
         visible: Some(true),
         native_ref: None,
+        unstated: None,
     };
-    let region = Region {
-        id: RegionId::mint("f3d:model:region#1").unwrap(),
-        body: body.id.clone(),
-        shells: vec![ShellId::mint("f3d:model:shell#1").unwrap()],
-        native_ref: None,
-    };
+    let region = Region::new(
+        RegionId::mint("f3d:model:region#1").unwrap(),
+        body.id.clone(),
+        vec![ShellId::mint("f3d:model:shell#1").unwrap()],
+    );
     let shell = Shell::new(
         ShellId::mint("f3d:model:shell#1").unwrap(),
         region.id.clone(),
@@ -180,6 +180,7 @@ fn bind_direct(native_set: bool) -> BodySelection {
         construction_recipes: &[],
         persistent_design_links: &[],
         histories: &[],
+        scope_histories: &std::collections::HashMap::new(),
         bodies: std::slice::from_ref(&body),
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
@@ -245,6 +246,7 @@ fn linked_body() -> Option<cadmpeg_ir::ids::BodyId> {
         color: None,
         visible: Some(true),
         native_ref: None,
+        unstated: None,
     };
     let recipe = ConstructionRecipe {
         id: operands[0].recipe_id.clone(),
@@ -323,6 +325,7 @@ fn bind_single_native_design_record(
         construction_recipes: recipes,
         persistent_design_links: links,
         histories: &[],
+        scope_histories: &std::collections::HashMap::new(),
         bodies,
         regions,
         shells,

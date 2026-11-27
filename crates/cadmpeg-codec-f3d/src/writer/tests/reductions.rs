@@ -38,7 +38,7 @@ fn source_less(smbh: &[u8]) -> CadIr {
 fn write(ir: &CadIr) -> (ExportReport, CadIr) {
     let mut bytes = Vec::new();
     let report = F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the writer writes what it can encode");
     let decoded = F3dCodec
@@ -310,8 +310,12 @@ fn a_pole_loop_is_dropped_and_its_face_written() {
         native_ref: None,
     });
     match &mut ir.geometry.faces[0].loops {
-        FaceLoops::Unspecified { loops } => loops.push(pole.clone()),
-        FaceLoops::Classified { inner, .. } => inner.push(pole.clone()),
+        FaceLoops::Unspecified { loops } | FaceLoops::PartialUnspecified { loops } => {
+            loops.push(pole.clone());
+        }
+        FaceLoops::Classified { inner, .. } | FaceLoops::PartialClassified { inner, .. } => {
+            inner.push(pole.clone());
+        }
     }
     let faces = ir.geometry.faces.len();
     assert_written_with_loss(
@@ -674,7 +678,7 @@ fn faces_left_apart_are_written_in_separate_shells() {
     assert_eq!(decoded.geometry.faces.len(), 2);
     assert_eq!(decoded.geometry.shells.len(), 2);
     assert_eq!(decoded.geometry.regions.len(), 1);
-    assert_eq!(decoded.geometry.regions[0].shells.len(), 2);
+    assert_eq!(decoded.geometry.regions[0].stated_shells().count(), 2);
     for shell in &decoded.geometry.shells {
         assert_eq!(
             decoded
@@ -738,3 +742,4 @@ fn a_carrier_whose_encoding_fails_still_drops_its_body() {
 }
 
 mod edge_ranges;
+mod per_record;

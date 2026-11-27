@@ -63,7 +63,7 @@ fn closed_cylinder_gets_derived_seam() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir().geometry.faces[0].loops.len(), 1);
+    assert_eq!(result.ir().geometry.faces[0].loops.stated().count(), 1);
     assert_eq!(result.ir().geometry.loops[0].coedges().len(), 4);
     assert_eq!(result.ir().geometry.pcurves.len(), 4);
     assert!(result
@@ -99,15 +99,14 @@ fn sentinel_vertices_without_partners_withhold_the_rim_edges() {
         )
         .unwrap();
 
-    assert_eq!(decoded.ir().geometry.faces.len(), 0);
+    let faces = &decoded.ir().geometry.faces;
+    assert!(!faces.is_empty() && faces.iter().all(|face| face.loops.is_partial()));
     assert_eq!(
-        decoded
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code.local_code() == "topology.ring-edge-withheld")
-            .count(),
-        1
+        super::given_up(
+            &decoded,
+            crate::loss::SldprtLossCode::TopologyRingEdgeWithheld
+        ),
+        2
     );
 }
 

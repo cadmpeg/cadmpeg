@@ -23,7 +23,7 @@ const EPS_SKETCH_WRITE_GEOMETRY: f64 = 1.0e-9;
 
 /// The namespace every identity a written sketch generates is composed under.
 fn sketch_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
-    cadmpeg_ir::identity_namespace!("generated", "sldprt", "sketch")
+    cadmpeg_ir::identity_namespace!("sldprt", "generated", "sketch")
 }
 
 pub(super) fn sketch_brep(
@@ -40,6 +40,7 @@ pub(super) fn sketch_brep(
             ))
         })?;
     let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.tolerances = source.tolerances;
     // The sketch identity is escaped into one key here, once, and every
     // generated id below is that key with a `:`-separated part appended.
     let prefix = cadmpeg_ir::ids::IdentityKey::try_new(
@@ -402,12 +403,11 @@ pub(super) fn sketch_brep(
     ir.geometry
         .shells
         .push(Shell::new(shell_id.clone(), region_id.clone()));
-    ir.geometry.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id.clone(),
-        shells: vec![shell_id],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(Region::new(
+        region_id.clone(),
+        body_id.clone(),
+        vec![shell_id],
+    ));
     ir.geometry.bodies.push(Body {
         id: body_id,
         kind: BodyKind::Sheet,
@@ -416,6 +416,7 @@ pub(super) fn sketch_brep(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     ir.finalize();
     Ok(ir)

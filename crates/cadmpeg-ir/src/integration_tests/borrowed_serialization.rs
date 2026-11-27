@@ -2,14 +2,15 @@
 //! Borrowed owner serialization composes with structural decode admission.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_json::json;
 
 fn check_wire<T: Serialize + DeserializeOwned>(wire: &serde_json::Value) {
-    let value: T = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&value).unwrap(), *wire);
+    let value: T = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(&value).unwrap(), *wire);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -136,7 +137,7 @@ wire_case!(
 wire_case!(
     borrowed_tessellation_wire,
     crate::tessellation::Tessellation,
-    json!({"id":"test:model:tessellation#t","body":"test:model:body#b","faces":["test:model:face#f"],"mesh":{"kind":"list","vertices":[{"x":0.0,"y":0.0,"z":0.0},{"x":1.0,"y":0.0,"z":0.0},{"x":0.0,"y":1.0,"z":0.0}],"triangles":[[0,1,2]]},"feature_edges":[],"triangle_groups":[],"texture_assignments":[],"texture_coordinates":[],"channels":[]})
+    json!({"id":"test:model:tessellation#t","of":{"kind":"body","body":"test:model:body#b","faces":["test:model:face#f"]},"mesh":{"kind":"list","vertices":[{"x":0.0,"y":0.0,"z":0.0},{"x":1.0,"y":0.0,"z":0.0},{"x":0.0,"y":1.0,"z":0.0}],"triangles":[[0,1,2]]},"feature_edges":[],"triangle_groups":[],"texture_assignments":[],"texture_coordinates":[],"channels":[]})
 );
 wire_case!(
     borrowed_exactness_field_wire,

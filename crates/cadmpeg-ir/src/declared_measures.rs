@@ -81,19 +81,18 @@ pub enum DeclaredQuantity {
     },
 }
 
-/// The evidence class of a source-stated quantity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, DeserializeName)]
+/// Whether a stated value can predate the bodies it describes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
-pub enum DeclaredMeasureProvenance {
-    /// A source-stated quantity without a more specific evidence class.
-    #[default]
-    SourceDeclaration,
-    /// A source validation property that states an expected geometric value.
-    ValidationProperty,
-    /// A computed quantity retained by the source for later reuse.
-    SavedCache,
+pub enum MeasureBasis {
+    /// A value written with the bodies for a reader to check a transfer
+    /// against.
+    Validation,
+    /// The source's own last computation, which an edit after it leaves
+    /// stale.
+    Cache,
 }
 
 /// A quantity that the source states for a target.
@@ -107,16 +106,6 @@ pub struct DeclaredMeasure {
     pub target: DeclaredTarget,
     /// The stated quantity.
     pub quantity: DeclaredQuantity,
-    /// The evidence class of the stated quantity.
-    pub provenance: DeclaredMeasureProvenance,
-    /// Absolute bound on source-value representation error, in the quantity's
-    /// units. For centroid quantities, this is a Euclidean-distance bound.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_source_error"
-    )]
-    pub source_error: Option<NonNegativeReal>,
     /// Description text stored with the quantity.
     #[serde(
         default,
@@ -124,6 +113,22 @@ pub struct DeclaredMeasure {
         deserialize_with = "deserialize_label"
     )]
     pub label: Option<String>,
+    /// Whether the value can predate the bodies; `None` states neither.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_basis"
+    )]
+    pub basis: Option<MeasureBasis>,
+    /// The bound within which the stored value holds the value the source
+    /// computed, in the quantity's unit and for each coordinate of a
+    /// centroid.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_precision"
+    )]
+    pub precision: Option<NonNegativeReal>,
     /// Format-native record supplying the quantity.
     #[serde(
         default,
@@ -141,24 +146,24 @@ impl DeclaredMeasure {
             id,
             target,
             quantity,
-            provenance: DeclaredMeasureProvenance::SourceDeclaration,
-            source_error: None,
             label: None,
+            basis: None,
+            precision: None,
             native_ref: None,
         }
     }
 
-    /// The evidence class of this quantity.
+    /// Whether the value can predate the bodies.
     #[must_use]
-    pub fn with_provenance(mut self, provenance: DeclaredMeasureProvenance) -> Self {
-        self.provenance = provenance;
+    pub fn with_basis(mut self, basis: MeasureBasis) -> Self {
+        self.basis = Some(basis);
         self
     }
 
-    /// The bound on source-value representation error.
+    /// The bound within which the stored value holds the computed value.
     #[must_use]
-    pub fn with_source_error(mut self, source_error: NonNegativeReal) -> Self {
-        self.source_error = Some(source_error);
+    pub fn with_precision(mut self, precision: NonNegativeReal) -> Self {
+        self.precision = Some(precision);
         self
     }
 
@@ -179,15 +184,17 @@ impl DeclaredMeasure {
 
 mod identity_rewrite;
 
-cadmpeg_core::named_optional_field!(deserialize_source_error, NonNegativeReal, "source_error");
+cadmpeg_core::named_optional_field!(deserialize_basis, MeasureBasis, "basis");
+cadmpeg_core::named_optional_field!(deserialize_precision, NonNegativeReal, "precision");
 cadmpeg_core::named_optional_field!(deserialize_label, String, "label");
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 
 #[cfg(test)]
 mod tests {
-    use super::{DeclaredMeasure, DeclaredMeasureProvenance, DeclaredQuantity, DeclaredTarget};
+    use super::{DeclaredMeasure, DeclaredQuantity, DeclaredTarget, MeasureBasis};
     use crate::ids::{BodyId, DeclaredMeasureId};
     use crate::scalar::{FiniteReal, NonNegativeReal};
+    use cadmpeg_core::serde_erase::json;
 
     fn measure() -> DeclaredMeasure {
         DeclaredMeasure::new(
@@ -199,90 +206,80 @@ mod tests {
                 value: FiniteReal::new(10.0).expect("finite value"),
             },
         )
-        .with_source_error(NonNegativeReal::new(0.5).expect("nonnegative error"))
+        .with_precision(NonNegativeReal::new(0.5).expect("nonnegative precision"))
     }
 
     #[test]
-    fn source_error_round_trips_and_omits_when_absent() {
+    fn precision_round_trips_and_omits_when_absent() {
         let measure = measure();
-        let json = serde_json::to_value(&measure).expect("serialize measure");
-        assert_eq!(json["source_error"], 0.5);
-        assert_eq!(
-            serde_json::from_value::<DeclaredMeasure>(json).unwrap(),
-            measure
-        );
+        let json = json::to_value(&measure).expect("serialize measure");
+        assert_eq!(json["precision"], 0.5);
+        assert_eq!(json::from_value::<DeclaredMeasure>(json).unwrap(), measure);
 
         let exact = DeclaredMeasure::new(
             measure.id.clone(),
             measure.target.clone(),
             measure.quantity.clone(),
         );
-        let json = serde_json::to_value(&exact).expect("serialize exact measure");
-        assert!(json.get("source_error").is_none());
-        assert_eq!(
-            serde_json::from_value::<DeclaredMeasure>(json).unwrap(),
-            exact
-        );
+        let json = json::to_value(&exact).expect("serialize exact measure");
+        assert!(json.get("precision").is_none());
+        assert_eq!(json::from_value::<DeclaredMeasure>(json).unwrap(), exact);
     }
 
     #[test]
     fn a_target_is_a_state_or_a_bare_unresolved_tag() {
-        let state = serde_json::json!({
+        let state = cadmpeg_core::json!({
             "kind": "state",
             "of": {"kind": "tool", "value": "test:design:feature#3"}
         });
-        let target = serde_json::from_value::<DeclaredTarget>(state.clone()).unwrap();
+        let target = json::from_value::<DeclaredTarget>(state.clone()).unwrap();
         assert!(matches!(target, DeclaredTarget::State(_)));
-        assert_eq!(serde_json::to_value(&target).unwrap(), state);
-        let unresolved = serde_json::json!({"kind": "unresolved"});
+        assert_eq!(json::to_value(&target).unwrap(), state);
+        let unresolved = cadmpeg_core::json!({"kind": "unresolved"});
         assert_eq!(
-            serde_json::from_value::<DeclaredTarget>(unresolved.clone()).unwrap(),
+            json::from_value::<DeclaredTarget>(unresolved.clone()).unwrap(),
             DeclaredTarget::Unresolved
         );
         assert_eq!(
-            serde_json::to_value(DeclaredTarget::Unresolved).unwrap(),
+            json::to_value(DeclaredTarget::Unresolved).unwrap(),
             unresolved
         );
         for wire in [
-            serde_json::json!({"kind": "unresolved", "value": null}),
-            serde_json::json!({"kind": "unresolved", "bodies": []}),
-            serde_json::json!({"kind": "state", "value": {"of": {"kind": "tool", "value": "test:design:feature#3"}}}),
-            serde_json::json!({"kind": "state", "configuration": null, "of": {"kind": "tool", "value": "test:design:feature#3"}}),
+            cadmpeg_core::json!({"kind": "unresolved", "value": null}),
+            cadmpeg_core::json!({"kind": "unresolved", "bodies": []}),
+            cadmpeg_core::json!({"kind": "state", "value": {"of": {"kind": "tool", "value": "test:design:feature#3"}}}),
+            cadmpeg_core::json!({"kind": "state", "configuration": null, "of": {"kind": "tool", "value": "test:design:feature#3"}}),
         ] {
             assert!(
-                serde_json::from_value::<DeclaredTarget>(wire.clone()).is_err(),
+                json::from_value::<DeclaredTarget>(wire.clone()).is_err(),
                 "{wire}"
             );
         }
     }
 
     #[test]
-    fn source_error_rejects_negative_values() {
-        let json = serde_json::to_value(measure()).expect("serialize measure");
+    fn precision_rejects_negative_values() {
+        let json = json::to_value(measure()).expect("serialize measure");
         let mut invalid = json;
-        invalid["source_error"] = serde_json::json!(-0.5);
-        assert!(serde_json::from_value::<DeclaredMeasure>(invalid).is_err());
+        invalid["precision"] = cadmpeg_core::json!(-0.5);
+        assert!(json::from_value::<DeclaredMeasure>(invalid).is_err());
     }
 
     #[test]
-    fn provenance_round_trips_and_is_required_in_serialized_measures() {
-        let default = measure();
-        assert_eq!(
-            default.provenance,
-            DeclaredMeasureProvenance::SourceDeclaration
-        );
-
-        let cache = measure().with_provenance(DeclaredMeasureProvenance::SavedCache);
-        let mut json = serde_json::to_value(&cache).expect("serialize cache measure");
-        assert_eq!(json["provenance"], "saved_cache");
-        assert_eq!(
-            serde_json::from_value::<DeclaredMeasure>(json.clone()).unwrap(),
-            cache
-        );
-
-        json.as_object_mut()
-            .expect("measure object")
-            .remove("provenance");
-        assert!(serde_json::from_value::<DeclaredMeasure>(json).is_err());
+    fn basis_round_trips_in_snake_case_and_omits_when_absent() {
+        let unstated = json::to_value(measure()).expect("serialize measure");
+        assert!(unstated.get("basis").is_none());
+        for (basis, wire) in [
+            (MeasureBasis::Validation, "validation"),
+            (MeasureBasis::Cache, "cache"),
+        ] {
+            let stated = measure().with_basis(basis);
+            let json = json::to_value(&stated).expect("serialize measure");
+            assert_eq!(json["basis"], wire);
+            assert_eq!(json::from_value::<DeclaredMeasure>(json).unwrap(), stated);
+        }
+        let mut unknown = unstated;
+        unknown["basis"] = cadmpeg_core::json!("saved_cache");
+        assert!(json::from_value::<DeclaredMeasure>(unknown).is_err());
     }
 }

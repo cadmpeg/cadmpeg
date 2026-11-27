@@ -10,12 +10,12 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::hash::digest::Sha256Digest;
-use cadmpeg_ir::hash::{document_local_sha256, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::report::{
     decode::{TransferLedger, TransferOutcome},
     loss::LossNote,
     Severity,
 };
+use cadmpeg_ir::unknown::part::Part;
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
@@ -416,13 +416,52 @@ impl<'a> PhysicalParse<'a> {
         losses
     }
 
-    fn record_losses(&self) -> Result<Vec<LossNote>, CodecError> {
+    /// The framing recoveries, the give-up by `give_up` of the part of each
+    /// quarantined record in `image`, and the notes of unreadable Parameter
+    /// Data literals.
+    fn record_losses(
+        &self,
+        image: &entities::CardImage<'_>,
+        mut give_up: impl FnMut(Part<'_>, &LossNote) -> Result<LossNote, CodecError>,
+    ) -> Result<Vec<LossNote>, CodecError> {
         let mut losses = self.framing_recoveries.notes();
         for record in &self.quarantined_directory {
-            losses.push(record.loss_note());
+            let why = record.loss_note();
+            let length = record.source_length.ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "IGES Directory Entry D{} has no card span",
+                    record.sequence
+                ))
+            })?;
+            let part = image.part(
+                entities::DIRECTORY_ENTRY_PART,
+                record.sequence,
+                record.source_offset,
+                length,
+            )?;
+            let unreadable = give_up(part, &why)?;
+            losses.extend([why, unreadable]);
         }
+        let mut parameter_parts = BTreeSet::new();
         for record in &self.quarantined_parameters {
-            losses.push(record.loss_note()?);
+            let why = record.loss_note()?;
+            // Records whose declared ranges conflict can start at one card.
+            // The first gives up the part that starts there, and that part
+            // keeps the cards of each.
+            if !parameter_parts.insert(record.source_offset()) {
+                losses.push(why);
+                continue;
+            }
+            // A record that owns no card is a part of no bytes at the offset
+            // of its Directory Entry.
+            let part = image.part(
+                entities::PARAMETER_DATA_PART,
+                record.sequence,
+                record.source_offset(),
+                record.source_length().unwrap_or(0),
+            )?;
+            let unreadable = give_up(part, &why)?;
+            losses.extend([why, unreadable]);
         }
         let mut entries = BTreeMap::new();
         for record in &self.parameters {
@@ -461,7 +500,10 @@ pub(crate) fn inspect(
     let mut parse = PhysicalParse::run(window, ctx)?;
     let primary = crate::dialect::classify(representation, &parse.global);
     let mut losses = parse.admission_losses();
-    let record_losses = parse.record_losses()?;
+    let image = entities::CardImage::new(window, representation);
+    let record_losses = parse.record_losses(&image, |part, why| {
+        Ok(entities::give_up_part(ctx, part, why)?.loss())
+    })?;
 
     losses.extend(record_losses);
     let mut summary = card::summarize(&parse.scan, primary)?;
@@ -511,6 +553,12 @@ fn decode_with_occurrence_limits(
     ctx: &DecodeContext<'_>,
 ) -> Result<Decoded, CodecError> {
     let mut parse = PhysicalParse::run(parse_bytes, ctx)?;
+    let image = entities::CardImage::new(parse_bytes, representation);
+    let given_up_ids = entities::GivenUpIds::new(
+        &image,
+        &parse.quarantined_directory,
+        &parse.quarantined_parameters,
+    )?;
     let length_context = parse.global.length_context();
     let quarantined_parameter_sequences =
         quarantined_parameter_sequences(&parse.quarantined_parameters);
@@ -559,10 +607,6 @@ fn decode_with_occurrence_limits(
                 directory: &parse.directory,
                 parameters: &parse.parameters,
                 trailing_pointer_analysis: &parse.trailing_pointer_analysis,
-                quarantine: native::QuarantinedRecords {
-                    directory: &parse.quarantined_directory,
-                    parameters: &parse.quarantined_parameters,
-                },
                 structure_admitted: semantic_structure_admitted,
                 sequences: &projection.sequences,
                 boundary_vertex_derivations: &projection.boundary_vertex_derivations,
@@ -587,6 +631,17 @@ fn decode_with_occurrence_limits(
         ),
         cadmpeg_ir::products::ExternalDocument::default(),
     )?;
+    entities::give_up_entities(
+        &mut projection.losses,
+        &parse.directory,
+        &given_up_ids,
+        ctx,
+        &mut ir,
+        &mut source_fidelity,
+    )?;
+    let record_losses = parse.record_losses(&image, |part, why| {
+        entities::give_up_part(ctx, part, why)?.commit(ctx, &mut ir, &mut source_fidelity)
+    })?;
     // The transfer ledger is verified before DecodeResult construction, so its
     // identity checks require the same canonical arena order as the result.
     ir.finalize();
@@ -594,13 +649,14 @@ fn decode_with_occurrence_limits(
     // The source image is the only home of a geometry entry that no typed
     // record carries.
     let untyped_geometry = parse.directory.iter().any(|entry| {
-        matches!(
+        (matches!(
             entry.entity_type,
             100 | 102 | 104 | 108 | 110 | 112 | 114 | 116 | 118 | 120 | 122 | 126 | 128 | 130 | 140
                 ..=144 | 186 | 190 | 192 | 194 | 196 | 198 | 502 | 504 | 508 | 510 | 514
-        ) && (ctx.container_only()
-            || (!projection.decoded.contains(&entry.sequence)
-                && !projection.consumed.contains(&entry.sequence)))
+        ) || (entry.entity_type == 106 && entities::copious::geometry_form(entry.form)))
+            && (ctx.container_only()
+                || (!projection.decoded.contains(&entry.sequence)
+                    && !projection.consumed.contains(&entry.sequence)))
     });
     if untyped_geometry {
         source_fidelity.mark_untyped(
@@ -628,8 +684,6 @@ fn decode_with_occurrence_limits(
     let graph_losses = graph::losses(&parse.references, &parse.scan, &parse.parameters);
 
     losses.extend(graph_losses);
-    let record_losses = parse.record_losses()?;
-
     losses.extend(record_losses);
     if let Some(source_sequence) = product_occurrence_expansion.output_truncated_at {
         push_occurrence_loss(
@@ -728,7 +782,7 @@ fn decode_with_occurrence_limits(
                 table,
             );
         }
-        reject_invalid_semantic_ir(ctx, &ir)?;
+        losses.extend(invalid_semantic_ir(ctx, &ir)?);
     }
     let attributed = if ctx.container_only() {
         BTreeSet::new()
@@ -771,8 +825,10 @@ fn decode_with_occurrence_limits(
         record_retained_transfer(
             &mut transfer_ledger,
             source,
-            record.identity(),
-            "quarantined directory record retained; typed Directory fields were not recovered",
+            image
+                .part_id(entities::DIRECTORY_ENTRY_PART, record.source_offset)?
+                .into_string(),
+            "quarantined directory record given up; its part keeps the cards",
         );
     }
     for record in &parse.quarantined_parameters {
@@ -780,8 +836,10 @@ fn decode_with_occurrence_limits(
         record_retained_transfer(
             &mut transfer_ledger,
             source,
-            record.identity(),
-            "quarantined parameter data retained; tokens were not recovered",
+            image
+                .part_id(entities::PARAMETER_DATA_PART, record.source_offset())?
+                .into_string(),
+            "quarantined parameter data given up; its part keeps the cards",
         );
     }
     let verification_index = cadmpeg_ir::index::ModelIndex::build(&ir);
@@ -795,15 +853,7 @@ fn decode_with_occurrence_limits(
     let mut notes = directory::summary_notes(&parse.directory);
     notes.extend(parameter::summary_notes(&parse.parameters));
     notes.extend(graph::summary_notes(&parse.references));
-    let document_digest =
-        document_local_sha256(ctx, &ir, ir.source.as_ref(), "iges", crate::SOURCE_IMAGE_ID)?;
     drop(verification_index);
-    if let Some(source) = &mut ir.source {
-        source.attributes.insert(
-            cadmpeg_core::nonblank_const!(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-            document_digest,
-        );
-    }
     let mut body = DecodeBody::new(if ctx.container_only() {
         cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}
     } else {
@@ -819,34 +869,32 @@ fn decode_with_occurrence_limits(
     })
 }
 
-/// Fail the decode when the projected IR has any error-severity finding.
-///
-/// Keeps full [`cadmpeg_ir::validate_neutral`]: `DRAFT_CORE_CHECKS` error
-/// outcomes match full validation on every IGES golden fixture, so the route
-/// stays on the full validator.
-fn reject_invalid_semantic_ir(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecError> {
+/// One `projection.invalid` loss for each error-severity finding of the
+/// projected IR. The decode keeps the document; each loss names the record
+/// the finding is about.
+fn invalid_semantic_ir(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
     let validation = cadmpeg_ir::validate::validate_neutral_for_decode(ctx, ir, Vec::new())?;
-    let Some(finding) = validation
+    Ok(validation
         .findings
         .iter()
-        .find(|finding| finding.severity >= Severity::Error)
-    else {
-        return Ok(());
-    };
-    let entity = finding
-        .entity
-        .as_deref()
-        .map_or(String::new(), |entity| format!(" for {entity}"));
-    Err(CodecError::malformed(format_args!(
-        "IGES semantic projection produced invalid CADIR: {}{entity}: {}",
-        finding.check, finding.message
-    )))
+        .filter(|finding| finding.severity >= Severity::Error)
+        .map(|finding| {
+            let entity = finding
+                .entity
+                .as_deref()
+                .map_or(String::new(), |entity| format!(" for {entity}"));
+            IgesLossCode::ProjectionInvalid.note(format!(
+                "IGES semantic projection holds an error-severity finding: {}{entity}: {}",
+                finding.check, finding.message
+            ))
+        })
+        .collect())
 }
 
 #[cfg(test)]
 pub(crate) fn decode_with_test_occurrence_limits(
     bytes: &[u8],
-    options: DecodeOptions,
+    options: &DecodeOptions,
     output_limit: usize,
     depth_limit: usize,
 ) -> Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_ir::codec::DecodeFailure> {
@@ -898,7 +946,7 @@ pub(crate) fn decode_with_test_occurrence_limits(
             depth_limit,
         },
         &mut std::io::Cursor::new(bytes),
-        &options,
+        options,
     )
 }
 

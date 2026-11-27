@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Identity of the format that owns entity IDs decoded from an ASM stream.
 
-use cadmpeg_ir::ids::{
-    Identity, IdentityComponent, IdentityKey, IdentityNamespace, StaticIdentityComponent,
-};
+use cadmpeg_ir::codec::FormatId;
+use cadmpeg_ir::ids::{Identity, IdentityComponent, IdentityKey, IdentityNamespace};
 
 /// A validated static format component of an ASM entity identity.
 ///
@@ -12,16 +11,16 @@ use cadmpeg_ir::ids::{
 /// identity namespace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct IdFormat {
-    proof: StaticIdentityComponent,
+    format: FormatId,
 }
 
 impl IdFormat {
-    /// Admit a format literal, returning `None` when its grammar is invalid.
+    /// Admit a format literal that is a codec id. In a constant, text of
+    /// another form fails compilation.
     #[must_use]
-    pub const fn from_literal(value: &'static str) -> Option<Self> {
-        match StaticIdentityComponent::new(value) {
-            Some(proof) => Some(Self { proof }),
-            None => None,
+    pub const fn from_literal(value: &'static str) -> Self {
+        Self {
+            format: FormatId::new(value),
         }
     }
 
@@ -29,9 +28,8 @@ impl IdFormat {
     #[must_use]
     #[inline]
     pub(crate) fn brep_namespace(self, kind: &IdentityComponent) -> IdentityNamespace {
-        let format = IdentityComponent::from_static(self.proof);
         let scope = cadmpeg_ir::identity_component!("brep");
-        IdentityNamespace::from_components(&format, &scope, kind)
+        IdentityNamespace::from_components(self.format, &scope, kind)
     }
 
     /// Compose an identity under a static BREP namespace.
@@ -51,15 +49,14 @@ impl IdFormat {
         kind: &IdentityComponent,
         record_index: usize,
     ) -> Result<Identity, cadmpeg_core::CodecError> {
-        let format = IdentityComponent::from_static(self.proof);
-        let text = format!("{}:brep:{}#{record_index}", format.as_str(), kind.as_str());
+        let text = format!("{}:brep:{}#{record_index}", self.format, kind.as_str());
         Identity::new(text).map_err(cadmpeg_core::CodecError::malformed)
     }
 }
 
 impl std::fmt::Display for IdFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(IdentityComponent::from_static(self.proof).as_str())
+        f.write_str(self.format.as_str())
     }
 }
 
@@ -71,11 +68,7 @@ impl std::fmt::Display for IdFormat {
 #[macro_export]
 macro_rules! asm_format {
     ($value:literal) => {{
-        const STATIC_FORMAT: $crate::ids::IdFormat =
-            match $crate::ids::IdFormat::from_literal($value) {
-                Some(format) => format,
-                None => panic!("ASM identity format literal has invalid grammar"),
-            };
+        const STATIC_FORMAT: $crate::ids::IdFormat = $crate::ids::IdFormat::from_literal($value);
         STATIC_FORMAT
     }};
 }

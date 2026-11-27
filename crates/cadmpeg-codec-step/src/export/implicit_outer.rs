@@ -101,7 +101,7 @@ impl<'a> Builder<'a> {
         };
         if face
             .loops
-            .iter()
+            .stated()
             .any(|id| face.loop_role(id) == LoopBoundaryRole::Outer)
         {
             return ImplicitOuter::Stated;
@@ -174,7 +174,7 @@ impl<'a> Builder<'a> {
         {
             let Some(point) = finite_or_refusal(model_surface_point(
                 EvaluationAdmission::Standard,
-                self.ir,
+                &self.model_index,
                 &surface.geometry,
                 u,
                 v,

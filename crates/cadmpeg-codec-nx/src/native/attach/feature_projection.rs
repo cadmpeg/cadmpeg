@@ -29,8 +29,10 @@ use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, LoopId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::{FiniteReal, Length, NonZeroLength, PositiveLength};
-use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, FaceLoops, Region, Sense, Shell};
+use cadmpeg_ir::scalar::{FiniteReal, Length, NonZeroLength, PositiveAngle, PositiveLength};
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, FaceBoundary, Region, Sense, Shell,
+};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::Tolerances;
 use std::collections::{BTreeMap, BTreeSet};
@@ -92,7 +94,7 @@ impl<'a> SolidBodyIndex<'a> {
         let body = self.bodies.get(body_id)?;
         let mut faces = Vec::new();
         for region in self.body_regions.get(&body.id).into_iter().flatten() {
-            for shell_id in &region.shells {
+            for shell_id in region.stated_shells() {
                 let shell = self.shells.get(&(shell_id, &region.id))?;
                 faces.extend(self.shell_faces(shell));
             }
@@ -108,11 +110,17 @@ impl<'a> SolidBodyIndex<'a> {
         let [region] = self.body_regions.get(&body.id)?.as_slice() else {
             return None;
         };
-        let [shell_id] = region.shells.as_slice() else {
+        if body.unstated.is_some() || region.unstated.is_some() {
+            return None;
+        }
+        let mut shells = region.stated_shells();
+        let (Some(shell_id), None) = (shells.next(), shells.next()) else {
             return None;
         };
         let shell = self.shells.get(&(shell_id, &region.id))?;
-        Some(self.shell_faces(shell))
+        let faces = self.shell_faces(shell);
+        (shell.unstated.is_none() && faces.iter().all(|face| !face.loops.is_partial()))
+            .then_some(faces)
     }
 }
 
@@ -619,6 +627,43 @@ pub(super) fn simple_hole_native_properties(
             .any(|label| label == operation_label)
     }) {
         insert_property(properties, "simple_hole_construction_group", &group.id);
+    }
+}
+
+/// The linear bound (millimetres) below which evaluated B-rep geometry carries
+/// no meaning for the feature recognisers.
+const RECOGNITION_LINEAR_FLOOR_MM: f64 = 1.0e-9;
+
+const RECOGNITION_LINEAR_FLOOR: PositiveLength =
+    match PositiveLength::new(RECOGNITION_LINEAR_FLOOR_MM) {
+        Some(value) => value,
+        None => panic!("the recognition linear floor must be positive and finite"),
+    };
+
+/// The angular bound (radians) below which evaluated B-rep geometry carries no
+/// meaning for the feature recognisers.
+const RECOGNITION_ANGULAR_FLOOR_RAD: f64 = 1.0e-12;
+
+const RECOGNITION_ANGULAR_FLOOR: PositiveAngle =
+    match PositiveAngle::new(RECOGNITION_ANGULAR_FLOOR_RAD) {
+        Some(value) => value,
+        None => panic!("the recognition angular floor must be positive and finite"),
+    };
+
+/// The tolerances at which the feature recognisers compare evaluated B-rep
+/// geometry: each document tolerance, raised to its recognition floor.
+pub(super) fn recognition_tolerances(document: &Tolerances) -> Tolerances {
+    Tolerances {
+        linear: if document.linear.get() < RECOGNITION_LINEAR_FLOOR.get() {
+            RECOGNITION_LINEAR_FLOOR
+        } else {
+            document.linear
+        },
+        angular: if document.angular.get() < RECOGNITION_ANGULAR_FLOOR.get() {
+            RECOGNITION_ANGULAR_FLOOR
+        } else {
+            document.angular
+        },
     }
 }
 
@@ -2144,7 +2189,7 @@ pub(super) fn hole_axis_placements_for_body(
     let Some(bores) = cylindrical_face_witnesses(ir, carriers, &body_faces) else {
         return Vec::new();
     };
-    let angular_tolerance = ir.tolerances.angular.get();
+    let angular_tolerance = recognition_tolerances(&ir.tolerances).angular.get();
     let mut placements = Vec::new();
     for bore in bores {
         let origin = bore.line_origin;
@@ -2235,15 +2280,15 @@ pub(super) fn canonical_axis(
 }
 
 pub(super) fn face_two_loops(face: &Face) -> Option<[&LoopId; 2]> {
-    match &face.loops {
-        FaceLoops::Unspecified { loops } => {
-            let [first, second] = loops.as_slice() else {
+    match face.loops.boundary()? {
+        FaceBoundary::Unspecified(loops) => {
+            let [first, second] = loops else {
                 return None;
             };
             Some([first, second])
         }
-        FaceLoops::Classified { outer, inner } => {
-            let [second] = inner.as_slice() else {
+        FaceBoundary::Classified { outer, inner } => {
+            let [second] = inner else {
                 return None;
             };
             Some([outer, second])
@@ -2252,15 +2297,15 @@ pub(super) fn face_two_loops(face: &Face) -> Option<[&LoopId; 2]> {
 }
 
 pub(super) fn face_one_loop(face: &Face) -> Option<&LoopId> {
-    match &face.loops {
-        FaceLoops::Unspecified { loops } => {
-            let [only] = loops.as_slice() else {
+    match face.loops.boundary()? {
+        FaceBoundary::Unspecified(loops) => {
+            let [only] = loops else {
                 return None;
             };
             Some(only)
         }
-        FaceLoops::Classified { outer, inner } if inner.is_empty() => Some(outer),
-        FaceLoops::Classified { .. } => None,
+        FaceBoundary::Classified { outer, inner: [] } => Some(outer),
+        FaceBoundary::Classified { .. } => None,
     }
 }
 
@@ -2325,15 +2370,14 @@ pub(super) fn cylindrical_face_witnesses(
     carriers: &CarrierIndex<'_>,
     body_faces: &[&Face],
 ) -> Option<Vec<CylindricalFaceWitness>> {
-    let linear_tolerance = ir.tolerances.linear.get();
-    let angular_tolerance = ir.tolerances.angular.get();
+    let tolerances = recognition_tolerances(&ir.tolerances);
+    let linear_tolerance = tolerances.linear.get();
+    let angular_tolerance = tolerances.angular.get();
     let mut witnesses = Vec::new();
 
-    for face in body_faces
-        .iter()
-        .copied()
-        .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
-    {
+    for face in body_faces.iter().copied().filter(|face| {
+        face.sense == Sense::Reversed && face.loops.boundary().is_some_and(|loops| loops.len() == 2)
+    }) {
         let Some(surface) = carriers.surface(&face.surface) else {
             continue;
         };
@@ -2410,12 +2454,13 @@ pub(super) fn plane_annulus_witness(
     let outer_radius = large.radius;
     let inner_loop = &small.loop_ids[small_station_ordinal];
     let outer_loop = &large.loop_ids[large_station_ordinal];
-    let linear_tolerance = ir.tolerances.linear.get();
-    let angular_tolerance = ir.tolerances.angular.get();
+    let tolerances = recognition_tolerances(&ir.tolerances);
+    let linear_tolerance = tolerances.linear.get();
+    let angular_tolerance = tolerances.angular.get();
     let mut matches = 0;
 
     for face in body_faces {
-        if face.loops.len() != 2 {
+        if face.loops.boundary().is_none_or(|loops| loops.len() != 2) {
             continue;
         }
 
@@ -2512,8 +2557,9 @@ pub(super) fn counterbore_cylinders(
     if cylinders.is_empty() || cylinders.len() % 2 != 0 {
         return Ok(None);
     }
-    let linear_tolerance = ir.tolerances.linear.get();
-    let angular_tolerance = ir.tolerances.angular.get();
+    let tolerances = recognition_tolerances(&ir.tolerances);
+    let linear_tolerance = tolerances.linear.get();
+    let angular_tolerance = tolerances.angular.get();
     let mut candidates = ctx.alloc_filled(
         cylinders.len(),
         Vec::<(usize, CounterboreCylinderWitness)>::new(),
@@ -2626,8 +2672,9 @@ pub(super) fn blind_bore_cylinders(
     let [cylinder] = cylinders.as_slice() else {
         return None;
     };
-    let linear_tolerance = ir.tolerances.linear.get();
-    let angular_tolerance = ir.tolerances.angular.get();
+    let tolerances = recognition_tolerances(&ir.tolerances);
+    let linear_tolerance = tolerances.linear.get();
+    let angular_tolerance = tolerances.angular.get();
     let mut cap_station = None;
     let mut cap_count = 0usize;
     for (station_ordinal, station) in cylinder.stations.iter().enumerate() {
@@ -2789,8 +2836,9 @@ pub(super) fn simple_hole_chamfers(
         return Ok(BTreeMap::new());
     };
 
-    let linear_tolerance = ir.tolerances.linear.get();
-    let angular_tolerance = ir.tolerances.angular.get();
+    let tolerances = recognition_tolerances(&ir.tolerances);
+    let linear_tolerance = tolerances.linear.get();
+    let angular_tolerance = tolerances.angular.get();
     let mut treatments = BTreeMap::new();
     let solid_bodies = SolidBodyIndex::new(ir);
     let carriers = CarrierIndex::new(ir);
@@ -2816,10 +2864,10 @@ pub(super) fn simple_hole_chamfers(
             ctx.alloc_filled(bores.len(), 0usize, "nx simple-hole chamfer cone counts")?;
         let mut outer_radii = Vec::new();
         let mut included_angles = Vec::new();
-        for face in body_faces
-            .iter()
-            .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
-        {
+        for face in body_faces.iter().filter(|face| {
+            face.sense == Sense::Reversed
+                && face.loops.boundary().is_some_and(|loops| loops.len() == 2)
+        }) {
             let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))) = carriers
                 .surface(&face.surface)
                 .map(|surface| &surface.geometry)

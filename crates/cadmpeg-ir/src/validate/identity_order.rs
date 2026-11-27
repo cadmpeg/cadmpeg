@@ -3,7 +3,7 @@
 
 use crate::index::identities::BorrowedIdentities;
 use cadmpeg_core::CodecError;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::document::CadIr;
 use crate::report::{
@@ -14,16 +14,21 @@ use crate::report::{
 /// `seen` is absent when every visited identity is known to be distinct.
 fn push_identity<'a>(
     seen: &mut Option<BorrowedIdentities<'a, bool>>,
+    file_keys: &BTreeSet<&str>,
     findings: &mut Vec<Finding>,
     id: &'a str,
 ) -> Result<(), CodecError> {
+    super::products::decode_set::check_qualified_scope(file_keys, id, findings);
     if !crate::ids::is_valid_identity(id) {
         super::record_finding(
             findings,
             Check::Identity,
             Severity::Error,
             Some(id),
-            format_args!("entity id does not match `<format>:<scope>:<kind>#<key>`"),
+            crate::rule!(
+                "identity_order.entity-id-does-not-match-format",
+                "entity id does not match `<format>:<scope>:<kind>#<key>`"
+            ),
         );
     }
     let Some(seen) = seen else {
@@ -40,7 +45,10 @@ fn push_identity<'a>(
             Check::Identity,
             Severity::Error,
             Some(id),
-            format_args!("entity id is not globally unique"),
+            crate::rule!(
+                "identity_order.entity-id-not-globally-unique",
+                "entity id is not globally unique"
+            ),
         );
     }
     Ok(())
@@ -59,7 +67,10 @@ fn check_order<'a>(
                 Check::ArenaOrder,
                 Severity::Error,
                 Some(id),
-                format_args!("arena `{arena}` is not strictly sorted by id"),
+                crate::rule!(
+                    "identity_order.arena-not-strictly-sorted-id",
+                    "arena `{arena}` is not strictly sorted by id"
+                ),
             );
             return;
         }
@@ -72,12 +83,13 @@ macro_rules! define_model_identity_checks {
         fn check_model_identity_and_order<'a>(
             ir: &'a CadIr,
             seen: &mut Option<BorrowedIdentities<'a, bool>>,
+            file_keys: &BTreeSet<&str>,
             findings: &mut Vec<Finding>,
         ) -> Result<(), CodecError> {
             $(
                 check_order(stringify!($field), ir.$home.$field.iter().map(crate::schema::EntitySchema::identity), findings);
                 for entity in &ir.$home.$field {
-                    push_identity(seen, findings, crate::schema::EntitySchema::identity(entity))?;
+                    push_identity(seen, file_keys, findings, crate::schema::EntitySchema::identity(entity))?;
                 }
             )*
             Ok(())
@@ -87,8 +99,11 @@ macro_rules! define_model_identity_checks {
 crate::document::arena_registry!(define_model_identity_checks);
 
 /// Check model and native identities and preserve arena-ordered findings.
+/// `file_keys` are the keys of the `File` definitions of the document that
+/// holds the records.
 pub(super) fn check_identity_and_order(
     ids: &crate::index::ModelIndex<'_>,
+    file_keys: &BTreeSet<&str>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let view = ids.native_view();
@@ -111,11 +126,11 @@ pub(super) fn check_identity_and_order(
             }
         });
     }));
-    check_model_identity_and_order(view.ir, &mut seen, findings)?;
+    check_model_identity_and_order(view.ir, &mut seen, file_keys, findings)?;
     let mut by_arena: BTreeMap<String, Vec<&str>> = BTreeMap::new();
     view.visit::<cadmpeg_core::CodecError>(|format, arena, records| {
         for record in records.records() {
-            push_identity(&mut seen, findings, record.id())?;
+            push_identity(&mut seen, file_keys, findings, record.id())?;
         }
         if records.len() == 0 {
             return Ok(());

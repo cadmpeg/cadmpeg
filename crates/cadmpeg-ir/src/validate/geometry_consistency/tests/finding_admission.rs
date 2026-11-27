@@ -80,7 +80,13 @@ fn edge_endpoint_finding_is_reported() {
     ));
     finds(
         &ir,
-        super::super::check_edge_endpoint_consistency,
+        |ctx, ir, findings| {
+            super::super::check_edge_endpoint_consistency(
+                ctx,
+                &crate::index::ModelIndex::new_model_only(ir),
+                findings,
+            )
+        },
         "edge curve endpoints miss",
     );
 }
@@ -104,7 +110,13 @@ fn coedge_use_curve_finding_is_reported() {
     ir.geometry.curves.push(curve);
     finds(
         &ir,
-        super::super::check_edge_endpoint_consistency,
+        |ctx, ir, findings| {
+            super::super::check_edge_endpoint_consistency(
+                ctx,
+                &crate::index::ModelIndex::new_model_only(ir),
+                findings,
+            )
+        },
         "coedge use-curve endpoints miss",
     );
 }
@@ -246,6 +258,33 @@ fn charted_intersection_witness_finding_is_reported() {
         },
         "charted tolerant intersection misses its endpoint witnesses",
     );
+}
+
+#[test]
+fn procedural_cache_disagreements_are_warnings() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    for ir in [
+        super::mapped_surface_curve([3.0, 2.0]),
+        charted(false),
+        charted(true),
+    ] {
+        let index = crate::index::ModelIndex::new_model_only(&ir);
+        let mut findings = Vec::new();
+        super::super::check_procedural_support_consistency(
+            &ctx,
+            &index,
+            &crate::eval::admission::ModelEvaluationPass::new(),
+            &mut findings,
+        )
+        .unwrap();
+        assert!(!findings.is_empty());
+        assert!(
+            findings
+                .iter()
+                .all(|finding| finding.severity == crate::report::Severity::Warning),
+            "{findings:?}"
+        );
+    }
 }
 
 #[test]

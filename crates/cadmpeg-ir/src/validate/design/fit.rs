@@ -23,7 +23,8 @@ use crate::design::ops::sketch::{
 };
 use crate::design::refs::EntityRef;
 use crate::design::selection::{DatumPart, PickTarget, Picked, Picks, PrincipalEntity};
-use crate::geometry::SolvedCurveGeometry;
+use crate::geometry::{InlineCurve, SolvedCurveGeometry};
+use crate::report::check::Ruled;
 
 use super::constructions::{datum_element, DatumFeature};
 use super::index::DesignIndex;
@@ -35,13 +36,13 @@ pub(super) fn check_input(
     index: &DesignIndex<'_>,
     relation: &Relation,
     reference: Option<&InputReference>,
-    error: &mut dyn FnMut(std::fmt::Arguments<'_>),
+    error: &mut dyn FnMut(Ruled<'_>),
 ) {
     match reference {
         Some(InputReference::Built(built)) => {
             let kind = built_kind(built);
             if !built_fits(relation, kind) {
-                error(format_args!(
+                error(crate::rule!("design.nested-construction-reference-input-does-not", 
                     "a nested {} construction is the reference of a {relation:?} input, which does not take one",
                     kind.name()
                 ));
@@ -56,14 +57,14 @@ pub(super) fn check_input(
                 Relation::AtParameter => {
                     if let Some(first) = picks.first() {
                         if !pick_fits(index, relation, first) {
-                            error(format_args!(
+                            error(crate::rule!("design.atparameter-reference-picks-target-cannot-supply", 
                                 "an AtParameter reference picks a target that cannot supply what it reads"
                             ));
                         }
                     }
                     if let [_, origin] = picks {
                         if !may_be_point(index, origin) {
-                            error(format_args!(
+                            error(crate::rule!("design.measuring-origin-second-pick-reference-not", 
                                 "the measuring origin, the second pick of a {relation:?} reference, is not a point"
                             ));
                         }
@@ -72,7 +73,7 @@ pub(super) fn check_input(
                 Relation::Coordinates => {
                     if let [_, origin] = picks {
                         if !may_be_point(index, origin) {
-                            error(format_args!(
+                            error(crate::rule!("design.measuring-origin-second-pick-reference-not", 
                                 "the measuring origin, the second pick of a {relation:?} reference, is not a point"
                             ));
                         }
@@ -80,14 +81,15 @@ pub(super) fn check_input(
                 }
                 Relation::Fold => {
                     if picks.iter().any(|pick| !may_be_straight_edge(index, pick)) {
-                        error(format_args!(
+                        error(crate::rule!(
+                            "design.fold-reference-picks-something-other-straight",
                             "a Fold reference picks something other than a straight edge"
                         ));
                     }
                 }
                 _ => {
                     if picks.iter().any(|pick| !pick_fits(index, relation, pick)) {
-                        error(format_args!(
+                        error(crate::rule!("design.reference-picks-target-cannot-supply-what", 
                             "a {relation:?} reference picks a target that cannot supply what it reads"
                         ));
                     }
@@ -432,7 +434,13 @@ fn planar_straight(curve: Option<&PlanarCurve>) -> bool {
 fn spatial_straight(curve: Option<&SpatialCurve>) -> bool {
     match curve {
         None | Some(SpatialCurve::Point(_)) => false,
-        Some(SpatialCurve::Bounded { carrier, .. }) => !curved(carrier),
+        Some(SpatialCurve::Bounded(bounded)) => !matches!(
+            bounded.carrier,
+            InlineCurve::Circle(_)
+                | InlineCurve::Ellipse(_)
+                | InlineCurve::Parabola(_)
+                | InlineCurve::Hyperbola(_)
+        ),
     }
 }
 

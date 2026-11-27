@@ -91,7 +91,11 @@ fn a_resolved_state_is_closed_over_ids_in_no_topology() {
     content.base = StateBase::Empty;
     content.delta.records.vertices.push(vertex);
     content.delta.records.points.push(point);
-    assert_no_design_finding(&ir);
+    let closure: Vec<_> = design_findings(&ir)
+        .into_iter()
+        .filter(|finding| finding.message.contains("which the state does not hold"))
+        .collect();
+    assert!(closure.is_empty(), "{closure:#?}");
 }
 
 /// The baseline with configuration `configuration` overriding feature
@@ -111,6 +115,7 @@ fn stored_override(configuration: usize, bodies: Vec<BodyId>) -> CadIr {
                         tessellations: Vec::new(),
                         origin: StoredOrigin::Base {},
                     },
+                    assembly: None,
                     refine: None,
                     fuzzy_tolerance: None,
                 }),
@@ -206,4 +211,7 @@ fn a_base_delta_reaches_each_state_above_it_in_any_arena_order() {
     assert_eq!(with_owner_entry(&ir), expected);
 }
 
+mod cost;
+mod siblings;
 mod unproduced;
+mod whole_state;

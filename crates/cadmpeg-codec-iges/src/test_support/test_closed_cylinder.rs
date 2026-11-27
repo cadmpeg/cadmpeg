@@ -3,18 +3,14 @@
 //! curve.
 
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::{CadIr, CodecFormat, SourceGeometryRole, SourceObjectAssociation};
+use cadmpeg_ir::{CadIr, SourceGeometryRole, SourceObjectAssociation};
 
 /// A curve association that states the curve exists only to carry topology.
 fn support(key: &str) -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: CodecFormat::Iges,
+        format: cadmpeg_ir::codec_id!("iges"),
         geometry_role: Some(SourceGeometryRole::Support),
         object_id: NonBlankString::new(key).expect("non-blank key"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     }
 }

@@ -658,7 +658,7 @@ pub(super) enum Side {
 /// `loops`. Each loop lists its corners in run order with the material on
 /// the left (the exterior counterclockwise, holes clockwise), each with its
 /// side to the next corner; one corner with an arc side is a whole circle.
-fn prism(loops: &[Vec<([f64; 2], Side)>], [bottom, top]: [f64; 2]) -> CadIr {
+pub(super) fn prism(loops: &[Vec<([f64; 2], Side)>], [bottom, top]: [f64; 2]) -> CadIr {
     let height = top - bottom;
     let z_axis = Vector3::new(0.0, 0.0, 1.0);
     let x_axis = Vector3::new(1.0, 0.0, 0.0);
@@ -945,12 +945,11 @@ fn prism(loops: &[Vec<([f64; 2], Side)>], [bottom, top]: [f64; 2]) -> CadIr {
         shell.clone(),
         mint(RegionId::mint, "region", "prism"),
     ));
-    geometry.regions.push(Region {
-        id: mint(RegionId::mint, "region", "prism"),
-        body: mint(BodyId::mint, "body", "prism"),
-        shells: vec![shell],
-        native_ref: None,
-    });
+    geometry.regions.push(Region::new(
+        mint(RegionId::mint, "region", "prism"),
+        mint(BodyId::mint, "body", "prism"),
+        vec![shell],
+    ));
     geometry.bodies.push(Body {
         id: mint(BodyId::mint, "body", "prism"),
         kind: BodyKind::Solid,
@@ -959,6 +958,7 @@ fn prism(loops: &[Vec<([f64; 2], Side)>], [bottom, top]: [f64; 2]) -> CadIr {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     ir.finalize();
     ir

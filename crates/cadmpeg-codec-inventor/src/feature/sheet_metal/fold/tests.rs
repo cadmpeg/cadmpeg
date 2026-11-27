@@ -3,6 +3,7 @@ use super::*;
 use crate::feature::PmDcFeaturePropertyKind as Kind;
 use crate::record_identity::RecordTypeId;
 use crate::test_support::sheet_metal::{feature, list, property};
+use cadmpeg_core::serde_erase::json;
 
 /// An admitted fold record and its properties, with invented indexes.
 struct FoldFixture {
@@ -13,14 +14,14 @@ struct FoldFixture {
 const SLOTS: [u32; 8] = [41, 42, 43, 44, 45, 0, 0, 48];
 
 fn face_item(values: &[u32]) -> Kind {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "form": "face_item",
         "index_references": {
             "marker": 2,
             "metadata": if values.is_empty() {
                 serde_json::Value::Null
             } else {
-                serde_json::json!({"values": [values.len(), 268_435_456], "width": "u32"})
+                cadmpeg_core::json!({"values": [values.len(), 268_435_456], "width": "u32"})
             },
             "values": values,
         }
@@ -302,7 +303,7 @@ fn fold_losses_name_retained_controls_the_unresolved_source_and_refusals() {
     let codes = |feature: &Feature| {
         super::super::retained_control_losses([feature])
             .into_iter()
-            .map(|note| serde_json::to_string(&note).expect("note"))
+            .map(|note| json::to_string(&note).expect("note"))
             .collect::<Vec<_>>()
     };
     let unfold_notes = codes(&unfold);
@@ -327,7 +328,7 @@ fn fold_losses_name_retained_controls_the_unresolved_source_and_refusals() {
     );
     let notes = refusals.losses(&[native, unfold]);
     assert_eq!(notes.len(), 1);
-    let text = serde_json::to_string(&notes[0]).expect("note");
+    let text = json::to_string(&notes[0]).expect("note");
     assert!(text.contains("feature.sheet-metal-fold-refused"));
     assert!(text.contains("bends"));
 }

@@ -36,6 +36,10 @@
           "owner_loop": "rhino:object:loop#record-000000-offset-177.slot-0",
           "pcurves": [
             {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
               "pcurve": "rhino:object:pcurve#record-000000-offset-177.trim-0"
             }
           ],
@@ -48,6 +52,10 @@
           "owner_loop": "rhino:object:loop#record-000000-offset-177.slot-0",
           "pcurves": [
             {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
               "pcurve": "rhino:object:pcurve#record-000000-offset-177.trim-1"
             }
           ],
@@ -60,6 +68,10 @@
           "owner_loop": "rhino:object:loop#record-000000-offset-177.slot-0",
           "pcurves": [
             {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
               "pcurve": "rhino:object:pcurve#record-000000-offset-177.trim-2"
             }
           ],
@@ -103,8 +115,7 @@
             "format": "rhino",
             "geometry_role": "support",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -142,8 +153,7 @@
             "format": "rhino",
             "geometry_role": "support",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -181,8 +191,7 @@
             "format": "rhino",
             "geometry_role": "support",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         }
       ],
@@ -389,8 +398,7 @@
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -403,8 +411,7 @@
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -417,8 +424,7 @@
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         }
       ],
@@ -469,8 +475,7 @@
             "format": "rhino",
             "geometry_role": "support",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         }
       ],
@@ -497,20 +502,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -527,24 +525,15 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -701,8 +690,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0xe0495fe4",
@@ -750,8 +738,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep anonymous CRC mismatch at offset 2410",
@@ -763,8 +750,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep anonymous CRC mismatch at offset 2518",
@@ -776,8 +762,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep anonymous CRC mismatch at offset 2390",
@@ -789,8 +774,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep region wrapper checksum mismatch",
@@ -946,6 +930,8 @@
       },
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "02d6543f65f7229cd31ba39b5df0f9591c78c1027d9f2d670ecf09a52c66f649",
     "file_digests": {},
     "retained_records": {

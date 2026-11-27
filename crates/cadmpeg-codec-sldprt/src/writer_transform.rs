@@ -15,11 +15,16 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
 
-pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
-    if !ir.geometry.bodies.iter().any(|body| {
+/// Whether a body of `ir` states a placement other than the identity.
+pub(crate) fn places_bodies(ir: &CadIr) -> bool {
+    ir.geometry.bodies.iter().any(|body| {
         body.transform
             .is_some_and(|value| value != Transform::identity())
-    }) {
+    })
+}
+
+pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
+    if !places_bodies(ir) {
         return Ok(());
     }
 
@@ -59,15 +64,15 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
     let mut curve_transforms = HashMap::new();
     for body in &ir.geometry.bodies {
         let transform = body.transform.unwrap_or_default();
-        check_rigid(transform)?;
-        for region in ir.geometry.body_regions(&body.id) {
-            for shell_id in &region.shells {
+        check_rigid(transform).map_err(|error| naming(body.id.as_str(), error))?;
+        for region in ir.geometry.stated_body_regions(&body.id) {
+            for shell_id in region.stated_shells() {
                 let shell = shells.get(shell_id.as_str()).ok_or_else(|| {
                     CodecError::Malformed("region references missing shell".into())
                 })?;
-                for face in ir.geometry.shell_faces(&shell.id) {
+                for face in ir.geometry.stated_shell_faces(&shell.id) {
                     assign(&mut surface_transforms, face.surface.as_str(), transform)?;
-                    for loop_id in &face.loops {
+                    for loop_id in face.loops.stated() {
                         let lp = loops.get(loop_id.as_str()).ok_or_else(|| {
                             CodecError::Malformed("face references missing loop".into())
                         })?;
@@ -96,7 +101,8 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
 
     for point in &mut ir.geometry.points {
         if let Some(transform) = point_transforms.get(point.id.as_str()) {
-            let placed = placed_point(*transform, point.position())?;
+            let placed = placed_point(*transform, point.position())
+                .map_err(|error| naming(point.id.as_str(), error))?;
             point.set_position(placed);
         }
     }
@@ -104,13 +110,15 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
         let Some(transform) = surface_transforms.get(surface.id.as_str()).copied() else {
             continue;
         };
-        transform_surface(&mut surface.geometry, transform)?;
+        transform_surface(&mut surface.geometry, transform)
+            .map_err(|error| naming(surface.id.as_str(), error))?;
     }
     for curve in &mut ir.geometry.curves {
         let Some(transform) = curve_transforms.get(curve.id.as_str()).copied() else {
             continue;
         };
-        transform_curve(&mut curve.geometry, transform)?;
+        transform_curve(&mut curve.geometry, transform)
+            .map_err(|error| naming(curve.id.as_str(), error))?;
     }
     if !ir.model.tessellations.is_empty() {
         let transforms = ir
@@ -125,7 +133,8 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
             _ => None,
         };
         for mesh in &mut ir.model.tessellations {
-            let transform = match &mesh.body {
+            let owner = mesh.of.body().cloned();
+            let transform = match mesh.of.body() {
                 Some(body) => transforms.get(body).copied().ok_or_else(|| {
                     CodecError::Malformed("tessellation references missing body".into())
                 })?,
@@ -147,7 +156,8 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                 error @ TessellationError::Admission { .. } => {
                     CodecError::malformed(format_args!("invalid transformed tessellation: {error}"))
                 }
-            })?;
+            })
+            .map_err(|error| naming_owner(owner.as_ref(), error))?;
             if !mesh.vertex_normals().is_empty() || !mesh.per_corner_normals().is_empty() {
                 mesh.edit_normals(|normal| {
                     *normal = transform
@@ -163,7 +173,8 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                     error @ TessellationError::Admission { .. } => CodecError::malformed(
                         format_args!("invalid transformed tessellation: {error}"),
                     ),
-                })?;
+                })
+                .map_err(|error| naming_owner(owner.as_ref(), error))?;
             }
         }
     }
@@ -172,6 +183,27 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
         .iter_mut()
         .for_each(|body| body.transform = None);
     Ok(())
+}
+
+/// `error` with its message opened by `id`, the record whose bake it
+/// refuses, so that the body-drop pass leaves out the body that owns it.
+fn naming(id: &str, error: CodecError) -> CodecError {
+    match error {
+        CodecError::NotImplemented(message) => {
+            CodecError::NotImplemented(format!("{id}: {message}"))
+        }
+        CodecError::Malformed(message) => CodecError::malformed(format_args!("{id}: {message}")),
+        error => error,
+    }
+}
+
+/// `error` naming the body `owner` of the tessellation whose bake it
+/// refuses.
+fn naming_owner(owner: Option<&cadmpeg_ir::ids::BodyId>, error: CodecError) -> CodecError {
+    match owner {
+        Some(body) => naming(body.as_str(), error),
+        None => error,
+    }
 }
 
 fn assign(

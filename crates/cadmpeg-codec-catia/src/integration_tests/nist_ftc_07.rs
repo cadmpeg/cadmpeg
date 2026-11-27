@@ -4,7 +4,6 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 use std::path::Path;
-use std::sync::LazyLock;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{
@@ -15,19 +14,27 @@ use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::CatiaCodec;
 
-static FTC_07: LazyLock<EditableDecodeResult> = LazyLock::new(|| {
+/// One decode of the solid serves every check of its geometry and PMI.
+#[test]
+fn nist_ftc_07_agrees_with_its_ap242_model() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
     let bytes = std::fs::read(path).expect("read FTC-07 CATPart");
-    CatiaCodec
+    let decoded: EditableDecodeResult = CatiaCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode FTC-07 CATPart")
-        .into()
-});
+        .into();
+    nist_ftc_07_transfers_every_solid_face_carrier(&decoded);
+    nist_ftc_07_circular_edge_agrees_with_both_face_curves(&decoded);
+    nist_ftc_07_transfers_all_freeform_boundary_curves(&decoded);
+    nist_ftc_07_transfers_both_planar_sheet_bodies(&decoded);
+    nist_ftc_07_planar_rims_classify_and_counterwind_their_holes(&decoded);
+    nist_ftc_07_plane_semicircle_follows_the_edge_interval(&decoded);
+    nist_ftc_07_solid_measures_the_step_validation_properties(&decoded);
+    nist_ftc_07_transfers_the_semantic_step_geometric_tolerances(&decoded);
+}
 
-#[test]
-fn nist_ftc_07_transfers_every_solid_face_carrier() {
-    let decoded = &*FTC_07;
+fn nist_ftc_07_transfers_every_solid_face_carrier(decoded: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate::validate_neutral_with_annotations(
         decoded.ir(),
         &decoded.source_fidelity().annotations,
@@ -86,11 +93,9 @@ fn nist_ftc_07_transfers_every_solid_face_carrier() {
         .all(|loss| loss.message.contains("stored-box excess")));
 }
 
-#[test]
-fn nist_ftc_07_circular_edge_agrees_with_both_face_curves() {
+fn nist_ftc_07_circular_edge_agrees_with_both_face_curves(decoded: &EditableDecodeResult) {
     const STEP_EDGE_LENGTH_MM: f64 = 2.367_294_783_918_816_3;
     const LENGTH_TOLERANCE_MM: f64 = 2e-3;
-    let decoded = &*FTC_07;
     let geometry = &decoded.ir().geometry;
     let edge = geometry
         .edges
@@ -140,8 +145,7 @@ fn nist_ftc_07_circular_edge_agrees_with_both_face_curves() {
     }
 }
 
-#[test]
-fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
+fn nist_ftc_07_transfers_all_freeform_boundary_curves(decoded: &EditableDecodeResult) {
     const ENDPOINT_TOLERANCE_MM: f64 = 2.0e-5;
     const STEP_SAMPLE_TOLERANCE_MM: f64 = 1.0e-4;
     const PLANE_JET_EDGES: [usize; 8] = [418, 425, 436, 443, 700, 728, 753, 761];
@@ -227,7 +231,6 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
         (764, [139.561_823_278, -104.256_042_271, 70.771_719_768]),
         (809, [139.561_883_141, -104.254_327_504, -70.770_057_607]),
     ];
-    let decoded = &*FTC_07;
     let geometry = &decoded.ir().geometry;
     let surfaces: HashMap<_, _> = geometry.surfaces.iter().map(|s| (&s.id, s)).collect();
     let freeform_faces: HashSet<_> = geometry
@@ -529,11 +532,9 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
     );
 }
 
-#[test]
-fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
+fn nist_ftc_07_transfers_both_planar_sheet_bodies(decoded: &EditableDecodeResult) {
     use cadmpeg_ir::topology::BodyKind;
 
-    let decoded = &*FTC_07;
     let model = &decoded.ir().model;
     let geometry = &decoded.ir().geometry;
     let solid_faces: HashSet<_> = geometry
@@ -562,10 +563,10 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
     assert_eq!(sheets.len(), 2);
     let mut areas = Vec::new();
     for body in sheets {
-        let [region] = geometry.body_regions(&body.id).collect::<Vec<_>>()[..] else {
+        let [region] = geometry.stated_body_regions(&body.id).collect::<Vec<_>>()[..] else {
             panic!("one region per sheet")
         };
-        let [shell_id] = region.shells.as_slice() else {
+        let [shell_id] = region.stated_shells().collect::<Vec<_>>()[..] else {
             panic!("one shell per sheet")
         };
         let shell = geometry
@@ -573,7 +574,7 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
             .iter()
             .find(|shell| &shell.id == shell_id)
             .expect("sheet shell");
-        let [face] = geometry.shell_faces(&shell.id).collect::<Vec<_>>()[..] else {
+        let [face] = geometry.stated_shell_faces(&shell.id).collect::<Vec<_>>()[..] else {
             panic!("one face per sheet")
         };
         let surface = geometry
@@ -646,10 +647,8 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
     }
 }
 
-#[test]
-fn nist_ftc_07_planar_rims_classify_and_counterwind_their_holes() {
+fn nist_ftc_07_planar_rims_classify_and_counterwind_their_holes(decoded: &EditableDecodeResult) {
     use cadmpeg_ir::topology::{FaceLoops, Sense};
-    let decoded = &*FTC_07;
     let geometry = &decoded.ir().geometry;
     let edges: HashMap<_, _> = geometry.edges.iter().map(|edge| (&edge.id, edge)).collect();
     let curves: HashMap<_, _> = geometry
@@ -735,10 +734,8 @@ fn nist_ftc_07_planar_rims_classify_and_counterwind_their_holes() {
     }
 }
 
-#[test]
-fn nist_ftc_07_plane_semicircle_follows_the_edge_interval() {
+fn nist_ftc_07_plane_semicircle_follows_the_edge_interval(decoded: &EditableDecodeResult) {
     const TOLERANCE_MM: f64 = 2e-3;
-    let decoded = &*FTC_07;
     let model = &decoded.ir().geometry;
     let edge = model
         .edges
@@ -774,8 +771,7 @@ fn nist_ftc_07_plane_semicircle_follows_the_edge_interval() {
     assert!(actual.distance(expected) < TOLERANCE_MM);
 }
 
-#[test]
-fn nist_ftc_07_solid_measures_the_step_validation_properties() {
+fn nist_ftc_07_solid_measures_the_step_validation_properties(decoded: &EditableDecodeResult) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::topology::BodyKind;
     use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
@@ -789,7 +785,6 @@ fn nist_ftc_07_solid_measures_the_step_validation_properties() {
     const VOLUME_RELATIVE_TOLERANCE: f64 = 1e-5;
     const CENTROID_TOLERANCE_MM: f64 = 1e-3;
 
-    let decoded = &*FTC_07;
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0).expect("measure context");
@@ -857,8 +852,7 @@ fn nist_ftc_07_solid_measures_the_step_validation_properties() {
     );
 }
 
-#[test]
-fn nist_ftc_07_transfers_the_semantic_step_geometric_tolerances() {
+fn nist_ftc_07_transfers_the_semantic_step_geometric_tolerances(decoded: &EditableDecodeResult) {
     use cadmpeg_ir::pmi::{GeometricToleranceKind as Kind, PmiDefinition};
 
     const MM_PER_INCH: f64 = 25.4;
@@ -894,7 +888,6 @@ fn nist_ftc_07_transfers_the_semantic_step_geometric_tolerances() {
         (Kind::SurfaceProfile, 0.07, &["A", "B", "C"]),
         (Kind::SurfaceProfile, 0.07, &["A", "B", "C"]),
     ];
-    let decoded = &*FTC_07;
     let pmi = &decoded.ir().model.pmi;
     let labels = |system: &cadmpeg_ir::ids::PmiId| -> Vec<String> {
         let annotation = pmi

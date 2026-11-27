@@ -19,6 +19,7 @@
 //! and a record field holding a `serde_json::Value` states its own shape, so
 //! the descent is counted against [`MAX_NATIVE_NESTING_DEPTH`].
 
+use cadmpeg_core::serde_erase::json;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt::{Display, Write as _};
@@ -158,8 +159,8 @@ impl Members {
                 .map_err(|_| NativeConvertError::MissingId)?;
             crate::ids::Identity::new(text)?
         } else {
-            let id = serde_json::from_slice::<String>(raw_id)
-                .map_err(|_| NativeConvertError::MissingId)?;
+            let id =
+                json::from_slice::<String>(raw_id).map_err(|_| NativeConvertError::MissingId)?;
             crate::ids::Identity::new(id)?
         };
         let already_canonical = self.start == 0
@@ -484,12 +485,13 @@ impl<'a, 'o> CanonText<'a, 'o> {
         Ok(Written::Text)
     }
 
-    /// Write a finite number, or refuse a NaN or infinite one.
+    /// Write a finite number, negative zero as zero (§2.5), or refuse a NaN
+    /// or infinite one.
     fn number(self, value: f64) -> Result<Written, Error> {
         if !value.is_finite() {
             return Err(CanonError::NonFinite(Vec::new()));
         }
-        self.scalar(&value)
+        self.scalar(&(value + 0.0))
     }
 
     fn null(self) -> Written {
@@ -1226,7 +1228,7 @@ impl ser::Serializer for CanonKey<'_> {
 
     fn serialize_f32(self, value: f32) -> Result<String, Error> {
         if value.is_finite() {
-            number_key_text(&value)
+            number_key_text(&(value + 0.0))
         } else {
             Err(ser::Error::custom("float key must be finite"))
         }
@@ -1234,7 +1236,7 @@ impl ser::Serializer for CanonKey<'_> {
 
     fn serialize_f64(self, value: f64) -> Result<String, Error> {
         if value.is_finite() {
-            number_key_text(&value)
+            number_key_text(&(value + 0.0))
         } else {
             Err(ser::Error::custom("float key must be finite"))
         }

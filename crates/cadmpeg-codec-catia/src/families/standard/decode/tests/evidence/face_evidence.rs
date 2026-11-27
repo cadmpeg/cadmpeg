@@ -713,9 +713,82 @@ fn standard_face_attachment_mints_face_body_region_and_shell_ids() {
         "catia:standard:shell#0-0"
     );
     assert_eq!(
-        ir.geometry.shell_faces(&ir.geometry.shells[0].id).count(),
+        ir.geometry
+            .stated_shell_faces(&ir.geometry.shells[0].id)
+            .count(),
         1
     );
+}
+
+#[test]
+fn standard_face_on_a_plane_with_no_loop_is_stated_partial_and_charged() {
+    let brep = crate::test_support::test_topology::standard_quad_topology_stream();
+    let surface_id = SurfaceId::mint("catia:test:surface#plane").expect("identity grammar");
+    let mut ir = CadIr::empty();
+    ir.geometry.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        )),
+        source_object: None,
+        native_ref: None,
+    });
+    let bindings = [(surface_id, true, 0)];
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        crate::families::standard::decode::attach_standard_faces(
+            ctx,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &bindings,
+            &brep,
+            &mut admission,
+        )
+    })
+    .expect("attach standard faces");
+    assert_eq!(
+        ir.geometry.faces[0].loops,
+        cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops: Vec::new() }
+    );
+    let mut losses = Vec::new();
+    crate::assemble::state_loopless_faces(&mut ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::CatiaLossCode::TopologyFaceBoundaryUnstated.kind()
+    );
+    assert!(losses[0].message.contains("catia:standard:face#0"));
+}
+
+#[test]
+fn loopless_face_on_an_absent_surface_is_not_charged() {
+    let brep = crate::test_support::test_topology::standard_quad_topology_stream();
+    let bindings = [(
+        SurfaceId::mint("catia:test:surface#absent").expect("identity grammar"),
+        true,
+        0,
+    )];
+    let mut ir = CadIr::empty();
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        crate::families::standard::decode::attach_standard_faces(
+            ctx,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &bindings,
+            &brep,
+            &mut admission,
+        )
+    })
+    .expect("attach standard faces");
+    let mut losses = Vec::new();
+    crate::assemble::state_loopless_faces(&mut ir, &mut losses);
+    assert!(losses.is_empty());
 }
 
 #[test]
@@ -776,7 +849,7 @@ fn face_partition_splits_components_into_separate_regions_and_shells() {
     assert_eq!(
         base_ir
             .geometry
-            .shell_faces(&base_ir.geometry.shells[1].id)
+            .stated_shell_faces(&base_ir.geometry.shells[1].id)
             .next()
             .expect("shell face")
             .id

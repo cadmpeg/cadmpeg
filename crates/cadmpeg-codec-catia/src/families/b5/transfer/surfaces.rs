@@ -644,7 +644,7 @@ pub(super) fn emit_surfaces(
             },
         )?;
         if revolution_cache {
-            annotations.derived(id.as_str(), "geometry")?;
+            annotations.derived(&id, "geometry")?;
         }
         let model_id = id.clone();
         admission.charge()?;
@@ -679,7 +679,7 @@ pub(super) fn emit_surfaces(
                     "2d_profile_curve",
                     Exactness::Derived,
                 )?;
-                annotations.derived(directrix_id.as_str(), "geometry")?;
+                annotations.derived(&directrix_id, "geometry")?;
                 admission.charge()?;
                 ir.geometry.curves.push(Curve {
                     parameter_range: None,

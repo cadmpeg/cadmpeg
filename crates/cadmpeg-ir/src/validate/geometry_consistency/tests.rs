@@ -953,6 +953,7 @@ fn procedural_surface_carrier_requires_its_exact_owner() {
         cache_fit_tolerance: None,
         record_bounds: None,
     });
+    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "{:?}", report.findings);
 
@@ -986,6 +987,7 @@ fn procedural_curve_carrier_requires_its_exact_owner() {
         definition: ProceduralCurveDefinition::Helix(crate::geometry::helix::HelixCurveConstruction::try_new([0.0, std::f64::consts::TAU], crate::geometry::helix::HelixFrame { center: Point3::new(0.0, 0.0, 0.0), major: Vector3::new(1.0, 0.0, 0.0), minor: Vector3::new(0.0, 1.0, 0.0), pitch: Vector3::new(0.0, 0.0, 1.0), axis: Vector3::new(0.0, 0.0, 1.0) }, 0.0, None).unwrap()),
         cache_fit_tolerance: None,
     });
+    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "{:?}", report.findings);
 
@@ -1137,6 +1139,59 @@ fn edge_endpoint_mismatch_is_flagged() {
         "curve mismatch within its cache fit tolerance must validate, got: {:?}",
         report.findings
     );
+}
+
+/// Part 10 adds the fit tolerance of a cache to the tolerance in force: a
+/// vertex farther from its edge's cached curve than either term, and nearer
+/// than their sum, agrees with it.
+#[test]
+fn an_edge_end_within_the_sum_of_tolerance_and_cache_fit_agrees() {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let moved = ir.geometry.points[0].position().get();
+    ir.geometry.points[0].set_position(
+        crate::features::geometry::FinitePoint3::new(crate::math::Point3::new(
+            moved.x,
+            moved.y,
+            moved.z + 0.025,
+        ))
+        .expect("a finite position is a point"),
+    );
+    ir.tolerances.linear =
+        crate::scalar::PositiveLength::new(0.02).expect("positive finite tolerance");
+    let curve = ir.geometry.edges[0]
+        .curve()
+        .cloned()
+        .expect("cube edge curve");
+    let procedural = procedural_curve! {
+        id: ProceduralCurveId::mint("synthetic:cube:curve-cache#0").expect("valid identity"),
+        definition: ProceduralCurveDefinition::Intersection {
+            context: crate::geometry::intersection_curves::IntcurveSupportContext::try_new(std::array::from_fn(|_| crate::geometry::intersection_curves::IntcurveSupportSide {
+                    surface: None,
+                    pcurve: None,
+                }), ir.geometry.edges[0].param_range().expect("cube edge range").get(), std::array::from_fn(|_| Vec::new())).unwrap(),
+            discontinuity_flag: false,
+            cache: None,
+        },
+        cache_fit_tolerance: Some(0.01),
+    };
+    ir.geometry
+        .add_procedural_curve(&curve, procedural)
+        .unwrap();
+    let edge_finding = |ir: &CadIr| {
+        validate_neutral(ir, Vec::new())
+            .expect("validate the neutral model")
+            .findings
+            .into_iter()
+            .any(|f| {
+                f.check == Check::GeometricConsistency
+                    && f.entity.as_deref() == Some("synthetic:cube:edge#0")
+            })
+    };
+    assert!(!edge_finding(&ir));
+    ir.geometry.procedural_curves[0]
+        .set_cache_fit_tolerance(Some(0.004))
+        .unwrap();
+    assert!(edge_finding(&ir));
 }
 
 #[test]

@@ -48,7 +48,13 @@ fn a_reemitted_lane_keeps_a_reclassified_markers_code() {
     let mut payload = lane.native_payload.to_vec();
     payload[167..171].copy_from_slice(&1u32.to_le_bytes());
     lane.native_payload = payload.into();
-    let written = crate::writer::resolved_feature_payload(&lane, &[], &[]).unwrap();
+    let written = crate::writer::resolved_feature_payload(
+        &lane,
+        &[],
+        &[],
+        cadmpeg_ir::units::Tolerances::default().linear,
+    )
+    .unwrap();
     assert_eq!(&written[167..171], &1u32.to_le_bytes());
 }
 
@@ -76,14 +82,26 @@ fn a_reemitted_lane_keeps_unchanged_coordinates_in_their_layout() {
     lane.sketch_entities = markers;
     lane.classes = crate::resolved_features::names::class_declarations(&payload, &lane.id).unwrap();
     lane.native_payload = payload.clone().into();
-    let written = crate::writer::resolved_feature_payload(&lane, &[], &[]).unwrap();
+    let written = crate::writer::resolved_feature_payload(
+        &lane,
+        &[],
+        &[],
+        cadmpeg_ir::units::Tolerances::default().linear,
+    )
+    .unwrap();
     assert_eq!(&written[150 + 48..150 + 170], &payload[150 + 48..150 + 170]);
     // A change to coordinates this layout keeps elsewhere is refused, not
     // written at +66 and +74.
     let mut edited = lane.clone();
     edited.sketch_entities[0].coordinates_m =
         cadmpeg_ir::units::FiniteVector::new([coordinates[0] + 0.001, coordinates[1]]);
-    let error = crate::writer::resolved_feature_payload(&edited, &[], &[]).unwrap_err();
+    let error = crate::writer::resolved_feature_payload(
+        &edited,
+        &[],
+        &[],
+        cadmpeg_ir::units::Tolerances::default().linear,
+    )
+    .unwrap_err();
     assert!(
         error.to_string().contains("keeps them elsewhere"),
         "{error}"
@@ -105,9 +123,11 @@ fn a_config_objects_lane_is_written_to_its_own_member() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let native =
-            crate::native::SldprtNative::load(decoded.ir().native.namespace("sldprt").unwrap())
-                .unwrap();
+        let native = crate::native::SldprtNative::load(
+            decoded.ir().native.namespace("sldprt").unwrap(),
+            decoded.ir().tolerances.linear,
+        )
+        .unwrap();
         let mut lanes = native
             .feature_input_lanes
             .iter()
@@ -127,18 +147,13 @@ fn a_config_objects_lane_is_written_to_its_own_member() {
     let source = crate::test_support::carchive::sldprt_with_sketch_config_objects();
     let (decoded, expected) = lanes(&source);
     assert_eq!(expected.len(), 2, "{expected:?}");
-    let (mut ir, _, fidelity) = decoded.into_parts();
-    ir.source
-        .as_mut()
-        .unwrap()
-        .attributes
-        .remove(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE)
-        .unwrap();
+    let (ir, _, mut fidelity) = decoded.into_parts();
+    fidelity.content_digest = None;
     let mut written = Vec::new();
     crate::SldprtCodec
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap()
         .write_to(&mut written)
@@ -160,9 +175,11 @@ fn a_config_objects_lane_without_provenance_is_written_to_its_own_member() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let native =
-            crate::native::SldprtNative::load(decoded.ir().native.namespace("sldprt").unwrap())
-                .unwrap();
+        let native = crate::native::SldprtNative::load(
+            decoded.ir().native.namespace("sldprt").unwrap(),
+            decoded.ir().tolerances.linear,
+        )
+        .unwrap();
         let mut lanes = native
             .feature_input_lanes
             .iter()
@@ -182,13 +199,7 @@ fn a_config_objects_lane_without_provenance_is_written_to_its_own_member() {
     let source = crate::test_support::carchive::sldprt_with_sketch_config_objects();
     let (decoded, expected) = lanes(&source);
     assert_eq!(expected.len(), 2, "{expected:?}");
-    let (mut ir, _, _) = decoded.into_parts();
-    ir.source
-        .as_mut()
-        .unwrap()
-        .attributes
-        .remove(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE)
-        .unwrap();
+    let (ir, _, _) = decoded.into_parts();
     let mut written = Vec::new();
     crate::SldprtCodec
         .plan(

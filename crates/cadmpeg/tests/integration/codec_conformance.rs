@@ -302,6 +302,7 @@ mod budget {
                         &DecodeOptions {
                             depth: cadmpeg_core::decode::DecodeDepth::Full,
                             policy,
+                            ..DecodeOptions::default()
                         },
                     )
                     .expect_err("starved decode must fail");
@@ -420,6 +421,7 @@ mod sketch_profiles {
                     &DecodeOptions {
                         depth: DecodeDepth::Full,
                         policy,
+                        ..DecodeOptions::default()
                     },
                 )
                 .unwrap_or_else(|error| panic!("{profile}: sketch projection refused: {error}"));
@@ -631,7 +633,7 @@ mod product_roundtrip {
 
         let mut step = Vec::new();
         StepCodec::default()
-            .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut step))
             .expect("write STEP assembly");
         let decoded = StepCodec::default()
@@ -701,7 +703,7 @@ mod product_roundtrip {
 
         let mut step = Vec::new();
         StepCodec::default()
-            .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut step))
             .expect("write STEP");
         let decoded = StepCodec::default()
@@ -725,7 +727,7 @@ mod product_roundtrip {
             .0;
         let mut step = Vec::new();
         StepCodec::default()
-            .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut step))
             .expect("write STEP");
         let decoded = StepCodec::default()
@@ -899,7 +901,7 @@ mod subset_carriers {
     /// The unit cube with its first edge on a chain of subsets over `basis`,
     /// innermost first, that maps the edge onto `RANGE` of the basis.
     fn chain(basis: Basis, links: &[([f64; 2], bool)]) -> CadIr {
-        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         let edge = ir.geometry.edges[0].clone();
         let position = |vertex: &cadmpeg_ir::ids::VertexId| {
             let vertex = ir
@@ -1039,7 +1041,7 @@ mod subset_carriers {
                 );
                 let mut step = Vec::new();
                 let report = StepCodec::default()
-                    .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                    .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
                     .and_then(|plan| plan.write_to(&mut step))
                     .unwrap();
                 let losses = report
@@ -1071,7 +1073,7 @@ mod subset_carriers {
                 let ir = cube(basis, sense);
                 let mut iges = Vec::new();
                 IgesCodec
-                    .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                    .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
                     .and_then(|plan| plan.write_to(&mut iges))
                     .unwrap_or_else(|error| panic!("{basis:?} {sense}: {error}"));
                 assert!(!iges.is_empty());
@@ -1088,7 +1090,7 @@ mod subset_carriers {
                 assert_valid(&ir, &label);
                 let mut iges = Vec::new();
                 IgesCodec
-                    .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                    .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
                     .and_then(|plan| plan.write_to(&mut iges))
                     .unwrap_or_else(|error| panic!("{label}: {error}"));
                 let decoded = IgesCodec
@@ -1117,7 +1119,7 @@ mod subset_carriers {
             assert_valid(&ir, &label);
             let mut f3d = Vec::new();
             cadmpeg_codec_f3d::F3dCodec
-                .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
                 .and_then(|plan| plan.write_to(&mut f3d))
                 .unwrap_or_else(|error| panic!("{label}: {error}"));
             let decoded = cadmpeg_codec_f3d::F3dCodec

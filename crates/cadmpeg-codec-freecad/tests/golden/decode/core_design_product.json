@@ -3,14 +3,657 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "unordered",
+          "value": {
+            "id": "fcstd:design:container#document:group",
+            "kind": "group",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Box"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Cut"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Cylinder"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#DesignedFeature"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Occurrence"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Parameters"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Profile"
+              }
+            ]
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "primitive"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Box",
+          "name": "Box",
+          "native_ref": "fcstd:native:object#Box"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "combine"
+              }
+            },
+            "refine": true
+          },
+          "id": "fcstd:design:feature#Cut",
+          "name": "Cut",
+          "native_ref": "fcstd:native:object#Cut"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "primitive"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Cylinder",
+          "name": "Cylinder",
+          "native_ref": "fcstd:native:object#Cylinder"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#DesignedFeature:Shape:DesignedFeature.Shape.brp:34%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#DesignedFeature",
+          "name": "DesignedFeature",
+          "native_ref": "fcstd:native:object#DesignedFeature",
+          "suppressed": {
+            "kind": "literal",
+            "value": false
+          }
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "place",
+              "value": {
+                "base": "own_occurrence",
+                "constraints": [],
+                "native_options": {},
+                "occurrence": "fcstd:model:occurrence#Occurrence:instance",
+                "placement": {
+                  "after": [
+                    {
+                      "kind": "fixed",
+                      "value": [
+                        [
+                          1.0,
+                          0.0,
+                          0.0,
+                          40.0
+                        ],
+                        [
+                          0.0,
+                          1.0,
+                          0.0,
+                          0.0
+                        ],
+                        [
+                          0.0,
+                          0.0,
+                          1.0,
+                          0.0
+                        ]
+                      ]
+                    }
+                  ],
+                  "inputs": [],
+                  "resolved": {
+                    "origin": {
+                      "x": 40.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "x_axis": {
+                      "x": 1.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "y_axis": {
+                      "x": 0.0,
+                      "y": 1.0,
+                      "z": 0.0
+                    },
+                    "z_axis": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 1.0
+                    }
+                  },
+                  "resolved_in": {}
+                },
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Occurrence",
+          "name": "Occurrence",
+          "native_ref": "fcstd:native:object#Occurrence"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "spreadsheet"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Parameters",
+          "name": "Parameters",
+          "native_ref": "fcstd:native:object#Parameters"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "sketch"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Profile",
+          "name": "Profile",
+          "native_ref": "fcstd:native:object#Profile"
+        }
+      ],
       "names": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "30[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Box:Length",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Length",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Box:Length",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Box"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 30.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "360[deg]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Cylinder:Angle",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 1,
+              "length": 0,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Angle",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Cylinder:Angle",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Cylinder"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 6.283185307179586
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "4[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Cylinder:Radius",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Radius",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Cylinder:Radius",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Cylinder"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 4.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "5[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#DesignedFeature:Length",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Length",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#DesignedFeature:Length",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#DesignedFeature"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 5.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "source",
+              "value": {
+                "dialect": {
+                  "kind": "free_cad"
+                },
+                "tokens": [
+                  {
+                    "kind": "text",
+                    "value": "'Length"
+                  }
+                ]
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Parameters:cell:A1",
+          "kind": {
+            "kind": "text"
+          },
+          "name": "A1",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Parameters:cells",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Parameters"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "text",
+            "value": "Length"
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "source",
+              "value": {
+                "dialect": {
+                  "kind": "free_cad"
+                },
+                "tokens": [
+                  {
+                    "kind": "text",
+                    "value": "'Width"
+                  }
+                ]
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Parameters:cell:A2",
+          "kind": {
+            "kind": "text"
+          },
+          "name": "A2",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Parameters:cells",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Parameters"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "text",
+            "value": "Width"
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "source",
+              "value": {
+                "dialect": {
+                  "kind": "free_cad"
+                },
+                "tokens": [
+                  {
+                    "kind": "text",
+                    "value": "=30 mm"
+                  }
+                ]
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Parameters:cell:B1",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "ProductLength",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Parameters:cells",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Parameters"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 30.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "source",
+              "value": {
+                "dialect": {
+                  "kind": "free_cad"
+                },
+                "tokens": [
+                  {
+                    "kind": "text",
+                    "value": "=20 mm"
+                  }
+                ]
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Parameters:cell:B2",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "B2",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Parameters:cells",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Parameters"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 20.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "12[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Profile:constraint:3",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Constraint3",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Profile:Constraints",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Profile"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 12.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "8[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Profile:constraint:4",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Constraint4",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Profile:Constraints",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Profile"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 8.0
+          }
+        }
+      ],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Box"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Box",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Cut"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Cut:Shape:Cut.Shape.brp:44%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Cut",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Cylinder"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Cylinder:Shape:Cylinder.Shape.brp:9%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Cylinder",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#DesignedFeature"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#DesignedFeature:Shape:DesignedFeature.Shape.brp:34%40location1"
+              ],
+              "native_ref": "fcstd:native:object#DesignedFeature",
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "fcstd:model:product_definition#document:root",
+          "occurrences": {},
+          "roots": [
+            "fcstd:design:container#document:group"
+          ],
+          "unproduced": [
+            "fcstd:model:body#Profile:Shape:Profile.Shape.brp:9%40location1"
+          ]
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
@@ -1414,7 +2057,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -1438,7 +2081,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -1462,7 +2105,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -1484,7 +2127,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -1532,7 +2175,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -1580,7 +2223,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -1628,7 +2271,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -1654,7 +2297,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -1732,7 +2375,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -1778,7 +2421,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -1816,7 +2459,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -1847,7 +2490,7 @@
                 "ref_direction": {
                   "x": 1.0,
                   "y": 0.0,
-                  "z": -0.0
+                  "z": 0.0
                 }
               },
               "kind": "transformed",
@@ -1956,7 +2599,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -2004,7 +2647,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -2030,7 +2673,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -2078,7 +2721,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -2102,7 +2745,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -2124,7 +2767,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -2186,7 +2829,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -2217,7 +2860,7 @@
                 "ref_direction": {
                   "x": 1.0,
                   "y": 0.0,
-                  "z": -0.0
+                  "z": 0.0
                 }
               },
               "kind": "transformed",
@@ -2281,7 +2924,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -2305,7 +2948,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -2329,7 +2972,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -2351,7 +2994,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -2399,7 +3042,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -2447,7 +3090,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -2495,7 +3138,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -2521,7 +3164,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -5317,7 +5960,7 @@
               "v": 0.0
             },
             "y_axis": {
-              "u": -0.0,
+              "u": 0.0,
               "v": 1.0
             }
           },
@@ -6472,7 +7115,7 @@
               "normal": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 0.0,
@@ -6499,7 +7142,7 @@
             "value": {
               "kind": "plane",
               "normal": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -6540,7 +7183,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -6557,7 +7200,7 @@
             "value": {
               "kind": "plane",
               "normal": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -6598,7 +7241,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -6617,7 +7260,7 @@
               "normal": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 30.0,
@@ -6646,7 +7289,7 @@
               "normal": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 0.0,
@@ -6673,7 +7316,7 @@
             "value": {
               "kind": "plane",
               "normal": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -6714,7 +7357,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -6731,7 +7374,7 @@
             "value": {
               "kind": "plane",
               "normal": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -6772,7 +7415,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -6791,7 +7434,7 @@
               "normal": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 30.0,
@@ -6817,8 +7460,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "kind": "cylinder",
@@ -6831,7 +7474,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -6848,8 +7491,8 @@
             "value": {
               "basis": {
                 "axis": {
-                  "x": -0.0,
-                  "y": -0.0,
+                  "x": 0.0,
+                  "y": 0.0,
                   "z": -1.0
                 },
                 "kind": "cylinder",
@@ -6862,7 +7505,7 @@
                 "ref_direction": {
                   "x": 1.0,
                   "y": 0.0,
-                  "z": -0.0
+                  "z": 0.0
                 }
               },
               "kind": "transformed",
@@ -6913,7 +7556,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -6929,8 +7572,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "kind": "cylinder",
@@ -6943,7 +7586,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -6972,7 +7615,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -7002,7 +7645,7 @@
                 "u_axis": {
                   "x": 1.0,
                   "y": 0.0,
-                  "z": -0.0
+                  "z": 0.0
                 }
               },
               "kind": "transformed",
@@ -7043,7 +7686,7 @@
               "normal": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 0.0,
@@ -7070,7 +7713,7 @@
             "value": {
               "kind": "plane",
               "normal": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -7111,7 +7754,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -7128,7 +7771,7 @@
             "value": {
               "kind": "plane",
               "normal": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -7169,7 +7812,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -7188,7 +7831,7 @@
               "normal": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 12.0,
@@ -7378,244 +8021,11 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "primitive",
-              "value": {
-                "op": "new_body",
-                "placement": [
-                  [
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0
-                  ]
-                ],
-                "solid": {
-                  "height": 10.0,
-                  "kind": "box",
-                  "length": 30.0,
-                  "width": 20.0
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Box",
-          "name": "Box",
-          "native_ref": "fcstd:native:object#Box",
-          "ordinal": 10,
-          "outputs": [
-            "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "MapMode": "0",
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Box"
-        },
-        {
-          "definition": {
-            "kind": "post_process",
-            "value": {
-              "fuzzy_tolerance": {
-                "kind": "kernel_default"
-              },
-              "operation": {
-                "kind": "combine",
-                "value": {
-                  "destination": "target_component",
-                  "keep_tools": false,
-                  "op": "cut",
-                  "operands": {
-                    "target": {
-                      "kind": "native",
-                      "value": "fcstd:native:property#Cut:Base"
-                    },
-                    "tools": {
-                      "kind": "native",
-                      "value": "fcstd:native:property#Cut:Tool"
-                    }
-                  }
-                }
-              },
-              "refine": true
-            }
-          },
-          "dependencies": [
-            "fcstd:design:feature#Box",
-            "fcstd:design:feature#Cylinder"
-          ],
-          "id": "fcstd:design:feature#Cut",
-          "name": "Cut",
-          "native_ref": "fcstd:native:object#Cut",
-          "ordinal": 12,
-          "outputs": [
-            "fcstd:model:body#Cut:Shape:Cut.Shape.brp:44%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Cut"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "primitive",
-              "value": {
-                "op": "new_body",
-                "placement": [
-                  [
-                    1.0,
-                    0.0,
-                    0.0,
-                    15.0
-                  ],
-                  [
-                    0.0,
-                    1.0,
-                    0.0,
-                    10.0
-                  ],
-                  [
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0
-                  ]
-                ],
-                "solid": {
-                  "angle": 6.283185307179586,
-                  "height": 16.0,
-                  "kind": "cylinder",
-                  "radius": 4.0
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Cylinder",
-          "name": "Cylinder",
-          "native_ref": "fcstd:native:object#Cylinder",
-          "ordinal": 11,
-          "outputs": [
-            "fcstd:model:body#Cylinder:Shape:Cylinder.Shape.brp:9%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "MapMode": "0",
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Cylinder"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "stored_geometry",
-              "value": {}
-            }
-          },
-          "dependencies": [
-            "fcstd:design:feature#Profile"
-          ],
-          "id": "fcstd:design:feature#DesignedFeature",
-          "name": "DesignedFeature",
-          "native_ref": "fcstd:native:object#DesignedFeature",
-          "ordinal": 14,
-          "outputs": [
-            "fcstd:model:body#DesignedFeature:Shape:DesignedFeature.Shape.brp:34%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Suppressed": "false",
-            "Visibility": "true"
-          },
-          "source_tag": "PartDesign::Feature",
-          "suppressed": false
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "tree_node",
-              "value": {
-                "children": {
-                  "children": []
-                },
-                "role": "equations"
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Parameters",
-          "name": "Parameters",
-          "native_ref": "fcstd:native:object#Parameters",
-          "ordinal": 16,
-          "outputs": [],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Spreadsheet::Sheet"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "sketch",
-              "value": {
-                "sketch": {
-                  "kind": "planar",
-                  "sketch": "fcstd:design:sketch#Profile"
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Profile",
-          "name": "Profile",
-          "native_ref": "fcstd:native:object#Profile",
-          "ordinal": 13,
-          "outputs": [
-            "fcstd:model:body#Profile:Shape:Profile.Shape.brp:9%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "MapMode": "0",
-            "Visibility": "true"
-          },
-          "source_tag": "Sketcher::SketchObject"
-        }
-      ],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -7808,161 +8218,6 @@
           ]
         }
       ],
-      "parameters": [
-        {
-          "dependencies": [],
-          "expression": "30.0000000000000000",
-          "id": "fcstd:design:parameter#Box:Length",
-          "name": "Length",
-          "native_ref": "fcstd:native:property#Box:Length",
-          "ordinal": 8,
-          "owner": "fcstd:design:feature#Box",
-          "properties": {},
-          "value": {
-            "kind": "length",
-            "value": 30.0
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "360.0000000000000000",
-          "id": "fcstd:design:parameter#Cylinder:Angle",
-          "name": "Angle",
-          "native_ref": "fcstd:native:property#Cylinder:Angle",
-          "ordinal": 0,
-          "owner": "fcstd:design:feature#Cylinder",
-          "properties": {},
-          "value": {
-            "kind": "angle",
-            "value": 6.283185307179586
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "4.0000000000000000",
-          "id": "fcstd:design:parameter#Cylinder:Radius",
-          "name": "Radius",
-          "native_ref": "fcstd:native:property#Cylinder:Radius",
-          "ordinal": 14,
-          "owner": "fcstd:design:feature#Cylinder",
-          "properties": {},
-          "value": {
-            "kind": "length",
-            "value": 4.0
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "5.0000000000000000",
-          "id": "fcstd:design:parameter#DesignedFeature:Length",
-          "name": "Length",
-          "native_ref": "fcstd:native:property#DesignedFeature:Length",
-          "ordinal": 4,
-          "owner": "fcstd:design:feature#DesignedFeature",
-          "properties": {},
-          "value": {
-            "kind": "length",
-            "value": 5.0
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "'Length",
-          "id": "fcstd:design:parameter#Parameters:cell:A1",
-          "name": "A1",
-          "native_ref": "fcstd:native:property#Parameters:cells",
-          "ordinal": 0,
-          "owner": "fcstd:design:feature#Parameters",
-          "properties": {
-            "address": "A1"
-          },
-          "value": {
-            "kind": "string",
-            "value": "Length"
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "'Width",
-          "id": "fcstd:design:parameter#Parameters:cell:A2",
-          "name": "A2",
-          "native_ref": "fcstd:native:property#Parameters:cells",
-          "ordinal": 2,
-          "owner": "fcstd:design:feature#Parameters",
-          "properties": {
-            "address": "A2"
-          },
-          "value": {
-            "kind": "string",
-            "value": "Width"
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "=30 mm",
-          "id": "fcstd:design:parameter#Parameters:cell:B1",
-          "name": "ProductLength",
-          "native_ref": "fcstd:native:property#Parameters:cells",
-          "ordinal": 1,
-          "owner": "fcstd:design:feature#Parameters",
-          "properties": {
-            "address": "B1",
-            "alias": "ProductLength"
-          },
-          "value": {
-            "kind": "length",
-            "value": 30.0
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "=20 mm",
-          "id": "fcstd:design:parameter#Parameters:cell:B2",
-          "name": "B2",
-          "native_ref": "fcstd:native:property#Parameters:cells",
-          "ordinal": 3,
-          "owner": "fcstd:design:feature#Parameters",
-          "properties": {
-            "address": "B2"
-          },
-          "value": {
-            "kind": "length",
-            "value": 20.0
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "12.0000000000000000",
-          "id": "fcstd:design:parameter#Profile:constraint:3",
-          "name": "Constraint3",
-          "native_ref": "fcstd:native:property#Profile:Constraints",
-          "ordinal": 2,
-          "owner": "fcstd:design:feature#Profile",
-          "properties": {
-            "is_driving": "1"
-          },
-          "value": {
-            "kind": "length",
-            "value": 12.0
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "8.0000000000000000",
-          "id": "fcstd:design:parameter#Profile:constraint:4",
-          "name": "Constraint4",
-          "native_ref": "fcstd:native:property#Profile:Constraints",
-          "ordinal": 3,
-          "owner": "fcstd:design:feature#Profile",
-          "properties": {
-            "is_driving": "1"
-          },
-          "value": {
-            "kind": "length",
-            "value": 8.0
-          }
-        }
-      ],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -7984,12 +8239,10 @@
           "native_ref": "fcstd:native:object#Box",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Box",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -8005,12 +8258,10 @@
           "native_ref": "fcstd:native:object#Cut",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Cut",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -8026,12 +8277,10 @@
           "native_ref": "fcstd:native:object#Cylinder",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Cylinder",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -8047,12 +8296,10 @@
           "native_ref": "fcstd:native:object#DesignedFeature",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "DesignedFeature",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -8072,12 +8319,10 @@
             "fcstd:model:occurrence#DesignedFeature:container"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Product",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -8093,12 +8338,10 @@
           "native_ref": "fcstd:native:object#Profile",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Profile",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -8110,243 +8353,15 @@
             "fcstd:model:occurrence#Product:container"
           ],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [
-        {
-          "active": true,
-          "definition": {
-            "entity": "fcstd:design:sketch-entity#Profile:1",
-            "kind": "horizontal"
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Profile:1",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Profile:Constraints",
-          "sketch": "fcstd:design:sketch#Profile",
-          "virtual_space": false,
-          "visible": true
-        },
-        {
-          "active": true,
-          "definition": {
-            "entity": "fcstd:design:sketch-entity#Profile:2",
-            "kind": "vertical"
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Profile:2",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Profile:Constraints",
-          "sketch": "fcstd:design:sketch#Profile",
-          "virtual_space": false,
-          "visible": true
-        },
-        {
-          "active": true,
-          "definition": {
-            "entities": [
-              "fcstd:design:sketch-entity#Profile:1"
-            ],
-            "kind": "distance",
-            "parameter": "fcstd:design:parameter#Profile:constraint:3"
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Profile:3",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Profile:Constraints",
-          "sketch": "fcstd:design:sketch#Profile",
-          "virtual_space": false,
-          "visible": true
-        },
-        {
-          "active": true,
-          "definition": {
-            "entities": [
-              "fcstd:design:sketch-entity#Profile:2"
-            ],
-            "kind": "distance",
-            "parameter": "fcstd:design:parameter#Profile:constraint:4"
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Profile:4",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "native_ref": "fcstd:native:property#Profile:Constraints",
-          "sketch": "fcstd:design:sketch#Profile",
-          "virtual_space": false,
-          "visible": true
-        }
-      ],
-      "sketch_entities": [
-        {
-          "construction": false,
-          "endpoint_refs": [],
-          "geometry": {
-            "end": {
-              "u": 12.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "fcstd:design:sketch-entity#Profile:1",
-          "native_ref": "fcstd:native:property#Profile:Geometry",
-          "sketch": "fcstd:design:sketch#Profile"
-        },
-        {
-          "construction": false,
-          "endpoint_refs": [],
-          "geometry": {
-            "end": {
-              "u": 12.0,
-              "v": 8.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 12.0,
-              "v": 0.0
-            }
-          },
-          "id": "fcstd:design:sketch-entity#Profile:2",
-          "native_ref": "fcstd:native:property#Profile:Geometry",
-          "sketch": "fcstd:design:sketch#Profile"
-        },
-        {
-          "construction": false,
-          "endpoint_refs": [],
-          "geometry": {
-            "end": {
-              "u": 0.0,
-              "v": 8.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 12.0,
-              "v": 8.0
-            }
-          },
-          "id": "fcstd:design:sketch-entity#Profile:3",
-          "native_ref": "fcstd:native:property#Profile:Geometry",
-          "sketch": "fcstd:design:sketch#Profile"
-        },
-        {
-          "construction": false,
-          "endpoint_refs": [],
-          "geometry": {
-            "end": {
-              "u": 0.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 0.0,
-              "v": 8.0
-            }
-          },
-          "id": "fcstd:design:sketch-entity#Profile:4",
-          "native_ref": "fcstd:native:property#Profile:Geometry",
-          "sketch": "fcstd:design:sketch#Profile"
-        }
-      ],
-      "sketches": [
-        {
-          "id": "fcstd:design:sketch#Profile",
-          "name": "Profile",
-          "native_ref": "fcstd:native:object#Profile",
-          "placement": {
-            "frame": {
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "kind": "resolved"
-          },
-          "profiles": [
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#Profile:1",
-                "reversed": false
-              }
-            ],
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#Profile:2",
-                "reversed": false
-              }
-            ],
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#Profile:3",
-                "reversed": false
-              }
-            ],
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#Profile:4",
-                "reversed": false
-              }
-            ]
-          ]
-        }
-      ],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [
-        {
-          "cells": [
-            {
-              "address": "A1",
-              "parameter": "fcstd:design:parameter#Parameters:cell:A1"
-            },
-            {
-              "address": "B1",
-              "parameter": "fcstd:design:parameter#Parameters:cell:B1"
-            },
-            {
-              "address": "A2",
-              "parameter": "fcstd:design:parameter#Parameters:cell:A2"
-            },
-            {
-              "address": "B2",
-              "parameter": "fcstd:design:parameter#Parameters:cell:B2"
-            }
-          ],
-          "column_widths": [],
-          "feature": "fcstd:design:feature#Parameters",
-          "id": "fcstd:design:spreadsheet#Parameters",
-          "merged_ranges": [],
-          "native_ref": "fcstd:native:object#Parameters",
-          "row_heights": []
-        }
-      ],
       "tessellations": [],
       "view_presentations": []
     },
@@ -9501,7 +9516,6 @@
       "attributes": {
         "application_domains": "App,Part,PartDesign,Sketcher,Spreadsheet",
         "document_kind": "part-design",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "program_version": "1.1R20260414 (Git shallow)"
       },
@@ -9576,6 +9590,10 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {
+      "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "69c6aa00699cb8d8bb4014b48eb7c419352c49f360cffb45075f31e152f989ba",
     "file_digests": {},
     "retained_records": {},

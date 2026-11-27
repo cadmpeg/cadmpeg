@@ -151,7 +151,7 @@ fn typed_ownership_keeps_distinct_bodies_separate() {
     assert!(result.ir().geometry.shells.iter().all(|shell| result
         .ir()
         .geometry
-        .shell_faces(&shell.id)
+        .stated_shell_faces(&shell.id)
         .count()
         == 1));
 }
@@ -200,11 +200,14 @@ fn a_shared_metadata_head_does_not_supply_loop_or_body_ownership() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().geometry.faces.len(), 1);
-    assert_eq!(
-        result.ir().geometry.faces[0].id.as_str(),
-        "sldprt:brep:face#10"
-    );
+    let [owner, other] = &result.ir().geometry.faces[..] else {
+        panic!("the loop's face and the face that shares its metadata head");
+    };
+    assert_eq!(owner.id.as_str(), "sldprt:brep:face#10");
+    assert!(!owner.loops.is_partial());
+    assert_eq!(other.id.as_str(), "sldprt:brep:face#11");
+    assert!(other.loops.is_partial());
+    assert_eq!(other.loops.stated().count(), 0);
 }
 
 #[test]
@@ -227,12 +230,13 @@ fn distinct_faces_with_shared_metadata_head_retain_typed_body_membership() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().geometry.faces.len(), 2);
+    assert_eq!(result.ir().geometry.faces.len(), 3);
     let identities: std::collections::HashSet<_> = result
         .ir()
         .geometry
         .faces
         .iter()
+        .filter(|face| !face.loops.is_partial())
         .map(|face| face.id.as_str())
         .collect();
     assert_eq!(
@@ -243,7 +247,8 @@ fn distinct_faces_with_shared_metadata_head_retain_typed_body_membership() {
     assert!(result.ir().geometry.shells.iter().all(|shell| result
         .ir()
         .geometry
-        .shell_faces(&shell.id)
+        .stated_shell_faces(&shell.id)
+        .filter(|face| !face.loops.is_partial())
         .count()
         == 1));
 }
@@ -266,7 +271,7 @@ fn a_void_region_without_faces_transfers_no_region_and_a_faceless_solid_region_s
         .geometry
         .regions
         .iter()
-        .map(|region| (region.id.as_str(), region.shells.len()))
+        .map(|region| (region.id.as_str(), region.stated_shells().count()))
         .collect();
     assert_eq!(
         regions,
@@ -275,7 +280,7 @@ fn a_void_region_without_faces_transfers_no_region_and_a_faceless_solid_region_s
     let body_regions: BTreeSet<_> = result
         .ir()
         .geometry
-        .body_regions(&result.ir().geometry.bodies[0].id)
+        .stated_body_regions(&result.ir().geometry.bodies[0].id)
         .map(|region| region.id.as_str())
         .collect();
     assert_eq!(

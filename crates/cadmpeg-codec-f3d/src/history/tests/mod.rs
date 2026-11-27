@@ -30,6 +30,7 @@ mod selections;
 mod shell;
 mod state_pairs;
 mod state_visits;
+mod stored_chain;
 mod surface_stitch;
 
 mod recipe_transitions;

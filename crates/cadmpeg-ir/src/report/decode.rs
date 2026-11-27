@@ -492,7 +492,7 @@ impl DecodeReport {
     #[must_use]
     #[cfg(test)]
     pub(crate) fn unclassified(
-        format: impl Into<String>,
+        format: crate::design::names::CodecId,
         transfer: DecodeTransfer,
         coverage: BTreeMap<String, usize>,
         losses: Vec<LossNote>,
@@ -506,6 +506,21 @@ impl DecodeReport {
             losses,
             notes,
             transfer_ledger,
+        }
+    }
+
+    /// The report of a CADIR read, for the sidecar of a document written
+    /// from it: its losses are the read's report, and it delivered `depth`,
+    /// the depth of the document's scope (§3.3, Reading CADIR).
+    #[must_use]
+    pub fn of_cadir_read(losses: Vec<LossNote>, depth: DecodeDepth) -> Self {
+        Self {
+            classification: FormatIdentity::unclassified(crate::codec_id!("cadir")),
+            transfer: DecodeTransfer::at(depth, true),
+            coverage: Coverage::default(),
+            losses,
+            notes: Vec::new(),
+            transfer_ledger: TransferLedger::default(),
         }
     }
 

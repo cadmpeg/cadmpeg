@@ -182,7 +182,7 @@ fn project_fallback(
     };
     put(
         "source",
-        serde_json::to_string(&evidence).map_err(CodecError::malformed)?,
+        cadmpeg_core::serde_erase::to_json_string(&evidence).map_err(CodecError::malformed)?,
     )?;
     let mut losses = Vec::new();
     let mut note = |code: F3dLossCode, reason: &str| {
@@ -247,7 +247,7 @@ fn project_fallback(
             }
             SweepShape::Solid {
                 op,
-                section: circular.map_or(SweepSection::Unresolved(None), SweepSection::Generated),
+                section: circular.map_or(SweepSection::Unresolved, SweepSection::Generated),
                 sections: Vec::new(),
             }
         }
@@ -256,7 +256,7 @@ fn project_fallback(
                 F3dLossCode::FeaturePipeOperationUnresolved,
                 "the Pipe result operation is unresolved",
             );
-            SweepShape::unresolved(None)
+            SweepShape::unresolved()
         }
     };
     if section_unresolved {

@@ -12,6 +12,7 @@ use cadmpeg_core::decode::{
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::index::ModelIndex;
+use cadmpeg_ir::report::strictness::{code_name, Strictness};
 use cadmpeg_ir::source_fidelity::SourceFidelity;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
@@ -27,6 +28,7 @@ use crate::edges::{measure_edge, EdgeGeometry};
 use crate::face::{FaceInput, FaceResult, Verdict};
 use crate::failure::{settle, Missing, Outcome};
 use crate::geom::Aabb;
+use crate::loss::MeasureLossCode;
 use crate::owners::Owners;
 use crate::reason::CaveatCode;
 use crate::report::{
@@ -51,13 +53,16 @@ pub struct MeasureInput<'ir> {
 }
 
 /// Options of a measurement pass.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct MeasureOptions {
     /// The work profile that sets the pass allowance.
     pub work: WorkProfile,
     /// The material density of every body; body rows report mass and
     /// inertia only with one.
     pub density: Option<Density>,
+    /// The entries of the completed report on which the caller refuses the
+    /// measurement (§3.5). The default refuses none.
+    pub strictness: Strictness,
 }
 
 /// A material density in kilograms per cubic metre: finite and positive.
@@ -107,6 +112,15 @@ pub enum MeasureError {
         entity: String,
         /// The occurrence.
         occurrence: String,
+    },
+    /// The caller's [`MeasureOptions::strictness`] refused an entry of the
+    /// completed report.
+    #[error("the caller's strictness refuses the measurement at {}", code_name(&report.losses()[*entry].code))]
+    StrictRejected {
+        /// The completed report.
+        report: Box<MeasureReport>,
+        /// The index of the refused entry in the report's losses.
+        entry: usize,
     },
 }
 
@@ -215,7 +229,7 @@ pub fn body_boxes(ir: &CadIr) -> Result<Vec<BodyBox>, MeasureError> {
     };
     let options = MeasureOptions {
         work: WorkProfile::Service,
-        density: None,
+        ..MeasureOptions::default()
     };
     let boxes = Measurer::new(input, options).boxes(&ctx)?;
     ctx.finish_session()?;
@@ -317,7 +331,7 @@ impl<'ir> Measurer<'ir> {
         }
         for face in &needed_faces {
             if let Some(face) = self.owners.face(face) {
-                for loop_id in &face.loops {
+                for loop_id in face.loops.stated() {
                     if let Some(face_loop) = self.owners.loop_(loop_id.as_str()) {
                         for coedge in face_loop.coedges() {
                             if let Some(coedge) = self.owners.coedge(coedge.as_str()) {
@@ -549,7 +563,13 @@ impl<'ir> Measurer<'ir> {
             ));
         }
         caveats.sort();
-        Ok(MeasureReport {
+        let losses = if self.input.ir.scope().model {
+            Vec::new()
+        } else {
+            vec![MeasureLossCode::OutputEmpty
+                .note("the document's scope holds no model class, so the pass measured no body")]
+        };
+        let report = MeasureReport {
             occurrence: space.map(|space| space.report),
             tolerances: ReportTolerances {
                 linear: self.input.ir.tolerances.linear.get(),
@@ -561,7 +581,15 @@ impl<'ir> Measurer<'ir> {
             edges: edge_out,
             surfaces: surface_out,
             document,
-        })
+            losses,
+        };
+        match self.options.strictness.first_refused(&report.losses, false) {
+            None => Ok(report),
+            Some(entry) => Err(MeasureError::StrictRejected {
+                report: Box::new(report),
+                entry,
+            }),
+        }
     }
 
     /// One pass allowance of the options' work profile for every face and
@@ -626,7 +654,7 @@ impl<'ir> Measurer<'ir> {
             return Vec::new();
         }
         self.owners
-            .shell_faces(&face.shell)
+            .stated_shell_faces(&face.shell)
             .iter()
             .map(|face| face.id.as_str())
             .collect()
@@ -940,7 +968,7 @@ fn inverted_boundary_poles(owners: &Owners<'_>, face: &cadmpeg_ir::topology::Fac
         return 0;
     }
     face.loops
-        .iter()
+        .stated()
         .filter_map(|id| owners.loop_(id.as_str()))
         .flat_map(cadmpeg_ir::topology::Loop::coedges)
         .filter_map(|id| owners.coedge(id.as_str()))

@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{
-    self, BinaryOp, Expression, ExpressionDialect, ExpressionToken, Neutral, Node, UnaryOp,
+    self, Expression, ExpressionDialect, ExpressionToken, MulOp, Neutral, Node, UnaryOp,
 };
 use cadmpeg_ir::design::feature::Feature;
 use cadmpeg_ir::design::ids::ContainerId;
@@ -392,14 +392,32 @@ fn translated(
     }
     if translates {
         if let Ok(tree) = expr::parse(&neutral, &refs, &[]) {
-            if quantity(&tree, parameters)
-                .map(ValueKind::Quantity)
-                .as_ref()
-                == Some(kind)
-            {
+            let stated = quantity(&tree, parameters);
+            if stated.map(ValueKind::Quantity).as_ref() == Some(kind) {
                 return Expression::Neutral(Neutral(tree));
             }
+            // FreeCAD takes a dimensionless result in the property's
+            // internal unit (§5.12, Kind).
+            let internal = match kind {
+                ValueKind::Quantity(Quantity::LENGTH) => Some("mm"),
+                ValueKind::Quantity(Quantity::ANGLE) => Some("deg"),
+                _ => None,
+            };
+            if let (Some(Quantity::REAL), Some(unit)) = (stated, internal) {
+                if let Ok(tree) = expr::parse(&format!("({neutral}) * 1[{unit}]"), &refs, &[]) {
+                    return Expression::Neutral(Neutral(tree));
+                }
+            }
         }
+    }
+    // A source token list holds a text token (part 10): a lone reference
+    // stays the source's text.
+    if !text.is_empty()
+        && !tokens
+            .iter()
+            .any(|token| matches!(token, ExpressionToken::Text(_)))
+    {
+        tokens = vec![ExpressionToken::Text(text.to_owned())];
     }
     Expression::Source {
         dialect: ExpressionDialect::FreeCad,
@@ -510,30 +528,38 @@ fn quantity(
                 },
                 false,
             ) => pending.push((operand, false)),
-            (Node::Binary { left, right, .. }, false) => {
+            (Node::Sum { .. } | Node::Product { .. }, false) => {
                 pending.push((node, true));
-                pending.push((right, false));
-                pending.push((left, false));
+                let operands: Vec<_> = node.operands().collect();
+                pending.extend(operands.into_iter().rev().map(|operand| (operand, false)));
             }
-            (Node::Binary { op, .. }, true) => {
-                let right = values.pop()?;
-                let left = values.pop()?;
-                values.push(match op {
-                    BinaryOp::Add | BinaryOp::Subtract if left == right => left,
-                    BinaryOp::Multiply => Quantity {
-                        length: left.length.checked_add(right.length)?,
-                        mass: left.mass.checked_add(right.mass)?,
-                        angle: left.angle.checked_add(right.angle)?,
-                        time: left.time.checked_add(right.time)?,
-                    },
-                    BinaryOp::Divide => Quantity {
-                        length: left.length.checked_sub(right.length)?,
-                        mass: left.mass.checked_sub(right.mass)?,
-                        angle: left.angle.checked_sub(right.angle)?,
-                        time: left.time.checked_sub(right.time)?,
-                    },
-                    _ => return None,
-                });
+            (Node::Sum { rest, .. }, true) => {
+                let start = values.len().checked_sub(rest.len() + 1)?;
+                let run = values.split_off(start);
+                let (&first, rest) = run.split_first()?;
+                rest.iter()
+                    .all(|quantity| *quantity == first)
+                    .then_some(())?;
+                values.push(first);
+            }
+            (Node::Product { rest, .. }, true) => {
+                let start = values.len().checked_sub(rest.len() + 1)?;
+                let run = values.split_off(start);
+                let (&first, operands) = run.split_first()?;
+                let mut held = first;
+                for ((op, _), right) in rest.iter().zip(operands) {
+                    let combine = |a: i8, b: i8| match op {
+                        MulOp::Multiply => a.checked_add(b),
+                        MulOp::Divide => a.checked_sub(b),
+                    };
+                    held = Quantity {
+                        length: combine(held.length, right.length)?,
+                        mass: combine(held.mass, right.mass)?,
+                        angle: combine(held.angle, right.angle)?,
+                        time: combine(held.time, right.time)?,
+                    };
+                }
+                values.push(held);
             }
             _ => return None,
         }

@@ -24,13 +24,8 @@ use std::fmt;
 
 const MAX_COPIOUS_TUPLES: usize = 1_000_000;
 
-fn push_copious_loss(
-    losses: &mut Vec<LossNote>,
-    entry: &DirectoryEntry,
-    reason: fmt::Arguments<'_>,
-) {
-    push_attributed_loss(
-        losses,
+fn copious_note(entry: &DirectoryEntry, reason: fmt::Arguments<'_>) -> LossNote {
+    super::attributed_note(
         entry,
         if presentation_form(entry.form) {
             crate::loss::IgesLossCode::EntityNotProjected
@@ -41,7 +36,17 @@ fn push_copious_loss(
             "IGES entity type {} form {} was not projected: {reason}",
             entry.entity_type, entry.form
         ),
-    );
+    )
+}
+
+/// Pushes the loss of a copious entity that the projection gives up, with
+/// its `record.unreadable`.
+fn push_copious_loss(
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    reason: fmt::Arguments<'_>,
+) {
+    super::give_up(losses, entry, copious_note(entry, reason));
 }
 
 pub(super) struct CopiousProjectionOutcome {
@@ -82,6 +87,12 @@ pub(crate) fn expected_interpretation(form: i64) -> Option<i64> {
 
 fn presentation_form(form: i64) -> bool {
     matches!(form, 20 | 21 | 31..=38 | 40)
+}
+
+/// Whether a Type 106 entity of `form` carries model geometry: points or a
+/// path.
+pub(crate) fn geometry_form(form: i64) -> bool {
+    expected_interpretation(form).is_some() && !presentation_form(form)
 }
 
 fn presentation_use_flag_valid(form: i64, use_flag: Option<UseFlag>) -> bool {
@@ -296,6 +307,10 @@ pub(super) fn project(
             );
             continue;
         }
+        let projects_as_points = matches!(entry.form, 1..=3)
+            || (matches!(entry.form, 11..=13)
+                && tuple_count == 1
+                && matches!(global.global_table(), GlobalTable::V4_0));
         let transform = match resolve_transform(
             entry.transform,
             &entries,
@@ -308,7 +323,21 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                push_copious_loss(&mut losses, entry, format_args!("{message}"));
+                let stem = crate::ids::Stem::directory(entry.sequence);
+                let record: Option<cadmpeg_ir::ids::Identity> = if presentation_form(entry.form) {
+                    None
+                } else if projects_as_points {
+                    (tuple_count == 1).then(|| crate::ids::point(&stem.tail_index(1_usize)).into())
+                } else {
+                    Some(crate::ids::curve(&stem).into())
+                };
+                super::give_up_needing(
+                    &mut losses,
+                    entry,
+                    record,
+                    message.needs(),
+                    copious_note(entry, format_args!("{message}")),
+                );
                 continue;
             }
         };
@@ -401,10 +430,6 @@ pub(super) fn project(
             );
             continue;
         }
-        let projects_as_points = matches!(entry.form, 1..=3)
-            || (matches!(entry.form, 11..=13)
-                && tuple_count == 1
-                && matches!(global.global_table(), GlobalTable::V4_0));
         if projects_as_points {
             for (index, position) in positions.into_iter().enumerate() {
                 let point = crate::ids::point(
@@ -472,7 +497,7 @@ pub(super) fn project(
             continue;
         }
         let topology_tolerance = if entry.form == 63 && resolution > 0.0 {
-            let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(resolution) else {
+            let Some(value) = cadmpeg_ir::scalar::PositiveLength::new(resolution) else {
                 push_copious_loss(
                     &mut losses,
                     entry,

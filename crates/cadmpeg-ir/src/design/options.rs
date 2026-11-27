@@ -11,16 +11,17 @@ use serde::{Deserialize, Serialize};
 
 use super::construction::{kinds, Construction};
 use super::dimension::Dimension;
+use super::names::CodecName;
 use super::selection::{OrderedSelection, SetSelection};
 use crate::scalar::{Angle, FiniteReal, Length, PositiveLength, PositiveReal};
 
 /// Source options that Rule N leaves native, by key. A key is `codec:name`.
-pub type NativeOptions = BTreeMap<NonBlankString, NativeOption>;
+pub type NativeOptions = BTreeMap<CodecName, NativeOption>;
 
-pub(crate) fn rewrite_options<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+pub(crate) fn rewrite_options(
     options: NativeOptions,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+    map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
 ) -> Result<NativeOptions, cadmpeg_core::CodecError> {
     use crate::schema::rewrite::typed::RewriteIdentities;
     let _depth = ctx.enter_nested("native option values")?;

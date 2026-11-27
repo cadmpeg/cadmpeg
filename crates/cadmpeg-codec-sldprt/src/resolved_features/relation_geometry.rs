@@ -13,7 +13,7 @@ use super::operands::{
 use super::relation_loci::{
     line_line_angle, line_line_distance, marker_point_locus,
     marker_transform_candidates_by_feature, point_line_distance_value, profile_axis_for_relation,
-    profile_loci_by_marker, profile_locus_point, relation_constraint_is_inactive,
+    profile_loci_by_marker, profile_locus_point, relation_contradicts_geometry,
     relation_operand_marker, same_dimension_angle, same_dimension_length,
     typed_relation_definition, typed_relation_definition_with_profile_axis,
     unoriented_line_line_angle,
@@ -28,7 +28,8 @@ use super::transforms::{
 };
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
-    marker_relation_is_inactive, typed_marker_relation_definition_in_sketch,
+    marker_relation_contradicts_geometry, native_marker_relation_definition,
+    typed_marker_relation_definition_in_sketch,
 };
 use crate::brep::graph::LINEAR_RESOLUTION_MM;
 use crate::records::operand_tag::NativeOperandTag;
@@ -2735,7 +2736,7 @@ fn names_only_own_entities(
     sketch: &cadmpeg_ir::sketches::SketchId,
     owners: &HashMap<&str, &cadmpeg_ir::sketches::SketchId>,
 ) -> bool {
-    let Ok(value) = serde_json::to_value(definition) else {
+    let Ok(value) = cadmpeg_core::serde_erase::to_json_value(definition) else {
         return false;
     };
     let mut pending = vec![&value];
@@ -2835,15 +2836,6 @@ pub(crate) fn project_relation_bindings(
                 .as_ref()
                 .and_then(|parameter| parameters_by_id.get(parameter))
                 .copied();
-            let measured_parameter = parameter.is_some_and(|parameter| {
-                parameter
-                    .properties
-                    .get(RELATION_PARAMETER_ROLE_PROPERTY)
-                    .is_some_and(|role| {
-                        role == RELATION_PARAMETER_ROLE_REFERENCE
-                            || role == RELATION_PARAMETER_ROLE_DRIVING
-                    })
-            });
             let native_kind = relation_native_kind(relation.family);
             let mut entities = Vec::new();
             for marker in relation
@@ -2907,12 +2899,7 @@ pub(crate) fn project_relation_bindings(
                 .filter(|definition| names_only_own_entities(definition, sketch, &entity_sketches));
             let typed_definition = match typed_definition {
                 Some(definition)
-                    if measured_parameter
-                        && relation_constraint_is_inactive(
-                            parameter,
-                            &definition,
-                            sketch_entities,
-                        )? =>
+                    if relation_contradicts_geometry(parameter, &definition, sketch_entities)? =>
                 {
                     None
                 }
@@ -2941,8 +2928,6 @@ pub(crate) fn project_relation_bindings(
                     operands,
                 }
             };
-            let active = relation_constraint_is_inactive(parameter, &definition, sketch_entities)?
-                .then_some(false);
             let has_display_scalar =
                 relation_display_scalar_for_parameter(relation, &ids).is_some();
             let Ok(definition) =
@@ -2966,7 +2951,7 @@ pub(crate) fn project_relation_bindings(
                     .parameter_scalar_ref()
                     .map(|_| true)
                     .or_else(|| has_display_scalar.then_some(false)),
-                active,
+                active: None,
                 virtual_space: None,
                 visible: None,
                 orientation: None,
@@ -3008,7 +2993,7 @@ pub(crate) fn project_relation_bindings(
             else {
                 continue;
             };
-            let Some(definition) = typed_marker_relation_definition_in_sketch(
+            let Some(mut definition) = typed_marker_relation_definition_in_sketch(
                 ctx,
                 marker,
                 sketch,
@@ -3019,8 +3004,16 @@ pub(crate) fn project_relation_bindings(
             else {
                 continue;
             };
-            let active =
-                marker_relation_is_inactive(marker, &definition, sketch_entities)?.then_some(false);
+            if !matches!(definition, SketchConstraintDefinitionInput::Native { .. })
+                && marker_relation_contradicts_geometry(marker, &definition, sketch_entities)?
+            {
+                definition = native_marker_relation_definition(
+                    ctx,
+                    marker,
+                    &markers_by_id,
+                    &loci_by_marker,
+                )?;
+            }
             let Ok(definition) =
                 cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
             else {
@@ -3039,7 +3032,7 @@ pub(crate) fn project_relation_bindings(
                 definition,
                 name: None,
                 driving: None,
-                active,
+                active: None,
                 virtual_space: None,
                 visible: None,
                 orientation: None,

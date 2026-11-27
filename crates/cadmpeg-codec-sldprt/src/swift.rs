@@ -654,7 +654,7 @@ pub(crate) fn annotations(
         {
             crate::annotations::note(
                 annotations,
-                annotation.id.as_str(),
+                &annotation.id,
                 &stream,
                 u64_from_index(entity.offset),
                 "swift_gdt_analysis",
@@ -761,11 +761,7 @@ fn parse_unique_root(
     payload: &[u8],
 ) -> Result<Option<Entity>, CodecError> {
     let mut parsed = None;
-    for offset in payload
-        .windows(ENTITY_TOKEN.len())
-        .enumerate()
-        .filter_map(|(offset, window)| (window == ENTITY_TOKEN).then_some(offset))
-    {
+    for offset in memchr::memmem::find_iter(payload, ENTITY_TOKEN) {
         let Some(mut cursor) = View::over_retained(payload).child(offset, payload.len()) else {
             continue;
         };
@@ -1939,26 +1935,26 @@ fn project_dimension(
     dimension.nominal =
         nominal.map(|value| Dimension::Literal(PmiValue::from_parts(value, quantity)));
     dimension.tolerance = tolerance;
-    dimension.decimals = entity
-        .integers
-        .get("BlockToleranceDecimalPlaces")
-        .and_then(|places| u8::try_from(*places).ok());
+    let places = entity.integers.get("BlockToleranceDecimalPlaces").copied();
+    dimension.decimals = places
+        .filter(|_| nominal.is_some())
+        .and_then(|places| u8::try_from(places).ok());
     let mut annotation = PmiAnnotation::new(
         id,
         targets.into_iter().map(InstanceTarget::new).collect(),
         PmiDefinition::Dimension(dimension),
     );
     annotation.name = object_name(entity);
+    if let Some(places) = places.filter(|_| nominal.is_none()) {
+        annotation.native_options.insert(
+            cadmpeg_ir::codec_name!("sldprt:block_tolerance_decimal_places"),
+            NativeOption::Integer(Dimension::Literal(i64::from(places))),
+        );
+    }
     if let Some(Deviations { lower, upper }) = equal_deviations {
         for (key, value) in [
-            (
-                cadmpeg_core::nonblank_literal!("sldprt:lower_deviation"),
-                lower,
-            ),
-            (
-                cadmpeg_core::nonblank_literal!("sldprt:upper_deviation"),
-                upper,
-            ),
+            (cadmpeg_ir::codec_name!("sldprt:lower_deviation"), lower),
+            (cadmpeg_ir::codec_name!("sldprt:upper_deviation"), upper),
         ] {
             annotation
                 .native_options

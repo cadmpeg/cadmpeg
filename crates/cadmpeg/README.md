@@ -91,12 +91,30 @@ output, because that spelling is nearly always `--input-format` (alias
 pipe, `--binary-stdout`.
 
 Conversion writes the output when the check finds errors, and the check report
-lists every finding. The check leaves model data unchanged. `--reject-errors`
-stops the conversion before export if the check finds errors in what the output
-writes. An error in data the output format does not carry, for example feature
-history in a STEP export, stays in the report and does not stop the write under
-`--reject-errors`. Conversion writes the available output when decoding
-transfers no geometry and reports the decode and export losses.
+lists every finding. The check leaves model data unchanged. Each Error in what
+the output writes is charged to the export report as `export:record.invalid`.
+An error in data the output format does not carry, for example feature history
+in a STEP export, stays in the check report only. Conversion writes the
+available output when decoding transfers no geometry and reports the decode and
+export losses. A check that a resource ceiling stops before its end is reported
+on stderr and does not stop the write.
+
+Flags set the strictness of the decode and of the write. A refused write writes
+nothing and names the loss that refused it:
+
+- `--reject-errors` refuses `export:record.invalid`. A check that a resource
+  ceiling stops refuses with `resource_limit` at stage `check`.
+- `--reject-empty` refuses `export:output.empty`.
+- `--reject-lossy[=decode|export|any]` refuses a loss at or above
+  `--reject-lossy-floor=info|warning|error|blocking` (default `info`) in the
+  decode report, the export report, or both. A bare `--reject-lossy` is `any`.
+  A restored sidecar's decode report does not decide.
+- `--no-salvage` refuses a decode loss that reaches its strict floor.
+
+A decode refusal is `strict_decode_rejected` at stage `decode`; a write refusal
+is `strict_export_rejected` at stage `export`. `--missing-states=geometry-true|history-true`
+(default `geometry-true`) selects the form a writer gives features whose states
+the target needs and the document lacks.
 
 `convert` decodes a native source only as deeply as the output needs: STEP,
 IGES, and Rhino output decodes geometry and skips design intent, so the decode
@@ -296,8 +314,10 @@ placement space in `space` (`model`, `occurrence` or `stored`) and
 class of the carrier. It refuses a selection
 of more than one of faces, edges and surfaces. `--json` prints the versioned envelope; `--report FILE` (also `-o`
 and `--output`) writes it to a file. `--limits service` selects the smaller
-work allowance of a measurement pass. A CADIR document decoded at container
-depth holds no geometry; `measure` refuses it with `insufficient_depth`.
+work allowance of a measurement pass. A document whose scope holds no model
+class, such as a CADIR document decoded at container depth, measures no body
+and charges `measure:output.empty`; `--reject-empty` refuses it with
+`strict_measure_rejected`.
 
 ## Inputs and outputs
 
@@ -365,17 +385,17 @@ pretty-printed JSON records.
 
 ```sh
 cadmpeg check bracket.f3d -o report.json
-cadmpeg query findings report.json     # severity  check  entity  message
+cadmpeg query findings report.json     # severity  check  rule  entity  message
 cadmpeg query losses report.json       # severity  code   message
 cadmpeg query coverage report.json     # decode coverage counts
 cadmpeg query counts bracket.cadir.json  # per-arena entity counts; alias: arenas
 cadmpeg query item bracket.cadir.json geometry.faces FACE_ID  # one record; alias: record
-cadmpeg query schema types model.features    # the arena's IR record type (no FILE)
+cadmpeg query schema types design.features   # the arena's IR record type (no FILE)
 cadmpeg query schema file part.cadir.json native.nx.class_definitions  # inferred native fields
-cadmpeg query graph bracket.cadir.json model.features ID --hops 1
-cadmpeg query graph bracket.cadir.json model.features ID --follow native_ref --reverse
-cadmpeg query join bracket.cadir.json model.features native.rhino.unknowns \
-  --left-key native_ref --right-key id
+cadmpeg query graph bracket.cadir.json design.features ID --hops 1
+cadmpeg query graph bracket.cadir.json geometry.bodies ID --reverse --hops 3
+cadmpeg query join bracket.cadir.json model.occurrences model.product_definitions \
+  --left-key prototype --right-key id
 cadmpeg query summary report.json      # artifact kind and section counts
 cadmpeg query summary part.measure.json  # measure rows per level, unavailable per category, undefined
 cadmpeg query fidelity part.cadir.fidelity.json  # retained source records
@@ -430,8 +450,9 @@ on a semantic refusal of the input. Exit 2 is operational on every command.
   `check` (failed check), `diff` (models differ), and `inspect cmp` (files
   differ). `inspect cmp` exits 1 if the files are not identical, including
   length-only (Unix cmp contract). `dump` and `measure` exit 1 on a semantic
-  refusal of the input: `strict_decode_rejected` under `--no-salvage`,
-  `unsupported_dialect`, or `insufficient_depth`.
+  refusal of the input: `strict_decode_rejected` under `--no-salvage`, or
+  `unsupported_dialect`. `measure` also exits 1 on `strict_measure_rejected`
+  under `--reject-empty`.
 - `2`: operational error, including invalid arguments, unrecognized input,
   decode or encode failure, and file-system errors.
 

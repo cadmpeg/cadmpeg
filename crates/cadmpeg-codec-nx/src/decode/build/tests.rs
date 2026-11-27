@@ -7,8 +7,9 @@ use cadmpeg_ir::ids::BodyId;
 
 use super::{
     body_preselection, has_plain_beside_partition_streams, plain_history_images,
-    retain_live_annotations,
+    retain_live_annotations, select_terminal_feature_bodies, state_held_body_tolerances,
 };
+use crate::native::segments::{SegmentBodyBinding, SegmentBodyLineageStatus};
 use crate::parasolid::StreamKind;
 
 #[test]
@@ -29,7 +30,10 @@ fn live_annotation_lookup_scales_with_tree_depth() {
                 None,
             ));
         }
-        builder.exactness("nx:model:point#absent", cadmpeg_ir::Exactness::Derived);
+        builder.exactness(
+            cadmpeg_ir::ids::Identity::new("nx:model:point#absent").expect("identity grammar"),
+            cadmpeg_ir::Exactness::Derived,
+        );
         builder.build()
     };
     ({
@@ -39,42 +43,6 @@ fn live_annotation_lookup_scales_with_tree_depth() {
     assert!(!annotations
         .exactness()
         .contains_key("nx:model:point#absent"));
-}
-
-#[test]
-fn annotation_identity_retention_walks_ordered_keys_once() {
-    let names: Vec<_> = (0..10_000).map(|i| format!("id{i:05}")).collect();
-    let ids: std::collections::BTreeSet<_> = names.iter().map(String::as_str).collect();
-    let mut cursor = ids.iter().peekable();
-    for id in &names {
-        assert!(super::ordered_live_identity_contains(&mut cursor, id));
-    }
-    assert!(!super::ordered_live_identity_contains(
-        &mut cursor,
-        "id99999"
-    ));
-}
-
-#[test]
-fn annotation_identity_cursor_preserves_sorted_keep_decisions() {
-    let ids: std::collections::BTreeSet<_> = ["b", "d", "f"].into_iter().collect();
-    let mut cursor = ids.iter().peekable();
-    for (id, expected) in [
-        ("a", false),
-        ("b", true),
-        ("b", true),
-        ("c", false),
-        ("d", true),
-        ("e", false),
-        ("f", true),
-        ("g", false),
-    ] {
-        assert_eq!(
-            super::ordered_live_identity_contains(&mut cursor, id),
-            expected,
-            "{id}"
-        );
-    }
 }
 
 fn cone_record(xmt: u16, sine: f64, cosine: f64) -> Vec<u8> {
@@ -102,12 +70,46 @@ fn torus_record(xmt: u16, major: f64) -> Vec<u8> {
     bytes
 }
 
+/// The carrier codes of each refused record, each checked to give the record
+/// up as a `parasolid-record` part over its own bytes in its stream, inside
+/// the retained record of that stream.
 fn surface_refusal_codes(stream: &[u8]) -> Vec<cadmpeg_ir::report::loss::LossKind> {
     let graph = crate::topology::Graph::parse(stream);
-    super::surface_refusals(0, &graph)
-        .into_iter()
-        .map(|loss| loss.code)
-        .collect()
+    crate::test_support::with_decode_context(|ctx| {
+        super::surface_refusals(0, &graph)
+            .into_iter()
+            .map(|(node, refusal)| {
+                let pos = node.pos();
+                assert!(
+                    refusal.message.contains(&format!("at byte {pos} ")),
+                    "{refusal:#?}"
+                );
+                let part = super::give_up_record(
+                    ctx,
+                    (0, &cadmpeg_ir::stream_name!("nx:parasolid#0:partition")),
+                    node,
+                    &refusal,
+                )
+                .expect("the refused record is given up");
+                let loss = part.loss();
+                assert_eq!(
+                    loss.code,
+                    cadmpeg_ir::unknown::part::record_unreadable_kind()
+                );
+                assert!(
+                    loss.message.starts_with(&format!(
+                        "part parasolid-record stream=\"nx:parasolid#0:partition\" offset={pos} \
+                         length={} record={}: ",
+                        node.bytes().len(),
+                        part.id()
+                    )),
+                    "{loss:#?}"
+                );
+                assert!(loss.message.contains(&refusal.message), "{loss:#?}");
+                refusal.code.clone()
+            })
+            .collect()
+    })
 }
 
 #[test]
@@ -186,12 +188,9 @@ fn inactive_body_pruning_keeps_the_vertex_of_a_kept_vertex_loop() {
         region.clone(),
         other_vertex,
     ));
-    ir.geometry.regions.push(Region {
-        id: region,
-        body: body.clone(),
-        shells: vec![shell],
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region, body.clone(), vec![shell]));
     ir.geometry.bodies.push(Body {
         id: body,
         kind: BodyKind::General,
@@ -200,6 +199,7 @@ fn inactive_body_pruning_keeps_the_vertex_of_a_kept_vertex_loop() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
 
     super::prune_inactive_topology(&mut ir, &std::collections::BTreeSet::from([kept]));
@@ -334,5 +334,65 @@ fn plain_images_beside_partitions_suppress_terminal_lineage_preselection() {
     assert_eq!(
         body_preselection(Some("membership"), Some("terminal"), false),
         Some("membership")
+    );
+}
+
+#[test]
+fn a_body_that_terminal_lineage_prunes_does_not_set_the_part_tolerance() {
+    let body = |stream: u32| BodyId::mint(format!("nx:s{stream}:body#2")).expect("identity");
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    for stream in [1, 2] {
+        ir.geometry.bodies.push(cadmpeg_ir::topology::Body {
+            id: body(stream),
+            kind: cadmpeg_ir::topology::BodyKind::Solid,
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+            native_ref: None,
+            unstated: None,
+        });
+    }
+    let bindings = [1, 2].map(|stream| SegmentBodyBinding {
+        id: format!("binding#{stream}"),
+        stream_link: format!("link#{stream}"),
+        stream_ordinal: stream,
+        stream_kind: StreamKind::Partition,
+        body_object_index: 10 + stream,
+        body_alias_object_index: 20 + stream,
+        stream_role: 0,
+        source_offset: u64::from(stream),
+    });
+    let statuses = bindings
+        .iter()
+        .map(|binding| SegmentBodyLineageStatus {
+            id: format!("status#{}", binding.stream_ordinal),
+            segment_body_binding: binding.id.clone(),
+            body_object_index: binding.body_object_index,
+            body_alias_object_index: binding.body_alias_object_index,
+            terminal: binding.stream_ordinal == 1,
+            source_offset: binding.source_offset,
+        })
+        .collect::<Vec<_>>();
+    // The held body stores a value off the modeller default; the pruned body
+    // stores a coarser one.
+    let stored =
+        std::collections::BTreeMap::from([(body(1), Some(1.0e-7)), (body(2), Some(1.0e-6))]);
+    assert!(select_terminal_feature_bodies(
+        &mut ir, &bindings, &statuses
+    ));
+    assert_eq!(
+        ir.geometry
+            .bodies
+            .iter()
+            .map(|held| held.id.clone())
+            .collect::<Vec<_>>(),
+        [body(1)]
+    );
+    let losses = state_held_body_tolerances(&mut ir, &stored);
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(
+        Some(ir.tolerances.linear),
+        cadmpeg_parasolid::precision::linear_precision(1.0e-7)
     );
 }

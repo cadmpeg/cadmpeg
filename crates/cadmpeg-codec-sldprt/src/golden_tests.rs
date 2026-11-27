@@ -7,6 +7,7 @@
 //! `inspect` pins the container summary; `decode` pins the IR, losses, and
 //! source fidelity. Shared harness: [`cadmpeg_test_support::golden`].
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
@@ -17,9 +18,7 @@ use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_measure::test_support::round_trip::{measures_agree_with, measures_decide};
-use cadmpeg_test_support::golden::{
-    elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness,
-};
+use cadmpeg_test_support::golden::{snapshot_text, snapshots_agree, Branch, Harness};
 use cadmpeg_test_support::roundtrip::{
     mutation_roundtrip, reports_carried_source, semantic_roundtrip, verbatim_replay_holds,
     ExpectedWritePath, MutationOutcome, SemanticOutcome,
@@ -51,8 +50,8 @@ fn branches() -> [Branch; 2] {
 fn inspect_snapshot(bytes: &[u8]) -> String {
     let value =
         match SldprtCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
-            Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect summary"),
-            Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
+            Ok(summary) => json::to_value(&summary).expect("serialize inspect summary"),
+            Err(error) => cadmpeg_core::json!({ "inspect_error": error.to_string() }),
         };
     snapshot_text(&value)
 }
@@ -61,25 +60,18 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 /// fidelity. A decode error is frozen too: refusing a document is
 /// contract-relevant behavior, so this never panics on codec output.
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value =
-        match SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-            Ok(result) => {
-                let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
-                if let Some(source) = result.ir_mut().source.as_mut() {
-                    // The `native` lane digests cover retained source bytes and
-                    // stay pinned; a `_local_sha256` digest covers decoded
-                    // content, so a platform's libm moves it.
-                    elide_local_digests(&mut source.attributes);
-                }
-                serde_json::json!({
-                    "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
-                    "report": serde_json::to_value(result.report()).expect("serialize report"),
-                    "source_fidelity": serde_json::to_value(result.source_fidelity())
-                        .expect("serialize source_fidelity"),
-                })
-            }
-            Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
-        };
+    let value = match SldprtCodec
+        .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+    {
+        Ok(result) => {
+            cadmpeg_core::json!({
+                "ir": json::to_value(result.ir()).expect("serialize ir"),
+                "report": json::to_value(result.report()).expect("serialize report"),
+                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.ir(), result.source_fidelity()),
+            })
+        }
+        Err(error) => cadmpeg_core::json!({ "decode_error": error.to_string() }),
+    };
     snapshot_text(&value)
 }
 
@@ -125,7 +117,7 @@ fn neutral_text(bytes: &[u8], decoded: &Result<DecodeResult, DecodeFailure>) -> 
                 section_identities(&scan).expect("unique admitted source member identities");
             normalized_document(result.ir(), &sections)
         }
-        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+        Err(error) => cadmpeg_core::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)
 }
@@ -225,13 +217,13 @@ fn fixtures_survive_the_semantic_write_path() {
                     assert_eq!(history(written.ir()), history(source.ir()));
                 }
                 SemanticOutcome::Refused { error } => {
-                    panic!("fixture `{name}`: a faceless part writes from its partition: {error}")
+                    panic!("fixture `{name}`: the legacy part writes from its partition: {error}")
                 }
             });
             continue;
         }
         if name == "document_envelope" {
-            // The faceless part keeps its `SWObjects` member, and with it
+            // The part keeps its `SWObjects` member, and with it
             // every metadata record.
             let values = |ir: &cadmpeg_ir::CadIr| {
                 ir.model
@@ -256,7 +248,7 @@ fn fixtures_survive_the_semantic_write_path() {
                     assert_eq!(values(written.ir()), values(source.ir()));
                 }
                 SemanticOutcome::Refused { error } => {
-                    panic!("fixture `{name}`: a faceless part writes: {error}")
+                    panic!("fixture `{name}`: the envelope part writes: {error}")
                 }
             });
             continue;
@@ -272,6 +264,12 @@ fn fixtures_survive_the_semantic_write_path() {
                     matches!(report.write_path(), WritePath::Patched { .. }),
                     "fixture `{name}`: retained records fed the write, so it patched rather than synthesized"
                 );
+                let expected = match &source {
+                    Ok(decoded) if omits_every_body(decoded.ir(), &report.losses) => {
+                        brep_free_text(fixture, decoded)
+                    }
+                    _ => expected,
+                };
                 let written = decode_container(bytes);
                 if let Err(mismatch) = snapshots_agree(&expected, &neutral_text(bytes, &written)) {
                     panic!("fixture `{name}`: the semantically written container decodes to a different document: {mismatch}");
@@ -282,7 +280,10 @@ fn fixtures_survive_the_semantic_write_path() {
             }
             SemanticOutcome::Refused { error } => {
                 assert!(
-                matches!(error, CodecError::NotImplemented(_)),
+                matches!(
+                    error,
+                    cadmpeg_ir::codec::write::EncodeError::Backend(CodecError::NotImplemented(_))
+                ),
                 "fixture `{name}`: the semantic writer may decline an edit it has not built, but this \
                  refusal reports a defect in what it already retains: {error}"
             );
@@ -336,6 +337,52 @@ fn assert_members_carried_or_named(
             ids.len()
         );
     }
+}
+
+/// Whether `losses` declare that the write omits every body of `source`,
+/// each of which holds a partial face.
+fn omits_every_body(
+    source: &cadmpeg_ir::CadIr,
+    losses: &[cadmpeg_ir::report::loss::LossNote],
+) -> bool {
+    let declared = losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "writer.bodies-omitted")
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    let geometry = &source.geometry;
+    let holds_partial_face = |body: &cadmpeg_ir::topology::Body| {
+        geometry.faces.iter().any(|face| {
+            face.loops.is_partial()
+                && geometry.shells.iter().any(|shell| {
+                    shell.id == face.shell
+                        && geometry
+                            .regions
+                            .iter()
+                            .any(|region| region.id == shell.region && region.body == body.id)
+                })
+        })
+    };
+    !geometry.bodies.is_empty()
+        && geometry.bodies.iter().all(|body| {
+            holds_partial_face(body)
+                && declared
+                    .iter()
+                    .any(|message| names_record(message, body.id.as_str()))
+        })
+}
+
+/// [`neutral_text`] of `decoded` without its B-rep: the document a write
+/// states when it omits every body.
+fn brep_free_text(bytes: &[u8], decoded: &DecodeResult) -> String {
+    let mut ir = decoded.ir().clone();
+    ir.geometry = cadmpeg_ir::document::Topology::default();
+    for definition in &mut ir.model.product_definitions {
+        definition.bodies.clear();
+    }
+    let scan = crate::test_support::container::scan(bytes);
+    let sections = section_identities(&scan).expect("unique admitted source member identities");
+    snapshot_text(&normalized_document(&ir, &sections))
 }
 
 /// Whether `message` names record `id` as a whole token.
@@ -569,8 +616,8 @@ fn frozen_invalid_cache_fixture(name: &str, bytes: &[u8]) -> bool {
     true
 }
 
-/// The original history bytes lack both an active configuration source index
-/// and a complete typed BODY ownership class. Keep the bytes and their raw
+/// The original history bytes lack an active configuration source index and a
+/// typed BODY record, and their loops do not decode. Keep the bytes and their raw
 /// replay coverage; do not turn their unsupported semantic write into a pass.
 fn assert_legacy_history_preconditions(bytes: &[u8]) {
     let scan = crate::test_support::container::scan(bytes);
@@ -609,8 +656,19 @@ fn assert_legacy_history_preconditions(bytes: &[u8]) {
     };
     assert!(configuration.active);
     assert_eq!(configuration.source_index, Some(0));
-    assert!(configuration.bodies.is_none());
-    assert_eq!(arena_sizes(result.ir()), [0; 8]);
+    // The FACE names a loop whose VERTEX records do not resolve, so the face
+    // stays in partial form under a derived body hierarchy.
+    let [face] = result.ir().geometry.faces.as_slice() else {
+        panic!("the one partial face");
+    };
+    assert!(face.loops.is_partial());
+    assert_eq!(face.loops.stated().count(), 0);
+    assert_eq!(arena_sizes(result.ir()), [1, 1, 1, 1, 0, 0, 0, 0]);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::SldprtLossCode::TopologyBodyHierarchyDerived.kind()));
     assert!(result.ir().source.is_some());
     let mut ir = result.ir().clone();
     assert!(
@@ -839,10 +897,44 @@ fn normalized_document(
     ir: &cadmpeg_ir::CadIr,
     sections: &BTreeMap<u64, String>,
 ) -> serde_json::Value {
+    normalized(ir, sections, false)
+}
+
+/// [`normalized_document`] with the arenas the CADIR wire omits restated
+/// under `model`, as the document holds them in memory.
+fn normalized_in_memory(
+    ir: &cadmpeg_ir::CadIr,
+    sections: &BTreeMap<u64, String>,
+) -> serde_json::Value {
+    normalized(ir, sections, true)
+}
+
+/// The JSON form of `model`, with the arenas the wire omits where `omitted`.
+fn model_value(model: &cadmpeg_ir::document::Model, omitted: bool) -> serde_json::Value {
+    let mut value = json::to_value(model).expect("serialize model");
+    if omitted {
+        let serde_json::Value::Object(arenas) = model
+            .omitted_arenas_value()
+            .expect("serialize the omitted arenas")
+        else {
+            panic!("the omitted arenas serialize as an object");
+        };
+        value
+            .as_object_mut()
+            .expect("the model serializes as an object")
+            .extend(arenas);
+    }
+    value
+}
+
+fn normalized(
+    ir: &cadmpeg_ir::CadIr,
+    sections: &BTreeMap<u64, String>,
+    omitted: bool,
+) -> serde_json::Value {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let original_geometry =
-        serde_json::to_value(&ir.geometry).expect("serialize original geometry");
-    let original_model = serde_json::to_value(&ir.model).expect("serialize original model");
+    let original_geometry = json::to_value(&ir.geometry).expect("serialize original geometry");
+    let original_model = model_value(&ir.model, omitted);
     let mut opaque_references = BTreeMap::new();
     let mut declared_replacements = BTreeMap::new();
     let mut geometry = cadmpeg_ir::document::Topology::default();
@@ -859,8 +951,8 @@ fn normalized_document(
     model
         .extend_rewritten(ir.model.clone(), &mut rewrite)
         .expect("rewrite only schema-declared source identities");
-    let mut normalized_geometry = serde_json::to_value(&geometry).expect("serialize geometry");
-    let mut normalized_model = serde_json::to_value(&model).expect("serialize model");
+    let mut normalized_geometry = json::to_value(&geometry).expect("serialize geometry");
+    let mut normalized_model = model_value(&model, omitted);
     for (original, normalized) in [
         (&original_geometry, &mut normalized_geometry),
         (&original_model, &mut normalized_model),
@@ -872,11 +964,11 @@ fn normalized_document(
             &declared_replacements,
         );
     }
-    let mut document = serde_json::json!({
+    let mut document = cadmpeg_core::json!({
         "geometry": normalized_geometry,
         "model": normalized_model,
         "units": { "length": "millimeter" },
-        "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),
+        "tolerances": json::to_value(ir.tolerances).expect("serialize tolerances"),
     });
     canonicalize_model_arena_order(&mut document);
     document
@@ -969,11 +1061,11 @@ fn normalized_comparison_preserves_references_depth_values_and_nested_order() {
     let result = SldprtCodec
         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .expect("complete history decode");
-    let original = normalized_document(result.ir(), &sections);
+    let original = normalized_in_memory(result.ir(), &sections);
     let mut changed = result.ir().clone();
     changed.geometry.coedges[0].owner_loop =
         cadmpeg_ir::ids::LoopId::mint("sldprt:brep:loop#999").expect("authored distinct reference");
-    assert_ne!(original, normalized_document(&changed, &sections));
+    assert_ne!(original, normalized_in_memory(&changed, &sections));
     let mut changed = result.ir().clone();
     assert!(
         visit_blind_extrude_lengths(&mut changed, |length| {
@@ -981,8 +1073,8 @@ fn normalized_comparison_preserves_references_depth_values_and_nested_order() {
                 .expect("positive changed depth");
         }) > 0
     );
-    assert_ne!(original, normalized_document(&changed, &sections));
-    let mut ordered = serde_json::json!({"model": {"entities": [
+    assert_ne!(original, normalized_in_memory(&changed, &sections));
+    let mut ordered = cadmpeg_core::json!({"model": {"entities": [
         {"id": "b", "members": ["a", "b"]}, {"id": "a", "members": []}
     ]}});
     canonicalize_model_arena_order(&mut ordered);
@@ -1070,7 +1162,7 @@ fn section_normalization_preserves_identity_shaped_labels_and_unowned_properties
         .expect("physical source section in declared ID");
     assert_ne!(source_id, rewritten_id);
     labeled.model.features[0].name = Some(source_id.clone());
-    let normalized = normalized_document(&labeled, &sections);
+    let normalized = normalized_in_memory(&labeled, &sections);
     let feature = normalized["model"]["features"]
         .as_array()
         .expect("feature arena")
@@ -1080,13 +1172,13 @@ fn section_normalization_preserves_identity_shaped_labels_and_unowned_properties
     assert_eq!(feature["name"], source_id);
     let mut changed = labeled.clone();
     changed.model.features[0].name = Some(rewritten_id.clone());
-    assert_ne!(normalized, normalized_document(&changed, &sections));
+    assert_ne!(normalized, normalized_in_memory(&changed, &sections));
 
     let key = cadmpeg_core::nonblank_literal!("unowned_identity_shaped_text");
     labeled.model.features[0]
         .source_properties
         .insert(key.clone(), source_id.clone());
-    let normalized = normalized_document(&labeled, &sections);
+    let normalized = normalized_in_memory(&labeled, &sections);
     let feature = normalized["model"]["features"]
         .as_array()
         .expect("feature arena")
@@ -1098,7 +1190,7 @@ fn section_normalization_preserves_identity_shaped_labels_and_unowned_properties
     changed.model.features[0]
         .source_properties
         .insert(key, rewritten_id);
-    assert_ne!(normalized, normalized_document(&changed, &sections));
+    assert_ne!(normalized, normalized_in_memory(&changed, &sections));
 }
 
 /// Restore only a leaf changed by the preceding typed owner walk. This paired
@@ -1167,7 +1259,7 @@ fn section_normalization_preserves_qualified_native_reference_grammar() {
     source.model.features[0].name = Some(reference.to_owned());
     let id = normalize_identifier(source.model.features[0].id.as_str(), &sections)
         .expect("source-backed feature identity");
-    let normalized = normalized_document(&source, &sections);
+    let normalized = normalized_in_memory(&source, &sections);
     let feature = normalized["model"]["features"]
         .as_array()
         .expect("feature arena")
@@ -1179,17 +1271,17 @@ fn section_normalization_preserves_qualified_native_reference_grammar() {
     for changed_reference in ["1:sldprt:brep:edge#40", "0:sldprt:brep:edge#41"] {
         let mut changed = source.clone();
         changed.model.features[0].native_ref = Some(changed_reference.to_owned());
-        assert_ne!(normalized, normalized_document(&changed, &sections));
+        assert_ne!(normalized, normalized_in_memory(&changed, &sections));
     }
     let mut changed = source.clone();
     changed.model.features[0].name = Some("1:sldprt:brep:edge#40".to_owned());
-    assert_ne!(normalized, normalized_document(&changed, &sections));
+    assert_ne!(normalized, normalized_in_memory(&changed, &sections));
     let token = format!(
         "sldprt:golden-opaque:reference#{}",
         hex_reference(reference)
     );
     source.model.features[0].name = Some(token.clone());
-    let normalized = normalized_document(&source, &sections);
+    let normalized = normalized_in_memory(&source, &sections);
     let feature = normalized["model"]["features"]
         .as_array()
         .expect("feature arena")

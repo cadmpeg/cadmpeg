@@ -6,8 +6,10 @@ use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use super::{named_parameter, record_values, step_instance_id, RecordExt, ValueExt};
+use crate::reader::give_up_instance;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point};
 use cadmpeg_ir::features::geometry::FinitePoint3;
@@ -22,7 +24,8 @@ use cadmpeg_ir::geometry::{
     ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    CurveId, IdentityKey, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
+    AttributeId, CurveId, IdentityKey, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId,
+    SurfaceId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
@@ -32,7 +35,6 @@ use cadmpeg_ir::scalar::{
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::transform::{Transform, Transform2};
 use cadmpeg_ir::units::{HypotDirection2, OrthonormalFrame3, UnitVector3};
-use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -54,15 +56,80 @@ macro_rules! geometry_or_none {
     };
 }
 
-fn attach_geometry_source(
-    source: &mut Option<SourceObjectAssociation>,
-    id: u64,
-    name: Option<&str>,
-) {
-    if source.is_none() {
-        let name = name.map(std::string::ToString::to_string);
-        *source = Some(super::step_source_association(id, name));
+/// A free carrier of the current geometry, by its position in its arena.
+#[derive(Clone, Copy)]
+enum FreeCarrier {
+    Curve(usize),
+    Point(usize),
+    Surface(usize),
+}
+
+/// Associates `carrier` with the STEP record `id` where it has no association
+/// yet, and states the record's name as the carrier's `name` attribute.
+fn attach_geometry_source(ir: &mut CadIr, carrier: FreeCarrier, id: u64, name: Option<&str>) {
+    let (source, named) = match carrier {
+        FreeCarrier::Curve(index) => {
+            let curve = &mut ir.geometry.curves[index];
+            (
+                &mut curve.source_object,
+                NamedCarrier::Curve(curve.id.clone()),
+            )
+        }
+        FreeCarrier::Point(index) => {
+            let point = &mut ir.geometry.points[index];
+            (
+                &mut point.source_object,
+                NamedCarrier::Point(point.id.clone()),
+            )
+        }
+        FreeCarrier::Surface(index) => {
+            let surface = &mut ir.geometry.surfaces[index];
+            (
+                &mut surface.source_object,
+                NamedCarrier::Surface(surface.id.clone()),
+            )
+        }
+    };
+    if source.is_some() {
+        return;
     }
+    *source = Some(super::step_source_association(id));
+    if let Some(name) = name {
+        push_name_attribute(ir, named, name.to_owned());
+    }
+}
+
+/// A carrier that a source attribute can name.
+enum NamedCarrier {
+    Curve(CurveId),
+    Point(PointId),
+    Surface(SurfaceId),
+}
+
+/// States a representation item's `name` as a `name` attribute of the
+/// carrier read from it.
+fn push_name_attribute(ir: &mut CadIr, carrier: NamedCarrier, name: String) {
+    let (key, target) = match carrier {
+        NamedCarrier::Curve(id) => (
+            cadmpeg_ir::identity_key!("curve.").then(id.key()),
+            AttributeTarget::Curve(id),
+        ),
+        NamedCarrier::Point(id) => (
+            cadmpeg_ir::identity_key!("point.").then(id.key()),
+            AttributeTarget::Point(id),
+        ),
+        NamedCarrier::Surface(id) => (
+            cadmpeg_ir::identity_key!("surface.").then(id.key()),
+            AttributeTarget::Surface(id),
+        ),
+    };
+    ir.model.attributes.push(SourceAttribute {
+        id: AttributeId::from(ids::data(kind!("attribute"), key)),
+        target: target.into(),
+        name: "name".to_owned(),
+        values: vec![Some(AttributeValue::String(name))],
+        native_ref: None,
+    });
 }
 
 pub(super) struct GeometryData {
@@ -223,7 +290,7 @@ pub(super) fn infer_edge_parameter_ranges(
         // the inversion has already shown it misses, and refuses the body.
         let mut edge_tolerance = None;
         if worst > tolerance {
-            edge_tolerance = PositiveReal::new(tolerance + worst);
+            edge_tolerance = cadmpeg_ir::scalar::PositiveLength::new(tolerance + worst);
             let carried = edge_tolerance.map_or_else(String::new, |bound| {
                 format!("; the edge carries {:.6e} as its tolerance", bound.get())
             });
@@ -633,10 +700,12 @@ pub(super) fn decode(
                         .filter(|name| !name.is_empty());
                     apll_point_names.insert(id, source_name);
                 } else {
-                    losses.push(
+                    losses.extend(give_up_instance(
+                        exchange,
+                        id,
                         StepLossCode::DecodeWarning
                             .note(format!("{point_type} #{id} has invalid coordinates")),
-                    );
+                    ));
                 }
             }
             Some("CARTESIAN_POINT") => {
@@ -650,10 +719,12 @@ pub(super) fn decode(
                     points2.insert(id, position);
                     typed.insert(id);
                 } else {
-                    losses.push(
+                    losses.extend(give_up_instance(
+                        exchange,
+                        id,
                         StepLossCode::DecodeWarning
                             .note(format!("CARTESIAN_POINT #{id} has invalid coordinates")),
-                    );
+                    ));
                 }
             }
             Some("DIRECTION") => {
@@ -667,10 +738,12 @@ pub(super) fn decode(
                     directions2.insert(id, direction);
                     typed.insert(id);
                 } else {
-                    losses.push(
+                    losses.extend(give_up_instance(
+                        exchange,
+                        id,
                         StepLossCode::DecodeWarning
                             .note(format!("DIRECTION #{id} is invalid or zero")),
-                    );
+                    ));
                 }
             }
             _ => {}
@@ -764,11 +837,17 @@ pub(super) fn decode(
             continue;
         };
         let source_name = apll_point_names.remove(&id);
+        let point_id = PointId::from(ids::data(kind!("point"), id));
         ir.geometry.points.push(Point::new(
-            PointId::from(ids::data(kind!("point"), id)),
+            point_id.clone(),
             position,
-            source_name.map(|name| super::step_source_association(id, name)),
+            source_name
+                .is_some()
+                .then(|| super::step_source_association(id)),
         ));
+        if let Some(Some(name)) = source_name {
+            push_name_attribute(ir, NamedCarrier::Point(point_id), name);
+        }
     }
     for (id, record) in exchange.entities("VECTOR") {
         if record.partial("VECTOR").is_some() {
@@ -792,10 +871,18 @@ pub(super) fn decode(
             } else if let Some(value) = value2 {
                 vectors2.insert(id, value);
                 typed.insert(id);
-            } else {
-                losses.push(StepLossCode::DecodeWarning.note(format!(
-                    "VECTOR #{id} has an invalid direction or magnitude"
-                )));
+            } else if !super::drop_with_lost(
+                exchange,
+                id,
+                named_parameter(record, "VECTOR", 1).and_then(Value::reference),
+            ) {
+                losses.extend(give_up_instance(
+                    exchange,
+                    id,
+                    StepLossCode::DecodeWarning.note(format!(
+                        "VECTOR #{id} has an invalid direction or magnitude"
+                    )),
+                ));
             }
         }
     }
@@ -837,11 +924,17 @@ pub(super) fn decode(
             if let Some(placement) = placement {
                 placements.insert(id, placement);
                 typed.insert(id);
-            } else {
-                losses.push(
+            } else if !super::drop_with_lost(
+                exchange,
+                id,
+                named_parameter(record, placement_type, 1).and_then(Value::reference),
+            ) {
+                losses.extend(give_up_instance(
+                    exchange,
+                    id,
                     StepLossCode::DecodeWarning
                         .note(format!("AXIS2_PLACEMENT_3D #{id} has an invalid location")),
-                );
+                ));
             }
         }
     }
@@ -850,10 +943,14 @@ pub(super) fn decode(
         if let Some(transform) = cartesian_transformation_operator(record, &points, &directions) {
             transformation_operators.insert(id, transform);
             typed.insert(id);
-        } else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "CARTESIAN_TRANSFORMATION_OPERATOR_3D #{id} has invalid axes, origin, or scale"
-            )));
+        } else if !super::drop_with_lost(exchange, id, direct_references(record)) {
+            losses.extend(give_up_instance(
+                exchange,
+                id,
+                StepLossCode::DecodeWarning.note(format!(
+                    "CARTESIAN_TRANSFORMATION_OPERATOR_3D #{id} has invalid axes, origin, or scale"
+                )),
+            ));
         }
     }
     let mut transformation_operators2 = BTreeMap::new();
@@ -879,11 +976,13 @@ pub(super) fn decode(
         {
             transformation_operators2.insert(id, transform);
             typed.insert(id);
-        } else {
-            losses.push(
+        } else if !super::drop_with_lost(exchange, id, direct_references(record)) {
+            losses.extend(give_up_instance(
+                exchange,
+                id,
                 StepLossCode::DecodeWarning
                     .note(format!("{name} #{id} has invalid axes, origin, or scale")),
-            );
+            ));
         }
     }
     for (id, record) in exchange.entities("AXIS2_PLACEMENT_2D") {
@@ -904,11 +1003,19 @@ pub(super) fn decode(
         if let Some(placement) = placement {
             placements2.insert(id, placement);
             typed.insert(id);
-        } else {
-            losses.push(
+        } else if !super::drop_with_lost(
+            exchange,
+            id,
+            [1, 2].into_iter().filter_map(|index| {
+                named_parameter(record, "AXIS2_PLACEMENT_2D", index).and_then(Value::reference)
+            }),
+        ) {
+            losses.extend(give_up_instance(
+                exchange,
+                id,
                 StepLossCode::DecodeWarning
                     .note(format!("AXIS2_PLACEMENT_2D #{id} has an invalid location")),
-            );
+            ));
         }
     }
     let mut pcurve_geometries = BTreeMap::<u64, (PcurveGeometry, BTreeSet<u64>)>::new();
@@ -958,6 +1065,8 @@ pub(super) fn decode(
         }
     }
     let mut curve_parameter_offsets = BTreeMap::<u64, f64>::new();
+    let mut invalid_curves = BTreeSet::new();
+    let mut invalid_surfaces = BTreeSet::new();
     for (id, record) in exchange.entities_any(LeafCurveEntity::NAMES) {
         let Some(curve_kind) = LeafCurveEntity::of(record) else {
             continue;
@@ -1107,6 +1216,7 @@ pub(super) fn decode(
                 StepLossCode::DecodeWarning
                     .note(format!("{} #{id} has invalid geometry", curve_kind.name())),
             );
+            invalid_curves.insert(id);
         }
     }
     for (id, record) in exchange.entities("B_SPLINE_CURVE_WITH_KNOTS") {
@@ -1129,6 +1239,7 @@ pub(super) fn decode(
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "B_SPLINE_CURVE_WITH_KNOTS #{id} has invalid geometry"
             )));
+            invalid_curves.insert(id);
         }
     }
 
@@ -1152,6 +1263,7 @@ pub(super) fn decode(
     }
     let mut deferred_queue = VecDeque::from(deferred_ids);
     let mut waiting_on = HashMap::<u64, Vec<u64>>::new();
+    let mut past_nesting = HashSet::<u64>::new();
     while let Some(id) = deferred_queue.pop_front() {
         if carrier_index.curves.contains_key(&id) {
             continue;
@@ -1193,6 +1305,7 @@ pub(super) fn decode(
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "CURVE_REPLICA #{id} nests past the admitted inline basis depth"
                 )));
+                past_nesting.insert(id);
                 continue;
             };
             let geometry = SolvedCurveGeometry::Transformed(placed);
@@ -1477,9 +1590,11 @@ pub(super) fn decode(
         .filter(|(id, _)| !pcurve_geometry_records.contains(id))
     {
         if let std::collections::hash_map::Entry::Vacant(e) = carrier_index.curves.entry(id) {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "CURVE_REPLICA #{id} has invalid or unresolved parent/operator"
-            )));
+            if !past_nesting.contains(&id) {
+                losses.push(StepLossCode::DecodeWarning.note(format!(
+                    "CURVE_REPLICA #{id} has invalid or unresolved parent/operator"
+                )));
+            }
             let curve_index = CurveIndex(ir.geometry.curves.len());
             ir.geometry.curves.push(Curve {
                 parameter_range: None,
@@ -1624,6 +1739,7 @@ pub(super) fn decode(
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "{surface_type} #{id} has an unresolved directrix, vector, or axis"
             )));
+            invalid_surfaces.insert(id);
             continue;
         };
         let definition = match definition {
@@ -1632,6 +1748,7 @@ pub(super) fn decode(
                 losses.push(
                     StepLossCode::DecodeWarning.note(format!("procedural surface #{id}: {error}")),
                 );
+                invalid_surfaces.insert(id);
                 continue;
             }
         };
@@ -1765,6 +1882,7 @@ pub(super) fn decode(
                 StepLossCode::DecodeWarning
                     .note(format!("{surface_type} #{id} has invalid geometry")),
             );
+            invalid_surfaces.insert(id);
         }
     }
     for (id, record) in exchange.entities("B_SPLINE_SURFACE_WITH_KNOTS") {
@@ -1785,6 +1903,7 @@ pub(super) fn decode(
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "B_SPLINE_SURFACE_WITH_KNOTS #{id} has invalid geometry"
             )));
+            invalid_surfaces.insert(id);
         }
     }
 
@@ -1904,49 +2023,52 @@ pub(super) fn decode(
             };
             let parameter_ranges = [[u_start, u_end], [v_start, v_end]];
             let surface = SurfaceId::from(ids::data(kind!("surface"), id));
-            let copied_geometry = solved_geometry.clone();
+            let construction = match (|| {
+                let ranges = parameter_ranges.map(|range| {
+                    DirectedParameterRange::from_finite_endpoints(range).map_err(|_| {
+                        ProceduralGeometryError::Payload(
+                            "surface subset ranges are not finite and non-zero",
+                        )
+                    })
+                });
+                let [u_range, v_range] = ranges;
+                Ok::<_, ProceduralGeometryError>(
+                    cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction::from_parts(
+                        SurfaceId::from(ids::data(kind!("surface"), support_step)),
+                        [u_range?, v_range?],
+                        Some(u_sense),
+                        Some(v_sense),
+                        None,
+                    ),
+                )
+            })()
+            .map(|admitted_payload| {
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::from(ids::construction(
+                        kind!("rectangular_trimmed_surface"),
+                        id,
+                    )),
+                    ProceduralSurfaceDefinition::Subset(admitted_payload),
+                    None,
+                )
+            }) {
+                Ok(surface) => surface,
+                Err(error) => {
+                    losses.push(
+                        StepLossCode::DecodeWarning
+                            .note(format!("procedural surface #{id}: {error}")),
+                    );
+                    continue;
+                }
+            };
             ir.geometry.surfaces.push(Surface {
                 id: surface.clone(),
-                geometry: SurfaceGeometry::Solved(copied_geometry),
+                geometry: SurfaceGeometry::Solved(solved_geometry.clone()),
                 source_object: None,
                 native_ref: None,
             });
-            let _attached = procedural_admission.add_surface(&mut ir.geometry, &surface, match (|| {
-                    let ranges = parameter_ranges.map(|range| {
-                        DirectedParameterRange::from_finite_endpoints(range).map_err(|_| {
-                            ProceduralGeometryError::Payload(
-                                "surface subset ranges are not finite and non-zero",
-                            )
-                        })
-                    });
-                    let [u_range, v_range] = ranges;
-                    Ok::<_, ProceduralGeometryError>(
-                        cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction::from_parts(
-                            SurfaceId::from(ids::data(kind!("surface"), support_step)),
-                            [u_range?, v_range?],
-                            Some(u_sense),
-                            Some(v_sense),
-                            None,
-                        ),
-                    )
-                })()
-                .map(|admitted_payload| {
-                    ProceduralSurface::new(
-                        ProceduralSurfaceId::from(ids::construction(
-                            kind!("rectangular_trimmed_surface"),
-                            id,
-                        )),
-                        ProceduralSurfaceDefinition::Subset(admitted_payload),
-                        None,
-                    )
-                }) {
-                    Ok(surface) => surface,
-                    Err(error) => {
-                        losses.push(StepLossCode::DecodeWarning
-                                .note(format!("procedural surface #{id}: {error}")));
-                        continue;
-                    }
-                })?;
+            let _attached =
+                procedural_admission.add_surface(&mut ir.geometry, &surface, construction)?;
             carrier_index
                 .surfaces
                 .insert(id, SurfaceIndex(ir.geometry.surfaces.len() - 1));
@@ -2058,14 +2180,7 @@ pub(super) fn decode(
             let Some((distance, self_intersect)) = distance.zip(self_intersect) else {
                 continue;
             };
-            let surface_index = SurfaceIndex(ir.geometry.surfaces.len());
-            ir.geometry.surfaces.push(Surface {
-                id: surface.clone(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-                source_object: None,
-                native_ref: None,
-            });
-            let _attached = procedural_admission.add_surface(&mut ir.geometry, &surface, match cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, distance * record_scale, self_intersect).map(|admitted_payload| ProceduralSurface::new(
+            let construction = match cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, distance * record_scale, self_intersect).map(|admitted_payload| ProceduralSurface::new(
                     ProceduralSurfaceId::from(ids::construction(kind!("offset_surface"), id)),
                     ProceduralSurfaceDefinition::ParallelOffset(admitted_payload),
                     None,
@@ -2075,7 +2190,16 @@ pub(super) fn decode(
                         losses.push(StepLossCode::DecodeWarning.note(format!("procedural surface #{id}: {error}")));
                         continue;
                     }
-                })?;
+                };
+            let surface_index = SurfaceIndex(ir.geometry.surfaces.len());
+            ir.geometry.surfaces.push(Surface {
+                id: surface.clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                source_object: None,
+                native_ref: None,
+            });
+            let _attached =
+                procedural_admission.add_surface(&mut ir.geometry, &surface, construction)?;
             carrier_index.surfaces.insert(id, surface_index);
             typed.insert(id);
             true
@@ -2112,6 +2236,7 @@ pub(super) fn decode(
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "SURFACE_REPLICA #{id} nests past the admitted inline basis depth"
                 )));
+                past_nesting.insert(id);
                 continue;
             };
             let geometry = SolvedSurfaceGeometry::Transformed(placed);
@@ -2148,9 +2273,11 @@ pub(super) fn decode(
     }
     for (id, _) in exchange.entities("SURFACE_REPLICA") {
         if let std::collections::hash_map::Entry::Vacant(e) = carrier_index.surfaces.entry(id) {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "SURFACE_REPLICA #{id} has invalid or unresolved parent/operator"
-            )));
+            if !past_nesting.contains(&id) {
+                losses.push(StepLossCode::DecodeWarning.note(format!(
+                    "SURFACE_REPLICA #{id} has invalid or unresolved parent/operator"
+                )));
+            }
             let surface_index = SurfaceIndex(ir.geometry.surfaces.len());
             ir.geometry.surfaces.push(Surface {
                 id: SurfaceId::from(ids::data(kind!("surface"), id)),
@@ -2276,6 +2403,18 @@ pub(super) fn decode(
             e.insert(surface_index);
         }
     }
+    // An invalid carrier that no edge or face retains as an unknown carrier
+    // leaves no record.
+    for id in invalid_curves {
+        if !carrier_index.curves.contains_key(&id) {
+            exchange.lost().give_up(id, "invalid curve geometry");
+        }
+    }
+    for id in invalid_surfaces {
+        if !carrier_index.surfaces.contains_key(&id) {
+            exchange.lost().give_up(id, "invalid surface geometry");
+        }
+    }
     let mut surface_parameter_scales = BTreeMap::new();
     let lookup = SurfaceScaleLookup::new(ir);
     for surface in &ir.geometry.surfaces {
@@ -2319,24 +2458,34 @@ pub(super) fn decode(
             .filter(|surface| carrier_index.surfaces.contains_key(surface))
             .and(decoded)
         else {
-            losses.push(
+            losses.extend(give_up_instance(
+                exchange,
+                id,
                 StepLossCode::DecodeWarning
                     .note(format!("PCURVE #{id} has no decoded surface or 2D curve")),
-            );
+            ));
             continue;
         };
         let Some(scales) = surface_step.and_then(|surface| surface_parameter_scales.get(&surface))
         else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PCURVE #{id} has no established owning surface parameterization"
-            )));
+            losses.extend(give_up_instance(
+                exchange,
+                id,
+                StepLossCode::DecodeWarning.note(format!(
+                    "PCURVE #{id} has no established owning surface parameterization"
+                )),
+            ));
             continue;
         };
         let geometry = geometry.clone();
         let Ok(geometry) = geometry.scaled_coordinates_owned(ctx, *scales)? else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "PCURVE #{id} has a 2D carrier that cannot be scaled into the owning surface parameter units"
-            )));
+            losses.extend(give_up_instance(
+                exchange,
+                id,
+                StepLossCode::DecodeWarning.note(format!(
+                    "PCURVE #{id} has a 2D carrier that cannot be scaled into the owning surface parameter units"
+                )),
+            ));
             continue;
         };
         ir.geometry.pcurves.push(Pcurve {
@@ -2488,30 +2637,46 @@ fn decode_tessellated_curve_sets(
         let Some(coordinates_id) =
             tessellated_curve_parameter(record, 0).and_then(ValueExt::reference)
         else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "TESSELLATED_CURVE_SET #{id} has no COORDINATES_LIST reference"
-            )));
+            losses.extend(give_up_instance(
+                exchange,
+                id,
+                StepLossCode::DecodeWarning.note(format!(
+                    "TESSELLATED_CURVE_SET #{id} has no COORDINATES_LIST reference"
+                )),
+            ));
             continue;
         };
         let Some(coordinates_record) = exchange.records().get(&coordinates_id) else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "TESSELLATED_CURVE_SET #{id} references missing COORDINATES_LIST #{coordinates_id}"
-            )));
+            losses.extend(give_up_instance(
+                exchange,
+                id,
+                StepLossCode::DecodeWarning.note(format!(
+                    "TESSELLATED_CURVE_SET #{id} references missing COORDINATES_LIST #{coordinates_id}"
+                )),
+            ));
             continue;
         };
         let scale = unit_scales.length([coordinates_id]).get();
         let Some(vertices) = coordinate_rows(coordinates_record, scale) else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "TESSELLATED_CURVE_SET #{id} has invalid COORDINATES_LIST #{coordinates_id}"
-            )));
+            losses.extend(give_up_instance(
+                exchange,
+                id,
+                StepLossCode::DecodeWarning.note(format!(
+                    "TESSELLATED_CURVE_SET #{id} has invalid COORDINATES_LIST #{coordinates_id}"
+                )),
+            ));
             continue;
         };
         let Some(strips) =
             tessellated_line_strips(tessellated_curve_parameter(record, 1), vertices.len())
         else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "TESSELLATED_CURVE_SET #{id} has invalid line strips"
-            )));
+            losses.extend(give_up_instance(
+                exchange,
+                id,
+                StepLossCode::DecodeWarning.note(format!(
+                    "TESSELLATED_CURVE_SET #{id} has invalid line strips"
+                )),
+            ));
             continue;
         };
         let source_name = representation_item_name(record)
@@ -2548,14 +2713,17 @@ fn decode_tessellated_curve_sets(
             .ok() else {
                 continue;
             };
-            let source_name = source_name.clone();
+            let curve_id = CurveId::from(ids::data(kind!("curve"), curve_key));
             ir.geometry.curves.push(Curve {
                 parameter_range: None,
-                id: CurveId::from(ids::data(kind!("curve"), curve_key)),
+                id: curve_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)),
-                source_object: Some(super::step_source_association(id, source_name)),
+                source_object: Some(super::step_source_association(id)),
                 native_ref: None,
             });
+            if let Some(name) = &source_name {
+                push_name_attribute(ir, NamedCarrier::Curve(curve_id), name.clone());
+            }
         }
         for source_id in [id, coordinates_id] {
             typed.insert(source_id);
@@ -2648,31 +2816,19 @@ pub(super) fn associate_free_geometric_set_members(
                 if owned.curves.contains(index) {
                     continue;
                 }
-                attach_geometry_source(
-                    &mut ir.geometry.curves[index.0].source_object,
-                    member,
-                    name.as_deref(),
-                );
+                attach_geometry_source(ir, FreeCarrier::Curve(index.0), member, name.as_deref());
             }
             if let Some(index) = index.points.get(&member).map(|point| &point.index) {
                 if owned.points.contains(index) {
                     continue;
                 }
-                attach_geometry_source(
-                    &mut ir.geometry.points[index.0].source_object,
-                    member,
-                    name.as_deref(),
-                );
+                attach_geometry_source(ir, FreeCarrier::Point(index.0), member, name.as_deref());
             }
             if let Some(index) = index.surfaces.get(&member) {
                 if owned.surfaces.contains(index) {
                     continue;
                 }
-                attach_geometry_source(
-                    &mut ir.geometry.surfaces[index.0].source_object,
-                    member,
-                    name.as_deref(),
-                );
+                attach_geometry_source(ir, FreeCarrier::Surface(index.0), member, name.as_deref());
             }
         }
     }
@@ -2718,7 +2874,8 @@ pub(super) fn associate_free_representation_members(
             if let Some(index) = index.curves.get(&member) {
                 if !owned.curves.contains(index) {
                     attach_geometry_source(
-                        &mut ir.geometry.curves[index.0].source_object,
+                        ir,
+                        FreeCarrier::Curve(index.0),
                         member,
                         source_name.as_deref(),
                     );
@@ -2727,7 +2884,8 @@ pub(super) fn associate_free_representation_members(
             if let Some(index) = index.points.get(&member).map(|point| &point.index) {
                 if !owned.points.contains(index) {
                     attach_geometry_source(
-                        &mut ir.geometry.points[index.0].source_object,
+                        ir,
+                        FreeCarrier::Point(index.0),
                         member,
                         source_name.as_deref(),
                     );
@@ -2736,7 +2894,8 @@ pub(super) fn associate_free_representation_members(
             if let Some(index) = index.surfaces.get(&member) {
                 if !owned.surfaces.contains(index) {
                     attach_geometry_source(
-                        &mut ir.geometry.surfaces[index.0].source_object,
+                        ir,
+                        FreeCarrier::Surface(index.0),
                         member,
                         source_name.as_deref(),
                     );
@@ -2812,26 +2971,19 @@ fn associate_presentation_carrier(
         .filter(|name| !name.is_empty());
     if let Some(index) = index.curves.get(&target) {
         if !owned.curves.contains(index) {
-            attach_geometry_source(
-                &mut ir.geometry.curves[index.0].source_object,
-                source_id,
-                name.as_deref(),
-            );
+            attach_geometry_source(ir, FreeCarrier::Curve(index.0), source_id, name.as_deref());
         }
     }
     if let Some(index) = index.points.get(&target).map(|point| &point.index) {
         if !owned.points.contains(index) {
-            attach_geometry_source(
-                &mut ir.geometry.points[index.0].source_object,
-                source_id,
-                name.as_deref(),
-            );
+            attach_geometry_source(ir, FreeCarrier::Point(index.0), source_id, name.as_deref());
         }
     }
     if let Some(index) = index.surfaces.get(&target) {
         if !owned.surfaces.contains(index) {
             attach_geometry_source(
-                &mut ir.geometry.surfaces[index.0].source_object,
+                ir,
+                FreeCarrier::Surface(index.0),
                 source_id,
                 name.as_deref(),
             );
@@ -3168,7 +3320,7 @@ pub(super) fn associate_topology_carriers(
         }
         if ir.geometry.curves[index.0].source_object.is_none() {
             ir.geometry.curves[index.0].source_object =
-                Some(super::step_source_association(edge_id, None));
+                Some(super::step_source_association(edge_id));
         }
     }
     for (face_id, face) in exchange.entities_any(&["ADVANCED_FACE", "FACE_SURFACE"]) {
@@ -3183,7 +3335,7 @@ pub(super) fn associate_topology_carriers(
         }
         if ir.geometry.surfaces[index.0].source_object.is_none() {
             ir.geometry.surfaces[index.0].source_object =
-                Some(super::step_source_association(face_id, None));
+                Some(super::step_source_association(face_id));
         }
     }
     for (vertex_id, vertex) in exchange.entities("VERTEX_POINT") {
@@ -3198,7 +3350,7 @@ pub(super) fn associate_topology_carriers(
         }
         if ir.geometry.points[index.0].source_object.is_none() {
             ir.geometry.points[index.0].source_object =
-                Some(super::step_source_association(vertex_id, None));
+                Some(super::step_source_association(vertex_id));
         }
     }
 }
@@ -3221,7 +3373,7 @@ pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index
         };
         if ir.geometry.curves[parent_index.0].source_object.is_none() {
             ir.geometry.curves[parent_index.0].source_object =
-                Some(super::step_source_association(replica_id, None));
+                Some(super::step_source_association(replica_id));
         }
     }
     for (replica_id, record) in exchange.entities("SURFACE_REPLICA") {
@@ -3235,7 +3387,7 @@ pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index
         };
         if ir.geometry.surfaces[parent_index.0].source_object.is_none() {
             ir.geometry.surfaces[parent_index.0].source_object =
-                Some(super::step_source_association(replica_id, None));
+                Some(super::step_source_association(replica_id));
         }
     }
 }
@@ -3294,7 +3446,7 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
             .is_none()
         {
             ir.geometry.surfaces[surface_index.0].source_object =
-                Some(super::step_source_association(pcurve_id, None));
+                Some(super::step_source_association(pcurve_id));
         }
     }
 }
@@ -3328,7 +3480,7 @@ pub(super) fn associate_surface_curve_supports(
         {
             if ir.geometry.curves[curve_index.0].source_object.is_none() {
                 ir.geometry.curves[curve_index.0].source_object =
-                    Some(super::step_source_association(surface_curve_id, None));
+                    Some(super::step_source_association(surface_curve_id));
             }
         }
         for surface_id in surface_curve_supports(record, exchange, index) {
@@ -3340,7 +3492,7 @@ pub(super) fn associate_surface_curve_supports(
                 .is_none()
             {
                 ir.geometry.surfaces[surface_index.0].source_object =
-                    Some(super::step_source_association(surface_curve_id, None));
+                    Some(super::step_source_association(surface_curve_id));
             }
         }
     }
@@ -6233,6 +6385,16 @@ fn base_axis_2d(
         }
         (None, None) => (HypotDirection2::X_AXIS, HypotDirection2::Y_AXIS),
     }
+}
+
+/// The instances that the parameters of `record` reference directly.
+fn direct_references(record: &RawRecord) -> Vec<u64> {
+    record
+        .partials
+        .iter()
+        .flat_map(|partial| &partial.parameters)
+        .filter_map(Value::reference)
+        .collect()
 }
 
 fn optional_direction(

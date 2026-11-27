@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Generate deterministic, conservative NX capability-gate evidence.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsStr;
@@ -665,14 +666,14 @@ fn unique_face_body<'a>(
         .regions
         .iter()
         .filter_map(|region| {
-            let owns_face = region.shells.iter().any(|shell_id| {
+            let owns_face = region.stated_shells().any(|shell_id| {
                 ir.geometry
                     .shells
                     .iter()
                     .find(|shell| shell.id == *shell_id)
                     .is_some_and(|shell| {
                         ir.geometry
-                            .shell_faces(&shell.id)
+                            .stated_shell_faces(&shell.id)
                             .any(|face| &face.id == face_id)
                     })
             });
@@ -749,7 +750,7 @@ fn decode_fixture_in_worker(path: &Path) -> Result<DecodedFixtureEvidence, Worke
             path.display()
         )));
     }
-    serde_json::from_slice(&output.stdout).map_err(|error| WorkerFailure::Failed(error.to_string()))
+    json::from_slice(&output.stdout).map_err(|error| WorkerFailure::Failed(error.to_string()))
 }
 
 fn wait_for_worker(mut worker: Child) -> Result<Output, WorkerFailure> {
@@ -1264,6 +1265,7 @@ mod tests {
                 .expect("valid identity"),
             target: AppearanceTarget::Body(body.id.clone()).into(),
             appearance: appearance_id,
+            precedence: None,
             source_entity_id: None,
             object_type: None,
             visible: None,
@@ -1338,6 +1340,7 @@ mod tests {
                 .expect("valid identity"),
             target: target.clone().into(),
             appearance: appearance_id.clone(),
+            precedence: None,
             source_entity_id: None,
             object_type: None,
             visible: None,
@@ -1354,6 +1357,7 @@ mod tests {
                 .expect("valid identity"),
             target: target.clone().into(),
             appearance: appearance_id,
+            precedence: None,
             source_entity_id: None,
             object_type: None,
             visible: None,
@@ -1427,14 +1431,15 @@ mod tests {
 #[cfg(test)]
 mod boundary_wire_tests {
     use super::RederivationBoundary;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn worker_boundary_requires_a_feature_for_unsupported_reasons() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "feature": null, "feature_name": null, "feature_family": null,
             "feature_ordinal": null, "reason": "incomplete_feature_definition"
         });
-        assert!(serde_json::from_value::<RederivationBoundary>(wire)
+        assert!(json::from_value::<RederivationBoundary>(wire)
             .expect_err("unsupported boundaries require a feature")
             .to_string()
             .contains("feature"));

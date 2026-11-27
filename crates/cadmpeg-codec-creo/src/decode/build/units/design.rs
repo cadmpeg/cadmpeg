@@ -1,6 +1,6 @@
 use super::{
     curve_parameter_scale, scale_curve_geometry, scale_finite_point3, scale_length,
-    scale_positive_length, scale_procedural_curve, scale_procedural_surface,
+    scale_positive_length, scale_procedural_curve, scale_procedural_surface, scale_refusal,
     scale_surface_geometry, scale_transform_translation, surface_parameter_scales,
 };
 use cadmpeg_core::decode::DecodeContext;
@@ -238,10 +238,14 @@ fn pick(
             scale_finite_point3(&mut frame.origin, scale)?;
         }
         for curve in &mut w.curves {
-            scale_curve_geometry(ctx, curve, scale)?;
+            *curve = curve
+                .scaled(ctx, scale)?
+                .map_err(|refusal| scale_refusal(refusal, "curve", scale))?;
         }
         if let Some(surface) = &mut w.surface {
-            scale_surface_geometry(ctx, surface, scale)?;
+            *surface = surface
+                .scaled(ctx, scale)?
+                .map_err(|refusal| scale_refusal(refusal, "surface", scale))?;
         }
         if let Some(body) = &mut w.body {
             topology(ctx, body, scale)?;
@@ -431,9 +435,12 @@ fn topology(
     }
     Ok(())
 }
-fn tolerance(value: &mut Option<PositiveReal>, scale: PositiveReal) -> Result<(), CodecError> {
+fn tolerance(
+    value: &mut Option<cadmpeg_ir::scalar::PositiveLength>,
+    scale: PositiveReal,
+) -> Result<(), CodecError> {
     if let Some(v) = value {
-        *v = PositiveReal::new(v.get() * scale.get())
+        *v = cadmpeg_ir::scalar::PositiveLength::new(v.get() * scale.get())
             .ok_or_else(|| CodecError::malformed("scaled witness tolerance overflow"))?;
     }
     Ok(())
@@ -444,6 +451,7 @@ mod tests {
     mod witness_charts;
     use super::super::scale_feature_definition;
     use super::*;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::design::construction::{kinds, FrameAxis};
     use cadmpeg_ir::design::selection::{Anchor, PickTarget, PrincipalEntity, Witness};
     use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
@@ -494,11 +502,11 @@ mod tests {
             reversed: None,
         });
         draft.native_options.insert(
-            cadmpeg_core::nonblank_literal!("f3d:distance"),
+            cadmpeg_ir::codec_name!("f3d:distance"),
             NativeOption::Length(length()),
         );
         draft.source_settings.insert(
-            cadmpeg_core::nonblank_literal!("f3d:bound"),
+            cadmpeg_ir::codec_name!("f3d:bound"),
             NativeOption::Length(Dimension::Parameter(bound.clone())),
         );
         let mut definition = FeatureDefinition::Operation(
@@ -521,13 +529,13 @@ mod tests {
             Point3::new(10.0, 20.0, 30.0)
         );
         assert_eq!(
-            axis.native_options()[&cadmpeg_core::nonblank_literal!("f3d:distance")],
+            axis.native_options()["f3d:distance"],
             NativeOption::Length(Dimension::Literal(
                 Length::new(20.0).expect("expected scaled length")
             ))
         );
         assert_eq!(
-            axis.source_settings()[&cadmpeg_core::nonblank_literal!("f3d:bound")],
+            axis.source_settings()["f3d:bound"],
             NativeOption::Length(Dimension::Parameter(bound))
         );
         let Some(InputReference::Built(value)) = &axis.inputs()[0].reference else {
@@ -573,7 +581,7 @@ mod tests {
             .iter()
             .map(|point| point.position().get())
             .collect::<Vec<_>>();
-        let before_subd = serde_json::to_value(&body.subds[0].cage).expect("serialize source cage");
+        let before_subd = json::to_value(&body.subds[0].cage).expect("serialize source cage");
         let pcurve: cadmpeg_ir::ids::PcurveId = "test:model:pcurve#witness"
             .try_into()
             .expect("test pcurve identity");
@@ -625,7 +633,7 @@ mod tests {
         };
         let mut draft = DatumAxisDraft::default();
         draft.source_settings.insert(
-            cadmpeg_core::nonblank_literal!("test:witness"),
+            cadmpeg_ir::codec_name!("test:witness"),
             NativeOption::Selection(selection),
         );
         let mut definition = FeatureDefinition::Operation(
@@ -643,9 +651,7 @@ mod tests {
         let FeatureOperation::DatumAxis { axis } = definition.operation() else {
             panic!("datum axis")
         };
-        let NativeOption::Selection(selection) =
-            &axis.source_settings()[&cadmpeg_core::nonblank_literal!("test:witness")]
-        else {
+        let NativeOption::Selection(selection) = &axis.source_settings()["test:witness"] else {
             panic!("selection")
         };
         let Picks::Named(picks) = &selection.picks else {
@@ -702,7 +708,7 @@ mod tests {
             [2.0, 3.0]
         );
         assert_eq!(pcurve.metadata.wrapper_reversed(), Some(false));
-        let after_subd = serde_json::to_value(&body.subds[0].cage).expect("serialize scaled cage");
+        let after_subd = json::to_value(&body.subds[0].cage).expect("serialize scaled cage");
         for (before, after) in before_subd["vertices"]
             .as_array()
             .expect("source cage vertices")

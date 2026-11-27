@@ -4,16 +4,24 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::scalar::PositiveReal;
 
 #[test]
 fn emitted_vertex_records_keep_body_ownership_and_optional_tolerance() {
-    for tolerance in [None, Some(PositiveReal::new(0.125).unwrap())] {
+    for tolerance in [
+        None,
+        Some(cadmpeg_ir::scalar::PositiveLength::new(0.125).unwrap()),
+    ] {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
         for vertex in &mut ir.geometry.vertices {
             vertex.tolerance = tolerance;
         }
-        let body = crate::writer::brep_body(&ir, 0.001, false).unwrap();
+        let body = crate::writer::brep_body(
+            &ir,
+            0.001,
+            cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
+            false,
+        )
+        .unwrap();
         let native = crate::test_support::container::sldprt_with_body(&body);
         let decoded = crate::SldprtCodec
             .decode(&mut Cursor::new(native), &DecodeOptions::default())

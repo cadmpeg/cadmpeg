@@ -7,11 +7,13 @@ use crate::geometry::sampled::{
     GeometryLayoutError, PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex,
 };
 use crate::geometry::{
-    PlacedCurve, PlacedSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, MAX_GEOMETRY_NESTING,
+    InlineCurve, InlineSurface, PlacedCurve, PlacedSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, MAX_GEOMETRY_NESTING,
 };
 use crate::math::{Point3, Vector3};
 use crate::scalar::PositiveReal;
 use crate::transform::Transform;
+use cadmpeg_core::serde_erase::json;
 
 const SCALE_TO_TINY_LENGTH: f64 = 1.0e-10;
 
@@ -292,6 +294,70 @@ fn a_scaled_placement_refuses_its_basis_before_its_translation() {
         )
         .expect("fixture scaling admission"),
         Err(ScaleRefusal::Field("PlaneSurface.origin must be finite"))
+    );
+}
+
+/// An inline carrier scales by the rules of the solved carrier it spells:
+/// the same result, and the same refusal in the same order.
+#[test]
+fn an_inline_placement_scales_as_its_solved_spelling() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let SolvedSurfaceGeometry::Plane(leaf) = plane() else {
+        panic!("a plane fixture");
+    };
+    let translation = Transform::affine([
+        [1.0, 0.0, 0.0, 4.0],
+        [0.0, 1.0, 0.0, 5.0],
+        [0.0, 0.0, 1.0, 6.0],
+    ])
+    .expect("a finite translation fixture");
+    let inline = InlineSurface::Transformed {
+        basis: Box::new(InlineSurface::Plane(leaf)),
+        transform: translation,
+    };
+    let solved = SolvedSurfaceGeometry::Transformed(
+        PlacedSurface::try_new(Box::new(plane()), translation).expect("a placement fixture"),
+    );
+    let scaled_inline = inline
+        .scaled(&ctx, scale(2.0))
+        .expect("fixture scaling admission")
+        .expect("a finite scaled placement");
+    let scaled_solved = solved
+        .scaled(&ctx, scale(2.0))
+        .expect("fixture scaling admission")
+        .expect("a finite scaled placement");
+    assert_eq!(
+        json::to_value(&scaled_inline).unwrap(),
+        json::to_value(&scaled_solved).unwrap()
+    );
+
+    let line = |x: f64| {
+        LineCurve::try_new(Point3::new(x, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+            .expect("a finite line fixture")
+    };
+    let overflowing = Transform::affine([
+        [1.0, 0.0, 0.0, f64::MAX],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .expect("a finite translation fixture");
+    let placed = |x: f64| InlineCurve::Transformed {
+        basis: Box::new(InlineCurve::Line(line(x))),
+        transform: overflowing,
+    };
+    assert_eq!(
+        placed(1.0)
+            .scaled(&ctx, scale(2.0))
+            .expect("fixture scaling admission"),
+        Err(ScaleRefusal::Translation)
+    );
+    assert_eq!(
+        placed(f64::MAX)
+            .scaled(&ctx, scale(2.0))
+            .expect("fixture scaling admission"),
+        Err(ScaleRefusal::Field(
+            "scaled LineCurve.origin must be finite"
+        ))
     );
 }
 

@@ -257,7 +257,6 @@ parameter_range: None,
                 native_ref: None,
             });
             admitted!(annotate(&mut annotations, &procedural_id, "e5_0d_03", u64_from_index(jet.pos), "rolling_ball_jet_definition", Exactness::ByteExact));
-            admitted!(annotations.derived(&procedural_id, "surface").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
             admitted!(annotations.derived(&procedural_id, "definition").map(|_| ()).map_err(cadmpeg_core::CodecError::from));
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
@@ -329,6 +328,21 @@ refusal,
         let mut losses = Vec::new();
         if !topology_transferred {
             losses.push((CatiaLossCode::TopologyE5GraphUnclosed).note("E5 carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.".to_string()));
+            let face_records = topology
+                .iter()
+                .flat_map(|topology| topology.faces.iter().map(|face| face.record_id))
+                .collect::<std::collections::BTreeSet<_>>();
+            let code = CatiaLossCode::TopologyE5GraphUnclosed.kind();
+            losses.extend(face_records.into_iter().map(|record_id| {
+                cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                    cadmpeg_ir::ids::Identity::compose(
+                        &cadmpeg_ir::identity_namespace!("catia", "e5", "face"),
+                        record_id,
+                    ),
+                    format_args!("{code}: the reference graph of the face did not close"),
+                )
+                .loss()
+            }));
         }
         insert_unresolved_carrier_loss(&ir, &mut losses);
         if let Err(error) = link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations) {
@@ -346,6 +360,7 @@ refusal,
             },
             annotations,
             unknowns,
+            given_up: Vec::new(),
             admitted_model_entities: admission.admitted(),
         }))
     })()
@@ -1027,10 +1042,14 @@ fn attach_e5_free_vertices(
         .map_err(cadmpeg_core::CodecError::malformed)?;
     let shell_id = ShellId::mint("catia:e5:shell#unbound-points".to_owned())
         .map_err(cadmpeg_core::CodecError::malformed)?;
-    for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
+    for key in [
+        cadmpeg_ir::annotations::AnnotationKey::from(&body_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&region_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&shell_id),
+    ] {
         annotate(
             annotations,
-            id,
+            &key,
             "e5_0d_03",
             0,
             "unbound_point_owner",
@@ -1053,14 +1072,12 @@ fn attach_e5_free_vertices(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     admission.charge()?;
-    ir.geometry.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id,
-        shells,
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region_id.clone(), body_id, shells));
     admission.charge()?;
     if free_vertices.is_empty() {
         return Ok(());
@@ -1957,7 +1974,6 @@ fn emit_e5_curves_and_edges(
             "c1_surface_intersection",
             Exactness::Derived,
         )?;
-        annotations.derived(&id, "curve")?;
         annotations.derived(&id, "definition")?;
         admission.charge()?;
         let _attached = ir.geometry.add_procedural_curve(
@@ -1990,7 +2006,6 @@ fn emit_e5_curves_and_edges(
             "parametric_surface_curve",
             Exactness::Derived,
         )?;
-        annotations.derived(&id, "curve")?;
         annotations.derived(&id, "definition")?;
         admission.charge()?;
         let _attached = ir.geometry.add_procedural_curve(
@@ -2034,8 +2049,8 @@ fn emit_e5_curves_and_edges(
             annotations.derived(&id, field)?;
         }
         if edge_curve_ids.contains_key(&record_id) {
-            annotations.derived(&id, "curve")?;
-            annotations.derived(&id, "param_range")?;
+            annotations.derived(&id, "carrier.curve")?;
+            annotations.derived(&id, "carrier.param_range")?;
         }
         admission.charge()?;
         ir.geometry.edges.push(Edge {
@@ -2135,6 +2150,7 @@ fn emit_e5_bodies(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
         for (component, component_faces) in plan.components.iter().enumerate() {
             let region_id = region_ids[component].clone();
@@ -2152,12 +2168,9 @@ fn emit_e5_bodies(
             annotations.derived(&region_id, "shells")?;
             let shells = vec![shell_id.clone()];
             admission.charge()?;
-            ir.geometry.regions.push(Region {
-                id: region_id.clone(),
-                body: body_id.clone(),
-                shells,
-                native_ref: None,
-            });
+            ir.geometry
+                .regions
+                .push(Region::new(region_id.clone(), body_id.clone(), shells));
             annotate(
                 annotations,
                 &shell_id,
@@ -2279,18 +2292,23 @@ fn emit_e5_faces_loops_coedges(
             annotations.derived(&face_id, field)?;
         }
         admission.charge()?;
+        let loops = match loop_ids.split_first() {
+            // The source states the outer boundary first.
+            Some((outer, inner)) => {
+                cadmpeg_ir::topology::FaceLoops::classified(outer.clone(), inner.to_vec())
+            }
+            None => crate::assemble::unspecified_loops_on(
+                ir,
+                &surface_for_ref[&face.surface].0,
+                Vec::new(),
+            ),
+        };
         ir.geometry.faces.push(Face {
             id: face_id.clone(),
             shell: face_shell[&face.record_id].clone(),
             surface: surface_for_ref[&face.surface].0.clone(),
             sense: face_plan.sense,
-            loops: match loop_ids.split_first() {
-                // The source states the outer boundary first.
-                Some((outer, inner)) => {
-                    cadmpeg_ir::topology::FaceLoops::classified(outer.clone(), inner.to_vec())
-                }
-                None => cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-            },
+            loops,
             name: None,
             color: None,
             tolerance: None,
@@ -2336,7 +2354,7 @@ fn emit_e5_faces_loops_coedges(
                 "09_loop",
                 Exactness::ByteExact,
             )?;
-            for field in ["face", "coedges", "vertex_uses"] {
+            for field in ["face", "boundary.coedges", "boundary.vertex_uses"] {
                 annotations.derived(&loop_id, field)?;
             }
             let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, vertex_uses) else {

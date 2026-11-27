@@ -44,7 +44,7 @@ use crate::records::{
 };
 
 /// Top-level container entry holding the external-reference table.
-const REDIRECTIONS_ENTRY: &str = "RedirectionsStream.dat";
+pub(crate) const REDIRECTIONS_ENTRY: &str = "RedirectionsStream.dat";
 /// Top-level container entry holding the document-properties slot.
 const PROPERTIES_ENTRY: &str = "Properties.dat";
 /// Top-level JSON document carrying component-reference extension data.

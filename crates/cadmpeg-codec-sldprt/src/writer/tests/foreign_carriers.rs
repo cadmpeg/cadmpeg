@@ -28,7 +28,7 @@ fn cube() -> cadmpeg_ir::CadIr {
 
 pub(super) fn plan_losses(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     SldprtCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .unwrap()
         .report()
         .losses
@@ -75,7 +75,7 @@ fn procedural_carriers_are_written_from_their_solved_cache() {
 fn a_vertex_loop_is_written_as_the_sole_fin_of_its_loop() {
     let mut ir = cube();
     let face = ir.geometry.faces[0].clone();
-    let ring = face.loops.iter().next().unwrap().clone();
+    let ring = face.loops.stated().next().unwrap().clone();
     let ring = ir.geometry.loops.iter().find(|row| row.id == ring).unwrap();
     let mut corners = Vec::new();
     for coedge in ring.coedges() {
@@ -138,7 +138,7 @@ fn a_vertex_loop_is_written_as_the_sole_fin_of_its_loop() {
         },
         native_ref: None,
     });
-    let mut loops = face.loops.to_vec();
+    let mut loops = face.loops.stated().cloned().collect::<Vec<_>>();
     loops.push(pole_loop);
     ir.geometry.faces[0].loops = FaceLoops::unspecified(loops);
     let decoded = crate::test_support::ir::encode_decode(&ir);
@@ -447,6 +447,31 @@ fn history_with_another_formats_native_references_is_written() {
     assert_eq!(decoded.model.sketches.len(), 1);
 }
 
+/// A source that does not state suppression leaves its features unsuppressed
+/// (§5.10): the history is written whole, with no note for it.
+#[test]
+fn history_whose_source_does_not_state_suppression_is_written_unsuppressed() {
+    let mut ir = cube_with_foreign_history();
+    for feature in &mut ir.model.features {
+        feature.suppressed = None;
+    }
+    let losses = plan_losses(&ir);
+    assert!(
+        loss(&losses, "writer.features-omitted").is_none(),
+        "{losses:#?}"
+    );
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    for name in ["Profile", "Boss"] {
+        let feature = decoded
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("{name} decodes back"));
+        assert_eq!(feature.suppressed, Some(false), "{name}");
+    }
+}
+
 /// Push a feature of another format named `name`, with the input topology
 /// `other:history-input:state#{key}` holding one face and one edge, and
 /// return its id. `definition` builds the operation from that state, face and
@@ -481,6 +506,8 @@ pub(super) fn push_foreign_feature(
             vertices: DistinctMembers::default(),
             edge_geometry: Vec::new(),
             face_owners: Vec::new(),
+            face_geometry: Vec::new(),
+            body_writers: Vec::new(),
             native_ref: None,
         });
     let ordinal = u64::try_from(ir.model.features.len()).unwrap();
@@ -970,14 +997,14 @@ fn every_shell_of_a_region_is_written_in_its_shell_chain() {
     let region = ir.geometry.regions[0].id.clone();
     let second = ShellId::mint("other:model:shell#second").unwrap();
     ir.geometry.shells.push(Shell::new(second.clone(), region));
-    ir.geometry.regions[0].shells.push(second.clone());
+    ir.geometry.regions[0].push_shell(second.clone());
     for face in ir.geometry.faces.iter_mut().skip(3) {
         face.shell = second.clone();
     }
     let decoded = crate::test_support::ir::encode_decode(&ir);
     assert_eq!(decoded.geometry.faces.len(), 6);
     assert_eq!(decoded.geometry.shells.len(), 2);
-    assert_eq!(decoded.geometry.regions[0].shells.len(), 2);
+    assert_eq!(decoded.geometry.regions[0].stated_shells().count(), 2);
 }
 
 #[test]
@@ -1172,6 +1199,7 @@ fn a_face_binding_whose_colour_differs_from_the_face_colour_is_named_and_the_bod
         id: "other:model:appearance-binding#blue".try_into().unwrap(),
         target: AppearanceTarget::Face(face).into(),
         appearance: appearance.id.clone(),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,

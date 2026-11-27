@@ -53,6 +53,14 @@ pub(crate) fn state_root_definition(
     if let Some(root) =
         ir.state_root_definition(ctx, file_root_id(), ExternalDocument::default())?
     {
+        let root_id = root.id.clone();
+        retarget_meshes(&mut ir.model, &file_root_id(), &root_id);
+        let root = ir
+            .model
+            .product_definitions
+            .iter_mut()
+            .find(|definition| definition.id == root_id)
+            .ok_or_else(|| CodecError::malformed("F3D root definition was not stated"))?;
         if let (Some(identity), Storage::File { document, .. }) = (document, &mut root.storage) {
             // The manifest terminal supplies only the lineage; the version
             // always comes from design ordinal zero.
@@ -70,6 +78,24 @@ pub(crate) fn state_root_definition(
         }
     }
     Ok(losses)
+}
+
+/// Makes the mesh bodies of `from` the mesh bodies of `to`.
+pub(crate) fn retarget_meshes(
+    model: &mut Model,
+    from: &ProductDefinitionId,
+    to: &ProductDefinitionId,
+) {
+    if from == to {
+        return;
+    }
+    for mesh in &mut model.tessellations {
+        if let cadmpeg_ir::tessellation::Meshed::Definition { definition, .. } = &mut mesh.of {
+            if definition == from {
+                *definition = to.clone();
+            }
+        }
+    }
 }
 
 /// The file's root definition in `model`, added when it is absent.
@@ -274,17 +300,11 @@ fn belongs_to_placement<T: PartialEq + Copy>(
 }
 
 /// The archive member instance scope of an identity rescoped into it
-/// (`f3d:xref/<scope>/<identity>`), or `None` outside an archive member.
+/// (`f3d:<scope>` of `f3d:<scope>@<identity>`), or `None` outside an archive
+/// member.
 fn instance_scope(id: &str) -> Option<&str> {
-    let rest = id.strip_prefix("f3d:xref/")?;
-    let mut end = "f3d:xref".len();
-    for segment in rest.split('/') {
-        if segment.contains(':') {
-            break;
-        }
-        end += 1 + segment.len();
-    }
-    (end > "f3d:xref".len()).then(|| &id[..end])
+    let key = crate::ids::member_key(id)?;
+    Some(&id[..crate::ids::SCHEME_PREFIX.len() + key.len()])
 }
 
 /// Whether `occurrence` is the identity occurrence the component projection
@@ -498,8 +518,22 @@ pub(crate) fn own_once(
         .iter()
         .map(|(&from, (into, _))| (from, *into))
         .collect::<BTreeMap<_, _>>();
+    // A fold states the component's id, except where the file definition is
+    // an archive member's: its key qualifies every record of the member (§2.2).
+    let folded_id = folds
+        .iter()
+        .flat_map(|(&from, &(into, _))| {
+            let kept = if crate::ids::member_definition_key(definitions[from].id.as_str()).is_some()
+            {
+                from
+            } else {
+                into
+            };
+            [(from, kept), (into, kept)]
+        })
+        .collect::<BTreeMap<_, _>>();
     let definition_id = |index: usize| -> ProductDefinitionId {
-        definitions[folded_into.get(&index).copied().unwrap_or(index)]
+        definitions[folded_id.get(&index).copied().unwrap_or(index)]
             .id
             .clone()
     };
@@ -651,9 +685,14 @@ pub(crate) fn own_once(
         }
     }
     for (&from, &(into, _)) in &folds {
+        let (lost, kept) = if folded_id[&from] == from {
+            (into, from)
+        } else {
+            (from, into)
+        };
         identity_map.insert(
-            definitions[from].id.as_str().to_owned(),
-            definitions[into].id.as_str().to_owned(),
+            definitions[lost].id.as_str().to_owned(),
+            definitions[kept].id.as_str().to_owned(),
         );
     }
     let renamed = |id: &str| identity_map.get(id).map_or(id, String::as_str).to_owned();
@@ -666,6 +705,7 @@ pub(crate) fn own_once(
         let mut definition = definition.clone();
         if let Some((&from, _)) = folds.iter().find(|(_, (into, _))| *into == index) {
             let placing = &definitions[from];
+            definition.id = definition_id(from);
             definition.storage = placing.storage.clone();
             if definition.label.is_none() {
                 definition.label.clone_from(&placing.label);

@@ -135,121 +135,13 @@
         "appearance_bindings": [],
         "appearances": [],
         "articulations": [],
-        "assembly_joints": [],
         "assets": [],
         "attributes": [],
         "colliders": [],
-        "configurations": [],
         "declared_measures": [],
         "drawings": [],
-        "feature_input_topologies": [],
-        "feature_result_topologies": [
-          {
-            "id": "nx:feature-history:result-topology#0000000000-0000000000",
-            "members": [
-              {
-                "id": "nx:feature-history:body-reference#0000000000-0000000000",
-                "kind": "body"
-              }
-            ],
-            "native_ref": "nx:feature-history:body-reference#0000000000-0000000000",
-            "output_of": "nx:feature-history:feature#0000000000-0000000000"
-          }
-        ],
-        "features": [
-          {
-            "definition": {
-              "kind": "operation",
-              "value": {
-                "kind": "combine",
-                "value": {
-                  "destination": "target_component",
-                  "keep_tools": false,
-                  "op": "join",
-                  "operands": {
-                    "target": {
-                      "kind": "native",
-                      "value": "nx:om-object-index#6466"
-                    },
-                    "tools": {
-                      "kind": "native",
-                      "value": "nx:om-object-indices#6476,127"
-                    }
-                  }
-                }
-              }
-            },
-            "dependencies": [],
-            "id": "nx:feature-history:feature#0000000000-0000000000",
-            "name": "UNITE",
-            "native_ref": "nx:feature-history:operation-label#0000000000-0000000000",
-            "ordinal": 1,
-            "outputs": [],
-            "source_content": [],
-            "source_properties": {
-              "body_reference.0": "6466",
-              "body_reference_occurrence.0": "nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000",
-              "input_block.0": "nx:om-data-blocks-0:block#1",
-              "input_block_record.0": "nx:feature-history:input-block#0000000000-0000000000-0000000000",
-              "object_index.0": "1",
-              "object_index.1": "576",
-              "object_index.2": "6099",
-              "object_index.3": "null",
-              "operation_record": "nx:feature-history:operation-record#0000000000-0000000000",
-              "primary_body_reference": "nx:feature-history:body-reference#0000000000-0000000000"
-            },
-            "source_tag": "UNITE"
-          },
-          {
-            "definition": {
-              "kind": "operation",
-              "value": {
-                "kind": "tree_node",
-                "value": {
-                  "children": {
-                    "children": []
-                  },
-                  "role": "equations"
-                }
-              }
-            },
-            "dependencies": [],
-            "id": "nx:om-entry-0:feature#equations-372",
-            "name": "NX expressions",
-            "ordinal": 0,
-            "outputs": [],
-            "source_content": [
-              {
-                "kind": "parameter",
-                "value": "nx:om-entry-0:parameter#399"
-              }
-            ],
-            "source_properties": {},
-            "source_tag": "hostglobalvariables",
-            "suppressed": false
-          }
-        ],
-        "history_bodies": [],
         "mass_properties": [],
         "occurrences": [],
-        "parameters": [
-          {
-            "dependencies": [],
-            "expression": "25",
-            "id": "nx:om-entry-0:parameter#399",
-            "name": "length",
-            "native_ref": "nx:om-entry-0:expression#399",
-            "ordinal": 0,
-            "owner": "nx:om-entry-0:feature#equations-372",
-            "properties": {
-              "unit": "millimeter"
-            },
-            "value": {
-              "kind": "length",
-              "value": 25.0
-            }
-          }
-        ],
         "physical_materials": [],
         "physics_scenes": [],
         "pmi": [],
@@ -265,24 +157,15 @@
             "kind": "part",
             "occurrences": [],
             "representations": [],
-            "sketches": [],
             "storage": {
               "document": {},
               "kind": "file"
-            },
-            "tessellations": []
+            }
           }
         ],
         "rigid_bodies": [],
         "semantic_annotations": [],
-        "sketch_constraints": [],
-        "sketch_entities": [],
-        "sketches": [],
         "solver_settings": [],
-        "spatial_sketch_constraints": [],
-        "spatial_sketch_entities": [],
-        "spatial_sketches": [],
-        "spreadsheets": [],
         "tessellations": [],
         "view_presentations": []
       },
@@ -638,8 +521,8 @@
         }
       },
       "tolerances": {
-        "angular": 1e-10,
-        "linear": 1e-6
+        "angular": 1e-11,
+        "linear": 0.00001
       },
       "units": {
         "angle": "radian",
@@ -672,8 +555,7 @@
             "value": {
               "code": "geometry.not-transferred",
               "kind": "geometry_not_transferred",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
@@ -708,19 +590,12 @@
             "fields": {},
             "kind": "entity"
           },
-          "nx:om-entry-0:feature#equations-372": {
-            "entity": "derived",
-            "fields": {
-              "source_content": "derived"
-            },
-            "kind": "entity"
-          },
           "nx:om-entry-0:parameter#399": {
             "fields": {
+              "definition": "derived",
+              "kind": "derived",
               "native_ref": "derived",
-              "ordinal": "derived",
-              "owner": "derived",
-              "properties": "derived",
+              "unit": "derived",
               "value": "derived"
             },
             "kind": "fields"
@@ -787,11 +662,6 @@
             "stream": "nx:container",
             "tag": "OM_DATA_BLOCK_REFERENCE"
           },
-          "nx:om-entry-0:feature#equations-372": {
-            "offset": 475,
-            "stream": "nx:container",
-            "tag": "hostglobalvariables"
-          },
           "nx:om-entry-0:parameter#399": {
             "offset": 475,
             "stream": "nx:container",
@@ -839,6 +709,8 @@
           }
         }
       },
+      "codec_digests": {},
+      "content_digest": "<elided: digest over tolerantly compared geometry>",
       "decode_digest": "18b3e1249f1faec5b29c6461ba9c310c619cc20e503fdda4d2aae327138216e5",
       "file_digests": {},
       "retained_records": {

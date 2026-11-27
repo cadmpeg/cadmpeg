@@ -67,21 +67,31 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
                 }))
             }
             LegacyOperation::SplitBody {
-                extend_tool: Some(_),
-                ..
-            } => return Err("the split body states a tool extension"),
-            LegacyOperation::SplitBody {
                 targets,
                 tool,
-                extend_tool: None,
+                extend_tool,
             } => split(
                 selections::set(selections::bodies(targets)?)?,
                 match tool {
+                    cadmpeg_ir::features::direct_edit::SplitBodyTool::Plane { .. }
+                        if extend_tool.is_some() =>
+                    {
+                        return Err("the split body states a tool extension beside a plane")
+                    }
                     cadmpeg_ir::features::direct_edit::SplitBodyTool::Plane { plane } => {
                         new::SplitTool::Plane(Box::new(swept::datum_plane(plane)?))
                     }
                     cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(faces) => {
-                        new::SplitTool::Geometry(selections::face(faces)?)
+                        new::SplitTool::Geometry {
+                            tools: selections::face(faces)?,
+                            extend: extend_tool.map(|extended| {
+                                if extended {
+                                    new::ToolExtension::Extended { method: None }
+                                } else {
+                                    new::ToolExtension::Off
+                                }
+                            }),
+                        }
                     }
                 },
                 Some(new::Kept::All {
@@ -108,7 +118,10 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
                         return Err("the split face has multiple plane tools")
                     }
                     cadmpeg_ir::features::direct_edit::SplitFaceTool::Faces(faces) => {
-                        new::SplitTool::Geometry(selections::face(faces)?)
+                        new::SplitTool::Geometry {
+                            tools: selections::face(faces)?,
+                            extend: None,
+                        }
                     }
                     cadmpeg_ir::features::direct_edit::SplitFaceTool::Native(_) => {
                         return Err("the split-face tool is native")
@@ -124,7 +137,10 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
             }
             LegacyOperation::TrimBodies { operands, keep } => split(
                 selections::set(selections::bodies(operands.targets())?)?,
-                new::SplitTool::Geometry(selections::set(selections::bodies(operands.tools())?)?),
+                new::SplitTool::Geometry {
+                    tools: selections::set(selections::bodies(operands.tools())?)?,
+                    extend: None,
+                },
                 kept(*keep),
             ),
             LegacyOperation::TrimBodiesAtPlane {
@@ -142,13 +158,8 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
                 rotation,
                 copies,
             } => {
-                if rotation.is_some()
-                    && *translation != cadmpeg_ir::features::geometry::FiniteVector3::ZERO
-                {
-                    return Err("the body move has no stated order for translation and rotation");
-                }
                 let delta = translation.get();
-                let mut steps = vec![new::TransformStep::Components {
+                let components = new::TransformStep::Components {
                     frame: None,
                     delta: [delta.x, delta.y, delta.z]
                         .map(|value| {
@@ -160,13 +171,28 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
                         .collect::<Projected<Vec<_>>>()?
                         .try_into()
                         .map_err(|_| "the translation has invalid arity")?,
-                }];
-                if let Some(rotation) = rotation {
-                    steps.push(new::TransformStep::Rotate {
-                        axis: swept::axis(rotation.origin, rotation.direction)?,
-                        angle: Dimension::Literal(rotation.angle),
-                    });
-                }
+                };
+                let rotate = rotation
+                    .as_ref()
+                    .map(|rotation| {
+                        Ok::<_, &'static str>(new::TransformStep::Rotate {
+                            axis: swept::axis(rotation.origin, rotation.direction)?,
+                            angle: Dimension::Literal(rotation.angle),
+                        })
+                    })
+                    .transpose()?;
+                // The stored matrix maps `p` to `R*p + t`: the rotation applies
+                // first, then the translation. A zero translation leaves the
+                // order free, and keeps the translation step first.
+                let steps = match rotate {
+                    Some(rotate)
+                        if *translation != cadmpeg_ir::features::geometry::FiniteVector3::ZERO =>
+                    {
+                        vec![rotate, components]
+                    }
+                    Some(rotate) => vec![components, rotate],
+                    None => vec![components],
+                };
                 FeatureOperation::TransformBodies(Box::new(new::TransformBodies {
                     bodies: selections::set(selections::bodies(bodies)?)?,
                     transformation: new::Transformation {
@@ -263,7 +289,7 @@ fn split(
 ) -> FeatureOperation {
     FeatureOperation::Split(Box::new(new::Split {
         mode: new::SplitMode::ByTools {
-            targets,
+            targets: Some(targets),
             tools,
             method: Some(new::SplitMethod::Intersect),
             kept,

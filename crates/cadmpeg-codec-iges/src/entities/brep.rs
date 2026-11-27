@@ -19,7 +19,7 @@ use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry},
     CurveGeometry,
 };
-use cadmpeg_ir::ids::{CoedgeId, EdgeId, SurfaceId, VertexId};
+use cadmpeg_ir::ids::{CoedgeId, EdgeId, Identity, SurfaceId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{
     AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundary, PcurveUse, Point,
@@ -467,6 +467,14 @@ fn resolve_pcurve(
     }))
 }
 
+/// The first parameter curve of `uses` that has no projected curve record.
+fn missing_pcurve(ir: &CadIr, uses: &[(bool, u32)]) -> Option<u32> {
+    uses.iter().map(|(_, sequence)| *sequence).find(|sequence| {
+        let id = crate::ids::curve(&crate::ids::Stem::directory(*sequence));
+        !ir.geometry.curves.iter().any(|curve| curve.id == id)
+    })
+}
+
 fn resolve_pcurve_uses<'a>(
     source: &'a CadIr,
     uses: &[(bool, u32)],
@@ -641,6 +649,7 @@ pub(super) fn project(
             continue;
         };
         let mut edges = Vec::new();
+        let mut needs = None;
         for item in 0..count {
             let start = 2 + item * 5;
             let Some(edge) = pointer(record, start)
@@ -668,15 +677,19 @@ pub(super) fn project(
                     .get(&edge.end_list)
                     .is_none_or(|list| edge.end_index >= list.len())
             {
+                needs = [edge.start_list, edge.end_list]
+                    .into_iter()
+                    .find(|list| !vertex_lists.contains_key(list));
                 edges.clear();
                 break;
             }
             edges.push(edge);
         }
         if edges.len() != count {
-            super::push_geometry_loss(
+            super::push_geometry_loss_needing(
                 &mut losses,
                 entry,
+                needs,
                 format_args!("edge-list tuple is invalid or names a missing vertex"),
             );
             continue;
@@ -714,6 +727,7 @@ pub(super) fn project(
         };
         let mut index = 2;
         let mut uses = Vec::new();
+        let mut needs = None;
         for _ in 0..count {
             let Some(use_type) = record.integer(index) else {
                 uses.clear();
@@ -748,6 +762,9 @@ pub(super) fn project(
                 if entries.get(&sequence).is_none_or(|entry| {
                     entry.status.use_flag(global.global_table()) != Some(UseFlag::Parametric)
                 }) {
+                    if !entries.contains_key(&sequence) {
+                        needs = Some(sequence);
+                    }
                     pcurves.clear();
                     break;
                 }
@@ -771,6 +788,9 @@ pub(super) fn project(
                         .get(&list)
                         .is_none_or(|items| item_index >= items.len())
                     {
+                        if !edge_lists.contains_key(&list) {
+                            needs = Some(list);
+                        }
                         uses.clear();
                         break;
                     }
@@ -786,6 +806,9 @@ pub(super) fn project(
                         .get(&list)
                         .is_none_or(|items| item_index >= items.len())
                     {
+                        if !vertex_lists.contains_key(&list) {
+                            needs = Some(list);
+                        }
                         uses.clear();
                         break;
                     }
@@ -804,9 +827,10 @@ pub(super) fn project(
             index += 5 + pcurve_count * 2;
         }
         if uses.len() != count {
-            super::push_geometry_loss(
+            super::push_geometry_loss_needing(
                 &mut losses,
                 entry,
+                needs,
                 format_args!("loop edge-use tuple is invalid"),
             );
             continue;
@@ -895,11 +919,16 @@ pub(super) fn project(
         } else {
             FaceLoopPointers::Unclassified { first, rest }
         };
-        if face_loops
+        if let Some(missing) = face_loops
             .iter()
-            .any(|sequence| !loops.contains_key(&sequence))
+            .find(|sequence| !loops.contains_key(sequence))
         {
-            super::push_geometry_loss(&mut losses, entry, format_args!("face loop is missing"));
+            super::push_geometry_loss_needing(
+                &mut losses,
+                entry,
+                Some(missing),
+                format_args!("face loop is missing"),
+            );
             continue;
         }
         faces.insert(
@@ -941,6 +970,7 @@ pub(super) fn project(
             continue;
         };
         let mut face_uses = Vec::new();
+        let mut needs = None;
         for index in 0..count {
             let Some(face) = pointer(record, 2 + index * 2) else {
                 face_uses.clear();
@@ -955,15 +985,17 @@ pub(super) fn project(
                 }
             };
             if !faces.contains_key(&face) {
+                needs = Some(face);
                 face_uses.clear();
                 break;
             }
             face_uses.push((face, sense));
         }
         if face_uses.len() != count {
-            super::push_geometry_loss(
+            super::push_geometry_loss_needing(
                 &mut losses,
                 entry,
+                needs,
                 format_args!("shell face-use tuple is invalid"),
             );
             continue;
@@ -1059,9 +1091,18 @@ pub(super) fn project(
                     .is_none_or(|shell| shell.form != 1)
             })
         {
-            super::push_geometry_loss(
+            let needs = valid
+                .then(|| {
+                    shell_uses
+                        .iter()
+                        .find(|(sequence, _)| !shell_definitions.contains_key(sequence))
+                        .map(|(sequence, _)| *sequence)
+                })
+                .flatten();
+            super::push_geometry_loss_needing(
                 &mut losses,
                 entry,
+                needs,
                 format_args!("solid shell-use tuple is invalid or not closed"),
             );
             continue;
@@ -1081,7 +1122,12 @@ pub(super) fn project(
             Ok(transform) => (entry.transform != 0).then_some(transform),
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                super::push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    message.needs(),
+                    format_args!("{message}"),
+                );
                 continue;
             }
         };
@@ -1157,6 +1203,11 @@ pub(super) fn project(
         let stem = crate::ids::Stem::directory(entry.sequence);
         let body_id = crate::ids::body(&stem);
         sequences.record_body(&body_id, entry.sequence, &stem);
+        let projected: Identity = if entry.entity_type == 186 {
+            body_id.clone().into()
+        } else {
+            crate::ids::shell(&stem).into()
+        };
         let region_id = crate::ids::region(&stem);
         let mut vertex_ids = BTreeMap::<(u32, usize), VertexId>::new();
         let mut edge_ids = BTreeMap::<(u32, usize), EdgeId>::new();
@@ -1164,6 +1215,7 @@ pub(super) fn project(
         let mut region_shells = Vec::new();
         let mut consumed = BTreeSet::new();
         let mut valid = true;
+        let mut needs = None;
         for (shell_sequence, shell_sense) in definition.shells.iter().copied() {
             let shell_definition = &shell_definitions[&shell_sequence];
             let shell_stem = if shell_sequence == entry.sequence && definition.shells.len() == 1 {
@@ -1177,11 +1229,31 @@ pub(super) fn project(
                 let face_definition = &faces[&face_sequence];
                 let surface_id =
                     crate::ids::surface(&crate::ids::Stem::directory(face_definition.surface));
+                // A Type 128 states its parameters in the knots of its
+                // solved form, so an edge-use parameter curve reads it there.
                 let Some(support_geometry) = surface_positions
                     .get(surface_id.as_str())
                     .and_then(|position| ir.geometry.surfaces.get(*position))
-                    .map(|surface| &surface.geometry)
+                    .map(|surface| match &surface.geometry {
+                        cadmpeg_ir::geometry::SurfaceGeometry::Procedural {
+                            construction,
+                            cache: Some(solved),
+                        } if ir.geometry.procedural_surfaces.iter().any(|procedural| {
+                            procedural.id == *construction
+                                && matches!(
+                                    procedural.definition(),
+                                    cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Exact(_)
+                                )
+                        }) =>
+                        {
+                            std::borrow::Cow::Owned(cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                                solved.clone(),
+                            ))
+                        }
+                        geometry => std::borrow::Cow::Borrowed(geometry),
+                    })
                 else {
+                    needs = Some(face_definition.surface);
                     valid = false;
                     break;
                 };
@@ -1246,7 +1318,7 @@ pub(super) fn project(
                                 &SurfaceSupport {
                                     sequence: face_definition.surface,
                                     id: &surface_id,
-                                    geometry: support_geometry,
+                                    geometry: &support_geometry,
                                     factor,
                                 },
                                 PcurveEndpointCheck {
@@ -1272,11 +1344,17 @@ pub(super) fn project(
                                     break;
                                 }
                             }) else {
-                                super::push_geometry_loss(
+                                needs = missing_pcurve(ir, pcurves);
+                                super::give_up_needing(
                                     &mut losses,
                                     entry,
-                                    format_args!(
-                                        "loop vertex-use pcurves disagree with the pole vertex"
+                                    Some(projected.clone()),
+                                    needs,
+                                    super::geometry_note(
+                                        entry,
+                                        format_args!(
+                                            "loop vertex-use pcurves disagree with the pole vertex"
+                                        ),
                                     ),
                                 );
                                 valid = false;
@@ -1351,7 +1429,7 @@ pub(super) fn project(
                             &SurfaceSupport {
                                 sequence: face_definition.surface,
                                 id: &surface_id,
-                                geometry: support_geometry,
+                                geometry: &support_geometry,
                                 factor,
                             },
                             PcurveEndpointCheck {
@@ -1377,11 +1455,17 @@ pub(super) fn project(
                                 break;
                             }
                         }) else {
-                            super::push_geometry_loss(
+                            needs = missing_pcurve(ir, pcurves);
+                            super::give_up_needing(
                                 &mut losses,
                                 entry,
-                                format_args!(
-                                    "loop edge-use pcurves disagree with the edge vertices"
+                                Some(projected.clone()),
+                                needs,
+                                super::geometry_note(
+                                    entry,
+                                    format_args!(
+                                        "loop edge-use pcurves disagree with the edge vertices"
+                                    ),
                                 ),
                             );
                             valid = false;
@@ -1410,6 +1494,7 @@ pub(super) fn project(
                                 )
                             })?;
                             let Some(candidates) = curve_edges.get(curve_id.as_str()) else {
+                                needs = Some(edge_definition.curve);
                                 valid = false;
                                 break;
                             };
@@ -1647,10 +1732,15 @@ pub(super) fn project(
             consumed.insert(shell_sequence);
         }
         if !valid {
-            super::push_geometry_loss(
+            super::give_up_needing(
                 &mut losses,
                 entry,
-                format_args!("shell topology references missing geometry"),
+                Some(projected),
+                needs,
+                super::geometry_note(
+                    entry,
+                    format_args!("shell topology references missing geometry"),
+                ),
             );
             continue;
         }
@@ -1678,12 +1768,11 @@ pub(super) fn project(
         );
 
         ctx.charge_entities(1, "iges_geometry_brep")?;
-        candidate.geometry_mut().regions.push(Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: region_shells,
-            native_ref: None,
-        });
+        candidate.geometry_mut().regions.push(Region::new(
+            region_id.clone(),
+            body_id.clone(),
+            region_shells,
+        ));
 
         ctx.charge_entities(1, "iges_geometry_brep")?;
         candidate.geometry_mut().bodies.push(Body {
@@ -1694,6 +1783,7 @@ pub(super) fn project(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
         candidate.model_mut().finalize();
         drop(pcurve_indexes);

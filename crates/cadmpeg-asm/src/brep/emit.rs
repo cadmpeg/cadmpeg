@@ -4523,7 +4523,7 @@ fn evaluated_vertex_tolerance(record: &Record) -> Option<f64> {
 
 fn invalid_vertex_tolerance(record: &Record) -> bool {
     evaluated_vertex_tolerance(record).is_some_and(|value| {
-        value != -1.0 && cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM).is_none()
+        value != -1.0 && cadmpeg_ir::scalar::PositiveLength::new(value * LEN_TO_MM).is_none()
     })
 }
 
@@ -4556,7 +4556,7 @@ pub(super) fn emit_vertices(
                         // neutral vertex carries no tolerance and the native
                         // tail keeps the unset fact.
                         tolerance: evaluated_vertex_tolerance(r).and_then(|value| {
-                            cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM)
+                            cadmpeg_ir::scalar::PositiveLength::new(value * LEN_TO_MM)
                         }),
                         native_ref: None,
                     });
@@ -4737,7 +4737,7 @@ pub(super) fn emit_edges(
             // x 100 + header revision) is at least 2250003. All forms are
             // retained verbatim.
             let tolerance = edge_tolerance(r)
-                .and_then(|value| cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM));
+                .and_then(|value| cadmpeg_ir::scalar::PositiveLength::new(value * LEN_TO_MM));
             if edge_tolerance(r).is_some() && tolerance.is_none() {
                 count_kind(
                     &mut out.stats.other_record_kinds,
@@ -5076,15 +5076,36 @@ pub(super) fn emit_faces(
                     Sense::Reversed => Sense::Forward,
                 };
             }
+            let record_index = u32::try_from(r.index).map_err(|_| {
+                cadmpeg_core::CodecError::malformed("ASM native record index exceeds the u32 range")
+            })?;
+            let surface_id = <SurfaceId>::from(id(format, surface));
+            let carrier = if loops.is_empty() {
+                out.surfaces
+                    .iter()
+                    .find(|carrier| carrier.id == surface_id)
+                    .map(|carrier| &carrier.geometry)
+            } else {
+                None
+            };
+            let (loops, unbounded) =
+                cadmpeg_ir::topology::FaceLoops::unspecified_on(loops, carrier);
+            if let Some(surface_kind) = unbounded {
+                out.unbounded_faces.push(super::UnboundedFace {
+                    face: <FaceId>::from(id(format, i)),
+                    record_index,
+                    surface_kind,
+                });
+            }
             out.faces.push(Face {
                 id: <FaceId>::from(id(format, i)),
                 shell: ShellId::from(id(
                     format,
                     subshell_shells.get(&owner).copied().unwrap_or(owner),
                 )),
-                surface: <SurfaceId>::from(id(format, surface)),
+                surface: surface_id,
                 sense,
-                loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
+                loops,
                 name: attribute_name(r)?,
                 color: attribute_color(r),
                 tolerance: None,
@@ -5100,11 +5121,7 @@ pub(super) fn emit_faces(
                     format,
                 ),
                 face: <FaceId>::from(id(format, i)),
-                record_index: u32::try_from(r.index).map_err(|_| {
-                    cadmpeg_core::CodecError::malformed(
-                        "ASM native record index exceeds the u32 range",
-                    )
-                })?,
+                record_index,
                 native_sense,
                 carrier_flipped,
                 containment,
@@ -5116,11 +5133,7 @@ pub(super) fn emit_faces(
                         format,
                     ),
                     face: face_id,
-                    record_index: u32::try_from(r.index).map_err(|_| {
-                        cadmpeg_core::CodecError::malformed(
-                            "ASM native record index exceeds the u32 range",
-                        )
-                    })?,
+                    record_index,
                     asm_face_key: u64::try_from(*key).ok(),
                 });
             }
@@ -5224,12 +5237,11 @@ pub fn emit_containers(
             "region" | "lump" => {
                 let Some(owner) = r.ref_at(5) else { continue };
                 let shells = shell_chain(r, by_index, &emitted_shells, format);
-                out.regions.push(Region {
-                    id: <RegionId>::from(id(format, i)),
-                    body: <BodyId>::from(id(format, owner)),
+                out.regions.push(Region::new(
+                    <RegionId>::from(id(format, i)),
+                    <BodyId>::from(id(format, owner)),
                     shells,
-                    native_ref: None,
-                });
+                ));
             }
             "body" => {
                 out.chain_order
@@ -5292,6 +5304,7 @@ pub fn emit_containers(
                     color: attribute_color(r),
                     visible: None,
                     native_ref: None,
+                    unstated: None,
                 });
             }
             _ => {}
@@ -5309,13 +5322,13 @@ pub fn emit_containers(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
-        out.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id,
-            shells: vec![shell_id.clone()],
-            native_ref: None,
-        });
+        out.regions.push(Region::new(
+            region_id.clone(),
+            body_id,
+            vec![shell_id.clone()],
+        ));
         out.shells.push(Shell::with_wire_edge(
             shell_id,
             region_id,
@@ -5482,7 +5495,7 @@ pub(super) fn emit_passthrough_unknowns(
             || cached_unknown_procedural_surfaces.contains(&i)
             || invalid_vertex_tolerance(r)
             || edge_tolerance(r).is_some_and(|value| {
-                cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM).is_none()
+                cadmpeg_ir::scalar::PositiveLength::new(value * LEN_TO_MM).is_none()
             })
             || r.head().is_empty()
             || (r.head() == "face" && r.ref_at(5).is_none())

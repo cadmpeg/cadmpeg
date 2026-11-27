@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 
@@ -11,12 +12,12 @@ use crate::design::configuration::{
     Arrangement, ArrangementKind, ArrangementRef, DesignConfiguration, OccurrenceOverride,
     Overrides,
 };
-use crate::design::names::{CodecId, NativeName, NativeNameValue};
+use crate::design::names::{NativeName, NativeNameValue};
 use crate::design::refs::{ConfigurationRef, EntityRef};
 use crate::design::scope::OccurrenceDesign;
 use crate::design::selection::{OccurrencePath, PathStep, StepRef, Witness};
 use crate::geometry::nurbs::NurbsCurve;
-use crate::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+use crate::geometry::{Curve, CurveGeometry, InlineCurve, SolvedCurveGeometry};
 use crate::ids::{EdgeId, OccurrenceId, ProductDefinitionId};
 use crate::math::Point3;
 use crate::process::feature::{MachiningFeature, MachiningFeatureClass};
@@ -260,6 +261,7 @@ fn datum(key: &str, element: DatumElement) -> Feature {
                 native_options: BTreeMap::new(),
                 source_settings: BTreeMap::new(),
             })),
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },
@@ -311,7 +313,7 @@ fn state(configuration: Option<&str>, at: Position) -> StateRef {
 /// ratios; combined fit designations; and `Other` texts that name arms.
 fn document() -> CadIr {
     let mut ir = crate::examples::unit_cube().unwrap();
-    ir.set_scope(ContentScope::full()).unwrap();
+    ir.set_scope(ContentScope::full());
     let design = &mut ir.design;
     design.scopes.push(DesignScope {
         definition: id("definition", "part"),
@@ -774,7 +776,7 @@ fn a_rollback_after_a_nested_container_is_the_state_entering_it() {
 }
 
 /// The geometry of a line edge of the unit cube, and the edge.
-fn line_edge(ir: &CadIr) -> (EdgeId, SolvedCurveGeometry) {
+fn line_edge(ir: &CadIr) -> (EdgeId, InlineCurve) {
     ir.geometry
         .edges
         .iter()
@@ -789,8 +791,8 @@ fn line_edge(ir: &CadIr) -> (EdgeId, SolvedCurveGeometry) {
                 .iter()
                 .find(|curve| &curve.id == carrier)?;
             match &curve.geometry {
-                CurveGeometry::Solved(line @ SolvedCurveGeometry::Line(_)) => {
-                    Some((edge.id.clone(), line.clone()))
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) => {
+                    Some((edge.id.clone(), InlineCurve::Line(*line)))
                 }
                 _ => None,
             }
@@ -924,7 +926,7 @@ fn process_records_take_their_one_spelling() {
         name: None,
         class: MachiningFeatureClass::ClosedPocket {},
         native_kind: NativeName {
-            codec: CodecId::from(NonBlankString::new("test").unwrap()),
+            codec: crate::codec_id!("test"),
             value: NativeNameValue::Text(NonBlankString::new("pocket").unwrap()),
         },
         geometry: vec![
@@ -1162,13 +1164,103 @@ fn a_target_whose_path_selects_another_configuration_keeps_its_state() {
 }
 
 #[test]
-fn a_target_in_a_spanned_definition_keeps_its_state() {
+fn a_target_in_a_spanned_definition_reads_the_configuration_its_occurrence_applies() {
     let mut ir = placed();
     ir.model.pmi[0].targets = vec![
         in_base(steps(&[("cube", None), ("inner", None)])),
         in_base(steps(&[("cube", Some("base")), ("inner", None)])),
     ];
-    assert_eq!(normalized_states(ir), vec![Some(base_state()); 2]);
+    assert_eq!(normalized_states(ir), vec![None, Some(base_state())]);
+}
+
+#[test]
+fn a_target_into_the_evaluation_its_path_selects_states_none() {
+    let mut ir = placed();
+    cube_uses(&mut ir, "large");
+    let at = |path: Option<OccurrencePath>, configuration: Option<&str>| InstanceTarget {
+        path,
+        ..target(Some(state(configuration, after_body())))
+    };
+    ir.model.pmi[0].targets = vec![
+        at(Some(steps(&[("cube", None)])), Some("large")),
+        at(Some(steps(&[("cube", None)])), Some("base")),
+        at(Some(steps(&[("cube", None)])), None),
+        at(None, Some("large")),
+    ];
+    let large = Some(state(Some("large"), after_feature("fillet")));
+    assert_eq!(
+        normalized_states(ir),
+        [
+            None,
+            Some(base_state()),
+            Some(state(None, after_feature("fillet"))),
+            large
+        ]
+    );
+}
+
+#[test]
+fn drawing_and_annotation_references_take_the_one_spelling() {
+    use crate::drawings::{Drawing, DrawingKind};
+    use crate::references::{ReferenceEntity, ReferenceSelection, ReferenceTarget};
+    use crate::semantic_annotations::{SemanticAnnotation, SemanticAnnotationKind};
+    let reference = |configuration: &str| {
+        vec![ReferenceSelection::new(ReferenceTarget::Entity(
+            InstanceTarget {
+                state: Some(state(Some(configuration), after_body())),
+                ..InstanceTarget::new(ReferenceEntity::Definition(id("definition", "part")))
+            },
+        ))]
+    };
+    let role = NonBlankString::new("References").unwrap();
+    let mut ir = placed();
+    let mut drawing = Drawing::new(
+        id("drawing", "view"),
+        crate::ids::Identity::new("test:source:object#view").unwrap(),
+        DrawingKind::View,
+        "View".to_owned(),
+        0,
+        None,
+    );
+    drawing
+        .relationships
+        .insert(role.clone(), reference("base"));
+    ir.model.drawings.push(drawing);
+    let mut note = SemanticAnnotation::new(
+        id("annotation", "note"),
+        crate::ids::Identity::new("test:source:object#note").unwrap(),
+        SemanticAnnotationKind::Text,
+        "Note".to_owned(),
+        0,
+        "note".to_owned(),
+    );
+    note.references.insert(role.clone(), reference("base"));
+    note.references
+        .insert(NonBlankString::new("Other").unwrap(), reference("large"));
+    ir.model.semantic_annotations.push(note);
+    normalize(&mut ir).unwrap();
+    let states = |selections: &[ReferenceSelection]| -> Vec<Option<StateRef>> {
+        selections
+            .iter()
+            .map(|selection| match &selection.target {
+                ReferenceTarget::Entity(target) => target.state.clone(),
+                other => panic!("an entity target, not {other:?}"),
+            })
+            .collect()
+    };
+    let annotation = &ir.model.semantic_annotations[0].references;
+    assert_eq!(
+        [
+            states(&ir.model.drawings[0].relationships[&role]),
+            states(&annotation[&role]),
+            states(&annotation[&NonBlankString::new("Other").unwrap()]),
+        ],
+        [
+            vec![None],
+            vec![None],
+            vec![Some(state(Some("large"), after_feature("fillet")))]
+        ]
+    );
 }
 
 #[test]
@@ -1204,10 +1296,10 @@ fn other_replaced_by(prototype: &str) -> CadIr {
 }
 
 #[test]
-fn a_target_through_an_occurrence_whose_prototype_is_replaced_keeps_its_state() {
+fn a_target_through_an_occurrence_whose_prototype_is_replaced_reads_the_prototype_in_force() {
     let mut ir = other_replaced_by("part");
     ir.model.pmi[0].targets = vec![in_base(steps(&[("other", None)]))];
-    assert_eq!(normalized_states(ir), vec![Some(base_state())]);
+    assert_eq!(normalized_states(ir), vec![None]);
 }
 
 #[test]
@@ -1340,7 +1432,7 @@ fn a_path_whose_instance_the_resolver_cannot_establish_keeps_the_state() {
     let mut native = cube();
     native.0.push(PathStep {
         occurrence: StepRef::Native(NativeName {
-            codec: CodecId::from(NonBlankString::new("test").unwrap()),
+            codec: crate::codec_id!("test"),
             value: NativeNameValue::Text(NonBlankString::new("n").unwrap()),
         }),
         configuration: None,
@@ -1392,6 +1484,10 @@ fn a_path_whose_instance_the_resolver_cannot_establish_keeps_the_state() {
     ));
     let mut foreign_active = placed();
     scope_of(&mut foreign_active, "root").active_configuration = Some(id("configuration", "base"));
+    let mut unknown_arrangement = placed();
+    scope_of(&mut unknown_arrangement, "root")
+        .active_arrangements
+        .insert(id("arrangement", "gone"));
     let mut arranged = placed();
     arranged
         .design
@@ -1436,10 +1532,9 @@ fn a_path_whose_instance_the_resolver_cannot_establish_keeps_the_state() {
             with_path(placed(), steps(&[("other", None), ("cube", None)])),
         ),
         ("foreign active", with_path(foreign_active, cube())),
-        ("arranged", with_path(arranged, cube())),
         (
-            "arranged in configuration",
-            with_path(arranged_in_configuration, cube()),
+            "unknown arrangement",
+            with_path(unknown_arrangement, cube()),
         ),
     ];
     assert_eq!(
@@ -1447,6 +1542,13 @@ fn a_path_whose_instance_the_resolver_cannot_establish_keeps_the_state() {
         outcomes
             .clone()
             .map(|(case, _)| (case, vec![Some(base_state())]))
+    );
+    assert_eq!(
+        [
+            with_path(arranged, cube()),
+            with_path(arranged_in_configuration, cube())
+        ],
+        [vec![None], vec![None]]
     );
     assert_eq!(
         normalized_states(part_dangling),
@@ -1543,7 +1645,7 @@ fn a_target_whose_path_nothing_selects_through_states_none() {
 }
 
 #[test]
-fn an_arrangement_an_ancestor_uses_keeps_the_state() {
+fn an_arrangement_an_ancestor_uses_keeps_the_state_below_it() {
     let mut ir = nested();
     let mut overrides = Overrides::default();
     overrides.occurrences.insert(
@@ -1580,7 +1682,10 @@ fn an_arrangement_an_ancestor_uses_keeps_the_state() {
             uses(ArrangementRef::Local(id("arrangement", "b"))),
             uses(named)
         ],
-        [vec![Some(base_state()); 2], vec![Some(base_state()); 2]]
+        [
+            vec![Some(base_state()), None],
+            vec![Some(base_state()), None]
+        ]
     );
 }
 
@@ -1634,7 +1739,7 @@ fn a_definition_stored_in_a_file_of_its_own_is_not_spanned() {
             .find(|definition| definition.id == inner)
             .unwrap()
             .storage = storage;
-        ir.model.pmi[0].targets = vec![in_base(steps(&[("cube", Some("base")), ("inner", None)]))];
+        ir.model.pmi[0].targets = vec![in_base(steps(&[("cube", None), ("inner", None)]))];
         states.extend(normalized_states(ir));
     }
     assert_eq!(states, vec![Some(base_state()); 2]);
@@ -1693,8 +1798,8 @@ fn innermost_value(ir: &CadIr, key: &str) -> Option<ScalarDimension> {
     point.inputs[0].value.clone()
 }
 
-/// Decodes the unit cube with a datum whose point nests 300 deep, past the
-/// default recursion ceiling, and one whose point nests one deep.
+/// Decodes the unit cube with a datum whose point nests 24 deep, within the
+/// document's depth bound, and one whose point nests one deep.
 struct DeepCodec;
 
 impl CodecBackend for DeepCodec {
@@ -1716,7 +1821,7 @@ impl CodecBackend for DeepCodec {
         let mut ir = crate::examples::unit_cube().unwrap();
         ir.design
             .features
-            .push(datum("deep", DatumElement::Points(vec![nested_point(300)])));
+            .push(datum("deep", DatumElement::Points(vec![nested_point(24)])));
         ir.design.features.push(datum(
             "shallow",
             DatumElement::Points(vec![nested_point(1)]),
@@ -1752,7 +1857,11 @@ fn incomplete(result: &DecodeResult) -> Vec<&LossNote> {
 
 #[test]
 fn a_record_too_deep_to_normalize_is_kept_as_decoded_with_a_warning() {
-    let result = decode_deep(DecodePolicy::default());
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_recursion_depth = 16;
+    let result = decode_deep(policy);
+    let text = json::to_string(result.ir()).unwrap();
+    assert!(crate::bounds::text_depth(&text) <= crate::bounds::MAX_DOCUMENT_DEPTH);
     let ratio = |value| Some(ScalarDimension::Ratio(Dimension::Literal(real(value))));
     assert_eq!(innermost_value(result.ir(), "shallow"), ratio(1.0));
     assert_eq!(
@@ -1774,9 +1883,7 @@ fn a_record_too_deep_to_normalize_is_kept_as_decoded_with_a_warning() {
 
 #[test]
 fn the_normalizer_reads_the_callers_ceilings() {
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_recursion_depth = 1024;
-    let result = decode_deep(policy);
+    let result = decode_deep(DecodePolicy::default());
     let ratio = Some(ScalarDimension::Ratio(Dimension::Literal(real(1.0))));
     assert_eq!(innermost_value(result.ir(), "deep"), ratio);
     assert!(incomplete(&result).is_empty());

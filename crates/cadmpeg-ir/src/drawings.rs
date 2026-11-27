@@ -7,7 +7,7 @@ use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 crate::ids::id_type!(
     /// Stable identity of one neutral drawing entity.
@@ -56,7 +56,7 @@ pub struct Drawing {
     /// Stable drawing identity.
     pub id: DrawingId,
     /// Application object persisting this drawing entity.
-    pub object: String,
+    pub object: crate::ids::Identity,
     /// Format-neutral semantic role.
     pub kind: DrawingKind,
     /// Exact runtime type for extension-safe classification.
@@ -80,6 +80,16 @@ pub struct Drawing {
         deserialize_with = "deserialize_template"
     )]
     pub template: Option<DrawingId>,
+    /// The drawing records a page shows or a view collection holds, in
+    /// source order, or in id order where the source's list is a set.
+    pub views: Vec<DrawingId>,
+    /// The view a section or detail view is cut or magnified from.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_base_view"
+    )]
+    pub base_view: Option<DrawingId>,
     /// View origin on its page.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_position")]
@@ -142,6 +152,14 @@ pub struct Drawing {
         deserialize_with = "deserialize_perspective"
     )]
     pub perspective: Option<crate::scalar::PositiveLength>,
+    /// The edge classes a view's hidden-line projection draws besides its
+    /// visible hard edges.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_edge_classes"
+    )]
+    pub edge_classes: Option<EdgeClasses>,
     /// How a view's hidden-line projection computes its curves.
     #[serde(
         default,
@@ -153,7 +171,7 @@ pub struct Drawing {
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub parameters: BTreeMap<NonBlankString, String>,
     /// Template, image, symbol, or other retained assets.
-    pub assets: Vec<String>,
+    pub assets: Vec<crate::ids::Identity>,
     /// Native drawing record supplying this entity.
     #[serde(
         default,
@@ -168,7 +186,7 @@ impl Drawing {
     #[must_use]
     pub fn new(
         id: DrawingId,
-        object: String,
+        object: crate::ids::Identity,
         kind: DrawingKind,
         runtime_type: String,
         order: u32,
@@ -184,6 +202,8 @@ impl Drawing {
             visible: None,
             relationships: BTreeMap::new(),
             template: None,
+            views: Vec::new(),
+            base_view: None,
             position: None,
             scale: None,
             direction: None,
@@ -193,6 +213,7 @@ impl Drawing {
             scale_from: None,
             projection: None,
             perspective: None,
+            edge_classes: None,
             hidden_line: None,
             sheet: None,
             curves: Vec::new(),
@@ -224,7 +245,9 @@ cadmpeg_core::named_optional_field!(
     crate::scalar::PositiveLength,
     "perspective"
 );
+cadmpeg_core::named_optional_field!(deserialize_edge_classes, EdgeClasses, "edge_classes");
 cadmpeg_core::named_optional_field!(deserialize_hidden_line, HiddenLineMethod, "hidden_line");
+cadmpeg_core::named_optional_field!(deserialize_iso_count, u32, "iso_count");
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 /// Where a view's scale comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
@@ -250,6 +273,46 @@ pub enum ProjectionAngle {
     Third,
 }
 
+/// The edge classes a hidden-line projection draws besides its visible hard
+/// edges, which every projection draws.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct EdgeClasses {
+    /// Each class drawn; a class the set does not hold is not drawn.
+    #[serde(with = "cadmpeg_core::distinct_keys::set")]
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<EdgeClass>"))]
+    pub drawn: BTreeSet<EdgeClass>,
+    /// The number of iso-parameter lines.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_iso_count"
+    )]
+    pub iso_count: Option<u32>,
+}
+
+/// An edge class a hidden-line projection can draw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum EdgeClass {
+    /// Visible edges between tangent faces.
+    VisibleSmooth,
+    /// Visible seam edges of closed faces.
+    VisibleSeam,
+    /// Visible iso-parameter lines.
+    VisibleIso,
+    /// Hidden edges between faces that meet at an angle.
+    HiddenHard,
+    /// Hidden edges between tangent faces.
+    HiddenSmooth,
+    /// Hidden seam edges of closed faces.
+    HiddenSeam,
+    /// Hidden iso-parameter lines.
+    HiddenIso,
+}
+
 /// How a hidden-line projection computes its curves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -265,55 +328,56 @@ pub enum HiddenLineMethod {
 #[cfg(test)]
 mod tests {
     use super::{Drawing, DrawingId};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn template_text_round_trips_without_a_font_height() {
-        let wire = serde_json::json!({"text": "label", "position": [10.0, 9.0]});
-        let text: super::TemplateText = serde_json::from_value(wire.clone()).unwrap();
+        let wire = cadmpeg_core::json!({"text": "label", "position": [10.0, 9.0]});
+        let text: super::TemplateText = json::from_value(wire.clone()).unwrap();
         assert!(text.height.is_none());
-        assert_eq!(serde_json::to_value(text).unwrap(), wire);
+        assert_eq!(json::to_value(text).unwrap(), wire);
         for invalid in [
-            serde_json::json!(null),
-            serde_json::json!(0),
-            serde_json::json!(-1),
+            cadmpeg_core::json!(null),
+            cadmpeg_core::json!(0),
+            cadmpeg_core::json!(-1),
         ] {
             let mut rejected = wire.clone();
             rejected["height"] = invalid;
-            assert!(serde_json::from_value::<super::TemplateText>(rejected).is_err());
+            assert!(json::from_value::<super::TemplateText>(rejected).is_err());
         }
     }
 
     #[test]
     fn sheet_and_curves_wire_admission() {
-        let wire = serde_json::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0, "native_ref": "native",
+        let wire = cadmpeg_core::json!({"id": "synthetic:test:drawing#view", "object": "test:source:object#source", "kind": "view", "runtime_type": "View", "order": 0, "native_ref": "native",
         "sheet": {"width_mm": 210.0, "height_mm": 297.0, "fields": [{"name": "Title", "value": "Test"}]},
         "curves": [
             {"geometry": {"kind": "line", "start": [0.0, 1.0], "end": [2.0, 3.0]}, "visibility": "hidden", "source": "projected_model_edge"},
             {"geometry": {"kind": "circle", "center": [0.0, 0.0], "radius": 2.0}, "visibility": "visible", "source": "cosmetic"},
             {"geometry": {"kind": "arc", "center": [0.0, 0.0], "radius": 2.0, "start": [2.0, 0.0], "middle": [0.0, 2.0], "end": [-2.0, 0.0]}, "visibility": "visible", "source": "center_line"}
-        ], "relationships": {}, "parameters": {}, "assets": []});
-        let drawing: Drawing = serde_json::from_value(wire.clone()).unwrap();
+        ], "relationships": {}, "parameters": {}, "views": [], "assets": []});
+        let drawing: Drawing = json::from_value(wire.clone()).unwrap();
         assert!(drawing.sheet.as_ref().unwrap().is_valid());
         assert!(drawing.curves.iter().all(super::DrawingCurve::is_valid));
-        assert_eq!(serde_json::to_value(drawing).unwrap(), wire);
+        assert_eq!(json::to_value(drawing).unwrap(), wire);
         let mut rejected = wire.clone();
-        rejected["sheet"]["width_mm"] = serde_json::json!(0);
-        assert!(serde_json::from_value::<Drawing>(rejected)
+        rejected["sheet"]["width_mm"] = cadmpeg_core::json!(0);
+        assert!(json::from_value::<Drawing>(rejected)
             .unwrap_err()
             .to_string()
             .contains("sheet"));
         let mut rejected = wire.clone();
-        rejected["curves"][1]["geometry"]["radius"] = serde_json::json!(-1);
-        assert!(serde_json::from_value::<Drawing>(rejected).is_err());
+        rejected["curves"][1]["geometry"]["radius"] = cadmpeg_core::json!(-1);
+        assert!(json::from_value::<Drawing>(rejected).is_err());
         let mut rejected = wire.clone();
-        rejected["curves"][0]["geometry"]["start"] = serde_json::json!([0, null]);
-        assert!(serde_json::from_value::<Drawing>(rejected).is_err());
+        rejected["curves"][0]["geometry"]["start"] = cadmpeg_core::json!([0, null]);
+        assert!(json::from_value::<Drawing>(rejected).is_err());
         let mut rejected = wire;
         rejected["curves"][0]
             .as_object_mut()
             .unwrap()
             .remove("visibility");
-        assert!(serde_json::from_value::<Drawing>(rejected)
+        assert!(json::from_value::<Drawing>(rejected)
             .unwrap_err()
             .to_string()
             .contains("visibility"));
@@ -321,104 +385,165 @@ mod tests {
 
     #[test]
     fn template_reference_preserves_string_wire_and_rejects_invalid_ids() {
-        let value = serde_json::json!({"id": "synthetic:test:drawing#page", "object": "source", "kind": "page", "runtime_type": "Page", "order": 0, "template": "synthetic:test:drawing#template", "native_ref": "native", "relationships": {}, "curves": [], "parameters": {}, "assets": []});
-        let drawing: Drawing = serde_json::from_value(value.clone()).expect("valid drawing");
+        let value = cadmpeg_core::json!({"id": "synthetic:test:drawing#page", "object": "test:source:object#source", "kind": "page", "runtime_type": "Page", "order": 0, "template": "synthetic:test:drawing#template", "native_ref": "native", "relationships": {}, "curves": [], "parameters": {}, "views": [], "assets": []});
+        let drawing: Drawing = json::from_value(value.clone()).expect("valid drawing");
         assert_eq!(
             drawing.template.as_ref().map(DrawingId::as_str),
             Some("synthetic:test:drawing#template")
         );
-        assert_eq!(
-            serde_json::to_value(drawing).expect("serialize drawing"),
-            value
-        );
+        assert_eq!(json::to_value(drawing).expect("serialize drawing"), value);
         for invalid in ["", "bad id"] {
             let mut invalid_value = value.clone();
-            invalid_value["template"] = serde_json::json!(invalid);
-            assert!(serde_json::from_value::<Drawing>(invalid_value).is_err());
+            invalid_value["template"] = cadmpeg_core::json!(invalid);
+            assert!(json::from_value::<Drawing>(invalid_value).is_err());
         }
     }
     #[test]
+    fn views_are_required_and_a_base_view_is_written_only_where_stated() {
+        let wire = cadmpeg_core::json!({"id": "synthetic:test:drawing#section", "object": "test:source:object#source", "kind": "section", "runtime_type": "Section", "order": 0,
+            "relationships": {}, "views": ["synthetic:test:drawing#a", "synthetic:test:drawing#b"], "base_view": "synthetic:test:drawing#front",
+            "curves": [], "parameters": {}, "assets": []});
+        let drawing: Drawing = json::from_value(wire.clone()).expect("valid drawing");
+        assert_eq!(drawing.views.len(), 2);
+        assert_eq!(
+            drawing.base_view.as_ref().map(DrawingId::as_str),
+            Some("synthetic:test:drawing#front")
+        );
+        assert_eq!(json::to_value(drawing).expect("serialize"), wire);
+        let mut missing = wire.clone();
+        missing.as_object_mut().unwrap().remove("views");
+        let error = json::from_value::<Drawing>(missing).expect_err("views are required");
+        assert!(error.to_string().contains("views"), "{error}");
+        for invalid in [serde_json::Value::Null, cadmpeg_core::json!("bad id")] {
+            let mut rejected = wire.clone();
+            rejected["base_view"] = invalid;
+            let error = json::from_value::<Drawing>(rejected).expect_err("invalid base view");
+            assert!(error.to_string().contains("base_view"), "{error}");
+        }
+        for invalid in [serde_json::Value::Null, cadmpeg_core::json!(["bad id"])] {
+            let mut rejected = wire.clone();
+            rejected["views"] = invalid;
+            assert!(json::from_value::<Drawing>(rejected).is_err());
+        }
+    }
+
+    #[test]
     fn numeric_admission_names_fields_and_preserves_valid_values() {
-        let wire = serde_json::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0, "native_ref": "native", "position": [-2.0, 0.0], "scale": 0.5, "direction": [0.0, 0.0, 2.0], "rotation": -0.5, "relationships": {}, "curves": [], "parameters": {}, "assets": []});
-        let drawing: Drawing = serde_json::from_value(wire.clone()).expect("valid drawing");
-        assert_eq!(serde_json::to_value(drawing).expect("serialize"), wire);
+        let wire = cadmpeg_core::json!({"id": "synthetic:test:drawing#view", "object": "test:source:object#source", "kind": "view", "runtime_type": "View", "order": 0, "native_ref": "native", "position": [-2.0, 0.0], "scale": 0.5, "direction": [0.0, 0.0, 2.0], "rotation": -0.5, "relationships": {}, "curves": [], "parameters": {}, "views": [], "assets": []});
+        let drawing: Drawing = json::from_value(wire.clone()).expect("valid drawing");
+        assert_eq!(json::to_value(drawing).expect("serialize"), wire);
         for (field, invalid) in [
-            ("scale", serde_json::json!(0)),
-            ("direction", serde_json::json!([0, 0, 0])),
-            ("position", serde_json::json!([0, null])),
+            ("scale", cadmpeg_core::json!(0)),
+            ("direction", cadmpeg_core::json!([0, 0, 0])),
+            ("position", cadmpeg_core::json!([0, null])),
         ] {
             let mut rejected = wire.clone();
             rejected[field] = invalid;
-            let error =
-                serde_json::from_value::<Drawing>(rejected).expect_err("invalid numeric field");
+            let error = json::from_value::<Drawing>(rejected).expect_err("invalid numeric field");
             assert!(error.to_string().contains(field));
         }
     }
 
     #[test]
     fn view_projection_fields_round_trip_and_name_their_fields() {
-        let wire = serde_json::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0,
+        let wire = cadmpeg_core::json!({"id": "synthetic:test:drawing#view", "object": "test:source:object#source", "kind": "view", "runtime_type": "View", "order": 0,
             "scale_from": "fit", "projection": "third", "perspective": 250.0, "hidden_line": "polygonal",
-            "relationships": {}, "curves": [], "parameters": {}, "assets": []});
-        let drawing: Drawing = serde_json::from_value(wire.clone()).expect("valid drawing");
+            "relationships": {}, "curves": [], "parameters": {}, "views": [], "assets": []});
+        let drawing: Drawing = json::from_value(wire.clone()).expect("valid drawing");
         assert!(drawing.native_ref.is_none());
         assert_eq!(drawing.scale_from, Some(super::ScaleFrom::Fit));
-        assert_eq!(serde_json::to_value(drawing).expect("serialize"), wire);
+        assert_eq!(json::to_value(drawing).expect("serialize"), wire);
         for (field, invalid) in [
             ("scale_from", serde_json::Value::Null),
-            ("projection", serde_json::json!("second")),
-            ("perspective", serde_json::json!(0.0)),
+            ("projection", cadmpeg_core::json!("second")),
+            ("perspective", cadmpeg_core::json!(0.0)),
             ("hidden_line", serde_json::Value::Null),
             ("native_ref", serde_json::Value::Null),
         ] {
             let mut rejected = wire.clone();
             rejected[field] = invalid;
-            let error = serde_json::from_value::<Drawing>(rejected).expect_err("invalid field");
+            let error = json::from_value::<Drawing>(rejected).expect_err("invalid field");
             assert!(error.to_string().contains(field), "{field}: {error}");
         }
         let mut rejected = wire;
-        rejected["rotation_degrees"] = serde_json::json!(90.0);
-        assert!(serde_json::from_value::<Drawing>(rejected).is_err());
+        rejected["rotation_degrees"] = cadmpeg_core::json!(90.0);
+        assert!(json::from_value::<Drawing>(rejected).is_err());
+    }
+
+    /// §8: `edge_classes` is a set of classes drawn besides the visible hard
+    /// edges, with the iso-line count; a class is stated once.
+    #[test]
+    fn edge_classes_round_trip_as_a_set() {
+        let wire = cadmpeg_core::json!({"id": "synthetic:test:drawing#view", "object": "test:source:object#source", "kind": "view", "runtime_type": "View", "order": 0,
+            "edge_classes": {"drawn": ["visible_smooth", "visible_iso", "hidden_hard"], "iso_count": 3},
+            "relationships": {}, "curves": [], "parameters": {}, "views": [], "assets": []});
+        let drawing: Drawing = json::from_value(wire.clone()).expect("valid drawing");
+        let classes = drawing.edge_classes.as_ref().expect("edge classes");
+        assert_eq!(
+            classes.drawn.iter().copied().collect::<Vec<_>>(),
+            [
+                super::EdgeClass::VisibleSmooth,
+                super::EdgeClass::VisibleIso,
+                super::EdgeClass::HiddenHard
+            ]
+        );
+        assert_eq!(json::to_value(drawing).expect("serialize"), wire);
+        for (invalid, fragment) in [
+            (serde_json::Value::Null, "edge_classes"),
+            (
+                cadmpeg_core::json!({"drawn": ["hidden_iso", "hidden_iso"]}),
+                "",
+            ),
+            (cadmpeg_core::json!({"drawn": ["visible_hard"]}), ""),
+            (
+                cadmpeg_core::json!({"drawn": [], "iso_count": null}),
+                "iso_count",
+            ),
+        ] {
+            let mut rejected = wire.clone();
+            rejected["edge_classes"] = invalid;
+            let error = json::from_value::<Drawing>(rejected).expect_err("invalid field");
+            assert!(error.to_string().contains(fragment), "{fragment}: {error}");
+        }
     }
 
     #[test]
     fn a_free_form_map_refuses_a_blank_key() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "synthetic:test:drawing#view",
-            "object": "source",
+            "object": "test:source:object#source",
             "kind": "view",
             "runtime_type": "View",
             "order": 0,
             "native_ref": "native",
-            "parameters": {"   ": "value"}, "relationships": {}, "curves": [], "assets": []
+            "parameters": {"   ": "value"}, "relationships": {}, "curves": [], "views": [], "assets": []
         });
-        let error = serde_json::from_value::<Drawing>(wire).expect_err("blank parameter role");
+        let error = json::from_value::<Drawing>(wire).expect_err("blank parameter role");
         assert!(error.to_string().contains("must not be blank"), "{error}");
 
-        let relationships = serde_json::json!({
+        let relationships = cadmpeg_core::json!({
             "id": "synthetic:test:drawing#view",
-            "object": "source",
+            "object": "test:source:object#source",
             "kind": "view",
             "runtime_type": "View",
             "order": 0,
             "native_ref": "native",
-            "relationships": {"": []}, "curves": [], "parameters": {}, "assets": []
+            "relationships": {"": []}, "curves": [], "parameters": {}, "views": [], "assets": []
         });
         let error =
-            serde_json::from_value::<Drawing>(relationships).expect_err("blank relationship role");
+            json::from_value::<Drawing>(relationships).expect_err("blank relationship role");
         assert!(error.to_string().contains("must not be blank"), "{error}");
 
-        let named = serde_json::json!({
+        let named = cadmpeg_core::json!({
             "id": "synthetic:test:drawing#view",
-            "object": "source",
+            "object": "test:source:object#source",
             "kind": "view",
             "runtime_type": "View",
             "order": 0,
             "native_ref": "native",
-            "parameters": {" scale ": "value"}, "relationships": {}, "curves": [], "assets": []
+            "parameters": {" scale ": "value"}, "relationships": {}, "curves": [], "views": [], "assets": []
         });
-        let drawing: Drawing =
-            serde_json::from_value(named).expect("a named role is kept verbatim");
+        let drawing: Drawing = json::from_value(named).expect("a named role is kept verbatim");
         assert!(drawing.parameters.contains_key(" scale "));
     }
 }
@@ -426,6 +551,7 @@ mod tests {
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
 cadmpeg_core::named_optional_field!(deserialize_template, DrawingId, "template");
+cadmpeg_core::named_optional_field!(deserialize_base_view, DrawingId, "base_view");
 
 mod identity_rewrite;
 

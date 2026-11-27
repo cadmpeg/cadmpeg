@@ -9,7 +9,7 @@ use crate::sab::Record;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{AttributeId, ProceduralCurveId, ProceduralSurfaceId};
+use cadmpeg_ir::ids::{AttributeId, Identity, ProceduralCurveId, ProceduralSurfaceId};
 use std::collections::{HashMap, HashSet};
 
 /// Provenance tag for a source record or a synthetic procedural entity.
@@ -43,7 +43,7 @@ impl AnnotationTag {
 /// One sparse v1 annotation produced while SAB record offsets are available.
 pub struct AnnotationRecord {
     /// Globally unique IR entity id.
-    pub id: String,
+    pub id: Identity,
     /// BREP ZIP entry containing the source SAB record.
     pub stream: String,
     /// Byte offset in the decompressed ASM stream.
@@ -131,8 +131,7 @@ pub(super) fn emit_annotation_records(
             i64::try_from(record.index).map_err(|_| {
                 cadmpeg_core::CodecError::malformed("ASM record index exceeds the i64 range")
             })?,
-        )
-        .into_string();
+        );
         if emitted_ids.contains(entity_id.as_str()) {
             let mut derived_fields = Vec::new();
             match record.head() {
@@ -142,7 +141,7 @@ pub(super) fn emit_annotation_records(
                         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)))
                     ) =>
                 {
-                    derived_fields.extend(["geometry.normal", "geometry.u_axis"]);
+                    derived_fields.extend(["geometry.value.normal", "geometry.value.u_axis"]);
                 }
                 "cone"
                     if matches!(
@@ -152,7 +151,7 @@ pub(super) fn emit_annotation_records(
                         ))
                     ) =>
                 {
-                    derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
+                    derived_fields.extend(["geometry.value.axis", "geometry.value.ref_direction"]);
                 }
                 "sphere"
                     if matches!(
@@ -160,7 +159,7 @@ pub(super) fn emit_annotation_records(
                         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)))
                     ) =>
                 {
-                    derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
+                    derived_fields.extend(["geometry.value.axis", "geometry.value.ref_direction"]);
                 }
                 "torus"
                     if matches!(
@@ -168,7 +167,7 @@ pub(super) fn emit_annotation_records(
                         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)))
                     ) =>
                 {
-                    derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
+                    derived_fields.extend(["geometry.value.axis", "geometry.value.ref_direction"]);
                 }
                 "straight"
                     if matches!(
@@ -176,14 +175,16 @@ pub(super) fn emit_annotation_records(
                         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
                     ) =>
                 {
-                    derived_fields.push("geometry.direction");
+                    derived_fields.push("geometry.value.direction");
                 }
                 "ellipse" => match curve_geometries.get(entity_id.as_str()) {
                     Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))) => {
-                        derived_fields.extend(["geometry.axis", "geometry.ref_direction"]);
+                        derived_fields
+                            .extend(["geometry.value.axis", "geometry.value.ref_direction"]);
                     }
                     Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_))) => {
-                        derived_fields.extend(["geometry.axis", "geometry.major_direction"]);
+                        derived_fields
+                            .extend(["geometry.value.axis", "geometry.value.major_direction"]);
                     }
                     _ => {}
                 },
@@ -208,10 +209,10 @@ pub(super) fn emit_annotation_records(
                 derived_fields,
             });
         }
-        let attribute_id = brep_id!(format, AttributeId, "attribute", record.index).into_string();
+        let attribute_id = brep_id!(format, AttributeId, "attribute", record.index);
         if attribute_ids.contains(attribute_id.as_str()) {
             out.annotation_records.push(AnnotationRecord {
-                id: attribute_id,
+                id: attribute_id.into(),
                 stream: stream_copy()?,
                 offset: cadmpeg_core::decode::u64_from_index(record.offset),
                 tag: AnnotationTag::Record(record.name.clone()),
@@ -221,7 +222,7 @@ pub(super) fn emit_annotation_records(
         let unknown_id = unknown_record_id(record, format)?;
         if unknown_ids.contains(unknown_id.as_str()) {
             out.annotation_records.push(AnnotationRecord {
-                id: unknown_id.into_string(),
+                id: unknown_id.into(),
                 stream: stream_copy()?,
                 offset: cadmpeg_core::decode::u64_from_index(record.offset),
                 tag: AnnotationTag::Record(record.name.clone()),
@@ -230,17 +231,21 @@ pub(super) fn emit_annotation_records(
         }
         for (synthetic_id, tag) in [
             (
-                brep_id!(
+                Identity::from(brep_id!(
                     format,
                     ProceduralSurfaceId,
                     "procedural_surface",
                     record.index
-                )
-                .into_string(),
+                )),
                 AnnotationTag::ProceduralSurface,
             ),
             (
-                brep_id!(format, ProceduralCurveId, "procedural_curve", record.index).into_string(),
+                Identity::from(brep_id!(
+                    format,
+                    ProceduralCurveId,
+                    "procedural_curve",
+                    record.index
+                )),
                 AnnotationTag::ProceduralCurve,
             ),
         ] {
@@ -258,12 +263,12 @@ pub(super) fn emit_annotation_records(
     for (index, entity_id, tag) in carriers
         .procedural_support_sources
         .iter()
-        .map(|(index, id)| (index, id.as_str(), AnnotationTag::ProceduralSupport))
+        .map(|(index, id)| (index, id.as_ref(), AnnotationTag::ProceduralSupport))
         .chain(
             carriers
                 .procedural_curve_child_sources
                 .iter()
-                .map(|(index, id)| (index, id.as_str(), AnnotationTag::ProceduralCurveChild)),
+                .map(|(index, id)| (index, id.as_ref(), AnnotationTag::ProceduralCurveChild)),
         )
     {
         let record = by_index.get(index).ok_or_else(|| {
@@ -273,7 +278,7 @@ pub(super) fn emit_annotation_records(
         })?;
 
         out.annotation_records.push(AnnotationRecord {
-            id: entity_id.to_owned(),
+            id: entity_id.clone(),
             stream: stream_copy()?,
             offset: cadmpeg_core::decode::u64_from_index(record.offset),
             tag,

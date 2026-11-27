@@ -5,11 +5,11 @@ mod schema;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, IdentityKey};
+use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, Identity, IdentityKey};
 use cadmpeg_ir::presentation::{
     CameraState, PresentationDocument, PresentationId, PresentationState, PresentationStateKind,
     ViewPresentation,
@@ -17,6 +17,7 @@ use cadmpeg_ir::presentation::{
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteBinary32;
 use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::SourceProvenance;
 
 use crate::brep::ShapePayloadRecord;
@@ -35,6 +36,8 @@ pub(crate) struct Graph {
     pub(crate) providers: Vec<GuiViewProviderRecord>,
     pub(crate) properties: Vec<GuiPropertyRecord>,
     pub(crate) losses: Vec<LossNote>,
+    /// `GuiDocument.xml` given up whole, for the caller to commit.
+    pub(crate) given_up: Option<GivenUpPart>,
 }
 
 #[derive(Default)]
@@ -190,13 +193,20 @@ pub(crate) fn transfer(
 ) -> Result<Graph, CodecError> {
     match transfer_xml(ctx, ir, bytes, sources) {
         Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
-            Ok(source_only_graph(None, &error))
+            source_only_graph(ctx, bytes, None, error)
         }
         result => result,
     }
 }
 
-fn source_only_graph(schema_declaration: Option<&str>, error: &CodecError) -> Graph {
+/// The graph of a `GuiDocument.xml` the decoder could not read: one
+/// document record with no state, and the entry given up as a part.
+fn source_only_graph(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    schema_declaration: Option<&str>,
+    error: CodecError,
+) -> Result<Graph, CodecError> {
     let mut graph = Graph::default();
     graph.documents.push(GuiDocumentRecord {
         id: ("fcstd:gui:document#0").to_owned(),
@@ -209,7 +219,20 @@ fn source_only_graph(schema_declaration: Option<&str>, error: &CodecError) -> Gr
         .push(FreecadLossCode::SourceGuiMetadataUnresolved.note(format!(
         "GuiDocument.xml remains source-only: {error}; independently decoded geometry is retained"
     )));
-    graph
+    let part = Part::at(
+        crate::dialect::FORMAT,
+        "archive-entry",
+        0,
+        bytes,
+        [ArenaClass::Model],
+    )
+    .named("GuiDocument.xml")
+    .in_stream(cadmpeg_ir::stream_name!("GuiDocument.xml"))
+    .contained_in(
+        Identity::new(crate::native::native_id("document", "0")).map_err(CodecError::malformed)?,
+    );
+    graph.given_up = Some(ctx.give_up_part(part, error)?);
+    Ok(graph)
 }
 
 fn transfer_xml(
@@ -247,7 +270,7 @@ fn transfer_xml(
             graph
         }
         Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
-            source_only_graph(schema_declaration.as_deref(), &error)
+            source_only_graph(ctx, bytes, schema_declaration.as_deref(), error)?
         }
         Err(error) => return Err(error),
     };
@@ -608,6 +631,7 @@ fn transfer_schema_one(
                 ))?,
                 target: AppearanceTarget::Body(body.clone()).into(),
                 appearance: appearance_id.clone(),
+                precedence: None,
                 source_entity_id: Some(object_id.to_owned()),
                 object_type: Some("ViewProvider".into()),
                 visible: None,
@@ -621,6 +645,7 @@ fn transfer_schema_one(
         providers: native_providers,
         properties: native_properties,
         losses,
+        given_up: None,
     };
     let material_lists =
         validate_gui_list_payloads(&graph.properties, entries, requires_alpha_conversion)?;
@@ -824,7 +849,10 @@ fn transfer_neutral_presentation(
             };
             let mut assets = Vec::new();
             for entry in &state.side_entries {
-                assets.push(crate::native::native_id("entry", entry));
+                assets.push(
+                    cadmpeg_ir::ids::Identity::try_from(crate::native::native_id("entry", entry))
+                        .map_err(CodecError::malformed)?,
+                );
             }
             states.push(PresentationState {
                 kind,
@@ -899,7 +927,9 @@ fn transfer_neutral_presentation(
             object: provider
                 .object
                 .as_ref()
-                .map(|object| object.as_str().to_owned()),
+                .map(|object| cadmpeg_ir::ids::Identity::try_from(object.as_str()))
+                .transpose()
+                .map_err(CodecError::malformed)?,
             order: u32::try_from(provider.order).map_err(|_| {
                 CodecError::malformed(format_args!(
                     "FreeCAD ordinal {} exceeds u32",
@@ -1211,6 +1241,7 @@ fn transfer_primitive_appearance(
             ))?,
             target: target.into(),
             appearance: appearance_id.clone(),
+            precedence: None,
             source_entity_id: Some(object_id.to_owned()),
             object_type: Some(object_type.into()),
             visible: None,
@@ -3899,6 +3930,7 @@ fn transfer_shape_appearances(
                         ))?,
                         target: AppearanceTarget::Body(body.clone()).into(),
                         appearance: appearance_id.clone(),
+                        precedence: None,
                         source_entity_id: Some(object_id.to_owned()),
                         object_type: Some("ViewProvider ShapeAppearance".into()),
                         visible: None,
@@ -4187,6 +4219,7 @@ fn bind_material_faces(
             ))?,
             target: AppearanceTarget::Face(face).into(),
             appearance: appearance_id.clone(),
+            precedence: None,
             source_entity_id: Some(object_id.to_owned()),
             object_type: Some("ViewProvider ShapeAppearance".into()),
             visible: None,
@@ -4390,6 +4423,7 @@ fn transfer_topology_colors(
                 ))?,
                 target: target.into(),
                 appearance: appearance_id.clone(),
+                precedence: None,
                 source_entity_id: Some(object_id.to_owned()),
                 object_type: Some(format!("ViewProvider {}", kind.name())),
                 visible: None,
@@ -4560,6 +4594,7 @@ mod shape_association_tests {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
         ir
     }

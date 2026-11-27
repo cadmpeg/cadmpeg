@@ -104,14 +104,15 @@ impl Serialize for FeatureExtrudePayload32Branch {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_test_support::native_serialization::assert_native_limit;
 
     #[test]
     fn extrude_32_branch_borrowed_bytes_and_limit() {
         let json = r#"{"id":"nx:feature:extrude32#0","operation_label":"operation","body_object_index":42,"scalar":1.0,"raw_scalar":"2ff0000000000000","atoms_be":[1031799040],"atom_source_offsets":[33],"atom_indices":[1],"atom_data_blocks":["block#1"],"first_indices":[2],"raw_first_indices":["02"],"first_index_source_offsets":[39],"first_data_blocks":[null],"second_indices":[3],"raw_second_indices":["03"],"second_index_source_offsets":[42],"second_data_blocks":["block#3"],"terminal_object_index":42,"raw_terminal_object_index":"2a","terminal_source_offset":45,"source_offset":20}"#;
         let record: FeatureExtrudePayload32Branch = serde_json::from_str(json).unwrap();
-        let borrowed = serde_json::to_vec(&record).unwrap();
-        let owned = serde_json::to_vec(&super::super::FeatureExtrudePayload32BranchWire::from(
+        let borrowed = json::to_vec(&record).unwrap();
+        let owned = json::to_vec(&super::super::FeatureExtrudePayload32BranchWire::from(
             record.clone(),
         ))
         .unwrap();

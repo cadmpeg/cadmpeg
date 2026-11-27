@@ -229,18 +229,19 @@ pub(crate) fn patch_payload(
     let mut keep = |parameter: &cadmpeg_ir::features::parameters::DesignParameter,
                     record: &str,
                     reason: &str| {
-        kept.push(
-            crate::loss::SldprtLossCode::WriterParameterEditUnwritten.note(format!(
+        kept.push(cadmpeg_ir::codec::write::edit_dropped_note(
+            cadmpeg_ir::schema::EntityKind::Parameter,
+            format!(
                 "PMI dimension record {record} of parameter {} keeps its stored {reason}.",
                 parameter.id.as_str()
-            )),
-        );
+            ),
+        ));
     };
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Ok(kept);
     };
-    let native =
-        crate::native::SldprtNative::load(namespace).map_err(cadmpeg_core::CodecError::from)?;
+    let native = crate::native::SldprtNative::load(namespace, ir.tolerances.linear)
+        .map_err(cadmpeg_core::CodecError::from)?;
     let records_by_id = native
         .pmi_dimensions
         .iter()
@@ -377,17 +378,32 @@ fn patch_bytes(
     Ok(())
 }
 
+/// A parameter whose bare Keywords number `apply_to_parameters` typed as a
+/// length: the number and the millimetres in the unit it is displayed in.
+#[derive(Debug, Clone)]
+pub(crate) struct RefinedLength {
+    pub(crate) parameter: cadmpeg_ir::features::ParameterId,
+    pub(crate) displayed: crate::design_v11::DisplayedLength,
+}
+
+/// Bind the agreed PMI records to parameters. Returns the parameters whose
+/// bare Keywords number became a length, for the configurations that hold
+/// that parameter's other values. `length_unit` and `length_places` are the
+/// document's.
 pub(crate) fn apply_to_parameters(
     parameters: &mut Vec<cadmpeg_ir::features::parameters::DesignParameter>,
     features: &[cadmpeg_ir::features::Feature],
     records: &[PmiDimension],
-) -> Result<(), cadmpeg_core::CodecError> {
+    length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
+    length_places: Option<u32>,
+) -> Result<Vec<RefinedLength>, cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::parameters::{
         DesignParameter, DimensionDisplay, ParameterPmi, ParameterValue, PmiDimensionSubtype,
     };
     use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::scalar::Length;
 
+    let mut refined = Vec::new();
     let mut feature_names = BTreeMap::<&str, Vec<&cadmpeg_ir::features::Feature>>::new();
     for feature in features {
         if let Some(name) = feature.name.as_deref() {
@@ -487,7 +503,32 @@ pub(crate) fn apply_to_parameters(
         if let Some(parameter) = existing_parameter.map(|index| &mut parameters[index]) {
             // Keywords is the authoritative design value when it already
             // supplied this parameter. PMI still contributes its semantic
-            // annotation and source identity.
+            // annotation and source identity. A bare number Keywords shows
+            // for a length is the record's value in the document's unit, so
+            // the record supplies the length.
+            if matches!(
+                semantic.subtype,
+                PmiDimensionSubtype::Linear | PmiDimensionSubtype::Ordinate
+            ) && matches!(
+                parameter.value,
+                None | Some(ParameterValue::Real(_) | ParameterValue::Integer(_))
+            ) {
+                if let Some((displayed, length)) = crate::design_v11::displayed_length(
+                    &parameter.expression,
+                    record.value.get(),
+                    length_unit,
+                    length_places,
+                )
+                .zip(Length::new(millimetres))
+                {
+                    parameter.expression = crate::history::literals::format_length_mm(length);
+                    parameter.value = Some(ParameterValue::Length(length));
+                    refined.push(RefinedLength {
+                        parameter: parameter.id.clone(),
+                        displayed,
+                    });
+                }
+            }
             parameter.pmi = Some(semantic);
             continue;
         }
@@ -531,7 +572,7 @@ pub(crate) fn apply_to_parameters(
             native_ref: None,
         });
     }
-    Ok(())
+    Ok(refined)
 }
 
 /// Parse work one `PMISemanticDataDB` section may spend per payload byte. One
@@ -714,7 +755,7 @@ fn collect_dimensions(
             Ok(Some(record)) => {
                 crate::annotations::note(
                     annotations,
-                    record.id.clone(),
+                    crate::annotations::native_key(&record.id)?,
                     stream,
                     u64_from_index(offset),
                     "messagepack_dim_sem_data",
@@ -724,9 +765,18 @@ fn collect_dimensions(
             }
             Ok(None) => {}
             Err(PmiParseError::Malformed(message)) => {
-                losses.push(SldprtLossCode::PmiSemanticRecordMalformed.note(format!(
-                    "PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"
-                )));
+                losses.extend(cadmpeg_ir::unknown::part::record_given_up(
+                    cadmpeg_ir::ids::Identity::new(format!("sldprt:pmi:dimension#{normalized}"))?,
+                    SldprtLossCode::PmiSemanticRecordMalformed
+                        .note(format!(
+                            "PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"
+                        ))
+                        .with_provenance(cadmpeg_ir::SourceProvenance::in_stream(
+                            "sldprt",
+                            stream.clone(),
+                            u64_from_index(offset),
+                        )),
+                ));
             }
             Err(PmiParseError::Capped) => {
                 let skipped = candidates.count() + 1;
@@ -914,42 +964,45 @@ fn contains_fixstr_key(window: &[u8], key: &str) -> bool {
     let mut encoded = Vec::with_capacity(key.len() + 1);
     encoded.push(0xa0 | key_len);
     encoded.extend_from_slice(key.as_bytes());
-    window
-        .windows(encoded.len())
-        .any(|candidate| candidate == encoded)
+    memchr::memmem::find(window, &encoded).is_some()
 }
 
 /// Locate GUID-prefixed `MessagePack` maps. Key order and map length do not matter.
 fn candidate_maps(payload: &[u8]) -> impl Iterator<Item = (&str, usize)> {
-    payload
-        .iter()
-        .copied()
-        .enumerate()
-        .filter_map(|(offset, marker)| {
-            if matches!(
-                Marker::from_u8(marker),
-                Marker::FixMap(_) | Marker::Map16 | Marker::Map32
-            ) {
-                guid_before(payload, offset).map(|guid| (guid, offset))
-            } else {
-                None
-            }
-        })
+    let scan = if payload.len() > 36 {
+        &payload[23..payload.len() - 13]
+    } else {
+        &[][..]
+    };
+    memchr::memchr_iter(b'-', scan).filter_map(move |rel| {
+        let offset = rel + 36;
+        let marker = *payload.get(offset)?;
+        if matches!(
+            Marker::from_u8(marker),
+            Marker::FixMap(_) | Marker::Map16 | Marker::Map32
+        ) {
+            guid_before(payload, offset).map(|guid| (guid, offset))
+        } else {
+            None
+        }
+    })
 }
 
 fn guid_before(payload: &[u8], offset: usize) -> Option<&str> {
     let start = offset.checked_sub(36)?;
-    let guid = std::str::from_utf8(payload.get(start..offset)?).ok()?;
-    let bytes = guid.as_bytes();
-    (bytes.get(8) == Some(&b'-')
-        && bytes.get(13) == Some(&b'-')
-        && bytes.get(18) == Some(&b'-')
-        && bytes.get(23) == Some(&b'-')
-        && bytes
+    let bytes = payload.get(start..offset)?;
+    if bytes.get(8) != Some(&b'-')
+        || bytes.get(13) != Some(&b'-')
+        || bytes.get(18) != Some(&b'-')
+        || bytes.get(23) != Some(&b'-')
+        || !bytes
             .iter()
             .enumerate()
-            .all(|(index, byte)| [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit()))
-    .then_some(guid)
+            .all(|(index, byte)| matches!(index, 8 | 13 | 18 | 23) || byte.is_ascii_hexdigit())
+    {
+        return None;
+    }
+    std::str::from_utf8(bytes).ok()
 }
 
 /// `Ok(None)` rejects the value, including when `parse.work` runs out; the

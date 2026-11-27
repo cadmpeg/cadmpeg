@@ -25,6 +25,7 @@ pub(crate) fn make_first_face_surface_unknown(
 pub(crate) mod admissibility;
 pub(crate) mod edit;
 pub(crate) mod evaluation_cycles;
+pub(crate) mod evaluation_work;
 pub(crate) mod nurbs;
 pub(crate) mod wire;
 

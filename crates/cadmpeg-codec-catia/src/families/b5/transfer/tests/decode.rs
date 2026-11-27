@@ -89,13 +89,13 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     assert_eq!(result.ir().geometry.curves.len(), 3);
     assert!(result.ir().geometry.surfaces.iter().all(|surface| {
         surface.source_object.as_ref().is_some_and(|source| {
-            source.format == cadmpeg_ir::CodecFormat::Catia
+            source.format == cadmpeg_ir::codec_id!("catia")
                 && source.object_id.as_str().starts_with("cgm-surface:")
         })
     }));
     assert!(result.ir().geometry.curves.iter().all(|curve| {
         curve.source_object.as_ref().is_some_and(|source| {
-            source.format == cadmpeg_ir::CodecFormat::Catia
+            source.format == cadmpeg_ir::codec_id!("catia")
                 && source.object_id.as_str().starts_with("cgm-edge:")
         })
     }));
@@ -321,4 +321,49 @@ fn decode_does_not_transfer_a_loop_with_multiple_face_owners() {
         loss.code == CatiaLossCode::TopologyB5GraphUnclosed.kind()
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
+}
+
+#[test]
+fn an_unclosed_b5_graph_gives_up_its_face_records() {
+    let mut stream = b5_closed_triangle_stream();
+    let mut face_payload = vec![0x82];
+    face_payload.extend_from_slice(&b5_object_ref(100));
+    face_payload.extend_from_slice(&b5_object_ref(400));
+    face_payload.push(0x03);
+    append_b5_record(&mut stream, 0x5f, 902, &face_payload);
+    let bytes = object_main_catpart(&stream);
+    let names_face =
+        |message: &str, face: &str| message.split_whitespace().any(|token| token == face);
+
+    let admitted = CatiaCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .expect("a default decode admits the unclosed graph");
+    let losses = &admitted.report().losses;
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == CatiaLossCode::TopologyB5GraphUnclosed.kind()));
+    for face in ["catia:b5:face#500", "catia:b5:face#902"] {
+        assert!(
+            losses.iter().any(|loss| {
+                loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                    && loss.severity == cadmpeg_ir::report::Severity::Error
+                    && names_face(&loss.message, face)
+            }),
+            "record.unreadable names {face}: {losses:?}"
+        );
+    }
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect_err("a pinned decode refuses a given-up face record");
+    let cadmpeg_ir::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(names_face(&rejection.loss().message, "catia:b5:face#500"));
 }

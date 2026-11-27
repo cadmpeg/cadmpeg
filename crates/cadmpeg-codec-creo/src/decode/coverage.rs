@@ -398,7 +398,7 @@ pub(super) fn curve_transfer_coverage(
             curve
                 .source_object
                 .as_ref()
-                .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)?
+                .filter(|source| source.format == cadmpeg_ir::codec_id!("creo"))?
                 .object_id
                 .as_str()
                 .strip_prefix("VisibGeom:")?
@@ -421,7 +421,7 @@ pub(super) fn curve_transfer_coverage(
             curve
                 .source_object
                 .as_ref()
-                .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)?
+                .filter(|source| source.format == cadmpeg_ir::codec_id!("creo"))?
                 .object_id
                 .as_str()
                 .strip_prefix("VisibGeom:")?
@@ -486,7 +486,7 @@ pub(super) fn surface_transfer_coverage(
         let Some(id) = surface
             .source_object
             .as_ref()
-            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)
+            .filter(|source| source.format == cadmpeg_ir::codec_id!("creo"))
             .and_then(|source| source.object_id.as_str().strip_prefix("VisibGeom:"))
             .and_then(|id| id.parse::<u32>().ok())
         else {
@@ -513,7 +513,7 @@ pub(super) fn surface_transfer_coverage(
             surface
                 .source_object
                 .as_ref()
-                .filter(|source| source.format == cadmpeg_ir::CodecFormat::Creo)?
+                .filter(|source| source.format == cadmpeg_ir::codec_id!("creo"))?
                 .object_id
                 .as_str()
                 .strip_prefix("VisibGeom:")?

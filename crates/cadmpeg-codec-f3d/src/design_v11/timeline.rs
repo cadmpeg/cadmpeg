@@ -20,12 +20,12 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, StoredOrigin};
 use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::features::selections::BodySelection;
 use cadmpeg_ir::features::{
@@ -62,7 +62,7 @@ pub(super) struct Projected {
 
 /// The timeline containers and item features of every document of the
 /// decode, keyed by the document's identity prefix (empty for the root
-/// document, `xref/…/occurrence-N/` for a referenced design). `bodies` are
+/// document, the definition key and `@` for a referenced design). `bodies` are
 /// the bodies of the current geometry. A timeline whose rollback marker the
 /// flags leave open charges a loss to `losses`.
 pub(super) fn project(
@@ -137,7 +137,7 @@ pub(super) fn project(
                         flags,
                         companion_suppressed.get(&(stream, item.value)).copied(),
                         losses,
-                    ),
+                    )?,
                 };
                 members.push(Member::Feature(feature.id.clone()));
                 projected.features.push(feature);
@@ -146,7 +146,7 @@ pub(super) fn project(
                     .ok_or_else(|| CodecError::malformed("F3D timeline ordinal exceeds u64"))?;
             }
             ctx.charge_entities(1, "project F3D v11 timeline")?;
-            let id = container_id(timeline.id());
+            let id = container_id(timeline.id())?;
             let rollback = rollback(&id, &members, &rolled_back, losses);
             projected.containers.push(Container::Ordered {
                 id,
@@ -210,18 +210,14 @@ fn rollback(
         .map_or(Rollback::End, Rollback::Before)
 }
 
-/// The identity prefix of the document that holds `stream`: everything up to
-/// and including its last `occurrence-N/` segment, empty for the root
-/// document.
+/// The identity prefix of the document that holds `stream`: the definition
+/// key of the archive member and its `@`, empty for the root document.
 pub(super) fn document_prefix(stream: &str) -> &str {
     let local = stream.strip_prefix("f3d:").unwrap_or(stream);
-    local
-        .rfind("/occurrence-")
-        .and_then(|at| {
-            let tail = at + "/occurrence-".len();
-            local[tail..].find('/').map(|slash| &local[..=tail + slash])
-        })
-        .unwrap_or("")
+    let scope = local.split_once(':').map_or(local, |(scope, _)| scope);
+    scope
+        .split_once('@')
+        .map_or("", |(key, _)| &local[..=key.len()])
 }
 
 /// The v10 feature of the item whose record is `record`, among the features
@@ -257,6 +253,7 @@ fn resolved_item(
     let operation = super::datum::project(feature, losses)
         .or_else(|| stored(operation, bodies))
         .or_else(|| typed_pattern(losses))
+        .or_else(|| super::split::project(operation, feature.native_ref.as_deref()?))
         .unwrap_or_else(|| match family(operation) {
             Family::Typed(family) => FeatureOperation::Unresolved { family },
             Family::Native(kind) => native(&kind),
@@ -267,6 +264,7 @@ fn resolved_item(
         suppressed: feature.suppressed.map(Dimension::Literal),
         definition: FeatureDefinition {
             operation,
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },
@@ -308,8 +306,8 @@ fn unprojected_item(
     flags: Option<DesignScopeTailFlags>,
     companion: Option<bool>,
     losses: &mut Vec<LossNote>,
-) -> Feature {
-    let id = item_feature_id(stream, record);
+) -> Result<Feature, CodecError> {
+    let id = item_feature_id(stream, record)?;
     if let Some(flags) = flags {
         losses.extend(flags.assumption_notes(&format!("feature {id}")));
     }
@@ -318,7 +316,7 @@ fn unprojected_item(
         Some(Family::Native(kind)) => native(&kind),
         None => native("timeline-item"),
     };
-    Feature {
+    Ok(Feature {
         id,
         name: None,
         suppressed: flags
@@ -327,6 +325,7 @@ fn unprojected_item(
             .map(Dimension::Literal),
         definition: FeatureDefinition {
             operation,
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },
@@ -334,13 +333,16 @@ fn unprojected_item(
         component: None,
         driven_by: None,
         native_ref: Some(timeline.id().clone()),
-    }
+    })
 }
 
 /// A native operation of source kind `kind`, written `f3d:<kind>`.
 fn native(kind: &str) -> FeatureOperation {
-    let kind = NonBlankString::new(format!("f3d:{}", kind.strip_prefix("f3d:").unwrap_or(kind)))
-        .unwrap_or_else(|| cadmpeg_core::nonblank_literal!("f3d:timeline-item"));
+    let kind = CodecName::new(
+        &cadmpeg_ir::codec_id!("f3d"),
+        kind.strip_prefix("f3d:").unwrap_or(kind),
+    )
+    .unwrap_or_else(|| cadmpeg_ir::codec_name!("f3d:timeline-item"));
     FeatureOperation::Native {
         kind,
         native_options: BTreeMap::new(),
@@ -379,26 +381,58 @@ impl<'a> ItemTypes<'a> {
 }
 
 /// The feature of an unresolved item: its stream and record index, the
-/// stream length-prefixed.
-fn item_feature_id(stream: &str, record: u64) -> FeatureId {
-    let stream = IdentityKeyTail::percent_encode(stream);
-    let key = cadmpeg_ir::ids::IdentityKey::from(stream.as_str().len())
-        .then(cadmpeg_ir::identity_key!(":"))
-        .with_tail(&stream)
-        .colon(record);
-    FeatureId::compose(
+/// stream length-prefixed. The item of an archive member takes the id the
+/// member states alone, qualified by the member's definition key.
+fn item_feature_id(stream: &str, record: u64) -> Result<FeatureId, CodecError> {
+    let (key, stream) = member_scope(stream);
+    let stream = IdentityKeyTail::percent_encode(&stream);
+    let id = FeatureId::compose(
         &cadmpeg_ir::identity_namespace!("f3d", "design", "timeline-item"),
-        key,
-    )
+        cadmpeg_ir::ids::IdentityKey::from(stream.as_str().len())
+            .then(cadmpeg_ir::identity_key!(":"))
+            .with_tail(&stream)
+            .colon(record),
+    );
+    match key {
+        Some(key) => FeatureId::mint(qualified(key, id.as_str())?).map_err(CodecError::malformed),
+        None => Ok(id),
+    }
 }
 
-/// The container of the timeline record `native`.
-fn container_id(native: &str) -> ContainerId {
-    let native = IdentityKeyTail::percent_encode(native);
-    ContainerId::from(cadmpeg_ir::ids::Identity::compose(
+/// The container of the timeline record `native`. The container of an
+/// archive member takes the id the member states alone, qualified by the
+/// member's definition key.
+fn container_id(native: &str) -> Result<ContainerId, CodecError> {
+    let (key, native) = member_scope(native);
+    let native = IdentityKeyTail::percent_encode(&native);
+    let id = ContainerId::from(cadmpeg_ir::ids::Identity::compose(
         &cadmpeg_ir::identity_namespace!("f3d", "design", "timeline"),
         cadmpeg_ir::ids::IdentityKey::from(native.as_str().len())
             .then(cadmpeg_ir::identity_key!(":"))
             .with_tail(&native),
-    ))
+    ));
+    match key {
+        Some(key) => ContainerId::mint(qualified(key, id.as_str())?).map_err(CodecError::malformed),
+        None => Ok(id),
+    }
+}
+
+/// The definition key of the archive member that `native` was read from,
+/// and `native` as the member states it alone.
+fn member_scope(native: &str) -> (Option<&str>, std::borrow::Cow<'_, str>) {
+    match crate::ids::member_key(native) {
+        Some(key) => {
+            let alone = &native[crate::ids::SCHEME_PREFIX.len() + key.len() + 1..];
+            (
+                Some(key),
+                format!("{}{alone}", crate::ids::SCHEME_PREFIX).into(),
+            )
+        }
+        None => (None, native.into()),
+    }
+}
+
+fn qualified(key: &str, id: &str) -> Result<String, CodecError> {
+    crate::ids::qualify(id, key)
+        .ok_or_else(|| CodecError::malformed("F3D design identity is not an f3d identity"))
 }

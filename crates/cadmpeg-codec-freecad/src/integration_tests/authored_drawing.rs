@@ -21,7 +21,7 @@ fn authored_drawing_keeps_page_view_dimension_and_note() {
         model
             .drawings
             .iter()
-            .find(|d| d.object.ends_with(&format!("#{name}")))
+            .find(|d| d.object.as_str().ends_with(&format!("#{name}")))
             .unwrap()
     };
     for (name, kind) in [
@@ -36,14 +36,11 @@ fn authored_drawing_keeps_page_view_dimension_and_note() {
     }
     let page = drawing("Page");
     assert_eq!(page.template.as_ref(), Some(&drawing("Template").id));
-    let views = &page.relationships["Views"];
-    assert_eq!(views.len(), 4);
-    for (reference, name) in views.iter().zip(["View", "Dimension", "Note", "Symbol"]) {
-        assert_eq!(
-            reference.native_text(),
-            Some(crate::native::id_key(&drawing(name).object))
-        );
-    }
+    assert_eq!(
+        page.views,
+        ["View", "Dimension", "Note", "Symbol"].map(|name| drawing(name).id.clone())
+    );
+    assert!(page.relationships.is_empty());
     let template = drawing("Template");
     let sheet = template.sheet.as_ref().unwrap();
     assert!((sheet.width_mm.get() - 210.0).abs() < LENGTH_TOLERANCE);
@@ -51,7 +48,7 @@ fn authored_drawing_keeps_page_view_dimension_and_note() {
     assert!(template
         .assets
         .iter()
-        .any(|name| name.ends_with("cc0_template.svg")));
+        .any(|name| name.as_str().ends_with("cc0_template.svg")));
     let entries = decoded
         .ir()
         .native
@@ -103,7 +100,7 @@ fn authored_drawing_keeps_page_view_dimension_and_note() {
     let dim = model
         .semantic_annotations
         .iter()
-        .find(|a| a.object.ends_with("#Dimension"))
+        .find(|a| a.object.as_str().ends_with("#Dimension"))
         .unwrap();
     assert_eq!(dim.kind, SemanticAnnotationKind::Dimension);
     assert!(matches!(dim.dimension_kind, Some(DimensionKind::Distance)));
@@ -112,6 +109,13 @@ fn authored_drawing_keeps_page_view_dimension_and_note() {
         dim.references["References2D"][0].native_text(),
         Some("View.Edge1")
     );
+    assert_eq!(
+        dim.references["References2D"][0].target,
+        cadmpeg_ir::ReferenceTarget::Drawing {
+            drawing: drawing("View").id.clone(),
+            part: Some(cadmpeg_ir::references::DrawingPart::Unread),
+        }
+    );
     let [x, y, z] = dim.position.unwrap().get();
     for (actual, expected) in [x, y, z].into_iter().zip([80.0, 125.0, 0.0]) {
         assert!((actual - expected).abs() < LENGTH_TOLERANCE);
@@ -119,7 +123,7 @@ fn authored_drawing_keeps_page_view_dimension_and_note() {
     let note = model
         .semantic_annotations
         .iter()
-        .find(|a| a.object.ends_with("#Note"))
+        .find(|a| a.object.as_str().ends_with("#Note"))
         .unwrap();
     assert_eq!(note.kind, SemanticAnnotationKind::Text);
     assert_eq!(note.text, ["CC0 INSPECTION NOTE"]);

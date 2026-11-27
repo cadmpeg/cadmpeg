@@ -884,7 +884,7 @@ fn nx_text_payload_projects_semantic_text_and_font_family() {
     let annotation = text_semantic_annotation("nx:test:text#1", 7, &["plate label", "Arial"])
         .expect("annotation admission")
         .expect("valid text annotation");
-    assert_eq!(annotation.object, "nx:test:text#1");
+    assert_eq!(annotation.object.as_str(), "nx:test:text#1");
     assert_eq!(
         annotation.kind,
         cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text
@@ -1412,7 +1412,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         let mut second_region = disconnected.geometry.regions[0].clone();
         second_region.id = cadmpeg_ir::ids::RegionId::mint("test:model:entity#second-region")
             .expect("identity grammar");
-        second_region.shells.clear();
+        second_region.set_shells(Vec::new());
         disconnected.geometry.regions.push(second_region);
         assert_eq!(
             placement(&disconnected, dimensions, std::slice::from_ref(&output),),
@@ -1485,11 +1485,10 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
         second_region.id = cadmpeg_ir::ids::RegionId::mint("test:model:entity#second-region")
             .expect("identity grammar");
         second_region.body = second_body.id.clone();
-        second_region.shells =
-            vec![
-                cadmpeg_ir::ids::ShellId::mint("test:model:entity#second-shell")
-                    .expect("identity grammar"),
-            ];
+        second_region.set_shells(vec![cadmpeg_ir::ids::ShellId::mint(
+            "test:model:entity#second-shell",
+        )
+        .expect("identity grammar")]);
         let mut second_shell = ir.geometry.shells[0].clone();
         second_shell.id = cadmpeg_ir::ids::ShellId::mint("test:model:entity#second-shell")
             .expect("identity grammar");

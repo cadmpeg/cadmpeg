@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::decode::DecodeReport;
 
@@ -31,8 +31,8 @@ fn native_macro_instance_keeps_parameter_wire_fields() {
         parameters: &tokens,
     };
     assert_eq!(
-        serde_json::to_value(instance).unwrap(),
-        serde_json::json!({
+        json::to_value(instance).unwrap(),
+        cadmpeg_core::json!({
             "id": "iges:native:macro-instance#D3",
             "source_entity": "iges:entity:directory#3",
             "entity_type": 621,
@@ -62,8 +62,8 @@ fn native_parameter_record_keeps_bytes_tokens_comment_and_line_wire_fields() {
         b"e".to_vec(),
     );
     assert_eq!(
-        serde_json::to_value(super::NativeParameterRecordSlot(Some(&record))).unwrap(),
-        serde_json::json!({
+        json::to_value(super::NativeParameterRecordSlot(Some(&record))).unwrap(),
+        cadmpeg_core::json!({
             "parameter_line_start": 1,
             "parameter_line_end": 2,
             "parameter_bytes": cadmpeg_ir::native::bytes::NativeBytes::from(b"abc".as_slice()),
@@ -103,7 +103,7 @@ fn codes_charged_to(report: &DecodeReport, sequence: u32) -> Vec<String> {
 /// Run the overdeclared-count contract for one defective Directory Entry: the
 /// loss is charged once in both decode modes, it is the entry's only loss when
 /// no projection runs, a full decode also refuses that entry's projection, and
-/// a strict decode refuses the document on the count.
+/// a strict decode refuses the document on the count or on the entry given up.
 fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
     let overdeclared = IgesLossCode::ParameterCountOverdeclared.kind();
     for depth in [
@@ -152,7 +152,7 @@ fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
     }
 
     let mut strict = DecodeOptions::default();
-    strict.policy.mode = DecodeMode::Strict;
+    strict.strictness.pinned = true;
     match IgesCodec
         .decode(&mut Cursor::new(bytes.to_vec()), &strict)
         .unwrap_err()
@@ -160,7 +160,13 @@ fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
             assert!(
                 rejection.loss().code == overdeclared
-                    || rejection.loss().code == IgesLossCode::GeometryNotProjected.kind()
+                    || rejection.loss().code == cadmpeg_ir::unknown::part::record_unreadable_kind(),
+                "{:#?}",
+                rejection.loss()
+            );
+            assert_eq!(
+                code_count(rejection.report(), IgesLossCode::ParameterCountOverdeclared),
+                1
             );
         }
         other => panic!("expected a strict refusal, got {other:?}"),
@@ -265,10 +271,7 @@ fn decode_preserves_native_entities_and_graph() {
     );
 
     assert_eq!(result.ir().source.as_ref().unwrap().format(), "iges");
-    assert_eq!(
-        result.ir().source.as_ref().unwrap().attributes["document_local_sha256"],
-        crate::document_digest(result.ir()).unwrap()
-    );
+    assert!(!result.source_fidelity().edited(result.ir()).unwrap());
     assert_eq!(
         result
             .source_fidelity()
@@ -309,11 +312,11 @@ fn absent_native_parameter_record_keeps_empty_wire_fields() {
         parameters: super::NativeParameterRecordSlot<'a>,
     }
     assert_eq!(
-        serde_json::to_value(Record {
+        json::to_value(Record {
             parameters: super::NativeParameterRecordSlot(None)
         })
         .unwrap(),
-        serde_json::json!({
+        cadmpeg_core::json!({
             "parameter_line_start": null,
             "parameter_line_end": null,
             "parameter_bytes": "",

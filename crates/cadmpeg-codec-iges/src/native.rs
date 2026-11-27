@@ -5,7 +5,7 @@ use cadmpeg_ir::native::bytes::NativeBytes;
 
 use crate::card::{CardScan, ScannedLine, Section};
 
-use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord, SourceStatus, UseFlag};
+use crate::directory::{DirectoryEntry, SourceStatus, UseFlag};
 use crate::entities::drawing::drawing_property_value;
 use crate::entities::geometry::{
     resolve_transform, BoundaryEndpoint, BoundaryVertexDerivation, TransformResolutionError,
@@ -19,8 +19,8 @@ use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use crate::graph::{ParameterResolver, ReferenceEdge, ReferenceKind};
 use crate::parameter::{
     connect_node_layout, signal_string_layout, text_node_layout, DefaultTailCount, MacroDataError,
-    OverdeclaredCount, ParameterRecord, QuarantinedParameterRecord, ResolvedGroups, TextNodeLayout,
-    Token, TokenValue, TrailingPointerAnalysis,
+    OverdeclaredCount, ParameterRecord, ResolvedGroups, TextNodeLayout, Token, TokenValue,
+    TrailingPointerAnalysis,
 };
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
@@ -70,27 +70,6 @@ impl Serialize for CardId {
     }
 }
 
-struct QuarantinedId {
-    section: &'static str,
-    sequence: u32,
-}
-
-impl std::fmt::Display for QuarantinedId {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            formatter,
-            "iges:quarantine:{}#{}",
-            self.section, self.sequence
-        )
-    }
-}
-
-impl Serialize for QuarantinedId {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
 impl Serialize for NativeCard<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
@@ -122,54 +101,6 @@ impl Serialize for NativeCard<'_> {
             sequence,
         }
         .serialize(serializer)
-    }
-}
-
-enum NativeQuarantinedRecord<'a> {
-    Directory(&'a QuarantinedDirectoryRecord),
-    Parameter(&'a QuarantinedParameterRecord),
-}
-
-impl Serialize for NativeQuarantinedRecord<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        #[derive(Serialize)]
-        struct Wire<'a, D: Serialize> {
-            id: QuarantinedId,
-            section: &'static str,
-            sequence: u32,
-            source_offset: u64,
-            cards: usize,
-            bytes: NativeBytes<&'a [u8]>,
-            defect: D,
-        }
-        match self {
-            Self::Directory(record) => Wire {
-                id: QuarantinedId {
-                    section: "directory",
-                    sequence: record.sequence,
-                },
-                section: "directory-entry",
-                sequence: record.sequence,
-                source_offset: record.source_offset,
-                cards: record.cards(),
-                bytes: NativeBytes::from(record.bytes.as_slice()),
-                defect: record.defect,
-            }
-            .serialize(serializer),
-            Self::Parameter(record) => Wire {
-                id: QuarantinedId {
-                    section: "parameter",
-                    sequence: record.sequence,
-                },
-                section: "parameter-data",
-                sequence: record.sequence,
-                source_offset: record.source_offset(),
-                cards: record.cards(),
-                bytes: NativeBytes::from(record.bytes()),
-                defect: record.defect,
-            }
-            .serialize(serializer),
-        }
     }
 }
 
@@ -1392,13 +1323,6 @@ pub(crate) struct ProductOccurrenceExpansion {
     pub(crate) malformed_placement_sequences: Vec<u32>,
 }
 
-/// The two quarantine lists a decode carries into the native store.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct QuarantinedRecords<'a> {
-    pub(crate) directory: &'a [QuarantinedDirectoryRecord],
-    pub(crate) parameters: &'a [QuarantinedParameterRecord],
-}
-
 pub(crate) struct AmbiguousParameterBoundary {
     pub(crate) sequence: u32,
     pub(crate) ambiguity: ParameterBoundaryAmbiguity,
@@ -2182,8 +2106,6 @@ where
 }
 
 struct NativeInputIndexes<'a> {
-    quarantined_directory_records: Vec<NativeQuarantinedRecord<'a>>,
-    quarantined_parameter_records: Vec<NativeQuarantinedRecord<'a>>,
     cards: Vec<NativeCard<'a>>,
     by_directory: BTreeMap<u32, &'a ParameterRecord>,
     entries: BTreeMap<u32, &'a DirectoryEntry>,
@@ -2193,22 +2115,7 @@ fn index_native_inputs<'a>(
     scan: &'a CardScan<'_>,
     directory: &'a [DirectoryEntry],
     parameters: &'a [ParameterRecord],
-    quarantine: QuarantinedRecords<'a>,
 ) -> NativeInputIndexes<'a> {
-    let mut quarantined_directory_records = Vec::new();
-    quarantined_directory_records.extend(
-        quarantine
-            .directory
-            .iter()
-            .map(NativeQuarantinedRecord::Directory),
-    );
-    let mut quarantined_parameter_records = Vec::new();
-    quarantined_parameter_records.extend(
-        quarantine
-            .parameters
-            .iter()
-            .map(NativeQuarantinedRecord::Parameter),
-    );
     let mut cards = Vec::new();
     cards.extend(
         scan.lines
@@ -2225,8 +2132,6 @@ fn index_native_inputs<'a>(
         entries.insert(entry.sequence, entry);
     }
     NativeInputIndexes {
-        quarantined_directory_records,
-        quarantined_parameter_records,
         cards,
         by_directory,
         entries,
@@ -2239,7 +2144,6 @@ pub(crate) struct NativeStoreInputs<'a, 'b> {
     pub(crate) directory: &'a [DirectoryEntry],
     pub(crate) parameters: &'a [ParameterRecord],
     pub(crate) trailing_pointer_analysis: &'a BTreeMap<u32, TrailingPointerAnalysis>,
-    pub(crate) quarantine: QuarantinedRecords<'a>,
     pub(crate) structure_admitted: Option<&'a crate::entities::geometry::Projection>,
     pub(crate) sequences: &'a crate::entities::geometry::SourceSequences,
     pub(crate) boundary_vertex_derivations: &'a [BoundaryVertexDerivation],
@@ -2261,7 +2165,7 @@ pub(crate) fn store_physical_cards(
         .map(|(index, line)| NativeCard { index, line })
         .collect::<Vec<_>>();
     ir.native
-        .namespace_mut("iges")
+        .namespace_mut(cadmpeg_ir::codec_id!("iges"))
         .set_arena_from(ctx, "cards", cards)?;
     Ok(NativeStoreResult {
         occurrence_expansion: ProductOccurrenceExpansion {
@@ -2289,7 +2193,6 @@ pub(crate) fn store(
         directory,
         parameters,
         trailing_pointer_analysis,
-        quarantine,
         structure_admitted,
         sequences,
         boundary_vertex_derivations,
@@ -2299,12 +2202,10 @@ pub(crate) fn store(
         "iges_native_entities",
     )?;
     let NativeInputIndexes {
-        quarantined_directory_records,
-        quarantined_parameter_records,
         cards,
         by_directory,
         entries,
-    } = index_native_inputs(scan, directory, parameters, quarantine);
+    } = index_native_inputs(scan, directory, parameters);
     let mut macro_definitions = Vec::new();
     for entry in directory.iter().filter(|entry| entry.entity_type == 306) {
         let Some(record) = by_directory.get(&entry.sequence).copied() else {
@@ -4625,8 +4526,8 @@ pub(crate) fn store(
                     definition,
                     value_start,
                 ),
-                // The instance has no Parameter Data record at all, which its
-                // own quarantine loss already names.
+                // The instance has no Parameter Data record at all, which the
+                // give-up of its quarantined Parameter Data already names.
                 None => Ok(None),
             };
             let rows = match grid {
@@ -5545,7 +5446,7 @@ pub(crate) fn store(
         if let Some(sequence) = curve
             .source_object
             .as_ref()
-            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
+            .filter(|source| source.format == cadmpeg_ir::codec_id!("iges"))
             .and_then(|_| sequences.curve(&curve.id))
         {
             push_occurrence_neutral_link(
@@ -5559,7 +5460,7 @@ pub(crate) fn store(
         if let Some(sequence) = surface
             .source_object
             .as_ref()
-            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
+            .filter(|source| source.format == cadmpeg_ir::codec_id!("iges"))
             .and_then(|_| sequences.surface(&surface.id))
         {
             push_occurrence_neutral_link(
@@ -5758,8 +5659,6 @@ pub(crate) fn store(
         product_occurrence_expansion.len(),
         macro_definitions.len(),
         macro_instances.len(),
-        quarantined_directory_records.len(),
-        quarantined_parameter_records.len(),
     ]
     .into_iter()
     .map(u64_from_index)
@@ -5769,7 +5668,7 @@ pub(crate) fn store(
         ));
     };
     ctx.charge_entities(native_entity_count, "iges_native_entities")?;
-    let namespace = ir.native.namespace_mut("iges");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("iges"));
     namespace.set_arena_from(ctx, "cards", cards)?;
     namespace.set_arena_from(ctx, "entities", entities)?;
     namespace.set_arena_from(ctx, "directions", directions)?;
@@ -5829,16 +5728,6 @@ pub(crate) fn store(
     if !macro_instances.is_empty() {
         namespace.set_arena_from(ctx, "macro_instances", macro_instances)?;
     }
-    namespace.set_arena_from(
-        ctx,
-        "quarantined_directory_records",
-        quarantined_directory_records,
-    )?;
-    namespace.set_arena_from(
-        ctx,
-        "quarantined_parameter_records",
-        quarantined_parameter_records,
-    )?;
     Ok(NativeStoreResult {
         occurrence_expansion: ProductOccurrenceExpansion {
             output_truncated_at,
