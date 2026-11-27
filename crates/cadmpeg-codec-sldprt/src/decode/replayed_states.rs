@@ -9,10 +9,12 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::document::Topology;
 use cadmpeg_ir::ids::{BodyId, FaceId};
+use cadmpeg_ir::report::loss::LossNote;
 
 use crate::brep::attrib::NativeIdentity;
-use crate::brep::graph::decode_bodies;
+use crate::brep::graph::{decode_bodies, Brep, DroppedRecord};
 use crate::container::Section;
+use crate::loss::SldprtLossCode;
 
 /// The records of one stored state.
 pub(crate) struct DecodedState {
@@ -23,12 +25,12 @@ pub(crate) struct DecodedState {
     /// The exactness of the records. A replayed transmit is no file
     /// location, so the records have no provenance.
     pub(crate) annotations: Annotations,
+    pub(crate) losses: Vec<LossNote>,
 }
 
 /// Decode `transmit`, a state of the partition site `section`, with the ids
 /// of the site's current records: qualified by `qualifier` where the site is
-/// not the active one. A transmit that does not decode, or whose decode
-/// drops a topology record, gives the reason.
+/// not the active one. A transmit that does not decode gives the reason.
 pub(crate) fn decode_state(
     ctx: &DecodeContext<'_>,
     section: Section<'_>,
@@ -46,16 +48,33 @@ pub(crate) fn decode_state(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(error) => return Ok(Err(error.to_string())),
     };
-    if !brep.dropped.is_empty() {
-        return Ok(Err(format!(
-            "the decode of the state drops {} topology record(s)",
-            brep.dropped.len()
-        )));
-    }
     if let Some(site) = qualifier {
         brep.qualify_ids(site)?;
     }
     super::bind_opaque_geometry(&mut brep, &section.native_id());
+    state_records(brep)
+}
+
+fn state_records(mut brep: Brep) -> Result<Result<DecodedState, String>, CodecError> {
+    if brep.bodies.is_empty()
+        && (!brep.dropped.is_empty()
+            || brep.losses.iter().any(|loss| {
+                loss.code == SldprtLossCode::GeometryMeshBodyNotTransferred.kind()
+                    || loss.code == SldprtLossCode::TopologyOwnershipWithheld.kind()
+            }))
+    {
+        return Ok(Err("the state has no readable body".to_owned()));
+    }
+    for record in &mut brep.dropped {
+        if let DroppedRecord::GivenUp { at, .. } = record {
+            *at = None;
+        }
+    }
+    let mut losses = brep.take_losses()?;
+    super::append_topology_record_losses(&brep.stats, &mut losses);
+    for loss in &mut losses {
+        loss.provenance = None;
+    }
     let mut annotations = std::mem::take(&mut brep.annotations);
     annotations.retain_provenance(|_| false);
     Ok(Ok(DecodedState {
@@ -63,6 +82,7 @@ pub(crate) fn decode_state(
         faces: std::mem::take(&mut brep.native_face_identities),
         body_identities: std::mem::take(&mut brep.native_body_identities),
         annotations,
+        losses,
         geometry: Topology {
             bodies: brep.bodies,
             regions: brep.regions,
@@ -82,3 +102,6 @@ pub(crate) fn decode_state(
         },
     }))
 }
+
+#[cfg(test)]
+mod tests;

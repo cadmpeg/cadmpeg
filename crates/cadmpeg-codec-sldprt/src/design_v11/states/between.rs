@@ -74,6 +74,7 @@ pub(in crate::design_v11) struct Between {
     pub(in crate::design_v11) records: usize,
     /// The annotations of the records of the evaluations' deltas.
     pub(in crate::design_v11) annotations: Annotations,
+    losses: Vec<LossNote>,
 }
 
 /// The states between the features of each configuration whose latest state
@@ -113,8 +114,8 @@ pub(in crate::design_v11) fn states(
             section: active.section,
             qualifier: qualified(active.section, scope.current),
         };
-        let unread = reader.site(sources, &site, &end, &mut between, losses)?;
-        losses.extend(unread.note(end.configuration));
+        let unread = reader.site(sources, &site, &end, &mut between)?;
+        between.losses.extend(unread.note(end.configuration));
     }
     let (end_at, _) = end_of_tree(scope);
     for evaluation in latest.evaluations {
@@ -156,9 +157,10 @@ pub(in crate::design_v11) fn states(
                 names: &content.delta.names,
             },
         };
-        let unread = reader.site(sources, &site, &end, &mut between, losses)?;
-        losses.extend(unread.note(end.configuration));
+        let unread = reader.site(sources, &site, &end, &mut between)?;
+        between.losses.extend(unread.note(end.configuration));
     }
+    losses.append(&mut between.losses);
     Ok(between)
 }
 
@@ -252,7 +254,6 @@ impl Reader<'_, '_> {
         site: &Site<'_>,
         end: &End<'_>,
         between: &mut Between,
-        losses: &mut Vec<LossNote>,
     ) -> Result<Unread, CodecError> {
         let streams = site.section.ps_streams();
         let stream = |kind: &str| {
@@ -280,15 +281,17 @@ impl Reader<'_, '_> {
                 )));
             }
         };
-        if line.marks().len() <= 2 {
+        if line.marks().len() == 1 {
             return Ok(Unread::default());
         }
+        let has_intermediate_mark = line.marks().len() > 2;
         let marks = match site
             .section
             .name()
             .and_then(|partition| sources.marks.get(partition))
         {
             Some(Ok(marks)) => marks,
+            _ if !has_intermediate_mark => return Ok(Unread::default()),
             Some(Err(unread)) => return Ok(Unread::stopped(unread.to_string())),
             None => {
                 return Ok(Unread::stopped(
@@ -296,17 +299,16 @@ impl Reader<'_, '_> {
                 ));
             }
         };
-        if marks.inferred && site.qualifier.is_some() {
-            losses.push(crate::rollback::mark_class_inferred(&marks.configuration));
-        }
         let Some(lane) = marks
             .lane
             .as_ref()
             .and_then(|id| sources.lanes.iter().find(|lane| &lane.id == id))
         else {
-            return Ok(Unread::stopped(
-                "its feature stream has no serialized names".to_owned(),
-            ));
+            return Ok(if has_intermediate_mark {
+                Unread::stopped("its feature stream has no serialized names".to_owned())
+            } else {
+                Unread::default()
+            });
         };
         let names = object_names(lane);
         let mut wanted = wanted(
@@ -316,6 +318,14 @@ impl Reader<'_, '_> {
             &names,
             end.feature(&self.timeline),
         );
+        if marks.inferred
+            && matches!(end.base, StateBase::Evaluation(_))
+            && (has_intermediate_mark || !wanted.states.is_empty())
+        {
+            between
+                .losses
+                .push(crate::rollback::mark_class_inferred(&marks.configuration));
+        }
         if wanted.states.is_empty() {
             return Ok(wanted.unread);
         }
@@ -384,6 +394,7 @@ impl Reader<'_, '_> {
         Ok(Ok(Read {
             held: HeldState { records, names },
             annotations: decoded.annotations,
+            losses: decoded.losses,
         }))
     }
 
@@ -447,6 +458,15 @@ impl Reader<'_, '_> {
             let feature = &timeline.features[feature].id;
             let id = evaluation_id(end.configuration, feature);
             let content = chain.push(id.clone(), state.held);
+            for mut loss in state.losses {
+                let identity: &Identity = id.as_ref();
+                let key = identity.key();
+                cadmpeg_ir::unknown::part::rescope_give_up(&mut loss, |record| {
+                    Ok(format!("{record}@state/{key}"))
+                })?;
+                loss.message = format!("Evaluation {id} (PMARK {mark}): {}", loss.message);
+                between.losses.push(loss);
+            }
             let mut held = HashSet::new();
             topology_ids(&content.delta.records, |record| {
                 held.insert(record.as_str().to_owned());
@@ -676,7 +696,7 @@ fn wanted(
             continue;
         };
         let Some(namers) = timeline.namers(names, record.at) else {
-            unread.records += 1;
+            unread.records += usize::from(position != 0);
             continue;
         };
         for feature in namers {
@@ -734,6 +754,7 @@ fn wanted(
 struct Read {
     held: HeldState,
     annotations: Annotations,
+    losses: Vec<LossNote>,
 }
 
 /// The stored states of one configuration that are not stated.

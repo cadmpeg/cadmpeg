@@ -12,16 +12,21 @@ use cadmpeg_ir::design::names::NameEntry;
 use cadmpeg_ir::design::refs::{EntityRef, Evaluated, Member, Position};
 use cadmpeg_ir::document::Topology;
 use cadmpeg_ir::features::FeatureId;
-use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
+use cadmpeg_ir::ids::{BodyId, Identity, ProductDefinitionId};
 use cadmpeg_parasolid::deltas::replay::MainLine;
 use cadmpeg_parasolid::records::node_type::{GROUP, POINT};
 use cadmpeg_parasolid::records::{DeltasRecords, PrimaryRecords};
 use cadmpeg_parasolid::test_support::replay::{partition, DeltasStream, Mark, TestNode};
 
-use super::{evaluation_id, wanted, Between, End, Held, Read, Reader, Timeline, Unread, Wanted};
+use super::{
+    evaluation_id, wanted, Between, End, Held, Read, Reader, Site, Sources, Timeline, Unread,
+    Wanted,
+};
+use crate::container::{CompoundStream, ContainerScan, Section, SolidWorksEnvelopeScan};
 use crate::design_v11::names::{Names, Persistent};
-use crate::records::{FeatureHistory, FeatureSource};
-use crate::rollback::MarkRecord;
+use crate::parasolid::{stream_header, ExtractedStream};
+use crate::records::{FeatureHistory, FeatureInputLane, FeatureInputName, FeatureSource, ObjectId};
+use crate::rollback::{MarkRecord, SiteRecords};
 
 const C: Mark = Mark {
     xmt: 100,
@@ -237,6 +242,11 @@ fn replayed(
                     names: named(&feature.to_string()),
                 },
                 annotations: Annotations::default(),
+                losses: vec![cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                    Identity::new("sldprt:brep:edge#4").unwrap(),
+                    "unread edge use",
+                )
+                .loss()],
             }))
         };
         let mut between = Between::default();
@@ -294,6 +304,13 @@ fn each_earlier_feature_has_its_stored_state_based_on_the_next_later_state() {
         after_boss.content.as_ref().unwrap().base,
         StateBase::Evaluation(cut)
     );
+    assert_eq!(between.losses.len(), 2);
+    assert!(between.losses[0].message.contains(after_cut.id.as_str()));
+    assert!(between.losses[1].message.contains(after_boss.id.as_str()));
+    let key = Identity::from(after_cut.id.clone()).key();
+    assert!(between.losses[0]
+        .message
+        .contains(&format!("sldprt:brep:edge#4@state/{key}")));
 }
 
 #[test]
@@ -315,6 +332,152 @@ fn a_feature_without_a_main_line_mark_record_has_no_state_and_no_loss() {
         StateBase::Current(after(&features[2]))
     );
     assert!(wanted.unread.note(None).is_none());
+}
+
+#[test]
+fn an_absent_record_does_not_assign_a_feature_to_a_mark() {
+    let features = timeline_features();
+    let histories = [history(None)];
+    let mut records = records();
+    records.remove(1);
+    let wanted = joined(&features, &histories, &records);
+    assert_eq!(wanted.states, BTreeMap::from([(3, 0)]));
+    assert_eq!(wanted.unread, Unread::default());
+}
+
+#[test]
+fn an_unjoined_current_mark_is_already_read() {
+    let features = timeline_features();
+    let mut histories = [history(None)];
+    histories[0].features[2].source_id = FeatureSource::from_value(103);
+    let wanted = joined(&features, &histories, &records());
+    assert_eq!(wanted.states, BTreeMap::from([(6, 1), (3, 0)]));
+    assert_eq!(wanted.unread, Unread::default());
+}
+
+#[test]
+fn a_shared_mark_states_the_result_after_its_last_feature() {
+    let features = timeline_features();
+    let histories = [history(None)];
+    let mut records = records();
+    records[0].mark = B.identifier;
+    let wanted = joined(&features, &histories, &records);
+    assert_eq!(wanted.states, BTreeMap::from([(6, 1)]));
+    assert_eq!(wanted.unread, Unread::default());
+}
+
+#[test]
+fn a_record_can_join_the_only_earlier_mark_of_a_partition() {
+    let features = timeline_features();
+    let features = &features[1..];
+    let histories = [history(None)];
+    let deltas = DeltasStream::new(C)
+        .delta(&[], &[(10, POINT), (11, POINT), (12, GROUP)], &[])
+        .marks(&[Mark { preceding: 1, ..B }])
+        .terminator()
+        .finish();
+    let stream = |payload: Vec<u8>| ExtractedStream {
+        header: stream_header(&payload).unwrap().unwrap(),
+        payload,
+        offset: 0,
+    };
+    let partition_path = "Contents/Config-0-Partition";
+    let scan = ContainerScan {
+        source_image: &[],
+        version: 0,
+        blocks: Vec::new(),
+        directory: Vec::new(),
+        cache_cells: Vec::new(),
+        compound_streams: vec![CompoundStream {
+            path: cadmpeg_ir::StreamName::try_from(partition_path.to_owned()).unwrap(),
+            directory_id: 1,
+            start_sector: 0,
+            payload: Vec::new(),
+            decoded_payload: None,
+            ps_streams: vec![stream(partition(&current())), stream(deltas)],
+            ps_probe_capped: false,
+        }],
+        solidworks: SolidWorksEnvelopeScan::default(),
+        given_up: Vec::new(),
+        noncanonical: Vec::new(),
+    };
+    let lane = "sldprt:feature-input:resolved-features#2";
+    let mut lanes: [FeatureInputLane; 1] = [cadmpeg_core::serde_erase::json::from_value(
+        cadmpeg_core::json!({"id": lane, "native_payload": ""}),
+    )
+    .unwrap()];
+    lanes[0].names = NAMES[1..]
+        .iter()
+        .enumerate()
+        .map(|(index, &(offset, object))| FeatureInputName {
+            id: format!("{lane}/name/{index}"),
+            parent: lane.to_owned(),
+            ordinal: u32::try_from(index).unwrap(),
+            offset,
+            object_id: Some(ObjectId::try_from(object).unwrap()),
+            value: features[index].name.clone().unwrap(),
+        })
+        .collect();
+    let marks = BTreeMap::from([(
+        partition_path.to_owned(),
+        Ok(SiteRecords {
+            configuration: "Contents/Config-0".to_owned(),
+            records: records()[1..].to_vec(),
+            inferred: false,
+            lane: Some(lane.to_owned()),
+        }),
+    )]);
+
+    with_context(|ctx| {
+        let by_record = HashMap::new();
+        let names = Names::new(
+            Persistent {
+                faces: &[],
+                bodies: &[],
+            },
+            &[],
+            &by_record,
+        );
+        let reader = Reader {
+            ctx,
+            timeline: Timeline::new(features, &histories),
+            names: &names,
+            definition: &definition(),
+        };
+        let at = after(&features[1]);
+        let end = End {
+            configuration: None,
+            at: &at,
+            base: StateBase::Current(at.clone()),
+            status: EvaluationStatus::Current,
+            bodies: &[],
+            held: Held::Current {
+                geometry: &Topology::default(),
+                names: &BTreeMap::new(),
+            },
+        };
+        let sources = Sources {
+            scan: &scan,
+            histories: &histories,
+            lanes: &lanes,
+            marks: &marks,
+        };
+        let site = Site {
+            section: Section::Compound(&scan.compound_streams[0]),
+            qualifier: None,
+        };
+        let mut between = Between::default();
+        let unread = reader.site(&sources, &site, &end, &mut between).unwrap();
+        assert_eq!(unread, Unread::default());
+        let [evaluation] = between.evaluations.as_slice() else {
+            panic!("one historical state");
+        };
+        assert_eq!(evaluation.of, Evaluated::State(after(&features[0])));
+        let content = evaluation.content.as_ref().unwrap();
+        assert_eq!(content.base, StateBase::Current(at.clone()));
+        assert_eq!(content.delta.records, Topology::default());
+        assert!(between.losses.is_empty());
+    });
 }
 
 #[test]
