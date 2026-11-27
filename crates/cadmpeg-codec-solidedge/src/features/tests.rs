@@ -222,6 +222,19 @@ fn malformed_navigators_are_unread_not_absent() {
 }
 
 #[test]
+fn final_word_value_does_not_change_the_listed_features() {
+    // The final word is not a feature count: any value leaves the list as is.
+    let plain = damaged(|_| {});
+    for value in [0_u32, 2, 7, u32::MAX] {
+        let changed = damaged(|object| {
+            let at = object.len() - 4;
+            object[at..].copy_from_slice(&value.to_le_bytes());
+        });
+        assert_eq!(changed, plain);
+    }
+}
+
+#[test]
 fn listed_object_the_cluster_lacks_reads_as_unreadable() {
     let classes = ["ReferencePlaneObject", "Nav"];
     let objects = [

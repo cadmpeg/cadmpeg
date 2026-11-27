@@ -48,13 +48,13 @@
 
 **Need.** A document saved with one feature suppressed, one saved with the rollback position moved, and a no-edit resave of each.
 
-### DR-1016. Feature navigator final word
+### DR-1016. Feature navigator final word after suppression
 
-**Question.** What does the final word of the feature navigator object count?
+**Question.** Which state raises the final word of the feature navigator object above the number of feature-tree items that are not folders, plus one, and by how much?
 
-**Known.** For `n` listed features the word is `n` + 1 in most documents, `n` + 2 with a swept protrusion, and `n` with a lofted protrusion or a base tab followed by a flange.
+**Known.** The word is that number plus one in every document without a suppressed feature. Suppressing an extruded cutout raises it by 2, and suppressing a mirror copy raises it by 1. Suppressing a pattern does not raise it.
 
-**Need.** Documents that differ in one feature of each kind.
+**Need.** Documents that differ in one suppression, with the final word read before and after each change.
 
 ### DR-1017. Group feature kind and feature operands
 
