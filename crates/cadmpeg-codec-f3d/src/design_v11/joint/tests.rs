@@ -62,8 +62,9 @@ fn carrier() -> DesignComponentOccurrence {
     .unwrap()
 }
 
-/// A root that places `a` and `b`, and a part of `a` that places `c`, which
-/// [`carrier`] carries.
+/// A root that places `a` and `b`, a part of `a` that places `c`, which
+/// [`carrier`] carries, and a definition that the root does not place, which
+/// places `d`.
 struct Model {
     definitions: Vec<ProductDefinition>,
     occurrences: Vec<Occurrence>,
@@ -83,8 +84,10 @@ impl Model {
         part_a.occurrences = vec![occurrence("c")];
         let part_b = ProductDefinition::new(definition("part-b"), Storage::Embedded);
         let part_c = ProductDefinition::new(definition("part-c"), Storage::Embedded);
+        let mut unplaced = ProductDefinition::new(definition("unplaced"), Storage::Embedded);
+        unplaced.occurrences = vec![occurrence("d")];
         Self {
-            definitions: vec![root, part_a, part_b, part_c],
+            definitions: vec![root, part_a, part_b, part_c, unplaced],
             occurrences: vec![
                 Occurrence::new(occurrence("a"), definition("part-a"), None),
                 Occurrence::new(occurrence("b"), definition("part-b"), None),
@@ -93,6 +96,7 @@ impl Model {
                     c.native_ref = Some(carrier().id);
                     c
                 },
+                Occurrence::new(occurrence("d"), definition("part-b"), None),
             ],
         }
     }
@@ -948,7 +952,7 @@ fn an_operand_below_the_held_occurrences_picks_its_component_through_native_step
             .native_options
             .get(&codec_name("unresolved_member.1").unwrap()),
         Some(&NativeOption::Text(Dimension::Literal(
-            NonBlankString::new("b-origin/deeper-key").unwrap()
+            NonBlankString::new(format!("{}/b-origin/deeper-key", occurrence("b"))).unwrap()
         )))
     );
 }
@@ -1221,17 +1225,12 @@ fn a_group_member_off_the_group_placement_is_cut_in_its_operands() {
     );
 }
 
-/// A CADIR write carries each joint a joint feature restates: the group
-/// feature restates every joint of its scope and the hinge feature its
-/// joint, so the write charges only the joint no feature restates.
 /// An external document's placement is not one occurrence's: its frame is
 /// the operand's offset, with no resolved value in the owner's coordinates.
+/// The pick names the document, the object, and the keys below it.
 #[test]
 fn an_external_operand_frame_is_an_offset_with_no_resolved_value() {
-    let document = ExternalDocument {
-        path: NonBlankString::new("inserted"),
-        ..ExternalDocument::default()
-    };
+    let document = ExternalDocument::document_id("inserted-document");
     let inserted = joint(
         "inserted",
         88,
@@ -1259,11 +1258,76 @@ fn an_external_operand_frame_is_an_offset_with_no_resolved_value() {
     assert_eq!(
         pick.native.as_ref().map(|name| &name.value),
         Some(&NativeNameValue::Text(
-            NonBlankString::new("inserted-key/origin").unwrap()
+            NonBlankString::new("inserted-document/inserted-key/origin").unwrap()
         ))
     );
     assert_eq!(fixed_rows(construction), TURNED);
     assert_eq!(construction.resolved, None);
+}
+
+/// A group member whose keys descend in part is listed with every value its
+/// operand stores: the occurrence, the object, and each key, the descended
+/// key included.
+#[test]
+fn a_group_listing_of_a_partly_descended_member_keeps_every_stored_key() {
+    let first = joint(
+        "listed",
+        92,
+        fixed(),
+        [connector(on("a"), STORED), connector(on("b"), STORED)],
+    );
+    let partial = joint(
+        "listed:2",
+        92,
+        fixed(),
+        [
+            connector(on("a"), STORED),
+            connector(
+                JointOperand::occurrence(
+                    occurrence("a"),
+                    "a-key",
+                    vec![CARRIED.to_owned(), "deeper-key".to_owned()],
+                ),
+                STORED,
+            ),
+        ],
+    );
+    let mut feature = unresolved("listed");
+    feature.native_ref = first.native_ref.clone();
+    let mut features = [feature];
+    let (losses, restated) = restate_keyed(
+        &mut features,
+        &[legacy("listed", &first)],
+        &[first, partial],
+        &[(
+            92,
+            Source {
+                group: true,
+                ..Source::default()
+            },
+        )],
+        &[carrier()],
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    let FeatureOperation::RigidGroup(group) = &features[0].definition.operation else {
+        panic!("a rigid group: {:?}", features[0].definition.operation)
+    };
+    assert_eq!(group.members, [path(&["a"]), path(&["b"])].into());
+    assert_eq!(
+        group
+            .native_options
+            .get(&codec_name("unresolved_member.2").unwrap()),
+        Some(&NativeOption::Text(Dimension::Literal(
+            NonBlankString::new(format!("{}/a-key/{CARRIED}/deeper-key", occurrence("a"))).unwrap()
+        )))
+    );
+    assert_eq!(
+        restated,
+        [
+            (joint_id("listed"), feature_id("listed"), Vec::new()),
+            (joint_id("listed:2"), feature_id("listed"), Vec::new()),
+        ]
+    );
 }
 
 /// A group whose component is the scope's definition keeps it, though a
@@ -1312,6 +1376,179 @@ fn a_root_group_keeps_the_scope_definition_as_its_component() {
     );
 }
 
+/// A `Root` operand names an object in the document root, the scope's
+/// definition: where the feature's definition is another, the joint picks it
+/// through the scope's definition (§5.8, `InContext`).
+#[test]
+fn a_root_operand_of_a_component_feature_picks_in_the_scope_definition() {
+    let pair = joint(
+        "root-pair",
+        90,
+        fixed(),
+        [
+            connector(JointOperand::root("root-key", Vec::new()), STORED),
+            connector(on("c"), STORED),
+        ],
+    );
+    let mut feature = unresolved("root-pair");
+    feature.component = Some(definition("part-a"));
+    let mut features = [feature];
+    let losses = restate(
+        &mut features,
+        &[legacy("root-pair", &pair)],
+        &[pair],
+        &[(90, Source::default())],
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(features[0].component, Some(definition("part-a")));
+    let through = |target: Option<OccurrencePath>| {
+        Some(PickContext::InContext {
+            assembly: DefinitionRef {
+                definition: definition("root"),
+                configuration: None,
+            },
+            own: None,
+            target,
+        })
+    };
+    let joint = the_joint(&features[0]);
+    let root = only_pick(construction(&joint.connectors[0]));
+    assert_eq!(root.target, PickTarget::Native { within: None });
+    assert_eq!(root.context, through(None));
+    assert_eq!(
+        only_pick(construction(&joint.connectors[1])).context,
+        through(Some(path(&["a", "c"])))
+    );
+}
+
+/// Where the scope's definition has no path to the feature's definition, a
+/// joint whose picks start there stays at it: a `Root` operand is picked in
+/// the scope's definition.
+#[test]
+fn a_root_operand_of_an_unplaced_component_feature_is_picked_in_the_scope_definition() {
+    let pair = joint(
+        "unplaced-pair",
+        94,
+        fixed(),
+        [
+            connector(JointOperand::root("root-key", Vec::new()), STORED),
+            connector(on("d"), STORED),
+        ],
+    );
+    let mut feature = unresolved("unplaced-pair");
+    feature.component = Some(definition("unplaced"));
+    let mut features = [feature];
+    let losses = restate(
+        &mut features,
+        &[legacy("unplaced-pair", &pair)],
+        &[pair],
+        &[(94, Source::default())],
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    let contexts = the_joint(&features[0])
+        .connectors
+        .iter()
+        .map(|connector| only_pick(construction(connector)).context.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        contexts,
+        [
+            Some(PickContext::Definition(DefinitionRef {
+                definition: definition("root"),
+                configuration: None,
+            })),
+            Some(PickContext::Occurrence(path(&["d"]))),
+        ]
+    );
+}
+
+/// A joint origin is a datum of its own feature's definition: the joint
+/// picks it through the path to that definition's occurrence.
+#[test]
+fn a_datum_of_another_definition_is_picked_through_its_occurrence() {
+    let pair = joint(
+        "datum-pair",
+        91,
+        fixed(),
+        [
+            connector(
+                JointOperand::root("f3d:model:feature#b-origin", Vec::new()),
+                STORED,
+            ),
+            connector(on("a"), STORED),
+        ],
+    );
+    let mut origin = design(
+        "b-origin",
+        FeatureOperation::Native {
+            kind: codec_name("JointOrigin").unwrap(),
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
+        },
+    );
+    origin.component = Some(definition("part-b"));
+    let mut features = [origin, unresolved("datum-pair")];
+    let losses = restate(
+        &mut features,
+        &[legacy("datum-pair", &pair)],
+        &[pair],
+        &[(91, Source::default())],
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    let datum = only_pick(construction(&the_joint(&features[1]).connectors[0]));
+    assert_eq!(
+        datum.target,
+        PickTarget::Datum {
+            feature: FeatureId::mint("f3d:model:feature#b-origin").unwrap(),
+            part: None,
+        }
+    );
+    assert_eq!(datum.context, Some(PickContext::Occurrence(path(&["b"]))));
+}
+
+/// A datum feature whose definition the scope places other than once is
+/// picked in that definition.
+#[test]
+fn a_datum_of_an_unplaced_definition_is_picked_in_it() {
+    let pair = joint(
+        "loose-pair",
+        93,
+        fixed(),
+        [
+            connector(
+                JointOperand::root("f3d:model:feature#loose-origin", Vec::new()),
+                STORED,
+            ),
+            connector(on("a"), STORED),
+        ],
+    );
+    let mut origin = design(
+        "loose-origin",
+        FeatureOperation::Native {
+            kind: codec_name("JointOrigin").unwrap(),
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
+        },
+    );
+    origin.component = Some(definition("loose"));
+    let mut features = [origin, unresolved("loose-pair")];
+    let losses = restate(
+        &mut features,
+        &[legacy("loose-pair", &pair)],
+        &[pair],
+        &[(93, Source::default())],
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    let datum = only_pick(construction(&the_joint(&features[1]).connectors[0]));
+    assert_eq!(
+        datum.context,
+        Some(PickContext::Definition(DefinitionRef {
+            definition: definition("loose"),
+            configuration: None,
+        }))
+    );
+}
+
 /// The occurrence keys an operand stores below its occurrence name the
 /// occurrences they carry: the pick reaches the carried occurrence.
 #[test]
@@ -1347,6 +1584,9 @@ fn an_operand_key_that_names_a_child_occurrence_reaches_it() {
     assert_eq!(construction.resolved, frame_value(&frame(STORED)));
 }
 
+/// A CADIR write carries each joint a joint feature restates: the group
+/// feature restates every joint of its scope and the hinge feature its
+/// joint, so the write charges only the joint no feature restates.
 #[test]
 fn a_cadir_write_carries_the_joints_their_features_restate() {
     use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};

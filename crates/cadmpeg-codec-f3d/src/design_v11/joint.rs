@@ -168,18 +168,23 @@ pub(super) struct Inputs<'a> {
     /// The feature each assembly joint binds to.
     features: HashMap<&'a JointId, &'a FeatureId>,
     joints: HashMap<&'a JointId, &'a AssemblyJoint>,
-    /// The joints of each scope.
-    scoped: BTreeMap<&'a str, Vec<&'a AssemblyJoint>>,
-    /// What each scope record states, by scope id.
-    pub(super) sources: HashMap<&'a str, Source<'a>>,
+    /// Each scope that a joint names, by scope id.
+    scopes: HashMap<&'a str, Scope<'a>>,
     pub(super) places: Places<'a>,
+}
+
+/// A joint's scope record.
+struct Scope<'a> {
+    source: Source<'a>,
+    /// The joints of the scope, in model order.
+    joints: Vec<&'a AssemblyJoint>,
 }
 
 impl<'a> Inputs<'a> {
     pub(super) fn new(
         legacy: &'a [LegacyFeature],
         joints: &'a [AssemblyJoint],
-        sources: HashMap<&'a str, Source<'a>>,
+        mut sources: HashMap<&'a str, Source<'a>>,
         places: Places<'a>,
     ) -> Self {
         let mut bound = HashMap::new();
@@ -192,39 +197,41 @@ impl<'a> Inputs<'a> {
                 features.entry(joint).or_insert(&feature.id);
             }
         }
-        let mut scoped = BTreeMap::<&str, Vec<&AssemblyJoint>>::new();
+        let mut scopes = HashMap::<&str, Scope<'_>>::new();
         for joint in joints {
             if let Some(scope) = joint.native_ref.as_deref() {
-                scoped.entry(scope).or_default().push(joint);
+                scopes
+                    .entry(scope)
+                    .or_insert_with(|| Scope {
+                        source: sources.remove(scope).unwrap_or_default(),
+                        joints: Vec::new(),
+                    })
+                    .joints
+                    .push(joint);
             }
         }
         Self {
             bound,
             features,
             joints: joints.iter().map(|joint| (&joint.id, joint)).collect(),
-            scoped,
-            sources,
+            scopes,
             places,
         }
     }
 
-    /// What the scope record of `joint` states.
-    fn source(&self, joint: &AssemblyJoint) -> Source<'a> {
+    /// The scope record of `joint`.
+    fn scope(&self, joint: &AssemblyJoint) -> Option<&Scope<'a>> {
         joint
             .native_ref
             .as_deref()
-            .and_then(|scope| self.sources.get(scope))
-            .copied()
-            .unwrap_or_default()
+            .and_then(|scope| self.scopes.get(scope))
     }
 
-    /// The joints of the scope of `joint`.
-    fn group(&self, joint: &AssemblyJoint) -> Option<&[&'a AssemblyJoint]> {
-        joint
-            .native_ref
-            .as_deref()
-            .and_then(|scope| self.scoped.get(scope))
-            .map(Vec::as_slice)
+    /// What the scope record of `joint` states.
+    fn source(&self, joint: &AssemblyJoint) -> Source<'a> {
+        self.scope(joint)
+            .map(|scope| scope.source)
+            .unwrap_or_default()
     }
 }
 
@@ -244,20 +251,26 @@ pub(super) struct Restated {
 /// every joint of its scope.
 ///
 /// A feature keeps its component. Where the connector paths do not start at
-/// a component other than the scope's definition, a joint's picks reach
-/// their occurrences through the scope's definition; a rigid group's member
-/// paths start at the scope's definition, and the group leaves out the
-/// legacy feature's `product_definition`.
+/// a component other than the scope's definition and do start at the
+/// scope's definition, a joint's picks reach their occurrences through the
+/// scope's definition; a rigid group's member paths start at the scope's
+/// definition, and the group leaves out the legacy feature's
+/// `product_definition`.
 pub(super) fn project(
     features: &mut [Feature],
     owner: &ProductDefinitionId,
     inputs: &Inputs<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Vec<Restated> {
-    let ids = features
+    let definitions = features
         .iter()
-        .map(|feature| feature.id.as_str().to_owned())
-        .collect::<BTreeSet<_>>();
+        .map(|feature| {
+            (
+                feature.id.as_str().to_owned(),
+                feature.component.clone().unwrap_or_else(|| owner.clone()),
+            )
+        })
+        .collect::<HashMap<_, _>>();
     let mut unprojected = Vec::new();
     let mut assumed = Vec::new();
     let mut restated = Vec::new();
@@ -277,16 +290,21 @@ pub(super) fn project(
             unprojected.push(format!("{} (its assembly joint is absent)", feature.id));
             continue;
         };
-        let site = |owner, in_context| Site {
-            owner,
+        let site = |at, in_context| Site {
+            owner: at,
             in_context,
-            ids: &ids,
+            scope: owner,
+            definitions: &definitions,
             inputs,
         };
         let source = inputs.source(joint);
         let component = feature.component.clone();
         let (site, cleared) = match &component {
-            Some(component) if component != owner && !site(component, false).roots(joint) => {
+            Some(component)
+                if component != owner
+                    && !site(component, false).roots(joint)
+                    && (source.group || site(owner, false).roots(joint)) =>
+            {
                 if source.group {
                     (site(owner, false), true)
                 } else {
@@ -325,7 +343,11 @@ pub(super) fn project(
         match &operation {
             FeatureOperation::RigidGroup(_) => {
                 let placed = site.placed(joint).unwrap_or_default();
-                for member in inputs.group(joint).unwrap_or_default() {
+                for member in inputs
+                    .scope(joint)
+                    .into_iter()
+                    .flat_map(|scope| &scope.joints)
+                {
                     restated.push(Restated {
                         legacy: member.id.as_str().to_owned(),
                         by: by.clone(),
@@ -447,8 +469,10 @@ struct Site<'s, 'a> {
     /// Whether the paths reach through `owner` from a feature whose
     /// definition is another.
     in_context: bool,
-    /// The ids of the scope's features.
-    ids: &'s BTreeSet<String>,
+    /// The scope's definition: the document root a `Root` operand names.
+    scope: &'s ProductDefinitionId,
+    /// The definition of each feature of the scope, by feature id.
+    definitions: &'s HashMap<String, ProductDefinitionId>,
     inputs: &'s Inputs<'a>,
 }
 
@@ -463,12 +487,8 @@ impl<'a> Site<'_, 'a> {
         'a: 'j,
     {
         let mut connectors = pair(joint)?.1.iter().collect::<Vec<_>>();
-        if self.inputs.source(joint).group {
-            let group = self
-                .inputs
-                .group(joint)
-                .ok_or("its scope states no joints")?;
-            for member in group.iter().filter(|member| member.id != joint.id) {
+        if let Some(scope) = self.inputs.scope(joint).filter(|scope| scope.source.group) {
+            for member in scope.joints.iter().filter(|member| member.id != joint.id) {
                 connectors.push(&pair(member)?.1[1]);
             }
         }
@@ -487,32 +507,81 @@ impl<'a> Site<'_, 'a> {
                 configuration: None,
             });
         }
-        Some(if self.in_context {
-            PickContext::InContext {
+        self.through(Some(path))
+    }
+
+    /// The context of a pick at the end of `path` from `owner`, or in
+    /// `owner` itself: through `owner` where the feature's definition is
+    /// another.
+    fn through(&self, path: Option<OccurrencePath>) -> Option<PickContext> {
+        if self.in_context {
+            Some(PickContext::InContext {
                 assembly: DefinitionRef {
                     definition: self.owner.clone(),
                     configuration: None,
                 },
                 own: None,
-                target: Some(path),
-            }
+                target: path,
+            })
         } else {
-            PickContext::Occurrence(path)
-        })
+            path.map(PickContext::Occurrence)
+        }
+    }
+
+    /// The definition a `Root` operand's object lies in: a datum feature's
+    /// own definition, else the scope's definition, the document root.
+    fn home(&self, operand: &products::JointOperand) -> &ProductDefinitionId {
+        self.datum(operand).unwrap_or(self.scope)
+    }
+
+    /// The definition of the datum feature a `Root` operand names.
+    fn datum(&self, operand: &products::JointOperand) -> Option<&ProductDefinitionId> {
+        operand
+            .subelements
+            .is_empty()
+            .then(|| self.definitions.get(&operand.object))
+            .flatten()
+    }
+
+    /// The path from `owner` to the one occurrence of `home`; `None` where
+    /// `home` is `owner`. `Err` where `owner` places `home` other than once.
+    fn placement(&self, home: &ProductDefinitionId) -> Result<Option<OccurrencePath>, ()> {
+        if home == self.owner {
+            return Ok(None);
+        }
+        let places = &self.inputs.places;
+        let mut paths = places
+            .occurrences
+            .iter()
+            .filter(|occurrence| &occurrence.prototype == home)
+            .filter_map(|occurrence| places.path(&occurrence.id, self.owner));
+        match (paths.next(), paths.next()) {
+            (Some(path), None) => Ok(Some(path)),
+            _ => Err(()),
+        }
     }
 
     /// Whether the definition at `owner` has a path to each occurrence that
-    /// the connectors `joint` places name.
+    /// the connectors `joint` places name, and to the definition of each
+    /// `Root` operand a joint picks.
     fn roots(&self, joint: &AssemblyJoint) -> bool {
+        let group = self.inputs.source(joint).group;
         self.placed(joint).map_or(true, |connectors| {
-            connectors.iter().all(|connector| {
-                self.inputs
-                    .places
-                    .reach(&connector.operand)
-                    .is_none_or(|(occurrence, _)| {
-                        self.inputs.places.path(&occurrence, self.owner).is_some()
-                    })
-            })
+            connectors
+                .iter()
+                .all(|connector| match &connector.operand.container {
+                    OperandContainer::Occurrence { .. } => {
+                        self.inputs.places.reach(&connector.operand).is_none_or(
+                            |(occurrence, _)| {
+                                self.inputs.places.path(&occurrence, self.owner).is_some()
+                            },
+                        )
+                    }
+                    OperandContainer::Root {} => {
+                        group || self.placement(self.home(&connector.operand)).is_ok()
+                    }
+                    OperandContainer::External { .. } => true,
+                })
         })
     }
 
@@ -622,7 +691,7 @@ impl<'a> Site<'_, 'a> {
                     .inputs
                     .features
                     .get(joint)
-                    .filter(|feature| self.ids.contains(feature.as_str()))
+                    .filter(|feature| self.definitions.contains_key(feature.as_str()))
                     .ok_or_else(|| {
                         let named = self
                             .inputs
@@ -653,9 +722,11 @@ impl<'a> Site<'_, 'a> {
     /// frame datum, a frame on an occurrence moved by `frame`, or the native
     /// operand at `frame`. The frame is in the coordinates of the document at
     /// the end of the operand's path; an occurrence path that goes below the
-    /// occurrences the document holds ends in their native keys. An external
-    /// document's placement is not one occurrence's, so its frame states no
-    /// resolved value.
+    /// occurrences the document holds ends in their native keys. A `Root`
+    /// operand lies in the document root, or in its datum feature's own
+    /// definition, and its pick reaches that definition from `owner`. An
+    /// external document's placement is not one occurrence's, so its frame
+    /// states no resolved value.
     fn connector(
         &self,
         connector: &products::JointConnector,
@@ -671,21 +742,29 @@ impl<'a> Site<'_, 'a> {
             resolved: None,
         };
         let (pick, after, resolved) = match &operand.container {
-            OperandContainer::Root {}
-                if operand.subelements.is_empty() && self.ids.contains(&operand.object) =>
-            {
-                (
-                    pick(
+            OperandContainer::Root {} => {
+                let (target, native) = match self.datum(operand) {
+                    Some(_) => (
                         PickTarget::Datum {
                             feature: FeatureId::mint(operand.object.clone()).ok()?,
                             part: None,
                         },
                         None,
-                        None,
                     ),
-                    Vec::new(),
-                    true,
-                )
+                    None => (
+                        PickTarget::Native { within: None },
+                        Some(native_name(stored_parts(operand))?),
+                    ),
+                };
+                let home = self.home(operand);
+                let context = match self.placement(home) {
+                    Ok(path) => self.through(path),
+                    Err(()) => Some(PickContext::Definition(DefinitionRef {
+                        definition: home.clone(),
+                        configuration: None,
+                    })),
+                };
+                (pick(target, context, native), Vec::new(), true)
             }
             OperandContainer::Occurrence { .. } => {
                 let (occurrence, below) = self.inputs.places.reach(operand)?;
@@ -699,20 +778,11 @@ impl<'a> Site<'_, 'a> {
                     true,
                 )
             }
-            OperandContainer::Root {} => (
-                pick(
-                    PickTarget::Native { within: None },
-                    None,
-                    Some(native_name(operand_parts(operand))?),
-                ),
-                Vec::new(),
-                true,
-            ),
             OperandContainer::External { .. } => (
                 pick(
                     PickTarget::Native { within: None },
                     None,
-                    Some(native_name(operand_parts(operand))?),
+                    Some(native_name(stored_parts(operand))?),
                 ),
                 vec![PostStep::Fixed(frame)],
                 false,
@@ -736,24 +806,16 @@ impl<'a> Site<'_, 'a> {
         let mut members = BTreeSet::new();
         let mut native_options = NativeOptions::new();
         for (ordinal, connector) in connectors.into_iter().enumerate() {
-            let operand = &connector.operand;
-            let (member, listing) = match self.inputs.places.reach(operand) {
-                Some((occurrence, below)) => (
-                    below
-                        .is_empty()
-                        .then(|| self.inputs.places.path(&occurrence, self.owner))
-                        .flatten(),
-                    std::iter::once(&operand.object)
-                        .chain(&below)
-                        .map(String::as_str)
-                        .collect::<Vec<_>>()
-                        .join("/"),
-                ),
-                None => (None, operand_parts(operand).collect::<Vec<_>>().join("/")),
-            };
+            let member = self
+                .inputs
+                .places
+                .reach(&connector.operand)
+                .filter(|(_, below)| below.is_empty())
+                .and_then(|(occurrence, _)| self.inputs.places.path(&occurrence, self.owner));
             let named = match &member {
                 Some(path) => steps(path),
                 None => {
+                    let listing = stored_parts(&connector.operand).join("/");
                     insert_text(
                         &mut native_options,
                         &format!("unresolved_member.{ordinal}"),
@@ -1123,11 +1185,28 @@ fn input(pick: Picked) -> Option<ConstructionInput> {
     })
 }
 
-/// The parts of an operand's native name: its object and its subelements.
-fn operand_parts(operand: &products::JointOperand) -> impl Iterator<Item = &str> {
-    std::iter::once(&operand.object)
-        .chain(&operand.subelements)
-        .map(String::as_str)
+/// Every stored value of an operand, outermost first: its occurrence or its
+/// external document's identity, its object, and the native keys below them.
+fn stored_parts(operand: &products::JointOperand) -> Vec<&str> {
+    let (container, path) = match &operand.container {
+        OperandContainer::Root {} => (None, &[][..]),
+        OperandContainer::Occurrence {
+            occurrence,
+            occurrence_path,
+        } => (Some(occurrence.as_str()), occurrence_path.as_slice()),
+        OperandContainer::External { external_document } => (
+            external_document
+                .document_id
+                .as_ref()
+                .map(NonBlankString::as_str),
+            &[][..],
+        ),
+    };
+    container
+        .into_iter()
+        .chain(std::iter::once(operand.object.as_str()))
+        .chain(path.iter().chain(&operand.subelements).map(String::as_str))
+        .collect()
 }
 
 /// A native name of `parts` joined by `/`.
