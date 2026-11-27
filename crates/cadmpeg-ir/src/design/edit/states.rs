@@ -361,6 +361,57 @@ pub(super) fn compose(
 }
 
 impl CadIr {
+    /// The first record of `state` that references an id which neither
+    /// `state` nor a record of this document outside its geometry holds,
+    /// with that id: the reference that keeps `state` from closing as the
+    /// state of an evaluation of this document (§5.4).
+    ///
+    /// # Errors
+    ///
+    /// Returns a codec error where `ctx` refuses the work.
+    pub fn open_reference(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        state: &Topology,
+    ) -> Result<Option<(String, String)>, cadmpeg_core::CodecError> {
+        use crate::schema::rewrite::typed::RewriteIdentities;
+
+        let mut held = BTreeSet::new();
+        let mut geometry = BTreeSet::new();
+        macro_rules! ids {
+            ($($field:ident $arm:ident),*) => {$(
+                held.extend(state.$field.iter().map(ArenaRecord::record_identity));
+                geometry.extend(self.geometry.$field.iter().map(ArenaRecord::record_identity));
+            )*};
+        }
+        topology_arenas!(ids);
+        let index = crate::index::ModelIndex::build(self);
+        let mut found = None;
+        macro_rules! scan {
+            ($($field:ident $arm:ident),*) => {$(
+                for record in &state.$field {
+                    let own = record.record_identity();
+                    record.visit_identity_references(ctx, &mut |target| {
+                        if found.is_none()
+                            && target != own
+                            && !held.contains(target)
+                            && (geometry.contains(target)
+                                || !index.contains(target, crate::index::StandardIndex))
+                        {
+                            found = Some((own.to_owned(), target.to_owned()));
+                        }
+                        Ok(())
+                    })?;
+                    if found.is_some() {
+                        return Ok(found);
+                    }
+                }
+            )*};
+        }
+        topology_arenas!(scan);
+        Ok(found)
+    }
+
     /// The definition that lists a body among its bodies.
     pub(super) fn body_owner(&self, body: &BodyId) -> Option<&ProductDefinitionId> {
         self.model

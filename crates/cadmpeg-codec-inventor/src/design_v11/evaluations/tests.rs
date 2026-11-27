@@ -260,6 +260,34 @@ fn a_base_state_the_current_geometry_holds_is_restated_by_its_feature() {
     assert_stated_but_state(&omitted, &nest);
 }
 
+/// A decoded state whose surface names a record that neither the state nor
+/// the document holds does not close, so the decode charges its history
+/// body in place of an evaluation.
+#[test]
+fn a_state_that_names_a_record_it_does_not_hold_is_charged() {
+    let mut ir = part(
+        vec![extrude("a", 0), sketch("k", 1), extrude("s", 2)],
+        vec![history_body("s", 0, true, 9)],
+    );
+    let mut states = states();
+    states.get_mut(&0).expect("state").surfaces = vec![json::from_value(cadmpeg_core::json!({
+        "id": "inventor:brep:entity#20",
+        "geometry": {"kind": "solved", "value": {"kind": "unknown", "record": "inventor:brep:spline#20"}},
+    }))
+    .expect("surface")];
+    let losses = project_part(&mut ir, &states);
+    assert!(ir.design.evaluations.is_empty());
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}");
+    };
+    assert!(
+        loss.message
+            .ends_with("the state names a record that it does not hold."),
+        "{}",
+        loss.message
+    );
+}
+
 /// Two states chain back: the earlier is based on the later, and the later
 /// on the current state.
 #[test]

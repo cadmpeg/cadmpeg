@@ -136,6 +136,25 @@ pub(crate) fn project(
             (true, false) => unplaced.push((body, "the feature has no design record")),
         }
     }
+    let mut open = Vec::new();
+    for (index, plan) in &planned {
+        if let Some(state) = states.get(&plan.ordinal) {
+            if ir.open_reference(ctx, state)?.is_some() {
+                open.push(*index);
+            }
+        }
+    }
+    for index in open {
+        if let Some(plan) = planned.remove(&index) {
+            unplaced.extend(
+                ir.model
+                    .history_bodies
+                    .iter()
+                    .filter(|body| plan.bodies.contains(&body.id))
+                    .map(|body| (body, "the state names a record that it does not hold")),
+            );
+        }
+    }
     charge(&unplaced, losses);
     let mut base = StateBase::Current(at.clone());
     let mut evaluations = Vec::with_capacity(planned.len());
