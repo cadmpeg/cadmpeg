@@ -188,6 +188,7 @@ def cases():
         ("B3", "reference", "=Stock.Shape.Length", ""), ("B4", "call", "=abs(2.5)", ""),
         ("B6", "reference", "=None", ""),
         ("B8", "reference", "3", ""),
+        ("C1", "operator", "=<<x>> * (Vars.Huge - Vars.Huge)", ""),
     )
     yield from fixed
     families = {
@@ -254,6 +255,8 @@ def document(rows):
         ("Flag", "App::PropertyPythonObject", '<Python value="dHJ1ZQ==" encoded="yes" json="yes"/>'),
         ("Other", "App::PropertyPythonObject", '<Python value="ZmFsc2U=" encoded="yes" json="yes"/>'),
         ("JsonFloat", "App::PropertyPythonObject", '<Python value="NaN" json="yes"/>'),
+        ("Huge", "App::PropertyPythonObject",
+         '<Python value="99999999999999999999999999999999999999999999999" json="yes"/>'),
         ("Items", "App::PropertyPythonObject", '<Python value="[1, 2]" json="yes"/>'),
     ])
     properties(data, "Stock", [

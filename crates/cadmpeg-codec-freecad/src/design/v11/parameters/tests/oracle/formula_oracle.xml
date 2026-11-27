@@ -10,7 +10,7 @@
   </Objects>
   <ObjectData Count="5">
     <Object name="Vars">
-      <Properties Count="20">
+      <Properties Count="21">
         <Property name="Mode" type="App::PropertyEnumeration" group="Oracle" status="2097152">
           <Integer value="0" CustomEnum="true" />
           <CustomEnumList count="2">
@@ -72,6 +72,9 @@
         <Property name="JsonFloat" type="App::PropertyPythonObject" group="Oracle" status="2097152">
           <Python value="NaN" json="yes" />
         </Property>
+        <Property name="Huge" type="App::PropertyPythonObject" group="Oracle" status="2097152">
+          <Python value="99999999999999999999999999999999999999999999999" json="yes" />
+        </Property>
         <Property name="Items" type="App::PropertyPythonObject" group="Oracle" status="2097152">
           <Python value="[1, 2]" json="yes" />
         </Property>
@@ -114,7 +117,7 @@
     <Object name="Sheet">
       <Properties Count="1">
         <Property name="cells" type="Spreadsheet::PropertySheet">
-          <Cells Count="1644">
+          <Cells Count="1645">
             <Cell address="A1" content="2" alias="w" />
             <Cell address="A2" content="4" />
             <Cell address="A4" content="2 mm^2" />
@@ -129,6 +132,7 @@
             <Cell address="B4" content="=abs(2.5)" />
             <Cell address="B6" content="=None" />
             <Cell address="B8" content="3" />
+            <Cell address="C1" content="=&lt;&lt;x&gt;&gt; * (Vars.Huge - Vars.Huge)" />
             <Cell address="Z10" content="3 bolts" />
             <Cell address="Z11" content="-abc" />
             <Cell address="Z12" content="2*3" />

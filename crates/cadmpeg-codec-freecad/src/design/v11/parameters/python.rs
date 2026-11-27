@@ -86,7 +86,7 @@ fn json_value(text: &str) -> Value {
             Some(b'-' | b'0'..=b'9') if text.contains(['.', 'e', 'E']) => {
                 Value::numeric(Class::Float, text.parse().ok())
             }
-            Some(b'-' | b'0'..=b'9') => Value::numeric(Class::Int, text.parse().ok()),
+            Some(b'-' | b'0'..=b'9') => Value::integer_token(text),
             _ => Value::none(),
         };
     }

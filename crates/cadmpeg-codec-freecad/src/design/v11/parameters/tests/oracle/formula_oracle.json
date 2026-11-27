@@ -15,6 +15,7 @@
     ["call", "B4", "float", null],
     ["reference", "B6", "NoneType", null],
     ["reference", "B8", "int", null],
+    ["operator", "C1", "str", null],
     ["literal", "Z10", "str", null],
     ["literal", "Z11", "str", null],
     ["literal", "Z12", "str", null],

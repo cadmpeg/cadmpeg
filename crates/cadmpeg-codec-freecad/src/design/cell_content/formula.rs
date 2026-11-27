@@ -120,6 +120,7 @@ pub(in crate::design) struct Value(Vec<Class>, Option<Fact>);
 #[derive(Debug, Clone, PartialEq)]
 enum Fact {
     Number(f64),
+    WideInteger(Rc<str>),
     Text(Rc<str>),
     None,
     Items(Rc<[Value]>),
@@ -140,6 +141,16 @@ impl Value {
 
     pub(in crate::design) fn numeric(class: Class, number: Option<f64>) -> Self {
         Self::of(&[class]).with_number(number)
+    }
+
+    pub(in crate::design) fn integer_token(text: &str) -> Self {
+        if let Ok(number) = text.parse::<i32>() {
+            return Self::numeric(Int, Some(f64::from(number)));
+        }
+        if text.len() <= MAX_TRACKED_TEXT {
+            return Self(vec![Int], Some(Fact::WideInteger(text.into())));
+        }
+        Self::of(&[Int, Refused])
     }
 
     pub(in crate::design) fn text(text: impl Into<Rc<str>>) -> Self {
@@ -198,7 +209,7 @@ impl Value {
             Some(Fact::Text(text)) => Some(!text.is_empty()),
             Some(Fact::None) => Some(false),
             Some(Fact::Items(items)) => Some(!items.is_empty()),
-            None => None,
+            Some(Fact::WideInteger(_)) | None => None,
         }
     }
 
@@ -315,7 +326,7 @@ impl Value {
         if number.is_some() {
             return stored.with_number(number);
         }
-        if !self.contains(Raises) {
+        if !self.contains(Raises) && !matches!(self.1, Some(Fact::WideInteger(_))) {
             stored.1 = self.1;
         }
         stored
@@ -628,6 +639,14 @@ impl Operator {
     }
 
     fn fold(self, left: &Value, right: &Value, classes: &[Class]) -> Option<f64> {
+        if self == Self::Subtract
+            && matches!(
+                (&left.1, &right.1),
+                (Some(Fact::WideInteger(left)), Some(Fact::WideInteger(right))) if left == right
+            )
+        {
+            return Some(0.0);
+        }
         if let [Boolean] = classes {
             if let (Some(left), Some(right)) = (left.text_fact(), right.text_fact()) {
                 let order = left.cmp(right);

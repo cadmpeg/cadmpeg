@@ -648,8 +648,8 @@ conditional evaluates the branch selected by the condition's Python truth value.
 - A `<<…>>` literal, a successful `str()` or `address()` call, string concatenation and
   successful string `%` formatting give text. `address()` requires an integer row and
   column and takes an optional integer reference type from 1 through 4. Multiplying a
-  string or list by an integer or Boolean repeats it. The decoder infers a result kind
-  when the operand type, index conversion, and result size establish success.
+  string or list by an integer or Boolean repeats it. The multiplier must fit a Python
+  sequence index and the repeated size must fit the sequence's allocation.
 - Equality and ordering use the operands' Python comparison methods. The arithmetic
   operand guard refuses `None`, tuples and sets. String formatting uses its own
   right-operand rules. Plain Python division and numeric remainder raise on zero
