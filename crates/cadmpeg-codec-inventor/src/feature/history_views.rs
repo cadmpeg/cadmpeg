@@ -61,6 +61,17 @@ pub(crate) trait ResultStates {
     /// Whether the oldest state whose live naming tags list `source_index`
     /// holds a body record with `key` and the next older state holds none.
     fn introduces(&self, source_index: u32, key: i64) -> bool;
+
+    /// The model of the state before the one `after` selects, which is the
+    /// next older state. `Unavailable` when no state lists `source_index` or
+    /// the listing state is the oldest.
+    fn before(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _source_index: u32,
+    ) -> Result<Rc<StateModel>, CodecError> {
+        Ok(Rc::new(StateModel::Unavailable))
+    }
 }
 
 /// The views of the states of one closed chain.
@@ -177,7 +188,7 @@ pub(crate) fn decode_scratch(
         Some(&header.metadata),
         &stream,
         cadmpeg_asm::asm_format!("inventor"),
-        DecodePurpose::Model,
+        DecodePurpose::Inspect,
     ) {
         Ok(brep) => brep,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -202,20 +213,14 @@ pub(crate) fn decode_scratch(
     }
 }
 
-impl ResultStates for StateViews<'_, '_> {
-    fn after(
+impl StateViews<'_, '_> {
+    /// The model of the state at `ordinal`, shared between requests.
+    fn model_at(
         &self,
         ctx: &DecodeContext<'_>,
-        source_index: u32,
+        header: &BinaryHeader,
+        ordinal: u32,
     ) -> Result<Rc<StateModel>, CodecError> {
-        // Bind the state and the header first: a source that no state lists
-        // never builds the archive.
-        let (Some(&ordinal), Ok(header)) = (
-            self.closed.index.first.get(&source_index),
-            self.carrier.header.as_ref(),
-        ) else {
-            return Ok(Rc::new(StateModel::Unavailable));
-        };
         if let Some(model) = self.decoded.borrow().get(&ordinal) {
             return Ok(Rc::clone(model));
         }
@@ -231,6 +236,42 @@ impl ResultStates for StateViews<'_, '_> {
             );
         }
         Ok(model)
+    }
+}
+
+impl ResultStates for StateViews<'_, '_> {
+    fn after(
+        &self,
+        ctx: &DecodeContext<'_>,
+        source_index: u32,
+    ) -> Result<Rc<StateModel>, CodecError> {
+        // Bind the state and the header first: a source that no state lists
+        // never builds the archive.
+        let (Some(&ordinal), Ok(header)) = (
+            self.closed.index.first.get(&source_index),
+            self.carrier.header.as_ref(),
+        ) else {
+            return Ok(Rc::new(StateModel::Unavailable));
+        };
+        self.model_at(ctx, header, ordinal)
+    }
+
+    fn before(
+        &self,
+        ctx: &DecodeContext<'_>,
+        source_index: u32,
+    ) -> Result<Rc<StateModel>, CodecError> {
+        let (Some(ordinal), Ok(header)) = (
+            self.closed
+                .index
+                .first
+                .get(&source_index)
+                .and_then(|ordinal| ordinal.checked_sub(1)),
+            self.carrier.header.as_ref(),
+        ) else {
+            return Ok(Rc::new(StateModel::Unavailable));
+        };
+        self.model_at(ctx, header, ordinal)
     }
 
     fn introduces(&self, source_index: u32, key: i64) -> bool {
