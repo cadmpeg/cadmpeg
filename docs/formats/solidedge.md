@@ -255,12 +255,19 @@ little-endian `u32` values.
 | entries | `M` pairs of `0` and an object identifier |
 | final word | |
 
-The final word does not depend on the kind of any feature. In a document
-where no feature is suppressed, it equals the number
-of feature-tree items that are not feature-tree folders, plus one. A mirror
-copy and a pattern each count once, as do a swept, lofted, revolved or
-sheet-metal feature. A feature-tree folder adds an entry and does not change
-the word. Suppression of a feature can raise the word above this value. The word is not a feature count.
+The final word does not depend on the kind of any feature. Let `n` be the
+number of feature-tree items that are not feature-tree folders. A mirror copy
+and a pattern each count once, as do a swept, lofted, revolved or sheet-metal
+feature. A feature-tree folder adds an entry and does not change `n`. In a
+document with no suppressed feature, no failed feature and no earlier
+unsuppression, the word is `n` + 1. Each suppressed feature adds the number of
+non-folder items that follow it in the feature-tree order, including a mirror
+copy that failed because its source is suppressed. Each feature whose recompute
+failed subtracts one. Unsuppressing a feature does not restore the word: the
+word of a document with no suppressed feature stays above `n` + 1 after an
+unsuppression, and suppressing the same feature again adds to it. A SaveAs
+sequence and a save in place after the same actions store the same word.
+The word is not a feature count, and the reader does not use it.
 
 One more `u32` can follow the final word. The object then ends. The first
 three entries are the three base reference planes, of class
@@ -790,21 +797,21 @@ object identifiers after the end of its function name (§4.2):
 | 380 | `Double Value Object` relief width |
 | 408 | `Double Value Object` relief length |
 | 440 | `Double Value Object` offset kind, `44` |
-| 492 | `CLSID_JDim` partial width where the extent kind is `135`; offset where the extent kind is `138`; setback from the start of the edge where the extent kind is `140` |
+| 492 | `CLSID_JDim` partial width where the extent kind is `135`; offset where the extent kind is `138` or `139`; setback from the start of the edge where the extent kind is `140` |
 | 496 | `Double Value Object` relief type, where the extent kind is `134` |
-| 512 | `CLSID_JDim` width where the extent kind is `138`; setback from the end of the edge where the extent kind is `140` |
+| 512 | `CLSID_JDim` width where the extent kind is `138` or `139`; setback from the end of the edge where the extent kind is `140` |
 | 520 | `Double Value Object` relief type, where the extent kind is `135` |
-| 540 | `Double Value Object` relief type, where the extent kind is `138` or `140` |
+| 540 | `Double Value Object` relief type, where the extent kind is `138`, `139` or `140` |
 | 832 | `Double Value Object` bend method, the document variable of §10.1 index 13 |
 | 860 | `Double Value Object` bend deduction, the document variable of §10.1 index 11 |
 | 888 | `Double Value Object` bend allowance, the document variable of §10.1 index 12 |
 
 The slots from offset 492 on are 24 bytes later where the extent kind is
 `135` than where it is `134`, and 44 bytes later where the extent kind is
-`138` or `140`. The slots at offsets 832, 860 and 888 are
-those of the extent kind `134` layout; where the extent kind is `140` the bend
-method, bend deduction and bend allowance slots lie at offsets 876, 904 and
-932. The feature holds one edge. A flange
+`138`, `139` or `140`. The slots at offsets 832, 860 and 888 are
+those of the extent kind `134` layout; where the extent kind is `138`, `139`
+or `140` the bend method, bend deduction and bend allowance slots lie at
+offsets 876, 904 and 932. The feature holds one edge. A flange
 that follows another flange in the part names that flange at offset 40.
 
 The extent kind is `134` for the full length of the edge and `135` for a
@@ -823,10 +830,15 @@ the end of the edge. The start of the edge is the end that the edge proxy
 (§7.6) names as its start point. The flange spans the edge length less both
 setbacks. A setback is not negative. The stored edge proxy is the whole edge.
 
-The extent kind `138` is a width along the edge that starts at an offset from
-one end of the edge. The `CLSID_JDim` at offset 492 stores the offset and the
-`CLSID_JDim` at offset 512 stores the width. The stored edge proxy is the whole
-edge.
+The extent kinds `138` and `139` are a width along the edge that starts at an
+offset from one end of the edge. The `CLSID_JDim` at offset 492 stores the
+offset and the `CLSID_JDim` at offset 512 stores the width. The stored edge
+proxy is the whole edge. The offset of the extent kind `138` counts from the
+start of the edge (§7.6) and the width runs towards the end of the edge. The
+offset of the extent kind `139` counts from the end of the edge and the width
+runs towards the start of the edge. The offset and the width are independent
+of the edge length: the setback from the other end is the edge length less the
+offset and the width.
 
 The relief width and the relief length dimension the notch that the relief
 cuts in the base at each end of the flange width. The notch lies outside the

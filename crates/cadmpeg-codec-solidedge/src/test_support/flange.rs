@@ -44,12 +44,13 @@ const RELATION_OFFSET: u32 = 10_000;
 #[derive(Clone)]
 pub(crate) struct FlangeSpec {
     /// The extent kind: 134 full edge, 135 centred partial width, 138 offset
-    /// and width, 140 setbacks from both ends.
+    /// from the start and width, 139 offset from the end and width, 140
+    /// setbacks from both ends.
     pub(crate) extent: f64,
-    /// The partial width, stored with extent kinds 135 and 138; the end setback,
+    /// The partial width, stored with extent kinds 135, 138 and 139; the end setback,
     /// stored with extent kind 140.
     pub(crate) partial_width: f64,
-    /// The offset, stored with extent kind 138; the start setback, stored with
+    /// The offset, stored with extent kinds 138 and 139; the start setback, stored with
     /// extent kind 140.
     pub(crate) offset: f64,
     pub(crate) length: f64,
@@ -136,7 +137,7 @@ fn relation_body(own: u32, variable: u32) -> Vec<u8> {
 /// A document whose cluster 0 holds one `JMMultiFlangeFunction` feature per
 /// spec, in order, from object 10. Each flange names the flange before it at
 /// slot 40. The slots follow §10.3 and shift by 24 bytes from offset 492 for
-/// extent kind 135 and by 44 bytes for extent kinds 138 and 140. The streams `streams` stand beside the cluster.
+/// extent kind 135 and by 44 bytes for extent kinds 138, 139 and 140. The streams `streams` stand beside the cluster.
 pub(crate) fn flange_document(specs: &[FlangeSpec], streams: &[(&str, Vec<u8>)]) -> Vec<u8> {
     let mut objects = Vec::new();
     for id in 1..=3 {
@@ -164,7 +165,7 @@ pub(crate) fn flange_document(specs: &[FlangeSpec], streams: &[(&str, Vec<u8>)])
         body.resize(end + 900 + 4, 0);
         let shift = match spec.extent {
             135.0 => 24,
-            138.0 | 140.0 => 44,
+            138.0 | 139.0 | 140.0 => 44,
             _ => 0,
         };
         let previous = if index == 0 { 0 } else { id - 1 };

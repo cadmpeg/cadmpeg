@@ -132,30 +132,87 @@ fn centred_partial_width_shifts_the_later_slots() {
         .all(|code| !code.starts_with("sheet-metal.flange")));
 }
 
+/// The setbacks of the width of a flange, in millimetres.
+fn setbacks(result: &DecodeResult) -> (f64, f64) {
+    let Some(FlangeWidth::FromEnds {
+        first: Dimension::Literal(first),
+        second: Dimension::Literal(second),
+    }) = &flange(result, 0).width
+    else {
+        panic!("expected setbacks from both ends");
+    };
+    (first.get(), second.get())
+}
+
 #[test]
-fn offset_extent_shifts_the_relief_type_and_leaves_the_width_unread() {
+fn offset_from_the_start_leaves_the_rest_of_the_edge_at_the_end() {
+    // Edge 40 mm, offset 5 mm, width 12 mm: 23 mm remain at the end.
     let result = decode(&[FlangeSpec {
         extent: 138.0,
-        partial_width: 0.02,
         offset: 0.005,
-        relief_type: 52.0,
-        relief_width: 0.0015,
-        relief_length: 0.003,
+        partial_width: 0.012,
         ..FlangeSpec::default()
     }]);
-    let flange = flange(&result, 0);
-    assert!(flange.width.is_none());
-    let relief = flange.bend.relief.as_ref().unwrap();
-    assert_eq!(relief.shape, Some(ReliefShape::Obround));
-    assert!((millimetres(relief.width.as_ref()) - 1.5).abs() <= EPS_VALUE);
-    assert!((millimetres(relief.depth.as_ref()) - 3.0).abs() <= EPS_VALUE);
-    assert_eq!(
-        codes(&result)
-            .iter()
-            .filter(|code| *code == "sheet-metal.flange-field-unread")
-            .count(),
-        1
-    );
+    let (first, second) = setbacks(&result);
+    assert!((first - 5.0).abs() <= EPS_VALUE);
+    assert!((second - 23.0).abs() <= EPS_VALUE);
+    assert!(codes(&result)
+        .iter()
+        .all(|code| !code.starts_with("sheet-metal.flange")));
+}
+
+#[test]
+fn offset_from_the_end_leaves_the_rest_of_the_edge_at_the_start() {
+    let result = decode(&[FlangeSpec {
+        extent: 139.0,
+        offset: 0.005,
+        partial_width: 0.012,
+        ..FlangeSpec::default()
+    }]);
+    let (first, second) = setbacks(&result);
+    assert!((first - 23.0).abs() <= EPS_VALUE);
+    assert!((second - 5.0).abs() <= EPS_VALUE);
+}
+
+#[test]
+fn offset_extents_shift_the_relief_type() {
+    for extent in [138.0, 139.0] {
+        let result = decode(&[FlangeSpec {
+            extent,
+            relief_type: 52.0,
+            relief_width: 0.0015,
+            ..FlangeSpec::default()
+        }]);
+        let relief = flange(&result, 0).bend.relief.as_ref().unwrap();
+        assert_eq!(relief.shape, Some(ReliefShape::Obround));
+    }
+}
+
+#[test]
+fn offset_and_width_that_end_at_the_edge_end_leave_no_setback() {
+    let result = decode(&[FlangeSpec {
+        extent: 138.0,
+        offset: 0.01,
+        partial_width: 0.03,
+        ..FlangeSpec::default()
+    }]);
+    let (first, second) = setbacks(&result);
+    assert!((first - 10.0).abs() <= EPS_VALUE);
+    assert!(second.abs() <= EPS_VALUE);
+}
+
+#[test]
+fn offset_and_width_past_the_edge_end_leave_the_width_unread() {
+    for extent in [138.0, 139.0] {
+        let result = decode(&[FlangeSpec {
+            extent,
+            offset: 0.03,
+            partial_width: 0.02,
+            ..FlangeSpec::default()
+        }]);
+        assert!(flange(&result, 0).width.is_none());
+        assert!(codes(&result).contains(&"sheet-metal.flange-field-unread".to_owned()));
+    }
 }
 
 #[test]
