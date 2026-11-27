@@ -657,6 +657,7 @@ fn a_brep_entry_that_selected_no_body_is_not_claimed_empty_without_maps() {
     let report = classify(
         &crate::decode::DesignCarriers {
             brep_entries: 1,
+            model_body_maps_explicitly_empty: false,
             ..blank_design_carriers()
         },
         false,
