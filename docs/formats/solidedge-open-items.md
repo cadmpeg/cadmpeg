@@ -80,14 +80,6 @@
 
 **Need.** A variable-radius round and a round with a setback or other non-constant section, each with a copy that differs in one value.
 
-### DR-1026. Occurrence visibility
-
-**Question.** Where does an assembly store that an occurrence is hidden?
-
-**Known.** Hiding an occurrence leaves its `CLSID_JAsmReference` object (§9.2), `JAsmRefAttr`, `JSitesList` and `PSMroots` unchanged. It changes the 512-byte `JVisibleData` stream throughout, and that stream does not read as plain records.
-
-**Need.** The encoding of `JVisibleData`, or an assembly saved with one occurrence hidden and its copy with the occurrence shown, plus copies with two and three hidden occurrences.
-
 ### DR-1027. Tapped hole with counterbore
 
 **Question.** Which stored value sizes the solid of a tapped hole that has a counterbore?

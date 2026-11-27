@@ -597,6 +597,30 @@ A second file moniker of the same layout follows in the stream. Its up-level
 count is `1` and its path is relative to the folder of the assembly
 document.
 
+### 9.4 Occurrence visibility
+
+The stream `IOT/Default` of an assembly states which occurrences are hidden.
+It has `108 + 12 m` bytes, where `m` is the number of hidden occurrences. The
+first 104 bytes are a header that states no visibility. The `u32` `m` is at
+offset 104. `m` records of 12 bytes follow, from offset 108:
+
+| Offset | Field |
+| ---: | --- |
+| 0 | `u32` `0x40000002` |
+| 4 | `u32` `0` |
+| 8 | `u32` identifier of a hidden `CLSID_JAsmReference` object (§9.2) |
+
+An occurrence is hidden if and only if a record names its object. The records
+are in the order of the occurrence list (§9.1). An assembly with no hidden
+occurrence has `m` `0`. The stream `Preview/Structure/IOT` has the header of
+16 bytes, a `u32` occurrence count at offset 16, and from offset 20 one record of
+20 bytes per occurrence: a `u32` flag word, a `u32`, the `u32` identifier of
+the `CLSID_JAsmReference` object at offset 8, `u32` `0x80000027`, and a `u32`
+sequence number. Bit `0x02` of the flag word is set for a hidden occurrence and
+clear for a shown one. Hiding an occurrence does not change its
+`CLSID_JAsmReference` object, `JAsmRefAttr`, `JSitesList` or `PSMroots`. The
+stream `JVisibleData` does not state visibility.
+
 ## 10. Kernel stream map
 
 The `PARASOLID` storage contains binary kernel streams. A primary partition

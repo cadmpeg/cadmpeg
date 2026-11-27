@@ -1088,7 +1088,10 @@ mod patterns;
 pub(crate) use patterns::{mirror_document, pattern_document, MirrorSpec, PatternSpec};
 
 mod assembly;
-pub(crate) use assembly::{assembly_document, OccurrenceSpec, SiteSpec};
+pub(crate) use assembly::{
+    assembly_document, assembly_document_with_table, assembly_document_with_visibility,
+    visibility_stream, OccurrenceSpec, SiteSpec,
+};
 
 pub(crate) fn with_partitions(streams: &[Vec<u8>]) -> Vec<u8> {
     let fat = 2 + 8 * streams.len();
