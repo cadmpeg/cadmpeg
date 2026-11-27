@@ -2616,18 +2616,6 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder keeps a native mesh source selection and reports `feature.mesh-import-empty-source-assumed`. Unjoined nonempty body runs report `feature.mesh-import-tessellations-unresolved`. Unreadable source frames report `feature.mesh-import-source-unparsed`. DR-292 tracks the operation GUID bindings.
 
-### DR-1065. Stored state of a mesh body that a Convert Mesh consumes
-
-**Question.** Do the matrices and the `.paramesh` container of a mesh body that a `Convert Mesh` consumes hold the state at the input of that `Convert Mesh`?
-
-**Known.** The mesh collection of a consumed `Base Mesh Feature` body no longer lists it, and the `Base Mesh Feature` scope still lists it. A `Convert Mesh` input wrapper names a mesh operation group whose member names the body. The body keeps its wrapper, GUID, entry-name, and Scene-node references. For a `MeshRemove`, the matrices of a removed body place it in the state at the input of the `MeshRemove`. The decoder states the tessellation of a consumed body at the input of its `Convert Mesh`.
-
-**Need.** A save that inserts a mesh of known extent, moves it with `Modify`, and converts it with `Convert Mesh`, compared against the same save with the `Convert Mesh` suppressed: the mesh-body matrices and the `.paramesh` vertex positions of both saves.
-
-**Conflict.** None.
-
-**Note.** The decoder reports `feature.mesh-converted-state-assumed`. A mesh operation that changes the geometry of a consumed body before its `Convert Mesh` reports `feature.mesh-geometry-state-unjoined` (DR-473).
-
 ### DR-473. Geometry states of mesh operation scopes
 
 **Question.** Which tessellation does each output-geometry and input-geometry reference of a mesh operation scope select?

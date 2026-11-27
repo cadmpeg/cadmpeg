@@ -51,19 +51,12 @@ pub(super) fn bind(
             .filter(|feature| removes(feature, &tessellation) || converts(feature, &tessellation))
             .collect::<Vec<_>>();
         let state = match removers.as_slice() {
-            [remover] => input_state(&ir.design, &remover.id)
-                .map(|state| {
-                    (
-                        state,
-                        converts(remover, &tessellation).then_some(&remover.id),
-                    )
-                })
-                .ok_or_else(|| {
-                    format!(
-                        "its consumer {} has no built position in an ordered timeline",
-                        remover.id
-                    )
-                }),
+            [remover] => input_state(&ir.design, &remover.id).ok_or_else(|| {
+                format!(
+                    "its consumer {} has no built position in an ordered timeline",
+                    remover.id
+                )
+            }),
             [] => Err("no MeshRemove or Convert Mesh consumes it".to_owned()),
             _ => Err("several MeshRemove or Convert Mesh features consume it".to_owned()),
         };
@@ -71,14 +64,8 @@ pub(super) fn bind(
     }
     for mesh in &mut ir.model.tessellations {
         match states.remove(mesh.id.as_str()) {
-            Some(Ok((state, conversion))) => {
+            Some(Ok(state)) => {
                 mesh.state = Some(state);
-                if let Some(conversion) = conversion {
-                    losses.push(F3dLossCode::FeatureMeshConvertedStateAssumed.note(format!(
-                        "Mesh body {} that Convert Mesh {conversion} consumes stores the mesh of the state at the input of that conversion.",
-                        mesh.id.as_str()
-                    )));
-                }
             }
             Some(Err(reason)) => {
                 mesh.of = Meshed::Unresolved;
