@@ -42,6 +42,8 @@ const CHUNK_STREAM: u32 = 4;
 const LZMA_PROPERTIES: u8 = 0x5D;
 /// Second byte of the LZMA1 stream encoding.
 const LZMA_ENCODING_TAG: u8 = 0x14;
+/// Second byte of the second LZMA1 stream encoding.
+const LZMA_ENCODING_TAG_SIXTEEN: u8 = 0x10;
 /// Smallest LZMA1 history window the decoder allocates.
 const LZMA_DICTIONARY_BYTES: u32 = 1 << 22;
 /// Raw-stream selector following the common properties byte.
@@ -1284,7 +1286,9 @@ fn inflate_stream_inner(
             bytes: payload.to_vec(),
         });
     }
-    if properties != [LZMA_PROPERTIES, LZMA_ENCODING_TAG] {
+    if properties[0] != LZMA_PROPERTIES
+        || !matches!(properties[1], LZMA_ENCODING_TAG | LZMA_ENCODING_TAG_SIXTEEN)
+    {
         return Err(CodecError::malformed(
             "paramesh stream carries an undefined encoding",
         ));
@@ -2481,11 +2485,11 @@ mod tests {
         MeshAttributeDomain, MeshContainer, MeshElements, MeshStream, StreamDescriptorValue,
         CHANNEL_GROUP, CHANNEL_RESOURCE, CHANNEL_ROLE, CHANNEL_STREAMS, CHUNK_NAME_TABLE,
         CHUNK_STREAM, ELEMENT_PACKED_DIRECTION, ELEMENT_PAIR, ELEMENT_QUAD, ELEMENT_TRIANGLE_DELTA,
-        FEATURE_EDGE_STREAM, GROUP_GUID, GROUP_KEY, LZMA_ENCODING_TAG, LZMA_PROPERTIES, MAGIC,
-        PROPERTY_KEY, PROPERTY_STREAM, PROPERTY_TEXT, RAW_STREAM_MODE, REGISTRY_FACE_GROUP_COUNT,
-        REGISTRY_FEATURE_EDGES, REGISTRY_MESH_UUID, REGISTRY_PROPERTY, REGISTRY_TRIANGLES,
-        REGISTRY_TRIANGLE_CHANNEL, REGISTRY_VERTEX_CHANNEL, REGISTRY_VERTICES, STREAM_ELEMENT_CODE,
-        STREAM_INDEX, STREAM_VALUES, VERSION,
+        FEATURE_EDGE_STREAM, GROUP_GUID, GROUP_KEY, LZMA_ENCODING_TAG, LZMA_ENCODING_TAG_SIXTEEN,
+        LZMA_PROPERTIES, MAGIC, PROPERTY_KEY, PROPERTY_STREAM, PROPERTY_TEXT, RAW_STREAM_MODE,
+        REGISTRY_FACE_GROUP_COUNT, REGISTRY_FEATURE_EDGES, REGISTRY_MESH_UUID, REGISTRY_PROPERTY,
+        REGISTRY_TRIANGLES, REGISTRY_TRIANGLE_CHANNEL, REGISTRY_VERTEX_CHANNEL, REGISTRY_VERTICES,
+        STREAM_ELEMENT_CODE, STREAM_INDEX, STREAM_VALUES, VERSION,
     };
     use cadmpeg_core::CodecError;
     fn decode_mesh_container(bytes: &[u8]) -> Result<MeshContainer, CodecError> {
@@ -3606,6 +3610,31 @@ mod tests {
             .expect("properties");
         container[at] = 0x00;
         assert!(decode_mesh_container(&container).is_err());
+    }
+
+    #[test]
+    fn stream_encoding_tag_sixteen_inflates_the_same_lzma_stream() {
+        let reference = container(GUID, &TRIANGLE_VERTICES, &TRIANGLE_CORNERS);
+        let expected = decode_mesh_container(&reference).expect("tag 0x14 container");
+        for (tag, admitted) in [(LZMA_ENCODING_TAG_SIXTEEN, true), (0x12, false)] {
+            let mut retagged = reference.clone();
+            let mut streams = 0;
+            for at in 0..retagged.len() - 1 {
+                if retagged[at..at + 2] == [LZMA_PROPERTIES, LZMA_ENCODING_TAG] {
+                    retagged[at + 1] = tag;
+                    streams += 1;
+                }
+            }
+            assert_eq!(streams, 2);
+            let decoded = decode_mesh_container(&retagged);
+            if admitted {
+                let decoded = decoded.expect("tag 0x10 container");
+                assert_eq!(decoded.vertices, expected.vertices);
+                assert_eq!(decoded.triangles, expected.triangles);
+            } else {
+                assert!(decoded.is_err());
+            }
+        }
     }
 
     #[test]
