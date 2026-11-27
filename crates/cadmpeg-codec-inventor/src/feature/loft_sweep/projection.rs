@@ -4,13 +4,13 @@
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::features::evaluation::FeatureResultTopology;
 use cadmpeg_ir::features::operation_settings::BooleanOp;
-use cadmpeg_ir::features::profiles::ProfileRef;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{Feature, FeatureContent, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::sketches::Sketch;
 
 use super::super::{
-    boolean_properties, feature_result, resolve_property, FeatureFamily, PmDcFeature,
+    body_result, boolean_properties, feature_result, resolve_property, FeatureFamily, PmDcFeature,
     PmDcFeatureLabel, ProjectionIndex,
 };
 use cadmpeg_ir::features::profiles::LoftSection;
@@ -20,12 +20,13 @@ pub(super) mod evidence;
 
 use super::controls::{self, NativeReason};
 
-pub(in crate::feature) fn project(
+pub(in crate::feature) fn project<'a>(
     ctx: &DecodeContext<'_>,
     source: &PmDcFeature,
     label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
     family: FeatureFamily,
+    type_at: impl Fn(u32) -> Option<&'a str>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
     let operation = match family {
@@ -44,11 +45,59 @@ pub(in crate::feature) fn project(
             }
             Err(Refusal::Codec(error)) => return Some(Err(error)),
         },
+        FeatureFamily::SurfaceLoft => match surface_loft(source, label, index, type_at) {
+            Ok(operation) => operation,
+            Err(_) => return None,
+        },
         _ => return None,
     };
-    let (id, result) = match feature_result(ctx, source, family.output_slot(source), index) {
+    typed(ctx, source, label, index, family, operation, losses)
+}
+
+/// Whether an earlier feature names the result wrapper of a surface loft. The
+/// loft then stays native, and its note names the part-operation rule as the
+/// cause; the feature counts toward the surface-loft operation refusals.
+pub(in crate::feature) fn refuse_used_wrapper(
+    source: &PmDcFeature,
+    features: &[PmDcFeature],
+    positions: &std::collections::HashMap<(&str, u32), u64>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> bool {
+    let used = controls::wrapper_used_earlier(source, features, |other| {
+        positions
+            .get(&(
+                other.identity.segment_token.as_str(),
+                other.identity.record_ordinal,
+            ))
+            .copied()
+    });
+    if used {
+        losses.push(crate::loss::InventorLossCode::FeatureSurfaceLoftOperationAssumed.note(
+            "Surface loft retained natively: an earlier feature names its result wrapper, so the creation-or-combination rule of part-operation value 5 is open.",
+        ));
+    }
+    used
+}
+
+/// The typed feature of a loft or sweep whose operation is admitted.
+fn typed(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+    family: FeatureFamily,
+    operation: FeatureOperation,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    let result = if matches!(family, FeatureFamily::SurfaceLoft) {
+        body_result(ctx, source, family.output_slot(source), index)
+    } else {
+        feature_result(ctx, source, family.output_slot(source), index)
+    };
+    let (id, result) = match result {
         Some(Ok(value)) => value,
         Some(Err(error)) => return Some(Err(error)),
+        None if matches!(family, FeatureFamily::SurfaceLoft) => return None,
         None => {
             losses.push(if matches!(family, FeatureFamily::Sweep) {
                 super::sweep::NativeReason::ResultIdentity.note()
@@ -60,6 +109,14 @@ pub(in crate::feature) fn project(
     };
     if let Err(error) = ctx.charge_entities(1, "project Inventor loft or sweep") {
         return Some(Err(error));
+    }
+    if matches!(family, FeatureFamily::SurfaceLoft) {
+        losses.push(crate::loss::InventorLossCode::FeatureSurfaceLoftOperationAssumed.note(
+            "Surface loft reads part-operation value 5 as a new-body creation; the creation-or-combination rule is open.",
+        ));
+        losses.push(crate::loss::InventorLossCode::FeatureSurfaceLoftFaceLoopNative.note(
+            "Surface loft retains its face-loop section selection; the selected loop has no resolved neutral profile.",
+        ));
     }
     Some(Ok((
         Feature {
@@ -103,6 +160,100 @@ impl From<NativeReason> for Refusal {
     }
 }
 
+/// The numeric parameter record and solved value that `reference` selects.
+fn section_parameter<'a>(
+    token: &str,
+    reference: crate::pmdc::PmDcReference,
+    index: &'a ProjectionIndex<'a>,
+) -> Option<(
+    &'a crate::design::PmDcParameter,
+    &'a cadmpeg_ir::features::parameters::ParameterValue,
+)> {
+    let parameter = index
+        .parameters
+        .get(&(token, reference.record_ordinal()?))?
+        .as_ref()?;
+    let value = index
+        .parameter_values
+        .get(parameter.id().as_str())?
+        .as_ref()?
+        .value
+        .as_ref()?;
+    Some((*parameter, value))
+}
+
+/// A positional surface loft: one sketch-wire section and one face-loop
+/// section. The sketch section selects the whole single closed profile of its
+/// consumed sketch, so that a validator recomputes it from the sketch alone.
+/// The face-loop section stays a native reference to its section record. The
+/// second label participant has the face-loop participant type, and the two
+/// sections select different wires.
+fn surface_loft<'a>(
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+    type_at: impl Fn(u32) -> Option<&'a str>,
+) -> Result<FeatureOperation, NativeReason> {
+    let token = source.identity.segment_token.as_str();
+    let admitted = controls::surface_sections(
+        source,
+        |reference| resolve_property(token, reference.index(), index),
+        |reference| section_parameter(token, reference, index),
+    )?;
+    let sketches = participant_sketches(source, label, index);
+    let [(ordinal, sketch)] = sketches.as_slice() else {
+        return Err(NativeReason::Profile);
+    };
+    if !controls::face_loop_participant(label, *ordinal, type_at) {
+        return Err(NativeReason::Profile);
+    }
+    let sketch_link = admitted
+        .sketch
+        .entity_link
+        .record_ordinal()
+        .ok_or(NativeReason::Profile)?;
+    let loop_link = admitted
+        .face_loop
+        .entity_link
+        .record_ordinal()
+        .ok_or(NativeReason::Profile)?;
+    if sketch_link == loop_link {
+        return Err(NativeReason::Profile);
+    }
+    let profile = index
+        .profiles
+        .regions(token, *ordinal, sketch, &[sketch_link])
+        .ok_or(NativeReason::Profile)?;
+    if index.profiles.whole_sketch(token, *ordinal, sketch) != Some(profile.clone()) {
+        return Err(NativeReason::Profile);
+    }
+    index
+        .profiles
+        .numbered_edge_count(token, loop_link)
+        .ok_or(NativeReason::Profile)?;
+    let section = resolve_property(token, admitted.face_loop.record.index(), index)
+        .ok_or(NativeReason::SectionRecord)?;
+    let sketch_section = LoftSection::Profile(ProfileRef::Planar(profile));
+    let loop_section =
+        LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::native(section.id())));
+    let sections = if admitted.sketch_first {
+        vec![sketch_section, loop_section]
+    } else {
+        vec![loop_section, sketch_section]
+    };
+    Ok(FeatureOperation::Loft {
+        sections,
+        guidance: LoftGuidance::default(),
+        op: BooleanOp::NewBody,
+        closed: false,
+        solid: false,
+        ruled: false,
+        linearize: false,
+        max_degree: None,
+        allow_multi_profile_faces: None,
+    })
+}
+
 fn loft(
     ctx: &DecodeContext<'_>,
     source: &PmDcFeature,
@@ -113,19 +264,7 @@ fn loft(
     let links = controls::sections(
         source,
         |reference| resolve_property(token, reference.index(), index),
-        |reference| {
-            let parameter = index
-                .parameters
-                .get(&(token, reference.record_ordinal()?))?
-                .as_ref()?;
-            let value = index
-                .parameter_values
-                .get(parameter.id().as_str())?
-                .as_ref()?
-                .value
-                .as_ref()?;
-            Some((*parameter, value))
-        },
+        |reference| section_parameter(token, reference, index),
     )?;
     let sketches = participant_sketches(source, label, index);
     let mut selected = Vec::new();

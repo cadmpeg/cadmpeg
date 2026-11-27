@@ -1294,6 +1294,10 @@ pub(super) fn emit_topology(
             loops.push(id.clone());
         }
     }
+    let mut surface_indices = std::collections::HashMap::with_capacity(ir.geometry.surfaces.len());
+    for (index, surface) in ir.geometry.surfaces.iter().enumerate() {
+        surface_indices.entry(surface.id.clone()).or_insert(index);
+    }
     let mut emitted_faces = BTreeMap::new();
     for pending in pending_faces {
         let boundary_failed = if let Some(failure) = face_loop_failures.remove(&pending.xmt) {
@@ -1311,15 +1315,24 @@ pub(super) fn emit_topology(
             .and_then(Node::face_fields)
             .is_some_and(|fields| fields.loop_xmt.is_none());
         if loops.is_empty() && !boundary_failed && has_null_loop_ref {
-            loops = whole_sphere_pole_loops(
-                ir,
-                annotations,
-                &scope,
-                source_stream,
-                face_node,
-                &pending.id,
-                &pending.surface,
-            )?;
+            if let Some(sphere) = surface_indices
+                .get(&pending.surface)
+                .and_then(|&index| ir.geometry.surfaces[index].geometry.solved())
+                .and_then(|solved| match solved {
+                    SolvedSurfaceGeometry::Sphere(sphere) => Some(*sphere),
+                    _ => None,
+                })
+            {
+                loops = whole_sphere_pole_loops(
+                    ir,
+                    annotations,
+                    &scope,
+                    source_stream,
+                    face_node,
+                    &pending.id,
+                    &sphere,
+                )?;
+            }
         }
 
         let partial = boundary_failed
@@ -1329,11 +1342,9 @@ pub(super) fn emit_topology(
             cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops }
         } else {
             let surface = if loops.is_empty() {
-                ir.geometry
-                    .surfaces
-                    .iter()
-                    .find(|surface| surface.id == pending.surface)
-                    .map(|surface| &surface.geometry)
+                surface_indices
+                    .get(&pending.surface)
+                    .map(|&index| &ir.geometry.surfaces[index].geometry)
             } else {
                 None
             };
@@ -1675,22 +1686,9 @@ fn whole_sphere_pole_loops(
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
     node: Option<&Node>,
     face: &FaceId,
-    surface: &SurfaceId,
+    sphere: &cadmpeg_ir::geometry::analytic::SphereSurface,
 ) -> Result<Vec<LoopId>, CodecError> {
     let Some(node) = node else {
-        return Ok(Vec::new());
-    };
-    let Some(sphere) = ir
-        .geometry
-        .surfaces
-        .iter()
-        .find(|candidate| &candidate.id == surface)
-        .and_then(|candidate| candidate.geometry.solved())
-        .and_then(|solved| match solved {
-            SolvedSurfaceGeometry::Sphere(sphere) => Some(sphere),
-            _ => None,
-        })
-    else {
         return Ok(Vec::new());
     };
     let center = sphere.center().get();

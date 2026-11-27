@@ -2334,15 +2334,28 @@ pub(crate) fn placement_affine(
     ))
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct ProjectInputs<'a> {
+    pub(super) directory: &'a [DirectoryEntry],
+    pub(super) parameters: &'a [ParameterRecord],
+    pub(super) trailing_pointer_analysis: &'a BTreeMap<u32, TrailingPointerAnalysis>,
+    pub(super) global: &'a ProjectedGlobal,
+    pub(super) limits: super::geometry::ProjectionLimits,
+}
+
 pub(super) fn project(
     ir: &mut CadIr,
-    directory: &[DirectoryEntry],
-    parameters: &[ParameterRecord],
-    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
-    global: &ProjectedGlobal,
+    inputs: ProjectInputs<'_>,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<(ProjectionOutcome, BTreeMap<u32, PlacementRejection>), CodecError> {
+    let ProjectInputs {
+        directory,
+        parameters,
+        trailing_pointer_analysis,
+        global,
+        limits,
+    } = inputs;
     let mut records = BTreeMap::new();
     for record in parameters {
         records.insert(record.directory_sequence, record);
@@ -2353,7 +2366,7 @@ pub(super) fn project(
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
-    let planar_pairs = PlanarPairBudget::new();
+    let planar_pairs = PlanarPairBudget::new(limits);
     let boundary_rules = PlaneBoundaryRules {
         resolution: global.minimum_resolution_mm(),
         pairs: &planar_pairs,
