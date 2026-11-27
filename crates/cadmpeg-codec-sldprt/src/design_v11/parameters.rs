@@ -690,9 +690,17 @@ pub(super) struct Entries<'a> {
     list: Vec<Entry<'a>>,
     /// The decoder's parameters of the features outside the timeline that
     /// are no equations folder.
-    outside: Vec<ParameterId>,
+    outside: Vec<Outside>,
     by_owner: HashMap<(FeatureId, String), ParameterId>,
     ids: HashSet<ParameterId>,
+}
+
+/// A decoder's parameter of a feature outside the timeline that is no
+/// equations folder.
+struct Outside {
+    id: ParameterId,
+    /// The feature lies under a tree node that is no member.
+    beneath: bool,
 }
 
 impl<'a> Entries<'a> {
@@ -723,28 +731,53 @@ impl<'a> Entries<'a> {
         })
     }
 
-    /// The note naming the decoder's parameters, of `decoded`, that a
-    /// feature-tree node outside the timeline owns: §5.12 gives such an
-    /// owner no home.
+    /// The notes naming the decoder's parameters, of `decoded`, that a
+    /// feature-tree node outside the timeline owns, or a feature under such
+    /// a node, which no design feature states: §5.12 gives such an owner no
+    /// home.
     pub(super) fn outside(
         &self,
         decoded: &[cadmpeg_ir::features::parameters::DesignParameter],
-    ) -> Option<LossNote> {
+    ) -> Vec<LossNote> {
         let decoded = decoded
             .iter()
             .map(|parameter| &parameter.id)
             .collect::<HashSet<_>>();
-        let mut named = NamedCount::default();
-        for id in self.outside.iter().filter(|id| decoded.contains(id)) {
-            named.push(id.as_str());
+        let mut nodes = NamedCount::default();
+        let mut under = NamedCount::default();
+        for outside in self
+            .outside
+            .iter()
+            .filter(|outside| decoded.contains(&outside.id))
+        {
+            let named = if outside.beneath {
+                &mut under
+            } else {
+                &mut nodes
+            };
+            named.push(outside.id.as_str());
         }
-        (!named.is_empty()).then(|| {
-            SldprtLossCode::DesignParameterOwnerOutsideTimeline.note(format!(
-                "{} model parameters whose owner is a feature-tree node outside the timeline \
-                 state no design parameter: {named}",
-                named.count()
-            ))
-        })
+        let mut notes = Vec::new();
+        if !nodes.is_empty() {
+            notes.push(
+                SldprtLossCode::DesignParameterOwnerOutsideTimeline.note(format!(
+                    "{} model parameters whose owner is a feature-tree node outside the timeline \
+                 state no design parameter: {nodes}",
+                    nodes.count()
+                )),
+            );
+        }
+        if !under.is_empty() {
+            notes.push(
+                SldprtLossCode::DesignParameterOwnerOutsideTimeline.note(format!(
+                    "{} model parameters whose owner is a feature under a feature-tree node \
+                 outside the timeline state no design parameter: no design feature states \
+                 their owner: {under}",
+                    under.count()
+                )),
+            );
+        }
+        notes
     }
 
     /// The parameter of `owner` named `name`.
@@ -861,35 +894,34 @@ fn entries<'a>(
     histories: &'a [FeatureHistory],
     parameter_histories: &'a [FeatureHistory],
     timeline: &Timeline,
-) -> Result<(Vec<Entry<'a>>, Vec<ParameterId>), CodecError> {
-    let stored = histories
+) -> Result<(Vec<Entry<'a>>, Vec<Outside>), CodecError> {
+    let under = timeline
+        .skipped
         .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
+        .map(|(record, _)| record.as_str())
+        .collect::<HashSet<_>>();
     let mut entries = Vec::new();
     let mut outside = Vec::new();
     let mut user_names = HashSet::new();
-    for enriched in parameter_histories
-        .iter()
-        .flat_map(|history| &history.features)
-    {
+    let features =
+        |histories: &'a [FeatureHistory]| histories.iter().flat_map(|history| &history.features);
+    for (feature, enriched) in features(histories).zip(features(parameter_histories)) {
+        debug_assert_eq!(feature.id, enriched.id);
         let owner = match timeline.features_by_record.get(&enriched.id) {
             Some(owner) => Some(owner.clone()),
             None if timeline.equation_records.contains(&enriched.id) => None,
             None => {
                 for (ordinal, name) in projected_parameter_names(enriched).into_iter().enumerate() {
                     if enriched.parameters.contains_key(name.as_str()) {
-                        outside.push(neutral_parameter_id(enriched, ordinal)?);
+                        outside.push(Outside {
+                            id: neutral_parameter_id(enriched, ordinal)?,
+                            beneath: under.contains(enriched.id.as_str()),
+                        });
                     }
                 }
                 continue;
             }
         };
-        let feature = stored
-            .get(enriched.id.as_str())
-            .copied()
-            .unwrap_or(enriched);
         for (ordinal, name) in projected_parameter_names(enriched).into_iter().enumerate() {
             let (text, added) = match feature.parameters.get(name.as_str()) {
                 Some(text) => (text, false),
@@ -942,7 +974,11 @@ fn parameter(
         comment: None,
         native_options: NativeOptions::new(),
         source_settings: NativeOptions::new(),
-        native_ref: None,
+        native_ref: entry
+            .added
+            .then(|| readings.decoded.parameters.get(entry.id.as_str()))
+            .flatten()
+            .and_then(|decoded| decoded.native_ref.clone()),
     }
 }
 
@@ -1303,12 +1339,16 @@ fn added(entry: &Entry<'_>, readings: &Readings<'_>) -> Reading {
 /// it, where that value differs at [`LITERAL_DIGITS`] significant digits
 /// from `active`, the value the active configuration stores, else from the
 /// parameter's (§5.11). A parameter whose expression is one literal has the
-/// stored value as a literal in the same unit; any other expression keeps
-/// its text, and the override states the value alone, a cache.
+/// stored value as a literal in the same unit; one whose neutral expression
+/// references nothing, which the stored value then replaces, has it as the
+/// literal a record stores with no text, in the length unit `length_unit`;
+/// any other expression keeps its text, and the override states the value
+/// alone, a cache.
 pub(super) fn configuration_override(
     parameter: &DesignParameter,
     stored: cadmpeg_ir::features::parameters::ParameterValue,
     active: Option<cadmpeg_ir::features::parameters::ParameterValue>,
+    length_unit: Option<UnitSymbol>,
 ) -> Option<ParameterOverride> {
     let ParameterDefinition::Expression(expression) = &parameter.definition else {
         return None;
@@ -1320,12 +1360,37 @@ pub(super) fn configuration_override(
     if base.is_some_and(|base| same_value(&base, &value)) {
         return None;
     }
-    let expression =
-        literal_like(expression, &value).map(|node| Expression::Neutral(Neutral(node)));
+    let expression = literal_like(expression, &value)
+        .or_else(|| {
+            references_nothing(expression)
+                .then(|| stored_literal(&parameter.kind, &value, length_unit))
+                .flatten()
+        })
+        .map(|node| Expression::Neutral(Neutral(node)));
     Some(ParameterOverride {
         expression,
         value: Some(value),
     })
+}
+
+/// Whether `expression` is neutral and no node of it reads a value other
+/// than its own literals: no reference, measure, law parameter or bend
+/// variable.
+fn references_nothing(expression: &Expression) -> bool {
+    let Expression::Neutral(Neutral(node)) = expression else {
+        return false;
+    };
+    let mut stack = vec![node];
+    while let Some(node) = stack.pop() {
+        if matches!(
+            node,
+            Node::Reference(_) | Node::Measure(_) | Node::LawParameter | Node::Bend(_)
+        ) {
+            return false;
+        }
+        stack.extend(node.operands());
+    }
+    true
 }
 
 /// Whether two caches are one value at [`LITERAL_DIGITS`] significant

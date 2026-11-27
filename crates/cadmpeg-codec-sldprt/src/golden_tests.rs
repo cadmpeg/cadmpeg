@@ -264,13 +264,13 @@ fn fixtures_survive_the_semantic_write_path() {
                     matches!(report.write_path(), WritePath::Patched { .. }),
                     "fixture `{name}`: retained records fed the write, so it patched rather than synthesized"
                 );
+                let written = decode_container(bytes);
                 let expected = match &source {
                     Ok(decoded) if omits_every_body(decoded.ir(), &report.losses) => {
-                        brep_free_text(fixture, decoded)
+                        brep_free_text(fixture, decoded, written.as_ref().ok())
                     }
                     _ => expected,
                 };
-                let written = decode_container(bytes);
                 if let Err(mismatch) = snapshots_agree(&expected, &neutral_text(bytes, &written)) {
                     panic!("fixture `{name}`: the semantically written container decodes to a different document: {mismatch}");
                 }
@@ -373,16 +373,20 @@ fn omits_every_body(
 }
 
 /// [`neutral_text`] of `decoded` without its B-rep: the document a write
-/// states when it omits every body. The write states one active
-/// configuration, and with no body left to place, a part's configurations
-/// state its design, which types the part's definition.
-fn brep_free_text(bytes: &[u8], decoded: &DecodeResult) -> String {
+/// states when it omits every body. A definition that a design scope of
+/// `written`, the decode of the write, spans is typed as a part: the design
+/// of a part whose configurations the write keeps types its definition.
+fn brep_free_text(bytes: &[u8], decoded: &DecodeResult, written: Option<&DecodeResult>) -> String {
     let mut ir = decoded.ir().clone();
     ir.geometry = cadmpeg_ir::document::Topology::default();
-    let configured = !ir.model.configurations.is_empty();
+    let scoped = written
+        .into_iter()
+        .flat_map(|written| &written.ir().design.scopes)
+        .map(|scope| scope.definition.clone())
+        .collect::<Vec<_>>();
     for definition in &mut ir.model.product_definitions {
         definition.bodies.clear();
-        if configured {
+        if scoped.contains(&definition.id) {
             definition.kind = Some(cadmpeg_ir::products::ProductDefinitionKind::Part);
         }
     }

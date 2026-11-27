@@ -7,8 +7,10 @@ use super::*;
 
 use cadmpeg_ir::design::configuration::DesignConfiguration;
 use cadmpeg_ir::design::expr::{Expression, Neutral, Node};
+use cadmpeg_ir::design::parameter::DesignParameter;
 use cadmpeg_ir::design::parameter::ParameterValue;
 use cadmpeg_ir::design::units::{Unit, UnitFactor, UnitSymbol};
+use cadmpeg_ir::features::parameters::DesignConfiguration as ModelConfiguration;
 
 use crate::test_support::cadir::round_trip;
 use crate::test_support::history::resolved_features_payload_with_names_relation_and_scalar;
@@ -107,17 +109,27 @@ fn configurations_whose_active_one_does_not_resolve_are_named_in_a_note() {
     assert!(message.starts_with("2 configurations"), "{message}");
 }
 
+/// The configurations of [`with_configured_radius`], in lane order.
+const CONFIGURATIONS: [&str; 3] = ["Default", "Large", "Twin"];
+
 /// A part whose fillet radius `D1` the history states as `text`, with `D2`
-/// defined as `D1 * 2`, and whose configurations `Default`, the active one,
-/// and `Large` store `D1` as `radii` metres in their own lanes.
-fn with_configured_radius(text: &str, radii: [f64; 2]) -> CadIr {
+/// defined as `D1 * 2`, and whose leading [`CONFIGURATIONS`], of which
+/// `Default` is the active one, store `D1` as `radii` metres in their own
+/// lanes.
+fn with_configured_radius(text: &str, radii: &[f64]) -> CadIr {
     let mut source = sldprt_with_body(&triangle_body());
+    let mut configurations = String::new();
+    for name in &CONFIGURATIONS[..radii.len()] {
+        configurations.push_str(r#"<Configuration Name=""#);
+        configurations.push_str(name);
+        configurations.push_str(r#""/>"#);
+    }
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        format!(r#"<Keywords><Configuration Name="Default"/><Configuration Name="Large"/><Fillet Name="Round1" Type="Fillet"><Dimension Name="D1">{text}</Dimension><Dimension Name="D2">D1 * 2</Dimension></Fillet></Keywords>"#).as_bytes(),
+        format!(r#"<Keywords>{configurations}<Fillet Name="Round1" Type="Fillet"><Dimension Name="D1">{text}</Dimension><Dimension Name="D2">D1 * 2</Dimension></Fillet></Keywords>"#).as_bytes(),
     ));
-    for (lane, radius) in radii.into_iter().enumerate() {
+    for (lane, &radius) in radii.iter().enumerate() {
         source.extend(make_block(
             0x45,
             &format!("Contents/Config-{lane}-ResolvedFeatures"),
@@ -135,7 +147,7 @@ fn with_configured_radius(text: &str, radii: [f64; 2]) -> CadIr {
 
 #[test]
 fn a_dimension_another_configuration_stores_apart_is_an_override_of_it() {
-    let ir = with_configured_radius("30mm", [0.025, 0.050]);
+    let ir = with_configured_radius("30mm", &[0.025, 0.050]);
     let parameter = |name: &str| {
         ir.design
             .parameters
@@ -184,11 +196,8 @@ fn a_dimension_another_configuration_stores_apart_is_an_override_of_it() {
     assert_eq!(read.design.configurations, ir.design.configurations);
 }
 
-#[test]
-fn a_configuration_storing_the_active_configurations_values_states_no_override() {
-    let ir = with_configured_radius("12.34567mm", [0.012_345_666_666_666_7; 2]);
-    let radius = ir
-        .design
+fn parameter_named<'a>(ir: &'a CadIr, name: &str) -> &'a DesignParameter {
+    ir.design
         .parameters
         .iter()
         .find(|parameter| {
@@ -196,17 +205,138 @@ fn a_configuration_storing_the_active_configurations_values_states_no_override()
                 .name
                 .as_ref()
                 .map(cadmpeg_core::text::NonBlankString::as_str)
-                == Some("D1")
+                == Some(name)
         })
-        .unwrap();
-    let stored = ir
-        .model
+        .unwrap()
+}
+
+fn stored<'a>(ir: &'a CadIr, name: &str) -> &'a ModelConfiguration {
+    ir.model
         .configurations
         .iter()
-        .find(|configuration| configuration.name.as_deref() == Some("Large"))
-        .unwrap();
-    assert!(stored.parameter_values.contains_key(&radius.id));
+        .find(|configuration| configuration.name.as_deref() == Some(name))
+        .unwrap()
+}
+
+/// `Twin` stores the active configuration's radius, which differs from the
+/// history's text at the literal's digits, and states no override; `Large`
+/// stores another radius and states one.
+#[test]
+fn a_configuration_storing_the_active_configurations_values_states_no_override() {
+    let active = 0.012_345_666_666_666_7;
+    let ir = with_configured_radius("12.34567mm", &[active, 0.05, active]);
+    let radius = parameter_named(&ir, "D1");
+    assert!(stored(&ir, "Twin")
+        .parameter_values
+        .contains_key(&radius.id));
     assert!(named(&ir, "Default").overrides.parameters.is_empty());
-    let overrides = &named(&ir, "Large").overrides.parameters;
+    assert!(named(&ir, "Large")
+        .overrides
+        .parameters
+        .contains_key(&radius.id));
+    let overrides = &named(&ir, "Twin").overrides.parameters;
     assert!(overrides.is_empty(), "{overrides:#?}");
+}
+
+/// A neutral expression that references nothing takes another
+/// configuration's stored value as a literal in the part's length unit; an
+/// expression with a reference keeps its text.
+#[test]
+fn an_expression_that_references_nothing_takes_the_stored_value_as_its_literal() {
+    use cadmpeg_ir::design::expr::AddOp;
+    use cadmpeg_ir::design::parameter::ParameterDefinition;
+
+    let ir = with_configured_radius("30mm", &[0.025, 0.050]);
+    let mut radius = parameter_named(&ir, "D1").clone();
+    let millimetres =
+        |value| crate::design_v11::parameters::number_node(value, Some(UnitSymbol::Mm)).unwrap();
+    radius.definition = ParameterDefinition::Expression(Expression::Neutral(Neutral(Node::add(
+        millimetres(20.0),
+        AddOp::Add,
+        millimetres(5.0),
+    ))));
+    let value = |name: &str| stored(&ir, name).parameter_values[&radius.id].clone();
+    let entry = crate::design_v11::parameters::configuration_override(
+        &radius,
+        value("Large"),
+        Some(value("Default")),
+        Some(UnitSymbol::Mm),
+    )
+    .unwrap();
+    assert_eq!(
+        entry.expression,
+        Some(Expression::Neutral(Neutral(millimetres(50.0))))
+    );
+
+    let doubled = parameter_named(&ir, "D2");
+    let entry = crate::design_v11::parameters::configuration_override(
+        doubled,
+        stored(&ir, "Large").parameter_values[&doubled.id].clone(),
+        Some(stored(&ir, "Default").parameter_values[&doubled.id].clone()),
+        Some(UnitSymbol::Mm),
+    )
+    .unwrap();
+    assert_eq!(entry.expression, None);
+}
+
+/// Each configuration that is not active is named for its unread
+/// suppression, and each feature whose decoded definition there differs from
+/// the active configuration's is named for its unstated definition.
+#[test]
+fn configurations_that_are_not_active_name_their_unread_suppression_and_definitions() {
+    use cadmpeg_ir::features::parameters::{ConfigurationEvaluation, ConfigurationFeatureState};
+    use cadmpeg_ir::features::selections::DistinctMembers;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
+
+    let ir = with_configured_radius("30mm", &[0.025, 0.050, 0.025]);
+    let round = feature_named(&ir, "Round1");
+    let state = |family| ConfigurationFeatureState {
+        evaluation: ConfigurationEvaluation::Active {
+            outputs: DistinctMembers::default(),
+        },
+        dependencies: DistinctMembers::default(),
+        definition: FeatureDefinition::Operation(FeatureOperation::Unresolved { family }),
+    };
+    let mut decoded = ir.model.configurations.clone();
+    for configuration in &mut decoded {
+        let family = match configuration.name.as_deref() {
+            Some("Large") => UnresolvedFamily::Cone,
+            _ => UnresolvedFamily::Cylinder,
+        };
+        configuration
+            .feature_states
+            .insert(round.id.clone(), state(family));
+    }
+    let configurations = crate::design_v11::configurations::Configurations {
+        records: ir.design.configurations.clone(),
+        active: Some(named(&ir, "Default").id.clone()),
+    };
+    let notes = crate::design_v11::configurations::unread_states(
+        &configurations,
+        &decoded,
+        std::slice::from_ref(round),
+    );
+    let message = |code: SldprtLossCode| {
+        let [note] = notes
+            .iter()
+            .filter(|note| note.code == code.kind())
+            .collect::<Vec<_>>()[..]
+        else {
+            panic!("one note: {notes:#?}");
+        };
+        note.message.clone()
+    };
+    let (large, twin) = (&named(&ir, "Large").id, &named(&ir, "Twin").id);
+    let suppression = message(SldprtLossCode::DesignConfigurationSuppressionUnread);
+    assert!(
+        suppression.starts_with("2 configurations")
+            && suppression.ends_with(&format!("{}, {}", large.as_str(), twin.as_str())),
+        "{suppression}"
+    );
+    let definition = message(SldprtLossCode::DesignConfigurationDefinitionUnstated);
+    assert!(
+        definition.starts_with("1 features")
+            && definition.ends_with(&format!("{} in {}", round.id.as_str(), large.as_str())),
+        "{definition}"
+    );
 }

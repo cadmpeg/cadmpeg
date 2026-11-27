@@ -52,7 +52,7 @@ use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitio
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::SketchEntityId;
 
-use crate::loss::SldprtLossCode;
+use crate::loss::{NamedCount, SldprtLossCode};
 use crate::records::{FeatureHistory, FeatureInputLane};
 use crate::resolved_features::assembly::ConfigurationMaps;
 use crate::rollback::{Reading, Unread};
@@ -115,8 +115,10 @@ pub(crate) struct Projection {
 /// has no value add their reasons to `losses`. A part whose timeline is empty
 /// states its configurations in a scope with no root container, whose bodies
 /// are unproduced (§5.5), and its equation-manager lines go to `losses`.
-/// Interim: where its geometry holds the state of a configuration that is not
-/// active, which no position places, it states no scope.
+/// Interim: a body its geometry holds outside the active configuration's
+/// bodies is one more unproduced body of that scope, and a loss names it.
+/// A feature node under a tree node that is no timeline member states no
+/// design feature, and a loss names it.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -139,6 +141,18 @@ pub(crate) fn project(
     } = part;
     let active = equations::active_slot(histories, ir.source.as_ref());
     let mut timeline = tree::timeline(histories)?;
+    let mut skipped = NamedCount::default();
+    for (_, feature) in &timeline.skipped {
+        skipped.push(feature.as_str());
+    }
+    if !skipped.is_empty() {
+        losses.push(SldprtLossCode::DesignFeatureOutsideTimeline.note(format!(
+            "{} feature nodes under a feature-tree node that is no timeline member (an \
+             annotations, body or equations folder, or another node with no design meaning) \
+             state no design feature: {skipped}",
+            skipped.count()
+        )));
+    }
     let definition = root_definition();
     if timeline.features.is_empty() {
         losses.extend(equations::without_design(&managers, active));
@@ -147,11 +161,17 @@ pub(crate) fn project(
         if configurations.records.is_empty() {
             return Ok(Projection::default());
         }
-        if let Some(note) = configurations::unplaced(&configurations, &ir.geometry.bodies, &bodies)
-        {
-            losses.push(note);
-            return Ok(Projection::default());
-        }
+        let bodies = match configurations::unplaced(&ir.geometry.bodies, &bodies) {
+            Some(note) => {
+                losses.push(note);
+                ir.geometry
+                    .bodies
+                    .iter()
+                    .map(|body| body.id.clone())
+                    .collect()
+            }
+            None => bodies,
+        };
         let added = 2 + configurations.records.len();
         push_root(ir, definition.clone(), length, bodies.clone());
         ir.design.scopes.push(DesignScope {
@@ -243,7 +263,17 @@ pub(crate) fn project(
     losses.extend(equations::link(&mut parameters, &linking));
     let mut configurations =
         configurations::configurations(histories, ir.source.as_ref(), &definition, losses)?;
-    configurations::parameter_overrides(&mut configurations, &ir.model.configurations, &parameters);
+    configurations::parameter_overrides(
+        &mut configurations,
+        &ir.model.configurations,
+        &parameters,
+        length,
+    );
+    losses.extend(configurations::unread_states(
+        &configurations,
+        &ir.model.configurations,
+        &timeline.features,
+    ));
     let id = container_id(cadmpeg_ir::identity_key!("timeline"));
     let members = timeline.members();
     let (rollback, at) = match stated(&timeline.features, rollback) {

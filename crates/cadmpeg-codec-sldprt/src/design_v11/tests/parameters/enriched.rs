@@ -92,3 +92,40 @@ fn a_dimension_only_a_pmi_record_states_is_a_parameter_of_its_feature() {
         .iter()
         .any(|written| written.id == legacy.id));
 }
+
+/// A dimension that only a `ResolvedFeatures` scalar states keeps the
+/// decoder's native reference, the id of that scalar.
+#[test]
+fn a_dimension_only_a_lane_scalar_states_keeps_its_native_reference() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Fillet Name="Round1" Type="Fillet"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &crate::test_support::history::resolved_features_payload_with_names_relation_and_scalar(
+            &[0],
+            &["Round1", "D1"],
+            "sgPntPntDist",
+            0.025,
+        ),
+    ));
+    let ir = decode(&source);
+    let legacy = ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "D1")
+        .unwrap();
+    assert!(legacy.native_ref.is_some(), "{legacy:#?}");
+    let parameter = ir
+        .design
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id == legacy.id)
+        .expect("the design restates the dimension under the decoder's id");
+    assert_eq!(parameter.native_ref, legacy.native_ref);
+}
