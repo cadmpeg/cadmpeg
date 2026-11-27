@@ -161,8 +161,9 @@ fn zero_angle_elliptical_cone_round_trips_as_an_extruded_ellipse() {
 pub(super) fn assert_first_surface_faces_omitted(ir: &CadIr) {
     let plan = StepCodec::default()
         .plan(
-            EncodeInput::new(ir, None),
-            TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
+            EncodeInput::new(ir, None).with_target(TargetRequest::Explicit(
+                StepSchema::Ap214.descriptor().id.as_str(),
+            )),
         )
         .expect("a face on a surface STEP cannot hold is left out");
     let surface = &ir.geometry.surfaces[0].id;
@@ -388,8 +389,9 @@ fn circular_cone_plan(
     half_angle: f64,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
     crate::StepCodec::default().plan(
-        EncodeInput::new(&circular_cone_cube(half_angle), None),
-        TargetRequest::Explicit(crate::StepSchema::Ap214.descriptor().id.as_str()),
+        EncodeInput::new(&circular_cone_cube(half_angle), None).with_target(
+            TargetRequest::Explicit(crate::StepSchema::Ap214.descriptor().id.as_str()),
+        ),
     )
 }
 
