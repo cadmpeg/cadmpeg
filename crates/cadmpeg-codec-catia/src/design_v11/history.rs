@@ -70,9 +70,7 @@ pub(super) fn project(
     let mut bodies = Vec::new();
     if let Some(tree) = tree {
         for item in &tree.group {
-            if let Some(member) = stated.item(tree.graph_offset, item, Anchor::Current)? {
-                group.insert(member);
-            }
+            group.insert(stated.item(tree.graph_offset, item, Anchor::Current)?);
         }
         for body in &tree.bodies {
             bodies.push(stated.body(tree.graph_offset, body)?);
@@ -170,12 +168,10 @@ impl Statements<'_, '_> {
         let mut members = Vec::with_capacity(body.members.len());
         let mut in_work = None;
         for item in &body.members {
-            if let Some(member) = self.item(graph_offset, item, Anchor::Input)? {
-                if Some(item.entity_id()) == self.current {
-                    in_work = Some(members.len());
-                }
-                members.push(member);
+            if Some(item.entity_id()) == self.current {
+                in_work = Some(members.len());
             }
+            members.push(self.item(graph_offset, item, Anchor::Input)?);
         }
         let rollback = if Some(body.container.entity_id) == self.current {
             Some(Rollback::End)
@@ -206,15 +202,15 @@ impl Statements<'_, '_> {
         graph_offset: u64,
         item: &Item<'_>,
         at: Anchor,
-    ) -> Result<Option<Member>, CodecError> {
+    ) -> Result<Member, CodecError> {
         let (member, class) = match item {
-            Item::Body(body) => return Ok(Some(Member::Container(self.body(graph_offset, body)?))),
+            Item::Body(body) => return Ok(Member::Container(self.body(graph_offset, body)?)),
             Item::Feature { member, class } => (member, *class),
         };
         let id = member_feature_id(graph_offset, member.entity_id)?;
         if let Some(legacy) = self.legacy.get(&id) {
             if legacy_agrees(legacy, class) {
-                return self.legacy_feature(legacy, at).map(Some);
+                return self.legacy_feature(legacy, at);
             }
             self.reclassified.push(format!(
                 "{} (record class {class}, restated by it)",
@@ -243,9 +239,8 @@ impl Statements<'_, '_> {
                 FeatureOperation::Sketch(sketch)
             }
             None => {
-                let Some(kind) = CodecName::new(&cadmpeg_ir::codec_id!("catia"), class) else {
-                    return Ok(None);
-                };
+                let kind = CodecName::new(&cadmpeg_ir::codec_id!("catia"), class)
+                    .ok_or_else(|| CodecError::malformed("CATIA compact class name is blank"))?;
                 FeatureOperation::Native {
                     kind,
                     native_options: BTreeMap::new(),
@@ -257,7 +252,7 @@ impl Statements<'_, '_> {
         self.restated.insert(id.clone());
         self.features
             .push(feature(id.clone(), operation, native_ref));
-        Ok(Some(Member::Feature(id)))
+        Ok(Member::Feature(id))
     }
 
     fn legacy_feature(&mut self, legacy: &LegacyFeature, at: Anchor) -> Result<Member, CodecError> {

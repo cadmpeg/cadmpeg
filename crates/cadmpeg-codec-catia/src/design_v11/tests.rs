@@ -427,6 +427,34 @@ fn a_set_whose_kind_is_unread_is_unstated() {
     assert_design_survives_cadir(ir);
 }
 
+/// A member whose compact class selects a blank catalog entry is not
+/// stated, and the loss names it.
+#[test]
+fn a_member_whose_class_is_blank_is_unstated() {
+    let mut records = part();
+    records[3].1 = compact(0x08, 0x37);
+    let result = decode(
+        outer_container_catpart(&stream(&records)).0,
+        &DecodeOptions::default(),
+    );
+    let ir = result.ir();
+    let Container::Ordered { members, .. } = container(ir, "catia:outer:feature-container", 3)
+    else {
+        panic!("the main body is ordered");
+    };
+    assert_eq!(
+        members.iter().map(member).collect::<Vec<_>>(),
+        [("feature", 6)]
+    );
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::CatiaLossCode::DesignTreeRecordsUnstated
+            .note("")
+            .code
+        && loss.message.contains("selects a blank catalog entry")));
+    assert_eq!(design_findings(&result), Vec::<String>::new());
+    assert_design_survives_cadir(ir);
+}
+
 /// A feature the decoder reads from a record whose compact class
 /// contradicts the reading is not restated, and a loss names it.
 #[test]

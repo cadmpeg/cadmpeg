@@ -159,6 +159,13 @@ impl<'a> Walk<'a, '_> {
                 });
                 return None;
             };
+            if class.name.trim().is_empty() {
+                self.unstated.push(Unstated {
+                    record: record.to_owned(),
+                    reason: "selects a blank catalog entry",
+                });
+                return None;
+            }
             return Some(Item::Feature {
                 member,
                 class: class.name.as_str(),
