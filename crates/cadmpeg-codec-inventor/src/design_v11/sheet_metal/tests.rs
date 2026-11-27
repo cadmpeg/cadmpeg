@@ -593,8 +593,7 @@ fn native_validation_rejects_a_changed_relief_form() {
         &mut ir,
         &inventory,
         &sketches,
-        &[],
-        &[],
+        crate::design_v11::ParameterRecords::default(),
         &mut Vec::new(),
     )
     .expect("projection");

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Part parameters and their stored expressions.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::{unique_index, DecodeContext};
 use cadmpeg_core::text::NonBlankString;
@@ -17,17 +17,26 @@ use cadmpeg_ir::design::units::{Quantity, Unit, ValueKind};
 use cadmpeg_ir::features::parameters::{
     DesignParameter as LegacyParameter, ParameterValue as LegacyValue,
 };
+use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::CadIr;
 
-use crate::design::{PmDcParameter, PmDcUnit, PmDcUnitDimension, PmDcUnitKind};
+use crate::design::scope::PmDcParameterTable;
+use crate::design::{PmDcParameter, PmDcUnitDimension, PmDcUnitKind};
 
+/// Projects the part's parameters. Each takes its place in the member list
+/// of the one parameter table of `records` that names it, where the
+/// parameters of its owner come from one table.
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    parameters: &[PmDcParameter],
-    unit_records: &[PmDcUnit],
+    records: super::ParameterRecords<'_>,
 ) -> Result<(), CodecError> {
+    let super::ParameterRecords {
+        parameters,
+        units: unit_records,
+        tables,
+    } = records;
     let Some(part) = ir.model.product_definitions.first() else {
         return Ok(());
     };
@@ -62,6 +71,7 @@ pub(super) fn project(
             )
         })
         .collect();
+    let positions = positions(&ir.model.parameters, &raw, tables);
     for parameter in &ir.model.parameters {
         ctx.charge_entities(1, "project Inventor v11 parameter")?;
         let declared = parameter
@@ -109,7 +119,7 @@ pub(super) fn project(
             id: parameter.id.clone(),
             scope: part.id.clone(),
             owner: parameter.owner.clone().map(ParameterOwner::Feature),
-            position: None,
+            position: positions.get(&parameter.id).copied(),
             name: NonBlankString::new(parameter.name.clone()),
             kind,
             unit,
@@ -126,6 +136,47 @@ pub(super) fn project(
     }
     ir.design.parameters.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(())
+}
+
+/// The place of each of `legacy` in the member list of the one table of
+/// `tables` that names its record, where the parameters of its owner come
+/// from one table.
+fn positions<'a>(
+    legacy: &'a [LegacyParameter],
+    raw: &HashMap<String, Option<&PmDcParameter>>,
+    tables: &[PmDcParameterTable],
+) -> BTreeMap<&'a ParameterId, u32> {
+    let members = unique_index(tables.iter().enumerate().flat_map(|(table, record)| {
+        let token = record.identity.segment_token.as_str();
+        (0_u32..)
+            .zip(record.members.references())
+            .filter_map(move |(place, member)| {
+                Some(((token, member.record_ordinal()?), (table, place)))
+            })
+    }));
+    let placed = legacy
+        .iter()
+        .filter_map(|parameter| {
+            let record = (*raw.get(parameter.native_ref.as_ref()?)?)?;
+            let key = (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            );
+            Some((parameter, (*members.get(&key)?)?))
+        })
+        .collect::<Vec<_>>();
+    let mut sources = BTreeMap::<Option<&FeatureId>, BTreeSet<usize>>::new();
+    for (parameter, (table, _)) in &placed {
+        sources
+            .entry(parameter.owner.as_ref())
+            .or_default()
+            .insert(*table);
+    }
+    placed
+        .into_iter()
+        .filter(|(parameter, _)| sources[&parameter.owner.as_ref()].len() == 1)
+        .map(|(parameter, (_, place))| (&parameter.id, place))
+        .collect()
 }
 
 fn unit(symbol: &str) -> Option<Unit> {
