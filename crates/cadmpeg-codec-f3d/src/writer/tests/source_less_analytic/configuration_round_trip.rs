@@ -8,7 +8,6 @@
 
 use std::io::{Cursor, Read};
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::export::ExportReport;
@@ -137,23 +136,16 @@ fn documents(archive: &[u8]) -> Vec<(String, Vec<u8>)> {
 fn written(ir: &cadmpeg_ir::CadIr, fidelity: Option<&SourceFidelity>) -> (ExportReport, Vec<u8>) {
     let mut bytes = Vec::new();
     let report = F3dCodec
-        .plan(EncodeInput::new(ir, fidelity), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, fidelity))
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("unedited write");
     (report, bytes)
 }
 
-/// `report` charges no configuration and names no configuration document,
-/// but for the patch path's decline of a moved active row.
+/// `report` charges no configuration and names no configuration document.
 fn assert_uncharged(shape: Shape, report: &ExportReport) {
     for loss in &report.losses {
         let code = loss.code.to_string();
-        if shape.moved
-            && code == "f3d/writer.patch-declined"
-            && loss.message.contains("changes the Design root record")
-        {
-            continue;
-        }
         assert!(
             ![
                 "export/edit.dropped",
@@ -244,6 +236,17 @@ fn every_table_shape_written_unedited_is_written_as_stated_with_no_charge() {
                 report.write_path()
             );
             assert_uncharged(shape, &report);
+            if shape.moved && fidelity.is_some() {
+                assert!(
+                    matches!(
+                        report.synthesis_cause(),
+                        Some(cadmpeg_ir::report::export::SynthesisCause::PatchDeclined { reason })
+                            if reason.contains("changes the Design root record")
+                    ),
+                    "{shape:?} {path}: {:?}",
+                    report.write_path()
+                );
+            }
             assert_eq!(documents(&bytes), documents(&archive), "{shape:?} {path}");
         }
     }

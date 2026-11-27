@@ -1353,8 +1353,6 @@ pub(crate) enum F3dLossCode {
     TsplineRadialMapUnresolved,
     /// A T-spline control cage was not decoded.
     TsplineCageUndecoded,
-    /// Preserved source image required for a byte-exact write was unavailable.
-    SourcePreservedImageUnavailable,
     /// The document was read with a grammar its own declarations do not select.
     SourceDialectUnverified,
     /// Export omits records named by the counted loss message.
@@ -1397,8 +1395,6 @@ pub(crate) enum F3dLossCode {
     WriterRollbackAssumed,
     /// An appearance was not written.
     WriterAppearanceOmitted,
-    /// The retained source could not carry an edit; the file was regenerated.
-    WriterPatchDeclined,
     /// The history arenas of a document read from CADIR JSON were not
     /// restored from its retained source; the file was written from its
     /// `design` records.
@@ -2251,7 +2247,6 @@ impl F3dLossCode {
         Self::TsplineRecordUntyped,
         Self::TsplineRadialMapUnresolved,
         Self::TsplineCageUndecoded,
-        Self::SourcePreservedImageUnavailable,
         Self::SourceDialectUnverified,
         Self::WriterAppearancePropertiesOmitted,
         Self::WriterProceduralReduced,
@@ -2271,7 +2266,6 @@ impl F3dLossCode {
         Self::WriterEdgeRangeAssumed,
         Self::WriterRollbackAssumed,
         Self::WriterAppearanceOmitted,
-        Self::WriterPatchDeclined,
         Self::WriterHistoryUnrestored,
         Self::WriterAppearanceGuidAllocated,
         Self::KernelDialectUnverified,
@@ -3496,7 +3490,6 @@ impl F3dLossCode {
             Self::TsplineRecordUntyped => "tspline.record-untyped",
             Self::TsplineRadialMapUnresolved => "tspline.radial-map-unresolved",
             Self::TsplineCageUndecoded => "tspline.cage-undecoded",
-            Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::WriterAppearancePropertiesOmitted => "writer.appearance-properties-omitted",
             Self::WriterProceduralReduced => "writer.procedural-reduced",
@@ -3516,7 +3509,6 @@ impl F3dLossCode {
             Self::WriterEdgeRangeAssumed => "writer.edge-range-assumed",
             Self::WriterRollbackAssumed => "writer.rollback-assumed",
             Self::WriterAppearanceOmitted => "writer.appearance-omitted",
-            Self::WriterPatchDeclined => "writer.patch-declined",
             Self::WriterHistoryUnrestored => "writer.history-unrestored",
             Self::WriterIntegerAsReal => "writer.integer-as-real",
             Self::WriterDesignRecordOmitted => "writer.design-record-omitted",
@@ -3628,7 +3620,6 @@ impl F3dLossCode {
             Self::WriterEdgeRangeAssumed => Severity::Warning,
             Self::WriterRollbackAssumed => Severity::Warning,
             Self::WriterAppearanceOmitted => Severity::Warning,
-            Self::WriterPatchDeclined => Severity::Warning,
             Self::WriterHistoryUnrestored => Severity::Warning,
             Self::WriterIntegerAsReal => Severity::Info,
             Self::WriterDesignRecordOmitted => Severity::Warning,
@@ -3680,9 +3671,7 @@ impl F3dLossCode {
             | Self::XrefMemberUndecoded
             | Self::TsplineCageUndecoded
             | Self::DesignIntentUndecoded => Severity::Error,
-            Self::GeometryNotTransferred
-            | Self::TopologyNotTransferred
-            | Self::SourcePreservedImageUnavailable => Severity::Blocking,
+            Self::GeometryNotTransferred | Self::TopologyNotTransferred => Severity::Blocking,
             Self::OperationPoseDisagrees
             | Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
@@ -4481,7 +4470,6 @@ impl F3dLossCode {
             Self::WriterEdgeRangeAssumed => LossTaxonomy::TopologyGaugeSubstituted,
             Self::WriterRollbackAssumed => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterAppearanceOmitted => LossTaxonomy::MaterialNotTransferred,
-            Self::WriterPatchDeclined => LossTaxonomy::PreservedSourceUnavailable,
             Self::WriterHistoryUnrestored => LossTaxonomy::PreservedSourceUnavailable,
             Self::WriterIntegerAsReal => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterDesignRecordOmitted => LossTaxonomy::ParametricRecordOmitted,
@@ -5230,7 +5218,6 @@ impl F3dLossCode {
             Self::TopologyNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::MissingGeometryStream => LossTaxonomy::MissingGeometryStream,
-            Self::SourcePreservedImageUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
             }
@@ -6169,7 +6156,6 @@ mod tests {
                 "tspline.record-untyped",
                 "tspline.radial-map-unresolved",
                 "tspline.cage-undecoded",
-                "source.preserved-image-unavailable",
                 "source.dialect-unverified",
                 "writer.appearance-properties-omitted",
                 "writer.procedural-reduced",
@@ -6189,7 +6175,6 @@ mod tests {
                 "writer.edge-range-assumed",
                 "writer.rollback-assumed",
                 "writer.appearance-omitted",
-                "writer.patch-declined",
                 "writer.history-unrestored",
                 "writer.appearance-guid-allocated",
                 "source.kernel-dialect-unverified",
