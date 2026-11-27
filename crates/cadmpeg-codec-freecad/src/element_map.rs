@@ -3,8 +3,10 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use cadmpeg_core::decode::{bounded_len, DecodeContext};
+use cadmpeg_core::decode::{bounded_len, ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::ids::Identity;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 
 use crate::native::element_map::{
     ElementMapGroup, ElementMapNode, ElementMapNodes, ElementMapRecord, ElementMappedName,
@@ -22,15 +24,17 @@ fn recover_metadata<T>(
     match result {
         Ok(value) => Ok(Some(value)),
         Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
-            losses.push(
-                crate::loss::FreecadLossCode::ElementMapMetadataUnresolved.note(format!(
-                    "{field} remains source-only: {error}; independent shape geometry is retained"
-                )),
-            );
+            losses.push(metadata_unresolved(field, &error));
             Ok(None)
         }
         Err(error) => Err(error),
     }
+}
+
+fn metadata_unresolved(field: &str, error: &CodecError) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::FreecadLossCode::ElementMapMetadataUnresolved.note(format!(
+        "{field} remains source-only: {error}; independent shape geometry is retained"
+    ))
 }
 
 const MAX_TABLE_ENTRIES: usize = 10_000_000;
@@ -71,6 +75,7 @@ pub(crate) fn parse(
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<(StringTables, Vec<ElementMapRecord>), CodecError> {
     // Orphan carriers are diagnosed once; each marker still proves its own
     // framing so a damaged table cannot erase independently framed peers.
@@ -355,8 +360,36 @@ pub(crate) fn parse(
                 maps: parsed.maps,
             }))
         })();
-        if let Some(map) = recover_metadata(parsed, losses, &property.id)?.flatten() {
-            maps.push(map);
+        match parsed {
+            Ok(map) => maps.extend(map),
+            Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
+                losses.push(metadata_unresolved(&property.id, &error).with_provenance(
+                    cadmpeg_ir::SourceProvenance::in_stream(
+                        "fcstd",
+                        cadmpeg_ir::stream_name!("Document.xml"),
+                        property.xml.start(),
+                    ),
+                ));
+                let identity = |id: String| Identity::new(id).map_err(CodecError::malformed);
+                // The kept property record holds the same raw XML.
+                let part = Part::at(
+                    crate::dialect::FORMAT,
+                    "property-element",
+                    property.xml.start(),
+                    property.xml.text().as_bytes(),
+                    [ArenaClass::Model],
+                )
+                .in_stream(cadmpeg_ir::stream_name!("Document.xml"))
+                .contained_in(identity(property.id.clone())?)
+                .dropping([identity(crate::native::native_child_id(
+                    "element-map",
+                    &property.id,
+                    "map",
+                ))?])
+                .digest_only();
+                given_up.push(ctx.give_up_part(part, error)?);
+            }
+            Err(error) => return Err(error),
         }
     }
     Ok((StringTables::try_from(tables)?, maps))

@@ -10,8 +10,9 @@ use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;
 use crate::test_support::container::{make_block, sldprt_with_body};
 use crate::test_support::history::resolved_features_payload_with_names_relation_and_scalar;
-use crate::test_support::parasolid::triangle_body;
+use crate::test_support::parasolid::{triangle_body, triangle_body_with_resolution};
 use crate::SldprtCodec;
+use cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION;
 
 use super::decode;
 
@@ -198,7 +199,7 @@ fn point_marker(bytes: &mut Vec<u8>, ordinal: u32, [x, y]: [f64; 2]) {
 ///   length, and whose relation-class token names `sgPntPntDist`; their
 ///   operands name the second and the fourth point, and the driving value is
 ///   [`D2_DRIVING_METRES`].
-fn token_dimension_part(reach: f64, stream: LaneStream) -> Vec<u8> {
+fn token_dimension_part(reach: f64, stream: LaneStream, linear_resolution: f64) -> Vec<u8> {
     let mut lane = vec![0x02, 0x00];
     for class in ["sgPointHandle", "sgLineHandle", "sgArcHandle"] {
         declare(&mut lane, class);
@@ -237,7 +238,7 @@ fn token_dimension_part(reach: f64, stream: LaneStream) -> Vec<u8> {
     for (ordinal, point) in (0u32..).zip([[1.0, 1.0], [0.0, 0.0], [5.0, 5.0], [reach, 0.0]]) {
         point_marker(&mut lane, ordinal, point);
     }
-    let mut source = sldprt_with_body(&triangle_body());
+    let mut source = sldprt_with_body(&triangle_body_with_resolution(linear_resolution));
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
@@ -301,7 +302,11 @@ fn a_refused_sketch_dimension_of_a_configuration_stream_lane_reaches_the_decode_
         (D2_DRIVING_METRES, true),
         (D2_DRIVING_METRES + OFF_VALUE_METRES, false),
     ] {
-        let decoded = decode(token_dimension_part(reach, LaneStream::Configuration));
+        let decoded = decode(token_dimension_part(
+            reach,
+            LaneStream::Configuration,
+            DEFAULT_LINEAR_RESOLUTION,
+        ));
         let native = SldprtNative::load(
             decoded
                 .ir()
@@ -333,6 +338,53 @@ fn a_refused_sketch_dimension_of_a_configuration_stream_lane_reaches_the_decode_
     }
 }
 
+/// A part decoded with a refused sketch dimension and written unchanged, with
+/// and without its decode sidecar, keeps its native records and the linear
+/// tolerance its body stores: the write states the tolerance the native
+/// records load at.
+#[test]
+fn a_part_written_unchanged_keeps_its_native_records_and_linear_tolerance() {
+    const OFF_VALUE_METRES: f64 = 1.0e-4;
+    const STORED_RESOLUTION_METRES: f64 = 1.0e-7;
+    let decoded = decode(token_dimension_part(
+        D2_DRIVING_METRES + OFF_VALUE_METRES,
+        LaneStream::ResolvedFeatures,
+        STORED_RESOLUTION_METRES,
+    ));
+    let ir = decoded.ir();
+    assert_eq!(
+        Some(ir.tolerances.linear),
+        cadmpeg_parasolid::precision::linear_precision(STORED_RESOLUTION_METRES)
+    );
+    for fidelity in [Some(decoded.source_fidelity()), None] {
+        let mut output = Vec::new();
+        let report = SldprtCodec
+            .plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
+            .unwrap()
+            .write_to(&mut output)
+            .unwrap();
+        assert!(
+            !report
+                .losses
+                .iter()
+                .any(|loss| loss.code.local_code() == "native.records-omitted"),
+            "{:?}",
+            report.losses
+        );
+        let read_back = decode(output);
+        assert_eq!(read_back.ir().tolerances, ir.tolerances);
+        let namespace = read_back
+            .ir()
+            .native
+            .namespace("sldprt")
+            .expect("native records");
+        if fidelity.is_some() {
+            assert_eq!(Some(namespace), ir.native.namespace("sldprt"));
+        }
+        assert!(SldprtNative::load(namespace, read_back.ir().tolerances.linear).is_ok());
+    }
+}
+
 /// A part decoded with a refused sketch dimension that its points measure
 /// only beyond the decode's linear tolerance, written under a linear
 /// tolerance that measures it, holds native relation instances that the
@@ -346,6 +398,7 @@ fn a_part_written_under_another_linear_tolerance_omits_its_stale_native_records(
     let decoded = decode(token_dimension_part(
         D2_DRIVING_METRES + OFF_VALUE_METRES,
         LaneStream::ResolvedFeatures,
+        DEFAULT_LINEAR_RESOLUTION,
     ));
     let mut ir = decoded.ir().clone();
     ir.tolerances.linear = PositiveLength::new(WRITE_TOLERANCE_MM).unwrap();

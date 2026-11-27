@@ -66,6 +66,7 @@ fn combine_scope(tools: &[(u32, u32)]) -> DesignParameterScope {
     let selection = |(entity, creator): (u32, u32), record_index| DesignCombineBodySelection {
         record_index,
         external_identity: None,
+        legacy_external_identity: None,
         body_node: Some(DesignCombineBodyNode {
             record_index: entity + 1,
             body_entity_suffix: entity,

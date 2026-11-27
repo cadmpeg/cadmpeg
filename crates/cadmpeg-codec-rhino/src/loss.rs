@@ -504,15 +504,6 @@ impl RhinoLossCode {
         }
     }
 
-    /// The strict floor `rhino_3dm.md` §21 states: a given-up framed object
-    /// record pins Warning.
-    const fn strict_floor(self) -> Option<Severity> {
-        match self {
-            Self::ObjectFramingUndecodable => Some(Severity::Warning),
-            _ => None,
-        }
-    }
-
     /// Namespaced [`LossKind`] for this local code.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
@@ -526,7 +517,6 @@ impl RhinoLossCode {
             self.code(),
             self.shared_taxonomy(),
         )
-        .with_strict_floor(self.strict_floor())
         .into()
     }
 
@@ -689,18 +679,12 @@ mod tests {
         );
     }
 
-    /// `rhino_3dm.md` §21 states a strict floor for an undecodable object
-    /// framing and for no other code.
+    /// `rhino_3dm.md` §21 states no strict floor for a Rhino code: a given-up
+    /// record refuses a pinned decode through `record.unreadable`.
     #[test]
-    fn only_an_undecodable_object_framing_pins_a_strict_floor() {
+    fn no_rhino_code_pins_a_strict_floor() {
         for code in RhinoLossCode::ALL {
-            let expected = match code {
-                RhinoLossCode::ObjectFramingUndecodable => {
-                    Some(cadmpeg_ir::report::Severity::Warning)
-                }
-                _ => None,
-            };
-            assert_eq!(code.kind().strict_floor(), expected, "{}", code.code());
+            assert_eq!(code.kind().strict_floor(), None, "{}", code.code());
         }
     }
 }

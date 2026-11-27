@@ -1933,6 +1933,15 @@ fn try_decode_standard_populations(
         if output.report.transfer.geometry_transferred() {
             merged.report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
         }
+        let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+        for mut loss in output.report.losses {
+            if loss.code == unreadable {
+                cadmpeg_ir::unknown::part::rescope_give_up(&mut loss, |id| {
+                    Ok(rescope_standard_id(id, &scope))
+                })?;
+                merged.report.losses.push(loss);
+            }
+        }
     }
 
     for (key, value) in population_coverage {
@@ -2674,6 +2683,15 @@ fn try_decode_standard_population(
         Err(StandardTopologyError::Codec(error)) => return Some(Err(error)),
     };
     let topology_attached = topology_failure.is_none();
+    let given_up_faces: Vec<cadmpeg_ir::ids::FaceId> = match topology_failure {
+        Some(_) => topology_ir
+            .geometry
+            .faces
+            .iter()
+            .map(|face| face.id.clone())
+            .collect(),
+        None => Vec::new(),
+    };
     if topology_attached {
         ir = topology_ir;
         annotations = topology_annotations.into_retained();
@@ -2838,6 +2856,16 @@ scan,
             admitted_standard_face_rows: face_count,
         },
 topology_failure.map(StandardTopologyFailure::message));
+    if let Some(failure) = topology_failure {
+        let code = CatiaLossCode::TopologyBoundaryGraphNotEmitted.kind();
+        report.losses.extend(given_up_faces.into_iter().map(|face| {
+            cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                face,
+                format_args!("{code}: {}", failure.message()),
+            )
+            .loss()
+        }));
+    }
     if consolidated_curve_bindings.rechart_numeric_failures != 0 {
         report.losses.push((CatiaLossCode::GeometryPcurveRechartNonFinite).note(format!(
             "{} pcurve rechart attempts produced non-finite coordinates; native records remain retained",
@@ -3005,6 +3033,7 @@ topology_failure.map(StandardTopologyFailure::message));
         report,
         annotations,
         unknowns,
+        given_up: Vec::new(),
         admitted_model_entities: admission.admitted(),
     }))
     })()

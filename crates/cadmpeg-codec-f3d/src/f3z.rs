@@ -107,7 +107,17 @@ fn compose(
     if !archive_untyped.is_empty() {
         fidelity.mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, archive_untyped)?;
     }
-    crate::decode::commit_given_up_parts(ctx, scan, &mut ir, &mut fidelity)?;
+    // `outer_losses` already holds the loss of each part the scan or the
+    // member classification gave up.
+    crate::decode::commit_parts(
+        ctx,
+        scan.given_up
+            .iter()
+            .chain(&session.archive.given_up)
+            .cloned(),
+        &mut ir,
+        &mut fidelity,
+    )?;
     if let Some(drawing_root) = &session.omitted_drawing_root {
         push_loss(&mut report.losses, F3dLossCode::DrawingDocumentOmitted, format_args!(
             "drawing root {drawing_root} is omitted; decoded its unambiguous derived model {model_root}"

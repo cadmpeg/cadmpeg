@@ -356,3 +356,33 @@ fn sweep_losses_distinguish_support_from_malformed_records_and_budgets() {
     let malformed = super::mapping_loss_code(&feature, false, true, "malformed parameters");
     assert!(OnshapeLossCode::HistoryNotSupported.matches(&malformed.note("record")));
 }
+
+#[test]
+fn custom_features_keep_the_history_loss_whatever_their_type() {
+    for (kind, extra) in [
+        (
+            "extrude",
+            json!({"parameters":[{"parameterId":"bodyType","value":"THIN"}]}),
+        ),
+        (
+            "sweep",
+            json!({"parameters":[
+                {"parameterId":"bodyType","value":"SOLID"},
+                {"parameterId":"operationType","value":"NEW"},
+                {"parameterId":"profiles","queries":[]},
+                {"parameterId":"path","queries":[]}
+            ]}),
+        ),
+    ] {
+        let mut feature = extra;
+        feature["featureType"] = json!(kind);
+        let built_in = super::mapping_loss_code(&feature, false, true, "unsupported control");
+        assert!(!OnshapeLossCode::HistoryNotSupported.matches(&built_in.note("built-in")));
+        feature["namespace"] = json!("synthetic");
+        let custom = super::mapping_loss_code(&feature, false, true, "custom feature");
+        assert!(OnshapeLossCode::HistoryNotSupported.matches(&custom.note("custom")));
+        feature["namespace"] = json!("");
+        let empty = super::mapping_loss_code(&feature, false, true, "empty namespace");
+        assert!(!OnshapeLossCode::HistoryNotSupported.matches(&empty.note("built-in")));
+    }
+}

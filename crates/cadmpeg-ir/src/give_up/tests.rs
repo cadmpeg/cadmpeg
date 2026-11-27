@@ -11,7 +11,7 @@ use cadmpeg_core::json;
 use super::{give_up, Arena, Seed};
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use crate::document::CadIr;
-use crate::ids::Identity;
+use crate::ids::{FaceId, Identity};
 use crate::report::loss::LossNote;
 use crate::source_fidelity::SourceFidelity;
 use crate::topology::{FaceLoops, RegionUnstated, Shell, Unstated};
@@ -102,7 +102,9 @@ fn gone(ir: &CadIr, seed: &str, outcome: &Outcome) -> BTreeSet<String> {
 }
 
 fn holds(ir: &CadIr, id: &str) -> bool {
-    ir.references().held.contains_key(id)
+    ir.references_from(super::References::default())
+        .held
+        .contains_key(id)
 }
 
 /// No referential-integrity finding of `ir` names an id the give-up
@@ -618,7 +620,7 @@ fn a_name_of_a_lost_feature_keeps_its_native_name_or_is_released() {
 }
 
 #[test]
-fn a_native_record_that_names_a_lost_record_is_dropped() {
+fn a_native_record_that_states_a_lost_id_is_kept() {
     let mut ir = crate::examples::unit_cube().unwrap();
     let point = ir.geometry.points[0].id.as_str().to_owned();
     let native = "test:native:mark#1";
@@ -632,8 +634,9 @@ fn a_native_record_that_names_a_lost_record_is_dropped() {
         .set_arena_records("marks", vec![record])
         .unwrap();
     let (outcome, _) = run(&mut ir, seed("geometry", "points", &point));
-    assert!(outcome.dropped.contains(native));
-    assert!(!holds(&ir, native));
+    assert!(!outcome.dropped.contains(native));
+    assert!(!outcome.marked.contains(native));
+    assert!(holds(&ir, native));
     assert_closed(&ir, &point, &outcome);
 }
 
@@ -1046,8 +1049,8 @@ fn a_given_up_record_and_its_delta_records_take_their_annotations() {
     let evaluation = after_extrude(&ir).id.clone();
     let dangling = "test:design:face#missing";
     let qualified = [
-        AnnotationKey::in_delta(&evaluation, &face),
-        AnnotationKey::in_delta(&evaluation, &own),
+        AnnotationKey::in_delta(&evaluation, &FaceId::mint(face.as_str()).unwrap()),
+        AnnotationKey::in_delta(&evaluation, &FaceId::mint(own.as_str()).unwrap()),
     ];
     let stream = StreamHandle::new(crate::stream_name!("test:source"));
     let mut builder = crate::AnnotationBuilder::new();

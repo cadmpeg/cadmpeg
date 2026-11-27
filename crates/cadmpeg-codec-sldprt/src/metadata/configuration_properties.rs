@@ -9,6 +9,7 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::{AttributeId, IdentityKey};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::Exactness;
 
 use crate::container::{ContainerScan, Section};
@@ -54,6 +55,7 @@ pub(super) fn append(
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<(), CodecError> {
     let count = scan.sections().filter(|owner| is_owner(*owner)).count();
     let mut owners =
@@ -79,21 +81,38 @@ pub(super) fn append(
             end += 1;
         }
         if end == cursor + 1 {
-            let projected = match owner {
-                Section::Block(_) => project_owner(ctx, owner, index, out, annotations, losses),
-                Section::Compound(_) => {
-                    project_compound_owner(ctx, owner, index, out, annotations, losses)
+            let mut rows = Vec::new();
+            let mut notes = Annotations::default();
+            let mut row_losses = Vec::new();
+            let projected = ctx.run_part(|| match owner {
+                Section::Block(_) => {
+                    project_owner(ctx, owner, index, &mut rows, &mut notes, &mut row_losses)
                 }
-            };
+                Section::Compound(_) => project_compound_owner(
+                    ctx,
+                    owner,
+                    index,
+                    &mut rows,
+                    &mut notes,
+                    &mut row_losses,
+                ),
+            })?;
             match projected {
-                Ok(()) => {}
-                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                Err(error) => losses.push(
+                Ok(()) => {
+                    out.extend(rows);
+                    annotations
+                        .append(notes)
+                        .map_err(|error| CodecError::malformed(error.to_string()))?;
+                    losses.extend(row_losses);
+                }
+                Err(error @ CodecError::NotImplemented(_)) => losses.push(
                     SldprtLossCode::MetadataConfigurationPropertyCarrierUnsupported.note(format!(
-                        "Configuration-property carrier {} retains unsupported data: {error}",
+                        "Configuration-property carrier {} retains property data in a form the \
+                         decoder does not read: {error}",
                         owner.source_stream().as_str()
                     )),
                 ),
+                Err(error) => super::give_up_carrier(ctx, owner, error, given_up)?,
             }
         } else {
             losses.push(
@@ -204,8 +223,8 @@ fn project_owner(
     if root.tag_name().name() != "ConfigProperties"
         || root.tag_name().namespace() != Some(ROOT_NAMESPACE)
     {
-        return Err(CodecError::malformed(
-            "configuration-property XML root is unsupported",
+        return Err(CodecError::NotImplemented(
+            "configuration-property XML root is unsupported".into(),
         ));
     }
     let mut sets = root.children().filter(|node| {
@@ -220,16 +239,22 @@ fn project_owner(
             })
     });
     let section = sets.next().ok_or_else(|| {
-        CodecError::malformed("configuration-property XML has no UserDefinedProperties set")
+        CodecError::NotImplemented(
+            "configuration-property XML has no UserDefinedProperties set".into(),
+        )
     })?;
-    if sets.next().is_some()
-        || section
-            .tag_name()
-            .namespace()
-            .is_some_and(|namespace| !namespace.is_empty())
-    {
+    if sets.next().is_some() {
         return Err(CodecError::malformed(
-            "configuration-property set is repeated or namespaced",
+            "configuration-property set is repeated",
+        ));
+    }
+    if section
+        .tag_name()
+        .namespace()
+        .is_some_and(|namespace| !namespace.is_empty())
+    {
+        return Err(CodecError::NotImplemented(
+            "configuration-property set is namespaced".into(),
         ));
     }
     if section
@@ -245,8 +270,8 @@ fn project_owner(
                 )
         })
     {
-        return Err(CodecError::malformed(
-            "configuration-property set has an unsupported record",
+        return Err(CodecError::NotImplemented(
+            "configuration-property set has an unsupported record".into(),
         ));
     }
     let named = || {
@@ -265,8 +290,8 @@ fn project_owner(
             .namespace()
             .is_some_and(|namespace| !namespace.is_empty())
         {
-            return Err(CodecError::malformed(
-                "configuration-property record is namespaced",
+            return Err(CodecError::NotImplemented(
+                "configuration-property record is namespaced".into(),
             ));
         }
         *slot = property(node)?;

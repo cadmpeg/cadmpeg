@@ -90,6 +90,7 @@ pub(super) struct TopologyBudgets<'inputs> {
 pub(super) struct TopologyLosses<'losses> {
     pub(super) losses: &'losses mut Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(super) partial_faces: &'losses mut Vec<(FaceId, cadmpeg_ir::report::loss::LossNote)>,
+    pub(super) given_up: &'losses mut Vec<cadmpeg_ir::unknown::part::GivenUpPart>,
 }
 
 pub(super) fn emit_topology(
@@ -104,6 +105,7 @@ pub(super) fn emit_topology(
     let TopologyLosses {
         losses: topology_losses,
         partial_faces: partial_face_losses,
+        given_up,
     } = topology_losses;
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
@@ -258,19 +260,33 @@ pub(super) fn emit_topology(
     }
     let mut admitted_shells = Vec::new();
     let mut shape_bodies = BTreeSet::new();
+    let mut given_up_shells = BTreeMap::new();
     for shell in graph.body_shape_shells() {
-        shape_bodies.extend(
-            shell
-                .shell_fields()
-                .and_then(|fields| fields.body.map(u32::from)),
-        );
+        let body = shell
+            .shell_fields()
+            .and_then(|fields| fields.body.map(u32::from));
+        shape_bodies.extend(body);
         if admitted_shell_faces.contains_key(&shell.xmt()) {
             admitted_shells.push(shell);
         } else {
-            topology_losses.push(crate::loss::NxLossCode::TopologyShellWithheld.note(format!(
-                "parasolid#{stream_index} SHELL {} is withheld: no FACE of the shell is admitted",
+            let withheld = crate::loss::NxLossCode::TopologyShellWithheld.note(format!(
+                "parasolid#{stream_index} SHELL {} is withheld: no FACE of the shell is \
+                 admitted",
                 shell.xmt()
-            )));
+            ));
+            let part = super::build::give_up_record(
+                ctx,
+                (stream_index, source_stream.name()),
+                shell,
+                &withheld,
+            )?;
+            if let Some(body) = body {
+                given_up_shells
+                    .entry(body)
+                    .or_insert_with(|| part.id().clone());
+            }
+            given_up.push(part);
+            topology_losses.push(withheld);
         }
     }
     let mut first_body_shells = BTreeMap::new();
@@ -398,9 +414,26 @@ pub(super) fn emit_topology(
     for body_xmt in shape_bodies {
         let body = bodies.get(&body_xmt);
         if body.is_none_or(|body| !shell_owners.contains(body)) {
-            topology_losses.push(crate::loss::NxLossCode::TopologyShellWithheld.note(format!(
+            let withheld = crate::loss::NxLossCode::TopologyShellWithheld.note(format!(
                 "parasolid#{stream_index} BODY {body_xmt} is withheld: no SHELL of the body is emitted"
-            )));
+            ));
+            if let Some(shell) = given_up_shells.get(&body_xmt) {
+                let body: BodyId = match body {
+                    Some(body) => body.clone(),
+                    None => {
+                        scope.id_from_display(&cadmpeg_ir::identity_component!("body"), body_xmt)?
+                    }
+                };
+                topology_losses.push(cadmpeg_ir::unknown::part::dropped_with(body, shell));
+            } else if let Some(node) = graph.get(NodeKind::Body, body_xmt) {
+                given_up.push(super::build::give_up_record(
+                    ctx,
+                    (stream_index, source_stream.name()),
+                    node,
+                    &withheld,
+                )?);
+            }
+            topology_losses.push(withheld);
             withheld_bodies.extend(body.cloned());
         }
     }

@@ -279,7 +279,7 @@ fn type_2_reals_decode_compact_bits_runs_and_child_rows() {
         .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.real_values.rows.len(), 4);
-    assert_eq!(persistence.real_values.unresolved_count, 0);
+    assert!(persistence.real_values.unresolved.is_empty());
     assert_eq!(
         persistence.real_values.rows[0].payload,
         RealPayload::Scalar {
@@ -336,7 +336,7 @@ fn type_2_reals_withhold_incomplete_or_nonfinite_values() {
         .expect("the fixture states every scope inside its own bytes");
 
     assert!(persistence.real_values.rows.is_empty());
-    assert_eq!(persistence.real_values.unresolved_count, 3);
+    assert_eq!(persistence.real_values.unresolved.len(), 3);
 }
 
 #[test]
@@ -348,7 +348,7 @@ fn type_1_integers_decode_signed_scalars_runs_and_child_rows() {
         .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.integer_values.rows.len(), 3);
-    assert_eq!(persistence.integer_values.unresolved_count, 0);
+    assert!(persistence.integer_values.unresolved.is_empty());
     assert_eq!(
         persistence.integer_values.rows[0].payload,
         IntegerPayload::Scalar { value: i32::MIN }
@@ -389,7 +389,7 @@ fn type_1_integers_withhold_incomplete_arrays_and_overflow() {
         .expect("the fixture states every scope inside its own bytes");
 
     assert!(persistence.integer_values.rows.is_empty());
-    assert_eq!(persistence.integer_values.unresolved_count, 2);
+    assert_eq!(persistence.integer_values.unresolved.len(), 2);
 }
 
 #[test]
@@ -407,7 +407,7 @@ fn remaining_numeric_types_decode_their_scalar_and_array_grammars() {
         .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.type_5_values.rows.len(), 2);
-    assert_eq!(persistence.type_5_values.unresolved_count, 0);
+    assert!(persistence.type_5_values.unresolved.is_empty());
     assert_eq!(
         persistence.type_5_values.rows[1].payload,
         UnsignedPayload::array(
@@ -423,7 +423,7 @@ fn remaining_numeric_types_decode_their_scalar_and_array_grammars() {
         .expect("numeric array work admission")
     );
     assert_eq!(persistence.type_6_values.rows.len(), 2);
-    assert_eq!(persistence.type_6_values.unresolved_count, 0);
+    assert!(persistence.type_6_values.unresolved.is_empty());
     assert_eq!(
         persistence.type_6_values.rows[0].payload,
         RealPayload::Scalar {
@@ -431,11 +431,11 @@ fn remaining_numeric_types_decode_their_scalar_and_array_grammars() {
         }
     );
     assert_eq!(persistence.type_7_values.rows.len(), 2);
-    assert_eq!(persistence.type_7_values.unresolved_count, 0);
+    assert!(persistence.type_7_values.unresolved.is_empty());
     assert_eq!(persistence.type_9_values.rows.len(), 1);
-    assert_eq!(persistence.type_9_values.unresolved_count, 0);
+    assert!(persistence.type_9_values.unresolved.is_empty());
     assert_eq!(persistence.type_11_values.rows.len(), 2);
-    assert_eq!(persistence.type_11_values.unresolved_count, 0);
+    assert!(persistence.type_11_values.unresolved.is_empty());
     assert_eq!(
         persistence.type_11_values.rows[1].payload,
         UnsignedPayload::array(
@@ -458,11 +458,11 @@ fn remaining_numeric_types_withhold_undefined_values() {
         .expect("the fixture states every scope inside its own bytes");
 
     assert!(persistence.type_5_values.rows.is_empty());
-    assert_eq!(persistence.type_5_values.unresolved_count, 1);
+    assert_eq!(persistence.type_5_values.unresolved.len(), 1);
     assert!(persistence.type_6_values.rows.is_empty());
-    assert_eq!(persistence.type_6_values.unresolved_count, 1);
+    assert_eq!(persistence.type_6_values.unresolved.len(), 1);
     assert!(persistence.type_11_values.rows.is_empty());
-    assert_eq!(persistence.type_11_values.unresolved_count, 1);
+    assert_eq!(persistence.type_11_values.unresolved.len(), 1);
 }
 
 #[test]
@@ -478,7 +478,7 @@ fn type_3_and_type_4_decode_exact_scalar_bytes() {
         .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.type_3_values.rows.len(), 3);
-    assert_eq!(persistence.type_3_values.unresolved_count, 1);
+    assert_eq!(persistence.type_3_values.unresolved.len(), 1);
     assert_eq!(persistence.type_3_values.rows[0].payload, StringValue::Null);
     assert_eq!(
         persistence.type_3_values.rows[1].payload,
@@ -495,7 +495,7 @@ fn type_3_and_type_4_decode_exact_scalar_bytes() {
     assert_eq!(persistence.type_3_values.rows[0].parent, Some(root_offset));
 
     assert_eq!(persistence.type_4_values.rows.len(), 2);
-    assert_eq!(persistence.type_4_values.unresolved_count, 0);
+    assert!(persistence.type_4_values.unresolved.is_empty());
     assert_eq!(
         persistence.type_4_values.rows[0].payload,
         StringValue::Utf8 {
@@ -1217,26 +1217,26 @@ fn typed_value_results_keep_grammar_and_unresolved_counts_together() {
     let persistence = scan(data, std::iter::once(0..data.len()))
         .expect("the fixture states every scope inside its own bytes");
     assert_eq!(persistence.type_3_values.rows[0].payload, StringValue::Null);
-    assert_eq!(persistence.type_3_values.unresolved_count, 2);
+    assert_eq!(persistence.type_3_values.unresolved.len(), 2);
     assert_eq!(
         persistence.type_4_values.rows[0].payload,
         StringValue::Utf8 {
             text: "NULL".to_owned()
         }
     );
-    assert_eq!(persistence.type_4_values.unresolved_count, 0);
+    assert!(persistence.type_4_values.unresolved.is_empty());
     assert_eq!(
         persistence.type_5_values.rows[0].payload,
         NumericPayload::Scalar { value: 7 }
     );
-    assert_eq!(persistence.type_5_values.unresolved_count, 1);
+    assert_eq!(persistence.type_5_values.unresolved.len(), 1);
     assert_eq!(
         persistence.type_6_values.rows[0].payload,
         NumericPayload::Scalar {
             value: Real::from_bits(1.0f64.to_bits())
         }
     );
-    assert_eq!(persistence.type_6_values.unresolved_count, 0);
+    assert!(persistence.type_6_values.unresolved.is_empty());
 }
 
 #[test]
@@ -1266,7 +1266,7 @@ fn numeric_array_withholds_child_at_maximum_depth() {
         persistence.integer_values.rows[0].payload,
         IntegerPayload::Scalar { value: 7 }
     ));
-    assert_eq!(persistence.integer_values.unresolved_count, 1);
+    assert_eq!(persistence.integer_values.unresolved.len(), 1);
 }
 
 #[test]

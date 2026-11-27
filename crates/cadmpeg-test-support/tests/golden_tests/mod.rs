@@ -34,6 +34,7 @@ use cadmpeg_test_support::unknown_keys::accepting_shapes;
 use serde_json::Value;
 
 mod annotation_paths;
+mod give_up_charges;
 mod schema_sweep;
 
 #[test]
@@ -279,7 +280,7 @@ fn hand_written_documents() -> Vec<(&'static str, Value)> {
                 "test:model:semantic-annotation#0"
                     .try_into()
                     .expect("valid identity"),
-                "zz:object".to_string(),
+                "zz:test:object#0".try_into().expect("valid identity"),
                 SemanticAnnotationKind::Text,
                 "zz:runtime".to_string(),
                 0,

@@ -284,6 +284,144 @@ fn a_given_up_record_takes_the_annotations_of_its_sidecar() {
         .all(|kept| kept.id.as_str() != point));
 }
 
+/// A sidecar read with the document loses the annotations of each record
+/// of a stored state's delta that the read drops with a given-up record,
+/// under the record's key in that state, and keeps those of the state
+/// (§3.2, §3.3).
+#[test]
+fn a_given_up_record_takes_the_annotations_of_the_delta_records_it_drops() {
+    let mut ir = crate::validate::design::fixture::document();
+    let face = ir.geometry.faces[0].clone();
+    let shell = face.shell.clone();
+    let own = crate::topology::Face {
+        id: crate::ids::FaceId::mint("test:design:face#delta").unwrap(),
+        ..face.clone()
+    };
+    let evaluation = ir.design.evaluations[0].id.clone();
+    ir.design.evaluations[0]
+        .content
+        .as_mut()
+        .expect("the fixture stores the state")
+        .delta
+        .records
+        .faces = vec![face.clone(), own.clone()];
+    ir.finalize();
+    let mut value = json::to_value(&ir).unwrap();
+    value["geometry"]["shells"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|record| record["id"] == json!(shell.as_str()))
+        .expect("the face's shell")["region"] = json!([]);
+    let read = read(value.to_string().as_bytes());
+    assert!(
+        codes(&read.report).contains(&"decode/record.unreadable".to_owned()),
+        "{:?}",
+        read.report
+    );
+
+    let qualified = [
+        crate::annotations::AnnotationKey::in_delta(&evaluation, &face.id),
+        crate::annotations::AnnotationKey::in_delta(&evaluation, &own.id),
+    ];
+    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
+    let mut annotations = crate::AnnotationBuilder::new();
+    for key in qualified
+        .iter()
+        .cloned()
+        .chain([crate::annotations::AnnotationKey::from(&evaluation)])
+    {
+        annotations.note(&key, &stream, 0, None);
+    }
+    let mut sidecar =
+        crate::SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(b"test source"));
+    sidecar.annotations = annotations.build();
+
+    let (_, _, fidelity) = read.with_sidecar(sidecar).unwrap();
+
+    let keys: Vec<&str> = fidelity
+        .annotations
+        .provenance
+        .keys()
+        .map(crate::annotations::AnnotationKey::as_str)
+        .collect();
+    assert_eq!(keys, [evaluation.as_str()]);
+}
+
+/// A release that stops on an error after it dropped records keeps the id
+/// of each record it dropped, so a sidecar read with the document loses
+/// their annotations (§3.3).
+#[test]
+fn a_release_that_stops_on_an_error_keeps_the_records_it_dropped() {
+    use cadmpeg_core::text::NonBlankString;
+
+    use crate::native::{NativeField, NativeRecord};
+
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let mut document = unit_cube().unwrap();
+    let point = document.geometry.points.remove(0).id;
+    let needing: Vec<crate::ids::VertexId> = document
+        .geometry
+        .vertices
+        .iter()
+        .filter(|vertex| vertex.point == point)
+        .map(|vertex| vertex.id.clone())
+        .collect();
+    assert!(!needing.is_empty());
+    // The rewrite of the stubs after the release refuses an arena that
+    // states one stub id twice.
+    let stub = NativeRecord::from_identity(
+        crate::ids::Identity::new("cadir:record:unknown#0").unwrap(),
+        [(
+            "links".to_owned(),
+            NativeField::TextList(vec![point.as_str().to_owned()]),
+        )],
+    );
+    document
+        .native
+        .namespace_mut(cadmpeg_core::text::CodecId::new("cadir".to_owned()).unwrap())
+        .arenas_mut()
+        .insert(
+            NonBlankString::new("unknowns").unwrap(),
+            vec![stub.clone(), stub],
+        );
+    let mut reader = super::Reader {
+        bytes: b"",
+        ctx: &ctx,
+        limits: cadmpeg_core::decode::ResourceLimits::default(),
+        report: Vec::new(),
+        parts: Vec::new(),
+        part_entries: std::collections::BTreeMap::new(),
+        lost: vec![(point.as_str().to_owned(), 0)],
+        removed: crate::annotations::Removed::default(),
+        stop: None,
+        refusal: None,
+    };
+
+    reader.release_lost(&mut document).unwrap();
+
+    let [entry] = reader.report.as_slice() else {
+        panic!("one entry: {:?}", reader.report);
+    };
+    assert!(
+        entry.message.contains("are not released"),
+        "{}",
+        entry.message
+    );
+    let removed = reader.removed.after(&document);
+    for vertex in &needing {
+        assert!(document
+            .geometry
+            .vertices
+            .iter()
+            .all(|kept| kept.id != *vertex));
+        assert!(
+            removed.names(&crate::annotations::AnnotationKey::from(vertex)),
+            "{vertex}"
+        );
+    }
+}
+
 /// Each record that needs a given-up record is dropped, transitively, until
 /// no record of the document names a dropped one; each record that holds
 /// one as a member is kept with a mark; and the entry that gives the record
@@ -355,10 +493,11 @@ fn a_record_that_needs_a_given_up_record_is_dropped_and_named() {
     }
 }
 
-/// The entry that gives a record up names each native record that links to
-/// it, and the document keeps no link to it (§3.3).
+/// A native record holds no reference into the neutral model (§2): one
+/// whose value states the id of a given-up record keeps its place, and the
+/// entry that gives the record up does not name it.
 #[test]
-fn a_native_record_that_links_to_a_given_up_record_is_named() {
+fn a_native_record_that_states_a_given_up_id_is_kept() {
     const ANNOTATION: &str = "test:native:annotation#1";
     let mut ir = unit_cube().unwrap();
     let point = ir.geometry.points[0].id.as_str().to_owned();
@@ -375,6 +514,7 @@ fn a_native_record_that_links_to_a_given_up_record_is_named() {
             vec![annotation],
         );
     let mut value = json::to_value(&ir).unwrap();
+    let annotations = value["native"]["test"].clone();
     points(&mut value)[0]["position"] = json!("not a point");
     let read = read(value.to_string().as_bytes());
     let entry = read
@@ -383,15 +523,47 @@ fn a_native_record_that_links_to_a_given_up_record_is_named() {
         .find(|entry| entry.code == crate::unknown::part::record_unreadable_kind())
         .unwrap_or_else(|| panic!("{:?}", read.report));
     assert!(
-        listed(&entry.message, "dropped")
+        !listed(&entry.message, "dropped")
             .into_iter()
             .chain(listed(&entry.message, "marked"))
             .any(|id| id == ANNOTATION),
         "{}",
         entry.message
     );
-    let native = json::to_string(&read.document.native).unwrap();
-    assert!(!native.contains(&format!("\"{point}\"")), "{native}");
+    assert_eq!(
+        json::to_value(&read.document.native).unwrap()["test"],
+        annotations
+    );
+}
+
+/// A label names nothing: a surface whose source object states the id of a
+/// given-up point keeps its place, and so do the faces on it (§3.3).
+#[test]
+fn a_record_whose_label_states_a_given_up_id_is_kept() {
+    const LOOSE: &str = "test:geometry:point#loose";
+    let (ir, mut value) = wire();
+    let mut loose = points(&mut value)[0].clone();
+    loose["id"] = json!(LOOSE);
+    loose["position"] = json!("not a point");
+    points(&mut value).push(loose);
+    value["geometry"]["surfaces"][0]["source_object"] =
+        json!({"format": "test", "object_id": LOOSE, "instance_path": []});
+    let read = read(value.to_string().as_bytes());
+    let document = &read.document;
+    assert!(document
+        .geometry
+        .points
+        .iter()
+        .all(|kept| kept.id.as_str() != LOOSE));
+    assert_eq!(document.geometry.surfaces.len(), ir.geometry.surfaces.len());
+    assert_eq!(document.geometry.faces.len(), ir.geometry.faces.len());
+    assert_eq!(
+        document.geometry.surfaces[0]
+            .source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some(LOOSE)
+    );
 }
 
 /// A record nested past the depth bound is given up without a reading of
@@ -635,4 +807,77 @@ fn a_key_restated_with_different_values_in_a_kept_record_is_given_up_as_parts() 
     assert_eq!(read.document.geometry, ir.geometry);
     assert_eq!(codes(&read.report), ["read/record.repeated"]);
     assert_eq!(read.document.native_unknowns("cadir").unwrap().len(), 2);
+}
+
+/// The `object` of the view presentations in `read`.
+fn view_objects(read: &CadirRead) -> Vec<Option<String>> {
+    read.document
+        .model
+        .view_presentations
+        .iter()
+        .map(|view| {
+            view.object
+                .as_ref()
+                .map(|object| object.as_str().to_owned())
+        })
+        .collect()
+}
+
+/// A view presentation whose `object` names a neutral record the read gives
+/// up keeps no link to it (§3.3).
+#[test]
+fn a_view_presentation_keeps_no_object_of_a_given_up_point() {
+    let (_, mut value) = wire();
+    let point = points(&mut value)[0]["id"].as_str().unwrap().to_owned();
+    value["model"]["view_presentations"] = json!([{
+        "id": "test:model:view#1", "object": point, "order": 0, "properties": {}
+    }]);
+    points(&mut value)[0]["position"] = json!("not a point");
+    let read = read(value.to_string().as_bytes());
+    assert!(read
+        .document
+        .geometry
+        .points
+        .iter()
+        .all(|kept| kept.id.as_str() != point));
+    assert!(
+        view_objects(&read)
+            .iter()
+            .flatten()
+            .all(|object| *object != point),
+        "{:?}",
+        read.report
+    );
+}
+
+/// A view presentation whose `object` names a native record that the read
+/// gives up for an id stated twice with different values keeps no link to
+/// it (§3.3).
+#[test]
+fn a_view_presentation_keeps_no_object_of_a_repeated_native_record() {
+    const OBJECT: &str = "test:native:object#1";
+    let (_, mut value) = wire();
+    value["native"]["test"] = json!({"objects": [
+        {"id": OBJECT, "label": "a"},
+        {"id": OBJECT, "label": "b"}
+    ]});
+    value["model"]["view_presentations"] = json!([{
+        "id": "test:model:view#1", "object": OBJECT, "order": 0, "properties": {}
+    }]);
+    let read = read(value.to_string().as_bytes());
+    assert!(
+        codes(&read.report)
+            .iter()
+            .any(|code| code == "read/record.repeated"),
+        "{:?}",
+        read.report
+    );
+    assert!(
+        view_objects(&read)
+            .iter()
+            .flatten()
+            .all(|object| object != OBJECT),
+        "{:?}",
+        read.report
+    );
 }

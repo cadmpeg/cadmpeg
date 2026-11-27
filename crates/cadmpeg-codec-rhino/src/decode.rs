@@ -28,6 +28,7 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{FinitePoint2, OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::SourceProvenance;
@@ -173,7 +174,8 @@ struct ClassOutcome<'a> {
     retained: usize,
     native: Option<(RhinoLossCode, NonZeroUsize)>,
     attribute_degraded: usize,
-    failed_framed: usize,
+    /// Source orders of the framed records the decoder gave up.
+    failed_framed: Vec<usize>,
     first_object: &'a ObjectRecord,
 }
 
@@ -226,6 +228,7 @@ impl ReportBuckets {
 }
 
 const MAX_INSTANCE_REFERENCES: usize = 1 << 20;
+
 const MAX_INSTANCE_MEMBERS: usize = 1 << 20;
 const MAX_INSTANCE_ENTITIES: usize = 1 << 20;
 /// Member visits, copied entities, and the points, control points, mesh
@@ -325,17 +328,20 @@ impl ExpansionBudget {
 
 /// Source-record links and object outcomes that one top-level instance
 /// expansion added. A rejected expansion removes exactly these, so rollback
-/// work follows the expansion, not the document.
+/// work follows the expansion, not the document. `capped` lists the members
+/// that the instance entity cap refused.
 #[derive(Debug, Default)]
 struct ExpansionUndo {
     links: Vec<(usize, String)>,
     outcomes: Vec<usize>,
+    capped: Vec<usize>,
 }
 
 impl ExpansionUndo {
     fn absorb(&mut self, mut inner: Self) {
         self.links.append(&mut inner.links);
         self.outcomes.append(&mut inner.outcomes);
+        self.capped.append(&mut inner.capped);
     }
 }
 
@@ -407,6 +413,8 @@ pub(crate) struct DecodeContext<'a> {
     definition_candidates: HashMap<crate::wire::Uuid, usize>,
     expansion_budget: ExpansionBudget,
     expansion_undo: Option<ExpansionUndo>,
+    /// Definition members that failed to decode in a rejected expansion.
+    failed_members: BTreeSet<usize>,
     /// The mesh objects committed, by tessellation id: each is a mesh body of
     /// the root, stated with its own name, colour, and visibility once the
     /// root exists.
@@ -465,6 +473,7 @@ impl<'a> DecodeContext<'a> {
             definition_candidates,
             expansion_budget: ExpansionBudget::new(),
             expansion_undo: None,
+            failed_members: BTreeSet::new(),
             mesh_bodies: HashMap::new(),
             object_presentations: HashMap::new(),
         };
@@ -650,6 +659,7 @@ impl<'a> DecodeContext<'a> {
         let entity_count = candidate.entity_count();
         let mut budget = self.expansion_budget;
         let expanding = self.instance_selection.is_some();
+        let mut capped = false;
         let appended = self.session.try_admit_append(
             candidate,
             annotations,
@@ -665,6 +675,7 @@ impl<'a> DecodeContext<'a> {
                     ))));
                 }
                 if expanding && !budget.entities(entity_count) {
+                    capped = true;
                     return Ok(Err(CandidateError::Admission(
                         ENTITY_BUDGET_EXCEEDED.to_string(),
                     )));
@@ -674,6 +685,9 @@ impl<'a> DecodeContext<'a> {
                 Ok(Ok((value, annotations)))
             },
         );
+        if capped {
+            self.note_entity_cap();
+        }
         let (value, annotations) = appended??;
         annotations.apply(&mut self.annotations);
         self.expansion_budget = budget;
@@ -760,7 +774,7 @@ impl<'a> DecodeContext<'a> {
         }
         let code = match self.resolve_object(id) {
             ObjectReference::Resolved(order) => {
-                return Some(format!("{}", Self::mint_unknown_id(order)));
+                return Some(format!("{}", crate::container::object_record_id(order)));
             }
             ObjectReference::Missing => RhinoLossCode::ReferenceMemberUnresolved,
             ObjectReference::Ambiguous => RhinoLossCode::ReferenceMemberAmbiguous,
@@ -1414,7 +1428,7 @@ impl<'a> DecodeContext<'a> {
                     parameters,
                 }),
             ),
-            native_ref: Some(Self::mint_unknown_id(source_order).to_string()),
+            native_ref: Some(crate::container::object_record_id(source_order).to_string()),
             product_definition: None,
         };
         match self
@@ -2159,6 +2173,10 @@ impl<'a> DecodeContext<'a> {
         }
         for source_order in undo.outcomes {
             if let Some(status) = self.statuses.get_mut(source_order) {
+                if *status == Some(GeometryOutcome::Failed) && !undo.capped.contains(&source_order)
+                {
+                    self.failed_members.insert(source_order);
+                }
                 *status = None;
             }
         }
@@ -2681,28 +2699,38 @@ impl<'a> DecodeContext<'a> {
         Ok(())
     }
 
-    /// Mints the stable unknown-record ID for source order.
-    fn mint_unknown_id(source_order: usize) -> UnknownId {
-        UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("rhino", "object", "record"),
-            cadmpeg_ir::ids::IdentityKey::zero_padded(
-                cadmpeg_core::decode::u64_from_index(source_order),
-                6,
-            ),
+    /// Gives up the framed object record at `source_order`, of class
+    /// `class`, that no decoder transferred.
+    fn give_up_object(
+        &self,
+        source_order: usize,
+        class: &str,
+    ) -> Result<GivenUpPart, cadmpeg_core::CodecError> {
+        let record = crate::container::object_record_id(source_order);
+        let why = RhinoLossCode::ObjectFramingUndecodable.note(format_args!(
+            "framed object record {record} of class {class} could not be decoded"
+        ));
+        crate::container::give_up_object_record(
+            self.expand.ctx(),
+            self.scan.data,
+            source_order,
+            self.scan.objects[source_order].range(),
+            &why,
         )
     }
 
     /// Commits the transaction and produces canonical IR and report state.
     pub(crate) fn commit(mut self) -> Result<Decoded, cadmpeg_core::CodecError> {
+        for source_order in std::mem::take(&mut self.failed_members) {
+            self.mark_failed(source_order);
+        }
         let ctx = self.expand.ctx();
         for loss in &self.scan.metadata.losses {
             self.report.phase_losses.push(loss.clone());
         }
-        self.report.typed_losses.extend(crate::annotations::install(
-            ctx,
-            self.scan,
-            self.session.document_mut()?,
-        )?);
+        let (annotation_losses, mut given_up) =
+            crate::annotations::install(ctx, self.scan, self.session.document_mut()?)?;
+        self.report.typed_losses.extend(annotation_losses);
         let document_data =
             crate::document_data::install(ctx, self.scan, self.session.document_mut()?)?;
         self.report.typed_losses.extend(document_data.losses);
@@ -2712,16 +2740,17 @@ impl<'a> DecodeContext<'a> {
         let presentation =
             crate::presentation::install(ctx, self.scan, self.session.document_mut()?)?;
         self.report.typed_losses.extend(presentation.losses);
+        given_up.extend(presentation.given_up);
         for source in presentation.opaque_records {
             self.retain_opaque_record(&source)?;
         }
-        self.report.typed_losses.extend(crate::product::install(
-            ctx,
-            self.scan,
-            self.session.document_mut()?,
-        )?);
+        let (product_losses, product_given_up) =
+            crate::product::install(ctx, self.scan, self.session.document_mut()?)?;
+        self.report.typed_losses.extend(product_losses);
+        given_up.extend(product_given_up);
         let views = crate::views::install(ctx, self.scan, self.session.document_mut()?)?;
         self.report.typed_losses.extend(views.losses);
+        given_up.extend(views.given_up);
         for source in views.opaque_records {
             self.retain_opaque_record(&source)?;
         }
@@ -2793,21 +2822,33 @@ impl<'a> DecodeContext<'a> {
                         .with_provenance(loss_provenance(class, outcome)),
                 );
             }
-            if outcome.failed_framed > 0 {
+            if !outcome.failed_framed.is_empty() {
                 losses.push(
                     RhinoLossCode::ObjectFramingUndecodable
                         .note(format_args!(
                             "{} framed object record(s) for class {class} could not be decoded",
-                            outcome.failed_framed
+                            outcome.failed_framed.len()
                         ))
                         .with_provenance(loss_provenance(class, outcome)),
                 );
+                for source_order in &outcome.failed_framed {
+                    given_up.push(self.give_up_object(*source_order, class)?);
+                }
             }
         }
 
         self.report.typed_losses.extend(omissions);
         for diagnostic in self.scan.definitions.diagnostics() {
-            losses.push(diagnostic.to_loss());
+            let loss = diagnostic.to_loss();
+            if let Some(record) = &diagnostic.given_up {
+                given_up.push(crate::container::give_up_table_record(
+                    ctx,
+                    self.scan.data,
+                    record,
+                    &loss,
+                )?);
+            }
+            losses.push(loss);
         }
 
         losses.append(&mut self.report.typed_losses);
@@ -2893,10 +2934,18 @@ impl<'a> DecodeContext<'a> {
             .iter()
             .map(|record| record.id().clone())
             .collect::<Vec<_>>();
-        source_fidelity.retain_unknown_records("rhino", self.opaque_records)?;
+        source_fidelity
+            .retain_unknown_records(crate::container::FILE_OWNER, self.opaque_records)?;
         for id in untyped {
             source_fidelity.mark_untyped(id.as_str(), [cadmpeg_core::decode::ArenaClass::Model])?;
         }
+        losses.extend(crate::container::commit_given_up(
+            ctx,
+            self.scan.data,
+            &mut ir,
+            &mut source_fidelity,
+            given_up,
+        )?);
         let primary = crate::container::dialect_match(self.scan);
         // Charged from the admission the source records, so the document-level
         // residual admission and its loss cannot be reported apart.
@@ -2932,7 +2981,7 @@ impl<'a> DecodeContext<'a> {
             let object = &self.scan.objects[source_order];
             let range = object.range();
             let degraded = object.is_degraded();
-            let id = Self::mint_unknown_id(source_order);
+            let id = crate::container::object_record_id(source_order);
             let record = self.source_record(id, range)?;
 
             records.push(record);
@@ -2988,20 +3037,7 @@ impl<'a> DecodeContext<'a> {
         &mut self,
         source: &OpaqueRecord,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        let table_key = source.table_typecode.to_be_bytes();
-        let record_key = source.record.typecode.to_be_bytes();
-        let offset_key =
-            (cadmpeg_core::decode::u64_from_index(source.record.range.start)).to_be_bytes();
-        let key = IdentityKey::hex_byte(table_key[0])
-            .with_hex_bytes(&table_key[1..])
-            .dash(IdentityKey::hex_byte(record_key[0]).with_hex_bytes(&record_key[1..]))
-            .dash(IdentityKey::hex_byte(offset_key[0]).with_hex_bytes(&offset_key[1..]));
-        let id = UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("rhino", "opaque", "record"),
-            key,
-        );
-
-        let record = self.source_record(id, source.record.range.clone())?;
+        let record = self.source_record(source.id(), source.record.range.clone())?;
         self.opaque_records.push(record);
         Ok(())
     }
@@ -3083,6 +3119,7 @@ impl<'a> DecodeContext<'a> {
         let mut budget = self.expansion_budget;
         if self.instance_selection.is_some() && !budget.entities(amount) {
             self.scan_warning(source_order, format_args!("{ENTITY_BUDGET_EXCEEDED}"));
+            self.note_entity_cap();
             return Ok(false);
         }
         self.expand
@@ -3090,6 +3127,14 @@ impl<'a> DecodeContext<'a> {
             .charge_entities(u64_from_index(amount), "rhino_instance_entities")?;
         self.expansion_budget = budget;
         Ok(true)
+    }
+
+    /// Records that the instance entity cap refused the selected member, so a
+    /// rejected expansion does not give it up.
+    fn note_entity_cap(&mut self) {
+        if let (Some(undo), Some(selected)) = (&mut self.expansion_undo, &self.instance_selection) {
+            undo.capped.push(selected.source_order);
+        }
     }
 
     fn commit_geometry(
@@ -3629,10 +3674,13 @@ impl<'a> DecodeContext<'a> {
                 self.append_link(source_order, &link)?;
             }
             Err(CandidateError::Codec(error)) => return Err(error),
-            Err(findings) => self.scan_warning(
-                source_order,
-                format_args!("unknown surface validation rejected candidate: {findings}"),
-            ),
+            Err(findings) => {
+                self.scan_warning(
+                    source_order,
+                    format_args!("unknown surface validation rejected candidate: {findings}"),
+                );
+                self.mark_failed(source_order);
+            }
         }
         Ok(())
     }
@@ -3840,23 +3888,26 @@ impl<'a> DecodeContext<'a> {
                     !full_topology && !emitted_geometry && !draft.model().tessellations.is_empty();
                 let entity_count = draft.entity_count();
                 let mut budget = self.expansion_budget;
-                let committed =
-                    if self.instance_selection.is_none() || budget.entities(entity_count) {
-                        match self.session.validate_source_records()? {
-                            Ok(()) => match self.session.commit(draft, &mut self.annotations)? {
-                                Ok(()) => Ok(()),
-                                Err(error) => Err(format!("{error}")),
-                            },
+                let admitted = self.instance_selection.is_none() || budget.entities(entity_count);
+                let committed = if admitted {
+                    match self.session.validate_source_records()? {
+                        Ok(()) => match self.session.commit(draft, &mut self.annotations)? {
+                            Ok(()) => Ok(()),
                             Err(error) => Err(format!("{error}")),
-                        }
-                    } else {
-                        Err(ENTITY_BUDGET_EXCEEDED.to_string())
-                    };
+                        },
+                        Err(error) => Err(format!("{error}")),
+                    }
+                } else {
+                    Err(ENTITY_BUDGET_EXCEEDED.to_string())
+                };
                 if let Err(error) = committed {
                     self.scan_warning(
                         source_order,
                         format_args!("Brep draft rejected before commit: {error}"),
                     );
+                    if admitted {
+                        self.mark_failed(source_order);
+                    }
                 } else {
                     self.expansion_budget = budget;
                     self.append_links(source_order, &links)?;
@@ -3901,6 +3952,12 @@ impl<'a> DecodeContext<'a> {
                     source_order,
                     format_args!("Brep geometry/topology degraded: {error}"),
                 );
+                if !matches!(
+                    error,
+                    crate::curves::GeometryError::UnsupportedVersion { .. }
+                ) {
+                    self.mark_failed(source_order);
+                }
             }
         }
         Ok(())
@@ -3919,14 +3976,16 @@ impl<'a> DecodeContext<'a> {
 
     fn class_outcomes(&self) -> Result<Vec<(String, ClassOutcome<'a>)>, cadmpeg_core::CodecError> {
         let mut outcomes = HashMap::new();
-        for (object, status) in self.scan.objects.iter().zip(&self.statuses) {
+        for (source_order, (object, status)) in
+            self.scan.objects.iter().zip(&self.statuses).enumerate()
+        {
             let class = object.class_uuid().unwrap_or_else(crate::wire::Uuid::nil);
             let outcome = outcomes.entry(class).or_insert_with(|| ClassOutcome {
                 decoded: 0,
                 retained: 0,
                 native: None,
                 attribute_degraded: 0,
-                failed_framed: 0,
+                failed_framed: Vec::new(),
                 first_object: object,
             });
             // Keep the first framed source, or the last degraded source if none was framed.
@@ -3941,7 +4000,7 @@ impl<'a> DecodeContext<'a> {
             match status {
                 None => outcome.retained += 1,
                 Some(GeometryOutcome::Decoded) => outcome.decoded += 1,
-                Some(GeometryOutcome::Failed) => outcome.failed_framed += 1,
+                Some(GeometryOutcome::Failed) => outcome.failed_framed.push(source_order),
                 Some(GeometryOutcome::NativeRetained(code)) => {
                     let count = outcome
                         .native

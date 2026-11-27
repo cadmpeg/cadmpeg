@@ -255,6 +255,25 @@ pub(crate) struct ProteinRejectionRecord {
     detail: NonBlankString,
 }
 
+impl ProteinRejectionRecord {
+    /// The id of the asset record the rejection stands in place of.
+    pub(crate) fn asset_id(&self) -> String {
+        asset_id(self.entry_name.as_str(), self.ordinal)
+    }
+
+    pub(crate) fn detail(&self) -> &str {
+        self.detail.as_str()
+    }
+}
+
+/// The id of the asset record at `ordinal` of the Protein entry `entry_name`.
+pub(crate) fn asset_id(entry_name: &str, ordinal: u64) -> String {
+    format!(
+        "inventor:protein:asset#{}-{ordinal}",
+        cadmpeg_ir::hash::sha256_hex(entry_name.as_bytes())
+    )
+}
+
 impl Serialize for ProteinRejectionRecord {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut fields = serializer.serialize_struct("ProteinRejectionRecordWire", 4)?;

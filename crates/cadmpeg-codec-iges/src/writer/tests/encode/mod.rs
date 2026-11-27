@@ -489,9 +489,9 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
             "the IGES write omits 1 native record(s) of `iges` arena `cards` that are Start \
              section cards, whose text the semantic writer replaces with its own: \
              iges:physical:card#1",
-            "the IGES write omits 1 native record(s) of `iges` arena `display_attributes` which \
-             the bounded semantic writer does not regenerate: \
-             iges:presentation:display-attributes#D1",
+            "the IGES write omits 1 native record(s) of `iges` arena `display_attributes` that \
+             are Directory line font, level, view, or line weight fields the semantic writer \
+             writes with its own values: iges:presentation:display-attributes#D1",
             "the IGES write omits 1 native record(s) of `iges` arena \
              `product_occurrence_expansion` which the bounded semantic writer does not \
              regenerate: iges:product:occurrence-expansion#state",
