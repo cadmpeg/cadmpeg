@@ -389,12 +389,16 @@ fn a_face_that_states_no_orientation_drops_its_loops_and_coedges() {
     let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
         .unwrap()
         .unwrap();
-    let range = records
+    let face = records
         .nodes()
         .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::FACE)
-        .unwrap()
-        .field_range("sense")
         .unwrap();
+    let span = format!(
+        " stream=\"solidedge:PARASOLID/STREAM0.P_B\" offset={} length={} given up: ",
+        face.range().start,
+        face.range().len()
+    );
+    let range = face.field_range("sense").unwrap();
     partition[range].copy_from_slice(b"?");
     let bytes = test_support::with_partitions(&[partition]);
     let result = SolidEdgeCodec
@@ -414,6 +418,7 @@ fn a_face_that_states_no_orientation_drops_its_loops_and_coedges() {
         charge.starts_with("record solidedge:brep:face#"),
         "{charge}"
     );
+    assert!(charge.contains(&span), "{charge}");
     let dropped = charge
         .split_once("; dropped=[")
         .and_then(|(_, tail)| tail.split_once(']'))
@@ -986,6 +991,101 @@ fn vertexless_ring_edge_is_bounded_by_one_vertex_on_its_carrier() {
         .get();
     assert!((range[1] - range[0] - std::f64::consts::TAU).abs() < EPS_RING_VERTEX_MM);
     assert_geometry_valid(ir);
+}
+
+/// A vertexless edge with no carrier is given up with its node's span in the
+/// partition stream, from the start of the node sequence after any text
+/// header, and drops its loop, coedge, and face.
+#[test]
+fn a_vertexless_edge_with_no_carrier_is_given_up_at_its_node() {
+    let partition = test_support::uncarried_ring_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let edge = records
+        .nodes()
+        .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::EDGE)
+        .unwrap()
+        .range();
+    let header = b"**END_OF_HEADER\n".to_vec();
+    for prefix in [Vec::new(), header] {
+        let mut stream = prefix.clone();
+        stream.extend_from_slice(&partition);
+        let result = decode_partition(stream);
+        let geometry = &result.ir().geometry;
+        assert!(geometry.edges.is_empty());
+        assert!(geometry.faces.is_empty());
+        assert!(geometry.loops.is_empty());
+        assert!(geometry.coedges.is_empty());
+        let charges: Vec<_> = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+            .collect();
+        let [charge] = charges.as_slice() else {
+            panic!("one record.unreadable: {charges:?}");
+        };
+        let offset = prefix.len() + edge.start;
+        let span = format!(
+            " stream=\"solidedge:PARASOLID/STREAM0.P_B\" offset={offset} length={} given up: \
+             a vertexless edge has no carrier; dropped=[",
+            edge.len()
+        );
+        assert!(
+            charge.message.starts_with("record solidedge:brep:edge#"),
+            "{charge:?}"
+        );
+        assert!(charge.message.contains(&span), "{charge:?}");
+        assert_eq!(
+            charge
+                .provenance
+                .as_ref()
+                .map(|provenance| provenance.offset),
+            Some(u64::try_from(offset).unwrap())
+        );
+        let dropped = charge
+            .message
+            .split_once("; dropped=[")
+            .and_then(|(_, tail)| tail.split_once(']'))
+            .map(|(list, _)| list.split(", ").collect::<Vec<_>>())
+            .unwrap();
+        for kind in [
+            "solidedge:brep:coedge#",
+            "solidedge:brep:face#",
+            "solidedge:brep:loop#",
+        ] {
+            assert!(dropped.iter().any(|id| id.starts_with(kind)), "{charge:?}");
+        }
+    }
+}
+
+/// A swept ring face whose edge has neither a vertex nor a carrier is
+/// dropped with its loop; its surface leaves with it, and the charge names
+/// the surface's procedural construction among the records dropped.
+#[test]
+fn a_dropped_swept_face_names_the_construction_of_its_surface() {
+    let kept = decode_partition(test_support::swept_ring_partition(NULL_REAL));
+    let [construction] = kept.ir().geometry.procedural_surfaces.as_slice() else {
+        panic!("the swept surface has one construction");
+    };
+    let result = decode_partition(test_support::uncarried_swept_ring_partition(NULL_REAL));
+    let geometry = &result.ir().geometry;
+    assert!(geometry.faces.is_empty());
+    assert!(geometry.procedural_surfaces.is_empty());
+    let id = construction.id.as_str();
+    assert!(
+        result.report().losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss
+                    .message
+                    .split_once("; dropped=[")
+                    .and_then(|(_, tail)| tail.split_once(']'))
+                    .is_some_and(|(list, _)| list.split(", ").any(|named| named == id))
+        }),
+        "{:#?}",
+        result.report().losses
+    );
 }
 
 fn swept_ring_direction(scale: f64) -> f64 {
