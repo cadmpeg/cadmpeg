@@ -119,6 +119,44 @@ fn same_feature_owner(
     }
 }
 
+/// Whether an occurrence body selection names a body that no definition at
+/// `depth` nested occurrence levels below the occurrence's prototype owns.
+/// An absent occurrence or prototype is a referential finding of its own.
+fn occurrence_selection_leaves_its_prototype(
+    ir: &CadIr,
+    occurrence: &crate::ids::OccurrenceId,
+    depth: usize,
+    bodies: &[crate::ids::BodyId],
+) -> bool {
+    let definition = |id: &crate::ids::ProductDefinitionId| {
+        ir.model
+            .product_definitions
+            .iter()
+            .find(|row| &row.id == id)
+    };
+    let prototype_of = |id: &crate::ids::OccurrenceId| {
+        ir.model
+            .occurrences
+            .iter()
+            .find(|row| &row.id == id)
+            .map(|row| &row.prototype)
+    };
+    let Some(prototype) = prototype_of(occurrence).and_then(definition) else {
+        return false;
+    };
+    let mut level = vec![prototype];
+    for _ in 0..depth {
+        level = level
+            .iter()
+            .flat_map(|owner| &owner.occurrences)
+            .filter_map(|child| prototype_of(child).and_then(definition))
+            .collect();
+    }
+    bodies
+        .iter()
+        .any(|body| !level.iter().any(|owner| owner.bodies.contains(body)))
+}
+
 fn ref_error(
     findings: &mut Vec<Finding>,
     owner: &str,
@@ -718,16 +756,16 @@ pub(super) fn check_references(
             }
             AppearanceTarget::Tessellation(tessellation)
                 if ids
-                    .tessellations(tessellation, crate::index::StandardIndex)
+                    .tessellations(tessellation.as_str(), crate::index::StandardIndex)
                     .is_none() =>
             {
-                ref_error(findings, &owner, "tessellation", tessellation);
+                ref_error(findings, &owner, "tessellation", tessellation.as_str());
             }
             AppearanceTarget::TriangleGroup {
                 tessellation,
                 group,
-            } => match ids.tessellations(tessellation, crate::index::StandardIndex) {
-                None => ref_error(findings, &owner, "tessellation", tessellation),
+            } => match ids.tessellations(tessellation.as_str(), crate::index::StandardIndex) {
+                None => ref_error(findings, &owner, "tessellation", tessellation.as_str()),
                 Some(mesh)
                     if !mesh
                         .triangle_groups()
@@ -4972,6 +5010,43 @@ fn check_feature_references(
                             crate::rule!(
                                 "topology.generated-body-selection-invalid",
                                 "generated body selection is invalid"
+                            ),
+                        );
+                    }
+                }
+                BodySelection::Occurrence {
+                    occurrence,
+                    occurrence_path,
+                    bodies,
+                    ..
+                } => {
+                    if !occurrence_ids.contains(occurrence.as_str()) {
+                        ref_error(
+                            findings,
+                            feature.id.as_str(),
+                            "body-selection occurrence",
+                            occurrence.as_str(),
+                        );
+                    }
+                    check_ids(
+                        findings,
+                        feature.id.as_str(),
+                        "selected body",
+                        bodies.iter().map(super::super::ids::BodyId::as_str),
+                        |identity| ids.bodies(identity, crate::index::StandardIndex).is_some(),
+                    );
+                    if occurrence_selection_leaves_its_prototype(
+                        ir,
+                        occurrence,
+                        occurrence_path.len(),
+                        bodies,
+                    ) {
+                        geometry_error(
+                            findings,
+                            feature.id.as_str(),
+                            crate::rule!(
+                                "topology.occurrence-body-selection-outside-prototype",
+                                "occurrence body selection names a body outside its prototype"
                             ),
                         );
                     }

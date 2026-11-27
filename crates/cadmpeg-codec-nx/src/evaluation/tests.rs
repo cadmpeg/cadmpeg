@@ -252,7 +252,7 @@ fn body_census_result_rejects_noncanonical_and_contradictory_wire_states() {
     for bodies in [vec![a.clone(), a.clone()], vec![b.clone(), a.clone()]] {
         assert!(BodyCensusEvaluation::verified(bodies.clone()).is_err());
         assert!(json::from_value::<BodyCensusEvaluation>(
-            serde_json::json!({"kind": "verified", "bodies": bodies})
+            cadmpeg_core::json!({"kind": "verified", "bodies": bodies})
         )
         .is_err());
     }
@@ -260,19 +260,19 @@ fn body_census_result_rejects_noncanonical_and_contradictory_wire_states() {
         for (rederived, saved) in [(invalid.clone(), vec![]), (vec![], invalid)] {
             assert!(BodyCensusEvaluation::mismatch(rederived.clone(), saved.clone()).is_err());
             assert!(json::from_value::<BodyCensusEvaluation>(
-                serde_json::json!({"kind": "mismatch", "rederived": rederived, "saved": saved})
+                cadmpeg_core::json!({"kind": "mismatch", "rederived": rederived, "saved": saved})
             )
             .is_err());
         }
     }
     assert!(BodyCensusEvaluation::mismatch(vec![a.clone()], vec![a.clone()]).is_err());
     assert!(json::from_value::<BodyCensusEvaluation>(
-        serde_json::json!({"kind": "mismatch", "rederived": [a.clone()], "saved": [a.clone()]})
+        cadmpeg_core::json!({"kind": "mismatch", "rederived": [a.clone()], "saved": [a.clone()]})
     )
     .is_err());
     for wire in [
-        serde_json::json!({"kind": "verified", "bodies": [a.clone(), b.clone()]}),
-        serde_json::json!({"kind": "mismatch", "rederived": [a], "saved": [b]}),
+        cadmpeg_core::json!({"kind": "verified", "bodies": [a.clone(), b.clone()]}),
+        cadmpeg_core::json!({"kind": "mismatch", "rederived": [a], "saved": [b]}),
     ] {
         let result: BodyCensusEvaluation = json::from_value(wire.clone()).unwrap();
         assert_eq!(json::to_value(result).unwrap(), wire);

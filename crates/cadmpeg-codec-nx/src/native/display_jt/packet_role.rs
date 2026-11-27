@@ -200,7 +200,7 @@ mod tests {
         }
 
         for label in ["vertex_flags", "high_degree_face_attribute_masks_12"] {
-            let role: TopologyPacketRole = json::from_value(serde_json::json!(label)).unwrap();
+            let role: TopologyPacketRole = json::from_value(cadmpeg_core::json!(label)).unwrap();
             let record = Record {
                 id: "nx:jt:packet-role#1",
                 role: &role,
@@ -208,7 +208,7 @@ mod tests {
             ROLE_INTO_STRING_COUNT.with(|count| count.set(0));
             cadmpeg_test_support::native_serialization::assert_native_limit(
                 &record,
-                serde_json::json!({"id": record.id, "role": label}),
+                cadmpeg_core::json!({"id": record.id, "role": label}),
             );
             ROLE_INTO_STRING_COUNT.with(|count| assert_eq!(count.get(), 0));
         }
@@ -225,7 +225,7 @@ mod tests {
             "high_degree_face_attribute_masks_",
             "face_attribute_masks_7_next_31",
         ] {
-            assert!(json::from_value::<TopologyPacketRole>(serde_json::json!(label)).is_err());
+            assert!(json::from_value::<TopologyPacketRole>(cadmpeg_core::json!(label)).is_err());
         }
     }
 }

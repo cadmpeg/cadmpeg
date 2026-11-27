@@ -459,8 +459,8 @@ mod tests {
         );
 
         assert_eq!(
-            serde_json::to_value(refusal).expect("target refusal serializes"),
-            serde_json::json!({
+            crate::serde_erase::json::to_value(refusal).expect("target refusal serializes"),
+            crate::json!({
                 "format": "fcstd",
                 "refusal": {
                     "kind": "explicit_unavailable",
@@ -489,8 +489,8 @@ mod tests {
     fn empty_catalog_refusal_retains_its_format() {
         let refusal = TargetRefusal::unknown_explicit("future", TargetCatalog::empty("cadir"));
         assert_eq!(
-            serde_json::to_value(&refusal).expect("serialize target refusal"),
-            serde_json::json!({
+            crate::serde_erase::json::to_value(&refusal).expect("serialize target refusal"),
+            crate::json!({
                 "format": "cadir",
                 "refusal": {"kind": "unknown_explicit", "requested": "future"},
                 "available": []
@@ -591,8 +591,9 @@ mod tests {
         );
 
         assert_eq!(
-            serde_json::to_value(&refusal).expect("serialize refusal")["refusal"]["source"],
-            serde_json::json!({"kind": "unrecorded_dialect"})
+            crate::serde_erase::json::to_value(&refusal).expect("serialize refusal")["refusal"]
+                ["source"],
+            crate::json!({"kind": "unrecorded_dialect"})
         );
         assert_eq!(
             refusal.to_string(),

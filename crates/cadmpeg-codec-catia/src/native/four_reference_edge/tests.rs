@@ -121,9 +121,9 @@ fn wire_self_consistency_checks_all_derived_fields() {
         for field in ["value", "encoding"] {
             let mut invalid = wire.clone();
             invalid["operands"][slot][field] = if field == "value" {
-                serde_json::json!(63)
+                cadmpeg_core::json!(63)
             } else {
-                serde_json::json!("selector2")
+                cadmpeg_core::json!("selector2")
             };
             assert!(json::from_value::<CatiaConsolidatedFourReferenceEdge>(invalid).is_err());
         }
@@ -137,11 +137,11 @@ fn wire_self_consistency_checks_all_derived_fields() {
     ] {
         let mut invalid = wire.clone();
         match field {
-            "terminal" => invalid[field] = serde_json::json!(0x22),
-            "terminal_value" => invalid[field] = serde_json::json!(0),
-            "terminal_encoding" => invalid[field] = serde_json::json!("selector2"),
-            "payload" => invalid["frame"][field] = serde_json::json!("090f070b26"),
-            "header_token" => invalid["frame"][field] = serde_json::json!(256),
+            "terminal" => invalid[field] = cadmpeg_core::json!(0x22),
+            "terminal_value" => invalid[field] = cadmpeg_core::json!(0),
+            "terminal_encoding" => invalid[field] = cadmpeg_core::json!("selector2"),
+            "payload" => invalid["frame"][field] = cadmpeg_core::json!("090f070b26"),
+            "header_token" => invalid["frame"][field] = cadmpeg_core::json!(256),
             _ => unreachable!(),
         }
         assert!(json::from_value::<CatiaConsolidatedFourReferenceEdge>(invalid).is_err());

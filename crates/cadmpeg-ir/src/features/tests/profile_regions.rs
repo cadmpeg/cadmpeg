@@ -25,14 +25,14 @@ fn boundary_parameter_ranges_reject_invalid_values_and_preserve_direction() {
                 reversed,
             };
             let wire = json::to_value(&boundary).unwrap();
-            assert_eq!(wire["parameter_range"], serde_json::json!(endpoints));
+            assert_eq!(wire["parameter_range"], cadmpeg_core::json!(endpoints));
             assert_eq!(
                 json::from_value::<SketchProfileBoundaryUse>(wire.clone()).unwrap(),
                 boundary
             );
             for invalid in [
-                serde_json::json!([2.0, 2.0]),
-                serde_json::json!([null, 2.0]),
+                cadmpeg_core::json!([2.0, 2.0]),
+                cadmpeg_core::json!([null, 2.0]),
             ] {
                 let mut wire = wire.clone();
                 wire["parameter_range"] = invalid;
@@ -50,12 +50,12 @@ fn region_loops_reject_repeated_and_outer_holes() {
     for holes in [vec![1, 1], vec![0], vec![1, 0]] {
         assert!(SketchProfileLoops::new(0, holes.clone(),).is_err());
         assert!(SketchProfileRegion::loops(0, holes.clone(),).is_err());
-        let wire = serde_json::json!({"outer": 0, "holes": holes});
+        let wire = cadmpeg_core::json!({"outer": 0, "holes": holes});
         assert!(json::from_value::<SketchProfileLoops>(wire.clone())
             .unwrap_err()
             .to_string()
             .contains("holes"));
-        let region = serde_json::json!({"kind": "loops", "outer": 0, "holes": holes});
+        let region = cadmpeg_core::json!({"kind": "loops", "outer": 0, "holes": holes});
         assert!(json::from_value::<SketchProfileRegion>(region)
             .unwrap_err()
             .to_string()
@@ -71,7 +71,7 @@ fn region_loops_reject_repeated_and_outer_holes() {
         let wire = json::to_value(&region).unwrap();
         assert_eq!(wire["kind"], "loops");
         assert_eq!(wire["outer"], 0);
-        assert_eq!(wire["holes"], serde_json::json!(holes));
+        assert_eq!(wire["holes"], cadmpeg_core::json!(holes));
         assert_eq!(
             json::from_value::<SketchProfileRegion>(wire).unwrap(),
             region
@@ -89,8 +89,8 @@ fn trimmed_regions_require_nonempty_rings_and_region_selections_are_distinct() {
     assert!(SketchProfileRegion::trimmed(vec![], vec![]).is_err());
     assert!(SketchProfileRegion::trimmed(vec![boundary.clone()], vec![vec![]]).is_err());
     for wire in [
-        serde_json::json!({"kind": "trimmed", "outer_boundary": []}),
-        serde_json::json!({"kind": "trimmed", "outer_boundary": [boundary], "hole_boundaries": [[]]}),
+        cadmpeg_core::json!({"kind": "trimmed", "outer_boundary": []}),
+        cadmpeg_core::json!({"kind": "trimmed", "outer_boundary": [boundary], "hole_boundaries": [[]]}),
     ] {
         let error = json::from_value::<SketchProfileRegion>(wire)
             .unwrap_err()
@@ -112,7 +112,7 @@ fn trimmed_regions_require_nonempty_rings_and_region_selections_are_distinct() {
     ] {
         assert!(SketchProfileRegions::try_from(regions.clone()).is_err());
         assert!(PlanarProfileRef::sketch_regions(sketch.clone(), regions.clone()).is_err());
-        let wire = serde_json::json!({"kind": "sketch_regions", "value": {"sketch": sketch, "regions": regions}});
+        let wire = cadmpeg_core::json!({"kind": "sketch_regions", "value": {"sketch": sketch, "regions": regions}});
         assert!(json::from_value::<ProfileRef>(wire.clone()).is_err());
         assert!(json::from_value::<PlanarProfileRef>(wire)
             .unwrap_err()
@@ -122,7 +122,7 @@ fn trimmed_regions_require_nonempty_rings_and_region_selections_are_distinct() {
     let profile = PlanarProfileRef::sketch_regions(sketch, vec![trimmed, loops]).unwrap();
     let wire = json::to_value(&profile).unwrap();
     assert_eq!(
-        json::from_value::<ProfileRef>(serde_json::json!({"kind": "planar", "value": wire}))
+        json::from_value::<ProfileRef>(cadmpeg_core::json!({"kind": "planar", "value": wire}))
             .unwrap(),
         ProfileRef::Planar(profile)
     );
@@ -152,20 +152,20 @@ fn a_sketch_profile_region_states_which_boundary_form_it_uses() {
     );
 
     let mut cross = loops_wire;
-    cross["outer_boundary"] = serde_json::json!([boundary]);
+    cross["outer_boundary"] = cadmpeg_core::json!([boundary]);
     let error = json::from_value::<SketchProfileRegion>(cross)
         .unwrap_err()
         .to_string();
     assert!(error.contains("outer_boundary"), "{error}");
 
     let mut stray = trimmed_wire;
-    stray["outer"] = serde_json::json!(0);
+    stray["outer"] = cadmpeg_core::json!(0);
     let error = json::from_value::<SketchProfileRegion>(stray)
         .unwrap_err()
         .to_string();
     assert!(error.contains("outer"), "{error}");
 
-    let error = json::from_value::<SketchProfileRegion>(serde_json::json!({"outer": 0}))
+    let error = json::from_value::<SketchProfileRegion>(cadmpeg_core::json!({"outer": 0}))
         .unwrap_err()
         .to_string();
     assert!(error.contains("kind"), "{error}");

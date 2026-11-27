@@ -6,10 +6,13 @@ mod references;
 mod token_wire;
 mod validate;
 
-use cadmpeg_core::decode::DecodeContext;
+use std::collections::BTreeMap;
+
+use cadmpeg_core::decode::{ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::NativeNamespace;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::{dropped_with, DecodeParts, GivenUpPart, GivenUpRecord, Part};
 use serde::{Deserialize, Serialize};
 
 use crate::container::InventorContainer;
@@ -93,6 +96,14 @@ pub(crate) struct Inventory {
     pub(crate) references: Vec<MetadataReference>,
     pub(crate) reference_tables: Vec<references::Tables>,
     pub(crate) issues: Vec<StructuralIssueRecord>,
+    /// The parts the inventory gave up, for the decode to commit.
+    pub(crate) given_up: Vec<GivenUpPart>,
+    /// The give-ups and dependent notes of the refused records.
+    refusals: Vec<LossNote>,
+    /// The id that names each refused record, by segment token and ordinal.
+    refused: BTreeMap<(String, u32), String>,
+    /// The reference-tables id of each segment whose tables do not read.
+    failed_tables: BTreeMap<String, String>,
     segment_count: usize,
     record_count: usize,
 }
@@ -118,18 +129,46 @@ impl Inventory {
         Ok(())
     }
 
+    /// Refuses `record` for its references. A record that fails only for a
+    /// link to a given-up record is dropped with that record; any other
+    /// record is given up itself.
     fn refuse_references(
         &mut self,
         ctx: &DecodeContext<'_>,
         record: &Record,
+        links: bool,
     ) -> Result<(), CodecError> {
         ctx.charge_entities(1, "retain Inventor drawing reference refusal")?;
         let scope = format!("{}-{}", record.segment_token, record.ordinal);
+        let detail = "drawing record does not select the required unique reference targets";
         self.issues.push(StructuralIssueRecord {
             id: format!("inventor:drawing:record-issue#{scope}"),
             scope,
-            detail: "drawing record does not select the required unique reference targets".into(),
+            detail: detail.into(),
         });
+        let need = links
+            .then(|| references::refused_link(record, &self.refused, &self.failed_tables))
+            .flatten();
+        self.refusals.push(match need {
+            Some(need) => dropped_with(
+                cadmpeg_ir::ids::Identity::new(&record.id)?,
+                cadmpeg_ir::ids::Identity::new(need)?,
+            ),
+            None => GivenUpRecord::new(
+                cadmpeg_ir::ids::Identity::new(&record.id)?,
+                format_args!(
+                    "{}: {detail}",
+                    InventorLossCode::DrawingRecordMalformed.kind()
+                ),
+            )
+            .loss(),
+        });
+        if !links {
+            self.refused.insert(
+                (record.segment_token.as_str().to_owned(), record.ordinal),
+                record.id.clone(),
+            );
+        }
         Ok(())
     }
 
@@ -147,6 +186,7 @@ impl Inventory {
                 self.issues.len()
             )));
         }
+        losses.extend(self.refusals.iter().cloned());
         losses
     }
 }
@@ -179,7 +219,20 @@ pub(crate) fn inventory(
                 Err(error) => {
                     let detail = crate::issue_detail(error)?;
                     ctx.charge_entities(1, "retain Inventor drawing reference-table refusal")?;
-                    let scope = format!("reference-tables-{}", segment.pair.token.as_str());
+                    let token = segment.pair.token.as_str();
+                    let id = format!("inventor:drawing:reference-tables#{token}");
+                    inventory.refusals.push(
+                        GivenUpRecord::new(
+                            cadmpeg_ir::ids::Identity::new(&id)?,
+                            format_args!(
+                                "{}: {detail}",
+                                InventorLossCode::DrawingRecordMalformed.kind()
+                            ),
+                        )
+                        .loss(),
+                    );
+                    inventory.failed_tables.insert(token.to_owned(), id);
+                    let scope = format!("reference-tables-{token}");
                     inventory.issues.push(StructuralIssueRecord {
                         id: format!("inventor:drawing:record-issue#{scope}"),
                         scope,
@@ -249,7 +302,33 @@ pub(crate) fn inventory(
                 Err(error) => {
                     let detail = crate::issue_detail(error)?;
                     ctx.charge_entities(1, "retain Inventor drawing metadata-reference refusal")?;
-                    let scope = format!("metadata-references-{}", segment.pair.token.as_str());
+                    let token = segment.pair.token.as_str();
+                    let section = &meta.tables.sections[8];
+                    let part = Part::new(
+                        "inventor",
+                        "meta-section",
+                        section.payload,
+                        [ArenaClass::Model],
+                    )
+                    .in_stream(
+                        cadmpeg_ir::StreamName::try_from(format!("RSeStorage/M{token}:expanded"))
+                            .map_err(CodecError::malformed)?,
+                    )
+                    .contained_in(
+                        cadmpeg_ir::ids::Identity::try_from(format!(
+                            "inventor:rse:meta-section#{token}-{}",
+                            section.number
+                        ))
+                        .map_err(CodecError::malformed)?,
+                    );
+                    inventory.given_up.push(ctx.give_up_part(
+                        part,
+                        CodecError::malformed(format_args!(
+                            "{}: {detail}",
+                            InventorLossCode::DrawingRecordMalformed.kind()
+                        )),
+                    )?);
+                    let scope = format!("metadata-references-{token}");
                     inventory.issues.push(StructuralIssueRecord {
                         id: format!("inventor:drawing:record-issue#{scope}"),
                         scope,
@@ -284,7 +363,26 @@ pub(crate) fn inventory(
                 Err(error) => {
                     let detail = crate::issue_detail(error)?;
                     ctx.charge_entities(1, "retain Inventor drawing record refusal")?;
-                    let scope = format!("{}-{}", segment.pair.token.as_str(), frame.ordinal);
+                    let token = segment.pair.token.as_str();
+                    let part = crate::rse::bulk_record_part(
+                        "rse-record",
+                        (token, frame.ordinal),
+                        frame.payload_offset,
+                        frame.payload.window(),
+                        ArenaClass::Model,
+                    )?;
+                    let part = ctx.give_up_part(
+                        part,
+                        CodecError::malformed(format_args!(
+                            "{}: {detail}",
+                            InventorLossCode::DrawingRecordMalformed.kind()
+                        )),
+                    )?;
+                    inventory
+                        .refused
+                        .insert((token.to_owned(), frame.ordinal), part.id().to_string());
+                    inventory.given_up.push(part);
+                    let scope = format!("{token}-{}", frame.ordinal);
                     inventory.issues.push(StructuralIssueRecord {
                         id: format!("inventor:drawing:record-issue#{scope}"),
                         scope,
@@ -311,7 +409,7 @@ pub(crate) fn inventory(
             }) {
                 eligible.push(record);
             } else {
-                inventory.refuse_references(ctx, &record)?;
+                inventory.refuse_references(ctx, &record, false)?;
             }
         }
         let mut admitted =
@@ -324,7 +422,7 @@ pub(crate) fn inventory(
             if accepted {
                 inventory.records.push(record);
             } else {
-                inventory.refuse_references(ctx, &record)?;
+                inventory.refuse_references(ctx, &record, true)?;
             }
         }
     }

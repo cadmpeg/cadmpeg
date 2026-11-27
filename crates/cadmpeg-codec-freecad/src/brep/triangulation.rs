@@ -245,14 +245,14 @@ mod tests {
                     .unwrap_err();
             assert!(error.contains("chordal_deflection must be finite and non-negative"));
         }
-        let mut json = serde_json::json!({
+        let mut json = cadmpeg_core::json!({
             "deflection": 0.5,
             "nodes": [{"x": 0.0, "y": 0.0, "z": 0.0}],
             "uv_nodes": null,
             "triangles": [],
             "normals": null,
         });
-        json["deflection"] = serde_json::json!(-1.0);
+        json["deflection"] = cadmpeg_core::json!(-1.0);
         assert!(json::from_value::<TextTriangulation>(json).is_err());
     }
 
@@ -311,7 +311,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(value.triangles(), [[0, 1, 2], [2, 1, 0]]);
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "deflection": 0.5,
             "nodes": [
                 {"x": 0.0, "y": 0.0, "z": 0.0},
@@ -359,7 +359,7 @@ mod tests {
         );
         for field in ["uv_nodes", "normals"] {
             let mut invalid = wire.clone();
-            invalid[field] = serde_json::json!([]);
+            invalid[field] = cadmpeg_core::json!([]);
             assert!(json::from_value::<TextTriangulation>(invalid)
                 .unwrap_err()
                 .to_string()

@@ -91,8 +91,7 @@
         "value": {
           "code": "parameter.data-quarantined",
           "kind": "noncanonical_source_syntax",
-          "namespace": "iges",
-          "strict_floor": "warning"
+          "namespace": "iges"
         }
       },
       "message": "IGES Parameter Data of D3 (P3 through P4) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
@@ -103,6 +102,24 @@
         "tag": "D3:parameter"
       },
       "severity": "warning"
+    },
+    {
+      "code": {
+        "kind": "namespaced",
+        "value": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "strict_floor": "error"
+        }
+      },
+      "message": "part parameter-data \"D3\" stream=\"\" offset=729 length=161 record=iges:source:part#370fcf75bff48f60a729986b64f36958954da32a1fd10a9817009f1542f3a6bf: malformed container: iges/parameter.data-quarantined: IGES Parameter Data of D3 (P3 through P4) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted; dropped=[]",
+      "provenance": {
+        "format": "iges",
+        "offset": 729,
+        "tag": "parameter-data"
+      },
+      "severity": "error"
     }
   ],
   "notes": [

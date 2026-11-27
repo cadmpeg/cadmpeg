@@ -180,7 +180,7 @@ mod tests {
         for slot in 2..6 {
             let mut invalid = wire.clone();
             invalid["source_offsets"][slot] =
-                serde_json::json!(wire["source_offsets"][slot].as_u64().unwrap() + 1);
+                cadmpeg_core::json!(wire["source_offsets"][slot].as_u64().unwrap() + 1);
             let error =
                 json::from_value::<FeaturePointConstructionScalarLane>(invalid).unwrap_err();
             assert!(error.to_string().contains("source_offsets"));
@@ -198,13 +198,13 @@ mod tests {
             ],
         ] {
             let mut invalid = wire.clone();
-            invalid["source_offsets"] = serde_json::json!(offsets);
+            invalid["source_offsets"] = cadmpeg_core::json!(offsets);
             let error =
                 json::from_value::<FeaturePointConstructionScalarLane>(invalid).unwrap_err();
             assert!(error.to_string().contains("source_offsets"));
         }
         let mut boundary = wire;
-        boundary["source_offsets"] = serde_json::json!([
+        boundary["source_offsets"] = cadmpeg_core::json!([
             u64::MAX - 3,
             u64::MAX - 59,
             u64::MAX - 51,

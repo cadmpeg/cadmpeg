@@ -102,7 +102,7 @@ fn generated_configuration_document() -> serde_json::Value {
         ],
         &["small", "medium", "large"],
     );
-    document["extension"] = serde_json::json!({"future": 7});
+    document["extension"] = cadmpeg_core::json!({"future": 7});
     document
 }
 
@@ -234,12 +234,8 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .find(|configuration| configuration.name.as_deref() == Some("Medium"))
         .expect("medium configuration")
         .active = true;
-    crate::test_support::assert_written_with_loss(
-        &inconsistent,
-        None,
-        "export/native.records-omitted",
-        "must equal the projection of native configuration tables",
-    );
+    let (_, inconsistent_round_trip) = write_and_decode(&inconsistent);
+    assert_active_row_written(&inconsistent_round_trip, &inconsistent, "medium");
     let mut rooted = source_less.clone();
     set_active_row(&mut rooted, "medium");
     let (rooted_report, rooted_round_trip) = write_and_decode(&rooted);
@@ -467,6 +463,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
                 asm_body_key_offset: 0,
                 asm_body_key: 42,
                 entity_suffix: 42,
+                browser_node_entity: 43,
                 visible: false,
             },
         )
@@ -540,12 +537,25 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             wire.asm_body_key = 43;
             *visibility = crate::records::bodies::BodyVisibility::try_from(wire).unwrap();
         }
-        crate::test_support::assert_written_with_loss(
-            &invalid,
-            None,
-            "export/native.records-omitted",
-            "uses an ASM key different from body",
+        let mut bytes = Vec::new();
+        let report = F3dCodec
+            .plan(EncodeInput::new(&invalid, None), TargetRequest::Unnamed)
+            .and_then(|plan| plan.write_to(&mut bytes))
+            .expect("source-less write");
+        assert!(
+            report
+                .losses
+                .iter()
+                .all(|loss| !loss.message.contains("body visibilit")),
+            "{:#?}",
+            report.losses
         );
+        let regenerated = F3dCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("source-less round trip");
+        let visibilities = &f3d_native(regenerated.ir()).body_visibilities;
+        assert_eq!(visibilities.len(), 1);
+        assert_eq!(visibilities[0].asm_body_key(), 42);
     }
 
     assert_eq!(round_trip.ir().geometry.bodies.len(), 1);
@@ -1887,6 +1897,7 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
 
 mod closed_edges;
 mod configuration_root;
+mod configuration_round_trip;
 mod family_changes;
 mod reversed_edges;
 mod tolerant_tails;

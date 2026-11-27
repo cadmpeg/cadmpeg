@@ -3,7 +3,7 @@
 use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 
-use serde_json::json;
+use cadmpeg_core::json;
 
 use super::DesignScope;
 use crate::design::read;

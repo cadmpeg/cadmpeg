@@ -551,7 +551,7 @@ fn partial_component_definition_retains_explicit_body_membership() {
         .proof(1200, 0, 0)
         .unwrap();
     let body = cadmpeg_ir::ids::BodyId::mint("f3d:brep/fixture.smbh/brep:entity#1").unwrap();
-    let binding:crate::records::bodies::DesignBodyBinding=json::from_value(serde_json::json!({
+    let binding:crate::records::bodies::DesignBodyBinding=json::from_value(cadmpeg_core::json!({
         "id":"f3d:Design/BulkStream.dat:design-body-binding#0","stream":"Design/BulkStream.dat","pair_count":1,"pair_ordinal":0,"asm_body_key":11,"asm_body_key_offset":0,"entity_suffix":42,"entity_suffix_offset":8,"blob_name":"BREP.","blob_name_offset":32,"body":body,"component_owner":proof,
     })).unwrap();
     let bodies = BTreeSet::from([body.clone()]);
@@ -870,7 +870,7 @@ fn centimetre_overflow_retains_native_membership_and_can_use_a_finite_carrier() 
             ];
         if current {
             occurrences[0].current_pose = Some(
-                json::from_value(serde_json::json!({
+                json::from_value(cadmpeg_core::json!({
                     "carrier_record_index": 1200
                 }))
                 .unwrap(),

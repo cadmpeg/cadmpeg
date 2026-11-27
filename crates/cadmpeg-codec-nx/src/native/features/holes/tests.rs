@@ -595,7 +595,7 @@ fn hole_group_preserves_parallel_wire_and_requires_complete_members() {
 fn hole_group_rejects_short_and_duplicate_members_at_deserialization() {
     for labels in [vec![], vec!["first"], vec!["first", "first"]] {
         let count = labels.len();
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "group",
             "first_data_blocks": ["a", "b"],
             "second_data_blocks": ["c", "d"],
@@ -962,11 +962,12 @@ fn simple_hole_reference_pairs_preserve_wire_and_reject_wrong_witness_wrappers()
             let mut wire = base.clone();
             if first {
                 wire["first_reference_prefix"] =
-                    serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(FIRST_PREFIX));
+                    cadmpeg_core::json!(cadmpeg_ir::native::bytes::NativeBytes::from(FIRST_PREFIX));
             }
             if second {
-                wire["second_reference_prefix"] =
-                    serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(SECOND_PREFIX));
+                wire["second_reference_prefix"] = cadmpeg_core::json!(
+                    cadmpeg_ir::native::bytes::NativeBytes::from(SECOND_PREFIX)
+                );
             }
             let record: FeatureSimpleHoleRepeatedScalarLaneBlockReferences =
                 json::from_value(wire.clone()).unwrap();
@@ -978,7 +979,7 @@ fn simple_hole_reference_pairs_preserve_wire_and_reject_wrong_witness_wrappers()
         ("second_reference_prefix", FIRST_PREFIX),
     ] {
         let mut wire = base.clone();
-        wire[field] = serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(prefix));
+        wire[field] = cadmpeg_core::json!(cadmpeg_ir::native::bytes::NativeBytes::from(prefix));
         let error = json::from_value::<FeatureSimpleHoleRepeatedScalarLaneBlockReferences>(wire)
             .unwrap_err();
         assert!(error.to_string().contains(field));

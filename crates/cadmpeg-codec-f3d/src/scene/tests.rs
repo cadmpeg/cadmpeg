@@ -199,7 +199,7 @@ fn scene_binding_is_exact_and_preserves_all_three_states() {
         assert!(json::to_value(binding).unwrap().get("occurrence").is_none());
     }
     assert!(json::from_value::<SceneBinding>(
-        serde_json::json!({"state":"ambiguous","occurrence":"f3d:test:occurrence#a"})
+        cadmpeg_core::json!({"state":"ambiguous","occurrence":"f3d:test:occurrence#a"})
     )
     .is_err());
 }
@@ -257,10 +257,10 @@ fn scene_native_validation_shares_matrix_and_path_gates() {
     assert!(ScenePath::try_from(vec![]).is_ok());
     let (rows, _) = decode(&encoded(&[3, 17]));
     let mut wire = json::to_value(&rows[0]).unwrap();
-    wire["path"] = serde_json::json!([3]);
+    wire["path"] = cadmpeg_core::json!([3]);
     assert!(json::from_value::<DisplayPose>(wire).is_err());
     let mut wire = json::to_value(&rows[0]).unwrap();
-    wire["transform"][0][0] = serde_json::json!(-1.0);
+    wire["transform"][0][0] = cadmpeg_core::json!(-1.0);
     assert!(json::from_value::<DisplayPose>(wire).is_err());
 }
 

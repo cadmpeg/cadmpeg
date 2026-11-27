@@ -199,6 +199,34 @@ fn parse(
     Ok((pairs, revisions, external))
 }
 
+/// The id of the given-up record that `record` fails its links for: for a
+/// sheet, the first local view it names that `refused` holds by its segment
+/// token and ordinal; for a cached view, the reference tables of its own
+/// segment that `failed_tables` holds by segment token.
+pub(super) fn refused_link<'r>(
+    record: &super::Record,
+    refused: &'r std::collections::BTreeMap<(String, u32), String>,
+    failed_tables: &'r std::collections::BTreeMap<String, String>,
+) -> Option<&'r str> {
+    let token = record.segment_token.as_str();
+    match &record.fields {
+        super::records::Fields::Sheet {
+            views,
+            auxiliary_lists,
+            ..
+        } => views
+            .references()
+            .iter()
+            .chain(auxiliary_lists[2].references())
+            .filter(|reference| reference.qualified())
+            .filter_map(|reference| reference.record_ordinal())
+            .find_map(|ordinal| refused.get(&(token.to_owned(), ordinal)))
+            .map(String::as_str),
+        super::records::Fields::CachedView { .. } => failed_tables.get(token).map(String::as_str),
+        super::records::Fields::View { .. } | super::records::Fields::ModelReference { .. } => None,
+    }
+}
+
 pub(super) fn record_links_are_valid(
     record: &super::Record,
     tables: &[Tables],

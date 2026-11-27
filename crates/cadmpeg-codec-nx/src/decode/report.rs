@@ -22,7 +22,7 @@ use super::feature_completeness::{
     trim_bodies_definition_is_incomplete, trim_surface_definition_is_incomplete,
 };
 use super::pcurves::MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES;
-use super::support_uv::pcurve_requires_completion;
+use super::support_uv::MAX_SUPPORT_UV_LANE_GEOMETRY_WORK;
 use super::{Counts, Scan};
 use crate::loss::NxLossCode;
 use crate::parasolid::StreamKind;
@@ -108,8 +108,6 @@ pub(super) struct SupportUvPhaseStatus {
 pub(super) struct CompletionBudgetStatus {
     pub(super) pcurves: PcurveCompletionStatus,
     pub(super) serialized: SupportUvPhaseStatus,
-    pub(super) direct: SupportUvPhaseStatus,
-    pub(super) coupled: SupportUvPhaseStatus,
     pub(super) support_uv_lane_geometry_exhausted: bool,
     pub(super) transfer_limit: usize,
     pub(super) support_uv_limit: usize,
@@ -122,8 +120,6 @@ pub(super) struct GeometryWorkLimits {
     pub(super) adaptive: usize,
     pub(super) pcurve_completion: usize,
     pub(super) serialized_support_uv: usize,
-    pub(super) support_uv_completion: usize,
-    pub(super) coupled_support_uv: usize,
 }
 
 // Keep the independent report facts explicit at the decode/report boundary.
@@ -163,11 +159,7 @@ fn push_bounded_completion_losses(
                 context
                     .sides()
                     .iter()
-                    .filter(|side| {
-                        pcurve_requires_completion(
-                            side.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
-                        )
-                    })
+                    .filter(|side| side.pcurve.is_none())
                     .count(),
             )
         })
@@ -176,12 +168,8 @@ fn push_bounded_completion_losses(
         && (completion_budget.pcurves.exact_boundary_exhausted
             || completion_budget.pcurves.transfer_exhausted
             || completion_budget.serialized.samples_exhausted
-            || completion_budget.direct.samples_exhausted
-            || completion_budget.coupled.samples_exhausted
             || completion_budget.pcurves.geometry_exhausted
             || completion_budget.serialized.geometry_exhausted
-            || completion_budget.direct.geometry_exhausted
-            || completion_budget.coupled.geometry_exhausted
             || completion_budget.support_uv_lane_geometry_exhausted)
     {
         let bounded_phases = [
@@ -198,14 +186,6 @@ fn push_bounded_completion_losses(
                 .samples_exhausted
                 .then_some("support-UV consistency checks"),
             completion_budget
-                .direct
-                .samples_exhausted
-                .then_some("EXT11 support-UV fitting"),
-            completion_budget
-                .coupled
-                .samples_exhausted
-                .then_some("coupled EXT11 support-UV fitting"),
-            completion_budget
                 .pcurves
                 .geometry_exhausted
                 .then_some("pcurve geometry fitting"),
@@ -214,29 +194,18 @@ fn push_bounded_completion_losses(
                 .geometry_exhausted
                 .then_some("serialized support-UV geometry fitting"),
             completion_budget
-                .direct
-                .geometry_exhausted
-                .then_some("support-UV geometry fitting"),
-            completion_budget
-                .coupled
-                .geometry_exhausted
-                .then_some("coupled support-UV geometry fitting"),
-            completion_budget
                 .support_uv_lane_geometry_exhausted
                 .then_some("support-UV lane geometry slices"),
         ];
         push_report_loss(losses, NxLossCode::IntersectionPcurveCompletionBounded, format_args!(
-            "Model-wide geometric completion stopped at its bounded work budget for {} ({} exact-boundary transfer samples, {} opposite-chart transfer samples, {} support-UV consistency checks, {} support-UV point fits, {} coupled support-UV point fits, {} pcurve geometry evaluations, {} serialized support-UV geometry evaluations, {} support-UV geometry evaluations, {} coupled support-UV geometry evaluations); {} intersection pcurve lane(s) remain incomplete and were not emitted as completed parameterizations.",
+            "Geometric completion stopped at its bounded work budget for {} ({} exact-boundary transfer samples, {} opposite-chart transfer samples, {} support-UV consistency checks, {} pcurve geometry evaluations, {} serialized support-UV geometry evaluations, at most {} geometry evaluations per support-UV lane attempt); {} intersection pcurve lane(s) remain incomplete and were not emitted as completed parameterizations.",
             JoinedLabels { labels: &bounded_phases, separator: " and " },
             MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
             completion_budget.transfer_limit,
             completion_budget.support_uv_limit,
-            completion_budget.support_uv_limit,
-            completion_budget.support_uv_limit,
             completion_budget.geometry_limits.pcurve_completion,
             completion_budget.geometry_limits.serialized_support_uv,
-            completion_budget.geometry_limits.support_uv_completion,
-            completion_budget.geometry_limits.coupled_support_uv,
+            MAX_SUPPORT_UV_LANE_GEOMETRY_WORK,
             unresolved_intersection_lanes,
         ));
     }
@@ -1017,8 +986,6 @@ mod tests {
                     ..PcurveCompletionStatus::default()
                 },
                 serialized: SupportUvPhaseStatus::default(),
-                direct: SupportUvPhaseStatus::default(),
-                coupled: SupportUvPhaseStatus::default(),
                 support_uv_lane_geometry_exhausted: false,
                 transfer_limit: 0,
                 support_uv_limit: 0,

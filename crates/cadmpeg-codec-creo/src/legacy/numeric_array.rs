@@ -83,7 +83,7 @@ mod tests {
         .expect("complete array");
         assert_eq!(
             json::to_value(payload).expect("array JSON"),
-            serde_json::json!({"form": "array", "dimensions": [2, 2], "runs": [{"count": 4, "value": -1}]})
+            cadmpeg_core::json!({"form": "array", "dimensions": [2, 2], "runs": [{"count": 4, "value": -1}]})
         );
         assert!(NumericPayload::<i32>::array(vec![0], vec![]).is_some());
     }

@@ -128,30 +128,33 @@ fn the_revision_g2_blend_admission_writes_every_scalar_it_admits() {
     };
     let value = json::to_value(&definition).expect("serialize the definition");
     let stored = &value["construction"];
-    assert_eq!(stored["leading_parameters"], serde_json::json!([1.0, 2.0]));
+    assert_eq!(
+        stored["leading_parameters"],
+        cadmpeg_core::json!([1.0, 2.0])
+    );
     assert_eq!(
         stored["sides"][0]["surface"]["parameter_ranges"],
-        serde_json::json!([[0.0, null], [null, 4.0]])
+        cadmpeg_core::json!([[0.0, null], [null, 4.0]])
     );
     assert_eq!(
         stored["sides"][0]["curve"]["parameter_range"],
-        serde_json::json!([null, 6.0])
+        cadmpeg_core::json!([null, 6.0])
     );
     assert_eq!(
         stored["sides"][0]["location"],
-        serde_json::json!({"x": 1.0, "y": 2.0, "z": 3.0})
+        cadmpeg_core::json!({"x": 1.0, "y": 2.0, "z": 3.0})
     );
-    assert_eq!(stored["center_range"], serde_json::json!([0.0, 7.0]));
-    assert_eq!(stored["radii"], serde_json::json!([8.0, 15.0]));
-    assert_eq!(stored["u_range"], serde_json::json!([9.0, null]));
-    assert_eq!(stored["v_range"], serde_json::json!([null, 10.0]));
-    assert_eq!(stored["shape_parameter"], serde_json::json!(11.0));
-    assert_eq!(stored["shape_length"], serde_json::json!(12.0));
+    assert_eq!(stored["center_range"], cadmpeg_core::json!([0.0, 7.0]));
+    assert_eq!(stored["radii"], cadmpeg_core::json!([8.0, 15.0]));
+    assert_eq!(stored["u_range"], cadmpeg_core::json!([9.0, null]));
+    assert_eq!(stored["v_range"], cadmpeg_core::json!([null, 10.0]));
+    assert_eq!(stored["shape_parameter"], cadmpeg_core::json!(11.0));
+    assert_eq!(stored["shape_length"], cadmpeg_core::json!(12.0));
     assert_eq!(
         stored["cache"]["u_interval"],
-        serde_json::json!([13.0, null])
+        cadmpeg_core::json!([13.0, null])
     );
-    assert_eq!(stored["discontinuities"][0], serde_json::json!([14.0]));
+    assert_eq!(stored["discontinuities"][0], cadmpeg_core::json!([14.0]));
     assert_eq!(
         json::from_value::<ProceduralSurfaceDefinition>(value).expect("the definition round-trips"),
         definition
@@ -172,7 +175,7 @@ fn the_revision_g2_blend_admits_the_full_positive_revision_lane() {
     for revision in [0_i64, -1] {
         assert!(PositiveI64::new(revision).is_none());
         let mut invalid = value.clone();
-        invalid["construction"]["revision"] = serde_json::json!(revision);
+        invalid["construction"]["revision"] = cadmpeg_core::json!(revision);
         assert!(json::from_value::<ProceduralSurfaceDefinition>(invalid).is_err());
     }
 
@@ -186,7 +189,7 @@ fn the_revision_g2_blend_admits_the_full_positive_revision_lane() {
         i64::MAX
     );
     let mut maximum = value;
-    maximum["construction"]["revision"] = serde_json::json!(i64::MAX);
+    maximum["construction"]["revision"] = cadmpeg_core::json!(i64::MAX);
     let parsed = json::from_value::<ProceduralSurfaceDefinition>(maximum)
         .expect("maximum JSON revision is admitted");
     let ProceduralSurfaceDefinition::RevisionG2Blend { construction } = parsed else {
@@ -198,7 +201,7 @@ fn the_revision_g2_blend_admits_the_full_positive_revision_lane() {
 #[test]
 fn radius_selector_diagnostic_reports_the_rejected_integer() {
     for value in [0, -2, i64::MIN] {
-        let error = json::from_value::<PositiveI64>(serde_json::json!(value))
+        let error = json::from_value::<PositiveI64>(cadmpeg_core::json!(value))
             .unwrap_err()
             .to_string();
         assert!(error.contains(&value.to_string()), "{error}");

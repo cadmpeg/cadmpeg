@@ -737,6 +737,8 @@ pub(crate) enum F3dLossCode {
     SketchPointUndecoded,
     /// One indexed sketch curve retains an unread geometry member.
     SketchCurveUndecoded,
+    /// One indexed sketch curve record failed decoding and is given up.
+    SketchCurveRecordUndecoded,
     /// One sketch surface failed decoding.
     SketchSurfaceUndecoded,
     /// One indexed sketch text record failed decoding.
@@ -969,6 +971,9 @@ pub(crate) enum F3dLossCode {
     /// inserts it, because the state that last updates the slot before the
     /// feature has no unique earlier scope.
     FeatureBodyOperandWriterAssumed,
+    /// A Combine tool in an inserted design binds to that design's final
+    /// body in the inserting occurrence's frame.
+    FeatureCombineToolExternalFinalStateAssumed,
     FeatureSilhouetteSplitPrefixUnparsed,
     FeatureSilhouetteSplitModeUnresolved,
     FeatureSilhouetteSplitDirectionUnresolved,
@@ -1894,6 +1899,7 @@ impl F3dLossCode {
         Self::SketchPointUnprojected,
         Self::SketchPointUndecoded,
         Self::SketchCurveUndecoded,
+        Self::SketchCurveRecordUndecoded,
         Self::SketchSurfaceUndecoded,
         Self::SketchTextUndecoded,
         Self::SketchRelationUndecoded,
@@ -2022,6 +2028,7 @@ impl F3dLossCode {
         Self::FeatureCombineBodyProducerUnresolved,
         Self::FeatureCombineOperandWriterAssumed,
         Self::FeatureBodyOperandWriterAssumed,
+        Self::FeatureCombineToolExternalFinalStateAssumed,
         Self::FeatureSilhouetteSplitPrefixUnparsed,
         Self::FeatureSilhouetteSplitModeUnresolved,
         Self::FeatureSilhouetteSplitDirectionUnresolved,
@@ -2958,6 +2965,7 @@ impl F3dLossCode {
             Self::SketchPointUnprojected => "sketch.point-unprojected",
             Self::SketchPointUndecoded => "sketch.point-undecoded",
             Self::SketchCurveUndecoded => "sketch.curve-undecoded",
+            Self::SketchCurveRecordUndecoded => "sketch.curve-record-undecoded",
             Self::SketchSurfaceUndecoded => "sketch.surface-undecoded",
             Self::SketchTextUndecoded => "sketch.text-undecoded",
             Self::SketchRelationUndecoded => "sketch.relation-undecoded",
@@ -3158,6 +3166,9 @@ impl F3dLossCode {
             }
             Self::FeatureCombineOperandWriterAssumed => "feature.combine-operand-writer-assumed",
             Self::FeatureBodyOperandWriterAssumed => "feature.body-operand-writer-assumed",
+            Self::FeatureCombineToolExternalFinalStateAssumed => {
+                "feature.combine-tool-external-final-state-assumed"
+            }
             Self::FeatureSilhouetteSplitPrefixUnparsed => {
                 "feature.silhouette-split-prefix-unparsed"
             }
@@ -4039,6 +4050,7 @@ impl F3dLossCode {
             | Self::SketchPointUnprojected
             | Self::SketchPointUndecoded
             | Self::SketchCurveUndecoded
+            | Self::SketchCurveRecordUndecoded
             | Self::SketchSurfaceUndecoded
             | Self::SketchTextUndecoded
             | Self::SketchRelationUndecoded
@@ -4165,6 +4177,7 @@ impl F3dLossCode {
             | Self::FeatureCombineBodyProducerUnresolved
             | Self::FeatureCombineOperandWriterAssumed
             | Self::FeatureBodyOperandWriterAssumed
+            | Self::FeatureCombineToolExternalFinalStateAssumed
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -4944,6 +4957,7 @@ impl F3dLossCode {
             | Self::FeatureCombineBodyProducerUnresolved
             | Self::FeatureCombineOperandWriterAssumed
             | Self::FeatureBodyOperandWriterAssumed
+            | Self::FeatureCombineToolExternalFinalStateAssumed
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -5183,6 +5197,7 @@ impl F3dLossCode {
             | Self::TsplineCageUndecoded
             | Self::SketchPointUndecoded
             | Self::SketchCurveUndecoded
+            | Self::SketchCurveRecordUndecoded
             | Self::SketchSurfaceUndecoded
             | Self::DesignBodyBoundsUndecoded
             | Self::SketchTextUndecoded
@@ -5226,27 +5241,17 @@ impl F3dLossCode {
         }
     }
 
-    /// The strict floor `f3d.md` §4 states: each code that records a given-up
-    /// Design record pins Warning.
+    /// The strict floor `f3d.md` §4 states: each code that records a Design
+    /// record the decoder keeps with less content pins Warning, and so does
+    /// the design-intent failure that the decoder keeps as a record.
     const fn strict_floor(self) -> Option<Severity> {
         match self {
             Self::DesignIntentUndecoded
             | Self::SketchCurveUndecoded
-            | Self::SketchSurfaceUndecoded
-            | Self::SketchTextUndecoded
-            | Self::SketchRelationUndecoded
-            | Self::SketchFolderUndecoded
-            | Self::SketchOrdinalCollectionUndecoded
             | Self::SketchContainerUndecoded
-            | Self::SketchGeometryGroupUndecoded
-            | Self::FeatureTimelineUndecoded
-            | Self::PrimaryRecordUndecoded
             | Self::ConfigurationProjectionNative
             | Self::SketchOwnerConflict
-            | Self::SketchRelationOwnerUnresolved
-            | Self::ConfigurationDocumentUndecoded
-            | Self::BendSettingsUndecoded
-            | Self::DesignBodyBoundsUndecoded => Some(Severity::Warning),
+            | Self::SketchRelationOwnerUnresolved => Some(Severity::Warning),
             _ => None,
         }
     }
@@ -5278,41 +5283,46 @@ mod tests {
     use super::F3dLossCode;
     use std::collections::BTreeSet;
 
-    /// The sixteen codes that record a Design record, or its dependent
-    /// state, kept in the source archive after a decoding failure: the
-    /// sketch curve, surface, text, relation, folder, ordinal-collection,
-    /// container and geometry-group codes; the feature-timeline and
-    /// primary-record codes; the configuration projection and document
-    /// codes; the sketch owner-conflict and relation-owner codes; the bend
-    /// settings code; and the body-bounds code.
-    const UNREAD_DESIGN_RECORD_CODES: [F3dLossCode; 16] = [
+    /// The codes that record a Design record the decoder keeps with less
+    /// content: the design-intent failure record, a sketch curve without its
+    /// geometry, a sketch without its container row, configurations left
+    /// native, and sketch geometry or a relation with an unresolved owner.
+    const KEPT_DESIGN_RECORD_CODES: [F3dLossCode; 6] = [
+        F3dLossCode::DesignIntentUndecoded,
         F3dLossCode::SketchCurveUndecoded,
+        F3dLossCode::SketchContainerUndecoded,
+        F3dLossCode::ConfigurationProjectionNative,
+        F3dLossCode::SketchOwnerConflict,
+        F3dLossCode::SketchRelationOwnerUnresolved,
+    ];
+
+    /// The codes that record only a Design record the decoder gives up. The
+    /// record's `record.unreadable` refuses a pinned decode, so these codes
+    /// have no floor.
+    const GIVEN_UP_DESIGN_RECORD_CODES: [F3dLossCode; 12] = [
+        F3dLossCode::SketchCurveRecordUndecoded,
         F3dLossCode::SketchSurfaceUndecoded,
         F3dLossCode::SketchTextUndecoded,
         F3dLossCode::SketchRelationUndecoded,
         F3dLossCode::SketchFolderUndecoded,
         F3dLossCode::SketchOrdinalCollectionUndecoded,
-        F3dLossCode::SketchContainerUndecoded,
         F3dLossCode::SketchGeometryGroupUndecoded,
         F3dLossCode::FeatureTimelineUndecoded,
         F3dLossCode::PrimaryRecordUndecoded,
-        F3dLossCode::ConfigurationProjectionNative,
-        F3dLossCode::SketchOwnerConflict,
-        F3dLossCode::SketchRelationOwnerUnresolved,
         F3dLossCode::ConfigurationDocumentUndecoded,
         F3dLossCode::BendSettingsUndecoded,
         F3dLossCode::DesignBodyBoundsUndecoded,
     ];
 
     #[test]
-    fn unread_design_records_keep_strict_refusal() {
-        for code in UNREAD_DESIGN_RECORD_CODES {
+    fn kept_design_records_keep_strict_refusal() {
+        for code in KEPT_DESIGN_RECORD_CODES {
             assert!(
                 cadmpeg_ir::report::strictness::Strictness {
                     pinned: true,
                     ..Default::default()
                 }
-                .refuses(&code.note("synthetic unread Design record"), false),
+                .refuses(&code.note("synthetic kept Design record"), false),
                 "{}",
                 code.kind().local_code()
             );
@@ -5320,9 +5330,24 @@ mod tests {
     }
 
     #[test]
-    fn unread_design_record_codes_are_registered_once() {
+    fn given_up_design_record_codes_have_no_floor() {
+        for code in GIVEN_UP_DESIGN_RECORD_CODES {
+            assert_eq!(
+                code.kind().strict_floor(),
+                None,
+                "{}",
+                code.kind().local_code()
+            );
+        }
+    }
+
+    #[test]
+    fn design_record_codes_are_registered_once() {
         let mut seen = BTreeSet::new();
-        for code in UNREAD_DESIGN_RECORD_CODES {
+        for code in KEPT_DESIGN_RECORD_CODES
+            .into_iter()
+            .chain(GIVEN_UP_DESIGN_RECORD_CODES)
+        {
             assert!(F3dLossCode::ALL.contains(&code));
             assert!(seen.insert(code.kind().local_code().to_owned()));
         }
@@ -5790,6 +5815,7 @@ mod tests {
                 "sketch.point-unprojected",
                 "sketch.point-undecoded",
                 "sketch.curve-undecoded",
+                "sketch.curve-record-undecoded",
                 "sketch.surface-undecoded",
                 "sketch.text-undecoded",
                 "sketch.relation-undecoded",
@@ -5918,6 +5944,7 @@ mod tests {
                 "feature.combine-body-producer-unresolved",
                 "feature.combine-operand-writer-assumed",
                 "feature.body-operand-writer-assumed",
+                "feature.combine-tool-external-final-state-assumed",
                 "feature.silhouette-split-prefix-unparsed",
                 "feature.silhouette-split-mode-unresolved",
                 "feature.silhouette-split-direction-unresolved",

@@ -3,8 +3,9 @@
 use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
+use cadmpeg_core::json;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::{
     to_canonical_json_string, to_compact_canonical_json_string, to_json_value, CanonicalJsonError,

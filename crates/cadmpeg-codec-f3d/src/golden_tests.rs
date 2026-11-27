@@ -437,10 +437,12 @@ fn decode_snapshot(bytes: &[u8]) -> String {
                 .to_canonical_json()
                 .expect("serialize canonical ir");
             let report = json::to_string_pretty(result.report()).expect("serialize report");
-            let fidelity = json::to_string_pretty(
-                &cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
-            )
-            .expect("serialize source_fidelity");
+            let fidelity =
+                json::to_string_pretty(&cadmpeg_test_support::golden::fidelity_snapshot(
+                    result.ir(),
+                    result.source_fidelity(),
+                ))
+                .expect("serialize source_fidelity");
             let mut out = String::from("{\n");
             out.push_str("  \"ir\": ");
             out.push_str(&indent_block(&ir));
@@ -452,7 +454,7 @@ fn decode_snapshot(bytes: &[u8]) -> String {
             out
         }
         Err(error) => {
-            let value = serde_json::json!({ "decode_error": error.to_string() });
+            let value = cadmpeg_core::json!({ "decode_error": error.to_string() });
             let mut text = json::to_string_pretty(&value).expect("serialize decode error");
             text.push('\n');
             text
@@ -464,7 +466,7 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
     let value = match F3dCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default())
     {
         Ok(summary) => json::to_value(&summary).expect("serialize inspect"),
-        Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
+        Err(error) => cadmpeg_core::json!({ "inspect_error": error.to_string() }),
     };
     let mut text = json::to_string_pretty(&value).expect("serialize inspect snapshot");
     text.push('\n');
@@ -652,7 +654,7 @@ fn generated_container_snapshot(bytes: &[u8]) -> String {
     let mut ir = match decode_result(bytes) {
         Ok(result) => result.into_parts().0,
         Err(error) => {
-            let value = serde_json::json!({ "decode_error": error.to_string() });
+            let value = cadmpeg_core::json!({ "decode_error": error.to_string() });
             return json::to_string_pretty(&value).expect("serialize decode error");
         }
     };
@@ -881,7 +883,17 @@ fn fixtures_replay_verbatim() {
             marked.push(name);
         }
     }
-    assert_eq!(marked, ["container_metadata_only"]);
+    assert_eq!(
+        marked,
+        [
+            "design_remove_body",
+            "design_surface_stitch",
+            "design_copy_paste",
+            "design_copy_paste_bodies",
+            "design_form",
+            "container_metadata_only"
+        ]
+    );
 }
 
 /// A document its sidecar reads as edited is patched from the retained
@@ -922,7 +934,7 @@ const FIXTURES_WITHOUT_POINTS: [&str; 1] = ["container_metadata_only"];
 /// Serializes the neutral geometry and model plus unit and tolerance
 /// declarations.
 fn neutral_document(ir: &CadIr) -> String {
-    snapshot_text(&serde_json::json!({
+    snapshot_text(&cadmpeg_core::json!({
         "geometry": json::to_value(&ir.geometry).expect("serialize geometry"),
         "model": json::to_value(&ir.model).expect("serialize model"),
         "units": { "length": "millimeter" },
@@ -1133,7 +1145,7 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
         let construction = &mut surface["definition"]["construction"];
         if construction.get("layout").is_some() {
             assert!(construction.get("inner_count").is_none());
-            construction["inner_count"] = serde_json::json!(0);
+            construction["inner_count"] = cadmpeg_core::json!(0);
             touched += 1;
         }
     }
@@ -1143,7 +1155,7 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
         .to_string();
     assert!(error.contains("inner_count"), "{error}");
 
-    let face_maker_object = serde_json::json!({"kind": "extrude", "value": {
+    let face_maker_object = cadmpeg_core::json!({"kind": "extrude", "value": {
         "direction": {"kind": "explicit", "source": {"kind": "custom"},
                       "vector": {"x": 0.0, "y": 0.0, "z": 1.0}},
         "extent": {"kind": "symmetric",
@@ -1161,7 +1173,7 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
         .to_string();
     assert!(error.contains("invalid type: map"), "{error}");
 
-    let solver_scalar_object = serde_json::json!({
+    let solver_scalar_object = cadmpeg_core::json!({
         "kind": "angle_difference",
         "first": {"variable_type": 4, "key": 1},
         "second": 2,
@@ -1173,7 +1185,7 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
     .to_string();
     assert!(error.contains("invalid type: map"), "{error}");
 
-    let labelled = serde_json::json!({
+    let labelled = cadmpeg_core::json!({
         "source": 7,
         "offset": 9,
         "labels": ["source", "offset"],

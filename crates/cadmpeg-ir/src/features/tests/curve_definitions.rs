@@ -13,7 +13,7 @@ fn feature_lines_and_polylines_close_geometry_bounds_without_changing_wire_field
     let segment = FeatureLineSegment::new(first, second).unwrap();
     let wire = definition_wire(
         "line_segment",
-        serde_json::json!({"segment":{"start":first, "end":second}}),
+        cadmpeg_core::json!({"segment":{"start":first, "end":second}}),
     );
     let definition = FeatureDefinition::Operation(FeatureOperation::LineSegment { segment });
     assert_eq!(json::to_value(&definition).unwrap(), wire);
@@ -25,7 +25,7 @@ fn feature_lines_and_polylines_close_geometry_bounds_without_changing_wire_field
     assert!(FeatureLineSegment::new(Point3::new(f64::NAN, 0.0, 0.0), second).is_none());
     assert!(json::from_value::<FeatureDefinition>(definition_wire(
         "line_segment",
-        serde_json::json!({"segment":{"start":first, "end":first}})
+        cadmpeg_core::json!({"segment":{"start":first, "end":first}})
     ))
     .is_err());
 
@@ -47,7 +47,7 @@ fn feature_lines_and_polylines_close_geometry_bounds_without_changing_wire_field
         );
         let wire = definition_wire(
             "polyline",
-            serde_json::json!({"chain":{"points":points, "closed":closed}}),
+            cadmpeg_core::json!({"chain":{"points":points, "closed":closed}}),
         );
         let definition = FeatureDefinition::Operation(FeatureOperation::Polyline { chain });
         assert_eq!(json::to_value(&definition).unwrap(), wire);
@@ -65,7 +65,7 @@ fn feature_lines_and_polylines_close_geometry_bounds_without_changing_wire_field
         assert!(FeaturePolyline::new(points.clone(), closed).is_none());
         assert!(json::from_value::<FeatureDefinition>(definition_wire(
             "polyline",
-            serde_json::json!({"chain":{"points":points, "closed":closed}})
+            cadmpeg_core::json!({"chain":{"points":points, "closed":closed}})
         ))
         .is_err());
     }
@@ -90,7 +90,7 @@ fn equation_curve_admission_preserves_expression_text_and_requires_an_increasing
     let definition = FeatureDefinition::Operation(FeatureOperation::EquationCurve { curve });
     let wire = definition_wire(
         "equation_curve",
-        serde_json::json!({"curve":{"parameter":" t ", "x_expression":" t*t ", "y_expression":"0", "z_expression":" -t ", "start":-2.0, "end":3.0}}),
+        cadmpeg_core::json!({"curve":{"parameter":" t ", "x_expression":" t*t ", "y_expression":"0", "z_expression":" -t ", "start":-2.0, "end":3.0}}),
     );
     assert_eq!(json::to_value(&definition).unwrap(), wire);
     assert_eq!(
@@ -100,7 +100,7 @@ fn equation_curve_admission_preserves_expression_text_and_requires_an_increasing
     for field in ["parameter", "x_expression", "y_expression", "z_expression"] {
         for blank in ["", " \t\n"] {
             let mut invalid = wire.clone();
-            invalid[field] = serde_json::json!(blank);
+            invalid[field] = cadmpeg_core::json!(blank);
             assert!(json::from_value::<FeatureDefinition>(invalid).is_err());
         }
     }
@@ -123,8 +123,8 @@ fn equation_curve_admission_preserves_expression_text_and_requires_an_increasing
     }
     for [start, end] in [[1.0, 1.0], [2.0, 1.0]] {
         let mut invalid = wire.clone();
-        invalid["value"]["value"]["curve"]["start"] = serde_json::json!(start);
-        invalid["value"]["value"]["curve"]["end"] = serde_json::json!(end);
+        invalid["value"]["value"]["curve"]["start"] = cadmpeg_core::json!(start);
+        invalid["value"]["value"]["curve"]["end"] = cadmpeg_core::json!(end);
         assert!(json::from_value::<FeatureDefinition>(invalid).is_err());
     }
 }

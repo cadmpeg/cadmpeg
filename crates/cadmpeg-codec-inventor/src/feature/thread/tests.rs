@@ -229,7 +229,7 @@ fn thread_definition_requires_unique_typed_feature_owner_and_supported_versions(
             .is_none()
     );
     let mut wrong = json::to_value(&label)?;
-    wrong["class_id"] = serde_json::json!("00000000000000000000000000000000");
+    wrong["class_id"] = cadmpeg_core::json!("00000000000000000000000000000000");
     let wrong = json::from_value(wrong)?;
     assert!(fields(&source, &wrong, &[definition]).diameter.is_none());
     Ok(())

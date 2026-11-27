@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The stored rollback bar positions the design timeline's rollback and
 //! current state.
+use cadmpeg_core::json;
 use cadmpeg_ir::codec::DecodeResult;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::projection::stored_thin;
 use crate::loss::OnshapeLossCode;
