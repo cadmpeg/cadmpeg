@@ -122,8 +122,8 @@
 
 ### DR-1034. Flange constants and options
 
-**Question.** Which options set the flange object slots that hold the same value in every stored flange, and which values can the offset kind, the dimension side, the corner relief and the extent kind take?
+**Question.** Which options set the flange object slots that hold the same value in every stored flange, and which values can the offset kind, the dimension side and the corner relief take?
 
-**Known.** The `Double Value Object` slots at offsets 268, 352 and 460 of §10.3, the constants that follow the relief type, and the zero-valued `CLSID_JDim` that follows them hold the same value in every stored flange. The field that selects the 8-byte header extension of a 563-byte edge proxy (§7.6) is not established. A flange with extent kind `138` stores the relief type 540 bytes after the end of its function name, 44 bytes after the extent kind `134` position.
+**Known.** The `Double Value Object` slots at offsets 268, 352 and 460 of §10.3, the constants that follow the relief type, and the zero-valued `CLSID_JDim` that follows them hold the same value in every stored flange. The field that selects the 8-byte header extension of a 563-byte edge proxy (§7.6) is not established.
 
-**Need.** A flange with each offset type, the dimension side, the corner relief option, and a flange of each kind created by the Flange command. A flange with each extent kind, against the edge length.
+**Need.** A flange with each offset type, the dimension side, the corner relief option, and a flange of each kind created by the Flange command.
