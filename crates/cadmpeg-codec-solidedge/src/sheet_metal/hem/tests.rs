@@ -108,7 +108,7 @@ fn another_form_code_states_only_its_code() {
     );
     let (hem, options) = hem(&result);
     assert_eq!(native_name(hem), "solidedge:hem-form-210");
-    assert_eq!(options.len(), 1);
+    assert_eq!(options.len(), 3);
     assert!(matches!(
         option(options, "hem_form_code"),
         Some(NativeOption::Integer(Dimension::Literal(210)))
