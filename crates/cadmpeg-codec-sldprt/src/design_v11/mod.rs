@@ -248,6 +248,10 @@ pub(crate) fn project(
         &ir.tolerances,
     ));
     losses.extend(equations::link(&mut parameters, &linking));
+    losses.extend(parameters::references_unbound(
+        &ir.model.parameters,
+        &parameters,
+    ));
     configurations::parameter_overrides(
         &mut configurations,
         &ir.model.configurations,

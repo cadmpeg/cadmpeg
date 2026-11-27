@@ -84,6 +84,7 @@ use crate::records::{
 };
 use crate::resolved_features::assembly::ConfigurationMaps;
 use crate::resolved_features::parameter_classes::{stated_parameters, StatedParameter, Statement};
+use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
 
 /// The kind of a dimension whose quantity the decoder has not read: a bare
 /// number, or an expression over other parameters, that no stored record
@@ -1333,6 +1334,34 @@ fn added(entry: &Entry<'_>, readings: &Readings<'_>) -> Reading {
         decided: false,
         unvalued: None,
     }
+}
+
+/// The note naming, with its stored expression, each reference-dimension
+/// parameter of `decoded` that no parameter of `stated` states: no sketch
+/// dimension of the design binds it, and a `Driven` parameter is bound by
+/// its dimension (§5.12).
+pub(super) fn references_unbound(
+    decoded: &[cadmpeg_ir::features::parameters::DesignParameter],
+    stated: &[DesignParameter],
+) -> Option<LossNote> {
+    let stated = stated
+        .iter()
+        .map(|parameter| &parameter.id)
+        .collect::<HashSet<_>>();
+    let mut unbound = NamedCount::default();
+    for parameter in decoded.iter().filter(|parameter| {
+        is_reference_relation_parameter(parameter) && !stated.contains(&parameter.id)
+    }) {
+        unbound.push(&format!("{} = {}", parameter.id, parameter.expression));
+    }
+    (!unbound.is_empty()).then(|| {
+        SldprtLossCode::DesignParameterReferenceUnbound.note(format!(
+            "{} reference-dimension parameters state no design parameter: no sketch dimension \
+             of the design binds them, and a driven parameter is bound by its dimension: \
+             {unbound}",
+            unbound.count()
+        ))
+    })
 }
 
 /// The override of `parameter` in a configuration that stores `stored` for

@@ -606,6 +606,10 @@ pub(crate) enum SldprtLossCode {
     /// Features under a feature-tree node outside the timeline (the
     /// annotations node, a lights folder) state no design feature.
     DesignFeatureOutsideTimeline,
+    /// Reference-dimension parameters of the model that no sketch dimension
+    /// of the design binds state no design parameter: a `Driven` parameter
+    /// is bound by its dimension (§5.12).
+    DesignParameterReferenceUnbound,
     /// Parameters whose text is one reference to a parameter whose kind
     /// differs or is not read, and whose unit-blind tree does not type or is
     /// not confirmed by the document's values, hold the text and state no
@@ -916,6 +920,7 @@ impl SldprtLossCode {
         Self::DesignConfigurationSuppressionUnread,
         Self::DesignConfigurationDefinitionUnstated,
         Self::DesignFeatureOutsideTimeline,
+        Self::DesignParameterReferenceUnbound,
         Self::DesignParameterReferenceAsText,
         Self::DesignExtrudeDepthAssumed,
         Self::DesignParameterClassAssumed,
@@ -1199,6 +1204,7 @@ impl SldprtLossCode {
                 "design.configuration-definition-unstated"
             }
             Self::DesignFeatureOutsideTimeline => "design.feature-outside-timeline",
+            Self::DesignParameterReferenceUnbound => "design.parameter-reference-unbound",
             Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
             Self::DesignExtrudeDepthAssumed => "design.extrude-depth-assumed",
             Self::DesignParameterClassAssumed => "design.parameter-class-assumed",
@@ -1437,6 +1443,7 @@ impl SldprtLossCode {
             | Self::DesignConfigurationSuppressionUnread
             | Self::DesignConfigurationDefinitionUnstated
             | Self::DesignFeatureOutsideTimeline
+            | Self::DesignParameterReferenceUnbound
             | Self::DesignParameterReferenceAsText
             | Self::DesignExtrudeDepthAssumed
             | Self::DesignParameterClassAssumed
@@ -1571,7 +1578,8 @@ impl SldprtLossCode {
             | Self::DesignConfigurationStateUnplaced
             | Self::DesignConfigurationSuppressionUnread
             | Self::DesignConfigurationDefinitionUnstated
-            | Self::DesignFeatureOutsideTimeline => LossTaxonomy::ParametricRecordOmitted,
+            | Self::DesignFeatureOutsideTimeline
+            | Self::DesignParameterReferenceUnbound => LossTaxonomy::ParametricRecordOmitted,
             Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
             | Self::DesignExtrudeDepthAssumed
@@ -2133,6 +2141,7 @@ mod tests {
                 "design.configuration-suppression-unread",
                 "design.configuration-definition-unstated",
                 "design.feature-outside-timeline",
+                "design.parameter-reference-unbound",
                 "design.parameter-reference-as-text",
                 "design.extrude-depth-assumed",
                 "design.parameter-class-assumed",

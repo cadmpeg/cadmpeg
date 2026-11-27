@@ -18,9 +18,34 @@
           "scope": "sldprt:model:product-definition#root"
         }
       ],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "unordered",
+          "value": {
+            "id": "sldprt:model:container#sketches",
+            "kind": "group",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "sldprt:design:sketch-owner#27:sldprt%3Amodel%3Asketch%23348%3A0%3A0"
+              }
+            ]
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "sketch",
+              "value": "sldprt:model:sketch#348:0:0"
+            }
+          },
+          "id": "sldprt:design:sketch-owner#27:sldprt%3Amodel%3Asketch%23348%3A0%3A0",
+          "name": "feature input circular sketch"
+        }
+      ],
       "names": [],
       "parameters": [],
       "programs": [],
@@ -32,7 +57,9 @@
           "current": [],
           "definition": "sldprt:model:product-definition#root",
           "occurrences": {},
-          "roots": [],
+          "roots": [
+            "sldprt:model:container#sketches"
+          ],
           "unproduced": [
             "sldprt:brep:body#900"
           ]
@@ -40,8 +67,84 @@
       ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
+      "sketch_entities": [
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "circle",
+              "value": {
+                "center": {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                "radius": 1000.0
+              }
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:0:0:0",
+          "native_options": {},
+          "native_ref": "0:sldprt:brep:edge#40",
+          "roles": [],
+          "sketch": "sldprt:model:sketch#348:0:0",
+          "source_settings": {}
+        }
+      ],
+      "sketches": [
+        {
+          "id": "sldprt:model:sketch#348:0:0",
+          "name": "feature input circular sketch",
+          "native_options": {},
+          "native_ref": "sldprt:feature-input:resolved-features#348",
+          "owner": "sldprt:design:sketch-owner#27:sldprt%3Amodel%3Asketch%23348%3A0%3A0",
+          "plane": {
+            "after": [],
+            "inputs": [
+              {
+                "reference": {
+                  "kind": "picks",
+                  "value": {
+                    "at": {
+                      "kind": "current"
+                    },
+                    "picks": {
+                      "kind": "unread"
+                    }
+                  }
+                }
+              }
+            ],
+            "kind": "placed",
+            "resolved": {
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "x_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "y_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "z_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
+            },
+            "resolved_in": {}
+          },
+          "solve": {
+            "status": "current"
+          },
+          "source_settings": {}
+        }
+      ],
       "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
@@ -617,6 +720,16 @@
             "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
+        },
+        "sldprt:model:sketch#348:0:0": {
+          "entity": "derived",
+          "fields": {},
+          "kind": "entity"
+        },
+        "sldprt:model:sketch-entity#348:0:0:0": {
+          "entity": "derived",
+          "fields": {},
+          "kind": "entity"
         }
       },
       "provenance": {
@@ -754,6 +867,16 @@
           "offset": 0,
           "stream": "Contents/Keywords",
           "tag": "Keywords"
+        },
+        "sldprt:model:sketch#348:0:0": {
+          "offset": 315,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_profile"
+        },
+        "sldprt:model:sketch-entity#348:0:0:0": {
+          "offset": 0,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_profile_edge"
         }
       }
     },
