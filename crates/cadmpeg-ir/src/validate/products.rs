@@ -16,9 +16,20 @@ use crate::products::{JointOperands, OperandContainer, PairedJointKind};
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 
+#[cfg(test)]
 pub(super) fn check_products(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
+    let records = crate::validate::design::records::DesignRecords::new(ir);
+    check_products_with(ctx, ir, &records, findings)
+}
+
+pub(super) fn check_products_with(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    records: &crate::validate::design::records::DesignRecords<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let definitions = BorrowedIdentities::build(|add| {
@@ -26,6 +37,7 @@ pub(super) fn check_products(
             add(definition.id.as_str(), ());
         }
     });
+    decode_set::check_component_records(records, findings);
     for (id, owner) in ir
         .model
         .features
@@ -273,7 +285,7 @@ pub(super) fn check_products(
             }
         }
     }
-    definitions::check(ir, findings);
+    definitions::check(records, findings);
     Ok(())
 }
 
@@ -342,11 +354,10 @@ fn check_root_definition(ir: &CadIr, findings: &mut Vec<Finding>) {
 }
 
 /// Part 10: every body of `CadIr.geometry` is listed by exactly one
-/// definition's `bodies`, or by `instance_bodies` entries and by no
-/// definition's `bodies` (§8.1). A body that a definition lists is also
-/// listed where an `instance_bodies` entry names it. The rule holds where the
-/// root rule holds, since a body the file holds outside every other
-/// definition is the root definition's.
+/// definition's `bodies` and by no `instance_bodies` entry, or by
+/// `instance_bodies` entries and by no definition's `bodies` (§8.1). The rule
+/// holds where the root rule holds, since a body the file holds outside every
+/// other definition is the root definition's.
 fn check_body_owners(ir: &CadIr, findings: &mut Vec<Finding>) {
     if ir.fragment
         || !ir.scope().holds(cadmpeg_core::decode::ArenaClass::Model)
@@ -386,6 +397,19 @@ fn check_body_owners(ir: &CadIr, findings: &mut Vec<Finding>) {
                     "products.body-listed-several-definitions",
                     "body is listed by {} definitions' `bodies`; one lists it",
                     owners.len()
+                ),
+            );
+        } else if owners.len() == 1 && instanced.contains(id) {
+            let owner = owners[0];
+            record_related_finding(
+                findings,
+                Check::ReferentialIntegrity,
+                Severity::Error,
+                id,
+                &[owner],
+                crate::rule!(
+                    "products.body-listed-definition-and-instance-bodies",
+                    "body is listed by definition {owner}'s `bodies` and by an `instance_bodies` entry; a body an entry shows is listed by no definition's `bodies`"
                 ),
             );
         } else if owners.is_empty() && !instanced.contains(id) {
@@ -475,6 +499,7 @@ mod tests {
         AssemblyJoint, JointConnector, JointId, JointOperand, Occurrence, PairedJointKind,
     };
     use crate::transform::Transform;
+    use cadmpeg_core::serde_erase::json;
 
     fn root_operand(object: &str) -> JointOperand {
         JointOperand::root(object, Vec::new())
@@ -571,13 +596,13 @@ mod tests {
             "test:model:product#placed".try_into().unwrap(),
             Some(Transform::identity()),
         ));
-        let mut wire = serde_json::to_value(&ir.model.assembly_joints[0]).expect("joint wire");
+        let mut wire = json::to_value(&ir.model.assembly_joints[0]).expect("joint wire");
         wire["operands"]["value"]["connectors"][0]["operand"]["occurrence"] =
-            serde_json::json!(occurrence.as_str());
-        wire["operands"]["value"]["connectors"][0]["operand"]["external_document"] = serde_json::json!({
+            cadmpeg_core::json!(occurrence.as_str());
+        wire["operands"]["value"]["connectors"][0]["operand"]["external_document"] = cadmpeg_core::json!({
             "path": "external.f3d"
         });
-        assert!(serde_json::from_value::<AssemblyJoint>(wire).is_err());
+        assert!(json::from_value::<AssemblyJoint>(wire).is_err());
     }
 
     #[test]

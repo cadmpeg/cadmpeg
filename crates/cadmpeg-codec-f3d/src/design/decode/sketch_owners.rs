@@ -178,8 +178,9 @@ pub(crate) fn attach(
         let view = scan
             .entry_view(&entry.name)
             .ok_or_else(|| CodecError::malformed("missing Design stream"))?;
-        let frames = super::meta::typed_primary_frames(
-            view.window(),
+        let frames = super::meta::scan_typed_primary_frames(
+            scan,
+            &entry.name,
             &meta,
             COLLECTION_GUID,
             "sketch owner collection",

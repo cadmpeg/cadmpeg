@@ -214,6 +214,21 @@ impl DecodedProceduralSurface {
     }
 }
 
+/// The parameters of `point` on the plane through `origin` with `normal` and
+/// `u_axis`: its offsets along `u_axis` and along `normal × u_axis`. The
+/// decoder states extrusion cap pcurves and the writer projects planar trims
+/// with this one computation, so the writer's projection reproduces a decoded
+/// cap pcurve exactly.
+pub(crate) fn plane_parameters(
+    point: Point3,
+    origin: Point3,
+    normal: Vector3,
+    u_axis: Vector3,
+) -> [f64; 2] {
+    let delta = point.vector_from(origin);
+    [delta.dot(u_axis), delta.dot(normal.cross(u_axis))]
+}
+
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     data: &[u8],

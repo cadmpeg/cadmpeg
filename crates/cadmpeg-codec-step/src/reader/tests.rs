@@ -6,6 +6,7 @@ use cadmpeg_test_support::{wire, EditableDecodeResult};
 use super::{byte_accounting, claim_trivia, decode_exchange_mode, ByteClass, Packaging, ValueExt};
 use crate::loss::StepLossCode;
 use std::collections::HashSet;
+use std::fmt::Write as _;
 
 #[test]
 fn step_integer_number_refuses_inexact_f64() {
@@ -59,6 +60,80 @@ fn byte_census_keeps_metadata_admission_after_an_omitted_record() {
     assert_eq!(
         cadmpeg_test_support::wire::coverage_count(decoded.report(), "bytes_unclassified"),
         0
+    );
+}
+
+#[test]
+fn a_given_up_instance_is_one_part_and_its_dependents_drop_with_it() {
+    let source = "ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
+         #1=DIRECTION('',(0.,0.,0.));#2=VECTOR('',#1,2.);ENDSEC;END-ISO-10303-21;";
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("an invalid direction is given up");
+    let charges = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.clone())
+        .collect::<Vec<_>>();
+    let [charge] = charges.as_slice() else {
+        panic!("one record.unreadable: {charges:?}");
+    };
+    let direction = "#1=DIRECTION('',(0.,0.,0.));";
+    let offset = source.find(direction).expect("the direction");
+    let head = format!(
+        "part data_record stream=\"\" offset={offset} length={} record=",
+        direction.len()
+    );
+    assert!(charge.starts_with(&head), "{charge}");
+    assert!(
+        charge.contains("DIRECTION #1 is invalid or zero"),
+        "{charge}"
+    );
+    // The vector is a value of no record: it keeps its exact source as an
+    // opaque record, and the charge lists no record for it.
+    assert!(charge.ends_with("; dropped=[]"), "{charge}");
+    let stub = charge[head.len()..]
+        .split_once(": ")
+        .map(|(stub, _)| stub.to_owned())
+        .expect("the stub");
+    let (_, _, fidelity) = decoded.into_parts();
+    assert!(fidelity.retained_record("step:data:vector#2").is_some());
+    // The untyped instance keeps its exact source as an opaque record.
+    assert_eq!(
+        fidelity
+            .retained_record(&stub)
+            .expect("the stub's bytes")
+            .data(),
+        None
+    );
+}
+
+#[test]
+fn an_anchor_whose_name_holds_a_space_drops_with_its_bounded_part() {
+    let mut anchors = String::from("<x 0>=(1,1);");
+    for index in 1..=23 {
+        write!(anchors, "<x {index}>=(<#x {0}>,<#x {0}>);", index - 1).expect("write anchor");
+    }
+    anchors.push_str("<y z>=#1;");
+    let source = format!(
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<#x 23>);ENDSEC;END-ISO-10303-21;"
+    );
+    // The parser keeps the exact source of the dropped anchor as an omitted
+    // record, and the charge names that record.
+    let anchor = source.find("<y z>=#1;").expect("the dropped anchor");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("a permissive decode refuses no anchor name");
+    let dropped = format!("; dropped=[step:file:omitted#{anchor}]");
+    assert!(
+        decoded.report().losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.message.ends_with(&dropped)
+        }),
+        "{:?}",
+        decoded.report().losses
     );
 }
 
@@ -210,6 +285,45 @@ fn byte_accounting_reports_an_unrecognized_suffix() {
             && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains("1 byte(s) unclassified")
     }));
+}
+
+/// A record that holds literals only metadata admission reads stays a
+/// record. The accounting lexer, under metadata admission, reads each record
+/// token by token to its end, so the accounting walk reads past it.
+#[test]
+fn byte_accounting_reads_past_a_record_with_metadata_only_literals() {
+    let input = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=COLOUR_RGB('',1.E999,\"5F\",0.);\n#2=UNKNOWN_ITEM(2);\nENDSEC;END-ISO-10303-21;\n";
+    let (exchange, _) = crate::test_support::with_service_context(input, crate::parse::parse_inner)
+        .expect("parse the exchange");
+    assert!(exchange.records().contains_key(&1));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, &policy)
+        .expect("context");
+    for record in exchange.records().values() {
+        let mut lexer = crate::lex::Lexer::new(input, &ctx);
+        lexer.set_literal_admission(crate::lex::LiteralAdmission::Metadata);
+        lexer.seek(record.span.start);
+        let mut end = record.span.start;
+        while end < record.span.end {
+            end = lexer
+                .next_token()
+                .expect("the record lexes")
+                .expect("the record holds a token")
+                .span
+                .end;
+        }
+        assert_eq!(end, record.span.end);
+    }
+
+    let counts =
+        byte_accounting(input, &exchange, &HashSet::new(), &[], &ctx).expect("byte classes");
+
+    assert_eq!(counts.unclassified, 0);
+    assert_eq!(
+        counts.structural + counts.typed + counts.opaque,
+        input.len()
+    );
 }
 
 #[test]
@@ -795,10 +909,7 @@ fn decode_reports_the_substituted_grammar_for_an_unknown_implementation_level() 
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("1;1"));
     assert!(losses[0].message.contains("4;3 grammar"));
-    assert_eq!(
-        losses[0].code.strict_floor(),
-        Some(cadmpeg_ir::report::Severity::Warning)
-    );
+    assert_eq!(losses[0].code.strict_floor(), None);
     let provenance = losses[0].provenance.as_ref().expect("source provenance");
     assert_eq!(
         provenance.offset,
@@ -808,20 +919,18 @@ fn decode_reports_the_substituted_grammar_for_an_unknown_implementation_level() 
 }
 
 #[test]
-fn strict_decode_rejects_an_unverified_implementation_level() {
+fn a_pinned_decode_admits_an_unverified_implementation_level() {
     let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'1;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let error = StepCodec::default()
+    let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &options)
-        .expect_err("strict mode rejects a guessed implementation grammar");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. }
-    ));
-    assert!(error
-        .to_string()
-        .contains("parse.implementation-level-unverified"));
+        .expect("a guessed implementation grammar pins no strict floor");
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::ImplementationLevelUnverified.kind()));
 }
 
 #[test]

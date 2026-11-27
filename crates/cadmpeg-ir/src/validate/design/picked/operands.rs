@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::design::ops::body::{Kept, SplitMode, TransformBodies, TransformStep};
-use crate::design::ops::shared::JointConnector;
+use crate::design::ops::shared::{JointConnector, JointKind};
 use crate::design::ops::surface::Knit;
 use crate::design::selection::{
     Anchor, MemberOrder, OrderedSelection, Picked, Picks, Selection, SetSelection,
@@ -17,7 +17,8 @@ use crate::design::selection::{
 use super::super::constructions::input_selections;
 use super::super::matching::{Matcher, StateTopology};
 use super::super::sheets;
-use super::{all_entities, entities, resolved_entities, straight_length, Entity, Probe};
+use super::apart::straight_length;
+use super::{all_entities, entities, resolved_entities, Entity, Probe};
 
 /// The bodies and faces an operand selection resolves to in a state.
 struct Operands<'a> {
@@ -185,6 +186,18 @@ impl<'a> Probe<'_, 'a> {
                 continue;
             };
             for (mate_at, mate) in mates.iter().enumerate() {
+                if !matches!(
+                    mate.kind,
+                    JointKind::Coincident { .. }
+                        | JointKind::Parallel
+                        | JointKind::Perpendicular
+                        | JointKind::Tangent { .. }
+                        | JointKind::Concentric
+                        | JointKind::Distance { .. }
+                        | JointKind::Angle { .. }
+                ) {
+                    continue;
+                }
                 let [first, _] = &mate.connectors;
                 let selections = connector_selections(first);
                 if selections.is_empty() || selections.iter().any(|s| s.at != *moved_at) {
@@ -275,16 +288,17 @@ impl<'a> Probe<'_, 'a> {
         if corners.at != Anchor::Input {
             return;
         }
-        let Some(thicknesses) = sheets::entering(self.index, self.feature.id.as_str())
-            .and_then(|entering| entering.thicknesses)
-        else {
-            return;
-        };
-        let Some(thinnest) = thicknesses.into_iter().reduce(f64::min) else {
-            return;
-        };
         let mut short = BTreeMap::new();
         for state in self.states(&corners.at) {
+            let Some(thinnest) = sheets::entering(
+                self.index,
+                self.feature.id.as_str(),
+                sheets::Reading::of(state.configuration),
+            )
+            .and_then(|entering| entering.thicknesses)
+            .and_then(|thicknesses| thicknesses.into_iter().reduce(f64::min)) else {
+                continue;
+            };
             let Some(topology) = state.matcher.topology() else {
                 continue;
             };
@@ -294,12 +308,12 @@ impl<'a> Probe<'_, 'a> {
                 };
                 if let Some(length) = straight_length(topology, edge) {
                     if length < thinnest - self.linear {
-                        short.insert(edge, length);
+                        short.insert(edge, (length, thinnest));
                     }
                 }
             }
         }
-        for (edge, length) in short {
+        for (edge, (length, thinnest)) in short {
             self.error(crate::rule!(
                 "design.break-corner-edge-shorter-than-sheet",
                 "BreakCorner.corners picks edge {edge} of length {length}, shorter than the sheet's thickness {thinnest}"

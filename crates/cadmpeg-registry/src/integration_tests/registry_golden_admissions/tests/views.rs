@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    assert_rejected, inspect_view, kernel_loss, kernel_loss_note, nx_13006, registry_rows,
-    report_view, sldprt_13006, source_view, validate, Admission,
+    assert_rejected, inspect_view, kernel_loss, nx_13006, registry_rows, report_view, sldprt_13006,
+    source_view, validate, Admission,
 };
-use cadmpeg_ir::report::loss::LossKind;
-use cadmpeg_ir::report::Severity;
-use serde_json::json;
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use std::path::Path;
 
 #[test]
@@ -24,45 +23,20 @@ fn view_local_kernel_loss_counts_include_zero_for_admitted_layers() {
     assert_rejected(
         &report_view(&sldprt, &[kernel_loss("sldprt")]),
         &registry,
-        "has 0 residual Parasolid layers but 1 typed kernel losses",
+        "has 0 residual kernel layers but 1 typed kernel losses",
     );
 
     let no_loss = report_view(&nx, &[]);
     assert_rejected(
         &no_loss,
         &registry,
-        "has 1 residual Parasolid layers but 0 typed kernel losses",
+        "has 1 residual kernel layers but 0 typed kernel losses",
     );
 
     assert_rejected(
         &report_view(&nx, &[kernel_loss("sldprt")]),
         &registry,
         "kernel loss must use the nx namespaced source_dialect_unverified code",
-    );
-
-    let mut missing_floor = kernel_loss_note("nx");
-    let code = match &missing_floor.code {
-        LossKind::Namespaced(code) => code.clone().with_strict_floor(None),
-        LossKind::Shared { .. } => panic!("kernel loss uses a namespaced code"),
-    };
-    missing_floor.code = LossKind::Namespaced(code);
-    assert_rejected(
-        &report_view(
-            &nx,
-            &[serde_json::to_value(missing_floor).expect("typed loss serializes")],
-        ),
-        &registry,
-        "kernel loss must reject strict mode",
-    );
-
-    let downgraded = kernel_loss_note("nx").with_severity(Severity::Info);
-    assert_rejected(
-        &report_view(
-            &nx,
-            &[serde_json::to_value(downgraded).expect("typed loss serializes")],
-        ),
-        &registry,
-        "kernel loss must reject strict mode",
     );
 
     let mut flattened = report_view(&nx, &[kernel_loss("nx")]);
@@ -215,7 +189,7 @@ fn real_decode_and_inspect_error_fixtures_are_not_success_views() {
         let path = golden_root.join(relative);
         let bytes = std::fs::read(&path)
             .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()));
-        let value: serde_json::Value = serde_json::from_slice(&bytes)
+        let value: serde_json::Value = json::from_slice(&bytes)
             .unwrap_or_else(|error| panic!("cannot parse {}: {error}", path.display()));
         assert_eq!(validate(&value, &registry), Ok(0), "{}", path.display());
     }

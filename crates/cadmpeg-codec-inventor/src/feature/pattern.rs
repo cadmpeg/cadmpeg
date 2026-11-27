@@ -9,6 +9,7 @@ use super::{
 use crate::layout::{
     pm_dc_content_header as header, pm_dc_content_header_v28 as header_v28,
     pm_dc_pattern_cached_edge_body as cached_edge, pm_dc_pattern_cached_line_body as cached_line,
+    pm_dc_pattern_cached_line_chain_entry as chain_entry,
     pm_dc_pattern_selection_control_body as selection_control,
     pm_dc_pattern_suppression_pair as suppression_pair,
     pm_dc_pattern_suppression_prefix as suppression,
@@ -25,7 +26,7 @@ use cadmpeg_ir::features::patterns::{
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::PositiveLength;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 
 const SUPPRESSION_TYPE: [u8; 16] = [
@@ -54,7 +55,7 @@ pub(crate) struct Operands {
     lengths: HashMap<(String, u32), u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum Operand {
     Unresolved,
@@ -71,8 +72,26 @@ pub(crate) enum Operand {
         geometry: crate::pmdc::PmDcReference,
         links: Vec<crate::pmdc::PmDcReference>,
         span: Vector3,
+        /// Number of cached line entries, at least 1. Entries after the first
+        /// continue the first one in a straight line.
+        #[serde(default = "single_segment", skip_serializing_if = "is_single_segment")]
+        segments: u32,
     },
 }
+
+fn single_segment() -> u32 {
+    1
+}
+
+/// serde's `skip_serializing_if` passes the field by reference.
+fn is_single_segment<T: PartialEq<u32>>(segments: &T) -> bool {
+    *segments == 1
+}
+
+/// Largest gap, in internal centimetres, between the end of a cached line entry and the start of the next one.
+const EPS_CHAIN_JOIN: f64 = 1e-9;
+/// Largest sine of the angle between the spans of two entries of one straight chain.
+const EPS_CHAIN_PARALLEL: f64 = 1e-9;
 
 pub(super) fn is_operand(type_id: [u8; 16]) -> bool {
     matches!(
@@ -350,25 +369,54 @@ fn parse(
             let selection_form = cursor.u32("pattern selection form")?;
             let zero = cursor.u16("pattern selection value")?;
             let curve_form = cursor.u32("pattern selection curve form")?;
-            if selection_form != cached_edge::SELECTION_FORM_VALUE
-                || curve_form != cached_edge::CURVE_FORM_VALUE
+            let chain = type_id == LINE_DIRECTION_TYPE && selection_form > 1;
+            if curve_form != cached_edge::CURVE_FORM_VALUE
+                || (selection_form != cached_edge::SELECTION_FORM_VALUE && !chain)
             {
                 return Ok(Operand::Unresolved);
             }
+            let segments = if chain {
+                let Some(segments) = chain_segments(selection_form, body_len) else {
+                    return Ok(Operand::Unresolved);
+                };
+                segments
+            } else {
+                1
+            };
             let expected_len = if type_id == EDGE_DIRECTION_TYPE {
                 cached_edge::LEN
             } else {
                 cached_line::LEN
             };
-            if body_len != expected_len || zero != cached_edge::ZERO_VALUE {
+            if chain && zero != cached_edge::ZERO_VALUE {
+                return Ok(Operand::Unresolved);
+            }
+            if (!chain && body_len != expected_len) || zero != cached_edge::ZERO_VALUE {
                 return Err(CodecError::malformed(
                     "Inventor pattern line selection prefix is invalid",
                 ));
             }
-            f64_triple(&mut cursor, "pattern line origin")?;
-            let span = f64_triple(&mut cursor, "pattern line span")?;
+            let mut entries = Vec::new();
+            for index in 0..segments {
+                if index != 0
+                    && (cursor.u16("pattern chain entry value")? != cached_edge::ZERO_VALUE
+                        || cursor.u32("pattern chain entry curve form")?
+                            != cached_edge::CURVE_FORM_VALUE)
+                {
+                    return Ok(Operand::Unresolved);
+                }
+                let origin = f64_triple(&mut cursor, "pattern line origin")?;
+                let span = f64_triple(&mut cursor, "pattern line span")?;
+                entries.push((
+                    Vector3::new(origin[0].get(), origin[1].get(), origin[2].get()),
+                    Vector3::new(span[0].get(), span[1].get(), span[2].get()),
+                ));
+            }
             f64_triple(&mut cursor, "pattern line selection point")?;
             if cursor.u8("pattern line state")? != cached_edge::LINE_STATE_VALUE {
+                if chain {
+                    return Ok(Operand::Unresolved);
+                }
                 return Err(CodecError::malformed(
                     "Inventor pattern line state is invalid",
                 ));
@@ -377,9 +425,15 @@ fn parse(
             if type_id == EDGE_DIRECTION_TYPE {
                 links.push(cursor.reference("pattern line source")?);
             }
-            let span = Vector3::new(span[0].get(), span[1].get(), span[2].get());
+            let span = entries[0].1;
             if span == Vector3::new(0.0, 0.0, 0.0) {
+                if chain {
+                    return Ok(Operand::Unresolved);
+                }
                 return Err(CodecError::malformed("Inventor pattern line span is zero"));
+            }
+            if chain && !is_straight_chain(&entries) {
+                return Ok(Operand::Unresolved);
             }
             Operand::Line {
                 state,
@@ -387,6 +441,7 @@ fn parse(
                 geometry,
                 links,
                 span,
+                segments,
             }
         }
         _ => {
@@ -397,6 +452,39 @@ fn parse(
     };
     cursor.finish("pattern operand")?;
     Ok(operand)
+}
+
+/// Entry count of a cached line chain whose body has `body_len` bytes, when the length fits `selection_form` entries.
+fn chain_segments(selection_form: u32, body_len: usize) -> Option<u32> {
+    let extra = usize::try_from(selection_form.checked_sub(1)?)
+        .ok()?
+        .checked_mul(chain_entry::LEN)?;
+    (body_len == cached_line::LEN.checked_add(extra)?).then_some(selection_form)
+}
+
+fn is_straight_chain(entries: &[(Vector3, Vector3)]) -> bool {
+    let norm =
+        |vector: Vector3| (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).sqrt();
+    entries.windows(2).all(|pair| {
+        let (origin, span) = pair[0];
+        let (next_origin, next_span) = pair[1];
+        let join = Vector3::new(
+            origin.x + span.x - next_origin.x,
+            origin.y + span.y - next_origin.y,
+            origin.z + span.z - next_origin.z,
+        );
+        let cross = Vector3::new(
+            span.y * next_span.z - span.z * next_span.y,
+            span.z * next_span.x - span.x * next_span.z,
+            span.x * next_span.y - span.y * next_span.x,
+        );
+        let lengths = norm(span) * norm(next_span);
+        let dot = span.x * next_span.x + span.y * next_span.y + span.z * next_span.z;
+        lengths > 0.0
+            && norm(join) <= EPS_CHAIN_JOIN
+            && norm(cross) <= EPS_CHAIN_PARALLEL * lengths
+            && dot > 0.0
+    })
 }
 
 fn operand_length(version: u8, type_id: [u8; 16], operand: &Operand) -> Option<u64> {
@@ -421,8 +509,12 @@ fn operand_length(version: u8, type_id: [u8; 16], operand: &Operand) -> Option<u
                     .checked_add(pairs.len().checked_mul(suppression_pair::LEN)?)?
             })?,
         Operand::SelectionControl { .. } => stamped_prefix + selection_control::LEN,
-        Operand::Line { .. } => {
+        Operand::Line { segments, .. } => {
+            let extra = usize::try_from(segments.checked_sub(1)?)
+                .ok()?
+                .checked_mul(chain_entry::LEN)?;
             prefix
+                + extra
                 + if type_id == EDGE_DIRECTION_TYPE {
                     cached_edge::LEN
                 } else {
@@ -535,6 +627,7 @@ fn direction(
         geometry,
         links,
         span,
+        ..
     } = operands.get_for(source, reference)?
     else {
         return None;

@@ -5564,7 +5564,8 @@ pub(super) fn count_other_records(
 
 /// A tolerant-coedge interval whose ends lie outside the knot domain of its
 /// embedded curve only by floating-point noise, moved onto that domain.
-fn clamp_to_knot_domain(
+#[must_use]
+pub fn clamp_to_knot_domain(
     interval: cadmpeg_ir::topology::ParameterInterval,
     curve: &NurbsCurve,
 ) -> cadmpeg_ir::topology::ParameterInterval {

@@ -60,6 +60,7 @@ pub mod eval;
 pub mod examples;
 pub mod features;
 pub mod geometry;
+pub(crate) mod give_up;
 pub mod hash;
 pub mod history_body;
 
@@ -157,7 +158,7 @@ pub use subd::{
 pub use unknown::{NativeUnknownRecord, UnknownRecord};
 pub use validate::admit::{
     admit, admit_with_additional_native_identities, admit_with_annotations, Admission,
-    CATIA_ADMISSION, DRAFT_CORE, RHINO_DRAFT, RHINO_INSTANCE,
+    CATIA_ADMISSION, DRAFT_CORE, HISTORY_BODY_ADMISSION, RHINO_DRAFT, RHINO_INSTANCE,
 };
 pub use validate::{validate_neutral, validate_neutral_with_source_fidelity};
 

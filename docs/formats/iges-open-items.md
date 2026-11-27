@@ -139,19 +139,11 @@ from a conformant file.
 
 **Need.** A tolerance basis must establish the sample count and the residual limit.
 
-### TGT-01. Write target displacement
-
-**Question.** When does a write target that differs from the source dialect charge a loss, and when is it silent?
-
-**Known.** The writer charges `iges/target.source-dialect-displaced` when the selected write target differs from the same-format source dialect (`writer/target.rs:135`). `iges.md` states the target profiles.
-
-**Need.** Cross-target writes must establish the charge condition.
-
 ### SRC-01. Unavailable preserved source image
 
 **Question.** What disposition applies when the preserved source image for byte-exact replay is unavailable?
 
-**Known.** The writer declines replay, regenerates semantically, and charges `iges/source.preserved-image-unavailable` (`writer/target.rs:141`). `iges.md` states the replay rule for an intact source baseline.
+**Known.** The writer declines replay and regenerates semantically; the export report's synthesis cause states that the source fidelity holds no IGES source image (`writer/target.rs`). `iges.md` states the replay rule for an intact source baseline.
 
 **Need.** Source-less edit workflows must establish when regeneration is accepted and when it is refused.
 
@@ -159,7 +151,7 @@ from a conformant file.
 
 **Question.** Which native arenas does the semantic writer regenerate, and which does it omit?
 
-**Known.** The writer charges `iges/writer.passthrough-omitted` for native arenas the writer skips, including quarantined records without writable fields (`writer.rs:5373`).
+**Known.** The semantic writer declares the native arenas it regenerates; the export wrapper charges `export:native.records-omitted` with the record ids of every other arena. A record that failed typing is a given-up part: the wrapper does not charge its `unknowns` stub, and the writer declares its cards dropped as cards of no typed entity. The writer declares each native entity record after it emits the file. A surface entity is regenerated when the file holds the neutral surface projected from it; the writer declares it dropped when it withholds that surface, as it withholds an analytic surface (Types 192 to 198) on no face and a support surface with no written owner. A Type 123 direction is regenerated, in its `directions` record and its entity, when a written analytic surface (Types 190 to 198) names it as an axis or reference direction, and dropped otherwise. A curve entity, Type 106 included except Forms 1 to 3, is regenerated when the file holds a neutral curve projected from it. It is dropped when the writer withholds each such curve, as it withholds a support curve with no written owner. A Type 106 form with no neutral curve, such as a witness line, a centerline or a section line, is dropped in its entity and its `copious_data` record. A Type 116 point is regenerated when the file holds its neutral point or a written analytic surface names it as its location, and Type 106 Forms 1 to 3 when the file holds a neutral point of their tuples. Otherwise each is dropped: the location of withheld analytic surfaces, a point whose neutral point the writer withholds, as it withholds a support point with no written owner, and a point with no neutral point. A Type 124 transformation is regenerated when an entity the writer keeps names it, directly or through another kept transformation, and dropped in its entity and its `transformations` record otherwise. A model with no neutral faces gets no trimmed surface, B-rep shell or solid, so the writer declares its native topology entities (Types 141 to 144, 186 and 502 to 514), `manifold_solids` and `boundary_vertex_sewing` dropped. A Directory or Parameter card in `cards` takes the disposition of the entity that holds it, and a card of no typed entity is dropped. The writer writes its own Start text, so the Start section cards are dropped, and it regenerates the Global and Terminate sections. The wrapper lists each dropped record by id.
 
 **Need.** A complete arena inventory must establish the regenerated set and the omitted set.
 

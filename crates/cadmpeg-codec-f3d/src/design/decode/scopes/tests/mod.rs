@@ -10,6 +10,7 @@ mod assembly;
 mod assembly_variable_reference;
 mod chamfer_sets;
 mod combine;
+mod combine_legacy_external;
 mod component_pattern;
 mod copy_paste_bodies;
 mod derived_instance;

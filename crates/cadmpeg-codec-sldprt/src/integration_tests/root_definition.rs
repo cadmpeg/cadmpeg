@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::products::ProductDefinitionKind;
 use cadmpeg_ir::{Codec, DecodeOptions};
@@ -61,7 +62,10 @@ fn assert_root(decoded: &EditableDecodeResult, id: &str) {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert!(!decoded
         .source_fidelity()
-        .edited(decoded.ir())
+        .edited(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            decoded.ir(),
+        )
         .expect("final document digest"));
 }
 
@@ -107,10 +111,10 @@ fn assembly_decode_states_one_root_with_local_and_virtual_body_owners() {
         );
     }
     assert!(ir.design.scopes.is_empty());
-    assert!(!serde_json::to_string(ir)
+    assert!(!json::to_string(ir)
         .expect("serialize IR references")
         .contains(PART_ROOT));
-    assert!(!serde_json::to_string(decoded.source_fidelity())
+    assert!(!json::to_string(decoded.source_fidelity())
         .expect("serialize source fidelity references")
         .contains(PART_ROOT));
     assert_eq!(

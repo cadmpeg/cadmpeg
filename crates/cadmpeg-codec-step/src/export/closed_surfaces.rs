@@ -104,7 +104,13 @@ impl Builder<'_> {
                 } else {
                     self.ir.tolerances.linear.get()
                 };
-                let Some(bound) = nurbs_bound(n, forward, tolerance)? else {
+                let Some(bound) = nurbs_bound(
+                    EvaluationAdmission::Write(self.context),
+                    n,
+                    forward,
+                    tolerance,
+                )?
+                else {
                     return Ok(None);
                 };
                 bound
@@ -234,6 +240,7 @@ fn pole(curve: &NurbsCurve, tolerance: f64) -> Option<Point3> {
 }
 
 fn nurbs_bound(
+    admission: EvaluationAdmission<'_, '_>,
     n: &NurbsSurface,
     forward: bool,
     tolerance: f64,
@@ -251,8 +258,7 @@ fn nurbs_bound(
         (IsolineDirection::ConstantV, v1),
         (IsolineDirection::ConstantU, u0),
     ] {
-        let Some(curve) = nurbs_surface_isoline(EvaluationAdmission::Standard, n, direction, at)?
-        else {
+        let Some(curve) = nurbs_surface_isoline(admission, n, direction, at)? else {
             return Ok(None);
         };
         sides.push(curve);
@@ -260,13 +266,7 @@ fn nurbs_bound(
     let u_seam = n.u_periodic() || same_curve(&sides[1], &sides[3]);
     let v_seam = n.v_periodic() || same_curve(&sides[0], &sides[2]);
     if u_seam && v_seam {
-        let Some(point) = finite_or_refusal(nurbs_surface_point(
-            EvaluationAdmission::Standard,
-            n,
-            u0,
-            v0,
-        ))?
-        else {
+        let Some(point) = finite_or_refusal(nurbs_surface_point(admission, n, u0, v0))? else {
             return Ok(None);
         };
         Ok(Some(ClosedBound::Seams(Box::new(Seams {

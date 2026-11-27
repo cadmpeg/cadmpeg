@@ -14,6 +14,7 @@ use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::CadIr;
 
 use crate::{RhinoArchiveVersion, RhinoCodec};
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
@@ -50,8 +51,9 @@ fn nonclamped_nurbs_edge_uses_evaluated_endpoints() {
     let mut output = Vec::new();
     RhinoCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V8.descriptor().id.as_str(),
+            )),
         )
         .and_then(|plan| plan.write_to(&mut output))
         .expect("evaluated edge endpoints are writable");
@@ -89,8 +91,8 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -144,6 +146,18 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
 
 #[test]
 fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
+    assert_explicit_nurbs_pcurves_round_trip(&explicit_nurbs_pcurve_sheet(false));
+}
+
+#[test]
+fn a_pcurve_with_a_reversed_wrapper_is_written_along_its_use() {
+    assert_explicit_nurbs_pcurves_round_trip(&explicit_nurbs_pcurve_sheet(true));
+}
+
+/// A sheet whose edge 1 has a NURBS pcurve on each of its coedges. Where
+/// `wrapped`, the pcurve of the reversed coedge runs along the edge, states
+/// a reversed wrapper, and its use runs it backwards.
+fn explicit_nurbs_pcurve_sheet(wrapped: bool) -> CadIr {
     let mut ir = adjacent_quad_sheet();
     ir.geometry.edges[1].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
         ir.geometry.edges[1].curve().cloned(),
@@ -174,7 +188,8 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
             cadmpeg_ir::math::Point2::new(1.25, 0.5),
             cadmpeg_ir::math::Point2::new(1.0, 1.0),
         ];
-        if reversed {
+        let wrapper_reversed = wrapped && reversed;
+        if reversed && !wrapped {
             control_points.reverse();
         }
         ir.geometry
@@ -192,7 +207,7 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
                     .expect("valid explicit pcurve"),
                 },
                 metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
-                    Some(false),
+                    Some(wrapper_reversed),
                     Some(
                         cadmpeg_ir::units::FiniteVector::new([2.0, 5.0])
                             .expect("finite fixture range"),
@@ -207,9 +222,16 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
         ir.geometry.coedges[coedge].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,
             isoparametric: None,
-            parameter_range: None,
+            parameter_range: wrapper_reversed.then(|| {
+                cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([5.0, 2.0])
+                    .expect("finite fixture range")
+            }),
         }];
     }
+    ir
+}
+
+fn assert_explicit_nurbs_pcurves_round_trip(ir: &CadIr) {
     for version in [
         RhinoArchiveVersion::V5,
         RhinoArchiveVersion::V6,
@@ -219,8 +241,8 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -407,8 +429,8 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -459,8 +481,8 @@ fn rational_nurbs_surface_patch_round_trips_exact_boundaries() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -509,8 +531,8 @@ fn mixed_plane_and_nurbs_faces_round_trip_shared_edge() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -657,8 +679,8 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -885,8 +907,10 @@ fn reversed_trim_reflects_interior_knots_without_domain_sum_overflow() {
         payload: ([0; 16], vec![]),
         domain_extent_points: uv,
         domain,
+        reversed: false,
     };
     let finding = validate_nurbs_trim(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         0.001,
         &edge,
@@ -964,8 +988,10 @@ fn numerical_ranges_trim_sampling_avoids_wide_domain_subtraction() {
         payload: ([0; 16], vec![]),
         domain_extent_points: uv,
         domain,
+        reversed: false,
     };
     let finding = validate_nurbs_trim(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         0.001,
         &edge,

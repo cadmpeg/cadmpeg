@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Command reports: the JSON command-report envelope on stdout and on disk.
 
+use cadmpeg_core::serde_erase::json;
 use std::fs;
 
 use assert_cmd::Command;
@@ -36,8 +37,7 @@ fn artifact_reports_cover_success_with_and_without_geometry() {
         ])
         .assert()
         .success();
-    let value: serde_json::Value =
-        serde_json::from_slice(&fs::read(success_report).unwrap()).unwrap();
+    let value: serde_json::Value = json::from_slice(&fs::read(success_report).unwrap()).unwrap();
     assert_eq!(value["command"], "convert");
     assert_eq!(value["status"], "ok");
     assert!(value["refusal"].is_null());
@@ -69,8 +69,7 @@ fn artifact_reports_cover_success_with_and_without_geometry() {
         ])
         .assert()
         .success();
-    let value: serde_json::Value =
-        serde_json::from_slice(&fs::read(empty_report).unwrap()).unwrap();
+    let value: serde_json::Value = json::from_slice(&fs::read(empty_report).unwrap()).unwrap();
     assert_eq!(value["command"], "convert");
     assert_eq!(value["status"], "ok");
     assert!(value["refusal"].is_null());
@@ -199,7 +198,7 @@ fn f3d_export_report_identifies_regenerated_output() {
         ])
         .assert()
         .success();
-    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let value: serde_json::Value = json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert_eq!(value["export"]["identity"]["kind"], "native");
     assert_eq!(
         value["export"]["identity"]["target"],
@@ -228,7 +227,7 @@ fn reporting_commands_emit_json_only_on_stdout() {
         .args(["check", input.to_str().unwrap(), "--json"])
         .output()
         .unwrap();
-    let value: serde_json::Value = serde_json::from_slice(&validate.stdout).unwrap();
+    let value: serde_json::Value = json::from_slice(&validate.stdout).unwrap();
     assert_eq!(value["command"], "check");
 
     let diff = Command::cargo_bin("cadmpeg")
@@ -241,7 +240,7 @@ fn reporting_commands_emit_json_only_on_stdout() {
         ])
         .output()
         .unwrap();
-    let value: serde_json::Value = serde_json::from_slice(&diff.stdout).unwrap();
+    let value: serde_json::Value = json::from_slice(&diff.stdout).unwrap();
     assert_eq!(value["command"], "diff");
 
     let native = geometryless_creo(dir.path(), "ambiguous.bin");
@@ -257,7 +256,7 @@ fn reporting_commands_emit_json_only_on_stdout() {
         .output()
         .unwrap();
     assert!(inspect.status.success());
-    let value: serde_json::Value = serde_json::from_slice(&inspect.stdout).unwrap();
+    let value: serde_json::Value = json::from_slice(&inspect.stdout).unwrap();
     assert_eq!(value["command"], "inspect");
 }
 
@@ -278,7 +277,7 @@ fn inspect_report_writes_summary_to_file() {
         .assert()
         .success()
         .stdout(predicate::str::contains("format: rhino (detected high)"));
-    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let value: serde_json::Value = json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert_eq!(value["command"], "inspect");
     assert_eq!(value["selection"]["kind"], "detected");
     assert_eq!(value["selection"]["confidence"], "high");
@@ -310,7 +309,7 @@ fn validate_report_writes_result_to_file() {
         .assert()
         .success()
         .stdout(predicate::str::contains("check: OK"));
-    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let value: serde_json::Value = json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert_eq!(value["command"], "check");
     assert!(value["decode_report"].is_null());
     assert!(value["check_report"].is_object());
@@ -340,7 +339,7 @@ fn check_classifies_and_reports_an_unsupported_dialect() {
             "unsupported step dialect step:part28-xml",
         ));
 
-    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let value: serde_json::Value = json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert_eq!(value["command"], "check");
     assert_eq!(value["status"], "refused");
     assert_eq!(value["refusal"]["stage"], "decode");
@@ -378,7 +377,7 @@ fn inspect_classifies_and_reports_an_unsupported_dialect() {
 
     let report_bytes = fs::read(&report).unwrap();
     for bytes in [output.stdout.as_slice(), report_bytes.as_slice()] {
-        let value: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        let value: serde_json::Value = json::from_slice(bytes).unwrap();
         assert_eq!(value["command"], "inspect");
         assert_eq!(value["status"], "refused");
         assert_eq!(value["refusal"]["code"], "unsupported_dialect");
@@ -427,7 +426,7 @@ fn reporting_commands_accept_o_for_the_report_and_force_to_replace_it() {
             .args(&arguments)
             .assert()
             .success();
-        let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+        let value: serde_json::Value = json::from_slice(&fs::read(&report).unwrap()).unwrap();
         assert_eq!(value["command"], command[0]);
     }
 }
@@ -463,7 +462,7 @@ fn validate_agrees_between_its_exit_code_printed_summary_and_report() {
         .and_then(|(_, rest)| rest.split_once(" error(s)"))
         .map_or_else(|| panic!("{summary}"), |(count, _)| count.parse().unwrap());
 
-    let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    let value: serde_json::Value = json::from_slice(&fs::read(&report).unwrap()).unwrap();
     let findings = value["check_report"]["findings"].as_array().unwrap();
     let reported_errors = findings
         .iter()
@@ -492,7 +491,7 @@ fn diff_report_writes_result_to_file() {
         .assert()
         .success()
         .stdout(predicate::str::contains("identical"));
-    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let value: serde_json::Value = json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert_eq!(value["command"], "diff");
     assert_eq!(value["different"], false);
     assert!(value["diff"].is_object());
@@ -579,7 +578,7 @@ fn every_command_that_loads_a_cadir_document_names_its_stale_sidecar() {
     let check_report = dir.path().join("check.json");
     fs::write(
         &check_report,
-        serde_json::to_vec(&serde_json::json!({
+        json::to_vec(&cadmpeg_core::json!({
             "ir_version": cadmpeg_ir::document::IR_VERSION,
             "command": "check",
             "input_path": cadir,
@@ -666,9 +665,9 @@ fn the_check_report_carries_the_stale_sidecar_loss() {
         ])
         .assert()
         .success();
-    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let value: serde_json::Value = json::from_slice(&fs::read(report).unwrap()).unwrap();
     let losses: Vec<cadmpeg_ir::report::loss::LossNote> =
-        serde_json::from_value(value["check_report"]["losses"].clone()).unwrap();
+        json::from_value(value["check_report"]["losses"].clone()).unwrap();
     assert_eq!(losses.len(), 1, "{value:#}");
     assert_eq!(
         losses[0].code,

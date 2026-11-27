@@ -30,43 +30,59 @@ const MIN_LINEAR_TOLERANCE: f64 = 1e-5;
 /// Millimetres per Fusion length unit (cm).
 const MM_PER_CM: f64 = 10.0;
 
-/// What the design writes for the scope's geometry feature.
+/// What the design writes for the scope's geometry features.
 #[derive(Debug)]
 pub(super) enum Decision<'a> {
     /// The scope holds no typed sketch-driven feature among its geometry
     /// features.
     None,
-    Item(Item<'a>),
-    /// The feature stays in the Base Feature, for `reason`.
+    /// The geometry features, each written as an item with its state, in
+    /// timeline order. Each item after the first makes a new body.
+    Items(Vec<Item<'a>>),
+    /// The first typed feature stays in the Base Feature, with every
+    /// geometry feature of the run. `reason` concerns `cause`, the feature
+    /// the writer cannot write with its state, where that is a later
+    /// feature, and `feature` otherwise.
     BaseFeature {
         feature: &'a FeatureId,
+        cause: Option<&'a FeatureId>,
         reason: String,
     },
 }
 
 impl<'a> Decision<'a> {
-    /// Whether `feature` is written as the geometry item.
+    /// Whether `feature` is written as a geometry item.
     pub(super) fn writes(&self, feature: &FeatureId) -> bool {
-        self.item().is_some_and(|item| item.feature() == feature)
+        self.items().iter().any(|item| item.feature() == feature)
     }
 
-    /// The reason the Base Feature holds `feature`, where the decided
-    /// feature is it.
-    pub(super) fn reason(&self, feature: &FeatureId) -> Option<&str> {
-        match self {
-            Self::BaseFeature {
-                feature: decided,
-                reason,
-            } if *decided == feature => Some(reason),
-            Self::None | Self::Item(_) | Self::BaseFeature { .. } => None,
+    /// The reason the Base Feature holds `feature`, where the decision
+    /// names it: the decided feature, or the later feature that causes the
+    /// decision.
+    pub(super) fn reason(&self, feature: &FeatureId) -> Option<String> {
+        let Self::BaseFeature {
+            feature: decided,
+            cause,
+            reason,
+        } = self
+        else {
+            return None;
+        };
+        match cause {
+            Some(cause) if *cause == feature => Some(reason.clone()),
+            Some(cause) if *decided == feature => {
+                Some(format!("the writer cannot write {cause} with its state"))
+            }
+            None if *decided == feature => Some(reason.clone()),
+            Some(_) | None => None,
         }
     }
 
-    /// The written geometry item.
-    pub(super) fn item(&self) -> Option<&Item<'a>> {
+    /// The written geometry items, in timeline order.
+    pub(super) fn items(&self) -> &[Item<'a>] {
         match self {
-            Self::Item(item) => Some(item),
-            Self::None | Self::BaseFeature { .. } => None,
+            Self::Items(items) => items,
+            Self::None | Self::BaseFeature { .. } => &[],
         }
     }
 }
@@ -95,6 +111,14 @@ impl<'a> Item<'a> {
         }
     }
 
+    /// The body of its state; `None` for a rolled-back item.
+    pub(super) fn body(&self) -> Option<&'a BodyId> {
+        match self {
+            Self::Extrude(plan) => plan.result.as_ref().map(|result| result.body),
+            Self::Revolve(plan) => plan.result.as_ref().map(|result| result.body),
+        }
+    }
+
     /// The parameters the item owns, in owner-local order.
     pub(super) fn owned(&self) -> Vec<&OwnedParameter> {
         match self {
@@ -117,6 +141,18 @@ enum Typed<'a> {
     Revolve(&'a Revolve),
 }
 
+impl Typed<'_> {
+    /// Whether the operation states a new body: it leaves the bodies of
+    /// the state before it unchanged.
+    fn makes_new_body(self) -> bool {
+        let output = match self {
+            Self::Extrude(extrude) => &extrude.output,
+            Self::Revolve(revolve) => &revolve.output,
+        };
+        matches!(output.boolean, Some(Boolean::NewBody))
+    }
+}
+
 fn typed<'a>(target: &'a CadIr, feature: &FeatureId) -> Option<Typed<'a>> {
     let record = target.design.features.iter().find(|f| &f.id == feature)?;
     match &record.definition.operation {
@@ -125,6 +161,30 @@ fn typed<'a>(target: &'a CadIr, feature: &FeatureId) -> Option<Typed<'a>> {
         _ => None,
     }
 }
+
+/// Whether the writer can write `feature` with its state as a geometry
+/// item of a run: a family it writes as an item that makes a new body, or
+/// any such family where the feature is the run's `first` stateful feature.
+/// `Err` names why it cannot.
+pub(super) fn carries(
+    target: &CadIr,
+    feature: &FeatureId,
+    first: bool,
+) -> Result<(), &'static str> {
+    let operation = typed(target, feature).ok_or(OTHER_FAMILY)?;
+    if first || operation.makes_new_body() {
+        Ok(())
+    } else {
+        Err(CHANGES_AN_EARLIER_BODY)
+    }
+}
+
+/// Why a geometry feature is not written with its state where the writer
+/// writes no item of its family.
+const OTHER_FAMILY: &str = "the writer writes no item of its family with its state";
+/// Why a geometry feature after the first is not written with its state
+/// where it changes a body of the state before it.
+const CHANGES_AN_EARLIER_BODY: &str = "it changes a body of the state before it, and f3d-open-items.md DR-1054 leaves open the record changes of such a state";
 
 /// The features the geometry item is chosen from: the scope's features in
 /// timeline order, or the run before the timeline marker of the
@@ -136,18 +196,23 @@ pub(super) struct Run<'a, 'p> {
     pub(super) ends: bool,
 }
 
-/// The decision for the run's features in timeline order: the first
-/// stateful feature of a family the writer writes as an item. `failure` is
-/// the error of an earlier attempt to write the item. A written item whose
-/// parameter binds a user parameter takes that parameter out of
-/// `parameters`; its parameters take the source ordinals from `ordinal`.
+/// The decision for the run's features in timeline order: every stateful
+/// feature of the run, each written as an item with its state, where each
+/// is of a family the writer writes as an item and each after the first
+/// makes a new body (f3d.md §3.1, "History states"). `failure` is why an
+/// earlier attempt could not write the items, with the feature it concerns
+/// where it names one. A written item whose parameter
+/// binds a user parameter takes that parameter out of `parameters`; the
+/// items' parameters take the source ordinals from `ordinal`. The
+/// `BaseFeature` decision names the first typed feature, and the later
+/// feature its reason concerns.
 pub(super) fn plan<'a>(
     target: &'a CadIr,
     scope: &'a DesignScope,
     run: Run<'a, '_>,
     sketches: &SketchPlan<'a>,
     parameters: &mut ParameterPlan,
-    failure: Option<&str>,
+    failure: Option<(String, Option<&FeatureId>)>,
     ordinal: u32,
 ) -> Decision<'a> {
     let features = run.features;
@@ -155,20 +220,37 @@ pub(super) fn plan<'a>(
         .iter()
         .enumerate()
         .filter(|(_, feature)| !target.is_stateless(feature, None).unwrap_or(false))
+        .map(|(position, feature)| (position, *feature))
         .collect::<Vec<_>>();
-    let Some((position, feature, operation)) = stateful.iter().find_map(|(position, feature)| {
-        typed(target, feature).map(|operation| (*position, **feature, operation))
-    }) else {
+    let Some(feature) = stateful
+        .iter()
+        .find_map(|(_, feature)| typed(target, feature).map(|_| *feature))
+    else {
         return Decision::None;
     };
-    let base = |reason: String| Decision::BaseFeature { feature, reason };
-    if let Some(failure) = failure {
-        return base(format!("the writer cannot write its records ({failure})"));
+    let base = |cause: Option<&'a FeatureId>, reason: String| Decision::BaseFeature {
+        feature,
+        cause: cause.filter(|cause| *cause != feature),
+        reason,
+    };
+    if let Some((failure, cause)) = failure {
+        let cause = cause.and_then(|cause| features.iter().copied().find(|at| *at == cause));
+        return base(cause, failure);
     }
-    if stateful.len() > 1 {
-        return base("the timeline holds other geometry features".to_owned());
+    let mut chain = Vec::with_capacity(stateful.len());
+    for &(position, feature) in &stateful {
+        let Some(operation) = typed(target, feature) else {
+            return base(
+                None,
+                "the timeline holds other geometry features".to_owned(),
+            );
+        };
+        if !chain.is_empty() && !operation.makes_new_body() {
+            return base(Some(feature), CHANGES_AN_EARLIER_BODY.to_owned());
+        }
+        chain.push((position, feature, operation));
     }
-    let rows = Rows {
+    let rows = |position: usize, feature: &'a FeatureId, body, items_before| Rows {
         target,
         scope,
         features,
@@ -177,11 +259,61 @@ pub(super) fn plan<'a>(
         position,
         ends: run.ends,
         rolled_back: false,
+        body,
+        items_before,
     };
-    match family_plan(&rows, operation, parameters, ordinal) {
-        Ok(item) => Decision::Item(item),
-        Err(reason) => base(reason.to_owned()),
+    let Some(&(last_position, last, _)) = chain.last() else {
+        return Decision::None;
+    };
+    let state = match rows(last_position, last, None, 0).state(chain.len()) {
+        Ok(state) => state,
+        Err(reason) => return base(None, reason.to_owned()),
+    };
+    let mut trial = parameters.clone();
+    let mut next = Some(ordinal);
+    let mut items = Vec::<Item<'a>>::with_capacity(chain.len());
+    for &(position, feature, operation) in &chain {
+        let items_before = items.len();
+        let Some(item_ordinal) = next else {
+            return base(
+                Some(feature),
+                "its parameters exceed the source ordinals".to_owned(),
+            );
+        };
+        let mut first_error = None;
+        let mut planned = None;
+        for body in state
+            .iter()
+            .filter(|body| !items.iter().any(|item| item.body() == Some(*body)))
+        {
+            match family_plan(
+                &rows(position, feature, Some(body), items_before),
+                operation,
+                &mut trial,
+                item_ordinal,
+            ) {
+                Ok(item) => {
+                    planned = Some(item);
+                    break;
+                }
+                Err(reason) => {
+                    first_error.get_or_insert(reason);
+                }
+            }
+        }
+        let Some(item) = planned else {
+            return base(
+                Some(feature),
+                first_error
+                    .unwrap_or("its faces do not match its profile")
+                    .to_owned(),
+            );
+        };
+        next = item.next_ordinal(item_ordinal);
+        items.push(item);
     }
+    *parameters = trial;
+    Decision::Items(items)
 }
 
 /// The definition of the feature at `position` in `features`, the scope's
@@ -210,6 +342,8 @@ pub(super) fn rolled_back<'a>(
         position,
         ends: true,
         rolled_back: true,
+        body: None,
+        items_before: 0,
     };
     family_plan(&rows, operation, parameters, ordinal)
 }
@@ -247,6 +381,11 @@ pub(super) struct Rows<'a, 'p> {
     /// Whether the feature itself follows the timeline marker: the rows of
     /// its state do not apply.
     pub(super) rolled_back: bool,
+    /// The body of its state, which [`Rows::state`] holds; `None` for a
+    /// rolled-back feature.
+    body: Option<&'a BodyId>,
+    /// The number of geometry items before it in the timeline.
+    items_before: usize,
 }
 
 /// What the shared rows establish of a sketch-driven feature.
@@ -258,8 +397,9 @@ pub(super) struct Profiled<'a, 'p> {
     pub(super) planned: &'p PlannedSketch<'a>,
     /// The number of `Sketch` items before it in the timeline.
     pub(super) after: usize,
-    /// The number of timeline items before it: the `Sketch` items and the
-    /// `WorkPlane` items that precede them.
+    /// The persistent identities that the timeline items before it own:
+    /// one for each `Sketch` item and each `WorkPlane` item before them, two
+    /// for each geometry item.
     pub(super) preceding: usize,
     /// The loops of the profile region in stored order: the exterior loop
     /// in ring order from the curve of side token `3`, then the holes.
@@ -269,11 +409,9 @@ pub(super) struct Profiled<'a, 'p> {
 }
 
 impl<'a, 'p> Rows<'a, 'p> {
-    /// The shared rows in order; the first that fails names the reason: one
-    /// body, the timeline rolled to its end, the current state its result,
-    /// and the profile `selection` one region of one written sketch before
-    /// the feature, on an origin plane and not mirrored. A rolled-back
-    /// feature takes only the rows of its profile.
+    /// The shared rows of the profile in order; the first that fails names
+    /// the reason: the profile `selection` is one region of one written
+    /// sketch before the feature, on an origin plane and not mirrored.
     pub(super) fn profiled(
         &self,
         selection: &ProfileRef,
@@ -282,12 +420,7 @@ impl<'a, 'p> Rows<'a, 'p> {
         let body = if self.rolled_back {
             None
         } else {
-            let [body] = target.geometry.bodies.as_slice() else {
-                return Err("the design holds more than one body");
-            };
-            self.rollback()?;
-            self.current(&body.id)?;
-            Some(&body.id)
+            Some(self.body.ok_or("it has no body")?)
         };
         let (sketch, after) = self.sketch(selection)?;
         let planned = &self.sketches.items[sketch];
@@ -310,10 +443,37 @@ impl<'a, 'p> Rows<'a, 'p> {
                     .planes
                     .iter()
                     .filter(|plane| plane.first < after)
-                    .count(),
+                    .count()
+                + 2 * self.items_before,
             loops,
             linear,
         })
+    }
+
+    /// The bodies of the state of the run's `items` geometry items, in the
+    /// design's body order, where the feature is the last of them; the
+    /// first row that fails names the reason: the design holds one body
+    /// for each item, the timeline is rolled to its end, and the current
+    /// state is the result of the feature. A current state after the
+    /// timeline marker fails first.
+    fn state(&self, items: usize) -> Result<Vec<&'a BodyId>, &'static str> {
+        const AFTER_THE_MARKER: &str = "the current state stands after the timeline marker, and the writer writes no evaluation of the document as the state at the marker";
+        if let [state] = self.scope.current.as_slice() {
+            if self.ends && after_the_run(&state.at, self.features) {
+                return Err(AFTER_THE_MARKER);
+            }
+        }
+        let bodies = &self.target.geometry.bodies;
+        if bodies.len() != items {
+            return Err(if items == 1 {
+                "the design holds more than one body"
+            } else {
+                "the design holds other bodies than its geometry items make"
+            });
+        }
+        self.rollback()?;
+        self.current(bodies)?;
+        Ok(bodies.iter().map(|body| &body.id).collect())
     }
 
     /// The feature's timeline is rolled to its end, or, where rolled-back
@@ -348,8 +508,8 @@ impl<'a, 'p> Rows<'a, 'p> {
     }
 
     /// The current state is the state after the feature or a later member
-    /// of the run, and holds the one body.
-    fn current(&self, body: &BodyId) -> Result<(), &'static str> {
+    /// of the run, and holds the design's `bodies`.
+    fn current(&self, bodies: &[cadmpeg_ir::topology::Body]) -> Result<(), &'static str> {
         const NOT_ITS_RESULT: &str = "the current state is not its result";
         let [state] = self.scope.current.as_slice() else {
             return Err(NOT_ITS_RESULT);
@@ -375,7 +535,9 @@ impl<'a, 'p> Rows<'a, 'p> {
             }
             Position::After(Member::Container(_)) | Position::Start(_) => false,
         };
-        if !later || !matches!(state.bodies.as_slice(), [only] if only == body) {
+        let holds = state.bodies.len() == bodies.len()
+            && bodies.iter().all(|body| state.bodies.contains(&body.id));
+        if !later || !holds {
             return Err(NOT_ITS_RESULT);
         }
         Ok(())
@@ -385,24 +547,7 @@ impl<'a, 'p> Rows<'a, 'p> {
     /// position in the plan and the number of written sketches before the
     /// feature.
     fn sketch(&self, selection: &ProfileRef) -> Result<(usize, usize), &'static str> {
-        const NOT_WRITTEN: &str = "its sketch is not written";
-        let Picks::Named(members) = &selection.picks else {
-            return Err(NOT_WRITTEN);
-        };
-        let [picked] = members.as_slice() else {
-            return Err(NOT_WRITTEN);
-        };
-        let PickTarget::Sketch(sketch) = &picked.target else {
-            return Err(NOT_WRITTEN);
-        };
-        let owner = self
-            .target
-            .design
-            .sketches
-            .iter()
-            .find(|record| &record.id == sketch)
-            .map(|record| &record.owner)
-            .ok_or(NOT_WRITTEN)?;
+        let owner = sketch_owner(self.target, selection).ok_or(SKETCH_NOT_WRITTEN)?;
         let position_of = |feature: &FeatureId| {
             self.features
                 .iter()
@@ -413,9 +558,9 @@ impl<'a, 'p> Rows<'a, 'p> {
             .items
             .iter()
             .position(|item| item.feature == owner)
-            .ok_or(NOT_WRITTEN)?;
+            .ok_or(SKETCH_NOT_WRITTEN)?;
         if position_of(owner).is_none_or(|at| at >= self.position) {
-            return Err(NOT_WRITTEN);
+            return Err(SKETCH_NOT_WRITTEN);
         }
         let after = self
             .sketches
@@ -424,6 +569,49 @@ impl<'a, 'p> Rows<'a, 'p> {
             .filter(|item| position_of(item.feature).is_some_and(|at| at < self.position))
             .count();
         Ok((index, after))
+    }
+}
+
+/// Why the writer writes no item of a feature whose profile is not on one
+/// written sketch.
+pub(super) const SKETCH_NOT_WRITTEN: &str = "its sketch is not written";
+
+/// The feature of the one sketch the profile `selection` picks.
+fn sketch_owner<'a>(target: &'a CadIr, selection: &ProfileRef) -> Option<&'a FeatureId> {
+    let Picks::Named(members) = &selection.picks else {
+        return None;
+    };
+    let [picked] = members.as_slice() else {
+        return None;
+    };
+    let PickTarget::Sketch(sketch) = &picked.target else {
+        return None;
+    };
+    target
+        .design
+        .sketches
+        .iter()
+        .find(|record| &record.id == sketch)
+        .map(|record| &record.owner)
+}
+
+/// The feature of the sketch the profile of `feature` lies on, where the
+/// writer writes items of its family.
+pub(super) fn profile_sketch<'a>(target: &'a CadIr, feature: &FeatureId) -> Option<&'a FeatureId> {
+    let selection = match typed(target, feature)? {
+        Typed::Extrude(extrude) => &extrude.profile,
+        Typed::Revolve(revolve) => &revolve.profile,
+    };
+    sketch_owner(target, selection)
+}
+
+/// Whether the state at `at` stands after every feature of `run`: after a
+/// feature outside the run, or after a timeline.
+pub(super) fn after_the_run(at: &Position, run: &[&FeatureId]) -> bool {
+    match at {
+        Position::After(Member::Feature(at)) => !run.contains(&at),
+        Position::After(Member::Container(_)) => true,
+        Position::Start(_) => false,
     }
 }
 

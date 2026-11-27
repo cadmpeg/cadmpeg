@@ -72,13 +72,73 @@ fn admit_text(text: &str) -> Result<(), String> {
     Ok(())
 }
 
+const fn build_delim_table(include_comma: bool) -> [bool; 256] {
+    let mut table = [false; 256];
+    let mut i = 0;
+    while i < 256 {
+        table[i] = matches!(i, 0x22 | 0x7b | 0x5b | 0x7d | 0x5d) || (include_comma && i == 0x2c);
+        i += 1;
+    }
+    table
+}
+
+/// Byte lookup for JSON structural delimiters outside a string when commas do
+/// not matter (`"`, `{`, `[`, `}`, `]`).
+const DEEP_DELIM: [bool; 256] = build_delim_table(false);
+
+/// Byte lookup for JSON structural delimiters outside a string when commas
+/// advance followed container members (`"`, `{`, `[`, `}`, `]`, `,`).
+const SHALLOW_DELIM: [bool; 256] = build_delim_table(true);
+
 /// The depth of JSON text (§2.5), read without parsing it.
 pub(crate) fn text_depth(text: &str) -> usize {
-    let mut scan = Scan::default();
-    let mut deepest = 0;
-    for &byte in text.as_bytes() {
-        scan.byte(byte);
-        deepest = deepest.max(scan.depth);
+    let bytes = text.as_bytes();
+    let mut pos = 0;
+    let mut depth = 0_usize;
+    let mut deepest = 0_usize;
+    while pos < bytes.len() {
+        while pos < bytes.len() && !DEEP_DELIM[usize::from(bytes[pos])] {
+            pos += 1;
+        }
+        if pos >= bytes.len() {
+            break;
+        }
+        match bytes[pos] {
+            b'"' => {
+                pos += 1;
+                let mut terminated = false;
+                while let Some(hit) = memchr::memchr2(b'"', b'\\', &bytes[pos..]) {
+                    if bytes[pos + hit] == b'\\' {
+                        pos += hit + 2;
+                        if pos >= bytes.len() {
+                            pos = bytes.len();
+                            break;
+                        }
+                    } else {
+                        pos += hit + 1;
+                        terminated = true;
+                        break;
+                    }
+                }
+                if !terminated {
+                    pos = bytes.len();
+                }
+            }
+            b'{' | b'[' => {
+                depth += 1;
+                deepest = deepest.max(depth);
+                pos += 1;
+            }
+            b'}' | b']' => {
+                if let Some(next) = depth.checked_sub(1) {
+                    depth = next;
+                }
+                pos += 1;
+            }
+            _ => {
+                pos += 1;
+            }
+        }
     }
     deepest
 }
@@ -127,13 +187,13 @@ pub(crate) fn note_expression_past() {
     EXPRESSION_PAST.with(|past| past.set(true));
 }
 
-fn take_expression_past() -> bool {
+pub(crate) fn take_expression_past() -> bool {
     EXPRESSION_PAST.with(|past| past.replace(false))
 }
 
-/// The bound a record passes.
+/// The depth bound of §2.5 that a record or a document passes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Bound {
+pub enum Bound {
     /// [`MAX_DOCUMENT_DEPTH`].
     Document,
     /// [`MAX_EXPRESSION_DEPTH`].
@@ -173,13 +233,23 @@ pub(crate) enum Place {
     },
 }
 
+/// Where a value outside every record sits: `field` is the root member, or
+/// `home.field` for a member of a home or of `native`, and `entry` is the
+/// position in that member's array.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct Outside {
+    pub(crate) field: String,
+    pub(crate) entry: Option<usize>,
+}
+
 /// What [`Measure`] found past a bound.
 #[derive(Debug, Default)]
 pub(crate) struct Measured {
     /// Each record past a bound, with the first bound it passes.
     pub(crate) records: BTreeMap<Place, Bound>,
-    /// The first bound passed outside every record.
-    pub(crate) outside: Option<Bound>,
+    /// Each value outside every record past a bound, with the first bound it
+    /// passes.
+    pub(crate) outside: BTreeMap<Outside, Bound>,
 }
 
 const HOMES: [&str; 4] = ["geometry", "model", "design", "process"];
@@ -230,7 +300,13 @@ impl<W: Write> Measure<W> {
     /// What the measure found.
     pub(crate) fn finish(mut self) -> Measured {
         if take_expression_past() {
-            self.found.outside.get_or_insert(Bound::Expression);
+            self.found
+                .outside
+                .entry(Outside {
+                    field: String::new(),
+                    entry: None,
+                })
+                .or_insert(Bound::Expression);
         }
         self.found
     }
@@ -254,9 +330,11 @@ impl<W: Write> Measure<W> {
         let array = self.levels.get(level - 1).filter(|array| array.array)?;
         let text = |at: usize| String::from_utf8_lossy(&self.levels[at].key).into_owned();
         Some(if level == 3 {
+            let (home, arena) = (text(0), text(1));
+            crate::give_up::Arena::home(&home, &arena)?;
             Place::Home {
-                home: text(0),
-                arena: text(1),
+                home,
+                arena,
                 index: array.index,
             }
         } else {
@@ -274,8 +352,48 @@ impl<W: Write> Measure<W> {
                 self.found.records.entry(place).or_insert(bound);
             }
             None => {
-                self.found.outside.get_or_insert(bound);
+                let outside = self.outside();
+                self.found.outside.entry(outside).or_insert(bound);
             }
+        }
+    }
+
+    /// Where the value being written sits, outside every record.
+    fn outside(&self) -> Outside {
+        let key = |at: usize| {
+            self.levels
+                .get(at)
+                .filter(|level| !level.array)
+                .map(|level| String::from_utf8_lossy(&level.key).into_owned())
+        };
+        let root = key(0).unwrap_or_default();
+        let member = (HOMES.contains(&root.as_str()) || root == "native")
+            .then(|| key(1))
+            .flatten();
+        match member {
+            Some(member) => Outside {
+                field: format!("{root}.{member}"),
+                entry: self
+                    .levels
+                    .get(2)
+                    .filter(|level| level.array)
+                    .map(|level| level.index),
+            },
+            None => Outside {
+                field: root,
+                entry: None,
+            },
+        }
+    }
+
+    /// Charges a noted expression to the value outside every record that
+    /// ends here, when a member of the root or of a home ends at `depth`.
+    fn member_ends(&mut self, depth: usize) {
+        if (1..=2).contains(&depth)
+            && self.levels.get(depth - 1).is_some_and(|level| !level.array)
+            && take_expression_past()
+        {
+            self.mark(Bound::Expression);
         }
     }
 
@@ -290,21 +408,113 @@ impl<W: Write> Measure<W> {
         }
     }
 
-    fn byte(&mut self, byte: u8) {
-        let in_string = self.scan.string;
-        self.scan.byte(byte);
-        if in_string {
-            if self.in_key {
-                if self.scan.string {
-                    if let Some(level) = self.levels.last_mut() {
-                        level.key.push(byte);
+    fn scan_bytes(&mut self, mut bytes: &[u8]) {
+        while !bytes.is_empty() {
+            if self.scan.string {
+                if self.scan.escaped {
+                    self.scan.escaped = false;
+                    if self.in_key {
+                        if let Some(level) = self.levels.last_mut() {
+                            level.key.push(bytes[0]);
+                        }
                     }
-                } else {
-                    self.in_key = false;
+                    bytes = &bytes[1..];
+                    continue;
                 }
+                match memchr::memchr2(b'"', b'\\', bytes) {
+                    None => {
+                        if self.in_key {
+                            if let Some(level) = self.levels.last_mut() {
+                                level.key.extend_from_slice(bytes);
+                            }
+                        }
+                        return;
+                    }
+                    Some(pos) => {
+                        if self.in_key {
+                            if let Some(level) = self.levels.last_mut() {
+                                level.key.extend_from_slice(&bytes[..pos]);
+                            }
+                        }
+                        if bytes[pos] == b'\\' {
+                            if self.in_key {
+                                if let Some(level) = self.levels.last_mut() {
+                                    level.key.push(b'\\');
+                                    if pos + 1 < bytes.len() {
+                                        level.key.push(bytes[pos + 1]);
+                                    }
+                                }
+                            }
+                            if pos + 1 < bytes.len() {
+                                bytes = &bytes[pos + 2..];
+                            } else {
+                                self.scan.escaped = true;
+                                return;
+                            }
+                        } else {
+                            self.scan.string = false;
+                            self.in_key = false;
+                            bytes = &bytes[pos + 1..];
+                        }
+                    }
+                }
+                continue;
             }
-            return;
+
+            if self.scan.depth > FOLLOWED {
+                let mut pos = 0;
+                while pos < bytes.len() {
+                    while pos < bytes.len() && !DEEP_DELIM[usize::from(bytes[pos])] {
+                        pos += 1;
+                    }
+                    if pos >= bytes.len() {
+                        return;
+                    }
+                    let byte = bytes[pos];
+                    pos += 1;
+                    match byte {
+                        b'"' => {
+                            self.scan.string = true;
+                            bytes = &bytes[pos..];
+                            break;
+                        }
+                        b'{' | b'[' => {
+                            self.scan.depth += 1;
+                            if self.scan.depth > MAX_DOCUMENT_DEPTH {
+                                self.mark(Bound::Document);
+                            }
+                        }
+                        b'}' | b']' => {
+                            self.scan.depth -= 1;
+                            if self.scan.depth <= FOLLOWED {
+                                bytes = &bytes[pos..];
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                    if pos >= bytes.len() {
+                        return;
+                    }
+                }
+                continue;
+            }
+
+            let mut pos = 0;
+            while pos < bytes.len() && !SHALLOW_DELIM[usize::from(bytes[pos])] {
+                pos += 1;
+            }
+            if pos >= bytes.len() {
+                return;
+            }
+            let byte = bytes[pos];
+            bytes = &bytes[pos + 1..];
+            self.outside_delim(byte);
         }
+    }
+
+    fn outside_delim(&mut self, byte: u8) {
+        self.scan.byte(byte);
         let followed = self.levels.len() == self.scan.depth;
         match byte {
             b'"' => {
@@ -337,12 +547,15 @@ impl<W: Write> Measure<W> {
                 if self.levels.len() == closed {
                     if byte == b']' {
                         self.element_ends(closed);
+                    } else {
+                        self.member_ends(closed);
                     }
                     self.levels.pop();
                 }
             }
             b',' if followed => {
                 self.element_ends(self.scan.depth);
+                self.member_ends(self.scan.depth);
                 if let Some(level) = self.levels.last_mut() {
                     if level.array {
                         level.index += 1;
@@ -359,15 +572,124 @@ impl<W: Write> Measure<W> {
 impl<W: Write> Write for Measure<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let written = self.inner.write(buf)?;
-        for &byte in &buf[..written] {
-            self.byte(byte);
-        }
+        self.scan_bytes(&buf[..written]);
         Ok(written)
     }
 
     fn flush(&mut self) -> io::Result<()> {
         self.inner.flush()
     }
+}
+
+/// A value outside every record that [`unstate_outside`] stated in its
+/// unstated form: its field, and what the document states in its place.
+#[derive(Debug)]
+pub(crate) struct Unstated {
+    pub(crate) field: String,
+    pub(crate) what: String,
+}
+
+/// States each value of `outside`, which belongs to no record and passes a
+/// bound, as the value it takes when unstated (§2.4). An entry of the name
+/// table states its native name alone, or is removed where it has none
+/// (§5.7); any other field takes its value in the empty document.
+///
+/// # Errors
+///
+/// [`CodecError::Malformed`] where the document does not read back from its
+/// JSON.
+pub(crate) fn unstate_outside(
+    ir: &mut crate::document::CadIr,
+    outside: &BTreeMap<Outside, Bound>,
+) -> Result<Vec<Unstated>, cadmpeg_core::CodecError> {
+    let mut unstated = Vec::new();
+    let mut fields = Vec::new();
+    for (place, bound) in outside.iter().rev() {
+        let what = match (place.field.as_str(), place.entry) {
+            ("design.names", Some(entry)) => {
+                let mut entries = ir.design.names.entries().clone();
+                let Some((entity, mut stated)) = entries
+                    .iter()
+                    .nth(entry)
+                    .map(|(entity, stated)| (entity.clone(), stated.clone()))
+                else {
+                    continue;
+                };
+                let what = if stated.native.is_some() {
+                    stated.name = None;
+                    entries.insert(entity.clone(), stated);
+                    format!(
+                        "the name of {} with its native name alone, since its name {}",
+                        entity.id(),
+                        bound.describe()
+                    )
+                } else {
+                    entries.remove(&entity);
+                    format!(
+                        "no name of {}, since its name {}",
+                        entity.id(),
+                        bound.describe()
+                    )
+                };
+                ir.design.names = entries.into();
+                what
+            }
+            (field, _) => {
+                fields.push(field);
+                format!("the unstated value of a field that {}", bound.describe())
+            }
+        };
+        unstated.push(Unstated {
+            field: place.field.clone(),
+            what,
+        });
+    }
+    unstate(ir, &fields)?;
+    Ok(unstated)
+}
+
+/// Replaces each of `fields` of `ir`, a root member or `home.field`, by its
+/// value in the empty document, or removes it where the empty document omits
+/// it, in one pass through the document's JSON. The arenas the wire omits
+/// keep their records.
+fn unstate(
+    ir: &mut crate::document::CadIr,
+    fields: &[&str],
+) -> Result<(), cadmpeg_core::CodecError> {
+    if fields.is_empty() {
+        return Ok(());
+    }
+    let malformed = |error: String| cadmpeg_core::CodecError::Malformed(error);
+    let mut document = crate::hash::finite_json::to_json_value(&*ir)
+        .map_err(|error| malformed(error.to_string()))?;
+    let empty = crate::hash::finite_json::to_json_value(&crate::document::CadIr::empty())
+        .map_err(|error| malformed(error.to_string()))?;
+    for field in fields {
+        let pointer = format!("/{}", field.replace('.', "/"));
+        let unstated = empty.pointer(&pointer).cloned();
+        let Some((parent, key)) = pointer.rsplit_once('/') else {
+            continue;
+        };
+        let Some(parent) = document
+            .pointer_mut(parent)
+            .and_then(serde_json::Value::as_object_mut)
+        else {
+            continue;
+        };
+        match unstated {
+            Some(value) => {
+                parent.insert(key.to_owned(), value);
+            }
+            None => {
+                parent.remove(key);
+            }
+        }
+    }
+    let decoded = cadmpeg_core::serde_erase::from_json_value(&document)
+        .map_err(|error| malformed(error.to_string()))?;
+    let original = std::mem::replace(ir, decoded);
+    ir.model.adopt_omitted_arenas(&original.model);
+    Ok(())
 }
 
 #[cfg(test)]

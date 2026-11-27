@@ -55,7 +55,7 @@ cadmpeg convert part.f3d -o part.step
 decode report (f3d): depth=geometry, geometry_transferred=true
 ...
 check: OK (0 error(s), 0 warning(s))
-wrote part.step (... entities)
+wrote part.step (... entities, sha256 ...)
 ```
 
 Measure one face, or every cylindrical face of a part:
@@ -91,10 +91,12 @@ Each format carries one support level from the ladder; `cadmpeg inspect <file>` 
 - **Creo Parametric `.prt`** — L1 ([profile](docs/format-support.md#creo-parametric-prt))
 - **Creo View `.pvz`** — L3 ([profile](docs/format-support.md#creo-view-pvz))
 - **SolidWorks eDrawings `.eprt` and `.easm`** — L2 ([profile](docs/format-support.md#solidworks-edrawings-eprt-and-easm))
+- **Alibre Design `.AD_PRT`** — L3 ([profile](docs/format-support.md#alibre-design-adprt))
 - **OpenUSD layers** — L2 ([profile](docs/format-support.md#openusd-layers))
 - **STEP Part 21** — L8 ([profile](docs/format-support.md#step-part-21))
 - **Solid Edge `.par`, `.psm`, and `.asm`** — L2 ([profile](docs/format-support.md#solid-edge-par-psm-and-asm))
-- **Onshape bundle** — L0 ([profile](docs/format-support.md#onshape-bundle))
+- **IronCAD `.ics`** — L0 ([profile](docs/format-support.md#ironcad-ics))
+- **Onshape bundle** — L4 ([profile](docs/format-support.md#onshape-bundle))
 
 <!-- /generated: capability-lines -->
 

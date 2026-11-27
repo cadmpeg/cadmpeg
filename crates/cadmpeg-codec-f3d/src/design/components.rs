@@ -82,6 +82,7 @@ pub(crate) fn project_local_components_with_types(
 ) -> Result<LocalComponentProjection, cadmpeg_core::CodecError> {
     let mut projector = Projector::new(sources);
     let mut types_by_stream = std::collections::HashMap::new();
+    let mut qualifier_placed = BTreeSet::new();
     for scope in sources.scopes {
         let stream = crate::ids::native_stream(&scope.id).unwrap_or_default();
         let relation_only = scope.assembly_alignment().is_some_and(|alignment| {
@@ -124,6 +125,13 @@ pub(crate) fn project_local_components_with_types(
                 let Some(root) = root else {
                     continue;
                 };
+                let occurrence_key = projector
+                    .occurrence_id(stream, &root.occurrence_guid)
+                    .as_str()
+                    .to_owned();
+                if !projector.occurrences.contains_key(&occurrence_key) {
+                    qualifier_placed.insert(occurrence_key);
+                }
                 projector.place(
                     stream,
                     ComponentIdentity::CarrierGuid(&root.component_guid),
@@ -171,6 +179,12 @@ pub(crate) fn project_local_components_with_types(
             )?;
         }
     }
+    projector.path_poses.operation_placed = projector
+        .occurrences
+        .keys()
+        .filter(|key| !qualifier_placed.contains(*key))
+        .cloned()
+        .collect();
     projector.place_root_contained_carriers()?;
     projector.attach_root_occurrences();
     projector.expand_nested_carriers()?;
@@ -403,10 +417,26 @@ struct PathPoseOutcome {
     /// Occurrences placed from the closing matrix of a marker-carrying object
     /// prelude without a component-path proof.
     marked_prelude_placements: usize,
+    /// Occurrences placed from the closing matrix of an unmarked object
+    /// prelude that no component-path carrier of a complete stream names.
+    object_prelude_placements: usize,
+    /// Design streams that store at least one component-path record.
+    path_streams: BTreeSet<String>,
+    /// Occurrences that an assembly operation or a derived-instance
+    /// construction placed from an operation matrix before any carrier
+    /// matrix was read. An occurrence that an assembly alignment qualifier
+    /// places from its carrier's closing matrix is not among them.
+    operation_placed: BTreeSet<String>,
     /// Carriers of the occurrences that took a path pose.
     applied_carriers: BTreeSet<String>,
     /// Expanded instances with an independently resolved world pose.
     applied_instances: BTreeSet<String>,
+    /// Carriers that a component-path record names as its target, whether or
+    /// not the record resolves.
+    path_targets: BTreeSet<String>,
+    /// Design streams with a component-path record that is not applied as
+    /// one unique pose of one expanded occurrence.
+    blocked_streams: BTreeSet<String>,
 }
 
 /// One expanded local occurrence, for path resolution.
@@ -1091,6 +1121,13 @@ impl<'a> Projector<'a> {
     /// applies only when exactly one expanded occurrence matches. Two
     /// carriers that pose one occurrence differently apply to neither.
     fn apply_path_poses(&mut self) -> Result<(), cadmpeg_core::CodecError> {
+        self.path_poses.path_streams = self
+            .sources
+            .paths
+            .iter()
+            .filter_map(|path| crate::ids::native_stream(&path.id))
+            .map(str::to_owned)
+            .collect();
         if self.sources.paths.is_empty() {
             return Ok(());
         }
@@ -1169,8 +1206,12 @@ impl<'a> Projector<'a> {
                 .collect::<Vec<_>>();
             let (true, [_], [target]) = (distinct, components.as_slice(), target.as_slice()) else {
                 self.path_poses.unresolved += 1;
+                self.path_poses.blocked_streams.insert(stream.to_owned());
                 continue;
             };
+            if let Some(carrier) = carriers.get(&(stream, *target)) {
+                self.path_poses.path_targets.insert(carrier.id.clone());
+            }
             let root_contained = carriers.get(&(stream, *target)).is_some_and(|carrier| {
                 self.stream_components(carrier)
                     .and_then(|(_, stream_components)| {
@@ -1180,10 +1221,16 @@ impl<'a> Projector<'a> {
                     })
                     .is_some_and(|root| root.root_entity == carrier.owner_entity)
             });
+            // A root-contained current pose is applied by its own route, but
+            // only to a carrier that was placed; a path that names an
+            // unplaced carrier resolves to nothing and blocks its stream.
             if root_contained
                 && carriers
                     .get(&(stream, *target))
                     .is_some_and(|carrier| carrier.current_pose.is_some())
+                && instances
+                    .iter()
+                    .any(|instance| instance.stream == stream && instance.record == *target)
             {
                 continue;
             }
@@ -1218,7 +1265,10 @@ impl<'a> Projector<'a> {
                 .map(|(ordinal, _)| ordinal)
                 .collect::<Vec<_>>();
             match matching.as_slice() {
-                [] => self.path_poses.unresolved += 1,
+                [] => {
+                    self.path_poses.unresolved += 1;
+                    self.path_poses.blocked_streams.insert(stream.to_owned());
+                }
                 [ordinal] => resolved.entry(*ordinal).or_default().push(path),
                 _ => ambiguous.push((path, matching)),
             }
@@ -1248,6 +1298,9 @@ impl<'a> Projector<'a> {
                 ));
             } else {
                 self.path_poses.disagreeing += 1;
+                self.path_poses
+                    .blocked_streams
+                    .insert(instances[ordinal].stream.clone());
             }
         }
         let mut groups = BTreeMap::<(&str, u64), Vec<(&DesignComponentPath, Vec<usize>)>>::new();
@@ -1282,6 +1335,9 @@ impl<'a> Projector<'a> {
                         self.set_path_pose(key, local);
                     } else {
                         self.path_poses.unresolved += 1;
+                        self.path_poses
+                            .blocked_streams
+                            .insert(instances[ordinal].stream.clone());
                     }
                 }
                 PathJob::Group(index) => {
@@ -1382,6 +1438,10 @@ impl<'a> Projector<'a> {
         ) {
             (false, [assignment]) => {
                 for (&carrier, &ordinal) in order.iter().zip(assignment) {
+                    // An inferred assignment names no one occurrence.
+                    self.path_poses
+                        .blocked_streams
+                        .insert(instances[ordinal].stream.clone());
                     let key = instances[ordinal].key.as_str();
                     if let Some(local) = self.path_local_pose(key, rows_of(carriers[carrier].0))? {
                         self.set_path_pose(key, local);
@@ -1391,22 +1451,50 @@ impl<'a> Projector<'a> {
                 self.path_poses.inferred_instances += assignment.len();
                 self.path_poses.inferred_groups += 1;
             }
-            _ => self.path_poses.unresolved += carriers.len(),
+            _ => {
+                self.path_poses.unresolved += carriers.len();
+                for (_, candidates) in carriers {
+                    for &ordinal in candidates {
+                        self.path_poses
+                            .blocked_streams
+                            .insert(instances[ordinal].stream.clone());
+                    }
+                }
+            }
         }
         Ok(())
     }
 
+    /// Whether the closing matrix of `carrier` is its placement. The stream of
+    /// `carrier` stores component-path carriers, reads every one of them, and
+    /// each names one expanded occurrence, and none names `carrier` as its
+    /// target. A carrier that no such path poses has then no current pose that
+    /// differs from its closing matrix.
+    fn closing_matrix_assumed(&self, carrier: &DesignComponentOccurrence) -> bool {
+        !self.path_poses.path_targets.contains(&carrier.id)
+            && self
+                .stream_components(carrier)
+                .is_some_and(|(stream, components)| {
+                    components.unadmitted_paths == 0
+                        && !self.path_poses.blocked_streams.contains(stream)
+                        && self.path_poses.path_streams.contains(stream)
+                })
+    }
+
     /// Keep object snapshots with unresolved body frames in their stored frame.
     fn reject_unproven_object_poses(&mut self) {
+        let unnamed = |key: &String, carrier: &DesignComponentOccurrence| {
+            carrier.needs_object_pose_proof()
+                && carrier.transform().is_some()
+                && !self.path_poses.applied_instances.contains(key)
+        };
         let mut rejected = self
             .occurrences
             .iter()
             .filter_map(|(key, (_, carrier))| {
                 carrier
                     .filter(|carrier| {
-                        carrier.needs_object_pose_proof()
-                            && carrier.transform().is_some()
-                            && !self.path_poses.applied_instances.contains(key)
+                        unnamed(key, carrier) && !self.closing_matrix_assumed(carrier)
                     })
                     .map(|_| key.clone())
             })
@@ -1434,9 +1522,19 @@ impl<'a> Projector<'a> {
             .filter(|(key, (_, carrier))| {
                 !rejected.contains(key.as_str())
                     && !self.path_poses.applied_instances.contains(key.as_str())
+                    && !self.path_poses.operation_placed.contains(key.as_str())
                     && carrier.is_some_and(|carrier| {
                         carrier.has_marked_object_prelude() && carrier.transform().is_some()
                     })
+            })
+            .count();
+        self.path_poses.object_prelude_placements = self
+            .occurrences
+            .iter()
+            .filter(|(key, (_, carrier))| {
+                !rejected.contains(key.as_str())
+                    && !self.path_poses.operation_placed.contains(key.as_str())
+                    && carrier.is_some_and(|carrier| unnamed(key, carrier))
             })
             .count();
         for key in rejected {
@@ -1682,6 +1780,12 @@ impl<'a> Projector<'a> {
             losses.push(F3dLossCode::LocalOccurrenceMarkedPreludeAssumed.note(format!(
                 "{} local occurrence(s) are placed from the closing matrix of an object-prelude carrier with a source marker and no component-path proof; the reference frame of that matrix is assumed to be the component frame",
                 self.path_poses.marked_prelude_placements
+            )));
+        }
+        if self.path_poses.object_prelude_placements != 0 {
+            losses.push(F3dLossCode::LocalOccurrenceObjectPreludeAssumed.note(format!(
+                "{} local occurrence(s) are placed from the closing matrix of an object-prelude carrier that no component-path carrier names as its target; every component-path carrier of its Design stream names an expanded occurrence, and the reference frame of the closing matrix is assumed to be the component frame",
+                self.path_poses.object_prelude_placements
             )));
         }
         if self.path_poses.unresolved != 0 {
@@ -2500,6 +2604,7 @@ mod tests {
         },
         scope::DesignParameterScope,
     };
+    use cadmpeg_core::serde_erase::json;
 
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -2594,7 +2699,7 @@ mod tests {
     }
 
     fn binding(offset: u64, entity_suffix: u64, body: &str) -> DesignBodyBinding {
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": format!("{STREAM}:design-body-binding#{offset}"),
             "stream": "Design/BulkStream.dat",
             "pair_count": 1,

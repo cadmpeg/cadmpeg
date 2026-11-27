@@ -7,6 +7,9 @@ use crate::loss::CreoLossCode;
 
 use super::coverage::torus_parameter_coverage;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
+use cadmpeg_ir::SourceProvenance;
+use std::collections::BTreeSet;
 
 pub(super) fn push_report_loss(
     losses: &mut Vec<LossNote>,
@@ -464,11 +467,83 @@ pub(super) fn push_legacy_value_losses(
     }
 }
 
+/// One `record.unreadable` per legacy value row that forms no record. Rows
+/// kept with a partial payload are not charged.
+pub(super) fn push_unread_legacy_rows(
+    losses: &mut Vec<LossNote>,
+    scan: &ContainerScan,
+) -> Result<(), cadmpeg_core::CodecError> {
+    fn charge(
+        losses: &mut Vec<LossNote>,
+        code: CreoLossCode,
+        rows: impl Iterator<Item = crate::legacy::SerializedOffsetId>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let code = code.kind();
+        for row in rows {
+            losses.push(
+                GivenUpRecord::new(
+                    cadmpeg_ir::ids::Identity::new(row.to_string())?,
+                    format_args!("{code}: the value row forms no record"),
+                )
+                .at(SourceProvenance::root(
+                    "creo",
+                    cadmpeg_core::decode::u64_from_index(row.offset),
+                ))
+                .loss(),
+            );
+        }
+        Ok(())
+    }
+    let Some(legacy) = scan.framing.layout.legacy_ascii() else {
+        return Ok(());
+    };
+    let values = &legacy.persistence;
+    charge(
+        losses,
+        CreoLossCode::LegacyRealValueUnresolved,
+        values.real_values.unresolved_ids(),
+    )?;
+    charge(
+        losses,
+        CreoLossCode::LegacyIntegerValueUnresolved,
+        values.integer_values.unresolved_ids(),
+    )?;
+    charge(
+        losses,
+        CreoLossCode::LegacyContinuationFormUndefined,
+        values
+            .type_3_values
+            .unresolved_ids()
+            .chain(values.type_4_values.unresolved_ids()),
+    )?;
+    charge(
+        losses,
+        CreoLossCode::LegacyUnsignedValueUnresolved,
+        values
+            .type_5_values
+            .unresolved_ids()
+            .chain(values.type_7_values.unresolved_ids())
+            .chain(values.type_9_values.unresolved_ids())
+            .chain(values.type_11_values.unresolved_ids()),
+    )?;
+    charge(
+        losses,
+        CreoLossCode::LegacyCompactRealUnresolved,
+        values.type_6_values.unresolved_ids(),
+    )?;
+    charge(
+        losses,
+        CreoLossCode::LegacyStringContinuationUndefined,
+        values.unread_string_scalar_ids(),
+    )
+}
+
 pub(super) fn push_brep_transfer_note(
     losses: &mut Vec<LossNote>,
     diagnostics: &BrepTransferDiagnostics,
+    geometry: &cadmpeg_ir::document::Topology,
     geometry_section_count: usize,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for (body_id, reason) in &diagnostics.rejected_extrusion_bodies {
         push_report_loss(
             losses,
@@ -555,6 +630,50 @@ pub(super) fn push_brep_transfer_note(
         diagnostics.emitted_face_count,
         rejected_face_count,
     ));
+    let code = CreoLossCode::BrepTransferIncomplete.kind();
+    losses.extend(
+        diagnostics
+            .rejected_faces()?
+            .into_iter()
+            .map(|(face, reason)| {
+                GivenUpRecord::new(
+                    face,
+                    format_args!("{code}: face admission rejected the face for {reason}"),
+                )
+                .loss()
+            }),
+    );
+    let held: BTreeSet<&str> = geometry
+        .surfaces
+        .iter()
+        .map(|record| record.id.as_str())
+        .chain(geometry.curves.iter().map(|record| record.id.as_str()))
+        .chain(geometry.pcurves.iter().map(|record| record.id.as_str()))
+        .chain(geometry.vertices.iter().map(|record| record.id.as_str()))
+        .chain(geometry.edges.iter().map(|record| record.id.as_str()))
+        .chain(geometry.coedges.iter().map(|record| record.id.as_str()))
+        .chain(geometry.loops.iter().map(|record| record.id.as_str()))
+        .chain(geometry.faces.iter().map(|record| record.id.as_str()))
+        .chain(geometry.shells.iter().map(|record| record.id.as_str()))
+        .chain(geometry.regions.iter().map(|record| record.id.as_str()))
+        .chain(geometry.bodies.iter().map(|record| record.id.as_str()))
+        .collect();
+    losses.extend(diagnostics.gated_faces.iter().map(|(face, dropped)| {
+        GivenUpRecord::new(
+            face.clone(),
+            format_args!(
+                "{code}: the component admission gate withheld the face: {component_gate}"
+            ),
+        )
+        .dropping(
+            dropped
+                .iter()
+                .filter(|record| !held.contains(record.as_str()))
+                .cloned(),
+        )
+        .loss()
+    }));
+    Ok(())
 }
 
 pub(super) fn push_carrier_transfer_notes(
@@ -994,7 +1113,13 @@ mod tests {
         diagnostics.selected_body_count = Some(2);
         let losses = {
             let mut losses = Vec::new();
-            push_brep_transfer_note(&mut losses, &diagnostics, 4);
+            push_brep_transfer_note(
+                &mut losses,
+                &diagnostics,
+                &cadmpeg_ir::document::Topology::default(),
+                4,
+            )
+            .expect("a rejected face id composes");
             losses
         };
         let message = &losses[0].message;
@@ -1009,6 +1134,59 @@ mod tests {
         )));
         assert!(message.contains("Boundary evidence: 0 curve(s), 0 without a unique incidence pair, 0 with an unsolved endpoint vertex."));
         assert!(message.contains("0 solved. 4 PSB geometry section(s) were preserved"));
+    }
+
+    /// The admission gate withholds a face that reaches two curves. One of
+    /// them has no solved carrier, and the finished document keeps it as an
+    /// unknown carrier record. The charge of the face lists the other curve
+    /// alone.
+    #[test]
+    fn a_withheld_face_lists_no_record_that_the_finished_document_keeps() {
+        use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+        use cadmpeg_ir::ids::{CurveId, FaceId, Identity};
+        let face = crate::identity::compose_checked::<FaceId>(&crate::identity::VISIBGEOM_FACE, 1)
+            .expect("a face id composes");
+        let [retained, withheld] = [10, 11].map(|curve| {
+            crate::identity::compose_checked::<CurveId>(&crate::identity::VISIBGEOM_CURVE, curve)
+                .expect("a curve id composes")
+        });
+        let mut diagnostics = BrepTransferDiagnostics::default();
+        diagnostics.body_count_mismatch = true;
+        diagnostics.gated_faces.insert(
+            face.clone(),
+            vec![
+                Identity::from(retained.clone()),
+                Identity::from(withheld.clone()),
+            ],
+        );
+        let mut geometry = cadmpeg_ir::document::Topology::default();
+        geometry.curves.push(Curve {
+            id: retained,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            parameter_range: None,
+            source_object: None,
+            native_ref: None,
+        });
+        let mut losses = Vec::new();
+        push_brep_transfer_note(&mut losses, &diagnostics, &geometry, 0)
+            .expect("the withheld face id composes");
+        let charge = losses
+            .iter()
+            .find(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+            .expect("the withheld face is charged");
+        assert_eq!(
+            charge.message.split_whitespace().nth(1),
+            Some(face.as_str()),
+            "{}",
+            charge.message
+        );
+        assert!(
+            charge
+                .message
+                .contains(&format!("dropped=[{}]", withheld.as_str())),
+            "{}",
+            charge.message
+        );
     }
 
     /// A refusal names the instance and the lane it happened in. The orbit

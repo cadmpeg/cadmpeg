@@ -46,12 +46,7 @@ fn traversal_decode(bytes: &[u8], options: &DecodeOptions) -> Result<DecodeResul
         .compose_in_traversal_for_test(&ctx)
         .map_err(DecodeFailure::from)
         .and_then(|decoded| {
-            DecodeResult::from_decoded(
-                &ctx,
-                decoded,
-                FormatId::new("f3d"),
-                &cadmpeg_ir::report::strictness::Strictness::default(),
-            )
+            DecodeResult::from_decoded(&ctx, decoded, FormatId::new("f3d"), &options.strictness)
         });
     ctx.finish_session()?;
     result
@@ -212,7 +207,7 @@ fn archive_session_repeated_member_refuses_at_the_original_entity_charge() {
         },
         ..DecodeOptions::default()
     };
-    let operation = "F3Z repeated member occurrences and joints";
+    let operation = "F3Z repeated member occurrences";
     let error = cadmpeg_core::decode::test_support::at_charge(
         ResourceDimension::Entities,
         operation,

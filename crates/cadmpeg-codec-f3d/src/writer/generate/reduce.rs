@@ -9,21 +9,25 @@
 //! omitted there, and its body is written open without it; a body with no
 //! writable face is left to the body fallback. An attempt that still fails
 //! names the stage that failed, and [`Reduction::degrade`] takes the next
-//! fallback for that stage:
+//! fallback for that stage. A failure that names the native records it
+//! concerns drops those records alone (W1). Otherwise the fallbacks are
 //! the native Design records, then every native record (W1), then the bodies
 //! that cannot be written alone, then every body. An empty design is the last
 //! form; only a failure to write that is returned. A failure of the design
-//! scope's records takes one fallback: the design scope is not written.
+//! scope's records or of the ASM history of its timeline items drops the
+//! records it names and each record that needs them, then the next part of
+//! the design scope's form, then the design scope.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::edge_ranges::{open_edge_ranges, vertex_positions};
+use cadmpeg_ir::codec::write::subset_lowering::UnloweredSubset;
 use cadmpeg_ir::codec::write::{
-    native_records_omitted, output_empty, partial_topology_omitted, record_invalid,
-    MissingStateForm,
+    output_empty, partial_topology_omitted, record_invalid, MissingStateForm, NativeDisposition,
+    NativeDispositions,
 };
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::refs::Member;
@@ -32,11 +36,12 @@ use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::curve_point_solved;
 use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::geometry::legacy_cache::FitTolerance;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{EdgeId, PointId, ShellId, VertexId};
+use cadmpeg_ir::ids::{EdgeId, Identity, IdentityKeyTail, PointId, ShellId, VertexId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
 use cadmpeg_ir::schema::EntityKind;
@@ -49,6 +54,7 @@ use serde_json::Value;
 
 use crate::loss::F3dLossCode;
 
+use super::design::{Culprit, RecordFailure};
 use super::native_geometry::{
     native_procedural_curve, native_procedural_surface, ProceduralOwners,
 };
@@ -74,6 +80,47 @@ const BREP_ARENAS: &[&str] = &[
     "wire_topologies",
 ];
 
+/// Native Design arenas the source-less Design stream has no form for. The
+/// generator writes no record of these families on the native path. A
+/// document with parameter records takes the neutral path, which drops them
+/// with the Design stream.
+const DESIGN_ARENAS_WITHOUT_FORM: &[&str] = &[
+    "derived_references",
+    "design_body_bindings",
+    "design_body_bounds",
+    "design_body_recipe_operands",
+    "design_body_reference_tails",
+    "design_canvas_images",
+    "design_component_naming_spaces",
+    "design_component_occurrences",
+    "design_component_paths",
+    "design_construction_operand_groups",
+    "design_construction_operand_identities",
+    "design_decal_images",
+    "design_edge_identity_operands",
+    "design_edge_operands",
+    "design_edge_treatment_vertex_operands",
+    "design_entity_selection_operands",
+    "design_extrude_selection_groups",
+    "design_extrude_selection_members",
+    "design_face_operands",
+    "design_feature_timelines",
+    "design_fillet_radius_groups",
+    "design_intent_failures",
+    "design_joint_motions",
+    "design_loft_legacy_body_carriers",
+    "design_material_assignments",
+    "design_mesh_features",
+    "design_placement_constructions",
+    "design_profile_curve_selections",
+    "design_sheet_metal_settings",
+    "design_surface_trim_operations",
+    "sketch_geometry_groups",
+    "sketch_surfaces",
+    "xref_designs",
+    "xref_references",
+];
+
 /// Native arenas the generator never writes: it has no `MetaStream` record
 /// registry for `ACT`, and a mesh-surface sentinel needs the retained ASM record.
 const UNWRITTEN_ARENAS: &[&str] = &[
@@ -85,6 +132,52 @@ const UNWRITTEN_ARENAS: &[&str] = &[
     "mesh_surface_sentinels",
 ];
 
+/// The arenas whose records hold a Design record index that other sketch
+/// records name.
+const SKETCH_RECORD_ARENAS: &[&str] = &[
+    "design_record_headers",
+    "sketch_curve_identities",
+    "sketch_points",
+    "sketch_relations",
+    "sketch_texts",
+];
+
+/// The keys by which written records name the dropped records (W1).
+#[derive(Clone, Default)]
+pub(super) struct DroppedRecords {
+    /// The record indices of the dropped sketch records and record headers.
+    pub(super) sketch_records: BTreeSet<u32>,
+    /// The primary and secondary identities of the dropped sketch curves.
+    pub(super) curve_identities: BTreeSet<(u64, u64)>,
+    /// The record indices of the dropped sketch texts.
+    pub(super) texts: BTreeSet<u32>,
+    /// The Design entity suffixes of the dropped body visibilities.
+    pub(super) body_entities: BTreeSet<u64>,
+}
+
+impl DroppedRecords {
+    /// Keep the keys of `record`, removed from `arena`.
+    fn insert(&mut self, arena: &str, record: &cadmpeg_ir::NativeRecord) {
+        let field = |name: &str| record.field(name).as_ref().and_then(Value::as_u64);
+        let index = || field("record_index").and_then(|index| u32::try_from(index).ok());
+        if SKETCH_RECORD_ARENAS.contains(&arena) {
+            self.sketch_records.extend(index());
+        }
+        match arena {
+            "sketch_curve_identities" => {
+                if let (Some(primary), Some(secondary)) =
+                    (field("primary_id"), field("secondary_id"))
+                {
+                    self.curve_identities.insert((primary, secondary));
+                }
+            }
+            "sketch_texts" => self.texts.extend(index()),
+            "body_visibilities" => self.body_entities.extend(field("entity_suffix")),
+            _ => {}
+        }
+    }
+}
+
 /// The stage of an attempt that failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Stage {
@@ -92,10 +185,30 @@ pub(super) enum Stage {
     Brep,
     /// The Design, configuration and appearance streams.
     Design,
-    /// The records of the root definition's design scope.
+    /// The records of the root definition's design scope, with the ASM
+    /// history of its timeline items.
     NeutralDesign,
     /// The archive itself: nothing in the document can avoid it.
     Archive,
+}
+
+/// Native records an attempt cannot write as they stand, and why. The
+/// writer drops them alone (cadir-v11.md §3.4, W1).
+#[derive(Debug)]
+pub(super) struct Unwritable {
+    /// Completes "the F3D write omits N native record(s) ...".
+    pub(super) reason: String,
+    pub(super) records: BTreeSet<String>,
+}
+
+impl Unwritable {
+    /// The records `records` names, or `None` where it names none.
+    pub(super) fn of(reason: impl Into<String>, records: BTreeSet<String>) -> Option<Self> {
+        (!records.is_empty()).then(|| Self {
+            reason: reason.into(),
+            records,
+        })
+    }
 }
 
 /// A failed attempt and the stage it failed in.
@@ -103,6 +216,23 @@ pub(super) enum Stage {
 pub(super) struct Failure {
     pub(super) stage: Stage,
     pub(super) error: CodecError,
+    /// The records the failure names, where it names any.
+    pub(super) culprit: Option<Culprit>,
+    /// The native records that cause the failure, where it names them.
+    pub(super) native: Option<NativeCause>,
+}
+
+/// The native records that cause a failure.
+#[derive(Debug)]
+pub(super) enum NativeCause {
+    /// Records the writer drops alone (W1).
+    Records(Box<Unwritable>),
+    /// Parameter records. A typed feature scope, parameter owner or
+    /// companion, sketch placement or dimension frame holds its decoded
+    /// members and their offsets, and no byte form for the rest of its
+    /// frame. The neutral records restate them, so the Design stream is
+    /// written from those (W2).
+    ParameterRecords,
 }
 
 impl Failure {
@@ -110,6 +240,8 @@ impl Failure {
         Self {
             stage: Stage::Brep,
             error,
+            culprit: None,
+            native: None,
         }
     }
 
@@ -117,6 +249,8 @@ impl Failure {
         Self {
             stage: Stage::Design,
             error,
+            culprit: None,
+            native: None,
         }
     }
 
@@ -124,6 +258,61 @@ impl Failure {
         Self {
             stage: Stage::NeutralDesign,
             error,
+            culprit: None,
+            native: None,
+        }
+    }
+
+    /// A failure of the ASM history, with the feature whose state it
+    /// concerns where it names one.
+    pub(super) fn history(error: CodecError, cause: Option<FeatureId>) -> Self {
+        Self {
+            stage: Stage::NeutralDesign,
+            error,
+            culprit: Some(Culprit::History(cause)),
+            native: None,
+        }
+    }
+
+    /// A failure to write the design scope's records.
+    pub(super) fn records(failure: RecordFailure) -> Self {
+        Self {
+            stage: Stage::NeutralDesign,
+            error: failure.error,
+            culprit: failure.culprit,
+            native: None,
+        }
+    }
+
+    /// A failure of `stage` that the native records of `unwritable` cause.
+    pub(super) fn unwritable(stage: Stage, unwritable: Unwritable) -> Self {
+        Self {
+            stage,
+            error: CodecError::InvalidInput(format!(
+                "F3D native records {}: {}",
+                unwritable.reason,
+                unwritable
+                    .records
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+            culprit: None,
+            native: Some(NativeCause::Records(Box::new(unwritable))),
+        }
+    }
+
+    /// A failure of the native Design path whose records hold parameter
+    /// records.
+    pub(super) fn parameter_records() -> Self {
+        Self {
+            stage: Stage::Design,
+            error: CodecError::NotImplemented(
+                "source-less F3D Design parameter records are not writable".into(),
+            ),
+            culprit: None,
+            native: Some(NativeCause::ParameterRecords),
         }
     }
 
@@ -131,16 +320,26 @@ impl Failure {
         Self {
             stage: Stage::Archive,
             error,
+            culprit: None,
+            native: None,
         }
     }
 }
 
 /// The document the generator writes, and the losses taken to reach it.
+#[derive(Clone)]
 pub(super) struct Reduction<'a> {
     ir: Cow<'a, CadIr>,
+    /// The encode session.
+    ctx: &'a DecodeContext<'a>,
     losses: Vec<LossNote>,
+    /// The `f3d` records are written but those a fallback drops (W1).
+    native: NativeDispositions,
     design_dropped: bool,
     neutral_dropped: bool,
+    /// The keys of the dropped records that other records name: no written
+    /// record names them (W1).
+    dropped: DroppedRecords,
     /// The form of the features whose states the writer cannot write.
     missing_states: MissingStateForm,
     /// The parts of the design scope's form dropped after a failure.
@@ -151,19 +350,32 @@ pub(super) struct Reduction<'a> {
     /// The open edges written over one arc of a curve that passes a vertex
     /// twice, charged at [`Self::finish`] for the edges still written.
     assumed_arcs: Vec<(EdgeId, LossNote)>,
+    /// The reduction before the first held state, which the writer takes
+    /// again where it no longer writes the held items.
+    unheld: Option<Box<Reduction<'a>>>,
 }
 
 impl<'a> Reduction<'a> {
-    pub(super) fn new(ir: &'a CadIr, missing_states: MissingStateForm) -> Self {
+    pub(super) fn new(
+        ctx: &'a DecodeContext<'a>,
+        ir: &'a CadIr,
+        missing_states: MissingStateForm,
+    ) -> Self {
+        let mut native = NativeDispositions::dropped("which the F3D writer does not write");
+        native.namespace("f3d", NativeDisposition::Written);
         Self {
             missing_states,
             ir: Cow::Borrowed(ir),
+            ctx,
             losses: Vec::new(),
+            native,
             design_dropped: false,
             neutral_dropped: false,
+            dropped: DroppedRecords::default(),
             fallback: super::design::Fallback::default(),
             opened: BTreeMap::new(),
             assumed_arcs: Vec::new(),
+            unheld: None,
         }
     }
 
@@ -197,8 +409,15 @@ impl<'a> Reduction<'a> {
         &self.fallback
     }
 
-    /// The losses, with `export:output.empty` when no geometry is written.
-    pub(super) fn finish(mut self) -> Vec<LossNote> {
+    /// The keys of the dropped records that other records name.
+    pub(super) fn dropped(&self) -> &DroppedRecords {
+        &self.dropped
+    }
+
+    /// The losses, with `export:output.empty` when no geometry is written,
+    /// and what the write does with each native record.
+    pub(super) fn finish(mut self) -> (Vec<LossNote>, NativeDispositions) {
+        self.drop_design_arenas_without_form();
         for (body, faces) in std::mem::take(&mut self.opened) {
             let Some(row) = self
                 .ir
@@ -260,7 +479,7 @@ impl<'a> Reduction<'a> {
         } else {
             self.losses.extend(unranged_open_edges(geometry));
         }
-        self.losses
+        (self.losses, self.native)
     }
 
     /// Remove every item the generator has no form for. Idempotent: it runs
@@ -269,9 +488,11 @@ impl<'a> Reduction<'a> {
         self.omit_partial_bodies()?;
         self.drop_unwritten_native();
         self.drop_rolled_back_native_design();
+        self.drop_unmatched_asm_histories();
         if !self.writes_design() {
             self.drop_design_only_arenas();
         }
+        self.drop_assembly_joints();
         self.drop_unwritten_arenas();
         self.strip_carrier_metadata();
         self.complete_vertex_free_edges()?;
@@ -293,17 +514,36 @@ impl<'a> Reduction<'a> {
     pub(super) fn degrade(
         &mut self,
         failure: Failure,
-        writes_alone: impl Fn(&CadIr, &crate::native::F3dNative, Stage) -> bool,
+        writes_alone: impl Fn(&CadIr, Stage) -> bool,
     ) -> Result<(), CodecError> {
-        let Failure { stage, error } = failure;
+        let Failure {
+            stage,
+            error,
+            culprit,
+            native,
+        } = failure;
         if matches!(error, CodecError::ResourceLimit(_) | CodecError::Io(_)) {
             return Err(error);
+        }
+        let dropped_cause = match native {
+            Some(NativeCause::Records(unwritable)) => self.drop_unwritable(&unwritable),
+            Some(NativeCause::ParameterRecords) => self.writes_design() && self.drop_design_stream(
+                "of the Design stream, which the generator writes from the design's neutral records (its feature scopes, parameter owners and companions, sketch placements and dimension frames hold no byte form that a write without the source file can store)",
+            ),
+            None => false,
+        };
+        if dropped_cause {
+            return self.prepare();
         }
         let reason = error.to_string();
         let progressed = match stage {
             Stage::Archive => false,
             Stage::NeutralDesign => {
-                self.drop_design_part(&reason) || self.drop_neutral_design(&reason)
+                let named = match culprit {
+                    Some(culprit) => self.drop_records(&reason, &culprit)?,
+                    None => false,
+                };
+                named || self.drop_design_part(&reason) || self.drop_neutral_design(&reason)
             }
             Stage::Brep => {
                 self.drop_unwritable_bodies(&reason, Stage::Brep, &writes_alone)?
@@ -337,11 +577,11 @@ impl<'a> Reduction<'a> {
             return;
         }
         let dropped = self.remove_native_arenas(|arena| UNWRITTEN_ARENAS.contains(&arena));
-        self.losses.extend(native_records_omitted(
-            "F3D",
+        self.native.drop_records(
+            "f3d",
             "that the source-less generator has no form for (ACT records and mesh-surface sentinels need the retained MetaStream registry and ASM record)",
             dropped,
-        ));
+        );
     }
 
     /// Neutral records the generator writes only from native Design records.
@@ -349,10 +589,7 @@ impl<'a> Reduction<'a> {
     /// or charged with that parameter.
     fn drop_design_only_arenas(&mut self) {
         let model = &self.ir.model;
-        if model.parameters.is_empty()
-            && model.configurations.is_empty()
-            && model.assembly_joints.is_empty()
-        {
+        if model.parameters.is_empty() && model.configurations.is_empty() {
             return;
         }
         let restated = if self.writes_neutral_design() {
@@ -366,7 +603,6 @@ impl<'a> Reduction<'a> {
         let model = &mut self.ir.to_mut().model;
         let parameters = std::mem::take(&mut model.parameters);
         let configurations = std::mem::take(&mut model.configurations);
-        let joints = std::mem::take(&mut model.assembly_joints);
         let reason = "the source-less F3D generator writes it only from native Design records";
         self.losses.extend(named_loss(
             F3dLossCode::WriterParameterOmitted,
@@ -383,10 +619,19 @@ impl<'a> Reduction<'a> {
             reason,
             configurations.iter().map(|row| row.id.to_string()),
         ));
+    }
+
+    /// Neither Design stream form holds a joint record: the source-less
+    /// generator writes the joints of no design.
+    fn drop_assembly_joints(&mut self) {
+        if self.ir.model.assembly_joints.is_empty() {
+            return;
+        }
+        let joints = std::mem::take(&mut self.ir.to_mut().model.assembly_joints);
         self.losses.extend(named_loss(
             F3dLossCode::WriterJointOmitted,
             "assembly joint",
-            reason,
+            "the source-less F3D Design stream holds no joint record",
             joints.iter().map(|row| row.id.to_string()),
         ));
     }
@@ -476,21 +721,9 @@ impl<'a> Reduction<'a> {
         if associations.is_empty() && tolerances.is_empty() {
             return;
         }
-        let geometry = &mut self.ir.to_mut().geometry;
-        for surface in &mut geometry.surfaces {
-            surface.source_object = None;
-        }
-        for curve in &mut geometry.curves {
-            curve.source_object = None;
-        }
-        for face in &mut geometry.faces {
-            face.tolerance = None;
-        }
-        for coedge in &mut geometry.coedges {
-            if tolerances.contains(coedge.id.as_str()) {
-                coedge.use_curve = None;
-            }
-        }
+        clear_carrier_metadata(&mut self.ir.to_mut().geometry, |coedge| {
+            !tolerances.contains(coedge)
+        });
         self.losses.extend(named_loss(
             F3dLossCode::WriterSourceAssociationOmitted,
             "carrier source-object association",
@@ -506,11 +739,10 @@ impl<'a> Reduction<'a> {
     }
 
     fn tolerant_use_curve_coedges(&self) -> HashSet<String> {
-        let Some(native) = self
-            .ir
-            .native
-            .namespace("f3d")
-            .and_then(|namespace| crate::native::F3dNative::load(namespace).ok())
+        let Some(native) =
+            self.ir.native.namespace("f3d").and_then(|namespace| {
+                crate::native::F3dNative::load_inner(self.ctx, namespace).ok()
+            })
         else {
             return HashSet::new();
         };
@@ -651,6 +883,7 @@ impl<'a> Reduction<'a> {
     fn state_open_edge_ranges(&mut self) -> Result<(), CodecError> {
         let owners = ProceduralOwners::new(&self.ir);
         let Some(plan) = open_edge_ranges(
+            self.ctx,
             &self.ir,
             |curve| {
                 owners
@@ -777,7 +1010,7 @@ impl<'a> Reduction<'a> {
             .map(|body| body.id.to_string())
             .collect::<Vec<_>>();
         let kept = kept.iter().map(String::as_str).collect::<BTreeSet<_>>();
-        let unreachable = retain_bodies(self.ir.to_mut(), &kept)?;
+        let unreachable = retain_bodies(self.ctx, self.ir.to_mut(), &kept)?;
         self.losses.extend(losses);
         self.charge_removed(
             &unreachable,
@@ -879,13 +1112,14 @@ impl<'a> Reduction<'a> {
             if edge.ends.is_some() {
                 continue;
             }
-            let start = closed_curve_start(edge, &curves, tolerance)?.and_then(|position| {
-                let point = PointId::mint(format!("{}/start-point", edge.id))
-                    .map_err(|error| error.to_string())?;
-                let vertex = VertexId::mint(format!("{}/start-vertex", edge.id))
-                    .map_err(|error| error.to_string())?;
-                Ok((point, vertex, position))
-            });
+            let start =
+                closed_curve_start(edge, &curves, tolerance, self.ctx)?.and_then(|position| {
+                    let point = PointId::mint(format!("{}/start-point", edge.id))
+                        .map_err(|error| error.to_string())?;
+                    let vertex = VertexId::mint(format!("{}/start-vertex", edge.id))
+                        .map_err(|error| error.to_string())?;
+                    Ok((point, vertex, position))
+                });
             match start {
                 Ok(start) => starts.push((index, start)),
                 Err(reason) => omitted.push((edge.id.clone(), reason)),
@@ -913,6 +1147,37 @@ impl<'a> Reduction<'a> {
             }
         }
         Ok(())
+    }
+
+    /// A subset curve that cannot be restated on the parameter of the curve
+    /// it trims is written as the solved geometry its cache holds, and the
+    /// construction is dropped.
+    pub(super) fn reduce_unlowered_subsets(&mut self, unlowered: Vec<UnloweredSubset>) {
+        if unlowered.is_empty() {
+            return;
+        }
+        let geometry = &mut self.ir.to_mut().geometry;
+        for subset in unlowered {
+            let Some(curve) = geometry
+                .curves
+                .iter_mut()
+                .find(|curve| curve.id == subset.curve)
+            else {
+                continue;
+            };
+            let Some(solved) = curve.geometry.solved_cache().cloned() else {
+                continue;
+            };
+            curve.geometry = CurveGeometry::Solved(solved);
+            geometry
+                .procedural_curves
+                .retain(|row| row.id != subset.construction);
+            self.losses
+                .push(F3dLossCode::WriterProceduralReduced.note(format!(
+                "procedural construction {} was reduced to the solved geometry of carrier {}: {}",
+                subset.construction, subset.curve, subset.error
+            )));
+        }
     }
 
     /// A procedural carrier whose construction has no native encoding is
@@ -1112,8 +1377,8 @@ impl<'a> Reduction<'a> {
             .map(|body| body.id.to_string())
             .collect::<Vec<_>>();
         let kept = bodies.iter().map(String::as_str).collect::<BTreeSet<_>>();
-        let unreachable = retain_bodies(self.ir.to_mut(), &kept)?;
-        split_disconnected_shells(&mut self.ir.to_mut().geometry, &touched)?;
+        let unreachable = retain_bodies(self.ctx, self.ir.to_mut(), &kept)?;
+        split_disconnected_shells(&mut self.ir.to_mut().geometry, &touched);
         let kinds = super::preconditions::derived_body_kinds(&self.ir.geometry);
         for (body, kind) in self.ir.to_mut().geometry.bodies.iter_mut().zip(kinds) {
             if unwritable.contains_key(body.id.as_str()) {
@@ -1293,20 +1558,67 @@ impl<'a> Reduction<'a> {
     /// W1 for the Design stream: drop every native record the B-rep stream is
     /// not written from. The neutral records written only from them go too.
     fn drop_native_design(&mut self, reason: &str) -> bool {
-        if !self.writes_design() {
-            return false;
-        }
+        self.writes_design()
+            && self.drop_design_stream(&format!(
+                "of the Design stream, because the source-less generator cannot write them consistently ({reason})"
+            ))
+    }
+
+    /// Write the design from its neutral records: drop every native record
+    /// the B-rep stream is not written from. Returns whether it dropped one.
+    fn drop_design_stream(&mut self, reason: &str) -> bool {
         let dropped = self.remove_native_arenas(|arena| !BREP_ARENAS.contains(&arena));
-        if dropped.is_empty() {
-            return false;
+        let progressed = !dropped.is_empty();
+        self.design_dropped |= progressed;
+        self.native.drop_records("f3d", reason, dropped);
+        progressed
+    }
+
+    /// W3 for the native Design path: the written Design stream holds no
+    /// record of the Design arenas it has no form for, so each one is
+    /// declared dropped.
+    fn drop_design_arenas_without_form(&mut self) {
+        if !self.writes_design() {
+            return;
         }
-        self.design_dropped = true;
-        self.losses.extend(native_records_omitted(
-            "F3D",
-            &format!("of the Design stream, because the source-less generator cannot write them consistently ({reason})"),
+        for arena in DESIGN_ARENAS_WITHOUT_FORM {
+            self.native.drop_arena(
+                "f3d",
+                arena,
+                "because the source-less Design stream has no form for these records",
+            );
+        }
+    }
+
+    /// The generator writes every body in one B-rep stream, whose history
+    /// tail holds one ASM history. Where the document holds more than one,
+    /// the records do not state which the written stream continues, so
+    /// every ASM history record is dropped (W1).
+    fn drop_unmatched_asm_histories(&mut self) {
+        let histories = self
+            .ir
+            .native
+            .namespace("f3d")
+            .and_then(|namespace| namespace.arenas().get("asm_histories"))
+            .map_or(0, Vec::len);
+        if histories < 2 {
+            return;
+        }
+        let dropped = self.remove_native_arenas(|arena| arena.starts_with("asm_"));
+        self.native.drop_records(
+            "f3d",
+            &format!("of {histories} ASM history streams (the generator writes the bodies in one B-rep stream, whose history tail holds one history, and the records do not state which history that stream continues)"),
             dropped,
-        ));
-        true
+        );
+    }
+
+    /// W1: drop the native records `unwritable` names. Returns whether the
+    /// document held one of them.
+    fn drop_unwritable(&mut self, unwritable: &Unwritable) -> bool {
+        let dropped = self.remove_native_records(|record| unwritable.records.contains(record.id()));
+        let progressed = !dropped.is_empty();
+        self.native.drop_records("f3d", &unwritable.reason, dropped);
+        progressed
     }
 
     /// A native design whose timeline is rolled back is written from its
@@ -1327,23 +1639,99 @@ impl<'a> Reduction<'a> {
             MissingStateForm::GeometryTrue => "geometry-true",
             MissingStateForm::HistoryTrue => "history-true",
         };
-        let reason = format!(
+        self.drop_design_stream(&format!(
             "of the Design stream, because the generator writes the design's timeline, rolled back before {first}, from its neutral records in the {form} form"
-        );
-        let dropped = self.remove_native_arenas(|arena| !BREP_ARENAS.contains(&arena));
+        ));
         self.design_dropped = true;
-        self.losses
-            .extend(native_records_omitted("F3D", &reason, dropped));
     }
 
     /// Write the design scope without its next droppable part (its sketch
     /// dimensions, its `Extrude` item, its `Sketch` items, in that order):
     /// the design plan charges what the part held.
     fn drop_design_part(&mut self, reason: &str) -> bool {
-        self.writes_neutral_design()
+        let dropped = self.writes_neutral_design()
             && self
                 .fallback
-                .drop_next(&self.ir, self.missing_states, reason)
+                .drop_next(&self.ir, self.missing_states, reason);
+        if dropped && self.fallback.drops_items() {
+            self.unhold();
+        }
+        dropped
+    }
+
+    /// Drop the records `culprit` names, and each record that needs them.
+    /// Where the history-true run ends at an item, the document keeps the
+    /// state the failed attempt wrote for the items before it.
+    fn drop_records(&mut self, reason: &str, culprit: &Culprit) -> Result<bool, CodecError> {
+        if !self.writes_neutral_design() {
+            return Ok(false);
+        }
+        let earlier = self.fallback.clone();
+        if !self
+            .fallback
+            .drop_records(&self.ir, self.missing_states, culprit, reason)
+        {
+            return Ok(false);
+        }
+        if self.fallback.drops_items() {
+            self.unhold();
+        } else {
+            self.hold(&earlier)?;
+        }
+        Ok(true)
+    }
+
+    /// Write the state the history-true design holds where the current
+    /// fallback ends its run at a feature that `earlier` does not: the
+    /// bodies outside that state are not written.
+    fn hold(&mut self, earlier: &super::design::Fallback) -> Result<(), CodecError> {
+        let Some(scope) = super::design::root_scope_at(&self.ir) else {
+            return Ok(());
+        };
+        let Some(held) = super::design::held_state(
+            &self.ir,
+            scope,
+            self.missing_states,
+            earlier,
+            &self.fallback,
+        ) else {
+            return Ok(());
+        };
+        if self.unheld.is_none() {
+            self.unheld = Some(Box::new(self.clone()));
+        }
+        let reason = format!(
+            "the history-true design writes the state of the items before {} at its timeline marker",
+            held.before
+        );
+        let dropped = self
+            .ir
+            .geometry
+            .bodies
+            .iter()
+            .filter(|body| !held.state.bodies.contains(&body.id))
+            .map(|body| body.id.as_str().to_owned())
+            .collect::<Vec<_>>();
+        let kept = held
+            .state
+            .bodies
+            .iter()
+            .map(|body| body.as_str().to_owned())
+            .collect::<Vec<_>>();
+        self.ir.to_mut().design.scopes[scope].current = vec![held.state];
+        let kept = kept.iter().map(String::as_str).collect();
+        self.retain_reporting_bodies(&kept, &dropped, &reason)
+    }
+
+    /// Take again the reduction before the first held state, with the
+    /// current fallback: the design no longer writes the held items, so
+    /// every body the hold removed is written.
+    fn unhold(&mut self) {
+        if let Some(unheld) = self.unheld.take() {
+            let fallback = std::mem::take(&mut self.fallback);
+            *self = *unheld;
+            self.fallback = fallback;
+        }
     }
 
     /// Write no design scope: every design scope, container, feature and
@@ -1353,6 +1741,7 @@ impl<'a> Reduction<'a> {
         if !self.writes_neutral_design() {
             return false;
         }
+        self.unhold();
         self.neutral_dropped = true;
         self.losses
             .extend(super::design::dropped_records(&self.ir, reason));
@@ -1372,24 +1761,24 @@ impl<'a> Reduction<'a> {
             .flatten()
             .map(|record| record.id().to_owned())
             .collect::<Vec<_>>();
-        self.losses.extend(native_records_omitted(
-            "F3D",
+        self.native.drop_records(
+            "f3d",
             &format!(
                 "because the source-less generator cannot write the document with them ({reason})"
             ),
             dropped,
-        ));
+        );
         true
     }
 
-    /// Drop each body the stage cannot write on its own, with or without the
-    /// native records. A body that writes alone only without them blames the
-    /// native records, and the native fallbacks run first.
+    /// Drop each body the stage cannot write on its own without native
+    /// records (W1: F3D has no record form for it). Where every body writes
+    /// alone, drop the geometry no body uses.
     fn drop_unwritable_bodies(
         &mut self,
         reason: &str,
         stage: Stage,
-        writes_alone: &impl Fn(&CadIr, &crate::native::F3dNative, Stage) -> bool,
+        writes_alone: &impl Fn(&CadIr, Stage) -> bool,
     ) -> Result<bool, CodecError> {
         let bodies = self
             .ir
@@ -1401,37 +1790,26 @@ impl<'a> Reduction<'a> {
         if bodies.is_empty() {
             return Ok(false);
         }
-        let reach = Reach::new(&self.ir.geometry)?;
-        let native = self
-            .ir
-            .native
-            .namespace("f3d")
-            .and_then(|namespace| crate::native::F3dNative::load(namespace).ok());
-        let without_native = crate::native::F3dNative::default();
-        let writes = |group: &[String], native: &crate::native::F3dNative| {
+        let reach = Reach::new(self.ctx, &self.ir.geometry)?;
+        let writes = |group: &[String]| {
             let mut alone = CadIr::empty();
             alone.tolerances = self.ir.tolerances;
             alone.geometry = reach.subset(
                 &self.ir.geometry,
                 &reach.from(group.iter().map(String::as_str)),
             );
-            writes_alone(&alone, native, stage)
+            writes_alone(&alone, stage)
         };
         // Bisect: a group that writes clears its bodies; a failing group is
         // halved until each failing body stands alone.
         let mut unwritable = Vec::new();
-        let mut native_blamed = false;
         let mut pending = vec![bodies.as_slice()];
         while let Some(group) = pending.pop() {
-            if writes(group, native.as_ref().unwrap_or(&without_native)) {
+            if writes(group) {
                 continue;
             }
             if let [body] = group {
-                if native.is_some() && writes(group, &without_native) {
-                    native_blamed = true;
-                } else {
-                    unwritable.push(body.clone());
-                }
+                unwritable.push(body.clone());
                 continue;
             }
             let (first, second) = group.split_at(group.len() / 2);
@@ -1439,9 +1817,6 @@ impl<'a> Reduction<'a> {
             pending.push(first);
         }
         if unwritable.is_empty() {
-            if native_blamed {
-                return Ok(false);
-            }
             let kept = bodies.iter().map(String::as_str).collect();
             let removed = self.retain(&kept, reason)?;
             return Ok(!removed.is_empty());
@@ -1493,7 +1868,13 @@ impl<'a> Reduction<'a> {
                 "body {body} was not written, with the topology and geometry only it uses: {reason}"
             )));
         }
-        self.retain(kept, reason)?;
+        let mut removed = retain_bodies(self.ctx, self.ir.to_mut(), kept)?;
+        let omitted = dropped_bodies
+            .iter()
+            .filter(|body| removed.remove(body.as_str()))
+            .cloned()
+            .collect();
+        self.charge_removed(&removed, &omitted, reason);
         Ok(())
     }
 
@@ -1504,7 +1885,7 @@ impl<'a> Reduction<'a> {
         kept: &BTreeSet<&str>,
         reason: &str,
     ) -> Result<BTreeSet<String>, CodecError> {
-        let removed = retain_bodies(self.ir.to_mut(), kept)?;
+        let removed = retain_bodies(self.ctx, self.ir.to_mut(), kept)?;
         self.charge_removed(&removed, &BTreeSet::new(), reason);
         Ok(removed)
     }
@@ -1529,11 +1910,11 @@ impl<'a> Reduction<'a> {
             return;
         }
         let dropped = self.remove_native_records_naming(&named);
-        self.losses.extend(native_records_omitted(
-            "F3D",
+        self.native.drop_records(
+            "f3d",
             "that name topology or geometry the write omits",
             dropped,
-        ));
+        );
     }
 
     /// Remove the named native arenas; returns the removed record ids.
@@ -1559,22 +1940,35 @@ impl<'a> Reduction<'a> {
     /// W1: a native record that holds a reference to a removed entity is
     /// dropped. Returns the dropped record ids.
     fn remove_native_records_naming(&mut self, removed: &BTreeSet<String>) -> Vec<String> {
+        self.remove_native_records(|record| {
+            record.fields().map_or(true, |fields| {
+                fields.values().any(|value| mentions(value, removed))
+            })
+        })
+    }
+
+    /// Remove each native record `remove` selects, and keep the keys by
+    /// which other records name those among them. Returns the removed record
+    /// ids.
+    fn remove_native_records(
+        &mut self,
+        remove: impl Fn(&cadmpeg_ir::NativeRecord) -> bool,
+    ) -> Vec<String> {
         let Some(namespace) = self.ir.to_mut().native.0.get_mut("f3d") else {
             return Vec::new();
         };
-        let mut dropped = Vec::new();
-        for records in namespace.arenas_mut().values_mut() {
+        let mut removed = Vec::new();
+        for (arena, records) in namespace.arenas_mut() {
             records.retain(|record| {
-                let names_removed = record.fields().map_or(true, |fields| {
-                    fields.values().any(|value| mentions(value, removed))
-                });
-                if names_removed {
-                    dropped.push(record.id().to_owned());
+                if !remove(record) {
+                    return true;
                 }
-                !names_removed
+                removed.push(record.id().to_owned());
+                self.dropped.insert(arena.as_str(), record);
+                false
             });
         }
-        dropped
+        removed
     }
 }
 
@@ -1585,6 +1979,7 @@ fn closed_curve_start(
     edge: &cadmpeg_ir::topology::Edge,
     curves: &HashMap<&str, &cadmpeg_ir::geometry::Curve>,
     tolerance: f64,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Result<FinitePoint3, String>, CodecError> {
     let Some(curve) = edge.curve() else {
         return Ok(Err("it has no curve".into()));
@@ -1603,7 +1998,7 @@ fn closed_curve_start(
         },
     };
     let point =
-        |parameter| match curve_point_solved(EvaluationAdmission::Standard, solved, parameter) {
+        |parameter| match curve_point_solved(EvaluationAdmission::Write(ctx), solved, parameter) {
             Ok(point) => Ok(Some(point)),
             Err(EvaluationFailure::ResourceLimit(limit)) => Err(CodecError::ResourceLimit(limit)),
             Err(_) => Ok(None),
@@ -1800,7 +2195,7 @@ fn unwritable_faces(ir: &CadIr) -> BTreeMap<String, Vec<(String, String)>> {
 fn split_disconnected_shells(
     geometry: &mut cadmpeg_ir::document::Topology,
     shells: &BTreeSet<String>,
-) -> Result<(), CodecError> {
+) {
     #[derive(Clone, Copy, PartialEq, Eq, Hash)]
     enum Incidence<'a> {
         Edge(&'a str),
@@ -1888,19 +2283,15 @@ fn split_disconnected_shells(
             let id = if let Some(id) = components.get(&root) {
                 ShellId::clone(id)
             } else {
-                let candidate = loop {
+                let id = loop {
                     ordinal += 1;
-                    let candidate = format!("{}/component-{ordinal}", shell.id);
-                    if used.insert(candidate.clone()) {
+                    let candidate = ShellId::from(Identity::from(shell.id.clone()).with_key_tail(
+                        &IdentityKeyTail::percent_encode(&format!("/component-{ordinal}")),
+                    ));
+                    if used.insert(candidate.to_string()) {
                         break candidate;
                     }
                 };
-                let id = ShellId::mint(candidate).map_err(|error| {
-                    CodecError::malformed(format_args!(
-                        "shell {} component identity: {error}",
-                        shell.id
-                    ))
-                })?;
                 created.push((id.clone(), shell.region.clone(), after));
                 after = id.clone();
                 components.insert(root, id.clone());
@@ -1918,7 +2309,6 @@ fn split_disconnected_shells(
         }
         geometry.shells.push(Shell::new(id, region));
     }
-    Ok(())
 }
 
 /// The root of `node`, halving the path on the way.
@@ -2165,6 +2555,35 @@ pub(super) fn geometry_records_by_arena(geometry: &cadmpeg_ir::document::Topolog
     arenas
 }
 
+/// The records of `geometry` that `kept` does not hold unchanged, by arena:
+/// each arena's name, row count and record ids.
+pub(super) fn geometry_records_outside(
+    geometry: &cadmpeg_ir::document::Topology,
+    kept: &cadmpeg_ir::document::Topology,
+) -> Vec<String> {
+    let mut arenas = Vec::new();
+    macro_rules! list {
+        ($($field:ident),*) => {$(
+            let outside = geometry
+                .$field
+                .iter()
+                .filter(|row| !kept.$field.contains(row))
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>();
+            if !outside.is_empty() {
+                arenas.push(format!(
+                    "{} {}: {}",
+                    outside.len(),
+                    stringify!($field),
+                    outside.join(", ")
+                ));
+            }
+        )*};
+    }
+    for_each_geometry_arena!(list);
+    arenas
+}
+
 /// The F3D edge record stores a parameter range, and an open edge on a curve
 /// with none is written with `[0, 1]`: a range its vertices do not fix, which
 /// the output's validation finds.
@@ -2196,9 +2615,10 @@ fn unranged_open_edges(geometry: &cadmpeg_ir::document::Topology) -> Option<Loss
 }
 
 impl Reach {
-    fn new(geometry: &cadmpeg_ir::document::Topology) -> Result<Self, CodecError> {
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
+    fn new(
+        ctx: &DecodeContext<'_>,
+        geometry: &cadmpeg_ir::document::Topology,
+    ) -> Result<Self, CodecError> {
         let mut adjacency = HashMap::<String, Vec<String>>::new();
         let mut every = BTreeSet::new();
         let mut rows = HashMap::new();
@@ -2209,7 +2629,7 @@ impl Reach {
                     let owner = row.id.as_str();
                     every.insert(owner.to_owned());
                     rows.insert(owner.to_owned(), (arena_ordinal, row_ordinal));
-                    row.visit_identity_references(&ctx, &mut |target| {
+                    row.visit_identity_references(ctx, &mut |target| {
                         if target != owner {
                             adjacency.entry(owner.to_owned()).or_default().push(target.to_owned());
                         }
@@ -2290,10 +2710,61 @@ impl Reach {
     }
 }
 
+/// Clear the carrier metadata the F3D B-rep stream holds only through native
+/// records: source-object associations, face tolerances, and the use curve of
+/// each coedge `keeps_use_curve` does not name.
+fn clear_carrier_metadata(
+    geometry: &mut cadmpeg_ir::document::Topology,
+    keeps_use_curve: impl Fn(&str) -> bool,
+) {
+    for surface in &mut geometry.surfaces {
+        surface.source_object = None;
+    }
+    for curve in &mut geometry.curves {
+        curve.source_object = None;
+    }
+    for face in &mut geometry.faces {
+        face.tolerance = None;
+    }
+    for coedge in &mut geometry.coedges {
+        if !keeps_use_curve(coedge.id.as_str()) {
+            coedge.use_curve = None;
+        }
+    }
+}
+
+/// `target` as the generator writes it without native records.
+pub(super) fn without_native_carrier_metadata(target: &CadIr) -> Cow<'_, CadIr> {
+    let geometry = &target.geometry;
+    let carries = geometry
+        .surfaces
+        .iter()
+        .any(|row| row.source_object.is_some())
+        || geometry
+            .curves
+            .iter()
+            .any(|row| row.source_object.is_some())
+        || geometry.faces.iter().any(|face| face.tolerance.is_some())
+        || geometry
+            .coedges
+            .iter()
+            .any(|coedge| coedge.use_curve.is_some());
+    if !carries {
+        return Cow::Borrowed(target);
+    }
+    let mut target = target.clone();
+    clear_carrier_metadata(&mut target.geometry, |_| false);
+    Cow::Owned(target)
+}
+
 /// Keep the bodies in `kept` and every topology and geometry record they
 /// reach; remove the rest. Returns the removed ids.
-fn retain_bodies(ir: &mut CadIr, kept: &BTreeSet<&str>) -> Result<BTreeSet<String>, CodecError> {
-    let reach = Reach::new(&ir.geometry)?;
+fn retain_bodies(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    kept: &BTreeSet<&str>,
+) -> Result<BTreeSet<String>, CodecError> {
+    let reach = Reach::new(ctx, &ir.geometry)?;
     let reachable = reach.from(kept.iter().copied());
     let removed = reach
         .every
@@ -2328,4 +2799,69 @@ fn rolled_back_from(ir: &CadIr) -> Option<&Member> {
             } if members.contains(before) => Some(before),
             _ => None,
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BREP_ARENAS, DESIGN_ARENAS_WITHOUT_FORM, UNWRITTEN_ARENAS};
+
+    /// Native arenas the source-less Design stream and the B-rep stream's
+    /// history tail are written from.
+    const DESIGN_ARENAS: &[&str] = &[
+        "asm_bulletin_boards",
+        "asm_delta_states",
+        "asm_entity_changes",
+        "asm_face_boundaries",
+        "asm_histories",
+        "asm_history_records",
+        "construction_recipes",
+        "design_body_members",
+        "design_configurations",
+        "design_entity_headers",
+        "design_parameters",
+        "design_record_headers",
+        "design_types",
+        "lost_edge_references",
+        "persistent_references",
+        "sketch_curve_identities",
+        "sketch_points",
+        "sketch_relations",
+        "sketch_texts",
+    ];
+
+    /// Native arenas of parameter records, whose presence sends the design
+    /// to the neutral path.
+    const PARAMETER_ARENAS: &[&str] = &[
+        "design_dimension_annotation_frames",
+        "design_dimension_locus_groups",
+        "design_dimension_locus_pairs",
+        "design_dimension_null_locus_pairs",
+        "design_dimension_presentation_frames",
+        "design_dimension_recipe_records",
+        "design_face_source_groups",
+        "design_parameter_companions",
+        "design_parameter_owners",
+        "design_parameter_scopes",
+        "design_sketch_placements",
+    ];
+
+    /// Each native arena has one disposition on the native path. The
+    /// generator writes no display scene, and no list holds its poses.
+    #[test]
+    fn each_native_arena_has_one_disposition() {
+        for arena in crate::native::F3D_ARENA_NAMES {
+            let lists = [
+                PARAMETER_ARENAS,
+                BREP_ARENAS,
+                DESIGN_ARENAS,
+                DESIGN_ARENAS_WITHOUT_FORM,
+                UNWRITTEN_ARENAS,
+                &["display_poses"],
+            ]
+            .iter()
+            .filter(|list| list.contains(arena))
+            .count();
+            assert_eq!(lists, 1, "{arena}");
+        }
+    }
 }

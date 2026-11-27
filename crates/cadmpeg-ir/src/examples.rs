@@ -137,6 +137,7 @@ pub fn unit_cube_with_history_body() -> Result<CadIr, ExampleError> {
         ),
         produced_by: Some(feature),
         consumed_by: None,
+        state_of: None,
         state: HistoryStateRef {
             ordinal: 0,
             identifier: 1,

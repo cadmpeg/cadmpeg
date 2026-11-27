@@ -6,7 +6,7 @@
 fn planar_pcurve_recovers_a_solid_for_each_geometry_writer() {
     use std::io::Cursor;
 
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs};
     use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
@@ -21,7 +21,7 @@ fn planar_pcurve_recovers_a_solid_for_each_geometry_writer() {
         original: &cadmpeg_ir::CadIr,
     ) {
         let plan = codec
-            .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(ir, None))
             .expect("recover and plan the solid");
         assert!(!plan
             .report()

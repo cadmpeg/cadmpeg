@@ -171,21 +171,20 @@ fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
     let mut all_cages = std::collections::BTreeSet::new();
     let mut foreign_sources = std::collections::HashSet::new();
     for form in forms {
-        let (role, reference) = [(XREF_ROLE, 0), (SECOND_ROLE, 1)]
+        let prefix = ["child-a.f3d@", "child-b.f3d@"]
             .into_iter()
-            .find(|(role, reference)| {
-                form.inputs().references.iter().any(|id| {
-                    id.as_str()
-                        .contains(&format!("role-{role}/reference-{reference}/occurrence-0@"))
-                })
+            .find(|prefix| {
+                form.inputs()
+                    .references
+                    .iter()
+                    .any(|id| id.as_str().starts_with(&format!("f3d:{prefix}")))
             })
             .unwrap();
-        let prefix = format!("role-{role}/reference-{reference}/occurrence-0@");
         assert!(!form.membership_is_complete());
         assert_eq!(form.committed_cages().count(), 2);
         assert_eq!(form.referenced_cages().count(), 2);
         for id in form.referenced_cages() {
-            assert!(id.as_str().contains(&prefix));
+            assert!(id.as_str().contains(prefix));
             assert!(decoded
                 .ir()
                 .geometry
@@ -200,14 +199,14 @@ fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
             .iter()
             .find(|association| association.resource.source.as_str().ends_with("#1720"))
             .unwrap();
-        assert!(association.cage.as_str().contains(&prefix));
-        assert!(association.resource.source.as_str().contains(&prefix));
+        assert!(association.cage.as_str().contains(prefix));
+        assert!(association.resource.source.as_str().contains(prefix));
         assert!(form
             .referenced_cages()
             .any(|cage| cage == &association.cage));
         assert_eq!(association.resource.entry.as_str(), "FusionAssetName[Active]/TSplines.BlobParts/TSpline.00000000-0000-4000-8000-000000000099.tsm");
         let foreign = form.inputs().reference_evidence.iter().find(|reference| matches!(&reference.target, FormNativeReferenceTarget::Document { asset_guid, target_type_guid: Some(type_guid), link_name, version: Some(version), .. } if asset_guid == &collision && type_guid == "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA" && link_name == &collision && version.key == "11111111-2222-3333-4444-555555555555" && version.urn == collision)).unwrap();
-        assert!(foreign.source.as_str().contains(&prefix));
+        assert!(foreign.source.as_str().contains(prefix));
         assert_eq!(foreign.group, Some(original_group));
         assert!(foreign_sources.insert(foreign.source.clone()));
         assert!(decoded
@@ -235,7 +234,7 @@ fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
             .unwrap();
         let (absent, group) = absent;
         assert_eq!(group, Some(absent_group));
-        assert!(absent.as_str().contains(&prefix));
+        assert!(absent.as_str().contains(prefix));
         assert!(!decoded
             .ir()
             .native
@@ -267,4 +266,97 @@ fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
     }
     assert_eq!(all_cages.len(), 4);
     assert_eq!(foreign_sources.len(), 2);
+}
+
+/// A radial map is the source's native map, so a map that repeats a source
+/// decodes with the cage and is kept whole.
+#[test]
+fn a_radial_map_that_repeats_a_source_decodes_and_keeps_the_map() {
+    let mut program = crate::test_support::zip_test::generated_form_tsm();
+    program.extend_from_slice(
+        b"105sym 1\n105plane 0.5 0.5 0 1 1 0 0 0 0 1 0 0\n\
+          105r segments 4\n105r sweep 1\n105r ef 0 1 0 2\n105r er 1 0\n\
+          105r ff 0 0\n105r fr 0 0\n105r vf 0 1\n105r vr 1 0\n",
+    );
+    let decoded = super::decode(crate::test_support::zip_test::f3d_with_form_body_resource(
+        &program,
+    ));
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::TsplineCageUndecoded.kind()));
+    let [subd] = decoded.ir().geometry.subds.as_slice() else {
+        panic!("one cage");
+    };
+    let [symmetry] = subd.cage.symmetries() else {
+        panic!("one symmetry");
+    };
+    let cadmpeg_ir::SubdSymmetryKind::Radial(radial) = symmetry.kind() else {
+        panic!("radial symmetry");
+    };
+    let ef = radial
+        .radial_maps
+        .iter()
+        .find(|map| map.selector == cadmpeg_ir::SubdRadialMapSelector::Ef)
+        .expect("ef map");
+    assert_eq!(ef.pairs, vec![[0, 1], [0, 2]]);
+}
+
+/// A repeated radial source over live edges: a pair is a neutral
+/// correspondence only where its target has one source and the reverse map
+/// holds its inverse. The native maps stay whole, and each affected pair is
+/// charged as unresolved.
+#[test]
+fn a_repeated_radial_source_over_live_edges_projects_only_pairs_with_an_inverse() {
+    for (reverse_edges, edge_pairs, unresolved) in [
+        ("1 0", vec![[0_u32, 1]], 1),
+        ("1 0 2 0", Vec::new(), 4_usize),
+    ] {
+        let mut program = crate::test_support::zip_test::generated_form_tsm();
+        program.extend_from_slice(
+            format!(
+                "105sym 1\n105plane 0.5 0.5 0 1 1 0 0 0 0 1 0 0\n\
+                 105r segments 4\n105r sweep 1\n105r ef 0 1 0 2\n105r er {reverse_edges}\n\
+                 105r ff 0 0\n105r fr 0 0\n105r vf 0 1\n105r vr 1 0\n"
+            )
+            .as_bytes(),
+        );
+        let decoded = super::decode(crate::test_support::zip_test::f3d_with_form_body_resource(
+            &program,
+        ));
+        let losses = &decoded.report().losses;
+        assert!(!losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::F3dLossCode::TsplineCageUndecoded.kind()));
+        let charged = losses
+            .iter()
+            .find(|loss| loss.code == crate::loss::F3dLossCode::TsplineRadialMapUnresolved.kind())
+            .expect("unresolved radial pairs are charged");
+        assert!(
+            charged
+                .message
+                .starts_with(&format!("{unresolved} radial symmetry pair(s)")),
+            "{}",
+            charged.message
+        );
+        let [subd] = decoded.ir().geometry.subds.as_slice() else {
+            panic!("one cage");
+        };
+        let [symmetry] = subd.cage.symmetries() else {
+            panic!("one symmetry");
+        };
+        assert_eq!(symmetry.edge_pairs(), edge_pairs.as_slice());
+        assert_eq!(symmetry.face_pairs(), [[0_u32, 0]]);
+        assert_eq!(symmetry.vertex_pairs(), [[0_u32, 1]]);
+        let cadmpeg_ir::SubdSymmetryKind::Radial(radial) = symmetry.kind() else {
+            panic!("radial symmetry");
+        };
+        let ef = radial
+            .radial_maps
+            .iter()
+            .find(|map| map.selector == cadmpeg_ir::SubdRadialMapSelector::Ef)
+            .expect("ef map");
+        assert_eq!(ef.pairs, vec![[0, 1], [0, 2]]);
+    }
 }

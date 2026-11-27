@@ -274,6 +274,10 @@ directly with its PSB named record. `THMB_IMG_MAIN` is an auxiliary exception:
 its expanded payload contains the JPEG payload and is identified by the
 `FF D8 FF` marker.
 
+The reader gives up a section whose expansion is not valid as a
+`compressed-section` part over the stored section. The section record retains
+the bytes, so the part keeps only their length and digest.
+
 PSB does not use the Parasolid neutral-binary encoding. Parasolid terminology may describe some geometric concepts, but it does not define PSB byte semantics.
 
 ### 1.1 Layout families
@@ -3374,6 +3378,12 @@ auxiliary field. In the uncounted form, the first `f6` terminates the argument
 body and is the auxiliary field. The equation table ends before the following
 `scale`, `scales`, or `guesses` named record. The declared count and decoded row
 count are independent native values.
+
+When a feature table declares more rows than the reader decodes, the reader
+gives up the rows from the first row it does not decode as a
+`feature-table-rows` part. The part runs to the next table label or decoded
+row of the feature definition, or to the end of the definition, and retains
+its bytes.
 
 Within each `var_arr` row, `value` and `guess` are independent scalar lanes.
 The unresolved forms `00 <tail2>` and `34 <tail2>` occupy three bytes;
@@ -6784,6 +6794,12 @@ integer, and `35` is a logical value. A named value prototype can introduce a
 value class that later rows reference with `f7`. `ref_id` and `ref_type`
 identify the attribute owner.
 
+When the `attributes` field does not read, the reader gives up the
+`NeuPrtSld` section as a `neutral-section` part. A geometric-tolerance type
+row or a dimensional row with a null `ref_id` or `ref_type` is a
+`pmi-attribute-row` part. The section record retains the bytes of both parts,
+so each part keeps only their length and digest.
+
 In the attribute real lane, the single-byte tokens `09`, `0a`, `0b`, `0c`,
 `0d`, `0e`, and `0f` encode 0.005, 0.01, 0.06, 0.1, 0.25, 0.5, and 1.0.
 Tokens `00`, `01`, and `02` select a constant and replace its low one, two,
@@ -6956,6 +6972,15 @@ assembly coordinates and uses the assembly length unit. The placement maps a
 child point `p` to `origin + p.x * e1 + p.y * e2 + p.z * e3`. This is the
 solved placement of the component; the table does not store the placement
 constraints.
+
+A row whose frame is not a proper rigid placement is given up by the id of
+the occurrence that it places. When a row does not match the row grammar, the
+reader gives up the bytes from that row to the end of the section as a
+`component-rows` part. When a `NeuAsmSld` section holds a `members` field
+whose table the reader does not transfer, the reader gives up the bytes from
+that field to the end of the section as a `component-table` part. This covers
+a field that opens no table array, a section with more than one `members`
+field, and a table in each of two or more `NeuAsmSld` sections.
 
 ### 9.1 Frame slots
 

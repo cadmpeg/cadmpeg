@@ -4,6 +4,7 @@ use crate::features::{
     ParameterId,
 };
 use crate::math::Point3;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn source_content_rejects_repeated_references_and_preserves_repeated_text() {
@@ -43,11 +44,8 @@ fn source_content_rejects_repeated_references_and_preserves_repeated_text() {
             FeatureSourceContent::Text("text".into()),
         ]
     );
-    let wire = serde_json::to_value(&content).unwrap();
-    assert_eq!(
-        serde_json::from_value::<FeatureContent>(wire).unwrap(),
-        content
-    );
+    let wire = json::to_value(&content).unwrap();
+    assert_eq!(json::from_value::<FeatureContent>(wire).unwrap(), content);
 }
 
 #[test]
@@ -80,26 +78,32 @@ fn feature_membership_is_checked_on_the_feature_wire() {
         .push(parameter.clone())
         .map_err(cadmpeg_core::CodecError::from)
         .unwrap();
-    let original = serde_json::to_value(&feature).unwrap();
+    let original = json::to_value(&feature).unwrap();
     assert_eq!(
-        serde_json::from_value::<Feature>(original.clone()).unwrap(),
+        json::from_value::<Feature>(original.clone()).unwrap(),
         feature
     );
     for (field, bad) in [
-        ("dependencies", serde_json::json!([dependency, dependency])),
-        ("source_content", serde_json::json!([parameter, parameter])),
+        (
+            "dependencies",
+            cadmpeg_core::json!([dependency, dependency]),
+        ),
+        (
+            "source_content",
+            cadmpeg_core::json!([parameter, parameter]),
+        ),
     ] {
         let mut wire = original.clone();
         wire[field] = bad;
-        assert!(serde_json::from_value::<Feature>(wire)
+        assert!(json::from_value::<Feature>(wire)
             .unwrap_err()
             .to_string()
             .contains(field));
     }
     feature.dependencies.clear();
     feature.source_content = FeatureContent::default();
-    let wire = serde_json::to_value(&feature).unwrap();
-    assert_eq!(wire["dependencies"], serde_json::json!([]));
-    assert_eq!(wire["source_content"], serde_json::json!([]));
-    assert_eq!(serde_json::from_value::<Feature>(wire).unwrap(), feature);
+    let wire = json::to_value(&feature).unwrap();
+    assert_eq!(wire["dependencies"], cadmpeg_core::json!([]));
+    assert_eq!(wire["source_content"], cadmpeg_core::json!([]));
+    assert_eq!(json::from_value::<Feature>(wire).unwrap(), feature);
 }

@@ -50,7 +50,7 @@ Semantic decode accepts `SchemaVersion=2`, `3`, and `4`. Schema 2 uses the
 
 ```rust,no_run
 use cadmpeg_codec_freecad::FcstdCodec;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::fs::File;
 
@@ -62,20 +62,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut output = File::create("part-edited.FCStd")?;
     FcstdCodec
-        .plan(EncodeInput::new(result.ir(), None), TargetRequest::Inherit)?
+        .plan(EncodeInput::new(result.ir(), None))?
         .write_to(&mut output)?;
     Ok(())
 }
 ```
 
 Writing uses the FCStd native document graph on `CadIr`
-(`ir.native["fcstd"]`), not `SourceFidelity`. `Encoder::plan` ignores
-`fidelity` and returns `NotConsumed` when one is supplied. Retained
-schema-4/file-1 documents regenerate while preserving unedited XML records and
-named side entries. Checked leaf property edits and side-entry replacements
-update the native graph in place. `FcstdDocumentBuilder` builds source-less
-application graphs for the same write envelope. Unsupported schema or file
-targets are refused.
+(`ir.native["fcstd"]`). `Encoder::plan` reads two things from `fidelity`: the
+uncarried codec digest, which tells whether the document holds edits since
+decode, and the untyped retained records, which the patched file holds and
+`export:source.carried` and `export:source.unchecked` name. It returns
+`NotConsumed`. The writer patches the retained
+`Document.xml` and repacks the retained side entries; it preserves unedited XML
+records and named side entries and writes the band the retained `Document.xml`
+declares. Checked leaf property edits and side-entry replacements update the
+native graph in place. `FcstdDocumentBuilder` builds a schema-4 document from
+typed objects, properties, and side entries by assembling an archive and
+decoding it, so the document holds retained entries the writer patches. A
+document that holds no retained `Document.xml` is refused with
+`UnsupportedTarget`.
 
 ## Data model
 

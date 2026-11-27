@@ -77,6 +77,12 @@ loss_codes! {
     PrimaryNodeUnresolved => ("topology.primary-node-unresolved", Warning, TopologyNotTransferred),
     /// Surface-intersection records lack a validated chart and term-endpoint witness.
     IntersectionRecordsOpaque => ("intersection.records-opaque", Warning, ObjectRecordsUntransferred),
+    /// Two or more surface-intersection records of a stream share one
+    /// identity, and each is withheld.
+    IntersectionIdentityDuplicated => ("intersection.identity-duplicated", Warning, ObjectRecordsUntransferred),
+    /// A surface-intersection record's references state no construction,
+    /// and the record is withheld.
+    IntersectionRecordUnresolved => ("intersection.record-unresolved", Warning, ObjectRecordsUntransferred),
     /// Geometric completion reached a declared work bound before all
     /// intersection pcurve lanes were complete.
     IntersectionPcurveCompletionBounded => ("intersection.pcurve-completion-bounded", Warning, ObjectRecordsUntransferred),
@@ -161,8 +167,12 @@ loss_codes! {
     /// A face states no loop on a plane, cylinder, or cone, which no face
     /// covers whole: its boundary is unstated, and the face is stated partial.
     TopologyFaceBoundaryUnstated => ("topology.face-boundary-unstated", Warning, TopologyNotTransferred),
-    /// A shell with no admitted face, or a body with no emitted shell, is withheld.
+    /// A shell with no admitted face or whose region another body owns, or a
+    /// body with no emitted shell, is withheld.
     TopologyShellWithheld => ("topology.shell-withheld", Warning, TopologyNotTransferred),
+    /// A topology record names a record that does not resolve: it is withheld
+    /// with the records that need it.
+    TopologyRecordUnresolved => ("topology.record-unresolved", Warning, TopologyNotTransferred),
     /// A semantic annotation order is past the stated annotation order width.
     SemanticAnnotationOrderUnstatable => ("annotation.semantic-order-unstatable", Warning, MetadataNotTransferred),
     /// A record search reached its local work bound and skipped the records
@@ -179,22 +189,18 @@ loss_codes! {
     DisplayJtTessellationsDropped => ("carrier.display-jt-tessellations-dropped", Warning, ObjectRecordsUntransferred),
     /// Native object-model attachment failed; none of its records were kept.
     NativeAttachmentFailed => ("native.attachment-failed", Error, DecodeDiagnostic),
+    /// A BODY stores a `res_linear` that states no linear precision
+    /// (`parasolid.md` §4).
+    BodyResolutionInvalid => ("body.resolution-invalid", Warning, SourceTopologyInvalid),
+    /// A BODY's `res_linear` is in a node the primary records do not read.
+    BodyResolutionUnread => ("body.resolution-unread", Warning, DecodeDiagnostic),
+    /// The feature recognisers compare evaluated geometry at a floor coarser
+    /// than the document tolerances.
+    FeatureRecognitionToleranceFloor => ("feature.recognition-tolerance-floor", Warning, DecodeDiagnostic),
 }
 
 impl NxLossCode {
-    /// Strict floor pinned from this local code.
-    ///
-    /// Defaults to the taxonomy floor. `NativeAttachmentFailed` pins Error
-    /// above its `DecodeDiagnostic` taxonomy, which strict mode otherwise
-    /// tolerates.
-    const fn strict_floor(self) -> Option<Severity> {
-        match self {
-            Self::NativeAttachmentFailed => Some(Severity::Error),
-            other => other.shared_taxonomy().strict_floor(),
-        }
-    }
-
-    /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
+    /// Namespaced [`LossKind`] for this local code.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
         cadmpeg_ir::report::loss::NamespacedLossKind::new(
@@ -207,14 +213,13 @@ impl NxLossCode {
             self.code(),
             self.shared_taxonomy(),
         )
-        .with_strict_floor(self.strict_floor())
         .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `nx/<local>`. Severity comes from the local
-    /// code; the strict floor comes from [`Self::strict_floor`].
+    /// code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -243,6 +248,8 @@ mod tests {
                 "topology.primary-edge-unresolved",
                 "topology.primary-node-unresolved",
                 "intersection.records-opaque",
+                "intersection.identity-duplicated",
+                "intersection.record-unresolved",
                 "intersection.pcurve-completion-bounded",
                 "geometry.adaptive-work-bounded",
                 "deltas.selection-unresolved",
@@ -282,12 +289,16 @@ mod tests {
                 "topology.vertex-loop-unresolved",
                 "topology.face-boundary-unstated",
                 "topology.shell-withheld",
+                "topology.record-unresolved",
                 "annotation.semantic-order-unstatable",
                 "source.scan-bounded",
                 "native.record-identity-bounded",
                 "container.display-jt-arithmetic-lane-bounded",
                 "carrier.display-jt-tessellations-dropped",
                 "native.attachment-failed",
+                "body.resolution-invalid",
+                "body.resolution-unread",
+                "feature.recognition-tolerance-floor",
             ]
         );
     }
@@ -320,22 +331,17 @@ mod tests {
         }
     }
 
-    /// Only an attachment failure pins a floor above its taxonomy floor.
+    /// An attachment failure is refused through `record.unreadable`, so no
+    /// NX code pins a strict floor.
     #[test]
-    fn strict_floor_follows_taxonomy_except_attachment_failure() {
-        use cadmpeg_ir::report::loss::StrictConsequence;
+    fn no_code_pins_a_strict_floor() {
         for code in NxLossCode::ALL {
-            let expected = match code {
-                NxLossCode::NativeAttachmentFailed => Some(cadmpeg_ir::report::Severity::Error),
-                other => other.shared_taxonomy().strict_floor(),
-            };
-            assert_eq!(code.kind().strict_floor(), expected, "{}", code.code());
+            assert_eq!(code.kind().strict_floor(), None, "{}", code.code());
         }
-        assert_eq!(
-            NxLossCode::NativeAttachmentFailed
-                .note("x")
-                .strict_consequence(),
-            StrictConsequence::Reject
-        );
+        assert!(!cadmpeg_ir::report::strictness::Strictness {
+            pinned: true,
+            ..Default::default()
+        }
+        .refuses(&NxLossCode::NativeAttachmentFailed.note("x"), false));
     }
 }

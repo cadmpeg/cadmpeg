@@ -363,9 +363,9 @@ fn a_container_decode_states_no_model_record() {
 }
 
 #[test]
-fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
+fn a_pinned_decode_admits_unrepresentable_geometry_and_records_its_loss_codes() {
     use crate::loss::SldprtLossCode;
-    use cadmpeg_ir::report::loss::{LossTaxonomy, StrictConsequence};
+    use cadmpeg_ir::report::loss::LossTaxonomy;
 
     let fixture = synthetic_sldprt();
 
@@ -383,34 +383,59 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
         .losses
         .iter()
         .any(|note| note.code.taxonomy() == LossTaxonomy::TopologyNotTransferred));
-    assert!(salvaged
+    let pinned = SldprtCodec
+        .decode(&mut Cursor::new(fixture), &strict_options())
+        .expect("no SLDPRT code pins a strict floor");
+    assert!(pinned
         .report()
         .losses
         .iter()
-        .any(|note| note.strict_consequence() == StrictConsequence::Reject));
+        .any(|note| note.code == SldprtLossCode::GeometryParasolidNotTransferred.kind()));
+}
 
-    // Name the code rather than the `sldprt/` prefix: this fixture also
-    // declares no `swVersion`, so `source.dialect-unverified` rejects under
-    // strict too, and a prefix test would pass on either. The invariant here
-    // is that unrepresentable *geometry* is what refuses.
-    let strict = SldprtCodec.decode(&mut Cursor::new(fixture), &strict_options());
-    match strict {
-        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }) => {
-            assert_eq!(
-                rejection.loss().code,
-                SldprtLossCode::GeometryParasolidNotTransferred.kind(),
-                "unexpected loss code: {}",
-                rejection.loss().code
-            );
-        }
-        other => panic!("strict decode must reject unrepresentable geometry, got {other:?}"),
-    }
+#[test]
+fn a_pinned_decode_refuses_a_partition_whose_entity_records_build_no_geometry() {
+    use crate::loss::SldprtLossCode;
+    use cadmpeg_ir::unknown::part::record_unreadable_kind;
+
+    let mut body = crate::test_support::parasolid::entity51(1, 10, 0, &[]);
+    body.extend([0; 8]);
+    let mut fixture = outer_header();
+    fixture.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", &body),
+    ));
+    add_solidworks_version(&mut fixture, 13100);
+
+    let salvaged = SldprtCodec
+        .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
+        .expect("a salvage decode admits the given-up partition");
+    assert!(!salvaged.report().geometry_transferred());
+    let losses = &salvaged.report().losses;
+    assert!(losses
+        .iter()
+        .any(|note| note.code == SldprtLossCode::GeometryParasolidNotTransferred.kind()));
+    let site = losses
+        .iter()
+        .filter(|note| note.code == record_unreadable_kind())
+        .map(|note| note.message.as_str())
+        .find(|message| message.starts_with("part parasolid-site "))
+        .expect("record.unreadable gives up the partition site");
+    assert!(!site.contains("sldprt:file:"));
+
+    let failure = SldprtCodec
+        .decode(&mut Cursor::new(fixture), &strict_options())
+        .expect_err("a pinned decode refuses a given-up partition");
+    let cadmpeg_ir::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(rejection.loss().code, record_unreadable_kind());
+    assert_eq!(rejection.loss().message, site);
 }
 
 #[test]
 fn strict_accepts_tolerable_gauge_substitution_geometry() {
-    use cadmpeg_ir::report::loss::StrictConsequence;
-
     // The fixture declares a `swVersion` so this test keeps asserting what it
     // is about. A part that declares nothing classifies as `sldprt:unknown`
     // and charges `source.dialect-unverified`, whose strict floor rejects; the
@@ -426,11 +451,11 @@ fn strict_accepts_tolerable_gauge_substitution_geometry() {
         .report()
         .losses
         .iter()
-        .all(|note| note.strict_consequence() == StrictConsequence::Tolerate));
+        .all(|note| !strict_options().strictness.refuses(note, false)));
 }
 
 #[test]
-fn strict_rejects_residual_parasolid_schema_while_salvage_reports_it() {
+fn a_pinned_decode_admits_and_reports_a_residual_parasolid_schema() {
     use crate::loss::SldprtLossCode;
 
     let mut fixture = outer_header();
@@ -450,14 +475,14 @@ fn strict_rejects_residual_parasolid_schema_while_salvage_reports_it() {
             && note.message.contains("SCH_TEST_1_9999")
     }));
 
-    let strict = SldprtCodec.decode(&mut Cursor::new(fixture), &strict_options());
-    match strict {
-        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }) => assert_eq!(
-            rejection.loss().code,
-            SldprtLossCode::KernelDialectUnverified.kind()
-        ),
-        other => panic!("strict decode must reject the residual kernel layer, got {other:?}"),
-    }
+    let pinned = SldprtCodec
+        .decode(&mut Cursor::new(fixture), &strict_options())
+        .expect("a residual kernel layer pins no strict floor");
+    assert!(pinned
+        .report()
+        .losses
+        .iter()
+        .any(|note| note.code == SldprtLossCode::KernelDialectUnverified.kind()));
 }
 
 #[test]

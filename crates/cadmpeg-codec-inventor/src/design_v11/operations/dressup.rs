@@ -10,8 +10,8 @@ use cadmpeg_ir::design::ops::dressup as new;
 use cadmpeg_ir::design::options::{Thickness, WallSide};
 use cadmpeg_ir::features::{self as old, FeatureOperation as LegacyOperation};
 use cadmpeg_ir::scalar::PositiveReal;
-use cadmpeg_ir::sketches::Sketch;
 
+use super::selections::SketchData;
 use super::{selections, swept, Projected};
 
 fn controls() -> new::BlendControls {
@@ -80,7 +80,7 @@ fn thickness(value: cadmpeg_ir::scalar::PositiveLength, outward: Option<bool>) -
 
 pub(super) fn operation(
     value: &LegacyOperation,
-    sketches: &[Sketch],
+    sketches: SketchData<'_>,
     inputs: &[old::evaluation::FeatureInputTopology],
 ) -> Option<Projected<FeatureOperation>> {
     if !matches!(
@@ -186,30 +186,42 @@ pub(super) fn operation(
                 sets: groups
                     .iter()
                     .map(|group| {
+                        let (size, reference) = match group.spec {
+                            old::edge_treatments::ChamferSpec::Distance { distance } => (
+                                new::ChamferSize::Distance(Dimension::Literal(distance)),
+                                None,
+                            ),
+                            old::edge_treatments::ChamferSpec::TwoDistances { first, second }
+                                if first == second =>
+                            {
+                                (new::ChamferSize::Distance(Dimension::Literal(first)), None)
+                            }
+                            old::edge_treatments::ChamferSpec::TwoDistances { first, second } => (
+                                new::ChamferSize::Distances {
+                                    first: Dimension::Literal(first),
+                                    second: Dimension::Literal(second),
+                                },
+                                Some(selections::support_face(&group.edges, inputs)?),
+                            ),
+                            old::edge_treatments::ChamferSpec::DistanceAngle { .. } => {
+                                return Err(
+                                    "the chamfer support side has no v11 reference selection",
+                                )
+                            }
+                            old::edge_treatments::ChamferSpec::Unresolved { .. } => {
+                                return Err("the chamfer size is unresolved")
+                            }
+                        };
+                        // A named reference fixes the side, so the stored
+                        // direction swap is stated only for the default side.
+                        let flip = reference
+                            .is_none()
+                            .then_some(Dimension::Literal(*flip_direction));
                         Ok(new::ChamferSet {
                             edges: selections::set(selections::edge(&group.edges, inputs)?)?,
-                            size: Some(match group.spec {
-                                old::edge_treatments::ChamferSpec::Distance { distance } => {
-                                    new::ChamferSize::Distance(Dimension::Literal(distance))
-                                }
-                                old::edge_treatments::ChamferSpec::TwoDistances {
-                                    first,
-                                    second,
-                                } if first == second => {
-                                    new::ChamferSize::Distance(Dimension::Literal(first))
-                                }
-                                old::edge_treatments::ChamferSpec::TwoDistances { .. }
-                                | old::edge_treatments::ChamferSpec::DistanceAngle { .. } => {
-                                    return Err(
-                                        "the chamfer support side has no v11 reference selection",
-                                    )
-                                }
-                                old::edge_treatments::ChamferSpec::Unresolved { .. } => {
-                                    return Err("the chamfer size is unresolved")
-                                }
-                            }),
-                            reference: None,
-                            flip: Some(Dimension::Literal(*flip_direction)),
+                            size: Some(size),
+                            reference,
+                            flip,
                             measure: None,
                         })
                     })

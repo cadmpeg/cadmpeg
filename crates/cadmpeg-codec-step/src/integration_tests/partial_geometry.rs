@@ -130,7 +130,7 @@ fn a_mesh_only_export_is_not_reported_as_empty() {
 
 #[test]
 fn a_fitting_resource_limit_is_reported_by_the_encoder() {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
     use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
     use cadmpeg_ir::geometry::pcurve::PlacedPcurve;
     use cadmpeg_ir::geometry::procedural_curves::{ProceduralCurveDefinition, SupportPcurve};
@@ -180,7 +180,7 @@ fn a_fitting_resource_limit_is_reported_by_the_encoder() {
         construction,
         cache: None,
     };
-    let result = StepCodec::default().plan(EncodeInput::new(&ir, None), TargetRequest::Inherit);
+    let result = StepCodec::default().plan(EncodeInput::new(&ir, None));
     assert!(matches!(
         result,
         Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit))

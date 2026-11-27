@@ -9,8 +9,8 @@ use cadmpeg_ir::geometry::{
     SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, Identity, LoopId, PcurveId, PointId, RegionId,
+    ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{
@@ -228,6 +228,9 @@ pub(in super::super) struct BrepTransferDiagnostics {
     pub(in super::super) empty_component_count: usize,
     pub(in super::super) admitted_component_count: usize,
     pub(in super::super) selected_body_count: Option<usize>,
+    /// The id each face of a component the admission gate withholds would
+    /// hold as a face, with the ids of the records dropped with it.
+    pub(in super::super) gated_faces: BTreeMap<FaceId, Vec<Identity>>,
 }
 
 impl BrepTransferDiagnostics {
@@ -259,6 +262,26 @@ impl BrepTransferDiagnostics {
                 .take(FACE_REJECTION_SAMPLE_LIMIT)
                 .map(|diagnostic| &diagnostic.detail),
         )
+    }
+
+    /// The id each rejected face would hold as a face, once per face, with
+    /// the reason of its first rejection.
+    pub(in super::super) fn rejected_faces(
+        &self,
+    ) -> Result<Vec<(FaceId, &'static str)>, cadmpeg_core::CodecError> {
+        let mut faces = BTreeMap::new();
+        for diagnostic in &self.face_rejection_diagnostics {
+            faces
+                .entry(diagnostic.detail.face_id)
+                .or_insert(diagnostic.reason.key());
+        }
+        faces
+            .into_iter()
+            .map(|(face, reason)| {
+                crate::identity::compose_checked(&crate::identity::VISIBGEOM_FACE, face)
+                    .map(|face| (face, reason))
+            })
+            .collect()
     }
 
     pub(in super::super) fn face_admission_rejection_records(
@@ -2062,6 +2085,152 @@ fn used_brep_vertices(
     used_vertices
 }
 
+/// The inputs of the transfer that the component admission gate withholds.
+struct GatedComponents<'a, 'b> {
+    namespaces: &'a NativeSurfaceNamespaces<'b>,
+    body_components: &'a [NeutralShellSpec],
+    eligible_regions: &'a BTreeMap<FaceRegionKey, Vec<&'b crate::topology::Loop>>,
+    face_curves: &'a BTreeSet<u32>,
+    neutral_edge_curves: &'a BTreeSet<u32>,
+    edge_vertices: &'a BTreeMap<u32, [u32; 2]>,
+    native_pcurves: &'a NativePcurveCandidates,
+}
+
+impl GatedComponents<'_, '_> {
+    /// Each face the gate withholds, in id order, with the records of the
+    /// withheld transfer that the face is the first in id order to reach: its
+    /// surface, loops and coedges, the native pcurve candidate of each coedge,
+    /// and the curve, edge and vertices of each of its coedges. A component's
+    /// shells, region, body and wire edges go with its first face. A record
+    /// that no face of its component reaches goes with the first face. The
+    /// report lists only the records that the finished document does not hold.
+    fn face_records(&self) -> Result<BTreeMap<FaceId, Vec<Identity>>, cadmpeg_core::CodecError> {
+        use crate::identity::compose_checked;
+        let edge_records = |curve_id: u32| -> Result<Vec<Identity>, cadmpeg_core::CodecError> {
+            if !self.neutral_edge_curves.contains(&curve_id) {
+                return Ok(Vec::new());
+            }
+            let mut records = vec![
+                compose_checked(&crate::identity::VISIBGEOM_CURVE, curve_id)?,
+                compose_checked(&crate::identity::VISIBGEOM_EDGE, curve_id)?,
+            ];
+            for vertex in self.edge_vertices.get(&curve_id).into_iter().flatten() {
+                records.push(compose_checked(&crate::identity::VISIBGEOM_VERTEX, vertex)?);
+            }
+            Ok(records)
+        };
+        let mut face_reach = BTreeMap::<FaceId, Vec<Identity>>::new();
+        let mut component_reach = Vec::new();
+        for (component_index, component) in self.body_components.iter().enumerate() {
+            let mut first_face = None::<FaceId>;
+            for face_key in &component.faces {
+                let face = compose_checked::<FaceId>(&crate::identity::VISIBGEOM_FACE, face_key)?;
+                let mut records =
+                    vec![Identity::from(self.namespaces.surface_id(face_key.source)?)];
+                let loops = self
+                    .eligible_regions
+                    .get(face_key)
+                    .map_or(&[][..], Vec::as_slice);
+                for (loop_index, native_loop) in loops.iter().enumerate() {
+                    records.push(if loop_index == 0 {
+                        compose_checked(&crate::identity::VISIBGEOM_LOOP, face_key)?
+                    } else {
+                        compose_checked(
+                            &crate::identity::VISIBGEOM_LOOP,
+                            format_args!("{face_key}:{loop_index}"),
+                        )?
+                    });
+                    for half_edge in native_loop.half_edges() {
+                        records.push(compose_checked(
+                            &crate::identity::VISIBGEOM_COEDGE,
+                            format_args!("{}:{}", half_edge.curve_id, half_edge.side.index()),
+                        )?);
+                        if self
+                            .native_pcurves
+                            .contains_key(&(half_edge.curve_id, face_key.source))
+                        {
+                            records.push(compose_checked(
+                                &crate::identity::VISIBGEOM_PCURVE,
+                                format_args!("{}:{}", half_edge.curve_id, face_key.source),
+                            )?);
+                        }
+                        records.extend(edge_records(half_edge.curve_id)?);
+                    }
+                }
+                if first_face.as_ref().is_none_or(|first| face < *first) {
+                    first_face = Some(face.clone());
+                }
+                face_reach.insert(face, records);
+            }
+            let topology = BrepComponentTopology::from_component(
+                &component.wire_curves,
+                self.face_curves,
+                &component.faces,
+                self.eligible_regions,
+                self.edge_vertices,
+            );
+            let shells = split_neutral_component_shells(
+                &component.faces,
+                &topology.wire_curves,
+                &topology.face_adjacency,
+                &topology.face_vertices,
+                self.edge_vertices,
+            );
+            let mut records = Vec::new();
+            for (shell_index, shell) in shells.iter().enumerate() {
+                if shell.faces.is_empty() && shell.wire_curves.is_empty() {
+                    continue;
+                }
+                records.push(if shell_index == 0 {
+                    compose_checked(&crate::identity::VISIBGEOM_SHELL, component_index + 1)?
+                } else {
+                    compose_checked(
+                        &crate::identity::VISIBGEOM_SHELL,
+                        format_args!("{}:{}", component_index + 1, shell_index + 1),
+                    )?
+                });
+            }
+            records.push(compose_checked(
+                &crate::identity::VISIBGEOM_REGION,
+                component_index + 1,
+            )?);
+            records.push(compose_checked(
+                &crate::identity::VISIBGEOM_BODY,
+                component_index + 1,
+            )?);
+            for curve_id in &topology.wire_curves {
+                records.extend(edge_records(*curve_id)?);
+            }
+            component_reach.push((first_face, records));
+        }
+        let Some(first_face) = face_reach.keys().next().cloned() else {
+            return Ok(BTreeMap::new());
+        };
+        let mut rest = Vec::new();
+        for curve_id in self.neutral_edge_curves {
+            rest.extend(edge_records(*curve_id)?);
+        }
+        let mut named = BTreeSet::<Identity>::new();
+        let mut gated: BTreeMap<FaceId, Vec<Identity>> = face_reach
+            .keys()
+            .map(|face| (face.clone(), Vec::new()))
+            .collect();
+        let reached = face_reach.into_iter().chain(
+            component_reach
+                .into_iter()
+                .map(|(first, records)| (first.unwrap_or_else(|| first_face.clone()), records)),
+        );
+        for (face, records) in reached.chain(std::iter::once((first_face.clone(), rest))) {
+            for record in records {
+                if named.insert(record.clone()) {
+                    gated.entry(face.clone()).or_default().push(record);
+                }
+            }
+        }
+        Ok(gated)
+    }
+}
+
 fn brep_set_at<K: Ord, V: Ord>(map: &mut BTreeMap<K, BTreeSet<V>>, key: K) -> &mut BTreeSet<V> {
     match map.entry(key) {
         std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
@@ -3047,6 +3216,16 @@ pub(in super::super) fn transfer_native_brep(
         || diagnostics.legacy_body_ownership_ambiguous
         || diagnostics.empty_component_count != 0
     {
+        diagnostics.gated_faces = GatedComponents {
+            namespaces: &namespaces,
+            body_components: &body_components,
+            eligible_regions: &eligible_regions,
+            face_curves: &face_curves,
+            neutral_edge_curves: &neutral_edge_curves,
+            edge_vertices: &edge_vertices,
+            native_pcurves: &native_pcurves,
+        }
+        .face_records()?;
         return Ok(NativeBrepTransferSummary {
             topological_point_count: solved_point_count,
             diagnostics,

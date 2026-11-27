@@ -22,6 +22,7 @@ use cadmpeg_ir::tessellation::{
     ShadedVertex, Strip, Strips, Tessellation, TessellationId, TessellationLaneError,
     TessellationMesh,
 };
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
@@ -48,6 +49,9 @@ pub(in super::super) struct BuiltIr {
     pub(in super::super) coverage: cadmpeg_ir::report::decode::Coverage,
     pub(in super::super) brep_diagnostics: BrepTransferDiagnostics,
     pub(in super::super) transfer_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// The source parts the build gives up, for the decode to commit after it
+    /// attaches the retained records that contain them.
+    pub(in super::super) given_up: Vec<GivenUpPart>,
 }
 
 pub(in super::super) fn build_container_ir(
@@ -69,6 +73,7 @@ pub(in super::super) fn build_container_ir(
         coverage,
         brep_diagnostics: BrepTransferDiagnostics::default(),
         transfer_losses,
+        given_up: Vec::new(),
     })
 }
 
@@ -475,7 +480,7 @@ fn transfer_display_tessellations(
         )?;
         annotate(
             annotations,
-            id.as_str(),
+            &id,
             "SolidPrimdata",
             cadmpeg_core::decode::u64_from_index(strip.offset),
             "display_triangle_strip",
@@ -772,10 +777,17 @@ pub(in super::super) fn build_ir(
         &mut transfer_losses,
         &mut source_carriers,
     )?;
+    let mut given_up = super::super::assembly::give_up_unread_tables(ctx, scan)?;
     let geometry_generator_feature_count =
         emit_model_features(ctx, scan, &mut ir, &mut annotations, &source_carriers)?;
-    let dimension_targets =
-        super::super::pmi::transfer(ctx, scan, &mut ir, &mut annotations, &mut transfer_losses)?;
+    let dimension_targets = super::super::pmi::transfer(
+        ctx,
+        scan,
+        &mut ir,
+        &mut annotations,
+        &mut transfer_losses,
+        &mut given_up,
+    )?;
     super::super::pmi::tags::transfer(
         ctx,
         scan,
@@ -828,6 +840,7 @@ pub(in super::super) fn build_ir(
         coverage,
         brep_diagnostics,
         transfer_losses,
+        given_up,
     })
 }
 

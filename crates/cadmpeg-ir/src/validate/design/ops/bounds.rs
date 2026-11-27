@@ -47,7 +47,7 @@ impl<'v, 'a> Values<'v, 'a> {
     }
 }
 
-impl<'a> Site<'a> {
+impl<'a> Site<'_, 'a> {
     /// Checks a rule that bounds the values `breach` reads, which returns the
     /// rule's message where they break it. A breach among the literals alone
     /// is an Error. Where the rule reads a bound dimension, a breach in a
@@ -130,7 +130,10 @@ impl<'a> Site<'a> {
             return Vec::new();
         }
         let in_force = |configuration: Option<&str>| {
-            std::ptr::eq(index.definition_in(feature, configuration), definition)
+            std::ptr::eq(
+                index.definition_in(feature, configuration, None),
+                definition,
+            )
         };
         if configurations.is_empty() {
             return if in_force(None) {

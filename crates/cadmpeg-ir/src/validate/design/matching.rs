@@ -71,6 +71,12 @@ pub(super) struct StateTopology<'a> {
     pub(super) edge_faces: BTreeMap<&'a str, BTreeSet<&'a str>>,
     /// The faces on which each vertex lies.
     pub(super) vertex_faces: BTreeMap<&'a str, BTreeSet<&'a str>>,
+    /// The edges that each vertex ends.
+    vertex_edges: BTreeMap<&'a str, BTreeSet<&'a str>>,
+    /// The shells that list each wire edge.
+    wire_shells: BTreeMap<&'a str, Vec<&'a Shell>>,
+    /// The shells that list each free vertex.
+    free_shells: BTreeMap<&'a str, Vec<&'a Shell>>,
     /// The face loops that use each edge through a coedge.
     pub(super) edge_loops: BTreeMap<&'a str, BTreeSet<&'a str>>,
     /// The edges each face loop uses through its coedges.
@@ -153,6 +159,30 @@ impl<'a> Collected<'a> {
                     .extend(faces.iter().copied());
             }
         }
+        let mut vertex_edges: BTreeMap<&'a str, BTreeSet<&'a str>> = BTreeMap::new();
+        for (edge, record) in &self.edges {
+            for vertex in record.vertices() {
+                vertex_edges
+                    .entry(vertex.as_str())
+                    .or_default()
+                    .insert(edge);
+            }
+        }
+        let mut wire_shells: BTreeMap<&'a str, Vec<&'a Shell>> = BTreeMap::new();
+        let mut free_shells: BTreeMap<&'a str, Vec<&'a Shell>> = BTreeMap::new();
+        for &shell in self.shells.values() {
+            for member in &shell.members {
+                match member {
+                    ShellMember::WireEdge { id } => {
+                        wire_shells.entry(id.as_str()).or_default().push(shell);
+                    }
+                    ShellMember::FreeVertex { id } => {
+                        free_shells.entry(id.as_str()).or_default().push(shell);
+                    }
+                    ShellMember::Subd { .. } => {}
+                }
+            }
+        }
         for record in self.loops.values() {
             if let LoopBoundary::Vertex { vertex, .. } = &record.boundary {
                 if self.faces.contains_key(record.face.as_str()) {
@@ -175,6 +205,9 @@ impl<'a> Collected<'a> {
             surfaces: self.surfaces,
             edge_faces,
             vertex_faces,
+            vertex_edges,
+            wire_shells,
+            free_shells,
             edge_loops,
             loop_edges,
         }
@@ -182,6 +215,13 @@ impl<'a> Collected<'a> {
 }
 
 impl<'a> StateTopology<'a> {
+    /// Every record of `geometry`.
+    pub(super) fn of_geometry(geometry: &'a Topology) -> Self {
+        let mut collected = Collected::default();
+        collected.add(geometry, &|_| true, &|_| true);
+        collected.finish()
+    }
+
     fn of_extents(geometry: &'a Topology, extents: &[&Extent<'a>]) -> Self {
         let mut collected = Collected::default();
         collected.add(
@@ -236,13 +276,28 @@ impl<'a> StateTopology<'a> {
             .filter_map(|face| self.face_body(face))
             .map(|body| body.id.as_str())
             .collect();
-        for shell in self.shells.values() {
-            let owns = shell.members.iter().any(
-                |member| matches!(member, ShellMember::WireEdge { id } if id.as_str() == edge),
-            );
-            if owns {
-                bodies.extend(self.shell_body(shell).map(|body| body.id.as_str()));
-            }
+        for &shell in self.wire_shells.get(edge).into_iter().flatten() {
+            bodies.extend(self.shell_body(shell).map(|body| body.id.as_str()));
+        }
+        bodies
+    }
+
+    /// The bodies that hold `vertex`: those of the faces it lies on, of the
+    /// edges it ends, and of the shells that own it as a free vertex.
+    pub(super) fn vertex_bodies(&self, vertex: &str) -> BTreeSet<&'a str> {
+        let mut bodies: BTreeSet<&'a str> = self
+            .vertex_faces
+            .get(vertex)
+            .into_iter()
+            .flatten()
+            .filter_map(|face| self.face_body(face))
+            .map(|body| body.id.as_str())
+            .collect();
+        for edge in self.vertex_edges.get(vertex).into_iter().flatten() {
+            bodies.extend(self.edge_bodies(edge));
+        }
+        for &shell in self.free_shells.get(vertex).into_iter().flatten() {
+            bodies.extend(self.shell_body(shell).map(|body| body.id.as_str()));
         }
         bodies
     }
@@ -262,7 +317,7 @@ impl<'a> StateTopology<'a> {
 
 /// One stored state's name table, with its topology derived on first use.
 pub(super) struct Matcher<'a> {
-    states: &'a States<'a>,
+    states: StatesRef<'a>,
     state: StateKey<'a>,
     entries: BTreeMap<&'a str, Entry>,
     topology: OnceCell<Option<StateTopology<'a>>>,
@@ -277,7 +332,7 @@ enum StateKey<'a> {
 impl<'a> Matcher<'a> {
     /// The matcher of a stored state. `None` where an evaluation's chain of
     /// bases does not resolve, which the evaluation rules report.
-    fn new(states: &'a States<'a>, state: &Stored<'a>) -> Option<Self> {
+    fn new(states: StatesRef<'a>, state: &Stored<'a>) -> Option<Self> {
         let (entries, key) = match state {
             Stored::Extents(extents) => (
                 states
@@ -287,12 +342,7 @@ impl<'a> Matcher<'a> {
                         Some((entity.id(), Entry::of(entry.name.as_ref()?)))
                     })
                     .collect(),
-                StateKey::Extents(
-                    extents
-                        .iter()
-                        .map(|extent| std::ptr::from_ref(*extent))
-                        .collect(),
-                ),
+                StateKey::Extents(extents.iter().map(Rc::as_ptr).collect()),
             ),
             Stored::Evaluation(evaluation) => (
                 states
@@ -322,12 +372,13 @@ impl<'a> Matcher<'a> {
                         .states
                         .extents
                         .iter()
-                        .filter(|extent| extents.contains(&std::ptr::from_ref(*extent)))
+                        .filter(|extent| extents.contains(&Rc::as_ptr(extent)))
+                        .map(Rc::as_ref)
                         .collect();
                     Some(StateTopology::of_extents(self.states.geometry(), &extents))
                 }
                 StateKey::Evaluation(evaluation) => {
-                    StateTopology::of_evaluation(self.states, evaluation)
+                    StateTopology::of_evaluation(&self.states, evaluation)
                 }
             })
             .as_ref()
@@ -587,41 +638,63 @@ fn index_places(name: &TopoName) -> BTreeMap<Place, BTreeSet<u32>> {
     found
 }
 
+#[derive(Clone)]
+enum StatesRef<'a> {
+    #[cfg(test)]
+    Borrowed(&'a States<'a>),
+    Owned(Rc<States<'a>>),
+}
+
+impl<'a> std::ops::Deref for StatesRef<'a> {
+    type Target = States<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            #[cfg(test)]
+            Self::Borrowed(states) => states,
+            Self::Owned(states) => states,
+        }
+    }
+}
+
 /// The matchers of the stored states one validation reads, each built once.
-pub(super) struct Matchers<'a> {
-    states: &'a States<'a>,
+pub(in crate::validate) struct Matchers<'a> {
+    states: StatesRef<'a>,
     built: std::cell::RefCell<BTreeMap<StateKey<'a>, Option<Rc<Matcher<'a>>>>>,
 }
 
 impl<'a> Matchers<'a> {
-    pub(super) fn new(states: &'a States<'a>) -> Self {
+    #[cfg(test)]
+    pub(in crate::validate) fn new(states: &'a States<'a>) -> Self {
         Self {
-            states,
+            states: StatesRef::Borrowed(states),
+            built: std::cell::RefCell::new(BTreeMap::new()),
+        }
+    }
+
+    pub(in crate::validate) fn owned(states: States<'a>) -> Self {
+        Self {
+            states: StatesRef::Owned(Rc::new(states)),
             built: std::cell::RefCell::new(BTreeMap::new()),
         }
     }
 
     /// The resolved states the matchers read.
-    pub(super) const fn states(&self) -> &'a States<'a> {
-        self.states
+    pub(super) fn states(&self) -> &States<'a> {
+        &self.states
     }
 
     /// The matcher of a stored state. `None` where an evaluation's chain of
     /// bases does not resolve.
     pub(super) fn get(&self, state: &Stored<'a>) -> Option<Rc<Matcher<'a>>> {
         let key = match state {
-            Stored::Extents(extents) => StateKey::Extents(
-                extents
-                    .iter()
-                    .map(|extent| std::ptr::from_ref(*extent))
-                    .collect(),
-            ),
+            Stored::Extents(extents) => StateKey::Extents(extents.iter().map(Rc::as_ptr).collect()),
             Stored::Evaluation(evaluation) => StateKey::Evaluation(evaluation),
         };
         if let Some(found) = self.built.borrow().get(&key) {
             return found.clone();
         }
-        let matcher = Matcher::new(self.states, state).map(Rc::new);
+        let matcher = Matcher::new(self.states.clone(), state).map(Rc::new);
         self.built.borrow_mut().insert(key, matcher.clone());
         matcher
     }

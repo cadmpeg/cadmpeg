@@ -332,11 +332,12 @@ fn follow_consumed_inputs(
                 .iter()
                 .filter_map(|id| model.features.iter().position(|other| &other.id == id))
                 .collect::<BTreeSet<_>>();
-            let text = serde_json::to_string(row.evaluation.definition()).map_err(|error| {
-                CodecError::malformed(format_args!(
-                    "feature definition does not serialize: {error}"
-                ))
-            })?;
+            let text = cadmpeg_core::serde_erase::to_json_string(row.evaluation.definition())
+                .map_err(|error| {
+                    CodecError::malformed(format_args!(
+                        "feature definition does not serialize: {error}"
+                    ))
+                })?;
             for (sketch, index) in &sketch_rows {
                 if text.contains(&format!("\"{sketch}\"")) && model.features[*index].id != row.id {
                     inputs.insert(*index);
