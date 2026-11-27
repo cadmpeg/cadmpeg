@@ -105,7 +105,7 @@ fn numeric_entity_chains_do_not_claim_faces() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.message.contains("No body record was available")));
+        .any(|loss| loss.message.contains("No body record names a region")));
 }
 
 #[test]
