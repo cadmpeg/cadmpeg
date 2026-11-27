@@ -107,8 +107,8 @@ pub(super) fn configurations(
 /// bodies are the current bodies `current`. Each leaves out `ordinal` where
 /// the model holds more than one configuration and their order by `ordinal`
 /// is not the order by `position` of their design configurations (§2.2).
-/// The native record its `native_ref` names holds the native slot. Each compared configuration is recorded, also where it
-/// leaves out no field.
+/// The native record its `native_ref` names holds the native slot. Each
+/// compared configuration is recorded, also where it leaves out no field.
 pub(super) fn restate(
     ir: &mut CadIr,
     configurations: &Configurations,
