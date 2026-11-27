@@ -624,11 +624,11 @@ fn decode_lineage_bundle_with(
     let objects: Vec<_> = objects
         .iter()
         .map(|(path, lineage, version)| {
-            serde_json::json!({"relativePath": path, "lineage": lineage, "about": version})
+            cadmpeg_core::json!({"relativePath": path, "lineage": lineage, "about": version})
         })
         .collect();
     let description =
-        serde_json::json!({"designDescription":{"designGraphs":[{"designObjects":objects}]}});
+        cadmpeg_core::json!({"designDescription":{"designGraphs":[{"designObjects":objects}]}});
     let mut members: Vec<(&str, &[u8])> = vec![
         ("root.f3d", &root),
         ("child.f3d", child),
@@ -837,7 +837,7 @@ fn f3z_unreadable_redirections_entry_does_not_resolve_by_lineage() {
     );
     let root = with_unreadable_redirections(&root);
     let child = include_bytes!("../../tests/golden/fixtures/generated_unit_cube.f3d");
-    let description = serde_json::json!({"designDescription":{"designGraphs":[{"designObjects":[
+    let description = cadmpeg_core::json!({"designDescription":{"designGraphs":[{"designObjects":[
         {"relativePath":"child.f3d","lineage":CHILD_LINEAGE,"about":CHILD_VERSION}
     ]}]}});
     let bytes = f3z_archive_with_design_description(
@@ -871,7 +871,7 @@ fn f3z_lineage_candidate_with_an_unreadable_payload_keeps_the_ambiguity() {
         lineage_placement(),
     );
     let child = include_bytes!("../../tests/golden/fixtures/generated_unit_cube.f3d");
-    let description = serde_json::json!({"designDescription":{"designGraphs":[{"designObjects":[
+    let description = cadmpeg_core::json!({"designDescription":{"designGraphs":[{"designObjects":[
         {"relativePath":"child.f3d","lineage":CHILD_LINEAGE,"about":CHILD_VERSION},
         {"relativePath":"other.f3d","lineage":CHILD_LINEAGE,"about":CHILD_VERSION}
     ]}]}});
