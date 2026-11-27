@@ -397,7 +397,7 @@ mod tests {
             panic!("one removed-state loss: {losses:#?}");
         };
         assert!(message.contains(&tessellation));
-        assert!(message.contains("no MeshRemove removes it"));
+        assert!(message.contains("no MeshRemove or Convert Mesh consumes it"));
         assert!(message.contains(import.id.as_str()) && message.contains(modify.id.as_str()));
         assert!(!losses.iter().any(|loss| {
             loss.code == F3dLossCode::FeatureMeshBodySelectionAssumed.kind()
@@ -428,7 +428,7 @@ mod tests {
         let [message] = unstated(&losses)[..] else {
             panic!("one removed-state loss: {losses:#?}");
         };
-        assert!(message.contains("several MeshRemove features remove it"));
+        assert!(message.contains("several MeshRemove or Convert Mesh features consume it"));
         for feature in ir
             .model
             .features
