@@ -211,6 +211,13 @@ fn empty_model_maps_archive(
         super::streams_test::append_companion(&mut bulk, &mut records, 1200, 1202);
         let base = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
         types.push((
+            "33333333-4444-5555-6666-777777777777",
+            "",
+            5,
+            "Dimension",
+            &[270, 271],
+        ));
+        types.push((
             "00000000-0000-0000-0000-000000001100",
             base,
             1,
