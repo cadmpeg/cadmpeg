@@ -736,7 +736,9 @@ fn departure_from_supports(fitted: &NurbsCurve, steps: u32) -> f64 {
 fn a_cylinder_spline_intersection_is_fitted_within_the_document_tolerance() {
     let linear = 1.0e-5;
     let (ir, curve) = cylinder_on_spline_intersection(linear);
-    let mut approximator = Approximator::new(&ir);
+    let arena = DecodeArena::new();
+    let context = DecodeContext::new(&arena, &DecodePolicy::default(), DecodeDepth::Full);
+    let mut approximator = Approximator::new(&ir, &context);
     let Some(SolvedCurveGeometry::Nurbs(fitted)) = approximator.exact_intersection(curve.as_str())
     else {
         panic!("a cylinder and a spline surface meet in a fitted carrier");
