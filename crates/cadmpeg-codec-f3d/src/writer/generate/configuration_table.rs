@@ -11,8 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{edit_dropped, value_unwritable};
 use cadmpeg_ir::features::parameters::{
-    ConfigurationEvaluation, ConfigurationFeatureState, DesignConfiguration as Configuration,
-    ParameterValue,
+    ConfigurationFeatureState, DesignConfiguration as Configuration, ParameterValue,
 };
 use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::report::loss::LossNote;
@@ -46,7 +45,7 @@ pub(super) struct Written<'a> {
     expected: BTreeMap<String, &'a Configuration>,
     /// Whether the active row of `decoded` suppresses each feature it
     /// states.
-    source_cells: BTreeMap<FeatureId, bool>,
+    source_cells: BTreeMap<cadmpeg_ir::features::FeatureId, bool>,
 }
 
 /// Write `documents` with the rows, cells, row order and rule targets of
@@ -197,7 +196,7 @@ impl Written<'_> {
                 (row.is_suppressed() != current.is_suppressed()
                     && !kept(feature, row.is_suppressed()))
                 .then(|| {
-                    let shown = |state: &ConfigurationEvaluation| {
+                    let shown = |state: &cadmpeg_ir::features::parameters::ConfigurationEvaluation| {
                         serde_json::to_string(state).unwrap_or_default()
                     };
                     format!(
