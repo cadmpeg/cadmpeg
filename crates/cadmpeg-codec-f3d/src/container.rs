@@ -963,7 +963,7 @@ fn scan_in<'a>(
         let matched = F3dDialect::classify_document(top_level_manifest.declared_version());
         let design_asset = manifest::resolve_design_folder(
             &top_level_manifest,
-            archive.entries().iter().map(|entry| entry.name.as_str()),
+            inflated_entries.keys().map(String::as_str),
             |name| inflated_entries.get(name).map(|view| view.window()),
         )?;
         manifest_lineage_urn = top_level_manifest.lineage_urn;
