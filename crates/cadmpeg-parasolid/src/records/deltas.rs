@@ -151,7 +151,7 @@ pub enum StopReason {
 }
 
 /// The end state of the Deltas reader.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum DeltasEnd {
     /// The reader consumed the complete stream.

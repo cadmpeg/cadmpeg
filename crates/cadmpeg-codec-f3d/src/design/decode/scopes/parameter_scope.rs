@@ -177,20 +177,34 @@ pub(crate) fn decode_parameter_scopes(
         let split_face_frames = metadata
             .as_ref()
             .and_then(|metadata| {
-                crate::design::decode::meta::unambiguous_design_primary_frames(bytes, metadata).ok()
+                crate::design::decode::meta::scan_unambiguous_design_primary_frames(
+                    scan,
+                    &entry.name,
+                    metadata,
+                )
+                .ok()
             })
             .unwrap_or_default();
         let paste_metadata = metadata.as_ref().filter(|_| needs_browser_metadata);
         let paste_nodes = super::base_feature::PasteNodes {
             sources: paste_metadata
                 .and_then(|metadata| {
-                    crate::design::decode::presentation::browser_node_suffixes(bytes, metadata).ok()
+                    crate::design::decode::presentation::scan_browser_node_suffixes(
+                        scan,
+                        &entry.name,
+                        bytes,
+                        metadata,
+                    )
+                    .ok()
                 })
                 .unwrap_or_default(),
             copies: paste_metadata
                 .and_then(|metadata| {
-                    crate::design::decode::presentation::presentation_scene_node_guids(
-                        bytes, metadata,
+                    crate::design::decode::presentation::scan_presentation_scene_node_guids(
+                        scan,
+                        &entry.name,
+                        bytes,
+                        metadata,
                     )
                     .ok()
                 })

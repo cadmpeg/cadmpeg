@@ -190,3 +190,34 @@ fn the_cache_holds_at_most_its_limit_of_models() {
         assert_eq!(first.geometry.faces.len(), second.geometry.faces.len());
     });
 }
+
+#[test]
+fn the_state_before_is_the_next_older_state() {
+    with_chain(|ctx, carrier, closed| {
+        let views = StateViews::new(carrier, closed, 1 << 20);
+        // The head state lists HEAD first, so the state before it is the
+        // older state, which `after` of OLDER decodes.
+        let before = decoded(views.before(ctx, HEAD));
+        let older = decoded(views.after(ctx, OLDER));
+        assert_eq!(before.geometry.faces.len(), older.geometry.faces.len());
+        assert!(matches!(
+            &before.geometry.surfaces[0].geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
+        ));
+    });
+}
+
+#[test]
+fn no_state_precedes_the_oldest_state_or_an_unlisted_source() {
+    with_chain(|ctx, carrier, closed| {
+        let views = StateViews::new(carrier, closed, 1 << 20);
+        // OLDER and ALIAS first appear in the state at history position 0.
+        for source in [OLDER, ALIAS, 99] {
+            assert!(matches!(
+                &*model(views.before(ctx, source)),
+                StateModel::Unavailable
+            ));
+        }
+        assert!(!closed.archive_built());
+    });
+}

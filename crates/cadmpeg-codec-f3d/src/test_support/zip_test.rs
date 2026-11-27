@@ -1106,10 +1106,8 @@ pub(crate) fn f3d_with_work_axis(
             }
         }
     }
+    types.retain(|row| row.4 != [1500]);
     for row in &mut types {
-        if row.4 == [600, 1500] {
-            row.4 = &[600];
-        }
         if row.4.contains(&1600) {
             row.4 = &[];
         }

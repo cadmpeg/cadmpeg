@@ -71,7 +71,7 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
 
-fn expected_segment_rows(
+pub(in crate::decode) fn expected_segment_rows(
     definition_id: u32,
     table: &crate::feature::definitions::FeatureSegmentTable,
 ) -> Result<usize, CodecError> {

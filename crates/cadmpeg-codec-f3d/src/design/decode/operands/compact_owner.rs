@@ -2,7 +2,7 @@
 //! Source namespaces selected by compact construction owner carriers.
 use crate::container::ContainerScan;
 use crate::design::decode::meta::{
-    design_primary_frames, metadata_for_bulk_stream, DesignPrimaryFrame,
+    metadata_for_bulk_stream, scan_design_primary_frames, DesignPrimaryFrame,
 };
 use crate::ids::native_stream;
 use crate::layout::{compact_owner_body_carrier as carrier, compact_owner_body_wrapper as wrapper};
@@ -73,7 +73,7 @@ pub(crate) fn source_selectors(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let frames = design_primary_frames(bytes, &meta)?;
+        let frames = scan_design_primary_frames(scan, &entry.name, &meta)?;
         let mut frame_at = HashMap::new();
         for (index, frame) in frames.iter().enumerate() {
             if let Ok(start) = u64::try_from(frame.start) {

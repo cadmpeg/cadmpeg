@@ -45,7 +45,7 @@ impl<'de> Deserialize<'de> for RealBits {
 }
 
 /// One decoded field element of a status-framed instance.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "type", content = "value", rename_all = "snake_case")]
 pub enum FieldValue {
     /// A byte value.

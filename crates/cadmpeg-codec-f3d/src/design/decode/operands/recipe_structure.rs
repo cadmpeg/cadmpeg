@@ -2,9 +2,6 @@
 //! Edge, surface patch, and face recipe structure.
 
 use super::FaceRecipeProgramKind;
-use crate::design::decode::sketch::{
-    indexed_record_header_at, next_indexed_record_offset, next_indexed_record_offset_with_index,
-};
 use crate::records::topology::edge_identity::DesignEdgeOperand;
 use crate::records::topology::edge_recipe::{
     DesignTopologyRecipeEntry, DesignTopologyRecipeSide, DesignTopologyRecipeTriplet,
@@ -679,8 +676,9 @@ pub(super) fn edge_recipe_topology_triplet(
 /// `N`. Select an expected continuation before applying that fallback.
 /// Without an enclosing boundary and a following header, the stream end
 /// terminates the envelope and the returned record index is `0`.
-pub(super) fn face_recipe_next_boundary(
-    bytes: &[u8],
+pub(super) fn face_recipe_next_boundary_in(
+    bytes_len: usize,
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
     position: usize,
     record_index: u32,
     limit: Option<u64>,
@@ -695,17 +693,28 @@ pub(super) fn face_recipe_next_boundary(
     [record_index.checked_add(4)?, record_index.checked_add(5)?]
         .into_iter()
         .filter_map(|expected_index| {
-            next_indexed_record_offset_with_index(bytes, position, expected_index)
+            records
+                .first_at_or_after(position, expected_index)
                 .map(|offset| (expected_index, offset))
         })
         .filter(|(_, offset)| within_limit(*offset))
         .min_by_key(|(_, offset)| *offset)
-        .or_else(|| match next_indexed_record_offset(bytes, position) {
-            Some(offset) => {
-                let record_index = indexed_record_header_at(bytes, offset)?.record_index;
-                within_limit(offset).then_some((record_index, offset))
+        .or_else(|| match records.next_header(position) {
+            Some(header) => {
+                within_limit(header.offset).then_some((header.record_index, header.offset))
             }
-            None => limit.is_none().then_some((0, bytes.len())),
+            None => limit.is_none().then_some((0, bytes_len)),
         })
         .map(|(record_index, offset)| (offset, record_index))
+}
+
+#[cfg(test)]
+pub(super) fn face_recipe_next_boundary(
+    bytes: &[u8],
+    position: usize,
+    record_index: u32,
+    limit: Option<u64>,
+) -> Option<(usize, u32)> {
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(bytes);
+    face_recipe_next_boundary_in(bytes.len(), &records, position, record_index, limit)
 }
