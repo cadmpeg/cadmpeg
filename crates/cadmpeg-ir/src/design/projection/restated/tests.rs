@@ -426,6 +426,7 @@ fn design_parameter(key: &str, name: &str) -> DesignParameter {
         id: parameter_id(key),
         scope: ProductDefinitionId::mint(SCOPE).unwrap(),
         owner: None,
+        position: None,
         name: NonBlankString::new(name.to_owned()),
         kind: ValueKind::Quantity(Quantity::LENGTH),
         unit: None,

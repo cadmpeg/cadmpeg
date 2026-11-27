@@ -340,6 +340,7 @@ fn a_configuration_is_restated_without_what_its_record_does_not_state() {
         id: id(key),
         scope: cadmpeg_ir::ids::ProductDefinitionId::mint(ROOT).unwrap(),
         name: key.to_owned(),
+        position: None,
         parent: None,
         comment: None,
         overrides: Overrides::default(),

@@ -51,6 +51,7 @@ pub(super) fn project(ir: &mut CadIr, definition: &ProductDefinitionId) {
             id: parameter.id.clone(),
             scope: definition.clone(),
             owner: None,
+            position: None,
             name: Some(name),
             kind: declared.kind,
             unit: declared.unit,
@@ -86,7 +87,7 @@ pub(super) fn inputs(field: ParameterField) -> &'static [ModelParameterField] {
             ModelParameterField::ExpressionText,
             ModelParameterField::Properties,
         ],
-        ParameterField::NativeRef => &[ModelParameterField::NativeRef],
+        ParameterField::NativeRef | ParameterField::Position => &[ModelParameterField::NativeRef],
         ParameterField::Scope
         | ParameterField::Owner
         | ParameterField::Display

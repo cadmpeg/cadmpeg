@@ -1409,6 +1409,7 @@ fn parameter_inputs(field: ParameterField) -> &'static [ModelParameterField] {
     match field {
         ParameterField::Scope
         | ParameterField::Owner
+        | ParameterField::Position
         | ParameterField::Name
         | ParameterField::Kind
         | ParameterField::Unit

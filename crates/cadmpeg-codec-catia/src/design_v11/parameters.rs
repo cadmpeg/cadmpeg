@@ -72,6 +72,7 @@ pub(super) fn project(
             id: parameter.id.clone(),
             scope: scope.clone(),
             owner: None,
+            position: None,
             name: NonBlankString::new(parameter.name.clone()),
             value: value(parameter.value.as_ref(), &kind),
             definition: ParameterDefinition::Expression(expression),
@@ -144,6 +145,7 @@ pub(super) fn inputs(field: ParameterField) -> &'static [ModelParameterField] {
         ],
         ParameterField::Value => &[ModelParameterField::Value, ModelParameterField::Properties],
         ParameterField::NativeRef => &[ModelParameterField::NativeRef],
+        ParameterField::Position => &[ModelParameterField::Ordinal],
         ParameterField::Scope
         | ParameterField::Owner
         | ParameterField::Unit

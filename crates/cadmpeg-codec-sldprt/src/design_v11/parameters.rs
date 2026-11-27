@@ -852,6 +852,7 @@ fn parameter(
         id: entry.id.clone(),
         scope: scope.clone(),
         owner: entry.owner.clone().map(ParameterOwner::Feature),
+        position: None,
         name: Some(entry.name.clone()),
         kind: reading.kind,
         unit: None,

@@ -107,6 +107,7 @@ pub(super) fn project(
             id: row.id.clone(),
             scope: scope.clone(),
             name: row.name.clone().unwrap_or_default(),
+            position: None,
             parent: None,
             comment: None,
             overrides,

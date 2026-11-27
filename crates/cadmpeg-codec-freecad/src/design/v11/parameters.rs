@@ -82,6 +82,7 @@ pub(super) fn project(
             id: parameter.id.clone(),
             scope: definition.clone(),
             owner: Some(owner.clone()),
+            position: None,
             name: name(parameter),
             kind,
             unit: None,

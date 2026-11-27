@@ -83,6 +83,7 @@ fn parameter(
         id: parameter_id(key),
         scope: root(),
         owner: None,
+        position: None,
         name: NonBlankString::new(name.to_owned()),
         kind: ValueKind::Quantity(Quantity::LENGTH),
         unit: None,

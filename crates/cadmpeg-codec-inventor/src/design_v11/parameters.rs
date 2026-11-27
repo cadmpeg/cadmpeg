@@ -109,6 +109,7 @@ pub(super) fn project(
             id: parameter.id.clone(),
             scope: part.id.clone(),
             owner: parameter.owner.clone().map(ParameterOwner::Feature),
+            position: None,
             name: NonBlankString::new(parameter.name.clone()),
             kind,
             unit,

@@ -35,6 +35,16 @@ fn a_scope_names_an_active_configuration_of_its_own() {
 }
 
 #[test]
+fn configuration_positions_are_distinct_per_scope() {
+    let mut ir = document();
+    ir.design.configurations[0].position = Some(0);
+    ir.design.configurations[1].position = Some(1);
+    assert_no_design_finding(&ir);
+    ir.design.configurations[1].position = Some(0);
+    assert_finding(&ir, "2 configurations of the scope state position 0");
+}
+
+#[test]
 fn configuration_parents_stay_in_one_scope_without_cycles() {
     let mut ir = document();
     ir.design.configurations[0].parent = Some(id("configuration", "large"));

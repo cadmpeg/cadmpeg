@@ -274,6 +274,7 @@ fn a_kept_history_writes_a_reader_of_a_driven_parameter_with_its_value() {
                 scope: cadmpeg_ir::ids::ProductDefinitionId::mint("synthetic:test:id#part")
                     .unwrap(),
                 owner: None,
+                position: None,
                 name: Some(cadmpeg_core::nonblank_literal!("Input")),
                 kind: cadmpeg_ir::design::units::ValueKind::Integer,
                 unit: None,

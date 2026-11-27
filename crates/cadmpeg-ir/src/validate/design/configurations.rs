@@ -133,6 +133,26 @@ pub(super) fn check_configurations(index: &DesignRecords<'_>, findings: &mut Vec
             }
         }
     }
+    let mut positions = BTreeMap::<(&str, u32), usize>::new();
+    for configuration in &design.configurations {
+        if let Some(position) = configuration.position {
+            *positions
+                .entry((configuration.scope.as_str(), position))
+                .or_default() += 1;
+        }
+    }
+    for ((scope, position), count) in positions {
+        if count > 1 {
+            super::error(
+                findings,
+                scope,
+                crate::rule!(
+                    "design.configurations-position-distinct",
+                    "{count} configurations of the scope state position {position}"
+                ),
+            );
+        }
+    }
     for arrangement in &design.arrangements {
         check_arrangement(index, arrangement, findings);
     }

@@ -76,6 +76,7 @@ pub(super) fn configurations(
             id: neutral_configuration_id(&configuration.id)?,
             scope: scope.clone(),
             name: configuration.name.clone(),
+            position: None,
             parent: None,
             comment: None,
             overrides: Overrides::default(),

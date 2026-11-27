@@ -225,6 +225,7 @@ fn record(
         id: parameter.id.clone(),
         scope,
         owner: owner.cloned().map(ParameterOwner::Feature),
+        position: None,
         name: Some(name),
         kind,
         unit: None,

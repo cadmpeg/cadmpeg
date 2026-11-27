@@ -157,6 +157,7 @@ fn project_parameter(
         id: parameter.id.clone(),
         scope: scope.clone(),
         owner: parameter.owner.clone().map(ParameterOwner::Feature),
+        position: None,
         name: NonBlankString::new(parameter.name.clone()),
         kind,
         unit,
