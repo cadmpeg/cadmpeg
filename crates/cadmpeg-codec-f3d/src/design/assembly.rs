@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod motion_link;
+pub(crate) mod operand_keys;
 
 use cadmpeg_core::decode::u64_from_index;
 
@@ -1242,7 +1243,7 @@ pub(crate) fn project_assembly_joints_with_paths(
 
 /// The decoded motion of an `Assemble` scope's joint: the joint record's
 /// index is one less than the scope's.
-fn scope_joint_motion<'a>(
+pub(crate) fn scope_joint_motion<'a>(
     scope: &DesignParameterScope,
     stream: &str,
     motions: &'a [crate::records::feature::joint_motion::DesignJointMotion],
@@ -1269,7 +1270,7 @@ enum JointMotionKind {
     Slider { limits: Option<JointLimits> },
 }
 
-fn zero_lane_rotation_limits(
+pub(crate) fn zero_lane_rotation_limits(
     motion: &crate::records::feature::joint_motion::DesignJointMotion,
 ) -> bool {
     matches!(motion.freedoms.as_slice(), [freedom] if matches!(freedom.value, 1 | 2))

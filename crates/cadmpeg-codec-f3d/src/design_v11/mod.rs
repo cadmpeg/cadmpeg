@@ -23,6 +23,7 @@
 
 mod configurations;
 mod datum;
+mod joint;
 mod operation;
 pub(crate) mod parameters;
 mod pattern;
@@ -107,18 +108,27 @@ pub(crate) fn project(
         .iter()
         .map(|body| body.id.as_str())
         .collect::<BTreeSet<_>>();
-    let scopes = namespace
+    let scope_records = namespace
         .arena_as_for_decode::<crate::records::feature::scope::DesignParameterScope>(
             ctx,
             "design_parameter_scopes",
         )?;
+    let joint_records = if ir.model.assembly_joints.is_empty() {
+        None
+    } else {
+        Some(JointRecords {
+            motions: namespace.arena_as_for_decode(ctx, "design_joint_motions")?,
+            carriers: namespace.arena_as_for_decode(ctx, "design_component_occurrences")?,
+            references: namespace.arena_as_for_decode(ctx, "xref_references")?,
+        })
+    };
     let documents = timeline::project(
         ctx,
         &ir.model.features,
         &timelines,
         &types,
         &timeline::ScopeInputs {
-            records: &scopes,
+            records: &scope_records,
             tail_flags: &tail_flags,
         },
         &current,
@@ -188,6 +198,9 @@ pub(crate) fn project(
         .iter()
         .filter_map(|feature| Some((&feature.id, feature.product_definition.as_ref()?)))
         .collect::<HashMap<_, _>>();
+    let joints = joint_records
+        .as_ref()
+        .map(|records| records.inputs(&ir.model, &scope_records));
     for (prefix, (definition, mut projected)) in scopes {
         let Span {
             definitions: spanned,
@@ -200,6 +213,9 @@ pub(crate) fn project(
                     .filter(|owner| spanned.contains(**owner))
                     .map(|owner| (*owner).clone());
             }
+        }
+        if let Some(joints) = &joints {
+            joint::project(&mut projected.features, &definition, joints, losses);
         }
         let Some(Container::Ordered {
             id,
@@ -250,6 +266,63 @@ pub(crate) fn project(
     sheet_metal::project(ctx, ir, &definitions, losses)?;
     thread::project(ctx, ir, losses)?;
     Ok(())
+}
+
+/// The native records a joint feature reads beside its scope record.
+struct JointRecords {
+    motions: Vec<crate::records::feature::joint_motion::DesignJointMotion>,
+    carriers: Vec<crate::records::feature::assembly_features::DesignComponentOccurrence>,
+    references: Vec<crate::records::xref::XrefReference>,
+}
+
+impl JointRecords {
+    fn inputs<'a>(
+        &'a self,
+        model: &'a cadmpeg_ir::document::Model,
+        scopes: &'a [crate::records::feature::scope::DesignParameterScope],
+    ) -> joint::Inputs<'a> {
+        let joined = model
+            .assembly_joints
+            .iter()
+            .filter_map(|joint| joint.native_ref.as_deref())
+            .collect::<BTreeSet<_>>();
+        let sources = scopes
+            .iter()
+            .filter(|scope| joined.contains(scope.id.as_str()))
+            .filter_map(|scope| {
+                let stream = crate::ids::native_stream(&scope.id)?;
+                let group = crate::design::assembly::rigid_as_built_scope(scope);
+                Some((
+                    scope.id.as_str(),
+                    joint::Source {
+                        as_built: !group
+                            && scope.kind()
+                                == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+                        group,
+                        motion: crate::design::assembly::scope_joint_motion(
+                            scope,
+                            stream,
+                            &self.motions,
+                        ),
+                    },
+                ))
+            })
+            .collect();
+        joint::Inputs::new(
+            &model.features,
+            &model.assembly_joints,
+            sources,
+            joint::Places::new(
+                &model.product_definitions,
+                &model.occurrences,
+                crate::design::assembly::operand_keys::OperandKeys::new(
+                    &self.carriers,
+                    &self.references,
+                    scopes,
+                ),
+            ),
+        )
+    }
 }
 
 /// The position of the rollback marker of the timeline `id`: after its last

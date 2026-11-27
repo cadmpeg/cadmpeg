@@ -263,6 +263,9 @@ pub(crate) enum F3dLossCode {
     /// enabled. The neutral joint carries no rest; the native record retains
     /// the valid rest or the malformed-rest mark.
     AssemblyJointRestUnprojected,
+    /// Fusion joint features whose design record keeps `Unresolved`: their
+    /// joint record does not restate as a v11 joint or rigid group.
+    AssemblyDesignJointUnprojected,
     /// Projected Design assembly joints whose activation state is assumed
     /// active because the scope-tail booleans' activation meaning is unknown.
     AssemblyJointActivationAssumed,
@@ -1593,6 +1596,7 @@ impl F3dLossCode {
         Self::AssemblyRigidGroupFrameUnparsed,
         Self::AssemblyJointMotionUndecoded,
         Self::AssemblyJointRestUnprojected,
+        Self::AssemblyDesignJointUnprojected,
         Self::AssemblyJointActivationAssumed,
         Self::AssemblyJointAngularLimitsNative,
         Self::AssemblyOperandPathPairsNative,
@@ -2496,6 +2500,7 @@ impl F3dLossCode {
             Self::AssemblyRigidGroupFrameUnparsed => "assembly.rigid-group-frame-unparsed",
             Self::AssemblyJointMotionUndecoded => "assembly.joint-motion-undecoded",
             Self::AssemblyJointRestUnprojected => "assembly.joint-rest-unprojected",
+            Self::AssemblyDesignJointUnprojected => "assembly.design-joint-unprojected",
             Self::AssemblyJointActivationAssumed => "assembly.joint-activation-assumed",
             Self::AssemblyJointAngularLimitsNative => "assembly.joint-angular-limits-native",
             Self::AssemblyOperandPathPairsNative => "assembly.operand-path-pairs-native",
@@ -3750,6 +3755,7 @@ impl F3dLossCode {
             | Self::AssemblyJointMotionUndecoded
             | Self::AssemblyJointAngularLimitsNative
             | Self::AssemblyJointRestUnprojected
+            | Self::AssemblyDesignJointUnprojected
             | Self::AssemblyJointActivationAssumed
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
@@ -5095,6 +5101,7 @@ impl F3dLossCode {
             | Self::AssemblyJointMotionUndecoded
             | Self::AssemblyJointAngularLimitsNative
             | Self::AssemblyJointRestUnprojected
+            | Self::AssemblyDesignJointUnprojected
             | Self::AssemblyJointActivationAssumed
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
@@ -5499,6 +5506,7 @@ mod tests {
                 "assembly.rigid-group-frame-unparsed",
                 "assembly.joint-motion-undecoded",
                 "assembly.joint-rest-unprojected",
+                "assembly.design-joint-unprojected",
                 "assembly.joint-activation-assumed",
                 "assembly.joint-angular-limits-native",
                 "assembly.operand-path-pairs-native",
