@@ -571,6 +571,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
         asm_body_key_offset: 20,
         asm_body_key: 3,
         entity_suffix: 1,
+        browser_node_entity: 2,
         visible: true,
     })
     .unwrap();

@@ -4976,6 +4976,25 @@ fn check_feature_references(
                         );
                     }
                 }
+                BodySelection::Occurrence {
+                    occurrence, bodies, ..
+                } => {
+                    if !occurrence_ids.contains(occurrence.as_str()) {
+                        ref_error(
+                            findings,
+                            feature.id.as_str(),
+                            "body-selection occurrence",
+                            occurrence.as_str(),
+                        );
+                    }
+                    check_ids(
+                        findings,
+                        feature.id.as_str(),
+                        "selected body",
+                        bodies.iter().map(super::super::ids::BodyId::as_str),
+                        |identity| ids.bodies(identity, crate::index::StandardIndex).is_some(),
+                    );
+                }
                 BodySelection::Local { .. }
                 | BodySelection::NativeSet(_)
                 | BodySelection::Unresolved

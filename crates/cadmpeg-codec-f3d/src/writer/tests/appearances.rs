@@ -163,6 +163,7 @@ fn generated_source_less_drops_collapsed_visibility_body_bindings() {
                     asm_body_key_offset: 0,
                     asm_body_key: 42,
                     entity_suffix,
+                    browser_node_entity: entity_suffix + 1,
                     visible: false,
                 },
             )

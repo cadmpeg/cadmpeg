@@ -467,6 +467,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
                 asm_body_key_offset: 0,
                 asm_body_key: 42,
                 entity_suffix: 42,
+                browser_node_entity: 43,
                 visible: false,
             },
         )
