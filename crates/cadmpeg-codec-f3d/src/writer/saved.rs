@@ -16,6 +16,7 @@ use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::features::parameters::DesignParameter;
 use cadmpeg_ir::report::loss::LossNote;
 
+use super::primitives::{configuration_targets, decoded_configurations, f3d_native};
 use crate::loss::F3dLossCode;
 use crate::{ids, F3dCodec};
 
@@ -45,7 +46,11 @@ pub(crate) fn restore(
                 "the retained F3D archive cannot be decoded: {other}"
             )),
         })
-        .and_then(|decoded| restore_history(input.ir, decoded.ir(), &FusionText));
+        .and_then(|decoded| restore_history(input.ir, decoded.ir(), &FusionText))
+        .and_then(|mut restored| {
+            reproject(&mut restored.ir)?;
+            Ok(restored)
+        });
     match restored {
         Ok(restored) if restored.unwritten.is_empty() => Ok(Some(restored.ir)),
         Ok(restored) => {
@@ -63,6 +68,22 @@ pub(crate) fn restore(
             Ok(None)
         }
     }
+}
+
+/// Replaces the configurations `ir` took from the archive's decode with the
+/// ones the decoder states for the configuration tables `ir` was read with.
+fn reproject(ir: &mut CadIr) -> Result<(), CodecError> {
+    ir.model.configurations = match f3d_native(ir)? {
+        Some(native) => {
+            decoded_configurations(
+                &native.design_configurations,
+                &configuration_targets(ir, &native),
+            )?
+            .configurations
+        }
+        None => Vec::new(),
+    };
+    Ok(())
 }
 
 /// Records why the history arenas were not restored, and charges it where

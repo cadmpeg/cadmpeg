@@ -15,10 +15,11 @@ use cadmpeg_ir::report::loss::LossNote;
 
 use crate::manifest::{self, GENERATED_DESIGN_ASSET_FOLDER as DESIGN_FOLDER};
 use crate::writer::primitives::{
-    f3d_native, validate_assembly_projection, validate_configuration_projection,
+    configuration_targets, decoded_configurations, f3d_native, validate_assembly_projection,
 };
 mod attributes;
 pub(in crate::writer) mod configuration_root;
+mod configuration_table;
 mod design;
 mod index;
 mod native_bytes;
@@ -243,7 +244,6 @@ fn attempt<W: Write + Seek>(
     let mut native_parameters = None;
     if write_design {
         let native_design = || -> Result<design::parameters::ParameterSource, CodecError> {
-            validate_configuration_projection(target, &native)?;
             validate_source_less_history_graph(target, &native)?;
             let parameters = design::parameters::native_or_neutral(target, &native)?;
             validate_source_less_design_ownership(&native)?;
@@ -333,11 +333,39 @@ fn attempt<W: Write + Seek>(
     let mut configurations = Vec::new();
     let mut renamed = BTreeMap::<EntryNameFault, Vec<String>>::new();
     let mut root = None;
+    let mut table_losses = Vec::new();
     if write_design {
-        let plan = configuration_root::plan(target, &native.design_configurations);
-        let names = configuration_entry_names(&native.design_configurations);
+        let targets = configuration_targets(target, &native);
+        let decoded = decoded_configurations(&native.design_configurations, &targets)
+            .map_err(Failure::design)?;
+        let neutral = if target.model.omitted_arenas_held() {
+            target.model.configurations.as_slice()
+        } else {
+            decoded.configurations.as_slice()
+        };
+        let (written, losses) = configuration_table::regenerate(
+            &native.design_configurations,
+            &decoded,
+            neutral,
+            &targets,
+        )
+        .map_err(Failure::design)?;
+        let plan = configuration_root::plan(
+            target,
+            &native.design_configurations,
+            decoded.table,
+            &written,
+            neutral,
+        );
+        table_losses = losses;
+        table_losses.extend(
+            written
+                .read_back(plan.active(), &targets)
+                .map_err(Failure::design)?,
+        );
+        let names = configuration_entry_names(&written.documents);
         for (index, (configuration, (name, fault))) in
-            native.design_configurations.iter().zip(names).enumerate()
+            written.documents.iter().zip(names).enumerate()
         {
             let payload = plan
                 .payload(index, configuration)
@@ -353,12 +381,10 @@ fn attempt<W: Write + Seek>(
         }
         root = Some(plan);
     }
-    let mut configuration_losses = renamed
-        .into_iter()
-        .filter_map(|(fault, entries)| {
-            cadmpeg_ir::codec::write::value_unwritable("F3D", &fault.reason(), entries)
-        })
-        .collect::<Vec<_>>();
+    let mut configuration_losses = table_losses;
+    configuration_losses.extend(renamed.into_iter().filter_map(|(fault, entries)| {
+        cadmpeg_ir::codec::write::value_unwritable("F3D", &fault.reason(), entries)
+    }));
     let mut design_bulk = encode_design_bulkstream(
         target,
         &native,
