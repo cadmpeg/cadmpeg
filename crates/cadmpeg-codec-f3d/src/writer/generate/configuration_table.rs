@@ -18,23 +18,24 @@ use cadmpeg_ir::features::{ConfigurationId, ParameterId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::schema::EntityKind;
+use cadmpeg_ir::units::Tolerances;
 use cadmpeg_ir::CadIr;
 use serde_json::{Map, Value};
 
+use super::configuration_root::{plan, Plan};
 use super::presentation::deterministic_guid;
 use crate::design::configurations::{table_at, ConfigurationTargets, Projection};
 use crate::design::feature_project::DESIGN_LENGTH_TO_MILLIMETRE;
+use crate::design_v11::configurations::{agree, restate, ActiveRows, RestatedRows};
 use crate::ids::neutral_configuration_id;
 use crate::native::F3dNative;
 use crate::records::configuration::table::{
     new_document, new_row, property_component, push_column, push_property_column, push_row,
-    push_test_row, remove_row, set_cell, set_row_name, set_row_order, set_test_row, AdmittedTables,
-    CellData, ColumnTarget, ConfigurationColumn, ConfigurationRow, ConfigurationTable,
-    ConfiguredValue, RowGuids, TableNames,
+    remove_row, set_cell, set_row_name, set_row_order, write_test_rows, AdmittedTables, CellData,
+    ColumnTarget, ConfigurationColumn, ConfigurationRow, ConfigurationTable, ConfiguredValue,
+    RowGuids, TableNames,
 };
-use crate::records::configuration::{
-    DesignConfiguration, DesignConfigurationActiveRow, DesignConfigurationKind,
-};
+use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
 use crate::writer::primitives::{
     bases, configuration_targets, decoded_configurations, differences, projection, projects,
     reconciled, same_row, Bases, Difference,
@@ -55,9 +56,8 @@ pub(super) struct Written<'a> {
     expected: BTreeMap<String, &'a Configuration>,
     /// The ids of the columns the write adds to the table of the rows.
     added: BTreeSet<String>,
-    /// Whether the active row of `decoded` suppresses each feature it
-    /// states.
-    source_cells: BTreeMap<cadmpeg_ir::features::FeatureId, bool>,
+    /// The configuration of the row the stored root record names active.
+    stored_active: Option<Configuration>,
 }
 
 /// The `tableName` and the `tableType` of a table the write creates in an
@@ -141,13 +141,11 @@ pub(super) fn regenerate<'a>(
         .filter(|(written, configuration)| configuration.id.as_str() != written.as_str())
         .map(|(written, configuration)| (written.clone(), configuration.id.to_string()))
         .collect();
-    let source_cells = decoded
+    let stored_active = decoded
         .configurations
         .iter()
-        .filter(|configuration| configuration.active)
-        .flat_map(|configuration| &configuration.feature_states)
-        .map(|(feature, state)| (feature.clone(), state.evaluation.is_suppressed()))
-        .collect();
+        .find(|configuration| configuration.active)
+        .cloned();
     Ok((
         Written {
             documents,
@@ -155,7 +153,7 @@ pub(super) fn regenerate<'a>(
             generated,
             expected,
             added,
-            source_cells,
+            stored_active,
         },
         losses,
     ))
@@ -170,12 +168,8 @@ impl Written<'_> {
     /// row states otherwise than the reconciled feature is written in a state
     /// the row contradicts, unless the write keeps both the state its scope
     /// stores and the cell of the source's active row: the source holds the
-    /// same contradiction.
-    ///
-    /// A configuration of a `pinned` cell reads back at the Design stream's
-    /// expression and value where its row is the one the root record names,
-    /// else at its cell; each that reads back otherwise than it resolves is
-    /// charged.
+    /// same contradiction. Each `pinned` cell is charged with the value the
+    /// write states in its place.
     pub(super) fn read_back(
         &self,
         active: Option<&str>,
@@ -196,41 +190,15 @@ impl Written<'_> {
         losses.extend(value_unwritable(
             "F3D",
             "writes these parameters of an active configuration at the expression and value of the Design stream, which stores the state of the active row (f3d.md §1.2) and which the writer cannot set to what the configuration resolves",
-            pinned.iter().filter_map(|pinned| {
-                let back = self
-                    .expected
-                    .iter()
-                    .find(|(_, configuration)| configuration.id.as_str() == pinned.configuration)
-                    .and_then(|(written, _)| {
-                        read.configurations
-                            .iter()
-                            .find(|configuration| configuration.id.as_str() == written)
-                    });
-                let (expression, value) = match back.filter(|back| !back.active) {
-                    Some(back) => (
-                        bases.expression(back, &pinned.parameter),
-                        bases.value(back, &pinned.parameter),
-                    ),
-                    None => {
-                        let own = bases.parameters.get(&pinned.parameter);
-                        (
-                            own.map(|own| &own.expression),
-                            own.and_then(|own| own.value.as_ref()),
-                        )
-                    }
-                };
-                (expression != Some(&pinned.expression) || value != pinned.value.as_ref()).then(
-                    || {
-                        format!(
-                            "{}: {}",
-                            pinned.configuration,
-                            Difference::of(
-                                pinned.parameter.to_string(),
-                                Some(&(Some(pinned.expression.as_str()), pinned.value.as_ref())),
-                                Some(&(expression.map(String::as_str), value)),
-                            )
-                        )
-                    },
+            pinned.iter().map(|pinned| {
+                format!(
+                    "{}: {}",
+                    pinned.configuration,
+                    Difference::of(
+                        pinned.parameter.to_string(),
+                        Some(&pinned.stated),
+                        Some(&pinned.written),
+                    )
                 )
             }),
         ));
@@ -276,7 +244,12 @@ impl Written<'_> {
             feature
                 .suppressed
                 .is_some_and(|state| stored.get(&feature.id) == Some(&state))
-                && self.source_cells.get(&feature.id) == Some(&row)
+                && self
+                    .stored_active
+                    .as_ref()
+                    .and_then(|stored| stored.feature_states.get(&feature.id))
+                    .map(|state| state.evaluation.is_suppressed())
+                    == Some(row)
         };
         losses.extend(value_unwritable(
             "F3D",
@@ -323,39 +296,56 @@ fn host(
 
 /// A parameter cell of the row of an active configuration that the write
 /// states at the Design stream's expression and value, in place of the cell
-/// the configuration resolves.
-pub(in crate::writer) struct Pinned {
-    configuration: String,
+/// the configuration resolves: the expression and value it resolves
+/// (`stated`), and the ones the write states (`written`).
+pub(super) struct Pinned {
+    configuration: ConfigurationId,
     parameter: ParameterId,
-    expression: String,
-    value: Option<ParameterValue>,
+    stated: (String, Option<ParameterValue>),
+    written: (String, Option<ParameterValue>),
 }
 
-/// The rows [`stated_rows`] writes, and the cells it pins.
-pub(in crate::writer) struct Stated {
-    pub(in crate::writer) rows: Vec<Configuration>,
-    pub(in crate::writer) pinned: Vec<Pinned>,
+/// The target of the configuration tables that [`stated_rows`] derives.
+pub(super) struct Stated {
+    /// The rows, with the cells of each active row that the Design stream
+    /// states removed: the cell writer fills them with the parameter's own
+    /// expression and value.
+    rows: Vec<Configuration>,
+    pinned: Vec<Pinned>,
+    /// The parameters whose own expression or value the write states
+    /// otherwise than the stored Design stream.
+    rewritten: BTreeSet<ParameterId>,
+    /// One `<stored> active in place of <document>` per scope whose stored
+    /// active row the rows keep ([`ActiveRows::Stored`]).
+    kept: Vec<String>,
 }
 
-/// The v10 rows that state the configurations of `target`: its rows where
-/// it holds them, else `decoded`, the rows its configuration tables project,
-/// with what the configurations of its `design` state otherwise than
-/// `decoded` written in (cadir-v11.md §3.4, W2). The features and
-/// parameters of `targets` are the history the rows set. Adds to `losses`
-/// what no row states, and each value of a held row that the
-/// configurations state otherwise.
+/// The target of the configuration tables of `target`: the v10 rows that
+/// state its configurations (its rows where it holds them, else `decoded`,
+/// the rows its configuration tables project, with what the configurations
+/// of its `design` state otherwise than `decoded` written in: cadir-v11.md
+/// §3.4, W2), with the active rows `which` selects. The features and
+/// parameters of `targets` are the history the rows set, and the parameters'
+/// own expressions and values are the Design stream the write states.
+/// Adds to `losses` what no row states, and each value of a held row that
+/// the configurations state otherwise.
 ///
-/// The Design stream stores the state of the active row (f3d.md §1.2), so a
-/// cell of the row of a scope's active configuration states the parameter's
-/// expression and value in `targets` where the configuration resolves the
-/// cell otherwise, or where the parameter is in `rebased`, the parameters
-/// whose own expression or value the write takes from that configuration.
-/// A cell of an unedited active row is kept as stored.
-pub(in crate::writer) fn stated_rows(
+/// The Design stream stores the state of the active row (f3d.md §1.2). A
+/// cell of an active row resolves the Design stream value where its
+/// parameter is in `rebased`, the parameters whose own expression and value
+/// the write takes from the active configuration, or where neither the
+/// design nor an edit of a held row states it; the write states the Design
+/// stream value there, except that the stored active row keeps an unedited
+/// cell of a parameter the write does not rewrite. Each other cell of an
+/// active row that differs from the Design stream value is pinned to it. A
+/// row made active drops the feature cells that neither the design nor an
+/// edit states: its configuration resolves the feature's own state.
+pub(super) fn stated_rows(
     target: &CadIr,
     decoded: &[Configuration],
     targets: &ConfigurationTargets<'_>,
     rebased: &BTreeSet<ParameterId>,
+    which: ActiveRows,
     losses: &mut Vec<LossNote>,
 ) -> Stated {
     let held = target.model.omitted_arenas_held();
@@ -364,125 +354,169 @@ pub(in crate::writer) fn stated_rows(
     } else {
         decoded
     };
-    let mut restated = crate::design_v11::configurations::restate(
+    let RestatedRows {
+        rows: mut restated,
+        active,
+        stated,
+        kept,
+    } = restate(
         rows,
         decoded,
-        &target.design,
-        &target.model.product_definitions,
+        target,
         targets.neutral_features,
         targets.neutral_parameters,
-        &target.tolerances,
-    );
-    let written = std::mem::take(&mut restated.active_cells);
-    let mut restated = restated.into_rows(losses);
-    let pinned = pin(target, &mut restated, targets, rebased, &written);
-    if held {
-        let bases = bases(targets.neutral_features, targets.neutral_parameters);
-        let by_id = |rows: &[Configuration]| {
-            rows.iter()
-                .map(|row| (row.id.clone(), row.clone()))
-                .collect::<BTreeMap<_, _>>()
-        };
-        let (decoded, restated) = (by_id(decoded), by_id(&restated));
-        let mut overridden = Vec::new();
-        for row in rows {
-            let (Some(stored), Some(written)) = (decoded.get(&row.id), restated.get(&row.id))
-            else {
-                continue;
-            };
-            let edited = differences(stored, row, &bases)
-                .into_iter()
-                .map(|difference| difference.field)
-                .collect::<BTreeSet<_>>();
-            overridden.extend(
-                differences(row, written, &bases)
-                    .into_iter()
-                    .filter(|difference| edited.contains(&difference.field))
-                    .map(|difference| format!("{}: {difference}", row.id)),
-            );
-            if row.name != stored.name && written.name != row.name {
-                overridden.push(format!("{}: name", row.id));
-            }
-            if row.active != stored.active && written.active != row.active {
-                overridden.push(format!("{}: active", row.id));
-            }
-        }
-        losses.extend(edit_dropped(
-            EntityKind::Configuration,
-            "F3D",
-            "drops these edits of the v10 configuration rows, which the design configurations state otherwise: the neutral record wins (cadir-v11.md §3.4, W2)",
-            overridden,
-        ));
-    }
-    Stated {
-        rows: restated,
-        pinned,
-    }
-}
-
-/// Set each cell of `rows` that [`stated_rows`] pins to the Design stream's
-/// expression and value, and return the cells it held. `written` holds the
-/// cells the configurations' resolution wrote into active rows.
-fn pin(
-    target: &CadIr,
-    rows: &mut [Configuration],
-    targets: &ConfigurationTargets<'_>,
-    rebased: &BTreeSet<ParameterId>,
-    written: &BTreeSet<(ConfigurationId, ParameterId)>,
-) -> Vec<Pinned> {
-    let active = target
-        .design
-        .scopes
+        which,
+    )
+    .into_rows(losses);
+    let rewritten = match which {
+        ActiveRows::Design => rewritten(targets, &target.tolerances),
+        ActiveRows::Stored => BTreeSet::new(),
+    };
+    let stored = decoded
         .iter()
-        .filter_map(|scope| scope.active_configuration.as_ref())
-        .collect::<BTreeSet<_>>();
+        .map(|row| (&row.id, row))
+        .collect::<BTreeMap<_, _>>();
     let own = targets
         .neutral_parameters
         .iter()
         .map(|parameter| (&parameter.id, parameter))
         .collect::<BTreeMap<_, _>>();
     let mut pinned = Vec::new();
-    for row in rows.iter_mut().filter(|row| active.contains(&row.id)) {
+    for row in restated.iter_mut().filter(|row| active.contains(&row.id)) {
+        let source = stored.get(&row.id).copied();
+        let stays = source.is_some_and(|source| source.active);
         let cells = row.parameter_overrides.keys().cloned().collect::<Vec<_>>();
         for parameter in cells {
-            if !rebased.contains(&parameter)
-                && !written.contains(&(row.id.clone(), parameter.clone()))
-            {
-                continue;
-            }
             let Some(own) = own.get(&parameter) else {
                 continue;
             };
-            let value = row.parameter_values.get(&parameter);
-            let agrees = row.parameter_overrides[&parameter] == own.expression
-                && match (value, &own.value) {
-                    (Some(cell), Some(own)) => {
-                        crate::design_v11::configurations::agree(cell, own, &target.tolerances)
-                    }
-                    (cell, own) => cell == own.as_ref(),
-                };
-            if agrees {
-                continue;
-            }
-            pinned.push(Pinned {
-                configuration: row.id.to_string(),
-                parameter: parameter.clone(),
-                expression: row.parameter_overrides[&parameter].clone(),
-                value: value.cloned(),
+            let design = stated
+                .parameters
+                .contains(&(row.id.clone(), parameter.clone()));
+            let edited = !source.is_some_and(|source| {
+                source.parameter_overrides.get(&parameter)
+                    == row.parameter_overrides.get(&parameter)
+                    && source.parameter_values.get(&parameter)
+                        == row.parameter_values.get(&parameter)
             });
-            row.parameter_overrides
-                .insert(parameter.clone(), own.expression.clone());
-            match &own.value {
-                Some(value) => {
-                    row.parameter_values.insert(parameter, value.clone());
-                }
-                None => {
+            if rebased.contains(&parameter) || !(design || edited) {
+                if !(stays && !edited && !rewritten.contains(&parameter)) {
+                    row.parameter_overrides.remove(&parameter);
                     row.parameter_values.remove(&parameter);
                 }
+                continue;
+            }
+            let expression = &row.parameter_overrides[&parameter];
+            let value = row.parameter_values.get(&parameter);
+            let agrees = *expression == own.expression
+                && match (value, &own.value) {
+                    (Some(cell), Some(own)) => agree(cell, own, &target.tolerances),
+                    (cell, own) => cell == own.as_ref(),
+                };
+            if !agrees {
+                pinned.push(Pinned {
+                    configuration: row.id.clone(),
+                    parameter,
+                    stated: (expression.clone(), value.cloned()),
+                    written: (own.expression.clone(), own.value.clone()),
+                });
             }
         }
+        if !stays {
+            row.feature_states.retain(|feature, state| {
+                stated.features.contains(&(row.id.clone(), feature.clone()))
+                    || !source
+                        .is_some_and(|source| source.feature_states.get(feature) == Some(state))
+            });
+        }
     }
-    pinned
+    if held {
+        losses.extend(edit_dropped(
+            EntityKind::Configuration,
+            "F3D",
+            "drops these edits of the v10 configuration rows, which the design configurations state otherwise: the neutral record wins (cadir-v11.md §3.4, W2)",
+            overridden(rows, decoded, &restated, targets),
+        ));
+    }
+    for pin in &pinned {
+        if let Some(row) = restated.iter_mut().find(|row| row.id == pin.configuration) {
+            row.parameter_overrides.remove(&pin.parameter);
+            row.parameter_values.remove(&pin.parameter);
+        }
+    }
+    Stated {
+        rows: restated,
+        pinned,
+        rewritten,
+        kept,
+    }
+}
+
+/// Each edit of a held v10 row of `rows`, against `decoded`, the rows the
+/// stored tables project, that `restated` states otherwise.
+fn overridden(
+    rows: &[Configuration],
+    decoded: &[Configuration],
+    restated: &[Configuration],
+    targets: &ConfigurationTargets<'_>,
+) -> Vec<String> {
+    let bases = bases(targets.neutral_features, targets.neutral_parameters);
+    let by_id = |rows: &[Configuration]| {
+        rows.iter()
+            .map(|row| (row.id.clone(), row.clone()))
+            .collect::<BTreeMap<_, _>>()
+    };
+    let (decoded, restated) = (by_id(decoded), by_id(restated));
+    let mut out = Vec::new();
+    for row in rows {
+        let (Some(stored), Some(written)) = (decoded.get(&row.id), restated.get(&row.id)) else {
+            continue;
+        };
+        let edited = differences(stored, row, &bases)
+            .into_iter()
+            .map(|difference| difference.field)
+            .collect::<BTreeSet<_>>();
+        out.extend(
+            differences(row, written, &bases)
+                .into_iter()
+                .filter(|difference| edited.contains(&difference.field))
+                .map(|difference| format!("{}: {difference}", row.id)),
+        );
+        if row.name != stored.name && written.name != row.name {
+            out.push(format!("{}: name", row.id));
+        }
+        if row.active != stored.active && written.active != row.active {
+            out.push(format!("{}: active", row.id));
+        }
+    }
+    out
+}
+
+/// The parameters of `targets` whose own expression or value differs from
+/// the Design stream record of the parameter, or that have none.
+fn rewritten(targets: &ConfigurationTargets<'_>, tolerances: &Tolerances) -> BTreeSet<ParameterId> {
+    let records = targets
+        .parameters
+        .iter()
+        .map(|record| (crate::ids::neutral_parameter_id(record), record))
+        .collect::<BTreeMap<_, _>>();
+    targets
+        .neutral_parameters
+        .iter()
+        .filter(|own| {
+            records.get(&own.id).is_none_or(|record| {
+                record.expression() != own.expression
+                    || match (
+                        targets.parameter_value(&own.id, record.evaluated_value()),
+                        &own.value,
+                    ) {
+                        (Some(stored), Some(own)) => !agree(&stored, own, tolerances),
+                        (stored, own) => stored.as_ref() != own.as_ref(),
+                    }
+            })
+        })
+        .map(|own| own.id.clone())
+        .collect()
 }
 
 /// The configuration documents a patch of the retained archive carries, and
@@ -496,161 +530,102 @@ pub(in crate::writer) struct Patched {
 }
 
 /// The configuration documents of `target`, whose native records are
-/// `native`, rewritten to state its configurations ([`stated_rows`]).
-/// `stored` holds the documents of the archive. Its `DesignConfigurationRoot`
-/// record is rewritten in place, so a moved active row is written where its
-/// row id has the UTF-16 length of the stored one in the same table;
-/// otherwise the stored record is kept and charged.
+/// `native`, rewritten to state its configurations ([`stated_rows`]). The
+/// patch writes no Design stream parameter, so the row the stored
+/// `DesignConfigurationRoot` record names stays active, and each scope whose
+/// active configuration differs is charged.
 pub(in crate::writer) fn patched(
     target: &CadIr,
     native: &F3dNative,
-    stored: &[DesignConfiguration],
 ) -> Result<Patched, CodecError> {
     let targets = configuration_targets(target, native);
     let documents = &native.design_configurations;
     let decoded = decoded_configurations(documents, &targets)?;
     let mut losses = Vec::new();
-    let Stated {
-        rows: configurations,
-        pinned,
-    } = stated_rows(
+    let stated = stated_rows(
         target,
         &decoded.configurations,
         &targets,
         &BTreeSet::new(),
+        ActiveRows::Stored,
         &mut losses,
     );
-    if pinned.is_empty() && projects(&configurations, documents, &targets)? {
+    losses.extend(value_unwritable(
+        "F3D",
+        "keeps the archive's active configuration state in place of the requested state: the DesignConfigurationRoot names the row whose state the Design stream stores (f3d.md §1.2), and the patch preserves its parameter values",
+        stated.kept.iter().cloned(),
+    ));
+    if stated.pinned.is_empty() && projects(&stated.rows, documents, &targets)? {
         return Ok(Patched {
             documents: None,
             losses,
         });
     }
-    let (written, regenerated) = regenerate(documents, &decoded, &configurations, &targets)?;
+    let (mut written, regenerated) = regenerate(documents, &decoded, &stated.rows, &targets)?;
     losses.extend(regenerated);
-    let plan = super::configuration_root::plan(
-        target,
-        documents,
-        decoded.table,
-        &written,
-        &configurations,
-    );
-    let mut patched = written.documents.to_vec();
-    let active = written.moved(&mut patched, stored, &plan, &mut losses)?;
-    if let Some((index, payload)) = written.test_rows(
-        active.as_deref(),
-        stored_active(&decoded),
-        &targets,
-        &mut losses,
-    ) {
-        patched[index] = patched[index].with_payload(payload)?;
-    }
-    losses.extend(written.read_back(active.as_deref(), &targets, &pinned)?);
-    losses.extend(plan.into_losses());
+    let active = decoded
+        .configurations
+        .iter()
+        .find(|configuration| configuration.active)
+        .map(|configuration| configuration.id.as_str());
+    written.finish(active, &targets, &stated, &mut losses)?;
     Ok(Patched {
-        documents: Some(patched),
+        documents: Some(written.documents.into_owned()),
         losses,
     })
 }
 
-/// The configuration of the row that the stored root record names active.
-pub(super) fn stored_active(decoded: &Projection) -> Option<&str> {
-    decoded
-        .configurations
-        .iter()
-        .find(|configuration| configuration.active)
-        .map(|configuration| configuration.id.as_str())
+/// The configuration documents of a generated Design stream: `documents`,
+/// whose rows are `decoded`, written to state `stated`, with the root record
+/// `target` names, and the `testRowData` entries of its active row. Adds to
+/// `losses` what the documents read back as otherwise.
+pub(super) fn generated<'a>(
+    target: &CadIr,
+    documents: &'a [DesignConfiguration],
+    decoded: &Projection,
+    stated: &'a Stated,
+    targets: &ConfigurationTargets<'_>,
+    losses: &mut Vec<LossNote>,
+) -> Result<(Written<'a>, Plan), CodecError> {
+    let (mut written, regenerated) = regenerate(documents, decoded, &stated.rows, targets)?;
+    losses.extend(regenerated);
+    let plan = plan(target, documents, decoded.table, &written, &stated.rows);
+    written.finish(plan.active(), targets, stated, losses)?;
+    Ok((written, plan))
 }
 
 impl Written<'_> {
-    /// Write into `documents`, the written documents, the active rows of
-    /// `stored`, the documents of the archive; then the active row that
-    /// `plan` names, where the table of the archive's
-    /// `DesignConfigurationRoot` record holds it and its id has the UTF-16
-    /// length of the stored one. The patch rewrites the record in place;
-    /// another row is charged. Return the configuration whose row the record
-    /// then names.
-    fn moved(
-        &self,
-        documents: &mut [DesignConfiguration],
-        stored: &[DesignConfiguration],
-        plan: &super::configuration_root::Plan,
+    /// Write the `testRowData` entries of the row of the configuration
+    /// `active` ([`Self::test_rows`]), and add to `losses` what the
+    /// documents read back as otherwise than `stated` ([`Self::read_back`]).
+    fn finish(
+        &mut self,
+        active: Option<&str>,
+        targets: &ConfigurationTargets<'_>,
+        stated: &Stated,
         losses: &mut Vec<LossNote>,
-    ) -> Result<Option<String>, CodecError> {
-        for document in documents.iter_mut() {
-            let row = stored
-                .iter()
-                .find(|stored| stored.entry_name() == document.entry_name())
-                .and_then(DesignConfiguration::active_row);
-            match row {
-                Some(row) => document.set_active_row(row.clone())?,
-                None => document.clear_active_row(),
-            }
+    ) -> Result<(), CodecError> {
+        if let Some((index, payload)) = self.test_rows(active, targets, &stated.rewritten, losses) {
+            let document = self.documents[index].with_payload(payload)?;
+            self.documents.to_mut()[index] = document;
         }
-        let stored = stored.iter().find_map(|stored| {
-            let index = documents
-                .iter()
-                .position(|document| document.entry_name() == stored.entry_name())?;
-            Some((index, stored.active_row()?.clone()))
-        });
-        let named = |index: usize, row: &str| {
-            let read = neutral_configuration_id(documents[index].entry_name(), row).to_string();
-            self.expected
-                .get(&read)
-                .map_or(read, |configuration| configuration.id.to_string())
-        };
-        Ok(match (plan.row(), stored) {
-            (Some((table, row)), Some((_, stored)))
-                if (table, row) == (stored.table_id.as_str(), stored.row_id.as_str()) =>
-            {
-                plan.active().map(str::to_owned)
-            }
-            (Some((table, row)), Some((index, stored)))
-                if table == stored.table_id
-                    && row.encode_utf16().count() == stored.row_id.encode_utf16().count() =>
-            {
-                documents[index].set_active_row(DesignConfigurationActiveRow {
-                    row_id: row.to_owned(),
-                    ..stored
-                })?;
-                plan.active().map(str::to_owned)
-            }
-            (planned, Some((index, stored))) => {
-                losses.extend(value_unwritable(
-                    "F3D",
-                    "keeps the stored DesignConfigurationRoot record, which names the row of this configuration active: the patch rewrites the record in place, and the row of the active configuration is in another table or its id has another UTF-16 length",
-                    [format!(
-                        "{} in place of {}",
-                        named(index, &stored.row_id),
-                        planned.map_or("no row", |(_, row)| row)
-                    )],
-                ));
-                Some(named(index, &stored.row_id))
-            }
-            (Some(_), None) => {
-                losses.extend(value_unwritable(
-                    "F3D",
-                    "writes no DesignConfigurationRoot record for this active configuration: the patch rewrites a stored record in place, and the archive holds none",
-                    plan.active(),
-                ));
-                None
-            }
-            (None, None) => None,
-        })
+        losses.extend(self.read_back(active, targets, &stated.pinned)?);
+        Ok(())
     }
 
     /// The payload of the table document of the rows with the `testRowData`
     /// entries that state the values of the row of the configuration
-    /// `active` (f3d.md §1.2): an entry of each added column, and, where
-    /// `active` is not `stored`, the configuration whose row the stored
-    /// entries state, the entry of each other column. Return the document's
+    /// `active` (f3d.md §1.2): an entry of each added column, and the stored
+    /// entry of each other column where the active row moves, where the
+    /// active row states the column otherwise than the stored active row, or
+    /// where the column's parameter is `rewritten`. Return the document's
     /// position and payload where they change, and charge to `losses` the
     /// entries the write adds, rewrites or keeps.
-    pub(super) fn test_rows(
+    fn test_rows(
         &self,
         active: Option<&str>,
-        stored: Option<&str>,
         targets: &ConfigurationTargets<'_>,
+        rewritten: &BTreeSet<ParameterId>,
         losses: &mut Vec<LossNote>,
     ) -> Option<(usize, Map<String, Value>)> {
         let (index, table) = host(&self.documents, self.projection.table)?;
@@ -661,49 +636,47 @@ impl Written<'_> {
                 .copied()
                 .find(|configuration| configuration.id.as_str() == active)
         });
+        let stored = self.stored_active.as_ref();
+        let moved = active != stored.map(|stored| stored.id.as_str());
         let entry_name = self.documents[index].entry_name();
-        let mut payload = self.documents[index].payload().clone();
-        let (mut added, mut rewritten, mut kept) = (false, false, Vec::new());
-        for column in &table.columns {
-            let entry = test_row(column, configuration, targets, &bases);
-            if self.added.contains(&column.id) {
-                if let Some(entry) = entry {
-                    added |= push_test_row(&mut payload, &entry);
-                }
-            } else if active != stored {
-                let probe = Map::from_iter([(
-                    "ColumnUniqueID".to_owned(),
-                    Value::from(column.id.as_str()),
-                )]);
-                match entry {
-                    Some(entry) => rewritten |= set_test_row(&mut payload, &entry).0,
-                    None if set_test_row(&mut payload, &probe).1 => {
-                        kept.push(format!("{entry_name}: column {}", column.id));
-                    }
-                    None => {}
-                }
-            }
+        let expected = table
+            .columns
+            .iter()
+            .filter_map(|column| {
+                let entry = test_row(column, configuration, targets, &bases);
+                let restated = moved
+                    || self.added.contains(&column.id)
+                    || entry != test_row(column, stored, targets, &bases)
+                    || column_parameter(&column.target, targets)
+                        .is_some_and(|parameter| rewritten.contains(&parameter));
+                restated.then_some((column.id.as_str(), entry))
+            })
+            .collect::<BTreeMap<_, _>>();
+        if expected.is_empty() {
+            return None;
         }
-        if added {
+        let mut payload = self.documents[index].payload().clone();
+        let result = write_test_rows(&mut payload, &expected);
+        if result.added {
             losses.extend(record_residual_unavailable(
                 "F3D",
-                "writes a testRowData entry of each column the write adds to this configuration table document, with the value of the active row, in the members f3d.md §1.2 names: f3d-open-items.md DR-1069 leaves the member order and the unit of the value of such an entry open",
+                "adds testRowData entries to this configuration table document with the values of the active row in the members f3d.md §1.2 names: f3d-open-items.md DR-1069 leaves the member order and the unit of the value of a new entry open",
                 [entry_name],
             ));
         }
-        if rewritten {
+        if result.rewritten {
             losses.extend(record_residual_unavailable(
                 "F3D",
-                "writes the testRowData entries of this configuration table document with the values of the row the write names active, each with its members in key order: f3d-open-items.md DR-1069 leaves the member order and the unit of the value of a written entry open",
+                "writes testRowData entries of this configuration table document with the values of the active row, each with its members in key order: f3d-open-items.md DR-1069 leaves the member order and the unit of the value of a written entry open",
                 [entry_name],
             ));
         }
         losses.extend(value_unwritable(
             "F3D",
-            "keeps these testRowData entries, which state the value of the row the stored DesignConfigurationRoot record names: the active configuration states no value of the column",
-            kept,
+            "writes testRowData that reads back otherwise than the target value of these columns in the active row",
+            result.unwritten.into_iter().map(|column| format!("{entry_name}: column {column}")),
         ));
-        (added || rewritten).then_some((index, payload))
+        (result.added || result.rewritten).then_some((index, payload))
     }
 }
 

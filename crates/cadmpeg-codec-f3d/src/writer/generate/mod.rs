@@ -14,6 +14,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
 use crate::design_v11::configurations::rebase::{rebased, Rebased};
+use crate::design_v11::configurations::ActiveRows;
 use crate::manifest::{self, GENERATED_DESIGN_ASSET_FOLDER as DESIGN_FOLDER};
 use crate::writer::primitives::{configuration_targets, decoded_configurations, f3d_native};
 mod attributes;
@@ -428,49 +429,25 @@ fn attempt<W: Write + Seek>(
         }
         let decoded = decoded_configurations(&native.design_configurations, &targets)
             .map_err(Failure::design)?;
-        let configuration_table::Stated {
-            rows: neutral,
-            pinned,
-        } = configuration_table::stated_rows(
+        let stated = configuration_table::stated_rows(
             target,
             &decoded.configurations,
             &targets,
             &rebased
                 .map(|rebased| rebased.parameters.keys().cloned().collect())
                 .unwrap_or_default(),
+            ActiveRows::Design,
             &mut table_losses,
         );
-        let (mut written, losses) = configuration_table::regenerate(
-            &native.design_configurations,
-            &decoded,
-            &neutral,
-            &targets,
-        )
-        .map_err(Failure::design)?;
-        let plan = configuration_root::plan(
+        let (written, plan) = configuration_table::generated(
             target,
             &native.design_configurations,
-            decoded.table,
-            &written,
-            &neutral,
-        );
-        table_losses.extend(losses);
-        if let Some((index, payload)) = written.test_rows(
-            plan.active(),
-            configuration_table::stored_active(&decoded),
+            &decoded,
+            &stated,
             &targets,
             &mut table_losses,
-        ) {
-            let document = written.documents[index]
-                .with_payload(payload)
-                .map_err(Failure::design)?;
-            written.documents.to_mut()[index] = document;
-        }
-        table_losses.extend(
-            written
-                .read_back(plan.active(), &targets, &pinned)
-                .map_err(Failure::design)?,
-        );
+        )
+        .map_err(Failure::design)?;
         let names = configuration_entry_names(&written.documents);
         for (index, (configuration, (name, fault))) in
             written.documents.iter().zip(names).enumerate()

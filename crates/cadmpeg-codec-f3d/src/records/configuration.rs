@@ -189,11 +189,6 @@ impl DesignConfiguration {
         Ok(())
     }
 
-    /// Detach the active row of the document.
-    pub(crate) fn clear_active_row(&mut self) {
-        self.active_row = None;
-    }
-
     pub(crate) fn id(&self) -> String {
         crate::ids::configuration_entry_id(&self.entry_name, &self.identity_scope)
     }

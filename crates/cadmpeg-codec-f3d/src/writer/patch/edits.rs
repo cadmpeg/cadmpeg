@@ -1655,85 +1655,9 @@ fn validate_fixed_design_string(id: &str, before: &str, after: &str) -> Result<(
     Ok(())
 }
 
-/// The configuration edits of a patch: the payload of each changed document
-/// by entry name, the rewrite of the `DesignConfigurationRoot` record where
-/// the active row moves in place, and each active row the stored record
-/// keeps in place of the row a document names.
-pub(super) struct ConfigurationEdits {
-    pub(super) documents: BTreeMap<String, Vec<u8>>,
-    pub(super) root: Option<RootEdit>,
-    pub(super) kept: Vec<KeptRoot>,
-}
-
-/// An active row of a document that the patch does not write.
-#[derive(Clone)]
-pub(super) struct KeptRoot {
-    /// Whether the archive holds a record of the document.
-    pub(super) rooted: bool,
-    /// The document, the row the stored record names, and the row the
-    /// document names.
-    pub(super) entry: String,
-}
-
-/// The bytes of a `DesignConfigurationRoot` record after its class tag and
-/// record index, before and after the edit: the constant fields, the key,
-/// the table id, the row id, and the closing zero (f3d.md §1.2). The two have
-/// one length.
-pub(super) struct RootEdit {
-    stored: Vec<u8>,
-    written: Vec<u8>,
-    /// The row the edit names active, and its table document.
-    pub(super) row: String,
-}
-
-impl RootEdit {
-    /// Rewrite the stored record in `bytes` where `bytes` holds it once.
-    /// Returns how many times `bytes` holds it.
-    pub(super) fn apply(&self, bytes: &mut [u8]) -> usize {
-        let at = bytes
-            .windows(self.stored.len())
-            .enumerate()
-            .filter(|(_, window)| *window == self.stored.as_slice())
-            .map(|(at, _)| at)
-            .collect::<Vec<_>>();
-        if let [at] = at.as_slice() {
-            bytes[*at..*at + self.written.len()].copy_from_slice(&self.written);
-        }
-        at.len()
-    }
-}
-
-/// The bytes of a `DesignConfigurationRoot` record after its class tag and
-/// record index that names `row`.
-fn root_record(
-    row: &crate::records::configuration::DesignConfigurationActiveRow,
-) -> Result<Vec<u8>, CodecError> {
-    use crate::design::decode::configuration_root::ROOT_KEY;
-    use crate::layout::configuration_root_prefix as root;
-
-    let mut out = Vec::new();
-    out.extend_from_slice(&root::ZERO_U32_VALUE.to_le_bytes());
-    out.extend_from_slice(&root::KEY_LENGTH_VALUE.to_le_bytes());
-    out.extend_from_slice(ROOT_KEY.as_bytes());
-    out.extend_from_slice(&[0; root::CONSTANT_ONE - root::ZERO_RUN_11]);
-    out.extend_from_slice(&root::CONSTANT_ONE_VALUE.to_le_bytes());
-    for text in [&row.table_id, &row.row_id] {
-        let units = text.encode_utf16().collect::<Vec<_>>();
-        let length = u32::try_from(units.len()).map_err(|_| {
-            CodecError::NotImplemented("DesignConfigurationRoot id exceeds u32::MAX units".into())
-        })?;
-        out.extend_from_slice(&length.to_le_bytes());
-        for unit in units {
-            out.extend_from_slice(&unit.to_le_bytes());
-        }
-    }
-    out.extend_from_slice(&0_u32.to_le_bytes());
-    Ok(out)
-}
-
 pub(super) fn validate_configuration_edits(
     native: PatchNatives<'_>,
-) -> Result<ConfigurationEdits, CodecError> {
+) -> Result<BTreeMap<String, Vec<u8>>, CodecError> {
     let baseline = native
         .baseline
         .map_or(&[][..], |native| native.design_configurations.as_slice());
@@ -1753,16 +1677,7 @@ pub(super) fn validate_configuration_edits(
             "retained F3D configuration editing requires the unchanged entry-name set".into(),
         ));
     }
-    let mut edits = ConfigurationEdits {
-        documents: BTreeMap::new(),
-        root: None,
-        kept: Vec::new(),
-    };
-    let row = |row: Option<&crate::records::configuration::DesignConfigurationActiveRow>| {
-        row.map_or("no row".to_owned(), |row| {
-            format!("row {} of table {}", row.row_id, row.table_id)
-        })
-    };
+    let mut edits = BTreeMap::new();
     for (name, before) in baseline {
         let after = target[name];
         if before.id() != after.id() || before.kind() != after.kind() {
@@ -1770,37 +1685,13 @@ pub(super) fn validate_configuration_edits(
                 "retained F3D configuration edit changes entry identity: {name}"
             )));
         }
-        match (before.active_row(), after.active_row()) {
-            (stored, written) if stored == written => {}
-            (Some(stored), Some(written))
-                if stored.record_index == written.record_index
-                    && stored.table_id == written.table_id
-                    && stored.row_id.encode_utf16().count()
-                        == written.row_id.encode_utf16().count()
-                    && edits.root.is_none() =>
-            {
-                edits.root = Some(RootEdit {
-                    stored: root_record(stored)?,
-                    written: root_record(written)?,
-                    row: format!(
-                        "row {} of table {} in {name}",
-                        written.row_id, written.table_id
-                    ),
-                });
-            }
-            (stored, written) => edits.kept.push(match stored {
-                Some(_) => KeptRoot {
-                    rooted: true,
-                    entry: format!("{name}: {} in place of {}", row(stored), row(written)),
-                },
-                None => KeptRoot {
-                    rooted: false,
-                    entry: format!("{name}: {}", row(written)),
-                },
-            }),
+        if before.active_row() != after.active_row() {
+            return Err(CodecError::NotImplemented(format!(
+                "retained F3D configuration edit changes the Design root record: {name}"
+            )));
         }
-        if before.payload() != after.payload() {
-            edits.documents.insert(
+        if before != after {
+            edits.insert(
                 name.to_owned(),
                 crate::records::configuration::encode_configuration_payload(
                     after.entry_name(),

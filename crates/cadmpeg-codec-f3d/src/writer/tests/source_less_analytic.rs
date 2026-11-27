@@ -201,19 +201,10 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
 
     let mut root_edit = decoded.ir().clone();
     set_active_row(&mut root_edit, "medium");
-    let kept = crate::test_support::assert_written_with_loss(
+    crate::test_support::assert_patch_declined(
         &root_edit,
         Some(decoded.source_fidelity()),
-        "export/value.unwritable",
-        "the patch rewrites a stored record in place, and the archive holds none",
-    );
-    assert!(
-        matches!(
-            kept.write_path(),
-            cadmpeg_ir::report::export::WritePath::Patched { .. }
-        ),
-        "{:?}",
-        kept.write_path()
+        "changes the Design root record",
     );
 
     let expected_projected = decoded.ir().model.configurations.clone();

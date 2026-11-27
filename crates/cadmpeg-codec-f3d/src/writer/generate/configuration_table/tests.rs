@@ -1356,11 +1356,10 @@ fn a_moved_active_row_writes_the_test_rows_of_its_row() {
     configuration(&mut configurations, "tall").active = true;
     let (written, _) = regenerate(&documents, &decoded, &configurations, &targets).unwrap();
     let tall = id("tall");
-    let stored = super::stored_active(&decoded);
-    assert_eq!(stored, Some(id("c1").as_str()));
+    let stored = id("c1");
     let mut losses = Vec::new();
     let (index, payload) = written
-        .test_rows(Some(tall.as_str()), stored, &targets, &mut losses)
+        .test_rows(Some(tall.as_str()), &targets, &BTreeSet::new(), &mut losses)
         .expect("rewritten testRowData");
     assert_eq!(index, 0);
     let entries = payload["testRowData"]
@@ -1368,23 +1367,34 @@ fn a_moved_active_row_writes_the_test_rows_of_its_row() {
         .unwrap()
         .iter()
         .map(|entry| serde_json::from_str::<serde_json::Value>(entry.as_str().unwrap()).unwrap())
-        .collect::<Vec<_>>();
+        .map(|entry| (entry["ColumnUniqueID"].as_str().unwrap().to_owned(), entry))
+        .collect::<std::collections::BTreeMap<_, _>>();
     assert_eq!(
-        entries,
-        vec![json!({
+        entries["P"],
+        json!({
             "ColumnUniqueID": "P",
             "DataType": "StringOptionValue",
             "Option": 1,
             "Value": "Tall"
-        })]
+        })
     );
+    assert_eq!(entries["H"]["Expression"], "35 mm");
+    assert_eq!(entries["D"]["Expression"], "10.00 mm");
+    assert_eq!(entries["F"]["Value"], false);
     assert!(
         losses
             .iter()
-            .any(|loss| loss.message.contains("writes the testRowData entries")),
+            .any(|loss| loss.message.contains("writes testRowData entries")),
         "{losses:#?}"
     );
     assert!(written
-        .test_rows(stored, stored, &targets, &mut Vec::new())
+        .test_rows(
+            Some(stored.as_str()),
+            &targets,
+            &BTreeSet::new(),
+            &mut Vec::new()
+        )
         .is_none());
 }
+
+mod target;

@@ -3,7 +3,7 @@
 
 use cadmpeg_ir::scalar::FiniteReal;
 use serde_json::{Map, Value};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 const ASSET_PREFIX: &str = "autodesk.configuration:assets.";
 const COMPONENT_PREFIX: &str = "autodesk.configuration:components.";
@@ -506,45 +506,84 @@ pub(crate) fn property_component(payload: &Map<String, Value>, position: usize) 
     })
 }
 
-/// Append `entry`, a test-row cell, as a string to the `testRowData` array of
-/// `payload`. Returns whether the document holds the array.
-pub(crate) fn push_test_row(payload: &mut Map<String, Value>, entry: &Map<String, Value>) -> bool {
-    let Some(cells) = payload.get_mut("testRowData").and_then(Value::as_array_mut) else {
-        return false;
-    };
-    cells.push(Value::from(Value::Object(entry.clone()).to_string()));
-    true
+#[derive(Default)]
+pub(crate) struct TestRowWrite<'a> {
+    pub(crate) added: bool,
+    pub(crate) rewritten: bool,
+    pub(crate) unwritten: BTreeSet<&'a str>,
 }
 
-/// Write the members of `entry`, a test-row cell, into each `testRowData`
-/// entry of `payload` whose `ColumnUniqueID` is the entry's. Returns
-/// whether an entry changed and whether one holds the column.
-pub(crate) fn set_test_row(
+/// Replace the known members of the targeted entries. Preserve opaque entries
+/// and extra members. Return which target columns read back differently.
+pub(crate) fn write_test_rows<'a>(
     payload: &mut Map<String, Value>,
-    entry: &Map<String, Value>,
-) -> (bool, bool) {
-    let Some(cells) = payload.get_mut("testRowData").and_then(Value::as_array_mut) else {
-        return (false, false);
-    };
-    let column = entry.get("ColumnUniqueID");
-    let (mut changed, mut held) = (false, false);
-    for cell in cells {
-        let Some(mut stored) = cell
-            .as_str()
-            .and_then(|text| serde_json::from_str::<Map<String, Value>>(text).ok())
-            .filter(|stored| stored.get("ColumnUniqueID") == column)
-        else {
-            continue;
-        };
-        held = true;
-        let before = stored.clone();
-        stored.extend(entry.clone());
-        if stored != before {
-            *cell = Value::from(Value::Object(stored).to_string());
-            changed = true;
+    target: &BTreeMap<&'a str, Option<Map<String, Value>>>,
+) -> TestRowWrite<'a> {
+    let mut result = TestRowWrite::default();
+    if let Some(cells) = payload.get_mut("testRowData").and_then(Value::as_array_mut) {
+        let mut present = BTreeSet::new();
+        for cell in cells.iter_mut() {
+            let Some(mut entry) = test_row_members(cell) else {
+                continue;
+            };
+            let Some((&column, expected)) =
+                string(&entry, "ColumnUniqueID").and_then(|column| target.get_key_value(column))
+            else {
+                continue;
+            };
+            present.insert(column);
+            if let Some(expected) = expected {
+                if !test_row_agrees(&entry, expected) {
+                    entry.extend(expected.clone());
+                    *cell = Value::from(Value::Object(entry).to_string());
+                    result.rewritten = true;
+                }
+            }
+        }
+        for (&column, expected) in target {
+            if let Some(expected) = expected.as_ref().filter(|_| !present.contains(column)) {
+                cells.push(Value::from(Value::Object(expected.clone()).to_string()));
+                result.added = true;
+            }
         }
     }
-    (changed, held)
+    let mut read = BTreeSet::new();
+    for entry in payload
+        .get("testRowData")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(test_row_members)
+    {
+        if let Some((&column, expected)) =
+            string(&entry, "ColumnUniqueID").and_then(|column| target.get_key_value(column))
+        {
+            read.insert(column);
+            if !expected
+                .as_ref()
+                .is_some_and(|expected| test_row_agrees(&entry, expected))
+            {
+                result.unwritten.insert(column);
+            }
+        }
+    }
+    result.unwritten.extend(
+        target
+            .iter()
+            .filter(|(column, expected)| expected.is_some() && !read.contains(*column))
+            .map(|(&column, _)| column),
+    );
+    result
+}
+
+fn test_row_members(cell: &Value) -> Option<Map<String, Value>> {
+    serde_json::from_str(cell.as_str()?).ok()
+}
+
+fn test_row_agrees(entry: &Map<String, Value>, expected: &Map<String, Value>) -> bool {
+    expected
+        .iter()
+        .all(|(key, value)| entry.get(key) == Some(value))
 }
 
 /// Add the column `id` with the title `title` and the configured `object`

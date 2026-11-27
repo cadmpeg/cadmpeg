@@ -38,19 +38,19 @@ use cadmpeg_ir::design::expr::{
 };
 use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
 use cadmpeg_ir::design::units::{Quantity, Unit, ValueKind};
-use cadmpeg_ir::document::Design;
 use cadmpeg_ir::features::parameters::{
     ConfigurationEvaluation, ConfigurationFeatureState, DesignConfiguration as LegacyConfiguration,
     DesignParameter as LegacyParameter, ParameterValue as LegacyValue,
 };
 use cadmpeg_ir::features::selections::DistinctMembers;
-use cadmpeg_ir::features::{ConfigurationId, Feature as LegacyFeature, ParameterId};
+use cadmpeg_ir::features::{ConfigurationId, Feature as LegacyFeature, FeatureId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::products::ProductDefinition;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::schema::EntityKind;
 use cadmpeg_ir::units::Tolerances;
+use cadmpeg_ir::CadIr;
 
 use super::parameters::{cache, expression};
 use super::timeline::document_prefix;
@@ -279,11 +279,38 @@ fn overrides(
 /// The v10 rows that state a design's configurations, with what they cannot
 /// state.
 pub(crate) struct Restated {
-    rows: Vec<LegacyConfiguration>,
+    rows: RestatedRows,
     charges: Charges,
-    /// The parameter cells written into the row of each scope's active
-    /// configuration from what the configuration resolves.
-    pub(crate) active_cells: BTreeSet<(ConfigurationId, ParameterId)>,
+}
+
+/// The rows of [`restate`].
+pub(crate) struct RestatedRows {
+    pub(crate) rows: Vec<LegacyConfiguration>,
+    /// The configurations whose rows are active.
+    pub(crate) active: BTreeSet<ConfigurationId>,
+    /// The cells of active rows that the design configurations state.
+    pub(crate) stated: StatedCells,
+    /// One `<kept> active in place of <document>` per scope whose stored
+    /// active row the rows keep in place of the active configuration of the
+    /// document ([`ActiveRows::Stored`]).
+    pub(crate) kept: Vec<String>,
+}
+
+/// The cells written into active rows from what their configurations
+/// resolve.
+#[derive(Default)]
+pub(crate) struct StatedCells {
+    pub(crate) parameters: BTreeSet<(ConfigurationId, ParameterId)>,
+    pub(crate) features: BTreeSet<(ConfigurationId, FeatureId)>,
+}
+
+/// Which rows [`restate`] makes active.
+#[derive(Clone, Copy)]
+pub(crate) enum ActiveRows {
+    /// The row of each scope's active configuration.
+    Design,
+    /// The row the stored tables name active.
+    Stored,
 }
 
 /// What restated rows cannot state.
@@ -303,7 +330,7 @@ impl Restated {
     /// The rows; charges to `losses` each field that no row states, each
     /// cell whose cached value is not its expression's value, and each value
     /// a configuration states that a cell does not cache.
-    pub(crate) fn into_rows(self, losses: &mut Vec<LossNote>) -> Vec<LegacyConfiguration> {
+    pub(crate) fn into_rows(self, losses: &mut Vec<LossNote>) -> RestatedRows {
         losses.extend(edit_dropped(
             EntityKind::DesignConfiguration,
             "F3D",
@@ -347,36 +374,36 @@ struct Scoped<'a> {
 }
 
 /// `rows`, v10 configurations of the configuration tables, with what the
-/// configurations of `design` state otherwise than [`project`] reads from
-/// `stored`, the rows the stored tables project, written in: the neutral
-/// record wins (cadir-v11.md §3.4, W2), and a value of `rows` that `design`
-/// leaves as the stored tables state it is kept. A scope of `design`
+/// configurations of the design of `target` state otherwise than [`project`]
+/// reads from `stored`, the rows the stored tables project, written in: the
+/// neutral record wins (cadir-v11.md §3.4, W2), and a value of `rows` that
+/// the design leaves as the stored tables state it is kept. A design scope
 /// restates the rows of its documents where they name an active row or
 /// there are none. A row of such a scope that the stored tables hold and no
 /// configuration states is removed. A configuration with no row becomes a
 /// new row after the others, in arena order, unless the stored tables hold
 /// its row and it states what that row projects. The rows are numbered
 /// again in their order. `history` holds the v10 features whose states the
-/// rows set, `own` the v10 parameters, and `tolerances` the tolerances
-/// within which a cache agrees with its expression's value.
+/// rows set, and `own` the v10 parameters; a cache agrees with its
+/// expression's value within the tolerances of `target`. `which` selects
+/// the active rows.
 pub(crate) fn restate(
     rows: &[LegacyConfiguration],
     stored: &[LegacyConfiguration],
-    design: &Design,
-    definitions: &[ProductDefinition],
+    target: &CadIr,
     history: &[LegacyFeature],
     own: &[LegacyParameter],
-    tolerances: &Tolerances,
+    which: ActiveRows,
 ) -> Restated {
+    let (design, definitions, tolerances) = (
+        &target.design,
+        target.model.product_definitions.as_slice(),
+        &target.tolerances,
+    );
     let scoped = design
         .scopes
         .iter()
         .map(|scope| &scope.definition)
-        .collect::<BTreeSet<_>>();
-    let active = design
-        .scopes
-        .iter()
-        .filter_map(|scope| scope.active_configuration.as_ref())
         .collect::<BTreeSet<_>>();
     let features = design
         .features
@@ -391,7 +418,11 @@ pub(crate) fn restate(
         .filter(|definition| scoped.contains(definition))
     };
     let mut named = BTreeMap::<ProductDefinitionId, bool>::new();
-    for row in rows {
+    for row in rows.iter().chain(
+        stored
+            .iter()
+            .filter(|_| matches!(which, ActiveRows::Stored)),
+    ) {
         if let Some(scope) = scope_of(row) {
             *named.entry(scope).or_default() |= row.active;
         }
@@ -399,18 +430,35 @@ pub(crate) fn restate(
     let restates = |scope: &ProductDefinitionId| {
         scoped.contains(scope) && named.get(scope).copied().unwrap_or(true)
     };
-    let moved = design
-        .scopes
-        .iter()
-        .filter(|scope| {
-            let active = stored
-                .iter()
-                .find(|row| row.active && scope_of(row).as_ref() == Some(&scope.definition))
-                .map(|row| &row.id);
-            scope.active_configuration.as_ref() != active
-        })
-        .map(|scope| &scope.definition)
-        .collect::<BTreeSet<_>>();
+    let (mut active, mut moved, mut kept) = (BTreeSet::new(), BTreeSet::new(), Vec::new());
+    let shown = |id: Option<&ConfigurationId>| {
+        id.map_or("no configuration".to_owned(), ToString::to_string)
+    };
+    for scope in &design.scopes {
+        let held = stored
+            .iter()
+            .find(|row| row.active && scope_of(row).as_ref() == Some(&scope.definition))
+            .map(|row| &row.id);
+        let stated = scope.active_configuration.as_ref();
+        match which {
+            ActiveRows::Design => {
+                active.extend(stated);
+                if stated != held {
+                    moved.insert(&scope.definition);
+                }
+            }
+            ActiveRows::Stored => {
+                active.extend(held);
+                if stated != held {
+                    kept.push(format!(
+                        "{} active in place of {}",
+                        shown(held),
+                        shown(stated)
+                    ));
+                }
+            }
+        }
+    }
     let stored = stored
         .iter()
         .map(|row| (&row.id, row))
@@ -434,19 +482,37 @@ pub(crate) fn restate(
         tolerances,
     };
     let mut out = Restated {
-        rows: Vec::new(),
+        rows: RestatedRows {
+            rows: Vec::new(),
+            active: active.iter().map(|id| (*id).clone()).collect(),
+            stated: StatedCells::default(),
+            kept,
+        },
         charges: Charges::default(),
-        active_cells: BTreeSet::new(),
     };
+    let present = rows.iter().map(|row| &row.id).collect::<BTreeSet<_>>();
+    let retained = stored.values().copied().filter(|row| {
+        matches!(which, ActiveRows::Stored)
+            && active.contains(&row.id)
+            && !present.contains(&row.id)
+    });
     let mut held = BTreeSet::new();
-    for row in rows {
+    for row in rows.iter().chain(retained) {
         let Some(scope) = scope_of(row).filter(|scope| restates(scope)) else {
-            out.rows.push(row.clone());
+            out.rows.rows.push(row.clone());
             continue;
         };
         let Some(record) = records.get(&row.id) else {
-            if !stored.contains_key(&row.id) {
-                out.rows.push(row.clone());
+            match stored.get(&row.id) {
+                Some(stored) if matches!(which, ActiveRows::Stored) && active.contains(&row.id) => {
+                    out.rows.rows.push((*stored).clone());
+                    out.charges.unstated.push(format!(
+                        "design.configurations[{}]: the retained DesignConfigurationRoot record still references this row",
+                        row.id
+                    ));
+                }
+                Some(_) => {}
+                None => out.rows.rows.push(row.clone()),
             }
             continue;
         };
@@ -458,7 +524,7 @@ pub(crate) fn restate(
                 record,
                 &input(&record.scope),
                 &mut out.charges,
-                &mut out.active_cells,
+                &mut out.rows.stated,
             );
         } else {
             out.charges.unstated.push(format!(
@@ -466,7 +532,7 @@ pub(crate) fn restate(
                 record.id
             ));
         }
-        out.rows.push(restated);
+        out.rows.rows.push(restated);
     }
     let mut added = Vec::new();
     for record in &design.configurations {
@@ -505,14 +571,15 @@ pub(crate) fn restate(
             record,
             &input(&record.scope),
             &mut out.charges,
-            &mut out.active_cells,
+            &mut out.rows.stated,
         );
         added.push(row);
     }
     out.rows
+        .rows
         .sort_by(|left, right| (left.ordinal, &left.id).cmp(&(right.ordinal, &right.id)));
-    out.rows.extend(added);
-    for (at, row) in (0_u32..).zip(&mut out.rows) {
+    out.rows.rows.extend(added);
+    for (at, row) in (0_u32..).zip(&mut out.rows.rows) {
         row.ordinal = at;
     }
     out.charges.unstated.sort();
@@ -610,14 +677,14 @@ fn resolved(chain: &[&DesignConfiguration]) -> Overrides {
 /// has no parent, so it states the values `record` inherits. Each parameter
 /// cell caches its expression's value in the configuration (§5.11,
 /// Resolution). Charges to `charges` each field no row states, and each
-/// cache the cell does not take from its expression. Adds to `active_cells`
-/// each parameter cell written into the row of an active configuration.
+/// cache the cell does not take from its expression. Adds to `stated` each
+/// cell written into the row of an active configuration.
 fn overlay(
     row: &mut LegacyConfiguration,
     record: &DesignConfiguration,
     input: &Scoped<'_>,
     charges: &mut Charges,
-    active_cells: &mut BTreeSet<(ConfigurationId, ParameterId)>,
+    stated_cells: &mut StatedCells,
 ) {
     let mut stored = input
         .stored
@@ -751,7 +818,9 @@ fn overlay(
         };
         row.parameter_overrides.insert(id.clone(), text);
         if active {
-            active_cells.insert((record.id.clone(), id.clone()));
+            stated_cells
+                .parameters
+                .insert((record.id.clone(), id.clone()));
         }
         match value {
             Some(value) => {
@@ -777,6 +846,11 @@ fn overlay(
             continue;
         }
         let field = path(&format!("overrides.features[{id}]"));
+        if active {
+            stated_cells
+                .features
+                .insert((record.id.clone(), id.clone()));
+        }
         if stated.definition.is_some() {
             charges.unstated.push(format!(
                 "{field}.definition: a feature cell states only whether the feature is computed"

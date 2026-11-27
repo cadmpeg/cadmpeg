@@ -37,11 +37,11 @@ use crate::F3dCodec;
 const SOURCE: &[u8] = include_bytes!("../../../../corpus/f3d/region_A.f3d");
 
 /// What [`fixture`] configures.
-struct Fixture {
+pub(crate) struct Fixture {
     /// The entry of the table document.
-    entry: String,
+    pub(crate) entry: String,
     /// The length parameter of column `W`.
-    width: ParameterId,
+    pub(crate) width: ParameterId,
     /// The feature of column `S`.
     feature: FeatureId,
 }
@@ -114,7 +114,7 @@ fn object(target: &ColumnTarget) -> Value {
 /// (`7 mm`, suppressed) and `c` (`12 mm`, computed), with a root record
 /// that names row `a` active and a `testRowData` entry of each column with
 /// the value of row `a`, decoded.
-fn fixture(width: bool) -> (DecodeResult, Fixture) {
+pub(crate) fn fixture(width: bool) -> (DecodeResult, Fixture) {
     let plain = decode(SOURCE);
     let ir = plain.ir();
     let entry = empty_table(ir);
@@ -294,7 +294,7 @@ fn written_with_losses(ir: &CadIr, sidecar: &SourceFidelity) -> (DecodeResult, V
 
 /// The `testRowData` entry of the column `column` of the table document at
 /// `entry` of `ir`.
-fn test_row(ir: &CadIr, entry: &str, column: &str) -> Value {
+pub(crate) fn test_row(ir: &CadIr, entry: &str, column: &str) -> Value {
     let documents = f3d_native(ir).design_configurations;
     let mut entries = documents[table(&documents, entry)].payload()["testRowData"]
         .as_array()
@@ -345,7 +345,12 @@ fn parameter_column(ir: &CadIr, entry: &str, parameter: &ParameterId) -> String 
 
 /// The expression and the database-unit value of the cell of row `row` in
 /// the column of `parameter` of the table document at `entry` of `ir`.
-fn parameter_cell(ir: &CadIr, entry: &str, row: &str, parameter: &ParameterId) -> (String, f64) {
+pub(crate) fn parameter_cell(
+    ir: &CadIr,
+    entry: &str,
+    row: &str,
+    parameter: &ParameterId,
+) -> (String, f64) {
     let column = parameter_column(ir, entry, parameter);
     let table = stored_table(ir, entry);
     let row = table
@@ -370,7 +375,7 @@ fn parameter_cell(ir: &CadIr, entry: &str, row: &str, parameter: &ParameterId) -
 }
 
 /// The expression and the value in millimetres of `parameter` of `ir`.
-fn own(ir: &CadIr, parameter: &ParameterId) -> (String, f64) {
+pub(crate) fn own(ir: &CadIr, parameter: &ParameterId) -> (String, f64) {
     let own = ir
         .model
         .parameters
@@ -392,7 +397,7 @@ fn part_number<'a>(ir: &'a CadIr, name: &str) -> Option<&'a str> {
 }
 
 /// The design configuration of `ir` named `name`.
-fn named<'a>(ir: &'a CadIr, name: &str) -> &'a DesignConfiguration {
+pub(crate) fn named<'a>(ir: &'a CadIr, name: &str) -> &'a DesignConfiguration {
     ir.design
         .configurations
         .iter()
@@ -401,7 +406,7 @@ fn named<'a>(ir: &'a CadIr, name: &str) -> &'a DesignConfiguration {
 }
 
 /// The design configuration of `ir` named `name`, to edit.
-fn named_mut<'a>(ir: &'a mut CadIr, name: &str) -> &'a mut DesignConfiguration {
+pub(crate) fn named_mut<'a>(ir: &'a mut CadIr, name: &str) -> &'a mut DesignConfiguration {
     ir.design
         .configurations
         .iter_mut()
@@ -419,7 +424,7 @@ fn row<'a>(ir: &'a CadIr, name: &str) -> &'a cadmpeg_ir::features::parameters::D
 }
 
 /// A parameter override of `millimetres`.
-fn length_override(millimetres: f64) -> ParameterOverride {
+pub(crate) fn length_override(millimetres: f64) -> ParameterOverride {
     let unit = Unit(vec![UnitFactor {
         symbol: UnitSymbol::Mm,
         power: NonZeroI8::new(1).unwrap(),
@@ -557,34 +562,6 @@ fn a_parameter_no_column_names_gets_a_column() {
 }
 
 #[test]
-fn an_active_row_moved_through_cadir_is_named_by_the_root_record() {
-    let (decoded, _) = fixture(true);
-    let mut read = saved(decoded.ir());
-    let b = named(&read, "B").id.clone();
-    let scope = read
-        .design
-        .scopes
-        .iter_mut()
-        .find(|scope| scope.active_configuration.is_some())
-        .unwrap();
-    scope.active_configuration = Some(b.clone());
-    let (round_trip, losses) = written_with_losses(&read, decoded.source_fidelity());
-    assert!(round_trip
-        .ir()
-        .design
-        .scopes
-        .iter()
-        .any(|scope| scope.active_configuration.as_ref() == Some(&b)));
-    assert!(
-        losses
-            .iter()
-            .any(|loss| loss.code.to_string() == "export/value.unwritable"
-                && loss.message.contains("DesignConfigurationRoot")),
-        "{losses:#?}"
-    );
-}
-
-#[test]
 fn a_configuration_added_through_cadir_is_a_row_of_the_written_table() {
     let (decoded, fixture) = fixture(true);
     let mut read = saved(decoded.ir());
@@ -710,13 +687,13 @@ fn an_expression_that_names_a_parameter_caches_its_override_in_the_same_row() {
     let rows = crate::design_v11::configurations::restate(
         &ir.model.configurations,
         &ir.model.configurations,
-        &ir.design,
-        &ir.model.product_definitions,
+        &ir,
         &ir.model.features,
         &ir.model.parameters,
-        &ir.tolerances,
+        crate::design_v11::configurations::ActiveRows::Design,
     )
-    .into_rows(&mut losses);
+    .into_rows(&mut losses)
+    .rows;
     let b = rows
         .iter()
         .find(|row| row.name.as_deref() == Some("B"))
@@ -734,51 +711,53 @@ fn an_expression_that_names_a_parameter_caches_its_override_in_the_same_row() {
     assert!((cached.get() - 4.5).abs() < 1e-9, "{cached:?}: {losses:#?}");
 }
 
-/// A held decode whose design scope names row `b` active, with no other
-/// edit: the root record and the `testRowData` entries name row `b`. The
-/// patch writes no Design stream parameter, so the parameter cells of row
-/// `b` hold the Design stream's expression and value (f3d.md §1.2), and the
-/// override of `B` is charged. Row `a`, no longer active, states what `A`
-/// resolves: the base.
+/// An active row moved in the design, of a held decode and through CADIR:
+/// the patch writes no Design stream parameter, and the Design stream stores
+/// the state of the active row (f3d.md §1.2), so the stored root record keeps
+/// row `a` active, row `b` keeps its cells, the `testRowData` entries keep
+/// the values of row `a`, and the move is charged once.
 #[test]
-fn an_active_row_moved_in_the_design_of_a_held_decode_writes_its_test_row() {
+fn an_active_row_moved_in_the_design_keeps_the_stored_row_and_is_charged() {
     let (decoded, fixture) = fixture(true);
-    let mut ir = decoded.ir().clone();
-    assert!(ir.model.omitted_arenas_held());
-    let b = named(&ir, "B").id.clone();
-    ir.design
-        .scopes
-        .iter_mut()
-        .find(|scope| scope.active_configuration.is_some())
-        .unwrap()
-        .active_configuration = Some(b.clone());
-    let (expression, millimetres) = own(&ir, &fixture.width);
-    let (round_trip, losses) = written_with_losses(&ir, decoded.source_fidelity());
-    assert_eq!(active(round_trip.ir()), Some(&b), "{losses:#?}");
-    let width = test_row(round_trip.ir(), &fixture.entry, "W");
-    assert_eq!(width["Expression"], expression.as_str(), "{width}");
-    assert!(
-        (width["Value"].as_f64().unwrap() - millimetres / 10.0).abs() < 1e-9,
-        "{width}"
-    );
-    assert_eq!(pinned(&losses, &b, &fixture.width).len(), 1, "{losses:#?}");
-    let (text, value) = parameter_cell(round_trip.ir(), &fixture.entry, "a", &fixture.width);
-    assert_eq!(text, expression, "row a states what A resolves, the base");
-    assert!((value - millimetres / 10.0).abs() < 1e-9, "{value}");
-    assert_eq!(
-        test_row(round_trip.ir(), &fixture.entry, "S")["Value"],
-        false
-    );
-    assert_eq!(
-        test_row(round_trip.ir(), &fixture.entry, "P")["Value"],
-        "B-1"
-    );
-    assert!(
-        losses
+    let a = named(decoded.ir(), "A").id.clone();
+    let b = named(decoded.ir(), "B").id.clone();
+    let stored = test_row(decoded.ir(), &fixture.entry, "W");
+    for (path, mut ir) in [
+        ("decode", decoded.ir().clone()),
+        ("CADIR read", saved(decoded.ir())),
+    ] {
+        ir.design
+            .scopes
+            .iter_mut()
+            .find(|scope| scope.active_configuration.is_some())
+            .unwrap()
+            .active_configuration = Some(b.clone());
+        let (round_trip, losses) = written_with_losses(&ir, decoded.source_fidelity());
+        assert_eq!(active(round_trip.ir()), Some(&a), "{path}: {losses:#?}");
+        assert_eq!(
+            parameter_cell(round_trip.ir(), &fixture.entry, "b", &fixture.width).0,
+            "7 mm",
+            "{path}"
+        );
+        assert_eq!(
+            test_row(round_trip.ir(), &fixture.entry, "W"),
+            stored,
+            "{path}"
+        );
+        let moved = losses
             .iter()
-            .any(|loss| loss.message.contains("testRowData")),
-        "{losses:#?}"
-    );
+            .filter(|loss| {
+                loss.code.to_string() == "export/value.unwritable"
+                    && loss.message.contains("DesignConfigurationRoot")
+                    && loss.message.contains(b.as_str())
+            })
+            .count();
+        assert_eq!(moved, 1, "{path}: {losses:#?}");
+        assert!(
+            pinned(&losses, &b, &fixture.width).is_empty(),
+            "{path}: {losses:#?}"
+        );
+    }
 }
 
 /// The editor's switch to row `b` marks the current state stale, so the
@@ -859,13 +838,13 @@ fn a_native_cell_edit_loses_to_the_design_configuration() {
     let restated = crate::design_v11::configurations::restate(
         &rows,
         &rows,
-        &read.design,
-        &read.model.product_definitions,
+        &read,
         &read.model.features,
         &read.model.parameters,
-        &read.tolerances,
+        crate::design_v11::configurations::ActiveRows::Design,
     )
-    .into_rows(&mut losses);
+    .into_rows(&mut losses)
+    .rows;
     let b = restated
         .iter()
         .find(|row| row.name.as_deref() == Some("B"))
@@ -985,7 +964,7 @@ fn resolved_millimetres(ir: &CadIr, name: &str, parameter: &ParameterId) -> f64 
 /// The losses of `losses` that charge the parameter `parameter` of the
 /// active configuration `configuration`, written at the Design stream's
 /// expression and value.
-fn pinned<'a>(
+pub(crate) fn pinned<'a>(
     losses: &'a [LossNote],
     configuration: &cadmpeg_ir::features::ConfigurationId,
     parameter: &ParameterId,

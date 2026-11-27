@@ -52,18 +52,16 @@ use records::{
 
 /// `target` with the configuration table documents that state its
 /// configurations, where its documents project others (cadir-v11.md
-/// §5.11); `stored` holds the documents of the archive. Adds to `losses`
-/// what the documents state otherwise.
+/// §5.11). Adds to `losses` what the documents state otherwise.
 fn restated_tables(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
-    stored: &[crate::records::configuration::DesignConfiguration],
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<CadIr>, CodecError> {
     let Some(native) = f3d_native(ctx, target)? else {
         return Ok(None);
     };
-    let patched = crate::writer::generate::configuration_table::patched(target, &native, stored)?;
+    let patched = crate::writer::generate::configuration_table::patched(target, &native)?;
     losses.extend(patched.losses);
     let Some(documents) = patched.documents else {
         return Ok(None);
@@ -134,14 +132,7 @@ pub(crate) fn write_semantic(
         ));
     }
     let baseline_native = f3d_native(ctx, baseline.ir())?;
-    let restated = restated_tables(
-        ctx,
-        target,
-        baseline_native
-            .as_ref()
-            .map_or(&[][..], |native| native.design_configurations.as_slice()),
-        &mut table_losses,
-    )?;
+    let restated = restated_tables(ctx, target, &mut table_losses)?;
     let target = restated.as_ref().unwrap_or(target);
     let target_native = f3d_native(ctx, target)?;
     validate_assembly_projection(ctx, target, target_native.as_ref())?;
@@ -680,7 +671,6 @@ pub(crate) fn write_semantic(
     let output = Cursor::new(Vec::new());
     let mut zip = zip::ZipWriter::new(output);
     let mut patched_protein_appearances = BTreeSet::new();
-    let mut root_records = 0_usize;
     for index in 0..archive.len() {
         // `zip` cannot expand or write a Zstandard member: it is read raw and expanded by
         // `cadmpeg-core`, and written back by `write_zstd_member` below.
@@ -743,11 +733,8 @@ pub(crate) fn write_semantic(
         if let Some(cage) = user_knot_edits.remove(&name) {
             bytes = crate::tsm::user_knots::rewrite(ctx, &name, &bytes, &cage)?;
         }
-        if let Some(configuration) = configuration_edits.documents.get(&name) {
+        if let Some(configuration) = configuration_edits.get(&name) {
             bytes.clone_from(configuration);
-        }
-        if let Some(root) = &configuration_edits.root {
-            root_records += root.apply(&mut bytes);
         }
         if name == *active_brep {
             patch_geometry(
@@ -866,34 +853,6 @@ pub(crate) fn write_semantic(
             "one or more edited T-spline surfaces have no writable TSM member".into(),
         ));
     }
-    if let Some(root) = &configuration_edits.root {
-        if root_records != 1 {
-            return Err(CodecError::NotImplemented(format!(
-                "the moved active configuration row needs one stored DesignConfigurationRoot \
-                 record of the stored row, and the archive holds {root_records}"
-            )));
-        }
-        table_losses.extend(cadmpeg_ir::codec::write::value_unwritable(
-            "F3D",
-            "names this row active in the DesignConfigurationRoot record and in the testRowData entries of its configuration table document, and writes the Design stream and the B-rep in the state of the row the stored record named: the patch does not compute the model in the state of another row",
-            [root.row.clone()],
-        ));
-    }
-    let (kept, unrooted) = configuration_edits
-        .kept
-        .iter()
-        .cloned()
-        .partition::<Vec<_>, _>(|kept| kept.rooted);
-    table_losses.extend(cadmpeg_ir::codec::write::value_unwritable(
-        "F3D",
-        "keeps the stored DesignConfigurationRoot record, which names the first row active in place of the second: the patch rewrites a stored record in place, where the row is in the same table and its id has the same length",
-        kept.into_iter().map(|kept| kept.entry),
-    ));
-    table_losses.extend(cadmpeg_ir::codec::write::value_unwritable(
-        "F3D",
-        "writes no DesignConfigurationRoot record for the row each names active: the patch rewrites a stored record in place, and the archive holds none",
-        unrooted.into_iter().map(|kept| kept.entry),
-    ));
     if patched_protein_appearances.len() != protein_appearance_edits.len() {
         return Err(CodecError::NotImplemented(
             "one or more edited F3D appearances have no writable Protein carrier".into(),

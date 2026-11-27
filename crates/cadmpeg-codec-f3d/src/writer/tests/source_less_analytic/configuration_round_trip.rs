@@ -2,10 +2,8 @@
 //! Writes of every configuration table shape that the synthetic archive
 //! holds, on the patch path and on the generator path. A document the decode
 //! returned, also read from CADIR, replays the source (cadir-v11.md §3.1,
-//! Rule B). The archive's design states no configuration, so an active row
-//! that the native records and the v10 rows move is written: the patch
-//! rewrites the root record in place or charges it, and the generator
-//! writes it.
+//! Rule B). The patch path declines a moved active row, which changes the
+//! root record, and the generator writes it with the source.
 
 use std::io::{Cursor, Read};
 
@@ -154,7 +152,7 @@ fn assert_uncharged<'a>(
 }
 
 #[test]
-fn every_table_shape_is_written_as_stated_with_only_a_moved_root_charged() {
+fn every_table_shape_is_written_as_stated_with_no_charge() {
     for shape in shapes() {
         let archive = archive(shape);
         let decoded = EditableDecodeResult::from(
@@ -188,7 +186,7 @@ fn every_table_shape_is_written_as_stated_with_only_a_moved_root_charged() {
         read.model.drop_omitted_arenas();
         let fidelity = Some(decoded.source_fidelity());
         let preserved = if shape.moved {
-            "patched"
+            "synthesized"
         } else {
             "verbatim_replay"
         };
@@ -204,18 +202,18 @@ fn every_table_shape_is_written_as_stated_with_only_a_moved_root_charged() {
             ),
         ] {
             let (report, bytes) = written_on(target, fidelity, &[expected]);
-            let moved_root = |loss: &&cadmpeg_ir::report::loss::LossNote| {
-                loss.code.to_string() == "export/value.unwritable"
-                    && loss.message.contains("DesignConfigurationRoot")
-                    && loss.message.contains("wide")
-            };
-            assert_eq!(
-                report.losses.iter().filter(moved_root).count(),
-                usize::from(shape.moved && fidelity.is_some()),
-                "{shape:?} {path}: {:#?}",
-                report.losses
-            );
-            assert_uncharged(shape, report.losses.iter().filter(|loss| !moved_root(loss)));
+            assert_uncharged(shape, &report.losses);
+            if shape.moved && fidelity.is_some() {
+                assert!(
+                    matches!(
+                        report.synthesis_cause(),
+                        Some(cadmpeg_ir::report::export::SynthesisCause::PatchDeclined { reason })
+                            if reason.contains("changes the Design root record")
+                    ),
+                    "{shape:?} {path}: {:?}",
+                    report.write_path()
+                );
+            }
             assert_eq!(documents(&bytes), documents(&archive), "{shape:?} {path}");
         }
     }
