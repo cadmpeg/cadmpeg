@@ -463,6 +463,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
                 asm_body_key_offset: 0,
                 asm_body_key: 42,
                 entity_suffix: 42,
+                browser_node_entity: 43,
                 visible: false,
             },
         )
@@ -536,12 +537,25 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             wire.asm_body_key = 43;
             *visibility = crate::records::bodies::BodyVisibility::try_from(wire).unwrap();
         }
-        crate::test_support::assert_written_with_loss(
-            &invalid,
-            None,
-            "export/native.records-omitted",
-            "uses an ASM key different from body",
+        let mut bytes = Vec::new();
+        let report = F3dCodec
+            .plan(EncodeInput::new(&invalid, None), TargetRequest::Unnamed)
+            .and_then(|plan| plan.write_to(&mut bytes))
+            .expect("source-less write");
+        assert!(
+            report
+                .losses
+                .iter()
+                .all(|loss| !loss.message.contains("body visibilit")),
+            "{:#?}",
+            report.losses
         );
+        let regenerated = F3dCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("source-less round trip");
+        let visibilities = &f3d_native(regenerated.ir()).body_visibilities;
+        assert_eq!(visibilities.len(), 1);
+        assert_eq!(visibilities[0].asm_body_key(), 42);
     }
 
     assert_eq!(round_trip.ir().geometry.bodies.len(), 1);

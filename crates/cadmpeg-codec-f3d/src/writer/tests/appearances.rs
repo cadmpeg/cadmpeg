@@ -112,7 +112,7 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
 }
 
 #[test]
-fn generated_source_less_drops_material_assignment_without_presentation_graph() {
+fn generated_source_less_drops_material_assignment_alone() {
     use crate::records::references::DesignMaterialAssignment;
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
@@ -137,16 +137,24 @@ fn generated_source_less_drops_material_assignment_without_presentation_graph() 
         visual_preset: None,
     }];
 
-    crate::test_support::assert_written_with_loss(
+    let report = crate::test_support::assert_written_with_loss(
         &source_less,
         None,
         "export/native.records-omitted",
-        "requires a typed body-presentation B-rep and scene graph",
+        "because the source-less Design stream has no form for these records: f3d:generated:material-assignment#0",
+    );
+    assert!(
+        report
+            .losses
+            .iter()
+            .all(|loss| !loss.message.contains("of the Design stream")),
+        "{:#?}",
+        report.losses
     );
 }
 
 #[test]
-fn generated_source_less_drops_collapsed_visibility_body_bindings() {
+fn generated_source_less_charges_the_second_visibility_of_a_body() {
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source_less.geometry.bodies[0].visible = Some(false);
     let body = source_less.geometry.bodies[0].id.clone();
@@ -163,6 +171,7 @@ fn generated_source_less_drops_collapsed_visibility_body_bindings() {
                     asm_body_key_offset: 0,
                     asm_body_key: 42,
                     entity_suffix,
+                    browser_node_entity: entity_suffix + 1,
                     visible: false,
                 },
             )
@@ -170,12 +179,30 @@ fn generated_source_less_drops_collapsed_visibility_body_bindings() {
         })
         .collect();
 
-    crate::test_support::assert_written_with_loss(
-        &source_less,
-        None,
-        "export/native.records-omitted",
-        "F3D body visibility",
+    let mut bytes = Vec::new();
+    let report = F3dCodec
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("source-less write");
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.message
+                .contains("of body visibilities that name the body or the Design entity")
+                && loss
+                    .message
+                    .ends_with(": f3d:generated-1:body-visibility#42")
+        }),
+        "{:#?}",
+        report.losses
     );
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("source-less round trip");
+    let visibilities =
+        &crate::test_support::native_test::f3d_native(decoded.ir()).body_visibilities;
+    assert_eq!(visibilities.len(), 1);
+    assert!(!visibilities[0].visible);
+    assert_eq!(visibilities[0].entity_suffix, 985);
 }
 
 #[test]

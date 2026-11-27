@@ -114,6 +114,8 @@ pub(crate) enum InventorLossCode {
     FeatureEdgeSelectionNative,
     /// A fillet omits an edge set whose items all store empty index-reference lists.
     FeatureFilletEmptyEdgeSetsOmitted,
+    /// A fillet omits edge items with empty index-reference lists beside listed items of an edge set.
+    FeatureFilletEmptyEdgeItemsOmitted,
     /// An edge-treatment input edge has several matched owners of identical geometry.
     FeatureEdgeOwnerIdenticalGeometry,
     /// An input edge rests on the assumption that extra selector generators do not change it.
@@ -400,6 +402,7 @@ impl InventorLossCode {
         Self::FeatureEdgeSelectionEmptyItemsNative,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureFilletEmptyEdgeSetsOmitted,
+        Self::FeatureFilletEmptyEdgeItemsOmitted,
         Self::FeatureEdgeOwnerIdenticalGeometry,
         Self::FeatureEdgeSelectorGeneratorsAssumed,
         Self::FeatureMoveFaceSelectionNative,
@@ -578,6 +581,7 @@ impl InventorLossCode {
             }
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureFilletEmptyEdgeSetsOmitted => "feature.fillet-empty-edge-sets-omitted",
+            Self::FeatureFilletEmptyEdgeItemsOmitted => "feature.fillet-empty-edge-items-omitted",
             Self::FeatureEdgeOwnerIdenticalGeometry => "feature.edge-owner-identical-geometry",
             Self::FeatureEdgeSelectorGeneratorsAssumed => {
                 "feature.edge-selector-generators-assumed"
@@ -764,6 +768,7 @@ impl InventorLossCode {
             | Self::FeatureEdgeSelectionEmptyItemsNative
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureFilletEmptyEdgeSetsOmitted
+            | Self::FeatureFilletEmptyEdgeItemsOmitted
             | Self::FeatureEdgeOwnerIdenticalGeometry
             | Self::FeatureEdgeSelectorGeneratorsAssumed
             | Self::FeatureMoveFaceSelectionNative
@@ -967,6 +972,7 @@ mod tests {
                 "feature.edge-selection-empty-items-native",
                 "feature.edge-selection-native",
                 "feature.fillet-empty-edge-sets-omitted",
+                "feature.fillet-empty-edge-items-omitted",
                 "feature.edge-owner-identical-geometry",
                 "feature.edge-selector-generators-assumed",
                 "feature.move-face-selection-native",

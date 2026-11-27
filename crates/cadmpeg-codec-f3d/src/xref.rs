@@ -2761,7 +2761,7 @@ fn legacy_root_component_path_order(
 
 /// The entity and source occurrence identity of the legacy target that opens a
 /// legacy attributed occurrence-placement record.
-fn legacy_placement_target(body: &[u8]) -> Option<(u64, u64)> {
+pub(crate) fn legacy_placement_target(body: &[u8]) -> Option<(u64, u64)> {
     legacy_external_placement_details(body)?;
     let mut at = legacy_prefix::TARGET_REFERENCE;
     let target = take_legacy_occurrence_reference(body, &mut at)?;
