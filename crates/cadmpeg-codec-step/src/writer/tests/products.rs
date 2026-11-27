@@ -1001,3 +1001,66 @@ fn writer_does_not_leave_a_once_placed_prototype_beside_its_nested_override() {
     assert_single_use_structure(&decoded);
     assert_eq!(decoded.geometry.bodies.len(), 1);
 }
+
+/// Moves each identity of the unit cube into the `spare` namespace.
+struct IntoSpare<'c> {
+    ctx: &'c cadmpeg_core::decode::DecodeContext<'c>,
+}
+
+impl cadmpeg_ir::document::EntityRewrite for IntoSpare<'_> {
+    type Error = cadmpeg_core::CodecError;
+
+    fn rewrite<T: cadmpeg_ir::schema::rewrite::typed::RewriteIdentities>(
+        &mut self,
+        entity: T,
+    ) -> Result<T, cadmpeg_core::CodecError> {
+        let mut map = cadmpeg_ir::schema::rewrite::typed::IdentityMap::new(|id: &str| {
+            Ok(id.replacen(":cube:", ":spare:", 1))
+        });
+        let entity = entity.rewrite_identities(self.ctx, &mut map)?;
+        map.finish()?;
+        Ok(entity)
+    }
+}
+
+#[test]
+fn writer_writes_a_definition_no_occurrence_places_as_a_top_level_product() {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let first_spare_body = ir.geometry.bodies.len();
+    ir.geometry
+        .extend_rewritten(
+            unit_cube().expect("unit cube fixture is admitted").geometry,
+            &mut IntoSpare { ctx: &ctx },
+        )
+        .expect("rewrite the second cube");
+    let mut part = root_definition("test:model:product-definition#part", &[]);
+    part.bodies = vec![ir.geometry.bodies[0].id.clone()];
+    part.label = Some("Part".into());
+    let mut spare = unnamed_definition(
+        "test:model:product-definition#spare",
+        vec![ir.geometry.bodies[first_spare_body].id.clone()],
+    );
+    spare.label = Some("Spare".into());
+    ir.model.product_definitions = vec![part, spare];
+
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write a definition no occurrence places");
+    let step = String::from_utf8(output).expect("STEP text");
+    assert!(record_names(&step, "PRODUCT").contains(&"Spare".to_owned()));
+    assert!(record_names(&step, "NEXT_ASSEMBLY_USAGE_OCCURRENCE").is_empty());
+    assert!(
+        report
+            .losses
+            .iter()
+            .all(|loss| loss.code.local_code() != "definition.placed"),
+        "{:?}",
+        report.losses
+    );
+}

@@ -106,11 +106,11 @@ pub(super) fn start_at_seam_cut<'ir>(
             carrier.coedge.id
         )))
     };
-    let Some([_, uv]) = written_ends(&written.pcurves[first_use - 1])? else {
+    let Some([_, uv]) = written_ends(ctx, &written.pcurves[first_use - 1])? else {
         return unstarted("has no finite parameter curve end");
     };
     let Some(point) = finite_or_refusal(model_surface_point(
-        EvaluationAdmission::Standard,
+        EvaluationAdmission::Write(ctx),
         &index.model,
         surface,
         uv.u,
@@ -181,14 +181,17 @@ fn traversed_ends(pcurve_use: &WrittenPcurveUse<'_>) -> [CurveEnd; 2] {
 
 /// The parameter-plane start and end of the curve that a written use
 /// references, in the direction of that curve.
-fn written_ends(pcurve_use: &WrittenPcurveUse<'_>) -> Result<Option<[Point2; 2]>, CodecError> {
+fn written_ends(
+    ctx: &DecodeContext<'_>,
+    pcurve_use: &WrittenPcurveUse<'_>,
+) -> Result<Option<[Point2; 2]>, CodecError> {
     let Some(range) = pcurve_use.pcurve.parameter_range() else {
         return Ok(None);
     };
     let mut ends = [Point2::new(0.0, 0.0); 2];
     for (end, parameter) in ends.iter_mut().zip(range.get()) {
         let Some(point) = finite_or_refusal(pcurve_uv(
-            EvaluationAdmission::Standard,
+            EvaluationAdmission::Write(ctx),
             &pcurve_use.pcurve.geometry,
             parameter,
         ))?

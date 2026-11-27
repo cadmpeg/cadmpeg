@@ -24,7 +24,6 @@ cadmpeg-ir.workspace = true
 cadmpeg-codec-step.workspace = true
 cadmpeg-measure.workspace = true
 cadmpeg-test-support = { workspace = true }
-serde_json.workspace = true
 
 [lints]
 workspace = true
