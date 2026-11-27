@@ -88,11 +88,35 @@ fn pairs(bytes: &[u8], at: usize) -> Option<(Pair, Pair)> {
     ))
 }
 
-/// What one stream states: `None` where it holds no record 0, and
-/// `RecordUnreadable` where it holds one that `pairs` cannot read.
+/// Whether the record whose header starts at `at` holds the `AssetSettings`
+/// key, whole or not.
+fn holds_settings_key(bytes: &[u8], at: usize) -> bool {
+    let Some(key_at) = at.checked_add(settings::KEY) else {
+        return false;
+    };
+    let Some(key_end) = key_at.checked_add(settings::KEY_VALUE.len()) else {
+        return false;
+    };
+    bytes.get(key_at..key_end) == Some(settings::KEY_VALUE.as_slice())
+}
+
+/// What one stream states: `None` where no record-0 candidate is the settings
+/// record, and `RecordUnreadable` where one is and `pairs` cannot read it. A
+/// record-0 candidate is the settings record when it is the stream's first
+/// indexed record or holds the `AssetSettings` key; a zero word that the
+/// index scan reads inside another record's payload is neither.
 fn read_stream(bytes: &[u8]) -> Option<UpAxisRead> {
     let offsets = IndexedRecordOffsets::build(bytes);
-    let record_zero = offsets.offsets(RECORD_INDEX);
+    let first = offsets
+        .records()
+        .flat_map(|(_, at)| at.iter().copied())
+        .min();
+    let record_zero = offsets
+        .offsets(RECORD_INDEX)
+        .iter()
+        .copied()
+        .filter(|at| Some(*at) == first || holds_settings_key(bytes, *at))
+        .collect::<Vec<_>>();
     if record_zero.is_empty() {
         return None;
     }

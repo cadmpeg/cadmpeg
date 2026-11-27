@@ -124,3 +124,19 @@ fn the_stored_pair_follows_the_document_up_axis() {
     assert_eq!(stored_pair(Some(UpAxis::Z)), Z_UP_PAIR);
     assert_eq!(stored_pair(None), Z_UP_PAIR);
 }
+
+/// A design stream whose first record is another record, with a body-recipe
+/// family marker whose zero word the index scan reads as a record-0 header.
+#[test]
+fn a_record_zero_candidate_inside_another_record_states_nothing() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"001");
+    bytes.extend_from_slice(&5u32.to_le_bytes());
+    bytes.extend_from_slice(&[0xAA; 40]);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"322");
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&[0xAA; 40]);
+    assert_eq!(read_stream(&bytes), None);
+}
