@@ -3,12 +3,13 @@
 
 use super::{
     DesignCombineBodyNode, DesignCombineBodySelection, DesignCombineDestination,
-    DesignCombineExternalBodyIdentity, DesignCombineForm, DesignCombineOperation,
-    DesignCombineScope, DesignCombineTools, DesignExternalVersion,
+    DesignCombineExternalBodyIdentity, DesignCombineForm, DesignCombineLegacyExternalBodyIdentity,
+    DesignCombineOperation, DesignCombineScope, DesignCombineTools, DesignExternalVersion,
 };
 
 rewrite_native_record!(DesignCombineBodyNode, []; {record_index, body_entity_suffix, creating_scope_record_index});
-rewrite_native_record!(DesignCombineBodySelection, []; {record_index, external_identity, body_node});
+rewrite_native_record!(DesignCombineBodySelection, []; {record_index, external_identity, legacy_external_identity, body_node});
+rewrite_native_record!(DesignCombineLegacyExternalBodyIdentity, []; {selector_asset_id, selector_asset_id_offset, selector_context_id, selector_context_id_offset, occurrence_reference, occurrence_reference_offset, browser_node_entity, browser_node_entity_offset, source_occurrence_identity, source_occurrence_identity_offset, tail_values, tail_value_offsets});
 rewrite_native_record!(DesignCombineExternalBodyIdentity, []; {selector_asset_id, selector_asset_id_offset, selector_context_id, selector_context_id_offset, occurrence_reference, occurrence_reference_offset, external_body_reference, external_body_reference_offset, external_segment, external_segment_offset, external_asset_id_offset, external_link_name, external_link_name_offset, external_version, tail_values, tail_value_offsets});
 rewrite_native_scalar!(DesignCombineForm);
 rewrite_native_scalar!(DesignCombineDestination);
