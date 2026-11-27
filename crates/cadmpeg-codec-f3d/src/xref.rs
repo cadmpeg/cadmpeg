@@ -43,7 +43,7 @@ use crate::records::{
 };
 
 /// Top-level container entry holding the external-reference table.
-const REDIRECTIONS_ENTRY: &str = "RedirectionsStream.dat";
+pub(crate) const REDIRECTIONS_ENTRY: &str = "RedirectionsStream.dat";
 /// Top-level container entry holding the document-properties slot.
 const PROPERTIES_ENTRY: &str = "Properties.dat";
 /// Top-level JSON document carrying component-reference extension data.
@@ -125,7 +125,7 @@ struct DesignJson {
     version_urn: String,
 }
 
-#[derive(Deserialize)]
+#[derive(cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "type")]
 enum ReferenceJson {
     #[serde(rename = "XREF")]
@@ -150,7 +150,7 @@ enum PropertyJson {
     Data(StringProperty),
 }
 
-#[derive(Deserialize)]
+#[derive(cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "dataType", deny_unknown_fields)]
 enum StringProperty {
     #[serde(rename = "STRING")]
@@ -2596,7 +2596,7 @@ fn legacy_root_component_path_order(
 
 /// The entity and source occurrence identity of the legacy target that opens a
 /// legacy attributed occurrence-placement record.
-fn legacy_placement_target(body: &[u8]) -> Option<(u64, u64)> {
+pub(crate) fn legacy_placement_target(body: &[u8]) -> Option<(u64, u64)> {
     legacy_external_placement_details(body)?;
     let mut at = legacy_prefix::TARGET_REFERENCE;
     let target = take_legacy_occurrence_reference(body, &mut at)?;

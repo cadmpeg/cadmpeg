@@ -8,15 +8,16 @@ use std::io::{Seek, SeekFrom, Write};
 mod convert;
 mod exact;
 mod model;
+mod subd;
 pub(crate) mod target;
 use model::{
-    WritableEdge, WritableEdgeCurve, WritableFaceSurface, WritableModel, WritableObjectCurve,
-    WritablePcurve, WritableVertex,
+    TrimEdge, WritableEdge, WritableEdgeCurve, WritableFaceSurface, WritableModel,
+    WritableObjectCurve, WritablePcurve, WritableVertex,
 };
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{native_records_omitted, value_unwritable};
+use cadmpeg_ir::codec::write::value_unwritable;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -170,22 +171,26 @@ fn write(
     ir: &CadIr,
     version: RhinoArchiveVersion,
     unjoined: &BTreeSet<&str>,
-    output: &mut dyn Write,
+    ctx: &DecodeContext<'_>,
+    output: &mut Vec<u8>,
 ) -> Result<Written, CodecError> {
-    let mut staged = tempfile::tempfile()?;
-    let written = write_seekable(ir, version, unjoined, &mut staged)?;
-    staged.seek(SeekFrom::Start(0))?;
-    std::io::copy(&mut staged, output)?;
-    Ok(written)
+    write_seekable(
+        ir,
+        version,
+        unjoined,
+        ctx,
+        &mut std::io::Cursor::new(output),
+    )
 }
 
 fn write_seekable(
     ir: &CadIr,
     version: RhinoArchiveVersion,
     unjoined: &BTreeSet<&str>,
+    ctx: &DecodeContext<'_>,
     output: &mut dyn WriteSeek,
 ) -> Result<Written, CodecError> {
-    let mut plan = prepare_write(ir, version, unjoined)?;
+    let mut plan = prepare_write(ir, version, unjoined, ctx)?;
     write_archive_prefix(ir.tolerances.linear.get(), plan.angular, version, output)?;
     let table_start = output.stream_position()?;
     output.write_all(&TCODE_OBJECT_TABLE.to_le_bytes())?;
@@ -275,7 +280,7 @@ struct BrepPayload {
 
 struct WritePlan {
     /// The object records, in object-table order.
-    records: std::fs::File,
+    records: std::io::Cursor<Vec<u8>>,
     /// The angular tolerance the settings table states.
     angular: f64,
     losses: Vec<LossNote>,
@@ -284,7 +289,7 @@ struct WritePlan {
 /// The object records the writer encodes, and each record it leaves out with
 /// the reason.
 struct Records {
-    file: std::fs::File,
+    file: std::io::Cursor<Vec<u8>>,
     omitted: Vec<(String, String)>,
 }
 
@@ -595,16 +600,20 @@ fn brep_scope(
     }
 }
 
-/// The Breps `scope` is written as, and each face left out with the reason.
-/// The carriers take their 3DM form ([`convert::convert_scope`]); the faces
+/// The Breps `scope` is written as, with the converted scope's findings
+/// ([`convert::convert_scope`]). The carriers take their 3DM form; the faces
 /// left are written as one Brep for each edge-connected set of them. A solid
-/// that loses a face is written as a sheet.
-fn brep_pieces(scope: &BrepScope) -> (Vec<BrepScope>, Vec<(String, String)>) {
+/// that loses a face or an edge join is written as a sheet.
+fn brep_pieces(
+    ctx: &DecodeContext<'_>,
+    compounds: &convert::CompoundIndex<'_>,
+    scope: &BrepScope,
+) -> Result<(Vec<BrepScope>, convert::ScopeFindings), CodecError> {
     use cadmpeg_ir::topology::BodyKind;
 
-    let converted = convert::convert_scope(&scope.ir);
-    let mut ir = converted.ir;
-    if !converted.dropped.is_empty() {
+    let convert::ConvertedScope { mut ir, findings } =
+        convert::convert_scope(ctx, compounds, &scope.ir)?;
+    if !findings.dropped.is_empty() || !findings.unjoined.is_empty() {
         for body in &mut ir.geometry.bodies {
             if body.kind == BodyKind::Solid {
                 body.kind = BodyKind::Sheet;
@@ -626,7 +635,7 @@ fn brep_pieces(scope: &BrepScope) -> (Vec<BrepScope>, Vec<(String, String)>) {
             curves: BTreeSet::new(),
             pcurves: BTreeSet::new(),
         };
-        return (vec![piece], converted.dropped);
+        return Ok((vec![piece], findings));
     };
     let index = TopologyIndex::new(&ir);
     let components = face_components(&ir);
@@ -642,7 +651,7 @@ fn brep_pieces(scope: &BrepScope) -> (Vec<BrepScope>, Vec<(String, String)>) {
             brep_scope(&ir, &index, identity, body, region, &shell.id, &faces)
         })
         .collect();
-    (pieces, converted.dropped)
+    Ok((pieces, findings))
 }
 
 /// The faces of `ir`, in sets joined through shared edges, each set in
@@ -705,14 +714,18 @@ fn brep_record(
     archive_version: RhinoArchiveVersion,
 ) -> Result<(Vec<u8>, Vec<LossNote>), CodecError> {
     let placed;
+    let mut dropped_tolerances = None;
     let ir = match scope.ir.geometry.bodies[0].transform {
         Some(transform) => {
-            placed = placed_brep(&scope.ir, transform)?;
+            let (ir, dropped) = placed_brep(&scope.ir, transform)?;
+            placed = ir;
+            dropped_tolerances = dropped;
             &placed
         }
         None => &scope.ir,
     };
-    let model = WritableModel::try_new(ir)?;
+    let mut model = WritableModel::try_new(ctx, ir)?;
+    model.losses.extend(dropped_tolerances);
     let payload = brep_payload(ctx, &model, archive_version)?;
     let body = model.body;
     let record = brep_object_record(
@@ -756,11 +769,12 @@ fn largest_stretch(rows: [[f64; 4]; 3]) -> f64 {
 /// degree-1 NURBS curve over the same range, and a plane with the
 /// orthonormal frame of its mapped axes, whose faces then take the
 /// projections of their edges as trims; tolerances grow by the largest
-/// stretch, and a reflection reverses each face.
+/// stretch, and a reflection reverses each face. A tolerance that grows past
+/// the finite range is left out, with the loss that names its records.
 fn placed_brep(
     ir: &CadIr,
     transform: cadmpeg_ir::transform::Transform,
-) -> Result<CadIr, CodecError> {
+) -> Result<(CadIr, Option<LossNote>), CodecError> {
     use cadmpeg_ir::geometry::{
         CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     };
@@ -936,24 +950,26 @@ fn placed_brep(
             .pcurves
             .retain(|pcurve| used.contains(pcurve.id.as_str()));
     }
+    let mut unwritable = Vec::new();
     if !rigid {
         let stretch = largest_stretch(transform.affine_rows());
-        let grow = |tolerance: &mut Option<cadmpeg_ir::scalar::PositiveLength>| {
-            *tolerance = tolerance
-                .and_then(|value| cadmpeg_ir::scalar::PositiveLength::new(value.get() * stretch));
+        let mut grow = |id: &str, tolerance: &mut Option<cadmpeg_ir::scalar::PositiveLength>| {
+            if let Some(value) = *tolerance {
+                *tolerance = cadmpeg_ir::scalar::PositiveLength::new(value.get() * stretch);
+                if tolerance.is_none() {
+                    unwritable.push(id.to_owned());
+                }
+            }
         };
-        geometry
-            .edges
-            .iter_mut()
-            .for_each(|edge| grow(&mut edge.tolerance));
-        geometry
-            .vertices
-            .iter_mut()
-            .for_each(|vertex| grow(&mut vertex.tolerance));
-        geometry
-            .faces
-            .iter_mut()
-            .for_each(|face| grow(&mut face.tolerance));
+        for edge in &mut geometry.edges {
+            grow(edge.id.as_str(), &mut edge.tolerance);
+        }
+        for vertex in &mut geometry.vertices {
+            grow(vertex.id.as_str(), &mut vertex.tolerance);
+        }
+        for face in &mut geometry.faces {
+            grow(face.id.as_str(), &mut face.tolerance);
+        }
     }
     if orientation < 0.0 {
         for face in &mut geometry.faces {
@@ -962,8 +978,136 @@ fn placed_brep(
                 cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
             };
         }
+        reverse_loops(geometry)?;
     }
-    Ok(placed)
+    let loss = value_unwritable(
+        "Rhino",
+        "writes these records without their tolerance, which the body placement scales past \
+         the finite range",
+        unwritable,
+    );
+    Ok((placed, loss))
+}
+
+/// Reverses each loop of `geometry`: the ring order, each coedge's sense, and
+/// each coedge's pcurve uses, which keep their pcurve interval in the other
+/// direction. A reflection turns a loop the other way about its face's
+/// oriented normal. A use whose interval is not derivable is dropped with its
+/// pcurve: a plane face takes the trim from its edge, and a NURBS face then
+/// refuses the coedge.
+fn reverse_loops(geometry: &mut cadmpeg_ir::document::Topology) -> Result<(), CodecError> {
+    let edge_ranges = geometry
+        .edges
+        .iter()
+        .filter_map(|edge| Some((edge.id.as_str(), edge.param_range()?.get())))
+        .collect::<std::collections::HashMap<_, _>>();
+    let pcurves = geometry
+        .pcurves
+        .iter()
+        .map(|pcurve| (pcurve.id.as_str(), pcurve))
+        .collect::<std::collections::HashMap<_, _>>();
+    let uses = geometry
+        .coedges
+        .iter()
+        .map(|coedge| {
+            let edge_range = edge_ranges.get(coedge.edge.as_str()).copied();
+            coedge
+                .pcurves
+                .iter()
+                .filter_map(|use_| {
+                    let Some(pcurve) = pcurves.get(use_.pcurve.as_str()) else {
+                        return Some(use_.clone());
+                    };
+                    let [start, end] = convert::use_interval(use_, pcurve, edge_range).ok()?;
+                    let range =
+                        cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([
+                            end, start,
+                        ])
+                        .ok()?;
+                    Some(cadmpeg_ir::topology::PcurveUse {
+                        parameter_range: Some(range),
+                        ..use_.clone()
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    for (coedge, uses) in geometry.coedges.iter_mut().zip(uses) {
+        coedge.sense = match coedge.sense {
+            cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
+            cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
+        };
+        coedge.pcurves = uses;
+    }
+    let used = geometry
+        .coedges
+        .iter()
+        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.clone()))
+        .chain(geometry.loops.iter().flat_map(|loop_| {
+            loop_
+                .anchored_vertex_uses()
+                .iter()
+                .flat_map(|vertex| vertex.pcurves.iter().map(|use_| use_.pcurve.clone()))
+                .chain(
+                    loop_
+                        .singular_vertex()
+                        .into_iter()
+                        .flat_map(|(_, uses)| uses.iter().map(|use_| use_.pcurve.clone())),
+                )
+        }))
+        .collect::<BTreeSet<_>>();
+    geometry.pcurves.retain(|pcurve| used.contains(&pcurve.id));
+    for loop_ in &mut geometry.loops {
+        let old = loop_.coedges().to_vec();
+        if old.is_empty() {
+            continue;
+        }
+        let vertex_uses = loop_
+            .anchored_vertex_uses()
+            .iter()
+            .map(|vertex| {
+                let position = old.iter().position(|id| *id == vertex.after);
+                cadmpeg_ir::topology::AnchoredVertexUse {
+                    after: position.map_or_else(
+                        || vertex.after.clone(),
+                        |position| old[(position + 1) % old.len()].clone(),
+                    ),
+                    ..vertex.clone()
+                }
+            })
+            .rev()
+            .collect();
+        let mut coedges = old;
+        coedges.reverse();
+        loop_.replace_ring(coedges, vertex_uses).map_err(|error| {
+            CodecError::malformed(format_args!("loop {}: {error}", loop_.id.as_str()))
+        })?;
+    }
+    Ok(())
+}
+
+/// The curve object record of the joined curve `curve`: one NURBS curve over
+/// its domain.
+fn joined_curve_record(
+    ctx: &DecodeContext<'_>,
+    compounds: &convert::CompoundIndex<'_>,
+    curve: &cadmpeg_ir::geometry::Curve,
+) -> Result<Vec<u8>, CodecError> {
+    let id = curve.id.as_str();
+    let unwritable = |reason: String| {
+        CodecError::NotImplemented(format!("joined curve {id} has no one NURBS form: {reason}"))
+    };
+    let domain = compounds.domain(ctx, curve).map_err(unwritable)?;
+    let nurbs = compounds
+        .joined_nurbs(ctx, id, domain)
+        .ok_or_else(|| unwritable("it is not a joined curve".into()))?
+        .map_err(unwritable)?;
+    let mut joined = curve.clone();
+    joined.geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(nurbs),
+    );
+    let (class, payload) = WritableObjectCurve::try_new(&joined)?.payload()?;
+    attributed_object_record(4, class, &payload, id, None, None, None)
 }
 
 /// An object name as 3DM holds it: up to its first NUL character.
@@ -989,16 +1133,14 @@ fn prepare_write(
     ir: &CadIr,
     archive_version: RhinoArchiveVersion,
     unjoined: &BTreeSet<&str>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<WritePlan, CodecError> {
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::topology::BodyKind;
 
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
     let mut losses = Vec::new();
     let angular = if ir.tolerances.angular.get() > std::f64::consts::PI {
-        losses.extend(value_unwritable(
-            "Rhino",
+        losses.extend(RhinoLossCode::WriterValueOmitted.listed(
             "writes the default angular tolerance pi/180 in place of an angular tolerance above \
              pi, which 3DM does not hold",
             ["document angular tolerance"],
@@ -1007,13 +1149,6 @@ fn prepare_write(
     } else {
         ir.tolerances.angular.get()
     };
-    if let Some(namespace) = ir.native.namespace("rhino") {
-        losses.extend(native_records_omitted(
-            "Rhino",
-            "that the 3DM writer does not regenerate",
-            omitted_native_records(namespace),
-        ));
-    }
     let geometry = &ir.geometry;
     let (breps, splits) = brep_scopes(ir, unjoined);
     let mut held = BTreeSet::new();
@@ -1026,6 +1161,9 @@ fn prepare_write(
         topology_curves.extend(scope.curves.iter().map(String::as_str));
         topology_surfaces.extend(scope.surfaces.iter().map(String::as_str));
     }
+    let compounds = convert::CompoundIndex::new(ir);
+    let components = compounds.components(topology_curves.iter().copied().collect::<Vec<_>>());
+    topology_curves.extend(components);
     let general = geometry
         .bodies
         .iter()
@@ -1038,7 +1176,7 @@ fn prepare_write(
     }
 
     let mut records = Records {
-        file: tempfile::tempfile()?,
+        file: std::io::Cursor::new(Vec::new()),
         omitted: Vec::new(),
     };
     let mut written_pieces = Vec::new();
@@ -1046,8 +1184,20 @@ fn prepare_write(
     let mut written_carriers = BTreeSet::new();
     let mut parts = Vec::new();
     for scope in &breps {
-        let (pieces, dropped) = brep_pieces(scope);
-        records.omitted.extend(dropped);
+        let (pieces, scope_findings) = brep_pieces(ctx, &compounds, scope)?;
+        records.omitted.extend(scope_findings.dropped);
+        let mut unjoined_edges = std::collections::BTreeMap::<_, Vec<&str>>::new();
+        for (reason, edge) in &scope_findings.unjoined {
+            unjoined_edges.entry(*reason).or_default().push(edge);
+        }
+        for (reason, edges) in unjoined_edges {
+            losses.push(RhinoLossCode::WriterEdgeUnjoined.note(format!(
+                "{} is written with each use of these edges on its own edge, as {}: {}",
+                scope.identity,
+                reason.reason(),
+                edges.join(", ")
+            )));
+        }
         if pieces.is_empty() {
             records.omitted.push((
                 scope.identity.clone(),
@@ -1064,8 +1214,9 @@ fn prepare_write(
                     .collect::<Vec<_>>(),
             ));
         }
+        let first_written = written_pieces.len();
         for piece in pieces {
-            let built = brep_record(&ctx, &piece, archive_version);
+            let built = brep_record(ctx, &piece, archive_version);
             let Some((record, findings)) = records.admit(&piece.identity, built)? else {
                 continue;
             };
@@ -1076,6 +1227,47 @@ fn prepare_write(
                 cut_names.push(piece.identity.clone());
             }
             written_pieces.push(piece);
+        }
+        for (edge, gap) in &scope_findings.rejoined {
+            let written = written_pieces[first_written..].iter().any(|piece| {
+                piece
+                    .ir
+                    .geometry
+                    .coedges
+                    .iter()
+                    .any(|coedge| coedge.edge.as_str() == edge)
+            });
+            if written {
+                losses.push(RhinoLossCode::WriterEdgeGapJoined.note(format!(
+                    "the curve pieces of edge {edge} of {} are joined at the midpoint of their \
+                     ends, which are up to {gap} apart within the edge tolerance",
+                    scope.identity
+                )));
+            }
+        }
+        for split in &scope_findings.split {
+            let written = written_pieces[first_written..].iter().any(|piece| {
+                piece
+                    .ir
+                    .geometry
+                    .edges
+                    .iter()
+                    .any(|edge| split.pieces.iter().any(|id| edge.id.as_str() == id))
+            });
+            if written {
+                losses.push(RhinoLossCode::WriterEdgeSplit.note(format!(
+                    "edge {} of {} is written as the edges {}, one for each run of its curve \
+                     pieces that meet within the edge tolerance, with a vertex at the midpoint \
+                     of each gap; the gaps are up to {} wide; each trim breaks where its image \
+                     comes closest to the gap vertex, and the edges at a gap take a tolerance \
+                     of up to {} that reaches the vertex and the trim ends",
+                    split.edge,
+                    scope.identity,
+                    split.pieces.join(", "),
+                    split.gap,
+                    split.tolerance
+                )));
+            }
         }
     }
     for piece in &written_pieces {
@@ -1124,10 +1316,59 @@ fn prepare_write(
             cut_names.push(body.id.as_str().to_owned());
         }
     }
+    let free = geometry
+        .curves
+        .iter()
+        .filter(|curve| {
+            !topology_curves.contains(curve.id.as_str())
+                && !is_support(curve.source_object.as_ref())
+        })
+        .collect::<Vec<_>>();
+    let joined = free
+        .iter()
+        .map(|curve| curve.id.as_str())
+        .filter(|id| compounds.is_joined(id))
+        .collect::<Vec<_>>();
+    let nested = compounds.components(joined.iter().copied());
+    let free_by_id = free
+        .iter()
+        .map(|curve| (curve.id.as_str(), *curve))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut pending = joined
+        .iter()
+        .rev()
+        .copied()
+        .filter(|id| !nested.contains(id))
+        .collect::<Vec<_>>();
+    let mut covered = BTreeSet::new();
+    while let Some(id) = pending.pop() {
+        if !covered.insert(id) {
+            continue;
+        }
+        let Some(curve) = free_by_id.get(id).copied() else {
+            continue;
+        };
+        match joined_curve_record(ctx, &compounds, curve) {
+            Ok(record) => {
+                records.file.write_all(&record)?;
+                written_carriers.insert(id);
+                covered.extend(compounds.components([id]));
+            }
+            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
+            Err(error) => {
+                losses.push(RhinoLossCode::WriterCurveSplit.note(format!(
+                    "{id} is written as a curve object for each of its pieces: {error}"
+                )));
+                pending.extend(compounds.joined_components(id).into_iter().rev());
+            }
+        }
+    }
     let mut deflected = Vec::new();
-    for curve in geometry.curves.iter().filter(|curve| {
-        !topology_curves.contains(curve.id.as_str()) && !is_support(curve.source_object.as_ref())
-    }) {
+    for curve in free
+        .iter()
+        .copied()
+        .filter(|curve| !covered.contains(curve.id.as_str()))
+    {
         let built = WritableObjectCurve::try_new(curve)
             .and_then(|writable| writable.payload())
             .and_then(|(class, payload)| {
@@ -1168,7 +1409,7 @@ fn prepare_write(
         .filter(|mesh| !withheld.contains(mesh.id.as_str()))
     {
         let built = check_mesh(mesh).and_then(|admission| {
-            let payload = mesh_payload(mesh, archive_version, &admission.channels)?;
+            let payload = mesh_payload(&MeshRows::of(mesh, &admission.channels), archive_version)?;
             Ok((
                 mesh_object_record(&payload, mesh.id.as_str())?,
                 admission.omitted,
@@ -1188,6 +1429,101 @@ fn prepare_write(
         if mesh.of.body().is_some() {
             unbound.push(mesh.id.as_str().to_owned());
         }
+    }
+
+    let cage_owners = subd::cage_owners(ir);
+    let mut unheld_cage_content = std::collections::BTreeMap::<_, Vec<&str>>::new();
+    let mut shared_cage_bodies = std::collections::BTreeMap::<&str, Vec<&str>>::new();
+    let mut control_meshes = Vec::new();
+    let mut reduced_cages = Vec::new();
+    let mut fanned_cages = Vec::new();
+    let mut quantized_cages = Vec::new();
+    for surface in &geometry.subds {
+        let owner = cage_owners.get(surface.id.as_str());
+        let body = owner.map(|owner| owner.body);
+        let identity = match owner {
+            Some(owner) if !owner.shared => owner.body.id.as_str(),
+            _ => surface.id.as_str(),
+        };
+        let name = body.and_then(|body| written_name(body.name.as_deref()));
+        let named = match owner {
+            Some(owner) => format!("cage {} of body {}", surface.id, owner.body.id),
+            None => surface.id.as_str().to_owned(),
+        };
+        let built = cage_record(surface, body, identity, name, archive_version);
+        let Some(written) = records.admit(&named, built)? else {
+            continue;
+        };
+        records.file.write_all(&written.record)?;
+        if written.fanned {
+            fanned_cages.push(surface.id.as_str());
+        }
+        if written.quantized {
+            quantized_cages.push(surface.id.as_str());
+        }
+        for content in written.unheld {
+            unheld_cage_content
+                .entry(content)
+                .or_default()
+                .push(surface.id.as_str());
+        }
+        if let Some(owner) = owner {
+            if owner.body.name.as_deref() != name {
+                cut_names.push(identity.to_owned());
+            }
+        }
+        if written.form == subd::CageForm::ControlMesh {
+            control_meshes.push(named);
+            continue;
+        }
+        if surface.scheme == cadmpeg_ir::SubdScheme::TSpline {
+            reduced_cages.push(named);
+        }
+        let Some(owner) = owner else {
+            continue;
+        };
+        held.extend([owner.body.id.as_str(), owner.region, owner.shell]);
+        if owner.shared {
+            shared_cage_bodies
+                .entry(owner.body.id.as_str())
+                .or_default()
+                .push(surface.id.as_str());
+        }
+    }
+    losses.extend(RhinoLossCode::WriterSubdControlMesh.listed(
+        "writes these T-spline cages as meshes of their control nets, which hold the name, \
+         color, and visibility of each body, without their bodies, subdivision rule, edge \
+         sharpness, vertex tags, symmetries, secondary grips, and knot intervals",
+        control_meshes,
+    ));
+    losses.extend(RhinoLossCode::WriterSubdControlMesh.listed(
+        "writes each control-net face of more than four sides of these cages as a fan of \
+         triangles from its first corner",
+        fanned_cages,
+    ));
+    losses.extend(RhinoLossCode::WriterTsplineReduced.listed(
+        "writes these T-spline cages as Catmull-Clark ON_SubD objects without their edge knot \
+         intervals and user knots; the Catmull-Clark limit surface differs from the T-spline \
+         limit surface where knot intervals are unequal, at T-junctions, and at the G1 caps \
+         around extraordinary vertices",
+        reduced_cages,
+    ));
+    if !quantized_cages.is_empty() {
+        losses.push(RhinoLossCode::MeshVertexPrecisionReduced.note(format!(
+            "archive version 50 stores mesh vertices as f32, and the control nets of these \
+             cages are written as meshes: {}",
+            quantized_cages.join(", ")
+        )));
+    }
+    for (content, cages) in unheld_cage_content {
+        losses.extend(RhinoLossCode::WriterSubdContentOmitted.listed(content.reason(), cages));
+    }
+    for (body, cages) in shared_cage_bodies {
+        losses.push(RhinoLossCode::WriterBodySplit.note(format!(
+            "body {body} is written as separate objects, one for each of its cages and one for \
+             its other content: {}",
+            cages.join(", ")
+        )));
     }
 
     for (body, pieces) in splits {
@@ -1270,28 +1606,23 @@ fn prepare_write(
             unheld.join(", ")
         )));
     }
-    losses.extend(value_unwritable(
-        "Rhino",
+    losses.extend(RhinoLossCode::WriterAttributesOmitted.listed(
         "writes these object names up to their first NUL character, which ends a 3DM name",
         cut_names,
     ));
-    losses.extend(value_unwritable(
-        "Rhino",
+    losses.extend(RhinoLossCode::WriterValueOmitted.listed(
         "writes these free vertices as points without their tolerance",
         tolerant_vertices,
     ));
-    losses.extend(value_unwritable(
-        "Rhino",
+    losses.extend(RhinoLossCode::WriterValueOmitted.listed(
         "writes these polylines as degree-1 NURBS curves without their chordal deflection",
         deflected,
     ));
-    losses.extend(value_unwritable(
-        "Rhino",
+    losses.extend(RhinoLossCode::WriterValueOmitted.listed(
         "writes these meshes as standalone objects without their body binding",
         unbound,
     ));
-    losses.extend(value_unwritable(
-        "Rhino",
+    losses.extend(RhinoLossCode::WriterValueOmitted.listed(
         "writes these NURBS carriers without their periodic flag, which 3DM derives from the \
          knot vector",
         periodic_flags_changed(ir, &written_carriers),
@@ -1300,6 +1631,95 @@ fn prepare_write(
         records: records.file,
         angular,
         losses,
+    })
+}
+
+/// A cage's object record, how it holds the cage, the cage content it does
+/// not hold, and whether its control net is fanned or quantized.
+struct CageRecord {
+    record: Vec<u8>,
+    form: subd::CageForm,
+    unheld: Vec<subd::Unheld>,
+    fanned: bool,
+    quantized: bool,
+}
+
+/// The object record of `surface`, which `body` holds, with the attributes
+/// of `body` under `identity` and `name`.
+fn cage_record(
+    surface: &cadmpeg_ir::subd::SubdSurface,
+    body: Option<&cadmpeg_ir::topology::Body>,
+    identity: &str,
+    name: Option<&str>,
+    archive_version: RhinoArchiveVersion,
+) -> Result<CageRecord, CodecError> {
+    let form = subd::cage_form(surface.scheme, &surface.cage, archive_version)?;
+    let transform = body.and_then(|body| body.transform);
+    let cage = subd::placed(&surface.cage, transform)?;
+    let reflection = subd::reflection(&surface.cage, transform, archive_version);
+    let attributes = object_attributes_payload(
+        identity,
+        name,
+        body.and_then(|body| body.color),
+        body.and_then(|body| body.visible),
+    )?;
+    let unheld = match form {
+        subd::CageForm::ControlMesh => Vec::new(),
+        subd::CageForm::Subd | subd::CageForm::MeshProxy => subd::unheld(
+            &surface.cage,
+            surface.scheme,
+            reflection.is_some(),
+            archive_version,
+        ),
+    };
+    if form == subd::CageForm::Subd {
+        let payload = subd::payload(&cage, reflection, archive_version)?;
+        let record = framed_object_record(
+            subd::SUBD_OBJECT_TYPE,
+            subd::SUBD_CLASS,
+            &payload.body,
+            Some(&payload.direct),
+            &[],
+            Some(attributes),
+        )?;
+        return Ok(CageRecord {
+            record,
+            form,
+            unheld,
+            fanned: false,
+            quantized: false,
+        });
+    }
+    let mesh = subd::control_mesh(&cage)?;
+    let proxied = form == subd::CageForm::MeshProxy;
+    let userdata = if proxied {
+        subd::mesh_proxy(&subd::payload(&cage, None, archive_version)?, &mesh)?
+    } else {
+        Vec::new()
+    };
+    let rows = MeshRows {
+        vertices: mesh.vertices,
+        faces: mesh.faces,
+        normals: Vec::new(),
+        channels: [&[]; 4],
+    };
+    let payload = mesh_payload(&rows, archive_version)?;
+    let record = framed_object_record(
+        0x20,
+        MESH_CLASS,
+        &payload.body,
+        Some(&payload.direct),
+        &userdata,
+        Some(attributes),
+    )?;
+    Ok(CageRecord {
+        record,
+        form,
+        unheld,
+        fanned: !proxied && mesh.fanned,
+        quantized: !proxied
+            && !archive_version.stores_mesh_vertices_as_f64()
+            && quantizes(&rows.vertices),
     })
 }
 
@@ -1611,20 +2031,30 @@ fn brep_payload(
         .iter()
         .enumerate()
         .map(|(index, coedge)| {
-            let edge = &model.edges[coedge.edge];
             let (from, to) = model.endpoints(index);
+            let (edge_index, trim_type) = match coedge.edge {
+                TrimEdge::Edge(position) => {
+                    let edge = &model.edges[position];
+                    let same_loop = edge.uses.len() == 2
+                        && model.coedges[edge.uses[0]].owner_loop
+                            == model.coedges[edge.uses[1]].owner_loop;
+                    (
+                        wire_index(position)?,
+                        brep_trim_type(edge.uses.len(), same_loop),
+                    )
+                }
+                TrimEdge::Singular(_) => (-1, SINGULAR_TRIM_TYPE),
+            };
             let index = wire_index(index)?;
             let mut record = index.to_le_bytes().to_vec();
             record.extend(index.to_le_bytes());
             record.extend(coedge.domain.into_iter().flat_map(f64::to_le_bytes));
-            record.extend(wire_index(coedge.edge)?.to_le_bytes());
+            record.extend(edge_index.to_le_bytes());
             record.extend(wire_index(from)?.to_le_bytes());
             record.extend(wire_index(to)?.to_le_bytes());
-            record.extend(i32::from(coedge.source.sense == Sense::Reversed).to_le_bytes());
-            let same_loop = edge.uses.len() == 2
-                && model.coedges[edge.uses[0]].owner_loop == model.coedges[edge.uses[1]].owner_loop;
-            record.extend(brep_trim_type(edge.uses.len(), same_loop).to_le_bytes());
-            record.extend(0_i32.to_le_bytes());
+            record.extend(i32::from(coedge.reversed).to_le_bytes());
+            record.extend(trim_type.to_le_bytes());
+            record.extend(coedge.iso.to_le_bytes());
             record.extend(wire_index(coedge.owner_loop)?.to_le_bytes());
             record.extend(
                 [coedge.fit_tolerance, 0.0_f64]
@@ -1728,6 +2158,9 @@ fn brep_payload(
     })
 }
 
+/// The 3DM trim type of a trim with no edge whose ends meet at one vertex.
+const SINGULAR_TRIM_TYPE: i32 = 4;
+
 fn brep_trim_type(edge_use_count: usize, two_uses_in_one_loop: bool) -> i32 {
     if edge_use_count == 1 {
         1
@@ -1769,6 +2202,12 @@ fn planar_solid_orientation(model: &WritableModel<'_>) -> i32 {
     let mut correction = 0.0;
     let mut volume6 = 0.0;
     for loop_ in &model.loops {
+        let sign = if model.faces[loop_.face].source.sense == cadmpeg_ir::topology::Sense::Reversed
+        {
+            -1.0
+        } else {
+            1.0
+        };
         let ring = loop_
             .coedges
             .iter()
@@ -1778,7 +2217,7 @@ fn planar_solid_orientation(model: &WritableModel<'_>) -> i32 {
             for triangle in ring[1..].windows(2) {
                 let a = local(triangle[0]);
                 let b = local(triangle[1]);
-                let term = local(*origin).dot(a.cross(b));
+                let term = sign * local(*origin).dot(a.cross(b));
                 let adjusted = term - correction;
                 let total = volume6 + adjusted;
                 correction = (total - volume6) - adjusted;
@@ -1830,27 +2269,25 @@ fn brep_c3_curve(
 fn generated_projected_brep_c2_curve(
     vertices: &[WritableVertex<'_>],
     edge: &WritableEdge<'_>,
-    sense: cadmpeg_ir::topology::Sense,
+    reversed: bool,
     origin: cadmpeg_ir::math::Point3,
+    normal: cadmpeg_ir::math::Vector3,
     u_axis: cadmpeg_ir::math::Vector3,
-    v_axis: cadmpeg_ir::math::Vector3,
 ) -> Result<([u8; 16], Vec<u8>), CodecError> {
-    use cadmpeg_ir::topology::Sense;
-
     Ok(match edge.curve {
         WritableEdgeCurve::Line(_) => {
-            let (from, to) = if sense == Sense::Forward {
-                (edge.start, edge.end)
-            } else {
+            let (from, to) = if reversed {
                 (edge.end, edge.start)
+            } else {
+                (edge.start, edge.end)
             };
             let from = vertices[from].point;
             let to = vertices[to].point;
             (
                 LINE_CLASS,
                 bounded_line_payload(
-                    plane_uv(from, origin, u_axis, v_axis),
-                    plane_uv(to, origin, u_axis, v_axis),
+                    plane_uv(from, origin, normal, u_axis),
+                    plane_uv(to, origin, normal, u_axis),
                     FiniteReal::raw_array(edge.domain),
                     2,
                 )?,
@@ -1861,7 +2298,7 @@ fn generated_projected_brep_c2_curve(
             projected
                 .try_map_control_points(|_, point| {
                     let mut point = point.get();
-                    let uv = plane_uv(point, origin, u_axis, v_axis);
+                    let uv = plane_uv(point, origin, normal, u_axis);
                     point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
                     cadmpeg_ir::features::geometry::FinitePoint3::new(point).ok_or_else(|| {
                         cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
@@ -1870,7 +2307,7 @@ fn generated_projected_brep_c2_curve(
                     })
                 })
                 .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
-            if sense == Sense::Reversed {
+            if reversed {
                 let sum = projected.knots()[usize::try_from(projected.degree()).map_err(|_| {
                     CodecError::Malformed("Rhino count exceeds address space".into())
                 })?] + projected.knots()[projected.pole_count()];
@@ -1910,15 +2347,18 @@ fn canonicalize_native_curve_knots(
 }
 
 /// The pcurve `pcurve` as a trim carrier over its own interval: its stated
-/// range, else its NURBS knot domain, else the range of its edge.
-fn admit_pcurve<'a>(
-    edge: &WritableEdge<'_>,
-    pcurve: &'a cadmpeg_ir::geometry::pcurve::Pcurve,
-) -> Result<WritablePcurve<'a>, CodecError> {
+/// range, else its NURBS knot domain, else `edge_domain`, the range of its
+/// edge where the edge has a curve. A `reversed` carrier runs `pcurve`
+/// backwards over the same interval.
+fn admit_pcurve(
+    edge_domain: Option<[f64; 2]>,
+    pcurve: &cadmpeg_ir::geometry::pcurve::Pcurve,
+    reversed: bool,
+) -> Result<WritablePcurve<'_>, CodecError> {
     let unsupported =
         |what: &str| CodecError::NotImplemented(format!("pcurve {} {what}", pcurve.id.as_str()));
-    if pcurve.wrapper_reversed() == Some(true) || pcurve.native_tail_flags().is_some() {
-        return Err(unsupported("has a reversed wrapper or tail flags"));
+    if pcurve.native_tail_flags().is_some() {
+        return Err(unsupported("has tail flags"));
     }
     let knot_domain = match &pcurve.geometry {
         cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } => {
@@ -1936,7 +2376,8 @@ fn admit_pcurve<'a>(
         .parameter_range()
         .map(cadmpeg_ir::units::FiniteVector::get)
         .or(knot_domain)
-        .unwrap_or_else(|| FiniteReal::raw_array(edge.domain));
+        .or(edge_domain)
+        .ok_or_else(|| unsupported("states no parameter interval"))?;
     if domain[0].partial_cmp(&domain[1]) != Some(std::cmp::Ordering::Less) {
         return Err(unsupported("has an empty or decreasing parameter interval"));
     }
@@ -1954,6 +2395,7 @@ fn admit_pcurve<'a>(
                 origin.v + direction.v * domain[1],
                 0.0,
             ];
+            let (from, to) = if reversed { (to, from) } else { (from, to) };
             (
                 (LINE_CLASS, bounded_line_payload(from, to, domain, 2)?),
                 vec![
@@ -1963,7 +2405,7 @@ fn admit_pcurve<'a>(
             )
         }
         cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } => {
-            let curve = nurbs
+            let mut curve = nurbs
                 .lift(|point| cadmpeg_ir::math::Point3::new(point.u, point.v, 0.0))
                 .map_err(|error| {
                     CodecError::NotImplemented(format!("pcurve {}: {error}", pcurve.id.as_str()))
@@ -1973,6 +2415,14 @@ fn admit_pcurve<'a>(
                 return Err(unsupported(
                     "is not a nonperiodic NURBS curve over its whole knot domain",
                 ));
+            }
+            if reversed {
+                let [Some(start), Some(end)] = domain.map(FiniteReal::new) else {
+                    return Err(unsupported("has a non-finite parameter interval"));
+                };
+                curve
+                    .reverse_parameterization_in_range(start, end)
+                    .ok_or_else(|| unsupported("cannot be reversed over its knot domain"))?;
             }
             (
                 (NURBS_CURVE_CLASS, nurbs_curve_payload_dimension(&curve, 2)?),
@@ -1990,6 +2440,7 @@ fn admit_pcurve<'a>(
         payload,
         domain_extent_points,
         domain,
+        reversed,
     })
 }
 
@@ -2002,12 +2453,13 @@ const CLOSEST_POINT_STEPS: usize = 48;
 /// The point of `edge`'s curve at `parameter`: a non-finite point as it is,
 /// `None` where the curve has no point there.
 fn edge_curve_point(
+    ctx: &DecodeContext<'_>,
     edge: &WritableEdge<'_>,
     parameter: f64,
 ) -> Result<Option<cadmpeg_ir::math::Point3>, CodecError> {
     let parameter = FiniteReal::new(parameter)
         .ok_or_else(|| CodecError::malformed("non-finite edge sample parameter"))?;
-    match edge.curve.point(parameter) {
+    match edge.curve.point(ctx, parameter) {
         Ok(point) => Ok(Some(point.get())),
         Err(failure) => Ok(failure.non_finite()?),
     }
@@ -2046,6 +2498,7 @@ fn span_samples(domain: [f64; 2], knots: impl IntoIterator<Item = f64>) -> Vec<f
 /// `face_tolerance` is the IR-stated tolerance `stated_write_tolerance`
 /// gives.
 fn validate_nurbs_trim(
+    ctx: &DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     face_tolerance: f64,
     edge: &WritableEdge<'_>,
@@ -2065,6 +2518,11 @@ fn validate_nurbs_trim(
         surface.v_knots()[v_count],
     ];
     let pcurve = explicit.source;
+    let ends = if explicit.reversed {
+        [ends[1], ends[0]]
+    } else {
+        ends
+    };
     let inside_domain = |u: f64, v: f64| {
         cadmpeg_ir::math::parameter_in_domain(u, u_domain, EPS_WRITE_DEGENERATE)
             && cadmpeg_ir::math::parameter_in_domain(v, v_domain, EPS_WRITE_DEGENERATE)
@@ -2087,7 +2545,7 @@ fn validate_nurbs_trim(
     let edge_parameters = span_samples(edge_domain, edge_knots);
     let mut edge_points = Vec::with_capacity(edge_parameters.len());
     for parameter in &edge_parameters {
-        match edge_curve_point(edge, *parameter)? {
+        match edge_curve_point(ctx, edge, *parameter)? {
             Some(point) => edge_points.push(point),
             None => {
                 return Ok(Some(format!(
@@ -2117,7 +2575,7 @@ fn validate_nurbs_trim(
     for (index, parameter) in samples.into_iter().enumerate() {
         // A non-finite pcurve point fails the domain test.
         let uv = match cadmpeg_ir::eval::decode::pcurve_uv(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
             &pcurve.geometry,
             parameter,
         ) {
@@ -2140,7 +2598,7 @@ fn validate_nurbs_trim(
         }
         // A non-finite surface point is measured as a finite one is.
         let mapped = match cadmpeg_ir::eval::decode::nurbs_surface_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
             surface,
             uv.u,
             uv.v,
@@ -2156,7 +2614,7 @@ fn validate_nurbs_trim(
                 }
             },
         };
-        let distance = closest_edge_distance(edge, &edge_parameters, &edge_points, mapped)?;
+        let distance = closest_edge_distance(ctx, edge, &edge_parameters, &edge_points, mapped)?;
         if !distance.is_finite() || distance > tolerance {
             return Ok(Some(format!(
                 "pcurve {} misses edge curve {} by {distance}",
@@ -2184,34 +2642,171 @@ fn validate_nurbs_trim(
     Ok(None)
 }
 
+/// Checks that the image of a singular trim's pcurve through its face's
+/// surface stays at the trim's vertex, and returns the finding where it does
+/// not. `tolerance` is the larger of the face and edge tolerances.
+fn validate_singular_trim(
+    ctx: &DecodeContext<'_>,
+    surface: WritableFaceSurface<'_>,
+    tolerance: f64,
+    vertex: cadmpeg_ir::math::Point3,
+    explicit: &WritablePcurve<'_>,
+) -> Result<Option<String>, CodecError> {
+    let pcurve = explicit.source;
+    let tolerance = tolerance.max(
+        pcurve
+            .fit_tolerance()
+            .map_or(0.0, cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
+    );
+    let knots = match &pcurve.geometry {
+        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } => nurbs.knots().to_vec(),
+        _ => Vec::new(),
+    };
+    for parameter in span_samples(explicit.domain, knots) {
+        let uv = match cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
+            &pcurve.geometry,
+            parameter,
+        ) {
+            Ok(uv) => uv.get(),
+            Err(failure) => match failure.non_finite()? {
+                Some(point) => point,
+                None => {
+                    return Ok(Some(format!(
+                        "pcurve {} cannot be evaluated over its parameter interval",
+                        pcurve.id.as_str()
+                    )))
+                }
+            },
+        };
+        let mapped = match surface {
+            WritableFaceSurface::Plane {
+                origin,
+                normal,
+                u_axis,
+            } => {
+                let v_axis = normal.cross(u_axis);
+                cadmpeg_ir::math::Point3::new(
+                    origin.x + u_axis.x * uv.u + v_axis.x * uv.v,
+                    origin.y + u_axis.y * uv.u + v_axis.y * uv.v,
+                    origin.z + u_axis.z * uv.u + v_axis.z * uv.v,
+                )
+            }
+            WritableFaceSurface::Nurbs { surface, .. } => {
+                match cadmpeg_ir::eval::decode::nurbs_surface_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
+                    surface,
+                    uv.u,
+                    uv.v,
+                ) {
+                    Ok(point) => point.get(),
+                    Err(failure) => match failure.non_finite()? {
+                        Some(point) => point,
+                        None => {
+                            return Ok(Some(format!(
+                                "pcurve {} cannot be evaluated through its NURBS surface",
+                                pcurve.id.as_str()
+                            )))
+                        }
+                    },
+                }
+            }
+        };
+        let distance = cadmpeg_ir::math::Point3::distance(mapped, vertex);
+        if !distance.is_finite() || distance > tolerance {
+            return Ok(Some(format!(
+                "pcurve {} of a singular trim leaves its vertex by {distance}",
+                pcurve.id.as_str()
+            )));
+        }
+    }
+    Ok(None)
+}
+
+/// The 3DM iso value of a singular trim: west 3, south 4, east 5, or north
+/// 6 where its pcurve lies on that side of its NURBS surface's parameter
+/// domain, else 0.
+fn singular_trim_iso(surface: WritableFaceSurface<'_>, pcurve: &WritablePcurve<'_>) -> i32 {
+    let WritableFaceSurface::Nurbs { surface, .. } = surface else {
+        return 0;
+    };
+    let Some((u, v)) = convert::nurbs_surface_domain(surface) else {
+        return 0;
+    };
+    let points = &pcurve.domain_extent_points;
+    let on = |lane: fn(&cadmpeg_ir::math::Point2) -> f64, bound: f64| {
+        points
+            .iter()
+            .all(|point| (lane(point) - bound).abs() <= EPS_WRITE_DEGENERATE)
+    };
+    let u_of = |point: &cadmpeg_ir::math::Point2| point.u;
+    let v_of = |point: &cadmpeg_ir::math::Point2| point.v;
+    if on(u_of, u[0]) {
+        3
+    } else if on(v_of, v[0]) {
+        4
+    } else if on(u_of, u[1]) {
+        5
+    } else if on(v_of, v[1]) {
+        6
+    } else {
+        0
+    }
+}
+
 /// The distance from `point` to the edge curve: the closest of `points`,
 /// sampled at `parameters`, refined by golden-section search over the
 /// sample spans on either side of it.
 fn closest_edge_distance(
+    ctx: &DecodeContext<'_>,
     edge: &WritableEdge<'_>,
     parameters: &[f64],
     points: &[cadmpeg_ir::math::Point3],
     point: cadmpeg_ir::math::Point3,
 ) -> Result<f64, CodecError> {
-    let Some((closest, mut best)) = points
+    let distances = points
         .iter()
         .map(|sample| cadmpeg_ir::math::Point3::distance(*sample, point))
-        .enumerate()
-        .min_by(|left, right| left.1.total_cmp(&right.1))
-    else {
-        return Ok(f64::INFINITY);
-    };
-    let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
-    let distance = |parameter: Option<cadmpeg_ir::scalar::FiniteReal>| -> Result<f64, CodecError> {
-        let Some(parameter) = parameter else {
-            return Ok(f64::INFINITY);
-        };
-        Ok(
-            edge_curve_point(edge, parameter.get())?.map_or(f64::INFINITY, |sample| {
+        .collect::<Vec<_>>();
+    let closest = refine_closest(parameters, &distances, |parameter| {
+        Ok::<_, CodecError>(
+            edge_curve_point(ctx, edge, parameter)?.map_or(f64::INFINITY, |sample| {
                 cadmpeg_ir::math::Point3::distance(sample, point)
             }),
         )
+    })?;
+    Ok(closest.map_or(f64::INFINITY, |(_, distance)| distance))
+}
+
+/// The parameter where `distance` is least and that distance: the sample of
+/// `parameters` with the least of `distances`, refined by golden-section
+/// search over the sample spans on either side of it. `None` where there
+/// are no samples.
+fn refine_closest<E>(
+    parameters: &[f64],
+    distances: &[f64],
+    mut distance: impl FnMut(f64) -> Result<f64, E>,
+) -> Result<Option<(f64, f64)>, E> {
+    let Some((closest, least)) = distances
+        .iter()
+        .copied()
+        .enumerate()
+        .min_by(|left, right| left.1.total_cmp(&right.1))
+    else {
+        return Ok(None);
     };
+    let mut best = (parameters[closest], least);
+    let mut measure = |parameter: Option<cadmpeg_ir::scalar::FiniteReal>| -> Result<f64, E> {
+        let Some(parameter) = parameter else {
+            return Ok(f64::INFINITY);
+        };
+        let measured = distance(parameter.get())?;
+        if measured < best.1 {
+            best = (parameter.get(), measured);
+        }
+        Ok(measured)
+    };
+    let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
     let at = |a: f64, b: f64, fraction: f64| cadmpeg_ir::math::interpolate(a, b, fraction);
     let mut a = closest
         .checked_sub(1)
@@ -2220,35 +2815,30 @@ fn closest_edge_distance(
         .get(closest + 1)
         .copied()
         .unwrap_or(parameters[closest]);
-    let mut fc = distance(at(a, b, 1.0 - ratio))?;
-    let mut fd = distance(at(a, b, ratio))?;
+    let mut fc = measure(at(a, b, 1.0 - ratio))?;
+    let mut fd = measure(at(a, b, ratio))?;
     for _ in 0..CLOSEST_POINT_STEPS {
         if fc < fd {
             b = at(a, b, ratio).map_or(b, cadmpeg_ir::scalar::FiniteReal::get);
             fd = fc;
-            fc = distance(at(a, b, 1.0 - ratio))?;
+            fc = measure(at(a, b, 1.0 - ratio))?;
         } else {
             a = at(a, b, 1.0 - ratio).map_or(a, cadmpeg_ir::scalar::FiniteReal::get);
             fc = fd;
-            fd = distance(at(a, b, ratio))?;
+            fd = measure(at(a, b, ratio))?;
         }
-        best = best.min(fc).min(fd);
     }
-    Ok(best)
+    Ok(Some(best))
 }
 
 fn plane_uv(
     point: cadmpeg_ir::math::Point3,
     origin: cadmpeg_ir::math::Point3,
-    u: cadmpeg_ir::math::Vector3,
-    v: cadmpeg_ir::math::Vector3,
+    normal: cadmpeg_ir::math::Vector3,
+    u_axis: cadmpeg_ir::math::Vector3,
 ) -> [f64; 3] {
-    let delta = [point.x - origin.x, point.y - origin.y, point.z - origin.z];
-    [
-        delta[0] * u.x + delta[1] * u.y + delta[2] * u.z,
-        delta[0] * v.x + delta[1] * v.y + delta[2] * v.z,
-        0.0,
-    ]
+    let [u, v] = crate::surfaces::plane_parameters(point, origin, normal, u_axis);
+    [u, v, 0.0]
 }
 
 /// A bounded line from its endpoints, which callers compute, and its domain.
@@ -2416,7 +3006,10 @@ struct MeshAdmission {
 /// groups, and texture assignments, are written without and named.
 fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<MeshAdmission, CodecError> {
     let vertex_count = mesh.vertices().len();
-    if vertex_count == 0 || vertex_count > (1 << 24) || mesh.triangles().len() > (1 << 24) {
+    if vertex_count == 0
+        || vertex_count > crate::mesh::MAX_MESH_COUNT
+        || mesh.triangles().len() > crate::mesh::MAX_MESH_COUNT
+    {
         return Err(CodecError::NotImplemented(format!(
             "mesh {} counts are outside Rhino's native range",
             mesh.id
@@ -3010,28 +3603,69 @@ struct MeshPayload {
     direct: Vec<u8>,
 }
 
+/// The rows of a 3DM mesh: its vertices, its faces as four vertex indices
+/// (a triangle repeats its third), its vertex normals, and the bytes of its
+/// texture, curvature, colour, and surface-parameter channels.
+struct MeshRows<'a> {
+    vertices: Vec<cadmpeg_ir::features::geometry::FinitePoint3>,
+    faces: Vec<[u32; 4]>,
+    normals: Vec<cadmpeg_ir::features::geometry::FiniteVector3>,
+    channels: [&'a [u8]; 4],
+}
+
+impl<'a> MeshRows<'a> {
+    /// The rows of `mesh`, with the channels in `channels`.
+    fn of(mesh: &'a cadmpeg_ir::tessellation::Tessellation, channels: &BTreeSet<u32>) -> Self {
+        Self {
+            vertices: mesh.vertices(),
+            faces: mesh
+                .triangles()
+                .into_iter()
+                .map(|[a, b, c]| [a, b, c, c])
+                .collect(),
+            normals: mesh.vertex_normals(),
+            channels: [
+                CHANNEL_UV,
+                CHANNEL_CURVATURE,
+                CHANNEL_COLOR,
+                CHANNEL_SURFACE_PARAMETERS,
+            ]
+            .map(|kind| mesh_channel(mesh, channels, kind)),
+        }
+    }
+}
+
+/// Whether a 3DM `f32` vertex changes a coordinate of `vertices`.
+fn quantizes(vertices: &[cadmpeg_ir::features::geometry::FinitePoint3]) -> bool {
+    vertices.iter().any(|point| {
+        [point.x, point.y, point.z]
+            .into_iter()
+            .any(|value| cadmpeg_core::convert::f32_from_f64(value).map(f64::from) != Some(value))
+    })
+}
+
 fn mesh_payload(
-    mesh: &cadmpeg_ir::tessellation::Tessellation,
+    mesh: &MeshRows<'_>,
     archive_version: RhinoArchiveVersion,
-    channels: &BTreeSet<u32>,
 ) -> Result<MeshPayload, CodecError> {
+    let [uv, curvature, color, surface_parameters] = mesh.channels;
     let writes_double_vertices = archive_version.stores_mesh_vertices_as_f64();
     let payload_version = if writes_double_vertices { 0x38 } else { 0x35 };
     let mut payload = vec![payload_version];
     payload.extend(
-        (i32::try_from(mesh.vertices().len()).map_err(|_| {
+        (i32::try_from(mesh.vertices.len()).map_err(|_| {
             native_count_limit(
                 2_147_483_647,
-                cadmpeg_core::decode::u64_from_index(mesh.vertices().len()),
+                cadmpeg_core::decode::u64_from_index(mesh.vertices.len()),
             )
         })?)
         .to_le_bytes(),
     );
     payload.extend(
-        (i32::try_from(mesh.triangles().len()).map_err(|_| {
+        (i32::try_from(mesh.faces.len()).map_err(|_| {
             native_count_limit(
                 2_147_483_647,
-                cadmpeg_core::decode::u64_from_index(mesh.triangles().len()),
+                cadmpeg_core::decode::u64_from_index(mesh.faces.len()),
             )
         })?)
         .to_le_bytes(),
@@ -3045,9 +3679,9 @@ fn mesh_payload(
     payload.extend(0_i32.to_le_bytes());
     payload.extend([0_u8; 5]);
 
-    let width = if mesh.vertices().len() < 256 {
+    let width = if mesh.vertices.len() < 256 {
         FaceIndexWidth::One
-    } else if mesh.vertices().len() < 65_536 {
+    } else if mesh.vertices.len() < 65_536 {
         FaceIndexWidth::Two
     } else {
         FaceIndexWidth::Four
@@ -3061,8 +3695,8 @@ fn mesh_payload(
         })?)
         .to_le_bytes(),
     );
-    for triangle in mesh.triangles() {
-        for index in [triangle[0], triangle[1], triangle[2], triangle[2]] {
+    for face in &mesh.faces {
+        for &index in face {
             match width {
                 FaceIndexWidth::One => payload.push(u8::try_from(index).map_err(|_| {
                     CodecError::Malformed("mesh face index exceeds chosen width".into())
@@ -3079,7 +3713,7 @@ fn mesh_payload(
     }
 
     let mut float_vertices = Vec::new();
-    for point in mesh.vertices() {
+    for point in &mesh.vertices {
         for value in [point.x, point.y, point.z] {
             let value = cadmpeg_core::convert::f32_from_f64(value)
                 .ok_or_else(|| CodecError::Malformed("mesh vertex exceeds f32 range".into()))?;
@@ -3087,29 +3721,19 @@ fn mesh_payload(
         }
     }
     let mut normals = Vec::new();
-    for normal in mesh.vertex_normals() {
+    for normal in &mesh.normals {
         for value in [normal.x, normal.y, normal.z] {
             let value = cadmpeg_core::convert::f32_from_f64(value)
                 .ok_or_else(|| CodecError::Malformed("mesh normal exceeds f32 range".into()))?;
             normals.extend(value.to_le_bytes());
         }
     }
-    for data in [
-        &float_vertices[..],
-        &normals[..],
-        mesh_channel(mesh, channels, CHANNEL_UV),
-        mesh_channel(mesh, channels, CHANNEL_CURVATURE),
-        mesh_channel(mesh, channels, CHANNEL_COLOR),
-    ] {
+    for data in [&float_vertices[..], &normals[..], uv, curvature, color] {
         payload.extend(mesh_buffer(data)?);
     }
     payload.extend(0_i32.to_le_bytes());
     payload.extend([0_u8; 16]);
-    payload.extend(mesh_buffer(mesh_channel(
-        mesh,
-        channels,
-        CHANNEL_SURFACE_PARAMETERS,
-    ))?);
+    payload.extend(mesh_buffer(surface_parameters)?);
     let mut direct = payload.clone();
     payload.extend(mesh_mapping_tag()?);
     payload.extend([0_u8; 3]);
@@ -3120,7 +3744,7 @@ fn mesh_payload(
         payload.push(1);
         direct.push(1);
         let doubles = mesh
-            .vertices()
+            .vertices
             .iter()
             .flat_map(|point| {
                 [point.x, point.y, point.z]
@@ -3131,21 +3755,21 @@ fn mesh_payload(
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(0_i32.to_le_bytes());
         body.extend(
-            (u32::try_from(mesh.vertices().len()).map_err(|_| {
+            (u32::try_from(mesh.vertices.len()).map_err(|_| {
                 native_count_limit(
                     4_294_967_295,
-                    cadmpeg_core::decode::u64_from_index(mesh.vertices().len()),
+                    cadmpeg_core::decode::u64_from_index(mesh.vertices.len()),
                 )
             })?)
             .to_le_bytes(),
         );
         body.extend(mesh_buffer(&doubles)?);
         payload.extend(crc_chunk(0x4000_8000, &body)?);
-        let min = mesh.vertices().iter().fold([f64::INFINITY; 3], |a, point| {
+        let min = mesh.vertices.iter().fold([f64::INFINITY; 3], |a, point| {
             [a[0].min(point.x), a[1].min(point.y), a[2].min(point.z)]
         });
         let max = mesh
-            .vertices()
+            .vertices
             .iter()
             .fold([f64::NEG_INFINITY; 3], |a, point| {
                 [a[0].max(point.x), a[1].max(point.y), a[2].max(point.z)]
@@ -3221,6 +3845,7 @@ fn attributed_object_record(
         class_uuid,
         payload,
         None,
+        &[],
         Some(object_attributes_payload(identity, name, color, visible)?),
     )
 }
@@ -3231,6 +3856,7 @@ fn mesh_object_record(payload: &MeshPayload, identity: &str) -> Result<Vec<u8>, 
         MESH_CLASS,
         &payload.body,
         Some(&payload.direct),
+        &[],
         Some(object_attributes_payload(identity, None, None, None)?),
     )
 }
@@ -3247,6 +3873,7 @@ fn brep_object_record(
         BREP_CLASS,
         &payload.body,
         Some(&payload.direct),
+        &[],
         Some(object_attributes_payload(identity, name, color, visible)?),
     )
 }
@@ -3256,6 +3883,7 @@ fn framed_object_record(
     class_uuid: [u8; 16],
     payload: &[u8],
     direct_class_data: Option<&[u8]>,
+    userdata: &[u8],
     attributes: Option<Vec<u8>>,
 ) -> Result<Vec<u8>, CodecError> {
     let object_type = short_chunk(TCODE_OBJECT_RECORD_TYPE, object_type);
@@ -3268,7 +3896,10 @@ fn framed_object_record(
         crc_chunk(TCODE_CLASS_DATA, payload)?
     };
     let class_end = short_chunk(TCODE_CLASS_END, 0);
-    let class = long_chunk(TCODE_CLASS_WRAPPER, &[uuid, class_data, class_end].concat())?;
+    let class = long_chunk(
+        TCODE_CLASS_WRAPPER,
+        &[uuid, class_data, userdata.to_vec(), class_end].concat(),
+    )?;
     let object_end = short_chunk(TCODE_OBJECT_RECORD_END, 0);
     let mut body = [object_type, class].concat();
     if let Some(attributes) = attributes {
@@ -3331,6 +3962,16 @@ fn default_layer_payload() -> Result<Vec<u8>, CodecError> {
     payload.push(0);
     payload.extend(&Sha256::digest(b"cadmpeg:default-layer")[..16]);
     Ok(payload)
+}
+
+/// Whether `edge` is singular: it has no curve and both its ends are one
+/// vertex. A 3DM Brep holds it as a singular trim, which has no edge.
+fn is_singular_edge(edge: &cadmpeg_ir::topology::Edge) -> bool {
+    edge.curve().is_none()
+        && edge
+            .ends
+            .as_ref()
+            .is_some_and(|ends| ends.start == ends.end)
 }
 
 /// The two vertices that bound an edge. A Rhino Brep edge names both.

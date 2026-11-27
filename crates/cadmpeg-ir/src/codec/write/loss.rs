@@ -90,6 +90,13 @@ pub(crate) enum ExportLossCode {
     FeatureLowered,
     /// One edge of a dependency cycle is dropped (§3.4, Dependency cycles).
     DependencyCycleBroken,
+    /// The output of a definition of an encode set is not written, while
+    /// another output is (§3.4, Encode sets).
+    OutputUnwritten,
+    /// No output of an encode set holds a record of the document, or the
+    /// output that holds it holds it without a record of another output it
+    /// names (§3.4, Encode sets).
+    RecordUnheld,
 }
 
 impl ExportLossCode {
@@ -122,6 +129,8 @@ impl ExportLossCode {
             Self::GeneralToleranceDropped => "general_tolerance.dropped",
             Self::FeatureLowered => "feature.lowered",
             Self::DependencyCycleBroken => "dependency.cycle-broken",
+            Self::OutputUnwritten => "output.unwritten",
+            Self::RecordUnheld => "record.unheld",
         }
     }
 
@@ -143,7 +152,8 @@ impl ExportLossCode {
             | Self::DefinitionPlaced
             | Self::FitDropped
             | Self::GeneralToleranceDropped
-            | Self::DependencyCycleBroken => Severity::Warning,
+            | Self::DependencyCycleBroken
+            | Self::RecordUnheld => Severity::Warning,
             Self::ParameterRenamed
             | Self::SourceCarried
             | Self::ValueQuantized
@@ -153,7 +163,8 @@ impl ExportLossCode {
             Self::EditDropped(_)
             | Self::RecordInvalid(_)
             | Self::RuleInvalid
-            | Self::LinkUnwritten => Severity::Error,
+            | Self::LinkUnwritten
+            | Self::OutputUnwritten => Severity::Error,
         }
     }
 
@@ -165,7 +176,9 @@ impl ExportLossCode {
             Self::SourceCarried | Self::SourceUnchecked | Self::SourceDropped => {
                 return LossTaxonomy::RecordNotTyped;
             }
-            Self::LinkUnwritten => return LossTaxonomy::AssemblyComponentsExternal,
+            Self::LinkUnwritten | Self::OutputUnwritten | Self::RecordUnheld => {
+                return LossTaxonomy::AssemblyComponentsExternal;
+            }
             Self::DefinitionPlaced => return LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::OutputEmpty => return LossTaxonomy::NoExportableSolids,
             Self::FacePartial | Self::SolidPartial => {
@@ -422,6 +435,28 @@ where
     listed(ExportLossCode::LinkUnwritten, format, reason, ids)
 }
 
+/// `export:output.unwritten`: the output of `definition` is not written, for
+/// `cause`, while another output of the encode set is (§3.4, Encode sets).
+#[must_use]
+pub(super) fn output_unwritten(format: &str, definition: &str, cause: &str) -> LossNote {
+    ExportLossCode::OutputUnwritten.note(format!(
+        "the {format} write holds no output of definition {definition}: {cause}"
+    ))
+}
+
+/// `export:record.unheld`: no output of the encode set holds these records,
+/// or the output that holds each holds it without the records of other
+/// outputs it names. Each entry names the record and each record of another
+/// output that it needs, with that output's name (§3.4, Encode sets).
+#[must_use]
+pub(super) fn record_unheld<I, S>(format: &str, reason: &str, entries: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    listed(ExportLossCode::RecordUnheld, format, reason, entries)
+}
+
 /// `export:definition.placed`: the target cannot hold a definition that no
 /// occurrence places, and the writer writes these definitions placed (§3.4,
 /// Encode sets).
@@ -520,6 +555,13 @@ where
     listed(ExportLossCode::EditDropped(kind), format, reason, ids)
 }
 
+/// `export:edit.dropped` for one record, or the file, with a message that
+/// names it and why its edit is not written (§3.4, Paths item 4).
+#[must_use]
+pub fn edit_dropped_note(kind: EntityKind, message: impl Into<String>) -> LossNote {
+    ExportLossCode::EditDropped(kind).note(message)
+}
+
 /// `export:output.empty`: the written file holds no geometry (§3.5).
 #[must_use]
 pub fn output_empty(message: impl Into<String>) -> LossNote {
@@ -531,7 +573,7 @@ pub fn output_empty(message: impl Into<String>) -> LossNote {
 #[must_use]
 pub fn face_partial(format: &str, face: &crate::ids::FaceId) -> LossNote {
     ExportLossCode::FacePartial.note(format!(
-        "{format} writes no partial face: {face} does not state every loop"
+        "{format} writes no partial face: {face} does not state its boundary in full"
     ))
 }
 

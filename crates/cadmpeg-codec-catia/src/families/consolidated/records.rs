@@ -214,7 +214,7 @@ impl From<Class23Slots> for [u32; 2] {
 }
 
 /// Closed payload grammar of a consolidated edge-definition frame.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub(crate) enum ConsolidatedEdgeDefinitionData {
     /// Compact class-`0x24` payload `81 <operand> 0f 87`.

@@ -5076,15 +5076,36 @@ pub(super) fn emit_faces(
                     Sense::Reversed => Sense::Forward,
                 };
             }
+            let record_index = u32::try_from(r.index).map_err(|_| {
+                cadmpeg_core::CodecError::malformed("ASM native record index exceeds the u32 range")
+            })?;
+            let surface_id = <SurfaceId>::from(id(format, surface));
+            let carrier = if loops.is_empty() {
+                out.surfaces
+                    .iter()
+                    .find(|carrier| carrier.id == surface_id)
+                    .map(|carrier| &carrier.geometry)
+            } else {
+                None
+            };
+            let (loops, unbounded) =
+                cadmpeg_ir::topology::FaceLoops::unspecified_on(loops, carrier);
+            if let Some(surface_kind) = unbounded {
+                out.unbounded_faces.push(super::UnboundedFace {
+                    face: <FaceId>::from(id(format, i)),
+                    record_index,
+                    surface_kind,
+                });
+            }
             out.faces.push(Face {
                 id: <FaceId>::from(id(format, i)),
                 shell: ShellId::from(id(
                     format,
                     subshell_shells.get(&owner).copied().unwrap_or(owner),
                 )),
-                surface: <SurfaceId>::from(id(format, surface)),
+                surface: surface_id,
                 sense,
-                loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
+                loops,
                 name: attribute_name(r)?,
                 color: attribute_color(r),
                 tolerance: None,
@@ -5100,11 +5121,7 @@ pub(super) fn emit_faces(
                     format,
                 ),
                 face: <FaceId>::from(id(format, i)),
-                record_index: u32::try_from(r.index).map_err(|_| {
-                    cadmpeg_core::CodecError::malformed(
-                        "ASM native record index exceeds the u32 range",
-                    )
-                })?,
+                record_index,
                 native_sense,
                 carrier_flipped,
                 containment,
@@ -5116,11 +5133,7 @@ pub(super) fn emit_faces(
                         format,
                     ),
                     face: face_id,
-                    record_index: u32::try_from(r.index).map_err(|_| {
-                        cadmpeg_core::CodecError::malformed(
-                            "ASM native record index exceeds the u32 range",
-                        )
-                    })?,
+                    record_index,
                     asm_face_key: u64::try_from(*key).ok(),
                 });
             }
@@ -5545,7 +5558,8 @@ pub(super) fn count_other_records(
 
 /// A tolerant-coedge interval whose ends lie outside the knot domain of its
 /// embedded curve only by floating-point noise, moved onto that domain.
-fn clamp_to_knot_domain(
+#[must_use]
+pub fn clamp_to_knot_domain(
     interval: cadmpeg_ir::topology::ParameterInterval,
     curve: &NurbsCurve,
 ) -> cadmpeg_ir::topology::ParameterInterval {

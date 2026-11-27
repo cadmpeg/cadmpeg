@@ -43,8 +43,8 @@ fn source_less_points_round_trip_across_target_versions() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -80,8 +80,9 @@ fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
     let mut bytes = Vec::new();
     RhinoCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V8.descriptor().id.as_str(),
+            )),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("coarse absolute tolerance is writable");
@@ -111,7 +112,7 @@ fn angular_tolerance_just_above_pi_is_written_as_the_default() {
     assert!(
         losses
             .iter()
-            .any(|loss| loss.starts_with("export/value.unwritable")
+            .any(|loss| loss.starts_with("rhino/writer.value-omitted")
                 && loss.contains("document angular tolerance")),
         "{losses:?}"
     );
@@ -170,8 +171,9 @@ fn source_less_circle_round_trips_with_its_frame() {
     let mut bytes = Vec::new();
     RhinoCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V8.descriptor().id.as_str(),
+            )),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
@@ -224,8 +226,9 @@ fn rational_nurbs_curve_round_trips_homogeneous_poles() {
     let mut bytes = Vec::new();
     RhinoCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V8.descriptor().id.as_str(),
+            )),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
@@ -322,8 +325,8 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -374,8 +377,8 @@ fn standalone_mesh_round_trips_across_archive_versions() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -471,8 +474,9 @@ fn mesh_precision_is_target_specific_and_reported() {
     let mut v5 = Vec::new();
     let v5_report = RhinoCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V5.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V5.descriptor().id.as_str(),
+            )),
         )
         .and_then(|plan| plan.write_to(&mut v5))
         .expect("required invariant");
@@ -484,8 +488,9 @@ fn mesh_precision_is_target_specific_and_reported() {
     let mut v8 = Vec::new();
     let v8_report = RhinoCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V8.descriptor().id.as_str(),
+            )),
         )
         .and_then(|plan| plan.write_to(&mut v8))
         .expect("required invariant");
@@ -537,8 +542,9 @@ fn mesh_auxiliary_channels_round_trip_by_kind() {
     let mut bytes = Vec::new();
     RhinoCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V8.descriptor().id.as_str(),
+            )),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
@@ -591,8 +597,9 @@ fn mesh_channel_bytes_cannot_impersonate_nested_chunk_framing() {
     let mut bytes = Vec::new();
     RhinoCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V8.descriptor().id.as_str(),
+            )),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("channel bytes are opaque to chunk framing");
@@ -673,8 +680,9 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
     let mut bytes = Vec::new();
     RhinoCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V8.descriptor().id.as_str(),
+            )),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
@@ -707,8 +715,9 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
     let mut bytes = Vec::new();
     RhinoCodec
         .plan(
-            EncodeInput::new(&source, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            EncodeInput::new(&source, None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V8.descriptor().id.as_str(),
+            )),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
@@ -725,8 +734,9 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
     let mut output = Vec::new();
     RhinoCodec
         .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            EncodeInput::new(decoded.ir(), None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V8.descriptor().id.as_str(),
+            )),
         )
         .and_then(|plan| plan.write_to(&mut output))
         .expect("required invariant");
@@ -751,8 +761,9 @@ fn unsupported_retained_native_records_are_omitted_and_named() {
     let mut bytes = Vec::new();
     RhinoCodec
         .plan(
-            EncodeInput::new(&source, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            EncodeInput::new(&source, None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V8.descriptor().id.as_str(),
+            )),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
@@ -821,7 +832,7 @@ fn noncanonical_nurbs_periodicity_is_written_as_the_stored_knots_state() {
     assert!(
         losses
             .iter()
-            .any(|loss| loss.starts_with("export/value.unwritable")
+            .any(|loss| loss.starts_with("rhino/writer.value-omitted")
                 && loss.contains("cadir:model:curve#periodic")),
         "{losses:?}"
     );
@@ -916,7 +927,7 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
         native_ref: None,
     });
     let plan = RhinoCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None))
         .expect("synthetic support fixture is admitted");
     let loss = plan
         .report()
@@ -963,8 +974,9 @@ fn free_curve_decodes_with_its_layer_and_display_and_rewrites() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(ir, None),
-                TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+                EncodeInput::new(ir, None).with_target(TargetRequest::Explicit(
+                    RhinoArchiveVersion::V8.descriptor().id.as_str(),
+                )),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .map(|report| (bytes, report.losses))
@@ -1016,4 +1028,315 @@ fn free_curve_decodes_with_its_layer_and_display_and_rewrites() {
             "{arena}: {losses:#?}"
         );
     }
+}
+
+/// A document of free lines joined by one composite curve over `range`:
+/// each line is `(key, origin, direction, domain)`.
+fn free_composite_of_lines(
+    lines: &[(&str, Point3, cadmpeg_ir::math::Vector3, [f64; 2])],
+    range: [f64; 2],
+) -> CadIr {
+    use cadmpeg_ir::geometry::{
+        CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition, Curve,
+        CurveGeometry,
+    };
+    use cadmpeg_ir::ids::CurveId;
+
+    let curves = lines
+        .iter()
+        .map(|(key, origin, direction, domain)| Curve {
+            parameter_range: cadmpeg_ir::topology::IncreasingParameterInterval::new(*domain),
+            id: CurveId::mint(format!("rhino:test:curve#{key}")).expect("identity grammar"),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(*origin, *direction)
+                    .expect("a line"),
+            )),
+            source_object: None,
+            native_ref: None,
+        })
+        .collect::<Vec<_>>();
+    let segments = curves
+        .iter()
+        .map(|curve| CompositeCurveSegment {
+            curve: curve.id.clone(),
+            same_sense: true,
+            transition: CompositeCurveTransition::Discontinuous,
+        })
+        .collect::<Vec<_>>();
+    let joined = Curve {
+        parameter_range: cadmpeg_ir::topology::IncreasingParameterInterval::new(range),
+        id: CurveId::mint("rhino:test:curve#joined").expect("identity grammar"),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+            segments: CompositeCurveSegments::try_from(segments).expect("segments"),
+            self_intersect: None,
+        }),
+        source_object: None,
+        native_ref: None,
+    };
+    let mut ir = CadIr::empty();
+    ir.geometry.curves.extend(curves);
+    ir.geometry.curves.push(joined);
+    ir
+}
+
+/// The one NURBS curve a written document decodes to, where no curve is
+/// omitted.
+fn written_joined_nurbs(ir: &CadIr) -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
+    use cadmpeg_ir::geometry::CurveGeometry;
+
+    let (decoded, losses) = super::written(ir);
+    assert!(
+        losses
+            .iter()
+            .all(|loss| !loss.contains("writer.record-omitted")),
+        "{losses:?}"
+    );
+    let [curve] = decoded.geometry.curves.as_slice() else {
+        panic!("one curve object: {:?}", decoded.geometry.curves);
+    };
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &curve.geometry else {
+        panic!("a NURBS curve: {:?}", curve.geometry);
+    };
+    nurbs.clone()
+}
+
+#[test]
+fn free_composite_curve_is_written_as_one_nurbs_curve() {
+    let ir = free_composite_of_lines(
+        &[
+            (
+                "first",
+                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                [0.0, 1.0],
+            ),
+            (
+                "second",
+                Point3::new(1.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                [0.0, 1.0],
+            ),
+        ],
+        [0.0, 2.0],
+    );
+    let nurbs = written_joined_nurbs(&ir);
+    let ends = [0, nurbs.pole_count() - 1].map(|index| {
+        nurbs
+            .pole_rows()
+            .point_at(index)
+            .expect("a control point")
+            .get()
+    });
+    assert_eq!(
+        ends,
+        [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)]
+    );
+}
+
+#[test]
+fn composite_segment_against_its_curve_is_written_reversed() {
+    use cadmpeg_ir::geometry::{CompositeCurveSegments, CurveGeometry};
+
+    // The second line runs from (1, 1) to (1, 0); its segment runs it from
+    // (1, 0) to (1, 1).
+    let mut ir = free_composite_of_lines(
+        &[
+            (
+                "first",
+                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                [0.0, 1.0],
+            ),
+            (
+                "second",
+                Point3::new(1.0, 1.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0),
+                [0.0, 1.0],
+            ),
+        ],
+        [0.0, 2.0],
+    );
+    let joined = ir.geometry.curves.last_mut().expect("the composite curve");
+    let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) =
+        &mut joined.geometry
+    else {
+        panic!("a composite curve");
+    };
+    let mut reversed = segments.iter().cloned().collect::<Vec<_>>();
+    reversed[1].same_sense = false;
+    *segments = CompositeCurveSegments::try_from(reversed).expect("segments");
+
+    let nurbs = written_joined_nurbs(&ir);
+    for (parameter, expected) in [
+        (0.0, Point3::new(0.0, 0.0, 0.0)),
+        (1.0, Point3::new(1.0, 0.0, 0.0)),
+        (1.25, Point3::new(1.0, 0.25, 0.0)),
+        (2.0, Point3::new(1.0, 1.0, 0.0)),
+    ] {
+        let actual = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &nurbs,
+            parameter,
+        )
+        .expect("the written curve has a point")
+        .get();
+        assert!(
+            actual.distance(expected) <= 1e-12,
+            "{parameter}: {actual:?} != {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn composite_with_abutting_domains_keeps_its_stated_range() {
+    let ir = free_composite_of_lines(
+        &[
+            (
+                "first",
+                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                [-3.0, -2.9],
+            ),
+            (
+                "second",
+                Point3::new(-2.9, 2.9, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                [-2.9, -0.8],
+            ),
+        ],
+        [-3.0, -0.8],
+    );
+    let nurbs = written_joined_nurbs(&ir);
+    let degree = usize::try_from(nurbs.degree()).expect("a degree");
+    assert_eq!(
+        [nurbs.knots()[degree], nurbs.knots()[nurbs.pole_count()]],
+        [-3.0, -0.8]
+    );
+}
+
+#[test]
+fn composite_breaks_off_by_rounding_take_the_stored_parameters() {
+    // Laid by length, the second piece would start at 6.0 and end short of
+    // the stated range end; its stored start lies a few ulps past 6.0.
+    let stored = 6.0 + 4.0 * f64::EPSILON * 6.0;
+    let ir = free_composite_of_lines(
+        &[
+            (
+                "first",
+                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                [0.0, 1.0],
+            ),
+            (
+                "second",
+                Point3::new(1.0, -stored, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                [stored, 7.0],
+            ),
+        ],
+        [5.0, 7.0],
+    );
+    let nurbs = written_joined_nurbs(&ir);
+    let degree = usize::try_from(nurbs.degree()).expect("a degree");
+    assert_eq!(
+        [nurbs.knots()[degree], nurbs.knots()[nurbs.pole_count()]],
+        [5.0, 7.0]
+    );
+
+    // Laid by length, the pieces end a few ulps short of the stated end.
+    let end = 2.0 + 4.0 * f64::EPSILON * 2.0;
+    let ir = free_composite_of_lines(
+        &[
+            (
+                "first",
+                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                [0.0, 1.0],
+            ),
+            (
+                "second",
+                Point3::new(1.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                [0.0, 1.0],
+            ),
+        ],
+        [0.0, end],
+    );
+    let nurbs = written_joined_nurbs(&ir);
+    assert_eq!(
+        [nurbs.knots()[degree], nurbs.knots()[nurbs.pole_count()]],
+        [0.0, end]
+    );
+}
+
+#[test]
+fn composite_whose_pieces_do_not_join_is_written_as_its_pieces() {
+    let ir = free_composite_of_lines(
+        &[
+            (
+                "first",
+                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                [0.0, 1.0],
+            ),
+            (
+                "second",
+                Point3::new(5.0, 5.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                [0.0, 1.0],
+            ),
+        ],
+        [0.0, 2.0],
+    );
+    let (decoded, losses) = super::written(&ir);
+    assert_eq!(decoded.geometry.curves.len(), 2, "{losses:?}");
+    let split = crate::loss::RhinoLossCode::WriterCurveSplit
+        .kind()
+        .to_string();
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.starts_with(&split) && loss.contains("rhino:test:curve#joined")),
+        "{losses:?}"
+    );
+    assert!(
+        losses
+            .iter()
+            .all(|loss| !loss.contains("writer.record-omitted")),
+        "{losses:?}"
+    );
+}
+
+#[test]
+fn polycurve_with_a_near_full_turn_circle_piece_is_written_over_its_stored_interval() {
+    use crate::test_support::test_archive as support;
+
+    // The circle piece's interval is a full turn plus less than the circle
+    // tolerance, so its laid length would fall short of the stored break.
+    let turn = std::f64::consts::TAU + 1.0e-11;
+    let children = [
+        (
+            support::ARC_CLASS,
+            support::arc_payload([0.0, std::f64::consts::TAU], [0.0, std::f64::consts::TAU]),
+        ),
+        (
+            support::LINE_CLASS,
+            support::line_payload([2.0, 0.0, 0.0], [3.0, 0.0, 0.0], [0.0, 1.0]),
+        ),
+    ];
+    let bytes = support::archive(&[support::object_record(
+        4,
+        support::POLYCURVE_CLASS,
+        &support::polycurve_payload(&[0.0, turn, turn + 1.0], &children),
+    )]);
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the polycurve archive decodes");
+
+    let nurbs = written_joined_nurbs(decoded.ir());
+    let degree = usize::try_from(nurbs.degree()).expect("a degree");
+    assert_eq!(
+        [nurbs.knots()[degree], nurbs.knots()[nurbs.pole_count()]],
+        [0.0, turn + 1.0]
+    );
 }

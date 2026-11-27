@@ -103,7 +103,7 @@ fn semantic_writer_keeps_stored_compact_edge_selections_and_names_the_edit() {
         });
     }
 
-    let unwritten =
+    let (unwritten, _) =
         crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert!(
         unwritten
@@ -211,7 +211,7 @@ fn semantic_writer_keeps_stored_compact_surface_selections_and_names_the_edit() 
         updated_feature_evaluation.set_definition(updated_feature_definition);
     }
 
-    let unwritten =
+    let (unwritten, _) =
         crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert!(
         unwritten

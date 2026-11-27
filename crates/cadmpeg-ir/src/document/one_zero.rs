@@ -2,255 +2,138 @@
 //! The reading half of §2.5's one zero: a float field is read by its value,
 //! so `-0`, `-0.0`, and `0` read as 0.
 //!
-//! [`Zeroed`] forwards a `Deserializer` and wraps every visitor, seed, and
-//! access it hands on, so each float the inner deserializer visits, at any
-//! depth and native records included, reaches the reading type with negative
-//! zero replaced by zero. An integer field keeps `serde_json`'s integer
-//! reading: `1.0`, `1e0`, and `-0` are floats, and an integer field refuses
-//! them.
+//! Negative-zero JSON number tokens (`-0`, `-0.0`, `-0e0`, …) outside string
+//! literals are rewritten to positive-zero float spellings (`0.0` or the same
+//! spelling with a leading space in place of `-`) before feeding
+//! `serde_json`'s `StrRead` deserializer directly. An integer field keeps
+//! `serde_json`'s integer reading: `1.0`, `1e0`, and `-0` are floats, and an
+//! integer field refuses them. Because reading uses `StrRead` directly, types
+//! share the single `serde_json` string deserializer with `cadmpeg_core::tagged`
+//! instead of instantiating an extra deserializer wrapper across the whole IR.
 
-use serde::de::{
-    self, DeserializeSeed, Deserializer, EnumAccess, MapAccess, SeqAccess, VariantAccess, Visitor,
-};
+use std::borrow::Cow;
+
+use serde::de;
 
 /// Reads `text` as one JSON value of `T`, every float zero as 0.
 pub(super) fn from_str<T: de::DeserializeOwned>(text: &str) -> Result<T, serde_json::Error> {
-    let mut deserializer = crate::bounds::deserializer(text)?;
-    let value = T::deserialize(Zeroed(&mut deserializer))?;
+    let normalized = normalize_negative_zero(text);
+    let mut deserializer = crate::bounds::deserializer(&normalized)?;
+    let value = T::deserialize(&mut deserializer)?;
     deserializer.end()?;
     Ok(value)
 }
 
-/// A deserializer whose floats read negative zero as zero.
-struct Zeroed<D>(D);
+/// Reads `value` as one value of `T`, every float zero as 0. A refusal
+/// carries no position: the text it would name is written here, not read.
+pub(super) fn from_value<T: de::DeserializeOwned>(
+    value: &serde_json::Value,
+) -> Result<T, serde_json::Error> {
+    let text = serde_json::to_string(value)?;
+    from_str(&text).map_err(cadmpeg_core::serde_erase::without_position)
+}
 
-/// A visitor that receives negative zero as zero.
-struct Visit<V>(V);
-
-/// A seed whose value is read through [`Zeroed`].
-struct Seed<S>(S);
-
-/// A sequence, map, enum, or variant access whose values are read through
-/// [`Zeroed`].
-struct Access<A>(A);
-
-macro_rules! forward_deserialize {
-    ($($method:ident($($argument:ident: $type:ty),*)),* $(,)?) => {$(
-        fn $method<V: Visitor<'de>>(
-            self,
-            $($argument: $type,)*
-            visitor: V,
-        ) -> Result<V::Value, Self::Error> {
-            self.0.$method($($argument,)* Visit(visitor))
+/// Rewrites every negative-zero JSON number token outside string literals to a
+/// positive-zero float spelling so float fields read `+0.0` while integer
+/// fields still refuse `-0` and `-0.0`.
+fn normalize_negative_zero(text: &str) -> Cow<'_, str> {
+    if !text.contains("-0") {
+        return Cow::Borrowed(text);
+    }
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut copied = 0;
+    let mut index = 0;
+    let mut in_string = false;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if in_string {
+            if byte == b'\\' {
+                index += 2;
+                continue;
+            }
+            if byte == b'"' {
+                in_string = false;
+            }
+            index += 1;
+            continue;
         }
-    )*};
-}
-
-impl<'de, D: Deserializer<'de>> Deserializer<'de> for Zeroed<D> {
-    type Error = D::Error;
-
-    forward_deserialize!(
-        deserialize_any(),
-        deserialize_bool(),
-        deserialize_i8(),
-        deserialize_i16(),
-        deserialize_i32(),
-        deserialize_i64(),
-        deserialize_i128(),
-        deserialize_u8(),
-        deserialize_u16(),
-        deserialize_u32(),
-        deserialize_u64(),
-        deserialize_u128(),
-        deserialize_f32(),
-        deserialize_f64(),
-        deserialize_char(),
-        deserialize_str(),
-        deserialize_string(),
-        deserialize_bytes(),
-        deserialize_byte_buf(),
-        deserialize_option(),
-        deserialize_unit(),
-        deserialize_unit_struct(name: &'static str),
-        deserialize_newtype_struct(name: &'static str),
-        deserialize_seq(),
-        deserialize_tuple(len: usize),
-        deserialize_tuple_struct(name: &'static str, len: usize),
-        deserialize_map(),
-        deserialize_struct(name: &'static str, fields: &'static [&'static str]),
-        deserialize_enum(name: &'static str, variants: &'static [&'static str]),
-        deserialize_identifier(),
-        deserialize_ignored_any(),
-    );
-
-    fn is_human_readable(&self) -> bool {
-        self.0.is_human_readable()
-    }
-}
-
-macro_rules! forward_visit {
-    ($($method:ident($type:ty)),* $(,)?) => {$(
-        fn $method<E: de::Error>(self, value: $type) -> Result<Self::Value, E> {
-            self.0.$method(value)
+        if byte == b'"' {
+            in_string = true;
+            index += 1;
+            continue;
         }
-    )*};
-}
-
-impl<'de, V: Visitor<'de>> Visitor<'de> for Visit<V> {
-    type Value = V::Value;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.expecting(formatter)
+        if byte == b'-'
+            && bytes.get(index + 1) == Some(&b'0')
+            && (index == 0 || is_json_delimiter(bytes[index - 1]))
+        {
+            if let Some((end, has_float_marker)) = negative_zero_end(bytes, index) {
+                out.push_str(&text[copied..index]);
+                if has_float_marker {
+                    out.push(' ');
+                    out.push_str(&text[index + 1..end]);
+                } else {
+                    out.push_str("0.0");
+                }
+                copied = end;
+                index = end;
+                continue;
+            }
+        }
+        index += 1;
     }
-
-    forward_visit!(
-        visit_bool(bool),
-        visit_i8(i8),
-        visit_i16(i16),
-        visit_i32(i32),
-        visit_i64(i64),
-        visit_i128(i128),
-        visit_u8(u8),
-        visit_u16(u16),
-        visit_u32(u32),
-        visit_u64(u64),
-        visit_u128(u128),
-        visit_char(char),
-        visit_str(&str),
-        visit_borrowed_str(&'de str),
-        visit_string(String),
-        visit_bytes(&[u8]),
-        visit_borrowed_bytes(&'de [u8]),
-        visit_byte_buf(Vec<u8>),
-    );
-
-    fn visit_f32<E: de::Error>(self, value: f32) -> Result<Self::Value, E> {
-        self.0.visit_f32(value + 0.0)
-    }
-
-    fn visit_f64<E: de::Error>(self, value: f64) -> Result<Self::Value, E> {
-        self.0.visit_f64(value + 0.0)
-    }
-
-    fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
-        self.0.visit_none()
-    }
-
-    fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
-        self.0.visit_unit()
-    }
-
-    fn visit_some<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Value, D::Error> {
-        self.0.visit_some(Zeroed(deserializer))
-    }
-
-    fn visit_newtype_struct<D: Deserializer<'de>>(
-        self,
-        deserializer: D,
-    ) -> Result<Self::Value, D::Error> {
-        self.0.visit_newtype_struct(Zeroed(deserializer))
-    }
-
-    fn visit_seq<A: SeqAccess<'de>>(self, access: A) -> Result<Self::Value, A::Error> {
-        self.0.visit_seq(Access(access))
-    }
-
-    fn visit_map<A: MapAccess<'de>>(self, access: A) -> Result<Self::Value, A::Error> {
-        self.0.visit_map(Access(access))
-    }
-
-    fn visit_enum<A: EnumAccess<'de>>(self, access: A) -> Result<Self::Value, A::Error> {
-        self.0.visit_enum(Access(access))
+    if copied == 0 {
+        Cow::Borrowed(text)
+    } else {
+        out.push_str(&text[copied..]);
+        Cow::Owned(out)
     }
 }
 
-impl<'de, S: DeserializeSeed<'de>> DeserializeSeed<'de> for Seed<S> {
-    type Value = S::Value;
-
-    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Value, D::Error> {
-        self.0.deserialize(Zeroed(deserializer))
-    }
+fn is_json_delimiter(byte: u8) -> bool {
+    matches!(
+        byte,
+        b' ' | b'\t' | b'\n' | b'\r' | b',' | b':' | b'[' | b']' | b'{' | b'}'
+    )
 }
 
-impl<'de, A: SeqAccess<'de>> SeqAccess<'de> for Access<A> {
-    type Error = A::Error;
-
-    fn next_element_seed<T: DeserializeSeed<'de>>(
-        &mut self,
-        seed: T,
-    ) -> Result<Option<T::Value>, Self::Error> {
-        self.0.next_element_seed(Seed(seed))
+/// If `bytes[start..]` starts with a valid negative-zero JSON number token
+/// followed by a JSON delimiter or EOF, returns `(end_offset, has_float_marker)`.
+fn negative_zero_end(bytes: &[u8], start: usize) -> Option<(usize, bool)> {
+    let mut cursor = start + 2;
+    let mut has_float_marker = false;
+    if bytes.get(cursor) == Some(&b'.') {
+        has_float_marker = true;
+        cursor += 1;
+        let frac_start = cursor;
+        while bytes.get(cursor) == Some(&b'0') {
+            cursor += 1;
+        }
+        if cursor == frac_start {
+            return None;
+        }
+        if bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+            return None;
+        }
     }
-
-    fn size_hint(&self) -> Option<usize> {
-        self.0.size_hint()
+    if matches!(bytes.get(cursor), Some(b'e' | b'E')) {
+        has_float_marker = true;
+        cursor += 1;
+        if matches!(bytes.get(cursor), Some(b'+' | b'-')) {
+            cursor += 1;
+        }
+        let exp_start = cursor;
+        while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+            cursor += 1;
+        }
+        if cursor == exp_start {
+            return None;
+        }
     }
-}
-
-impl<'de, A: MapAccess<'de>> MapAccess<'de> for Access<A> {
-    type Error = A::Error;
-
-    fn next_key_seed<K: DeserializeSeed<'de>>(
-        &mut self,
-        seed: K,
-    ) -> Result<Option<K::Value>, Self::Error> {
-        self.0.next_key_seed(Seed(seed))
-    }
-
-    fn next_value_seed<T: DeserializeSeed<'de>>(
-        &mut self,
-        seed: T,
-    ) -> Result<T::Value, Self::Error> {
-        self.0.next_value_seed(Seed(seed))
-    }
-
-    fn size_hint(&self) -> Option<usize> {
-        self.0.size_hint()
-    }
-}
-
-impl<'de, A: EnumAccess<'de>> EnumAccess<'de> for Access<A> {
-    type Error = A::Error;
-    type Variant = Access<A::Variant>;
-
-    fn variant_seed<T: DeserializeSeed<'de>>(
-        self,
-        seed: T,
-    ) -> Result<(T::Value, Self::Variant), Self::Error> {
-        self.0
-            .variant_seed(Seed(seed))
-            .map(|(value, variant)| (value, Access(variant)))
-    }
-}
-
-impl<'de, A: VariantAccess<'de>> VariantAccess<'de> for Access<A> {
-    type Error = A::Error;
-
-    fn unit_variant(self) -> Result<(), Self::Error> {
-        self.0.unit_variant()
-    }
-
-    fn newtype_variant_seed<T: DeserializeSeed<'de>>(
-        self,
-        seed: T,
-    ) -> Result<T::Value, Self::Error> {
-        self.0.newtype_variant_seed(Seed(seed))
-    }
-
-    fn tuple_variant<V: Visitor<'de>>(
-        self,
-        len: usize,
-        visitor: V,
-    ) -> Result<V::Value, Self::Error> {
-        self.0.tuple_variant(len, Visit(visitor))
-    }
-
-    fn struct_variant<V: Visitor<'de>>(
-        self,
-        fields: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, Self::Error> {
-        self.0.struct_variant(fields, Visit(visitor))
+    if cursor == bytes.len() || is_json_delimiter(bytes[cursor]) {
+        Some((cursor, has_float_marker))
+    } else {
+        None
     }
 }
 

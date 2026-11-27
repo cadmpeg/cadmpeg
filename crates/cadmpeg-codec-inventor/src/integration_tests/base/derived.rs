@@ -216,10 +216,10 @@ fn derived_validator_rejects_changed_source_transform_state_types_and_qualifiers
                     9 => record["save_version_major"] = 18.into(),
                     10 => {
                         record["header"]["stamps"] =
-                            serde_json::json!(vec![0; 2 + usize::from(version >= 25)]);
+                            cadmpeg_core::json!(vec![0; 2 + usize::from(version >= 25)]);
                     }
-                    11 => record["header"]["stamps"] = serde_json::json!([0]),
-                    12 => record["header"]["stamps"] = serde_json::json!([-2]),
+                    11 => record["header"]["stamps"] = cadmpeg_core::json!([0]),
+                    12 => record["header"]["stamps"] = cadmpeg_core::json!([-2]),
                     _ => record["header"]["flags_extension"] = 0.into(),
                 }
                 namespace

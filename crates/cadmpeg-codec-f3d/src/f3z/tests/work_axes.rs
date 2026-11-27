@@ -94,8 +94,11 @@ fn work_axis_partial_evidence_and_literal_names_survive_real_f3z_merge() {
             unreachable!()
         };
         assert!(axis.geometry().is_some());
-        let native =
-            crate::native::F3dNative::load(merged.ir().native.namespace("f3d").unwrap()).unwrap();
+        let native = crate::native::F3dNative::load_inner(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            merged.ir().native.namespace("f3d").unwrap(),
+        )
+        .unwrap();
         assert!(native
             .design_parameter_scopes
             .iter()
@@ -168,7 +171,7 @@ fn distinct_work_axis_members_with_equal_local_ids_keep_their_owners_images_and_
         .unwrap();
     let local_feature = source.id.as_str();
     let local_native = source.native_ref.as_deref().unwrap();
-    let prefix = |ordinal| format!("f3d:xref/role-{XREF_ROLE}/reference-{ordinal}/occurrence-0/");
+    let prefix = |ordinal: usize| format!("f3d:{}@", ["first.f3d", "second.f3d"][ordinal]);
     let destination = format!(
         "{}{}",
         prefix(0),
@@ -200,8 +203,11 @@ fn distinct_work_axis_members_with_equal_local_ids_keep_their_owners_images_and_
         )
         .unwrap(),
     );
-    let native =
-        crate::native::F3dNative::load(merged.ir().native.namespace("f3d").unwrap()).unwrap();
+    let native = crate::native::F3dNative::load_inner(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        merged.ir().native.namespace("f3d").unwrap(),
+    )
+    .unwrap();
     let axes = merged
         .ir()
         .model

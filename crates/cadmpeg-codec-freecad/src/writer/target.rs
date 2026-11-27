@@ -7,12 +7,16 @@
 //!
 //! [`Encoder::plan`]: cadmpeg_ir::codec::write::Encoder::plan
 
+use std::collections::HashSet;
+
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    carried_source_losses, edit_dropped, edit_unverified, target::ResolvedWrite, ArenaCoverage,
-    Consumption, EncodeInput, ExportBody, PatchConsumption, WritePath,
+    carried_source_losses, edit_dropped, edit_unverified,
+    target::{ResolvedWrite, WrittenRow},
+    ArenaCoverage, Consumption, EncodeInput, ExportBody, NativeDisposition, NativeDispositions,
+    PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::digest::Sha256Digest;
@@ -28,7 +32,8 @@ use crate::persistence::Vocabulary;
 ///
 /// This writer has one capability. It patches the retained
 /// `Document.xml` and regenerates none, so the only dialect it can deliver is
-/// the one the retained document declares. Only [`resolve`] and
+/// the one the retained document declares, and a request for another row is
+/// written as that dialect (§3.4, Refusals). Only [`resolve`] and
 /// [`retained_baseline`] build one: its fields are private, so a `Resolution`
 /// in hand proves that the retained archive entries hold a `Document.xml` that
 /// reads as the dialect it carries. [`write_seekable`] takes that proof instead
@@ -47,6 +52,9 @@ pub(super) struct Resolution<'a> {
     /// The other retained entries that read, each name once, in arena order.
     entries: Vec<EntryRecord>,
     omitted: Omissions,
+    /// Names of the archive members `omitted` already names by their entry
+    /// record.
+    omitted_members: HashSet<String>,
 }
 
 impl<'a> Resolution<'a> {
@@ -85,43 +93,48 @@ impl<'a> Resolution<'a> {
     pub(super) const fn omitted(&self) -> &Omissions {
         &self.omitted
     }
+
+    pub(super) const fn omitted_members(&self) -> &HashSet<String> {
+        &self.omitted_members
+    }
 }
 
 const BASELINE_UNAVAILABLE: &str =
     "the document holds no FCStd archive entry with a readable Document.xml, and this writer \
      regenerates no Document.xml, so the target cannot be written";
-const TRANSCODE_UNAVAILABLE: &str =
-    "the resolved target displaces the retained FCStd source dialect, and this writer \
-     regenerates no Document.xml, so the target cannot be written";
-const DIALECT_UNAVAILABLE: &str =
-    "the retained Document.xml declares another schema than the resolved target, and this \
-     writer regenerates no Document.xml, so the target cannot be written";
+const PATCH_ONLY: &str =
+    "this writer patches the retained FCStd Document.xml and regenerates none, so it writes \
+     the dialect the retained document declares";
 
 /// Resolve the request against the source, then plan the export it names.
 ///
-/// `Explicit(id)` refuses an id outside the synthesis catalog. It is otherwise
-/// the replay law's compare: the retained document is written back exactly when
-/// its `Document.xml` declares `id`, and an id that displaces the recorded
-/// source dialect is a transcode this writer cannot perform, refused by name
-/// with the catalog.
+/// `Explicit(id)` refuses an id that names no row of the synthesis catalog
+/// and no replay row ([`crate::dialect::REPLAY_ROWS`]). Otherwise the retained
+/// document is written back as the dialect its `Document.xml` declares: `id`
+/// when it declares `id`, and the declared dialect, with
+/// `target.request-displaced` naming both, when it declares another.
 ///
 /// `Inherit` asks for preservation instead. This writer repacks the retained
 /// entry set and patches `Document.xml` inside it, which reproduces whatever
 /// schema the source declared — schema 2 and schema 3 included, neither of which
-/// is a synthesis target. There is no fall-through to the catalog default: a
-/// same-format conversion never silently changes what the file is.
+/// is a synthesis target. With no recorded source dialect, the resolution
+/// names the newest catalog row and the file is the dialect the retained
+/// `Document.xml` declares.
 ///
 /// The source bytes are the archive entries the document's `fcstd` records
 /// hold (§3.4, Paths), whatever format `ir.source` names. A document that holds
 /// no such entry with a readable `Document.xml` gives this writer, which has no
 /// synthesis path, nothing to write.
 pub(crate) fn plan(
+    ctx: &DecodeContext<'_>,
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    let resolution = resolve(input.ir, resolved)?;
-    let baseline = admit_unedited(input.ir, input.fidelity)?;
-    finish(&resolution, input.fidelity, baseline)
+    let (resolution, written_row) = resolve(ctx, input.ir, resolved)?;
+    let baseline = admit_unedited(ctx, input.ir, input.fidelity)?;
+    let mut body = finish(ctx, &resolution, input.fidelity, baseline)?;
+    body.written_row = written_row;
+    Ok(body)
 }
 
 /// Native `fcstd` arenas this writer handles itself: property values patch
@@ -159,13 +172,15 @@ pub(crate) fn uncarried_digest(
 }
 
 /// What [`admit_unedited`] could establish about edits since decode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Baseline {
     /// The digest matches: nothing outside [`CARRIED_NATIVE_ARENAS`] changed.
     Unedited,
-    /// The digest differs: an edit outside [`CARRIED_NATIVE_ARENAS`] has no
-    /// serializer here and is left as the source stores it.
-    Edited,
+    /// The digest differs, or does not compute for the reason held, though
+    /// the decode that recorded it computed it: an edit outside
+    /// [`CARRIED_NATIVE_ARENAS`] has no serializer here and is left as the
+    /// source stores it.
+    Edited(Option<String>),
     /// The sidecar records no digest, so the document's edits are not known.
     Unrecorded,
 }
@@ -173,24 +188,32 @@ enum Baseline {
 /// Compare the document with the digest its decode recorded.
 ///
 /// A document whose sidecar records no digest (no sidecar, or every decode
-/// below `Full`) is [`Baseline::Unrecorded`].
-fn admit_unedited(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Baseline, CodecError> {
+/// below `Full`) is [`Baseline::Unrecorded`]. A held digest that does not
+/// compute, for a reason other than a resource ceiling, shows an edit.
+fn admit_unedited(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    fidelity: Option<&SourceFidelity>,
+) -> Result<Baseline, CodecError> {
     let Some(expected) = fidelity.and_then(|fidelity| fidelity.codec_digests.get(UNCARRIED_DIGEST))
     else {
         return Ok(Baseline::Unrecorded);
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    let current = uncarried_digest(&ctx, ir)?;
-    ctx.finish_session()?;
+    let current = match uncarried_digest(ctx, ir) {
+        Ok(current) => current,
+        Err(error) => {
+            let reason = error.to_string();
+            recover(error)?;
+            return Ok(Baseline::Edited(Some(reason)));
+        }
+    };
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(limit));
+    }
     Ok(if current == *expected {
         Baseline::Unedited
     } else {
-        Baseline::Edited
+        Baseline::Edited(None)
     })
 }
 
@@ -200,14 +223,16 @@ fn admit_unedited(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Basel
 /// in `fidelity` charge both carried-source codes. A [`Baseline::Unrecorded`]
 /// document charges `export:edit.unverified`, and a [`Baseline::Edited`] one
 /// charges `export:edit.dropped` naming the document, because the digest does
-/// not isolate the edited record (§3.4, Paths item 4).
+/// not isolate the edited record, and the record the digest error names
+/// (§3.4, Paths item 4).
 fn finish(
+    ctx: &DecodeContext<'_>,
     resolution: &Resolution<'_>,
     fidelity: Option<&cadmpeg_ir::SourceFidelity>,
     baseline: Baseline,
 ) -> Result<ExportBody, CodecError> {
     let mut bytes = Vec::new();
-    let outcome = write(&mut bytes, resolution)?;
+    let outcome = write(ctx, &mut bytes, resolution)?;
     let write_path = WritePath::Patched {
         consumption: PatchConsumption::Independent(Consumption::NotConsumed),
     };
@@ -219,7 +244,7 @@ fn finish(
              since decode are not known; the file patches the retained Document.xml with the \
              carried native records and holds no other edit"
         ))),
-        Baseline::Edited => losses.extend(edit_dropped(
+        Baseline::Edited(None) => losses.extend(edit_dropped(
             EntityKind::Feature,
             "FCStd",
             "patches the retained Document.xml with the carried native records and holds \
@@ -227,30 +252,59 @@ fn finish(
              record, so the entry names the document",
             [resolution.document().id.clone()],
         )),
+        Baseline::Edited(Some(reason)) => losses.extend(edit_dropped(
+            EntityKind::Feature,
+            "FCStd",
+            &format!(
+                "patches the retained Document.xml with the carried native records and holds \
+                 the other records as the source stores them; the `{UNCARRIED_DIGEST}` codec \
+                 digest the sidecar holds does not compute ({reason}), so a record it covers \
+                 is edited, and the entry names the document"
+            ),
+            [resolution.document().id.clone()],
+        )),
     }
     losses.extend(outcome.losses);
+    // The patched archive holds every record of the retained graph; a
+    // namespace of another format has no place in it.
+    let mut native = NativeDispositions::dropped("which the FCStd writer does not write");
+    native.namespace("fcstd", NativeDisposition::Written);
+    outcome.omitted.declare(&mut native);
     Ok(ExportBody {
         bytes,
+        synthesis_cause: None,
         census: outcome.census,
         losses,
         write_path,
         coverage: ArenaCoverage::Complete,
+        native,
         notes: outcome.notes,
+        written_row: None,
+        annotations: None,
     })
 }
 
-/// Decide what to write, from the request and the source.
-fn resolve<'a>(ir: &'a CadIr, resolved: &ResolvedWrite<'_>) -> Result<Resolution<'a>, CodecError> {
-    if resolved.displaced_source().is_some() {
-        return Err(resolved.unavailable(TRANSCODE_UNAVAILABLE));
-    }
-    let resolution = retained_baseline(ir, resolved.target_id())?
+/// Decide what to write, from the request and the source: the retained
+/// document, and the row it is where the resolution names another.
+fn resolve<'a>(
+    ctx: &DecodeContext<'_>,
+    ir: &'a CadIr,
+    resolved: &ResolvedWrite<'_>,
+) -> Result<(Resolution<'a>, Option<WrittenRow>), CodecError> {
+    let mut resolution = retained_baseline(ctx, ir, resolved.target_id())?
         .ok_or_else(|| resolved.unavailable(BASELINE_UNAVAILABLE))?;
-    if FcstdDialect::from_schema_version(resolution.schema_version()).id() != *resolved.target_id()
-    {
-        return Err(resolved.unavailable(DIALECT_UNAVAILABLE));
+    let declared = FcstdDialect::from_schema_version(resolution.schema_version()).id();
+    if declared == *resolved.target_id() {
+        return Ok((resolution, None));
     }
-    Ok(resolution)
+    resolution.target = declared.clone();
+    Ok((
+        resolution,
+        Some(WrittenRow {
+            target: declared,
+            reason: PATCH_ONLY.to_owned(),
+        }),
+    ))
 }
 
 /// The retained archive the write repacks, witnessed by its own
@@ -264,6 +318,7 @@ fn resolve<'a>(ir: &'a CadIr, resolved: &ResolvedWrite<'_>) -> Result<Resolution
 /// whose name an earlier entry already takes, is left out of the archive and
 /// reported. `target` is the dialect the resolution names.
 pub(super) fn retained_baseline<'a>(
+    ctx: &DecodeContext<'_>,
     ir: &'a CadIr,
     target: &DialectId,
 ) -> Result<Option<Resolution<'a>>, CodecError> {
@@ -271,11 +326,12 @@ pub(super) fn retained_baseline<'a>(
         return Ok(None);
     };
     let mut omitted = Omissions::default();
-    let (records, unreadable) = super::read_arena::<EntryRecord>(namespace, "entries")?;
+    let (records, unreadable) = super::read_arena::<EntryRecord>(ctx, namespace, "entries")?;
+    let omitted_members = entry_names(ctx, namespace, &unreadable);
     for id in unreadable {
         omitted.push(super::UNREADABLE_ENTRY, id);
     }
-    let mut names = std::collections::HashSet::new();
+    let mut names = HashSet::new();
     let mut document_xml = None;
     let mut entries = Vec::with_capacity(records.len());
     for entry in records {
@@ -290,7 +346,7 @@ pub(super) fn retained_baseline<'a>(
     let Some(document_xml) = document_xml else {
         return Ok(None);
     };
-    let Some((document, schema_version, vocabulary)) = read_declaration(document_xml.data())?
+    let Some((document, schema_version, vocabulary)) = read_declaration(ctx, document_xml.data())?
     else {
         return Ok(None);
     };
@@ -307,22 +363,49 @@ pub(super) fn retained_baseline<'a>(
         document_xml,
         entries,
         omitted,
+        omitted_members,
     }))
+}
+
+/// The member names the entry records `ids` state, for each record whose
+/// name reads.
+fn entry_names(
+    ctx: &DecodeContext<'_>,
+    namespace: &cadmpeg_ir::native::NativeNamespace,
+    ids: &[String],
+) -> HashSet<String> {
+    #[derive(serde::Deserialize)]
+    struct Named {
+        name: String,
+    }
+    let ids = ids.iter().map(String::as_str).collect::<HashSet<_>>();
+    namespace
+        .arenas()
+        .get("entries")
+        .into_iter()
+        .flatten()
+        .map(cadmpeg_ir::native::NativeRecord::id)
+        .zip(namespace.arena_iter_as_for_decode::<Named>(ctx, "entries"))
+        .filter(|(id, _)| ids.contains(id))
+        .filter_map(|(_, named)| named.ok().map(|named| named.name))
+        .collect()
 }
 
 /// The document facts, `SchemaVersion`, and vocabulary that `bytes` declare,
 /// or `None` where they do not read as a `Document.xml` the decoder admits.
 fn read_declaration(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<(DocumentFacts, String, Vocabulary)>, CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)?;
-    let declared = crate::container::admit_document(&ctx, bytes).and_then(|xml| {
-        let (document, schema_version) = crate::container::parse_document(&xml, &mut Vec::new())?;
-        let vocabulary = Vocabulary::from_declaration(&schema_version)?;
-        Ok((document, schema_version, vocabulary))
-    });
+    let declared = std::str::from_utf8(bytes)
+        .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))
+        .and_then(|text| super::parse_retained(ctx, text, super::DOCUMENT_XML))
+        .and_then(|xml| {
+            let (document, schema_version) =
+                crate::container::parse_document(&xml, &mut Vec::new())?;
+            let vocabulary = Vocabulary::from_declaration(&schema_version)?;
+            Ok((document, schema_version, vocabulary))
+        });
     match declared {
         Ok(declared) => Ok(Some(declared)),
         Err(error) => recover(error).map(|()| None),

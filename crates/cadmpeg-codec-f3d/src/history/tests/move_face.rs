@@ -6,6 +6,7 @@ use crate::history_records::{
 };
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::topology::construction::DesignConstructionOperandGroup;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::direct_edit::FaceMotion;
 use cadmpeg_ir::features::evaluation::{FeatureEvaluation, FeatureInputTopology};
 use cadmpeg_ir::features::selections::FaceSelection;
@@ -105,7 +106,7 @@ fn group(scope_record_index: u32, members: &[u32]) -> DesignConstructionOperandG
     let member_offsets: Vec<u64> = (0..u64::try_from(members.len()).unwrap())
         .map(|ordinal| ordinal * 11)
         .collect();
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": GROUP_ID,
         "byte_offset": 0,
         "class_tag": "261",
@@ -171,6 +172,8 @@ fn bind_with_scope(
     };
     let mut input_topologies = vec![FeatureInputTopology {
         face_owners: Vec::new(),
+        face_geometry: Vec::new(),
+        body_writers: Vec::new(),
         id: crate::ids::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id,
         bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),

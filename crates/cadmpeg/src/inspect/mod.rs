@@ -529,7 +529,7 @@ pub(crate) fn run(command: ByteCommand) -> Result<ExitCode> {
             stage: crate::application::refusal::RefusalStage::Decode,
         };
         let payload = crate::commands::reporting::Payload::Refused(
-            serde_json::json!({ "subcommand": subcommand }), &refusal,
+            cadmpeg_core::json!({ "subcommand": subcommand }), &refusal,
         );
         match crate::commands::reporting::payload_report_json("inspect", payload) {
             Ok(report) => println!("{report}"),
@@ -645,7 +645,7 @@ fn find(args: &FindArgs) -> Result<()> {
     let hits = search::find_all(&bytes, &pattern, limit);
     let truncated = limit.is_some_and(|max| hits.len() >= max.get());
     if args.json {
-        let payload = serde_json::json!({
+        let payload = cadmpeg_core::json!({
             "subcommand": "find",
             "pattern": described,
             "pattern_bytes": pattern.len(),

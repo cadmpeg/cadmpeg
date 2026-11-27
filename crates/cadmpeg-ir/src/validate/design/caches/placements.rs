@@ -14,9 +14,10 @@
 
 use std::collections::BTreeMap;
 
+use super::super::frames::frame_transform;
 use super::super::records::DesignRecords;
 use super::super::warning;
-use crate::design::construction::{AxisValue, FrameValue, PlaneValue};
+use crate::design::construction::{AxisValue, PlaneValue};
 use crate::design::container::Container;
 use crate::design::dimension::Dimension;
 use crate::design::feature::FeatureOperation;
@@ -57,7 +58,7 @@ pub(super) fn check_placements(index: &DesignRecords<'_>, findings: &mut Vec<Fin
         .iter()
         .map(|occurrence| (occurrence.id.as_str(), occurrence.transform))
         .collect();
-    for (holder, definition) in index.feature_definitions() {
+    for (holder, _, definition) in index.feature_definitions() {
         match &definition.operation {
             FeatureOperation::TransformBodies(transform) => {
                 check_transformation(holder, &transform.transformation, within, findings);
@@ -342,21 +343,6 @@ fn translation(by: Vector3) -> Option<Transform> {
         [1.0, 0.0, 0.0, by.x],
         [0.0, 1.0, 0.0, by.y],
         [0.0, 0.0, 1.0, by.z],
-    ])
-}
-
-/// The transform that maps the definition frame onto `frame`.
-fn frame_transform(frame: &FrameValue) -> Option<Transform> {
-    let [x, y, z] = [
-        Vector3::from(frame.x_axis),
-        Vector3::from(frame.y_axis),
-        Vector3::from(frame.z_axis),
-    ];
-    let origin = frame.origin.get();
-    Transform::affine([
-        [x.x, y.x, z.x, origin.x],
-        [x.y, y.y, z.y, origin.y],
-        [x.z, y.z, z.z, origin.z],
     ])
 }
 

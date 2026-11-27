@@ -415,19 +415,14 @@ fn native_patch_requires_point_provenance_annotation() {
         .source_fidelity_mut()
         .annotations
         .provenance
-        .remove(&point_id);
+        .remove(point_id.as_str());
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::Malformed(message))
-            if message.contains("requires provenance annotation") && message.contains(&point_id)
-    ));
+    let error =
+        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
+    assert!(
+        error.contains("requires provenance annotation") && error.contains(&point_id),
+        "{error}"
+    );
 }
 
 #[test]
@@ -603,7 +598,8 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let brep_hash = crate::decode::brep_local_sha256(decoded.ir()).unwrap();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let brep_hash = crate::decode::brep_local_sha256(&ctx, decoded.ir()).unwrap();
     let document_hash = crate::test_support::document_local_sha256(decoded.ir()).unwrap();
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
@@ -625,7 +621,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         source_fidelity.annotations = annotations.build();
     }
     assert_eq!(
-        crate::decode::brep_local_sha256(decoded.ir()).unwrap(),
+        crate::decode::brep_local_sha256(&ctx, decoded.ir()).unwrap(),
         brep_hash
     );
     assert_ne!(
@@ -868,19 +864,10 @@ fn native_patch_refuses_a_baseline_its_own_decoder_refuses() {
         )
         .expect("the source image record was removed first");
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    let error =
+        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
     assert!(
-        matches!(
-            &error,
-            cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::Malformed(message))
-                if message.contains("states body offset")
-                    && message.contains("past its")
-        ),
+        error.contains("states body offset") && error.contains("past its"),
         "the write must state the baseline decode's cause, not report no patch: {error}"
     );
 }
@@ -945,15 +932,26 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
     let decoded = EditableDecodeResult::from(decoded);
     let records = crate::source_records(decoded.ir(), decoded.source_fidelity()).unwrap();
     let annotations = &decoded.source_fidelity().annotations;
-    assert!(
-        super::patch_partition(decoded.ir(), annotations, &records, 0.001)
-            .unwrap()
-            .is_some()
-    );
+    assert!(super::patch_partition(
+        decoded.ir(),
+        annotations,
+        &records,
+        0.001,
+        &cadmpeg_core::decode::DecodePolicy::desktop()
+    )
+    .unwrap()
+    .is_some());
     let mut changed = decoded.ir().clone();
     changed.geometry.faces[0].color =
         Some(cadmpeg_ir::topology::Color::new(0.2, 0.3, 0.4, 1.0).unwrap());
-    let error = super::patch_partition(&changed, annotations, &records, 0.001).unwrap_err();
+    let error = super::patch_partition(
+        &changed,
+        annotations,
+        &records,
+        0.001,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+    )
+    .unwrap_err();
     assert!(error
         .to_string()
         .contains("cannot write changed face colours"));
@@ -983,7 +981,14 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
                 native_ref: None,
             });
     }
-    let error = super::patch_partition(&changed, annotations, &records, 0.001).unwrap_err();
+    let error = super::patch_partition(
+        &changed,
+        annotations,
+        &records,
+        0.001,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+    )
+    .unwrap_err();
     assert!(error
         .to_string()
         .contains("cannot write changed pcurve geometry or metadata"));

@@ -26,7 +26,7 @@ use crate::products::{ProductDefinition, ProductDefinitionKind, Storage};
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 
-pub(in crate::validate) fn id<T>(kind: &str, key: &str) -> T
+pub(crate) fn id<T>(kind: &str, key: &str) -> T
 where
     T: TryFrom<String>,
     T::Error: Debug,
@@ -125,7 +125,7 @@ pub(in crate::validate) fn arrangement(key: &str, kind: ArrangementKind) -> Arra
     }
 }
 
-pub(in crate::validate) fn parameter(key: &str, kind: ValueKind) -> DesignParameter {
+pub(crate) fn parameter(key: &str, kind: ValueKind) -> DesignParameter {
     DesignParameter {
         id: id("parameter", key),
         scope: id("definition", "part"),
@@ -149,10 +149,10 @@ pub(in crate::validate) fn parameter(key: &str, kind: ValueKind) -> DesignParame
 /// fillet, rolled to its end; two configurations; the current state after the
 /// fillet holding the cube; and an evaluation of the base configuration after
 /// the extrude, stored against the current state.
-pub(in crate::validate) fn document() -> CadIr {
+pub(crate) fn document() -> CadIr {
     let mut ir = crate::examples::unit_cube().unwrap();
     ir.model.product_definitions.clear();
-    ir.set_scope(ContentScope::full()).unwrap();
+    ir.set_scope(ContentScope::full());
     let body = body(&ir);
     ir.model.product_definitions.push(ProductDefinition {
         kind: Some(ProductDefinitionKind::Part),
@@ -237,7 +237,11 @@ pub(in crate::validate) fn family_findings(
 }
 
 pub(in crate::validate) fn design_findings(ir: &CadIr) -> Vec<Finding> {
-    family_findings(ir, Check::Design, super::check_design)
+    family_findings(
+        ir,
+        Check::Design,
+        crate::validate::process::check_design_and_process,
+    )
 }
 
 #[track_caller]
@@ -255,4 +259,19 @@ pub(in crate::validate) fn assert_finding(ir: &CadIr, fragment: &str) {
         ),
         "no design error containing {fragment:?} in {findings:#?}"
     );
+}
+
+/// Runs `work` on a 1 MiB stack, the smallest default stack of a supported
+/// target (a Windows main thread). The design walk and the canonical writer
+/// recurse once per JSON level, and a Windows debug frame is larger than a
+/// Linux one.
+pub(in crate::validate) fn on_the_smallest_default_stack<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+) -> T {
+    std::thread::Builder::new()
+        .stack_size(1 << 20)
+        .spawn(work)
+        .unwrap()
+        .join()
+        .unwrap()
 }

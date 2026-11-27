@@ -2,18 +2,19 @@
 
 use super::NativeBytes;
 use crate::native::{test_ctx, NativeRecord};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn hexadecimal_payload_round_trips_every_byte() {
     let bytes = NativeBytes::from((0..=u8::MAX).collect::<Vec<_>>());
-    let json = serde_json::to_string(&bytes).unwrap();
+    let json = json::to_string(&bytes).unwrap();
     assert_eq!(json.len(), 514);
     assert!(json[1..json.len() - 1]
         .bytes()
         .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
     assert_eq!(serde_json::from_str::<NativeBytes>(&json).unwrap(), bytes);
     assert_eq!(
-        serde_json::to_string(&NativeBytes::from(&[0, 15, 255][..])).unwrap(),
+        json::to_string(&NativeBytes::from(&[0, 15, 255][..])).unwrap(),
         "\"000fff\""
     );
     assert_eq!(
@@ -101,11 +102,11 @@ fn canonical_payload_uses_string_storage_and_no_byte_slots() {
 #[test]
 fn reconstructed_byte_lane_streams_as_one_string() {
     let bytes = (0..=u8::MAX).cycle().take(1025);
-    let wire = serde_json::to_string(&NativeBytes::iter_wire(bytes.clone())).unwrap();
+    let wire = json::to_string(&NativeBytes::iter_wire(bytes.clone())).unwrap();
     let decoded = serde_json::from_str::<NativeBytes>(&wire).unwrap();
     assert_eq!(decoded.into_inner(), bytes.collect::<Vec<_>>());
     assert_eq!(
-        serde_json::to_string(&NativeBytes::iter_wire(std::iter::empty())).unwrap(),
+        json::to_string(&NativeBytes::iter_wire(std::iter::empty())).unwrap(),
         "\"\""
     );
 }

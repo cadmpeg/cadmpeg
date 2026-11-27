@@ -55,7 +55,7 @@ pub enum Check {
     WireTopology,
     /// A face-bearing shell is disconnected through shared edges or vertices.
     ShellTopology,
-    /// A face does not state every loop, or a region, shell, or body does
+    /// A face does not state its boundary in full, or a region, shell, or body does
     /// not state every child (§5.6, Unstated children).
     TopologyPartial,
     /// A surface, curve, pcurve, or point carrier is orphan: no topology or
@@ -413,10 +413,11 @@ cadmpeg_core::named_optional_field!(deserialize_entity, String, "entity");
 mod tests {
     use super::{Check, Finding};
     use crate::report::Severity;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn finding_without_related_writes_an_empty_list() -> Result<(), serde_json::Error> {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "check": "referential_integrity",
             "rule": "test.invalid-reference",
             "severity": "error",
@@ -424,16 +425,16 @@ mod tests {
             "entity": "test:model:feature#consumer",
             "related": []
         });
-        let finding: Finding = serde_json::from_value(wire.clone())?;
+        let finding: Finding = json::from_value(wire.clone())?;
         assert!(finding.related.is_empty());
-        assert_eq!(serde_json::to_value(finding)?, wire);
+        assert_eq!(json::to_value(finding)?, wire);
         Ok(())
     }
 
     #[test]
     fn a_finding_names_its_rule_in_the_rule_grammar() {
         let wire = |rule: &str| {
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "check": "referential_integrity",
                 "rule": rule,
                 "severity": "error",
@@ -446,7 +447,7 @@ mod tests {
             "f3d/links.native-ref",
             "design_x.a1",
         ] {
-            let finding: Finding = serde_json::from_value(wire(good)).expect(good);
+            let finding: Finding = json::from_value(wire(good)).expect(good);
             assert_eq!(finding.rule.as_str(), good);
         }
         for bad in [
@@ -457,17 +458,14 @@ mod tests {
             "topology.x_y",
             "",
         ] {
-            assert!(
-                serde_json::from_value::<Finding>(wire(bad)).is_err(),
-                "{bad}"
-            );
+            assert!(json::from_value::<Finding>(wire(bad)).is_err(), "{bad}");
         }
         let mut missing = wire("topology.free-vertex");
         missing
             .as_object_mut()
             .expect("a finding is an object")
             .remove("rule");
-        assert!(serde_json::from_value::<Finding>(missing).is_err());
+        assert!(json::from_value::<Finding>(missing).is_err());
     }
 
     #[test]
@@ -479,9 +477,9 @@ mod tests {
             (Check::MeasurementIncomplete, "measurement_incomplete"),
             (Check::DeclaredMeasure, "declared_measure"),
         ] {
-            assert_eq!(serde_json::to_value(check)?, name);
+            assert_eq!(json::to_value(check)?, name);
             assert_eq!(check.to_string(), name);
-            assert_eq!(serde_json::from_value::<Check>(name.into())?, check);
+            assert_eq!(json::from_value::<Check>(name.into())?, check);
         }
         Ok(())
     }
@@ -499,9 +497,9 @@ mod tests {
                 "test:model:feature#first".into(),
             ],
         };
-        let wire = serde_json::to_value(&finding)?;
-        assert_eq!(wire["related"], serde_json::json!(finding.related));
-        assert_eq!(serde_json::from_value::<Finding>(wire)?, finding);
+        let wire = json::to_value(&finding)?;
+        assert_eq!(wire["related"], cadmpeg_core::json!(finding.related));
+        assert_eq!(json::from_value::<Finding>(wire)?, finding);
         Ok(())
     }
 }

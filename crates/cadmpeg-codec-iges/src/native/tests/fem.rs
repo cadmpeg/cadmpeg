@@ -3,8 +3,8 @@
 
 use std::io::Cursor;
 
+use cadmpeg_core::json;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use serde_json::json;
 
 use crate::test_support::test_owned::{owned_test_file_with_global, OwnedTestEntity};
 use crate::IgesCodec;

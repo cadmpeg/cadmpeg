@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::history::edge_operand_history::bind_edge_operand_history_candidates;
+use cadmpeg_core::serde_erase::json;
 use std::collections::HashMap;
 
 #[test]
@@ -23,7 +24,7 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
         })
         .unwrap();
     let mut operand: crate::records::topology::edge_identity::DesignEdgeOperand =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": format!("{stream}:design-edge-operand#20"),
             "scope_record_index": 10,
             "scope_reference_ordinal": 0,
@@ -112,7 +113,7 @@ fn a_rebind_that_stops_before_the_transition_clears_its_deleted_edges() {
 
     let stream = "f3d:Design/BulkStream.dat";
     let mut operand: crate::records::topology::edge_identity::DesignEdgeOperand =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": format!("{stream}:design-edge-operand#20"),
             "scope_record_index": 10,
             "scope_reference_ordinal": 0,
@@ -214,7 +215,7 @@ fn primary_reference_edges_bind_in_the_named_input_topology() {
                 })
                 .unwrap();
             let mut operand: crate::records::topology::edge_identity::DesignEdgeOperand =
-                serde_json::from_value(serde_json::json!({
+                json::from_value(cadmpeg_core::json!({
                     "id": format!("{stream}:design-edge-operand#20"),
                     "scope_record_index": 10,
                     "scope_reference_ordinal": 0,
@@ -398,9 +399,9 @@ fn revolve_axis_edge_is_shared_by_the_first_recipe_side_faces() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let reference = |token: &str| serde_json::json!({"selector": 1, "selector_offset": 0, "token": token, "token_offset": 0, "design_reference": 50, "design_reference_offset": 0});
+        let reference = |token: &str| cadmpeg_core::json!({"selector": 1, "selector_offset": 0, "token": token, "token_offset": 0, "design_reference": 50, "design_reference_offset": 0});
         let mut operand: crate::records::topology::edge_identity::DesignEdgeOperand =
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": format!("{stream}:design-edge-operand#20"),
                 "scope_record_index": 10,
                 "scope_reference_ordinal": 0,

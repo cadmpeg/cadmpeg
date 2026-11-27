@@ -12,26 +12,8 @@ B-rep side entries. GUI state, thumbnails, persistent element maps, and string-h
 independently optional. Each archive entry is one part. A Geometry property needs the side entry
 that holds its payload.
 
-The synthesis catalog is `fcstd:schema-4`, the one band an explicit write target may name. A
-retained document write regenerates the ZIP container deterministically, writes `Document.xml`
-first, preserves the physical order of the retained side entries, preserves every unedited XML
-record and every named side entry, and serializes checked
-leaf-value edits with XML escaping. It writes the band the retained `Document.xml` declares, so a
-preserving write reproduces schemas 2 and 3 as well. The document facts and the band come from the
-retained `Document.xml`. An edit that the patch cannot hold stays as the source stores it, and the
-export report names its record with `export:edit.dropped`: an edit of a nested value without a
-typed serializer, of a property, object, or extension declaration, or of a value whose written form
-does not read back as its record states it. Where the patched `Document.xml` does not read back,
-the write holds `Document.xml` as the source stores it. An archive entry record that does not read,
-a repeated entry name, and a ZIP member without an entry record are left out with
-`export:native.records-omitted`. A property whose side entry the archive does not hold is written
-with an empty `file` attribute, which names no entry, and its object is marked `Touched` in schemas
-3 and 4. A schema-2 `Feature` declaration has no persisted pending-recompute flag: a schema-2
-object-input edit is written beside the stored shape, and the report names the object with
-`export:evaluation.stale`. Retained-document transcoding across bands is refused: the writer
-regenerates no `Document.xml`, so an explicit `fcstd:schema-4` target on a schema-2 or schema-3
-source is refused by name. A source whose retained `Document.xml` does not read as a FreeCAD
-document is refused with the source's own dialect and the catalog.
+Outside the XLink properties, a non-empty `file` or `File` value attribute names one side entry,
+and an empty one names none.
 
 Source-less construction declares application objects, runtime types, ordered dependencies,
 recursive typed property values, and named side entries. New object declarations carry
@@ -425,6 +407,8 @@ CADIR decision: non-boundary edges transfer as shell wire geometry. An edge that
 uses retains its boundary ownership. Repeated non-boundary uses share one shell wire edge. Their
 face incidence and native orientation remain in the native shape record, with
 `fcstd/topology.non-boundary-incidence-retained`.
+A face with no boundary wire on a plane, cylinder, or cone states no boundary; its neutral face is
+partial (CADIR §5.6), with `fcstd/topology.face-boundary-unstated`.
 
 An edge endpoint accessor visits the edge's direct child uses in serialized order. Its endpoint
 incidence has exactly one `Forward` vertex use and exactly one `Reversed` vertex use: `Forward`
@@ -742,6 +726,13 @@ The chain resolves each local product target through its unique product record. 
 no product record contributes its persisted `LinkPlacement` matrix or its restored `Placement`
 matrix directly.
 Prototype cycles are invalid in both the native and neutral product graphs.
+
+CADIR decision: a scalar link whose `LinkTransform` is true and whose linked object has no own
+occurrence in the document's scope emits `feature.link-placement-unresolved`; its v11 `Place`
+states no placement. The occurrence's transform holds the link's placement and scale composed
+after the linked object's placement where the document holds that object, and the link's
+placement and scale alone where the object is in a document that was not read.
+
 Component identity keeps the stable source object name separately from its user-visible label,
 description, part number, and additional named BOM fields. Generated BOM spreadsheets remain
 spreadsheet objects; they are not treated as the authoritative identity of their source component.
@@ -872,6 +863,7 @@ payload record. A persistent element name binds a record of the current geometry
 selection of an intermediate shape's sub-element keeps its source property. A free feature
 outside a body retains the GUI visibility of its own `Shape`.
 
+An axis link to an `App::Line` resolves to the local X axis of the line's placement, which is the line's base direction (1, 0, 0). The origin lines X_Axis, Y_Axis, and Z_Axis carry the identity placement and the 120-degree rotations about (1, 1, 1) and (1, -1, 1) that carry X onto Y and Z. A `PartDesign::Line` resolves to the local Z axis of its placement.
 Revolution and groove operations retain their linked profile, explicit base point and axis,
 one-angle or two-angle extent, and additive or subtractive effect. Fillet operations retain a
 constant radius, and chamfers distinguish equal-distance, two-distance, and distance-angle laws.
@@ -922,7 +914,7 @@ Pad and Pocket also persist the boolean carriers `Midplane`, `UseCustomVector`, 
 `Midplane=false` leaves the `SideType` value in force. `UseCustomVector=true` selects `Direction` for the sweep axis;
 false selects the reference axis or profile normal. For a blind `Length` termination, `AlongSketchNormal=true` measures
 the stored length along the profile normal and false measures it along the sweep axis. `Reversed=true` reverses the
-resolved sweep direction. `AllowMultiFace=true` permits a profile with multiple faces. A present carrier with another
+resolved sweep direction. A Pad sweeps along the profile normal and a Pocket sweeps against it. A custom `Direction` is the stored sweep direction for both, and a Pocket `ReferenceAxis` direction is stored already negated, so only a profile-normal Pocket sweep is the negated profile normal. A symmetric extent has no sweep side to negate. `AllowMultiFace=true` permits a profile with multiple faces. A present carrier with another
 runtime type, without exactly one direct `Bool`, or with any other value does not select a neutral Pad or Pocket; the
 operation remains native.
 Part `Extrusion` `DirMode` is an `App::PropertyEnumeration` whose indices `0`, `1`, and `2` mean

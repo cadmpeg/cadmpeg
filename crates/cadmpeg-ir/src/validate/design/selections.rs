@@ -69,7 +69,7 @@ pub(super) fn check<'a>(
     ctx: &DecodeContext<'_>,
     index: &DesignIndex<'a>,
     matchers: &Matchers<'a>,
-    held: &'a [Held<'a>],
+    held: &[Held<'a>],
     document: NativeView<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
@@ -348,8 +348,14 @@ fn check_witness_body(
     else {
         return Ok(());
     };
-    let nested =
-        crate::validate::nested_topology_findings(ctx, document, body.clone(), true, true)?;
+    let file_keys = crate::validate::products::decode_set::file_keys(document.ir);
+    let nested = crate::validate::topology::nested::check(
+        ctx,
+        document,
+        body.clone(),
+        Some(&file_keys),
+        crate::validate::topology::nested::NestRules::All { caches: true },
+    )?;
     for finding in nested {
         findings.push(crate::validate::nested_finding(
             finding,
@@ -370,7 +376,6 @@ fn check_pick<'a>(
     moved: &BTreeSet<&str>,
     findings: &mut Vec<Finding>,
 ) {
-    let states = matchers.states();
     let at = site.holder.record();
     if !target_exists(index, &pick.target) {
         super::error(
@@ -450,20 +455,64 @@ fn check_pick<'a>(
         }
     }
     if pick.context.is_none() {
-        let stored = anchored_states(index, states, site);
-        if stored.is_empty() && pick.resolved.is_some() && names_unstored_state(index, site) {
-            super::error(
-                findings,
-                at,
-                crate::rule!(
-                    "design.resolved-without-stored-state",
-                    "a pick states `resolved`, but the document stores no state at its anchor"
-                ),
-            );
-        }
-        for state in stored {
-            check_in_state(states, matchers, &state, pick, at, findings);
-        }
+        check_anchored(index, matchers, site, pick, findings);
+    }
+}
+
+/// A pick of a process record with no context, which resolves in its
+/// setup's scope (§5.8, part 7).
+pub(in crate::validate) struct ProcessPick<'a> {
+    pub(in crate::validate) record: &'a str,
+    pub(in crate::validate) scope: &'a ProductDefinitionId,
+    pub(in crate::validate) anchor: &'a Anchor,
+    pub(in crate::validate) pick: &'a Picked,
+}
+
+/// Each process pick resolves in its anchored state by the matching rule
+/// of §5.7, as a design pick does: a `Current` pick in the current geometry
+/// of its setup's scope (§5.8).
+pub(in crate::validate) fn check_process_picks<'a>(
+    index: &DesignIndex<'a>,
+    matchers: &Matchers<'a>,
+    picks: &[ProcessPick<'a>],
+    findings: &mut Vec<Finding>,
+) {
+    for pick in picks {
+        let site = Site {
+            holder: Holder::Record {
+                record: pick.record,
+                scope: Some(pick.scope),
+            },
+            anchor: pick.anchor,
+            owner: Some(pick.scope),
+        };
+        check_anchored(index, matchers, site, pick.pick, findings);
+    }
+}
+
+/// A pick with no context resolves in each stored state its anchor names.
+fn check_anchored<'a>(
+    index: &DesignIndex<'a>,
+    matchers: &Matchers<'a>,
+    site: Site<'a>,
+    pick: &'a Picked,
+    findings: &mut Vec<Finding>,
+) {
+    let states = matchers.states();
+    let at = site.holder.record();
+    let stored = anchored_states(index, states, site);
+    if stored.is_empty() && pick.resolved.is_some() && names_unstored_state(index, site) {
+        super::error(
+            findings,
+            at,
+            crate::rule!(
+                "design.resolved-without-stored-state",
+                "a pick states `resolved`, but the document stores no state at its anchor"
+            ),
+        );
+    }
+    for state in stored {
+        check_in_state(states, matchers, &state, pick, at, findings);
     }
 }
 
@@ -941,5 +990,55 @@ pub(in crate::validate) fn check_path(
             );
         }
         previous = Some(placed.prototype.as_str());
+    }
+}
+
+/// Every `TemplateInput` pick names an input of an instance that lists the
+/// picking feature as a member: the feature whose definition holds the pick,
+/// or that owns the sketch, sketch record, or parameter that holds it.
+pub(super) fn check_template_inputs(
+    index: &DesignRecords<'_>,
+    held: &[Held<'_>],
+    findings: &mut Vec<Finding>,
+) {
+    for record in held {
+        let Some(picking) = record.holder.feature() else {
+            continue;
+        };
+        for selection in &record.selections {
+            for pick in selection.picks() {
+                let PickTarget::TemplateInput { instance, input } = &pick.target else {
+                    continue;
+                };
+                let valid = match index
+                    .features
+                    .get(instance.as_str())
+                    .map(|feature| &feature.definition.operation)
+                {
+                    Some(FeatureOperation::TemplateInstance(template)) => {
+                        template
+                            .members
+                            .iter()
+                            .any(|member| member.as_str() == picking)
+                            && usize::try_from(*input)
+                                .is_ok_and(|input| input < template.inputs.len())
+                    }
+                    _ => false,
+                };
+                if !valid {
+                    record_finding(
+                        findings,
+                        Check::Design,
+                        Severity::Error,
+                        Some(record.holder.record()),
+                        crate::rule!(
+                            "design.templateinput-picks-input-no-input-instance",
+                            "TemplateInput picks input {input} of {}, which is no input of an instance that lists this feature",
+                            instance.as_str()
+                        ),
+                    );
+                }
+            }
+        }
     }
 }

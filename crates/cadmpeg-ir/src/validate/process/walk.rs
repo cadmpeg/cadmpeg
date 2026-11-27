@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! What one process record holds, found by writing its JSON.
 //!
-//! A process record nests `Choice`s, process dimensions, selections, and
-//! constructions through some two hundred fields. Writing the record's JSON
-//! through the canonical walk reaches every one of them: a struct is
+//! A process record nests `Choice`s, process dimensions, selections, picks,
+//! and constructions through some two hundred fields. Writing the record's
+//! JSON through the canonical walk reaches every one of them: a struct is
 //! recognised by the name serde gives it, so a field added to a process type
 //! is walked without a change here. The [`Reader`] also measures the record's
 //! JSON nesting, which the reader bounds.
 
+use cadmpeg_core::serde_erase::json;
 use std::cell::RefCell;
 
 use serde::Serialize;
@@ -15,7 +16,7 @@ use serde_json::{Map, Value};
 
 use super::records::{OwnerKey, ProcessRecords};
 use crate::design::dimension::ParamRef;
-use crate::design::selection::{Anchor, PickContext};
+use crate::design::selection::{Anchor, PickContext, Picked};
 use crate::hash::finite_json::{admission::CanonicalAdmission, write_serde_json, Structs};
 use crate::process::state::ProcessStateOf;
 
@@ -44,9 +45,26 @@ pub(super) struct Found {
     pub(super) anchors: Vec<(At, Anchor)>,
     /// The context of every pick.
     pub(super) contexts: Vec<(At, PickContext)>,
+    /// Every pick.
+    pub(super) picks: Vec<(At, Picked)>,
 }
 
 impl Found {
+    /// Each pick that a selection holds, with that selection's anchor.
+    pub(super) fn anchored_picks(&self) -> impl Iterator<Item = (&Anchor, &Picked)> {
+        self.picks.iter().filter_map(|(at, pick)| {
+            let (_, anchor) = self
+                .anchors
+                .iter()
+                .filter(|(selection, _)| {
+                    at.strip_prefix(selection.as_str())
+                        .is_some_and(|rest| rest.starts_with('/'))
+                })
+                .max_by_key(|(selection, _)| selection.len())?;
+            Some((anchor, pick))
+        })
+    }
+
     /// Whether the record holds a selection or a construction that picks.
     pub(super) fn holds_selection(&self) -> bool {
         !self.anchors.is_empty() || !self.workpieces.is_empty()
@@ -154,6 +172,7 @@ enum Capture {
     Workpiece,
     /// The `at` of a `Selection`.
     Selection,
+    Picked,
 }
 
 impl Capture {
@@ -164,6 +183,7 @@ impl Capture {
             "PickContext" => Self::PickContext,
             "WorkpieceSelection" | "ProcessConstruction" => Self::Workpiece,
             "Selection" => Self::Selection,
+            "Picked" => Self::Picked,
             _ => return None,
         })
     }
@@ -185,19 +205,28 @@ impl Capture {
                 },
             }),
             Self::ParamRef => {
-                if let Ok(reference) = serde_json::from_value(Value::Object(members)) {
+                if let Ok(reference) =
+                    cadmpeg_core::serde_erase::from_json_value(&Value::Object(members))
+                {
                     found.references.push((at, reference));
                 }
             }
             Self::PickContext => {
-                if let Ok(context) = serde_json::from_value(Value::Object(members)) {
+                if let Ok(context) =
+                    cadmpeg_core::serde_erase::from_json_value(&Value::Object(members))
+                {
                     found.contexts.push((at, context));
+                }
+            }
+            Self::Picked => {
+                if let Ok(pick) = json::from_value(Value::Object(members)) {
+                    found.picks.push((at, pick));
                 }
             }
             Self::Selection => {
                 if let Some(anchor) = members
                     .remove("at")
-                    .and_then(|value| serde_json::from_value(value).ok())
+                    .and_then(|value| cadmpeg_core::serde_erase::from_json_value(&value).ok())
                 {
                     found.anchors.push((at, anchor));
                 }

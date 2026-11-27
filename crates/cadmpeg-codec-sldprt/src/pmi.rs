@@ -222,6 +222,7 @@ pub(crate) fn patch_payload(
     block_id: &str,
     payload: &mut [u8],
     edited: &dyn Fn(&cadmpeg_ir::features::ParameterId) -> bool,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::parameters::{ParameterValue, PmiDimensionSubtype};
 
@@ -229,18 +230,19 @@ pub(crate) fn patch_payload(
     let mut keep = |parameter: &cadmpeg_ir::features::parameters::DesignParameter,
                     record: &str,
                     reason: &str| {
-        kept.push(
-            crate::loss::SldprtLossCode::WriterParameterEditUnwritten.note(format!(
+        kept.push(cadmpeg_ir::codec::write::edit_dropped_note(
+            cadmpeg_ir::schema::EntityKind::Parameter,
+            format!(
                 "PMI dimension record {record} of parameter {} keeps its stored {reason}.",
                 parameter.id.as_str()
-            )),
-        );
+            ),
+        ));
     };
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Ok(kept);
     };
-    let native =
-        crate::native::SldprtNative::load(namespace).map_err(cadmpeg_core::CodecError::from)?;
+    let native = crate::native::SldprtNative::load_under(namespace, limits, ir.tolerances.linear)
+        .map_err(cadmpeg_core::CodecError::from)?;
     let records_by_id = native
         .pmi_dimensions
         .iter()
@@ -313,8 +315,8 @@ pub(crate) fn patch_payload(
                 continue;
             }
         };
-        FloatPatchSlot::read(payload, record.offset)?.write(native_value);
-        IntegerPatchSlot::read(payload, record.offset, "valPrecision")?
+        FloatPatchSlot::read(payload, record.offset, limits)?.write(native_value);
+        IntegerPatchSlot::read(payload, record.offset, "valPrecision", limits)?
             .write(semantic.precision)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         for (field, value) in [
@@ -322,7 +324,7 @@ pub(crate) fn patch_payload(
             ("isInspection", semantic.inspection),
             ("isReferenceOnly", semantic.reference_only),
         ] {
-            BooleanPatchSlot::read(payload, record.offset, field)?.write(value);
+            BooleanPatchSlot::read(payload, record.offset, field, limits)?.write(value);
         }
         if semantic.display_text.as_deref() != record.display_text() {
             let (Some((previous, offset)), Some(text)) = (
@@ -754,7 +756,7 @@ fn collect_dimensions(
             Ok(Some(record)) => {
                 crate::annotations::note(
                     annotations,
-                    record.id.clone(),
+                    crate::annotations::native_key(&record.id)?,
                     stream,
                     u64_from_index(offset),
                     "messagepack_dim_sem_data",
@@ -764,9 +766,18 @@ fn collect_dimensions(
             }
             Ok(None) => {}
             Err(PmiParseError::Malformed(message)) => {
-                losses.push(SldprtLossCode::PmiSemanticRecordMalformed.note(format!(
-                    "PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"
-                )));
+                losses.extend(cadmpeg_ir::unknown::part::record_given_up(
+                    cadmpeg_ir::ids::Identity::new(format!("sldprt:pmi:dimension#{normalized}"))?,
+                    SldprtLossCode::PmiSemanticRecordMalformed
+                        .note(format!(
+                            "PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"
+                        ))
+                        .with_provenance(cadmpeg_ir::SourceProvenance::in_stream(
+                            "sldprt",
+                            stream.clone(),
+                            u64_from_index(offset),
+                        )),
+                ));
             }
             Err(PmiParseError::Capped) => {
                 let skipped = candidates.count() + 1;
@@ -954,42 +965,45 @@ fn contains_fixstr_key(window: &[u8], key: &str) -> bool {
     let mut encoded = Vec::with_capacity(key.len() + 1);
     encoded.push(0xa0 | key_len);
     encoded.extend_from_slice(key.as_bytes());
-    window
-        .windows(encoded.len())
-        .any(|candidate| candidate == encoded)
+    memchr::memmem::find(window, &encoded).is_some()
 }
 
 /// Locate GUID-prefixed `MessagePack` maps. Key order and map length do not matter.
 fn candidate_maps(payload: &[u8]) -> impl Iterator<Item = (&str, usize)> {
-    payload
-        .iter()
-        .copied()
-        .enumerate()
-        .filter_map(|(offset, marker)| {
-            if matches!(
-                Marker::from_u8(marker),
-                Marker::FixMap(_) | Marker::Map16 | Marker::Map32
-            ) {
-                guid_before(payload, offset).map(|guid| (guid, offset))
-            } else {
-                None
-            }
-        })
+    let scan = if payload.len() > 36 {
+        &payload[23..payload.len() - 13]
+    } else {
+        &[][..]
+    };
+    memchr::memchr_iter(b'-', scan).filter_map(move |rel| {
+        let offset = rel + 36;
+        let marker = *payload.get(offset)?;
+        if matches!(
+            Marker::from_u8(marker),
+            Marker::FixMap(_) | Marker::Map16 | Marker::Map32
+        ) {
+            guid_before(payload, offset).map(|guid| (guid, offset))
+        } else {
+            None
+        }
+    })
 }
 
 fn guid_before(payload: &[u8], offset: usize) -> Option<&str> {
     let start = offset.checked_sub(36)?;
-    let guid = std::str::from_utf8(payload.get(start..offset)?).ok()?;
-    let bytes = guid.as_bytes();
-    (bytes.get(8) == Some(&b'-')
-        && bytes.get(13) == Some(&b'-')
-        && bytes.get(18) == Some(&b'-')
-        && bytes.get(23) == Some(&b'-')
-        && bytes
+    let bytes = payload.get(start..offset)?;
+    if bytes.get(8) != Some(&b'-')
+        || bytes.get(13) != Some(&b'-')
+        || bytes.get(18) != Some(&b'-')
+        || bytes.get(23) != Some(&b'-')
+        || !bytes
             .iter()
             .enumerate()
-            .all(|(index, byte)| [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit()))
-    .then_some(guid)
+            .all(|(index, byte)| matches!(index, 8 | 13 | 18 | 23) || byte.is_ascii_hexdigit())
+    {
+        return None;
+    }
+    std::str::from_utf8(bytes).ok()
 }
 
 /// `Ok(None)` rejects the value, including when `parse.work` runs out; the

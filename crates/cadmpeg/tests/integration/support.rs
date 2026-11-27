@@ -132,16 +132,33 @@ pub(crate) fn synthetic_rhino_point(
     name: &str,
     point: [f64; 3],
 ) -> std::path::PathBuf {
-    let version = 50;
     let mut payload = vec![0x10];
     for coordinate in point {
         payload.extend(coordinate.to_le_bytes());
     }
+    rhino_point_archive(dir, name, &payload)
+}
+
+/// A Rhino archive whose one point object record frames a payload that holds
+/// only the point's first coordinate, so its decoder gives the record up.
+#[cfg(feature = "rhino")]
+pub(crate) fn rhino_archive_with_unreadable_point(
+    dir: &std::path::Path,
+    name: &str,
+) -> std::path::PathBuf {
+    let mut payload = vec![0x10];
+    payload.extend(1.0_f64.to_le_bytes());
+    rhino_point_archive(dir, name, &payload)
+}
+
+#[cfg(feature = "rhino")]
+fn rhino_point_archive(dir: &std::path::Path, name: &str, payload: &[u8]) -> std::path::PathBuf {
+    let version = 50;
     let point_class = [
         0x1d, 0x1a, 0x10, 0xc3, 0x57, 0xf1, 0xd3, 0x11, 0xbf, 0xe7, 0x00, 0x10, 0x83, 0x01, 0x22,
         0xf0,
     ];
-    let object = rhino_object_record(version, point_class, &payload);
+    let object = rhino_object_record(version, point_class, payload);
     let end = rhino_short_chunk(version, 0xffff_ffff, 0);
     let object_table = rhino_long_chunk(version, 0x1000_0013, &[object, end].concat());
 

@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
+
 mod parameter_points;
 
 #[test]
@@ -471,13 +473,14 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
             carrier_surface.encoding,
             crate::wire::bytes::AllocationReferenceEncoding::BackwardDistance
         );
-        let wire = serde_json::to_value(native.consolidated_owner_packets[0].owner_chart())
+        let wire = json::to_value(native.consolidated_owner_packets[0].owner_chart())
             .expect("serialize owner chart");
-        let controls: [u8; 6] = serde_json::from_value::<
-            cadmpeg_ir::native::bytes::NativeBytes<[u8; 6]>,
-        >(wire["bridge"]["controls"].clone())
-        .expect("six bridge controls")
-        .into_inner();
+        let controls: [u8; 6] =
+            json::from_value::<cadmpeg_ir::native::bytes::NativeBytes<[u8; 6]>>(
+                wire["bridge"]["controls"].clone(),
+            )
+            .expect("six bridge controls")
+            .into_inner();
         assert_eq!(controls, [carrier_selector, 0x05, 0x03, 0x05, 0x01, 0x05]);
         assert_eq!(construction_radius.get(), 1.0);
         assert_eq!(
@@ -560,15 +563,14 @@ fn owner_chart_admits_the_scalar_free_eight_reference_bridge() {
         [1, 100, 0, 101, 1, 2, 3, 4]
     );
     let native = crate::native::CatiaNative::decode(&bytes);
-    let wire = serde_json::to_value(native.consolidated_owner_packets[0].owner_chart())
+    let wire = json::to_value(native.consolidated_owner_packets[0].owner_chart())
         .expect("serialize extended owner chart");
-    let controls: [u8; 4] =
-        serde_json::from_value::<cadmpeg_ir::native::bytes::NativeBytes<[u8; 4]>>(
-            wire["bridge"]["controls"].clone(),
-        )
-        .expect("four extended bridge controls")
-        .into_inner();
-    let terminal_controls: [u8; 2] = serde_json::from_value::<
+    let controls: [u8; 4] = json::from_value::<cadmpeg_ir::native::bytes::NativeBytes<[u8; 4]>>(
+        wire["bridge"]["controls"].clone(),
+    )
+    .expect("four extended bridge controls")
+    .into_inner();
+    let terminal_controls: [u8; 2] = json::from_value::<
         cadmpeg_ir::native::bytes::NativeBytes<[u8; 2]>,
     >(wire["bridge"]["terminal_controls"].clone())
     .expect("two extended bridge terminal controls")

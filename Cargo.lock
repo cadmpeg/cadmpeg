@@ -210,6 +210,7 @@ dependencies = [
  "cadmpeg-codec-step",
  "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-measure",
  "cadmpeg-registry",
@@ -248,12 +249,12 @@ name = "cadmpeg-codec-catia"
 version = "0.6.12"
 dependencies = [
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-measure",
  "cadmpeg-test-support",
  "memchr",
  "serde",
- "serde-value",
  "serde_json",
 ]
 
@@ -289,6 +290,7 @@ dependencies = [
  "cadmpeg-codec-step",
  "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-measure",
  "cadmpeg-protein",
@@ -297,10 +299,8 @@ dependencies = [
  "memchr",
  "roxmltree",
  "serde",
- "serde-value",
  "serde_json",
  "sha2",
- "tempfile",
  "zip",
 ]
 
@@ -311,13 +311,13 @@ dependencies = [
  "cadmpeg-codec-step",
  "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-measure",
  "cadmpeg-test-support",
  "roxmltree",
  "serde",
  "serde_json",
- "tempfile",
  "zip",
 ]
 
@@ -343,6 +343,7 @@ dependencies = [
  "cadmpeg-asm",
  "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-protein",
  "cadmpeg-test-support",
@@ -353,15 +354,31 @@ dependencies = [
 ]
 
 [[package]]
-name = "cadmpeg-codec-nx"
+name = "cadmpeg-codec-ironcad"
 version = "0.6.12"
 dependencies = [
+ "cadmpeg-asm",
+ "cadmpeg-codec-sldprt",
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
  "cadmpeg-parasolid",
  "cadmpeg-test-support",
  "flate2",
+]
+
+[[package]]
+name = "cadmpeg-codec-nx"
+version = "0.6.12"
+dependencies = [
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-derive",
+ "cadmpeg-ir",
+ "cadmpeg-parasolid",
+ "cadmpeg-test-support",
+ "flate2",
+ "memchr",
  "roxmltree",
  "serde",
  "serde_json",
@@ -415,7 +432,6 @@ dependencies = [
  "serde_json",
  "sha1",
  "sha2",
- "tempfile",
 ]
 
 [[package]]
@@ -435,12 +451,14 @@ version = "0.6.12"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-measure",
  "cadmpeg-parasolid",
  "cadmpeg-test-support",
  "crc32fast",
  "flate2",
+ "memchr",
  "rmp",
  "roxmltree",
  "serde",
@@ -517,6 +535,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "toml",
 ]
@@ -576,6 +595,7 @@ name = "cadmpeg-parasolid"
 version = "0.6.12"
 dependencies = [
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-test-support",
  "serde",
@@ -588,6 +608,7 @@ version = "0.6.12"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-test-support",
  "flate2",
@@ -608,6 +629,7 @@ dependencies = [
  "cadmpeg-codec-freecad",
  "cadmpeg-codec-iges",
  "cadmpeg-codec-inventor",
+ "cadmpeg-codec-ironcad",
  "cadmpeg-codec-nx",
  "cadmpeg-codec-onshape",
  "cadmpeg-codec-pvz",

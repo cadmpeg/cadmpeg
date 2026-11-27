@@ -269,7 +269,7 @@ struct CatiaOwnerIdentityTarget {
 }
 
 /// Structurally decoded payload of a class-`0x62` consolidated owner packet.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum CatiaOwnerPacketPayload {
     /// Nine alternating strong/weak identities followed by a fixed numeric tail.
@@ -813,7 +813,7 @@ struct CatiaConsolidatedCylinderWire {
     payload: CatiaConsolidatedCylinderPayloadWire,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum CatiaConsolidatedCylinderPayloadWire {
     Resolved {
@@ -1456,7 +1456,7 @@ pub(crate) struct CatiaConsolidatedVertexIdentity {
 }
 
 /// Exact carrier selected for one side of a consolidated historical edge.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub(crate) enum CatiaConsolidatedSupportBinding {
     /// Standalone `b2 03 28` cylinder.

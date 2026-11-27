@@ -17,6 +17,7 @@ use crate::design::selection::OccurrencePath;
 use crate::features::ConfigurationId;
 use crate::products::{ProductDefinition, Storage};
 use crate::report::check::Finding;
+use crate::tessellation::Meshed;
 
 /// A position names an existing member of a container, an ordered container
 /// that is a root of its scope, or the start of an existing ordered
@@ -102,7 +103,7 @@ fn has_own_result(
     feature: &Feature,
     configuration: Option<&str>,
 ) -> Option<bool> {
-    let operation = &index.definition_in(feature, configuration).operation;
+    let operation = &index.definition_in(feature, configuration, None).operation;
     if matches!(operation, FeatureOperation::Native { .. }) {
         return None;
     }
@@ -215,7 +216,7 @@ pub(super) fn check_evaluations(
         .max()
         .and_then(|&deepest| crate::validate::state_chain_refusal(max_chain_depth, deepest))
     {
-        return Err(refusal);
+        return Err(CodecError::ResourceLimit(refusal));
     }
     let mut keys = BTreeMap::new();
     for evaluation in &index.ir.design.evaluations {
@@ -333,7 +334,7 @@ pub(super) fn check_evaluations(
                 );
             } else if matches!(of, OfKey::Tool(_))
                 && super::ops::builds_tool_body(
-                    &index.definition_in(feature, configuration).operation,
+                    &index.definition_in(feature, configuration, None).operation,
                 ) == Some(false)
             {
                 super::error(
@@ -560,7 +561,7 @@ pub(super) fn is_stateless(
         return true;
     }
     index
-        .definition_in(feature, configuration)
+        .definition_in(feature, configuration, None)
         .operation
         .cannot_change_state()
 }
@@ -755,13 +756,13 @@ fn check_current_position(
 /// stored holds each body that definition names (§5.10).
 fn check_stored_features(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     let ir = index.ir;
-    let tessellations: BTreeSet<&str> = ir
+    let tessellations: BTreeMap<&str, &Meshed> = ir
         .model
         .tessellations
         .iter()
-        .map(|tessellation| tessellation.id.as_str())
+        .map(|tessellation| (tessellation.id.as_str(), &tessellation.of))
         .collect();
-    for (holder, definition) in index.feature_definitions() {
+    for (holder, feature, definition) in index.feature_definitions() {
         let FeatureOperation::Stored {
             tessellations: named,
             ..
@@ -769,17 +770,49 @@ fn check_stored_features(index: &DesignRecords<'_>, findings: &mut Vec<Finding>)
         else {
             continue;
         };
+        let spanned = index
+            .scope_of(MemberKey::Feature(feature))
+            .map(|scope| index.spanned_definitions(scope));
         for tessellation in named {
-            if !tessellations.contains(tessellation.as_str()) {
-                super::error(
+            let id = tessellation.as_str();
+            match tessellations.get(id) {
+                None => super::error(
                     findings,
                     holder,
                     crate::rule!(
                         "design.stored-feature-names-no-tessellation-model",
-                        "stored feature names {}, which is no tessellation of the model",
-                        tessellation.as_str()
+                        "stored feature names {id}, which is no tessellation of the model"
                     ),
-                );
+                ),
+                Some(Meshed::Definition { definition, .. }) => {
+                    if spanned
+                        .as_ref()
+                        .is_some_and(|spanned| !spanned.contains(definition.as_str()))
+                    {
+                        super::error(
+                            findings,
+                            holder,
+                            crate::rule!(
+                                "design.stored-feature-tessellation-definition-not-spanned",
+                                "stored feature names {id}, a mesh of {}, which the feature's scope does not span",
+                                definition.as_str()
+                            ),
+                        );
+                    }
+                }
+                Some(
+                    Meshed::Body { .. }
+                    | Meshed::Display { .. }
+                    | Meshed::Pmi { .. }
+                    | Meshed::Unresolved,
+                ) => super::error(
+                    findings,
+                    holder,
+                    crate::rule!(
+                        "design.stored-feature-tessellation-not-definition-mesh",
+                        "stored feature names {id}, whose `of` is not `Definition`"
+                    ),
+                ),
             }
         }
     }
@@ -797,7 +830,7 @@ fn check_stored_features(index: &DesignRecords<'_>, findings: &mut Vec<Finding>)
             .as_ref()
             .map(ConfigurationId::as_str);
         let FeatureOperation::Stored { bodies, .. } =
-            &index.definition_in(feature, active).operation
+            &index.definition_in(feature, active, None).operation
         else {
             continue;
         };

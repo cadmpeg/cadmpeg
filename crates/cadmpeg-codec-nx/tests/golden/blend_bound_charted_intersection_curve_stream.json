@@ -554,8 +554,8 @@
         }
       },
       "tolerances": {
-        "angular": 1e-10,
-        "linear": 1e-6
+        "angular": 1e-11,
+        "linear": 0.00001
       },
       "units": {
         "angle": "radian",
@@ -611,11 +611,22 @@
             "value": {
               "code": "source.kernel-dialect-unverified",
               "kind": "source_dialect_unverified",
-              "namespace": "nx",
-              "strict_floor": "warning"
+              "namespace": "nx"
             }
           },
           "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "severity": "warning"
+        },
+        {
+          "code": {
+            "kind": "namespaced",
+            "value": {
+              "code": "body.resolution-unread",
+              "kind": "decode_diagnostic",
+              "namespace": "nx"
+            }
+          },
+          "message": "body nx:s0:body#2 stores no res_linear value the decoder reads; the part's linear tolerance excludes it",
           "severity": "warning"
         }
       ],
@@ -884,8 +895,7 @@
           "value": {
             "code": "source.kernel-dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "nx",
-            "strict_floor": "warning"
+            "namespace": "nx"
           }
         },
         "message": "The Parasolid stream at stream@76 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",

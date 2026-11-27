@@ -22,7 +22,8 @@ use crate::native::om::object_uuid::ObjectUuidValue;
 use crate::native::om::roll_forward::{OmRollForwardStateGroup, OmRollForwardStateTable};
 use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
 use crate::native::om::state_status::OmOperationStateStatus;
-use cadmpeg_ir::annotations::StreamHandle;
+use cadmpeg_ir::annotations::{AnnotationKey, StreamHandle};
+use cadmpeg_ir::ids::Identity;
 
 use std::borrow::Cow;
 
@@ -99,6 +100,13 @@ fn emit_arena<T: Serialize>(
     Ok(())
 }
 
+/// The annotation key of the native record `id`.
+fn native_key(id: &str) -> Result<AnnotationKey, CodecError> {
+    Identity::new(id)
+        .map(AnnotationKey::from)
+        .map_err(CodecError::malformed)
+}
+
 /// A record noted into the shared `nx:container` stream: its id and the source
 /// offset the note points at.
 trait ContainerNoted {
@@ -131,13 +139,15 @@ fn note_container<T: ContainerNoted>(
     catalogue_row: &CatalogueRow,
     tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
-) {
+) -> Result<(), CodecError> {
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for record in records {
         let (id, offset) = record.container_note();
-        a.note(&id, &stream, offset, tag);
-        a.exactness(id, catalogue_row.exactness);
+        let key = native_key(&id)?;
+        a.note(&key, &stream, offset, tag);
+        a.exactness(key, catalogue_row.exactness);
     }
+    Ok(())
 }
 
 /// Emit the standard per-stream note for every record in a family: one note in
@@ -148,14 +158,16 @@ fn note_per_stream<T: StreamNoted>(
     catalogue_row: &CatalogueRow,
     tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
-) {
+) -> Result<(), CodecError> {
     for record in records {
         let (id, stream_ordinal, offset) = record.stream_note();
         let stream =
             StreamHandle::new(cadmpeg_ir::stream_name!("nx:s").with_suffix(stream_ordinal));
-        a.note(id, &stream, offset, tag);
-        a.exactness(id, catalogue_row.exactness);
+        let key = native_key(id)?;
+        a.note(&key, &stream, offset, tag);
+        a.exactness(key, catalogue_row.exactness);
     }
+    Ok(())
 }
 
 impl ContainerNoted for DisplayJtSegment {
@@ -715,26 +727,29 @@ fn note_display_jt_display_jt_indices(
     _catalogue_row: &CatalogueRow,
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
-) {
+) -> Result<(), CodecError> {
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for index in &m.display_jt.indices {
+        let key = native_key(&index.id)?;
         a.note(
-            &index.id,
+            &key,
             &annotation_stream,
             index.source_offset,
             Some("DISPLAY_JT_INDEX"),
         );
-        a.exactness(&index.id, Exactness::ByteExact);
+        a.exactness(key, Exactness::ByteExact);
         for row in index.rows() {
+            let key = native_key(&row.id)?;
             a.note(
-                &row.id,
+                &key,
                 &annotation_stream,
                 row.source_offset,
                 Some("DISPLAY_JT_INDEX_ROW"),
             );
-            a.exactness(&row.id, Exactness::ByteExact);
+            a.exactness(key, Exactness::ByteExact);
         }
     }
+    Ok(())
 }
 
 fn note_display_jt_display_jt_documents(
@@ -742,26 +757,29 @@ fn note_display_jt_display_jt_documents(
     _catalogue_row: &CatalogueRow,
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
-) {
+) -> Result<(), CodecError> {
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for document in m.display_jt.graph.documents() {
+        let key = native_key(&document.id)?;
         a.note(
-            &document.id,
+            &key,
             &annotation_stream,
             document.source_offset,
             Some("DISPLAY_JT_DOCUMENT"),
         );
-        a.exactness(&document.id, Exactness::ByteExact);
+        a.exactness(key, Exactness::ByteExact);
         for entry in &document.toc_entries {
+            let key = native_key(&entry.id)?;
             a.note(
-                &entry.id,
+                &key,
                 &annotation_stream,
                 entry.source_offset,
                 Some("DISPLAY_JT_TOC_ENTRY"),
             );
-            a.exactness(&entry.id, Exactness::ByteExact);
+            a.exactness(key, Exactness::ByteExact);
         }
     }
+    Ok(())
 }
 
 fn note_parasolid_parasolid_intersection_records(
@@ -769,18 +787,20 @@ fn note_parasolid_parasolid_intersection_records(
     _catalogue_row: &CatalogueRow,
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
-) {
+) -> Result<(), CodecError> {
     for record in &m.parasolid.intersection_records {
         let source_stream =
             StreamHandle::new(cadmpeg_ir::stream_name!("nx:s").with_suffix(record.stream_ordinal));
+        let key = native_key(&record.id)?;
         a.note(
-            &record.id,
+            &key,
             &source_stream,
             record.inflated_offset,
             Some("INTERSECTION"),
         );
-        a.exactness(&record.id, Exactness::ByteExact);
+        a.exactness(key, Exactness::ByteExact);
     }
+    Ok(())
 }
 
 fn note_parasolid_parasolid_attribute_class_uses(
@@ -788,19 +808,21 @@ fn note_parasolid_parasolid_attribute_class_uses(
     _catalogue_row: &CatalogueRow,
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
-) {
+) -> Result<(), CodecError> {
     for class_use in &m.parasolid.attribute_class_uses {
         let source_stream = StreamHandle::new(
             cadmpeg_ir::stream_name!("nx:s").with_suffix(class_use.stream_ordinal),
         );
+        let key = native_key(&class_use.id)?;
         a.note(
-            &class_use.id,
+            &key,
             &source_stream,
             class_use.inflated_offset,
             Some("ATTRIBUTE_CLASS_USE"),
         );
-        a.exactness(&class_use.id, Exactness::Derived);
+        a.exactness(key, Exactness::Derived);
     }
+    Ok(())
 }
 
 fn note_parasolid_parasolid_topology_attribute_class_uses(
@@ -808,19 +830,21 @@ fn note_parasolid_parasolid_topology_attribute_class_uses(
     _catalogue_row: &CatalogueRow,
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
-) {
+) -> Result<(), CodecError> {
     for class_use in &m.parasolid.topology_attribute_class_uses {
         let source_stream = StreamHandle::new(
             cadmpeg_ir::stream_name!("nx:s").with_suffix(class_use.stream_ordinal),
         );
+        let key = native_key(&class_use.id)?;
         a.note(
-            &class_use.id,
+            &key,
             &source_stream,
             class_use.inflated_offset,
             Some("TOPOLOGY_ATTRIBUTE_CLASS_USE"),
         );
-        a.exactness(&class_use.id, Exactness::Derived);
+        a.exactness(key, Exactness::Derived);
     }
+    Ok(())
 }
 
 fn note_features_feature_sketch_point_uses(
@@ -828,17 +852,19 @@ fn note_features_feature_sketch_point_uses(
     _catalogue_row: &CatalogueRow,
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
-) {
+) -> Result<(), CodecError> {
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for point_use in &m.features.feature_sketch_point_uses {
+        let key = native_key(&point_use.id)?;
         a.note(
-            &point_use.id,
+            &key,
             &annotation_stream,
             point_use.references[0].source_offset,
             Some("SKETCH_POINT_USE"),
         );
-        a.exactness(&point_use.id, Exactness::Derived);
+        a.exactness(key, Exactness::Derived);
     }
+    Ok(())
 }
 
 fn note_features_feature_input_block_identity_groups(
@@ -846,17 +872,19 @@ fn note_features_feature_input_block_identity_groups(
     _catalogue_row: &CatalogueRow,
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
-) {
+) -> Result<(), CodecError> {
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for group in &m.features.feature_input_block_identity_groups {
+        let key = native_key(&group.id)?;
         a.note(
-            &group.id,
+            &key,
             &annotation_stream,
             group.members[0].source_offset,
             Some("FEATURE_INPUT_BLOCK_IDENTITY_GROUP"),
         );
-        a.exactness(&group.id, Exactness::ByteExact);
+        a.exactness(key, Exactness::ByteExact);
     }
+    Ok(())
 }
 
 fn note_features_feature_parameter_uses(
@@ -864,17 +892,19 @@ fn note_features_feature_parameter_uses(
     _catalogue_row: &CatalogueRow,
     _tag: Option<&'static str>,
     a: &mut AnnotationBuilder,
-) {
+) -> Result<(), CodecError> {
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for parameter_use in &m.features.feature_parameter_uses {
+        let key = native_key(&parameter_use.id)?;
         a.note(
-            &parameter_use.id,
+            &key,
             &annotation_stream,
             parameter_use.bindings[0].source_offset,
             Some("FEATURE_PARAMETER_USE"),
         );
-        a.exactness(&parameter_use.id, Exactness::Derived);
+        a.exactness(key, Exactness::Derived);
     }
+    Ok(())
 }
 
 /// One row per native record family, note-bearing rows in emission order.
@@ -940,7 +970,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_INITIAL_FACE_DEGREE_SYMBOLS"),
             note: |m, r, tag, a| {
-                note_container(&m.display_jt.initial_face_degree_symbols, r, tag, a);
+                note_container(&m.display_jt.initial_face_degree_symbols, r, tag, a)
             },
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.initial_face_degree_symbols, r, ns),
@@ -1019,7 +1049,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_VERTEX_TEXTURE_COORDINATES"),
             note: |m, r, tag, a| {
-                note_container(&m.display_jt.vertex_texture_coordinates, r, tag, a);
+                note_container(&m.display_jt.vertex_texture_coordinates, r, tag, a)
             },
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.vertex_texture_coordinates, r, ns),
@@ -1043,7 +1073,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_GEOMETRIC_TRANSFORM"),
             note: |m, r, tag, a| {
-                note_container(&m.display_jt.geometric_transform_attributes, r, tag, a);
+                note_container(&m.display_jt.geometric_transform_attributes, r, tag, a)
             },
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.display_jt.geometric_transform_attributes, r, ns),
@@ -1078,7 +1108,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_COMPRESSED_ELEMENT_SEQUENCE"),
             note: |m, r, tag, a| {
-                note_container(m.display_jt.graph.compressed_element_sequences(), r, tag, a);
+                note_container(m.display_jt.graph.compressed_element_sequences(), r, tag, a)
             },
         },
         emit: |ctx, m, r, ns| {
@@ -1098,7 +1128,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("DISPLAY_JT_COMPRESSED_ELEMENT"),
             note: |m, r, tag, a| {
-                note_container(m.display_jt.graph.compressed_elements(), r, tag, a);
+                note_container(m.display_jt.graph.compressed_elements(), r, tag, a)
             },
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, m.display_jt.graph.compressed_elements(), r, ns),
@@ -1605,7 +1635,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("TOPOLOGY_ATTRIBUTE_LIST_REFERENCE"),
             note: |m, r, tag, a| {
-                note_per_stream(&m.parasolid.topology_attribute_list_references, r, tag, a);
+                note_per_stream(&m.parasolid.topology_attribute_list_references, r, tag, a)
             },
         },
         emit: |ctx, m, r, ns| {
@@ -1653,7 +1683,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("SKETCH_NAMED_POINT_BLOCK_USE"),
             note: |m, r, tag, a| {
-                note_container(&m.features.feature_sketch_named_point_block_uses, r, tag, a);
+                note_container(&m.features.feature_sketch_named_point_block_uses, r, tag, a)
             },
         },
         emit: |ctx, m, r, ns| {
@@ -1678,7 +1708,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                     r,
                     tag,
                     a,
-                );
+                )
             },
         },
         emit: |ctx, m, r, ns| {
@@ -1714,7 +1744,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                     r,
                     tag,
                     a,
-                );
+                )
             },
         },
         emit: |ctx, m, r, ns| {
@@ -1814,8 +1844,9 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
             tag: Some("OM_ROLL_FORWARD_STATE_GROUP"),
             note: |m, r, tag, a| {
                 for table in &m.om.operation_state_groups {
-                    note_container(table.groups(), r, tag, a);
+                    note_container(table.groups(), r, tag, a)?;
                 }
+                Ok(())
             },
         },
         emit: |ctx, m, r, ns| {
@@ -1909,7 +1940,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("FEATURE_SKETCH_FIXED_PAIR"),
             note: |m, r, tag, a| {
-                note_container(&m.features.feature_sketch_payload_fixed_pairs, r, tag, a);
+                note_container(&m.features.feature_sketch_payload_fixed_pairs, r, tag, a)
             },
         },
         emit: |ctx, m, r, ns| {
@@ -1924,7 +1955,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("FEATURE_SKETCH_MIXED_PAIR"),
             note: |m, r, tag, a| {
-                note_container(&m.features.feature_sketch_payload_mixed_pairs, r, tag, a);
+                note_container(&m.features.feature_sketch_payload_mixed_pairs, r, tag, a)
             },
         },
         emit: |ctx, m, r, ns| {
@@ -1961,7 +1992,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("FEATURE_UNLABELED_OPERATION_RECORD"),
             note: |m, r, tag, a| {
-                note_container(&m.features.feature_unlabeled_operation_records, r, tag, a);
+                note_container(&m.features.feature_unlabeled_operation_records, r, tag, a)
             },
         },
         emit: |ctx, m, r, ns| {
@@ -1981,7 +2012,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                     r,
                     tag,
                     a,
-                );
+                )
             },
         },
         emit: |ctx, m, r, ns| {
@@ -2001,7 +2032,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("FEATURE_OPERATION_BODY_WRITE"),
             note: |m, r, tag, a| {
-                note_container(&m.features.feature_operation_body_writes, r, tag, a);
+                note_container(&m.features.feature_operation_body_writes, r, tag, a)
             },
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_operation_body_writes, r, ns),
@@ -2014,7 +2045,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("FEATURE_OPERATION_TAGGED_REFERENCE"),
             note: |m, r, tag, a| {
-                note_container(&m.features.feature_operation_tagged_references, r, tag, a);
+                note_container(&m.features.feature_operation_tagged_references, r, tag, a)
             },
         },
         emit: |ctx, m, r, ns| {
@@ -2034,7 +2065,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
                     r,
                     tag,
                     a,
-                );
+                )
             },
         },
         emit: |ctx, m, r, ns| {
@@ -2054,7 +2085,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("FEATURE_OPERATION_COMMON_FRAME"),
             note: |m, r, tag, a| {
-                note_container(&m.features.feature_operation_common_frames, r, tag, a);
+                note_container(&m.features.feature_operation_common_frames, r, tag, a)
             },
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_operation_common_frames, r, ns),
@@ -2067,7 +2098,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("FEATURE_OPERATION_TERMINAL_FRAME"),
             note: |m, r, tag, a| {
-                note_container(&m.features.feature_operation_terminal_frames, r, tag, a);
+                note_container(&m.features.feature_operation_terminal_frames, r, tag, a)
             },
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.features.feature_operation_terminal_frames, r, ns),
@@ -2080,7 +2111,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("FEATURE_OPERATION_STATE_JOURNAL_USE"),
             note: |m, r, tag, a| {
-                note_container(&m.features.feature_operation_state_journal_uses, r, tag, a);
+                note_container(&m.features.feature_operation_state_journal_uses, r, tag, a)
             },
         },
         emit: |ctx, m, r, ns| {
@@ -2117,7 +2148,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("FEATURE_BODY_REFERENCE_OCCURRENCE"),
             note: |m, r, tag, a| {
-                note_container(&m.features.feature_body_reference_occurrences, r, tag, a);
+                note_container(&m.features.feature_body_reference_occurrences, r, tag, a)
             },
         },
         emit: |ctx, m, r, ns| {
@@ -2187,7 +2218,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         phase: Phase::GroupA {
             tag: Some("OM_DATA_BLOCK_CONTROL_CLASS_REFERENCE"),
             note: |m, r, tag, a| {
-                note_container(&m.om.data_block_control_class_references, r, tag, a);
+                note_container(&m.om.data_block_control_class_references, r, tag, a)
             },
         },
         emit: |ctx, m, r, ns| emit_arena(ctx, &m.om.data_block_control_class_references, r, ns),
@@ -3825,7 +3856,9 @@ mod tests {
                 let id = model.parasolid.attribute_class_uses[0].id.clone();
                 model.parasolid.entity_51_records = Vec::new();
                 let mut annotations = super::AnnotationBuilder::new();
-                super::NATIVE_CATALOGUE.note_phase(NotePhase::GroupA, &model, &mut annotations);
+                super::NATIVE_CATALOGUE
+                    .note_phase(NotePhase::GroupA, &model, &mut annotations)
+                    .expect("annotate");
                 assert!(annotations.build().exactness().contains_key(&id));
             },
         );

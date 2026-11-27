@@ -2,6 +2,7 @@ use crate::records::feature::fixed_parameters::{
     DesignFixedFilletGroup, DesignFixedFilletIntermediate, DesignFixedFilletLaw,
     DesignFixedFilletScalar,
 };
+use cadmpeg_core::serde_erase::json;
 
 fn scalar(value: f64) -> DesignFixedFilletScalar {
     DesignFixedFilletScalar {
@@ -74,28 +75,28 @@ fn fillet_law_admission_rejects_invalid_numeric_values() {
 
 #[test]
 fn fillet_law_serde_rejects_negative_zero_only_and_unordered_laws() {
-    let input = serde_json::json!({
+    let input = cadmpeg_core::json!({
         "radii": [0.0, 0.0, 1.0, 0.0],
         "radius_record_indexes": [1, 2, 3, 4], "radius_offsets": [40, 48, 56, 64],
         "intermediate_parameters": [0.0, 0.5],
         "intermediate_parameter_record_indexes": [5, 6], "intermediate_parameter_offsets": [72, 80],
     });
-    let group: DesignFixedFilletGroup = serde_json::from_value(input.clone()).unwrap();
-    assert_eq!(serde_json::to_value(group).unwrap(), input);
+    let group: DesignFixedFilletGroup = json::from_value(input.clone()).unwrap();
+    assert_eq!(json::to_value(group).unwrap(), input);
     for (field, value) in [
-        ("radii", serde_json::json!([-1.0, 0.0, 1.0, 0.0])),
-        ("radii", serde_json::json!([0.0, 0.0, 0.0, 0.0])),
-        ("intermediate_parameters", serde_json::json!([0.5, 0.5])),
-        ("intermediate_parameters", serde_json::json!([0.75, 0.25])),
-        ("intermediate_parameters", serde_json::json!([0.0, 1.0])),
+        ("radii", cadmpeg_core::json!([-1.0, 0.0, 1.0, 0.0])),
+        ("radii", cadmpeg_core::json!([0.0, 0.0, 0.0, 0.0])),
+        ("intermediate_parameters", cadmpeg_core::json!([0.5, 0.5])),
+        ("intermediate_parameters", cadmpeg_core::json!([0.75, 0.25])),
+        ("intermediate_parameters", cadmpeg_core::json!([0.0, 1.0])),
         (
             "tangency_weight",
-            serde_json::json!({"value": 0.0, "record_index": 7, "value_offset": 88}),
+            cadmpeg_core::json!({"value": 0.0, "record_index": 7, "value_offset": 88}),
         ),
     ] {
         let mut invalid = input.clone();
         invalid[field] = value;
-        assert!(serde_json::from_value::<DesignFixedFilletGroup>(invalid)
+        assert!(json::from_value::<DesignFixedFilletGroup>(invalid)
             .unwrap_err()
             .to_string()
             .contains(field));

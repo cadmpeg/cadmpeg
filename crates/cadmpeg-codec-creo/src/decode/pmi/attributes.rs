@@ -36,6 +36,8 @@ pub(super) struct Attribute<'a> {
     pub(super) owner_type: Option<u32>,
     pub(super) unit: &'a [u8],
     pub(super) offset: usize,
+    /// Byte offset after the row's last byte.
+    pub(super) end: usize,
 }
 
 pub(super) fn attributes<'a>(
@@ -109,6 +111,7 @@ fn prototype<'a>(view: &mut View<'a>) -> Option<Attribute<'a>> {
         owner_type,
         unit,
         offset,
+        end: view.position(),
     })
 }
 
@@ -138,6 +141,7 @@ fn positional<'a>(view: &mut View<'a>) -> Option<Attribute<'a>> {
         owner_type,
         unit,
         offset,
+        end: view.position(),
     })
 }
 

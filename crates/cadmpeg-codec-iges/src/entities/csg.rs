@@ -157,7 +157,7 @@ pub(super) fn project(
         matches!(entry.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 168) && entry.form == 0
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -175,7 +175,7 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("primitive placement is invalid"),
@@ -205,7 +205,7 @@ pub(super) fn project(
             }
         }
         if !dimensions_present {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("primitive dimensions are not numeric"),
@@ -248,7 +248,7 @@ pub(super) fn project(
             _ => false,
         };
         if !dimensions_valid {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("primitive dimension invariant is violated"),
@@ -264,7 +264,7 @@ pub(super) fn project(
             160 => (3, None, Some(6)),
             168 => (4, Some(7), Some(10)),
             _ => {
-                super::push_geometry_loss(
+                super::push_retained_geometry_loss(
                     &mut losses,
                     entry,
                     format_args!("primitive solid type is unsupported"),
@@ -273,7 +273,7 @@ pub(super) fn project(
             }
         };
         let Some(origin) = vector_or(record, origin_start, Vector3::new(0.0, 0.0, 0.0)) else {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("primitive origin is invalid"),
@@ -281,7 +281,7 @@ pub(super) fn project(
             continue;
         };
         if !origin.is_finite() {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("primitive origin is non-finite"),
@@ -310,7 +310,7 @@ pub(super) fn project(
                     )
                 })
         {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("primitive axes are not orthonormal"),
@@ -325,7 +325,7 @@ pub(super) fn project(
             || (entry.entity_type == 164 && entry.form == 0)
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -334,7 +334,7 @@ pub(super) fn project(
         };
         let factor = global.length_factor_mm();
         let Some(profile) = pointer(record, 1) else {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("solid profile curve pointer is invalid"),
@@ -350,7 +350,7 @@ pub(super) fn project(
             .iter()
             .any(|curve| Some(curve.id.as_str()) == profile_id)
         {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("solid profile curve pointer is invalid"),
@@ -361,7 +361,7 @@ pub(super) fn project(
             .number_or(2, 1.0)
             .filter(|value| value.is_finite() && *value > 0.0)
         else {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("solid sweep amount is invalid"),
@@ -369,7 +369,7 @@ pub(super) fn project(
             continue;
         };
         if entry.entity_type == 162 && amount > 1.0 {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("solid revolution fraction is greater than one"),
@@ -388,7 +388,7 @@ pub(super) fn project(
                     .is_none()
             })
         {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("solid sweep axis is invalid"),
@@ -396,7 +396,7 @@ pub(super) fn project(
             continue;
         }
         let Some(closed) = profile_closed(ir, profile, global.minimum_resolution_mm()) else {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("solid profile endpoints are unavailable"),
@@ -406,7 +406,7 @@ pub(super) fn project(
         if (entry.entity_type == 162 && entry.form == 0 && closed)
             || (entry.entity_type == 164 && !closed)
         {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("solid sweep form disagrees with profile closure"),
@@ -423,7 +423,7 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("solid sweep placement is invalid"),
@@ -439,7 +439,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 180 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -447,7 +447,7 @@ pub(super) fn project(
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 2) else {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("Boolean postfix length is not greater than two"),
@@ -476,7 +476,7 @@ pub(super) fn project(
             }
         }
         if !terms_valid {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("Boolean postfix term is invalid"),
@@ -496,7 +496,7 @@ pub(super) fn project(
             BooleanTerm::Operation => false,
         });
         if !valid_stack || depth != 1 {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("Boolean postfix stack is unbalanced"),
@@ -530,7 +530,7 @@ pub(super) fn project(
                 })
         });
         if !operands_valid || cyclic {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("Boolean operands, form, or reference acyclicity is invalid"),
@@ -548,7 +548,7 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("Boolean result placement is invalid"),
@@ -563,7 +563,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 182 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -576,7 +576,7 @@ pub(super) fn project(
                     .get(sequence)
                     .is_some_and(|target| target.entity_type == 180)
         }) else {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("selected-component Boolean tree pointer is invalid"),
@@ -585,7 +585,7 @@ pub(super) fn project(
         };
         let point_valid = (2..=4).all(|index| record.number(index).is_some());
         if !point_valid || entry.status.use_flag(global.global_table()) != Some(UseFlag::Other) {
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("selected-component point or entity-use flag is invalid"),
@@ -603,7 +603,7 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            super::push_geometry_loss(
+            super::push_retained_geometry_loss(
                 &mut losses,
                 entry,
                 format_args!("selected-component placement is invalid"),

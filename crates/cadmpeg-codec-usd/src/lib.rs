@@ -118,40 +118,49 @@ impl CodecBackend for UsdCodec {
 
 impl EncoderBackend for UsdCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    const NAME: &'static str = "USD";
     /// Writes topology, geometry, tessellations, appearances, and placements;
     /// design arenas are not read.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = false;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(TARGETS, Some(0));
 
     fn plan_resolved(
         &self,
+        ctx: &DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
         let packaged = target
-            .entry()
-            .is_some_and(|entry| entry.id == dialect::USD_USDZ);
+            .synthesized_row()
+            .is_some_and(|(_, entry)| entry.id == dialect::USD_USDZ);
         let binary = target
-            .entry()
-            .is_some_and(|entry| entry.id == dialect::USD_USDC_0_8_0);
-        let (mut body, members) = writer::plan(input, &target, packaged)?;
+            .synthesized_row()
+            .is_some_and(|(_, entry)| entry.id == dialect::USD_USDC_0_8_0);
+        let (mut body, members) = writer::plan(ctx, input, &target, packaged)?;
         if binary {
-            body.bytes = crate_layer(&body.bytes)?;
-            let metres = input.scene.meters_per_unit.unwrap_or(1.0);
+            let (bytes, left_out) = crate_layer(ctx, &body.bytes)?;
+            body.bytes = bytes;
+            body.losses
+                .extend(cadmpeg_ir::codec::write::value_unwritable(
+                    "USDC",
+                    "leaves out the fields whose value has no USDC 0.8.0 form",
+                    left_out,
+                ));
+            let metres = input
+                .scene
+                .meters_per_unit
+                .map_or(1.0, cadmpeg_ir::scalar::PositiveReal::get);
             body.notes = vec![format!(
                 "USDC 0.8.0 binary layer, {}",
                 writer::units_note(metres)
             )];
         }
         if packaged {
-            let mut all = vec![(usdz::ROOT_MEMBER, body.bytes.as_slice())];
-            all.extend(
-                members
-                    .iter()
-                    .map(|(name, bytes)| (name.as_str(), bytes.as_slice())),
-            );
-            body.bytes = usdz::package(&all)?;
+            let (bytes, losses) = usdz::package_layer(&body.bytes, &members);
+            body.bytes = bytes;
+            body.losses.extend(losses);
             body.notes
                 .push(format!("USDZ package, root layer {}", usdz::ROOT_MEMBER));
         }
@@ -159,13 +168,21 @@ impl EncoderBackend for UsdCodec {
     }
 }
 
-/// The USDC form of the written text layer `text`.
-fn crate_layer(text: &[u8]) -> Result<Vec<u8>, CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(text, &arena, &policy)?;
-    let layer = text::grammar::parse_layer(&ctx, text)?;
-    ctx.finish_session()?;
+/// The USDC form of the written text layer `text`, and the fields left out
+/// because their value has no USDC form.
+///
+/// The text is this writer's own, so it parses: only the encode session's
+/// budget stops the parse.
+fn crate_layer(ctx: &DecodeContext<'_>, text: &[u8]) -> Result<(Vec<u8>, Vec<String>), CodecError> {
+    let layer = text::grammar::parse_layer(ctx, text).inspect_err(|error| {
+        debug_assert!(
+            matches!(error, CodecError::ResourceLimit(_)),
+            "the written layer parses: {error}"
+        );
+    })?;
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(limit));
+    }
     usdc::write::write(&layer)
 }
 

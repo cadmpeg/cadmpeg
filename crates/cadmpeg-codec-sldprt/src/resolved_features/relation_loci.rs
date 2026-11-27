@@ -4556,16 +4556,47 @@ pub(super) fn marker_transform_candidates_by_feature<'a>(
             }
             let compatible = |primary_only: bool| -> HashMap<GridPoint, HashSet<GridPoint>> {
                 let mut points = HashMap::<GridPoint, HashSet<GridPoint>>::new();
+                // Precompute per-entity quantized loci/anchors once per sketch
+                // instead of recomputing them for every marker.
+                let primary_loci = primary_only.then(|| {
+                    sketch_entities
+                        .iter()
+                        .map(|entity| {
+                            let quantized = sketch_entity_locus_points(entity)
+                                .into_iter()
+                                .flatten()
+                                .map(|(point, _)| quantize(point, QUANTUM))
+                                .collect::<Vec<_>>();
+                            (&entity.geometry, quantized)
+                        })
+                        .filter(|(_, quantized)| !quantized.is_empty())
+                        .collect::<Vec<_>>()
+                });
+                let anchors_by_kind = (!primary_only).then(|| {
+                    [
+                        SketchInputKind::Point,
+                        SketchInputKind::LineOrCircle,
+                        SketchInputKind::Arc,
+                        SketchInputKind::ConstrainedPoint,
+                    ]
+                    .map(|kind| {
+                        let mut loci = Vec::new();
+                        for entity in sketch_entities {
+                            for point in marker_geometry_anchors(kind, &entity.geometry) {
+                                loci.push(quantize(point, QUANTUM));
+                            }
+                        }
+                        loci
+                    })
+                });
                 for marker in &markers {
-                    if !matches!(
-                        marker.kind(),
-                        SketchInputKind::Point
-                            | SketchInputKind::LineOrCircle
-                            | SketchInputKind::Arc
-                            | SketchInputKind::ConstrainedPoint
-                    ) {
-                        continue;
-                    }
+                    let kind_index = match marker.kind() {
+                        SketchInputKind::Point => 0,
+                        SketchInputKind::LineOrCircle => 1,
+                        SketchInputKind::Arc => 2,
+                        SketchInputKind::ConstrainedPoint => 3,
+                        _ => continue,
+                    };
                     let Some([u, v]) = marker
                         .coordinates_m
                         .map(cadmpeg_ir::units::FiniteVector::get)
@@ -4581,30 +4612,23 @@ pub(super) fn marker_transform_candidates_by_feature<'a>(
                     }
                     let marker_point =
                         quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
-                    for entity in sketch_entities {
-                        if entity.sketch != **sketch {
-                            continue;
+                    if let Some(primary_loci) = &primary_loci {
+                        for (geometry, quantized) in primary_loci {
+                            if marker_accepts_locus(marker.kind(), geometry) {
+                                points
+                                    .entry(marker_point)
+                                    .or_default()
+                                    .extend(quantized.iter().copied());
+                            }
                         }
-                        if primary_only {
-                            for (point, _) in
-                                sketch_entity_locus_points(entity).into_iter().flatten()
-                            {
-                                if marker_accepts_locus(marker.kind(), &entity.geometry) {
-                                    insert_compatible_locus(
-                                        &mut points,
-                                        marker_point,
-                                        quantize(point, QUANTUM),
-                                    );
-                                }
-                            }
-                        } else {
-                            for point in marker_geometry_anchors(marker.kind(), &entity.geometry) {
-                                insert_compatible_locus(
-                                    &mut points,
-                                    marker_point,
-                                    quantize(point, QUANTUM),
-                                );
-                            }
+                    } else if let Some(loci) =
+                        anchors_by_kind.as_ref().map(|buckets| &buckets[kind_index])
+                    {
+                        if !loci.is_empty() {
+                            points
+                                .entry(marker_point)
+                                .or_default()
+                                .extend(loci.iter().copied());
                         }
                     }
                 }

@@ -4,11 +4,12 @@
 //! flange's profile is open, a wall's side fits whether its profile is open,
 //! a chain's start is an end of it, a vertex bend sits where two pieces
 //! meet, a patch condition's support meets its curve, a natural extend
-//! picks whole loops, and a spine limit lies on its spine.
+//! picks whole loops, and a spine limit is a point or a plane on its spine.
 //!
 //! A chain is read where every pick of the selection resolves to edges of
-//! the state. Two ends are one node where they are one vertex or lie within
-//! the linear tolerance of each other.
+//! the state, or picks a curve of one sketch whose solve is current. Two
+//! ends are one node where they are one vertex or lie within the linear
+//! tolerance of each other.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -20,14 +21,15 @@ use crate::design::ops::swept::{Spine, SpineLimits, SweepSection};
 use crate::design::options::{
     BodyForm, CornerRound, SectionCondition, SolidOutput, Support, Thickness, WallSide,
 };
-use crate::design::selection::{MemberOrder, Selection, SetSelection};
-use crate::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
-use crate::math::portable::Portable;
+use crate::design::selection::{MemberOrder, Picked, Selection, SetSelection};
+use crate::geometry::SolvedCurveGeometry;
 use crate::math::Point3;
 use crate::topology::EdgeCarrier;
 
 use super::super::matching::StateTopology;
-use super::{all_entities, edge_placed, position, surface_shape, Entity, InState, Probe};
+use super::super::ops::picks::{class, is_point_or_plane, Class};
+use super::apart::{apart, curve_distance, placed_position};
+use super::{all_entities, entities, picks, planar, Entity, InState, Probe};
 
 /// How the edges of a selection join.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -75,8 +77,9 @@ fn edges<'a, O: MemberOrder>(
         .collect()
 }
 
-/// The chain `edges` form. `None` where an edge or an end's position is not
-/// held, or an edge with no ends is one of several.
+/// The chain `edges` form, its ends read in the definition's frame. `None`
+/// where an edge or an end's placed position is not held, or an edge with no
+/// ends is one of several.
 fn chain<'a>(
     topology: &StateTopology<'a>,
     edges: &BTreeSet<&'a str>,
@@ -97,33 +100,57 @@ fn chain<'a>(
             None => return None,
         }
     }
-    let mut vertices: Vec<(&'a str, Point3)> = Vec::new();
+    let mut vertices: Vec<&'a str> = Vec::new();
+    let mut points: Vec<Point3> = Vec::new();
     for vertex in ends.iter().flat_map(|&(start, end)| [start, end]) {
-        if vertices.iter().all(|(held, _)| *held != vertex) {
-            vertices.push((vertex, position(topology, vertex)?));
+        if !vertices.contains(&vertex) {
+            vertices.push(vertex);
+            points.push(placed_position(topology, vertex)?);
         }
     }
-    let mut parent: Vec<usize> = (0..vertices.len()).collect();
-    for first in 0..vertices.len() {
-        for second in first + 1..vertices.len() {
-            if vertices[first].1.vector_from(vertices[second].1).norm() <= tolerance {
+    let slot = |vertex: &str| vertices.iter().position(|held| *held == vertex);
+    let curves: Vec<[usize; 2]> = ends
+        .iter()
+        .map(|&(start, end)| Some([slot(start)?, slot(end)?]))
+        .collect::<Option<_>>()?;
+    let linked = link(&points, &curves, tolerance);
+    Some(Chain {
+        shape: linked.shape,
+        node: vertices.into_iter().zip(linked.node).collect(),
+        degree: linked.degree,
+    })
+}
+
+/// How curves join whose ends lie at points.
+struct Linked {
+    shape: Shape,
+    /// The node of each point.
+    node: Vec<usize>,
+    /// The number of curve ends at each node.
+    degree: Vec<usize>,
+}
+
+/// How the curves join, each the pair of indices into `points` of its ends.
+/// Two points are one node where they lie within `tolerance` of each other.
+fn link(points: &[Point3], curves: &[[usize; 2]], tolerance: f64) -> Linked {
+    let mut parent: Vec<usize> = (0..points.len()).collect();
+    for first in 0..points.len() {
+        for second in first + 1..points.len() {
+            if points[first].vector_from(points[second]).norm() <= tolerance {
                 join(&mut parent, first, second);
             }
         }
     }
-    let slot = |vertex: &str| vertices.iter().position(|(held, _)| *held == vertex);
     let mut pieces = parent.clone();
-    let mut degree = vec![0; vertices.len()];
-    for &(start, end) in &ends {
-        let (start, end) = (slot(start)?, slot(end)?);
+    let mut degree = vec![0; points.len()];
+    for &[start, end] in curves {
         let (start, end) = (root(&mut parent, start), root(&mut parent, end));
         degree[start] += 1;
         degree[end] += 1;
         join(&mut pieces, start, end);
     }
-    let nodes: BTreeSet<usize> = (0..vertices.len())
-        .map(|at| root(&mut parent, at))
-        .collect();
+    let node: Vec<usize> = (0..points.len()).map(|at| root(&mut parent, at)).collect();
+    let nodes: BTreeSet<usize> = node.iter().copied().collect();
     let components: BTreeSet<usize> = nodes.iter().map(|&at| root(&mut pieces, at)).collect();
     let shape = if components.len() > 1 {
         Shape::Disconnected
@@ -134,16 +161,11 @@ fn chain<'a>(
     } else {
         Shape::Open
     };
-    let node = vertices
-        .iter()
-        .enumerate()
-        .map(|(at, (vertex, _))| (*vertex, root(&mut parent, at)))
-        .collect();
-    Some(Chain {
+    Linked {
         shape,
         node,
         degree,
-    })
+    }
 }
 
 fn root(parent: &mut [usize], mut at: usize) -> usize {
@@ -218,82 +240,6 @@ fn touches(topology: &StateTopology<'_>, face: &str, edges: &BTreeSet<&str>) -> 
     })
 }
 
-/// Whether `edge` lies wholly on one side of the plane of `face`, farther
-/// than `tolerance` from it. `None` where the face is not an unplaced plane,
-/// the edge is not on an unplaced line with two ends or a circle, or a body
-/// that holds either has a placement of its own.
-fn apart(topology: &StateTopology<'_>, face: &str, edge: &str, tolerance: f64) -> Option<bool> {
-    if topology.face_body(face)?.transform.is_some() || edge_placed(topology, edge) {
-        return None;
-    }
-    let (SolvedSurfaceGeometry::Plane(plane), false) = surface_shape(topology, face)? else {
-        return None;
-    };
-    let normal = *plane.frame().axis().as_raw();
-    let height = |point: Point3| point.vector_from(plane.origin().get()).dot(normal);
-    let record = topology.edges.get(edge)?;
-    let (EdgeCarrier::Curve(curve) | EdgeCarrier::Bounded(curve, _)) = &record.carrier else {
-        return None;
-    };
-    match topology.curves.get(curve.as_str())?.geometry.solved()? {
-        SolvedCurveGeometry::Line(_) => {
-            let ends = record.ends.as_ref()?;
-            let start = height(position(topology, ends.start.as_str())?);
-            let end = height(position(topology, ends.end.as_str())?);
-            Some(start * end > 0.0 && start.abs().min(end.abs()) > tolerance)
-        }
-        SolvedCurveGeometry::Circle(circle) => {
-            let axis = *circle.frame().axis().as_raw();
-            let reach = circle.radius().get() * normal.cross(axis).norm();
-            Some(height(circle.center().get()).abs() - reach > tolerance)
-        }
-        _ => None,
-    }
-}
-
-/// The distance from `point` to the curve of `edge`, through its whole
-/// carrier. `None` where the curve is not an analytic line or circle or a
-/// body that holds the edge has a placement of its own.
-fn curve_distance(topology: &StateTopology<'_>, edge: &str, point: Point3) -> Option<f64> {
-    if edge_placed(topology, edge) {
-        return None;
-    }
-    let (EdgeCarrier::Curve(curve) | EdgeCarrier::Bounded(curve, _)) =
-        &topology.edges.get(edge)?.carrier
-    else {
-        return None;
-    };
-    match topology.curves.get(curve.as_str())?.geometry.solved()? {
-        SolvedCurveGeometry::Line(line) => {
-            let offset = point.vector_from(line.origin().get());
-            Some(offset.cross(*line.direction().as_raw()).norm())
-        }
-        SolvedCurveGeometry::Circle(circle) => {
-            let axis = *circle.frame().axis().as_raw();
-            let offset = point.vector_from(circle.center().get());
-            let height = offset.dot(axis);
-            let across = offset.cross(axis).norm() - circle.radius().get();
-            Some(height.portable_hypot(across))
-        }
-        _ => None,
-    }
-}
-
-/// The position of `vertex` where every face it lies on belongs to a held
-/// body with no placement of its own.
-fn unplaced_position(topology: &StateTopology<'_>, vertex: &str) -> Option<Point3> {
-    let faces = topology.vertex_faces.get(vertex)?;
-    let unplaced = faces.iter().all(|face| {
-        topology
-            .face_body(face)
-            .is_some_and(|body| body.transform.is_none())
-    });
-    if faces.is_empty() || !unplaced {
-        return None;
-    }
-    position(topology, vertex)
-}
-
 impl<'a> Probe<'_, 'a> {
     /// The chains a selection's edges form in each stored state it anchors
     /// in, with the state.
@@ -315,10 +261,13 @@ impl<'a> Probe<'_, 'a> {
 
     /// The shapes a selection's edges form across its stored states.
     fn shapes<O: MemberOrder>(&self, selection: &'a Selection<O>) -> BTreeSet<Shape> {
-        self.chains(selection)
+        let mut shapes: BTreeSet<Shape> = self
+            .chains(selection)
             .into_iter()
             .map(|(_, chain)| chain.shape)
-            .collect()
+            .collect();
+        shapes.extend(sketch::shape(self.index, selection, self.linear));
+        shapes
     }
 
     pub(super) fn chain_operation(&mut self, operation: &'a FeatureOperation) {
@@ -330,7 +279,7 @@ impl<'a> Probe<'_, 'a> {
                     self.wall(profile, &sweep.output);
                 }
                 self.path(&sweep.path, "Sweep.path");
-                self.spine_limits(&sweep.path, &sweep.limits);
+                self.spine_limits(Some(&sweep.path), &sweep.limits);
                 for guide in &sweep.guides {
                     self.path(&guide.path, "SweepGuide.path");
                 }
@@ -366,9 +315,7 @@ impl<'a> Probe<'_, 'a> {
                 }
             }
             FeatureOperation::ImplicitSweep(sweep) => {
-                if let Some(spine) = &sweep.spine {
-                    self.spine_limits(spine, &sweep.limits);
-                }
+                self.spine_limits(sweep.spine.as_ref(), &sweep.limits);
             }
             FeatureOperation::Extend(extend) => {
                 if let Some(ExtendLimit::Natural) = extend.limit {
@@ -446,8 +393,14 @@ impl<'a> Probe<'_, 'a> {
     }
 
     /// `CornerRound::Round` occurs only with a profile whose picked curves
-    /// are all line segments (§6).
+    /// are all line segments (§6), edges or sketch curves.
     fn round_corners<O: MemberOrder>(&mut self, profile: &'a Selection<O>) {
+        for curve in sketch::curved(self.index, profile, self.linear) {
+            self.error(crate::rule!(
+                "design.round-corner-profile-not-lines",
+                "CornerRound::Round occurs with a profile that picks curve {curve}, which is no line segment"
+            ));
+        }
         let mut curved = BTreeSet::new();
         for state in self.states(&profile.at) {
             let Some(topology) = state.matcher.topology() else {
@@ -500,7 +453,8 @@ impl<'a> Probe<'_, 'a> {
     }
 
     /// Each patch condition's support faces meet its boundary curve (§6.6).
-    /// A face is judged where it shares no edge or vertex with the curve.
+    /// A face is judged where it shares no edge or vertex with the curve,
+    /// and is off it where a bound shows every curve edge apart from it.
     fn patch_supports(&mut self, edges: &'a [PatchEdge]) {
         let mut off = BTreeSet::new();
         for edge in edges {
@@ -577,15 +531,60 @@ impl<'a> Probe<'_, 'a> {
     }
 
     /// `SpineLimits` targets are points or planes on the spine, where the
-    /// state exists (§6.6). A planar face is judged against the lines and
-    /// circles of the spine, and a vertex that ends no spine edge against
-    /// their carriers.
-    fn spine_limits<O: MemberOrder>(&mut self, spine: &'a Selection<O>, limits: &'a SpineLimits) {
+    /// state exists (§6.6). A target that resolves to an edge, a body, or a
+    /// face that is not planar is no point or plane; a pick that states such
+    /// a kind is judged by its kind (`ops::swept`), and each other pick of the
+    /// target by what it resolves to. A face is off the spine where a bound
+    /// shows every spine edge apart from it, and a vertex that ends no spine
+    /// edge where a bound shows it apart from every one. A face that is no
+    /// plane is reported once, as no plane.
+    fn spine_limits<O: MemberOrder>(
+        &mut self,
+        spine: Option<&'a Selection<O>>,
+        limits: &'a SpineLimits,
+    ) {
         let mut off = BTreeSet::new();
+        let mut shapeless = BTreeSet::new();
         for target in [&limits.start, &limits.end].into_iter().flatten() {
-            if target.at != spine.at {
+            let judged: Vec<&'a Picked> = picks(target)
+                .iter()
+                .filter(|pick| {
+                    let class = class(pick);
+                    class == Class::Unknown || is_point_or_plane(class)
+                })
+                .collect();
+            if judged.is_empty() {
                 continue;
             }
+            for state in self.states(&target.at) {
+                let Some(topology) = state.matcher.topology() else {
+                    continue;
+                };
+                let resolved = judged
+                    .iter()
+                    .filter_map(|pick| entities(&state.matcher, topology, pick))
+                    .flatten();
+                for entity in resolved {
+                    match entity {
+                        Entity::Edge(id) | Entity::Body(id) => {
+                            shapeless.insert(id);
+                        }
+                        Entity::Face(face) if planar(topology, face) == Some(false) => {
+                            shapeless.insert(face);
+                        }
+                        Entity::Face(_) | Entity::Vertex(_) | Entity::Other => {}
+                    }
+                }
+            }
+        }
+        let spine_targets = spine.into_iter().flat_map(|spine| {
+            [&limits.start, &limits.end]
+                .into_iter()
+                .flatten()
+                .filter(move |target| target.at == spine.at)
+                .map(move |target| (spine, target))
+        });
+        for (spine, target) in spine_targets {
             for state in self.states(&spine.at) {
                 let Some(topology) = state.matcher.topology() else {
                     continue;
@@ -598,7 +597,7 @@ impl<'a> Probe<'_, 'a> {
                     .flatten()
                 {
                     let separate = match entity {
-                        Entity::Face(face) => path
+                        Entity::Face(face) if !shapeless.contains(face) => path
                             .iter()
                             .all(|&edge| apart(topology, face, edge, self.linear) == Some(true))
                             .then_some(face),
@@ -608,7 +607,7 @@ impl<'a> Probe<'_, 'a> {
                                     record.vertices().any(|end| end.as_str() == vertex)
                                 })
                             });
-                            let far = unplaced_position(topology, vertex).is_some_and(|point| {
+                            let far = placed_position(topology, vertex).is_some_and(|point| {
                                 path.iter().all(|&edge| {
                                     curve_distance(topology, edge, point)
                                         .is_some_and(|distance| distance > self.linear)
@@ -616,7 +615,7 @@ impl<'a> Probe<'_, 'a> {
                             });
                             (!ends && far).then_some(vertex)
                         }
-                        Entity::Body(_) | Entity::Edge(_) | Entity::Other => None,
+                        Entity::Face(_) | Entity::Body(_) | Entity::Edge(_) | Entity::Other => None,
                     };
                     off.extend(separate);
                 }
@@ -628,13 +627,22 @@ impl<'a> Probe<'_, 'a> {
                 "a SpineLimits target, {target}, does not lie on the spine"
             ));
         }
+        for target in shapeless {
+            self.error(crate::rule!(
+                "design.spine-limit-resolves-no-point-or-plane",
+                "a SpineLimits target resolves to {target}, which is no point or plane"
+            ));
+        }
     }
 
     /// A `ContourFlange.profile`'s picks form one open chain, and each
     /// `VertexBend.vertex` picks a vertex of it where two pieces meet (§6.6).
     fn contour<O: MemberOrder>(&mut self, profile: &'a Selection<O>, bends: &'a [VertexBend]) {
         let chains = self.chains(profile);
-        if chains.iter().any(|(_, chain)| chain.shape != Shape::Open) {
+        let sketched = sketch::shape(self.index, profile, self.linear);
+        if chains.iter().any(|(_, chain)| chain.shape != Shape::Open)
+            || sketched.is_some_and(|shape| shape != Shape::Open)
+        {
             self.error(crate::rule!(
                 "design.contour-flange-profile-not-open-chain",
                 "ContourFlange.profile's picks do not form one open chain"
@@ -706,3 +714,5 @@ impl<'a> Probe<'_, 'a> {
         }
     }
 }
+
+mod sketch;

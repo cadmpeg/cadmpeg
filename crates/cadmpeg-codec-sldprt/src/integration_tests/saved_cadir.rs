@@ -18,7 +18,6 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, Length};
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity};
 
-use crate::loss::SldprtLossCode;
 use crate::test_support::container::{make_block, native_envelope_fixture, sldprt_with_body};
 use crate::test_support::native::sldprt_native;
 use crate::test_support::parasolid::triangle_body;
@@ -64,7 +63,7 @@ fn held(decoded: &DecodeResult) -> CadIr {
 /// The bytes, losses and notes `ir` writes with `fidelity`.
 fn report(ir: &CadIr, fidelity: &SourceFidelity) -> (Vec<u8>, Vec<LossNote>, Vec<String>) {
     let plan = SldprtCodec
-        .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, Some(fidelity)))
         .expect("plan");
     let mut bytes = Vec::new();
     let report = plan.write_to(&mut bytes).expect("write");
@@ -74,10 +73,7 @@ fn report(ir: &CadIr, fidelity: &SourceFidelity) -> (Vec<u8>, Vec<LossNote>, Vec
 /// The bytes `ir` writes with the decode's sidecar, or why it refuses.
 fn written(ir: &CadIr, decoded: &DecodeResult) -> Result<Vec<u8>, String> {
     let plan = SldprtCodec
-        .plan(
-            EncodeInput::new(ir, Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(ir, Some(decoded.source_fidelity())))
         .map_err(|error| error.to_string())?;
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes)
@@ -202,12 +198,7 @@ fn a_design_edit_the_history_cannot_state_is_left_out_and_named() {
 
     let (bytes, losses, _) = report(&read, decoded.source_fidelity());
     assert_eq!(Ok(&bytes), written(&held, &decoded).as_ref());
-    let unwritten = messages(
-        &losses,
-        &SldprtLossCode::WriterParameterEditUnwritten
-            .kind()
-            .to_string(),
-    );
+    let unwritten = messages(&losses, "export/edit.dropped");
     let path = format!("design.parameters[{id}].comment");
     assert!(
         unwritten.iter().any(|message| message.contains(&path)),
@@ -229,12 +220,7 @@ fn an_edited_saved_compound_file_part_keeps_its_stored_part() {
 
     let (bytes, losses, _) = report(&read, decoded.source_fidelity());
     assert_eq!(bytes, source);
-    let unwritten = messages(
-        &losses,
-        &SldprtLossCode::WriterParameterEditUnwritten
-            .kind()
-            .to_string(),
-    );
+    let unwritten = messages(&losses, "export/edit.dropped");
     let path = format!("design.parameters[{id}]");
     assert!(
         unwritten.iter().any(|message| message.contains(&path)),
@@ -299,8 +285,8 @@ fn a_saved_part_synthesizes_as_its_decode_does() {
     let synthesized = |ir: &CadIr| {
         let plan = SldprtCodec
             .plan(
-                EncodeInput::new(ir, Some(decoded.source_fidelity())),
-                TargetRequest::Explicit("sldprt:unknown"),
+                EncodeInput::new(ir, Some(decoded.source_fidelity()))
+                    .with_target(TargetRequest::Explicit("sldprt:unknown")),
             )
             .expect("plan");
         let mut bytes = Vec::new();

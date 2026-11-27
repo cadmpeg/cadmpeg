@@ -443,7 +443,7 @@ fn paired_items<M, T>(metadata: Option<M>, values: Vec<T>) -> PairedItems<M, T> 
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "width", content = "values", rename_all = "snake_case")]
 pub(crate) enum PmDcListMetadata {
     U16([u16; 2]),
@@ -850,6 +850,7 @@ mod tests {
     use crate::test_support::truncation::displayed_truncation;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use cadmpeg_core::decode::{DecodeContext, View};
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_core::CodecError;
 
     #[test]
@@ -891,10 +892,10 @@ mod tests {
                     .is_none()
             );
             assert!(super::PmDcU32List::new(marker, Some(metadata.clone()), vec![1]).is_none());
-            let wire = serde_json::json!({"marker": marker, "metadata": metadata, "references": [reference]});
-            assert!(serde_json::from_value::<super::PmDcReferenceList>(wire).is_err());
-            let wire = serde_json::json!({"marker": marker, "metadata": metadata, "values": [1]});
-            assert!(serde_json::from_value::<super::PmDcU32List>(wire).is_err());
+            let wire = cadmpeg_core::json!({"marker": marker, "metadata": metadata, "references": [reference]});
+            assert!(json::from_value::<super::PmDcReferenceList>(wire).is_err());
+            let wire = cadmpeg_core::json!({"marker": marker, "metadata": metadata, "values": [1]});
+            assert!(json::from_value::<super::PmDcU32List>(wire).is_err());
         }
     }
 
@@ -902,8 +903,8 @@ mod tests {
     fn references_reject_high_indices_on_every_construction_path() {
         assert!(super::PmDcReference::new(0x8000_0000, false).is_none());
         assert!(super::PmDcReference::zip(vec![0x8000_0000], vec![false]).is_err());
-        assert!(serde_json::from_value::<super::PmDcReference>(
-            serde_json::json!({"index": 2_147_483_648_u32, "qualified": false})
+        assert!(json::from_value::<super::PmDcReference>(
+            cadmpeg_core::json!({"index": 2_147_483_648_u32, "qualified": false})
         )
         .is_err());
         for (packed, index, qualified) in [
@@ -917,8 +918,8 @@ mod tests {
                 (index, qualified)
             );
             assert_eq!(
-                serde_json::to_value(reference).expect("reference wire"),
-                serde_json::json!({"index": index, "qualified": qualified})
+                json::to_value(reference).expect("reference wire"),
+                cadmpeg_core::json!({"index": index, "qualified": qualified})
             );
         }
     }

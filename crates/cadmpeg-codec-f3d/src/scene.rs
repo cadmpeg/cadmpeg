@@ -31,7 +31,7 @@ const TAGGED_HIGH_WORD: u32 = 0x0100_0000;
 
 pub(crate) type Sources = BTreeMap<String, [u64; 2]>;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum SceneBinding {
     Bound { occurrence: OccurrenceId },
@@ -238,7 +238,7 @@ fn row(
         *index = (u64::from(middle) << 32) | u64::from(low);
     }
     Ok(DisplayPose {
-        id: format!("f3d:{stream}:display-pose#{offset}"),
+        id: crate::ids::native_scoped_id(stream, "display-pose", offset),
         stream: stream.to_owned(),
         byte_offset: offset,
         path: ScenePath(path),

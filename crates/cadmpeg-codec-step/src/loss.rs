@@ -57,8 +57,6 @@ pub(crate) enum StepLossCode {
     HeaderMetadataNoncanonical,
     /// The declared `FILE_SCHEMA` identifier satisfies no declared dialect.
     SourceDialectUnverified,
-    /// The selected write target differs from the same-format source dialect.
-    SourceDialectDisplaced,
     /// The declared schema object identifier names a module edition that the
     /// decoder reads as a published AP edition.
     SourceSchemaEditionAssumed,
@@ -83,6 +81,9 @@ pub(crate) enum StepLossCode {
     TopologyRootRejected,
     /// A topology root does not resolve to a complete connected graph.
     TopologyRootIncomplete,
+    /// An alias topology root's name differs from the name its shared body
+    /// takes, so the alias name is not kept.
+    TopologyAliasRootNameDropped,
     /// An oriented shell omits the derived `cfs_faces` slot.
     OrientedShellOmitsCfsFaces,
     /// A `SEAM_EDGE` has no decoded pcurve on its edge curve and face surface.
@@ -297,8 +298,6 @@ pub(crate) enum StepLossCode {
     PmiAllAroundComponentsUnresolved,
     /// Source-object associations were not represented.
     SourceAssociationOmitted,
-    /// Uninterpreted passthrough records were not represented.
-    PassthroughRecordOmitted,
     /// Display colors had no emitted STEP item.
     DisplayColorUnstyled,
     /// A wire body's direct color alpha was omitted from RGB curve styling.
@@ -322,8 +321,6 @@ pub(crate) enum StepLossCode {
     HelixFitFailed,
     /// A procedural definition has no emitted native construction or solved carrier.
     ProceduralDefinitionNotWritten,
-    /// Source-native records were not represented.
-    SourceNativeRecordOmitted,
     /// A region has no writable outer shell.
     RegionNoWritableOuterShell,
     /// A region omitted a void shell with no writable faces.
@@ -400,6 +397,13 @@ pub(crate) enum StepLossCode {
     /// A non-manifold edge of a closed shell was written as one edge per
     /// forward and reversed use pair.
     NonManifoldEdgeSplit,
+    /// An open edge whose ends coincide within the linear tolerance was
+    /// written as one edge: no point of its curve between the ends was found.
+    OpenEdgeUnsplit,
+    /// A face the source holds with no boundary on a plane, cylinder, or
+    /// cone, whose domain is unbounded, or whose stored boundary does not
+    /// resolve to a closed loop, is stated partial with no loop.
+    TopologyFaceBoundaryUnstated,
     /// An edge vertex lies off its own carrier by more than the document
     /// tolerance, and the edge's parameter range was derived anyway.
     ///
@@ -456,7 +460,6 @@ impl StepLossCode {
         Self::ImplementationLevelUnverified,
         Self::HeaderMetadataNoncanonical,
         Self::SourceDialectUnverified,
-        Self::SourceDialectDisplaced,
         Self::SourceSchemaEditionAssumed,
         Self::AttributeStringInvalid,
         Self::PlacementReferenceInferred,
@@ -468,6 +471,7 @@ impl StepLossCode {
         Self::LineParameterScaleUnresolved,
         Self::TopologyRootRejected,
         Self::TopologyRootIncomplete,
+        Self::TopologyAliasRootNameDropped,
         Self::OrientedShellOmitsCfsFaces,
         Self::SeamEdgePcurveUnresolved,
         Self::EdgeNoSurfaceOrCurveForPcurve,
@@ -573,7 +577,6 @@ impl StepLossCode {
         Self::PmiAnnotationNotWritten,
         Self::PmiAllAroundComponentsUnresolved,
         Self::SourceAssociationOmitted,
-        Self::PassthroughRecordOmitted,
         Self::DisplayColorUnstyled,
         Self::WireBodyTransparencyOmitted,
         Self::AppearanceReducedToBaseColor,
@@ -584,7 +587,6 @@ impl StepLossCode {
         Self::ProceduralSampledToBspline,
         Self::HelixFitFailed,
         Self::ProceduralDefinitionNotWritten,
-        Self::SourceNativeRecordOmitted,
         Self::RegionNoWritableOuterShell,
         Self::RegionOmittedVoidShell,
         Self::RegionSolidReducedToSheet,
@@ -621,6 +623,8 @@ impl StepLossCode {
         Self::OccurrenceExpansionOutputTruncated,
         Self::OccurrenceExpansionDepthTruncated,
         Self::NonManifoldEdgeSplit,
+        Self::OpenEdgeUnsplit,
+        Self::TopologyFaceBoundaryUnstated,
         Self::EdgeVertexOffCarrier,
         Self::AngleUnitFactorCorrected,
         Self::LengthUnitContradicted,
@@ -654,7 +658,6 @@ impl StepLossCode {
             Self::ImplementationLevelUnverified => "parse.implementation-level-unverified",
             Self::HeaderMetadataNoncanonical => "parse.header-metadata-noncanonical",
             Self::SourceDialectUnverified => "source.dialect-unverified",
-            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourceSchemaEditionAssumed => "source.schema-edition-assumed",
             Self::AttributeStringInvalid => "attribute.string-invalid",
             Self::PlacementReferenceInferred => "geometry.placement-reference-inferred",
@@ -666,6 +669,7 @@ impl StepLossCode {
             Self::LineParameterScaleUnresolved => "geometry.line-parameter-scale-unresolved",
             Self::TopologyRootRejected => "topology.root-rejected",
             Self::TopologyRootIncomplete => "topology.root-incomplete",
+            Self::TopologyAliasRootNameDropped => "topology.alias-root-name-dropped",
             Self::OrientedShellOmitsCfsFaces => "topology.oriented-shell-omits-cfs-faces",
             Self::SeamEdgePcurveUnresolved => "topology.seam-edge-pcurve-unresolved",
             Self::EdgeNoSurfaceOrCurveForPcurve => "topology.edge-no-surface-or-curve-for-pcurve",
@@ -787,7 +791,6 @@ impl StepLossCode {
             Self::PmiAnnotationNotWritten => "pmi.annotation-not-written",
             Self::PmiAllAroundComponentsUnresolved => "pmi.all-around-components-unresolved",
             Self::SourceAssociationOmitted => "source.association-omitted",
-            Self::PassthroughRecordOmitted => "native.passthrough-record-omitted",
             Self::DisplayColorUnstyled => "appearance.display-color-unstyled",
             Self::WireBodyTransparencyOmitted => "appearance.wire-body-transparency-omitted",
             Self::AppearanceReducedToBaseColor => "appearance.reduced-to-base-color",
@@ -798,7 +801,6 @@ impl StepLossCode {
             Self::ProceduralSampledToBspline => "geometry.procedural-sampled-to-bspline",
             Self::HelixFitFailed => "geometry.helix-fit-failed",
             Self::ProceduralDefinitionNotWritten => "geometry.procedural-definition-not-written",
-            Self::SourceNativeRecordOmitted => "native.source-record-omitted",
             Self::RegionNoWritableOuterShell => "topology.region-no-writable-outer-shell",
             Self::RegionOmittedVoidShell => "topology.region-omitted-void-shell",
             Self::RegionSolidReducedToSheet => "topology.region-solid-reduced-to-sheet",
@@ -837,6 +839,8 @@ impl StepLossCode {
             Self::OccurrenceExpansionOutputTruncated => "occurrence.expansion-output-truncated",
             Self::OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
             Self::NonManifoldEdgeSplit => "topology.non-manifold-edge-split",
+            Self::OpenEdgeUnsplit => "topology.open-edge-unsplit",
+            Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::EdgeVertexOffCarrier => "geometry.edge-vertex-off-carrier",
             Self::AngleUnitFactorCorrected => "geometry.angle-unit-factor-corrected",
             Self::LengthUnitContradicted => "geometry.length-unit-contradicted",
@@ -903,7 +907,6 @@ impl StepLossCode {
             | Self::OccurrenceMetadataOmitted
             | Self::InstanceDefinitionSplit
             | Self::SourceAssociationOmitted
-            | Self::PassthroughRecordOmitted
             | Self::DisplayColorUnstyled
             | Self::WireBodyTransparencyOmitted
             | Self::AppearanceReducedToBaseColor
@@ -912,7 +915,6 @@ impl StepLossCode {
             | Self::ProceduralReducedToCarrier
             | Self::HelixFittedToBspline
             | Self::ProceduralSampledToBspline
-            | Self::SourceNativeRecordOmitted
             | Self::NonManifoldEdgeSplit
             | Self::OccurrencePlacementInferred => Severity::Info,
             _ => Severity::Warning,
@@ -941,8 +943,8 @@ impl StepLossCode {
             Self::ImplementationLevelUnverified
             | Self::SourceDialectUnverified
             | Self::SourceSchemaEditionAssumed => LossTaxonomy::SourceDialectUnverified,
-            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::MetadataStringInvalid
+            | Self::TopologyAliasRootNameDropped
             | Self::SchemaObjectIdentifierOutOfRange
             | Self::PresentationAnnotationTextUnordered
             | Self::PresentationAnnotationPlacementAmbiguous
@@ -1035,7 +1037,9 @@ impl StepLossCode {
             | Self::EdgeStartVertexMissing
             | Self::EdgeEndVertexMissing
             | Self::EdgeNoVertex
-            | Self::NonManifoldEdgeSplit => LossTaxonomy::TopologyNotTransferred,
+            | Self::NonManifoldEdgeSplit
+            | Self::OpenEdgeUnsplit
+            | Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::SeamEdgePcurveUnresolved
             | Self::EdgeNoSurfaceOrCurveForPcurve
             | Self::PcurveAssociationAmbiguous
@@ -1094,9 +1098,7 @@ impl StepLossCode {
             | Self::AppearanceBindingTargetConflict
             | Self::WireBodyTransparencyOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::SubdOmitted => LossTaxonomy::SubdOmitted,
-            Self::ParametricDesignRecordsOmitted | Self::SourceNativeRecordOmitted => {
-                LossTaxonomy::ParametricRecordOmitted
-            }
+            Self::ParametricDesignRecordsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::SemanticAnnotationOmitted
             | Self::PmiAnnotationNotWritten
             | Self::PmiAllAroundComponentsUnresolved
@@ -1108,7 +1110,6 @@ impl StepLossCode {
             Self::DocumentAssetOmitted => LossTaxonomy::AssetNotTransferred,
             Self::OccurrenceExternalProduct => LossTaxonomy::AssemblyComponentsExternal,
             Self::SourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
-            Self::PassthroughRecordOmitted => LossTaxonomy::PassthroughRecordOmitted,
             Self::AppearanceReducedToBaseColor | Self::AppearanceBindingMetadataReduced => {
                 LossTaxonomy::AppearanceReduced
             }
@@ -1121,13 +1122,28 @@ impl StepLossCode {
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
-        LossKind::namespaced(NAMESPACE, self.code(), self.shared_taxonomy())
+        cadmpeg_ir::report::loss::NamespacedLossKind::new(
+            NAMESPACE,
+            self.code(),
+            self.shared_taxonomy(),
+        )
+        .with_strict_floor(self.strict_floor())
+        .into()
+    }
+
+    /// The strict floor `step.md` (Part 21 mapping) states: a repaired
+    /// noncanonical record pins Warning.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::ParseNoncanonicalSyntax => Some(Severity::Warning),
+            _ => None,
+        }
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
-    /// The structured code is `step/<local>`. Severity comes from the local
-    /// code; the strict floor comes from the taxonomy.
+    /// The structured code is `step/<local>`. Severity and strict floor come
+    /// from the local code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -1137,7 +1153,7 @@ impl StepLossCode {
 #[cfg(test)]
 mod tests {
     use super::StepLossCode;
-    use cadmpeg_ir::report::{loss::StrictConsequence, Severity};
+    use cadmpeg_ir::report::{strictness::Strictness, Severity};
     use std::collections::BTreeSet;
 
     /// Value-level golden: the stable string form of every code, pinned.
@@ -1161,7 +1177,6 @@ mod tests {
                 "parse.implementation-level-unverified",
                 "parse.header-metadata-noncanonical",
                 "source.dialect-unverified",
-                "target.source-dialect-displaced",
                 "source.schema-edition-assumed",
                 "attribute.string-invalid",
                 "geometry.placement-reference-inferred",
@@ -1173,6 +1188,7 @@ mod tests {
                 "geometry.line-parameter-scale-unresolved",
                 "topology.root-rejected",
                 "topology.root-incomplete",
+                "topology.alias-root-name-dropped",
                 "topology.oriented-shell-omits-cfs-faces",
                 "topology.seam-edge-pcurve-unresolved",
                 "topology.edge-no-surface-or-curve-for-pcurve",
@@ -1278,7 +1294,6 @@ mod tests {
                 "pmi.annotation-not-written",
                 "pmi.all-around-components-unresolved",
                 "source.association-omitted",
-                "native.passthrough-record-omitted",
                 "appearance.display-color-unstyled",
                 "appearance.wire-body-transparency-omitted",
                 "appearance.reduced-to-base-color",
@@ -1289,7 +1304,6 @@ mod tests {
                 "geometry.procedural-sampled-to-bspline",
                 "geometry.helix-fit-failed",
                 "geometry.procedural-definition-not-written",
-                "native.source-record-omitted",
                 "topology.region-no-writable-outer-shell",
                 "topology.region-omitted-void-shell",
                 "topology.region-solid-reduced-to-sheet",
@@ -1326,6 +1340,8 @@ mod tests {
                 "occurrence.expansion-output-truncated",
                 "occurrence.expansion-depth-truncated",
                 "topology.non-manifold-edge-split",
+                "topology.open-edge-unsplit",
+                "topology.face-boundary-unstated",
                 "geometry.edge-vertex-off-carrier",
                 "geometry.angle-unit-factor-corrected",
                 "geometry.length-unit-contradicted",
@@ -1377,14 +1393,31 @@ mod tests {
     fn globally_unproved_pcurve_admission_does_not_refuse_strict_decode() {
         let note = StepLossCode::PcurveGlobalFidelityUnproved.note("x");
         assert_eq!(note.severity, Severity::Warning);
-        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
+        let pinned = Strictness {
+            pinned: true,
+            ..Strictness::default()
+        };
+        assert!(!pinned.refuses(&note, false));
     }
 
-    /// A kept default replaces a source value, so strict decode refuses it.
+    /// `step.md` states a strict floor for a repaired noncanonical record
+    /// and for no other code.
     #[test]
-    fn substituted_length_uncertainty_refuses_strict_decode() {
-        let note = StepLossCode::UncertaintyLengthAmbiguous.note("x");
-        assert_eq!(note.severity, Severity::Warning);
-        assert_eq!(note.strict_consequence(), StrictConsequence::Reject);
+    fn only_a_repaired_noncanonical_record_pins_a_strict_floor() {
+        let pinned = Strictness {
+            pinned: true,
+            ..Strictness::default()
+        };
+        for code in StepLossCode::ALL {
+            let expected = match code {
+                StepLossCode::ParseNoncanonicalSyntax => Some(Severity::Warning),
+                _ => None,
+            };
+            assert_eq!(code.kind().strict_floor(), expected, "{}", code.code());
+        }
+        assert!(pinned.refuses(&StepLossCode::ParseNoncanonicalSyntax.note("x"), false));
+        let substituted = StepLossCode::UncertaintyLengthAmbiguous.note("x");
+        assert_eq!(substituted.severity, Severity::Warning);
+        assert!(!pinned.refuses(&substituted, false));
     }
 }

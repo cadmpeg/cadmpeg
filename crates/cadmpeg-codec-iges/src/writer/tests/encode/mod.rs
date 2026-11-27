@@ -308,7 +308,7 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
 }
 
 #[test]
-fn encode_drops_open_shells_before_iges_5_3() {
+fn encode_writes_open_shells_before_iges_5_3_as_unjoined_trimmed_surfaces() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_non_manifold_open_shell_file()),
@@ -320,10 +320,67 @@ fn encode_drops_open_shells_before_iges_5_3() {
             .unwrap_or_else(|error| panic!("{version:?}: {error}"));
         assert_charged(
             &plan,
-            "iges/writer.face-omitted",
-            "does not define emitted entity Type 514 Form 2",
+            "iges/writer.open-shell-unjoined",
+            "defines no open shell (Type 514 Form 2)",
         );
+        let losses = &plan.report().losses;
+        assert!(
+            !losses
+                .iter()
+                .any(|loss| loss.code.to_string() == "iges/writer.face-omitted"),
+            "{version:?}: {losses:#?}"
+        );
+        let mut written = Vec::new();
+        plan.write_to(&mut written).unwrap();
+        let read = IgesCodec
+            .decode(&mut Cursor::new(written), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(read.ir().geometry.faces.len(), 3, "{version:?}");
     }
+}
+
+#[test]
+fn encode_drops_only_the_open_shell_faces_before_iges_5_3_beside_a_solid() {
+    struct Unchanged;
+    impl cadmpeg_ir::document::EntityRewrite for Unchanged {
+        type Error = std::convert::Infallible;
+        fn rewrite<T: cadmpeg_ir::schema::rewrite::typed::RewriteIdentities>(
+            &mut self,
+            entity: T,
+        ) -> Result<T, Self::Error> {
+            Ok(entity)
+        }
+    }
+    let mut ir = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_non_manifold_open_shell_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap()
+        .ir()
+        .clone();
+    let cube = cadmpeg_ir::examples::unit_cube().unwrap();
+    let cube_body = cube.geometry.bodies[0].id.to_string();
+    ir.geometry
+        .extend_rewritten(cube.geometry, &mut Unchanged)
+        .unwrap();
+    ir.finalize();
+    let plan = plan_at(IgesVersion::V5_1, &ir, None).unwrap();
+    assert_charged(
+        &plan,
+        "iges/writer.face-omitted",
+        "does not define emitted entity Type 514 Form 2",
+    );
+    let losses = &plan.report().losses;
+    assert!(
+        !losses.iter().any(|loss| {
+            let code = loss.code.to_string();
+            code == "iges/writer.open-shell-unjoined"
+                || code == "export/output.empty"
+                || (code == "iges/writer.body-omitted" && loss.message.contains(&cube_body))
+        }),
+        "{losses:#?}"
+    );
 }
 
 #[test]
@@ -420,10 +477,26 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
     ));
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
-    assert!(report
+    let omitted = report
         .losses
         .iter()
-        .any(|loss| { loss.code == IgesLossCode::PassthroughRecordOmitted.kind() }));
+        .filter(|loss| loss.code.to_string() == "export/native.records-omitted")
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        omitted,
+        [
+            "the IGES write omits 1 native record(s) of `iges` arena `cards` that are Start \
+             section cards, whose text the semantic writer replaces with its own: \
+             iges:physical:card#1",
+            "the IGES write omits 1 native record(s) of `iges` arena `display_attributes` that \
+             are Directory line font, level, view, or line weight fields the semantic writer \
+             writes with its own values: iges:presentation:display-attributes#D1",
+            "the IGES write omits 1 native record(s) of `iges` arena \
+             `product_occurrence_expansion` which the bounded semantic writer does not \
+             regenerate: iges:product:occurrence-expansion#state",
+        ]
+    );
     let round_trip = IgesCodec
         .decode(
             &mut Cursor::new(written.as_slice()),
@@ -1340,10 +1413,15 @@ fn encode_regenerates_decoded_manifold_brep_without_source_bytes() {
     let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::PassthroughRecordOmitted.kind()));
+    assert!(
+        !report.losses.iter().any(|loss| {
+            loss.code.to_string() == "export/native.records-omitted"
+                && (loss.message.contains("arena `directions`")
+                    || loss.message.contains("native topology"))
+        }),
+        "{:#?}",
+        report.losses
+    );
     assert_eq!(
         report.census.counts.get("186_manifold_solid_brep"),
         Some(&1)

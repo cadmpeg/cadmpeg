@@ -6,7 +6,7 @@ use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 use std::collections::{btree_map::Entry, BTreeMap};
 use std::fmt;
 
-use cadmpeg_core::decode::DecodeDepth;
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::write::{
@@ -33,20 +33,23 @@ pub struct StepCodec {
 
 impl EncoderBackend for StepCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    const NAME: &'static str = "STEP";
     /// Writes B-rep, product structure, presentation and PMI; design arenas are
     /// reported as omitted, not read.
     const REQUEST: DecodeDepth = DecodeDepth::Geometry;
+    const REUSES_SOURCE: bool = false;
     type Target = Catalog;
-    const TARGET: Catalog = Catalog::new(StepSchema::TARGETS, Some(2));
+    const TARGET: Catalog = Catalog::new(StepSchema::TARGETS, Some(StepSchema::DEFAULT_INDEX));
 
-    /// Synthesis-only encoder. An off-catalog STEP source cannot be reproduced
-    /// because every emitted schema stamps object-identifier arcs.
+    /// Synthesis-only encoder. Every emitted schema stamps object-identifier
+    /// arcs, so an off-catalog STEP source is written as the catalog default.
     fn plan_resolved(
         &self,
+        ctx: &DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        crate::writer::target::plan(self, input, &target)
+        crate::writer::target::plan(self, ctx, input, &target)
     }
 }
 
