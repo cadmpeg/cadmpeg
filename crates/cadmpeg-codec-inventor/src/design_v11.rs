@@ -68,7 +68,12 @@ pub(crate) fn project(
     sheet_metal::attachments::project(ir, features)?;
     losses.extend(sheet_metal::feature_reliefs(ir, features, parameters));
     place_current_bodies(ir)?;
-    topologies::restate(ctx, ir)?;
+    let properties = features
+        .properties
+        .iter()
+        .map(crate::record_identity::Located::id)
+        .collect();
+    topologies::restate(ctx, ir, &properties)?;
     Ok(())
 }
 

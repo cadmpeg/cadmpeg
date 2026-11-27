@@ -6,11 +6,14 @@ use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
 use cadmpeg_ir::features::evaluation::{
-    FeatureEvaluation, FeatureInputTopology, HistoricalBodyWriter, HistoricalEdgeGeometry,
+    FeatureEvaluation, FeatureInputTopology, FeatureResultMembers, HistoricalBodyWriter,
+    HistoricalEdgeGeometry,
 };
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{FeatureContent, FeatureDefinition, FeatureId};
-use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalBodyId, HistoricalEdgeId};
+use cadmpeg_ir::ids::{
+    FeatureInputTopologyId, FeatureResultTopologyId, HistoricalBodyId, HistoricalEdgeId,
+};
 use cadmpeg_ir::units::UnitVector3;
 
 use super::*;
@@ -191,11 +194,120 @@ fn a_native_operation_leaves_its_input_state_omitted() {
         ir.design.features[0].definition.operation,
         FeatureOperation::Native { .. }
     ));
-    restate(&ctx, &mut ir).expect("restate");
+    restate(&ctx, &mut ir, &BTreeSet::new()).expect("restate");
     assert!(ir.model.restated().get(STATE).is_none());
     let omitted = omitted(&ir);
     assert!(
         omitted.iter().any(|message| message.contains(STATE)),
+        "{omitted:?}"
+    );
+}
+
+const EXTRUDE: &str = "inventor:design:feature#extrude";
+const RESULT: &str = "inventor:design:feature-result#extrude";
+const BODY: &str = "inventor:pmdc:feature-property#body";
+const SLOT: &str = "inventor:pmdc:feature-property#slot";
+
+/// A part whose fillet rounds the generated edge `edge-1` of an extrude,
+/// whose result holds `edges` and the body wrapper `BODY`.
+fn generated_part(edges: &[&str]) -> CadIr {
+    let operation = json::from_value(cadmpeg_core::json!({
+        "kind": "fillet",
+        "value": {"groups": [{
+            "edges": {"kind": "generated", "value": {
+                "edges": [{"feature": EXTRUDE, "local_id": "edge-1"}],
+                "native": "inventor:pmdc:selection#fillet",
+            }},
+            "radius": {"kind": "constant", "radius": 2.0},
+        }]},
+    }))
+    .expect("fillet");
+    let mut ir = part(input(&[7]));
+    ir.model.feature_input_topologies.clear();
+    ir.model.features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(operation));
+    ir.model.features[0].ordinal = 1;
+    let mut extrude = ir.model.features[0].clone();
+    extrude.id = FeatureId::mint(EXTRUDE).expect("id");
+    extrude.ordinal = 0;
+    extrude.native_ref = Some("inventor:pmdc:feature#extrude".into());
+    extrude
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Unresolved {
+                family: cadmpeg_ir::features::UnresolvedFamily::Extrude,
+            },
+        ));
+    ir.model.features.insert(0, extrude);
+    let name =
+        |value: &str| cadmpeg_core::text::NonBlankString::new(value.to_owned()).expect("name");
+    ir.model
+        .feature_result_topologies
+        .push(FeatureResultTopology::new(
+            FeatureResultTopologyId::mint(RESULT).expect("result"),
+            FeatureId::mint(EXTRUDE).expect("id"),
+            FeatureResultMembers::new(
+                vec![name(BODY)],
+                Vec::new(),
+                edges.iter().map(|edge| name(edge)).collect(),
+                Vec::new(),
+            )
+            .expect("members"),
+            Some(SLOT.to_owned()),
+        ));
+    ir
+}
+
+/// Decode → design → restatement with the native property records `properties`.
+fn restate_part(ir: &mut CadIr, properties: &[&str]) {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    super::super::project_history(&ctx, ir, &BTreeMap::default(), false).expect("history");
+    super::super::operations::project(&ctx, ir, &mut Vec::new()).expect("operations");
+    assert!(matches!(
+        ir.design.features[1].definition.operation,
+        FeatureOperation::Fillet(_)
+    ));
+    let properties = properties.iter().map(|id| (*id).to_owned()).collect();
+    restate(&ctx, ir, &properties).expect("restate");
+}
+
+/// The native property records hold the body wrapper and the output slot,
+/// and the later fillet's pick holds the generated edge, so the extrude
+/// restates its result in full.
+#[test]
+fn a_result_whose_members_other_records_hold_is_restated_in_full() {
+    let mut ir = generated_part(&["edge-1"]);
+    restate_part(&mut ir, &[BODY, SLOT]);
+    let restating = ir.model.restated().get(RESULT).expect("restated");
+    assert_eq!(restating.by(), &Restater::Record(EXTRUDE.to_owned()));
+    assert!(restating.cut().is_empty(), "{:?}", restating.cut());
+    let omitted = omitted(&ir);
+    assert!(
+        !omitted.iter().any(|message| message.contains(RESULT)),
+        "{omitted:?}"
+    );
+}
+
+/// An edge no pick names and an output slot no native record holds stay
+/// charged as the fields of the result the extrude states in part.
+#[test]
+fn unpicked_edges_and_unheld_slots_are_stated_in_part() {
+    let mut ir = generated_part(&["edge-1", "edge-2"]);
+    restate_part(&mut ir, &[BODY]);
+    let restating = ir.model.restated().get(RESULT).expect("restated");
+    assert_eq!(
+        restating.cut().iter().copied().collect::<Vec<_>>(),
+        ["members", "native_ref"]
+    );
+    let omitted = omitted(&ir);
+    assert!(
+        omitted
+            .iter()
+            .any(|message| message
+                .contains(&format!("stated in part: {RESULT} (members, native_ref)"))),
         "{omitted:?}"
     );
 }
