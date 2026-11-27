@@ -1229,7 +1229,7 @@ impl SketchPoint {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum SketchPointRecordFormSerde {
     Version0,
@@ -2260,7 +2260,7 @@ impl SketchNurbsGeometry {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum SketchCurveGeometryWire {
     /// A straight line segment.
