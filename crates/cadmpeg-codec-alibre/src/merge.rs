@@ -56,7 +56,7 @@ impl Keyed<'_> {
                 let tail = &rest[scope_end..];
                 let tail = match tail.strip_prefix(FILE_KIND) {
                     Some(nested) if scope == "xref" => {
-                        format!("{}{key}/{nested}", FILE_KIND)
+                        format!("{FILE_KIND}{key}/{nested}")
                     }
                     _ => tail.to_owned(),
                 };
