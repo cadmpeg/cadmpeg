@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! One malformed record is a named loss and the rest of the file decodes.
-use crate::test_support::fixture;
 use crate::test_support::review::{decode, edit, wire};
+use crate::test_support::{fixture, Charge};
+use cadmpeg_ir::unknown::part::Cause;
 use serde_json::Value;
 
 fn feature_count(wire: &Value) -> usize {
     wire["model"]["features"].as_array().unwrap().len()
 }
 
-fn malformed_losses(result: &cadmpeg_ir::codec::DecodeResult) -> usize {
-    named_losses(result, "onshape/record.malformed")
+fn malformed_losses(result: &cadmpeg_ir::codec::DecodeResult, charge: Charge) -> usize {
+    named_losses(result, "onshape/record.malformed", charge)
 }
 
 #[test]
@@ -27,7 +28,12 @@ fn a_feature_without_an_id_is_omitted_with_one_named_loss() {
         }
     });
     let result = decode(&bytes);
-    assert_eq!(malformed_losses(&result), 1, "{:?}", result.report().losses);
+    assert_eq!(
+        malformed_losses(&result, Charge::GivenUp(Cause::Unreadable)),
+        1,
+        "{:?}",
+        result.report().losses
+    );
     assert_eq!(feature_count(&wire(&result)), total - 1);
 }
 
@@ -45,7 +51,12 @@ fn a_repeated_feature_id_with_other_content_gives_up_the_repeat_and_keeps_the_re
         }
     });
     let result = decode(&bytes);
-    assert_eq!(malformed_losses(&result), 1, "{:?}", result.report().losses);
+    assert_eq!(
+        malformed_losses(&result, Charge::GivenUp(Cause::Unreadable)),
+        1,
+        "{:?}",
+        result.report().losses
+    );
     assert_eq!(feature_count(&wire(&result)), total - 1);
     let repeat = crate::archive::source_record(&repeat);
     let given_up = result
@@ -71,18 +82,24 @@ fn a_missing_rollback_index_keeps_the_features_with_one_named_loss() {
         members.retain(|name, _| !name.ends_with("bodydetails/index.json"));
     });
     let result = decode(&bytes);
-    assert_eq!(malformed_losses(&result), 1, "{:?}", result.report().losses);
+    assert_eq!(
+        malformed_losses(&result, Charge::Note),
+        1,
+        "{:?}",
+        result.report().losses
+    );
     assert_eq!(feature_count(&wire(&result)), total);
 }
 
-/// The losses that state `code`: notes of `code`, and give-ups whose text
-/// carries it.
-fn named_losses(result: &cadmpeg_ir::codec::DecodeResult, code: &str) -> usize {
+/// The losses that state `code` as `charge`.
+fn named_losses(result: &cadmpeg_ir::codec::DecodeResult, code: &str, charge: Charge) -> usize {
     result
         .report()
         .losses
         .iter()
-        .filter(|loss| crate::test_support::states(code, &loss.code.to_string(), &loss.message))
+        .filter(|loss| {
+            crate::test_support::states(code, charge, &loss.code.to_string(), &loss.message)
+        })
         .count()
 }
 
@@ -186,7 +203,7 @@ fn an_oversized_topology_table_keeps_other_tables_and_degrades_its_consumer() {
             "{table}"
         );
         assert_eq!(
-            named_losses(&result, "onshape/history.not-supported"),
+            named_losses(&result, "onshape/history.not-supported", Charge::Note),
             1,
             "{table}"
         );
@@ -217,7 +234,11 @@ fn unreadable_step_keeps_readable_history_and_reports_missing_geometry() {
         });
         let result = decode(&bytes);
         assert_eq!(
-            named_losses(&result, "onshape/step.unreadable"),
+            named_losses(
+                &result,
+                "onshape/step.unreadable",
+                Charge::GivenUp(Cause::Unreadable)
+            ),
             1,
             "{:#?}",
             result.report().losses
@@ -306,7 +327,11 @@ fn an_oversized_history_member_retains_readable_geometry() {
         ),
         1
     );
-    assert_eq!(named_losses(&result, "onshape/history.not-supported"), 1);
+    // The give-up of the member is the one entry for the lost history.
+    assert_eq!(
+        named_losses(&result, "onshape/history.not-supported", Charge::Any),
+        0
+    );
     assert_eq!(feature_count(&wire(&result)), 0);
     assert_eq!(result.ir().geometry.bodies.len(), 1);
     crate::test_support::review::validate(result);
@@ -327,7 +352,14 @@ fn a_step_part_budget_refusal_keeps_history_and_clears_the_part_refusal() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(named_losses(&result, "onshape/step.unreadable"), 1);
+    assert_eq!(
+        named_losses(
+            &result,
+            "onshape/step.unreadable",
+            Charge::GivenUp(Cause::Undecoded)
+        ),
+        1
+    );
     assert_eq!(feature_count(&wire(&result)), 3);
     assert!(result.ir().geometry.bodies.is_empty());
     crate::test_support::review::validate(result);

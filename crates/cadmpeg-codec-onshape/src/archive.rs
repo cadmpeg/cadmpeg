@@ -242,7 +242,7 @@ impl<'a> Bundle<'a> {
                 || (name.starts_with("assemblies/")
                     && (name.ends_with("/definition.json") || name.ends_with("/features.json")))
             {
-                // An error carries whether a part resource limit stopped the parse.
+                // An error carries the cause of the stopped parse.
                 let parsed = match std::str::from_utf8(data.window()) {
                     Ok(text) => {
                         match ctx.run_part(|| ctx.parse_json_value(text, "Onshape JSON member"))? {
@@ -253,12 +253,12 @@ impl<'a> Bundle<'a> {
                                 return Err(CodecError::ResourceLimit(limit).into())
                             }
                             Err(error @ CodecError::ResourceLimit(_)) => {
-                                Err((error.to_string(), true))
+                                Err((error.to_string(), Cause::Undecoded))
                             }
-                            Err(error) => Err((error.to_string(), false)),
+                            Err(error) => Err((error.to_string(), cause_of(&error))),
                         }
                     }
-                    Err(error) => Err((error.to_string(), false)),
+                    Err(error) => Err((error.to_string(), Cause::Unreadable)),
                 };
                 match parsed {
                     Ok(value) => {
@@ -268,12 +268,7 @@ impl<'a> Bundle<'a> {
                         }
                         json.insert(name.clone(), value);
                     }
-                    Err((error, bound)) => {
-                        let cause = if bound {
-                            Cause::Undecoded
-                        } else {
-                            Cause::Unreadable
-                        };
+                    Err((error, cause)) => {
                         let why = coded(
                             &OnshapeLossCode::MemberUnreadable
                                 .note(format!("{name}: {error}; omitted the member")),
@@ -283,7 +278,7 @@ impl<'a> Bundle<'a> {
                             root,
                             entry,
                             (cause, why),
-                            bound,
+                            cause == Cause::Undecoded,
                             &mut losses,
                             &mut given_up,
                         )?;
@@ -310,6 +305,12 @@ impl<'a> Bundle<'a> {
     }
     pub(super) fn contains(&self, path: &str) -> bool {
         self.members.contains_key(path)
+    }
+    /// Whether the archive holds an entry `path` and the bundle admits no
+    /// member for it: the bundle gave the entry up, and that give-up names
+    /// each fact the member held.
+    pub(super) fn omitted(&self, path: &str) -> bool {
+        self.snapshot.entry(path).is_some() && !self.members.contains_key(path)
     }
     pub(super) fn json(&self, path: &str) -> Result<&Value, Error> {
         self.json

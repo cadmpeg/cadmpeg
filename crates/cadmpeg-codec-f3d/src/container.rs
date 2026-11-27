@@ -673,7 +673,7 @@ fn scan_in<'a>(
                 if let Some(stream) = stream {
                     part = part.in_stream(stream.clone());
                 }
-                let cause = crate::design::decode::record::cause_of(Cause::Unreadable, &error);
+                let cause = Cause::Unreadable.of(&error);
                 let part = ctx.give_up_part(part, cause, error)?;
                 // Two directory entries can name one stored span.
                 if given_up

@@ -319,10 +319,7 @@ pub(super) fn classify_members<'a>(
                     // The scan gave up an entry that it did not open.
                     let mut given = !scan.has_entry(member_path);
                     if opened {
-                        let cause = crate::design::decode::record::cause_of(
-                            cadmpeg_ir::unknown::part::Cause::Unreadable,
-                            &error,
-                        );
+                        let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
                         if let Some(part) = scan.give_up_entry(
                             ctx,
                             member_path,
@@ -330,7 +327,7 @@ pub(super) fn classify_members<'a>(
                             if crate::design::decode::record::is_fatal(&error) {
                                 error
                             } else {
-                                CodecError::Malformed(why.clone())
+                                crate::design::decode::record::give_up_error(cause, &why)
                             },
                         )? {
                             given = true;

@@ -116,6 +116,9 @@ pub(crate) enum FreecadLossCode {
     SourceGuiMetadataUnresolved,
     /// Optional persistent naming metadata could not be interpreted.
     ElementMapMetadataUnresolved,
+    /// A shape's string-table index or a mapped name's string id names no
+    /// record of the fully read string tables.
+    ElementMapStringReferenceDangling,
     /// A parameter-space curve could not enter neutral geometry.
     PcurveNotTransferred,
     /// Equal-matrix pcurves have no admitted matching native location chain.
@@ -186,6 +189,7 @@ impl FreecadLossCode {
         Self::SourceGuiPropertyKeyBlank,
         Self::SourceGuiMetadataUnresolved,
         Self::ElementMapMetadataUnresolved,
+        Self::ElementMapStringReferenceDangling,
         Self::PcurveNotTransferred,
         Self::PcurveLocationAmbiguous,
         Self::TopologyLocationIdentityBounded,
@@ -254,6 +258,7 @@ impl FreecadLossCode {
             Self::SourceGuiPropertyKeyBlank => "source.gui-property-key-blank",
             Self::SourceGuiMetadataUnresolved => "source.gui-metadata-unresolved",
             Self::ElementMapMetadataUnresolved => "element-map.metadata-unresolved",
+            Self::ElementMapStringReferenceDangling => "element-map.string-reference-dangling",
             Self::PcurveNotTransferred => "pcurve.not-transferred",
             Self::PcurveLocationAmbiguous => "pcurve.location-ambiguous",
             Self::TopologyLocationIdentityBounded => "topology.location-identity-bounded",
@@ -319,6 +324,7 @@ impl FreecadLossCode {
             | Self::SourceGuiPropertyKeyBlank
             | Self::SourceGuiMetadataUnresolved
             | Self::ElementMapMetadataUnresolved
+            | Self::ElementMapStringReferenceDangling
             | Self::PcurveNotTransferred
             | Self::TopologyNonBoundaryIncidenceRetained
             | Self::TopologyFaceBoundaryUnstated
@@ -371,6 +377,7 @@ impl FreecadLossCode {
             | Self::SourceGuiPropertyKeyBlank
             | Self::SourceGuiMetadataUnresolved
             | Self::ElementMapMetadataUnresolved
+            | Self::ElementMapStringReferenceDangling
             | Self::PcurveNotTransferred
             | Self::PcurveLocationAmbiguous
             | Self::TopologyLocationIdentityBounded
@@ -390,12 +397,15 @@ impl FreecadLossCode {
         }
     }
 
-    /// The strict floor `freecad_fcstd.md` (Strict floors) states: a
-    /// persistence count or a root version attribute that breaks the
-    /// `Document.xml` grammar, which the decoder reads past, pins Warning.
+    /// The strict floor `freecad_fcstd.md` §14 states: a persistence count
+    /// or a root version attribute that breaks the `Document.xml` grammar, or
+    /// a reference to a record that a table read in full lacks, which the
+    /// decoder reads past, pins Warning.
     const fn strict_floor(self) -> Option<Severity> {
         match self {
-            Self::PersistenceCountNoncanonical
+            Self::PersistenceSideEntryUnresolved
+            | Self::PersistenceCountNoncanonical
+            | Self::ElementMapStringReferenceDangling
             | Self::ProgramVersionNoncanonical
             | Self::FileVersionNoncanonical => Some(Severity::Warning),
             _ => None,
@@ -477,6 +487,7 @@ mod tests {
                 "source.gui-property-key-blank",
                 "source.gui-metadata-unresolved",
                 "element-map.metadata-unresolved",
+                "element-map.string-reference-dangling",
                 "pcurve.not-transferred",
                 "pcurve.location-ambiguous",
                 "topology.location-identity-bounded",
@@ -531,7 +542,12 @@ mod tests {
         assert_eq!(
             floored,
             [
+                (
+                    "metadata.persistence-side-entry-unresolved",
+                    Severity::Warning
+                ),
                 ("metadata.persistence-count-noncanonical", Severity::Warning),
+                ("element-map.string-reference-dangling", Severity::Warning),
                 ("metadata.program-version-noncanonical", Severity::Warning),
                 ("metadata.file-version-noncanonical", Severity::Warning),
             ]

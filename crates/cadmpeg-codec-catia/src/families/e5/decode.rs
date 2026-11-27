@@ -327,11 +327,15 @@ refusal,
         }
         let mut losses = Vec::new();
         if !topology_transferred {
-            losses.push((CatiaLossCode::TopologyE5GraphUnclosed).note("E5 carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.".to_string()));
             let face_records = topology
                 .iter()
                 .flat_map(|topology| topology.faces.iter().map(|face| face.record_id))
                 .collect::<std::collections::BTreeSet<_>>();
+            // Each face give-up states the unclosed graph; the note states it
+            // only where no face record is given up.
+            if face_records.is_empty() {
+                losses.push((CatiaLossCode::TopologyE5GraphUnclosed).note("E5 carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.".to_string()));
+            }
             let code = CatiaLossCode::TopologyE5GraphUnclosed.kind();
             losses.extend(face_records.into_iter().map(|record_id| {
                 cadmpeg_ir::unknown::part::GivenUpRecord::new(

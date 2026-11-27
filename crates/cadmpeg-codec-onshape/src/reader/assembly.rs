@@ -61,6 +61,16 @@ pub(super) fn read<'a>(
             declared.entry(eid).or_insert(position);
         }
     }
+    let root_id = match manifest.get("root_element") {
+        None | Some(Value::Null) => elements
+            .iter()
+            .find(|element| element.get("type").and_then(Value::as_str) == Some("ASSEMBLY"))
+            .and_then(|element| element.get("id"))
+            .and_then(Value::as_str),
+        Some(Value::String(eid)) => Some(eid.as_str()),
+        Some(Value::Object(root)) => root.get("id").and_then(Value::as_str),
+        Some(_) => None,
+    };
     let mut session = Session {
         ctx,
         bundle,
@@ -71,28 +81,23 @@ pub(super) fn read<'a>(
     for (position, element) in elements.iter().enumerate() {
         if let Some(eid) = element.get("id").and_then(Value::as_str) {
             if let Some(&first) = declared.get(eid).filter(|&&first| first != position) {
-                if elements.get(first) == Some(element) {
-                    report.push_coded(
-                        eid,
-                        OnshapeLossCode::AssemblyRecordRepeated,
-                        "element id repeats with the same content; retained the first declaration",
-                    );
-                } else {
-                    report.give_up_as(
-                        &format!("manifest.json#/elements/{position}"),
-                        eid,
-                        (Cause::Unreadable, OnshapeLossCode::AssemblyRecordRepeated),
-                        "element id repeats with different content; retained the first declaration",
-                    );
-                }
+                report.push_coded(
+                    eid,
+                    OnshapeLossCode::AssemblyRecordRepeated,
+                    if elements.get(first) == Some(element) {
+                        "element id repeats with the same content; retained the first declaration"
+                    } else {
+                        "element id repeats with different content; retained the first declaration"
+                    },
+                );
                 continue;
             }
         }
+        let stated = element.get("id").and_then(Value::as_str);
+        // The give-up of the root names an invalid root id.
         if element.get("type").and_then(Value::as_str) == Some("ASSEMBLY")
-            && !element
-                .get("id")
-                .and_then(Value::as_str)
-                .is_some_and(element_id)
+            && !stated.is_some_and(element_id)
+            && (stated.is_none() || stated != root_id)
         {
             report.push_coded(
                 "assembly element",
@@ -218,17 +223,6 @@ pub(super) fn read<'a>(
         ctx.depth(),
         !model.ir.geometry.bodies.is_empty(),
     );
-    let root_id = match manifest.get("root_element") {
-        None | Some(Value::Null) => rows(manifest, "elements")
-            .map_err(Error::Decode)?
-            .iter()
-            .find(|element| element.get("type").and_then(Value::as_str) == Some("ASSEMBLY"))
-            .and_then(|element| element.get("id"))
-            .and_then(Value::as_str),
-        Some(Value::String(eid)) => Some(eid.as_str()),
-        Some(Value::Object(root)) => root.get("id").and_then(Value::as_str),
-        Some(_) => None,
-    };
     if root_id.is_none()
         && manifest
             .get("root_element")
@@ -247,6 +241,15 @@ pub(super) fn read<'a>(
     let Some(root_id) = root_id else {
         return Ok(model);
     };
+    if declared.get(root_id).is_some_and(|position| {
+        elements
+            .get(*position)
+            .and_then(|element| element.get("type"))
+            .and_then(Value::as_str)
+            == Some("PARTSTUDIO")
+    }) {
+        return Ok(model);
+    }
     if !element_id(root_id) {
         let root_record = match manifest.get("root_element") {
             None | Some(Value::Null) => declared.get(root_id).map_or_else(
@@ -266,25 +269,18 @@ pub(super) fn read<'a>(
         );
         return Ok(model);
     }
-    if declared.get(root_id).is_some_and(|position| {
-        elements
-            .get(*position)
-            .and_then(|element| element.get("type"))
-            .and_then(Value::as_str)
-            == Some("PARTSTUDIO")
-    }) {
-        return Ok(model);
-    }
     let definition_path = format!("assemblies/{root_id}/definition.json");
     let definition_path = definition_path.as_str();
     let definition = match bundle.json(definition_path) {
         Ok(value) => value,
         Err(error) => {
-            report.push_coded(
-                root_id,
-                OnshapeLossCode::AssemblyRecordUnsupported,
-                error.to_string(),
-            );
+            if !bundle.omitted(definition_path) {
+                report.push_coded(
+                    root_id,
+                    OnshapeLossCode::AssemblyRecordUnsupported,
+                    error.to_string(),
+                );
+            }
             return Ok(model);
         }
     };

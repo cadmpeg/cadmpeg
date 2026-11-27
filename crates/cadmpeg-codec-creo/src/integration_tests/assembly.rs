@@ -4,7 +4,8 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::products::Storage;
-use cadmpeg_ir::unknown::part::record_unreadable_kind;
+use cadmpeg_ir::report::loss::LossKind;
+use cadmpeg_ir::unknown::part::{record_undecoded_kind, record_unreadable_kind};
 use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::loss::CreoLossCode;
@@ -146,10 +147,35 @@ fn an_assembly_header_without_a_component_table_reports_the_drop() {
     let result = decode(assembly);
     assert!(result.ir().model.occurrences.is_empty());
     assert_eq!(
+        loss_messages(&result, CreoLossCode::AssemblyMemberTableUnread).len(),
+        1
+    );
+    assert!(loss_messages(&result, CreoLossCode::AssemblyMemberTableIncomplete).is_empty());
+    assert!(loss_messages(&result, CreoLossCode::AssemblyComponentsExternal).is_empty());
+}
+
+#[test]
+fn a_pinned_decode_refuses_a_table_with_another_row_count() {
+    let mut table = members_table();
+    table[b"\xe0\x00members\0\xf1\xf8".len()] = 0x04;
+    let result = decode(build_asm_with(table.clone()));
+    assert_eq!(result.ir().model.occurrences.len(), 3);
+    assert_eq!(
         loss_messages(&result, CreoLossCode::AssemblyMemberTableIncomplete).len(),
         1
     );
-    assert!(loss_messages(&result, CreoLossCode::AssemblyComponentsExternal).is_empty());
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = CreoCodec
+        .decode(&mut Cursor::new(build_asm_with(table)), &options)
+        .expect_err("a pinned decode refuses a table that breaks its row count");
+    let DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        CreoLossCode::AssemblyMemberTableIncomplete.kind()
+    );
 }
 
 #[test]
@@ -229,14 +255,16 @@ fn a_pinned_decode_refuses_a_frame_that_is_not_rigid() {
         .any(|token| token == "creo:model:occurrence#member-1"));
 }
 
-#[test]
-fn an_unread_component_row_is_given_up_with_the_rows_after_it() {
+/// Decodes the component table after `damage` changes the second row, which
+/// starts with `8a 0f 02`, and returns the single row give-up's message after
+/// checking that it covers that row through the end of the section.
+fn given_up_rows(damage: impl FnOnce(&mut [u8], usize), cause: &LossKind) -> String {
     let mut table = members_table();
-    replace_once(
-        &mut table,
-        b"\x8a\x0f\x02BRACKET\0BRACKET\0\xe1",
-        b"\x8a\x0f\x02BRACKET\0BRACKET\0\xe2",
-    );
+    let in_table = table
+        .windows(3)
+        .position(|window| window == b"\x8a\x0f\x02")
+        .expect("the second row");
+    damage(&mut table, in_table);
     let bytes = build_asm_with(table);
     let row = bytes
         .windows(3)
@@ -252,33 +280,31 @@ fn an_unread_component_row_is_given_up_with_the_rows_after_it() {
     let result = decode(bytes.clone());
     assert_eq!(result.ir().model.occurrences.len(), 1);
     assert!(loss_messages(&result, CreoLossCode::AssemblyMemberTableIncomplete).is_empty());
+    assert!(loss_messages(&result, CreoLossCode::AssemblyMemberTableUnread).is_empty());
     let charges = result
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == record_unreadable_kind())
-        .map(|loss| loss.message.as_str())
+        .filter(|loss| {
+            loss.code == record_unreadable_kind() || loss.code == record_undecoded_kind()
+        })
         .collect::<Vec<_>>();
     assert_eq!(charges.len(), 1, "{charges:#?}");
+    assert_eq!(&charges[0].code, cause);
+    let message = charges[0].message.clone();
     assert!(
-        charges[0].contains("does not match the component row grammar"),
-        "{}",
-        charges[0]
-    );
-    assert!(
-        charges[0].starts_with(&format!(
+        message.starts_with(&format!(
             "part component-rows stream=\"\" offset={row} length={} record=creo:source:part#",
             end - row
         )),
-        "{}",
-        charges[0]
+        "{message}"
     );
     let stub = result
         .ir()
         .native_unknowns("creo")
         .expect("native unknowns")
         .into_iter()
-        .find(|record| charges[0].contains(&format!(" record={}: ", record.id)))
+        .find(|record| message.contains(&format!(" record={}: ", record.id)))
         .expect("the charge names its part stub");
     assert!(stub.links.is_empty());
     assert_eq!(
@@ -287,6 +313,45 @@ fn an_unread_component_row_is_given_up_with_the_rows_after_it() {
             .retained_record(stub.id.as_str())
             .and_then(|record| record.data()),
         Some(&bytes[row..end])
+    );
+    message
+}
+
+/// The offset of the second row's `tha_ref` byte from its start.
+const THA_REF: usize = b"\x8a\x0f\x02BRACKET\0BRACKET\0".len();
+
+#[test]
+fn a_component_row_that_breaks_the_grammar_is_given_up_as_unreadable() {
+    let message = given_up_rows(
+        |table, row| table[row + THA_REF + 1] = 0xe4,
+        &record_unreadable_kind(),
+    );
+    assert!(
+        message.contains("does not match the component row grammar"),
+        "{message}"
+    );
+}
+
+#[test]
+fn a_component_row_with_an_unread_value_form_is_given_up_as_undecoded() {
+    let message = given_up_rows(
+        |table, row| {
+            assert_eq!(table[row + THA_REF], 0xe1);
+            table[row + THA_REF] = 0xe2;
+        },
+        &record_undecoded_kind(),
+    );
+    assert!(
+        message.contains("holds a value form the row grammar does not read"),
+        "{message}"
+    );
+    let message = given_up_rows(
+        |table, row| table[row + THA_REF + 1] = 0xa4,
+        &record_undecoded_kind(),
+    );
+    assert!(
+        message.contains("holds a value form the row grammar does not read"),
+        "{message}"
     );
 }
 

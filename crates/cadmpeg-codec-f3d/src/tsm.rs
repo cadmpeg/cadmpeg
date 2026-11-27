@@ -181,9 +181,10 @@ pub(crate) fn decode(
                     ctx,
                     &entry.name,
                     cadmpeg_ir::unknown::part::Cause::Undecoded,
-                    CodecError::malformed(format_args!(
-                        "T-spline control cage not decoded: {error}"
-                    )),
+                    crate::design::decode::record::give_up_error(
+                        cadmpeg_ir::unknown::part::Cause::Undecoded,
+                        format_args!("T-spline control cage not decoded: {error}"),
+                    ),
                 )?);
             }
         }

@@ -13,7 +13,7 @@
 //! leaves only the per-instance message to the caller.
 //!
 use cadmpeg_ir::report::{
-    loss::{LossKind, LossNote, LossTaxonomy},
+    loss::{LossKind, LossNote, LossTaxonomy, NamespacedLossKind},
     Severity,
 };
 
@@ -303,8 +303,12 @@ pub(crate) enum CreoLossCode {
     TocScanCapped,
     /// Component occurrences reference model files the decode does not open.
     AssemblyComponentsExternal,
-    /// The component table is missing or ends before its declared rows.
+    /// The component table closes with a row count other than its declared
+    /// count.
     AssemblyMemberTableIncomplete,
+    /// The assembly declares a component table that the decode does not
+    /// read: no table is found, or its rows lie outside its section.
+    AssemblyMemberTableUnread,
     /// A component row names no model file the row grammar resolves.
     AssemblyMemberReferenceUnresolved,
     /// Component placement constraints are not decoded.
@@ -471,6 +475,7 @@ impl CreoLossCode {
             Self::TocScanCapped => "container.toc-scan-capped",
             Self::AssemblyComponentsExternal => "assembly.components-external",
             Self::AssemblyMemberTableIncomplete => "assembly.member-table-incomplete",
+            Self::AssemblyMemberTableUnread => "assembly.member-table-unread",
             Self::AssemblyMemberReferenceUnresolved => "assembly.member-reference-unresolved",
             Self::AssemblyConstraintsNotTransferred => "assembly.constraints-not-transferred",
         }
@@ -611,6 +616,7 @@ impl CreoLossCode {
             | Self::CurveExpressionTextCapped
             | Self::TocScanCapped
             | Self::AssemblyMemberTableIncomplete
+            | Self::AssemblyMemberTableUnread
             | Self::AssemblyMemberReferenceUnresolved
             | Self::AssemblyConstraintsNotTransferred
             | Self::DesignParameterReferenceAsText
@@ -757,16 +763,30 @@ impl CreoLossCode {
             }
             Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
             Self::NonVisibleCarrierVisibilityNotStated => LossTaxonomy::MetadataNotTransferred,
-            Self::AssemblyMemberTableIncomplete | Self::AssemblyConstraintsNotTransferred => {
+            Self::AssemblyMemberTableIncomplete
+            | Self::AssemblyMemberTableUnread
+            | Self::AssemblyConstraintsNotTransferred => {
                 LossTaxonomy::AssemblyPlacementsNotTransferred
             }
+        }
+    }
+
+    /// The strict floor `creo_prt.md` §10 states: a legacy array or a
+    /// component table whose element or row count breaks its stated count,
+    /// which the decoder reads past, pins Warning.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::LegacyObjectArrayIncomplete
+            | Self::LegacyStringArrayIncomplete
+            | Self::AssemblyMemberTableIncomplete => Some(Severity::Warning),
+            _ => None,
         }
     }
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
-        LossKind::namespaced(
+        NamespacedLossKind::new(
             const {
                 match cadmpeg_ir::report::loss::LossNamespace::new("creo") {
                     Ok(namespace) => namespace,
@@ -776,6 +796,8 @@ impl CreoLossCode {
             self.code(),
             self.shared_taxonomy(),
         )
+        .with_strict_floor(self.strict_floor())
+        .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -937,6 +959,7 @@ mod tests {
                 "container.toc-scan-capped",
                 "assembly.components-external",
                 "assembly.member-table-incomplete",
+                "assembly.member-table-unread",
                 "assembly.member-reference-unresolved",
                 "assembly.constraints-not-transferred",
             ]
@@ -958,6 +981,25 @@ mod tests {
                 "code {text} is not lowercase kebab"
             );
         }
+    }
+
+    /// The floor codes `creo_prt.md` §10 lists pin Warning, and no other
+    /// code pins a floor.
+    #[test]
+    fn strict_floors_are_the_listed_codes() {
+        use cadmpeg_ir::report::Severity;
+        let floored: Vec<_> = CreoLossCode::ALL
+            .iter()
+            .filter_map(|code| code.kind().strict_floor().map(|floor| (code.code(), floor)))
+            .collect();
+        assert_eq!(
+            floored,
+            [
+                ("legacy.object-array-incomplete", Severity::Warning),
+                ("legacy.string-array-incomplete", Severity::Warning),
+                ("assembly.member-table-incomplete", Severity::Warning),
+            ]
+        );
     }
 
     /// The note builder fixes severity from the codec-specific code.

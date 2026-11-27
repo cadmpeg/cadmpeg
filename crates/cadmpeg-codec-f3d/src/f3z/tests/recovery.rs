@@ -168,16 +168,23 @@ fn unreadable_referenced_document_withholds_the_occurrence_with_named_losses() {
     .unwrap();
     assert!(decoded.ir().geometry.faces.is_empty());
     assert!(decoded.ir().geometry.surfaces.is_empty());
-    assert!(decoded
-        .report()
-        .losses
+    // §3.3: the given-up member entry is the one loss of the member.
+    let member = format!("part {} \"component.f3d\" ", crate::container::ENTRY_PART);
+    let losses = &decoded.report().losses;
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| {
+                loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                    && loss.message.starts_with(&member)
+            })
+            .count(),
+        1,
+        "{losses:?}"
+    );
+    assert!(!losses
         .iter()
-        .any(|loss| loss.code == F3dLossCode::XrefMemberUndecoded.note("").code));
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code.to_string() == "decode/record.unreadable"));
+        .any(|loss| loss.code == F3dLossCode::XrefMemberUndecoded.kind()));
 }
 
 #[test]
@@ -372,7 +379,7 @@ fn a_model_root_part_keeps_its_bytes_when_the_root_source_image_is_replaced() {
 }
 
 #[test]
-fn failed_member_placed_by_two_parents_reports_each_reference() {
+fn failed_member_placed_by_two_parents_is_given_up_once() {
     // An invalid text BREP stream passes the archive scan and fails inside
     // member decode.
     let component = f3d_with_text_brep_stream(
@@ -398,20 +405,13 @@ fn failed_member_placed_by_two_parents_reports_each_reference() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&archive), &DecodeOptions::default())
         .unwrap();
-    let failures = decoded
+    // §3.3: one lost fact makes one report entry. The member's give-up
+    // states the failure for both references.
+    assert!(!decoded
         .report()
         .losses
         .iter()
-        .filter(|loss| {
-            loss.code == F3dLossCode::XrefMemberUndecoded.note("").code
-                && loss
-                    .message
-                    .contains("member component.f3d failed to decode")
-        })
-        .map(|loss| loss.message.split(": member ").nth(1).unwrap_or_default())
-        .collect::<Vec<_>>();
-    assert_eq!(failures.len(), 2, "{failures:?}");
-    assert_eq!(failures[0], failures[1]);
+        .any(|loss| loss.code == F3dLossCode::XrefMemberUndecoded.kind()));
     let unreadable = decoded
         .report()
         .losses

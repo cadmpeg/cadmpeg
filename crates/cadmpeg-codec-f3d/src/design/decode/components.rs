@@ -562,7 +562,7 @@ fn drop_class_256_first_matrices(
         return Ok(Vec::new());
     }
     given_up_frames(
-        Cause::Undecoded,
+        Cause::Unreadable,
         &format!(
             "{} class-256 local component-occurrence frame(s) store a matrix at ordinal one, and a class-256 carrier places a matrix only after its first occurrence, so none of them is an occurrence: {}.",
             dropped.len(),

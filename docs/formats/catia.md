@@ -2111,6 +2111,11 @@ The decoder gives up a record (CADIR §3.3) in these cases. Each give-up is one 
 | A zero-entity face record | The face has no complete allocation graph or face geometry. | `record.undecoded` |
 | A standard face | The standard boundary graph is not emitted. | `record.undecoded` |
 
+A NURBS carrier record that a second route reads and refuses keeps its one
+give-up. A face give-up of an unclosed `b5 03 5f` or E5 graph states the
+unclosed graph. `topology.b5-graph-unclosed` and `topology.e5-graph-unclosed`
+record the unclosed graph only where the decoder gives up no face record.
+
 No CATIA code carries a strict floor (CADIR §3.2).
 
 ---

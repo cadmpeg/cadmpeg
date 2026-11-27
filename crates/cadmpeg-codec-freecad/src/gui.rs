@@ -191,9 +191,14 @@ pub(crate) fn transfer(
     bytes: &[u8],
     sources: &GuiSources<'_, '_>,
 ) -> Result<Graph, CodecError> {
+    // These errors arise before the transfer changes `ir`: the entry is not
+    // UTF-8 XML, or it passes a bound of the XML reader.
     match transfer_xml(ctx, ir, bytes, sources) {
         Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
             source_only_graph(ctx, bytes, None, Cause::Unreadable, error)
+        }
+        Err(error @ CodecError::NotImplemented(_)) => {
+            source_only_graph(ctx, bytes, None, Cause::Undecoded, error)
         }
         result => result,
     }

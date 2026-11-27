@@ -14,7 +14,7 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, GivenUpRecord, Part};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
-use crate::assembly::{Member, MemberTable, MemberTableStop};
+use crate::assembly::{Member, MemberTable, MemberTableStop, RowFault};
 use crate::container::ContainerScan;
 use crate::loss::CreoLossCode;
 
@@ -38,7 +38,7 @@ pub(super) fn transfer_assembly_members(
 ) -> Result<(), CodecError> {
     let Some(table) = scan.assembly.as_ref() else {
         if declares_assembly(&scan.framing.version_line) {
-            transfer_losses.push(CreoLossCode::AssemblyMemberTableIncomplete.note(
+            transfer_losses.push(CreoLossCode::AssemblyMemberTableUnread.note(
                 "the header declares an assembly, but no NeuAsmSld component table was read; \
                  no component occurrence transferred",
             ));
@@ -171,18 +171,23 @@ pub(super) fn transfer_assembly_members(
     Ok(())
 }
 
-/// Charges a table stop that [`give_up_unread_rows`] does not give up.
+/// Charges a table stop that [`give_up_unread_rows`] does not give up: a
+/// row count other than the declared one breaks the table framing, and a
+/// row stop outside any `NeuAsmSld` section leaves the rows unread.
 fn record_table_stop(
     scan: &ContainerScan,
     table: &MemberTable,
     transfer_losses: &mut Vec<LossNote>,
 ) {
-    if let Some(stop) = &table.stop {
-        if unread_rows(scan).is_none() {
-            transfer_losses
-                .push(CreoLossCode::AssemblyMemberTableIncomplete.note(table_stop(table, stop)));
-        }
-    }
+    let Some(stop) = &table.stop else {
+        return;
+    };
+    let code = match stop.row {
+        None => CreoLossCode::AssemblyMemberTableIncomplete,
+        Some(_) if unread_rows(scan).is_none() => CreoLossCode::AssemblyMemberTableUnread,
+        Some(_) => return,
+    };
+    transfer_losses.push(code.note(table_stop(table, stop)));
 }
 
 /// The statement of a component table that ends at `stop`.
@@ -203,7 +208,7 @@ fn unread_rows<'a>(
     scan: &'a ContainerScan,
 ) -> Option<(&'a MemberTable, &'a MemberTableStop, &'a [u8])> {
     let table = scan.assembly.as_ref()?;
-    let stop = table.stop.as_ref().filter(|stop| stop.row_unread)?;
+    let stop = table.stop.as_ref().filter(|stop| stop.row.is_some())?;
     let bytes = scan
         .framing
         .sections
@@ -218,8 +223,10 @@ fn unread_rows<'a>(
 }
 
 /// Gives up the component rows from the first row the grammar does not
-/// admit to the end of its `NeuAsmSld` section, as an unreadable
-/// `component-rows` part. The decode retains no other copy of those bytes.
+/// admit to the end of its `NeuAsmSld` section, as a `component-rows` part:
+/// unreadable where the row breaks the grammar, undecoded where it holds a
+/// value form without a reading. The decode retains no other copy of those
+/// bytes.
 pub(super) fn give_up_unread_rows(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -234,10 +241,14 @@ pub(super) fn give_up_unread_rows(
         bytes,
         [ArenaClass::Model],
     );
+    let cause = match stop.row {
+        Some(RowFault::Unread) => Cause::Undecoded,
+        _ => Cause::Unreadable,
+    };
     ctx.give_up_part(
         part,
-        Cause::Unreadable,
-        CodecError::Malformed(table_stop(table, stop)),
+        cause,
+        super::give_up_error(cause, table_stop(table, stop)),
     )
     .map(Some)
 }

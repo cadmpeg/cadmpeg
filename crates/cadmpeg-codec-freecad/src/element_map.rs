@@ -41,6 +41,14 @@ fn metadata_unresolved(field: &str, error: &CodecError) -> cadmpeg_ir::report::l
     ))
 }
 
+/// A shape's string-table index, or a mapped name's string id, names no
+/// record of the string tables, which the decode reads in full.
+fn dangling_string_reference(what: std::fmt::Arguments<'_>) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::FreecadLossCode::ElementMapStringReferenceDangling.note(format!(
+        "{what}; Part HasherIndex remains source-only; independent shape geometry is retained"
+    ))
+}
+
 /// A count past one of the caps below: the decoder does not decode a table
 /// or map that large.
 fn past_cap(what: &str, count: usize, cap: usize) -> CodecError {
@@ -259,14 +267,10 @@ pub(crate) fn parse(
                 })
                 .transpose()?
                 .flatten();
-            if hasher_index.is_some_and(|index| tables.get(index).is_none()) {
-                recover_metadata::<()>(
-                    Err(CodecError::Malformed(
-                        "HasherIndex references an unavailable string table".into(),
-                    )),
-                    losses,
-                    "Part HasherIndex",
-                )?;
+            if let Some(index) = hasher_index.filter(|index| tables.get(*index).is_none()) {
+                losses.push(dangling_string_reference(format_args!(
+                    "Part HasherIndex {index} names no document string table"
+                )));
                 hasher_index = None;
             }
             let payload = match carrier {
@@ -347,13 +351,10 @@ pub(crate) fn parse(
                         missing |= !known_ids.contains(id);
                     }
                     if missing {
-                        recover_metadata::<()>(
-                            Err(CodecError::Malformed(
-                                "mapped names reference unavailable persistent string IDs".into(),
-                            )),
-                            losses,
-                            "Part HasherIndex",
-                        )?;
+                        losses.push(dangling_string_reference(format_args!(
+                            "mapped names reference persistent string ids that string table \
+                             {index} does not hold"
+                        )));
                         hasher_index = None;
                     }
                 }
@@ -1220,7 +1221,12 @@ fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<ParsedMap, CodecE
     let mut tokens = text.split_whitespace();
     if side_entry {
         expect(&mut tokens, "BeginElementMap")?;
-        expect(&mut tokens, "v1")?;
+        let version = next_token(&mut tokens, "element-map version")?;
+        if version != "v1" {
+            return Err(CodecError::NotImplemented(format!(
+                "element-map side-entry version {version:?}"
+            )));
+        }
     }
     let map_id = next_u64(&mut tokens, "element-map id")?;
     expect(&mut tokens, "PostfixCount")?;

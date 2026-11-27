@@ -358,6 +358,61 @@ EndMap\n";
     assert_eq!(maps[0].maps[0].groups[0].children.len(), 1);
 }
 
+/// A side entry of another `BeginElementMap` version is a form without a
+/// reading, which the decode gives up as undecoded.
+#[test]
+fn a_side_entry_map_of_another_version_is_not_implemented() {
+    let data = b"BeginElementMap v2\n1 PostfixCount 0\nMapCount 1\nEndMap\n";
+    let Err(error) = test_parse_element_map(data, true) else {
+        panic!("a v2 side entry has no reading")
+    };
+    assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+}
+
+/// A `HasherIndex` that names no document string table is a dangling
+/// reference into the tables, which the decode reads in full: its note pins
+/// Warning.
+#[test]
+fn a_hasher_index_past_the_string_tables_is_a_dangling_reference() {
+    let property = test_property(
+        "Part::PropertyPartShape",
+        r#"<Property name="Shape" type="Part::PropertyPartShape"><Part HasherIndex="3" ElementMap="1.0"/>
+<ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap>
+<ElementMap2 count="2">
+41 PostfixCount 0 MapCount 1
+ElementMap 1 41 1
+Face ChildCount 0 NameCount 2
+0
+;FaceStable.0.a 0
+EndMap
+</ElementMap2></Property>"#,
+    );
+    let (maps, losses) = in_decode_context(|ctx| {
+        let mut losses = Vec::new();
+        let (_, maps) = parse(
+            ctx,
+            br#"<Document FileVersion="1"/>"#,
+            Some(1),
+            &[property],
+            &[],
+            &mut losses,
+        )
+        .expect("the map reads");
+        (maps, losses)
+    });
+    assert_eq!(maps.len(), 1);
+    assert_eq!(maps[0].hasher_index, None);
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert_eq!(
+        losses[0].code.local_code(),
+        "element-map.string-reference-dangling"
+    );
+    assert_eq!(
+        losses[0].code.strict_floor(),
+        Some(cadmpeg_ir::report::Severity::Warning)
+    );
+}
+
 #[test]
 fn rejects_child_map_index_that_is_not_a_prior_node() {
     let data = b"BeginElementMap v1\n\

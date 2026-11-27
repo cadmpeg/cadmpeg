@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Assembly placement, reference, and bounded-work regressions.
-use crate::test_support::{assembly::*, read_bytes, Report};
+use crate::test_support::{assembly::*, read_bytes, Charge, Report};
 use cadmpeg_core::json;
 use cadmpeg_ir::products::{Occurrence, PlaneSense};
+use cadmpeg_ir::unknown::part::Cause;
 use serde_json::Value;
 use std::path::Path;
 
@@ -32,8 +33,8 @@ fn occurrence<'a>(model: &'a crate::reader::Model, name: &str) -> &'a Occurrence
         .find(|occurrence| occurrence.name.as_deref() == Some(name))
         .unwrap()
 }
-fn loss(report: &Report, code: &str) -> bool {
-    report.losses().iter().any(|loss| loss.states(code))
+fn loss(report: &Report, code: &str, charge: Charge) -> bool {
+    report.losses().iter().any(|loss| loss.states(code, charge))
 }
 #[test]
 fn rotated_parent_produces_child_local_translation_and_rotation() {
@@ -66,7 +67,11 @@ fn unresolved_subassembly_world_transform_leaves_children_unplaced() {
         assert!(occurrence(&model, "sub").transform.is_none());
         assert!(occurrence(&model, "first").transform.is_none());
         assert!(occurrence(&model, "second").transform.is_none());
-        assert!(loss(&report, "onshape/assembly.record-unsupported"));
+        assert!(loss(
+            &report,
+            "onshape/assembly.record-unsupported",
+            Charge::Note
+        ));
         assert!(model
             .ir
             .model
@@ -104,7 +109,11 @@ fn nested_mates_and_root_mate_paths_resolve_the_same_children() {
         })
         .collect();
     assert_eq!(ids[0], ids[1]);
-    assert!(loss(&report, "onshape/assembly.mate-frame-assumed"));
+    assert!(loss(
+        &report,
+        "onshape/assembly.mate-frame-assumed",
+        Charge::Note
+    ));
 }
 #[test]
 fn second_rotated_connector_keeps_millimetres_and_solved_opposed_sense() {
@@ -133,7 +142,11 @@ fn second_rotated_connector_keeps_millimetres_and_solved_opposed_sense() {
             joint.connectors().nth(1).unwrap().frame.affine_rows(),
             [[-1., 0., 0., 4.], [0., 1., 0., 5.], [0., 0., -1., 6.]]
         );
-        assert!(!loss(&report, "onshape/assembly.mate-limits-unresolved"));
+        assert!(!loss(
+            &report,
+            "onshape/assembly.mate-limits-unresolved",
+            Charge::Any
+        ));
     }
 }
 #[test]
@@ -146,7 +159,11 @@ fn planar_without_solved_world_sense_keeps_its_native_response() {
     definition["rootAssembly"]["features"] = json!([mate("planar", "PLANAR")]);
     let (model, report) = read(definition);
     assert_eq!(model.ir.model.assembly_joints.len(), 1);
-    assert!(loss(&report, "onshape/assembly.mate-frame-unresolved"));
+    assert!(loss(
+        &report,
+        "onshape/assembly.mate-frame-unresolved",
+        Charge::Note
+    ));
 }
 #[test]
 fn hidden_and_inherited_suppression_reach_children_and_mates() {
@@ -177,10 +194,18 @@ fn missing_definition_or_root_and_duplicate_instances_remain_partial() {
     });
     let (model, report) = decode(&missing);
     assert_eq!(model.ir.geometry.bodies.len(), 1);
-    assert!(loss(&report, "onshape/assembly.record-unsupported"));
+    assert!(loss(
+        &report,
+        "onshape/assembly.record-unsupported",
+        Charge::Note
+    ));
     let (model, report) = read(json!({"parts":[],"subAssemblies":[]}));
     assert!(model.ir.model.occurrences.is_empty());
-    assert!(loss(&report, "onshape/assembly.record-unsupported"));
+    assert!(loss(
+        &report,
+        "onshape/assembly.record-unsupported",
+        Charge::GivenUp(Cause::Unreadable)
+    ));
     let mut definition = definition();
     let first = definition["rootAssembly"]["instances"][0].clone();
     definition["rootAssembly"]["instances"]
@@ -189,7 +214,11 @@ fn missing_definition_or_root_and_duplicate_instances_remain_partial() {
         .push(first);
     let (model, report) = read(definition);
     assert_eq!(model.ir.model.occurrences.len(), 2);
-    assert!(loss(&report, "onshape/assembly.record-repeated"));
+    assert!(loss(
+        &report,
+        "onshape/assembly.record-repeated",
+        Charge::Note
+    ));
 }
 #[test]
 fn repeated_subassembly_has_distinct_paths_and_local_joints() {
@@ -251,7 +280,11 @@ fn non_default_configuration_and_microversion_mismatch_remain_unbound() {
             .unwrap()
             .bodies
             .is_empty());
-        assert!(loss(&report, "onshape/assembly.reference-unresolved"));
+        assert!(loss(
+            &report,
+            "onshape/assembly.reference-unresolved",
+            Charge::Note
+        ));
         assert!(report
             .losses()
             .iter()
@@ -307,8 +340,37 @@ fn assembly_root_forms_and_element_characters_are_explicit() {
         });
         let (model, report) = decode(&bytes);
         assert!(model.ir.model.occurrences.is_empty());
-        assert!(loss(&report, "onshape/assembly.record-unsupported"));
+        assert!(loss(
+            &report,
+            "onshape/assembly.record-unsupported",
+            Charge::GivenUp(Cause::Unreadable)
+        ));
     }
+}
+/// The give-up of the root is the one entry for an invalid root assembly id.
+#[test]
+fn an_invalid_root_assembly_id_has_one_entry() {
+    let bytes = edited(definition(), |members| {
+        let manifest = &mut members["manifest.json"];
+        manifest.as_object_mut().unwrap().remove("root_element");
+        for element in manifest["elements"].as_array_mut().unwrap() {
+            if element["type"] == "ASSEMBLY" {
+                element["id"] = json!("bad.id");
+            }
+        }
+    });
+    let (model, report) = decode(&bytes);
+    assert!(model.ir.model.occurrences.is_empty());
+    let code = "onshape/assembly.record-unsupported";
+    let named = |charge| {
+        report
+            .losses()
+            .iter()
+            .filter(|loss| loss.states(code, charge))
+            .count()
+    };
+    assert_eq!(named(Charge::Any), 1, "{:?}", report.losses());
+    assert_eq!(named(Charge::GivenUp(Cause::Unreadable)), 1);
 }
 #[test]
 fn non_mate_features_have_one_specific_loss_and_plain_mates_have_no_limit_loss() {
@@ -330,7 +392,11 @@ fn non_mate_features_have_one_specific_loss_and_plain_mates_have_no_limit_loss()
             .count(),
         4
     );
-    assert!(!loss(&report, "onshape/assembly.mate-limits-unresolved"));
+    assert!(!loss(
+        &report,
+        "onshape/assembly.mate-limits-unresolved",
+        Charge::Any
+    ));
     assert!(!report
         .losses()
         .iter()
@@ -364,7 +430,11 @@ fn mate_quantity_losses_name_enabled_and_unknown_parameter_ids() {
         });
         let (_, report) = decode(&bytes);
         assert_eq!(
-            loss(&report, "onshape/assembly.mate-limits-unresolved"),
+            loss(
+                &report,
+                "onshape/assembly.mate-limits-unresolved",
+                Charge::Note
+            ),
             expected.is_some()
         );
         if let Some(id) = expected {
@@ -391,7 +461,11 @@ fn depth_limit_preserves_the_reference_at_the_last_supported_level() {
     }
     let (model, report) = read(definition);
     assert_eq!(model.ir.model.occurrences.len(), 64);
-    assert!(loss(&report, "onshape/assembly.reference-unresolved"));
+    assert!(loss(
+        &report,
+        "onshape/assembly.reference-unresolved",
+        Charge::Note
+    ));
     assert_eq!(occurrence(&model, "sub-63").name.as_deref(), Some("sub-63"));
 }
 #[test]
@@ -559,7 +633,11 @@ fn unresolved_intermediate_placement_does_not_use_a_rotated_grandparent() {
         for name in ["sub", "first", "second"] {
             assert!(occurrence(&model, name).transform.is_none());
         }
-        assert!(loss(&report, "onshape/assembly.record-unsupported"));
+        assert!(loss(
+            &report,
+            "onshape/assembly.record-unsupported",
+            Charge::Note
+        ));
     }
 }
 #[test]

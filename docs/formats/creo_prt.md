@@ -6951,6 +6951,8 @@ The first row stores its fields as named records in this order:
 | `e3`          | `e0 02 e3\0`          | `f8 03`, then three frame slots.              |
 | `origin`      | `e0 02 origin\0`      | `f8 03`, then three frame slots.              |
 
+The decoder reads only the null `tha_ref` value.
+
 Each following row stores the same values in the same order without the
 named-record headers and without the `f8 03` array openers:
 
@@ -7038,13 +7040,28 @@ give-up is one entry.
 |---|---|---|
 | `compressed-section` part | The LZW code stream is not valid, or the output length differs from the TOC expanded-length field. | `record.unreadable` |
 | `compressed-section` part | The declared expanded length is over 256 MiB or over the per-expansion allowance of the decode. | `record.undecoded` |
-| `neutral-section` part | The `attributes` field of `NeuPrtSld` does not read (§8.9). | `record.unreadable` |
-| `pmi-attribute-row` part | A geometric-tolerance type row or a dimensional row has a null `ref_id` or `ref_type` (§8.9). | `record.unreadable` |
-| `component-rows` part | A row does not match the row grammar (§9). | `record.unreadable` |
+| `neutral-section` part | The `attributes` array of `NeuPrtSld` declares more rows than its section holds bytes (§8.9). | `record.unreadable` |
+| `neutral-section` part | The `NeuPrtSld` section holds no `attributes` field or holds more than one, the field holds a value form other than the object array, or a row holds a value type or class that the decoder does not read (§8.9). | `record.undecoded` |
+| `pmi-attribute-row` part | A geometric-tolerance type row or a dimensional row has a null `ref_id` or `ref_type` (§8.9). | `record.undecoded` |
+| `component-rows` part | A row breaks the row grammar: a fixed token or field header differs, a field runs past the section, a name is not UTF-8, a repeat token starts a run or runs past its end, or a frame slot is not finite (§9). | `record.unreadable` |
+| `component-rows` part | A row holds a value form that the decoder does not read: a frame-slot token that §9.1 does not list, a `tha_ref` value other than `e1`, or an empty name or a name with a control character (§9). | `record.undecoded` |
 | Placed occurrence | The row frame is not a proper rigid placement (§9). | `record.unreadable` |
-| Legacy type-1, type-2, type-5, type-6, type-7, type-9, or type-11 value row | The row does not form a complete scalar or a dimension-complete array of its type. | `record.unreadable` |
+| Legacy type-1, type-2, type-5, type-6, type-7, type-9, or type-11 value row | A scalar row without continuation rows holds text that breaks the scalar grammar of its type, or an array whose element runs all read has run counts that do not sum to the product of its extents (§1). | `record.unreadable` |
+| Legacy type-1, type-2, type-5, type-6, type-7, type-9, or type-11 value row | A scalar row has continuation rows, an array header has no element rows, an element row holds text that the decoder does not read, a run-count product is larger than the decoder index width, or a real word decodes to a non-finite value (§1). A `[1]` array and its direct element rows give one entry. | `record.undecoded` |
 | Legacy type-3, type-4, or type-10 scalar value row | The row uses an undefined continuation form. | `record.undecoded` |
 | PMI record of geometric-tolerance or dimensional attributes | The attributes form no PMI record. | `record.undecoded` |
 | Face | Face admission rejects the face. | `record.undecoded` |
 
-No Creo code carries a strict floor (CADIR §3.2).
+Three codes carry the strict floor `warning` (CADIR §3.2). Each reports a
+stated count that the input breaks and that the decoder reads past:
+
+- `legacy.object-array-incomplete`: a type-0 array has direct element rows, and
+  their count is not the product of its extents (§1).
+- `legacy.string-array-incomplete`: a type-10 array without continuation rows
+  has direct string rows that all read, and their count is not its first
+  extent (§1).
+- `assembly.member-table-incomplete`: the component table closes with a row
+  count other than `count` (§9).
+
+`assembly.member-table-unread` reports an `ASSEMBLY` header whose component
+table the decoder does not read. It carries no strict floor.

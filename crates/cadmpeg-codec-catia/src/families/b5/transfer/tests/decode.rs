@@ -317,10 +317,16 @@ fn decode_does_not_transfer_a_loop_with_multiple_face_owners() {
 
     assert!(result.ir().geometry.bodies.is_empty());
     assert!(result.ir().geometry.faces.is_empty());
+    // The face give-ups state the unclosed graph; no note repeats them.
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == CatiaLossCode::TopologyB5GraphUnclosed.kind()
-            && loss.severity == cadmpeg_ir::report::Severity::Blocking
+        cadmpeg_ir::unknown::part::gives_up(&loss.code)
+            && loss.message.contains("topology.b5-graph-unclosed")
     }));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == CatiaLossCode::TopologyB5GraphUnclosed.kind()));
 }
 
 #[test]
@@ -339,7 +345,7 @@ fn an_unclosed_b5_graph_gives_up_its_face_records() {
         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .expect("a default decode admits the unclosed graph");
     let losses = &admitted.report().losses;
-    assert!(losses
+    assert!(!losses
         .iter()
         .any(|loss| loss.code == CatiaLossCode::TopologyB5GraphUnclosed.kind()));
     for face in ["catia:b5:face#500", "catia:b5:face#902"] {

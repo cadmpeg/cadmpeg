@@ -968,6 +968,7 @@ impl CodecBackend for FcstdCodec {
                 ctx,
                 &mut graph.properties,
                 &scan.data,
+                &scan.unreadable_names,
                 &mut scan.losses,
             )?;
             let mut entry_records = container::entry_records(ctx, &scan, &graph.properties)?;

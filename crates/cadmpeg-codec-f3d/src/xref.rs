@@ -293,6 +293,28 @@ fn reference_data(
     parse(ctx, bytes).map(Some)
 }
 
+/// The stored form that holds the bytes of a failed external-reference
+/// table, which its give-up names.
+pub(crate) enum FailedTable {
+    /// An archive entry: `RedirectionsStream.dat` when the archive holds
+    /// it, and otherwise `ComponentReferenceData.json`, whose validation is
+    /// then the only stage that can fail.
+    Entry(&'static str),
+    /// The reference extension of `Manifest.dat`.
+    ManifestExtension,
+}
+
+/// The stored form of the table whose decode failed in `scan`.
+pub(crate) fn failed_table(scan: &ContainerScan<'_>) -> FailedTable {
+    if scan.entry_view(REDIRECTIONS_ENTRY).is_some() {
+        FailedTable::Entry(REDIRECTIONS_ENTRY)
+    } else if api_export::declares_references(scan) {
+        FailedTable::ManifestExtension
+    } else {
+        FailedTable::Entry(COMPONENT_REFERENCE_ENTRY)
+    }
+}
+
 /// Decode the container's external references.
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,

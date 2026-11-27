@@ -632,11 +632,13 @@ fn studio_in(
             }
         },
         Err(error) => {
-            report.push_coded(
-                &history_path,
-                OnshapeLossCode::HistoryNotSupported,
-                format!("{error}; feature history is missing"),
-            );
+            if !bundle.omitted(&history_path) {
+                report.push_coded(
+                    &history_path,
+                    OnshapeLossCode::HistoryNotSupported,
+                    format!("{error}; feature history is missing"),
+                );
+            }
             (&[][..], RollbackBar::default())
         }
     };
@@ -680,14 +682,7 @@ fn studio_in(
                     feature.get("featureType").and_then(Value::as_str),
                     Some("newSketch" | "assignVariable")
                 )
-        }) && !report
-            .notes
-            .iter()
-            .any(|note| OnshapeLossCode::StepUnreadable.states(note))
-            && !report
-                .parts
-                .iter()
-                .any(|part| OnshapeLossCode::StepUnreadable.states(&part.loss()))
+        }) && !bundle.omitted(&step_path)
         {
             report.push_coded(
                 &step_path,
@@ -1147,7 +1142,7 @@ fn studio_in(
             report.give_up_as(
                 &format!("{history_path}#/features/{ordinal}"),
                 name,
-                (Cause::Unreadable, OnshapeLossCode::RecordMalformed),
+                (Cause::Undecoded, OnshapeLossCode::HistoryNotSupported),
                 format!("{reason}; omitted the feature"),
             );
         }

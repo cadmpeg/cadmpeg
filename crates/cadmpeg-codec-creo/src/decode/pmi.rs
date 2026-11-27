@@ -75,15 +75,18 @@ pub(super) fn transfer(
     if !has_pmi_attributes {
         return Ok(BTreeMap::new());
     }
-    let Some(attributes) = attributes::attributes(ctx, neutral)? else {
-        given_up.push(give_up_neutral(
-            ctx,
-            scan,
-            neutral,
-            ("neutral-section", neutral),
-            "the neutral attribute table containing PMI does not parse completely".to_owned(),
-        )?);
-        return Ok(BTreeMap::new());
+    let attributes = match attributes::attributes(ctx, neutral)? {
+        Ok(attributes) => attributes,
+        Err(unread) => {
+            given_up.push(give_up_neutral(
+                ctx,
+                scan,
+                neutral,
+                ("neutral-section", neutral),
+                (unread.cause, unread.why.to_owned()),
+            )?);
+            return Ok(BTreeMap::new());
+        }
     };
     let mut tolerances = BTreeMap::<(u32, u32), Tolerance<'_>>::new();
     let mut unresolved = 0usize;
@@ -108,7 +111,6 @@ pub(super) fn transfer(
     for attribute in attributes.iter().flatten().copied() {
         let (Some(owner), Some(owner_type)) = (attribute.owner, attribute.owner_type) else {
             if attribute.name == b"PTC_GTOL_TYPE" {
-                unresolved += 1;
                 ownerless_tolerances.push((attribute.offset, attribute.end));
             }
             continue;
@@ -191,19 +193,12 @@ pub(super) fn transfer(
         match owners.get(&(owner, owner_type)) {
             Some(Some(_)) => {}
             // More than one annotation element claims the owner.
-            Some(None) => {
-                unresolved += 1;
-                unformed.push(pmi_record(&first_key));
-                continue;
-            }
-            None => {
-                unresolved += 1;
+            Some(None) | None => {
                 unformed.push(pmi_record(&first_key));
                 continue;
             }
         }
         let mut semantics = Vec::new();
-        unresolved += usize::from(tolerance.invalid_decoration);
         let target = targets.get(&(owner, owner_type));
         let target_faces = target
             .map(targets::ToleranceTarget::faces)
@@ -232,7 +227,6 @@ pub(super) fn transfer(
             &second_key,
         )?;
         let Some(kind) = tolerance.kind.and_then(kind) else {
-            unresolved += 1;
             unformed.push(pmi_record(&first_key));
             continue;
         };
@@ -263,7 +257,6 @@ pub(super) fn transfer(
             inferred_targets += surface_target;
             dimension_targets_used += dimension_target;
         } else {
-            unresolved += 1;
             unformed.push(pmi_record(&first_key));
         }
         if tolerance.secondary.is_some_and(|text| !text.is_empty())
@@ -298,10 +291,12 @@ pub(super) fn transfer(
                 inferred_targets += surface_target;
                 dimension_targets_used += dimension_target;
             } else {
-                unresolved += 1;
                 unformed.push(pmi_record(&second_key));
             }
         }
+        // A decoration attribute of another value type is a partial fact
+        // of a tolerance that transferred.
+        unresolved += usize::from(tolerance.invalid_decoration && !semantics.is_empty());
         if let Some((text, offset)) = tolerance.text_below.filter(|(text, _)| !text.is_empty()) {
             match std::str::from_utf8(text) {
                 Ok(text) if !semantics.is_empty() => {
@@ -331,18 +326,15 @@ pub(super) fn transfer(
                         source_settings: NativeOptions::new(),
                     });
                 }
-                // The frame text annotates tolerances, none of which transferred.
-                Ok(_) => unformed.push(pmi_record(format_args!("{first_key}:text-below"))),
-                Err(_) => {
-                    unresolved += 1;
-                    unformed.push(pmi_record(format_args!("{first_key}:text-below")));
-                }
+                // The frame text annotates tolerances, none of which
+                // transferred, or is not UTF-8.
+                _ => unformed.push(pmi_record(format_args!("{first_key}:text-below"))),
             }
         }
     }
     ir.model.pmi.sort_unstable_by(|a, b| a.id.cmp(&b.id));
     if unresolved != 0 {
-        losses.push(CreoLossCode::PmiRecordUnresolved.note(format!("{unresolved} geometric-tolerance attribute owner(s) have an unresolved or ambiguous type, value, or annotation-element join.")));
+        losses.push(CreoLossCode::PmiRecordUnresolved.note(format!("{unresolved} transferred geometric tolerance(s) have an all-around or text-below attribute of another value type.")));
     }
     let code = CreoLossCode::PmiRecordUnresolved.kind();
     for record in &unformed {
@@ -368,7 +360,10 @@ pub(super) fn transfer(
                 scan,
                 neutral,
                 ("pmi-attribute-row", row),
-                format!("{code}: the {what} attribute row names no owner"),
+                (
+                    Cause::Undecoded,
+                    format!("{code}: the {what} attribute row names no owner"),
+                ),
             )?);
         }
     }
@@ -434,7 +429,7 @@ fn give_up_neutral(
     scan: &ContainerScan<'_>,
     neutral: View<'_>,
     (kind, part): (&'static str, View<'_>),
-    why: String,
+    (cause, why): (Cause, String),
 ) -> Result<GivenUpPart, CodecError> {
     let namespace = if scan
         .framing
@@ -454,8 +449,8 @@ fn give_up_neutral(
         Part::new("creo", kind, part, [ArenaClass::Model])
             .contained_in(cadmpeg_ir::ids::Identity::from(section))
             .digest_only(),
-        Cause::Unreadable,
-        CodecError::Malformed(why),
+        cause,
+        super::give_up_error(cause, why),
     )
 }
 

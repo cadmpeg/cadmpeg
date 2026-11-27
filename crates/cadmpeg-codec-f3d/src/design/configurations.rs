@@ -49,10 +49,7 @@ pub(crate) fn decode_configurations(
             Ok(document) => documents.push(document),
             Err(error) if super::decode::record::is_fatal(&error) => return Err(error),
             Err(error) => {
-                let cause = super::decode::record::cause_of(
-                    cadmpeg_ir::unknown::part::Cause::Unreadable,
-                    &error,
-                );
+                let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
                 given_up.extend(scan.give_up_entry(ctx, &entry.name, cause, error)?);
             }
         }

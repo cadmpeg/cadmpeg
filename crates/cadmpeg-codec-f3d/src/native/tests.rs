@@ -1467,6 +1467,54 @@ fn strict_decode_refuses_a_malformed_paramesh_through_record_unreadable() {
     );
 }
 
+/// f3d.md §1.1.2: a container that declares a version other than 2 is a
+/// container generation the decoder has no reading for. A pinned decode
+/// keeps the document and the entry's one `record.undecoded` loss.
+#[test]
+fn a_pinned_decode_keeps_a_paramesh_container_of_another_version() {
+    const ENTRY: &str = "FusionAssetName[Active]/ParaMeshGeometry.BlobParts/later.paramesh";
+    let mut container = crate::paramesh::MAGIC.to_vec();
+    container.extend_from_slice(&3_u32.to_le_bytes());
+    container.extend_from_slice(&[0; 48]);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(ENTRY, stored).unwrap();
+    zip.write_all(&container).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &options)
+        .expect("a pinned decode keeps a container of another version");
+    let given_up = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+        .collect::<Vec<_>>();
+    let [loss] = given_up.as_slice() else {
+        panic!("one give-up for the container: {given_up:?}");
+    };
+    assert_eq!(
+        loss.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    assert!(
+        loss.message
+            .starts_with(&format!("part {} {ENTRY:?} ", crate::container::ENTRY_PART)),
+        "{}",
+        loss.message
+    );
+    assert!(
+        loss.message
+            .contains("paramesh container declares an unknown version"),
+        "{}",
+        loss.message
+    );
+}
+
 #[test]
 fn oversized_zip_entry_declaration_is_given_up_before_allocation() {
     let mut archive = f3d_with_deflated_smbh(&synthetic_geometry_smbh());

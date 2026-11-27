@@ -263,14 +263,17 @@ enum Refusal {
 }
 
 /// The refusals among `losses`, in [`Refusal`] order. Each given-up frame
-/// has one `record.undecoded` loss whose text states its reason.
+/// has one give-up loss whose text states its reason: `record.unreadable`
+/// for a class-256 matrix at ordinal one, which f3d.md §3.1 forbids, and
+/// `record.undecoded` for the others.
 fn codes(losses: &[cadmpeg_ir::report::loss::LossNote]) -> Vec<Refusal> {
-    let given_up = |phrase: &str| {
-        losses.iter().any(|loss| {
-            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
-                && loss.message.contains(phrase)
-        })
+    let charged = |kind: cadmpeg_ir::report::loss::LossKind, phrase: &str| {
+        losses
+            .iter()
+            .any(|loss| loss.code == kind && loss.message.contains(phrase))
     };
+    let given_up =
+        |phrase: &str| charged(cadmpeg_ir::unknown::part::record_undecoded_kind(), phrase);
     [
         (
             Refusal::TypeUnregistered,
@@ -288,7 +291,10 @@ fn codes(losses: &[cadmpeg_ir::report::loss::LossNote]) -> Vec<Refusal> {
         ),
         (
             Refusal::FirstMatrix,
-            given_up("store a matrix at ordinal one"),
+            charged(
+                cadmpeg_ir::unknown::part::record_unreadable_kind(),
+                "store a matrix at ordinal one",
+            ),
         ),
         (
             Refusal::IdentityOrdinal,

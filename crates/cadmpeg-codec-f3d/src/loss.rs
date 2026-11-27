@@ -1300,7 +1300,8 @@ pub(crate) enum F3dLossCode {
     XrefCycle,
     /// An `XREF` member is not present in the archive.
     XrefMemberMissing,
-    /// An `XREF` member failed to decode.
+    /// An `XREF` member that the archive scan cannot read and cannot give up
+    /// as an archive entry.
     XrefMemberUndecoded,
     /// T-spline records were retained without typed semantics.
     TsplineRecordUntyped,
@@ -1382,8 +1383,12 @@ pub(crate) enum F3dLossCode {
     /// A Design `BulkStream` stores a record run after its last indexed
     /// record; the run is not decoded and its bytes are retained natively.
     UnindexedRecordsRetained,
-    /// Design-intent decoding failed; its sketches, features and history were dropped.
+    /// Design-intent decoding met a form it has no reading for; its sketches,
+    /// features and history were dropped.
     DesignIntentUndecoded,
+    /// Design-intent decoding met records that break the Design grammar; its
+    /// sketches, features and history were dropped.
+    DesignIntentUnreadable,
     /// A body presentation display name matches multiple body bindings or conflicts on one body.
     BodyDisplayNameAmbiguous,
     /// Constructed planes assign conflicting display names to one `WorkPlane` scope.
@@ -2214,6 +2219,7 @@ impl F3dLossCode {
         Self::ManifestMetadataUnresolved,
         Self::UnindexedRecordsRetained,
         Self::DesignIntentUndecoded,
+        Self::DesignIntentUnreadable,
         Self::BodyDisplayNameAmbiguous,
         Self::WorkPlaneDisplayNameAmbiguous,
         Self::WorkPlaneDisplayNameUndecoded,
@@ -3431,6 +3437,7 @@ impl F3dLossCode {
             Self::ManifestMetadataUnresolved => "source.manifest-metadata-unresolved",
             Self::UnindexedRecordsRetained => "source.unindexed-records-retained",
             Self::DesignIntentUndecoded => "design.intent-undecoded",
+            Self::DesignIntentUnreadable => "design.intent-unreadable",
             Self::BodyDisplayNameAmbiguous => "design.body-display-name-ambiguous",
             Self::WorkPlaneDisplayNameAmbiguous => "work-plane.display-name-ambiguous",
             Self::WorkPlaneDisplayNameUndecoded => "work-plane.display-name-undecoded",
@@ -3579,7 +3586,8 @@ impl F3dLossCode {
             | Self::XrefCycle
             | Self::XrefMemberMissing
             | Self::XrefMemberUndecoded
-            | Self::DesignIntentUndecoded => Severity::Error,
+            | Self::DesignIntentUndecoded
+            | Self::DesignIntentUnreadable => Severity::Error,
             Self::GeometryNotTransferred
             | Self::TopologyNotTransferred
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
@@ -5068,7 +5076,8 @@ impl F3dLossCode {
             | Self::MeshBodyIdentityAssumed
             | Self::DialectLayerCollision
             | Self::FlaggedBaseFeatureBodySelected
-            | Self::DesignIntentUndecoded => LossTaxonomy::DecodeDiagnostic,
+            | Self::DesignIntentUndecoded
+            | Self::DesignIntentUnreadable => LossTaxonomy::DecodeDiagnostic,
             Self::MeshVertexPrecisionReduced => LossTaxonomy::MeshVertexPrecision,
             Self::BodylessDesignCarrier
             | Self::EmptyDesign
@@ -5103,9 +5112,9 @@ impl F3dLossCode {
     /// from input that breaks the format, with the output kept, pins Warning.
     const fn strict_floor(self) -> Option<Severity> {
         match self {
-            Self::SketchOwnerConflict | Self::FaceSurfaceReferenceDangling => {
-                Some(Severity::Warning)
-            }
+            Self::SketchOwnerConflict
+            | Self::FaceSurfaceReferenceDangling
+            | Self::DesignIntentUnreadable => Some(Severity::Warning),
             _ => None,
         }
     }
@@ -5139,11 +5148,12 @@ mod tests {
 
     /// The codes that record recovery from input that breaks the format,
     /// with the output kept: sketch geometry whose stored owner joins
-    /// disagree, and an ASM face whose surface reference is null or names no
-    /// record.
-    const FLOOR_CODES: [F3dLossCode; 2] = [
+    /// disagree, an ASM face whose surface reference is null or names no
+    /// record, and Design records that break the Design grammar.
+    const FLOOR_CODES: [F3dLossCode; 3] = [
         F3dLossCode::SketchOwnerConflict,
         F3dLossCode::FaceSurfaceReferenceDangling,
+        F3dLossCode::DesignIntentUnreadable,
     ];
 
     #[test]
@@ -5992,6 +6002,7 @@ mod tests {
                 "source.manifest-metadata-unresolved",
                 "source.unindexed-records-retained",
                 "design.intent-undecoded",
+                "design.intent-unreadable",
                 "design.body-display-name-ambiguous",
                 "work-plane.display-name-ambiguous",
                 "work-plane.display-name-undecoded",

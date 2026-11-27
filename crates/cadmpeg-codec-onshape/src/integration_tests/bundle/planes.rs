@@ -408,13 +408,12 @@ fn assert_support_frame_kept(model: &Model, case: &str) {
     );
 }
 
-/// Whether `report` states `code` with `detail`: in a note of `code`, or in a
-/// give-up whose text carries it.
-fn has_loss(report: &Report, code: &str, detail: &str) -> bool {
+/// Whether `report` states `code` as `charge` with `detail`.
+fn has_loss(report: &Report, code: &str, detail: &str, charge: Charge) -> bool {
     report
         .losses()
         .iter()
-        .any(|loss| loss.states(code) && loss.detail.contains(detail))
+        .any(|loss| loss.states(code, charge) && loss.detail.contains(detail))
 }
 
 #[test]
@@ -465,7 +464,8 @@ fn malformed_stored_matrices_keep_the_support_frame_with_named_assumption() {
             has_loss(
                 &report,
                 "onshape/sketch.plane-assumed",
-                "assumed the support"
+                "assumed the support",
+                Charge::Note
             ),
             "{case}: {:?}",
             report.losses()
@@ -480,7 +480,8 @@ fn absent_sketch_response_keeps_the_support_frame_with_named_assumption() {
     assert!(has_loss(
         &report,
         "onshape/sketch.plane-assumed",
-        "assumed the support"
+        "assumed the support",
+        Charge::Note
     ));
 }
 
@@ -504,7 +505,8 @@ fn sketch_response_microversion_must_match_the_bundle() {
     assert!(has_loss(
         &report,
         "onshape/member.unreadable",
-        "microversion"
+        "microversion",
+        Charge::GivenUp(Cause::Unreadable)
     ));
 }
 
@@ -523,7 +525,8 @@ fn sketch_response_row_count_is_bounded() {
     assert!(has_loss(
         &report,
         "onshape/sketch.plane-assumed",
-        "row limit"
+        "row limit",
+        Charge::Note
     ));
 }
 

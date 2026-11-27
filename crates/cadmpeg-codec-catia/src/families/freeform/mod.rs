@@ -901,7 +901,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 } else {
                     losses.push(why);
                 }
-            } else {
+            } else if !ir.geometry.faces.is_empty() || census_face_object_ids.is_empty() {
                 losses.push((CatiaLossCode::TopologyB5GraphUnclosed).note(format!(
                     "Object-stream and consolidated NURBS carriers were decoded, but the \
              face/loop/pcurve/edge graph did not close. Unclosed b5 03 5f face records, by object \
@@ -909,26 +909,26 @@ pub(super) fn try_decode_freeform_surfaces(
                     census_face_object_ids.len(),
                     identity_statement(&census_face_object_ids)
                 )));
+            } else {
                 // Owned-patch faces are keyed by roster position, not by b5
                 // face record, so the b5 face records are given up only where
-                // the route states no face.
-                if ir.geometry.faces.is_empty() {
-                    let face_records = census_face_object_ids
-                        .iter()
-                        .collect::<std::collections::BTreeSet<_>>();
-                    let code = CatiaLossCode::TopologyB5GraphUnclosed.kind();
-                    losses.extend(face_records.into_iter().map(|object_id| {
-                        cadmpeg_ir::unknown::part::GivenUpRecord::new(
-                            cadmpeg_ir::ids::Identity::compose(
-                                &cadmpeg_ir::identity_namespace!("catia", "b5", "face"),
-                                object_id,
-                            ),
-                            cadmpeg_ir::unknown::part::Cause::Undecoded,
-                            format_args!("{code}: the face/loop/pcurve/edge graph did not close"),
-                        )
-                        .loss()
-                    }));
-                }
+                // the route states no face. Each give-up names its face and
+                // the unclosed graph, so no note repeats them.
+                let face_records = census_face_object_ids
+                    .iter()
+                    .collect::<std::collections::BTreeSet<_>>();
+                let code = CatiaLossCode::TopologyB5GraphUnclosed.kind();
+                losses.extend(face_records.into_iter().map(|object_id| {
+                    cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                        cadmpeg_ir::ids::Identity::compose(
+                            &cadmpeg_ir::identity_namespace!("catia", "b5", "face"),
+                            object_id,
+                        ),
+                        cadmpeg_ir::unknown::part::Cause::Undecoded,
+                        format_args!("{code}: the face/loop/pcurve/edge graph did not close"),
+                    )
+                    .loss()
+                }));
             }
         }
         losses.extend(owned_patch_loss);

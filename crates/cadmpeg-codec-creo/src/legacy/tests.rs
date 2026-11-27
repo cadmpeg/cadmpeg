@@ -611,7 +611,8 @@ fn array_completeness_wire_retains_continuation_failures() {
         @other 2 10\n0 2 [1]\n1 2 value\n$child\n";
     let persistence = scan(data, std::iter::once(0..data.len()))
         .expect("the fixture states every scope inside its own bytes");
-    assert_eq!(persistence.incomplete_string_array_count, 2);
+    // Continuation forms have no reading; they break no stated count.
+    assert_eq!(persistence.incomplete_string_array_count, 0);
     assert_eq!(persistence.unresolved_string_value_count, 2);
     assert_eq!(
         json::to_value(&persistence.string_values[0].payload).unwrap(),
@@ -691,7 +692,8 @@ fn type_0_objects_retain_incomplete_and_opaque_forms() {
         .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.objects.len(), 2);
-    assert_eq!(persistence.incomplete_object_array_count, 1);
+    // A header without element rows stores no objects; it breaks no count.
+    assert_eq!(persistence.incomplete_object_array_count, 0);
     assert!(!persistence.objects[0].payload.is_complete());
     assert_eq!(persistence.unresolved_object_value_count, 1);
     assert!(matches!(
@@ -1013,7 +1015,7 @@ fn incomplete_legacy_values_are_reported() {
     let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
         @values 7 2\n0 7 [2]\n$0\n\
         @ids 8 1\n0 8 [2]\n$1\n\
-        @objects 9 0\n0 9 [2]\n\
+        @objects 9 0\n0 9 [2]\n1 9 ->\n\
         @future 10 0\n0 10 token\n\
         @names 11 10\n0 11 [2]\n1 11 only\n\
         @continued 12 10\n0 12 first\n$second\n\
@@ -1075,8 +1077,14 @@ fn incomplete_legacy_values_are_reported() {
             .filter(|loss| loss.code == cause.kind() && loss.message.contains(text))
             .count()
     };
-    assert_eq!(given_up(Unreadable, "the legacy type-2 value row"), 1);
-    assert_eq!(given_up(Unreadable, "the legacy type-1 value row"), 1);
+    assert_eq!(
+        given_up(Unreadable, "the legacy type-2 array's run counts"),
+        1
+    );
+    assert_eq!(
+        given_up(Unreadable, "the legacy type-1 array's run counts"),
+        1
+    );
     assert_eq!(
         given_up(Undecoded, "the legacy type-3 or type-4 value row"),
         1
@@ -1091,6 +1099,55 @@ fn incomplete_legacy_values_are_reported() {
             .count(),
         1
     );
+}
+
+#[test]
+fn legacy_value_rows_split_by_the_rule_they_break() {
+    let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
+        @header_only 7 2\n0 7 [2]\n\
+        @non_finite 8 2\n0 8 7FF\n\
+        @bad_hex 9 2\n0 9 zz\n\
+        @bad_int 10 1\n0 10 12x\n\
+        @continued_child 11 1\n0 11 [1]\n1 11 4\n$5\n\
+        @two_children 12 1\n0 12 [1]\n1 12 4\n1 12 5\n\
+        #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("legacy value-row decode");
+    let given_up = |cause: Cause, text: &str| {
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == cause.kind() && loss.message.contains(text))
+            .count()
+    };
+    // A header without element rows and a non-finite word are stated forms
+    // without a reading.
+    assert_eq!(given_up(Undecoded, "the legacy type-2 value row"), 2);
+    assert_eq!(given_up(Unreadable, "the legacy type-2"), 1);
+    assert_eq!(
+        given_up(
+            Unreadable,
+            "the legacy type-2 scalar row is not one through sixteen uppercase hexadecimal digits"
+        ),
+        1
+    );
+    assert_eq!(
+        given_up(
+            Unreadable,
+            "the legacy type-1 scalar row is not a signed decimal 32-bit integer"
+        ),
+        1
+    );
+    // A one-element array with a continued child row gives one entry.
+    assert_eq!(given_up(Undecoded, "the legacy type-1 value row"), 1);
+    assert_eq!(
+        given_up(Unreadable, "the legacy type-1 array's run counts"),
+        1
+    );
+    assert_eq!(given_up(Unreadable, "the legacy type-1"), 2);
 }
 
 #[test]

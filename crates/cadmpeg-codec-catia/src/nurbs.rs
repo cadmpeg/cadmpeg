@@ -51,6 +51,9 @@ pub(crate) struct LaneRefusals {
     /// Source records already given up, so a record two
     /// routes read and refuse is given up once.
     given_up: std::collections::BTreeSet<cadmpeg_ir::ids::Identity>,
+    /// Refusals of a record already given up. Its give-up is the one entry
+    /// for the record, so these add no note.
+    repeated: usize,
 }
 
 impl LaneRefusals {
@@ -62,33 +65,35 @@ impl LaneRefusals {
     /// Take every refusal recorded so far, in the order the readers stated
     /// them, and leave the sink empty.
     pub(crate) fn take_notes(&mut self) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+        self.repeated = 0;
         std::mem::take(&mut self.notes)
     }
 
-    /// How many refusals the sink holds.
+    /// How many refusals the sink holds, with each refusal of a record
+    /// already given up.
     ///
     /// The router reads this before and after a route, so it can state how
     /// many records a route refused before it transferred no model.
     pub(crate) fn note_count(&self) -> usize {
-        self.notes.len()
+        self.notes.len() + self.repeated
     }
 
     /// Give up the source record `source`, whose carrier the document then
     /// holds nowhere, as undecoded for `why`: the IR carrier refuses lanes
-    /// that the record states. A further refusal of a given-up record is
-    /// recorded as `why`.
+    /// that the record states. A further refusal of a given-up record states
+    /// the same lost fact, so it adds no note.
     fn give_up(
         &mut self,
         source: cadmpeg_ir::ids::Identity,
-        why: cadmpeg_ir::report::loss::LossNote,
+        why: &cadmpeg_ir::report::loss::LossNote,
     ) {
         if self.given_up.contains(&source) {
-            self.notes.push(why);
+            self.repeated += 1;
         } else {
             self.notes.push(cadmpeg_ir::unknown::part::record_given_up(
                 source.clone(),
                 cadmpeg_ir::unknown::part::Cause::Undecoded,
-                &why,
+                why,
             ));
             self.given_up.insert(source);
         }
@@ -490,7 +495,7 @@ pub(crate) fn give_up_refused<T>(
     match result {
         Ok(value) => Some(value),
         Err(error) => {
-            refusal.give_up(source, lane_refusal_note(record, &error));
+            refusal.give_up(source, &lane_refusal_note(record, &error));
             None
         }
     }
@@ -1801,11 +1806,12 @@ mod tests {
             .is_none());
         }
         assert_eq!(refusal.note_count(), 2, "two refusals of one record");
+        // The give-up is the one entry for the record's lost carrier.
         let notes = refusal.take_notes();
         let undecoded = cadmpeg_ir::unknown::part::record_undecoded_kind();
         let codes = notes.iter().map(|note| &note.code).collect::<Vec<_>>();
-        let refused = crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid.kind();
-        assert_eq!(codes, [&undecoded, &refused]);
+        assert_eq!(codes, [&undecoded]);
+        assert_eq!(refusal.note_count(), 0);
         assert!(notes[0]
             .message
             .split_whitespace()

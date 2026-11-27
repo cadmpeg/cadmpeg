@@ -98,3 +98,30 @@ fn an_unverified_gui_schema_that_does_not_read_gives_up_as_undecoded() {
         cadmpeg_ir::unknown::part::record_undecoded_kind()
     );
 }
+
+/// A tag with more attributes than the XML reader admits passes a bound of
+/// the decoder: the GUI document gives up as one `record.undecoded`.
+#[test]
+fn a_gui_document_past_the_xml_reader_bound_gives_up_as_undecoded() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let attributes = (0..300)
+        .map(|index| [" a", &index.to_string(), "=\"0\""].concat())
+        .collect::<String>();
+    let gui = format!(r#"<Document SchemaVersion="1"{attributes}/>"#);
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui.as_bytes()),
+            ])),
+            &options,
+        )
+        .expect("a pinned decode accepts an undecoded GUI document");
+    let loss = assert_gui_metadata_recovery(&decoded);
+    assert_eq!(
+        loss.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+}

@@ -838,6 +838,7 @@ fn read_back(
             &ctx,
             &mut graph.properties,
             &views,
+            &std::collections::BTreeSet::new(),
             &mut graph.losses,
         )?;
         Ok(graph)

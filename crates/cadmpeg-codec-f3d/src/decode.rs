@@ -2197,7 +2197,10 @@ fn give_up_unparsed_parameter_records(
             given_up.push(ctx.give_up_part(
                 part,
                 Cause::Undecoded,
-                CodecError::malformed("F3D parameter frame matches no parameter grammar"),
+                crate::design::decode::record::give_up_error(
+                    Cause::Undecoded,
+                    "F3D parameter frame matches no parameter grammar",
+                ),
             )?);
         }
     }
@@ -3657,7 +3660,8 @@ impl<'a> F3dDecodeSession<'a> {
                 self.report.transfer.geometry_transferred(),
             );
         }
-        let failure = match &prereqs.design_feature_timelines {
+        let charged = |error: &CodecError| (Cause::Unreadable.of(error), error.to_string());
+        let (failure_cause, failure) = match &prereqs.design_feature_timelines {
             Ok(timelines) => match self.decode_design_intent(path, prereqs, timelines) {
                 Ok(design) => {
                     return Ok(DesignState::Projected(Box::new(self.merge_design(design))));
@@ -3668,18 +3672,20 @@ impl<'a> F3dDecodeSession<'a> {
                 {
                     return Err(error);
                 }
-                Err(error) => error.to_string(),
+                Err(error) => charged(&error),
             },
             Err(error) => match self.ctx.resource_refusal() {
                 Some(limit) => return Err(CodecError::ResourceLimit(limit)),
-                None => error.to_string(),
+                None => charged(error),
             },
         };
-        self.report
-            .losses
-            .push(F3dLossCode::DesignIntentUndecoded.note(format!(
-                "Design intent was dropped because its decoding failed, so the dimension-companion and configuration reports were not produced: {failure}"
-            )));
+        let code = match failure_cause {
+            Cause::Unreadable => F3dLossCode::DesignIntentUnreadable,
+            Cause::Undecoded => F3dLossCode::DesignIntentUndecoded,
+        };
+        self.report.losses.push(code.note(format!(
+            "Design intent was dropped because its decoding failed, so the dimension-companion and configuration reports were not produced: {failure}"
+        )));
         self.native
             .design_intent_failures
             .push(design_intent::DesignIntentFailure {
@@ -4552,7 +4558,7 @@ fn decode_scanned_document<'a>(
                     ctx,
                     &candidate.name,
                     cause,
-                    CodecError::malformed(reason),
+                    crate::design::decode::record::give_up_error(cause, reason),
                 )?);
                 brep_outcome = ModelBrepOutcome::Failed {
                     stream: candidate.name.clone(),
@@ -4772,7 +4778,7 @@ fn collect_mesh_outcome(
             report.losses.push(
                 GivenUpRecord::new(
                     cadmpeg_ir::ids::Identity::new(&body_id)?,
-                    crate::design::decode::record::cause_of(Cause::Unreadable, &error),
+                    Cause::Unreadable.of(&error),
                     format_args!(
                         "mesh body {body_id} from container `{entry_name}` was not placed: {error}"
                     ),
@@ -4892,14 +4898,16 @@ fn project_mesh_bodies(
         Err(CodecError::ResourceLimit(e)) => return Err(CodecError::ResourceLimit(e)),
         Err(e) => {
             let before = given_up.len();
+            let cause = Cause::Undecoded.of(&e);
             for entry in crate::container::paramesh_entries(scan) {
                 given_up.extend(scan.give_up_entry(
                     ctx,
                     &entry.name,
-                    crate::design::decode::record::cause_of(Cause::Undecoded, &e),
-                    CodecError::malformed(format_args!(
-                        "F3D mesh bodies could not be decoded: {e}"
-                    )),
+                    cause,
+                    crate::design::decode::record::give_up_error(
+                        cause,
+                        format_args!("F3D mesh bodies could not be decoded: {e}"),
+                    ),
                 )?);
             }
             if given_up.len() == before {
@@ -5020,7 +5028,7 @@ fn project_mesh_bodies(
         collect_mesh_outcome(&mut bodies, report, &mut failed, outcome)?;
     }
     for (entry_name, error) in failed {
-        let cause = crate::design::decode::record::cause_of(Cause::Unreadable, &error);
+        let cause = Cause::Unreadable.of(&error);
         given_up.extend(scan.give_up_entry(ctx, &entry_name, cause, error)?);
     }
     let mut unresolved = std::collections::BTreeMap::new();
@@ -5308,9 +5316,10 @@ fn annotate_docstruct(
     Ok(())
 }
 
-/// Gives up the external-reference table the decoder dropped. The
-/// `RedirectionsStream.dat` entry that holds it is given up when the scan
-/// opened it; with no such entry the table itself is the given-up record.
+/// Gives up the external-reference table the decoder dropped. An archive
+/// entry that holds the failed bytes is given up as a part, unless the scan
+/// gave it up itself. A table in the `Manifest.dat` reference extension is
+/// the given-up record.
 fn report_xref_parse_loss(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
@@ -5318,27 +5327,26 @@ fn report_xref_parse_loss(
     given_up: &mut Vec<GivenUpPart>,
     error: &CodecError,
 ) -> Result<(), CodecError> {
-    let cause = crate::design::decode::record::cause_of(Cause::Unreadable, error);
-    match scan.give_up_entry(
-        ctx,
-        crate::xref::REDIRECTIONS_ENTRY,
-        cause,
-        CodecError::malformed(format_args!(
-            "F3D external-reference table {}: {error}",
-            crate::xref::REDIRECTIONS_ENTRY
-        )),
-    )? {
-        Some(part) => given_up.push(part),
-        None => report.losses.push(
+    let cause = Cause::Unreadable.of(error);
+    match crate::xref::failed_table(scan) {
+        crate::xref::FailedTable::Entry(entry) => given_up.extend(scan.give_up_entry(
+            ctx,
+            entry,
+            cause,
+            crate::design::decode::record::give_up_error(
+                cause,
+                format_args!("F3D external-reference table {entry}: {error}"),
+            ),
+        )?),
+        crate::xref::FailedTable::ManifestExtension => report.losses.push(
             GivenUpRecord::new(
                 cadmpeg_ir::ids::Identity::compose(
-                    &cadmpeg_ir::identity_namespace!("f3d", "archive", "entry"),
-                    cadmpeg_ir::ids::IdentityKey::encode_key_text(crate::xref::REDIRECTIONS_ENTRY),
+                    &cadmpeg_ir::identity_namespace!("f3d", "xref", "table"),
+                    cadmpeg_ir::ids::IdentityKey::encode_key_text("Manifest.dat"),
                 ),
                 cause,
                 format_args!(
-                    "F3D external-reference table {} was not decoded: {error}",
-                    crate::xref::REDIRECTIONS_ENTRY
+                    "F3D external-reference table in the Manifest.dat reference extension was not decoded: {error}"
                 ),
             )
             .loss(),

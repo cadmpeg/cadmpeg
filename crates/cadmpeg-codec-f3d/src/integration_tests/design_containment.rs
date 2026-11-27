@@ -25,6 +25,16 @@ fn malformed_design() -> CodecError {
     CodecError::malformed("injected design-intent failure")
 }
 
+fn unread_design_form() -> CodecError {
+    CodecError::NotImplemented("injected design-intent form".into())
+}
+
+/// Whether `loss` reports dropped design intent, for either cause.
+fn design_intent_dropped(loss: &cadmpeg_ir::report::loss::LossNote) -> bool {
+    loss.code == F3dLossCode::DesignIntentUnreadable.kind()
+        || loss.code == F3dLossCode::DesignIntentUndecoded.kind()
+}
+
 fn recursion_refusal() -> CodecError {
     CodecError::ResourceLimit(ResourceLimit {
         scope: cadmpeg_core::decode::LimitScope::for_dimension(ResourceDimension::RecursionDepth),
@@ -62,9 +72,13 @@ fn a_design_intent_failure_keeps_geometry_and_reports_one_error_loss() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == F3dLossCode::DesignIntentUndecoded.kind())
+        .filter(|loss| design_intent_dropped(loss))
         .collect::<Vec<_>>();
     assert_eq!(undecoded.len(), 1);
+    assert_eq!(
+        undecoded[0].code,
+        F3dLossCode::DesignIntentUnreadable.kind()
+    );
     assert_eq!(undecoded[0].severity, cadmpeg_ir::report::Severity::Error);
     assert!(undecoded[0]
         .message
@@ -72,21 +86,18 @@ fn a_design_intent_failure_keeps_geometry_and_reports_one_error_loss() {
     assert!(undecoded[0]
         .message
         .contains("dimension-companion and configuration reports were not produced"));
-    assert!(full
-        .report()
-        .losses
-        .iter()
-        .all(|loss| loss.code != F3dLossCode::DesignIntentUndecoded.kind()));
+    assert!(!full.report().losses.iter().any(design_intent_dropped));
     assert_valid(&contained);
 }
 
-/// §4: `design.intent-undecoded` records a decoder gap and pins no strict
-/// floor, so a pinned decode keeps the contained document.
+/// §4: `design.intent-undecoded` records a form the decoder has no reading
+/// for and pins no strict floor, so a pinned decode keeps the contained
+/// document.
 #[test]
-fn a_pinned_decode_keeps_a_contained_design_intent_failure() {
+fn a_pinned_decode_keeps_a_design_intent_form_without_a_reading() {
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    inject_failure(malformed_design);
+    inject_failure(unread_design_form);
 
     let contained = F3dCodec
         .decode(&mut Cursor::new(design_archive()), &options)
@@ -94,8 +105,29 @@ fn a_pinned_decode_keeps_a_contained_design_intent_failure() {
 
     assert!(contained.report().losses.iter().any(|loss| {
         loss.code == F3dLossCode::DesignIntentUndecoded.kind()
-            && loss.message.contains("injected design-intent failure")
+            && loss.message.contains("injected design-intent form")
     }));
+}
+
+/// §4: `design.intent-unreadable` records recovery from Design records that
+/// break their grammar and pins strict floor Warning, so a pinned decode
+/// refuses it.
+#[test]
+fn a_pinned_decode_refuses_design_intent_that_breaks_its_grammar() {
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    inject_failure(malformed_design);
+
+    let failure = F3dCodec
+        .decode(&mut Cursor::new(design_archive()), &options)
+        .expect_err("a pinned decode refuses broken design intent");
+    let DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        F3dLossCode::DesignIntentUnreadable.kind()
+    );
 }
 
 fn moved_first_point(result: &EditableDecodeResult) -> cadmpeg_ir::document::CadIr {
@@ -176,7 +208,7 @@ fn a_bodyless_design_intent_failure_keeps_the_xref_product_structure() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == F3dLossCode::DesignIntentUndecoded.kind())
+            .filter(|loss| loss.code == F3dLossCode::DesignIntentUnreadable.kind())
             .count(),
         1
     );
@@ -315,11 +347,7 @@ fn an_unread_configuration_keeps_timeline_sketches_and_geometry() {
         unreadable_records(&recovered),
         unreadable_records(&full) + 1
     );
-    assert!(recovered
-        .report()
-        .losses
-        .iter()
-        .all(|loss| loss.code != F3dLossCode::DesignIntentUndecoded.kind()));
+    assert!(!recovered.report().losses.iter().any(design_intent_dropped));
     assert_valid(&recovered);
     let mut replayed = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -388,11 +416,7 @@ fn an_unread_primary_header_keeps_the_other_design_stream() {
         unreadable_records(&recovered),
         unreadable_records(&full) + 1
     );
-    assert!(recovered
-        .report()
-        .losses
-        .iter()
-        .all(|loss| loss.code != F3dLossCode::DesignIntentUndecoded.kind()));
+    assert!(!recovered.report().losses.iter().any(design_intent_dropped));
     assert_valid(&recovered);
 }
 

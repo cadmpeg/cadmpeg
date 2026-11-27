@@ -52,12 +52,14 @@ impl<'a> Reader<'a> {
         })
     }
 
+    /// Records a failure over `start..end`. A failure that starts inside the
+    /// previous failure comes from a read past it, so the previous cause and
+    /// text state both. An adjacent failure of another cause is its own part.
     fn fail(&mut self, start: usize, end: usize, cause: Cause, error: CodecError) {
-        if let Some(previous) = self
-            .failures
-            .last_mut()
-            .filter(|previous| previous.end >= start)
-        {
+        if let Some(previous) = self.failures.last_mut().filter(|previous| {
+            previous.end > start
+                || (previous.end == start && (previous.cause == cause || start == end))
+        }) {
             previous.end = previous.end.max(end);
         } else {
             self.failures.push(Failure {
@@ -74,7 +76,7 @@ impl<'a> Reader<'a> {
             start,
             self.view.end(),
             cause,
-            CodecError::malformed(message),
+            crate::design::decode::record::give_up_error(cause, message),
         );
         self.view.seek_to_end();
     }
@@ -191,7 +193,10 @@ impl<'a> Reader<'a> {
                 leading_at,
                 self.view.end(),
                 Cause::Undecoded,
-                CodecError::malformed("WorkAxis carrier leading block layout is assumed"),
+                crate::design::decode::record::give_up_error(
+                    Cause::Undecoded,
+                    "WorkAxis carrier leading block layout is assumed",
+                ),
             ),
             ReadField::Absent | ReadField::Unread => return Ok(false),
         }
@@ -698,7 +703,7 @@ pub(super) fn decode_work_axis(
                 reader.fail(
                     reader.view.position(),
                     reader.view.end(),
-                    crate::design::decode::record::cause_of(Cause::Unreadable, &error),
+                    Cause::Unreadable.of(&error),
                     error,
                 );
             }
@@ -770,7 +775,7 @@ pub(super) fn decode_work_axis(
                             reader.fail(
                                 reader.view.position(),
                                 reader.view.end(),
-                                crate::design::decode::record::cause_of(Cause::Unreadable, &error),
+                                Cause::Unreadable.of(&error),
                                 error,
                             );
                         }

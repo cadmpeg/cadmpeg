@@ -62,15 +62,28 @@ pub(crate) fn fixture(name: &str) -> Vec<u8> {
     }
     zip.finish().unwrap().into_inner()
 }
-/// Whether a loss of kind `kind` and text `message` states the code `code`:
-/// a note of `code`, or a give-up whose text carries it.
-pub(crate) fn states(code: &str, kind: &str, message: &str) -> bool {
-    use cadmpeg_ir::unknown::part::{record_undecoded_kind, record_unreadable_kind};
-    kind == code
-        || ([record_unreadable_kind(), record_undecoded_kind()]
-            .iter()
-            .any(|given_up| given_up.to_string() == kind)
-            && message.contains(&format!("{code}: ")))
+/// How a report states a codec code.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Charge {
+    /// A note of the code.
+    Note,
+    /// A give-up of this cause whose text carries the code.
+    GivenUp(cadmpeg_ir::unknown::part::Cause),
+    /// A note or a give-up of either cause: for an assertion that no loss
+    /// states the code.
+    Any,
+}
+/// Whether a loss of kind `kind` and text `message` states the code `code`
+/// as `charge`.
+pub(crate) fn states(code: &str, charge: Charge, kind: &str, message: &str) -> bool {
+    use cadmpeg_ir::unknown::part::Cause;
+    let given_up =
+        |cause: Cause| cause.kind().to_string() == kind && message.contains(&format!("{code}: "));
+    match charge {
+        Charge::Note => kind == code,
+        Charge::GivenUp(cause) => given_up(cause),
+        Charge::Any => kind == code || given_up(Cause::Unreadable) || given_up(Cause::Undecoded),
+    }
 }
 #[derive(Debug)]
 pub(crate) struct Loss {
@@ -78,11 +91,11 @@ pub(crate) struct Loss {
     pub(crate) detail: String,
 }
 impl Loss {
-    /// Whether the loss states `code`, as [`states`] reads it.
-    pub(crate) fn states(&self, code: &str) -> bool {
+    /// Whether the loss states `code` as `charge`.
+    pub(crate) fn states(&self, code: &str, charge: Charge) -> bool {
         self.code
             .as_deref()
-            .is_some_and(|kind| states(code, kind, &self.detail))
+            .is_some_and(|kind| states(code, charge, kind, &self.detail))
     }
 }
 #[derive(Debug, Default)]

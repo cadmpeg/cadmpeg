@@ -401,21 +401,53 @@ pub(super) fn push_legacy_value_losses(
 }
 
 /// One give-up per legacy value row that forms no record. Rows kept with a
-/// partial payload are not charged. A row of an undefined continuation form
-/// is undecoded; a row whose value or extents break its type is unreadable.
+/// partial payload are not charged. A scalar whose text breaks the scalar
+/// grammar of its type, or an array whose read runs miscount its extents, is
+/// unreadable; a row of a form without a reading here (a continued scalar, a
+/// header without element rows, element text that does not read, a
+/// non-finite real word, an undefined continuation) is undecoded.
 pub(super) fn push_unread_legacy_rows(
     losses: &mut Vec<LossNote>,
     scan: &ContainerScan,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    use crate::legacy::{RowFault, SerializedOffsetId};
+    /// How one group of legacy value types states a row that forms no
+    /// record: the type names, the text for a form without a reading, and
+    /// the scalar grammar a malformed scalar breaks, where the types state
+    /// one.
+    struct Rows<'a> {
+        types: &'a str,
+        unread: &'a str,
+        scalar: Option<&'a str>,
+    }
     fn charge(
         losses: &mut Vec<LossNote>,
-        cause: Cause,
-        why: &str,
-        rows: impl Iterator<Item = crate::legacy::SerializedOffsetId>,
+        rows: &Rows<'_>,
+        unresolved: impl Iterator<Item = (SerializedOffsetId, RowFault)>,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        for row in rows {
+        for (row, fault) in unresolved {
+            let (cause, why) = match (fault, rows.scalar) {
+                (RowFault::Malformed, Some(scalar)) => (
+                    Cause::Unreadable,
+                    format!("the legacy {} scalar row is not {scalar}", rows.types),
+                ),
+                (RowFault::Miscounted, _) => (
+                    Cause::Unreadable,
+                    format!(
+                        "the legacy {} array's run counts do not sum to the product of its \
+                         extents",
+                        rows.types
+                    ),
+                ),
+                _ => (
+                    Cause::Undecoded,
+                    format!("the legacy {} {}", rows.types, rows.unread),
+                ),
+            };
+            let given_up =
+                GivenUpRecord::new(cadmpeg_ir::ids::Identity::new(row.to_string())?, cause, why);
             losses.push(
-                GivenUpRecord::new(cadmpeg_ir::ids::Identity::new(row.to_string())?, cause, why)
+                given_up
                     .at(SourceProvenance::root(
                         "creo",
                         cadmpeg_core::decode::u64_from_index(row.offset),
@@ -425,28 +457,38 @@ pub(super) fn push_unread_legacy_rows(
         }
         Ok(())
     }
+    const HEXADECIMAL: &str = "one through sixteen uppercase hexadecimal digits";
     let Some(legacy) = scan.framing.layout.legacy_ascii() else {
         return Ok(());
     };
     let values = &legacy.persistence;
     charge(
         losses,
-        Cause::Unreadable,
-        "the legacy type-2 value row does not form a complete finite scalar or \
-         dimension-complete real array",
+        &Rows {
+            types: "type-2",
+            unread: "value row does not form a complete finite scalar or dimension-complete \
+                     real array",
+            scalar: Some(HEXADECIMAL),
+        },
         values.real_values.unresolved_ids(),
     )?;
     charge(
         losses,
-        Cause::Unreadable,
-        "the legacy type-1 value row does not form a signed 32-bit scalar or \
-         dimension-complete integer array",
+        &Rows {
+            types: "type-1",
+            unread: "value row does not form a complete scalar or dimension-complete integer \
+                     array",
+            scalar: Some("a signed decimal 32-bit integer"),
+        },
         values.integer_values.unresolved_ids(),
     )?;
     charge(
         losses,
-        Cause::Undecoded,
-        "the legacy type-3 or type-4 value row uses an undefined continuation form",
+        &Rows {
+            types: "type-3 or type-4",
+            unread: "value row uses an undefined continuation form",
+            scalar: None,
+        },
         values
             .type_3_values
             .unresolved_ids()
@@ -454,9 +496,12 @@ pub(super) fn push_unread_legacy_rows(
     )?;
     charge(
         losses,
-        Cause::Unreadable,
-        "the legacy type-5, type-7, type-9, or type-11 value row does not form an unsigned \
-         32-bit scalar or dimension-complete unsigned array",
+        &Rows {
+            types: "type-5, type-7, type-9, or type-11",
+            unread: "value row does not form a complete scalar or dimension-complete unsigned \
+                     array",
+            scalar: Some("an unsigned decimal 32-bit integer"),
+        },
         values
             .type_5_values
             .unresolved_ids()
@@ -466,16 +511,24 @@ pub(super) fn push_unread_legacy_rows(
     )?;
     charge(
         losses,
-        Cause::Unreadable,
-        "the legacy type-6 value row does not form a complete finite compact-real scalar or \
-         dimension-complete real array",
+        &Rows {
+            types: "type-6",
+            unread: "value row does not form a complete finite compact-real scalar or \
+                     dimension-complete real array",
+            scalar: Some(HEXADECIMAL),
+        },
         values.type_6_values.unresolved_ids(),
     )?;
     charge(
         losses,
-        Cause::Undecoded,
-        "the legacy type-10 scalar row uses an undefined continuation form",
-        values.unread_string_scalar_ids(),
+        &Rows {
+            types: "type-10",
+            unread: "scalar row uses an undefined continuation form",
+            scalar: None,
+        },
+        values
+            .unread_string_scalar_ids()
+            .map(|row| (row, RowFault::Unread)),
     )
 }
 

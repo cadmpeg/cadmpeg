@@ -172,10 +172,9 @@ impl<'a> Index<'a> {
             match index.subassemblies.entry(definition_key) {
                 Entry::Occupied(entry) => {
                     if !same_content(entry.get().1, sub) {
-                        report.give_up_as(
+                        report.push_coded(
                             &format!("{definition_path}#/subAssemblies/{position}"),
-                            "subassembly",
-                            (Cause::Unreadable, OnshapeLossCode::AssemblyRecordRepeated),
+                            OnshapeLossCode::AssemblyRecordRepeated,
                             format!(
                                 "subassembly definition repeats with different content; retained the first record: {:?}",
                                 entry.key()
@@ -203,10 +202,9 @@ impl<'a> Index<'a> {
             match index.parts.entry(reference) {
                 Entry::Occupied(entry) => {
                     if !same_content(entry.get(), part) {
-                        report.give_up_as(
+                        report.push_coded(
                             &format!("{definition_path}#/parts/{position}"),
-                            "part",
-                            (Cause::Unreadable, OnshapeLossCode::AssemblyRecordRepeated),
+                            OnshapeLossCode::AssemblyRecordRepeated,
                             format!(
                                 "part identity repeats with different content; retained the first record: {:?}",
                                 entry.key()

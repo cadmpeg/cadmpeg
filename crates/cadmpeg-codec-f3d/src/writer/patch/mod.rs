@@ -110,12 +110,14 @@ pub(crate) fn write_semantic(
                 "the salvage decode of the source image refused: {other}"
             )),
         })?;
-    if baseline
-        .report()
-        .losses
+    if baseline.report().losses.iter().any(|loss| {
+        [
+            F3dLossCode::DesignIntentUndecoded,
+            F3dLossCode::DesignIntentUnreadable,
+        ]
         .iter()
-        .any(|loss| loss.code == F3dLossCode::DesignIntentUndecoded.kind())
-    {
+        .any(|code| loss.code == code.kind())
+    }) {
         return Err(CodecError::NotImplemented(
             "F3D semantic patching refuses a source whose design intent was not decoded".into(),
         ));

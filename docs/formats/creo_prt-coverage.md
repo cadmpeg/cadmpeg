@@ -1194,8 +1194,9 @@ occurrence. A row's prototype is the external `.asm` or `.prt` model file it
 names. A placement transfers only when its frame is a proper rigid transform.
 The first row that the row grammar does not admit ends the table; the rows
 before it transfer, and the decoder gives up the rest of the section as one
-`component-rows` part. An `ASSEMBLY` header without a component table retains
-`assembly.member-table-incomplete`.
+`component-rows` part. A table that closes with a row count other than its
+declared count retains `assembly.member-table-incomplete`. An `ASSEMBLY`
+header without a component table retains `assembly.member-table-unread`.
 `assembly.components-external` counts the external occurrences and files, and
 `assembly.constraints-not-transferred` records that placement constraints do
 not transfer. Synthetic checks cover each frame-slot form, repeat runs, row

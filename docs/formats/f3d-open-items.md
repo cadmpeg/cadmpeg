@@ -550,9 +550,9 @@ option `2`, and side extents `[1, 0]`.
 
 **Question.** Which container failures are malformed input and which are an unsupported container generation, and does the retained error identify the failing stage?
 
-**Known.** `f3d.md` §1.1.2 "When a referenced `.paramesh` container" defines the omission: a `.paramesh` container that fails the container grammar transfers no tessellation. The decoder gives up its entry as an `archive-entry` part with `record.unreadable`, and the loss carries the decode error. B-rep evaluation then proceeds. The specification gives the container layout; the per-stage failure taxonomy awaits definition.
+**Known.** `f3d.md` §1.1.2 "When a referenced `.paramesh` container" defines the omission: a `.paramesh` container that fails the container grammar transfers no tessellation. The decoder gives up its entry as an `archive-entry` part, and the loss carries the decode error. B-rep evaluation then proceeds. A container that declares a version other than 2, or a stream whose descriptor is outside the version-2 descriptor grammar, gives up with `record.undecoded`: these are the generation stages. A failure at every other stage gives up with `record.unreadable`. The specification gives the container layout; the taxonomy of the other stages awaits definition.
 
-**Need.** Containers that fail at each stage (magic, version, reserved run, protobuf framing, name-table order, descriptor grammar, stream encoding, declared counts) must show which failures break the format and which are a later container generation, and whether the retained error text identifies the failing stage. An unsupported generation gives up with `record.undecoded`.
+**Need.** Containers that fail at each stage (magic, version, reserved run, protobuf framing, name-table order, descriptor grammar, stream encoding, declared counts) must show which of the other failures break the format and which are a later container generation, and whether the retained error text identifies the failing stage. Each stage found to be a generation stage gives up with `record.undecoded`.
 
 **Note.** A resource-limit failure returns an error through the error path.
 
@@ -1348,7 +1348,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Do the cycle, absence, and decode-failure losses exhaust the unresolvable member states of a multi-document merge?
 
-**Known.** `f3d.md` §1.5 "XREF reference resolution is member-local and recursive." defines member-local recursive resolution. A member path that recurs in the active chain reports `xref.cycle` and stays unresolved. A member absent from the archive reports `xref.member-missing`. A present member that is not an F3D document member, that cannot be scanned, or that fails to decode reports `xref.member-undecoded`. Unscannable members are marked unreadable at scan time and skipped at merge time with that scan-time mark as their record. Resource-limit failures return an error.
+**Known.** `f3d.md` §1.5 "XREF reference resolution is member-local and recursive." defines member-local recursive resolution. A member path that recurs in the active chain reports `xref.cycle` and stays unresolved. A member absent from the archive reports `xref.member-missing`. A present member that is not an F3D document member, that cannot be scanned, or that fails to decode is given up as an `archive-entry` part, and that give-up is the one report entry for every reference to the member. A member that cannot be scanned and whose entry the scan cannot give up reports `xref.member-undecoded` once, at scan time. The merge skips each reference to a given-up or unscannable member. Resource-limit failures return an error.
 
 **Need.** A merge that must continue past each unresolvable member needs each such state mapped to its loss, so the mapping covers every unresolvable state and every skipped resolvable member.
 

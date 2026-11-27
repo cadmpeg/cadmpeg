@@ -2187,11 +2187,21 @@ The decoder gives up a part (CADIR §3.3) in these cases:
 | `archive-entry` | An archive member whose frame or compressed stream breaks the ZIP rules. | `record.unreadable` |
 | `archive-entry` | An encrypted archive member, a member of a compression method that the decoder does not read, or a member that a decode limit cuts. | `record.undecoded` |
 | `property-element` | The `Document.xml` property XML of a shape property whose element map breaks the element-map grammar of §7 or names a missing record. | `record.unreadable` |
-| `property-element` | The `Document.xml` property XML of a shape property whose element map has a count past the decoder's bound. | `record.undecoded` |
+| `property-element` | The `Document.xml` property XML of a shape property whose element map has a count past the decoder's bound, or whose side entry has a `BeginElementMap` version other than `v1`. | `record.undecoded` |
 | `archive-entry` | `GuiDocument.xml`, when it is not UTF-8 XML, or when a schema-1 document breaks the GUI grammar of §11. | `record.unreadable` |
-| `archive-entry` | `GuiDocument.xml`, when it holds a TechDraw geometry type or a material-list version that the decoder does not read, or when a document of another schema does not read with the schema-1 vocabulary. | `record.undecoded` |
+| `archive-entry` | `GuiDocument.xml`, when a tag holds more attributes or the text declares more namespace prefixes than the decoder's XML reader admits, when it holds a TechDraw geometry type or a material-list version that the decoder does not read, or when a document of another schema does not read with the schema-1 vocabulary. | `record.undecoded` |
 
-`fcstd/metadata.persistence-count-noncanonical`, `fcstd/metadata.program-version-noncanonical`,
-and `fcstd/metadata.file-version-noncanonical` carry strict floor Warning (CADIR §3.2): each
-records a `Document.xml` count or root attribute that breaks the grammar of §1 to §3, and the
-decoder reads past it. No other FreeCAD code carries a strict floor.
+These codes carry strict floor Warning (CADIR §3.2). Each records input that breaks a stated
+rule, and the decoder reads past it:
+
+- `fcstd/metadata.persistence-count-noncanonical`: a `Document.xml` count that differs from the
+  records it counts (§2). An absent optional `TransientCount` is a stated form and records no loss.
+- `fcstd/metadata.program-version-noncanonical` and `fcstd/metadata.file-version-noncanonical`: a
+  root version attribute that breaks the grammar of §2 and §3.
+- `fcstd/metadata.persistence-side-entry-unresolved`: a property names an optional side entry that
+  the archive directory does not list. A side entry that the decoder gives up records no such loss;
+  its give-up states the loss.
+- `fcstd/element-map.string-reference-dangling`: a shape's `HasherIndex` names no document string
+  table, or a mapped name names a persistent string id that its string table does not hold (§7).
+
+No other FreeCAD code carries a strict floor.

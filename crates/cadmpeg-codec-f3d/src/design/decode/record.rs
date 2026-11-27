@@ -15,16 +15,6 @@ pub(crate) fn is_fatal(error: &CodecError) -> bool {
     matches!(error, CodecError::Io(_) | CodecError::ResourceLimit(_))
 }
 
-/// The cause of a give-up that `error` ends: [`Cause::Undecoded`] for a form
-/// the decoder has no reading for or a resource refusal, and `cause` for
-/// every other failure.
-pub(crate) const fn cause_of(cause: Cause, error: &CodecError) -> Cause {
-    match error {
-        CodecError::NotImplemented(_) | CodecError::UnsupportedDialect { .. } => Cause::Undecoded,
-        _ => cause.of(error),
-    }
-}
-
 /// A Design record that a give-up names without its frame in hand: the
 /// record with record index `entity` in the archive stream `stream`, at its
 /// start offset in that stream where the caller holds it. Its id is
@@ -75,6 +65,16 @@ impl<'a> DesignRecord<'a> {
                 .at(position)
                 .loss(),
         )
+    }
+}
+
+/// The error of a give-up for `cause` with the text `message`: a malformed
+/// input for [`Cause::Unreadable`], and a form without a reading for
+/// [`Cause::Undecoded`], so the loss text states the cause the loss charges.
+pub(crate) fn give_up_error(cause: Cause, message: impl std::fmt::Display) -> CodecError {
+    match cause {
+        Cause::Unreadable => CodecError::malformed(message),
+        Cause::Undecoded => CodecError::NotImplemented(message.to_string()),
     }
 }
 
@@ -157,7 +157,7 @@ impl GivenUpFrame {
             [ArenaClass::Design],
         )
         .in_stream(stream);
-        ctx.give_up_part(part, self.cause, CodecError::Malformed(self.error))
+        ctx.give_up_part(part, self.cause, give_up_error(self.cause, self.error))
     }
 }
 
@@ -176,7 +176,7 @@ pub(crate) fn give_up_frames(
 /// Contains an error at one record the caller then gives up. An I/O error or
 /// a resource refusal is returned to the caller and ends the session. Every
 /// other error becomes the one loss of `record` given up for `cause`, as
-/// [`cause_of`] refines it, whose text describes the record as `what`. The
+/// [`Cause::of`] refines it, whose text describes the record as `what`. The
 /// record stays in the source archive, and the caller then decodes the next
 /// record.
 pub(crate) fn recover<T>(
@@ -190,7 +190,7 @@ pub(crate) fn recover<T>(
         Ok(record) => Ok(Some(record)),
         Err(error) if is_fatal(&error) => Err(error),
         Err(error) => {
-            losses.push(record.given_up(cause_of(cause, &error), failure_text(what, &error))?);
+            losses.push(record.given_up(cause.of(&error), failure_text(what, &error))?);
             Ok(None)
         }
     }
@@ -209,7 +209,7 @@ pub(crate) fn recover_frame<T>(
         Ok(record) => Ok(Some(record)),
         Err(error) if is_fatal(&error) => Err(error),
         Err(error) => {
-            frame.give_up(cause_of(cause, &error), failure_text(what, &error), frames);
+            frame.give_up(cause.of(&error), failure_text(what, &error), frames);
             Ok(None)
         }
     }

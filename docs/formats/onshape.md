@@ -30,7 +30,8 @@ which one is not `PARTSTUDIO` is not a Part Studio bundle. For assembly selectio
 `root_element` accepts an element-ID string or an object with a string `id`.
 Omission and `null` select the first `ASSEMBLY` element in source order.
 In an assembly bundle, an element ID declared more than once selects its first
-declaration.
+declaration. Each later declaration charges `assembly.record-repeated`
+(Warning).
 The ID consists of ASCII letters, digits, underscores and hyphens. A Part
 Studio ID forms the member prefix `partstudios/<id>`. An assembly ID forms
 `assemblies/<id>`. `external` entries store `documentId`, `elementId`, and
@@ -362,6 +363,8 @@ reads no feature history, topology table, or final geometry from the member.
 When the member is stored without compression, the part keeps only the digest
 of the stored bytes, because the asset holds the same bytes. When a part studio
 has no feature history and its `export.step` fails, the part studio fails.
+The give-up of a member is the one loss for the feature history, final
+geometry, or assembly definition that the member holds.
 
 The decoder also gives up a record of a JSON response, such as a feature with a
 repeated identity or an assembly record that breaks the response form, by the
@@ -384,6 +387,7 @@ does not decode. Each give-up has one cause (CADIR §3.3):
 | `archive-entry` | Nested `export.step` decode finds no STEP text, or stops at malformed or truncated text | `record.unreadable` |
 | `archive-entry` | Nested `export.step` decode fails for another reason | `record.undecoded` |
 | Response record | Fields that break the response form | `record.unreadable` |
+| Feature | The feature row that the decoder builds does not deserialize into its typed feature | `record.undecoded` |
 | Instanced part studio | Decode finds data of another format, or stops at malformed or truncated data | `record.unreadable` |
 | Instanced part studio | Decode fails for another reason | `record.undecoded` |
 
@@ -472,6 +476,7 @@ one definition.
 A `subAssemblies` or `parts` record whose reference equals an earlier record's
 defines nothing new. The later record is the same definition when its fields
 outside the reference fields equal the earlier record's; otherwise the later
-record is ignored and the earlier record defines the reference. A repeated
+record is ignored and the earlier record defines the reference, and the
+later record charges `assembly.record-repeated` (Warning). A repeated
 record does not change the count of parts in a Part Studio or the count of
 parts with one name.

@@ -168,12 +168,14 @@ fn give_up_unexpanded_section(
         crate::loss::CreoLossCode::CompressedSectionUnexpanded.kind(),
         expansion.message
     );
-    ctx.give_up_part(
-        part,
-        expansion.cause,
-        match expansion.cause {
-            Cause::Unreadable => CodecError::Malformed(why),
-            Cause::Undecoded => CodecError::NotImplemented(why),
-        },
-    )
+    ctx.give_up_part(part, expansion.cause, give_up_error(expansion.cause, why))
+}
+
+/// The error a give-up of `cause` states: `Malformed` for bytes that break
+/// the format, `NotImplemented` for a form without a reading.
+pub(super) fn give_up_error(cause: Cause, why: String) -> CodecError {
+    match cause {
+        Cause::Unreadable => CodecError::Malformed(why),
+        Cause::Undecoded => CodecError::NotImplemented(why),
+    }
 }
