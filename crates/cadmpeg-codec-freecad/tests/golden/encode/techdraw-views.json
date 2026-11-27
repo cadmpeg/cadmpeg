@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 77900,
-      "payload_sha256": "c41a13ecddd2d4afd5f125e161ebd8eb0e293c6155cbe5f988172e82192a1f7b"
+      "payload_len": 77892,
+      "payload_sha256": "5722d4c91c654b66081d0c4913bd8ddc35ee7fdcf43c12d2835c156456d3fa38"
     },
     {
       "name": "Box.Shape.brp",
