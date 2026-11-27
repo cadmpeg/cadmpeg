@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_asm::brep::records::BodyNativeKey;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 
-use crate::feature::base::{current_body, entry, reference_counts, unique_link_header, wrappers};
+use crate::feature::base::{
+    current_body, entry, inspect_source_body, reference_counts, unique_link_header, wrappers,
+};
 use crate::feature::tests::{reference, test_feature, test_header};
 use crate::feature::{
     PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload, PmDcKernelEntityLink,
@@ -130,8 +132,6 @@ fn external_entries_require_exact_count_width_and_bounds() {
 
 #[test]
 fn external_reference_counts_reject_dangling_revision_indices() {
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
@@ -197,4 +197,35 @@ fn base_slots_require_two_distinct_surface_wrappers_and_null_tail() {
     ] {
         assert!(wrappers(&invalid, crate::feature::BASE_CLASS_ID, |_| Some(&first)).is_none());
     }
+}
+
+#[test]
+fn a_bounded_base_source_inspection_reports_the_loss() {
+    use cadmpeg_asm::kernel_header::RefWidth;
+
+    use crate::kernel::parse_carrier;
+    use crate::loss::InventorLossCode;
+    use crate::test_support::history_carrier::{carrier_bytes, framed_carrier, CURRENT_BODY_KEY};
+
+    let bytes = framed_carrier(&carrier_bytes(RefWidth::Eight, false));
+    let entity = u32::try_from(CURRENT_BODY_KEY).expect("fixture body key");
+    let arena = DecodeArena::new();
+    let (ordinary, view) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("input");
+    let carrier =
+        parse_carrier(view, &cadmpeg_ir::identity_key!("seg"), 0, 0, 18).expect("carrier");
+    let mut losses = Vec::new();
+    assert!(inspect_source_body(&ordinary, &carrier, entity, &mut losses).expect("source check"));
+    assert!(losses.is_empty());
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let (bounded, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input");
+    assert!(!inspect_source_body(&bounded, &carrier, entity, &mut losses).expect("source check"));
+    let [loss] = losses.as_slice() else {
+        panic!("one bounded-source loss");
+    };
+    assert_eq!(loss.code, InventorLossCode::FeatureBaseSourceBounded.kind());
+    assert!(loss.message.contains("Entities"), "{}", loss.message);
+    assert!(bounded.resource_refusal().is_none());
 }
