@@ -474,6 +474,11 @@ fn attempt<W: Write + Seek>(
                 .map_err(design_failure)?,
         );
     }
+    // The MetaStream indexes the records of its sibling BulkStream, so the
+    // segment holds both files.
+    if !design_registry.types.is_empty() {
+        design_bulk.get_or_insert_with(Default::default);
+    }
     let meta_stream =
         encode_design_metastream(&design_registry, design_bulk.as_ref()).map_err(design_failure)?;
     let proteins = target

@@ -793,6 +793,30 @@ fn a_sketch_point_its_class_tag_does_not_register_is_dropped_alone() {
 }
 
 #[test]
+fn type_registrations_of_a_bodiless_design_are_written_with_their_bulk_stream() {
+    let mut ir = CadIr::empty();
+    let mut native = f3d_native_mut(&mut ir);
+    sketch_container(&mut native, &[]);
+    native.design_entity_headers.clear();
+    native.design_record_headers.clear();
+    drop(native);
+
+    let (_, bytes, decoded) = write_with_bytes(&ir);
+    let archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("a ZIP archive");
+    let names = archive
+        .file_names()
+        .map(|name| name.expect("a member name").into_owned())
+        .collect::<Vec<_>>();
+    let holds = |name: &str| names.iter().any(|member| member == name);
+    assert!(
+        holds("FusionAssetName[Active]/Design1/MetaStream.dat")
+            && holds("FusionAssetName[Active]/Design1/BulkStream.dat"),
+        "{names:?}"
+    );
+    assert_eq!(f3d_native(&decoded).design_types.len(), 1);
+}
+
+#[test]
 fn a_point_whose_companion_names_a_dropped_curve_is_dropped_with_it() {
     use crate::records::sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity};
     use cadmpeg_ir::math::{Point3, Vector3};
