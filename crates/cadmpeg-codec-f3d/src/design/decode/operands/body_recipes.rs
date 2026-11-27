@@ -3,9 +3,7 @@
 
 use crate::bytes::{is_guid_relaxed, lp_utf16_bounded};
 use crate::container::ContainerScan;
-use crate::design::decode::sketch::{
-    cached_borrowed_record_offsets, next_indexed_record_offset, IndexedRecordOffsets,
-};
+use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::design::decode::text::design_record_id;
 use crate::ids::native_stream;
 use crate::layout::{
@@ -77,7 +75,6 @@ pub(crate) fn decode_body_recipe_operands(
         .filter(|scope| scope.is_legacy_class_330_blind_cut())
         .map(|scope| ((native_stream(&scope.id), scope.record_index), scope))
         .collect();
-    let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
     let mut out = Vec::new();
     for group in groups {
         let Some(stream) = native_stream(&group.id) else {
@@ -95,7 +92,7 @@ pub(crate) fn decode_body_recipe_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
+        let records = scan.design_record_offsets(&entry.name)?;
         for (ordinal, record_index) in group
             .members()
             .iter()
@@ -121,7 +118,7 @@ pub(crate) fn decode_body_recipe_operands(
                         continue;
                     };
                     let Some(legacy) =
-                        BodyRecipeFrame::legacy_cut(bytes, records, header, closing_index)
+                        BodyRecipeFrame::legacy_cut(bytes, &records, header, closing_index)
                     else {
                         continue;
                     };
@@ -130,7 +127,7 @@ pub(crate) fn decode_body_recipe_operands(
             }
             let Some(recipe) = unique_body_recipe_with_index(
                 bytes,
-                records,
+                &records,
                 header,
                 frame,
                 body_recipes_by_stream
@@ -140,7 +137,7 @@ pub(crate) fn decode_body_recipe_operands(
                 continue;
             };
             if let Some(operand) = parse_body_recipe_operand_with_index(
-                bytes, records, group, ordinal, header, recipe, frame,
+                bytes, &records, group, ordinal, header, recipe, frame,
             ) {
                 push_body_recipe_operand(&mut out, operand, &entry.name, header.byte_offset);
             }
@@ -158,7 +155,7 @@ pub(crate) fn decode_body_recipe_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
+        let records = scan.design_record_offsets(&entry.name)?;
         let operation = scope.combine_operation();
         let record_indexes = operation
             .into_iter()
@@ -194,7 +191,7 @@ pub(crate) fn decode_body_recipe_operands(
             };
             let Some(recipe) = unique_body_recipe_with_index(
                 bytes,
-                records,
+                &records,
                 header,
                 BodyRecipeFrame::Standard,
                 body_recipes_by_stream
@@ -208,7 +205,7 @@ pub(crate) fn decode_body_recipe_operands(
             };
             if let Some(operand) = parse_body_recipe_operand_frame_with_index(
                 bytes,
-                records,
+                &records,
                 scope.record_index,
                 owner,
                 header,
