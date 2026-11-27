@@ -798,9 +798,9 @@ fn a_feature_column_beside_parameter_scopes_is_charged_with_its_configuration() 
         .model
         .configurations
         .iter()
-        .find(|configuration| configuration.id == crate::ids::neutral_configuration_id(ENTRY, "b"))
+        .find(|configuration| configuration.id == crate::ids::neutral_configuration_id(ENTRY, "a"))
         .and_then(|configuration| configuration.feature_states.get(&feature))
-        .expect("the column states the feature in row b");
+        .expect("the cell of row a suppresses the feature");
     assert_eq!(
         suppressed.evaluation,
         cadmpeg_ir::features::parameters::ConfigurationEvaluation::Suppressed {}
