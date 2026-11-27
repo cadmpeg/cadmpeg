@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The part's feature tree as the projection states it: the bodies whose
-//! kind a stored fact fixes, the members of the part's own group, and the
-//! tree records no design record can state.
+//! The part's feature tree as the projection states it: its bodies and
+//! sets, the members of the part's own group, and the tree records no design
+//! record can state.
 
 use std::collections::{BTreeSet, HashMap};
 
+use super::classes;
 use crate::decode::ModelingGraphScope;
 use crate::native::feature_tree::{
     CatiaFeatureContainer, CatiaFeatureMember, CatiaFeatureReference, CatiaSegmentValue,
@@ -17,38 +18,53 @@ pub(super) struct Tree<'a> {
     pub(super) graph_offset: u64,
     /// The part root.
     pub(super) root: &'a CatiaFeatureContainer,
-    /// Features the root lists outside every set.
+    /// Members the root lists outside every set, other than records that
+    /// hold no operation.
     pub(super) group: Vec<Item<'a>>,
-    /// The root's bodies, in list order.
-    pub(super) bodies: Vec<Body<'a>>,
+    /// The root's sets, in list order.
+    pub(super) sets: Vec<Set<'a>>,
     /// The entity the root's `CurrentFeature` selects: the in-work object.
     pub(super) current: Option<u32>,
     /// Tree records the projection does not state.
     pub(super) unstated: Vec<Unstated>,
 }
 
-/// A body: an ordered container that `MainTool` selects or whose class is
-/// `MechanicalTool`.
-pub(super) struct Body<'a> {
+/// A body or a geometrical set and its members in stored order.
+pub(super) struct Set<'a> {
     pub(super) container: &'a CatiaFeatureContainer,
+    pub(super) kind: SetKind,
     pub(super) members: Vec<Item<'a>>,
 }
 
-/// One stated member, in stored order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SetKind {
+    /// A `MechanicalTool`, or the `HybridBody` that `MainTool` selects.
+    Body,
+    /// Any other set: whether it is a body, an ordered geometrical set, or
+    /// a geometrical set is unread.
+    KindUnread,
+}
+
+/// One listed member, in stored order.
 pub(super) enum Item<'a> {
     Feature {
         member: &'a CatiaFeatureMember,
         class: &'a str,
     },
-    Body(Body<'a>),
+    /// A member whose record the decoder cannot read; it keeps its place.
+    Unread {
+        member: &'a CatiaFeatureMember,
+        reason: &'static str,
+    },
+    Set(Set<'a>),
 }
 
 impl Item<'_> {
     /// The entity identity of the item's record.
     pub(super) fn entity_id(&self) -> u32 {
         match self {
-            Item::Feature { member, .. } => member.entity_id,
-            Item::Body(body) => body.container.entity_id,
+            Item::Feature { member, .. } | Item::Unread { member, .. } => member.entity_id,
+            Item::Set(set) => set.container.entity_id,
         }
     }
 }
@@ -62,22 +78,34 @@ pub(super) struct Unstated {
 const ORDERED_BODY_CLASS: &str = "MechanicalTool";
 const MAIN_BODY_CLASS: &str = "HybridBody";
 
-/// The tree of the one part root in the modelling graphs, or `None` where
-/// the decoder reads no root list.
-pub(super) fn read<'a>(native: &'a CatiaNative, scope: &ModelingGraphScope) -> Option<Tree<'a>> {
-    let mut roots = native.feature_containers.iter().filter(|container| {
-        container.class.name == "MechanicalPart" && scope.contains(&container.object_graph)
-    });
-    let root = roots.next()?;
-    if roots.next().is_some() {
-        return None;
+/// The tree of the one part root in the modelling graphs: `Ok(None)` where
+/// the graphs hold no feature-tree record, and `Err` with the reason where
+/// they hold records but no tree is read.
+pub(super) fn read<'a>(
+    native: &'a CatiaNative,
+    scope: &ModelingGraphScope,
+) -> Result<Option<Tree<'a>>, &'static str> {
+    let in_scope = native
+        .feature_containers
+        .iter()
+        .filter(|container| scope.contains(&container.object_graph))
+        .collect::<Vec<_>>();
+    if in_scope.is_empty() {
+        return Ok(None);
     }
+    let mut roots = in_scope
+        .iter()
+        .filter(|container| container.class.name == "MechanicalPart");
+    let (Some(root), None) = (roots.next().copied(), roots.next()) else {
+        return Err("the modelling graphs store no part root or several");
+    };
     let graph_offset = native
         .object_graphs
         .iter()
-        .find(|graph| graph.id == root.object_graph)?
+        .find(|graph| graph.id == root.object_graph)
+        .ok_or("the part root's object graph is absent")?
         .byte_offset;
-    let listed = member_list(root)?;
+    let listed = member_list(root).ok_or("the part root's member list is unread")?;
     let containers = native
         .feature_containers
         .iter()
@@ -93,21 +121,21 @@ pub(super) fn read<'a>(native: &'a CatiaNative, scope: &ModelingGraphScope) -> O
     let mut walk = Walk {
         containers: &containers,
         main,
-        placed: BTreeSet::new(),
+        placed: BTreeSet::from([root.entity_id]),
         unstated: Vec::new(),
     };
-    walk.placed.insert(root.object_record.as_str());
     let mut group = Vec::new();
-    let mut bodies = Vec::new();
+    let mut sets = Vec::new();
     for member in listed {
         match walk.item(member) {
-            Some(Item::Body(body)) => bodies.push(body),
-            Some(feature) => group.push(feature),
+            Some(Item::Set(set)) => sets.push(set),
+            Some(Item::Feature { class, .. }) if classes::is_not_operation(class) => {}
+            Some(item) => group.push(item),
             None => {}
         }
     }
     for container in containers.values() {
-        if !walk.placed.contains(container.object_record.as_str()) {
+        if !walk.placed.contains(&container.entity_id) {
             walk.unstated.push(Unstated {
                 record: container.object_record.clone(),
                 reason: "no set lists it",
@@ -115,83 +143,71 @@ pub(super) fn read<'a>(native: &'a CatiaNative, scope: &ModelingGraphScope) -> O
         }
     }
     walk.unstated.sort_by(|a, b| a.record.cmp(&b.record));
-    Some(Tree {
+    Ok(Some(Tree {
         graph_offset,
         root,
         group,
-        bodies,
+        sets,
         current: token(root, "CurrentFeature").map(|reference| reference.entity_id),
         unstated: walk.unstated,
-    })
+    }))
 }
 
 struct Walk<'a, 'm> {
     containers: &'m HashMap<&'a str, &'a CatiaFeatureContainer>,
     main: Option<&'a str>,
-    placed: BTreeSet<&'a str>,
+    /// The entities of the members walked so far.
+    placed: BTreeSet<u32>,
     unstated: Vec<Unstated>,
 }
 
 impl<'a> Walk<'a, '_> {
-    /// The stated item for one listed member: a feature, a body, or `None`
-    /// where the member is not stated.
+    /// The item for one listed member, or `None` where the member repeats an
+    /// earlier one.
     fn item(&mut self, member: &'a CatiaFeatureMember) -> Option<Item<'a>> {
-        let Some(target) = member.target.as_ref() else {
+        if !self.placed.insert(member.entity_id) {
             self.unstated.push(Unstated {
                 record: format!("entity {}", member.entity_id),
-                reason: "selects no record",
-            });
-            return None;
-        };
-        let record = target.object_record.as_str();
-        if !self.placed.insert(record) {
-            self.unstated.push(Unstated {
-                record: record.to_owned(),
                 reason: "is listed more than once",
             });
             return None;
         }
-        let Some(container) = self.containers.get(record).copied() else {
-            let Some(class) = target.class.as_ref() else {
-                self.unstated.push(Unstated {
-                    record: record.to_owned(),
-                    reason: "has no compact class",
-                });
-                return None;
-            };
-            if class.name.trim().is_empty() {
-                self.unstated.push(Unstated {
-                    record: record.to_owned(),
-                    reason: "selects a blank catalog entry",
-                });
-                return None;
-            }
-            return Some(Item::Feature {
-                member,
-                class: class.name.as_str(),
-            });
+        let unread = |reason| Some(Item::Unread { member, reason });
+        let Some(target) = member.target.as_ref() else {
+            return unread("selects no record");
         };
-        let is_body = container.class.name == ORDERED_BODY_CLASS
-            || (container.class.name == MAIN_BODY_CLASS && self.main == Some(record));
-        if !is_body {
-            self.unstated.push(Unstated {
-                record: record.to_owned(),
-                reason: "is a set whose ordered or unordered kind is unread",
-            });
-            return None;
-        }
+        let record = target.object_record.as_str();
+        let Some(container) = self.containers.get(record).copied() else {
+            return match target.class.as_ref() {
+                None => unread("has no compact class"),
+                Some(class) if class.name.trim().is_empty() => {
+                    unread("selects a blank catalog entry")
+                }
+                Some(class) => Some(Item::Feature {
+                    member,
+                    class: class.name.as_str(),
+                }),
+            };
+        };
         let Some(listed) = member_list(container) else {
-            self.unstated.push(Unstated {
-                record: record.to_owned(),
-                reason: "has an unread member list",
-            });
-            return None;
+            return unread("is a set whose member list is unread");
+        };
+        let kind = if container.class.name == ORDERED_BODY_CLASS
+            || (container.class.name == MAIN_BODY_CLASS && self.main == Some(record))
+        {
+            SetKind::Body
+        } else {
+            SetKind::KindUnread
         };
         let members = listed
             .into_iter()
             .filter_map(|member| self.item(member))
             .collect();
-        Some(Item::Body(Body { container, members }))
+        Some(Item::Set(Set {
+            container,
+            kind,
+            members,
+        }))
     }
 }
 

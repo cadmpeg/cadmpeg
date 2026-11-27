@@ -143,28 +143,28 @@ pub(crate) struct CatiaFeatureContainer {
     pub(crate) unsegmented_payload_offset: Option<u64>,
 }
 
-/// Class of a compact definition prefix `00 <flags> <tag> <second>` or
-/// `00 <flags> 32 <ordinal:u32le> 32 <second:u32le>`.
+/// Class of a compact definition prefix `<lead> <flags> <class> <second>`.
 ///
-/// `flags` admits only bits `04` and `08`. The tag selects zero-based catalog
-/// ordinal `tag − 34` and the wide selector ordinal `ordinal − 1`; the second
-/// token is not assigned.
+/// `lead` is `00`, `01`, `08`, or `10`, and `flags` admits only bits `04`
+/// and `08`. The class and the second field are each a tag byte or a wide
+/// `32 <ordinal:u32le>` selector, and the second field ends the prefix. The
+/// tag selects zero-based catalog ordinal `tag − 34` and the wide selector
+/// ordinal `ordinal − 1`; the second field is not assigned.
 pub(crate) fn compact_class(
     ctx: &DecodeContext<'_>,
     definition_prefix: &[u8],
     catalog: Option<&CatiaCatalog>,
 ) -> Result<Option<CatiaCompactClass>, CodecError> {
-    let (flags, token) = match *definition_prefix {
-        [0x00, flags, tag, _] => (flags, CatiaCompactClassToken::Tag(tag)),
-        [0x00, flags, 0x32, _, _, _, _, 0x32, _, _, _, _] => {
-            let Some(ordinal) = View::u32_le_at(definition_prefix, 3) else {
-                return Ok(None);
-            };
-            (flags, CatiaCompactClassToken::Selector(ordinal))
-        }
-        _ => return Ok(None),
+    let [lead, flags, fields @ ..] = definition_prefix else {
+        return Ok(None);
     };
-    if flags & !0x0c != 0 {
+    if !matches!(*lead, 0x00 | 0x01 | 0x08 | 0x10) || flags & !0x0c != 0 {
+        return Ok(None);
+    }
+    let Some((token, second)) = class_field(fields) else {
+        return Ok(None);
+    };
+    if class_field(second).is_none_or(|(_, rest)| !rest.is_empty()) {
         return Ok(None);
     }
     let entry = catalog.and_then(|catalog| match token {
@@ -185,6 +185,19 @@ pub(crate) fn compact_class(
         entry: entry.id.clone(),
         name: entry.value.clone(),
     }))
+}
+
+/// One class field at the start of `bytes` and the bytes after it: the wide
+/// selector `32 <ordinal:u32le>` or one tag byte.
+fn class_field(bytes: &[u8]) -> Option<(CatiaCompactClassToken, &[u8])> {
+    match bytes {
+        [0x32, ..] => Some((
+            CatiaCompactClassToken::Selector(View::u32_le_at(bytes, 1)?),
+            bytes.get(5..)?,
+        )),
+        [tag, rest @ ..] => Some((CatiaCompactClassToken::Tag(*tag), rest)),
+        [] => None,
+    }
 }
 
 fn tag_entry(catalog: &CatiaCatalog, tag: u8) -> Option<&CatiaCatalogEntry> {

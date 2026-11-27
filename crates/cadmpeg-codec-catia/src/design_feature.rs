@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::chain_walk::{ChainStep, ChainStops};
 
+use crate::design_v11;
 use crate::ids::neutral_history_id;
 use crate::native::{
     CatiaDesignObject, CatiaDesignObjectRelationSource, CatiaNative, CatiaObjectRecord,
@@ -259,6 +260,17 @@ pub(crate) fn transfer_design_features(
         .flat_map(|graph| &graph.records)
         .map(|record| (record.id.as_str(), record)))
     .collect::<std::collections::HashMap<_, _>>();
+    let paired_classes = native
+        .entity_records
+        .iter()
+        .filter_map(|entity| {
+            let class = entity.compact_class.as_ref()?;
+            Some((
+                (entity.object_graph.as_str(), entity.entity_id),
+                class.name.as_str(),
+            ))
+        })
+        .collect::<HashMap<_, _>>();
     let mut transfer = DesignFeatureTransfer::default();
 
     for object in native
@@ -266,9 +278,16 @@ pub(crate) fn transfer_design_features(
         .iter()
         .filter(|object| graph_scope.contains(object.parent.as_str()))
     {
-        let plane_candidate = principal_plane_candidate(object, &records);
-        let sketch_owner = sketch_candidate(object, &records);
-        let reference_plane = reference_plane_candidate(object, &records);
+        let class = paired_classes
+            .get(&(object.parent.as_str(), object.owner_entity_id))
+            .copied();
+        let admits = |classes: &[&str]| class.is_none_or(|class| classes.contains(&class));
+        let plane_candidate = principal_plane_candidate(object, &records)
+            .filter(|_| admits(&[design_v11::classes::PLANE]));
+        let sketch_owner =
+            sketch_candidate(object, &records).filter(|_| admits(&[design_v11::classes::SKETCH]));
+        let reference_plane = reference_plane_candidate(object, &records)
+            .filter(|_| admits(&design_v11::classes::PLANES));
         match (plane_candidate, sketch_owner, reference_plane) {
             (Some(candidate), None, None) => {
                 transfer_principal_plane(ctx, ir, &mut transfer, candidate)?;

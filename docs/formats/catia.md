@@ -1773,18 +1773,28 @@ A `TTRSBloc` field references the `CATMmrTTRS` roots of a tolerance or datum. Ea
 
 #### 7.3.2 Compact record form and feature-tree membership
 
-A nested `7C05` record is in the compact record form when its complete definition prefix has one of these shapes:
+A nested `7C05` record is in the compact record form when its complete definition prefix is `<lead> <flags> <class> <second>`:
 
-| Form | Prefix | Length | Class field | Second field | Entry the field selects |
-|---|---|---|---|---|---|
-| Tag | `00 <flags> <class-tag> <second-tag>` | 4 | `class-tag` at offset 2 | `second-tag` at offset 3 | zero-based catalog ordinal `tag − 34` |
-| Wide | `00 <flags> 32 <class:u32le> 32 <second:u32le>` | 12 | `class` at offset 3 | `second` at offset 8 | one-based catalog ordinal `class` or `second` |
+| Field | Offset | Values |
+|---|---|---|
+| `lead` | 0 | `00`, `01`, `08`, or `10` |
+| `flags` | 1 | a combination of bits `04` and `08` |
+| `class` | 2 | a tag byte, or a wide field `32 <ordinal:u32le>` |
+| `second` | after `class` | a tag byte, or a wide field `32 <ordinal:u32le>`; it ends the prefix |
 
-| Field | Values |
-|---|---|
-| `flags` (offset 1) | a combination of bits `04` and `08` |
-| class tag | `34` through `33 + n`, for a catalog of `n` entries; another value selects no class |
-| wide class ordinal | `1` through `n`; another value selects no class |
+| `class` | `second` | Prefix length |
+|---|---|---|
+| tag | tag | 4 |
+| tag | wide | 8 |
+| wide | tag | 8 |
+| wide | wide | 12 |
+
+| Field form | Values | Entry the field selects |
+|---|---|---|
+| tag | `34` through `33 + n`, for a catalog of `n` entries; another value selects no class | zero-based catalog ordinal `tag − 34` |
+| wide | `1` through `n`; another value selects no class | one-based catalog ordinal `ordinal` |
+
+A tag byte is never `32`, so the first byte of each field gives its form.
 
 The class field names the record's class. The second field selects one entry of the same catalog:
 
@@ -1795,7 +1805,7 @@ The class field names the record's class. The second field selects one entry of 
 | `GSMTool` | `Open_body` |
 | `MechanicalPart` | the part's name |
 
-Preserve the class tag or wide ordinal, its prefix offset, the selected zero-based ordinal, and the selected entry and name. The two `32` selectors of the wide form are also definition selectors under the walk above, which resolves each stored ordinal as a zero-based entry. The compact class reading is a separate reading of the same bytes.
+Preserve the class tag or wide ordinal, its prefix offset, the selected zero-based ordinal, and the selected entry and name. Each wide field is also a definition selector under the walk above, which resolves each stored ordinal as a zero-based entry. The compact class reading is a separate reading of the same bytes.
 
 The paired `7C0A` payload of a part root, body, or geometrical set in the compact form is a run of tagged segments:
 
@@ -1827,8 +1837,8 @@ Preserve each segment's tag, payload offset, selected entry and name, and value,
 |---|---|
 | `MechanicalPart` | the part root |
 | `MechanicalTool` | a body |
-| `HybridBody` | the main body where the root's `MainTool` selects it |
-| `GSMTool` | a geometrical set |
+| `HybridBody` | the main body where the root's `MainTool` selects it; otherwise a body, an ordered geometrical set, or a geometrical set |
+| `GSMTool` | an ordered geometrical set or a geometrical set |
 
 Each container's `_FtrList` segment lists its members in stored order. A member that is a container is a set nested in the set that lists it. A member list states containment and order.
 
@@ -1846,7 +1856,42 @@ The part root's other segments are its remaining fields:
 | `MainTool` | entity | the main body |
 | `_ReferencePlanes` | list | the principal planes |
 
-The root's other fields, such as `PartAlgoConfigs`, have the same segment form.
+The root's other fields, such as `PartAlgoConfigs`, have the same segment form. The `_ReferencePlanes` list selects the same three `GSMPlane` records as the first three members of the root's `_FtrList`.
+
+The compact class of a member names its feature kind. Each class below has the operation family of CADIR v11 §6:
+
+| Family | Classes |
+|---|---|
+| `Sketch` | `PRTSketch` |
+| `Datum` | `GSMPoint`, `GSMPointBetween`, `GSMPointCenter`, `GSMPointCoord`, `GSMPointOnCurve`, `GSMPointOnPlane`, `GSMPointOnSurface`, `GSMPlane`, `GSMPlane2Lines`, `GSMPlaneAngle`, `GSMPlaneBetween`, `GSMPlaneEquation`, `GSMPlaneNormal`, `GSMPlaneOffset`, `GSMPlaneOffsetPt`, `GSMPlaneTangent`, `AxisSystem` |
+| `Extrude` | `Pad`, `Pocket`, `GSMExtrude` |
+| `Revolve` | `Shaft`, `Groove` |
+| `Sweep` | `Rib`, `Slot` |
+| `Rib` | `Stiffener` |
+| `Loft` | `GSMLoft` |
+| `Fillet` | `EdgeFillet`, `TritangentFillet` |
+| `Chamfer` | `Chamfer` |
+| `Shell` | `Shell` |
+| `Draft` | `Draft` |
+| `Thicken` | `ThickSurface` |
+| `Offset` | `GSMOffset`, `Thickness` |
+| `Hole` | `Hole`, `CATSm_Hole3D` |
+| `Thread` | `Thread` |
+| `Pattern` | `RectPattern`, `CircPattern`, `UserPattern`, `Mirror` |
+| `TemplateInstance` | `UdfFeature` |
+| `Combine` | `Add`, `Remove`, `Assemble`, `Intersect` |
+| `Split` | `Split`, `GSMSplit`, `GSMTrim` |
+| `DeleteFaces` | `RemoveFace` |
+| `Patch` | `GSMFill` |
+| `Knit` | `GSMAssemble`, `CloseSurface` |
+| `Graft` | `SewSurface` |
+| `Extract` | `GSMExtract` |
+| `Extend` | `GSMExtrapol` |
+| `TransformBodies` | `GSMTranslate`, `GSMRotate`, `GSMSymmetry` |
+| `Curve` | `GSMLine`, `GSMLinePtDir`, `GSMLinePtPt`, `GSMAxisLine`, `GSMHelix`, `GSMSpiral`, `GSMIntersect`, `GSMProject`, `GSMCombine`, `GSMBoundary` |
+| `SheetMetal` | `ShePart`, `PredefinedFlange`, `CATSmd_Stamp`, `CATSmCorner`, `CATSmCutOut`, `CATSmd_Extrusion`, `CATSmd_Wall`, `CATSmd_NewWallOnEdge`, `CATSm_ExtrudedHolePunch`, `CATSmd_BendExtremity` |
+
+The root also lists records that hold no operation: `MechanicalPartProperties` (the part's properties), `TTRSSet` (its annotation set), `RelationSet` and `ParameterSet` (its relation and parameter sets), `String` (a parameter), `GSMWSupportSet` (its work-on-support set), and `StDynAnalysisRootNodeFeature` (its analysis root).
 
 ### 7.4 `7C0B` visualization value blocks
 

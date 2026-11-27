@@ -216,9 +216,17 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which stored field tells an ordered geometrical set from a geometrical set?
 
-**Known.** `catia.md` §7.3.2 defines the compact `GSMTool` record and its `_FtrList` member list. Its compact prefix is `00 08 <class-tag> <second-tag>`, and the second tag selects the catalog entry `Open_body`. A `GSMTool` payload stores one `_FtrList` segment or stores no segment. A `HybridBody` record that `MainTool` selects is the main body. A `HybridBody` record that no container lists stores an `_FtrList` whose members have classes such as `Boolean`, `String`, `ConstraintPRT`, and `RelationSet`, and members with no compact class. The design layer names each `GSMTool` record and each unlisted `HybridBody` record in the loss `design.tree-records-unstated`.
+**Known.** `catia.md` §7.3.2 defines the compact `GSMTool` record and its `_FtrList` member list. Its compact prefix has lead `00` and flags `08`, and its second field selects the catalog entry `Open_body`. A `GSMTool` payload stores one `_FtrList` segment or stores no segment. A `HybridBody` record that `MainTool` selects is the main body; another `HybridBody` record has the same prefix form and second entry. A `HybridBody` record that no container lists stores an `_FtrList` whose members have classes such as `Boolean`, `String`, `ConstraintPRT`, and `RelationSet`. The design layer states each `GSMTool` record and each `HybridBody` record that `MainTool` does not select as an unordered geometrical set holding its members, and names it in the loss `design.set-kind-unread`.
 
 **Need.** Two saves of one part that differ in one control: a geometrical set saved as an ordered geometrical set, then saved as a plain geometrical set. Compare the compact prefix, the second-tag entry, and the payload segments of the two `GSMTool` records.
+
+### DI-35. Principal plane of each `_ReferencePlanes` entry
+
+**Question.** Which entry of the part root's `_ReferencePlanes` list is the xy plane, which the yz plane, and which the zx plane?
+
+**Known.** `catia.md` §7.3.2 defines the root's `_ReferencePlanes` segment: a list of three entities whose records have compact class `GSMPlane`, the same three records as the first three members of the root's `_FtrList`. The design objects of these records carry declaration classes that take field names as values, and none of them names a principal plane. The design layer states each of the three records as a datum feature whose construction is unread.
+
+**Need.** One saved part whose three principal planes each carry a sketch with a stored, resolved placement: a sketch on the xy plane, one on the yz plane, and one on the zx plane. Compare each sketch's support entity with the `_ReferencePlanes` list index, and the sketch normal with the plane each index selects.
 
 ## 3. Standard nested `V5_CFV2`
 

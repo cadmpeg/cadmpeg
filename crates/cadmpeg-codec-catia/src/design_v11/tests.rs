@@ -18,6 +18,7 @@ use cadmpeg_ir::report::check::Check;
 use cadmpeg_ir::{CadIr, ReadOptions};
 use cadmpeg_test_support::EditableDecodeResult;
 
+use crate::loss::CatiaLossCode;
 use crate::test_support::test_container::outer_container_catpart;
 use crate::test_support::test_feature_tree::{
     compact, part, stream, stream_with_catalog, stream_with_sketches, SKETCH,
@@ -103,10 +104,11 @@ fn a_part_with_parameters_states_one_scope_over_its_root_definition() {
         scope.unproduced.iter().collect::<Vec<_>>(),
         root.bodies.iter().collect::<Vec<_>>()
     );
-    assert!(result.report().losses.iter().any(|loss| loss.code
-        == crate::loss::CatiaLossCode::HistoryFeaturesUnread
-            .note("")
-            .code));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == CatiaLossCode::HistoryFeaturesUnread.note("").code));
     assert_eq!(
         ir.design
             .parameters
@@ -316,8 +318,18 @@ fn a_part_root_states_its_group_and_its_bodies_in_list_order() {
                 "unresolved Datum".to_owned(),
                 true
             ),
-            ("catia:outer:feature", 5, "catia:Pad".to_owned(), true),
-            ("catia:outer:feature", 6, "catia:Pad".to_owned(), true),
+            (
+                "catia:outer:feature",
+                5,
+                "unresolved Extrude".to_owned(),
+                true
+            ),
+            (
+                "catia:outer:feature",
+                6,
+                "unresolved Extrude".to_owned(),
+                true
+            ),
         ]
     );
     assert_eq!(design_findings(&result), Vec::<String>::new());
@@ -382,10 +394,19 @@ fn the_in_work_object_is_the_rollback_of_the_body_that_lists_it() {
     assert_eq!(rollbacks(0x85), [(3, None), (7, None)]);
 }
 
+fn has_loss(result: &EditableDecodeResult, code: CatiaLossCode, text: &str) -> bool {
+    result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == code.note("").code && loss.message.contains(text))
+}
+
 /// A `HybridBody` that `MainTool` does not select is a set whose kind is
-/// unread: neither it nor its members are stated, and a loss names it.
+/// unread: an unordered geometrical set of its typed members, and a loss
+/// names it.
 #[test]
-fn a_set_whose_kind_is_unread_is_unstated() {
+fn a_set_whose_kind_is_unread_is_an_unordered_geometrical_set() {
     let mut records = part();
     assert_eq!(records[0].2[21], 0x84, "the main-body token");
     records[0].2[21] = 0x88;
@@ -405,32 +426,48 @@ fn a_set_whose_kind_is_unread_is_unstated() {
             .collect::<Vec<_>>(),
         [
             ("catia:outer:feature-group", 2),
+            ("catia:outer:feature-container", 3),
             ("catia:outer:feature-container", 7),
         ]
+    );
+    let Container::Unordered { kind, members, .. } =
+        container(ir, "catia:outer:feature-container", 3)
+    else {
+        panic!("the set is unordered");
+    };
+    assert_eq!(*kind, UnorderedKind::GeometricalSet);
+    assert_eq!(
+        members.iter().map(member).collect::<Vec<_>>(),
+        [("feature", 5), ("feature", 6)]
     );
     assert_eq!(
         ir.design
             .features
             .iter()
-            .map(|feature| entity(feature.id.as_str()))
+            .map(|feature| (
+                entity(feature.id.as_str()),
+                operation(&feature.definition.operation)
+            ))
             .collect::<Vec<_>>(),
-        [4]
+        [
+            (4, "unresolved Datum".to_owned()),
+            (5, "unresolved Extrude".to_owned()),
+            (6, "unresolved Extrude".to_owned()),
+        ]
     );
-    assert!(result.report().losses.iter().any(|loss| loss.code
-        == crate::loss::CatiaLossCode::DesignTreeRecordsUnstated
-            .note("")
-            .code
-        && loss
-            .message
-            .contains("is a set whose ordered or unordered kind is unread")));
+    assert!(has_loss(
+        &result,
+        CatiaLossCode::DesignSetKindUnread,
+        "(HybridBody)"
+    ));
     assert_eq!(design_findings(&result), Vec::<String>::new());
     assert_design_survives_cadir(ir);
 }
 
-/// A member whose compact class selects a blank catalog entry is not
-/// stated, and the loss names it.
+/// A member whose compact class selects a blank catalog entry keeps its
+/// place as a native placeholder, and the loss names it (§3.3).
 #[test]
-fn a_member_whose_class_is_blank_is_unstated() {
+fn a_member_whose_class_is_blank_keeps_its_place() {
     let mut records = part();
     records[3].1 = compact(0x08, 0x37);
     let result = decode(
@@ -444,49 +481,130 @@ fn a_member_whose_class_is_blank_is_unstated() {
     };
     assert_eq!(
         members.iter().map(member).collect::<Vec<_>>(),
-        [("feature", 6)]
+        [("feature", 5), ("feature", 6)]
     );
-    assert!(result.report().losses.iter().any(|loss| loss.code
-        == crate::loss::CatiaLossCode::DesignTreeRecordsUnstated
-            .note("")
-            .code
-        && loss.message.contains("selects a blank catalog entry")));
+    let placeholder = ir
+        .design
+        .features
+        .iter()
+        .find(|feature| entity(feature.id.as_str()) == 5)
+        .unwrap();
+    assert_eq!(
+        operation(&placeholder.definition.operation),
+        "catia:feature"
+    );
+    assert!(has_loss(
+        &result,
+        CatiaLossCode::DesignMembersUnread,
+        "selects a blank catalog entry"
+    ));
     assert_eq!(design_findings(&result), Vec::<String>::new());
     assert_design_survives_cadir(ir);
 }
 
-/// A feature the decoder reads from a record whose compact class
-/// contradicts the reading is not restated, and a loss names it.
+/// A rollback before a member whose record is unread is stated, and a loss
+/// names it.
 #[test]
-fn a_feature_whose_record_class_contradicts_the_reading_is_not_restated() {
-    let catalog = [
-        "CATCatalogManager",
-        "catalogManager",
-        "catalogLinks",
-        "",
-        "xy-plane",
-        "Pad",
-    ];
-    let records = [
-        (2, compact(0x08, 0x39), vec![0xfe]),
-        (3, compact(0x08, 0x39), vec![0xfe]),
-    ];
+fn a_rollback_before_an_unread_member_is_charged() {
+    let mut records = part();
+    records[4].1 = compact(0x08, 0x37);
+    let result = decode(
+        outer_container_catpart(&stream(&records)).0,
+        &DecodeOptions::default(),
+    );
+    let Container::Ordered { rollback, .. } =
+        container(result.ir(), "catia:outer:feature-container", 3)
+    else {
+        panic!("the main body is ordered");
+    };
+    let Some(Rollback::Before(next)) = rollback else {
+        panic!("a rollback before the next member");
+    };
+    assert_eq!(member(next), ("feature", 6));
+    assert!(has_loss(
+        &result,
+        CatiaLossCode::DesignRollbackUnread,
+        "before entity 6"
+    ));
+    assert_eq!(design_findings(&result), Vec::<String>::new());
+}
+
+/// An in-work object that no body lists states no rollback, and a loss
+/// names it.
+#[test]
+fn an_in_work_object_outside_every_body_is_charged() {
+    let mut records = part();
+    records[0].2[19] = 0x85;
+    let result = decode(
+        outer_container_catpart(&stream(&records)).0,
+        &DecodeOptions::default(),
+    );
+    assert!(result
+        .ir()
+        .design
+        .containers
+        .iter()
+        .all(|container| !matches!(
+            container,
+            Container::Ordered {
+                rollback: Some(_),
+                ..
+            }
+        )));
+    assert!(has_loss(
+        &result,
+        CatiaLossCode::DesignRollbackUnread,
+        "entity 4"
+    ));
+}
+
+/// A record the part root lists that holds no operation is no member of
+/// the part's group.
+#[test]
+fn a_root_record_that_holds_no_operation_is_no_feature() {
+    let mut catalog = crate::test_support::test_feature_tree::CATALOG.to_vec();
+    catalog.push("MechanicalPartProperties");
+    let mut records = part();
+    records[2].1 = compact(0x0c, 0x43);
     let result = decode(
         outer_container_catpart(&stream_with_catalog(&records, &catalog)).0,
         &DecodeOptions::default(),
     );
     let ir = result.ir();
-    let [legacy] = ir.model.features.as_slice() else {
-        panic!("one typed feature");
+    let [scope] = ir.design.scopes.as_slice() else {
+        panic!("one design scope");
     };
-    assert!(ir.design.features.is_empty());
-    assert!(ir.design.containers.is_empty());
-    assert!(result.report().losses.iter().any(|loss| loss.code
-        == crate::loss::CatiaLossCode::DesignFeaturesContradicted
-            .note("")
-            .code
-        && loss.message.contains(legacy.id.as_str())
-        && loss.message.contains("record class Pad")));
+    assert_eq!(
+        scope
+            .roots
+            .iter()
+            .map(|id| entity(id.as_str()))
+            .collect::<Vec<_>>(),
+        [3, 7]
+    );
+    assert!(ir
+        .design
+        .features
+        .iter()
+        .all(|feature| entity(feature.id.as_str()) != 4));
+    assert_eq!(design_findings(&result), Vec::<String>::new());
+}
+
+/// Feature-tree records with no part root leave the tree unread, and a loss
+/// says so.
+#[test]
+fn a_tree_without_a_part_root_is_charged() {
+    let records = part().split_off(1);
+    let result = decode(
+        outer_container_catpart(&stream(&records)).0,
+        &DecodeOptions::default(),
+    );
+    assert!(result.ir().design.containers.is_empty());
+    assert!(has_loss(
+        &result,
+        CatiaLossCode::DesignTreeRecordsUnstated,
+        "feature tree is not read"
+    ));
 }
 
 /// A part that stores no part root keeps each feature the decoder types as a
@@ -527,9 +645,7 @@ fn a_feature_no_read_set_lists_is_a_member_of_the_part_group() {
         (PrincipalEntity::XyPlane, Anchor::Current)
     );
     assert!(result.report().losses.iter().any(|loss| loss.code
-        == crate::loss::CatiaLossCode::DesignFeaturesUngrouped
-            .note("")
-            .code
+        == CatiaLossCode::DesignFeaturesUngrouped.note("").code
         && loss.message.contains(legacy.id.as_str())));
     assert_eq!(design_findings(&result), Vec::<String>::new());
     assert_design_survives_cadir(ir);
@@ -571,11 +687,10 @@ fn sketch_plane(
     plane
 }
 
-/// A sketch record of the part's tree is a sketch feature whose sketch has
-/// one plane input with unread picks, anchored by the set that lists it
-/// (§5.8, §6.1).
+/// A sketch record of the part's tree that the decoder reads no sketch for
+/// is an unresolved sketch feature (§3.3, §6.1).
 #[test]
-fn a_tree_sketch_is_a_sketch_feature_whose_plane_is_unread() {
+fn a_tree_sketch_with_no_decoded_sketch_is_an_unresolved_sketch() {
     let mut records = part();
     records[2].1 = compact(0x0c, SKETCH);
     records[3].1 = compact(0x08, SKETCH);
@@ -584,55 +699,22 @@ fn a_tree_sketch_is_a_sketch_feature_whose_plane_is_unread() {
         &DecodeOptions::default(),
     );
     let ir = result.ir();
-    let sketches = ir
-        .design
-        .features
-        .iter()
-        .filter_map(|feature| match &feature.definition.operation {
-            FeatureOperation::Sketch(id) => Some((entity(feature.id.as_str()), id)),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(
-        sketches
-            .iter()
-            .map(|(feature, id)| (
-                *feature,
-                id.as_str().split('#').next().unwrap(),
-                entity(id.as_str())
-            ))
-            .collect::<Vec<_>>(),
-        [(4, "catia:outer:sketch", 4), (5, "catia:outer:sketch", 5)]
-    );
     assert_eq!(
         ir.design
-            .sketches
+            .features
             .iter()
-            .map(|sketch| {
-                let plane = sketch_plane(sketch);
-                assert_eq!(plane.resolved, None);
-                let [input] = plane.inputs.as_slice() else {
-                    panic!("one plane input");
-                };
-                assert_eq!(input.role, None);
-                let Some(InputReference::Picks(selection)) = &input.reference else {
-                    panic!("the plane input picks");
-                };
-                assert_eq!(selection.picks, Picks::Unread);
-                assert_eq!(
-                    sketch.solve.status,
-                    cadmpeg_ir::design::evaluation::EvaluationStatus::Current
-                );
-                assert!(sketch.native_ref.is_some());
-                (
-                    entity(sketch.id.as_str()),
-                    entity(sketch.owner.as_str()),
-                    selection.at.clone(),
-                )
-            })
+            .map(|feature| (
+                entity(feature.id.as_str()),
+                operation(&feature.definition.operation)
+            ))
             .collect::<Vec<_>>(),
-        [(4, 4, Anchor::Current), (5, 5, Anchor::Input)]
+        [
+            (4, "unresolved Sketch".to_owned()),
+            (5, "unresolved Sketch".to_owned()),
+            (6, "unresolved Extrude".to_owned()),
+        ]
     );
+    assert!(ir.design.sketches.is_empty());
     assert_eq!(design_findings(&result), Vec::<String>::new());
     assert_design_survives_cadir(ir);
 }
@@ -660,6 +742,11 @@ fn a_decoded_sketch_keeps_its_resolved_frame() {
     assert_eq!(sketch.id, legacy.id);
     assert_eq!(sketch.owner, feature.id);
     assert_eq!(sketch.native_ref, legacy.native_ref);
+    assert!(has_loss(
+        &result,
+        CatiaLossCode::DesignSketchEntitiesUnread,
+        legacy.id.as_str()
+    ));
     let plane = sketch_plane(sketch);
     assert!(plane.inputs.is_empty());
     let frame = plane.resolved.as_ref().unwrap();

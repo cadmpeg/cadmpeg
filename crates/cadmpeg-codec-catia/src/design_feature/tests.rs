@@ -840,3 +840,38 @@ fn feature_parent_cycles_and_their_tails_are_cyclic() {
         .collect::<HashSet<_>>();
     assert_eq!(cyclic, expected);
 }
+
+/// A principal-plane declaration on a record whose compact class is no
+/// plane reads no feature; on a `GSMPlane` record it reads one.
+#[test]
+fn a_principal_plane_needs_a_plane_record() {
+    use crate::test_support::test_container::outer_container_catpart;
+    use crate::test_support::test_feature_tree::{compact, stream_with_catalog};
+    use cadmpeg_ir::codec::Codec;
+
+    let catalog = [
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "xy-plane",
+        "Pad",
+        "GSMPlane",
+    ];
+    let features = |tag: u8| {
+        let records = [
+            (2, compact(0x08, tag), vec![0xfe]),
+            (3, compact(0x08, tag), vec![0xfe]),
+        ];
+        let bytes = outer_container_catpart(&stream_with_catalog(&records, &catalog)).0;
+        CatiaCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode")
+            .ir()
+            .model
+            .features
+            .len()
+    };
+    assert_eq!(features(0x39), 0);
+    assert_eq!(features(0x3a), 1);
+}

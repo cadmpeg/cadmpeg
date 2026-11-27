@@ -99,19 +99,74 @@ fn compact_definition_rejects_other_prefix_shapes() {
         (2, vec![0x00, 0x01, MECHANICAL_PART, 0x39], vec![0xfe]),
         (3, vec![0x00, 0x00, MECHANICAL_PART], vec![0xfe]),
         (4, vec![0x00, 0x00, MECHANICAL_PART, 0x39, 0x00], vec![0xfe]),
-        (5, vec![0x01, 0x00, MECHANICAL_PART, 0x39], vec![0xfe]),
+        (5, vec![0x02, 0x00, MECHANICAL_PART, 0x39], vec![0xfe]),
         (6, vec![0x00, 0x00, 0x33, 0x39], vec![0xfe]),
         (7, vec![0x00, 0x00, 0x43, 0x39], vec![0xfe]),
         (8, wide(0x00, 0), vec![0xfe]),
         (9, wide(0x00, 16), vec![0xfe]),
+        (
+            10,
+            vec![0x00, 0x00, PAD, 0x32, 0x0d, 0x00, 0x00, 0x00, 0x00],
+            vec![0xfe],
+        ),
     ];
     let native = CatiaNative::decode(&stream(&records));
-    assert_eq!(native.entity_records.len(), 8);
+    assert_eq!(native.entity_records.len(), 9);
     assert!(native
         .entity_records
         .iter()
         .all(|entity| entity.compact_class.is_none()));
     assert!(native.feature_containers.is_empty());
+}
+
+#[test]
+fn compact_definition_admits_each_lead_and_each_field_form() {
+    let records = vec![
+        (
+            2,
+            vec![0x08, 0x08, MECHANICAL_TOOL, MECHANICAL_TOOL],
+            vec![0xfe],
+        ),
+        (3, vec![0x10, 0x0c, PAD, PAD], vec![0xfe]),
+        (4, vec![0x01, 0x04, HYBRID_BODY, HYBRID_BODY], vec![0xfe]),
+        (
+            5,
+            vec![0x00, 0x00, PAD, 0x32, 0x0d, 0x00, 0x00, 0x00],
+            vec![0xfe],
+        ),
+        (
+            6,
+            vec![0x00, 0x0c, 0x32, 0x0e, 0x00, 0x00, 0x00, GSM_PLANE],
+            vec![0xfe],
+        ),
+        (7, wide_lead(0x08, 11), vec![0xfe]),
+    ];
+    let native = CatiaNative::decode(&stream(&records));
+    let classes = native
+        .entity_records
+        .iter()
+        .map(|entity| {
+            let class = entity.compact_class.as_ref().expect("compact class");
+            (entity.entity_id, class.token, class.name.as_str())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        classes,
+        [
+            (2, Tag(MECHANICAL_TOOL), "MechanicalTool"),
+            (3, Tag(PAD), "Pad"),
+            (4, Tag(HYBRID_BODY), "HybridBody"),
+            (5, Tag(PAD), "Pad"),
+            (6, Selector(14), "GSMPlane"),
+            (7, Selector(11), "MechanicalTool"),
+        ]
+    );
+}
+
+fn wide_lead(lead: u8, ordinal: u32) -> Vec<u8> {
+    let mut prefix = wide(0x08, ordinal);
+    prefix[0] = lead;
+    prefix
 }
 
 #[test]

@@ -20,6 +20,7 @@ use crate::decode::ModelingGraphScope;
 use crate::loss::CatiaLossCode;
 use crate::native::CatiaNative;
 
+pub(crate) mod classes;
 mod datums;
 mod history;
 mod parameters;
@@ -39,13 +40,18 @@ pub(crate) fn project(
     scope: &ModelingGraphScope,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    let tree = tree::read(native, scope);
+    let tree = tree::read(native, scope).unwrap_or_else(|reason| {
+        losses.push(CatiaLossCode::DesignTreeRecordsUnstated.note(format!(
+            "the part's feature tree is not read ({reason}); its bodies, sets, and their members are not stated"
+        )));
+        None
+    });
     if tree.is_none() && ir.model.features.is_empty() && ir.model.parameters.is_empty() {
         return Ok(());
     }
     let definition = root_definition(ctx, ir)?;
     parameters::project(ctx, ir, &definition, losses)?;
-    let roots = history::project(ctx, ir, native, tree.as_ref(), losses)?;
+    let roots = history::project(ctx, ir, tree.as_ref(), losses)?;
     if roots.is_empty() && ir.design.parameters.is_empty() {
         return Ok(());
     }

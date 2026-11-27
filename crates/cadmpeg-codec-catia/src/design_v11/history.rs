@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The part's bodies, its own group, and their member features (§5.2).
+//! The part's bodies, its sets, its own group, and their member features
+//! (§5.2).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -13,25 +14,21 @@ use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::ops::sketch::{Planar, Sketch, SketchConstraint};
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::design::selection::Anchor;
-use cadmpeg_ir::features::{
-    Feature as LegacyFeature, FeatureId, FeatureOperation as Legacy, UnresolvedFamily,
-};
+use cadmpeg_ir::features::{Feature as LegacyFeature, FeatureId, FeatureOperation as Legacy};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::{SketchConstraint as LegacyConstraint, SketchId};
 use cadmpeg_ir::CadIr;
 
-use super::tree::{Body, Item, Tree};
-use super::{datums, sketches};
+use super::tree::{Item, Set, SetKind, Tree};
+use super::{classes, datums, sketches};
 use crate::ids::neutral_history_id;
 use crate::loss::{identity_statement, CatiaLossCode};
-use crate::native::CatiaNative;
 
 /// Push the part's containers and their member features, and return the
-/// scope's roots: the part's group first, then its bodies in list order.
+/// scope's roots: the part's group first, then its sets in list order.
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    native: &CatiaNative,
     tree: Option<&Tree<'_>>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<ContainerId>, CodecError> {
@@ -39,41 +36,36 @@ pub(super) fn project(
         .model
         .features
         .iter()
-        .map(|feature| (feature.id.clone(), feature.clone()))
+        .map(|feature| (&feature.id, feature))
         .collect::<BTreeMap<_, _>>();
     let model_sketches = ir
         .model
         .sketches
         .iter()
-        .map(|sketch| {
-            (
-                sketch.id.clone(),
-                (sketch.native_ref.clone(), sketches::frame(sketch)),
-            )
-        })
+        .map(|sketch| (&sketch.id, (&sketch.native_ref, sketches::frame(sketch))))
         .collect::<BTreeMap<_, _>>();
-    let model_constraints = ir.model.sketch_constraints.clone();
     let mut stated = Statements {
         ctx,
         legacy: &legacy,
         model_sketches: &model_sketches,
-        model_constraints: &model_constraints,
+        model_constraints: &ir.model.sketch_constraints,
         current: tree.and_then(|tree| tree.current),
+        rollback_stated: false,
         restated: BTreeSet::new(),
-        reclassified: Vec::new(),
         features: Vec::new(),
         containers: Vec::new(),
         sketches: Vec::new(),
         constraints: Vec::new(),
+        charges: Charges::default(),
     };
     let mut group = BTreeSet::new();
-    let mut bodies = Vec::new();
+    let mut sets = Vec::new();
     if let Some(tree) = tree {
         for item in &tree.group {
             group.insert(stated.item(tree.graph_offset, item, Anchor::Current)?);
         }
-        for body in &tree.bodies {
-            bodies.push(stated.body(tree.graph_offset, body)?);
+        for set in &tree.sets {
+            sets.push(stated.set(tree.graph_offset, set)?);
         }
         if !tree.unstated.is_empty() {
             let records = tree
@@ -87,29 +79,19 @@ pub(super) fn project(
                 identity_statement(&records),
             )));
         }
+        if let (Some(current), false) = (tree.current, stated.rollback_stated) {
+            stated.charges.rollbacks.push(format!(
+                "the in-work object, entity {current}, is no member of a stated body and is no stated body"
+            ));
+        }
     }
-    let mut contradicted = std::mem::take(&mut stated.reclassified);
     let mut ungrouped = Vec::new();
     for feature in legacy.values() {
         if stated.restated.contains(&feature.id) {
             continue;
         }
-        if let Some(class) = contradicting_class(native, feature) {
-            contradicted.push(format!(
-                "{} (record class {class}, not restated)",
-                feature.id.as_str()
-            ));
-            continue;
-        }
         ungrouped.push(feature.id.as_str().to_owned());
         group.insert(stated.legacy_feature(feature, Anchor::Current)?);
-    }
-    if !contradicted.is_empty() {
-        losses.push(CatiaLossCode::DesignFeaturesContradicted.note(format!(
-            "{} feature(s) read from a record whose compact class contradicts the reading; the reading is not restated: {}",
-            contradicted.len(),
-            identity_statement(&contradicted),
-        )));
     }
     if !ungrouped.is_empty() {
         losses.push(CatiaLossCode::DesignFeaturesUngrouped.note(format!(
@@ -118,6 +100,7 @@ pub(super) fn project(
             identity_statement(&ungrouped),
         )));
     }
+    stated.charges.push_to(losses);
     let mut roots = Vec::new();
     if !group.is_empty() {
         ctx.charge_entities(1, "project the CATIA part group")?;
@@ -134,56 +117,149 @@ pub(super) fn project(
             members: group,
         });
     }
-    roots.extend(bodies);
-    ir.design.features.extend(stated.features);
+    roots.extend(sets);
+    let Statements {
+        features,
+        containers,
+        sketches,
+        constraints,
+        ..
+    } = stated;
+    ir.design.features.extend(features);
     ir.design.features.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.design.containers.extend(stated.containers);
+    ir.design.containers.extend(containers);
     ir.design.containers.sort_by(|a, b| a.id().cmp(b.id()));
-    ir.design.sketches.extend(stated.sketches);
+    ir.design.sketches.extend(sketches);
     ir.design.sketches.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.design.sketch_constraints.extend(stated.constraints);
+    ir.design.sketch_constraints.extend(constraints);
     ir.design.sketch_constraints.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(roots)
 }
 
+/// What the statements leave unread, one loss each.
+#[derive(Default)]
+struct Charges {
+    /// Members kept in place whose record is unread.
+    members: Vec<String>,
+    /// Sets stated unordered because their kind is unread.
+    sets: Vec<String>,
+    /// In-work objects no stated rollback holds, and stated rollbacks
+    /// before an unread member.
+    rollbacks: Vec<String>,
+    /// Sketches stated without their entities.
+    sketches: Vec<String>,
+    /// Sketch constraints of a kind the projection does not restate.
+    constraints: Vec<String>,
+}
+
+impl Charges {
+    fn push_to(self, losses: &mut Vec<LossNote>) {
+        for (records, code, statement) in [
+            (
+                self.members,
+                CatiaLossCode::DesignMembersUnread,
+                "member(s) of the part's feature tree whose record is unread are stated as native placeholder features",
+            ),
+            (
+                self.sets,
+                CatiaLossCode::DesignSetKindUnread,
+                "set(s) whose kind (body, ordered geometrical set, or geometrical set) is unread are stated as unordered geometrical sets",
+            ),
+            (
+                self.rollbacks,
+                CatiaLossCode::DesignRollbackUnread,
+                "in-work object position(s) are not stated by a rollback on a read member",
+            ),
+            (
+                self.sketches,
+                CatiaLossCode::DesignSketchEntitiesUnread,
+                "sketch(es) are stated without their entities, which the decoder does not read",
+            ),
+            (
+                self.constraints,
+                CatiaLossCode::DesignSketchConstraintsUnstated,
+                "sketch constraint(s) of a kind other than native are not restated",
+            ),
+        ] {
+            if !records.is_empty() {
+                losses.push(code.note(format!(
+                    "{} {statement}: {}",
+                    records.len(),
+                    identity_statement(&records),
+                )));
+            }
+        }
+    }
+}
+
 struct Statements<'c, 'l> {
     ctx: &'c DecodeContext<'c>,
-    legacy: &'l BTreeMap<FeatureId, LegacyFeature>,
+    legacy: &'l BTreeMap<&'l FeatureId, &'l LegacyFeature>,
     /// The native reference and the resolved frame of each sketch the
     /// decoder reads.
-    model_sketches: &'l BTreeMap<SketchId, (Option<String>, Option<FrameValue>)>,
+    model_sketches: &'l BTreeMap<&'l SketchId, (&'l Option<String>, Option<FrameValue>)>,
     model_constraints: &'l [LegacyConstraint],
     /// The in-work object's entity.
     current: Option<u32>,
+    /// Whether a stated body's rollback holds the in-work object.
+    rollback_stated: bool,
     restated: BTreeSet<FeatureId>,
-    reclassified: Vec<String>,
     features: Vec<Feature>,
     containers: Vec<Container>,
     sketches: Vec<Sketch>,
     constraints: Vec<SketchConstraint<Planar>>,
+    charges: Charges,
 }
 
 impl Statements<'_, '_> {
-    fn body(&mut self, graph_offset: u64, body: &Body<'_>) -> Result<ContainerId, CodecError> {
-        let mut members = Vec::with_capacity(body.members.len());
+    fn set(&mut self, graph_offset: u64, set: &Set<'_>) -> Result<ContainerId, CodecError> {
+        let id = ContainerId::mint(set.container.id.clone()).map_err(CodecError::malformed)?;
+        if set.kind == SetKind::KindUnread {
+            let mut members = BTreeSet::new();
+            for item in &set.members {
+                members.insert(self.item(graph_offset, item, Anchor::Current)?);
+            }
+            self.charges.sets.push(format!(
+                "{} ({})",
+                set.container.object_record, set.container.class.name
+            ));
+            self.ctx
+                .charge_entities(1, "project a CATIA geometrical set")?;
+            self.containers.push(Container::Unordered {
+                id: id.clone(),
+                kind: UnorderedKind::GeometricalSet,
+                members,
+            });
+            return Ok(id);
+        }
+        let mut members = Vec::with_capacity(set.members.len());
         let mut in_work = None;
-        for item in &body.members {
+        for item in &set.members {
             if Some(item.entity_id()) == self.current {
                 in_work = Some(members.len());
             }
             members.push(self.item(graph_offset, item, Anchor::Input)?);
         }
-        let rollback = if Some(body.container.entity_id) == self.current {
+        let rollback = if Some(set.container.entity_id) == self.current {
             Some(Rollback::End)
         } else {
-            in_work.map(|index| {
-                members
-                    .get(index + 1)
-                    .map_or(Rollback::End, |next| Rollback::Before(next.clone()))
-            })
+            in_work.map(
+                |index| match (set.members.get(index + 1), members.get(index + 1)) {
+                    (Some(next), Some(member)) => {
+                        if let Item::Unread { member: listed, .. } = next {
+                            self.charges.rollbacks.push(format!(
+                                "{} is before entity {}, whose record is unread",
+                                set.container.object_record, listed.entity_id
+                            ));
+                        }
+                        Rollback::Before(member.clone())
+                    }
+                    _ => Rollback::End,
+                },
+            )
         };
+        self.rollback_stated |= rollback.is_some();
         self.ctx.charge_entities(1, "project a CATIA body")?;
-        let id = ContainerId::mint(body.container.id.clone()).map_err(CodecError::malformed)?;
         self.containers.push(Container::Ordered {
             id: id.clone(),
             kind: OrderedKind::Body,
@@ -204,48 +280,31 @@ impl Statements<'_, '_> {
         at: Anchor,
     ) -> Result<Member, CodecError> {
         let (member, class) = match item {
-            Item::Body(body) => return Ok(Member::Container(self.body(graph_offset, body)?)),
-            Item::Feature { member, class } => (member, *class),
+            Item::Set(set) => return Ok(Member::Container(self.set(graph_offset, set)?)),
+            Item::Feature { member, class } => (member, Some(*class)),
+            Item::Unread { member, .. } => (member, None),
         };
         let id = member_feature_id(graph_offset, member.entity_id)?;
         if let Some(legacy) = self.legacy.get(&id) {
-            if legacy_agrees(legacy, class) {
-                return self.legacy_feature(legacy, at);
-            }
-            self.reclassified.push(format!(
-                "{} (record class {class}, restated by it)",
-                id.as_str()
-            ));
+            return self.legacy_feature(legacy, at);
         }
         let native_ref = member
             .target
             .as_ref()
             .map(|target| target.object_record.clone());
-        let operation = match datums::by_class(class) {
-            Some(operation) => operation,
-            None if class == SKETCH_CLASS => {
-                let sketch = SketchId::from(neutral_history_id(
-                    &crate::native::design_object_id(graph_offset, member.entity_id),
-                    &cadmpeg_ir::identity_component!("sketch"),
-                )?);
-                self.ctx.charge_entities(1, "project a CATIA sketch")?;
-                self.sketches.push(sketches::sketch(
-                    sketch.clone(),
-                    id.clone(),
-                    native_ref.clone(),
-                    None,
-                    at,
-                ));
-                FeatureOperation::Sketch(sketch)
-            }
+        let operation = match class.map(|class| (class, classes::family(class))) {
+            Some((_, Some(family))) => FeatureOperation::Unresolved { family },
+            Some((class, None)) => native_operation(class)?,
             None => {
-                let kind = CodecName::new(&cadmpeg_ir::codec_id!("catia"), class)
-                    .ok_or_else(|| CodecError::malformed("CATIA compact class name is blank"))?;
-                FeatureOperation::Native {
-                    kind,
-                    native_options: BTreeMap::new(),
-                    source_settings: BTreeMap::new(),
+                if let Item::Unread { reason, .. } = item {
+                    self.charges.members.push(format!(
+                        "{} ({reason})",
+                        native_ref
+                            .clone()
+                            .unwrap_or_else(|| format!("entity {}", member.entity_id))
+                    ));
                 }
+                native_operation(PLACEHOLDER_CLASS)?
             }
         };
         self.ctx.charge_entities(1, "project a CATIA feature")?;
@@ -280,26 +339,31 @@ impl Statements<'_, '_> {
                     .id()
                     .and_then(|id| self.model_sketches.get_key_value(id))
                 {
+                    let id = (*id).clone();
                     self.ctx.charge_entities(1, "project a CATIA sketch")?;
                     self.sketches.push(sketches::sketch(
                         id.clone(),
                         feature.id.clone(),
-                        native_ref.clone(),
+                        (*native_ref).clone(),
                         frame.clone(),
                         at,
                     ));
+                    self.charges.sketches.push(id.as_str().to_owned());
                     for legacy in self
                         .model_constraints
                         .iter()
-                        .filter(|item| &item.sketch == id)
+                        .filter(|item| item.sketch == id)
                     {
-                        if let Some(constraint) = sketches::constraint(legacy)? {
-                            self.ctx
-                                .charge_entities(1, "project a CATIA sketch constraint")?;
-                            self.constraints.push(constraint);
+                        match sketches::constraint(legacy)? {
+                            Some(constraint) => {
+                                self.ctx
+                                    .charge_entities(1, "project a CATIA sketch constraint")?;
+                                self.constraints.push(constraint);
+                            }
+                            None => self.charges.constraints.push(legacy.id.as_str().to_owned()),
                         }
                     }
-                    return Ok(FeatureOperation::Sketch(id.clone()));
+                    return Ok(FeatureOperation::Sketch(id));
                 }
                 OperationFamily::Sketch
             }
@@ -313,6 +377,19 @@ impl Statements<'_, '_> {
         };
         Ok(FeatureOperation::Unresolved { family })
     }
+}
+
+/// The class of the native placeholder for a member whose record is unread.
+const PLACEHOLDER_CLASS: &str = "feature";
+
+fn native_operation(class: &str) -> Result<FeatureOperation, CodecError> {
+    let kind = CodecName::new(&cadmpeg_ir::codec_id!("catia"), class)
+        .ok_or_else(|| CodecError::malformed("CATIA compact class name is blank"))?;
+    Ok(FeatureOperation::Native {
+        kind,
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    })
 }
 
 fn feature(id: FeatureId, operation: FeatureOperation, native_ref: Option<String>) -> Feature {
@@ -344,40 +421,4 @@ pub(super) fn member_feature_id(
         &cadmpeg_ir::identity_component!("feature"),
     )
     .map(FeatureId::from)
-}
-
-const SKETCH_CLASS: &str = "PRTSketch";
-
-/// The compact class a legacy reading needs of its record.
-fn legacy_class(feature: &LegacyFeature) -> Option<&'static str> {
-    match feature.evaluation.definition().operation() {
-        Legacy::DatumPrincipalPlane { .. }
-        | Legacy::Unresolved {
-            family: UnresolvedFamily::DatumPlane,
-        } => Some("GSMPlane"),
-        Legacy::Sketch { .. } => Some(SKETCH_CLASS),
-        _ => None,
-    }
-}
-
-fn legacy_agrees(feature: &LegacyFeature, class: &str) -> bool {
-    legacy_class(feature) == Some(class)
-}
-
-/// The compact class of the record a legacy feature reads, where it
-/// contradicts the reading.
-fn contradicting_class<'n>(native: &'n CatiaNative, feature: &LegacyFeature) -> Option<&'n str> {
-    let object = native
-        .design_objects
-        .iter()
-        .find(|object| Some(object.id.as_str()) == feature.native_ref.as_deref())?;
-    let class = native
-        .entity_records
-        .iter()
-        .find(|entity| {
-            entity.object_graph == object.parent && entity.entity_id == object.owner_entity_id
-        })?
-        .compact_class
-        .as_ref()?;
-    (!legacy_agrees(feature, &class.name)).then_some(class.name.as_str())
 }

@@ -181,15 +181,24 @@ pub(crate) enum CatiaLossCode {
     /// Parameters that hold an input parameter the decoder resolved as text,
     /// or omit it, and state no dependency on that parameter.
     DesignParameterReferenceAsText,
-    /// Feature-tree records the design layer does not state: a set whose
-    /// ordered or unordered kind is unread, a set whose member list is unread
-    /// or that no set lists, and a listed record with no compact class.
+    /// Feature-tree records the design layer does not state: a member listed
+    /// more than once, a set that no set lists, and every record of a tree
+    /// that is not read.
     DesignTreeRecordsUnstated,
-    /// Features read from a record whose compact class contradicts the
-    /// reading; the reading is not restated.
-    DesignFeaturesContradicted,
     /// Features that no stated set lists are members of the part's group.
     DesignFeaturesUngrouped,
+    /// Tree members whose record is unread keep their place as native
+    /// placeholder features.
+    DesignMembersUnread,
+    /// Sets whose kind is unread are stated as unordered geometrical sets.
+    DesignSetKindUnread,
+    /// The in-work object is read and no stated rollback holds it, or a
+    /// stated rollback is before a member whose record is unread.
+    DesignRollbackUnread,
+    /// Sketches are stated without their entities.
+    DesignSketchEntitiesUnread,
+    /// Sketch constraints of a kind other than native are not restated.
+    DesignSketchConstraintsUnstated,
     /// Materials, unbound NURBS caches, and document metadata were not transferred.
     AttributesMaterialsMetadataNotTransferred,
     /// Dimension scalars retain no admitted physical-quantity discriminator.
@@ -281,8 +290,12 @@ impl CatiaLossCode {
         Self::HistoryParameterLiteralAssumed,
         Self::DesignParameterReferenceAsText,
         Self::DesignTreeRecordsUnstated,
-        Self::DesignFeaturesContradicted,
         Self::DesignFeaturesUngrouped,
+        Self::DesignMembersUnread,
+        Self::DesignSetKindUnread,
+        Self::DesignRollbackUnread,
+        Self::DesignSketchEntitiesUnread,
+        Self::DesignSketchConstraintsUnstated,
         Self::AttributesMaterialsMetadataNotTransferred,
         Self::AttributesDimensionQuantityUnresolved,
         Self::AttributesPmiToleranceUntransferred,
@@ -377,8 +390,12 @@ impl CatiaLossCode {
             Self::HistoryParameterLiteralAssumed => "history.parameter-literal-assumed",
             Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
             Self::DesignTreeRecordsUnstated => "design.tree-records-unstated",
-            Self::DesignFeaturesContradicted => "design.features-contradicted",
             Self::DesignFeaturesUngrouped => "design.features-ungrouped",
+            Self::DesignMembersUnread => "design.members-unread",
+            Self::DesignSetKindUnread => "design.set-kind-unread",
+            Self::DesignRollbackUnread => "design.rollback-unread",
+            Self::DesignSketchEntitiesUnread => "design.sketch-entities-unread",
+            Self::DesignSketchConstraintsUnstated => "design.sketch-constraints-unstated",
             Self::AttributesMaterialsMetadataNotTransferred => {
                 "attributes.materials-metadata-not-transferred"
             }
@@ -502,8 +519,12 @@ impl CatiaLossCode {
             Self::TopologyUnselectedBodiesRetained => LossTaxonomy::FeatureHistoryRetained,
             Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
             Self::DesignTreeRecordsUnstated
-            | Self::DesignFeaturesContradicted
-            | Self::DesignFeaturesUngrouped => LossTaxonomy::FeatureHistoryRetained,
+            | Self::DesignFeaturesUngrouped
+            | Self::DesignMembersUnread
+            | Self::DesignSetKindUnread
+            | Self::DesignRollbackUnread
+            | Self::DesignSketchEntitiesUnread
+            | Self::DesignSketchConstraintsUnstated => LossTaxonomy::FeatureHistoryRetained,
         }
     }
 
@@ -607,8 +628,12 @@ mod tests {
                 "history.parameter-literal-assumed",
                 "design.parameter-reference-as-text",
                 "design.tree-records-unstated",
-                "design.features-contradicted",
                 "design.features-ungrouped",
+                "design.members-unread",
+                "design.set-kind-unread",
+                "design.rollback-unread",
+                "design.sketch-entities-unread",
+                "design.sketch-constraints-unstated",
                 "attributes.materials-metadata-not-transferred",
                 "attributes.dimension-quantity-unresolved",
                 "attributes.pmi-tolerance-untransferred",
