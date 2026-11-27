@@ -96,6 +96,7 @@ fn remove_body(group_id: &str, scope_id: &str) -> Feature {
 fn bind(
     tail: DesignBodyReferenceTail,
     binding: crate::records::bodies::DesignBodyBinding,
+    bodies: &[cadmpeg_ir::topology::Body],
 ) -> (Feature, Vec<cadmpeg_ir::report::loss::LossNote>) {
     let scope = crate::records::feature::scope::DesignParameterScope::empty(
         &format!("{STREAM}:design-parameter-scope#10"),
@@ -113,7 +114,7 @@ fn bind(
         persistent_design_links: &[],
         histories: &[],
         scope_histories: &std::collections::HashMap::new(),
-        bodies: &[],
+        bodies,
         regions: &[],
         shells: &[],
         faces: &[],
@@ -125,10 +126,27 @@ fn bind(
     (feature, losses)
 }
 
+/// A model body with identity `id` and the given visibility.
+fn model_body(id: &str, visible: Option<bool>) -> cadmpeg_ir::topology::Body {
+    let mut body = cadmpeg_ir::examples::unit_cube()
+        .unwrap()
+        .geometry
+        .bodies
+        .remove(0);
+    body.id = cadmpeg_ir::ids::BodyId::mint(id).unwrap();
+    body.visible = visible;
+    body
+}
+
 #[test]
-fn a_stateless_remove_body_selects_the_solved_body_its_tail_node_names() {
+fn a_stateless_remove_body_selects_the_hidden_solved_body_its_tail_node_names() {
     let body = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#4").unwrap();
-    let (feature, losses) = bind(tail(7), binding(7, Some(body.clone())));
+    let hidden = model_body("f3d:brep:entity#4", Some(false));
+    let (feature, losses) = bind(
+        tail(7),
+        binding(7, Some(body.clone())),
+        std::slice::from_ref(&hidden),
+    );
     assert!(losses.is_empty());
     let FeatureDefinition::Operation(FeatureOperation::DeleteBody {
         bodies: BodySelection::Resolved { bodies, .. },
@@ -142,7 +160,7 @@ fn a_stateless_remove_body_selects_the_solved_body_its_tail_node_names() {
 
 #[test]
 fn a_tail_node_whose_body_pair_is_unsolved_leaves_the_selection_native_with_a_loss() {
-    let (feature, losses) = bind(tail(7), binding(7, None));
+    let (feature, losses) = bind(tail(7), binding(7, None), &[]);
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
@@ -160,7 +178,12 @@ fn a_tail_node_whose_body_pair_is_unsolved_leaves_the_selection_native_with_a_lo
 #[test]
 fn a_tail_node_naming_another_entity_leaves_the_selection_native() {
     let body = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#4").unwrap();
-    let (feature, _) = bind(tail(7), binding(8, Some(body)));
+    let hidden = model_body("f3d:brep:entity#4", Some(false));
+    let (feature, _) = bind(
+        tail(7),
+        binding(8, Some(body)),
+        std::slice::from_ref(&hidden),
+    );
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
@@ -168,4 +191,25 @@ fn a_tail_node_naming_another_entity_leaves_the_selection_native() {
             ..
         })
     ));
+}
+
+#[test]
+fn a_visible_solved_body_is_not_shown_to_be_the_removed_body() {
+    let body = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#4").unwrap();
+    for visible in [None, Some(true)] {
+        let shown = model_body("f3d:brep:entity#4", visible);
+        let (feature, losses) = bind(
+            tail(7),
+            binding(7, Some(body.clone())),
+            std::slice::from_ref(&shown),
+        );
+        assert!(matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::DeleteBody {
+                bodies: BodySelection::Native(_),
+                ..
+            })
+        ));
+        assert_eq!(losses.len(), 1);
+    }
 }

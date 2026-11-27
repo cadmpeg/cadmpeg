@@ -107,10 +107,21 @@ pub(super) fn bind_tail_history_bodies(
         let (Some(state), None) = (states.next(), states.next()) else {
             return;
         };
-        let [slot] = state.transition.as_ref().map_or(&[][..], |transition| {
+        let inserted = state.transition.as_ref().map_or(&[][..], |transition| {
             &transition.topology.bodies.inserted[..]
-        }) else {
-            return;
+        });
+        let slot = match inserted {
+            [slot] => slot,
+            [_, _, ..] => {
+                let Some(ordinal) = node_body_ordinal(node, stream, &history.id, inputs) else {
+                    return;
+                };
+                let Some(slot) = inserted.iter().find(|slot| **slot == ordinal) else {
+                    return;
+                };
+                slot
+            }
+            [] => return,
         };
         if !input.bodies.contains(slot) || slots.contains(slot) {
             return;
@@ -129,9 +140,39 @@ pub(super) fn bind_tail_history_bodies(
     }
 }
 
+/// The body slot that a browser node names when its creating transition
+/// inserts several bodies: the ordinal of the node's solved body in the BREP
+/// blob of the history. The ordinal is the number of the solved body's
+/// `brep:entity#` identity. The node's body-map pair must name the blob of
+/// the history.
+fn node_body_ordinal(
+    node: DesignCombineBodyNode,
+    stream: &str,
+    history_id: &str,
+    inputs: &FeatureBodySelectionInputs<'_>,
+) -> Option<i64> {
+    let mut pairs = inputs.body_bindings.iter().filter(|pair| {
+        pair.entity_suffix == u64::from(node.body_entity_suffix)
+            && crate::ids::native_stream(pair.id()) == Some(stream)
+    });
+    let (Some(pair), None) = (pairs.next(), pairs.next()) else {
+        return None;
+    };
+    if !history_id.contains(pair.blob_name()) {
+        return None;
+    }
+    pair.body
+        .as_ref()?
+        .as_str()
+        .rsplit_once("brep:entity#")?
+        .1
+        .parse()
+        .ok()
+}
+
 /// Bind a native body group to the solved bodies of the Design body-map pairs
 /// that its tail nodes name. Every node names one pair of its stream whose
-/// body is solved, and no two nodes name one body.
+/// body is solved and hidden in the model, and no two nodes name one body.
 pub(super) fn bind_tail_model_bodies(
     selection: &mut BodySelection,
     scope: &DesignParameterScope,
@@ -158,6 +199,15 @@ pub(super) fn bind_tail_model_bodies(
         let Some(body) = pair.body.clone() else {
             return;
         };
+        // A removed body stays in its BREP blob with its model body hidden.
+        // A visible body is not shown to be the removed body.
+        if !inputs
+            .bodies
+            .iter()
+            .any(|candidate| candidate.id == body && candidate.visible == Some(false))
+        {
+            return;
+        }
         bodies.push(body);
     }
     if let Ok(bodies) = DistinctMembers::try_from(bodies) {
