@@ -3,7 +3,13 @@
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use std::collections::BTreeMap;
+
+use cadmpeg_ir::design::ids::SetupId;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::report::loss::LossNote;
+
+use crate::loss::F3dLossCode;
 use cadmpeg_ir::native::NativeConvertError;
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
@@ -82,21 +88,53 @@ pub(crate) fn collect(
     ctx: &DecodeContext<'_>,
     scan: &crate::container::ContainerScan<'_>,
     ir: &mut CadIr,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let mut cam = Manufacturing::default();
     super::read(ctx, scan, &mut cam, losses)?;
     if cam.is_empty() {
         return Ok(());
     }
+    admit(ctx, ir, &cam, losses)
+}
+
+/// Projects the read definitions onto the process arenas and retains their
+/// native records. A definition set that does not project is a loss and
+/// leaves the process arenas as they were.
+fn admit(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    cam: &Manufacturing,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
     losses.extend(crate::tree::state_root_definition(ctx, ir)?);
     let admitted = ir.entity_count();
-    project(ir, &cam)?;
+    let lengths = (
+        ir.process.setups.len(),
+        ir.process.operations.len(),
+        ir.process.tools.len(),
+        ir.process.parameters.len(),
+    );
+    let mut projected_losses = Vec::new();
+    match project(ctx, ir, cam, &mut projected_losses) {
+        Ok(()) => losses.append(&mut projected_losses),
+        Err(CodecError::Malformed(error)) => {
+            ir.process.setups.truncate(lengths.0);
+            ir.process.operations.truncate(lengths.1);
+            ir.process.tools.truncate(lengths.2);
+            ir.process.parameters.truncate(lengths.3);
+            losses.push(F3dLossCode::CamDocumentUnreadable.note(format!(
+                "CAM definitions did not project onto process records: {error}"
+            )));
+            return Ok(());
+        }
+        Err(error) => return Err(error),
+    }
     ctx.charge_entities(
         cadmpeg_core::decode::u64_from_index(ir.entity_count() - admitted),
         "admit CAM process entities",
     )?;
-    store(ctx, ir, &cam)
+    store(ctx, ir, cam)
 }
 
 pub(crate) fn scope(
@@ -113,49 +151,75 @@ pub(crate) fn scope(
     ir.process.operations.clear();
     ir.process.tools.clear();
     ir.process.parameters.clear();
-    project(ir, &cam)?;
+    project(ctx, ir, &cam, &mut Vec::new())?;
     store(ctx, ir, &cam)
 }
 
+/// A process dimension or process value of a source parameter.
+type Dim = (i32, i32, i32);
+const LENGTH: Dim = (1, 0, 0);
+const ANGLE: Dim = (0, 1, 0);
+const FEED: Dim = (1, 0, -1);
+const SPEED: Dim = (0, 1, -1);
+
+/// The factor to CADIR units (millimeters, radians, seconds) and the
+/// quantity of a parameter `unit` text.
+fn unit_scale(unit: &str) -> Option<(f64, Dim)> {
+    Some(match unit {
+        "mm" => (1.0, LENGTH),
+        "cm" => (10.0, LENGTH),
+        "m" => (1000.0, LENGTH),
+        "in" | "inch" | "inches" => (25.4, LENGTH),
+        "deg" => (std::f64::consts::PI / 180.0, ANGLE),
+        "rad" => (1.0, ANGLE),
+        "mm/min" => (1.0 / 60.0, FEED),
+        "cm/min" => (10.0 / 60.0, FEED),
+        "m/min" => (1000.0 / 60.0, FEED),
+        "in/min" => (25.4 / 60.0, FEED),
+        "rpm" => (std::f64::consts::TAU / 60.0, SPEED),
+        _ => return None,
+    })
+}
+
+/// The finite value of a numeric parameter in CADIR units, with its
+/// quantity, where its `unit` names one.
+fn measure(parameter: &ManufacturingParameter) -> Option<(f64, Dim)> {
+    let number = parameter.value.parse::<f64>().ok()?;
+    let (scale, quantity) = unit_scale(parameter.unit.as_deref()?)?;
+    let converted = number * scale;
+    (number.is_finite() && converted.is_finite()).then_some((converted, quantity))
+}
+
+/// The process parameter ids of one owner, by source name. The first
+/// parameter of a name owns it.
+type Ids = BTreeMap<String, String>;
+
 fn parameters(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     owner: &Value,
     id: &str,
     source: &[ManufacturingParameter],
-) -> Result<(), CodecError> {
-    let mut names = std::collections::BTreeSet::new();
+) -> Result<Ids, CodecError> {
+    let mut ids = Ids::new();
     for (ordinal, parameter) in source.iter().enumerate() {
-        if parameter.name.trim().is_empty() || !names.insert(&parameter.name) {
+        if parameter.name.trim().is_empty() || ids.contains_key(&parameter.name) {
             continue;
         }
-        let expression = roxmltree::Document::parse(&parameter.native_xml)
-            .ok()
-            .and_then(|document| {
-                document
-                    .root_element()
-                    .attribute("expression")
-                    .map(str::to_owned)
-            })
-            .unwrap_or_else(|| parameter.value.clone());
+        let parameter_id = format!("{id}/parameter/{ordinal}");
+        ids.insert(parameter.name.clone(), parameter_id.clone());
+        let expression = expression(ctx, parameter)?;
         let mut record = json!({
-            "id":format!("{id}/parameter/{ordinal}"), "owner":owner, "name":parameter.name,
+            "id":parameter_id, "owner":owner, "name":parameter.name,
             "definition":{"kind":"expression", "value":{"kind":"source", "value":{"dialect":{"kind":"fusion_cam"},"tokens":[{"kind":"text","value":expression}]}}},
             "native_ref":id
         });
         if let Ok(number) = parameter.value.parse::<f64>() {
             if number.is_finite() {
-                let (scale, quantity) = match parameter.unit.as_deref() {
-                    Some("mm") => (1.0, Some((1, 0, 0))),
-                    Some("cm") => (10.0, Some((1, 0, 0))),
-                    Some("m") => (1000.0, Some((1, 0, 0))),
-                    Some("in" | "inch") => (25.4, Some((1, 0, 0))),
-                    Some("deg") => (std::f64::consts::PI / 180.0, Some((0, 1, 0))),
-                    Some("rad") => (1.0, Some((0, 1, 0))),
-                    Some("mm/min") => (1.0 / 60.0, Some((1, 0, -1))),
-                    Some("rpm") => (std::f64::consts::TAU / 60.0, Some((0, 1, -1))),
-                    _ => (1.0, None),
+                let (converted, quantity) = match measure(parameter) {
+                    Some((converted, quantity)) => (converted, Some(quantity)),
+                    None => (number, None),
                 };
-                let converted = number * scale;
                 if converted.is_finite() {
                     record["value"] = json!({"kind":"number","value":converted});
                     if let Some((length, angle, time)) = quantity {
@@ -172,24 +236,62 @@ fn parameters(
         }
         ir.process.parameters.push(model(record)?);
     }
-    Ok(())
+    Ok(ids)
 }
 
-fn number(parameters: &[ManufacturingParameter], names: &[&str]) -> Option<f64> {
-    names.iter().find_map(|name| {
-        parameters
+/// The `expression` attribute of a parameter's source element, or its value
+/// text where the element states none.
+fn expression(
+    ctx: &DecodeContext<'_>,
+    parameter: &ManufacturingParameter,
+) -> Result<String, CodecError> {
+    let document = match ctx.parse_xml(&parameter.native_xml, "parse CAM parameter XML") {
+        Ok(document) => document,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(parameter.value.clone()),
+    };
+    Ok(document
+        .root_element()
+        .attribute("expression")
+        .map_or_else(|| parameter.value.clone(), str::to_owned))
+}
+
+/// A setup's or operation's parameters, with the ids their records carry.
+struct Named<'a> {
+    source: &'a [ManufacturingParameter],
+    ids: &'a Ids,
+}
+
+impl Named<'_> {
+    fn parameter(&self, name: &str) -> Option<&ManufacturingParameter> {
+        self.source.iter().find(|parameter| parameter.name == name)
+    }
+
+    fn text(&self, name: &str) -> Option<&str> {
+        self.parameter(name)
+            .map(|parameter| parameter.value.as_str())
+            .filter(|text| !text.trim().is_empty())
+    }
+
+    /// The ids of the parameters a choice is read from.
+    fn choice(&self, names: &[&str]) -> Vec<&str> {
+        names
             .iter()
-            .find(|parameter| parameter.name == *name)
-            .and_then(|parameter| parameter.value.parse::<f64>().ok())
-            .filter(|value| value.is_finite())
-    })
+            .filter_map(|name| self.ids.get(*name).map(String::as_str))
+            .collect()
+    }
+
+    /// A dimension bound to the process parameter `name`, where that
+    /// parameter states a number in the quantity `want` by its unit.
+    fn dimension(&self, name: &str, want: Dim) -> Option<Value> {
+        let (_, quantity) = measure(self.parameter(name)?)?;
+        let id = self.ids.get(name)?;
+        (quantity == want)
+            .then(|| json!({"kind":"parameter", "value":{"kind":"process", "value":id}}))
+    }
 }
 
-fn literal(value: f64) -> Value {
-    json!({"kind":"literal", "value":value})
-}
-
-fn technology(parameters: &[ManufacturingParameter]) -> Value {
+fn technology(named: &Named<'_>) -> Value {
     let mut result = json!({"feeds":[]});
     let feeds: Vec<_> = [
         ("tool_feedCutting", "cutting"),
@@ -200,17 +302,14 @@ fn technology(parameters: &[ManufacturingParameter]) -> Value {
     ]
     .into_iter()
     .filter_map(|(name, role)| {
-        number(parameters, &[name]).map(|value| {
-            json!([
-                {"kind":role}, {"kind":"per_time", "value":literal(value / 60.0)}
-            ])
-        })
+        named
+            .dimension(name, FEED)
+            .map(|value| json!([{"kind":role}, {"kind":"per_time", "value":value}]))
     })
     .collect();
     result["feeds"] = json!(feeds);
-    if let Some(speed) = number(parameters, &["tool_spindleSpeed"]) {
-        result["spindle"] =
-            json!({"kind":"rotation", "value":literal(speed * (std::f64::consts::TAU / 60.0))});
+    if let Some(speed) = named.dimension("tool_spindleSpeed", SPEED) {
+        result["spindle"] = json!({"kind":"rotation", "value":speed});
     }
     for (source, field) in [
         ("stepover", "stepover"),
@@ -219,11 +318,61 @@ fn technology(parameters: &[ManufacturingParameter]) -> Value {
         ("stockToLeave", "stock_to_leave_radial"),
         ("verticalStockToLeave", "stock_to_leave_axial"),
     ] {
-        if let Some(value) = number(parameters, &[source]) {
-            result[field] = literal(value);
+        if let Some(value) = named.dimension(source, LENGTH) {
+            result[field] = value;
         }
     }
     result
+}
+
+fn literal(value: f64) -> Value {
+    json!({"kind":"literal", "value":value})
+}
+
+/// The stock rule. `job_stockMode` `default` is a relative box, whose
+/// offsets `job_stockOffsetMode` `simple` states; any other stock mode, or an
+/// offset mode other than `simple`, keeps the source's mode name.
+fn stock(named: &Named<'_>, losses: &mut Vec<LossNote>) -> Option<Value> {
+    let mode = named.text("job_stockMode")?;
+    let mut value = json!({"kind":"native","value":mode});
+    let mut read = vec!["job_stockMode"];
+    if mode == "default" {
+        read.push("job_stockOffsetMode");
+        if named.text("job_stockOffsetMode") == Some("simple") {
+            let sides = named.dimension("job_stockOffsetSides", LENGTH);
+            let top = named.dimension("job_stockOffsetTop", LENGTH);
+            let bottom = named.dimension("job_stockOffsetBottom", LENGTH);
+            value = json!({"kind":"relative", "value":{
+                "low":[sides.clone(), sides.clone(), bottom],
+                "high":[sides.clone(), sides, top]}});
+        } else {
+            losses.push(F3dLossCode::CamStockOffsetModeUnread.note(format!(
+                "CAM stock offset mode {:?} is not the simple mode; the stock keeps its source mode name and the offsets stay in the setup parameters",
+                named.text("job_stockOffsetMode").unwrap_or("")
+            )));
+        }
+    }
+    Some(json!({"value":value, "parameters":named.choice(&read)}))
+}
+
+/// The WCS rules: `wcs_orientation_mode` `modelOrientation` is the model
+/// axes; every other mode keeps its source name.
+fn wcs(named: &Named<'_>) -> Value {
+    let mut wcs = json!({});
+    if let Some(mode) = named.text("wcs_origin_mode") {
+        wcs["origin"] = json!({"value":{"kind":"native","value":mode},
+            "parameters":named.choice(&["wcs_origin_mode"])});
+    }
+    if let Some(mode) = named.text("wcs_orientation_mode") {
+        let value = if mode == "modelOrientation" {
+            json!({"kind":"model"})
+        } else {
+            json!({"kind":"native","value":mode})
+        };
+        wcs["orientation"] =
+            json!({"value":value, "parameters":named.choice(&["wcs_orientation_mode"])});
+    }
+    wcs
 }
 
 fn process_id(id: &str) -> String {
@@ -232,7 +381,12 @@ fn process_id(id: &str) -> String {
         .replace(":cam_tool#", ":tool#")
 }
 
-fn project(ir: &mut CadIr, cam: &Manufacturing) -> Result<(), CodecError> {
+fn project(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    cam: &Manufacturing,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
     let scope = ir
         .model
         .product_definitions
@@ -242,63 +396,35 @@ fn project(ir: &mut CadIr, cam: &Manufacturing) -> Result<(), CodecError> {
         .ok_or_else(|| CodecError::malformed("CAM setup requires a document definition"))?
         .id
         .clone();
+    let mut steps: BTreeMap<&SetupId, Vec<Value>> = BTreeMap::new();
+    for operation in &cam.operations {
+        steps
+            .entry(&operation.setup)
+            .or_default()
+            .push(json!({"kind":"operation","value":process_id(operation.id.as_str())}));
+    }
     for setup in &cam.setups {
-        let mut record = json!({"id":process_id(setup.id.as_str()),"scope":scope,"steps":[],"workpieces":[],"wcs":{},"work_offsets":[],"native_ref":setup.id});
-        if let Some(name) = &setup.name {
-            record["name"] = json!(name);
-        }
-        if let Some(mode) = setup
-            .stock
-            .kind
-            .as_ref()
-            .filter(|mode| !mode.trim().is_empty())
-        {
-            record["stock"] = json!({"value":{"kind":"native","value":mode},"parameters":[]});
-            if mode == "default" || mode == "relativebox" {
-                let offset = |names: &[&str]| number(&setup.parameters, names).map(literal);
-                let sides = offset(&["job_stockOffsetSides"]);
-                let low = [
-                    sides.clone(),
-                    sides.clone(),
-                    offset(&["job_stockOffsetBottom"]),
-                ];
-                let high = [sides.clone(), sides, offset(&["job_stockOffsetTop"])];
-                record["stock"]["value"] =
-                    json!({"kind":"relative", "value":{"low":low,"high":high}});
-            }
-        }
-        if let Some(mode) = setup
-            .wcs
-            .origin_mode
-            .as_ref()
-            .filter(|mode| !mode.trim().is_empty())
-        {
-            record["wcs"]["origin"] =
-                json!({"value":{"kind":"native","value":mode},"parameters":[]});
-        }
-        if let Some(mode) = setup.wcs.orientation.iter().find(|parameter| {
-            parameter.name == "wcs_orientation_mode" && !parameter.value.trim().is_empty()
-        }) {
-            record["wcs"]["orientation"] =
-                json!({"value":{"kind":"native","value":mode.value},"parameters":[]});
-            if mode.value == "modelOrientation" {
-                record["wcs"]["orientation"]["value"] = json!({"kind":"model"});
-            }
-        }
-        let steps: Vec<_> = cam
-            .operations
-            .iter()
-            .filter(|operation| operation.setup == setup.id)
-            .map(|operation| json!({"kind":"operation","value":process_id(operation.id.as_str())}))
-            .collect();
-        record["steps"] = json!(steps);
-        ir.process.setups.push(model(record)?);
-        parameters(
+        let ids = parameters(
+            ctx,
             ir,
             &json!({"kind":"setup","value":process_id(setup.id.as_str())}),
             setup.id.as_str(),
             &setup.parameters,
         )?;
+        let named = Named {
+            source: &setup.parameters,
+            ids: &ids,
+        };
+        let mut record = json!({"id":process_id(setup.id.as_str()),"scope":scope,"steps":[],"workpieces":[],"wcs":{},"work_offsets":[],"native_ref":setup.id});
+        if let Some(name) = &setup.name {
+            record["name"] = json!(name);
+        }
+        if let Some(stock) = stock(&named, losses) {
+            record["stock"] = stock;
+        }
+        record["wcs"] = wcs(&named);
+        record["steps"] = json!(steps.get(&setup.id).map_or(&[][..], Vec::as_slice));
+        ir.process.setups.push(model(record)?);
     }
     for tool in &cam.tools {
         let mut record = json!({"id":process_id(tool.id.as_str()),"class":"unclassified","native_kind":native_name(tool.tool_type.as_deref().unwrap_or("unknown")),"nc":{},"cutter":{},"native_ref":tool.id});
@@ -334,7 +460,13 @@ fn project(ir: &mut CadIr, cam: &Manufacturing) -> Result<(), CodecError> {
                 "overall_length",
             ),
         ] {
-            if let Some(value) = number(&tool.parameters, &names) {
+            if let Some(value) = names.iter().find_map(|name| {
+                tool.parameters
+                    .iter()
+                    .find(|parameter| parameter.name == *name)
+                    .and_then(|parameter| parameter.value.parse::<f64>().ok())
+                    .filter(|value| value.is_finite())
+            }) {
                 let converted = value * tool_scale;
                 if converted.is_finite() {
                     record["cutter"][field] = literal(converted);
@@ -360,14 +492,22 @@ fn project(ir: &mut CadIr, cam: &Manufacturing) -> Result<(), CodecError> {
         }
         ir.process.tools.push(model(record)?);
         parameters(
+            ctx,
             ir,
             &json!({"kind":"tool","value":process_id(tool.id.as_str())}),
             tool.id.as_str(),
             &tool.parameters,
         )?;
     }
+    let setups: std::collections::BTreeSet<&SetupId> =
+        cam.setups.iter().map(|setup| &setup.id).collect();
     for operation in &cam.operations {
         use super::records::ManufacturingStrategy;
+        if !setups.contains(&operation.setup) {
+            return Err(CodecError::malformed(
+                "CAM operation names a setup that no CAM record defines",
+            ));
+        }
         let class = match operation.family {
             ManufacturingStrategy::Face => json!({"kind":"milling","value":"plane"}),
             ManufacturingStrategy::Drilling => json!({"kind":"drilling","value":"drilling"}),
@@ -387,14 +527,18 @@ fn project(ir: &mut CadIr, cam: &Manufacturing) -> Result<(), CodecError> {
         if let Some(tool) = &operation.tool {
             record["tooling"] = json!({"kind":"tool","value":process_id(tool.as_str())});
         }
-        record["technology"] = technology(&operation.parameters);
-        ir.process.operations.push(model(record)?);
-        parameters(
+        let ids = parameters(
+            ctx,
             ir,
             &json!({"kind":"operation","value":process_id(operation.id.as_str())}),
             operation.id.as_str(),
             &operation.parameters,
         )?;
+        record["technology"] = technology(&Named {
+            source: &operation.parameters,
+            ids: &ids,
+        });
+        ir.process.operations.push(model(record)?);
     }
     Ok(())
 }
@@ -469,3 +613,6 @@ pub(crate) fn ensure_scopes(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

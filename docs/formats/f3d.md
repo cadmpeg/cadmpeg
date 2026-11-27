@@ -4421,16 +4421,24 @@ parent object's `id`. `strategy="setup"` identifies a setup.
 chain identifies its setup. `displayName` holds the record name.
 `Parameters/Parameter` elements hold named values. The `value` attribute
 holds the evaluated value text. `expression` holds the source expression;
-its spelling can differ from the evaluated value text.
+its spelling can differ from the evaluated value text. An `expression` that
+is a numeric literal followed by a unit suffix (`2mm`, `1000mmpm`,
+`10000rpm`) states the unit of `value`, which is the number in that unit.
+The suffixes are the length units `mm`, `cm`, `m`, and `in`; the angle units
+`deg` and `rad`; `rpm`; and, for a feed, a length unit followed by `pm`
+(`mmpm`). An `expression` of any other form states no unit, and `value` is
+then a number with no stated unit.
 
 Setup parameters use the `job_` prefix. Stock parameters use `job_stock`;
 WCS orientation and origin parameters use `wcs_orientation_` and
 `wcs_origin_`. Tool parameters use `tool_`, and holder parameters use
-`holder_`. `job_stockMode="default"` selects a relative stock box.
+`holder_`. `job_stockMode="default"` selects a relative stock box; every other
+`job_stockMode` value names a rule outside the relative stock box.
 `job_stockOffsetMode="simple"` applies `job_stockOffsetSides` to both X
 sides and both Y sides, `job_stockOffsetTop` to high Z, and
-`job_stockOffsetBottom` to low Z. `wcs_orientation_mode="modelOrientation"`
-uses the model axes. `wcs_origin_mode="stockPoint"` selects the stock box
+`job_stockOffsetBottom` to low Z. The stored offsets of any other
+`job_stockOffsetMode` value have no stated placement.
+`wcs_orientation_mode="modelOrientation"` uses the model axes. `wcs_origin_mode="stockPoint"` selects the stock box
 point named by `wcs_origin_boxPoint`.
 
 The tool table uses the `http://www.hsmworks.com/xml/2004/cnc/tool-library`
@@ -4439,9 +4447,12 @@ The tool's `type` and `unit` attributes identify its cutter type and units.
 `nc` attributes hold the tool number and post settings. `body` attributes
 hold cutter dimensions and flute count; `overall-length` is the cutter's
 overall length and `body-length` is a separate dimension. `motion` attributes hold feed and
-spindle settings.
+spindle settings. `holder` attributes hold holder dimensions.
 
-An operation object's `valid` Boolean states computed-path validity.
+An operation object is an `object` with a `parent`, whose `strategy` is not
+`setup`, not `folder`, and not empty. A `toolpath` element inside an
+operation object belongs to that object. An operation object's `valid`
+Boolean states computed-path validity.
 `toolpathToolView` describes the toolpath frame. `toolpath` descriptors carry
 a `valid` Boolean.
 Strategy names identify machining families; `face` identifies planar face

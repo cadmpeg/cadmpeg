@@ -18,7 +18,7 @@ fn with_cam(bytes: Vec<u8>, name: &str, xml: &[u8]) -> Vec<u8> {
     archive.finish().unwrap().into_inner()
 }
 
-const XML: &[u8] = br#"<document><model><tool id="t1"/><section type="setup" name="Synthetic"><section strategy="parallel" tool="t1"><toolpath valid="true"/></section></section></model></document>"#;
+const XML: &[u8] = br#"<document><model><tool id="t1"/><object id="s" displayName="Synthetic" strategy="setup"/><object id="o" parent="s" strategy="face" toolId="t1" valid="true"/></model></document>"#;
 const MEMBER: &str = "Toolpath/Iron.Document/synthetic.irondoc";
 
 #[test]
@@ -116,7 +116,7 @@ fn cam_bracketed_workspace_reads_flat_objects_and_attribute_tools() {
 }
 
 #[test]
-fn cam_section_structure_emits_assumption() {
+fn cam_object_structure_emits_assumption() {
     let part = with_cam(f3d_with_smbh(&synthetic_geometry_smbh()), MEMBER, XML);
     let result = F3dCodec
         .decode(&mut Cursor::new(part), &DecodeOptions::default())
@@ -130,7 +130,7 @@ fn cam_section_structure_emits_assumption() {
     );
     assert_eq!(
         manufacturing.operations[0].family,
-        crate::cam::records::ManufacturingStrategy::Parallel
+        crate::cam::records::ManufacturingStrategy::Face
     );
     assert!(result
         .report()
@@ -141,7 +141,7 @@ fn cam_section_structure_emits_assumption() {
 
 #[test]
 fn cam_repeated_tool_reference_selects_last_tool_and_emits_assumption() {
-    let xml = br#"<document><model><tool id="t1" number="1"/><tool id="t1" number="2"/><section type="setup"><section strategy="parallel" tool="t1"/></section></model></document>"#;
+    let xml = br#"<document><model><tool id="t1"><nc number="1"/></tool><tool id="t1"><nc number="2"/></tool><object id="s" strategy="setup"/><object parent="s" strategy="face" toolId="t1"/></model></document>"#;
     let part = with_cam(f3d_with_smbh(&synthetic_geometry_smbh()), MEMBER, xml);
     let result = F3dCodec
         .decode(&mut Cursor::new(part), &DecodeOptions::default())
@@ -318,7 +318,7 @@ fn cam_face_strategy_wire_round_trip() {
 
 #[test]
 fn cam_manufacturing_wire_keeps_exact_parameter_text() {
-    let xml = br#"<document><tool number="1" type="flat end mill"><Parameters><Parameter name="tool_diameter" value="6.000" unit="mm" type="float"/></Parameters></tool></document>"#;
+    let xml = br#"<document><tool id="t1" type="flat end mill"><Parameters><Parameter name="tool_diameter" value="6.000" expression="6mm"/></Parameters></tool></document>"#;
     let part = with_cam(f3d_with_smbh(&synthetic_geometry_smbh()), MEMBER, xml);
     let result = F3dCodec
         .decode(&mut Cursor::new(part), &DecodeOptions::default())
@@ -367,7 +367,7 @@ fn cam_dangling_setup_is_a_reference_finding() {
 
 #[test]
 fn cam_process_uses_setup_order_tool_references_and_canonical_rates() {
-    let xml = br#"<document><model><tool id="t1" type="flat end mill"><body diameter="8.000"/></tool><object id="s" strategy="setup"><Parameters><Parameter name="wcs_orientation_mode" value="modelOrientation"/></Parameters></object><object id="op" parent="s" strategy="face" toolId="t1"><Parameters><Parameter name="tool_feedCutting" value="600"/><Parameter name="tool_spindleSpeed" value="60"/></Parameters></object></model></document>"#;
+    let xml = br#"<document><model><tool id="t1" type="flat end mill"><body diameter="8.000"/></tool><object id="s" strategy="setup"><Parameters><Parameter name="wcs_orientation_mode" value="modelOrientation"/></Parameters></object><object id="op" parent="s" strategy="face" toolId="t1"><Parameters><Parameter name="tool_feedCutting" value="600" expression="600mmpm"/><Parameter name="tool_spindleSpeed" value="60" expression="60rpm"/></Parameters></object></model></document>"#;
     let part = with_cam(f3d_with_smbh(&synthetic_geometry_smbh()), MEMBER, xml);
     let result = F3dCodec
         .decode(&mut Cursor::new(part), &DecodeOptions::default())
@@ -389,9 +389,28 @@ fn cam_process_uses_setup_order_tool_references_and_canonical_rates() {
         ))
     );
     let technology = serde_json::to_value(&process.operations[0].technology).unwrap();
-    assert_eq!(technology["feeds"][0][1]["value"]["value"], 10.0);
-    let spindle = technology["spindle"]["value"]["value"].as_f64().unwrap();
-    assert!((spindle - std::f64::consts::TAU).abs() <= f64::EPSILON * std::f64::consts::TAU);
+    let parameter = |name: &str| {
+        process
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name.as_str() == name)
+            .map(|parameter| serde_json::to_value(parameter).unwrap())
+            .unwrap()
+    };
+    let feed = parameter("tool_feedCutting");
+    assert_eq!(feed["value"]["value"], 10.0);
+    assert_eq!(technology["feeds"][0][1]["value"]["kind"], "parameter");
+    assert_eq!(
+        technology["feeds"][0][1]["value"]["value"]["value"],
+        feed["id"]
+    );
+    let speed = parameter("tool_spindleSpeed");
+    let rate = speed["value"]["value"].as_f64().unwrap();
+    assert!((rate - std::f64::consts::TAU).abs() <= f64::EPSILON * std::f64::consts::TAU);
+    assert_eq!(
+        technology["spindle"]["value"]["value"]["value"],
+        speed["id"]
+    );
     let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).unwrap();
     assert!(
         report
@@ -405,7 +424,7 @@ fn cam_process_uses_setup_order_tool_references_and_canonical_rates() {
 
 #[test]
 fn cam_f3z_keeps_source_operation_order() {
-    let xml = br#"<document><setup><!-- padding padding padding padding padding padding --><operation name="first" strategy="face"/><!-- padding padding padding padding padding padding padding padding padding padding padding padding --><operation name="second" strategy="parallel"/></setup></document>"#;
+    let xml = br#"<document><object id="s" strategy="setup"/><!-- padding padding padding padding padding padding --><object parent="s" strategy="face" displayName="first"/><!-- padding padding padding padding padding padding padding padding padding padding padding padding --><object parent="s" strategy="face" displayName="second"/></document>"#;
     let part = with_cam(f3d_with_smbh(&synthetic_geometry_smbh()), MEMBER, xml);
     let archive = f3z_archive("synthetic.f3d", &[("synthetic.f3d", &part)]);
     for bytes in [part, archive] {

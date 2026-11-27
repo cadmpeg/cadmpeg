@@ -33,6 +33,7 @@ pub(crate) enum F3dLossCode {
     CamOperationUnreadable,
     CamToolUnreadable,
     CamSelectionUnresolved,
+    CamStockOffsetModeUnread,
     /// A counted display override candidate fails its local grammar.
     SceneOverrideRefused,
     DraftPartingControlsPartial,
@@ -1453,6 +1454,7 @@ impl F3dLossCode {
         Self::CamOperationUnreadable,
         Self::CamToolUnreadable,
         Self::CamSelectionUnresolved,
+        Self::CamStockOffsetModeUnread,
         Self::SceneOverrideRefused,
         Self::DraftPartingControlsPartial,
         Self::DraftNeutralAnchorAssumed,
@@ -2310,6 +2312,7 @@ impl F3dLossCode {
             Self::CamOperationUnreadable => "cam.operation-unreadable",
             Self::CamToolUnreadable => "cam.tool-unreadable",
             Self::CamSelectionUnresolved => "cam.selection-unresolved",
+            Self::CamStockOffsetModeUnread => "cam.stock-offset-mode-unread",
             Self::SceneOverrideRefused => "scene.override-refused",
             Self::DraftPartingControlsPartial => "feature.draft-parting-controls-partial",
             Self::DraftNeutralAnchorAssumed => "feature.draft-neutral-anchor-assumed",
@@ -3561,6 +3564,7 @@ impl F3dLossCode {
             Self::CamOperationUnreadable => Severity::Warning,
             Self::CamToolUnreadable => Severity::Warning,
             Self::CamSelectionUnresolved => Severity::Warning,
+            Self::CamStockOffsetModeUnread => Severity::Warning,
             Self::SceneOverrideRefused => Severity::Warning,
             Self::BendStationaryRoleAssumed
             | Self::BendAngleUnresolved
@@ -4416,6 +4420,7 @@ impl F3dLossCode {
             Self::CamOperationUnreadable => LossTaxonomy::ProcessRecordOmitted,
             Self::CamToolUnreadable => LossTaxonomy::ProcessRecordOmitted,
             Self::CamSelectionUnresolved => LossTaxonomy::SourceAssociationOmitted,
+            Self::CamStockOffsetModeUnread => LossTaxonomy::ProcessRecordOmitted,
             Self::SceneOverrideRefused => LossTaxonomy::RecordNotTyped,
             Self::BendStationaryRoleAssumed
             | Self::BendAngleUnresolved
@@ -5381,6 +5386,7 @@ mod tests {
                 "cam.operation-unreadable",
                 "cam.tool-unreadable",
                 "cam.selection-unresolved",
+                "cam.stock-offset-mode-unread",
                 "scene.override-refused",
                 "feature.draft-parting-controls-partial",
                 "feature.draft-neutral-anchor-assumed",
