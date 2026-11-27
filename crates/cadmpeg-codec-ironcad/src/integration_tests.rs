@@ -485,6 +485,55 @@ fn an_assembly_matrix_places_its_member_parts() {
     assert_eq!(root.occurrences.len(), 1);
 }
 
+/// The names of the occurrences that the definition `name` holds.
+fn members(result: &DecodeResult, name: Option<&str>) -> Vec<String> {
+    let model = &result.ir().model;
+    let definition = model
+        .product_definitions
+        .iter()
+        .find(|definition| match name {
+            Some(name) => definition.source_name.as_deref() == Some(name),
+            None => definition.is_root(),
+        })
+        .unwrap();
+    definition
+        .occurrences
+        .iter()
+        .map(|id| {
+            let occurrence = model.occurrences.iter().find(|o| &o.id == id).unwrap();
+            occurrence.name.clone().unwrap()
+        })
+        .collect()
+}
+
+#[test]
+fn a_member_assembly_is_placed_in_the_assembly_that_holds_it() {
+    for (name, outer_rotation, outer_translation) in [
+        ("Assembly_nested.ics", IDENTITY, [30.0, -20.0, 10.0]),
+        (
+            "Assembly_nested_moved.ics",
+            [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
+            [100.0, 50.0, 10.0],
+        ),
+    ] {
+        let result = decode(name);
+        assert_eq!(count(&result, IronCadLossCode::AssemblyBoundByOrder), 1);
+        assert_eq!(count(&result, IronCadLossCode::AssemblyFlattened), 0);
+        assert_eq!(members(&result, None), ["Outer"]);
+        assert_eq!(members(&result, Some("Outer")), ["PartC", "Inner"]);
+        assert_eq!(members(&result, Some("Inner")), ["PartA", "PartB"]);
+        assert_placement(
+            placement(&result, "Outer"),
+            outer_rotation,
+            outer_translation,
+        );
+        assert_placement(placement(&result, "Inner"), IDENTITY, [0.0, 0.0, 10.0]);
+        assert_placement(placement(&result, "PartA"), IDENTITY, [0.0; 3]);
+        assert_placement(placement(&result, "PartB"), IDENTITY, [0.0, 0.0, 25.0]);
+        assert_placement(placement(&result, "PartC"), IDENTITY, [0.0; 3]);
+    }
+}
+
 #[test]
 fn an_inch_scene_states_inch_units() {
     let result = decode("Block_inch.ics");

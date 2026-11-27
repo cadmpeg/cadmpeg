@@ -31,6 +31,12 @@ Placement and units:
   (30, -20, 10) mm.
 - `Block_inch.ics`: one 4 x 2 x 1 in Parasolid block in a scene set to inches,
   degrees, and kilograms.
+- `Assembly_nested.ics`: the assembly `Outer` holds the 20 x 10 x 5 mm Parasolid
+  block `PartC` and the member assembly `Inner`. `Inner` holds the blocks
+  `PartA` and `PartB`, `PartB` 25 mm above `PartA`. `Inner` sits 10 mm above the
+  origin of `Outer`, and `Outer` is moved to (30, -20, 10) mm.
+- `Assembly_nested_moved.ics`: the same scene with only `Outer` moved, to
+  (100, 50, 10) mm, and turned 90 degrees about Z.
 
 Mixed scene:
 
@@ -42,11 +48,12 @@ Mixed scene:
 
 STEP exports:
 
-- `Ironcad_2025_simple_test_parts.stp` and `Assembly_moved.stp`: AP214 exports
-  of the scenes of the same name, written by IronCAD. They state the product
+- `Ironcad_2025_simple_test_parts.stp`, `Assembly_moved.stp`,
+  `Assembly_nested.stp`, and `Assembly_nested_moved.stp`: AP214 exports of the
+  scenes of the same name, written by IronCAD. They state the product
   tree, the part placements, and the body geometry of each scene. In
   `Assembly_moved.stp` the assembly is the root product, and its offset is part
-  of each part placement.
+  of each part placement. In the nested exports `Outer` is the root product.
 
 Parasolid export:
 
@@ -63,7 +70,8 @@ Assembly structure:
 
 - `assembly_between_parts.ics`: one part, then an assembly of two parts, then a
   second part added after the assembly.
-- `assembly_nested.ics`: that assembly placed inside a second assembly.
+- `assembly_only_assemblies.ics`: that assembly placed inside a second
+  assembly that holds no part.
 
 Export each requested scene to STEP as well.
 

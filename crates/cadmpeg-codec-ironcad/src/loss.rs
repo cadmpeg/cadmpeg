@@ -26,7 +26,6 @@ pub(crate) enum IronCadLossCode {
     PlacementUnbound,
     AssemblyFlattened,
     AssemblyBoundByOrder,
-    AssemblyNestedFrame,
     PropertyUnread,
     UnitsUnrecognized,
     UnitsScaleConflict,
@@ -97,7 +96,6 @@ impl IronCadLossCode {
             Self::AssemblyBoundByOrder => {
                 ("assembly.bound-by-order", LossTaxonomy::DecodeDiagnostic)
             }
-            Self::AssemblyNestedFrame => ("assembly.nested-frame", LossTaxonomy::DecodeDiagnostic),
             Self::SceneStreamsPending => (
                 "scene.decode-pending",
                 LossTaxonomy::ObjectRecordsUntransferred,

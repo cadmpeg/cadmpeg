@@ -360,7 +360,6 @@ fn a_member_assembly_is_placed_in_the_assembly_that_holds_it() {
     let mut losses = Vec::new();
     let results = vec![(Some(1), Vec::new()), (Some(0), Vec::new())];
     let placed = super::place(&ctx, &mut ir, results, &scene, &tree, &mut losses).unwrap();
-    assert_eq!(count(&losses, IronCadLossCode::AssemblyNestedFrame), 1);
     assert_eq!(count(&losses, IronCadLossCode::AssemblyFlattened), 0);
     let name = |id: &cadmpeg_ir::ids::OccurrenceId| {
         let occurrence = ir.model.occurrences.iter().find(|o| &o.id == id).unwrap();

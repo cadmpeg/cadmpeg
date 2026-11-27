@@ -696,14 +696,7 @@ fn place(
         occurrence.name = Some(record.name.clone());
         ir.model.occurrences.push(occurrence);
         match tree_assemblies[index].parent {
-            Some(parent) => {
-                losses.push(IronCadLossCode::AssemblyNestedFrame.note(format!(
-                    "the matrix of member assembly record `{}` places it in the frame of the \
-                     assembly that holds it",
-                    record.name
-                )));
-                assemblies[parent].occurrences.push(occurrence_id);
-            }
+            Some(parent) => assemblies[parent].occurrences.push(occurrence_id),
             None => placed.push(occurrence_id),
         }
     }
