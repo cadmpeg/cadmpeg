@@ -525,11 +525,11 @@ pub(crate) fn metadata_for_bulk_stream(
     let prefix = bulk_entry_name
         .strip_suffix("BulkStream.dat")
         .ok_or_else(|| CodecError::Malformed("Design stream has no BulkStream suffix".into()))?;
-    let Some(meta_entry) = scan
-        .entries
-        .iter()
-        .find(|entry| entry.name.strip_prefix(prefix) == Some("MetaStream.dat"))
-    else {
+    let meta_name = format!("{prefix}MetaStream.dat");
+    if scan.has_entry(&meta_name) {
+        return scan.parsed_metastream(&meta_name).map(Some);
+    }
+    let Some(meta_entry) = scan.entries.iter().find(|entry| entry.name == meta_name) else {
         return Ok(None);
     };
     scan.parsed_metastream(&meta_entry.name).map(Some)
@@ -581,84 +581,21 @@ pub(super) fn record_header_class_tag(
 }
 
 #[derive(Clone)]
-struct CachedDesignPrimaryFrame {
-    entity_id: u64,
-    class_tag: crate::records::references::DesignClassTag,
-    start: usize,
-    member_end: usize,
-    end: usize,
-    type_ordinal: usize,
+pub(crate) struct CachedDesignPrimaryFrame {
+    pub(crate) entity_id: u64,
+    pub(crate) class_tag: crate::records::references::DesignClassTag,
+    pub(crate) start: usize,
+    pub(crate) member_end: usize,
+    pub(crate) end: usize,
+    pub(crate) type_ordinal: usize,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct PrimaryFrameCacheKey {
-    bytes_len: usize,
-    records_len: usize,
-    types_len: usize,
-    secondary_len: usize,
-    fingerprint: [u64; 2],
-}
-
-#[inline]
-fn mix64(h: u64, v: u64) -> u64 {
-    // wrapping-exception: 64-bit multiplicative cache-key mixing operates modulo 2^64
-    (h.rotate_left(5) ^ v).wrapping_mul(0x517c_c1b7_2722_0a95)
-}
-
-fn mix_bytes_128(mut lo: u64, mut hi: u64, slice: &[u8]) -> [u64; 2] {
-    let mut chunks = slice.chunks_exact(16);
-    for chunk in &mut chunks {
-        let a = View::u64_le_at(chunk, 0).unwrap_or(0);
-        let b = View::u64_le_at(chunk, 8).unwrap_or(0);
-        lo = mix64(lo, a);
-        hi = mix64(hi, b);
-    }
-    let rem = chunks.remainder();
-    if !rem.is_empty() {
-        let mut tail = [0_u8; 16];
-        tail[..rem.len()].copy_from_slice(rem);
-        let a = View::u64_le_at(&tail, 0).unwrap_or(0);
-        let b = View::u64_le_at(&tail, 8).unwrap_or(0);
-        lo = mix64(lo, a);
-        hi = mix64(hi, b);
-    }
-    [mix64(lo, hi), mix64(hi, lo)]
-}
-
-fn primary_frame_cache_key(
+pub(crate) fn collect_cached_design_primary_frames(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
-) -> PrimaryFrameCacheKey {
-    use cadmpeg_core::decode::u64_from_index;
-
-    let [mut lo, mut hi] = mix_bytes_128(
-        mix64(0x9e37_79b9_7f4a_7c15, u64_from_index(bytes.len())),
-        mix64(0xc2b2_ae3d_27d4_eb4f, u64_from_index(meta.records.len())),
-        bytes,
-    );
-    for rec in &meta.records {
-        lo = mix64(lo, rec.entity_id);
-        hi = mix64(hi, rec.bulk_offset);
-    }
-    for rec in &meta.secondary_records {
-        lo = mix64(lo, rec.entity_id);
-        hi = mix64(hi, rec.bulk_offset);
-    }
-    for ty in &meta.types {
-        [lo, hi] = mix_bytes_128(lo, hi, ty.type_guid.as_str().as_bytes());
-        lo = mix64(lo, u64_from_index(ty.entities.len()));
-        for &entity_id in ty.entities.values() {
-            lo = mix64(lo, entity_id);
-            hi = mix64(hi, entity_id.rotate_left(17));
-        }
-    }
-    PrimaryFrameCacheKey {
-        bytes_len: bytes.len(),
-        records_len: meta.records.len(),
-        types_len: meta.types.len(),
-        secondary_len: meta.secondary_records.len(),
-        fingerprint: [lo, hi],
-    }
+) -> Result<Vec<CachedDesignPrimaryFrame>, CodecError> {
+    collect_design_primary_frames_with_cache(bytes, meta, "", &mut Vec::new())
+        .map(|(_, cached)| cached)
 }
 
 /// Resolve every live sibling record from the primary index. The primary
@@ -671,50 +608,36 @@ pub(super) fn design_primary_frames<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
-    use std::cell::RefCell;
+    collect_design_primary_frames_with_cache(bytes, meta, "", &mut Vec::new())
+        .map(|(frames, _)| frames)
+}
 
-    thread_local! {
-        static CACHE: RefCell<Vec<(PrimaryFrameCacheKey, Vec<CachedDesignPrimaryFrame>)>> =
-            const { RefCell::new(Vec::new()) };
-    }
-
-    let key = primary_frame_cache_key(bytes, meta);
-    if let Some(frames) = CACHE.with(|cache| {
-        let cache = cache.borrow();
-        cache
-            .iter()
-            .find(|(k, _)| *k == key)
-            .and_then(|(_, cached)| {
-                cached
-                    .iter()
-                    .map(|entry| {
-                        Some(DesignPrimaryFrame {
-                            entity_id: entry.entity_id,
-                            class_tag: entry.class_tag.clone(),
-                            start: entry.start,
-                            member_end: entry.member_end,
-                            end: entry.end,
-                            design_type: meta.types.get(entry.type_ordinal)?,
-                        })
-                    })
-                    .collect::<Option<Vec<_>>>()
+pub(super) fn scan_design_primary_frames<'a>(
+    scan: &ContainerScan,
+    bulk_entry_name: &str,
+    meta: &'a crate::metastream::MetaStream,
+) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
+    let Some(cached) = scan.design_primary_frames(bulk_entry_name)? else {
+        return Ok(Vec::new());
+    };
+    cached
+        .iter()
+        .map(|entry| {
+            let design_type = meta.types.get(entry.type_ordinal).ok_or_else(|| {
+                CodecError::Malformed(
+                    "F3D cached primary frame type ordinal is outside MetaStream".into(),
+                )
+            })?;
+            Ok(DesignPrimaryFrame {
+                entity_id: entry.entity_id,
+                class_tag: entry.class_tag.clone(),
+                start: entry.start,
+                member_end: entry.member_end,
+                end: entry.end,
+                design_type,
             })
-    }) {
-        return Ok(frames);
-    }
-
-    let (frames, cached) =
-        collect_design_primary_frames_with_cache(bytes, meta, "", &mut Vec::new())?;
-    if cached.len() <= 16_384 {
-        CACHE.with(|cache| {
-            let mut cache = cache.borrow_mut();
-            if cache.len() >= 4 {
-                cache.remove(0);
-            }
-            cache.push((key, cached));
-        });
-    }
-    Ok(frames)
+        })
+        .collect()
 }
 
 /// Resolve the frames as `design_primary_frames` does, and give up each frame
@@ -853,17 +776,34 @@ pub(crate) fn primary_frames_given_up(
     Ok(given_up)
 }
 
+#[cfg(test)]
 pub(super) fn unambiguous_design_primary_frames<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
-    let mut frames = design_primary_frames(bytes, meta)?;
+    let frames = design_primary_frames(bytes, meta)?;
+    Ok(filter_unambiguous_design_primary_frames(frames, meta))
+}
+
+pub(super) fn scan_unambiguous_design_primary_frames<'a>(
+    scan: &ContainerScan,
+    bulk_entry_name: &str,
+    meta: &'a crate::metastream::MetaStream,
+) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
+    let frames = scan_design_primary_frames(scan, bulk_entry_name, meta)?;
+    Ok(filter_unambiguous_design_primary_frames(frames, meta))
+}
+
+fn filter_unambiguous_design_primary_frames<'a>(
+    mut frames: Vec<DesignPrimaryFrame<'a>>,
+    meta: &crate::metastream::MetaStream,
+) -> Vec<DesignPrimaryFrame<'a>> {
     let mut registered = HashMap::<u64, usize>::new();
     for entity_id in meta.types.iter().flat_map(|row| row.entities.values()) {
         *registered.entry(*entity_id).or_default() += 1;
     }
     frames.retain(|frame| registered.get(&frame.entity_id) == Some(&1));
-    Ok(frames)
+    frames
 }
 
 /// One primary `BulkStream` frame selected through a registered Design type.
@@ -879,6 +819,27 @@ pub(super) struct TypedPrimaryFrame<'a> {
 /// `MetaStream` primary index and verify its dynamic class tag.
 pub(super) fn typed_primary_frames<'a>(
     bytes: &[u8],
+    meta: &'a crate::metastream::MetaStream,
+    type_guid: &str,
+    record_kind: &str,
+) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
+    let primary_frames = design_primary_frames(bytes, meta)?;
+    typed_primary_frames_from(&primary_frames, meta, type_guid, record_kind)
+}
+
+pub(super) fn scan_typed_primary_frames<'a>(
+    scan: &ContainerScan,
+    bulk_entry_name: &str,
+    meta: &'a crate::metastream::MetaStream,
+    type_guid: &str,
+    record_kind: &str,
+) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
+    let primary_frames = scan_design_primary_frames(scan, bulk_entry_name, meta)?;
+    typed_primary_frames_from(&primary_frames, meta, type_guid, record_kind)
+}
+
+pub(super) fn typed_primary_frames_from<'a>(
+    primary_frames: &[DesignPrimaryFrame<'a>],
     meta: &'a crate::metastream::MetaStream,
     type_guid: &str,
     record_kind: &str,
@@ -905,7 +866,6 @@ pub(super) fn typed_primary_frames<'a>(
 
     let mut resolved_entities = HashSet::new();
     let mut frames = Vec::new();
-    let primary_frames = design_primary_frames(bytes, meta)?;
     let valid_entities = primary_frames
         .iter()
         .map(|frame| frame.entity_id)
