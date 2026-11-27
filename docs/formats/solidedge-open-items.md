@@ -48,14 +48,6 @@
 
 **Need.** A document saved with one feature suppressed, one saved with the rollback position moved, and a no-edit resave of each.
 
-### DR-1016. Feature navigator final word after unsuppression
-
-**Question.** How much does an unsuppression add to the final word?
-
-**Known.** Suppress, unsuppress and suppress again on one feature store a word that rises at each step. The first suppression adds the number of later non-folder items (§4.1).
-
-**Need.** The same three steps on features with other counts of later items, to separate the added amount from the later-item count and from `n`.
-
 ### DR-1021. Topology proxy selections
 
 **Question.** Which faces does a `CLSID_JMTopologyProxy` object select, how does an edge proxy select a curved edge, what do the `f64` values after the axis of a circular-edge proxy store, which face of a two-setback chamfer is its reference face, where does a thin wall with several open faces store the faces after the first, and how does a proxy name the topology of its creating feature?
