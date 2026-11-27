@@ -47,6 +47,7 @@ pub struct GivenUpRecord {
     provenance: Option<SourceProvenance>,
     length: Option<u64>,
     dropped: Vec<String>,
+    marked: Vec<String>,
 }
 
 impl GivenUpRecord {
@@ -58,6 +59,7 @@ impl GivenUpRecord {
             provenance: None,
             length: None,
             dropped: Vec::new(),
+            marked: Vec::new(),
         }
     }
 
@@ -94,6 +96,22 @@ impl GivenUpRecord {
         self
     }
 
+    /// The records the decoder states in a partial form or with a mark
+    /// because they lose this record (§5.6, Unstated children).
+    pub fn marking<I>(mut self, records: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: Into<Identity>,
+    {
+        join_sorted(
+            &mut self.marked,
+            records
+                .into_iter()
+                .map(|record| record.into().into_string()),
+        );
+        self
+    }
+
     /// The `record.unreadable` (Error) of the give-up.
     #[must_use]
     pub fn loss(self) -> LossNote {
@@ -112,6 +130,7 @@ impl GivenUpRecord {
         let head = format!("record {}{span} given up: {}", self.record, self.error);
         let tail = Tail {
             dropped: self.dropped,
+            marked: (!self.marked.is_empty()).then_some(self.marked),
             ..Tail::default()
         };
         let loss = charge(&head, self.record, tail).with_severity(Severity::Error);
@@ -297,6 +316,7 @@ pub struct Part<'a> {
     holds: BTreeSet<ArenaClass>,
     containing: Option<Identity>,
     dropped: Vec<Identity>,
+    marked: Vec<Identity>,
     lost: Vec<String>,
     consequence: Option<String>,
     digest_only: bool,
@@ -344,6 +364,7 @@ impl<'a> Part<'a> {
             holds: holds.into_iter().collect(),
             containing: None,
             dropped: Vec::new(),
+            marked: Vec::new(),
             lost: Vec::new(),
             consequence: None,
             digest_only: false,
@@ -377,6 +398,14 @@ impl<'a> Part<'a> {
     #[must_use]
     pub fn dropping(mut self, records: impl IntoIterator<Item = Identity>) -> Self {
         self.dropped.extend(records);
+        self
+    }
+
+    /// Names records the decoder states in a partial form or with a mark
+    /// because they lose this part's records (§5.6, Unstated children).
+    #[must_use]
+    pub fn marking(mut self, records: impl IntoIterator<Item = Identity>) -> Self {
+        self.marked.extend(records);
         self
     }
 
@@ -922,9 +951,16 @@ impl DecodeParts for DecodeContext<'_> {
             part.kind,
             part.offset(),
         );
+        let mut marked: Vec<String> = part
+            .marked
+            .iter()
+            .map(|id| id.as_str().to_owned())
+            .collect();
+        marked.sort_unstable();
+        marked.dedup();
         let tail = Tail {
             dropped: dropped.into_iter().map(str::to_owned).collect(),
-            marked: None,
+            marked: (!marked.is_empty()).then_some(marked),
             stated: Vec::new(),
             lost: part.lost.clone(),
         };
