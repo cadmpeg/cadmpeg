@@ -255,6 +255,13 @@ little-endian `u32` values.
 | entries | `M` pairs of `0` and an object identifier |
 | final word | |
 
+The final word does not depend on the kind of any feature. In a document
+where no feature is suppressed, it equals the number
+of feature-tree items that are not feature-tree folders, plus one. A mirror
+copy and a pattern each count once, as do a swept, lofted, revolved or
+sheet-metal feature. A feature-tree folder adds an entry and does not change
+the word. Suppression of a feature can raise the word above this value. The word is not a feature count.
+
 One more `u32` can follow the final word. The object then ends. The first
 three entries are the three base reference planes, of class
 `ReferencePlaneObject`. The other `M` − 3 entries are the feature-tree
@@ -359,6 +366,7 @@ as `u32` object identifiers after the end of its function name (§4.2):
 | 72 | the profile (§5.3) |
 | 100 | the extent kind |
 | 128 | the side |
+| 156 | the second side word (§6.2) |
 | 184 | the depth of an extruded feature, or the axis of a revolved feature |
 | 212 | the sweep angle of a revolved feature |
 
@@ -376,6 +384,10 @@ profile normal `A` (§5.1), value `1` extends it against the normal, and
 value `3` extends it to both sides of the profile plane. For a revolved
 feature, value `2` sweeps towards the profile normal and value `1` away
 from it.
+
+The second side word is a `Double Value Object`. The first feature of a
+document stores no object in this slot. A later extruded feature stores the
+object.
 
 ### 6.3 Depth
 
@@ -443,7 +455,17 @@ Its object identifiers after the end of its function name are:
 
 `k` runs from `0` to `n` − 1. Set kind `1` is a constant radius. The count
 `n` is the number of consecutive `CLSID_JMTopologyProxy` identifiers from
-72 bytes after the name.
+72 bytes after the name. A round of the three edges that meet at one corner
+holds three sets of kind `1`, one for each edge, each with its own radius.
+
+Set kind `2` is a variable radius. In a round of one set of kind `2`, the
+radius slot of the set holds `0`. The vertex proxies follow: `m` consecutive
+`CLSID_JMTopologyProxy` identifiers, 20 bytes apart, start 168 bytes after the
+name. The `m` radii follow: `m` `CLSID_JDim` identifiers, 20 bytes apart, start
+12 bytes after the last vertex proxy. Vertex `j` and radius `j` form one
+station. A vertex proxy (§7.5) holds an end point of the edge of the set. The
+station is at the start of the edge when the vertex is the start point of the
+edge, and at its end when the vertex is the end point.
 
 ### 7.4 Chamfers
 
@@ -460,6 +482,30 @@ object identifiers after the end of its function name:
 
 Chamfer type `41` has one setback on both faces. Type `43` has two setbacks.
 Type `42` has a setback and an angle.
+
+### 7.5 Topology proxies
+
+A `CLSID_JMTopologyProxy` object holds the geometry of the entity it selects,
+in the part frame and in metres. The geometry class identifier is the first
+16-byte sequence in the object whose last ten bytes are `CE 11 9A 5E 08 00 36
+9B 41 02`. The geometry record starts at the byte after it. The first six
+bytes of the identifier give the geometry class:
+
+| First six bytes | Selected entity | Geometry record |
+| --- | --- | --- |
+| `74 0C 54 25 15 3A` | straight edge | `u8` `3`, `f64` start point (3), `f64` unit direction (3), `f64` `0`, `f64` length |
+| `76 E3 FE 7C 16 3A` | planar face | `u8` `14`, `f64` point (3), `f64` unit normal (3), `f64` unit vector (3) |
+| `72 C7 D4 1D 15 3A` | vertex | `f64` point (3) |
+| `92 DA 66 66 16 3A` | circular edge | `u8` `15`, `f64` center (3), `f64` unit axis (3) |
+
+The end point of a straight edge is the start point plus the length times the
+direction. The unit normal of a planar face points out of the material.
+
+### 7.6 Thin walls
+
+A `CLSID_JMPart` feature with function `JMThinwallAssocFunctionNew` stores the
+`CLSID_JMTopologyProxy` of the open face 124 bytes after the end of its
+function name.
 
 ## 8. Patterns and mirrors
 
