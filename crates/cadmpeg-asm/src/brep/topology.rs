@@ -194,7 +194,13 @@ pub(super) fn keep_faces_and_carriers(
                     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(ns?)),
                 );
                 if surf_rec.head() == "spline" && !procedural_surface_defs.contains_key(&surf_ref) {
-                    cached_unknown_procedural_surfaces.insert(surf_ref);
+                    cached_unknown_procedural_surfaces.insert(
+                        surf_ref,
+                        nurbs::core::surface_cache_fit_tolerance_resolving_refs(
+                            &surf_rec.tokens,
+                            token_table,
+                        ),
+                    );
                     count_kind(
                         &mut out.stats.other_record_kinds,
                         "cached-procedural-surface-untyped",
@@ -502,6 +508,19 @@ pub(super) fn walk_reachable_topology(
                                                         cache: None,
                                                     });
                                                 procedural_curve_defs.insert(cv, super::ProceduralCurveSource::Cacheless(Box::new(definition)));
+                                                kept_curves.insert(cv);
+                                            } else if let Some(mut curve) =
+                                                nurbs::proc_curve::par_int_cur_isoline(
+                                                    ctx,
+                                                    &crec.tokens,
+                                                    Some(token_table),
+                                                ).transpose()?
+                                            {
+                                                if record_reversed(crec) {
+                                                    curve.reverse_parameterization();
+                                                }
+                                                curve_geo.insert(cv, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)));
+                                                out.stats.nurbs_curves += 1;
                                                 kept_curves.insert(cv);
                                             } else if purpose == DecodePurpose::History {
                                                 curve_geo.insert(cv, CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }));

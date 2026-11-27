@@ -650,14 +650,17 @@ fn emit_carrier_surface(
         );
         out.procedural_surfaces
             .push((SurfaceId::from(id(format, i)), surface));
-    } else if cached_unknown_procedural_surfaces.contains(&i) {
+    } else if let Some(fit) = cached_unknown_procedural_surfaces.get(&i) {
+        let cache = fit.and_then(|tolerance| {
+            cadmpeg_ir::geometry::legacy_cache::LegacyCache::try_new(tolerance).ok()
+        });
         out.procedural_surfaces.push((
             <SurfaceId>::from(id(format, i)),
             ProceduralSurface::new(
                 brep_id!(format, ProceduralSurfaceId, "procedural_surface", i),
                 ProceduralSurfaceDefinition::Unknown {
                     record: Some(unknown_record_id(r, format)?),
-                    cache: None,
+                    cache,
                 },
                 None,
             ),
@@ -5492,7 +5495,7 @@ pub(super) fn emit_passthrough_unknowns(
             cadmpeg_core::CodecError::malformed("ASM record index exceeds the i64 range")
         })?;
         if undecoded_carriers.contains(&i)
-            || cached_unknown_procedural_surfaces.contains(&i)
+            || cached_unknown_procedural_surfaces.contains_key(&i)
             || invalid_vertex_tolerance(r)
             || edge_tolerance(r).is_some_and(|value| {
                 cadmpeg_ir::scalar::PositiveLength::new(value * LEN_TO_MM).is_none()

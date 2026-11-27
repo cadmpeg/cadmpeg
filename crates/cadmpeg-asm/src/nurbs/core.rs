@@ -145,20 +145,56 @@ pub(super) fn curve_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsCur
 /// earlier blocks are support surfaces or 2D pcurves), except in a
 /// `comp_spl_sur` compound, whose own cache comes first.
 pub(super) fn surface_cache(toks: &[Token]) -> Option<NurbsSurface> {
+    surface_cache_block(toks).map(|(surface, _)| surface)
+}
+
+/// The fit tolerance that follows the face-surface cache chosen by
+/// [`surface_cache`], in millimetres.
+pub fn surface_cache_fit_tolerance(toks: &[Token]) -> Option<f64> {
+    let (_, tolerance) = surface_cache_block(toks)?;
+    tolerance
+}
+
+/// [`surface_cache_fit_tolerance`], following subtype-table references to the
+/// scope that holds the cache.
+pub fn surface_cache_fit_tolerance_resolving_refs(
+    toks: &[Token],
+    table: &toks::SubtypeTable,
+) -> Option<f64> {
+    if surface_cache(toks).is_some() {
+        return surface_cache_fit_tolerance(toks);
+    }
+    cache_from_subtype_refs(toks, table, |scope| {
+        Ok::<_, std::convert::Infallible>(
+            surface_cache_block(scope.tokens()).map_or(CacheLookup::Missing, |(_, tolerance)| {
+                CacheLookup::Found(tolerance)
+            }),
+        )
+    })
+    .and_then(Result::ok)
+    .flatten()
+}
+
+/// The face-surface cache and the double that follows its block.
+fn surface_cache_block(toks: &[Token]) -> Option<(NurbsSurface, Option<f64>)> {
     let scope = toks::cache_scope(toks)?;
     let positions = toks::owned_marker_positions(scope)?;
     let compound = scope.iter().any(|token| {
         matches!(token, Token::Ident(name) | Token::SubIdent(name) if name == "comp_spl_sur")
     });
+    let decode = |pos: usize| {
+        surface_block(scope, pos).map(|(surface, end)| {
+            let tolerance = match scope.get(end) {
+                Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
+                _ => None,
+            };
+            (surface, tolerance)
+        })
+    };
     if compound {
-        positions
-            .into_iter()
-            .find_map(|pos| surface_block(scope, pos).map(|(surface, _)| surface))
+        positions.into_iter().find_map(decode)
     } else {
-        positions
-            .into_iter()
-            .rev()
-            .find_map(|pos| surface_block(scope, pos).map(|(surface, _)| surface))
+        positions.into_iter().rev().find_map(decode)
     }
 }
 

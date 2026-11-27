@@ -20,11 +20,11 @@ This document uses ASD-STE100 Simplified Technical English.
 
 ### ALB-01. Skinning surface construction
 
-**Question.** What are the fields of the `skinsur` subtype and the `exppc`, `parcur`, `nullbs`, and `intcurve` records of a lofted solid?
+**Question.** What are the fields of the `skinsur` construction of a lofted solid?
 
-**Known.** The `spline` surface record holds the subtype `skinsur`, an integer 0, two flags, an integer 2, four doubles of `-1`, a double 0, the section curves, and a solved `nubs` block with its fit tolerance. The decoder reads the solved block as a B-spline carrier and keeps the construction as an unknown procedural surface (`alibre/geometry.procedural-surface-untyped`). The edges between a loft face and a planar cap have `intcurve` curves with `exppc` pcurves. These curves carry no typed 3D carrier, and the decoder emits no pcurve for them (`alibre/geometry.pcurve-undecoded`).
+**Known.** The subtype stores an integer, two flags, an integer 2, four doubles of `-1`, and a double 0. The two section curves follow; each stores a curve, a support surface, a double 0, a law name, and a pcurve slot, and four doubles of `-1` with a section parameter precede the second curve. The solved `nubs` block and its fit tolerance close the subtype, followed by six zero counts. The decoder reads the solved block and its fit tolerance as the face carrier and keeps the construction as an unknown procedural surface with that tolerance (`alibre/geometry.procedural-surface-untyped`). The edges between a loft face and a planar cap have `intcurve` curves with `exppc` pcurves, and the decoder emits no pcurve for any of the loft's coedges (`alibre/geometry.pcurve-undecoded`).
 
-**Need.** A loft between two sections with a known profile, with the curve records of the edges compared against the sections.
+**Need.** A loft between two sections with a known profile, saved with each guide and tangency control changed in turn, with the construction fields compared against the controls.
 
 ## 2. Feature history
 

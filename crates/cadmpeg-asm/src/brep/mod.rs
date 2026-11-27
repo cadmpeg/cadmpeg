@@ -351,7 +351,9 @@ pub struct Reachable {
     curves: HashSet<i64>,
     pcurves: HashSet<i64>,
     unknown_surface_records: HashSet<i64>,
-    cached_unknown_procedural_surfaces: HashSet<i64>,
+    /// Cached spline surfaces whose construction is undecoded, with the fit
+    /// tolerance stored after the cache in millimetres.
+    cached_unknown_procedural_surfaces: HashMap<i64, Option<f64>>,
     undecoded_carriers: HashSet<i64>,
 }
 

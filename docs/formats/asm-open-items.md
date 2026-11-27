@@ -96,13 +96,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We keep the two slots without a change. To write them from a neutral model, we must know what they hold. To write a type-zero member into a save-format-23200 stream, or into a stream with a save format version between 22600 and 23200, we must know if that stream keeps the ASM integer. **Settling specimen:** a document whose type-zero member carries a non-null spline slot separates the slot types by the count of scalars per control point, and a save-format-23200 stream holding a revision-gated loft settles the gate.
 
-### GC-23. Cache-first intcurve leading enum values other than `0` and `2`
+### GC-23. Cache-first intcurve leading enum values other than `0`, `1`, and `2`
 
-**Question.** What layouts do the cache-first intcurve leading enum values other than `0` and `2` select?
+**Question.** What layouts do the cache-first intcurve leading enum values other than `0`, `1`, and `2` select? What do the two integers of the summary form (`1`) count?
 
-**Known.** `asm.md` §6.3 "**Cache-first subtype selection**" gives the layouts of `0` and `2`. The decoder reads both and retains a record with any other value verbatim. Value `2` paired with the complete value-zero cache payload is refused on read; the valid value-two layout replaces that cache rather than retaining it. A `par_int_cur` whose leading enum carries the spelling `summary`, `historical`, or `optimal` over an otherwise untouched cache-first payload is also refused. Each refusal rejects only the complete submitted value-and-layout pair and does not narrow other layouts or spellings.
+**Known.** `asm.md` §6.3 "**Cache-first subtype selection**" gives the layouts of `0`, `1`, and `2`. The decoder reads all three and retains a record with any other value verbatim. The two integers of the summary form store the values `3` and `2`. Value `2` paired with the complete value-zero cache payload is refused on read; the valid value-two layout replaces that cache rather than retaining it. A `par_int_cur` whose leading enum carries the spelling `summary`, `historical`, or `optimal` over an otherwise untouched cache-first payload is also refused. Each refusal rejects only the complete submitted value-and-layout pair and does not narrow other layouts or spellings.
 
-**Need.** We cannot read a record with a value other than `0` or `2`. **Settling specimen:** a document whose cache-first intcurve leading enum carries a value other than `0` or `2` gives that value's layout. GC-27 gives the separate limit that value `2` reaches.
+**Need.** We cannot read a record with a value other than `0`, `1`, or `2`, and cannot name the fields of the two summary-form integers. **Settling specimen:** a document whose cache-first intcurve leading enum carries a value other than `0`, `1`, or `2` gives that value's layout; a summary-form intcurve whose approximating curve has a changed degree and knot count shows what the two integers count. GC-27 gives the separate limit that value `2` reaches.
 
 ### GC-25. Payload after a true shared revision-gated surface tail logical
 
