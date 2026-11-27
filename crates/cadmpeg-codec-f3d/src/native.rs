@@ -2228,7 +2228,11 @@ impl F3dNative {
             act_table_references: read_arena!("act_table_references"),
             body_native_keys: read_arena!("body_native_keys"),
             body_visibilities: read_arena!("body_visibilities"),
-            design_types: read_arena!("design_types"),
+            design_types: {
+                let mut types: Vec<SegmentType> = read_arena!("design_types");
+                types.sort_by(|left, right| left.table_position().cmp(&right.table_position()));
+                types
+            },
             design_canvas_images: read_arena!("design_canvas_images"),
             design_decal_images: read_arena!("design_decal_images"),
             design_mesh_features: read_arena!("design_mesh_features"),

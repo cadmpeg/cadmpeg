@@ -1634,6 +1634,7 @@ fn only_the_operand_list_form_keeps_a_stored_join_with_kept_tools() {
                     first: DesignCombineBodySelection {
                         record_index: 12,
                         external_identity: None,
+                        legacy_external_identity: None,
                         body_node: None,
                     },
                     additional: Vec::new(),
