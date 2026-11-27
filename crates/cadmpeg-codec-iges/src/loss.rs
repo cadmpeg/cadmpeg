@@ -388,6 +388,7 @@ mod tests {
                 "entity.not-projected",
                 "geometry.not-projected",
                 "parameter.literal-unusable",
+                "geometry.spline-claim-recovered",
                 "topology.boundary-pcurve-outside-support-domain",
                 "topology.boundary-pcurve-disagrees",
                 "topology.boundary-winding-unresolved",
@@ -484,7 +485,6 @@ mod tests {
             [
                 "directory.metadata-noncanonical",
                 "parameter.literal-unusable",
-                "geometry.spline-claim-recovered",
                 "graph.pointer-unresolved",
                 "parameter.count-overdeclared",
                 "card.framing-recovered",
