@@ -122,9 +122,9 @@ fn a_revolve_about_a_sketch_line_states_its_axis_pick() {
 }
 
 fn variable_depth() -> Vec<u8> {
-    super::projection::with_variables(
+    crate::test_support::projection::with_variables(
         &fixture("plate-fillet"),
-        &[super::projection::variable(
+        &[crate::test_support::projection::variable(
             "width-variable",
             "width",
             "LENGTH",
