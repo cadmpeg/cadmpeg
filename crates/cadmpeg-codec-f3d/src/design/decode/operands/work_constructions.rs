@@ -6,7 +6,6 @@ use super::entity_selections::{
 };
 use super::recipe_operands::parse_vertex_recipe;
 use crate::container::ContainerScan;
-use crate::design::decode::sketch::{cached_owned_record_offsets, IndexedRecordOffsets};
 use crate::ids::native_stream;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::hole::DesignHoleConstruction;
@@ -54,8 +53,6 @@ pub(crate) fn bind_work_point_input_carriers(
             .or_default()
             .insert(preceding_index, scope.record_index);
     }
-    let mut record_offset_index: HashMap<String, IndexedRecordOffsets> = HashMap::new();
-
     for scope in scopes.iter_mut().filter(|scope| {
         scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPoint
     }) {
@@ -68,7 +65,7 @@ pub(crate) fn bind_work_point_input_carriers(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_owned_record_offsets(&mut record_offset_index, &stream, bytes);
+        let records = scan.design_record_offsets(&entry.name)?;
         let scope_record_index = scope.record_index;
         let Some(construction) = scope.work_point_construction_mut() else {
             continue;
@@ -92,7 +89,7 @@ pub(crate) fn bind_work_point_input_carriers(
             let Some(header) = header_index.get(&(stream.as_str(), input.record_index())) else {
                 continue;
             };
-            if let Some(recipe) = parse_vertex_recipe(bytes, records, &stream, header, recipes) {
+            if let Some(recipe) = parse_vertex_recipe(bytes, &records, &stream, header, recipes) {
                 input
                     .try_set_carrier(Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
                         recipe,
@@ -325,8 +322,6 @@ pub(crate) fn bind_work_plane_constructions(
         let key = (stream, header.record_index);
         header_index.insert(key, header);
     }
-    let mut record_offset_index: HashMap<String, IndexedRecordOffsets> = HashMap::new();
-
     for scope in scopes.iter_mut().filter(|scope| {
         scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPlane
     }) {
@@ -342,7 +337,7 @@ pub(crate) fn bind_work_plane_constructions(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_owned_record_offsets(&mut record_offset_index, &stream, bytes);
+        let records = scan.design_record_offsets(&entry.name)?;
         let Some([placement_record_index, first, second, third, extra_offset]) =
             scope.reference_members().values_array()
         else {
@@ -373,7 +368,7 @@ pub(crate) fn bind_work_plane_constructions(
             .map(|record_index| {
                 parse_vertex_recipe(
                     bytes,
-                    records,
+                    &records,
                     &stream,
                     header_index.get(&(stream.as_str(), *record_index))?,
                     recipes,

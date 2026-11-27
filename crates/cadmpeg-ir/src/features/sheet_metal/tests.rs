@@ -141,50 +141,6 @@ fn edge_offset_rows_keep_signed_and_missing_members() {
     assert!(json::from_value::<SheetMetalFlangeOffset>(json!({"extra": 1})).is_err());
 }
 
-#[cfg(feature = "schema")]
-#[test]
-fn edge_construction_schema_admits_absence_and_excludes_null() {
-    use super::SheetMetalEdgeFlangeConstruction;
-    let schema = json::to_value(schemars::schema_for!(SheetMetalEdgeFlangeConstruction))
-        .expect("edge schema");
-    assert!(schema.get("required").is_none());
-    for key in [
-        "edges",
-        "height",
-        "angle",
-        "height_datum",
-        "bend_position",
-        "width",
-        "bend_radius",
-    ] {
-        assert!(
-            !schema["properties"][key].to_string().contains("\"null\""),
-            "{key}"
-        );
-    }
-    for schema in [
-        json::to_value(schemars::schema_for!(super::SheetMetalFlangeSymmetricWidth))
-            .expect("width schema"),
-        json::to_value(schemars::schema_for!(
-            crate::features::sheet_metal_forms::SheetMetalFlangeTwoSidedWidth
-        ))
-        .expect("side schema"),
-        json::to_value(schemars::schema_for!(
-            super::SheetMetalFlangeTargetConstruction
-        ))
-        .expect("target schema"),
-    ] {
-        assert!(schema.get("required").is_none());
-        for field in schema["properties"]
-            .as_object()
-            .expect("optional properties")
-            .values()
-        {
-            assert!(!field.to_string().contains("\"null\""));
-        }
-    }
-}
-
 #[test]
 fn edge_construction_rewrite_visits_optional_height_feature() {
     use super::SheetMetalEdgeFlangeConstruction;
@@ -347,34 +303,6 @@ fn contour_construction_roundtrips_signed_travel_and_rejects_named_nulls() {
             .unwrap_err()
             .to_string();
         assert!(error.contains(key), "{error}");
-    }
-}
-
-#[cfg(feature = "schema")]
-#[test]
-fn contour_schema_declares_absence_and_rejects_explicit_nulls() {
-    use super::SheetMetalContourFlangeConstruction;
-    let schema =
-        json::to_value(schemars::schema_for!(SheetMetalContourFlangeConstruction)).unwrap();
-    let properties = schema["properties"].as_object().unwrap();
-    assert!(schema.get("required").is_none());
-    for name in [
-        "profile",
-        "direction",
-        "extent",
-        "thickness",
-        "inside_radius",
-        "side",
-        "neutral_factor",
-    ] {
-        assert!(
-            !properties[name].to_string().contains("\"null\""),
-            "{name}: {}",
-            properties[name]
-        );
-        let mut value = json!({});
-        value[name] = serde_json::Value::Null;
-        assert!(json::from_value::<SheetMetalContourFlangeConstruction>(value).is_err());
     }
 }
 

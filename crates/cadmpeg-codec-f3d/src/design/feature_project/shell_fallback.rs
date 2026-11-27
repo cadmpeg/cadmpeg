@@ -1,5 +1,6 @@
 use crate::container::ContainerScan;
 use crate::design::decode::scopes::shell_observation::{self, Form, Frame, Readout, Slot};
+#[cfg(test)]
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::face_resolve::resolved_historical_face_group;
 use crate::ids::native_stream;
@@ -75,7 +76,7 @@ pub(crate) fn project(
             continue;
         }
         let bytes = inputs.scan.entry_bytes(&entry.name)?;
-        let records = IndexedRecordOffsets::build(bytes);
+        let records = inputs.scan.design_record_offsets(&entry.name)?;
         for scope in selected {
             readouts
                 .entry(scope.id.clone())

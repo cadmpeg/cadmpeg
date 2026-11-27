@@ -1628,7 +1628,12 @@ fn parse_trim_record_with_length_encoding(
 }
 
 pub(crate) fn boundary_cycles(triangles: &[[u32; 3]]) -> Option<Vec<Vec<u32>>> {
-    let mut edge_directions = HashMap::<(u32, u32), u8>::new();
+    let mut edge_directions = HashMap::<(u32, u32), u8>::with_capacity(
+        triangles
+            .len()
+            .checked_mul(3)
+            .map_or(triangles.len(), |edges| edges / 2 + 1),
+    );
     for &[a, b, c] in triangles {
         for (start, end) in [(a, b), (b, c), (c, a)] {
             if start == end {
@@ -1649,7 +1654,7 @@ pub(crate) fn boundary_cycles(triangles: &[[u32; 3]]) -> Option<Vec<Vec<u32>>> {
             }
         }
     }
-    let mut successors = HashMap::new();
+    let mut successors = HashMap::with_capacity(edge_directions.len());
     for (&(low, high), &directions) in &edge_directions {
         let boundary = match directions {
             1 => Some((low, high)),

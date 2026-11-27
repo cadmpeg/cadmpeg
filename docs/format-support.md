@@ -72,6 +72,7 @@ its result.
 | Creo Parametric `.prt`                            | L1    |
 | Creo View `.pvz`                                  | L3    |
 | SolidWorks eDrawings `.eprt` and `.easm`          | L2    |
+| Alibre Design `.AD_PRT`                           | L3    |
 | OpenUSD layers                                    | L2    |
 | STEP Part 21                                      | L8    |
 | Solid Edge `.par`, `.psm`, and `.asm`             | L2    |
@@ -112,7 +113,7 @@ Structural detection requires directory evidence. The codec enumerates the compl
 - **ACIS part carriers: L3.** The 32-bit ACIS header and solved SAB partition transfer through the same direct and embedded kernel decoder at every save format. Connected B-rep validation and direct-carrier parity pass for majors 217 and 218, the verified bands. A carrier outside them decodes with the nearer verified band's grammar, reports the `acis:` kernel layer as `Admission::Unverified`, and charges `source.kernel-dialect-unverified`; a carrier that reads no geometry is retained verbatim and produces blocking `geometry_not_transferred`.
 - **Assemblies: partial extra.** A `UFRxDoc` occurrence transfers when its external file reference, `AmDc` occurrence identity, and active finite affine `AmGraphics` placement form one exact join. Placement translations convert from centimetres to millimetres. Suppressed occurrences transfer with hidden visibility and may use an identity placement when graphics are absent. External prototypes remain unresolved, no persisted path is opened, and local prototypes and nested parent links remain untransferred.
 - **Materials: partial extra.** Shared Protein schema decoding produces typed native assets and neutral appearance definitions. One exact `PmApp` default-style-to-rendering-style-to-asset join binds the selected appearance to transferred part bodies. One exact `PmGraphics` face-to-style-collection-to-primary-color join creates a direct face appearance that overrides the body default. Other style and texture families remain native.
-- **Design intent: partial extra.** Closed scalar parameter graphs and closed planar point, line, circle, ellipse, and constraint graphs transfer with native cross-links. Extrude, hole, constant-radius edge fillet, and equal-distance edge chamfer operations transfer only when every required typed property, dimension, native selection, placement, and result-body reference resolves. Each transferred result has a native intermediate-body identity. Browser work planes, including the origin planes, transfer as datum planes at their history positions. Solid splits by a work plane or a surface transfer as body splits that keep both sides. The version-19 selected-face form transfers as a face split by a work plane and retains its result-body identity. The bounded version-19 surface-tool form transfers as a body trim with its kept side retained natively. Suppression and dependency state remain unresolved, so this extra does not advance the score to L4.
+- **Design intent: partial extra.** Closed scalar parameter graphs and closed planar point, line, circle, ellipse, and constraint graphs transfer with native cross-links. Extrude, hole, constant-radius edge fillet, and equal-distance and joined unequal two-distance edge chamfer operations transfer only when every required typed property, dimension, native selection, placement, and result-body reference resolves. Each transferred result has a native intermediate-body identity. Browser work planes, including the origin planes, transfer as datum planes at their history positions. Solid splits by a work plane or a surface transfer as body splits that keep both sides. The version-19 selected-face form transfers as a face split by a work plane and retains its result-body identity. The bounded version-19 surface-tool form transfers as a body trim with its kept side retained natively. Suppression and dependency state remain unresolved, so this extra does not advance the score to L4.
 - **Write:** None. The codec has no encoder, replay path, or patch path.
 
 See [`formats/inventor.md`](formats/inventor.md), [`formats/inventor-open-items.md`](formats/inventor-open-items.md), and [`formats/protein.md`](formats/protein.md).
@@ -601,6 +602,39 @@ These gaps remain:
 ### Read profile
 - **Container and versions: Partial.** The codec admits the ZIP package through the shared archive snapshot, requires an `eModel` member, and reads its wrapper and zlib stream. The package members are listed with their roles.
 - **Geometry: Partial.** The model stream is walked and decoded. Shells become faceted bodies in millimetres, with colours, names, and the current display state. Only display meshes exist in the source.
+
+### Write and round trip
+- **Native write: None.**
+- **Round trip: None.**
+
+## Alibre Design `.AD_PRT`
+
+**Container:** Microsoft Compound File with a flat root; the `SAB_DATA` stream holds an ACIS binary body
+
+<!-- generated: dialects alibre -->
+
+**Ladder: L3.**
+
+| Dialect                  | Read     | Write |
+| ------------------------ | -------- | ----- |
+| `alibre:cfb-acis-binary` | detected | none  |
+| `alibre:unknown`         | refused  | none  |
+
+<!-- /generated: dialects alibre -->
+
+The codec detects a part from the streams `SAB_DATA` and `STEP_DATA`, frames the ACIS binary stream with the identifier table and the extended entity base (`alibre.md` §2), and decodes it through the shared ASM/ACIS decoders into a connected B-rep with analytic and B-spline carriers in millimetres. A part becomes one body under one root product definition. The feature history of `STEP_DATA` transfers as design records: one scope with a timeline, a feature for each state, sketches with their entities and constraints, and parameters. These design records are a partial extra above L3, which the B-rep sets. They cover the origin, axes, planes, offset planes, sketches, extrusions, revolutions, fillets, holes, and lofts, and the sheet-metal rule of a sheet-metal part. A `STEP_DATA` stream that does not read keeps the body and reports `alibre/history.stream-unread`.
+
+These gaps remain:
+
+- The side faces of a lofted solid keep the solved B-spline cache as carrier, and its `intcurve` edges have no typed 3D curve, and its coedges carry no pcurve (ALB-01, `alibre/geometry.procedural-surface-untyped`, `alibre/geometry.pcurve-undecoded`). The cap faces rest on `plane` carriers.
+- Feature families without a decoded record, the loft settings, the selection of edges and faces by topology signature, and the logicals of the operation entities stay unread (ALB-02, ALB-06, ALB-07, ALB-08, `alibre/history.operation-unmapped`, `alibre/history.edge-selection-unresolved`, `alibre/history.face-selection-unresolved`).
+- Every stream other than `SAB_DATA` and `STEP_DATA` does not transfer (ALB-03, `alibre/source.streams-undecoded`).
+- Assemblies are not claimed (ALB-04). A sheet-metal part (`.AD_SMP`) decodes as a part, and its sheet-metal settings transfer as one sheet-metal rule; the relief type code stays a native option (`alibre/history.sheet-metal-settings-unmapped`).
+
+### Read profile
+- **Container and versions: Partial.** The codec admits the compound file, requires the two body streams, and classifies the ACIS save format on the kernel layer.
+- **Geometry: Partial.** Planes, cylinders, cones, tori, and B-spline carriers decode with exact topology. Procedural constructions stay unknown.
+- **Design: Partial.** The feature history of the supported operations decodes into the design layer. Selections of edges and faces stay unread.
 
 ### Write and round trip
 - **Native write: None.**
