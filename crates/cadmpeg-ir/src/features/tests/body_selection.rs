@@ -146,3 +146,36 @@ fn generated_body_members_keep_one_native_per_row() {
         .to_string();
     assert!(error.contains("unknown field `native`"), "{error}");
 }
+
+#[test]
+fn occurrence_body_selection_names_its_occurrence_and_distinct_bodies() {
+    use crate::ids::OccurrenceId;
+
+    let wire = cadmpeg_core::json!({
+        "kind": "occurrence",
+        "value": {
+            "occurrence": "test:selection:occurrence#placed",
+            "occurrence_path": [],
+            "bodies": ["test:selection:body#a"],
+            "native": "native"
+        }
+    });
+    let selection: BodySelection = json::from_value(wire.clone()).unwrap();
+    let BodySelection::Occurrence {
+        occurrence, bodies, ..
+    } = &selection
+    else {
+        panic!("occurrence body selection");
+    };
+    assert_eq!(
+        occurrence,
+        &OccurrenceId::mint("test:selection:occurrence#placed").unwrap()
+    );
+    assert_eq!(bodies.len(), 1);
+    assert_eq!(json::to_value(&selection).unwrap(), wire);
+
+    let mut repeated = wire;
+    repeated["value"]["bodies"] =
+        cadmpeg_core::json!(["test:selection:body#a", "test:selection:body#a"]);
+    assert!(json::from_value::<BodySelection>(repeated).is_err());
+}
