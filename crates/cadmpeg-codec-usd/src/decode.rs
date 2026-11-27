@@ -20,7 +20,6 @@ const ATTRIBUTE_DEFAULT_PRIM: &str = "default_prim";
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     let mut source = crate::usdz::source::source(ctx, root)?;
     let layer = crate::usdz::source::parse(ctx, &mut source)?;
-    let mut losses = source.losses;
     let metrics = crate::model::metrics(&layer);
     let mut attributes = BTreeMap::from([
         (
@@ -39,17 +38,18 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         );
     }
     let mut ir = CadIr::decoded(SourceMeta::classified(source.layers, attributes));
-    let mut transferred = false;
+    let mut body = DecodeBody {
+        losses: source.losses,
+        ..DecodeBody::new(DecodeTransfer::at(ctx.depth(), false))
+    };
     if !ctx.container_only() {
         let layers = crate::layers::load(ctx, layer, source.package.take())?;
-        transferred = crate::model::build(ctx, &layers, &metrics, &mut ir, &mut losses)?;
+        let transferred = crate::model::build(ctx, &layers, &metrics, &mut ir, &mut body)?;
+        body.transfer = DecodeTransfer::at(ctx.depth(), transferred);
     }
     Ok(Decoded {
         ir,
-        body: DecodeBody {
-            losses,
-            ..DecodeBody::new(DecodeTransfer::at(ctx.depth(), transferred))
-        },
+        body,
         source_fidelity: SourceFidelity::for_root(root),
     })
 }

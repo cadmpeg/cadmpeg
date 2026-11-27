@@ -4983,6 +4983,9 @@ impl RecordPayload for PmDcFeatureTerminatorPayload {
 }
 
 #[cfg(test)]
+use cadmpeg_core::serde_erase::json as json_wire;
+
+#[cfg(test)]
 pub(crate) mod tests {
     mod holes;
     mod sheet_metal;
@@ -4990,7 +4993,7 @@ pub(crate) mod tests {
     mod thicken;
 
     use super::{
-        inventory, parse_boolean, parse_boundary_patch, parse_chamfer, parse_edge_item,
+        inventory, json_wire, parse_boolean, parse_boundary_patch, parse_chamfer, parse_edge_item,
         parse_entity_style_link, parse_feature, parse_fillet_edge_selection, parse_fillet_edge_set,
         parse_label, parse_part_operation, parse_pattern_feature, parse_placement,
         parse_profile_selection, parse_rdx_variable, parse_surface_body, parse_terminator,
@@ -5441,30 +5444,30 @@ pub(crate) mod tests {
     #[test]
     fn located_label_retains_empty_name_and_rejects_wrong_class_width() {
         let label = test_label(0, 1, EXTRUSION_CLASS_ID, &[]);
-        let valid = serde_json::to_value(&label).expect("valid label fixture");
+        let valid = json_wire::to_value(&label).expect("valid label fixture");
         let admitted: PmDcFeatureLabel =
-            serde_json::from_value(valid.clone()).expect("valid label fixture");
+            json_wire::from_value(valid.clone()).expect("valid label fixture");
         assert_eq!(
-            serde_json::to_value(admitted).expect("valid label fixture"),
+            json_wire::to_value(admitted).expect("valid label fixture"),
             valid
         );
         for (field, value) in [("class_id", "a".repeat(31)), ("class_id", "a".repeat(33))] {
             let mut wire = valid.clone();
-            wire[field] = serde_json::json!(value);
-            assert!(serde_json::from_value::<PmDcFeatureLabel>(wire)
+            wire[field] = cadmpeg_core::json!(value);
+            assert!(json_wire::from_value::<PmDcFeatureLabel>(wire)
                 .expect_err("invalid label")
                 .to_string()
                 .contains(field));
         }
         let mut unnamed = valid.clone();
-        unnamed["name"] = serde_json::json!("");
+        unnamed["name"] = cadmpeg_core::json!("");
         let label: PmDcFeatureLabel =
-            serde_json::from_value(unnamed.clone()).expect("optional label");
+            json_wire::from_value(unnamed.clone()).expect("optional label");
         assert!(label.name().is_none());
-        assert_eq!(serde_json::to_value(label).expect("label JSON"), unnamed);
+        assert_eq!(json_wire::to_value(label).expect("label JSON"), unnamed);
         let mut wire = valid;
-        wire["class_id"] = serde_json::json!("z".repeat(32));
-        assert!(serde_json::from_value::<PmDcFeatureLabel>(wire).is_err());
+        wire["class_id"] = cadmpeg_core::json!("z".repeat(32));
+        assert!(json_wire::from_value::<PmDcFeatureLabel>(wire).is_err());
     }
 
     pub(crate) fn test_label(
@@ -6913,8 +6916,8 @@ pub(crate) mod tests {
         let class_id = ClassId(cadmpeg_ir::native::bytes::NativeBytes::new([0xab; 16]));
         let owned = String::from(class_id);
         assert_eq!(
-            serde_json::to_vec(&class_id).expect("borrowed class id"),
-            serde_json::to_vec(&owned).expect("owned class id")
+            json_wire::to_vec(&class_id).expect("borrowed class id"),
+            json_wire::to_vec(&owned).expect("owned class id")
         );
         let record = Record {
             id: "inventor:pmdc:class-id#1",
@@ -6922,7 +6925,7 @@ pub(crate) mod tests {
         };
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
-            serde_json::json!({"id": record.id, "value": owned}),
+            cadmpeg_core::json!({"id": record.id, "value": owned}),
         );
     }
 
@@ -6960,8 +6963,8 @@ pub(crate) mod tests {
         .expect("feature label");
         let owned = PmDcFeatureLabelPayloadWire::from(label.clone());
         assert_eq!(
-            serde_json::to_vec(&label).expect("borrowed feature label"),
-            serde_json::to_vec(&owned).expect("owned feature label")
+            json_wire::to_vec(&label).expect("borrowed feature label"),
+            json_wire::to_vec(&owned).expect("owned feature label")
         );
         let record = Record {
             id: "inventor:pmdc:feature-label#1",
@@ -6970,7 +6973,7 @@ pub(crate) mod tests {
         crate::pmdc::PMDC_LIST_CLONE_COUNT.with(|count| count.set(0));
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
-            serde_json::json!({"id": record.id, "value": owned}),
+            cadmpeg_core::json!({"id": record.id, "value": owned}),
         );
         crate::pmdc::PMDC_LIST_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }

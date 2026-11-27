@@ -26,7 +26,11 @@ pub(crate) fn validate_native(
         message: "SolidWorks extrusion feature-reference profile lacks decoded non-construction curves".into(),
         entity: Some(feature.id.to_string()),
     }).collect::<Vec<_>>();
-    let native = match crate::native::SldprtNative::load_with_context(ctx, namespace) {
+    let native = match crate::native::SldprtNative::load_with_context(
+        ctx,
+        namespace,
+        ir.tolerances.linear,
+    ) {
         Ok(native) => native,
         Err(error) => {
             findings.extend(invalid_namespace(&error));
@@ -197,7 +201,9 @@ pub(crate) fn validate_native(
             });
         }
     }
-    for (lane, expected_lane) in crate::native::lanes::expected_lanes(ctx, &native)? {
+    for (lane, expected_lane) in
+        crate::native::lanes::expected_lanes(ctx, &native, ir.tolerances.linear)?
+    {
         for (entity, expected_entity) in lane
             .sketch_entities
             .iter()

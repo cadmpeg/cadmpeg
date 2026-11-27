@@ -147,6 +147,7 @@ impl<'a> OperationStateMessage<'a> {
 #[cfg(test)]
 mod tests {
     use super::{OperationStateMessage, StateMessage};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn source_extent_follows_text_and_each_tagged_width() {
@@ -165,10 +166,10 @@ mod tests {
     fn wire_severity_is_derived_and_preserves_field_order() {
         let json = r#"{"declared_length":3,"text":"A","value_marker":160,"value":0,"raw_value":"a00000","count_or_severity":256,"severity":"alert"}"#;
         let body: StateMessage<String> = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&body).unwrap(), json);
+        assert_eq!(json::to_string(&body).unwrap(), json);
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["severity"] = "failure".into();
-        assert!(serde_json::from_value::<StateMessage<String>>(wire)
+        assert!(json::from_value::<StateMessage<String>>(wire)
             .unwrap_err()
             .to_string()
             .contains("severity"));

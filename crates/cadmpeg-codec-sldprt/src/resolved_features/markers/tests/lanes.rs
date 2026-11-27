@@ -118,7 +118,7 @@ fn decode_resolves_each_marker_link_by_trailing_local_id() {
 }
 
 #[test]
-fn semantic_writer_rejects_edited_sketch_marker_local_id() {
+fn semantic_writer_patch_declines_edited_sketch_marker_local_id() {
     let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0, 1]);
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -139,17 +139,13 @@ fn semantic_writer_rejects_edited_sketch_marker_local_id() {
     .iter()
     .any(|finding| finding.message.contains("local object id does not match")));
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("local object id does not match"));
+    let error =
+        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
+    assert!(error.contains("local object id does not match"));
 }
 
 #[test]
-fn semantic_writer_rejects_edited_sketch_marker_object_index() {
+fn semantic_writer_patch_declines_edited_sketch_marker_object_index() {
     let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0, 1]);
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -170,17 +166,13 @@ fn semantic_writer_rejects_edited_sketch_marker_object_index() {
     .iter()
     .any(|finding| finding.message.contains("object index does not match")));
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("object index does not match"));
+    let error =
+        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
+    assert!(error.contains("object index does not match"));
 }
 
 #[test]
-fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
+fn semantic_writer_patch_declines_incomplete_sketch_marker_lanes() {
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_resolved_features(
@@ -196,16 +188,10 @@ fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
     });
     decoded.source_fidelity_mut().annotations = cadmpeg_ir::Annotations::default();
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    let error =
+        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
     assert!(
-        error
-            .to_string()
-            .contains("expects entity ordinal 1, found 2"),
+        error.contains("expects entity ordinal 1, found 2"),
         "{error}"
     );
 }

@@ -68,7 +68,7 @@ pub(super) fn check_appearance_attributes(
                         ),
                     );
                 }
-                record(ir, findings, owner, arena, id);
+                record(ir, findings, owner, arena, id.as_str());
             }
             _ => {}
         }
@@ -152,7 +152,7 @@ pub(super) fn check_appearance_attributes(
     for attribute in &ir.model.attributes {
         let owner = attribute.id.as_str();
         if let AttributeTarget::Record { arena, id } = &attribute.target.entity {
-            record(ir, findings, owner, arena, id);
+            record(ir, findings, owner, arena, id.as_str());
         } else if let Some((kind, id)) =
             unresolved_target(&attribute.target.entity, ids, &records, &model)
         {
@@ -247,7 +247,7 @@ fn unresolved_target<'t>(
         AttributeTarget::Tessellation(id) => (
             "tessellation",
             id.as_str(),
-            ids.tessellations(id, StandardIndex).is_some(),
+            ids.tessellations(id.as_str(), StandardIndex).is_some(),
         ),
         AttributeTarget::Feature(id) => ("feature", id.as_str(), records.holds_feature(id)),
         AttributeTarget::Sketch(id) => ("sketch", id.as_str(), records.holds_sketch(id)),

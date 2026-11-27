@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Established sketch relations in the v11 operand vocabulary.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::design::construction::ScalarDimension;
@@ -58,11 +59,11 @@ pub(super) fn project(
         for (name, text) in [
             (
                 cadmpeg_ir::codec_name!("inventor:properties"),
-                serde_json::to_string(native_properties),
+                json::to_string(native_properties),
             ),
             (
                 cadmpeg_ir::codec_name!("inventor:operands"),
-                serde_json::to_string(operands),
+                json::to_string(operands),
             ),
         ] {
             let text =

@@ -29,7 +29,7 @@ fuzz_target!(|data: &[u8]| {
     }
     let mut output = Vec::new();
     if FcstdCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut output))
         .is_ok()
     {

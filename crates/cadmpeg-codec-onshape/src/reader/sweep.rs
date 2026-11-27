@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::{document::Model, sketches::SketchGeometryDefinition};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::BTreeSet;
 
 use super::{definition, features, regions, rows, text, topology, Mapping};
@@ -188,7 +190,7 @@ fn endpoints(entity: &cadmpeg_ir::sketches::SketchEntity) -> Mapping<[[f64; 2]; 
         let last = points.last().ok_or("the sweep path spline has no poles")?;
         return Ok([[first.u, first.v], [last.u, last.v]]);
     }
-    let wire = serde_json::to_value(entity).map_err(|_| "the sweep path curve is unreadable")?;
+    let wire = json::to_value(entity).map_err(|_| "the sweep path curve is unreadable")?;
     regions::curve_endpoints(&wire)
 }
 

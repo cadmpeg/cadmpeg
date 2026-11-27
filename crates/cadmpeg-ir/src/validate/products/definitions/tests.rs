@@ -336,15 +336,18 @@ fn representation_features_need_the_design_class() {
     shown.features.push(fixture::feature("plane"));
     part.representations.push(shown);
     ir.model.product_definitions.push(part);
-    let violation = ir.set_scope(ContentScope::geometry()).unwrap_err();
+    ir.set_scope(ContentScope::geometry());
     assert_eq!(
-        violation.arena.map(crate::document::ArenaName::as_str),
-        Some("product_definitions")
+        ir.scope_violations(),
+        [crate::document::ScopeViolation::Referenced {
+            class: cadmpeg_core::decode::ArenaClass::Design,
+            arena: crate::document::ArenaName::parse("product_definitions").unwrap(),
+        }]
     );
     ir.model.product_definitions[0].representations[0]
         .features
         .clear();
-    assert!(ir.set_scope(ContentScope::geometry()).is_ok());
+    assert!(ir.scope_violations().is_empty());
 }
 
 #[test]
@@ -460,4 +463,38 @@ fn product_paths_state_no_step_configuration() {
         found(&ir, "an instance-body path states a step configuration"),
         error_on("assembly", "definition")
     );
+}
+
+#[test]
+fn a_definition_unit_system_names_units_of_their_quantities() {
+    use crate::design::units::{UnitSymbol, UnitSystem};
+    let mut ir = fixture::document();
+    definition_mut(&mut ir, "part").units = Some(UnitSystem {
+        length: UnitSymbol::In,
+        angle: UnitSymbol::Deg,
+        mass: Some(UnitSymbol::Lb),
+        time: Some(UnitSymbol::Min),
+    });
+    assert!(found(&ir, "unit `").is_empty());
+
+    definition_mut(&mut ir, "part").units = Some(UnitSystem {
+        length: UnitSymbol::Deg,
+        angle: UnitSymbol::Mm,
+        mass: Some(UnitSymbol::S),
+        time: Some(UnitSymbol::Kg),
+    });
+    for (what, unit) in [
+        ("length", "deg"),
+        ("angle", "mm"),
+        ("mass", "s"),
+        ("time", "kg"),
+    ] {
+        assert_eq!(
+            found(
+                &ir,
+                &format!("the definition's {what} unit `{unit}` is no {what} unit")
+            ),
+            error_on("part", "definition"),
+        );
+    }
 }

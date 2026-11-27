@@ -189,7 +189,7 @@ fn pcurve_uv_offset_edits_preserve_neutral_geometry_in_each_record_form() {
         .expect("clear native records");
         let mut generated = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut generated))
             .expect("offset generation");
         let decoded = F3dCodec
@@ -222,7 +222,7 @@ fn pcurve_uv_offset_new_record_defaults_to_zero() {
     ir.geometry.pcurves[0].metadata = cadmpeg_ir::geometry::pcurve::PcurveMetadata::default();
     let mut generated = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut generated))
         .expect("new record generation");
     let after = F3dCodec

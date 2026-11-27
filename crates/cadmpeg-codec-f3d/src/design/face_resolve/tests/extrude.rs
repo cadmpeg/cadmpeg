@@ -9,6 +9,7 @@ use crate::records::topology::{
     construction::DesignConstructionOperandGroup, extrude_selection::DesignOperandRole,
     face::DesignFaceOperand,
 };
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -341,7 +342,7 @@ fn target_plane_operand(candidates: &[i64]) -> DesignFaceOperand {
         .iter()
         .map(|slot| face(*slot).into_string())
         .collect::<Vec<_>>();
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "f3d:test:face-operand#200",
         "scope_record_index": 100,
         "scope_reference_ordinal": 0,
@@ -377,7 +378,7 @@ fn target_plane_operand(candidates: &[i64]) -> DesignFaceOperand {
 }
 
 fn target_face_group() -> DesignConstructionOperandGroup {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "f3d:test:construction-group#150",
         "scope_record_index": 100,
         "scope_reference_ordinal": 0,
@@ -509,7 +510,7 @@ fn extrude_root_fixture() -> (DesignParameterScope, [DesignConstructionOperandGr
         crate::records::feature::scope::DesignFeatureKind::Extrude,
         12,
     );
-    let root: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
+    let root: DesignConstructionOperandGroup = json::from_value(cadmpeg_core::json!({
         "id": "f3d:test:group#100",
         "scope_record_index": 12,
         "scope_reference_ordinal": 0,
@@ -588,7 +589,7 @@ fn extrude_leaf_fixture() -> (
     Vec<DesignFaceOperand>,
 ) {
     let (_, groups) = extrude_root_fixture();
-    let operand = serde_json::from_value(serde_json::json!({
+    let operand = json::from_value(cadmpeg_core::json!({
         "id": "f3d:test:face-operand#200",
         "scope_record_index": 12,
         "scope_reference_ordinal": 1,
