@@ -1833,6 +1833,76 @@ Parsed by:
 | 49 | 24 | `u_axis` | `f64[3]` | little | spec | They are the origin, the u axis, and the v axis in internal centimetres. |
 | 73 | 24 | `v_axis` | `f64[3]` | little | spec | They are the origin, the u axis, and the v axis in internal centimetres. |
 
+## `pm_dc_parametric_surface_form_29`
+
+Spec §13 · layout: byte offsets · size: 137 B
+
+Offsets start after the versioned content header and stamps. Segment major versions 15 through 21.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 12 | `references` | `u32[3]` | little | spec | three null references |
+| 12 | 1 | `state` | `u8` | little | spec | state 1 · value `1` |
+| 13 | 4 | `form` | `u32` | little | spec | Form 29 and form 73 are parametric surfaces · value `29` |
+| 17 | 4 | `value` | `u32` | little | spec | `value` 1 · value `1` |
+| 21 | 116 | `class_parameters` | `u8[116]` | little | spec | 116 bytes for form 29 |
+
+## `pm_dc_parametric_surface_form_29_extended`
+
+Spec §13 · layout: byte offsets · size: 141 B
+
+Offsets start after the versioned content header and stamps. Segment major version 22 and later.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 12 | `references` | `u32[3]` | little | spec | three null references |
+| 12 | 4 | `extension` | `u32` | little | spec | zero extension from version 22 · value `0` |
+| 16 | 1 | `state` | `u8` | little | spec | state 1 · value `1` |
+| 17 | 4 | `form` | `u32` | little | spec | Form 29 and form 73 are parametric surfaces · value `29` |
+| 21 | 4 | `value` | `u32` | little | spec | `value` 1 · value `1` |
+| 25 | 116 | `class_parameters` | `u8[116]` | little | spec | 116 bytes for form 29 |
+
+## `pm_dc_parametric_surface_form_73`
+
+Spec §13 · layout: byte offsets · size: 177 B
+
+Offsets start after the versioned content header and stamps. Segment major versions 15 through 21.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 12 | `references` | `u32[3]` | little | spec | three null references |
+| 12 | 1 | `state` | `u8` | little | spec | state 1 · value `1` |
+| 13 | 4 | `form` | `u32` | little | spec | Form 29 and form 73 are parametric surfaces · value `73` |
+| 17 | 4 | `value` | `u32` | little | spec | `value` 1 · value `1` |
+| 21 | 156 | `class_parameters` | `u8[156]` | little | spec | 156 bytes for form 73 |
+
+## `pm_dc_parametric_surface_form_73_extended`
+
+Spec §13 · layout: byte offsets · size: 181 B
+
+Offsets start after the versioned content header and stamps. Segment major version 22 and later.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 12 | `references` | `u32[3]` | little | spec | three null references |
+| 12 | 4 | `extension` | `u32` | little | spec | zero extension from version 22 · value `0` |
+| 16 | 1 | `state` | `u8` | little | spec | state 1 · value `1` |
+| 17 | 4 | `form` | `u32` | little | spec | Form 29 and form 73 are parametric surfaces · value `73` |
+| 21 | 4 | `value` | `u32` | little | spec | `value` 1 · value `1` |
+| 25 | 156 | `class_parameters` | `u8[156]` | little | spec | 156 bytes for form 73 |
+
 ## `pm_dc_thread_definition_prefix`
 
 Spec §13 · layout: byte offsets · size: 30 B

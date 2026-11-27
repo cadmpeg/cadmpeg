@@ -6,8 +6,6 @@
 mod joints;
 mod operations;
 mod patterns;
-#[cfg(feature = "schema")]
-mod schema;
 mod unit_variants;
 
 use cadmpeg_core::serde_erase::json;

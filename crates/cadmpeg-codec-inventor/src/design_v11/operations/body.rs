@@ -26,6 +26,7 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
             | LegacyOperation::DeleteFace { .. }
             | LegacyOperation::MirrorShape { .. }
             | LegacyOperation::Pattern { .. }
+            | LegacyOperation::SewBodies { .. }
     ) {
         return None;
     }
@@ -274,6 +275,24 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
             LegacyOperation::MirrorShape { .. } => {
                 return Err("the mirror source has no v11 copy or replacement disposition")
             }
+            LegacyOperation::SewBodies {
+                bodies,
+                gap_tolerance,
+            } => FeatureOperation::Knit(Box::new(cadmpeg_ir::design::ops::surface::Knit {
+                elements: selections::bodies(bodies)?,
+                tolerance: gap_tolerance.as_ref().map(|gap| {
+                    Dimension::Literal(cadmpeg_ir::scalar::NonNegativeLength::from(*gap))
+                }),
+                simplify: None,
+                healing: None,
+                federation: None,
+                output: cadmpeg_ir::design::options::SheetOutput {
+                    solid: None,
+                    boolean: None,
+                },
+                native_options: BTreeMap::default(),
+                source_settings: BTreeMap::default(),
+            })),
             LegacyOperation::Pattern { seeds, pattern } => {
                 FeatureOperation::Pattern(Box::new(patterns::project(seeds, pattern)?))
             }
