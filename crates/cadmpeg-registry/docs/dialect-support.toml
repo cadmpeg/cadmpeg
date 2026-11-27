@@ -1284,7 +1284,7 @@ reason = """
 Confidence::No and the forced codec path returns WrongFormat"""
 
 [format.onshape]
-level = 0
+level = 4
 scored = ["onshape:bundle-1"]
 
 [[support]]

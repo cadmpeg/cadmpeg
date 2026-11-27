@@ -147,6 +147,8 @@ impl Released {
         self.marked.extend(other.marked);
         self.marked.retain(|record| !self.dropped.contains(record));
         self.states.extend(other.states);
+        self.states
+            .retain(|(_, state), _| !self.dropped.contains(state));
         self.unstatable.extend(other.unstatable);
         for (record, named) in other.needs {
             self.needs.entry(record).or_default().extend(named);
@@ -537,8 +539,9 @@ pub(crate) fn drop_records(
 /// through records of `unnamed` it keeps; then each record that needs an id
 /// of `gone`, which `ir` no longer holds, and each record that needs one of
 /// those, transitively, as [`drop_records`] removes the records that need a
-/// seed. Returns what the removals released together. The seeds go first,
-/// so that a record that needs a seed names the seed among its needs.
+/// seed; then each carrier that the removals left with no user. Returns what
+/// the removals released together. The seeds go first, so that a record that
+/// needs a seed names the seed among its needs.
 ///
 /// # Errors
 ///
@@ -554,8 +557,10 @@ pub(crate) fn drop_records_needing(
     let mut cascade = Cascade::new(ctx, ir, NativeLinks::Read, &gone)?;
     let unnamed = cascade.references.unnamed(unnamed, &seeds);
     let mut released = Released::default();
+    let mut removed_any = false;
     for seed in seeds.into_iter().chain(unnamed) {
         if let Some(removed) = remove(ctx, ir, &mut cascade, &seed)? {
+            removed_any = true;
             released.absorb(removed);
         }
     }
@@ -566,6 +571,17 @@ pub(crate) fn drop_records_needing(
         &cascade.lazy,
         gone,
         Vec::new(),
+        &mut released,
+    )?;
+    if !removed_any && released.dropped.is_empty() && released.states.is_empty() {
+        return Ok(released);
+    }
+    drop_orphans(
+        ctx,
+        ir,
+        &mut cascade.references,
+        &cascade.lazy,
+        &cascade.unreached,
         &mut released,
     )?;
     Ok(released)
@@ -1158,6 +1174,9 @@ fn release(
     released
         .marked
         .retain(|record| !released.dropped.contains(record));
+    released
+        .states
+        .retain(|(_, state), _| !released.dropped.contains(state));
     Ok(all_gone)
 }
 

@@ -267,6 +267,15 @@ impl ExportReport {
         self.synthesis_cause.as_ref()
     }
 
+    /// The native dialect written, or `None` for neutral CADIR.
+    #[must_use]
+    pub const fn target(&self) -> Option<&DialectId> {
+        match &self.identity {
+            ExportIdentity::Cadir {} => None,
+            ExportIdentity::Native { target } => Some(target),
+        }
+    }
+
     /// Returns the native format namespace, or `"cadir"` for neutral CADIR.
     #[must_use]
     pub fn format(&self) -> &str {
