@@ -61,9 +61,9 @@ pub(super) fn projection(
 
 /// `projection` with its active configuration reconciled with `features`,
 /// and `features` with the suppression that the active configuration gives
-/// them, as the decoder reconciles both. The active row supplies the state
-/// of a feature that states none. A reconciliation that fails leaves both as
-/// they are.
+/// them. The active row supplies the state of a feature that states none;
+/// every other feature keeps its state. A reconciliation that fails leaves
+/// both as they are.
 pub(super) fn reconciled(
     projection: Projection,
     features: &mut [Feature],

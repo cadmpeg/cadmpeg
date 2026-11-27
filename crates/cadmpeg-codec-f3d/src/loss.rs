@@ -508,6 +508,8 @@ pub(crate) enum F3dLossCode {
     FeatureOutputStateChainUnbound,
     /// An affected body slot has no unique active body in the selected BREP.
     FeatureOutputBodyUnbound,
+    /// A pattern result state holds a generated solid body that no model body joins.
+    FeaturePatternCopyBodyOmitted,
     /// A derived base scope stores a copy of a source and frame that the archive does not contain.
     FeatureDerivedBaseUnresolved,
     /// A Pipe section is inferred as a circle from its result faces.
@@ -706,6 +708,10 @@ pub(crate) enum F3dLossCode {
     /// A treatment group takes the transition edges that the other groups of
     /// its scope do not take.
     HistoricalEdgeSelectionLeftoverAssumed,
+    /// A treatment group whose members' first sides name three faces takes
+    /// the one distinct assignment of edges that two of each member's faces
+    /// share.
+    HistoricalEdgeSelectionFirstSidePairAssumed,
     /// A Chamfer face member keeps a loop edge of its face whose continuity
     /// with the adjacent face is undetermined, with the assumption that the
     /// edge is sharp.
@@ -1025,6 +1031,10 @@ pub(crate) enum F3dLossCode {
     /// A tool of an operand-list Combine names a body that another component
     /// builds, and the generating feature is not proven.
     FeatureCombineToolBodyUnbound,
+    /// A generated tool body of an operand-list Combine keeps its body-map
+    /// pair identity: the generating feature has no one history state, or its
+    /// creating state inserts no one body slot.
+    FeatureCombineToolResultStateUnbound,
     /// The browser node of an operand-list Combine operand names no distinct
     /// body of the preceding history state, and the body recipes of the scope
     /// bind no body for it, so that operand stays native.
@@ -1765,6 +1775,7 @@ impl F3dLossCode {
         Self::FeatureRectangularPatternDirectionRecordDisagrees,
         Self::FeatureOutputStateChainUnbound,
         Self::FeatureOutputBodyUnbound,
+        Self::FeaturePatternCopyBodyOmitted,
         Self::FeatureDerivedBaseUnresolved,
         Self::FeaturePipeCircularSectionInferred,
         Self::FeaturePipeWholePathExtentAssumed,
@@ -1887,6 +1898,7 @@ impl F3dLossCode {
         Self::HistoricalEdgeSelectionInferred,
         Self::HistoricalEdgeSelectionDeletedSetAssumed,
         Self::HistoricalEdgeSelectionLeftoverAssumed,
+        Self::HistoricalEdgeSelectionFirstSidePairAssumed,
         Self::HistoricalEdgeContinuityAssumedSharp,
         Self::HistoricalEdgeHistoryInferred,
         Self::HistoricalOutputBlobHistoryInferred,
@@ -2076,6 +2088,7 @@ impl F3dLossCode {
         Self::FeatureCombineComponentDestinationAssumed,
         Self::FeatureCombineNamedTailPrologueAssumed,
         Self::FeatureCombineToolBodyUnbound,
+        Self::FeatureCombineToolResultStateUnbound,
         Self::FeatureCombineOperandBodyUnbound,
         Self::FeatureCombineToolRecipeReplacementAssumed,
         Self::FeatureCombinePrologueAssumed,
@@ -2644,6 +2657,7 @@ impl F3dLossCode {
             }
             Self::FeatureOutputStateChainUnbound => "feature.output-state-chain-unbound",
             Self::FeatureOutputBodyUnbound => "feature.output-body-unbound",
+            Self::FeaturePatternCopyBodyOmitted => "feature.pattern-copy-body-omitted",
             Self::FeatureDerivedBaseUnresolved => "feature.derived-base-unresolved",
             Self::FeaturePipeCircularSectionInferred => "feature.pipe-circular-section-inferred",
             Self::FeaturePipeWholePathExtentAssumed => "feature.pipe-whole-path-extent-assumed",
@@ -2952,6 +2966,9 @@ impl F3dLossCode {
             }
             Self::HistoricalEdgeSelectionLeftoverAssumed => {
                 "history.edge-selection-leftover-assumed"
+            }
+            Self::HistoricalEdgeSelectionFirstSidePairAssumed => {
+                "history.edge-selection-first-side-pair-assumed"
             }
             Self::HistoricalEdgeContinuityAssumedSharp => "history.edge-continuity-assumed-sharp",
             Self::HistoricalEdgeHistoryInferred => "history.edge-history-inferred",
@@ -3265,6 +3282,9 @@ impl F3dLossCode {
                 "feature.combine-named-tail-prologue-assumed"
             }
             Self::FeatureCombineToolBodyUnbound => "feature.combine-tool-body-unbound",
+            Self::FeatureCombineToolResultStateUnbound => {
+                "feature.combine-tool-result-state-unbound"
+            }
             Self::FeatureCombineOperandBodyUnbound => "feature.combine-operand-body-unbound",
             Self::FeatureCombineToolRecipeReplacementAssumed => {
                 "feature.combine-tool-recipe-replacement-assumed"
@@ -3798,6 +3818,7 @@ impl F3dLossCode {
             | Self::FeatureHistoryBodyConsumedWithheld
             | Self::FeatureOwnedBodyPairingAssumed
             | Self::FeatureOutputBodyUnbound
+            | Self::FeaturePatternCopyBodyOmitted
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
             | Self::FeatureDerivedInstanceComponentInsertAssumed
@@ -4036,6 +4057,7 @@ impl F3dLossCode {
             | Self::HistoricalEdgeSelectionInferred
             | Self::HistoricalEdgeSelectionDeletedSetAssumed
             | Self::HistoricalEdgeSelectionLeftoverAssumed
+            | Self::HistoricalEdgeSelectionFirstSidePairAssumed
             | Self::HistoricalEdgeContinuityAssumedSharp
             | Self::HistoricalEdgeHistoryInferred
             | Self::HistoricalOutputBlobHistoryInferred
@@ -4224,6 +4246,7 @@ impl F3dLossCode {
             | Self::FeatureCombineComponentDestinationAssumed
             | Self::FeatureCombineNamedTailPrologueAssumed
             | Self::FeatureCombineToolBodyUnbound
+            | Self::FeatureCombineToolResultStateUnbound
             | Self::FeatureCombineOperandBodyUnbound
             | Self::FeatureCombineToolRecipeReplacementAssumed
             | Self::FeatureCombinePrologueAssumed
@@ -4591,6 +4614,7 @@ impl F3dLossCode {
             | Self::FeatureHistoryBodyConsumedWithheld
             | Self::FeatureOwnedBodyPairingAssumed
             | Self::FeatureOutputBodyUnbound
+            | Self::FeaturePatternCopyBodyOmitted
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
             | Self::FeatureDerivedInstanceComponentInsertAssumed
@@ -4835,6 +4859,7 @@ impl F3dLossCode {
             | Self::HistoricalEdgeSelectionInferred
             | Self::HistoricalEdgeSelectionDeletedSetAssumed
             | Self::HistoricalEdgeSelectionLeftoverAssumed
+            | Self::HistoricalEdgeSelectionFirstSidePairAssumed
             | Self::HistoricalEdgeContinuityAssumedSharp
             | Self::HistoricalEdgeHistoryInferred
             | Self::HistoricalOutputBlobHistoryInferred
@@ -5005,6 +5030,7 @@ impl F3dLossCode {
             | Self::FeatureCombineComponentDestinationAssumed
             | Self::FeatureCombineNamedTailPrologueAssumed
             | Self::FeatureCombineToolBodyUnbound
+            | Self::FeatureCombineToolResultStateUnbound
             | Self::FeatureCombineOperandBodyUnbound
             | Self::FeatureCombineToolRecipeReplacementAssumed
             | Self::FeatureCombinePrologueAssumed
@@ -5680,6 +5706,7 @@ mod tests {
                 "feature.rectangular-pattern-direction-record-disagrees",
                 "feature.output-state-chain-unbound",
                 "feature.output-body-unbound",
+                "feature.pattern-copy-body-omitted",
                 "feature.derived-base-unresolved",
                 "feature.pipe-circular-section-inferred",
                 "feature.pipe-whole-path-extent-assumed",
@@ -5802,6 +5829,7 @@ mod tests {
                 "history.edge-selection-inferred",
                 "history.edge-selection-deleted-set-assumed",
                 "history.edge-selection-leftover-assumed",
+                "history.edge-selection-first-side-pair-assumed",
                 "history.edge-continuity-assumed-sharp",
                 "history.edge-history-inferred",
                 "history.output-blob-history-inferred",
@@ -5991,6 +6019,7 @@ mod tests {
                 "feature.combine-component-destination-assumed",
                 "feature.combine-named-tail-prologue-assumed",
                 "feature.combine-tool-body-unbound",
+                "feature.combine-tool-result-state-unbound",
                 "feature.combine-operand-body-unbound",
                 "feature.combine-tool-recipe-replacement-assumed",
                 "feature.combine-prologue-assumed",

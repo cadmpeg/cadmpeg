@@ -415,9 +415,9 @@ impl Natives {
         }
     }
 
-    /// Run the decoder's configuration pass over `documents` and these
+    /// Run the decoder's design attachment over `documents` and these
     /// records: the configurations it states, with the neutral features in
-    /// the state that the pass leaves them.
+    /// the state that it leaves them.
     pub(crate) fn attach(
         &mut self,
         documents: &[crate::records::configuration::DesignConfiguration],
@@ -429,14 +429,21 @@ impl Natives {
             design_parameter_scopes: self.scopes.clone(),
             ..Default::default()
         };
-        let mut model = cadmpeg_ir::document::Model::default();
-        model.parameters = self.neutral_parameters.clone();
-        model.features = std::mem::take(&mut self.neutral_features);
-        let producers = crate::design::configurations::body_producers(&model.features);
-        crate::design::configurations::attach(&native, &mut model, &producers, &mut Vec::new())
-            .unwrap();
-        self.neutral_features = model.features;
-        model.configurations
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.parameters = self.neutral_parameters.clone();
+        ir.model.features = std::mem::take(&mut self.neutral_features);
+        let archive = super::zip_test::f3d_with_configurations(
+            &super::smbh_geometry_test::synthetic_geometry_smbh(),
+            &[],
+        );
+        super::zip_test::with_scan(&archive, |scan| {
+            super::with_decode_context(|ctx| {
+                crate::decode::attach_design(ctx, scan, &native, &mut ir, &mut Vec::new())
+            })
+        })
+        .unwrap();
+        self.neutral_features = ir.model.features;
+        ir.model.configurations
     }
 
     pub(crate) fn targets(&self) -> ConfigurationTargets<'_> {
