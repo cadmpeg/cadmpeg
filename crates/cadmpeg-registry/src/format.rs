@@ -158,6 +158,7 @@ mod tests {
             "parasolid",
             "pvz",
             "edrawings",
+            "alibre",
             "usd",
         ] {
             assert!(
