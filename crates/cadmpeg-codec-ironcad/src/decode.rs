@@ -497,9 +497,7 @@ fn settle(
                 let stream = cadmpeg_ir::stream_name!("ironcad:")
                     .with_suffix(format!("{BREP_DATA}/record-{ordinal}"));
                 for withheld in std::mem::take(&mut brep.withheld) {
-                    let mut part = withheld
-                        .part(dialect::FORMAT, record.bytes.window())?
-                        .in_stream(stream.clone());
+                    let mut part = withheld.part(dialect::FORMAT).in_stream(stream.clone());
                     if retained {
                         part = part.digest_only();
                     }
