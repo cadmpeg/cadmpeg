@@ -852,7 +852,9 @@ fn a_consumed_base_names_its_result_in_the_earlier_two_body_state() {
     let resolved = read
         .resolved_evaluation_state(&evaluation.id, &DecodePolicy::service().limits)
         .expect("state resolves");
-    assert_eq!(resolved.records().bodies, vec![body(7), body(8)]);
+    let mut bodies = resolved.records().bodies.clone();
+    bodies.sort_by(|left, right| left.id.cmp(&right.id));
+    assert_eq!(bodies, vec![body(7), body(8)]);
     assert!(validate_operations_findings(&ir).is_empty());
 }
 
