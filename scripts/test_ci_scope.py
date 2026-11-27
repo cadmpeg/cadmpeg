@@ -136,7 +136,7 @@ class ScopeTests(unittest.TestCase):
         self.assertEqual(select(ROOT, ['crates/cadmpeg-codec-inventor/src/lib.rs'])['codec_scope'], ['inventor'])
         self.assertEqual(select(ROOT, ['crates/cadmpeg-core/src/lib.rs'])['codec_scope'], [])
         self.assertEqual(select(ROOT, ['crates/cadmpeg-codec-step/src/lib.rs'])['codec_scope'],
-                         ['f3d', 'freecad', 'onshape', 'step'])
+                         ['alibre', 'f3d', 'freecad', 'onshape', 'step'])
 
     def test_codec_scope_widens_for_noncodec_fuzz_dependents(self):
         with tempfile.TemporaryDirectory() as folder:

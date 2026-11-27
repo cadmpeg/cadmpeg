@@ -24,7 +24,7 @@ use crate::design::units::{Quantity, ValueKind};
 use crate::ids::ProductDefinitionId;
 use crate::products::Storage;
 use crate::report::check::Finding;
-use crate::validate::design::selections::{check_path, check_unconfigured, moved_occurrences};
+use crate::validate::design::selections::{check_path, check_unconfigured};
 use crate::validate::products::definitions::{check_representation_name, last_prototype};
 
 /// What holds a set of overrides.
@@ -507,7 +507,7 @@ fn check_arrangement(
             ),
         );
     }
-    let moved = moved_occurrences(index.ir);
+    let moved = index.moved_occurrences();
     for appearance in &arrangement.appearances {
         if appearance.appearance.is_none() && appearance.transparency.is_none() {
             super::error(
@@ -519,7 +519,7 @@ fn check_arrangement(
                 ),
             );
         }
-        check_path(index, Some(scope), &appearance.path, &moved, id, findings);
+        check_path(index, Some(scope), &appearance.path, moved, id, findings);
     }
     for movement in &arrangement.moves {
         if !matches!(
@@ -536,11 +536,11 @@ fn check_arrangement(
             );
         }
         for path in &movement.occurrences {
-            check_path(index, Some(scope), path, &moved, id, findings);
+            check_path(index, Some(scope), path, moved, id, findings);
         }
     }
     for nested in &arrangement.nested {
-        check_path(index, Some(scope), &nested.path, &moved, id, findings);
+        check_path(index, Some(scope), &nested.path, moved, id, findings);
         if let ArrangementRef::Local(local) = &nested.arrangement {
             let prototype = last_prototype(index, &nested.path);
             let of_prototype = index
@@ -804,14 +804,14 @@ fn check_occurrence_override(
         check_representation_name(index, prototype, name.as_str(), holder, findings);
     }
     let mut paths = BTreeSet::new();
-    let moved = moved_occurrences(index.ir);
+    let moved = index.moved_occurrences();
     let prototype = value
         .prototype
         .as_ref()
         .map(ProductDefinitionId::as_str)
         .or_else(|| index.prototype(occurrence));
     for nested in &value.nested {
-        check_path(index, prototype, &nested.path, &moved, holder, findings);
+        check_path(index, prototype, &nested.path, moved, holder, findings);
         check_unconfigured(&nested.path, holder, "a nested override's path", findings);
         if let Some(name) = &nested.representation {
             let prototype = last_prototype(index, &nested.path);

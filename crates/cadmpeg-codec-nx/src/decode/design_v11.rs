@@ -252,6 +252,7 @@ fn arrangements(
                 !configuration.parameter_values.is_empty(),
             ),
             ("feature_states", !configuration.feature_states.is_empty()),
+            ("ordinal", ir.model.configurations.len() > 1),
         ];
         let cut = held
             .into_iter()

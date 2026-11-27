@@ -11,7 +11,6 @@
 //! report's losses, and source fidelity.
 
 use cadmpeg_core::serde_erase::json;
-use cadmpeg_test_support::EditableDecodeResult;
 
 use std::collections::BTreeSet;
 use std::io::Cursor;
@@ -76,8 +75,21 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 /// descends only what the snapshot keeps. The digest reads the typed arenas, so
 /// it is unaffected by either step.
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value = match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-    {
+    decode_snapshot_from(crate::test_support::cached_full_decode(bytes))
+}
+
+fn decode_snapshot_uncached(bytes: &[u8]) -> String {
+    let fresh = FcstdCodec
+        .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+        .map(std::sync::Arc::new)
+        .map_err(|error| error.to_string());
+    decode_snapshot_from(fresh)
+}
+
+fn decode_snapshot_from(
+    decoded: Result<std::sync::Arc<cadmpeg_ir::codec::DecodeResult>, String>,
+) -> String {
+    let value = match decoded {
         Ok(result) => {
             let mut ir = json::to_value(result.ir()).expect("serialize ir");
             if let Some(native) = ir.get_mut("native") {
@@ -90,7 +102,7 @@ fn decode_snapshot(bytes: &[u8]) -> String {
                 "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.ir(), result.source_fidelity()),
             })
         }
-        Err(error) => cadmpeg_core::json!({ "decode_error": error.to_string() }),
+        Err(error) => cadmpeg_core::json!({ "decode_error": error }),
     };
     snapshot_text(&value)
 }
@@ -217,9 +229,9 @@ fn elided_native(native: &cadmpeg_ir::Native) -> serde_json::Value {
 /// Panics when a produced archive is not a readable ZIP, or when two runs in one
 /// process produce different bytes.
 fn encode_snapshot(bytes: &[u8]) -> String {
-    let value = match encode_once(bytes) {
+    let value = match encode_from_cached(bytes) {
         Ok((report, archive)) => {
-            let (_, second) = encode_once(bytes).expect("a second encode of the same input");
+            let (_, second) = encode_from_cached(bytes).expect("a second encode of the same input");
             assert!(
                 archive == second,
                 "the FCStd writer produced different bytes for the same input in one process"
@@ -234,16 +246,12 @@ fn encode_snapshot(bytes: &[u8]) -> String {
     snapshot_text(&value)
 }
 
-/// Decodes `bytes` and writes the document back, returning the export report and
-/// the produced archive, or the first refusal as text.
-fn encode_once(
+/// Encodes the cached decoded document for `bytes`, returning the export report
+/// and the produced archive, or the first refusal as text.
+fn encode_from_cached(
     bytes: &[u8],
 ) -> Result<(cadmpeg_ir::report::export::ExportReport, Vec<u8>), String> {
-    let decoded = EditableDecodeResult::from(
-        FcstdCodec
-            .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-            .map_err(|error| error.to_string())?,
-    );
+    let decoded = crate::test_support::cached_full_decode(bytes)?;
     let mut produced = Vec::new();
     let report = Encoder::plan(
         &FcstdCodec,
@@ -294,22 +302,26 @@ fn golden_inspect_is_deterministic() {
 
 macro_rules! golden_determinism {
     ($($name:ident: $partition:expr, $kind:literal, $snapshot:ident),+ $(,)?) => {
-        $(#[test] fn $name() { check_determinism_partition($partition, Branch::named($kind, $snapshot)); })+
+        $(#[test] fn $name() { check_determinism_partition($partition, $kind, $snapshot); })+
     };
 }
 
 golden_determinism! {
-    golden_decode_is_deterministic_0: 0, "decode", decode_snapshot,
-    golden_decode_is_deterministic_1: 1, "decode", decode_snapshot,
-    golden_decode_is_deterministic_2: 2, "decode", decode_snapshot,
-    golden_decode_is_deterministic_3: 3, "decode", decode_snapshot,
+    golden_decode_is_deterministic_0: 0, "decode", decode_snapshot_uncached,
+    golden_decode_is_deterministic_1: 1, "decode", decode_snapshot_uncached,
+    golden_decode_is_deterministic_2: 2, "decode", decode_snapshot_uncached,
+    golden_decode_is_deterministic_3: 3, "decode", decode_snapshot_uncached,
     golden_encode_is_deterministic_0: 0, "encode", encode_snapshot,
     golden_encode_is_deterministic_1: 1, "encode", encode_snapshot,
     golden_encode_is_deterministic_2: 2, "encode", encode_snapshot,
     golden_encode_is_deterministic_3: 3, "encode", encode_snapshot,
 }
 
-fn check_determinism_partition(partition: usize, branch: Branch) {
+fn check_determinism_partition(
+    partition: usize,
+    kind: &'static str,
+    snapshot: fn(&[u8]) -> String,
+) {
     let harness = harness();
     let inputs: Vec<_> = harness
         .fixture_inputs()
@@ -317,7 +329,18 @@ fn check_determinism_partition(partition: usize, branch: Branch) {
         .enumerate()
         .filter_map(|(index, input)| (index % 4 == partition).then_some(input))
         .collect();
-    harness.check_determinism_inputs(&inputs, &[branch]);
+    if kind == "decode" {
+        for (name, bytes) in &inputs {
+            let first = decode_snapshot(bytes);
+            let second = snapshot(bytes);
+            assert!(
+                first == second,
+                "fixture `{name}`: nondeterministic decode between cached and fresh runs"
+            );
+        }
+    } else {
+        harness.check_determinism_inputs(&inputs, &[Branch::named(kind, snapshot)]);
+    }
 }
 
 /// Serializes what one fixture exports as, or the refusal the export reports.
@@ -325,12 +348,10 @@ fn check_determinism_partition(partition: usize, branch: Branch) {
 /// Pins STEP output by content for this crate's fixtures. Export errors are
 /// frozen too.
 fn step_snapshot(bytes: &[u8]) -> String {
-    let decoded = EditableDecodeResult::from(
-        match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-            Ok(decoded) => decoded,
-            Err(error) => return format!("decode_error: {error}\n"),
-        },
-    );
+    let decoded = match crate::test_support::cached_full_decode(bytes) {
+        Ok(decoded) => decoded,
+        Err(error) => return format!("decode_error: {error}\n"),
+    };
     let mut exported = Vec::new();
     match Encoder::plan(
         &StepCodec::default(),

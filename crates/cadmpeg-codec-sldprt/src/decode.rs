@@ -3964,6 +3964,8 @@ fn build_geometry_ir(
     let all_lanes = lanes;
     let lanes = &all_lanes[..base_lane_count];
     let sketch_lanes = all_lanes.as_slice();
+    let lane_cache =
+        crate::resolved_features::lane_cache::LaneScanCache::new(&histories, sketch_lanes);
     crate::resolved_features::markers::report_listed_curve_relation_drops(
         sketch_lanes,
         &histories,
@@ -3985,7 +3987,11 @@ fn build_geometry_ir(
         &brep.curves,
     );
     plane_bindings.extend(
-        crate::resolved_features::profiles::project_marker_backed_sketches(
+        crate::resolved_features::profiles::project_marker_backed_sketches_with_cache(
+            crate::resolved_features::lane_cache::CachedLaneContext {
+                cache: Some(&lane_cache),
+                plane_frames: None,
+            },
             ctx,
             &mut ir.model.features,
             &mut sketches,
@@ -4079,14 +4085,20 @@ fn build_geometry_ir(
         held_handles,
         &mut pmi_losses,
     );
-    crate::resolved_features::relation_geometry::project_relation_bindings(
+    crate::resolved_features::relation_geometry::project_relation_bindings_with_cache(
         ctx,
         &mut sketch_constraints,
         &sketches,
         &ir.model.features,
         &sketch_entities,
         &ir.model.parameters,
-        sketch_lanes,
+        crate::resolved_features::lane_cache::CachedLanes {
+            lanes: sketch_lanes,
+            context: crate::resolved_features::lane_cache::CachedLaneContext {
+                cache: Some(&lane_cache),
+                plane_frames: None,
+            },
+        },
     )?;
     crate::resolved_features::relation_geometry::project_spatial_relation_bindings(
         &mut ir.model.spatial_sketch_constraints,
@@ -4247,7 +4259,7 @@ fn build_geometry_ir(
             points: &ir.geometry.points,
         },
     )?;
-    crate::resolved_features::holes::project_hole_axes(
+    crate::resolved_features::holes::project_hole_axes_with_cache(
         ctx,
         &mut ir.model.features,
         &ir.model.sketch_entities,
@@ -4261,7 +4273,13 @@ fn build_geometry_ir(
             points: &ir.geometry.points,
         },
         &histories,
-        &all_lanes,
+        crate::resolved_features::lane_cache::CachedLanes {
+            lanes: &all_lanes,
+            context: crate::resolved_features::lane_cache::CachedLaneContext {
+                cache: Some(&lane_cache),
+                plane_frames: None,
+            },
+        },
     )?;
     crate::resolved_features::holes::project_hole_topology_axes(
         ctx,
@@ -4284,14 +4302,20 @@ fn build_geometry_ir(
         &histories,
         &all_lanes,
     );
-    crate::resolved_features::relation_geometry::project_relation_bindings(
+    crate::resolved_features::relation_geometry::project_relation_bindings_with_cache(
         ctx,
         &mut ir.model.sketch_constraints,
         &ir.model.sketches,
         &ir.model.features,
         &ir.model.sketch_entities,
         &ir.model.parameters,
-        &all_lanes,
+        crate::resolved_features::lane_cache::CachedLanes {
+            lanes: &all_lanes,
+            context: crate::resolved_features::lane_cache::CachedLaneContext {
+                cache: Some(&lane_cache),
+                plane_frames: None,
+            },
+        },
     )?;
     crate::resolved_features::sweeps::bind(
         &mut ir.model.features,
@@ -4313,11 +4337,17 @@ fn build_geometry_ir(
         configuration_body_roles(&ir, &configuration_bodies, active_given_up);
     assign_configuration_bodies(&mut ir, configuration_bodies, Some(scan))?;
     let (configuration_losses, configuration_points) =
-        crate::history::configuration::project_configuration_sketch_states(
+        crate::history::configuration::project_configuration_sketch_states_with_cache(
             ctx,
             &mut ir,
             &histories,
-            &all_lanes,
+            crate::resolved_features::lane_cache::CachedLanes {
+                lanes: &all_lanes,
+                context: crate::resolved_features::lane_cache::CachedLaneContext {
+                    cache: Some(&lane_cache),
+                    plane_frames: None,
+                },
+            },
             &exact_profiles,
             &mut annotations,
             &mut plane_bindings,
@@ -5166,7 +5196,25 @@ fn build_geometry_report(
     classification: &crate::dialect::LayerClassification,
     notes: Vec<String>,
 ) -> Result<DecodeBody, CodecError> {
-    let mut brep_losses = decoded.take_losses()?;
+    let mut losses = brep_losses(decoded)?;
+    append_parasolid_container_losses(scan, &mut losses);
+    append_swift_pmi_losses(ctx, scan, &mut losses)?;
+    classification.append_losses(&mut losses);
+    Ok(DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: crate::archive::coverage(scan, ctx)?,
+        losses,
+        notes,
+        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
+    })
+}
+
+/// The losses of a decoded Parasolid B-rep: its withheld and untyped content,
+/// then the losses the builder charged.
+pub(crate) fn brep_losses(
+    decoded: &mut Brep,
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
+    let mut taken = decoded.take_losses()?;
     let s = &decoded.stats;
     let mut losses = Vec::new();
 
@@ -5190,7 +5238,7 @@ fn build_geometry_report(
         }
         losses.push(SldprtLossCode::GeometryFaceSupportSurfaceUntyped.note(message.join(" ")));
     }
-    losses.append(&mut brep_losses);
+    losses.append(&mut taken);
     if s.unknown_curve_edges > 0 {
         losses.push(
             SldprtLossCode::GeometryEdgeSupportCurveUntyped.note(format!(
@@ -5261,16 +5309,7 @@ fn build_geometry_report(
             ),
         );
     }
-    append_parasolid_container_losses(scan, &mut losses);
-    append_swift_pmi_losses(ctx, scan, &mut losses)?;
-    classification.append_losses(&mut losses);
-    Ok(DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
-        coverage: crate::archive::coverage(scan, ctx)?,
-        losses,
-        notes,
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
-    })
+    Ok(losses)
 }
 
 /// The source metadata of a decode that projects no Parasolid geometry: the

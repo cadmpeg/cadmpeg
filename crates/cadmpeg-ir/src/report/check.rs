@@ -15,7 +15,7 @@ use crate::document::CensusKey;
 use crate::report::{loss::LossNote, Severity};
 
 /// Which invariant a validation finding concerns.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -345,7 +345,7 @@ macro_rules! rule {
 }
 
 /// A single validation finding.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Finding {

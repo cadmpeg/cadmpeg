@@ -316,7 +316,7 @@ fn a_fusion_root_component_spans_the_components_its_root_occurrences_place() {
     assert_no_design_finding(&ir);
     let records = DesignRecords::new(&ir);
     assert_eq!(
-        records.spanned_definitions("test:design:definition#part"),
+        *records.spanned_definitions("test:design:definition#part"),
         BTreeSet::from([
             "test:design:definition#bracket",
             "test:design:definition#part",
