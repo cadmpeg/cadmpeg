@@ -13,7 +13,7 @@
 //! leaves only the per-instance message to the caller.
 //!
 use cadmpeg_ir::report::{
-    loss::{LossKind, LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind},
+    loss::{LossKind, LossNamespace, LossNote, LossTaxonomy},
     Severity,
 };
 
@@ -166,22 +166,10 @@ impl SatLossCode {
         }
     }
 
-    /// The strict floor `asm.md` §7.3 states: a stream read past its absent
-    /// terminator line breaks the text format and keeps its records, so its
-    /// code pins Warning.
-    const fn strict_floor(self) -> Option<Severity> {
-        match self {
-            Self::FramingTerminatorMissing => Some(Severity::Warning),
-            _ => None,
-        }
-    }
-
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
-        NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy())
-            .with_strict_floor(self.strict_floor())
-            .into()
+        LossKind::namespaced(NAMESPACE, self.code(), self.shared_taxonomy())
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -243,7 +231,6 @@ pub(crate) fn binary_header_losses(
 #[cfg(test)]
 mod tests {
     use super::SatLossCode;
-    use cadmpeg_ir::report::Severity;
     use std::collections::BTreeSet;
 
     /// Value-level golden: the stable string form of every code, pinned.
@@ -288,29 +275,6 @@ mod tests {
                 text.bytes()
                     .all(|b| b.is_ascii_lowercase() || b == b'.' || b == b'-'),
                 "code {text} is not lowercase kebab"
-            );
-        }
-    }
-
-    /// `asm.md` §7.3 states strict floor Warning for a stream read past its
-    /// absent terminator line, and no other SAT code has one, so a pinned
-    /// decode refuses that code alone.
-    #[test]
-    fn only_the_missing_terminator_pins_a_strict_floor() {
-        use cadmpeg_ir::report::strictness::Strictness;
-        let pinned = Strictness {
-            pinned: true,
-            ..Strictness::default()
-        };
-        for code in SatLossCode::ALL {
-            let floored = *code == SatLossCode::FramingTerminatorMissing;
-            let expected = floored.then_some(Severity::Warning);
-            assert_eq!(code.kind().strict_floor(), expected, "{}", code.code());
-            assert_eq!(
-                pinned.refuses(&code.note("x"), false),
-                floored,
-                "{}",
-                code.code()
             );
         }
     }

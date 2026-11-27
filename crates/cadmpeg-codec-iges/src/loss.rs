@@ -333,8 +333,7 @@ impl IgesLossCode {
             | Self::GlobalNoncanonicalFraming
             | Self::ParameterLiteralUnusable
             | Self::ParameterCountOverdeclared
-            | Self::CardFramingRecovered
-            | Self::SplineClaimRecovered => Some(Severity::Warning),
+            | Self::CardFramingRecovered => Some(Severity::Warning),
             _ => None,
         }
     }
@@ -389,7 +388,6 @@ mod tests {
                 "entity.not-projected",
                 "geometry.not-projected",
                 "parameter.literal-unusable",
-                "geometry.spline-claim-recovered",
                 "topology.boundary-pcurve-outside-support-domain",
                 "topology.boundary-pcurve-disagrees",
                 "topology.boundary-winding-unresolved",

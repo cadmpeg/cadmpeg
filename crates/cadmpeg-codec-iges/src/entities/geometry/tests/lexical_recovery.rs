@@ -100,7 +100,7 @@ fn optional_nurbs_literals_do_not_hide_readable_poles() {
 }
 
 #[test]
-fn a_pinned_decode_refuses_a_recovered_spline_claim() {
+fn a_pinned_decode_admits_a_recovered_spline_claim() {
     let parameters = b"126,1,1,2,0,1,0,0,0,1,1,1,1,0,0,0,2,0,0,0,1,0,0,1;";
     let input = polynomial_nurbs_curve_file(parameters);
     let recovered = IgesCodec
@@ -111,19 +111,12 @@ fn a_pinned_decode_refuses_a_recovered_spline_claim() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == IgesLossCode::SplineClaimRecovered.kind()));
+        .any(|loss| loss.code == crate::loss::IgesLossCode::SplineClaimRecovered.kind()));
     let mut pinned = DecodeOptions::default();
     pinned.strictness.pinned = true;
-    match IgesCodec.decode(&mut Cursor::new(input), &pinned) {
-        Err(DecodeFailure::StrictRejected { rejection }) => {
-            assert_eq!(
-                rejection.loss().code,
-                IgesLossCode::SplineClaimRecovered.kind()
-            );
-        }
-        Ok(_) => panic!("a planar flag outside 0 and 1 breaks Type 126: expected a refusal"),
-        Err(other) => panic!("{other:?}"),
-    }
+    IgesCodec
+        .decode(&mut Cursor::new(input), &pinned)
+        .expect("a recovered spline claim pins no strict floor");
 }
 
 #[test]
