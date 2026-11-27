@@ -311,8 +311,8 @@ fn a_derived_base_group_reads_the_linked_previous_state_of_its_first_scope() {
         None,
         false,
         vec![
-            state(2, 2, None, bodies_topology(&[1])),
-            state(1, 1, None, bodies_topology(&[1])),
+            state(2, 2, Some(1), bodies_topology(&[1])),
+            state(1, 1, Some(0), bodies_topology(&[1])),
             state(
                 0,
                 0,
@@ -336,14 +336,33 @@ fn a_derived_base_group_reads_the_linked_previous_state_of_its_first_scope() {
         feature_history_states(&feature, &scopes, std::slice::from_ref(&history), &none),
         placed(PreviousState::Linked(0))
     );
+    let mut bound = feature.clone();
+    let losses = bind_feature_outputs(
+        std::slice::from_mut(&mut bound),
+        &scopes,
+        &mut [history.clone()],
+        std::slice::from_ref(&body),
+        &none,
+        None,
+    )
+    .unwrap()
+    .losses;
+    assert_eq!(
+        bound.evaluation.outputs().as_slice(),
+        std::slice::from_ref(&body.id)
+    );
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code != F3dLossCode::FeatureOutputStateChainUnbound.kind()));
+
     let mut histories = [history, linked_tail(7)];
     assert_eq!(
         feature_history_states(&feature, &scopes, &histories, &none),
         placed(PreviousState::Conflicting(StateConflict::Histories(0, 7)))
     );
-    let mut bound = feature.clone();
+    let mut unbound = feature.clone();
     let losses = bind_feature_outputs(
-        std::slice::from_mut(&mut bound),
+        std::slice::from_mut(&mut unbound),
         &scopes,
         &mut histories,
         std::slice::from_ref(&body),
@@ -352,6 +371,7 @@ fn a_derived_base_group_reads_the_linked_previous_state_of_its_first_scope() {
     )
     .unwrap()
     .losses;
+    assert!(unbound.evaluation.outputs().is_empty());
     assert_eq!(
         losses
             .iter()
@@ -404,6 +424,21 @@ fn a_resolved_base_feature_with_an_unlinked_state_is_not_charged() {
                 },
             },
         ));
+    inserted
+        .evaluation
+        .set_outputs(DistinctMembers::try_from(vec![body.id.clone()]).unwrap());
+    assert_eq!(
+        bind(
+            &inserted,
+            &scope,
+            &mut [history.clone(), linked_tail(7)],
+            &body,
+            &HashMap::new()
+        ),
+        (vec![body.id.clone()], Vec::new())
+    );
+    // Clear the projected result to exercise the projection guard independently.
+    inserted.evaluation.set_outputs(Default::default());
     assert_eq!(
         bind(
             &inserted,

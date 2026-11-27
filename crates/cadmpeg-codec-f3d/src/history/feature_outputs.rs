@@ -58,25 +58,15 @@ pub(crate) fn bind_feature_outputs(
         .iter()
         .map(|feature| feature_history_states(feature, scopes, histories, scope_histories))
         .collect::<Vec<_>>();
-    let feature_states = placements
-        .iter()
-        .map(|placement| {
-            let placement = placement.as_ref()?;
-            match placement.from.previous {
-                PreviousState::Linked(previous_state_id) => {
-                    Some((placement.state_id, previous_state_id))
-                }
-                PreviousState::Unheld | PreviousState::Unnamed | PreviousState::Conflicting(_) => {
-                    None
-                }
-            }
-        })
-        .collect::<Vec<_>>();
     let feature_sources = features
         .iter()
-        .zip(&feature_states)
-        .map(|(feature, states)| {
-            let (state_id, previous_state_id) = (*states)?;
+        .zip(&placements)
+        .map(|(feature, placement)| {
+            let placement = (*placement)?;
+            let PreviousState::Linked(previous_state_id) = placement.from.previous else {
+                return None;
+            };
+            let state_id = placement.state_id;
             let scope = feature.native_ref.as_deref()?;
             let (history, _, previous) = if scope_histories.contains_key(scope) {
                 bound_history_state_pair(
@@ -115,26 +105,30 @@ pub(crate) fn bind_feature_outputs(
     losses.append(&mut inferred_histories);
     let output_chains = features
         .iter()
-        .enumerate()
-        .map(|(index, feature)| {
-            let (current, previous) = feature_states[index]?;
+        .zip(&placements)
+        .zip(&feature_sources)
+        .map(|((feature, placement), source)| {
+            let placement = (*placement)?;
+            let PreviousState::Linked(previous) = placement.from.previous else {
+                return None;
+            };
             super::output_chain::OutputChain::resolve(
                 histories,
-                current,
+                placement.state_id,
                 previous,
                 feature
                     .native_ref
                     .as_deref()
                     .and_then(|id| scope_histories.get(id))
                     .map(String::as_str)
-                    .or_else(|| feature_sources[index].map(|source| histories[source].id.as_str())),
+                    .or_else(|| source.map(|index| histories[index].id.as_str())),
             )
         })
         .collect::<Vec<_>>();
     let output_states = feature_sources
         .iter()
-        .zip(&feature_states)
-        .filter_map(|(source, states)| Some(((*source)?, (*states)?.0)))
+        .zip(&placements)
+        .filter_map(|(source, placement)| Some(((*source)?, (*placement)?.state_id)))
         .chain(output_chains.iter().flatten().flat_map(|chain| {
             chain
                 .states
@@ -143,11 +137,14 @@ pub(crate) fn bind_feature_outputs(
         }))
         .collect::<HashSet<_>>();
     let mut measured_states = output_states.clone();
-    for (source, states) in feature_sources.iter().zip(&feature_states) {
-        if let (Some(history_index), Some((_, previous_state_id))) = (*source, *states) {
-            measured_states.insert((history_index, previous_state_id));
-        }
-    }
+    measured_states.extend(feature_sources.iter().zip(&placements).filter_map(
+        |(source, placement)| {
+            let PreviousState::Linked(previous) = (*placement)?.from.previous else {
+                return None;
+            };
+            Some(((*source)?, previous))
+        },
+    ));
     measured_states.extend(
         histories
             .iter()
@@ -167,9 +164,13 @@ pub(crate) fn bind_feature_outputs(
     );
     let mut treatment_states = HashMap::<(usize, i64), Vec<EdgeMidpointRequest>>::new();
     for (feature_index, feature) in features.iter().enumerate() {
-        let Some((state_id, previous_state_id)) = feature_states[feature_index] else {
+        let Some(placement) = placements[feature_index] else {
             continue;
         };
+        let PreviousState::Linked(previous_state_id) = placement.from.previous else {
+            continue;
+        };
+        let state_id = placement.state_id;
         let op = match feature.evaluation.definition() {
             FeatureDefinition::Operation(op) => op,
             FeatureDefinition::PostProcess { operation, .. } => operation,
