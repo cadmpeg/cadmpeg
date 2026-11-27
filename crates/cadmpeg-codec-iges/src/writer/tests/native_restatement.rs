@@ -40,18 +40,27 @@ fn decode(file: &[u8]) -> CadIr {
 
 /// What a semantic write of `ir` at `version` does with each native record.
 fn dispositions(ir: &CadIr, version: IgesVersion) -> NativeDispositions {
-    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(ir).unwrap();
-    crate::writer::target::synthesis_and_dispositions(&recovered.document, version)
-        .unwrap()
-        .1
+    crate::test_support::with_policy_context(
+        &[],
+        &cadmpeg_core::decode::DecodePolicy {
+            limits: cadmpeg_core::decode::ResourceLimits::desktop(),
+        },
+        |ctx| {
+            let recovered =
+                cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(ir, ctx).unwrap();
+            crate::writer::target::synthesis_and_dispositions(ctx, &recovered.document, version)
+                .unwrap()
+                .1
+        },
+    )
 }
 
 /// The bytes and the loss messages of a semantic write of `ir` at `version`.
 fn write(ir: &CadIr, version: IgesVersion) -> (Vec<u8>, Vec<String>) {
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(ir, None),
-            TargetRequest::Explicit(version.descriptor().id.as_str()),
+            EncodeInput::new(ir, None)
+                .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
         )
         .unwrap();
     let messages = plan

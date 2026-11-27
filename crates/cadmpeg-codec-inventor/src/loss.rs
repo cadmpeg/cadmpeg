@@ -142,7 +142,7 @@ pub(crate) enum InventorLossCode {
     FeatureSurfaceExtrusionPolarityAssumed,
     /// A through-all surface extrusion reads its neutral extent as bounded by the selected solid body.
     FeatureSurfaceExtrusionSolidBoundAssumed,
-    /// A planar extrusion target retains its unresolved body-face identity.
+    /// An extrusion target face retains its stored surface record without a resolved body-face identity.
     FeatureExtrusionTargetFaceNative,
     /// Rectangular patterns retain construction operands outside the fixed-spacing feature form.
     FeatureRectangularPatternOperandsNative,
@@ -152,6 +152,9 @@ pub(crate) enum InventorLossCode {
     FeatureThickenOperandsNative,
     /// Thicken retains a construction form with unresolved operands.
     FeatureThickenConstructionNative,
+    /// A typed Stitch Surface keeps its Boolean controls as source properties
+    /// and assumes the tolerance role of its slot-4 parameter.
+    FeatureStitchControlsNative,
     /// Shell operations retain construction controls only natively.
     FeatureShellDefinitionPartial,
     /// Attachment type-9 modes, Boolean controls, and states have no construction map.
@@ -251,6 +254,10 @@ pub(crate) enum InventorLossCode {
     FeatureLoftResultOperandsNative,
     /// Surface-loft section selections have no complete neutral construction.
     FeatureSurfaceLoftSectionsNative,
+    /// A surface loft keeps its face-loop section selection native.
+    FeatureSurfaceLoftFaceLoopNative,
+    /// A surface loft reads part-operation value 5 as a new-body creation.
+    FeatureSurfaceLoftOperationAssumed,
     /// Inventor operations retain unresolved suppression and dependency state.
     FeatureStateUnresolved,
     /// Derived components retain external source construction only natively.
@@ -423,6 +430,7 @@ impl InventorLossCode {
         Self::FeatureThreadDefinitionPartial,
         Self::FeatureThickenOperandsNative,
         Self::FeatureThickenConstructionNative,
+        Self::FeatureStitchControlsNative,
         Self::FeatureShellDefinitionPartial,
         Self::FeatureSheetMetalAttachmentControlsNative,
         Self::FeatureSheetMetalBendControlsNative,
@@ -472,6 +480,8 @@ impl InventorLossCode {
         Self::FeatureLoftOperandsNative,
         Self::FeatureLoftResultOperandsNative,
         Self::FeatureSurfaceLoftSectionsNative,
+        Self::FeatureSurfaceLoftFaceLoopNative,
+        Self::FeatureSurfaceLoftOperationAssumed,
         Self::FeatureStateUnresolved,
         Self::FeatureDerivedSourceNative,
         Self::FeatureDerivedResultNative,
@@ -601,6 +611,7 @@ impl InventorLossCode {
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
             Self::FeatureThickenConstructionNative => "feature.thicken-construction-native",
+            Self::FeatureStitchControlsNative => "feature.stitch-controls-native",
             Self::FeatureShellDefinitionPartial => "feature.shell-definition-partial",
             Self::FeatureSheetMetalAttachmentControlsNative => {
                 "feature.sheet-metal-attachment-controls-native"
@@ -674,6 +685,8 @@ impl InventorLossCode {
             Self::FeatureLoftOperandsNative => "feature.loft-operands-native",
             Self::FeatureLoftResultOperandsNative => "feature.loft-result-operands-native",
             Self::FeatureSurfaceLoftSectionsNative => "feature.surface-loft-sections-native",
+            Self::FeatureSurfaceLoftFaceLoopNative => "feature.surface-loft-face-loop-native",
+            Self::FeatureSurfaceLoftOperationAssumed => "feature.surface-loft-operation-assumed",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::FeatureDerivedSourceNative => "feature.derived-source-native",
             Self::FeatureDerivedResultNative => "feature.derived-result-native",
@@ -793,6 +806,7 @@ impl InventorLossCode {
             | Self::FeatureThreadDefinitionPartial
             | Self::FeatureThickenOperandsNative
             | Self::FeatureThickenConstructionNative
+            | Self::FeatureStitchControlsNative
             | Self::FeatureDesignOperationNative
             | Self::SketchDesignConstraintNative
             | Self::FeatureShellDefinitionPartial
@@ -844,6 +858,8 @@ impl InventorLossCode {
             | Self::FeatureLoftOperandsNative
             | Self::FeatureLoftResultOperandsNative
             | Self::FeatureSurfaceLoftSectionsNative
+            | Self::FeatureSurfaceLoftFaceLoopNative
+            | Self::FeatureSurfaceLoftOperationAssumed
             | Self::FeatureProfileBodyUndecoded
             | Self::SketchConstructionUnresolved
             | Self::SketchAxisDistanceNative
@@ -998,6 +1014,7 @@ mod tests {
                 "feature.thread-definition-partial",
                 "feature.thicken-operands-native",
                 "feature.thicken-construction-native",
+                "feature.stitch-controls-native",
                 "feature.shell-definition-partial",
                 "feature.sheet-metal-attachment-controls-native",
                 "feature.sheet-metal-bend-controls-native",
@@ -1047,6 +1064,8 @@ mod tests {
                 "feature.loft-operands-native",
                 "feature.loft-result-operands-native",
                 "feature.surface-loft-sections-native",
+                "feature.surface-loft-face-loop-native",
+                "feature.surface-loft-operation-assumed",
                 "feature.state-unresolved",
                 "feature.derived-source-native",
                 "feature.derived-result-native",

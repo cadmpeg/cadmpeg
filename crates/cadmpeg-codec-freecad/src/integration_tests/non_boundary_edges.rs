@@ -152,7 +152,7 @@ fn assert_closed_cylinder(brep: &str) {
         .collect();
     assert_eq!(losses.len(), 1);
     let plan = cadmpeg_codec_step::StepCodec::default()
-        .plan(EncodeInput::new(ir, None), TargetRequest::Explicit("ap214"))
+        .plan(EncodeInput::new(ir, None).with_target(TargetRequest::Explicit("ap214")))
         .expect("closed cylinder STEP plan");
     assert!(plan
         .report()
@@ -198,10 +198,7 @@ fn forward_open_edge_still_fails_boundary_ordering() {
     assert_eq!(decoded.ir().geometry.bodies[0].kind, BodyKind::Sheet);
     assert_eq!(decoded.ir().geometry.loops.len(), 4);
     let plan = cadmpeg_codec_step::StepCodec::default()
-        .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit("ap214"),
-        )
+        .plan(EncodeInput::new(decoded.ir(), None).with_target(TargetRequest::Explicit("ap214")))
         .unwrap();
     assert!(plan
         .report()

@@ -33,7 +33,7 @@ pub(crate) const OPTIONS_TYPE: [u8; 16] = [
     0x5a, 0x4a, 0x68, 0x99, 0xd2, 0x11, 0x7f, 0xec, 0x60, 0x00, 0xb0, 0xab, 0xc8, 0x43, 0x3c, 0xb0,
 ];
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum Property {
     Selection {

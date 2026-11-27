@@ -6,13 +6,18 @@ use cadmpeg_ir::report::check::{Check, Finding};
 use super::{finding, unique, NativeData};
 use crate::feature::sheet_metal::unfold;
 
-pub(super) fn records(data: &NativeData, findings: &mut Vec<Finding>) {
-    let raw = cadmpeg_core::decode::unique_index(data.records.iter().map(|record| {
-        (
-            (record.token.as_str(), record.ordinal),
-            record.type_id.as_str(),
-        )
-    }));
+pub(super) fn records(
+    data: &NativeData,
+    raw: &std::collections::HashMap<(&str, u32), &str>,
+    findings: &mut Vec<Finding>,
+) {
+    if data.pm_dc_sheet_metal_styles.is_empty()
+        && data.pm_dc_sheet_metal_flanges.is_empty()
+        && data.pm_app_sheet_metal_unfold_rules.is_empty()
+        && data.pm_app_sheet_metal_unfold_selections.is_empty()
+    {
+        return;
+    }
     unique(
         findings,
         data.pm_dc_sheet_metal_styles
@@ -52,7 +57,6 @@ pub(super) fn records(data: &NativeData, findings: &mut Vec<Finding>) {
         if !crate::feature::sheet_metal::style::valid(style, |ordinal| {
             raw.get(&(style.identity.segment_token.as_str(), ordinal))
                 .copied()
-                .flatten()
         }) {
             findings.push(finding(
                 Check::NativeLinks,
@@ -74,8 +78,7 @@ pub(super) fn records(data: &NativeData, findings: &mut Vec<Finding>) {
         let expected = crate::pmdc::type_id_string(expected);
         let raw_type = raw
             .get(&(identity.segment_token.as_str(), identity.record_ordinal))
-            .copied()
-            .flatten();
+            .copied();
         if identity.type_id.as_str() != expected || raw_type != Some(expected.as_str()) {
             findings.push(finding(
                 Check::NativeLinks,
@@ -92,7 +95,6 @@ pub(super) fn records(data: &NativeData, findings: &mut Vec<Finding>) {
         if !crate::feature::sheet_metal::flange::valid(flange, |ordinal| {
             raw.get(&(flange.identity.segment_token.as_str(), ordinal))
                 .copied()
-                .flatten()
         }) {
             findings.push(finding(
                 Check::NativeLinks,
@@ -109,6 +111,22 @@ pub(super) fn definitions(ir: &cadmpeg_ir::CadIr, data: &NativeData, findings: &
     use cadmpeg_ir::features::profiles::PlanarProfileRef;
     use cadmpeg_ir::features::selections::EdgeSelection;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    if data.pm_dc_sheet_metal_flanges.is_empty()
+        && !ir.model.features.iter().any(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(
+                    FeatureOperation::SheetMetalContourFlange { .. }
+                        | FeatureOperation::SheetMetalAttachedPlate { .. }
+                        | FeatureOperation::SheetMetalBend { .. }
+                        | FeatureOperation::SheetMetalUnfold { .. }
+                        | FeatureOperation::SheetMetalRefold { .. }
+                )
+            )
+        })
+    {
+        return;
+    }
     let properties =
         cadmpeg_core::decode::unique_index(data.pm_dc_feature_properties.iter().map(|p| {
             (
