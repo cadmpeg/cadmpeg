@@ -3831,8 +3831,13 @@ fn build_geometry_ir(
     retention.give_up(history_given_up);
     let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps, walked_patterns) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
+    let stored_marks = if part {
+        crate::rollback::stored_marks(ctx, scan, &lanes)?
+    } else {
+        crate::rollback::StoredMarks::new()
+    };
     let rollback = part
-        .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
+        .then(|| crate::rollback::read(scan, &mark_owners, &stored_marks, &mut pmi_losses))
         .transpose()?;
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
@@ -4802,6 +4807,7 @@ fn build_geometry_ir(
                 outside_profile: &outside_profile,
                 given_up_configurations: &given_up_configurations,
                 scan: Some(&*scan),
+                marks: &stored_marks,
             },
             &mut pmi_losses,
         )?;
@@ -5396,8 +5402,13 @@ fn build_metadata_ir(
     retention.give_up(history_given_up);
     let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps, walked_patterns) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
+    let stored_marks = if part {
+        crate::rollback::stored_marks(ctx, scan, &lanes)?
+    } else {
+        crate::rollback::StoredMarks::new()
+    };
     let rollback = part
-        .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
+        .then(|| crate::rollback::read(scan, &mark_owners, &stored_marks, &mut pmi_losses))
         .transpose()?;
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
@@ -5920,6 +5931,7 @@ fn build_metadata_ir(
                 outside_profile: &outside_profile,
                 given_up_configurations: &given_up_configurations,
                 scan: None,
+                marks: &stored_marks,
             },
             &mut pmi_losses,
         )?;

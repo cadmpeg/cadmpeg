@@ -57,7 +57,7 @@ use crate::container::ContainerScan;
 use crate::loss::SldprtLossCode;
 use crate::records::{FeatureHistory, FeatureInputLane};
 use crate::resolved_features::assembly::ConfigurationMaps;
-use crate::rollback::{Reading, Unread};
+use crate::rollback::{Reading, StoredMarks, Unread};
 
 pub(crate) use equations::{managers as equation_managers, Managers as EquationManagers};
 pub(crate) use names::Persistent;
@@ -93,6 +93,8 @@ pub(crate) struct Part<'a> {
     /// The container whose partitions store the states between features,
     /// where the decode reads the partitions.
     pub(crate) scan: Option<&'a ContainerScan<'a>>,
+    /// The mark records of each partition site.
+    pub(crate) marks: &'a StoredMarks,
 }
 
 /// What [`project`] stated.
@@ -137,6 +139,7 @@ pub(crate) fn project(
         outside_profile,
         given_up_configurations,
         scan,
+        marks,
     } = part;
     let active = equations::active_slot(histories, ir.source.as_ref());
     let mut timeline = tree::timeline(histories)?;
@@ -274,6 +277,7 @@ pub(crate) fn project(
                 scan,
                 histories,
                 lanes,
+                marks,
             },
             losses,
         )?,

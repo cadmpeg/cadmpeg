@@ -44,13 +44,15 @@ use crate::container::{contains_ascii_case_insensitive, ContainerScan, Section};
 use crate::design_v11::names::{Names, Persistent};
 use crate::loss::SldprtLossCode;
 use crate::records::{FeatureHistory, FeatureInputLane, ObjectId};
-use crate::rollback::MarkRecord;
+use crate::rollback::{MarkRecord, StoredMarks};
 
 /// What the states between features are read from.
 pub(in crate::design_v11) struct Sources<'a> {
     pub(in crate::design_v11) scan: &'a ContainerScan<'a>,
     pub(in crate::design_v11) histories: &'a [FeatureHistory],
     pub(in crate::design_v11) lanes: &'a [FeatureInputLane],
+    /// The mark records of each partition site.
+    pub(in crate::design_v11) marks: &'a StoredMarks,
 }
 
 /// The latest state of each configuration: the current state, with its name
@@ -281,24 +283,26 @@ impl Reader<'_, '_> {
         if line.marks().len() <= 2 {
             return Ok(Unread::default());
         }
-        let (Some(chain), Some(partition)) =
-            (crate::rollback::mark_chain(&records), site.section.name())
-        else {
-            return Ok(Unread::stopped(
-                "its deltas transmit frames no current mark".to_owned(),
-            ));
-        };
-        let marks = match crate::rollback::site_marks(self.ctx, sources.scan, partition, &chain)? {
-            Ok(marks) => marks,
-            Err(unread) => return Ok(Unread::stopped(unread.to_string())),
+        let marks = match site
+            .section
+            .name()
+            .and_then(|partition| sources.marks.get(partition))
+        {
+            Some(Ok(marks)) => marks,
+            Some(Err(unread)) => return Ok(Unread::stopped(unread.to_string())),
+            None => {
+                return Ok(Unread::stopped(
+                    "its deltas transmit frames no current mark".to_owned(),
+                ));
+            }
         };
         if marks.inferred && site.qualifier.is_some() {
             losses.push(crate::rollback::mark_class_inferred(&marks.configuration));
         }
-        let Some(lane) = sources
-            .lanes
-            .iter()
-            .find(|lane| lane.native_payload.as_slice() == marks.resolved)
+        let Some(lane) = marks
+            .lane
+            .as_ref()
+            .and_then(|id| sources.lanes.iter().find(|lane| &lane.id == id))
         else {
             return Ok(Unread::stopped(
                 "its feature stream has no serialized names".to_owned(),
@@ -468,6 +472,7 @@ impl Reader<'_, '_> {
                 native_ref: Some(format!("PMARK {mark}")),
             });
         }
+        wanted.refuse(timeline, "the replay does not reach their mark");
         Ok(())
     }
 }

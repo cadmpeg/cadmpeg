@@ -16,6 +16,7 @@ use crate::carchive::reader::MarkOwner;
 use crate::container::{contains_ascii_case_insensitive, ContainerScan};
 use crate::layout::pmark_record_head as head;
 use crate::loss::SldprtLossCode;
+use crate::records::FeatureInputLane;
 
 #[cfg(test)]
 mod tests;
@@ -163,17 +164,82 @@ enum MarkClass {
 
 /// The current mark and the main line back from it, current first.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct MarkChain {
+struct MarkChain {
     current: u32,
     main: Vec<u32>,
 }
 
-/// Read the rollback position of the active configuration's feature tree.
-/// A class index taken from the token scan adds its note to `losses`.
-pub(crate) fn read(
+/// The `moPMarkRecord_c` records of each partition site that stores a
+/// deltas transmit, by the name of its partition section, or why they are
+/// not read.
+pub(crate) type StoredMarks = BTreeMap<String, Result<SiteRecords, Unread>>;
+
+/// The `moPMarkRecord_c` records of one configuration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SiteRecords {
+    /// The configuration's `Contents/Config-<N>` stream name.
+    pub(crate) configuration: String,
+    /// The records, in stream order.
+    pub(crate) records: Vec<MarkRecord>,
+    /// The class index comes from the token scan.
+    pub(crate) inferred: bool,
+    /// The id of the lane of the configuration's `ResolvedFeatures` stream.
+    pub(crate) lane: Option<String>,
+}
+
+/// The mark records of every partition site of `scan` that stores a deltas
+/// transmit. The decode moves the configuration streams into unknown
+/// records after it reads them, so the records are read here, with the
+/// lanes of the configurations' `ResolvedFeatures` streams.
+pub(crate) fn stored_marks(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
+    lanes: &[FeatureInputLane],
+) -> Result<StoredMarks, CodecError> {
+    let mut stored = BTreeMap::new();
+    for section in scan.sections() {
+        let Some(name) = section
+            .name()
+            .filter(|name| crate::container::is_partition_section(name))
+        else {
+            continue;
+        };
+        let Some(deltas) = section
+            .ps_streams()
+            .iter()
+            .find(|stream| contains_ascii_case_insensitive(&stream.header.description, "deltas"))
+        else {
+            continue;
+        };
+        let chain = match DeltasRecords::read(&deltas.payload) {
+            Ok(records) => mark_chain(&records),
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => None,
+        };
+        let site = match chain {
+            Some(chain) => site_marks(ctx, scan, name, &chain)?.map(|marks| SiteRecords {
+                lane: lanes
+                    .iter()
+                    .find(|lane| lane.native_payload.as_slice() == marks.resolved)
+                    .map(|lane| lane.id.clone()),
+                configuration: marks.configuration,
+                records: marks.records,
+                inferred: marks.inferred,
+            }),
+            None => Err(Unread::NoCurrentMark),
+        };
+        stored.insert(name.to_owned(), site);
+    }
+    Ok(stored)
+}
+
+/// Read the rollback position of the active configuration's feature tree
+/// from the mark records `stored` holds. A class index taken from the token
+/// scan adds its note to `losses`.
+pub(crate) fn read(
+    scan: &ContainerScan<'_>,
     owners: &MarkOwners,
+    stored: &StoredMarks,
     losses: &mut Vec<LossNote>,
 ) -> Result<Reading, CodecError> {
     let Some(site) = crate::container::select_active_parasolid_site(scan) else {
@@ -198,9 +264,10 @@ pub(crate) fn read(
     let Some(partition) = site.section.name() else {
         return Ok(Reading::Unread(Unread::NoFeatureStreams));
     };
-    let marks = match site_marks(ctx, scan, partition, &chain)? {
-        Ok(marks) => marks,
-        Err(unread) => return Ok(Reading::Unread(unread)),
+    let marks = match stored.get(partition) {
+        Some(Ok(marks)) => marks,
+        Some(Err(unread)) => return Ok(Reading::Unread(unread.clone())),
+        None => return Ok(Reading::Unread(Unread::NoFeatureStreams)),
     };
     if marks.inferred {
         losses.push(mark_class_inferred(&marks.configuration));
@@ -212,22 +279,22 @@ pub(crate) fn read(
     Ok(join(&chain, &marks.records, owners))
 }
 
-/// The `moPMarkRecord_c` records of one configuration.
-pub(crate) struct SiteMarks<'s> {
+/// The `moPMarkRecord_c` records of one configuration, in its stream.
+struct SiteMarks<'s> {
     /// The configuration's `Contents/Config-<N>` stream name.
-    pub(crate) configuration: String,
+    configuration: String,
     /// The configuration's `ResolvedFeatures` stream.
-    pub(crate) resolved: &'s [u8],
+    resolved: &'s [u8],
     /// The records, in stream order.
-    pub(crate) records: Vec<MarkRecord>,
+    records: Vec<MarkRecord>,
     /// The class index comes from the token scan.
-    pub(crate) inferred: bool,
+    inferred: bool,
 }
 
 /// The `moPMarkRecord_c` records of the configuration whose partition
 /// section is named `partition`, and whose deltas transmit has the main line
 /// `chain`.
-pub(crate) fn site_marks<'s>(
+fn site_marks<'s>(
     ctx: &DecodeContext<'_>,
     scan: &'s ContainerScan<'_>,
     partition: &str,
@@ -287,7 +354,7 @@ fn configuration_stream(partition: &str) -> Option<String> {
 }
 
 /// The current mark of a deltas transmit and the main line back from it.
-pub(crate) fn mark_chain(records: &DeltasRecords<'_>) -> Option<MarkChain> {
+fn mark_chain(records: &DeltasRecords<'_>) -> Option<MarkChain> {
     let mut current = None;
     let mut marks = BTreeMap::<u32, PmarkState>::new();
     for event in records.events() {
