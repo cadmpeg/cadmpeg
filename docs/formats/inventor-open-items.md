@@ -408,6 +408,14 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** Controlled positive and negative taper settings, with profile and result cross-sections, for profile-plane and from-plane origins and each extent form.
 
+### DE-31. Stitch Surface operands and controls
+
+**Question.** Which body records of the state before a Stitch Surface (feature-label class `608ba39ed6117473279943ad7fbe0b63`) do the operand wrappers select, and what do the slot-3 Boolean, the slot-5 Boolean, the slot-4 parameter and its unit, and the outline value 2 or 4 control?
+
+**Known.** Section 13.12 gives the six-slot form. The state after the feature has one body key that the state before lacks, and no body key of the state before is absent after it, so the operand wrappers select no body that leaves the model. Slot 3 is true and slot 5 is false when the operand collection has two wrappers. Slot 4 is a parameter record with a positive model value and an unresolved unit.
+
+**Need.** The kernel-entity link of each operand wrapper, joined to a body key of the state before the feature, with the faces of those bodies and of the new body. Features whose slot 3 or slot 5 has the other value, features whose slot-4 value differs from the largest gap that the stitch closes, a Stitch Surface whose slot-4 parameter has a resolved unit, and a pair of features that differ only in their outline value.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions

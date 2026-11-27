@@ -1628,6 +1628,23 @@ An edge name record of type `a6e032bfd111464a000888ba32a3dc09` has the prefix of
 
 Each selection item of an intent gives one target. An item gives the target that all of its selectors select, when they agree. An unresolved item has a selector without a selected entity, a malformed selector, or two selectors that select different entities.
 
+### 13.12 Stitch Surface
+
+Feature-label class `608ba39ed6117473279943ad7fbe0b63` identifies a Stitch Surface. Its feature record has six property slots and property-list metadata `[6, 0]`:
+
+| Slot | Property |
+| --- | --- |
+| 0 | Object collection of the operand surface-body wrappers |
+| 1 | Null |
+| 2 | Surface-body wrapper of the result |
+| 3 | Boolean property |
+| 4 | Parameter record with a positive model value |
+| 5 | Boolean property |
+
+The operand collection is nonempty, and its members are distinct surface-body wrappers. The outline value of the record is 4 or 2.
+
+Exactly one body key is live in `state_after` and in no body record live in `state_before` (section 13.10), and no body key is live in `state_before` and in no body record live in `state_after`.
+
 ## 14. Document kind
 
 `Pm*` segment families identify a part document. `Am*` segment families identify an assembly document. A document that contains both families has the distinct `mixed_part_assembly` kind. Property metadata can identify a part, assembly, drawing, or presentation only when segment-family evidence does not already identify the kind.
