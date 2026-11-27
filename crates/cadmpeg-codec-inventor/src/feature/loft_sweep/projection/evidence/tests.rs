@@ -1006,9 +1006,12 @@ fn a_joined_loft_requires_the_named_result_in_the_state_after_it() {
     ));
 }
 
+/// A state model read for a test history state.
+type StateRead = fn(&CadIr) -> StateModel;
+
 #[test]
 fn a_joined_loft_requires_a_solid_with_enough_faces_in_the_state_before_it() {
-    let cases: [(CadIr, fn(&CadIr) -> StateModel); 2] = [
+    let cases: [(CadIr, StateRead); 2] = [
         (CadIr::empty(), held),
         (model(), |_| StateModel::Unavailable),
     ];
