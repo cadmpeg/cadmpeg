@@ -7,7 +7,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::{target::TargetRequest, CadirEncoder, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::design::container::{Container, OrderedKind, UnorderedKind};
+use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::report::check::Check;
@@ -254,6 +254,64 @@ fn a_part_root_states_its_group_and_its_bodies_in_list_order() {
     );
     assert_eq!(design_findings(&result), Vec::<String>::new());
     assert_design_survives_cadir(ir);
+}
+
+/// The rollback of each body of a part whose `CurrentFeature` selects the
+/// entity `current`, by the body's entity.
+fn rollbacks(current: u8) -> Vec<(u32, Option<Rollback>)> {
+    let mut records = part();
+    assert_eq!(records[0].2[19], 0x86, "the in-work token");
+    records[0].2[19] = current;
+    let result = decode(
+        outer_container_catpart(&stream(&records)).0,
+        &DecodeOptions::default(),
+    );
+    assert_eq!(design_findings(&result), Vec::<String>::new());
+    assert_design_survives_cadir(result.ir());
+    result
+        .ir()
+        .design
+        .containers
+        .iter()
+        .filter_map(|container| match container {
+            Container::Ordered { id, rollback, .. } => {
+                Some((entity(id.as_str()), rollback.clone()))
+            }
+            Container::Unordered { .. } => None,
+        })
+        .collect()
+}
+
+/// The in-work object is the rollback of the body that lists it: before the
+/// member after it, or the body's end where it is the last member or the
+/// body itself (§5.2). Every other body's rollback is unread.
+#[test]
+fn the_in_work_object_is_the_rollback_of_the_body_that_lists_it() {
+    let feature = |entity_id: u32| {
+        let Some(Container::Ordered { members, .. }) = decode(
+            outer_container_catpart(&stream(&part())).0,
+            &DecodeOptions::default(),
+        )
+        .ir()
+        .design
+        .containers
+        .iter()
+        .find(|container| entity(container.id().as_str()) == 3)
+        .cloned() else {
+            panic!("the main body is ordered");
+        };
+        members
+            .into_iter()
+            .find(|member| self::member(member) == ("feature", entity_id))
+            .unwrap()
+    };
+    assert_eq!(
+        rollbacks(0x86),
+        [(3, Some(Rollback::Before(feature(6)))), (7, None)]
+    );
+    assert_eq!(rollbacks(0x87), [(3, Some(Rollback::End)), (7, None)]);
+    assert_eq!(rollbacks(0x88), [(3, None), (7, Some(Rollback::End))]);
+    assert_eq!(rollbacks(0x85), [(3, None), (7, None)]);
 }
 
 /// A part that stores no part root keeps each feature the decoder types as a

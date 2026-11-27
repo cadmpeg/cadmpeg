@@ -21,6 +21,8 @@ pub(super) struct Tree<'a> {
     pub(super) group: Vec<Item<'a>>,
     /// The root's bodies, in list order.
     pub(super) bodies: Vec<Body<'a>>,
+    /// The entity the root's `CurrentFeature` selects: the in-work object.
+    pub(super) current: Option<u32>,
     /// Tree records the projection does not state.
     pub(super) unstated: Vec<Unstated>,
 }
@@ -39,6 +41,16 @@ pub(super) enum Item<'a> {
         class: &'a str,
     },
     Body(Body<'a>),
+}
+
+impl Item<'_> {
+    /// The entity identity of the item's record.
+    pub(super) fn entity_id(&self) -> u32 {
+        match self {
+            Item::Feature { member, .. } => member.entity_id,
+            Item::Body(body) => body.container.entity_id,
+        }
+    }
 }
 
 /// A tree record the projection does not state, and why.
@@ -108,6 +120,7 @@ pub(super) fn read<'a>(native: &'a CatiaNative, scope: &ModelingGraphScope) -> O
         root,
         group,
         bodies,
+        current: token(root, "CurrentFeature").map(|reference| reference.entity_id),
         unstated: walk.unstated,
     })
 }

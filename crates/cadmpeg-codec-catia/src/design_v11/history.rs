@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::container::{Container, OrderedKind, UnorderedKind};
+use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::names::CodecName;
@@ -39,6 +39,7 @@ pub(super) fn project(
     let mut stated = Statements {
         ctx,
         legacy: &legacy,
+        current: tree.and_then(|tree| tree.current),
         restated: BTreeSet::new(),
         reclassified: Vec::new(),
         features: Vec::new(),
@@ -125,6 +126,8 @@ pub(super) fn project(
 struct Statements<'c, 'l> {
     ctx: &'c DecodeContext<'c>,
     legacy: &'l BTreeMap<FeatureId, LegacyFeature>,
+    /// The in-work object's entity.
+    current: Option<u32>,
     restated: BTreeSet<FeatureId>,
     reclassified: Vec<String>,
     features: Vec<Feature>,
@@ -134,11 +137,24 @@ struct Statements<'c, 'l> {
 impl Statements<'_, '_> {
     fn body(&mut self, graph_offset: u64, body: &Body<'_>) -> Result<ContainerId, CodecError> {
         let mut members = Vec::with_capacity(body.members.len());
+        let mut in_work = None;
         for item in &body.members {
             if let Some(member) = self.item(graph_offset, item)? {
+                if Some(item.entity_id()) == self.current {
+                    in_work = Some(members.len());
+                }
                 members.push(member);
             }
         }
+        let rollback = if Some(body.container.entity_id) == self.current {
+            Some(Rollback::End)
+        } else {
+            in_work.map(|index| {
+                members
+                    .get(index + 1)
+                    .map_or(Rollback::End, |next| Rollback::Before(next.clone()))
+            })
+        };
         self.ctx.charge_entities(1, "project a CATIA body")?;
         let id = ContainerId::mint(body.container.id.clone()).map_err(CodecError::malformed)?;
         self.containers.push(Container::Ordered {
@@ -146,7 +162,7 @@ impl Statements<'_, '_> {
             kind: OrderedKind::Body,
             members,
             folders: Vec::new(),
-            rollback: None,
+            rollback,
             placement: None,
         });
         Ok(id)
