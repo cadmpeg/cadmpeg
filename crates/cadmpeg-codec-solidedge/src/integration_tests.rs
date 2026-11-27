@@ -1376,5 +1376,5 @@ fn geometry_depth_decode_states_no_design_records() {
     assert!(ir.design.containers.is_empty());
     assert!(ir.design.features.is_empty());
     assert!(ir.design.sheet_metal_rules.is_empty());
-    assert!(ir.check_scope().is_ok());
+    assert!(ir.scope_violations().is_empty());
 }
