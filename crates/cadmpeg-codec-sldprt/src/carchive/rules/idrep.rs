@@ -2,6 +2,7 @@
 //! `moExtObject_c`, `moCStringHandle_c`.
 
 use super::super::reader::{bad, Reader, Res, V};
+use crate::layout::three_int_identity_own as three_int;
 
 #[cfg(test)]
 mod tests;
@@ -66,7 +67,7 @@ pub(crate) fn own(c: &str) -> Option<usize> {
         | "moSimpleEdgeIdRep_c" => 4,
         "moFromSktEnt3IntSurfIdRep_c"
         | "moEndFace3IntSurfIdRep_c"
-        | "moSideFace3IntSurfIdRep_c" => 12,
+        | "moSideFace3IntSurfIdRep_c" => three_int::LEN,
         "moEndFaceSurfIdRep_c"
         | "moThinClosingSurfIdRep_c"
         | "moUnBendSurfIdRep_c"
