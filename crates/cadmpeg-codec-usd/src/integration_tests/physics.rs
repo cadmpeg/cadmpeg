@@ -642,6 +642,38 @@ fn couplings_of_a_given_up_hinge_are_dropped_with_it() {
     );
 }
 
+/// A coupling relationship that targets a prim that is no transferred joint
+/// gives the coupling up: an empty coupled list would state that it acts on
+/// its connectors directly.
+#[test]
+fn a_coupling_whose_relationship_names_no_joint_is_given_up() {
+    let text = COUPLINGS.replacen(
+        "rel physics:hinge1 = </Rig/HingeB>",
+        "rel physics:hinge1 = </Rig/Base>",
+        1,
+    );
+    assert_ne!(text, COUPLINGS);
+    let result = decode(&text);
+    let model = &result.ir().model;
+    let gear = crate::ids::joint("/Rig/Gear");
+    assert!(model.assembly_joints.iter().all(|joint| joint.id != gear));
+    assert_eq!(coupling(model, false).1.len(), 2);
+    let charges: Vec<&str> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.as_str())
+        .collect();
+    assert_eq!(
+        charges,
+        [format!(
+            "record {gear} given up: usd/physics.joint-rejected: the joint couples a joint that \
+             is not a transferred joint; dropped=[]"
+        )]
+    );
+}
+
 /// A negative `physics:gearRatio` turns both gears the same way, as an
 /// internal gear does: a positive ratio, written back as it was read. A
 /// negative rack ratio moves the rack against the pinion's turn.

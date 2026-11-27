@@ -1437,7 +1437,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         set_extrude_start(&mut scope, DesignExtrudeStart::ProfilePlane);
 
         set_extrude_operation(&mut scope, DesignExtrudeOperation::NewBody);
-        let against = parameter("AgainstDistance", "mm", -0.05);
+        let against = parameter("AgainstDistance", "mm", 0.05);
         assert!(
             crate::test_support::with_decode_context(|decode_ctx| project_extrude(
                 decode_ctx,

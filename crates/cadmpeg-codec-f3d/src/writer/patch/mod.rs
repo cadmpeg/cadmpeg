@@ -14,10 +14,10 @@ use cadmpeg_ir::geometry::{
 
 use crate::decode;
 use crate::loss::F3dLossCode;
-use crate::writer::primitives::{
-    configuration_targets, f3d_native, projects, validate_assembly_projection,
-};
+use crate::writer::primitives::{f3d_native, validate_assembly_projection};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
+use cadmpeg_ir::codec::write::saved::adopt_configurations;
+use cadmpeg_ir::report::loss::LossNote;
 pub(crate) mod edits;
 mod geometry;
 pub(crate) mod records;
@@ -62,7 +62,9 @@ enum Baseline<'a, 'v> {
 /// `source_image` must match the F3D source represented by `target`. The
 /// function validates changed topology, geometry, design, sketch, history, and
 /// appearance fields before patching records. Unsupported edits return
-/// [`CodecError::NotImplemented`].
+/// [`CodecError::NotImplemented`]. The configuration tables are written as
+/// the configurations state them, and `losses` takes what they state
+/// otherwise.
 ///
 /// Completeness of the patch is checked by rebuilding the document from the
 /// baseline plus the supported edits and comparing its machine-local content
@@ -80,6 +82,7 @@ pub(crate) fn write_semantic(
     restored: Option<&DecodeResult>,
     writer: &mut dyn Write,
     notes: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     if !target.model.omitted_arenas_held() {
         return Err(CodecError::NotImplemented(
@@ -95,23 +98,7 @@ pub(crate) fn write_semantic(
         Some(decoded) => Baseline::Decoded(decoded),
         None => Baseline::Opened(ctx.open_input(source_image, "F3D patch source archive")?),
     };
-    let target_native = f3d_native(ctx, target)?;
-    if let Some(native) = target_native.as_ref() {
-        if !projects(
-            &target.model.configurations,
-            &native.design_configurations,
-            &configuration_targets(target, native),
-        )? {
-            return Err(CodecError::NotImplemented(
-                "the neutral configurations differ from the projection of the configuration \
-                 tables, and the patch carries the configuration tables as stored"
-                    .into(),
-            ));
-        }
-        validate_assembly_projection(ctx, target, Some(native))?;
-    } else {
-        validate_assembly_projection(ctx, target, None)?;
-    }
+    let mut table_losses = Vec::new();
     let decoded;
     let baseline = match source {
         Baseline::Decoded(baseline) => baseline,
@@ -137,6 +124,15 @@ pub(crate) fn write_semantic(
         ));
     }
     let baseline_native = f3d_native(ctx, baseline.ir())?;
+    let target_native = f3d_native(ctx, target)?;
+    let mut tables = target_native
+        .as_ref()
+        .map(|native| crate::writer::generate::configuration_table::patched(target, native))
+        .transpose()?;
+    if let Some(tables) = &mut tables {
+        table_losses.append(&mut tables.losses);
+    }
+    validate_assembly_projection(ctx, target, target_native.as_ref())?;
     let natives = PatchNatives {
         baseline: baseline_native.as_ref(),
         target: target_native.as_ref(),
@@ -268,7 +264,19 @@ pub(crate) fn write_semantic(
             "F3D ACT table-reference edits require regeneration of the complete table graph".into(),
         ));
     }
-    let configuration_edits = validate_configuration_edits(natives)?;
+    let configuration_edits = validate_configuration_edits(
+        baseline_native
+            .as_ref()
+            .map_or(&[][..], |native| native.design_configurations.as_slice()),
+        tables
+            .as_ref()
+            .and_then(|tables| tables.documents.as_deref())
+            .unwrap_or_else(|| {
+                target_native
+                    .as_ref()
+                    .map_or(&[][..], |native| native.design_configurations.as_slice())
+            }),
+    )?;
     validate_act_appearance_bindings(natives, baseline.ir(), target)?;
     let body_transform_edits =
         validate_body_transform_edits(&baseline.ir().geometry.bodies, &target.geometry.bodies)?;
@@ -400,6 +408,7 @@ pub(crate) fn write_semantic(
         .model
         .configurations
         .clone_from(&target.model.configurations);
+    adopt_configurations(&mut supported_target.design, &target.design);
     if let (Some(mut supported), Some(target_native)) =
         (baseline_native.clone(), target_native.as_ref())
     {
@@ -489,6 +498,9 @@ pub(crate) fn write_semantic(
                 .namespace_mut(cadmpeg_ir::codec_id!("f3d")),
         )?;
     }
+    supported_target
+        .model
+        .adopt_omitted_arenas_baseline(&target.model);
     if decode::document_local_sha256(ctx, &supported_target)?
         != decode::document_local_sha256(ctx, target)?
     {
@@ -844,7 +856,17 @@ pub(crate) fn write_semantic(
         .finish()
         .map_err(|error| CodecError::malformed(format_args!("cannot finish F3D ZIP: {error}")))?
         .into_inner();
+    if let Some(tables) = tables {
+        tables.witness.read_back(
+            ctx,
+            &output,
+            target,
+            &target.model.parameters,
+            &mut table_losses,
+        )?;
+    }
     writer.write_all(&output)?;
+    losses.extend(table_losses);
     Ok(())
 }
 

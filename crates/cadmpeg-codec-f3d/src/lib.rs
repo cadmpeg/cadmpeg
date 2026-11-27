@@ -149,7 +149,8 @@ enum PreservedWritePath {
 
 impl F3dCodec {
     /// Replay retained source bytes when the document is the one the decode
-    /// returned (§3.1, Rule B); otherwise patch. Returns which branch ran.
+    /// returned (§3.1, Rule B); otherwise patch, adding to `losses` what the
+    /// patch writes otherwise. Returns which branch ran.
     fn write_preserved_bytes(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         ir: &CadIr,
@@ -158,13 +159,14 @@ impl F3dCodec {
         restored: Option<&cadmpeg_ir::codec::DecodeResult>,
         writer: &mut dyn Write,
         notes: &mut Vec<String>,
-    ) -> Result<PreservedWritePath, CodecError> {
+    ) -> Result<(PreservedWritePath, Vec<cadmpeg_ir::report::loss::LossNote>), CodecError> {
+        let mut losses = Vec::new();
         if fidelity.edited(ctx, ir)? {
-            writer::patch::write_semantic(ctx, ir, data, restored, writer, notes)?;
-            return Ok(PreservedWritePath::Patched);
+            writer::patch::write_semantic(ctx, ir, data, restored, writer, notes, &mut losses)?;
+            return Ok((PreservedWritePath::Patched, losses));
         }
         writer.write_all(data)?;
-        Ok(PreservedWritePath::VerbatimReplay)
+        Ok((PreservedWritePath::VerbatimReplay, losses))
     }
 }
 

@@ -8,6 +8,7 @@ use cadmpeg_ir::codec::write::{
 };
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::report::loss::LossNote;
 
 use crate::loss::F3dLossCode;
 use crate::{ids, F3dCodec, PreservedWritePath};
@@ -44,7 +45,8 @@ pub(crate) fn plan(
                 bytes,
                 write_path,
                 notes,
-            }) => return Ok(preserved_body(input, write_path, bytes, notes)),
+                losses,
+            }) => return Ok(preserved_body(input, write_path, bytes, notes, losses)),
             Ok(Preservation::SourceImageUnavailable) => source_image_unavailable(),
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => Consumption::Degraded {
@@ -71,6 +73,8 @@ enum Preservation {
         bytes: Vec<u8>,
         write_path: PreservedWritePath,
         notes: Vec<String>,
+        /// What the patch writes otherwise than the document states.
+        losses: Vec<LossNote>,
     },
     /// No retained source image, or one without bytes.
     SourceImageUnavailable,
@@ -93,13 +97,14 @@ fn preserve(
     };
     let mut bytes = Vec::new();
     let mut notes = Vec::new();
-    let write_path = F3dCodec::write_preserved_bytes(
+    let (write_path, losses) = F3dCodec::write_preserved_bytes(
         ctx, input.ir, fidelity, data, restored, &mut bytes, &mut notes,
     )?;
     Ok(Preservation::Written {
         bytes,
         write_path,
         notes,
+        losses,
     })
 }
 
@@ -108,6 +113,7 @@ fn preserved_body(
     write_path: PreservedWritePath,
     bytes: Vec<u8>,
     notes: Vec<String>,
+    patched: Vec<LossNote>,
 ) -> ExportBody {
     let write_path = match write_path {
         PreservedWritePath::Patched => WritePath::Patched {
@@ -117,9 +123,11 @@ fn preserved_body(
     };
     // Replay runs only while the document digest matches its decode baseline,
     // and the patcher refuses unless the patched baseline digests equal to the
-    // target document, so every arena is carried. Bytes the decode kept
+    // target document, so every arena is carried; the configuration tables
+    // it writes report what they state otherwise. Bytes the decode kept
     // without decoding are carried too, and reported.
-    let losses = carried_source_losses(input.fidelity, &write_path);
+    let mut losses = carried_source_losses(input.fidelity, &write_path);
+    losses.extend(patched);
     let mut native = NativeDispositions::dropped("which the F3D writer does not write");
     native.namespace("f3d", NativeDisposition::Written);
     let mut body = body(
