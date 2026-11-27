@@ -50,7 +50,14 @@ pub(super) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<Outcome
                     .iter()
                     .filter(|constraint| constraint.sketch == source.id)
                     .collect();
-                let constraints = super::constraints::project(&sketch.id, &entities, &model);
+                let ends: BTreeMap<&str, &[String]> = ir
+                    .model
+                    .sketch_entities
+                    .iter()
+                    .filter(|entity| entity.sketch == source.id)
+                    .map(|entity| (entity.id().as_str(), entity.endpoint_refs.as_slice()))
+                    .collect();
+                let constraints = super::constraints::project(&sketch.id, &entities, &model, &ends);
                 ctx.charge_entities(
                     cadmpeg_core::decode::u64_from_index(
                         entities.len() + constraints.points.len() + constraints.relations.len(),

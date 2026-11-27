@@ -3,9 +3,10 @@
 //!
 //! A constraint the reader decoded is a design constraint under its own id.
 //! An operand at the start, end, or centre of a curve is a point entity with
-//! that role of the curve (§6.1, Points are entities), named by the curve's
-//! id and `.start`, `.end`, or `.center`, the form of Onshape's own point
-//! ids. Every dimension binds the parameter the reader built for it.
+//! that role of the curve (§6.1, Points are entities). Its id is the curve's
+//! id and `.start`, `.end`, or `.center`, and a start or end point keeps the
+//! point id Onshape stores on the curve as its native name. Every dimension
+//! binds the parameter the reader built for it.
 
 use std::collections::BTreeMap;
 
@@ -39,9 +40,11 @@ pub(super) fn project(
     sketch: &SketchId,
     entities: &[SketchEntity<Planar>],
     constraints: &[&cadmpeg_ir::sketches::SketchConstraint],
+    ends: &BTreeMap<&str, &[String]>,
 ) -> Projected {
     let mut points = Points {
         sketch,
+        ends,
         curves: entities
             .iter()
             .map(|entity| (entity.id.as_str(), entity))
@@ -82,6 +85,8 @@ pub(super) fn project(
 
 struct Points<'e> {
     sketch: &'e SketchId,
+    /// The point ids Onshape stores at the start and end of each curve.
+    ends: &'e BTreeMap<&'e str, &'e [String]>,
     curves: BTreeMap<&'e str, &'e SketchEntity<Planar>>,
     minted: BTreeMap<String, SketchEntity<Planar>>,
 }
@@ -129,6 +134,21 @@ impl Points<'_> {
         }
         let position = position(parent, &role).ok_or("the curve has no such point")?;
         let id = SketchEntityId::mint(key.clone()).map_err(|_| "the point id is not an id")?;
+        let stored = match (&role, self.ends.get(curve)) {
+            (DefiningRole::Start, Some([start, _])) => Some(start),
+            (DefiningRole::End, Some([_, end])) => Some(end),
+            _ => None,
+        };
+        let native = stored
+            .map(|stored| -> Result<_, &'static str> {
+                Ok(cadmpeg_ir::design::names::NativeName {
+                    codec: cadmpeg_ir::codec_id!(crate::dialect::FORMAT),
+                    value: cadmpeg_ir::design::names::NativeNameValue::Text(
+                        NonBlankString::new(stored.as_str()).ok_or("a stored point id is blank")?,
+                    ),
+                })
+            })
+            .transpose()?;
         self.minted.insert(
             key,
             SketchEntity {
@@ -141,7 +161,7 @@ impl Points<'_> {
                 }],
                 construction: parent.construction,
                 centerline: None,
-                native: None,
+                native,
                 native_options: BTreeMap::new(),
                 source_settings: BTreeMap::new(),
                 native_ref: None,

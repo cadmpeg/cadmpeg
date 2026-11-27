@@ -283,6 +283,57 @@ fn sketch_constraints_are_design_relations_on_stated_points() {
         json!({"kind":"free","value":{"kind":"point","value":{"u":20.0,"v":0.0}}})
     );
     assert_eq!(end["roles"], json!([{"of":line,"role":{"kind":"end"}}]));
+    assert_eq!(
+        end["native"],
+        json!({"codec":"onshape","value":{"kind":"text","value":"line0.end"}})
+    );
+    validate(result);
+}
+
+#[test]
+fn a_clockwise_arc_end_keeps_the_stored_point_id_of_its_geometric_end() {
+    let bytes = crate::test_support::review::edit(&fixture("plate-fillet"), |path, value| {
+        if path.ends_with("/features.json") {
+            let sketch = &mut value["features"][0];
+            sketch["entities"].as_array_mut().unwrap().push(json!({
+                "btType":"BTMSketchCurveSegment-155","entityId":"bend",
+                "startPointId":"bend.from","endPointId":"bend.to","centerId":"bend.middle",
+                "startParam":0.0,"endParam":std::f64::consts::FRAC_PI_2,
+                "geometry":{"btType":"BTCurveGeometryCircle-115","xCenter":0.0,"yCenter":0.0,
+                    "radius":0.005,"xDir":1.0,"yDir":0.0,"clockwise":true}
+            }));
+            sketch["constraints"].as_array_mut().unwrap().push(json!({
+                "btType":"BTMSketchConstraint-2","constraintType":"COINCIDENT","entityId":"joined",
+                "parameters":[
+                    {"btType":"BTMParameterString-149","parameterId":"localFirst","value":"bend.from"},
+                    {"btType":"BTMParameterString-149","parameterId":"localSecond","value":"line0.start"}
+                ]
+            }));
+        }
+    });
+    let result = decode(&bytes);
+    let wire = wire(&result);
+    let arc = id("entity", "Base sketch/bend");
+    let model = wire["model"]["sketch_entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["id"] == arc)
+        .unwrap();
+    assert_eq!(model["endpoint_refs"], json!(["bend.to", "bend.from"]));
+    let point = wire["design"]["sketch_entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["native"]["value"]["value"] == "bend.from")
+        .unwrap_or_else(|| panic!("{:?}", result.report().losses));
+    assert_eq!(point["id"], format!("{arc}.end"));
+    assert_eq!(point["roles"], json!([{"of":arc,"role":{"kind":"end"}}]));
+    // The arc runs clockwise from angle 0, so Onshape's start point is at
+    // (5, 0) and the counterclockwise curve ends there.
+    let at = &point["definition"]["value"]["value"];
+    assert!((at["u"].as_f64().unwrap() - 5.0).abs() < 1e-9, "{at}");
+    assert!(at["v"].as_f64().unwrap().abs() < 1e-9, "{at}");
     validate(result);
 }
 

@@ -407,6 +407,18 @@ pub(super) fn map(
         }
         let clockwise =
             super::boolean_field(entity.get("geometry").unwrap_or(&Value::Null), "clockwise")?;
+        let stored = |key: &str| {
+            entity
+                .get(key)
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+        };
+        // A clockwise arc runs counterclockwise from Onshape's end point.
+        let endpoint_refs = match (stored("startPointId"), stored("endPointId")) {
+            (Some(start), Some(end)) if clockwise => vec![end, start],
+            (Some(start), Some(end)) => vec![start, end],
+            _ => Vec::new(),
+        };
         for (key, kind) in [
             ("startPointId", if clockwise { "end" } else { "start" }),
             ("endPointId", if clockwise { "start" } else { "end" }),
@@ -431,7 +443,7 @@ pub(super) fn map(
         push(
             &mut model.sketch_entities,
             json!({"id": entity_id, "sketch": sketch_id,
-            "endpoint_refs": [], "construction": super::boolean_field(entity,"isConstruction")?, "geometry": match geometry(entity).and_then(|geometry| {
+            "endpoint_refs": endpoint_refs, "construction": super::boolean_field(entity,"isConstruction")?, "geometry": match geometry(entity).and_then(|geometry| {
                 json::from_value::<cadmpeg_ir::sketches::SketchGeometry>(geometry.clone()).map_err(|e| format!("sketch geometry admission failed ({e})"))?;
                 Ok(geometry)
             }) {
