@@ -685,7 +685,7 @@ fn a_group_with_one_occurrence_member_stays_unresolved() {
 }
 
 #[test]
-fn a_motion_link_couples_the_features_of_its_two_hinges() {
+fn a_motion_link_couples_the_features_of_its_two_revolute_joints() {
     let hinge = |name: &str, ordinal: u32| {
         joint(
             name,
