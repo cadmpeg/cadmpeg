@@ -2798,7 +2798,10 @@ aggregate order does not. All length values use their explicit measure units.
 CADIR decision: a zone whose defining tolerance is a given-up tolerance is a
 value of that tolerance and has no charge of its own. A zone whose defining
 tolerance is not a transferred geometric tolerance is given up as a
-`data_record` part over its statement (CADIR §3.3).
+`data_record` part over its statement (CADIR §3.3). The give-up is
+`record.undecoded` where the defining tolerance is a complex instance with a
+`GEOMETRIC_TOLERANCE` partial or a simple instance whose name ends in
+`_TOLERANCE`, and `record.unreadable` where it is of another type.
 CADIR decision: the reader recognizes only the exact characteristic leaf
 names above. An unrecognized direct entity name ending in `_TOLERANCE`,
 including the abstract `GEOMETRIC_TOLERANCE` name, is not a kind and remains a

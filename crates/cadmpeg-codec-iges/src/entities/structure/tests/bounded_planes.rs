@@ -111,10 +111,8 @@ fn a_rejected_bounded_plane_face_gives_up_no_decoded_plane() {
     assert!(result.report().losses.iter().any(|loss| {
         crate::test_support::reports(loss, IgesLossCode::EntityNotProjected)
             && loss
-                .provenance
-                .as_ref()
-                .and_then(|provenance| provenance.tag.as_deref())
-                == Some("directory_entry:D1")
+                .message
+                .starts_with("record iges:model:face#bounded-plane-D1 ")
     }));
     assert!(
         !result.report().losses.iter().any(|loss| {
@@ -373,7 +371,7 @@ fn a_rejected_bounded_plane_face_is_given_up_by_its_face_id() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
         .collect::<Vec<_>>();
     assert_eq!(given_up.len(), 1, "{given_up:#?}");
     assert!(

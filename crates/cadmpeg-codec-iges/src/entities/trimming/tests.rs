@@ -1801,7 +1801,7 @@ fn a_trimmed_face_on_a_surface_over_the_pole_limit_is_dropped_with_the_surface()
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .find(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
         .unwrap();
     assert!(
         given_up.message.contains("surface pole count exceeds"),

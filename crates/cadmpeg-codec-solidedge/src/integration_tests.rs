@@ -1117,7 +1117,7 @@ fn a_dropped_swept_face_names_the_construction_of_its_surface() {
     let id = construction.id.as_str();
     assert!(
         result.report().losses.iter().any(|loss| {
-            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
                 && loss
                     .message
                     .split_once("; dropped=[")

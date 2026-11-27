@@ -212,11 +212,19 @@ pub(super) fn attach(
                 "tolerance zone #{id} belongs to a given-up geometric tolerance"
             )));
         } else {
+            let cause = if owners
+                .iter()
+                .all(|owner| exchange.records().get(owner).is_some_and(is_tolerance))
+            {
+                Cause::Undecoded
+            } else {
+                Cause::Unreadable
+            };
             give_up_zone(
                 exchange,
                 id,
                 zone_projections,
-                Cause::Undecoded,
+                cause,
                 &StepLossCode::PmiZoneUnresolved.note(format!(
                     "tolerance zone #{id} names no transferred geometric tolerance"
                 )),
@@ -224,6 +232,15 @@ pub(super) fn attach(
         }
     }
     Ok(())
+}
+
+/// Whether `record` is of a tolerance type: a complex record with a
+/// `GEOMETRIC_TOLERANCE` partial, or a simple record of a `*_TOLERANCE` type.
+fn is_tolerance(record: &RawRecord) -> bool {
+    record.partial("GEOMETRIC_TOLERANCE").is_some()
+        || record
+            .simple_name()
+            .is_some_and(|name| name.ends_with("_TOLERANCE"))
 }
 
 /// Gives up tolerance zone `id` for `cause` as `why` states, and drops the

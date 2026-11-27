@@ -1605,7 +1605,7 @@ fn a_legacy_hole_that_fails_marks_its_parent_face_partial() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
         .filter(|loss| {
             loss.message
                 .starts_with(&format!("record {} ", hole.as_str()))

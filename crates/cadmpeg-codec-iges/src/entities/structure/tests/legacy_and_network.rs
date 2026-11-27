@@ -876,15 +876,21 @@ fn decode_omits_occurrences_for_rejected_structure_entities() {
         expansion.fields().unwrap()["issues"],
         cadmpeg_core::json!(["malformed_placement"])
     );
+    let (given_up, noted): (Vec<_>, Vec<_>) = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| crate::test_support::reports(loss, IgesLossCode::EntityNotProjected))
+        .partition(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code));
     assert_eq!(
-        result
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| crate::test_support::reports(loss, IgesLossCode::EntityNotProjected))
-            .count(),
-        3
+        (given_up.len(), noted.len()),
+        (3, 1),
+        "{:#?}",
+        result.report().losses
     );
+    assert!(noted[0]
+        .message
+        .contains("subfigure-instance placement or decoded definition is invalid"));
 }
 
 #[test]
