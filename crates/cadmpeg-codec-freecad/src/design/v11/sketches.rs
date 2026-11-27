@@ -1438,8 +1438,9 @@ fn origins(scope: &Scope<'_>) -> HashMap<String, PickTarget> {
 /// - a sketch of the root `Group` reads `Pinned(After(m))` where the
 ///   selection picks only `m`, another member of the `Group` with a result
 ///   of its own; else the current geometry, which holds the built features
-///   of each Body, and before whose selections each stateless member of the
-///   `Group` it picks depend-orders (§5.3);
+///   of each Body, and before whose selections each stateless feature it
+///   picks depend-orders, also one that a Body lists after its rollback
+///   (§5.3);
 /// - a sketch of a Body reads the state entering it for a stateless feature
 ///   that its Body lists before it, and `Pinned(After(m))` for a feature `m`
 ///   with a state of its own that its Body lists before it, for a feature
@@ -1450,11 +1451,12 @@ fn origins(scope: &Scope<'_>) -> HashMap<String, PickTarget> {
 /// `None` where the spec states no anchor that holds what the selection
 /// picks and not the sketch: a feature that the sketch's Body lists after
 /// it (every state at or after it holds the sketch), a stateless member of
-/// the `Group` picked from a Body (no state holds it), a member of a Body at
-/// or after its rollback picked from the `Group` (the current geometry does
-/// not hold it, and the `Group` sketch has no other anchor), and targets
-/// that no one state holds. An origin entity, a feature that places occurrences,
-/// and an object that no feature restates ask nothing of the anchor.
+/// the `Group` picked from a Body (no state holds it), a feature with a
+/// state of its own that a Body lists at or after its rollback, picked from
+/// the `Group` (the current geometry does not hold it, and the `Group`
+/// sketch has no other anchor), and targets that no one state holds. An
+/// origin entity, a feature that places occurrences, and an object that no
+/// feature restates ask nothing of the anchor.
 fn anchor(
     targets: &Targets,
     holder: &FeatureId,
@@ -1473,7 +1475,7 @@ fn anchor(
     if targets.grouped.contains(holder) {
         if linked
             .iter()
-            .any(|feature| targets.unbuilt.contains(*feature))
+            .any(|feature| targets.unbuilt.contains(*feature) && stateful(feature))
         {
             return None;
         }

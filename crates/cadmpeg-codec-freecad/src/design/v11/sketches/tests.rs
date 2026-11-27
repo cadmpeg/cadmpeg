@@ -21,7 +21,7 @@ use cadmpeg_ir::design::options::NativeOption;
 use cadmpeg_ir::design::parameter::DesignParameter;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::selection::{
-    Anchor, Ordered, PickTarget, Picks, PrincipalEntity, Selection,
+    Anchor, NativeOwner, Ordered, PickTarget, Picks, PrincipalEntity, Selection,
 };
 use cadmpeg_ir::sketches::SketchEntityId;
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
@@ -758,10 +758,11 @@ fn a_group_sketch_reads_the_result_of_the_one_group_member_it_picks() {
 }
 
 #[test]
-fn a_group_sketch_picks_a_body_sketch_after_the_tip_by_native_name() {
+fn a_group_sketch_picks_an_edge_of_a_body_sketch_after_the_tip_within_that_sketch() {
     // `Body::addObject` puts a new sketch or datum at the end of the Body
-    // and moves `Tip` only for a solid feature. `FreeCAD` computes `Later`,
-    // and no current state holds it (§5.2).
+    // and moves `Tip` only for a solid feature. A stateless feature that a
+    // `Group` sketch picks depend-orders before its `Current` selections
+    // (§5.3), also after the rollback, so the pick keeps `Later`.
     let document = document(&[
         (
             "PartDesign::Body",
@@ -777,15 +778,65 @@ fn a_group_sketch_picks_a_body_sketch_after_the_tip_by_native_name() {
         ),
     ]);
     let ir = decode(&document);
+    let source = source_selection(&ir, "Sketch", 0);
+    assert_eq!(source.at, Anchor::Current);
+    let Picks::Named(members) = &source.picks else {
+        panic!("{source:?}");
+    };
+    let [picked] = members.as_slice() else {
+        panic!("{members:?}");
+    };
     assert_eq!(
-        native_paths(&source_selection(&ir, "Sketch", 0).picks),
-        ["Later.Edge1"]
+        picked.target,
+        PickTarget::Native {
+            within: Some(NativeOwner::Feature(
+                cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Later").unwrap()
+            ))
+        }
     );
-    assert_eq!(source_anchor(&ir, "Sketch", 0), Anchor::Current);
-    assert!(charges(
+    assert!(
+        matches!(
+            picked.native.as_ref().map(|native| &native.value),
+            Some(NativeNameValue::Text(sub)) if sub.as_str() == "Edge1"
+        ),
+        "{picked:?}"
+    );
+    assert!(!charges(
         &document,
         crate::loss::FreecadLossCode::DesignSketchSourceUnread,
-        "its source is the native pick of the link"
+        ""
+    ));
+}
+
+#[test]
+fn a_group_sketch_attached_to_a_body_sketch_after_the_tip_picks_a_plane_of_its_frame() {
+    let document = document(&[
+        (
+            "PartDesign::Body",
+            "Body",
+            body_tip(&["Pad", "Later"], "Pad"),
+        ),
+        ("PartDesign::Pad", "Pad", String::new()),
+        ("Sketcher::SketchObject", "Later", sketch_on("", 0, &[])),
+        (
+            "Sketcher::SketchObject",
+            "Sketch",
+            sketch_on(&link("Later", ""), 5, &[]),
+        ),
+    ]);
+    let ir = decode(&document);
+    assert_eq!(
+        support(&ir, "Sketch"),
+        PickTarget::SketchFrame {
+            sketch: cadmpeg_ir::sketches::SketchId::mint("fcstd:design:sketch#Later").unwrap(),
+            entity: PrincipalEntity::XyPlane
+        }
+    );
+    assert_eq!(support_anchor(&ir, "Sketch"), Anchor::Current);
+    assert!(!charges(
+        &document,
+        crate::loss::FreecadLossCode::DesignSketchSupportUnread,
+        "#Sketch is attached"
     ));
 }
 
