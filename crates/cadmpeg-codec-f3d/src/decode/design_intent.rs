@@ -445,7 +445,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     let mut remaining_binding_work = MAX_HISTORY_BINDING_WORK;
     let mut unbound_histories = 0_usize;
     crate::history::clear_chamfer_orientation();
-    let (history_res, pre_sketch_res) = std::thread::scope(|scope| {
+    let (history_res, pre_sketch_res) = crate::scoped::scope(|scope| {
         let h_pre = scope.spawn(move || -> Result<_, CodecError> {
             let persistent_references =
                 crate::design::decode::sketch::decode_persistent_references(scan)?;
@@ -2283,7 +2283,7 @@ fn extend_related_design_records(
         &design.asm_histories,
         &scope_histories,
     );
-    let (edge_operand_res, treatment_vertex_res, face_res) = std::thread::scope(|scope| {
+    let (edge_operand_res, treatment_vertex_res, face_res) = crate::scoped::scope(|scope| {
         let edge_identities = &mut design.design_edge_identity_operands;
         let construction_identities = &design.design_construction_operand_identities;
         let scopes = &design.design_parameter_scopes;

@@ -4329,7 +4329,7 @@ impl<'a> F3dDecodeSession<'a> {
         self.note_uninterpreted_design();
         let mut f3d_namespace =
             std::mem::take(self.ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")));
-        let (store_res, annotations_res) = std::thread::scope(|scope| {
+        let (store_res, annotations_res) = crate::scoped::scope(|scope| {
             let ir = &self.ir;
             let native = &self.native;
             let unknowns = &self.unknowns;
