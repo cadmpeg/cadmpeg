@@ -1239,7 +1239,7 @@ fn a_variable_revolve_angle_becomes_a_parameter_the_revolve_owns() {
 }
 
 #[test]
-fn suppressed_features_and_variables_do_not_report_variable_loss() {
+fn a_suppressed_feature_keeps_its_definition_and_charges_what_it_drops() {
     for suppression in ["suppressed", "parentSuppressed"] {
         for suppress_variable in [false, true] {
             let mut round = variable("round-variable", "round", "LENGTH", "lengthValue", "1 mm");
@@ -1254,6 +1254,7 @@ fn suppressed_features_and_variables_do_not_report_variable_loss() {
                 }
             });
             let (wire, report) = read(&bytes);
+            let context = format!("{suppression}, suppress_variable={suppress_variable}");
             assert_eq!(wire["features"][0]["suppressed"], suppress_variable);
             assert_eq!(wire["features"][3]["suppressed"], true);
             assert_eq!(
@@ -1264,14 +1265,48 @@ fn suppressed_features_and_variables_do_not_report_variable_loss() {
                     .any(|p| { p["id"] == id("parameter", "round-variable") }),
                 !suppress_variable
             );
-            assert!(
-                !report.losses().iter().any(|loss| loss
-                    .code
-                    .as_deref()
-                    .is_some_and(|code| code.starts_with("onshape/history."))),
-                "{suppression}, suppress_variable={suppress_variable}: {:?}",
-                report.losses()
-            );
+            let history: Vec<_> = report
+                .losses()
+                .iter()
+                .filter(|loss| {
+                    loss.code
+                        .as_deref()
+                        .is_some_and(|code| code.starts_with("onshape/history."))
+                })
+                .collect();
+            if suppress_variable {
+                for subject in ["round-variable", "Corner round"] {
+                    assert!(
+                        history
+                            .iter()
+                            .any(|loss| loss.detail.ends_with(&format!("subject: {subject}"))),
+                        "{context}: {history:?}"
+                    );
+                }
+            } else {
+                assert!(history.is_empty(), "{context}: {history:?}");
+                assert_eq!(kinds(&wire)[3], "fillet", "{context}");
+                let result = crate::test_support::review::decode(&bytes);
+                let fillet =
+                    crate::test_support::review::design_operation(result.ir(), "Corner round");
+                assert_eq!(
+                    fillet["value"]["sets"][0]["section"]["size"]["value"],
+                    json!({"kind":"parameter","value":id("parameter", "Corner round/radius")}),
+                    "{context}"
+                );
+                let feature = result
+                    .ir()
+                    .design
+                    .features
+                    .iter()
+                    .find(|feature| feature.id.as_str() == id("feature", "Corner round"))
+                    .unwrap();
+                assert_eq!(
+                    feature.suppressed,
+                    Some(cadmpeg_ir::design::dimension::Dimension::Literal(true))
+                );
+                crate::test_support::review::validate(result);
+            }
         }
     }
 }

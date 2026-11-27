@@ -821,11 +821,10 @@ fn studio_in(
         let mut dependencies = Vec::new();
         let mapped = if let Err(reason) = &suppressed {
             Err(reason.clone())
-        } else if suppressed == Ok(true) {
-            Ok(definition(
-                "native",
-                json!({"kind": "Suppressed Onshape feature", "parameters": {}}),
-            ))
+        } else if suppressed == Ok(true) && !bindings.is_empty() {
+            Err("a suppressed variable assigns no value, so later features cannot read its definition; the definition is not stated".into())
+        } else if suppressed == Ok(true) && derived::is_derived(feature) {
+            Err("the captured design of a suppressed derived feature is not read".into())
         } else if derived::is_derived(feature) {
             match derived::map(session, feature, ordinal, &inputs, folder, depth, report) {
                 Ok(captured) => {
@@ -914,19 +913,17 @@ fn studio_in(
                 model.ir.model.feature_input_topologies.truncate(sizes.4);
                 model.ir.model.feature_result_topologies.truncate(sizes.5);
                 thin_design = None;
-                if suppressed != Ok(true) {
-                    let region_budget_exhausted = inputs
-                        .regions
-                        .try_borrow()
-                        .is_ok_and(|recovery| recovery.exhausted());
-                    let code = mapping_loss_code(
-                        feature,
-                        region_budget_exhausted,
-                        suppressed.is_ok(),
-                        &reason,
-                    );
-                    loss(report, name, &reason, model.source_step.is_some(), code);
-                }
+                let region_budget_exhausted = inputs
+                    .regions
+                    .try_borrow()
+                    .is_ok_and(|recovery| recovery.exhausted());
+                let code = mapping_loss_code(
+                    feature,
+                    region_budget_exhausted,
+                    suppressed.is_ok(),
+                    &reason,
+                );
+                loss(report, name, &reason, model.source_step.is_some(), code);
                 definition(
                     "native",
                     json!({"kind": format!("Onshape {}: {reason}", feature.get("featureType").and_then(Value::as_str).unwrap_or("feature")), "parameters": {}}),
@@ -1081,6 +1078,7 @@ fn studio_in(
         let outputs: Vec<_> = single_body
             .iter()
             .chain(part_bodies.get(&ordinal))
+            .filter(|_| suppressed == Ok(false))
             .filter(|_| {
                 (thin_design.is_some() && features::value(feature, "operationType") == Some("NEW"))
                     || definition
