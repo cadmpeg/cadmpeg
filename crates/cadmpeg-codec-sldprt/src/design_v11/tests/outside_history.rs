@@ -306,21 +306,49 @@ fn a_sketch_under_the_annotations_node_is_a_group_member_that_owns_its_dimension
         </Keywords>"#,
         &[("moDetailCabinet_c", "Annotations", 101)],
     );
-    let losses = project(
-        &mut ir,
-        &native.feature_histories,
-        &native.feature_input_lanes,
-    );
-
     let sketch = ir
         .model
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
-        .unwrap()
-        .id
-        .clone();
-    let (_, members) = group(&ir);
+        .unwrap();
+    let sketch_id = sketch.id.clone();
+    let sketch_definition = sketch.evaluation.definition().clone();
+    let histories = &native.feature_histories;
+    let lanes = &native.feature_input_lanes;
+    assert_grouped_sketch_dimensions(&mut ir, histories, lanes, &sketch_id);
+
+    let boss = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("Boss"))
+        .unwrap();
+    let boss_id = boss.id.clone();
+    boss.evaluation.set_definition(sketch_definition);
+    assert_grouped_sketch_dimensions(&mut ir, histories, lanes, &sketch_id);
+    assert!(matches!(
+        ir.design
+            .features
+            .iter()
+            .find(|feature| feature.id == boss_id)
+            .unwrap()
+            .definition
+            .operation,
+        FeatureOperation::Unresolved {
+            family: cadmpeg_ir::design::feature::OperationFamily::Extrude
+        }
+    ));
+}
+
+fn assert_grouped_sketch_dimensions(
+    ir: &mut CadIr,
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[crate::records::FeatureInputLane],
+    sketch: &cadmpeg_ir::features::FeatureId,
+) {
+    let losses = project(ir, histories, lanes);
+    let (_, members) = group(ir);
     assert!(
         members.contains(&Member::Feature(sketch.clone())),
         "{members:#?}"
@@ -330,7 +358,7 @@ fn a_sketch_under_the_annotations_node_is_a_group_member_that_owns_its_dimension
             .model
             .parameters
             .iter()
-            .find(|parameter| parameter.owner.as_ref() == Some(&sketch) && parameter.name == name)
+            .find(|parameter| parameter.owner.as_ref() == Some(sketch) && parameter.name == name)
             .unwrap();
         let parameter = ir
             .design

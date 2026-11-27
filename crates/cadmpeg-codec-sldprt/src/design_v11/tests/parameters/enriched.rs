@@ -166,6 +166,10 @@ fn a_feature_only_the_reading_holds_leaves_each_parameter_its_own_record_text() 
         "99mm".to_owned(),
     );
     read[0].features.insert(boss, extra);
+    let mut empty = read[0].clone();
+    empty.id.push_str("-extra");
+    empty.features.clear();
+    read.insert(0, empty);
     super::super::outside_history::project_from(
         &mut ir,
         &histories,

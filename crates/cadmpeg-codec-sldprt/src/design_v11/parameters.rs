@@ -85,6 +85,7 @@ use crate::history::project::{
 use crate::loss::{NamedCount, SldprtLossCode};
 use crate::records::{
     ArchiveParameterClass, Feature, FeatureHistory, FeatureInputLane, FeatureInputScalarRole,
+    HistoryFeatures,
 };
 use crate::resolved_features::assembly::ConfigurationMaps;
 use crate::resolved_features::parameter_classes::{stated_parameters, StatedParameter, Statement};
@@ -895,8 +896,7 @@ impl<'a> Entries<'a> {
 /// ids of the parameters of the features outside the timeline that are no
 /// equations folder and no member of the sketches' `Group`. A dimension the
 /// history names keeps the history's feature and text: each enriched
-/// feature is paired with the feature of the same record in the same
-/// history of `histories`.
+/// feature is paired with the feature of the same record in `histories`.
 fn entries<'a>(
     histories: &'a [FeatureHistory],
     parameter_histories: &'a [FeatureHistory],
@@ -910,64 +910,56 @@ fn entries<'a>(
     let mut entries = Vec::new();
     let mut outside = Vec::new();
     let mut user_names = HashSet::new();
-    for (index, history) in parameter_histories.iter().enumerate() {
-        let mut raw = HashMap::new();
-        for feature in histories
-            .get(index)
-            .into_iter()
-            .flat_map(|history| &history.features)
-        {
-            raw.entry(feature.id.as_str()).or_insert(feature);
-        }
-        for enriched in &history.features {
-            let feature = raw.get(enriched.id.as_str()).copied();
-            let owner = match timeline.features_by_record.get(&enriched.id) {
-                Some(owner) => Some(owner.clone()),
-                None if timeline.equation_records.contains(&enriched.id) => None,
-                None => match neutral_feature_id(&enriched.id)
-                    .ok()
-                    .filter(|id| timeline.grouped.contains(id))
-                {
-                    Some(grouped) => Some(grouped),
-                    None => {
-                        for (ordinal, name) in
-                            projected_parameter_names(enriched).into_iter().enumerate()
-                        {
-                            if enriched.parameters.contains_key(name.as_str()) {
-                                outside.push(Outside {
-                                    id: neutral_parameter_id(enriched, ordinal)?,
-                                    beneath: under.contains(enriched.id.as_str()),
-                                });
-                            }
+    let raw = HistoryFeatures::new(histories);
+    let enriched = HistoryFeatures::new(parameter_histories);
+    for enriched in enriched.iter() {
+        let feature = raw.get(&enriched.id);
+        let owner = match timeline.features_by_record.get(&enriched.id) {
+            Some(owner) => Some(owner.clone()),
+            None if timeline.equation_records.contains(&enriched.id) => None,
+            None => match neutral_feature_id(&enriched.id)
+                .ok()
+                .filter(|id| timeline.grouped.contains(id))
+            {
+                Some(grouped) => Some(grouped),
+                None => {
+                    for (ordinal, name) in
+                        projected_parameter_names(enriched).into_iter().enumerate()
+                    {
+                        if enriched.parameters.contains_key(name.as_str()) {
+                            outside.push(Outside {
+                                id: neutral_parameter_id(enriched, ordinal)?,
+                                beneath: under.contains(enriched.id.as_str()),
+                            });
                         }
-                        continue;
                     }
-                },
-            };
-            for (ordinal, name) in projected_parameter_names(enriched).into_iter().enumerate() {
-                let (text, added) =
-                    match feature.and_then(|feature| feature.parameters.get(name.as_str())) {
-                        Some(text) => (text, false),
-                        None => match enriched.parameters.get(name.as_str()) {
-                            Some(text) => (text, true),
-                            None => continue,
-                        },
-                    };
-                if owner.is_none() && !user_names.insert(name.clone()) {
                     continue;
                 }
-                let Some(key) = NonBlankString::new(name) else {
-                    continue;
+            },
+        };
+        for (ordinal, name) in projected_parameter_names(enriched).into_iter().enumerate() {
+            let (text, added) =
+                match feature.and_then(|feature| feature.parameters.get(name.as_str())) {
+                    Some(text) => (text, false),
+                    None => match enriched.parameters.get(name.as_str()) {
+                        Some(text) => (text, true),
+                        None => continue,
+                    },
                 };
-                entries.push(Entry {
-                    feature: feature.unwrap_or(enriched),
-                    owner: owner.clone(),
-                    name: key,
-                    id: neutral_parameter_id(enriched, ordinal)?,
-                    text,
-                    added,
-                });
+            if owner.is_none() && !user_names.insert(name.clone()) {
+                continue;
             }
+            let Some(key) = NonBlankString::new(name) else {
+                continue;
+            };
+            entries.push(Entry {
+                feature: feature.unwrap_or(enriched),
+                owner: owner.clone(),
+                name: key,
+                id: neutral_parameter_id(enriched, ordinal)?,
+                text,
+                added,
+            });
         }
     }
     Ok((entries, outside))
