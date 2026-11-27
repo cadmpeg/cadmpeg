@@ -1252,7 +1252,7 @@ fn try_bind_parallel(
     let order_ref = &order;
     let cursor_ref = &next_cursor;
 
-    let worker_results = std::thread::scope(|scope| {
+    let worker_results = crate::scoped::scope(|scope| {
         let handles: Vec<_> = (0..workers)
             .map(|_| {
                 let cp = checkpoint.clone();
@@ -1539,7 +1539,7 @@ fn try_bind_parallel(
             let num_threads = workers.min(full_transition_jobs.len());
             let mut results: Vec<Option<(usize, AsmHistoricalTransition)>> =
                 (0..full_transition_jobs.len()).map(|_| None).collect();
-            let batches = std::thread::scope(|scope| {
+            let batches = crate::scoped::scope(|scope| {
                 let handles: Vec<_> = (0..num_threads)
                     .map(|_| {
                         scope.spawn(move || {
