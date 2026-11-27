@@ -110,7 +110,26 @@ pub(crate) fn project(
         // A stored empty `Tip` builds no member; a `Tip` that names no member
         // of the Body fixes no rollback (cadir-v11.md §5.2), and the state at
         // it is spelled `After(Container(body))`.
-        let (rollback, at) = match &body.tip {
+        let tip_position = body
+            .tip
+            .as_ref()
+            .and_then(|tip| body.members.iter().position(|member| member == tip));
+        let (rollback, at) = match tip_position {
+            Some(index) => (
+                Some(
+                    members
+                        .get(index + 1)
+                        .map_or(Rollback::End, |next| Rollback::Before(next.clone())),
+                ),
+                Position::After(members[index].clone()),
+            ),
+            None if body
+                .native_ref
+                .as_deref()
+                .is_some_and(|object| source.named_tips.contains(object)) =>
+            {
+                (None, Position::After(Member::Container(id.clone())))
+            }
             None => (
                 Some(
                     members
@@ -119,17 +138,6 @@ pub(crate) fn project(
                 ),
                 Position::Start(id.clone()),
             ),
-            Some(tip) => match body.members.iter().position(|member| member == tip) {
-                Some(index) => (
-                    Some(
-                        members
-                            .get(index + 1)
-                            .map_or(Rollback::End, |next| Rollback::Before(next.clone())),
-                    ),
-                    Position::After(members[index].clone()),
-                ),
-                None => (None, Position::After(Member::Container(id.clone()))),
-            },
         };
         current.push(CurrentState {
             at,
@@ -396,10 +404,7 @@ fn places(
                             .any(|occurrence| occurrence.id.as_str() == own)
                     })
                 });
-                // The give-up of an unreadable `LinkedObject` names the
-                // occurrence that composes after it.
-                let charged = nodes.unknown_prototypes.contains(&link.object);
-                FeatureOperation::Place(Box::new(place(link, occurrence, own, charged, losses)))
+                FeatureOperation::Place(Box::new(place(link, occurrence, own, losses)))
             }
             several => FeatureOperation::PlaceSet(Box::new(PlaceSet {
                 occurrences: several
@@ -437,7 +442,7 @@ fn places(
     features
 }
 
-/// The feature of each link given up for a prototype or element list
+/// The feature of each link given up for a member or element list
 /// stored in a form the decoder cannot read: a `Place` whose operation is
 /// unresolved, at the placement the link stores (§3.3).
 fn unresolved_places(objects: &[ObjectRecord], unresolved: &[UnresolvedLink]) -> Vec<Feature> {
@@ -478,14 +483,13 @@ fn unresolved_places(objects: &[ObjectRecord], unresolved: &[UnresolvedLink]) ->
 /// parent where `LinkTransform` is false, and after the linked object's own
 /// occurrence where it is true and the scope holds that occurrence (`own`).
 /// Where it is true and the scope holds no such occurrence, the `Place`
-/// states neither, with a loss naming the link unless a give-up already
-/// names it (`charged`). The identity is absent under `Parent` with no
+/// states neither, with a design loss where the product occurrence
+/// already states a transform. The identity is absent under `Parent` with no
 /// scale (§2.4).
 fn place(
     link: &ProductNodeRecord,
     occurrence: &Occurrence,
     own: bool,
-    charged: bool,
     losses: &mut Vec<LossNote>,
 ) -> Place {
     let scalar = link.element_count().unwrap_or(0) == 0
@@ -497,7 +501,7 @@ fn place(
     } else {
         Some(PlacementBase::Parent)
     };
-    if scalar && base.is_none() && !charged {
+    if scalar && base.is_none() && occurrence.transform.is_some() {
         losses.push(
             FreecadLossCode::FeatureLinkPlacementUnresolved.note(format!(
                 "link {} composes its Placement after the linked object's own placement, \
@@ -584,6 +588,7 @@ struct Source<'a> {
     placements: HashMap<&'a str, &'a PropertyRecord>,
     /// The properties each object stores, by object and name.
     stored: BTreeSet<(&'a str, &'a str)>,
+    named_tips: BTreeSet<&'a str>,
     /// The objects a `MultiTransform` lists in `Transformations`.
     stages: BTreeSet<&'a str>,
 }
@@ -604,10 +609,23 @@ impl<'a> Source<'a> {
             .filter(|property| property.name == "Placement")
             .map(|property| (property.owner.as_str(), property))
             .collect();
+        let named_tips = properties
+            .iter()
+            .filter(|property| {
+                property.name == "Tip"
+                    && property
+                        .links()
+                        .iter()
+                        .flatten()
+                        .any(|link| link.object().is_some())
+            })
+            .map(|property| property.owner.as_str())
+            .collect();
         Self {
             touched,
             placements,
             stored,
+            named_tips,
             stages: multi_transform_stages(objects, properties),
         }
     }

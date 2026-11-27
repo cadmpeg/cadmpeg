@@ -1519,9 +1519,7 @@ fn reconvergent_product_graph_is_not_a_cycle() {
         .iter()
         .map(|record| (record.object.as_str(), record))
         .collect();
-    assert!(product_cycle_nodes(&nodes)
-        .expect("cycle analysis")
-        .is_empty());
+    assert!(product_cycle_nodes(&nodes).is_empty());
 }
 
 #[test]
@@ -1531,10 +1529,7 @@ fn product_cycle_marks_only_the_strongly_connected_component() {
         .iter()
         .map(|record| (record.object.as_str(), record))
         .collect();
-    assert_eq!(
-        product_cycle_nodes(&nodes).expect("cycle analysis"),
-        HashSet::from(["B", "C"])
-    );
+    assert_eq!(product_cycle_nodes(&nodes), HashSet::from(["B", "C"]));
 }
 
 #[test]

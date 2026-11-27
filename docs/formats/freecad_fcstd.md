@@ -651,8 +651,9 @@ an `App::LinkGroup` that lists it shows it at the link group's placement. An
 definition come only from the `Shape` property of its object. Other shape payloads, such as
 `AddSubShape` and `InternalShape`, are not definition bodies. A datum (`PartDesign::Plane`,
 `Line`, `Point`, or `CoordinateSystem`) is a feature: a container that lists it holds it as a
-member, and its `Shape` is its display shape, kept in its shape payload record. When `Shape` holds a non-null shape
-whose root location is a rigid transform, that transform is the restored `Placement` of the object
+member, and its `Shape` is its display shape, kept in its shape payload record. When `Shape` holds a
+non-null shape whose root location is a rigid transform, that transform is the restored
+`Placement` of the object
 and replaces the persisted `Placement` value. Otherwise the persisted `Placement` value applies. The
 bodies of a definition that an occurrence uses are in the frame of their object, and the occurrence
 carries its placement. The bodies of a definition that no occurrence uses keep their root location.
@@ -664,8 +665,9 @@ an object in one coordinate-system group: an `App::Part`, `Assembly::AssemblyObj
 `Assembly::AssemblyLink`, or `PartDesign::Body`. A member that a later group in document order also
 lists stays in the first, and the later group's list property is given up as `record.unreadable`;
 the later group places none of the objects the first holds. A `PartDesign::Body` lists as its
-features only the objects it holds, and a `Tip` that names an object it does not hold selects no
-active feature. An `App::LinkGroup` lists objects that a coordinate-system group also holds. Each
+features only the objects it holds. A `Tip` that names an object outside the Body leaves its
+rollback unspecified and states the current state after the Body container. An `App::LinkGroup`
+lists objects that a coordinate-system group also holds. Each
 object it lists has its own occurrence under the link group, beside its occurrence in the group
 that holds it. The occurrence under the first container that lists an object keeps the object's
 occurrence identity; the identity of each further occurrence adds that container's object key. The
@@ -687,9 +689,9 @@ number semantics for a same-named `Id` property. Product object identity, user-v
 column selection are distinct from the part-number value. Both properties retain their own type and
 value, including empty strings. A wrong runtime type, wrong root tag, missing or extra direct value,
 nested value, or missing `value` retains the property natively. FreeCAD restores the `_Property`
-elements of an owner and then its `Property` elements, each into the property of its name. Where
-an owner stores more than one element of one name, the element restored last sets the property,
-and the reading emits `metadata.persistence-property-repeated`.
+elements of an owner and then its `Property` elements, each into the property of its name. Repeated
+values of the same runtime type restore into that property in order. The decoder keeps the last
+element of a repeated name and emits `metadata.persistence-property-repeated`.
 
 Named product carriers use the producer runtime type and value grammar. `Group` and `ElementList`
 are `App::PropertyLinkList` properties with one `LinkList` root; its `count` equals the number of
@@ -701,14 +703,17 @@ properties with one `XLink` target. `LinkCopyOnChangeGroup` is an `App::Property
 with one `Float` value, and `ScaleVector` is an `App::PropertyVector` with one `PropertyVector`
 value carrying `valueX`, `valueY`, and `valueZ`. Link restoration keeps a nonuniform `ScaleVector`
 authoritative. A uniform `ScaleVector` takes the scalar `Scale` value on all axes; an absent `Scale`
-has the built-in default one. Both original carriers remain independently persisted properties. `VisibilityList` is an `App::PropertyBoolList` with one `BoolList` root and
-a `value` bit string. Its characters are ordered most-significant bit first: for a string of length
+has the built-in default one. Both original carriers remain independently persisted properties.
+`VisibilityList` is an `App::PropertyBoolList` with one `BoolList` root and a `value` bit string.
+Its characters are ordered most-significant bit first: for a string of length
 `n`, character `n - 1 - i` is `1` when `ElementList` element `i` is visible and `0` when it is
 hidden. The typed native property record retains the complete bit string. CADIR decision:
 `VisibilityList` remains a native product carrier and does not populate `Occurrence.visible`; that
 neutral field remains unset for product occurrences. `PlacementList` and
 `ScaleList` are respectively `App::PropertyPlacementList` and `App::PropertyVectorList`, each
-with one `PlacementList` or `VectorList` root and at most one named side entry. `LinkPlacement`,
+with one `PlacementList` or `VectorList` root and at most one named side entry. For an array
+with hidden element objects, each list contributes a matrix only at indices it stores.
+`LinkPlacement`,
 `Placement`, and the inherited component placement are `App::PropertyPlacement` properties with
 one `PropertyPlacement` value. A named carrier with another runtime type, root tag, value count,
 or link count is malformed and cannot populate a neutral field. The built-in `LinkCopyOnChange`
@@ -723,8 +728,10 @@ objects it lists are placed without its placement; it names at most eight of the
 rest. A malformed `Group` or `ElementList` of a link states its elements, so the link's product
 record is dropped with it, together with the record of each `App::LinkElement` the link holds: each
 that its `ElementList` names and each whose `_LinkOwner` is the link's persisted `id`, unless another
-link lists it. The link's design feature is a `Place` whose operation is unresolved, at the
-placement the link stores, and each link occurrence that composes after the link has no transform.
+array link lists it. The link's design feature is a `Place` whose operation is unresolved, at the
+placement the link stores. An occurrence that uses a dropped link or element as its prototype
+places an unresolved definition and follows the stored `LinkTransform` policy. With the policy
+enabled, the occurrence has no transform.
 The link and its elements have no occurrence, and a container that lists the link does not place
 it. A link with a malformed `LinkedObject` keeps its product record with no prototype: each of its
 occurrences places an unresolved definition, and with `LinkTransform` true it has no transform. A
@@ -772,8 +779,9 @@ For nested links, `prototype_transform` records the linked placement chain selec
 The chain resolves each local product target through its unique product record. A local target with
 no product record contributes its persisted `LinkPlacement` matrix or its restored `Placement`
 matrix directly.
-Prototype cycles are invalid in both the native and neutral product graphs, except a cycle of links
-that follow their linked objects, whose links are given up.
+Prototype cycles are invalid in both the native and neutral product graphs. The native validator
+omits the followed prototype edges of a cycle the decoder gives up, then checks the remaining
+graph for cycles.
 
 CADIR decision: a scalar link whose `LinkTransform` is true and whose linked object has no own
 occurrence in the document's scope emits `feature.link-placement-unresolved`; its v11 `Place`
@@ -1762,8 +1770,8 @@ PartDesign topology post-processing controls are optional and independent. `Refi
 `App::PropertyBool` property with one direct `Bool` root; an absent property means false.
 `FuzzyTolerance` is one `App::PropertyFloatConstraint` property with one direct `Float` root; an
 absent property means the kernel default. A finite value below zero selects automatic tolerance,
-zero selects the kernel default, and a positive value selects that explicit tolerance. A duplicate
-property name is malformed at document persistence admission. A duplicate or nested value root,
+zero selects the kernel default, and a positive value selects that explicit tolerance. Repeated
+property names follow the document persistence restore order. A duplicate or nested value root,
 wrong runtime type, invalid boolean value, or non-finite fuzzy value is malformed for design
 admission. The affected feature remains a native feature and reports blocking loss
 `feature.native-kind-retained`; the malformed control is never silently discarded. Valid controls

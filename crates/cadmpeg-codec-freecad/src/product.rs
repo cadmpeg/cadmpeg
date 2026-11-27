@@ -49,7 +49,9 @@ pub(crate) struct ProductNodes {
     pub(crate) unresolved: Vec<UnresolvedLink>,
     /// The links whose `LinkedObject` is stored in a form the decoder cannot
     /// read.
-    pub(crate) unknown_prototypes: HashSet<String>,
+    unknown_prototypes: HashSet<String>,
+    /// Removed link elements, keyed to the link whose carrier gave them up.
+    dropped_elements: HashMap<String, String>,
     /// The give-ups of placement values, charged by [`transfer_neutral`]
     /// once it knows the occurrences each leaves with no transform.
     pub(crate) deferred: Vec<Deferred>,
@@ -168,6 +170,7 @@ fn given_up(
 }
 
 pub(crate) fn transfer(
+    ctx: &DecodeContext<'_>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
@@ -264,11 +267,10 @@ pub(crate) fn transfer(
             membership.extend(copy_unreadable);
             dropped_links.push(DroppedLink {
                 object,
-                listed: owned
-                    .iter()
-                    .find(|property| property.name == "ElementList")
-                    .map(|property| linked_object_names(property.links()))
-                    .unwrap_or_default(),
+                listed: match owned.iter().find(|property| property.name == "ElementList") {
+                    Some(property) => dropped_element_names(ctx, property)?,
+                    None => Vec::new(),
+                },
                 given_up: membership,
             });
             continue;
@@ -455,7 +457,7 @@ pub(crate) fn transfer(
             node,
         });
     }
-    drop_link_elements(
+    let dropped_elements = drop_link_elements(
         objects,
         &by_owner,
         dropped_links,
@@ -467,8 +469,33 @@ pub(crate) fn transfer(
         unplaced,
         unresolved,
         unknown_prototypes,
+        dropped_elements,
         deferred,
     })
+}
+
+fn dropped_element_names(
+    ctx: &DecodeContext<'_>,
+    property: &PropertyRecord,
+) -> Result<Vec<String>, CodecError> {
+    if !property.links().is_empty() {
+        return Ok(linked_object_names(property.links()));
+    }
+    let xml = match ctx.parse_xml(property.xml.text(), "FreeCAD dropped link's element list") {
+        Ok(tree) => tree,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(Vec::new()),
+    };
+    Ok(xml
+        .root_element()
+        .children()
+        .filter(|root| root.has_tag_name("LinkList"))
+        .flat_map(|root| root.children())
+        .filter(|child| child.has_tag_name("Link"))
+        .filter_map(|child| child.attribute("value"))
+        .filter(|name| !name.is_empty())
+        .map(|name| crate::native::native_id("object", name))
+        .collect())
 }
 
 /// Gives up each link of `dropped` with the `App::LinkElement` objects it
@@ -481,40 +508,52 @@ fn drop_link_elements(
     dropped: Vec<DroppedLink<'_>>,
     output: &mut Vec<ProductNodeRecord>,
     deferred: &mut Vec<Deferred>,
-) -> Result<(), CodecError> {
+) -> Result<HashMap<String, String>, CodecError> {
     if dropped.is_empty() {
-        return Ok(());
+        return Ok(HashMap::new());
     }
     let dropped_objects = dropped
         .iter()
         .map(|link| link.object.id().as_str())
         .collect::<HashSet<_>>();
-    let kept = output
+    let kept = listed_link_element_objects(output, objects);
+    let mut elements = HashMap::new();
+    let mut elements_by_owner = HashMap::<i64, Vec<&ObjectRecord>>::new();
+    for object in objects
         .iter()
-        .flat_map(ProductNodeRecord::element_objects)
-        .cloned()
-        .collect::<HashSet<_>>();
-    let elements = objects
-        .iter()
-        .filter(|object| {
-            object.type_name == "App::LinkElement"
-                && !kept.contains(object.id())
-                && !dropped_objects.contains(object.id().as_str())
-        })
-        .collect::<Vec<_>>();
-    let mut removed = HashSet::new();
+        .filter(|object| object.type_name == "App::LinkElement")
+    {
+        if kept.contains(object.id().as_str()) || dropped_objects.contains(object.id().as_str()) {
+            continue;
+        }
+        elements.insert(object.id().as_str(), object);
+        if let Some(owner) = by_owner
+            .get(object.id().as_str())
+            .and_then(|owned| owned.iter().find(|property| property.name == "_LinkOwner"))
+            .and_then(|property| link_owner(property).ok())
+            .filter(|&owner| owner != 0)
+        {
+            elements_by_owner.entry(owner).or_default().push(object);
+        }
+    }
+    let mut removed = HashMap::new();
     for link in dropped {
         let mut ids = vec![crate::native::native_id("product", link.object.name())];
-        for element in &elements {
-            let owner = by_owner
-                .get(element.id().as_str())
-                .and_then(|owned| owned.iter().find(|property| property.name == "_LinkOwner"))
-                .and_then(|property| link_owner(property).ok());
-            if link.listed.contains(element.id())
-                || owner.is_some_and(|owner| Some(owner) == link.object.persistent_id)
+        let owned = link
+            .object
+            .persistent_id
+            .and_then(|id| elements_by_owner.get(&id));
+        for element in link
+            .listed
+            .iter()
+            .filter_map(|id| elements.get(id.as_str()).copied())
+            .chain(owned.into_iter().flatten().copied())
+        {
+            if let std::collections::hash_map::Entry::Vacant(slot) =
+                removed.entry(element.id().clone())
             {
                 ids.push(crate::native::native_id("product", element.name()));
-                removed.insert(element.id().clone());
+                slot.insert(link.object.id().clone());
             }
         }
         let mut ids = Some(ids);
@@ -534,8 +573,8 @@ fn drop_link_elements(
             });
         }
     }
-    output.retain(|record| !removed.contains(&record.object));
-    Ok(())
+    output.retain(|record| !removed.contains_key(&record.object));
+    Ok(removed)
 }
 
 /// The target of link property `name` of type `expected_type` and root
@@ -812,6 +851,8 @@ fn project(
         .filter(|object| product_kind(&object.type_name) == Some(ProductKind::Occurrence))
         .map(|object| object.id().as_str())
         .collect::<HashSet<_>>();
+    let dropped_link =
+        |object: &str| link_objects.contains(object) && !record_by_object.contains_key(object);
     let mut properties_by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     let mut owners = Vec::new();
     for property in properties {
@@ -833,7 +874,9 @@ fn project(
     for record in records {
         if !matches!(record.node, ProductNode::Occurrence(_)) {
             component_objects.push(record.object.as_str());
-            placed_objects.insert(record.object.as_str());
+            if parent_map.has_product_placement(&record.object) {
+                placed_objects.insert(record.object.as_str());
+            }
         }
     }
     for record in records {
@@ -841,7 +884,7 @@ fn project(
             !link_objects.contains(member.as_str())
                 && !constraint_objects.contains(member.as_str())
                 && !datum_objects.contains(member.as_str())
-                && !parent_map.body_held(member)
+                && parent_map.has_product_placement(member)
         }) {
             component_objects.push(member.as_str());
             placed_objects.insert(member.as_str());
@@ -879,16 +922,16 @@ fn project(
     for joint in joints {
         for reference in joint.references() {
             if reference.document().is_none() {
-                if let Some(name) = reference
-                    .object()
-                    .filter(|name| !link_objects.contains(*name) && !parent_map.body_held(name))
-                {
+                if let Some(name) = reference.object().filter(|name| {
+                    !link_objects.contains(*name) && parent_map.has_product_placement(name)
+                }) {
                     component_objects.push(name);
                     placed_objects.insert(name);
                 }
             }
         }
     }
+    component_objects.retain(|object| !dropped_link(object));
     component_objects.sort_unstable_by(Ord::cmp);
     component_objects.dedup();
 
@@ -964,7 +1007,9 @@ fn project(
                 .all(|body| body.transform.unwrap_or_default() == location)
         {
             placements_by_object.insert(owner, location);
-            unplaced.remove(owner);
+            if !dropped_link(owner) {
+                unplaced.remove(owner);
+            }
         }
     }
     // A copy-on-change group shows its children only through itself.
@@ -1011,6 +1056,19 @@ fn project(
     }
 
     let element_objects = listed_link_element_objects(records, objects);
+    let followed_cycles = followed_link_cycle_nodes(&record_by_object);
+    for record in records
+        .iter()
+        .filter(|record| followed_cycles.contains(record.object.as_str()))
+    {
+        deferred.push(Deferred {
+            object: record.object.clone(),
+            record: GivenUpRecord::new(
+                Identity::try_from(record.object.as_str()).map_err(CodecError::malformed)?,
+                "its chain of links that follow their linked objects returns to it",
+            ),
+        });
+    }
     let mut charged_links = HashSet::new();
     let mut occurrences = Vec::new();
     // The container object of each occurrence, parallel to `occurrences`.
@@ -1028,6 +1086,9 @@ fn project(
         let is_array = matches!(cardinality, LinkArrayCardinality::Elements(_));
         let expanded = show_element(record, owned);
         let listing = parent_map.containers(record.object.as_str());
+        if listing.is_empty() {
+            continue;
+        }
         let record_unplaced = unplaced.contains(record.object.as_str());
         let prototype_transform = linked_prototype_transform(
             ctx,
@@ -1037,9 +1098,10 @@ fn project(
                 placed: &placements_by_object,
                 unplaced: &unplaced,
                 unknown_prototypes: &nodes.unknown_prototypes,
+                followed_cycles: &followed_cycles,
+                dropped_elements: &nodes.dropped_elements,
             },
             &mut Links {
-                stack: Vec::new(),
                 charged: &mut charged_links,
                 deferred,
             },
@@ -1164,7 +1226,9 @@ fn project(
                     None => document,
                 };
                 external_definition(&mut externals, document)?
-            } else if let Some(prototype) = record.prototype() {
+            } else if let Some(prototype) =
+                record.prototype().filter(|object| !dropped_link(object))
+            {
                 definition_id(prototype)?
             } else {
                 let unresolved = ProductDefinitionId::mint(crate::native::model_id(
@@ -1288,7 +1352,7 @@ fn project(
         if has_geometry
             && !link_objects.contains(prototype)
             && !copied_objects.contains(prototype)
-            && !parent_map.body_held(prototype)
+            && parent_map.has_product_placement(prototype)
             && (placements_by_object.contains_key(prototype) || unplaced.contains(prototype))
         {
             placed_objects.insert(prototype);
@@ -1339,20 +1403,11 @@ fn project(
         let mut ordinals =
             ctx.alloc_filled(occurrences.len(), 0_u32, "freecad occurrence ordinals")?;
         let mut next_ordinal = HashMap::<Option<String>, u32>::new();
-        for record in records.iter().filter(|record| {
-            matches!(
-                record.node,
-                ProductNode::Part(_) | ProductNode::LinkGroup { .. }
-            )
-        }) {
+        for &(container, ref members) in &parent_map.member_order {
             let mut ordinal = 0_u32;
-            for member in record
-                .members()
-                .iter()
-                .chain(record.element_objects().iter())
-            {
-                for &index in by_source.get(member.as_str()).into_iter().flatten() {
-                    if assigned[index] || containers[index] != Some(record.object.as_str()) {
+            for member in members {
+                for &index in by_source.get(member).into_iter().flatten() {
+                    if assigned[index] || containers[index] != Some(container) {
                         continue;
                     }
                     assigned[index] = true;
@@ -1362,7 +1417,7 @@ fn project(
                     })?;
                 }
             }
-            next_ordinal.insert(Some(record.object.clone()), ordinal);
+            next_ordinal.insert(Some(container.to_owned()), ordinal);
         }
         for index in 0..occurrences.len() {
             if assigned[index] {
@@ -1489,12 +1544,11 @@ struct Placements<'a> {
     /// The links whose `LinkedObject` is stored in a form the decoder cannot
     /// read.
     unknown_prototypes: &'a HashSet<String>,
+    followed_cycles: &'a HashSet<&'a str>,
+    dropped_elements: &'a HashMap<String, String>,
 }
 
-/// The walk of a nested link chain: the links entered, the links given up
-/// as members of a cycle, and the deferred give-ups.
 struct Links<'a> {
-    stack: Vec<String>,
     charged: &'a mut HashSet<String>,
     deferred: &'a mut Vec<Deferred>,
 }
@@ -1509,9 +1563,8 @@ enum Prototype {
 
 /// The placement link `record` composes after its own: its linked object's,
 /// after the one that object follows in turn. Unknown where one of them is
-/// stored in a form the decoder cannot read or does not compose, and where
-/// the chain returns to a link it holds; each link of such a cycle is given
-/// up once, whatever the placements on the chain.
+/// stored in a form the decoder cannot read or does not compose, or the
+/// chain reaches a link of a cycle.
 fn linked_prototype_transform(
     ctx: &DecodeContext<'_>,
     record: &ProductNodeRecord,
@@ -1530,35 +1583,21 @@ fn linked_prototype_transform(
             Prototype::At(Transform::identity())
         });
     };
-    if let Some(start) = links
-        .stack
-        .iter()
-        .position(|object| object == &record.object)
-    {
-        for link in &links.stack[start..] {
-            if links.charged.insert(link.clone()) {
-                links.deferred.push(Deferred {
-                    object: link.clone(),
-                    record: GivenUpRecord::new(
-                        Identity::try_from(link.as_str()).map_err(CodecError::malformed)?,
-                        "its chain of links that follow their linked objects returns to it",
-                    ),
-                });
-            }
-        }
+    if placements.followed_cycles.contains(record.object.as_str()) {
         return Ok(Prototype::Unknown(record.object.clone()));
     }
 
-    links.stack.push(record.object.clone());
     let target_record = records.get(prototype).copied();
     let nested = target_record.map_or(Ok(Prototype::At(Transform::identity())), |target| {
         linked_prototype_transform(ctx, target, records, placements, links)
     });
-    links.stack.pop();
     let nested = match nested? {
         Prototype::At(nested) => nested,
         unknown @ Prototype::Unknown(_) => return Ok(unknown),
     };
+    if let Some(owner) = placements.dropped_elements.get(prototype) {
+        return Ok(Prototype::Unknown(owner.clone()));
+    }
     if placements.unplaced.contains(prototype) {
         return Ok(Prototype::Unknown(prototype.to_owned()));
     }
@@ -1623,6 +1662,7 @@ pub(crate) struct ParentMap<'a> {
     parts: HashSet<&'a str>,
     link_groups: HashMap<&'a str, Vec<&'a str>>,
     copy_on_change_groups: HashSet<&'a str>,
+    member_order: Vec<(&'a str, Vec<&'a str>)>,
     /// Each list property that lists objects another group holds, with each
     /// such object and the group that holds it.
     conflicts: Vec<(&'a PropertyRecord, Vec<(&'a str, &'a str)>)>,
@@ -1648,6 +1688,7 @@ impl<'a> ParentMap<'a> {
                 .filter(|target| target.document().is_none())
                 .filter_map(|target| target.object())
                 .collect(),
+            member_order: Vec::new(),
             conflicts: Vec::new(),
         };
         let mut in_document_order = objects.iter().collect::<Vec<_>>();
@@ -1672,12 +1713,19 @@ impl<'a> ParentMap<'a> {
                         container,
                         element_objects,
                     }) => {
-                        for member in container.members.iter().chain(element_objects) {
-                            let groups = map.link_groups.entry(member.as_str()).or_default();
+                        let members = container
+                            .members
+                            .iter()
+                            .chain(element_objects)
+                            .map(String::as_str)
+                            .collect::<Vec<_>>();
+                        for &member in &members {
+                            let groups = map.link_groups.entry(member).or_default();
                             if !groups.contains(&id) {
                                 groups.push(id);
                             }
                         }
+                        map.member_order.push((id, members));
                         continue;
                     }
                     _ if object.type_name == "PartDesign::Body" => {
@@ -1697,7 +1745,7 @@ impl<'a> ParentMap<'a> {
                     _ => continue,
                 };
             let mut conflicting = Vec::new();
-            for member in listed {
+            for &member in &listed {
                 match map.coordinate.get(member).copied() {
                     None => {
                         map.coordinate.insert(member, id);
@@ -1707,6 +1755,9 @@ impl<'a> ParentMap<'a> {
                     }
                     Some(_) => {}
                 }
+            }
+            if map.parts.contains(id) {
+                map.member_order.push((id, listed));
             }
             if let Some(carrier) = carrier.filter(|_| !conflicting.is_empty()) {
                 map.conflicts.push((carrier, conflicting));
@@ -1720,15 +1771,16 @@ impl<'a> ParentMap<'a> {
         self.coordinate.get(object).copied()
     }
 
-    /// Whether a `PartDesign::Body` holds `object`.
-    fn body_held(&self, object: &str) -> bool {
+    fn has_product_placement(&self, object: &str) -> bool {
         self.coordinate(object)
-            .is_some_and(|holder| !self.parts.contains(holder))
+            .is_none_or(|holder| self.parts.contains(holder))
+            || self.link_groups.contains_key(object)
     }
 
     /// The product containers that place `object`, first its `App::Part` or
     /// assembly, then each link group that lists it; `[None]` for the
-    /// document root. A copy-on-change group holds a link's copies hidden,
+    /// document root. A Body-held object has no root placement.
+    /// A copy-on-change group holds a link's copies hidden,
     /// so it places an object only where no other container lists it.
     pub(crate) fn containers(&self, object: &str) -> Vec<Option<&'a str>> {
         let mut found = self
@@ -1746,7 +1798,7 @@ impl<'a> ParentMap<'a> {
         if found.is_empty() {
             found.extend(groups.first().copied());
         }
-        if found.is_empty() {
+        if found.is_empty() && self.has_product_placement(object) {
             return vec![None];
         }
         found.into_iter().map(Some).collect()
@@ -2350,12 +2402,15 @@ fn bool_list(property: &PropertyRecord, name: &str) -> Result<Vec<bool>, CodecEr
 
 pub(crate) fn product_cycle_nodes<'a>(
     nodes: &HashMap<&'a str, &'a ProductNodeRecord>,
-) -> Result<HashSet<&'a str>, CodecError> {
+) -> HashSet<&'a str> {
+    let given_up = followed_link_cycle_nodes(nodes);
     cycle_nodes(nodes, |node| {
         node.members()
             .iter()
             .map(String::as_str)
-            .chain(node.prototype())
+            .chain(node.prototype().filter(|_| {
+                node.external_document().is_none() && !given_up.contains(node.object.as_str())
+            }))
             .chain(node.element_objects().iter().map(String::as_str))
             .collect()
     })
@@ -2363,9 +2418,9 @@ pub(crate) fn product_cycle_nodes<'a>(
 
 /// The links on a cycle of links that follow their linked objects, which
 /// [`transfer_neutral`] gives up.
-pub(crate) fn followed_link_cycle_nodes<'a>(
+fn followed_link_cycle_nodes<'a>(
     nodes: &HashMap<&'a str, &'a ProductNodeRecord>,
-) -> Result<HashSet<&'a str>, CodecError> {
+) -> HashSet<&'a str> {
     cycle_nodes(nodes, |node| {
         node.prototype()
             .filter(|_| node.link_transform() == Some(true) && node.external_document().is_none())
@@ -2378,7 +2433,7 @@ pub(crate) fn followed_link_cycle_nodes<'a>(
 fn cycle_nodes<'a>(
     nodes: &HashMap<&'a str, &'a ProductNodeRecord>,
     targets: impl Fn(&'a ProductNodeRecord) -> Vec<&'a str>,
-) -> Result<HashSet<&'a str>, CodecError> {
+) -> HashSet<&'a str> {
     let edges = |name: &'a str| {
         nodes
             .get(name)
@@ -2386,13 +2441,6 @@ fn cycle_nodes<'a>(
             .unwrap_or_default()
             .into_iter()
             .filter(|target| nodes.contains_key(target))
-    };
-    let collect_edges = |name: &'a str| -> Result<Vec<&'a str>, CodecError> {
-        let mut targets = Vec::new();
-        for target in edges(name) {
-            targets.push(target);
-        }
-        Ok(targets)
     };
     let mut reverse = HashMap::<&str, Vec<&str>>::new();
     for &source in nodes.keys() {
@@ -2413,12 +2461,12 @@ fn cycle_nodes<'a>(
             continue;
         }
         let mut stack = Vec::new();
-        stack.push((root, collect_edges(root)?, 0_usize));
+        stack.push((root, edges(root).collect::<Vec<_>>(), 0_usize));
         while let Some((current, targets, next)) = stack.last_mut() {
             if let Some(&target) = targets.get(*next) {
                 *next += 1;
                 if visited.insert(target) {
-                    stack.push((target, collect_edges(target)?, 0));
+                    stack.push((target, edges(target).collect(), 0));
                 }
             } else {
                 finish.push(*current);
@@ -2451,7 +2499,7 @@ fn cycle_nodes<'a>(
             }
         }
     }
-    Ok(cyclic)
+    cyclic
 }
 
 #[cfg(test)]

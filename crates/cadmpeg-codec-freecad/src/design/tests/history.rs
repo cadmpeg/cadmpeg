@@ -338,6 +338,23 @@ fn a_body_lists_only_the_features_it_holds() {
         ["fcstd:design:feature#Own"]
     );
     assert_eq!(children.active_child(), &None);
+    let design = &result.ir().design;
+    let container = design
+        .containers
+        .iter()
+        .find(|container| container.id().as_str() == "fcstd:design:container#Body")
+        .expect("Body container");
+    let cadmpeg_ir::design::container::Container::Ordered { rollback, .. } = container else {
+        panic!("{container:?}");
+    };
+    assert_eq!(*rollback, None);
+    let state = &design.scopes[0].current[0];
+    assert_eq!(
+        state.at,
+        cadmpeg_ir::design::refs::Position::After(cadmpeg_ir::design::refs::Member::Container(
+            container.id().clone()
+        ))
+    );
     assert_valid_document(result.ir());
 }
 

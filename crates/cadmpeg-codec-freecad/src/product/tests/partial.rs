@@ -201,6 +201,52 @@ fn a_link_cycle_is_given_up_whatever_the_placements_on_it_hold() {
 }
 
 #[test]
+fn native_validation_keeps_membership_cycles_when_it_omits_followed_edges() {
+    let link = |name: &str, target: &str| {
+        format!(
+            r#"<Object name="{name}"><Properties Count="3"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="{target}"/></Property><Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="{name}"/></LinkList></Property></Properties></Object>"#
+        )
+    };
+    let document = format!(
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="App::Link" name="First"/><Object type="App::Link" name="Second"/></Objects>
+<ObjectData Count="2">{}{}</ObjectData></Document>"#,
+        link("First", "Second"),
+        link("Second", "First"),
+    );
+    let result = decode_document(&document);
+    assert_eq!(
+        crate::test_support::validate_native(result.ir())
+            .iter()
+            .map(|finding| finding.message.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "fcstd:native:product#First participates in a product-structure cycle",
+            "fcstd:native:product#Second participates in a product-structure cycle",
+        ]
+    );
+    let given_up = result
+        .report()
+        .losses
+        .iter()
+        .map(|loss| loss.message.as_str())
+        .filter(|message| {
+            message.contains("its chain of links that follow their linked objects returns to it")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(given_up.len(), 2);
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "feature.link-placement-unresolved")
+            .count(),
+        0
+    );
+}
+
+#[test]
 fn an_object_a_body_holds_has_no_occurrence_of_a_part_that_lists_it_later() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3"><Object type="PartDesign::Body" name="Body"/><Object type="App::Part" name="Holder"/><Object type="Part::Feature" name="Member"/></Objects>
@@ -239,6 +285,37 @@ fn an_object_a_body_holds_has_no_occurrence_of_a_part_that_lists_it_later() {
              FreeCAD keeps each in the group that holds it, and this list places none of them; dropped=[]"
         ),
         "{message}"
+    );
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn a_body_held_link_does_not_take_an_ordinal_from_the_part_that_lists_it() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4"><Object type="PartDesign::Body" name="Body"/><Object type="App::Part" name="Part"/><Object type="App::Link" name="Held"/><Object type="Part::Feature" name="Member"/></Objects>
+<ObjectData Count="4">
+ <Object name="Body"><Properties Count="1"><Property name="Model" type="App::PropertyLinkList"><LinkList count="1"><Link value="Held"/></LinkList></Property></Properties></Object>
+ <Object name="Part"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="Held"/><Link value="Member"/></LinkList></Property></Properties></Object>
+ <Object name="Held"><Properties Count="0"/></Object>
+ <Object name="Member"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let result = decode_document(document);
+    assert_eq!(
+        owned_suffixes(result.ir(), "#Part:definition"),
+        ["#Member:container"]
+    );
+    assert_eq!(
+        result
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .map(|row| row.id.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "fcstd:model:occurrence#Member:container",
+            "fcstd:model:occurrence#Part:container",
+        ]
     );
     assert_valid_document(result.ir());
 }
@@ -382,6 +459,62 @@ fn a_link_with_an_unreadable_element_list_is_given_up_with_its_elements() {
         }
     );
     assert_eq!(feature.placement, None);
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn a_miscounted_array_list_gives_up_its_elements_and_keeps_a_dependent_link() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object type="App::Link" name="Array"/><Object type="App::LinkElement" name="Element"/><Object type="App::Link" name="Dependent"/></Objects>
+<ObjectData Count="3">
+ <Object name="Array"><Properties Count="1"><Property name="ElementList" type="App::PropertyLinkList"><LinkList count="2"><Link value="Element"/></LinkList></Property></Properties></Object>
+ <Object name="Element"><Properties Count="0"/></Object>
+ <Object name="Dependent"><Properties Count="2">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Element"/></Property>
+  <Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = decode_document(document);
+    let occurrence = occurrence(&result, "#Dependent:instance");
+    assert_eq!(occurrence.transform, None);
+    assert_eq!(
+        result
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .map(|row| &row.id)
+            .collect::<Vec<_>>(),
+        [&occurrence.id]
+    );
+    let prototype = result
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .find(|row| row.id == occurrence.prototype)
+        .expect("unresolved prototype of dependent link");
+    assert_eq!(
+        prototype.storage,
+        cadmpeg_ir::products::Storage::External(cadmpeg_ir::products::ExternalDocument::default())
+    );
+    assert_eq!(prototype.native_ref, None);
+    let message = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.message
+                .starts_with("record fcstd:native:property#Array:ElementList given up")
+        })
+        .expect("array membership give-up");
+    assert!(
+        message.message.ends_with(concat!(
+            "occurrence fcstd:model:occurrence#Dependent:instance states no transform; ",
+            "dropped=[fcstd:native:product#Array, fcstd:native:product#Element]"
+        )),
+        "{message:?}"
+    );
     assert_valid_document(result.ir());
 }
 
