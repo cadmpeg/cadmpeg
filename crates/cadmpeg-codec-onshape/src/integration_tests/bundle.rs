@@ -506,6 +506,15 @@ fn up_to_face_uses_analytic_boundaries_of_that_feature_input() {
         termination["face"]["value"]["state"],
         "onshape:model:input#toFace"
     );
+    let design = cadmpeg_core::serde_erase::json::to_value(
+        &model.ir.design.features[2].definition.operation,
+    )
+    .unwrap();
+    assert_eq!(
+        design["value"]["span"]["end"],
+        json!({"kind":"to_geometry","value":{"target":{"at":{"kind":"input"},"picks":{"kind":"named","value":[
+            {"target":{"kind":"native","value":{}},"native":{"codec":"onshape","value":{"kind":"text","value":"top"}}}]}}}})
+    );
     assert_eq!(
         wire["model"]["feature_input_topologies"][0]["edge_geometry"][0]["faces"],
         json!(["top"])

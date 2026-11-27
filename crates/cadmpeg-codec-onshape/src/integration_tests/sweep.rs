@@ -97,6 +97,37 @@ fn plain_sweep_resolves_profile_path_order_and_dependencies() {
             .losses
             .iter()
             .any(|loss| loss.code.to_string() == "onshape/sweep.not-supported"));
+        let design = json::to_value(
+            &result
+                .ir()
+                .design
+                .features
+                .last()
+                .unwrap()
+                .definition
+                .operation,
+        )
+        .unwrap();
+        assert_eq!(design["kind"], "sweep");
+        assert_eq!(
+            design["value"]["section"]["picks"]["value"],
+            json!([{"target":{"kind":"sketch","value":"onshape:model:sketch#Base%20sketch"}}])
+        );
+        assert_eq!(
+            design["value"]["path"]["picks"]["value"],
+            json!([
+                {"target":{"kind":"sketch_entity","value":"onshape:model:entity#path-sketch/z-line"}},
+                {"target":{"kind":"sketch_entity","value":"onshape:model:entity#path-sketch/a-arc"}}
+            ])
+        );
+        assert_eq!(
+            design["value"]["output"]["boolean"]["kind"],
+            if expected == "new_body" {
+                "new_body"
+            } else {
+                "apply"
+            }
+        );
         review::validate(result);
     }
 }

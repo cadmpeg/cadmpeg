@@ -3,6 +3,7 @@
 //! CADIR write carries its features and sketches in that layer.
 use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
+use serde_json::Value;
 
 use crate::reader::id;
 use crate::test_support::fixture;
@@ -82,6 +83,15 @@ fn a_part_studio_without_a_thin_extrude_states_its_timeline() {
         crate::loss::OnshapeLossCode::DesignOperationUnresolved.matches(loss)
             && loss.message.ends_with("subject: Corner round")
     }));
+    let names: Vec<_> = ir.design.names.entries().iter().collect();
+    let [(cadmpeg_ir::design::refs::EntityRef::Body(body), entry)] = names.as_slice() else {
+        panic!("one body name: {names:?}");
+    };
+    assert_eq!(body, &ir.geometry.bodies[0].id);
+    assert_eq!(
+        json::to_value(&entry.name).unwrap(),
+        json!({"kind":"generated","value":{"kind":"body","feature":id("feature", "Plate"),"role":{"kind":"body"}}})
+    );
     assert_eq!(ir.design.sketches.len(), 1);
     // The four lines, and the two ends of the line the length constraint
     // dimensions.
@@ -291,4 +301,131 @@ fn a_cadir_write_carries_the_restated_constraints() {
             constraint.id
         );
     }
+}
+
+/// The plate-fillet bundle with its fillet replaced by a chamfer of the
+/// parameters `parameters`.
+fn chamfer(parameters: &Value) -> Vec<u8> {
+    crate::test_support::review::edit(&fixture("plate-fillet"), |path, value| {
+        if path.ends_with("/features.json") {
+            let feature = &mut value["features"][2];
+            feature["featureType"] = json!("chamfer");
+            let mut rows = vec![json!({"parameterId":"entities","queries":[
+                {"btType":"BTMIndividualQuery-138","deterministicIds":["upright"]}]})];
+            rows.extend(parameters.as_array().unwrap().iter().cloned());
+            feature["parameters"] = Value::Array(rows);
+        }
+    })
+}
+
+#[test]
+fn a_chamfer_states_its_setbacks_and_flip() {
+    let result = decode(&chamfer(&json!([
+        {"parameterId":"chamferType","value":"EQUAL_OFFSETS"},
+        {"parameterId":"width","expression":"0.5 mm"}
+    ])));
+    let operation = design_operation(result.ir(), "Corner round");
+    assert_eq!(operation["kind"], "chamfer");
+    let set = &operation["value"]["sets"][0];
+    assert_eq!(
+        set["size"],
+        json!({"kind":"distance","value":{"kind":"literal","value":0.5}})
+    );
+    assert_eq!(set["flip"], json!({"kind":"literal","value":false}));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| crate::loss::OnshapeLossCode::ChamferSideAssumed.matches(loss)));
+    validate(result);
+
+    let result = decode(&chamfer(&json!([
+        {"parameterId":"chamferType","value":"TWO_OFFSETS"},
+        {"parameterId":"width1","expression":"0.5 mm"},
+        {"parameterId":"width2","expression":"0.25 mm"},
+        {"parameterId":"oppositeDirection","value":true}
+    ])));
+    let operation = design_operation(result.ir(), "Corner round");
+    let set = &operation["value"]["sets"][0];
+    assert_eq!(
+        set["size"],
+        json!({"kind":"distances","value":{"first":{"kind":"literal","value":0.5},
+            "second":{"kind":"literal","value":0.25}}})
+    );
+    assert_eq!(set["flip"], json!({"kind":"literal","value":true}));
+    assert!(result.report().losses.iter().any(|loss| {
+        crate::loss::OnshapeLossCode::ChamferSideAssumed.matches(loss)
+            && loss.message.ends_with("subject: Corner round")
+    }));
+    validate(result);
+}
+
+#[test]
+fn tangent_propagation_is_a_rule_on_the_selected_edges() {
+    for stored in [true, false] {
+        let bytes = crate::test_support::review::edit(&fixture("plate-fillet"), |path, value| {
+            if path.ends_with("/bodydetails/2.json") {
+                let body = &mut value["bodies"][0];
+                body["vertices"] = json!([{"id":"low"},{"id":"high"}]);
+                body["edges"][0]["vertices"] = json!(["low", "high"]);
+            }
+            if path.ends_with("/features.json") {
+                value["features"][2]["parameters"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({"parameterId":"tangentPropagation","value":stored}));
+            }
+        });
+        let result = decode(&bytes);
+        let fillet = design_operation(result.ir(), "Corner round");
+        let picks = &fillet["value"]["sets"][0]["edges"]["picks"];
+        assert_eq!(picks["kind"], "rule", "{fillet}");
+        let [term] = picks["value"]["terms"].as_array().unwrap().as_slice() else {
+            panic!("one term: {picks}");
+        };
+        assert_eq!(term["rule"], json!({"kind":"explicit"}));
+        assert_eq!(
+            term["seeds"][0]["native"]["value"]["value"],
+            json!("upright")
+        );
+        assert_eq!(
+            term["propagation"],
+            if stored {
+                json!({"kind":"connected","value":{"continuity":{"kind":"g1"}}})
+            } else {
+                json!({"kind":"off"})
+            }
+        );
+        assert!(picks["value"].get("resolved").is_none());
+        validate(result);
+    }
+}
+
+#[test]
+fn holes_state_their_bore_head_extent_and_thread() {
+    let result = decode(&fixture("hole-forms"));
+    let ir = result.ir();
+    let counterbore = design_operation(ir, "Counterbore");
+    assert_eq!(counterbore["kind"], "hole");
+    assert_eq!(
+        counterbore["value"]["positions"]["kind"], "points",
+        "{counterbore}"
+    );
+    assert_eq!(counterbore["value"]["shape"]["head"]["kind"], "counterbore");
+    assert_eq!(
+        counterbore["value"]["extent"],
+        json!({"kind":"through_all"})
+    );
+    let countersink = design_operation(ir, "Countersink");
+    assert_eq!(countersink["value"]["shape"]["head"]["kind"], "countersink");
+    let tapped = design_operation(ir, "Tapped");
+    assert_eq!(tapped["kind"], "hole", "{:?}", result.report().losses);
+    let thread = &tapped["value"]["thread"];
+    assert_eq!(
+        thread["major_diameter"],
+        json!({"kind":"literal","value":4.0})
+    );
+    assert!(thread["standard"]["standard"].is_string(), "{thread}");
+    assert!(tapped["value"]["standard"].is_null());
+    validate(result);
 }
