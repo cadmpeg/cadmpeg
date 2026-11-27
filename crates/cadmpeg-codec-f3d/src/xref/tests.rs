@@ -894,6 +894,75 @@ fn legacy_typed_placements_decode_identity_and_matrix_forms() {
     );
 }
 
+/// `frame` with each legacy target typed as the referenced design's root
+/// component.
+fn root_component_targets(frame: Vec<u8>) -> Vec<u8> {
+    let placeholder = b"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    let root = b"E03784ED-5E19-4E14-B9F2-3B07017018CD";
+    let mut out = Vec::with_capacity(frame.len());
+    let mut at = 0;
+    while at < frame.len() {
+        if frame[at..].starts_with(placeholder) {
+            out.extend_from_slice(root);
+            at += placeholder.len();
+        } else {
+            out.push(frame[at]);
+            at += 1;
+        }
+    }
+    out
+}
+
+#[test]
+fn legacy_typed_placement_source_keeps_its_frame_and_source_occurrence_identity() {
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let matrix = [
+        [0.0, -1.0, 0.0, 2.0],
+        [1.0, 0.0, 0.0, 3.0],
+        [0.0, 0.0, 1.0, 4.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let other = [
+        [1.0, 0.0, 0.0, 5.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    for transform in [None, Some(matrix)] {
+        let frame = root_component_targets(legacy_occurrence_record(role, 10, transform));
+        assert!(super::compact_legacy_placement_details(&frame).is_some());
+        assert!(super::legacy_external_placement_details(&frame).is_none());
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(document_with_placement(role, frame.clone())),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let native = f3d_native(decoded.ir());
+        let reference = &native.xref_references[0];
+        let source = reference.placement_source.as_ref().unwrap();
+        let mut expected_frame = frame;
+        expected_frame[4..7].copy_from_slice(b"256");
+        assert_eq!(source.frame_bytes, expected_frame);
+        assert_eq!(source.carrier_record_index, 10);
+        assert_eq!(
+            super::legacy_source_occurrence_identity(&source.frame_bytes),
+            Some(0x0102_0304_0506_0708)
+        );
+        assert!(super::placement_source_matches(reference).unwrap());
+        let mut renamed = reference.clone();
+        renamed.neutron_role = "aaaabbbb-cccc-dddd-eeee-ffff00002222"
+            .to_owned()
+            .try_into()
+            .unwrap();
+        assert!(!super::placement_source_matches(&renamed).unwrap());
+        let mut moved = reference.clone();
+        moved.transform =
+            Some(crate::records::xref::XrefPlacementTransform::try_from(other).unwrap());
+        assert!(!super::placement_source_matches(&moved).unwrap());
+    }
+}
+
 #[test]
 fn attributed_legacy_external_placements_keep_the_transform_owner_and_source() {
     use crate::test_support::legacy_attributed_external_placement;

@@ -186,7 +186,7 @@ fn supported_legacy_identity_owner_frame_keeps_its_projection() {
     let placement = super::super::occurrence_placement(&frame, None)
         .unwrap()
         .unwrap();
-    assert!(placement.frame_bytes.is_empty());
+    assert_eq!(placement.frame_bytes, frame);
     assert!(placement.owner.is_none());
     assert!(placement.occurrence_guid.is_none());
 }

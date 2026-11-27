@@ -1414,7 +1414,7 @@ fn occurrence_placement(
         let role = role.to_string();
         let link_names = [role].into_iter().collect::<Vec<_>>();
         return Ok(Some(OccurrencePlacement {
-            frame_bytes: Vec::new(),
+            frame_bytes: body.to_vec(),
             occurrence_guid: None,
             carrier_record_index,
             owner: None,
@@ -1496,6 +1496,19 @@ pub(crate) fn placement_source_matches(reference: &XrefReference) -> Result<bool
                 }),
         );
     }
+    if let Some((role, _, transform)) = legacy_occurrence_placement_details(&source.frame_bytes) {
+        return Ok(source.occurrence_guid.is_none()
+            && source.owner.is_none()
+            && role.eq_str(reference.neutron_role.as_str())
+            && View::u64_le_at(&source.frame_bytes, 7) == Some(source.carrier_record_index)
+            && reference.transform.map_or_else(
+                || cadmpeg_ir::transform::Transform::identity().rows(),
+                crate::records::xref::XrefPlacementTransform::rows,
+            ) == transform.map_or_else(
+                || cadmpeg_ir::transform::Transform::identity().rows(),
+                |(_, matrix)| matrix,
+            ));
+    }
     let Some(guid) = source.occurrence_guid.as_ref() else {
         return Ok(source.frame_bytes.is_empty());
     };
@@ -1566,8 +1579,16 @@ fn legacy_external_placement(
     }
 }
 
+/// The attributed or compact legacy external placement of `body`, in the
+/// precedence of [`occurrence_placement`]: a frame that the legacy typed
+/// grammar also closes is the typed placement (DR-1077).
 fn legacy_external_placement_details(body: &[u8]) -> Option<LegacyExternalPlacementDetails<'_>> {
-    legacy_attributed_placement_details(body).or_else(|| compact_legacy_placement_details(body))
+    legacy_attributed_placement_details(body).or_else(|| {
+        legacy_occurrence_placement_details(body)
+            .is_none()
+            .then(|| compact_legacy_placement_details(body))
+            .flatten()
+    })
 }
 
 fn legacy_external_placement_prefix(body: &[u8]) -> Option<LegacyOccurrenceTarget<'_>> {
@@ -2603,6 +2624,17 @@ pub(crate) fn legacy_placement_target(body: &[u8]) -> Option<(u64, u64)> {
     Some((target.entity, target.source_occurrence_identity))
 }
 
+/// The source occurrence identity of the legacy target references of a
+/// legacy attributed, compact, or typed occurrence-placement record.
+pub(crate) fn legacy_source_occurrence_identity(body: &[u8]) -> Option<u64> {
+    if let Some((_, identity)) = legacy_placement_target(body) {
+        return Some(identity);
+    }
+    legacy_occurrence_placement_details(body)?;
+    let (_, target) = legacy_occurrence_prefix(body, false)?;
+    target.map(|(_, identity)| identity)
+}
+
 /// Type-table identity of a Design root-component aggregate, which a
 /// component-path element names in a referenced design.
 const ROOT_COMPONENT_TYPE_GUID: &str = "E03784ED-5E19-4E14-B9F2-3B07017018CD";
@@ -3087,8 +3119,8 @@ pub(crate) fn identity_component_insert_carrier(
     if View::u64_le_at(body, 7)? != u64::from(carrier_record_index) {
         return None;
     }
-    let (mut at, targets_match) = legacy_occurrence_prefix(body, true)?;
-    if !targets_match || body.get(at) != Some(&1) {
+    let (mut at, target) = legacy_occurrence_prefix(body, true)?;
+    if target.is_none() || body.get(at) != Some(&1) {
         return None;
     }
     at += 1;
@@ -3121,10 +3153,8 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f
 type LegacyPlacementDetails<'a> = (Utf16View<'a>, usize, Option<(usize, [[f64; 4]; 4])>);
 
 fn legacy_occurrence_placement_details(body: &[u8]) -> Option<LegacyPlacementDetails<'_>> {
-    let (mut at, targets_match) = legacy_occurrence_prefix(body, false)?;
-    if !targets_match {
-        return None;
-    }
+    let (mut at, target) = legacy_occurrence_prefix(body, false)?;
+    target?;
     let identity_marker = *body.get(at)?;
     at += 1;
     let transform = match identity_marker {
@@ -3202,8 +3232,10 @@ fn legacy_occurrence_role(body: &[u8]) -> Option<Utf16View<'_>> {
     link_name.is_guid_relaxed().then_some(link_name)
 }
 
-/// Parse the shared prefix of the legacy identity and matrix forms.
-fn legacy_occurrence_prefix(body: &[u8], insert: bool) -> Option<(usize, bool)> {
+/// Parse the shared prefix of the legacy identity and matrix forms. The
+/// target entity and source occurrence identity are present when the two
+/// target references agree.
+fn legacy_occurrence_prefix(body: &[u8], insert: bool) -> Option<(usize, Option<(u64, u64)>)> {
     let (_class_tag, after_tag) = lp_ascii_strict(body, 0, 3..=3)?;
     let mut at = after_tag.checked_add(8)?;
     let (name, after_name) = lp_ascii_strict(body, at, 0..=256)?;
@@ -3274,7 +3306,10 @@ fn legacy_occurrence_prefix(body: &[u8], insert: bool) -> Option<(usize, bool)> 
         && first_target
             .type_guid
             .eq_ignore_ascii_case(second_target.type_guid);
-    Some((at, targets_match))
+    Some((
+        at,
+        targets_match.then_some((first_target.entity, first_target.source_occurrence_identity)),
+    ))
 }
 
 struct LegacyOccurrenceTarget<'a> {
