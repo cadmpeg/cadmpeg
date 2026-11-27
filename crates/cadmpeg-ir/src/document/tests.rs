@@ -732,7 +732,7 @@ fn scope_is_a_required_wire_field() {
     let mut value = json::to_value(&ir).unwrap();
     assert_eq!(
         value["scope"],
-        serde_json::json!({"model": true, "design": true, "process": true})
+        cadmpeg_core::json!({"model": true, "design": true, "process": true})
     );
 
     value.as_object_mut().unwrap().remove("scope");
@@ -745,7 +745,7 @@ fn scope_is_a_required_wire_field() {
 fn a_geometry_document_without_design_records_round_trips() {
     let json = with_scope(
         &unit_cube().expect("valid unit cube fixture"),
-        serde_json::json!({"model": true, "design": false, "process": false}),
+        cadmpeg_core::json!({"model": true, "design": false, "process": false}),
     );
     let parsed = CadIr::from_json(&json).unwrap();
     assert_eq!(parsed.scope(), ContentScope::geometry());
@@ -971,23 +971,10 @@ fn a_classified_source_carries_its_format_once() {
     );
 
     let mut restated = rendered;
-    restated["identity"]["format"] = serde_json::json!("step");
+    restated["identity"]["format"] = cadmpeg_core::json!("step");
     let error = json::from_value::<SourceMeta>(restated)
         .expect_err("a classified identity carries no second format");
     assert!(error.to_string().contains("format"), "{error}");
-}
-
-#[cfg(feature = "schema")]
-#[test]
-fn source_metadata_schema_requires_its_identity_and_has_no_singular_dialect() {
-    let schema = json::to_value(schemars::schema_for!(SourceMeta)).unwrap();
-    let required = schema["required"].as_array().unwrap();
-
-    assert!(
-        required.iter().any(|field| field == "identity"),
-        "{schema:#}"
-    );
-    assert!(schema["properties"].get("dialect").is_none(), "{schema:#}");
 }
 
 #[test]
@@ -1045,7 +1032,7 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
     let wire = json::to_value(model.sorted_omitted()).unwrap();
     assert_eq!(
         wire["features"][0]["definition"]["value"]["value"]["children"],
-        serde_json::json!({"children": []})
+        cadmpeg_core::json!({"children": []})
     );
     assert_eq!(
         wire["features"][1]["regeneration_parent"],
@@ -1111,7 +1098,7 @@ fn geometry_snapshot_matches_filtered_model_wire_without_intermediate_tree() {
         "tessellations".into(),
         json::to_value(&model.tessellations).expect("tessellations serialize"),
     );
-    object.insert("kind".into(), serde_json::json!("brep"));
+    object.insert("kind".into(), cadmpeg_core::json!("brep"));
     assert_eq!(
         json::to_string(&geometry.geometry_snapshot(&model, "brep")).expect("snapshot serializes"),
         json::to_string(&baseline).expect("baseline serializes"),

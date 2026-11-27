@@ -20,9 +20,9 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::CadIr;
 
-use super::super::native_record_losses;
 use super::super::pcurve_entity;
 use super::super::records::TopologyIndex;
+use crate::test_support::decoded_with;
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::{IgesCodec, IgesVersion};
 
@@ -47,8 +47,8 @@ fn decoded(bytes: &[u8]) -> CadIr {
 fn written(ir: &CadIr, version: IgesVersion) -> (Vec<LossNote>, Vec<u8>) {
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(ir, None),
-            TargetRequest::Explicit(version.descriptor().id.as_str()),
+            EncodeInput::new(ir, None)
+                .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
         )
         .expect("the document is written");
     let losses = plan.report().losses.clone();
@@ -268,7 +268,7 @@ fn a_translated_solid_writes_a_type_124_form_0_and_reads_back_placed() {
     let entries = directory(&bytes);
     assert!(entries.contains(&(124, 0)), "{entries:?}");
     assert!(entries.contains(&(186, 0)), "{entries:?}");
-    let read = decoded(&bytes);
+    let read = decoded_with(&bytes, &[]);
     assert_eq!(read.geometry.bodies.len(), 1);
     assert_rows_eq(read.geometry.bodies[0].transform, rows);
 }
@@ -286,7 +286,7 @@ fn a_mirrored_solid_writes_a_type_124_form_1_and_reads_back_placed() {
         "{losses:#?}"
     );
     assert!(directory(&bytes).contains(&(124, 1)));
-    let read = decoded(&bytes);
+    let read = decoded_with(&bytes, &[]);
     assert_eq!(read.geometry.bodies.len(), 1);
     assert_rows_eq(read.geometry.bodies[0].transform, rows);
 }
@@ -320,7 +320,7 @@ fn a_sheet_body_transform_is_placed_into_its_geometry() {
             charged(&losses, "iges/writer.face-omitted").is_empty(),
             "{losses:#?}"
         );
-        let read = decoded(&bytes);
+        let read = decoded_with(&bytes, &[]);
         assert_eq!(read.geometry.faces.len(), 1);
         assert!(read
             .geometry
@@ -347,7 +347,7 @@ fn a_wire_body_transform_is_placed_into_its_geometry() {
         charged(&losses, "iges/writer.body-omitted").is_empty(),
         "{losses:#?}"
     );
-    let read = decoded(&bytes);
+    let read = decoded_with(&bytes, &[]);
     assert_points_contain(
         &positions(&read),
         &[
@@ -379,7 +379,7 @@ fn a_solid_under_a_non_uniform_scale_writes_its_scaled_geometry() {
         "{losses:#?}"
     );
     assert!(directory(&bytes).contains(&(186, 0)));
-    let read = decoded(&bytes);
+    let read = decoded_with(&bytes, &[]);
     assert_eq!(read.geometry.bodies.len(), 1);
     assert!(read.geometry.bodies[0].transform.is_none());
     let actual = positions(&read);
@@ -392,7 +392,7 @@ fn a_reversed_face_writes_its_support_with_exchanged_parameters() {
     let ir = decoded(OPEN_SHELL);
     let (_, forward) = {
         let (_, bytes) = written(&ir, IgesVersion::V5_0);
-        let read = decoded(&bytes);
+        let read = decoded_with(&bytes, &[]);
         oriented_normal(&read, &read.geometry.faces[0])
     };
     let mut reversed = ir;
@@ -402,7 +402,7 @@ fn a_reversed_face_writes_its_support_with_exchanged_parameters() {
         charged(&losses, "iges/writer.face-omitted").is_empty(),
         "{losses:#?}"
     );
-    let read = decoded(&bytes);
+    let read = decoded_with(&bytes, &[]);
     assert_eq!(read.geometry.faces.len(), 1);
     let (_, normal) = oriented_normal(&read, &read.geometry.faces[0]);
     assert!(
@@ -470,7 +470,7 @@ fn a_solid_face_on_a_reversed_normal_b_spline_reads_back_outward() {
             charged(&losses, "iges/writer.body-omitted").is_empty(),
             "{version:?}: {losses:#?}"
         );
-        let read = decoded(&bytes);
+        let read = decoded_with(&bytes, &[]);
         assert_eq!(read.geometry.faces.len(), 6, "{version:?}");
         if version == IgesVersion::V5_3 {
             assert_eq!(read.geometry.bodies.len(), 1);
@@ -507,7 +507,7 @@ fn a_solid_before_5_1_writes_the_trimmed_surfaces_of_its_faces() {
         "{entries:?}"
     );
     assert!(!entries.contains(&(186, 0)), "{entries:?}");
-    let read = decoded(&bytes);
+    let read = decoded_with(&bytes, &[]);
     assert_eq!(read.geometry.faces.len(), 6);
     assert_faces_outward(&read, [0.5; 3]);
 }
@@ -527,7 +527,7 @@ fn a_plane_face_without_parameter_curves_writes_computed_ones() {
     let entries = directory(&bytes);
     assert!(entries.iter().any(|entry| entry.0 == 144), "{entries:?}");
     assert!(entries.iter().any(|entry| entry.0 == 142), "{entries:?}");
-    let read = decoded(&bytes);
+    let read = decoded_with(&bytes, &[]);
     assert_eq!(read.geometry.faces.len(), 1);
     assert!(!read.geometry.coedges.is_empty());
     assert!(read
@@ -552,13 +552,14 @@ fn a_face_without_a_boundary_loop_writes_an_untrimmed_type_144() {
         "{losses:#?}"
     );
     assert!(directory(&bytes).contains(&(144, 0)));
-    let read = decoded(&bytes);
+    let read = decoded_with(&bytes, &[]);
     assert_eq!(read.geometry.faces.len(), 1);
     assert_eq!(read.geometry.faces[0].loops.stated().count(), 0);
 }
 
 #[test]
 fn a_line_pcurve_writes_as_a_degree_1_type_126() {
+    test_ctx!(ctx);
     let pcurve = Pcurve {
         id: "test:model:pcurve#line".try_into().expect("valid identity"),
         geometry: PcurveGeometry::Line(
@@ -571,14 +572,14 @@ fn a_line_pcurve_writes_as_a_degree_1_type_126() {
     let mut ir = CadIr::empty();
     ir.geometry.pcurves.push(pcurve.clone());
     let index = TopologyIndex::new(&ir);
-    let entity = pcurve_entity(&index, &pcurve).expect("a line pcurve is written");
+    let entity = pcurve_entity(&ctx, &index, &pcurve).expect("a line pcurve is written");
     assert_eq!(entity.type_code, 126);
     let parameters = String::from_utf8(entity.parameter_body).expect("ASCII parameters");
     assert!(parameters.starts_with("1,1,"), "{parameters}");
 }
 
 #[test]
-fn a_native_curve_without_a_directory_sequence_names_that_cause() {
+fn a_native_curve_without_a_directory_sequence_is_listed_with_that_cause() {
     let mut ir = CadIr::empty();
     let mut fields = serde_json::Map::new();
     fields.insert("entity_type".into(), 126.into());
@@ -594,16 +595,14 @@ fn a_native_curve_without_a_directory_sequence_names_that_cause() {
         .namespace_mut(cadmpeg_ir::codec_id!("iges"))
         .set_arena_records("entities", vec![record])
         .expect("a valid arena name");
-    let messages = native_record_losses(&ir)
-        .into_iter()
-        .map(|loss| loss.message)
-        .collect::<Vec<_>>();
-    assert!(
-        messages.contains(
-            &"the IGES write omits 1 native record(s) whose record states no Directory sequence that ties it to a neutral geometry record: iges:native:entity#unsequenced"
-                .to_owned()
-        ),
-        "{messages:#?}"
+    let (losses, _) = written(&ir, IgesVersion::V5_3);
+    assert_eq!(
+        charged(&losses, "export/native.records-omitted"),
+        [
+            "the IGES write omits 1 native record(s) of `iges` arena `entities` whose record \
+          states no Directory sequence that ties it to a neutral geometry record: \
+          iges:native:entity#unsequenced"
+        ]
     );
 }
 
@@ -622,7 +621,7 @@ fn a_solid_under_a_reflecting_non_uniform_map_reads_back_outward() {
     for code in ["iges/writer.body-omitted", "iges/writer.face-omitted"] {
         assert!(charged(&losses, code).is_empty(), "{losses:#?}");
     }
-    let read = decoded(&bytes);
+    let read = decoded_with(&bytes, &[]);
     assert_eq!(read.geometry.bodies.len(), 1);
     assert_eq!(read.geometry.bodies[0].kind, BodyKind::Solid);
     assert!(read.geometry.bodies[0].transform.is_none());
@@ -739,7 +738,7 @@ fn a_conic_or_composite_under_a_shearing_map_writes_its_exact_image() {
             charged(&losses, "iges/writer.body-omitted").is_empty(),
             "{label}: {losses:#?}"
         );
-        let read = decoded(&bytes);
+        let read = decoded_with(&bytes, &[]);
         assert!(read
             .geometry
             .bodies

@@ -10,7 +10,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::features::evaluation::FeatureInputTopology;
-use cadmpeg_ir::features::parameters::{DesignConfiguration, DesignParameter};
+use cadmpeg_ir::features::parameters::DesignParameter;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::geometry::Surface;
 use cadmpeg_ir::products::{AssemblyJoint, Occurrence};
@@ -286,7 +286,6 @@ impl DesignNative {
 /// phase 2 reads them and does not change them.
 #[derive(Debug, Default)]
 pub(super) struct DesignModel {
-    pub(super) configurations: Vec<DesignConfiguration>,
     pub(super) features: Vec<Feature>,
     pub(super) history_bodies: Vec<cadmpeg_ir::history_body::HistoryBody>,
     pub(super) parameters: Vec<DesignParameter>,
@@ -307,7 +306,6 @@ impl DesignModel {
     /// Move every arena into the neutral model.
     pub(super) fn store(self, model: &mut Model) {
         let Self {
-            configurations,
             features,
             history_bodies,
             parameters,
@@ -321,7 +319,6 @@ impl DesignModel {
             spatial_sketch_entities,
             spatial_sketch_constraints,
         } = self;
-        model.configurations = configurations;
         model.features = features;
         model.history_bodies = history_bodies;
         model.parameters = parameters;
@@ -344,6 +341,8 @@ pub(super) struct DesignOutputs {
     pub(super) model: DesignModel,
     /// Losses in decode order. They follow the geometry losses.
     pub(super) losses: Vec<LossNote>,
+    /// Parts the design decode gave up.
+    pub(super) given_up: Vec<cadmpeg_ir::unknown::part::GivenUpPart>,
 }
 
 /// Add design assets that neither the geometry nor earlier design assets hold.
@@ -377,15 +376,17 @@ fn decode_asm_history(
     history_brep: &container::BrepFacts,
     remaining_retained_bytes: &mut u64,
     binding_work: &WorkBudget,
+    chamfer_senses: &mut crate::history::ChamferSenses,
 ) -> Result<Option<AsmHistory>, CodecError> {
     let bytes = scan.entry_bytes(&history_brep.name)?;
-    crate::history::decode(
+    crate::history::decode_with_senses(
         ctx,
         bytes,
         &history_brep.name,
         history_ref_width(history_brep),
         remaining_retained_bytes,
         binding_work,
+        Some(chamfer_senses),
     )
 }
 
@@ -425,28 +426,36 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     let mut remaining_retained_bytes = prereqs.history_retained_allowance;
     let mut remaining_binding_work = MAX_HISTORY_BINDING_WORK;
     let mut unbound_histories = 0_usize;
-    crate::history::clear_chamfer_orientation();
-    let (history_res, pre_sketch_res) = std::thread::scope(|scope| {
+    let (history_res, pre_sketch_res) = crate::scoped::scope(|scope| {
         let h_pre = scope.spawn(move || -> Result<_, CodecError> {
             let persistent_references =
                 crate::design::decode::sketch::decode_persistent_references(scan)?;
             let lost_edge_references =
                 crate::design::decode::sketch::decode_lost_edge_references(scan)?;
+            let mut given_up_frames = Vec::new();
             let mut relation_losses = Vec::new();
             let sketch_relations = crate::design::decode::sketch::decode_sketch_relations(
                 scan,
                 &prereqs.design_record_headers,
                 &mut relation_losses,
+                &mut given_up_frames,
             )?;
             let mut sketch_losses = Vec::new();
-            let mut sketch_points =
-                crate::design::decode::sketch::decode_sketch_points(scan, &mut sketch_losses)?;
-            let sketch_texts =
-                crate::design::decode::sketch::decode_sketch_texts(scan, &mut sketch_losses)?;
+            let mut sketch_points = crate::design::decode::sketch::decode_sketch_points(
+                scan,
+                &mut sketch_losses,
+                &mut given_up_frames,
+            )?;
+            let sketch_texts = crate::design::decode::sketch::decode_sketch_texts(
+                scan,
+                &mut sketch_losses,
+                &mut given_up_frames,
+            )?;
             let mut sketch_curve_identities =
                 crate::design::decode::sketch::decode_sketch_curve_identities(
                     scan,
                     &mut sketch_losses,
+                    &mut given_up_frames,
                 )?;
             let mut sketch_surfaces =
                 crate::design::decode::sketch::decode_sketch_surfaces(scan, &mut sketch_losses)?;
@@ -456,6 +465,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
                     &sketch_points,
                     &sketch_curve_identities,
                     &mut sketch_losses,
+                    &mut given_up_frames,
                 )?;
             let mut sketch_relations = sketch_relations;
             crate::design::decode::sketch::bind_sketch_graph(
@@ -471,6 +481,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
                 scan,
                 &prereqs.design_entity_headers,
                 &mut body_bounds_losses,
+                &mut given_up_frames,
             )?;
             crate::design::decode::body::bind_body_bounds(
                 &mut design_body_bounds,
@@ -488,10 +499,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
                 sketch_geometry_groups,
                 sketch_losses,
                 (design_body_bounds, body_bounds_losses),
+                given_up_frames,
             ))
         });
         let history_res = (|| -> Result<_, CodecError> {
             let mut histories = Vec::new();
+            let mut chamfer_senses = crate::history::ChamferSenses::default();
             for history_brep in container::history_breps(scan) {
                 let binding_work = WorkBudget::new(remaining_binding_work);
                 let history = decode_asm_history(
@@ -500,6 +513,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
                     history_brep,
                     &mut remaining_retained_bytes,
                     &binding_work,
+                    &mut chamfer_senses,
                 )?;
                 unbound_histories += usize::from(binding_work.exhausted());
                 remaining_binding_work = binding_work.remaining();
@@ -507,7 +521,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
                     histories.push(history);
                 }
             }
-            Ok(histories)
+            Ok((histories, chamfer_senses))
         })();
         let pre_sketch_res = h_pre.join().unwrap_or_else(|_| {
             Err(CodecError::malformed(
@@ -516,7 +530,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         });
         (history_res, pre_sketch_res)
     });
-    design.asm_histories = history_res?;
+    let (asm_histories, chamfer_senses) = history_res?;
+    design.asm_histories = asm_histories;
     let (
         persistent_references,
         lost_edge_references,
@@ -529,7 +544,9 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         sketch_geometry_groups,
         sketch_losses,
         (pre_body_bounds, body_bounds_losses),
+        given_up_frames,
     ) = pre_sketch_res?;
+    let mut given_up = crate::design::decode::record::give_up_frames(ctx, scan, given_up_frames)?;
     if unbound_histories != 0 {
         push_loss_vec(
             &mut losses,
@@ -546,8 +563,10 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     let RelatedDesignOutcome {
         untyped_tracking_paths,
         losses: profile_losses,
+        given_up: related_given_up,
         owner_sources,
     } = extend_related_design_records(ctx, scan, prereqs, timelines, geometry, &mut design)?;
+    given_up.extend(related_given_up);
     losses.extend(profile_losses);
     losses.extend(
         crate::design::decode::operands::body_recipes::body_recipe_serialization_form_losses(
@@ -703,14 +722,23 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     )?;
     design.design_body_bounds = pre_body_bounds;
     losses.extend(body_bounds_losses);
-    let configurations =
-        crate::design::configurations::decode_configurations(ctx, scan, &mut losses)?;
+    let configurations = crate::design::configurations::decode_configurations(
+        ctx,
+        scan,
+        &mut losses,
+        &mut given_up,
+    )?;
     design.design_configurations = configurations.documents;
     design.configuration_roots_unbound = configurations.unbound_roots;
     design
         .design_sheet_metal_settings
         .clone_from(&prereqs.design_sheet_metal_settings);
     losses.extend(prereqs.design_sheet_metal_settings_losses.iter().cloned());
+    given_up.extend(crate::design::decode::record::give_up_frames(
+        ctx,
+        scan,
+        prereqs.design_sheet_metal_settings_given_up.iter().cloned(),
+    )?);
     let projection_parameters = crate::design::decode::parameters::parameters_for_projection(
         &prereqs.design_parameters,
         &prereqs.design_parameter_owner_unparsed,
@@ -903,15 +931,16 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.asm_face_boundaries,
         &mut losses,
     );
-    model.feature_input_topologies =
-        crate::history::input_topologies::project_feature_input_topologies(
+    let projected_inputs =
+        crate::history::input_topologies::project_feature_input_topologies_without_geometry(
             &model.features,
             &design.design_parameter_scopes,
             &mut design.asm_histories,
             &design.design_edge_operands,
             &scope_histories,
         );
-    crate::history::clear_chamfer_orientation();
+    model.feature_input_topologies = projected_inputs.topologies;
+    let projected_input_sources = projected_inputs.sources;
     let bound_outputs = crate::history::feature_outputs::bind_feature_outputs(
         &mut model.features,
         &design.design_parameter_scopes,
@@ -1061,11 +1090,18 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             operands: &design.design_body_recipe_operands,
             recipes: &prereqs.construction_recipes,
         },
+        geometry.bodies,
         derived_snapshots,
         &mut losses,
     )?;
     model.history_bodies = history_bodies;
     design.history_body_consumers.remaining_work = remaining_work;
+    crate::history::body_writers::attach(
+        &model.features,
+        (&design.design_parameter_scopes, &design.asm_histories),
+        &scope_histories,
+        &mut model.feature_input_topologies,
+    );
     losses.extend(
         crate::history::face_selections::bind_feature_face_selections(
             &mut model.features,
@@ -1609,35 +1645,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         .cloned()
         .collect::<Vec<_>>();
     crate::design::assembly::bind_assembly_joint_features(&mut model.features, &bound_now);
-    crate::history::input_topologies::retain_selected_edge_geometry(
+    crate::history::input_topologies::populate_selected_input_geometry(
         inputs.ctx,
         &model.features,
+        &mut design.asm_histories,
+        &projected_input_sources,
+        &chamfer_senses,
         &mut model.feature_input_topologies,
-    )?;
-    crate::history::input_topologies::retain_selected_face_owners(
-        inputs.ctx,
-        &model.features,
-        &mut model.feature_input_topologies,
-    )?;
-    model.configurations = crate::design::decode::record::recover(
-        crate::design::configurations::project_configurations(
-            &design.design_configurations,
-            &crate::design::configurations::ConfigurationTargets {
-                parameters: &prereqs.design_parameters,
-                owners: &prereqs.design_parameter_owners,
-                scopes: &design.design_parameter_scopes,
-                neutral_parameters: &model.parameters,
-                neutral_features: &model.features,
-            },
-        ),
-        &mut losses,
-        F3dLossCode::ConfigurationProjectionNative,
-        "Configuration projection",
-    )?
-    .unwrap_or_default();
-    crate::design::configurations::reconcile_active_configurations(
-        &mut model.features,
-        &mut model.configurations,
     )?;
     losses.extend(
         crate::design::decode::operands::sketch_profiles::sketchless_profile_selection_losses(
@@ -1662,6 +1676,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         native: design,
         model,
         losses,
+        given_up,
     })
 }
 
@@ -1742,6 +1757,8 @@ struct RelatedDesignOutcome {
     untyped_tracking_paths: usize,
     /// Profile and edge-selection loss notes.
     losses: Vec<LossNote>,
+    /// Sketch-container records given up as parts.
+    given_up: Vec<cadmpeg_ir::unknown::part::GivenUpPart>,
     /// Source namespaces that compact construction owners select, by operand
     /// group id.
     owner_sources: HashMap<String, Vec<String>>,
@@ -2240,7 +2257,7 @@ fn extend_related_design_records(
         &design.asm_histories,
         &scope_histories,
     );
-    let (edge_operand_res, treatment_vertex_res, face_res) = std::thread::scope(|scope| {
+    let (edge_operand_res, treatment_vertex_res, face_res) = crate::scoped::scope(|scope| {
         let edge_identities = &mut design.design_edge_identity_operands;
         let construction_identities = &design.design_construction_operand_identities;
         let scopes = &design.design_parameter_scopes;
@@ -2366,12 +2383,15 @@ fn extend_related_design_records(
         &mut design.design_edge_identity_operands,
         &design.design_face_operands,
     );
+    let mut placement_given_up = Vec::new();
     design.design_sketch_placements = crate::design::decode::sketch::decode_sketch_placements(
         scan,
         &design.design_parameter_scopes,
         &prereqs.design_entity_headers,
         &mut profile_losses,
+        &mut placement_given_up,
     )?;
+    let given_up = crate::design::decode::record::give_up_frames(ctx, scan, placement_given_up)?;
     let mut stream_lengths = std::collections::HashMap::new();
     for entry in scan
         .entries
@@ -2415,6 +2435,7 @@ fn extend_related_design_records(
     Ok(RelatedDesignOutcome {
         untyped_tracking_paths,
         losses: profile_losses,
+        given_up,
         owner_sources,
     })
 }

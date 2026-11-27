@@ -149,15 +149,26 @@ fn collection_counts(bytes: &[u8]) -> impl Iterator<Item = usize> + '_ {
 /// the five stored length unit names is rejected: the search is a byte-window
 /// scan, and the closed name set is what separates the collection from a window
 /// that merely reads like one.
+#[cfg(test)]
 fn decode_modeling_length_unit(bytes: &[u8]) -> Option<String> {
+    let mut counts = collection_counts(bytes).peekable();
+    counts.peek()?;
     let offsets = IndexedRecordOffsets::build(bytes);
+    decode_modeling_length_unit_with_offsets(bytes, &offsets, counts)
+}
+
+fn decode_modeling_length_unit_with_offsets(
+    bytes: &[u8],
+    offsets: &IndexedRecordOffsets,
+    counts: impl Iterator<Item = usize>,
+) -> Option<String> {
     let payloads = |record_index: u32| {
         offsets
             .offsets(record_index)
             .iter()
             .filter_map(|at| at.checked_add(HEADER_LEN))
     };
-    for count_at in collection_counts(bytes) {
+    for count_at in counts {
         let Some(systems) = references::<{ index_from_u32(UNIT_SYSTEM_COUNT) }>(bytes, count_at)
         else {
             continue;
@@ -198,7 +209,14 @@ pub(crate) fn decode_document_length_unit(scan: &ContainerScan) -> Option<String
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         if let Ok(bytes) = scan.entry_bytes(&entry.name) {
-            if let Some(unit) = decode_modeling_length_unit(bytes) {
+            let mut counts = collection_counts(bytes).peekable();
+            if counts.peek().is_none() {
+                continue;
+            }
+            let Ok(offsets) = scan.design_record_offsets(&entry.name) else {
+                continue;
+            };
+            if let Some(unit) = decode_modeling_length_unit_with_offsets(bytes, &offsets, counts) {
                 return Some(unit);
             }
         }

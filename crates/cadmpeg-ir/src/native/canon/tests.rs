@@ -54,7 +54,7 @@ fn display_value_formats_once() {
     assert_eq!(calls.get(), 1);
     assert_eq!(
         record.field("value"),
-        Some(serde_json::json!("line\nquote\"\u{1}"))
+        Some(cadmpeg_core::json!("line\nquote\"\u{1}"))
     );
 }
 
@@ -93,7 +93,7 @@ fn display_map_key_formats_once() {
     let record = super::super::NativeRecord::from_typed_for_decode(&ctx, &Record(&calls))
         .expect("valid key record");
     assert_eq!(calls.get(), 1);
-    assert_eq!(record.field("key\n"), Some(serde_json::json!(7)));
+    assert_eq!(record.field("key\n"), Some(cadmpeg_core::json!(7)));
 }
 
 enum ObjectShape {
@@ -217,7 +217,7 @@ fn raw_value_is_stored_as_canonical_json() {
         super::super::NativeRecord::from_typed_for_decode(&ctx, &typed).expect("valid raw record");
     assert_eq!(
         stored.field("raw"),
-        Some(serde_json::json!({"text": "quoted \"value\""}))
+        Some(cadmpeg_core::json!({"text": "quoted \"value\""}))
     );
 }
 
@@ -231,7 +231,7 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
         raw: Box<RawValue>,
     }
 
-    let mut deep = serde_json::json!(7);
+    let mut deep = cadmpeg_core::json!(7);
     for _ in 0..140 {
         deep = Value::Array(vec![deep]);
     }
@@ -245,7 +245,7 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
     for (json, expected) in [
         (
             r#"{ "z": [1, true], "a": "text" }"#.to_owned(),
-            serde_json::json!({"a": "text", "z": [1, true]}),
+            cadmpeg_core::json!({"a": "text", "z": [1, true]}),
         ),
         (format!("{}7{}", "[".repeat(140), "]".repeat(140)), deep),
     ] {
@@ -280,7 +280,7 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
         .expect("raw object record");
     assert_eq!(
         namespace.arenas()["records"][0].field("value"),
-        Some(serde_json::json!(7))
+        Some(cadmpeg_core::json!(7))
     );
 
     let before = namespace.clone();
@@ -296,12 +296,12 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
         assert_eq!(namespace, before);
     }
 
-    let ordinary = serde_json::json!({"$serde_json::private::RawValue": "null"});
+    let ordinary = cadmpeg_core::json!({"$serde_json::private::RawValue": "null"});
     namespace
         .set_arena(
             &crate::native::test_ctx(),
             "records",
-            &[serde_json::json!({
+            &[cadmpeg_core::json!({
                 "id": "test:native:record#ordinary", "value": ordinary.clone(),
             })],
         )
@@ -334,7 +334,7 @@ fn one_budget_spans_the_whole_canonical_write() {
     }
 
     let chain = |containers: usize| {
-        let mut nested = serde_json::json!(7);
+        let mut nested = cadmpeg_core::json!(7);
         for _ in 0..containers {
             nested = Value::Array(vec![nested]);
         }
@@ -430,13 +430,16 @@ fn a_display_member_writes_its_text_through_collect_str() {
         keyed: Keyed,
     };
     let stored = NativeRecord::from_typed(&record).expect("a Display member is an ordinary string");
-    assert_eq!(stored.field("text"), Some(serde_json::json!("<plain>")));
+    assert_eq!(stored.field("text"), Some(cadmpeg_core::json!("<plain>")));
     assert_eq!(
         stored.field("escaped"),
-        Some(serde_json::json!("<a \"quoted\" \\ and\ttab>"))
+        Some(cadmpeg_core::json!("<a \"quoted\" \\ and\ttab>"))
     );
-    assert_eq!(stored.field("letter"), Some(serde_json::json!("\"")));
-    assert_eq!(stored.field("keyed"), Some(serde_json::json!({"<key>": 1})));
+    assert_eq!(stored.field("letter"), Some(cadmpeg_core::json!("\"")));
+    assert_eq!(
+        stored.field("keyed"),
+        Some(cadmpeg_core::json!({"<key>": 1}))
+    );
     assert_eq!(
         json::to_value(&stored).expect("the stored record writes"),
         json::to_value(&record).expect("the typed record writes")

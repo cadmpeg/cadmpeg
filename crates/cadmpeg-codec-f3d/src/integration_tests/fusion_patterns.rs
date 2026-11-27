@@ -4,8 +4,8 @@
 
 use std::io::Cursor;
 
+use cadmpeg_core::json;
 use cadmpeg_ir::{Codec, DecodeOptions};
-use serde_json::json;
 
 use crate::F3dCodec;
 
@@ -222,6 +222,7 @@ fn design_bulk_stream(bytes: &[u8]) -> Vec<u8> {
         &mut member,
         NAME,
         cadmpeg_core::decode::u64_from_index(bytes.len()),
+        cadmpeg_core::decode::ResourceLimits::desktop(),
     )
     .expect("expand BulkStream")
 }

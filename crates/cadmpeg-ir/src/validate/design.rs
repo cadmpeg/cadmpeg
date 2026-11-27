@@ -40,7 +40,7 @@ mod parameters;
 mod picked;
 mod programs;
 pub(super) mod records;
-pub(super) mod resolved;
+pub(crate) mod resolved;
 pub(super) mod selections;
 mod sheet_metal;
 mod sheets;

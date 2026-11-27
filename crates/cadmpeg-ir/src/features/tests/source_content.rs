@@ -84,8 +84,14 @@ fn feature_membership_is_checked_on_the_feature_wire() {
         feature
     );
     for (field, bad) in [
-        ("dependencies", serde_json::json!([dependency, dependency])),
-        ("source_content", serde_json::json!([parameter, parameter])),
+        (
+            "dependencies",
+            cadmpeg_core::json!([dependency, dependency]),
+        ),
+        (
+            "source_content",
+            cadmpeg_core::json!([parameter, parameter]),
+        ),
     ] {
         let mut wire = original.clone();
         wire[field] = bad;
@@ -97,7 +103,7 @@ fn feature_membership_is_checked_on_the_feature_wire() {
     feature.dependencies.clear();
     feature.source_content = FeatureContent::default();
     let wire = json::to_value(&feature).unwrap();
-    assert_eq!(wire["dependencies"], serde_json::json!([]));
-    assert_eq!(wire["source_content"], serde_json::json!([]));
+    assert_eq!(wire["dependencies"], cadmpeg_core::json!([]));
+    assert_eq!(wire["source_content"], cadmpeg_core::json!([]));
     assert_eq!(json::from_value::<Feature>(wire).unwrap(), feature);
 }

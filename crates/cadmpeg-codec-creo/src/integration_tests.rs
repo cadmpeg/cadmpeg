@@ -62,6 +62,7 @@ fn nist_ctc_01_brep_agrees_with_its_step_twin() {
     nist_ctc_01_cut_caps_keep_disjoint_boundaries(&result);
     nist_ctc_01_disjoint_planar_regions_keep_their_bores(&result);
     nist_ctc_01_closed_solid_volume_accounts_for_native_blind_cut(&result);
+    pmi::nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes(result.ir());
 }
 
 fn closed_plane_brep() -> Vec<u8> {
@@ -733,8 +734,9 @@ fn compact_rotation_cylinder_decode_and_validation_share_admission() {
                 .into_iter()
                 .flatten()
                 .any(|row| {
-                    row.fields()
-                        .is_ok_and(|fields| fields.get("curve_id") == Some(&serde_json::json!(21)))
+                    row.fields().is_ok_and(|fields| {
+                        fields.get("curve_id") == Some(&cadmpeg_core::json!(21))
+                    })
                 });
             assert_eq!(promoted, agrees || section == "VisibGeom");
             if agrees {

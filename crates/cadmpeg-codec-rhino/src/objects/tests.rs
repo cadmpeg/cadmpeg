@@ -1158,7 +1158,9 @@ pub(crate) fn malformed_bounded_object_is_retained_and_later_point_decodes() {
                 .ir()
                 .native_unknowns("rhino")
                 .expect("required invariant")
-                .len(),
+                .iter()
+                .filter(|record| record.id.as_str().starts_with("rhino:object:record#"))
+                .count(),
             2
         );
         assert_eq!(result.ir().geometry.points.len(), 1);

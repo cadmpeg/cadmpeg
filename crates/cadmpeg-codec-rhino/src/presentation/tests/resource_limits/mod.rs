@@ -6,13 +6,13 @@ use cadmpeg_core::serde_erase::json;
 fn dimension_controls_preserve_sorted_serialization_and_replacement() {
     let mut entries = crate::presentation::DimensionControlEntries::default();
     entries
-        .insert_with("z", || Ok(serde_json::json!(1)))
+        .insert_with("z", || Ok(cadmpeg_core::json!(1)))
         .expect("first key admitted");
     entries
-        .insert_with("a", || Ok(serde_json::json!(2)))
+        .insert_with("a", || Ok(cadmpeg_core::json!(2)))
         .expect("second key admitted");
     entries
-        .insert_with("z", || Ok(serde_json::json!(3)))
+        .insert_with("z", || Ok(cadmpeg_core::json!(3)))
         .expect("duplicate key replaced");
     let controls = crate::presentation::DimensionStyleControls {
         controls: &entries,

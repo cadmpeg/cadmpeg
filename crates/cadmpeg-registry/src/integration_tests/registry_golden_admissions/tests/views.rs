@@ -3,8 +3,8 @@ use super::{
     assert_rejected, inspect_view, kernel_loss, nx_13006, registry_rows, report_view, sldprt_13006,
     source_view, validate, Admission,
 };
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 use std::path::Path;
 
 #[test]
@@ -23,14 +23,14 @@ fn view_local_kernel_loss_counts_include_zero_for_admitted_layers() {
     assert_rejected(
         &report_view(&sldprt, &[kernel_loss("sldprt")]),
         &registry,
-        "has 0 residual Parasolid layers but 1 typed kernel losses",
+        "has 0 residual kernel layers but 1 typed kernel losses",
     );
 
     let no_loss = report_view(&nx, &[]);
     assert_rejected(
         &no_loss,
         &registry,
-        "has 1 residual Parasolid layers but 0 typed kernel losses",
+        "has 1 residual kernel layers but 0 typed kernel losses",
     );
 
     assert_rejected(

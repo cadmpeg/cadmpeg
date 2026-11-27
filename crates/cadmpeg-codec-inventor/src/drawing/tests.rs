@@ -60,13 +60,11 @@ fn refused_typed_drawing_records_emit_the_pinned_malformed_loss() {
     let losses = inventory.losses();
     assert_eq!(losses.len(), 1);
     assert_eq!(
-        losses[0].code,
-        crate::loss::InventorLossCode::DrawingRecordMalformed
-            .note("")
-            .code
-    );
-    assert_eq!(
         losses[0].code.to_string(),
         "inventor/drawing.record-malformed"
     );
+    assert!(!losses[0]
+        .message
+        .split_whitespace()
+        .any(|token| token == "inventor:drawing:record-issue#generated-0"));
 }

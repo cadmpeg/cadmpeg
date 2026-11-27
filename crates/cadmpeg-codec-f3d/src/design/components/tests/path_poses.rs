@@ -1218,7 +1218,7 @@ fn a_proven_root_instance_element_selects_the_saved_world_pose() {
 
 fn object_snapshot(carrier: &mut DesignComponentOccurrence) {
     let mut wire = json::to_value(&*carrier).unwrap();
-    wire["attributed"] = serde_json::json!({
+    wire["attributed"] = cadmpeg_core::json!({
         "attributes": [], "property_names": ["Transform"],
         "persistent_key": "0_100", "ordinal_prefix": 0,
         "path_discriminator": 0, "key_record_index": 0, "key_segment_index": 0

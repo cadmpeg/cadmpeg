@@ -22,9 +22,9 @@ fn unit_feature_directions_admit_only_unit_vectors_on_the_wire() {
         key: &str,
     ) {
         for refused in [
-            serde_json::json!({"x": 0.0, "y": 0.0, "z": 2.0}),
-            serde_json::json!({"x": 0.0, "y": 0.0, "z": 0.0}),
-            serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0 + 2.0e-9}),
+            cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 2.0}),
+            cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 0.0}),
+            cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 1.0 + 2.0e-9}),
         ] {
             let mut wire = wire.clone();
             wire.pointer_mut(payload).unwrap()[key] = refused;
@@ -33,7 +33,7 @@ fn unit_feature_directions_admit_only_unit_vectors_on_the_wire() {
         }
         let mut near_unit = wire.clone();
         near_unit.pointer_mut(payload).unwrap()[key] =
-            serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0 + 5.0e-10});
+            cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 1.0 + 5.0e-10});
         assert!(json::from_value::<T>(near_unit).is_ok());
     }
 

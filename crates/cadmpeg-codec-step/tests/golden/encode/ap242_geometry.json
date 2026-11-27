@@ -79,18 +79,6 @@
           "code": {
             "kind": "namespaced",
             "value": {
-              "code": "native.passthrough-record-omitted",
-              "kind": "passthrough_record_omitted",
-              "namespace": "step"
-            }
-          },
-          "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
-          "severity": "info"
-        },
-        {
-          "code": {
-            "kind": "namespaced",
-            "value": {
               "code": "appearance.reduced-to-base-color",
               "kind": "appearance_reduced",
               "namespace": "step"
@@ -201,18 +189,6 @@
           "code": {
             "kind": "namespaced",
             "value": {
-              "code": "native.passthrough-record-omitted",
-              "kind": "passthrough_record_omitted",
-              "namespace": "step"
-            }
-          },
-          "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
-          "severity": "info"
-        },
-        {
-          "code": {
-            "kind": "namespaced",
-            "value": {
               "code": "appearance.reduced-to-base-color",
               "kind": "appearance_reduced",
               "namespace": "step"
@@ -318,18 +294,6 @@
           },
           "message": "source dialect step:ap242 was displaced by target dialect step:ap214; the source dialect identity is not preserved",
           "severity": "warning"
-        },
-        {
-          "code": {
-            "kind": "namespaced",
-            "value": {
-              "code": "native.passthrough-record-omitted",
-              "kind": "passthrough_record_omitted",
-              "namespace": "step"
-            }
-          },
-          "message": "2 uninterpreted passthrough record(s) were not represented in STEP",
-          "severity": "info"
         },
         {
           "code": {

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch-profile operands and profile region members.
 
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 fn sketch_profile_operand() -> super::DesignSketchProfileOperand {
     json::from_value(json!({

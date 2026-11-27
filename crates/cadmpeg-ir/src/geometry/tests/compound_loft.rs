@@ -36,7 +36,7 @@ fn the_direction_selector_is_stored_once_on_the_curve_form() {
         );
 
         let mut zero = wire;
-        zero["direction"]["selector"] = serde_json::json!(0);
+        zero["direction"]["selector"] = cadmpeg_core::json!(0);
         assert!(json::from_value::<CompoundLoftTail>(zero).is_err());
     }
 }
@@ -57,6 +57,6 @@ fn a_scaled_direction_keeps_its_exact_nonzero_selector() {
         json::from_value::<ScaledCompoundLoftBranch>(wire.clone()).unwrap(),
         branch
     );
-    wire["direction"]["selector"] = serde_json::json!(0);
+    wire["direction"]["selector"] = cadmpeg_core::json!(0);
     assert!(json::from_value::<ScaledCompoundLoftBranch>(wire).is_err());
 }

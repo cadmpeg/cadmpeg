@@ -251,26 +251,50 @@ pub(crate) fn baseline_with_bytes(
             return (entries.clone(), bytes.clone());
         }
     }
-    let part = cadmpeg_test_support::EditableDecodeResult::from(part.clone());
     let records = crate::source_records(part.ir(), part.source_fidelity())
         .expect("the part's retained records");
+    // A NIST specimen's write session holds its retained source decoded again.
+    let source = super::nist::session(part.source_fidelity())
+        .and_then(|session| session.source_of(part.source_fidelity()));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy {
+        limits: cadmpeg_core::decode::ResourceLimits::desktop(),
+    };
+    let ctx = cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &policy,
+        cadmpeg_core::decode::DecodeDepth::Full,
+    );
+    let mut cache = crate::writer::SemanticWriteCache::of_source(source, policy.limits);
     let mut bytes = Vec::new();
     // A part the semantic writer cannot write unedited has no differences of
     // its own.
-    let (entries, unedited_bytes) = crate::writer::write_semantic_with_records(
+    let written = crate::writer::write_semantic_with_records_cached(
         part.ir(),
         &part.source_fidelity().annotations,
         &part.source_fidelity().codec_digests,
         &records,
-        &[],
-        &[],
+        crate::writer::SemanticWriteControls {
+            withheld: &[],
+            shaped: &[],
+            ctx: &ctx,
+        },
+        &mut cache,
         &mut bytes,
-    )
-    .map_or_else(
+    );
+    cache.keep_source(source);
+    let (entries, unedited_bytes) = written.map_or_else(
         |_| (Vec::new(), None),
         |_| {
-            let written = crate::decode::decode_for_read_back_cached(&bytes)
-                .expect("the unedited write decodes");
+            // A pass of the session that wrote no edit and gave the same
+            // bytes has read them back already. The unedited write is no
+            // pass, so its bytes do not take the place of a pass's.
+            let written = match cache.source_baseline.as_deref() {
+                Some(retained) => retained.read_back(&bytes, false),
+                None => crate::decode::decode_for_read_back(&bytes, policy.limits)
+                    .map(std::sync::Arc::new),
+            }
+            .expect("the unedited write decodes");
             (diff(part.ir(), written.ir()), Some(bytes))
         },
     );

@@ -213,6 +213,12 @@ impl Identity {
     }
 }
 
+impl From<&Identity> for Identity {
+    fn from(value: &Identity) -> Self {
+        value.clone()
+    }
+}
+
 impl TryFrom<String> for Identity {
     type Error = IdentityError;
     fn try_from(value: String) -> Result<Self, Self::Error> {
@@ -224,6 +230,12 @@ impl TryFrom<&str> for Identity {
     type Error = IdentityError;
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Self::new(value)
+    }
+}
+
+impl AsRef<Identity> for Identity {
+    fn as_ref(&self) -> &Identity {
+        self
     }
 }
 
@@ -1293,6 +1305,12 @@ impl fmt::Display for IdentityError {
 
 impl std::error::Error for IdentityError {}
 
+impl From<IdentityError> for cadmpeg_core::CodecError {
+    fn from(error: IdentityError) -> Self {
+        Self::malformed(format_args!("{error}"))
+    }
+}
+
 macro_rules! id_type {
     ($(#[$meta:meta])* $name:ident $(, $helper:ident)*) => {
         $(#[$meta])*
@@ -1346,8 +1364,24 @@ macro_rules! id_type {
             }
         }
 
+        impl AsRef<$crate::ids::Identity> for $name {
+            fn as_ref(&self) -> &$crate::ids::Identity { &self.0 }
+        }
+
         impl From<$name> for $crate::ids::Identity {
             fn from(value: $name) -> Self { value.0 }
+        }
+
+        impl From<&$name> for $crate::ids::Identity {
+            fn from(value: &$name) -> Self { value.0.clone() }
+        }
+
+        impl From<$name> for $crate::annotations::AnnotationKey {
+            fn from(value: $name) -> Self { Self::from(value.0) }
+        }
+
+        impl From<&$name> for $crate::annotations::AnnotationKey {
+            fn from(value: &$name) -> Self { Self::from(&value.0) }
         }
 
         impl From<$crate::ids::Identity> for $name {

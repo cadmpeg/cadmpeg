@@ -92,11 +92,11 @@ fn successor_relative_endpoints_do_not_share_unresolved_vertex_identities() {
     let wire = json::to_value(&native).expect("serialize native records");
     assert_eq!(
         wire["consolidated_edge_nodes"][0]["vertices"],
-        serde_json::json!(["", ""])
+        cadmpeg_core::json!(["", ""])
     );
     assert_eq!(
         wire["consolidated_edge_nodes"][1]["vertices"],
-        serde_json::json!(["", ""])
+        cadmpeg_core::json!(["", ""])
     );
     assert_eq!(
         json::from_value::<crate::native::CatiaNative>(wire).expect("load native records"),
@@ -499,9 +499,9 @@ fn a_loaded_plane_carrier_direction_is_admitted_unit() {
     let mut value = json::to_value(direction3).expect("plane carrier JSON");
     assert_eq!(
         value["payload"]["direction"],
-        serde_json::json!([1.0, 0.0, 0.0])
+        cadmpeg_core::json!([1.0, 0.0, 0.0])
     );
-    value["payload"]["direction"] = serde_json::json!([2.0, 0.0, 0.0]);
+    value["payload"]["direction"] = cadmpeg_core::json!([2.0, 0.0, 0.0]);
     let error = json::from_value::<crate::native::CatiaConsolidatedPlaneCarrier>(value)
         .expect_err("a non-unit plane-carrier direction");
     assert!(

@@ -799,7 +799,7 @@ mod tests {
     }
 
     fn assignment_document(located: bool) -> serde_json::Value {
-        let mut document = serde_json::json!({
+        let mut document = cadmpeg_core::json!({
             "id": "material#0",
             "asm_body_key": 42,
             "asm_body_key_offset": 200,

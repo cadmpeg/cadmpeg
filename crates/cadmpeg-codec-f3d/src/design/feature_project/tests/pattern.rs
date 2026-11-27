@@ -495,7 +495,7 @@ pub(super) fn compact_entity_selection(
     record_index: u32,
     identity: u64,
 ) -> crate::records::topology::entity_selection::DesignEntitySelectionOperand {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("f3d:Design/BulkStream.dat:design-entity-selection-operand#{record_index}"),
         "scope_record_index": 10,
         "group_record_index": group_record_index, "group_member_ordinal": 0,

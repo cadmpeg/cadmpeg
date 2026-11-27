@@ -979,17 +979,17 @@ fn a_standard_hole_reads_its_sizing_names_and_the_direction_after_them() {
 fn hole_type_metadata_roundtrips_and_rejects_an_unknown_type() {
     use crate::records::feature::hole::DesignHoleExtent;
     let legacy: DesignHoleExtent =
-        json::from_value(serde_json::json!({"extent_control":0})).unwrap();
+        json::from_value(cadmpeg_core::json!({"extent_control":0})).unwrap();
     assert_eq!(legacy.hole_type, None);
     for value in [0, 1, 2] {
         let encoded =
-            serde_json::json!({"extent_control":0,"hole_type":{"value":value,"offset":17}});
+            cadmpeg_core::json!({"extent_control":0,"hole_type":{"value":value,"offset":17}});
         let extent: DesignHoleExtent = json::from_value(encoded.clone()).unwrap();
         assert_eq!(extent.hole_type.as_ref().unwrap().value, value);
         assert_eq!(json::to_value(extent).unwrap(), encoded);
     }
     assert!(json::from_value::<DesignHoleExtent>(
-        serde_json::json!({"hole_type":{"value":3,"offset":17}})
+        cadmpeg_core::json!({"hole_type":{"value":3,"offset":17}})
     )
     .is_err());
 }

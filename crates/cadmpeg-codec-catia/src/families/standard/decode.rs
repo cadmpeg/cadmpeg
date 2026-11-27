@@ -1194,10 +1194,14 @@ fn attach_free_vertices(
         Vec::new(),
         free_vertices,
     );
-    for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
+    for key in [
+        cadmpeg_ir::annotations::AnnotationKey::from(&body_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&region_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&shell_id),
+    ] {
         annotate(
             annotations,
-            id,
+            &key,
             "MainDataStream+SurfacicReps",
             0,
             "unbound_point_owner",
@@ -1928,6 +1932,15 @@ fn try_decode_standard_populations(
         }
         if output.report.transfer.geometry_transferred() {
             merged.report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
+        }
+        let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+        for mut loss in output.report.losses {
+            if loss.code == unreadable {
+                cadmpeg_ir::unknown::part::rescope_give_up(&mut loss, |id| {
+                    Ok(rescope_standard_id(id, &scope))
+                })?;
+                merged.report.losses.push(loss);
+            }
         }
     }
 
@@ -2670,6 +2683,15 @@ fn try_decode_standard_population(
         Err(StandardTopologyError::Codec(error)) => return Some(Err(error)),
     };
     let topology_attached = topology_failure.is_none();
+    let given_up_faces: Vec<cadmpeg_ir::ids::FaceId> = match topology_failure {
+        Some(_) => topology_ir
+            .geometry
+            .faces
+            .iter()
+            .map(|face| face.id.clone())
+            .collect(),
+        None => Vec::new(),
+    };
     if topology_attached {
         ir = topology_ir;
         annotations = topology_annotations.into_retained();
@@ -2806,8 +2828,6 @@ fn try_decode_standard_population(
         Err(_) => return None,
     };
     consolidated_curve_bindings.standard_face_pcurves += source_jet_pcurves.pcurves;
-    consolidated_curve_bindings.widened_vertices = weighted.widened_vertices;
-    consolidated_curve_bindings.max_vertex_widening = weighted.max_vertex_widening;
     if let Err(error) = link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations) {
         return Some(Err(error));
     }
@@ -2836,6 +2856,16 @@ scan,
             admitted_standard_face_rows: face_count,
         },
 topology_failure.map(StandardTopologyFailure::message));
+    if let Some(failure) = topology_failure {
+        let code = CatiaLossCode::TopologyBoundaryGraphNotEmitted.kind();
+        report.losses.extend(given_up_faces.into_iter().map(|face| {
+            cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                face,
+                format_args!("{code}: {}", failure.message()),
+            )
+            .loss()
+        }));
+    }
     if consolidated_curve_bindings.rechart_numeric_failures != 0 {
         report.losses.push((CatiaLossCode::GeometryPcurveRechartNonFinite).note(format!(
             "{} pcurve rechart attempts produced non-finite coordinates; native records remain retained",
@@ -2858,13 +2888,6 @@ topology_failure.map(StandardTopologyFailure::message));
         report.losses.push(CatiaLossCode::SourceAnnotationCollision.note(format!(
             "{} source-owned spherical pcurve identity collision(s) were withheld",
             source_jet_pcurves.unresolved_identity_collisions,
-        )));
-    }
-    if consolidated_curve_bindings.widened_vertices != 0 {
-        report.losses.push(CatiaLossCode::GeometryVertexToleranceWidened.note(format!(
-            "Widened {} vertex tolerances for binary32 coordinate storage; maximum widening {:.17} mm",
-            consolidated_curve_bindings.widened_vertices,
-            consolidated_curve_bindings.max_vertex_widening,
         )));
     }
     report.coverage.record(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT, usize::from(true));
@@ -3010,6 +3033,7 @@ topology_failure.map(StandardTopologyFailure::message));
         report,
         annotations,
         unknowns,
+        given_up: Vec::new(),
         admitted_model_entities: admission.admitted(),
     }))
     })()
@@ -4031,13 +4055,19 @@ fn partition_standard_face_components(
             }
             continue;
         }
-        for (id, tag) in [
-            (region_id.as_str(), "derived_region"),
-            (shell_id.as_str(), "derived_shell"),
+        for (key, tag) in [
+            (
+                cadmpeg_ir::annotations::AnnotationKey::from(&region_id),
+                "derived_region",
+            ),
+            (
+                cadmpeg_ir::annotations::AnnotationKey::from(&shell_id),
+                "derived_shell",
+            ),
         ] {
             annotate(
                 annotations,
-                id,
+                &key,
                 "MainDataStream+SurfacicReps",
                 0,
                 tag,
@@ -4649,6 +4679,7 @@ fn attach_standard_topology(
         refusal,
         admission,
     } = inputs;
+    let mesh_cache = missing_edge::StandardMeshCache::new();
 
     let face_count = ir.geometry.faces.len();
     let edge_count = if edge_table_form == EdgeTableForm::FbbOnly {
@@ -5290,13 +5321,15 @@ fn attach_standard_topology(
                 })
                 .collect::<Vec<_>>();
             let mut changed = false;
-            if let Some(placement_domains) = missing_edge::standard_mesh_placement_endpoint_pairs(
-                ctx,
-                spine,
-                &edge_faces,
-                &seeds,
-            )
-            .map_err(StandardTopologyError::Codec)?
+            if let Some(placement_domains) =
+                missing_edge::standard_mesh_placement_endpoint_pairs_with_cache(
+                    ctx,
+                    spine,
+                    &edge_faces,
+                    &seeds,
+                    &mesh_cache,
+                )
+                .map_err(StandardTopologyError::Codec)?
             {
                 for (edge, mut domain) in placement_domains.into_iter().enumerate() {
                     if deferred_port_edges[edge] {
@@ -5460,7 +5493,8 @@ fn attach_standard_topology(
     };
     let mesh_propagated_endpoint_pairs = if let Some((options, ports)) =
         endpoint_options.as_ref().zip(
-            missing_edge::standard_mesh_edge_ports(ctx, spine)
+            mesh_cache
+                .edge_ports(ctx, spine)
                 .map_err(StandardTopologyError::Codec)?,
         ) {
         let pairs = options
@@ -5505,7 +5539,9 @@ fn attach_standard_topology(
     };
     if let (Some(options), Some(ports)) = (
         constrained_endpoint_options.as_mut(),
-        missing_edge::standard_mesh_edge_ports(ctx, spine).map_err(StandardTopologyError::Codec)?,
+        mesh_cache
+            .edge_ports(ctx, spine)
+            .map_err(StandardTopologyError::Codec)?,
     ) {
         let pruned = if deferred_port_edges.iter().any(|deferred| *deferred) {
             fbb::prune_edge_candidates_by_port_domains_with_deferred(
@@ -5562,7 +5598,9 @@ fn attach_standard_topology(
         include_native_endpoint_pairs(&mut endpoint_candidates, &pairs);
     }
     let fbb_mesh_ports = if edge_table_form == EdgeTableForm::FbbOnly {
-        missing_edge::standard_mesh_edge_ports(ctx, spine).map_err(StandardTopologyError::Codec)?
+        mesh_cache
+            .edge_ports(ctx, spine)
+            .map_err(StandardTopologyError::Codec)?
     } else {
         None
     };
@@ -5815,6 +5853,7 @@ fn attach_standard_topology(
                         preferred_assignment_edges: &partial_constraint_edges,
                         priority_edges: Some(&partial_constraint_edges),
                         assignment_dependencies: None,
+                        mesh_cache: Some(&mesh_cache),
                         budget: &preferred_budget,
                         partial_solution_valid: |pairs| {
                             endpoint_pairs_on_selected_faces(pairs)
@@ -5873,6 +5912,7 @@ fn attach_standard_topology(
                             preferred_assignment_edges: &partial_constraint_edges,
                             priority_edges: Some(&partial_constraint_edges),
                             assignment_dependencies: None,
+                            mesh_cache: Some(&mesh_cache),
                             budget: &fallback_budget,
                             partial_solution_valid: |pairs| {
                                 endpoint_pairs_on_selected_faces(pairs)
@@ -5967,7 +6007,7 @@ fn attach_standard_topology(
         let Some(options) = constrained_endpoint_options.as_ref() else {
             return Ok(None);
         };
-        if let Some(ports) = missing_edge::standard_mesh_edge_ports(ctx, spine)? {
+        if let Some(ports) = mesh_cache.edge_ports(ctx, spine)? {
             let candidate = fbb::parse_standard_port_endpoint_candidates(
                 ctx,
                 spine,
@@ -7121,7 +7161,7 @@ fn standard_native_graph_endpoint_pairs(
     let identity_points = unique_native_identity_points(
         graph.vertices.logical_vertices(),
         graph.vertices.raw_points().len(),
-        &graph.vertex_tolerances,
+        &graph.vertex_residuals,
         points,
     );
     let mut pairs = Vec::new();

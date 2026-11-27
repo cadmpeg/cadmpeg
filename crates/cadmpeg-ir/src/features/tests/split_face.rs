@@ -5,11 +5,11 @@ fn split_face_methods_enforce_their_wire_shapes() {
     use crate::features::surfaces::SplitFaceMethod;
     for (wire, value) in [
         (
-            serde_json::json!({"kind":"unresolved"}),
+            cadmpeg_core::json!({"kind":"unresolved"}),
             SplitFaceMethod::Unresolved {},
         ),
         (
-            serde_json::json!({"kind":"closest_point"}),
+            cadmpeg_core::json!({"kind":"closest_point"}),
             SplitFaceMethod::ClosestPoint {},
         ),
     ] {
@@ -19,10 +19,10 @@ fn split_face_methods_enforce_their_wire_shapes() {
             value
         );
         let mut invalid = wire;
-        invalid["unexpected"] = serde_json::json!(1);
+        invalid["unexpected"] = cadmpeg_core::json!(1);
         assert!(json::from_value::<SplitFaceMethod>(invalid).is_err());
     }
-    let wire = serde_json::json!({"kind":"along_vector", "native_inputs": [], "native_inputs_complete": false});
+    let wire = cadmpeg_core::json!({"kind":"along_vector", "native_inputs": [], "native_inputs_complete": false});
     assert!(json::from_value::<SplitFaceMethod>(wire.clone()).is_ok());
     for field in ["native_inputs", "native_inputs_complete"] {
         let mut invalid = wire.clone();
@@ -53,7 +53,7 @@ fn split_face_operation_writes_its_unresolved_method() {
     let mut wire = json::to_value(&operation).unwrap();
     assert_eq!(
         wire["value"]["method"],
-        serde_json::json!({"kind":"unresolved"})
+        cadmpeg_core::json!({"kind":"unresolved"})
     );
     assert_eq!(
         json::from_value::<FeatureOperation>(wire.clone()).unwrap(),

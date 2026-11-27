@@ -53,7 +53,7 @@ fn plane_frame_admission_rejects_non_finite_and_non_orthonormal_components() {
     ] {
         assert!(SubdPlaneFrame::new(origin, first, second).is_err());
         let wire =
-            serde_json::json!({"origin": origin, "first_axis": first, "second_axis": second});
+            cadmpeg_core::json!({"origin": origin, "first_axis": first, "second_axis": second});
         assert!(json::from_value::<SubdPlaneFrame>(wire).is_err());
     }
 }
@@ -142,7 +142,7 @@ fn radial_sweep_refuses_non_finite_values() {
                 .is_err()
         );
         let mut wire = json::to_value(radial(1.0).unwrap()).unwrap();
-        wire["kind"]["sweep"] = serde_json::json!(sweep);
+        wire["kind"]["sweep"] = cadmpeg_core::json!(sweep);
         assert!(json::from_value::<SubdSymmetry>(wire).is_err());
     }
 }
@@ -176,7 +176,7 @@ fn symmetry_pair_admission_requires_distinct_sources_and_targets() {
             )
             .unwrap();
             let mut wire = json::to_value(symmetry).unwrap();
-            wire[field] = serde_json::json!(invalid);
+            wire[field] = cadmpeg_core::json!(invalid);
             assert!(json::from_value::<SubdSymmetry>(wire)
                 .unwrap_err()
                 .to_string()
@@ -236,7 +236,7 @@ fn radial_maps_keep_repeated_selectors_and_sources() {
 
 #[test]
 fn radial_kind_deserialization_admits_controls_without_a_symmetry_owner() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "kind": "radial", "segments": 4, "sweep": 1.0,
         "radial_maps": [{ "selector": "ef", "pairs": [[0, 1]] }]
     });
@@ -246,10 +246,10 @@ fn radial_kind_deserialization_admits_controls_without_a_symmetry_owner() {
     zero_segments["segments"] = 0.into();
     assert!(json::from_value::<SubdSymmetryKind>(zero_segments).is_err());
     let mut duplicate_sources = wire.clone();
-    duplicate_sources["radial_maps"][0]["pairs"] = serde_json::json!([[0, 1], [0, 2]]);
+    duplicate_sources["radial_maps"][0]["pairs"] = cadmpeg_core::json!([[0, 1], [0, 2]]);
     assert!(json::from_value::<SubdSymmetryKind>(duplicate_sources).is_ok());
     let mut duplicate_selectors = wire.clone();
     duplicate_selectors["radial_maps"] =
-        serde_json::json!([wire["radial_maps"][0], wire["radial_maps"][0]]);
+        cadmpeg_core::json!([wire["radial_maps"][0], wire["radial_maps"][0]]);
     assert!(json::from_value::<SubdSymmetryKind>(duplicate_selectors).is_ok());
 }

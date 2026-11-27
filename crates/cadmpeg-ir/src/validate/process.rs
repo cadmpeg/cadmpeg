@@ -8,9 +8,9 @@
 
 mod bindings;
 mod caches;
-mod evaluations;
+pub(crate) mod evaluations;
 #[cfg(test)]
-mod fixture;
+pub(crate) mod fixture;
 mod operations;
 mod order;
 mod records;

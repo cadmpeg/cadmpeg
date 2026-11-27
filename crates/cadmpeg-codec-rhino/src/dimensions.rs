@@ -1761,7 +1761,8 @@ pub(crate) fn project(
         assets: Vec::new(),
         ..SemanticAnnotation::new(
             annotation_id,
-            object.to_owned(),
+            cadmpeg_ir::ids::Identity::try_from(object)
+                .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?,
             SemanticAnnotationKind::Dimension,
             runtime_type.to_owned(),
             order,
@@ -1788,7 +1789,13 @@ pub(crate) fn semantic_json(dimension: &Dimension) -> Result<String, cadmpeg_cor
             map.end()
         }
     }
-    let (annotation, _) = project(dimension, "embedded-history-dimension", None, "", 0)?;
+    let (annotation, _) = project(
+        dimension,
+        "embedded-history-dimension",
+        None,
+        "rhino:dimension:annotation#embedded-history-dimension",
+        0,
+    )?;
     crate::wire::canonical_json(&DimensionJson(&annotation))
 }
 
@@ -2432,9 +2439,15 @@ pub(crate) mod tests {
             ArchiveVersion::V8,
         )
         .expect("valid linear dimension");
-        let (annotation, _) = super::project(&dimension, "embedded-history-dimension", None, "", 0)
-            .expect("dimension projection");
-        let baseline = serde_json::json!({
+        let (annotation, _) = super::project(
+            &dimension,
+            "embedded-history-dimension",
+            None,
+            "rhino:dimension:annotation#embedded-history-dimension",
+            0,
+        )
+        .expect("dimension projection");
+        let baseline = cadmpeg_core::json!({
             "kind": "dimension",
             "runtime_type": annotation.runtime_type,
             "value": annotation.value,

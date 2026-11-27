@@ -576,15 +576,12 @@ impl SourceFidelity {
     ///
     /// # Errors
     ///
-    /// The digest's session could not be opened.
-    pub fn edited(&self, ir: &CadIr) -> Result<bool, CodecError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    /// A session ceiling of `ctx` ran out.
+    pub fn edited(&self, ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<bool, CodecError> {
         let same = self.content_digest.as_ref().is_some_and(|stored| {
-            crate::hash::content_digest(&ctx, ir).is_ok_and(|digest| digest == *stored)
+            crate::hash::content_digest(ctx, ir).is_ok_and(|digest| digest == *stored)
         });
-        Ok(!same || crate::hash::omitted_arenas_edited(&ctx, ir).unwrap_or(true))
+        Ok(!same || crate::hash::omitted_arenas_edited(ctx, ir).unwrap_or(true))
     }
 
     /// Append source metadata after checking every table for collisions.
@@ -915,7 +912,7 @@ mod tests {
         );
 
         let mut restated = wire;
-        restated["bytes"]["byte_len"] = serde_json::json!(3);
+        restated["bytes"]["byte_len"] = cadmpeg_core::json!(3);
         let error = json::from_value::<RetainedSourceRecord>(restated)
             .unwrap_err()
             .to_string();
@@ -929,7 +926,7 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("test context");
         for attach in [false, true] {
-            let unknown: UnknownRecord = json::from_value(serde_json::json!({
+            let unknown: UnknownRecord = json::from_value(cadmpeg_core::json!({
                 "id": "synthetic:model:unknown#0",
                 "offset": 7,
                 "retention": {"kind": "inline", "data": "AQID"},
@@ -966,7 +963,7 @@ mod tests {
     #[test]
     fn a_restated_record_id_is_refused_by_name() {
         let record = |stream: &str| {
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "stream": stream,
                 "offset": 0,
                 "bytes": {
@@ -1075,6 +1072,48 @@ mod tests {
         assert_eq!(
             parsed.fidelity.annotations.provenance["synthetic:point#0"].stream(),
             " \t"
+        );
+    }
+
+    #[test]
+    fn the_sidecar_reader_round_trips_a_key_qualified_by_an_evaluation() {
+        let evaluation =
+            crate::design::ids::EvaluationId::mint("synthetic:design:evaluation#1").unwrap();
+        let key = crate::annotations::AnnotationKey::in_delta(
+            &evaluation,
+            &crate::ids::FaceId::mint("synthetic:brep:face#2").unwrap(),
+        );
+        let mut builder = crate::AnnotationBuilder::new();
+        let stream = crate::annotations::StreamHandle::new(crate::stream_name!("source"));
+        builder.note(&key, &stream, 5, None);
+        builder
+            .field_exactness(&key, "tolerance", crate::provenance::Exactness::Derived)
+            .unwrap();
+        let sidecar = DecodeSidecar::bind_sha256(
+            crate::hash::digest::Sha256Digest::digest(b"cad-ir"),
+            report(),
+            SourceFidelity::with_annotations(builder.build(), root_digest()),
+        );
+
+        let json = sidecar.to_canonical_json().expect("serialize sidecar");
+        assert!(
+            json.contains(r#""synthetic:design:evaluation#1 synthetic:brep:face#2""#),
+            "{json}"
+        );
+        let parsed = DecodeSidecar::from_json(&json).expect("parse sidecar");
+        assert_eq!(parsed, sidecar);
+        let annotations = &parsed.fidelity.annotations;
+        let (read, _) = annotations.provenance.first_key_value().unwrap();
+        assert_eq!(
+            read.target(),
+            crate::annotations::AnnotationTarget::Delta {
+                qualifier: "synthetic:design:evaluation#1",
+                record: "synthetic:brep:face#2",
+            }
+        );
+        assert_eq!(
+            annotations.exactness()[&key].fields()["tolerance"],
+            crate::provenance::Exactness::Derived
         );
     }
 

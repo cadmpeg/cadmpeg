@@ -13,12 +13,14 @@
 //! no history the decoder reads, states no design.
 
 mod configurations;
+mod datum;
 mod equations;
 mod extrude;
 mod names;
 mod operation;
 mod order;
 pub(crate) mod parameters;
+mod pattern;
 mod profile_check;
 mod revolve;
 mod sketch;
@@ -40,6 +42,7 @@ use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::feature::Feature;
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::names::NameTable;
+use cadmpeg_ir::design::projection::restated::{restate_tree_nodes, Restater};
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::design::units::{UnitSymbol, UnitSystem};
@@ -146,6 +149,7 @@ pub(crate) fn project(
             definition: &definition,
             outside_profile,
             surfaces: &ir.geometry.surfaces,
+            angular: ir.tolerances.angular.get(),
         },
     );
     losses.extend(typed.loss);
@@ -161,6 +165,7 @@ pub(crate) fn project(
     losses.extend(typed.revolve_profile_differs);
     losses.extend(typed.revolve_profile_unchecked);
     losses.extend(typed.revolve_sense_assumed);
+    losses.extend(typed.datums);
     let mut readings = parameters::Readings {
         decoded: parameters::Decoded::new(&ir.model.parameters, lanes, configuration_maps),
         length_unit: length,
@@ -251,6 +256,8 @@ pub(crate) fn project(
         &names,
         losses,
     )?;
+    // The timeline restates each folder node as a `Folder` (§5.2).
+    let folders = timeline.folder_nodes(&Restater::Record(id.as_str().to_owned()));
     let container = Container::Ordered {
         id,
         kind: OrderedKind::Timeline,
@@ -259,6 +266,8 @@ pub(crate) fn project(
         rollback,
         placement: None,
     };
+    configurations::restate(ir, &configurations, &states.evaluations, &bodies);
+    restate_tree_nodes(ir, folders);
     let features = timeline.features;
     let added = 3
         + features.len()

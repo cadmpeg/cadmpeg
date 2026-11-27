@@ -6,17 +6,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read, Write};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+use cadmpeg_ir::codec::DecodeFailure;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 
+use crate::decode;
 use crate::loss::F3dLossCode;
 use crate::writer::primitives::{
-    f3d_native, validate_assembly_projection, validate_configuration_projection,
+    configuration_targets, f3d_native, projects, validate_assembly_projection,
 };
-use crate::{decode, F3dCodec};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 pub(crate) mod edits;
 mod geometry;
@@ -64,6 +64,7 @@ use records::{
 /// [`decode::document_local_sha256`] means anything; the comparison is bitwise
 /// because the question is whether an unsupported field moved at all.
 pub(crate) fn write_semantic(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     source_image: &[u8],
     writer: &mut dyn Write,
@@ -77,24 +78,33 @@ pub(crate) fn write_semantic(
                 .into(),
         ));
     }
-    // Semantic patching reserializes native records under the same desktop
-    // decode policy used for the source-image salvage decode below.
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (encode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        source_image,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::desktop(),
+    // The archive is input of the write's one session, so the caller's
+    // ceilings bound every read of it (cadir-v11.md §2.5).
+    ctx.charge_input(
+        cadmpeg_core::decode::u64_from_index(source_image.len()),
+        "F3D patch source archive",
     )?;
-    let target_native = f3d_native(target)?;
+    let policy = *ctx.policy();
+    let limits = policy.limits;
+    let target_native = f3d_native(ctx, target)?;
     if let Some(native) = target_native.as_ref() {
-        validate_configuration_projection(target, native)?;
-        validate_assembly_projection(target, Some(native))?;
+        if !projects(
+            &target.model.configurations,
+            &native.design_configurations,
+            &configuration_targets(target, native),
+        )? {
+            return Err(CodecError::NotImplemented(
+                "the neutral configurations differ from the projection of the configuration \
+                 tables, and the patch carries the configuration tables as stored"
+                    .into(),
+            ));
+        }
+        validate_assembly_projection(ctx, target, Some(native))?;
     } else {
-        validate_assembly_projection(target, None)?;
+        validate_assembly_projection(ctx, target, None)?;
     }
-    let baseline = F3dCodec
-        .decode(&mut Cursor::new(source_image), &DecodeOptions::default())
-        .map_err(|failure| match failure {
+    let baseline =
+        super::decode_retained_source(source_image, policy).map_err(|failure| match failure {
             DecodeFailure::Codec(error) => error,
             other => CodecError::malformed(format!(
                 "the salvage decode of the source image refused: {other}"
@@ -110,7 +120,7 @@ pub(crate) fn write_semantic(
             "F3D semantic patching refuses a source whose design intent was not decoded".into(),
         ));
     }
-    let baseline_native = f3d_native(baseline.ir())?;
+    let baseline_native = f3d_native(ctx, baseline.ir())?;
     let natives = PatchNatives {
         baseline: baseline_native.as_ref(),
         target: target_native.as_ref(),
@@ -457,7 +467,7 @@ pub(crate) fn write_semantic(
             .wire_topologies
             .clone_from(&target_native.wire_topologies);
         supported.store(
-            &encode_ctx,
+            ctx,
             supported_target
                 .native
                 .namespace_mut(cadmpeg_ir::codec_id!("f3d")),
@@ -686,6 +696,7 @@ pub(crate) fn write_semantic(
                     &mut entry,
                     &name,
                     cadmpeg_core::decode::u64_from_index(source_image.len()),
+                    limits,
                 )?);
             } else {
                 let mut chunk = [0_u8; 16 * 1024];
@@ -701,7 +712,7 @@ pub(crate) fn write_semantic(
         };
         let expanded = zstd.then(|| bytes.clone());
         if let Some(cage) = user_knot_edits.remove(&name) {
-            bytes = crate::tsm::user_knots::rewrite(&encode_ctx, &name, &bytes, &cage)?;
+            bytes = crate::tsm::user_knots::rewrite(ctx, &name, &bytes, &cage)?;
         }
         if let Some(configuration) = configuration_edits.get(&name) {
             bytes.clone_from(configuration);
@@ -751,6 +762,7 @@ pub(crate) fn write_semantic(
                     &bytes,
                     &protein_appearance_edits,
                     notes,
+                    limits,
                 )?;
                 bytes = patched_bytes;
                 patched_protein_appearances.extend(patched_guids);
