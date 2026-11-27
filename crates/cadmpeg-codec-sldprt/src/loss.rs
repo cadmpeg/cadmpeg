@@ -333,7 +333,7 @@ pub(crate) enum SldprtLossCode {
     TessellationReusedTagAmbiguous,
     /// `DisplayLists` meshes transferred without B-rep geometry ownership.
     TessellationDisplayWithoutGeometry,
-    /// No body record was available; a body hierarchy was derived.
+    /// No body record links up with the faces; a body hierarchy was derived.
     TopologyBodyHierarchyDerived,
     /// A canonical face has no explicit body relation.
     TopologyFaceUnclaimed,

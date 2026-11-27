@@ -1750,7 +1750,7 @@ fn plane_face_draft(
     surface_sequence: u32,
     source_sequence: u32,
     stem: &crate::ids::Stem,
-    boundary_edges: Vec<Edge>,
+    boundary_edges: Vec<(usize, Edge)>,
     resolution: f64,
     sequences: &mut super::geometry::SourceSequences,
     ctx: &DecodeContext<'_>,
@@ -1771,7 +1771,7 @@ fn plane_face_draft(
     sequences.record_face(&face_id, source_sequence);
     let mut candidate = ModelDraft::new();
     let mut loop_ids = Vec::new();
-    for (boundary_index, edge) in boundary_edges.into_iter().enumerate() {
+    for (boundary_index, edge) in boundary_edges {
         let edge_id = edge.id.clone();
 
         ctx.charge_entities(1, "iges_geometry_structure")?;
@@ -1885,6 +1885,22 @@ struct LegacyPlaneSource<'a> {
     parent: u32,
 }
 
+/// A child of a Type 402 Form 9 relation that bounds no hole of the
+/// relation's face: the loop it would state, the child, and why.
+struct LostHole {
+    loop_id: cadmpeg_ir::ids::LoopId,
+    child: u32,
+    why: &'static str,
+}
+
+/// The face a Type 402 Form 9 relation states: its draft, the Type 108
+/// planes it bounds with, and the children that bound no hole of it.
+struct LegacyFace {
+    draft: ModelDraft,
+    planes: Vec<u32>,
+    lost: Vec<LostHole>,
+}
+
 fn legacy_single_parent_face(
     ir: &CadIr,
     source: LegacyPlaneSource<'_>,
@@ -1893,7 +1909,7 @@ fn legacy_single_parent_face(
     rules: PlaneBoundaryRules<'_>,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
-) -> Result<Option<(ModelDraft, Vec<u32>)>, LegacyPlaneError> {
+) -> Result<Option<LegacyFace>, LegacyPlaneError> {
     let LegacyPlaneSource {
         entry,
         record,
@@ -1909,88 +1925,99 @@ fn legacy_single_parent_face(
         };
         children.push(child);
     }
-    let planes = children
-        .iter()
-        .filter(|sequence| {
-            entries
-                .get(sequence)
-                .is_some_and(|child| child.entity_type == 108)
-        })
-        .count();
-    if planes == 0 {
-        return Ok(None);
-    }
-    if planes < children.len() {
-        return Err(
-            "legacy single-parent plane hole names a child that is not a Type 108 plane".into(),
-        );
-    }
-    if children.iter().any(|sequence| {
+    if !children.iter().any(|sequence| {
         entries
             .get(sequence)
-            .is_none_or(|child| child.form != -1 || !child.status.is_physically_dependent())
+            .is_some_and(|child| child.entity_type == 108)
     }) {
-        return Err(
-            "legacy single-parent plane hole requires negative, physically dependent Type 108 children"
-                .into(),
-        );
+        return Ok(None);
     }
 
-    let mut boundary_sequences = Vec::new();
-    for sequence in std::iter::once(parent_sequence).chain(children.iter().copied()) {
-        boundary_sequences.push(
-            records
-                .get(&sequence)
-                .and_then(|plane| existing_pointer(plane, 5, entries))
-                .ok_or("legacy single-parent plane has an invalid boundary pointer")?,
-        );
-    }
     let index = ModelIndex::new_model_only(ir);
-    let parent_plane = plane_carrier(&index, parent_sequence)
-        .ok_or("legacy single-parent parent plane was not projected")?;
     let resolution = rules.resolution;
-    let mut boundary_edges = Vec::new();
-    for (boundary_index, (plane_sequence, boundary_sequence)) in std::iter::once(parent_sequence)
-        .chain(children.iter().copied())
-        .zip(boundary_sequences.iter().copied())
-        .enumerate()
-    {
-        let plane = plane_carrier(&index, plane_sequence)
-            .ok_or("legacy single-parent child plane was not projected")?;
-        if !planes_are_coplanar(parent_plane, plane, resolution) {
-            return Err("legacy single-parent plane boundaries are not coplanar".into());
-        }
+    let stem =
+        crate::ids::Stem::word_directory(crate::ids::Word::LegacySingleParent, entry.sequence);
+    let boundary_edge = |boundary_index: usize,
+                         plane_sequence: u32,
+                         plane: (Point3, Vector3)|
+     -> Result<(usize, Edge), LegacyPlaneError> {
+        let boundary_sequence = records
+            .get(&plane_sequence)
+            .and_then(|plane| existing_pointer(plane, 5, entries))
+            .ok_or("legacy single-parent plane has an invalid boundary pointer")?;
         let mut edge = plane_boundary_edge(&index, plane, boundary_sequence, entries, rules, ctx)
             .map_err(|error| match error.legacy_message() {
             Ok(message) => LegacyPlaneError::Invalid(message),
             Err(resource) => LegacyPlaneError::Resource(resource),
         })?;
-        let edge_id = crate::ids::edge(
-            &crate::ids::Stem::word_directory(crate::ids::Word::LegacySingleParent, entry.sequence)
-                .tail_index(boundary_index),
-        );
-        edge.id = edge_id.clone();
+        edge.id = crate::ids::edge(&stem.tail_index(boundary_index));
         if let Some(ends) = &mut edge.ends {
             ends.end = ends.start.clone();
         }
-        boundary_edges.push(edge);
+        Ok((boundary_index, edge))
+    };
+    let parent_plane = plane_carrier(&index, parent_sequence)
+        .ok_or("legacy single-parent parent plane was not projected")?;
+    let mut boundary_edges = vec![boundary_edge(0, parent_sequence, parent_plane)?];
+    let mut planes = vec![parent_sequence];
+    // Each child bounds its own hole: one that does not leaves the holes of
+    // the others stated (§3.3).
+    let mut lost = Vec::new();
+    for (offset, child) in children.into_iter().enumerate() {
+        let boundary_index = offset + 1;
+        let hole = entries
+            .get(&child)
+            .filter(|child| child.entity_type == 108)
+            .ok_or("legacy single-parent plane hole names a child that is not a Type 108 plane")
+            .and_then(|child| {
+                (child.form == -1 && child.status.is_physically_dependent()).then_some(()).ok_or(
+                    "legacy single-parent plane hole requires negative, physically dependent Type 108 children",
+                )
+            })
+            .and_then(|()| {
+                plane_carrier(&index, child)
+                    .ok_or("legacy single-parent child plane was not projected")
+            })
+            .and_then(|plane| {
+                planes_are_coplanar(parent_plane, plane, resolution)
+                    .then_some(plane)
+                    .ok_or("legacy single-parent plane boundaries are not coplanar")
+            })
+            .map_err(LegacyPlaneError::Invalid)
+            .and_then(|plane| boundary_edge(boundary_index, child, plane));
+        match hole {
+            Ok(edge) => {
+                boundary_edges.push(edge);
+                planes.push(child);
+            }
+            Err(LegacyPlaneError::Invalid(why)) => lost.push(LostHole {
+                loop_id: crate::ids::r#loop(&stem.slot(boundary_index)),
+                child,
+                why,
+            }),
+            Err(resource) => return Err(resource),
+        }
     }
-    let stem =
-        crate::ids::Stem::word_directory(crate::ids::Word::LegacySingleParent, entry.sequence);
-
-    children.insert(0, parent_sequence);
-    Ok(Some((
-        plane_face_draft(
-            parent_sequence,
-            entry.sequence,
-            &stem,
-            boundary_edges,
-            resolution,
-            sequences,
-            ctx,
-        )?,
-        children,
-    )))
+    if let (1, Some(first)) = (boundary_edges.len(), lost.first()) {
+        return Err(LegacyPlaneError::Invalid(first.why));
+    }
+    let mut draft = plane_face_draft(
+        parent_sequence,
+        entry.sequence,
+        &stem,
+        boundary_edges,
+        resolution,
+        sequences,
+        ctx,
+    )?;
+    if !lost.is_empty() {
+        state_holes_unstated(&mut draft);
+    }
+    Ok(Some(LegacyFace {
+        draft,
+        planes,
+        lost,
+    }))
 }
 
 /// States the face of `candidate` with its holes not stated in full, for a
@@ -2337,6 +2364,7 @@ pub(super) fn project(
     let mut legacy_face_candidates = Vec::<(&DirectoryEntry, u32, FaceId, ModelDraft)>::new();
     let mut legacy_plane_sequences = BTreeSet::new();
     let mut failed_holes = Vec::<(&DirectoryEntry, u32, cadmpeg_ir::report::loss::LossNote)>::new();
+    let mut lost_holes = Vec::<(&DirectoryEntry, FaceId, LostHole)>::new();
     let mut flows = BTreeMap::new();
     for entry in directory
         .iter()
@@ -2909,15 +2937,18 @@ pub(super) fn project(
                     ctx,
                     sequences,
                 ) {
-                    Ok(Some((candidate, plane_sequences))) => {
-                        for sequence in plane_sequences {
-                            legacy_plane_sequences.insert(sequence);
-                        }
+                    Ok(Some(LegacyFace {
+                        draft,
+                        planes,
+                        lost,
+                    })) => {
+                        legacy_plane_sequences.extend(planes);
                         let face = crate::ids::face(&crate::ids::Stem::word_directory(
                             crate::ids::Word::LegacySingleParent,
                             entry.sequence,
                         ));
-                        legacy_face_candidates.push((entry, parent, face, candidate));
+                        lost_holes.extend(lost.into_iter().map(|hole| (entry, face.clone(), hole)));
+                        legacy_face_candidates.push((entry, parent, face, draft));
                     }
                     Ok(None) => {}
                     Err(reason) => failed_holes.push((
@@ -2993,7 +3024,7 @@ pub(super) fn project(
                     if let Some(ends) = &mut edge.ends {
                         ends.end = ends.start.clone();
                     }
-                    let boundary_edges = vec![edge];
+                    let boundary_edges = vec![(0, edge)];
                     let candidate = plane_face_draft(
                         entry.sequence,
                         entry.sequence,
@@ -3056,6 +3087,7 @@ pub(super) fn project(
     drop(index);
     let mut commit_session = CommitSession::new(ir, ctx, None)?;
     let mut partial_faces = BTreeMap::new();
+    let mut committed_faces = BTreeSet::new();
     for (entry, parent, face, mut candidate) in legacy_face_candidates {
         let partial = failed_holes
             .iter()
@@ -3066,6 +3098,9 @@ pub(super) fn project(
         let committed = commit_session.commit_model(candidate)?.is_ok();
         if committed && partial {
             partial_faces.insert(parent, face.clone());
+        }
+        if committed {
+            committed_faces.insert(face.clone());
         }
         if !committed {
             super::give_up_record(
@@ -3079,6 +3114,19 @@ pub(super) fn project(
                 ),
             );
         }
+    }
+    for (entry, face, hole) in lost_holes {
+        let why = super::attributed_note(
+            entry,
+            crate::loss::IgesLossCode::EntityNotProjected,
+            format_args!(
+                "IGES entity type {} form {} hole bounded by Directory sequence {} was not \
+                 projected: {}",
+                entry.entity_type, entry.form, hole.child, hole.why
+            ),
+        );
+        let marked = committed_faces.contains(&face).then_some(face);
+        super::give_up_marking(&mut losses, entry, hole.loop_id, marked, why);
     }
     for (entry, parent, why) in failed_holes {
         super::give_up_marking(

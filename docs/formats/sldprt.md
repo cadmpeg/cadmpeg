@@ -70,6 +70,13 @@ record scanning, so records may cross frame boundaries. Every section is
 extracted independently, including partition and deltas sections. A section
 with one frame is the degenerate chained form.
 
+A frame whose member does not inflate to `uncompressed_size`, a frame whose
+member runs past the section, or bytes after the frames that are neither a
+frame nor zero padding cut the section at that frame. The decoder reads the
+concatenation of the frames before the cut as the section's stream, which ends
+early, and gives up the bytes from the cut to the section end. A section cut
+at its first frame is given up whole.
+
 ### 1.1 Outer header and block frame
 
 The file starts with an 8-byte header: `file_id` (u32), then `version` (u32 **big-endian**; observed value `0x00000004`). The decoder stores the word in the `outer_version` attribute; every value decodes (`dialect.rs`). The rest is a sequence of compressed blocks.
@@ -2674,10 +2681,10 @@ The loss `geometry.carrier-approximated` counts intersection chart curves, fitte
 A framed FACE record with no decoded loop is the loss `topology.face-withheld`.
 A vertex loop decodes to a vertex boundary on its vertex-use. A vertex loop whose vertex-use does not resolve is given up with the loss `topology.vertex-loop-withheld`; its FACE keeps its other loops in the partial form.
 A FACE with a loop whose FIN is ambiguous is the loss `topology.ambiguous-fin-face-withheld`.
-The loss `topology.ownership-withheld` counts current typed ownership nodes with no decoded node of the same kind and identity. The face count covers every valid typed ownership face. When hierarchy selection from the full typed face set resolves, the body and shell counts cover the nodes in that hierarchy set. A body or shell dropped with a face it needs (below) is charged with that face and not counted. One loss note gives the count for each kind.
+The loss `topology.ownership-withheld` counts current typed ownership nodes with no decoded node of the same kind and identity. The face count covers every valid typed ownership face. When hierarchy selection from the full typed face set resolves, the body and shell counts cover the nodes in that hierarchy set. A body, region or shell stated in its partial form (below) is not counted. One loss note gives the count for each kind.
 A FACE whose loop chain names a loop record that is missing, or one that another FACE owns, keeps the loops before it in the partial form and carries the loss `topology.loop-chain-cut`.
-A SHELL that lists a FACE the decode gives up states its members in the partial form. A SHELL with none of its faces stated is dropped with the first FACE it lists; a REGION with no stated shell is dropped with the first SHELL it lost, and a BODY with no stated region with the first REGION it lost. A REGION that keeps some shells and loses one leaves its shells unclassified, since which is the exterior is no longer stated.
-Where the BODY, REGION and SHELL nodes do not link up with the faces, the decode derives one body, region and shell (`topology.body-hierarchy-derived`). The derived body takes the kind that every BODY node states when they agree, and is classified from its faces otherwise. Once a face is given up, each derived shell states its members in the partial form, since no node says which shell held that face.
+A SHELL that lists a FACE the decode does not state states its members in the partial form. A SHELL with none of its faces stated is kept in that form with no face, so no SHELL, REGION or BODY is dropped for a child it lost: the REGION lists the SHELL, and the BODY keeps the kind it stores. A REGION that the decode states and that gains such a SHELL from the typed ownership nodes leaves its shells unclassified, since which is the exterior is not stated.
+Where the BODY, REGION and SHELL nodes do not link up with the faces, the decode derives one body, region and shell (`topology.body-hierarchy-derived`). The derived body takes the kind that the BODY nodes linked to a REGION state when they agree, and is classified from its faces otherwise. A BODY node is linked to a REGION when its region-chain head (§6) resolves, as a REGION attribute or as the predecessor sentinel that a REGION's previous field holds, or when a REGION names it in its body field. A BODY node linked to no REGION, such as one that owns only vertices, says nothing of the faces' body. Once a face is given up, or a typed FACE node is not stated, each derived shell states its members in the partial form, since no node says which shell held that face.
 
 ### 4.1 XT ownership nodes
 

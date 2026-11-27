@@ -82,6 +82,17 @@ impl BodyCandidate {
     }
 }
 
+/// What the BODY records that link to a stored REGION say of a body's kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum StoredBodyKind {
+    /// No BODY record links to a stored REGION.
+    Absent,
+    /// The linked BODY records state more than one kind.
+    Disagree,
+    /// Every linked BODY record states this kind.
+    Agreed(BodyKind),
+}
+
 impl BodyNode {
     /// First shell reference in the body topology fields.
     fn shell(&self) -> u32 {
@@ -182,23 +193,32 @@ type OwnershipMaps = (
 );
 
 impl Facts {
-    /// The kind that every BODY record naming a stored REGION states, when
-    /// there is one and they agree. A BODY that names no region, such as one
-    /// that owns only vertices, says nothing of the faces' body.
-    pub(super) fn stored_body_kind(&self) -> Option<BodyKind> {
+    /// The kind the BODY records that link to a stored REGION state. A BODY
+    /// links when one of its region-head references names a REGION, directly
+    /// or as the predecessor sentinel a REGION's previous reference holds, or
+    /// when a REGION names it as its body. A BODY that links to no region,
+    /// such as one that owns only vertices, says nothing of the faces' body.
+    pub(super) fn stored_body_kind(&self) -> StoredBodyKind {
         let regions: HashSet<u32> = self.regions.iter().map(|region| region.attr).collect();
-        let mut kinds = self
-            .bodies
-            .iter()
-            .filter(|body| {
-                body.topology_refs
-                    .iter()
-                    .chain(&body.ownership_refs)
-                    .any(|attr| regions.contains(attr))
-            })
-            .map(|body| body.kind);
-        let first = kinds.next()?;
-        kinds.all(|kind| kind == first).then_some(first)
+        let links = |body: &&BodyNode| {
+            body.region_head_candidates().any(|head| {
+                head > 1
+                    && (node_ref(head).is_some_and(|attr| regions.contains(&attr))
+                        || self.regions.iter().any(|region| region.refs[3] == head))
+            }) || self
+                .regions
+                .iter()
+                .any(|region| region.refs[1] == body.attr)
+        };
+        let mut kinds = self.bodies.iter().filter(links).map(|body| body.kind);
+        let Some(first) = kinds.next() else {
+            return StoredBodyKind::Absent;
+        };
+        if kinds.all(|kind| kind == first) {
+            StoredBodyKind::Agreed(first)
+        } else {
+            StoredBodyKind::Disagree
+        }
     }
 
     /// Ownership classes claimed for each stream-local transmit index.

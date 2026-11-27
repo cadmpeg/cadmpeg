@@ -145,27 +145,33 @@ fn a_compact_trimmed_face_supplies_topology_for_its_null_loop_ownership_face() {
 }
 
 #[test]
-fn a_loopless_plane_drops_its_shell_region_and_body_with_it() {
+fn a_loopless_plane_keeps_its_shell_region_and_body_marked() {
+    use cadmpeg_ir::topology::{BodyKind, Unstated};
     let out = decode(&loopless_nodes(50));
     assert!(out.faces.is_empty());
     assert_eq!(given_up(&out, SldprtLossCode::TopologyFaceWithheld), 1);
-    let with: Vec<_> = out
+    assert!(!out
         .dropped
         .iter()
-        .filter_map(|dropped| match dropped {
-            super::DroppedRecord::With { record, needs } => Some((record.as_str(), needs.as_str())),
-            super::DroppedRecord::GivenUp { .. } => None,
-        })
-        .collect();
-    assert_eq!(
-        with,
-        [
-            ("sldprt:brep:shell#4", "sldprt:brep:face#5"),
-            ("sldprt:brep:region#3", "sldprt:brep:shell#4"),
-            ("sldprt:brep:body#2", "sldprt:brep:region#3"),
-        ]
-    );
-    // The records dropped with the face are charged there, not counted.
+        .any(|dropped| matches!(dropped, super::DroppedRecord::With { .. })));
+    // The shell holds no stated face and says so; its region and body stay.
+    let [shell] = out.shells.as_slice() else {
+        panic!("one shell: {:#?}", out.dropped);
+    };
+    assert_eq!(shell.id.as_str(), "sldprt:brep:shell#4");
+    assert_eq!(shell.unstated, Some(Unstated::Members));
+    let [region] = out.regions.as_slice() else {
+        panic!("one region");
+    };
+    assert_eq!(region.id.as_str(), "sldprt:brep:region#3");
+    assert_eq!(region.unstated, None);
+    assert_eq!(region.stated_shells().collect::<Vec<_>>(), [&shell.id]);
+    let [body] = out.bodies.as_slice() else {
+        panic!("one body");
+    };
+    assert_eq!(body.id.as_str(), "sldprt:brep:body#2");
+    assert_eq!((body.kind, body.unstated), (BodyKind::Solid, None));
+    // The records stated in partial form are not counted as withheld.
     assert!(!out
         .losses
         .iter()
@@ -174,21 +180,35 @@ fn a_loopless_plane_drops_its_shell_region_and_body_with_it() {
 
 #[test]
 fn a_derived_shell_states_no_members_once_a_face_is_given_up() {
-    use cadmpeg_ir::ids::{RegionId, ShellId};
-    use cadmpeg_ir::topology::{Shell, Unstated};
-    let shell = ShellId::compose(&super::shell_namespace(), 1);
-    let region = RegionId::compose(&super::region_namespace(), 1);
-    let mut out = super::Brep::default();
-    out.stats.synthetic_body_grouping = true;
-    out.shells.push(Shell::new(shell, region));
-    super::mark_derived_shells(&mut out);
-    assert_eq!(out.shells[0].unstated, None);
-    out.dropped.push(super::DroppedRecord::with(
-        "sldprt:brep:face#5",
-        "sldprt:brep:surface#20",
-    ));
-    super::mark_derived_shells(&mut out);
-    assert_eq!(out.shells[0].unstated, Some(Unstated::Members));
+    use cadmpeg_ir::topology::Unstated;
+    use F::{C, I, P, V};
+    let mut nodes = loopless_nodes(53);
+    // The region does not name its body, so the decode derives the hierarchy.
+    nodes[1].2[2] = P(9);
+    let kept = decode(&nodes);
+    assert!(kept.stats.synthetic_body_grouping);
+    assert!(kept.shells.iter().all(|shell| shell.unstated.is_none()));
+    // A loopless plane beside the sphere in its shell is given up.
+    nodes[3].2[3] = P(30);
+    let mut plane = face_fields();
+    plane[0] = I(9);
+    plane[4] = P(5);
+    plane[5] = P(1);
+    plane[7] = P(21);
+    nodes.push((14, 30, plane));
+    #[rustfmt::skip]
+    nodes.push((50, 21, vec![I(8), P(1), P(1), P(1), P(1), P(1), C(b'+'), V([0.0; 3]), V([0.0, 0.0, 1.0]), V([1.0, 0.0, 0.0])]));
+    let out = decode(&nodes);
+    assert!(out.stats.synthetic_body_grouping);
+    let [face] = out.faces.as_slice() else {
+        panic!("the sphere face is kept: {:#?}", out.dropped);
+    };
+    assert_eq!(face.id.as_str(), "sldprt:brep:face#5");
+    assert!(!out.shells.is_empty());
+    assert!(out
+        .shells
+        .iter()
+        .all(|shell| shell.unstated == Some(Unstated::Members)));
 }
 
 #[test]
@@ -681,6 +701,8 @@ fn body_records_that_do_not_link_up_still_state_the_derived_body_kind() {
     let out = decode(&nodes);
     assert!(out.stats.synthetic_body_grouping);
     assert!(out.stats.unlinked_body_records);
+    // The body names its region as the head of its region chain.
+    assert!(out.stats.unlinked_body_kind);
     let [body] = out.bodies.as_slice() else {
         panic!("one derived body");
     };

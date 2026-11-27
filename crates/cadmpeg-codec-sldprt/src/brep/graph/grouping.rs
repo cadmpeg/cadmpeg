@@ -4,9 +4,13 @@
 
 use std::collections::{HashMap, HashSet};
 
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::annotations::{AnnotationBuilder, AnnotationKey, StreamHandle};
 use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId, RegionId, ShellId};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::topology::{BodyKind, Region, RegionUnstated, Sense, Unstated};
+use cadmpeg_ir::topology::{Body, BodyKind, Region, RegionUnstated, Sense, Shell, Unstated};
+use cadmpeg_ir::{Exactness, StreamName};
 
 use super::{topology, BodyRecord, Brep, DroppedRecord};
 
@@ -18,23 +22,6 @@ pub(super) fn stated_face_ids(out: &Brep) -> HashSet<String> {
         .collect()
 }
 
-/// The region of `shells`; once a shell of the region is lost, which of the
-/// rest is the exterior is not stated (§5.6, Unstated children).
-pub(super) fn native_region(
-    id: RegionId,
-    body: BodyId,
-    shells: Vec<ShellId>,
-    lost_shell: bool,
-) -> Region {
-    let mut region = Region::new(id, body, Vec::new());
-    if lost_shell {
-        region.unstated = Some(RegionUnstated::Unclassified { shells });
-    } else {
-        region.set_shells(shells);
-    }
-    region
-}
-
 /// The face of `refs`, the faces a native shell lists, that comes first
 /// among those the decode does not state, or none when it states them all.
 pub(super) fn first_lost_face(refs: &[u32], stated: &HashSet<String>) -> Option<FaceId> {
@@ -43,110 +30,121 @@ pub(super) fn first_lost_face(refs: &[u32], stated: &HashSet<String>) -> Option<
         .find(|face| !stated.contains(face.as_str()))
 }
 
-/// The records of `records` that the decode drops because it states none of
-/// their faces: each shell that lists a face, with the first of its faces;
-/// each region of such shells, with the first of them; and each body of such
-/// regions, with the first of them.
-pub(super) fn dropped_without_faces(records: &[BodyRecord]) -> Vec<DroppedRecord> {
-    let mut dropped = Vec::new();
-    for body in records {
-        let body_id = BodyId::compose(&super::body_namespace(), body.attr);
-        let mut first_region = None;
-        for region in &body.regions {
-            let region_id = RegionId::compose(&super::region_namespace(), region.attr);
-            let mut first_shell = None;
-            for shell in &region.shells {
-                let Some(face) = shell.refs.first() else {
-                    continue;
-                };
-                let shell_id = ShellId::compose(&super::shell_namespace(), shell.attr);
-                dropped.push(DroppedRecord::with(
-                    shell_id.as_str(),
-                    super::id_face(*face).as_str(),
-                ));
-                first_shell.get_or_insert(shell_id);
-            }
-            if let Some(shell) = first_shell {
-                dropped.push(DroppedRecord::with(region_id.as_str(), shell.as_str()));
-                first_region.get_or_insert(region_id);
-            }
-        }
-        if let Some(region) = first_region {
-            dropped.push(DroppedRecord::with(body_id.as_str(), region.as_str()));
-        }
-    }
-    dropped
-}
-
-/// The records of the typed `hierarchies` that the decode drops, with what
-/// each needs, where no dropped record names them yet: each shell the decode
-/// does not state and of which it states no face, with the first of its
-/// faces; each region it does not state, with the first such shell; and each
-/// body it does not state, with the first such region. A shell that lists a
-/// stated face belongs to a derived hierarchy and is not dropped with it.
-pub(super) fn dropped_with_lost_faces(
-    out: &Brep,
-    hierarchies: &[crate::brep::typed::Hierarchy],
-    accounted: &HashSet<&str>,
-) -> Vec<DroppedRecord> {
-    let stated_faces = stated_face_ids(out);
-    let shells: HashSet<&str> = out.shells.iter().map(|shell| shell.id.as_str()).collect();
-    let regions: HashSet<&str> = out
-        .regions
+/// States, in their partial form, the shells, regions, and bodies of
+/// `records` that the decode does not state, and marks each stated shell that
+/// lists a face the decode does not state (§3.3, §5.6). A shell none of whose
+/// faces is stated holds no face and says so; a stated region that gains such
+/// a shell leaves its shells unclassified, since which is the exterior is no
+/// longer stated; a body keeps its stored kind. A shell that lists a stated
+/// face is the shell that holds that face, so nothing of its body is stated
+/// beside it.
+pub(super) fn state_unbuilt_records(
+    ctx: &DecodeContext<'_>,
+    out: &mut Brep,
+    records: &[BodyRecord],
+    stream: &StreamName,
+) -> Result<(), CodecError> {
+    let face_shells: HashMap<FaceId, ShellId> = out
+        .faces
         .iter()
-        .map(|region| region.id.as_str())
+        .map(|face| (face.id.clone(), face.shell.clone()))
         .collect();
-    let bodies: HashSet<&str> = out.bodies.iter().map(|body| body.id.as_str()).collect();
-    let mut dropped = Vec::new();
-    for hierarchy in hierarchies {
-        let mut lost_shells = HashMap::new();
-        for shell in &hierarchy.shells {
-            let id = ShellId::compose(&super::shell_namespace(), shell.attr);
-            let mut attrs: Vec<u32> = hierarchy
-                .faces
-                .iter()
-                .filter(|(_, owner)| *owner == shell.attr)
-                .map(|(face, _)| *face)
-                .collect();
-            attrs.sort_unstable();
-            let faces: Vec<FaceId> = attrs.into_iter().map(super::id_face).collect();
-            let Some(face) = faces.first() else {
-                continue;
-            };
-            if shells.contains(id.as_str())
-                || faces
+    let built_shells: HashSet<ShellId> = out.shells.iter().map(|shell| shell.id.clone()).collect();
+    let built_regions: HashSet<RegionId> =
+        out.regions.iter().map(|region| region.id.clone()).collect();
+    let built_bodies: HashSet<BodyId> = out.bodies.iter().map(|body| body.id.clone()).collect();
+    let source = StreamHandle::new(stream.clone());
+    let mut annotations = AnnotationBuilder::resume(std::mem::take(&mut out.annotations));
+    let mut annotate = |key: AnnotationKey, offset: usize, tag: &str| {
+        annotations.note(key.clone(), &source, u64_from_index(offset), Some(tag));
+        annotations.exactness(key, Exactness::ByteExact);
+    };
+    let mut marked = HashSet::new();
+    for record in records {
+        let body_id = BodyId::compose(&super::body_namespace(), record.attr);
+        let mut new_shells = HashMap::<u32, Vec<ShellId>>::new();
+        for region in &record.regions {
+            let region_id = RegionId::compose(&super::region_namespace(), region.attr);
+            for shell in &region.shells {
+                let id = ShellId::compose(&super::shell_namespace(), shell.attr);
+                let faces: Vec<FaceId> = shell
+                    .refs
                     .iter()
-                    .any(|face| stated_faces.contains(face.as_str()))
-            {
-                continue;
+                    .map(|attr| super::id_face(*attr))
+                    .collect();
+                let mut holders: Vec<ShellId> = faces
+                    .iter()
+                    .filter_map(|face| face_shells.get(face).cloned())
+                    .collect();
+                if built_shells.contains(&id) {
+                    holders.push(id.clone());
+                }
+                if !holders.is_empty() {
+                    if faces.iter().any(|face| !face_shells.contains_key(face)) {
+                        marked.extend(holders);
+                    }
+                    continue;
+                }
+                if faces.is_empty() {
+                    continue;
+                }
+                super::admit_brep_entity(ctx)?;
+                annotate(AnnotationKey::from(&id), shell.offset, "00_51_shell");
+                let mut stated = Shell::new(id.clone(), region_id.clone());
+                stated.unstated = Some(Unstated::Members);
+                out.shells.push(stated);
+                new_shells.entry(region.attr).or_default().push(id);
             }
-            if !accounted.contains(id.as_str()) {
-                dropped.push(DroppedRecord::with(id.as_str(), face.as_str()));
-            }
-            lost_shells.entry(shell.refs[6]).or_insert(id);
         }
-        let mut lost_region = None;
-        for region in &hierarchy.regions {
+        let body_new = !built_bodies.contains(&body_id) && !new_shells.is_empty();
+        for region in &record.regions {
             let id = RegionId::compose(&super::region_namespace(), region.attr);
-            let Some(shell) = lost_shells.get(&region.attr) else {
-                continue;
-            };
-            if regions.contains(id.as_str()) {
+            let added = new_shells.remove(&region.attr).unwrap_or_default();
+            if built_regions.contains(&id) {
+                if let (false, Some(stated)) = (
+                    added.is_empty(),
+                    out.regions.iter_mut().find(|stated| stated.id == id),
+                ) {
+                    let mut shells: Vec<ShellId> = stated.stated_shells().cloned().collect();
+                    shells.extend(added);
+                    stated.set_shells(Vec::new());
+                    stated.unstated = Some(RegionUnstated::Unclassified { shells });
+                }
                 continue;
             }
-            if !accounted.contains(id.as_str()) {
-                dropped.push(DroppedRecord::with(id.as_str(), shell.as_str()));
+            if added.is_empty() && !body_new {
+                continue;
             }
-            lost_region.get_or_insert(id);
+            super::admit_brep_entity(ctx)?;
+            annotate(AnnotationKey::from(&id), region.offset, "00_51_region");
+            out.regions.push(Region::new(id, body_id.clone(), added));
         }
-        let body = BodyId::compose(&super::body_namespace(), hierarchy.body.attr);
-        if let Some(region) = lost_region {
-            if !bodies.contains(body.as_str()) && !accounted.contains(body.as_str()) {
-                dropped.push(DroppedRecord::with(body.as_str(), region.as_str()));
-            }
+        if body_new {
+            super::admit_brep_entity(ctx)?;
+            annotate(AnnotationKey::from(&body_id), record.offset, "00_51_body");
+            super::note_body_precision(out, &body_id, Some(record.linear_resolution));
+            out.bodies.push(Body {
+                id: body_id,
+                kind: record.kind,
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+                native_ref: None,
+                unstated: None,
+            });
         }
     }
-    dropped
+    for shell in &mut out.shells {
+        if marked.contains(&shell.id) {
+            shell.unstated = Some(Unstated::Members);
+        }
+    }
+    out.shells.sort_by(|a, b| a.id.cmp(&b.id));
+    out.regions.sort_by(|a, b| a.id.cmp(&b.id));
+    out.bodies.sort_by(|a, b| a.id.cmp(&b.id));
+    out.annotations = annotations.build();
+    Ok(())
 }
 
 /// The bodies and shells of the typed `hierarchies` that the decode neither
@@ -154,7 +152,7 @@ pub(super) fn dropped_with_lost_faces(
 pub(super) fn withheld_counts(
     out: &Brep,
     hierarchies: &[crate::brep::typed::Hierarchy],
-    accounted: &HashSet<&str>,
+    accounted: &HashSet<String>,
 ) -> (usize, usize) {
     let body_ids: HashSet<_> = out.bodies.iter().map(|body| body.id.as_str()).collect();
     let shell_ids: HashSet<_> = out.shells.iter().map(|shell| shell.id.as_str()).collect();
@@ -177,19 +175,21 @@ pub(super) fn withheld_counts(
 }
 
 /// Marks each shell of a derived body hierarchy as not stating all its
-/// faces where the decode gives up a face: the source does not say which
-/// shell held it (§5.6, Unstated children).
-pub(super) fn mark_derived_shells(out: &mut Brep) {
+/// faces where the decode gives up a face, or where `typed_face_unstated`
+/// says a typed FACE node is not stated: the source does not say which shell
+/// held it (§5.6, Unstated children).
+pub(super) fn mark_derived_shells(out: &mut Brep, typed_face_unstated: bool) {
     if !out.stats.synthetic_body_grouping {
         return;
     }
     let is_face = |id: &str| id.starts_with("sldprt:brep:face#");
-    let lost = out.dropped.iter().any(|record| match record {
-        DroppedRecord::GivenUp {
-            record, dropping, ..
-        } => is_face(record) || dropping.iter().any(|id| is_face(id)),
-        DroppedRecord::With { record, .. } => is_face(record),
-    });
+    let lost = typed_face_unstated
+        || out.dropped.iter().any(|record| match record {
+            DroppedRecord::GivenUp {
+                record, dropping, ..
+            } => is_face(record) || dropping.iter().any(|id| is_face(id)),
+            DroppedRecord::With { record, .. } => is_face(record),
+        });
     if lost {
         for shell in &mut out.shells {
             shell.unstated = Some(Unstated::Members);

@@ -19,18 +19,21 @@ fn a_given_up_face_is_not_counted_again_by_the_ownership_note() {
     .unwrap();
     let mut out = out;
     assert!(out.faces.is_empty());
-    // The shell, region and body are dropped with the face, so the note
-    // counts none of them.
+    // The shell holds no stated face and says so; it, its region and its
+    // body are stated, so the note counts none of them.
     assert!(out.losses.is_empty(), "{:#?}", out.losses);
-    let with: Vec<_> = out
+    assert!(!out
         .dropped
         .iter()
-        .filter_map(|dropped| match dropped {
-            super::DroppedRecord::With { record, .. } => Some(record.as_str()),
-            super::DroppedRecord::GivenUp { .. } => None,
-        })
-        .collect();
-    assert_eq!(with.len(), 3, "{with:?}");
+        .any(|dropped| matches!(dropped, super::DroppedRecord::With { .. })));
+    let [shell] = out.shells.as_slice() else {
+        panic!("one shell: {:#?}", out.dropped);
+    };
+    assert_eq!(
+        shell.unstated,
+        Some(cadmpeg_ir::topology::Unstated::Members)
+    );
+    assert_eq!((out.regions.len(), out.bodies.len()), (1, 1));
     let losses = out.take_losses().unwrap();
     assert_eq!(
         losses

@@ -514,6 +514,32 @@ pub(crate) fn legacy_mixed_single_parent_file(global: &[u8]) -> Vec<u8> {
     owned_test_file_with_global_and_line_fonts(&entities, global, &[(1, 1), (3, 1), (5, 1), (7, 1)])
 }
 
+/// [`legacy_perforated_plane_file`] with a second Type 108 hole at DE 11,
+/// bounded by the curve at DE 13, whose plane is not the parent's.
+pub(crate) fn legacy_two_hole_single_parent_file(global: &[u8]) -> Vec<u8> {
+    let mut entities = legacy_perforated_plane_entities();
+    entities[4].parameters = "402,1,2,1,3,11;".into();
+    entities.push(OwnedTestEntity {
+        entity_type: 108,
+        form: -1,
+        label: "CPLANE2".into(),
+        status: "00010000",
+        parameters: "108,0,1,0,0,13,0,0,0,0,1,9,0;".into(),
+    });
+    entities.push(OwnedTestEntity {
+        entity_type: 106,
+        form: 63,
+        label: "INNER2".into(),
+        status: "00010000",
+        parameters: "106,1,5,0,6,6,8,6,8,8,6,8,6,6;".into(),
+    });
+    owned_test_file_with_global_and_line_fonts(
+        &entities,
+        global,
+        &[(1, 1), (3, 1), (5, 1), (7, 1), (11, 1), (13, 1)],
+    )
+}
+
 pub(crate) fn legacy_generic_single_parent_file(global: &[u8]) -> Vec<u8> {
     owned_test_file_with_global_and_line_fonts(
         &[

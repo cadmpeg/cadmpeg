@@ -367,8 +367,10 @@ fn wrapped_member_requires_the_parasolid_header_at_byte_zero() {
     );
 }
 
+/// Bytes after a chained section's frames that are neither a frame nor zero
+/// padding cut the section there: the frames before them read.
 #[test]
-fn malformed_chained_continuation_is_not_emitted_as_a_prefix_stream() {
+fn a_malformed_chained_continuation_keeps_the_frames_before_it() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let stream = parasolid_payload("partition body", "SCH_SW_33103_11000");
@@ -382,10 +384,13 @@ fn malformed_chained_continuation_is_not_emitted_as_a_prefix_stream() {
     payload.extend_from_slice(&section);
 
     let extracted = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap();
-    assert!(extracted.streams.is_empty());
-    // The section is not read, so it is reported for a give-up.
-    let whole = 0..payload.len();
-    assert_eq!(extracted.unread, [whole]);
+    let [read] = extracted.streams.as_slice() else {
+        panic!("one stream: {:?}", extracted.streams.len());
+    };
+    assert_eq!(read.payload, stream);
+    // The bytes from the cut to the section end are reported for a give-up.
+    let cut = payload.len() - 3..payload.len();
+    assert_eq!(extracted.unread, [cut]);
 }
 
 /// A frame of a chained section whose sizes are zero holds an empty stream:

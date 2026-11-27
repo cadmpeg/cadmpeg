@@ -33,7 +33,8 @@ const MAX_WRAPPED_FRAME_UNCOMPRESSED: usize = 512 * 1024 * 1024;
 pub(crate) struct ExtractedStream {
     /// Direct-stream or wrapper offset in the outer payload.
     pub(crate) offset: usize,
-    /// Complete extracted Parasolid stream bytes.
+    /// Extracted Parasolid stream bytes. A chained section cut at a frame
+    /// that does not read holds the frames before that frame.
     pub(crate) payload: Vec<u8>,
     /// Header parsed from `payload` at extraction time.
     pub(crate) header: StreamHeader,
@@ -127,6 +128,15 @@ pub(crate) fn extract_streams_with_offsets(
                 if !stream_payload_present(&out, &stream.payload) {
                     out.push(stream);
                 }
+            }
+            Wrapped::Cut {
+                stream,
+                unread: span,
+            } => {
+                if !stream_payload_present(&out, &stream.payload) {
+                    out.push(stream);
+                }
+                unread.push(span);
             }
             Wrapped::Unread(span) => unread.push(span),
             Wrapped::None => {}
@@ -226,6 +236,13 @@ enum Wrapped {
     /// runs past its section. The range spans the wrapper in the outer
     /// payload.
     Unread(Range<usize>),
+    /// A chained section is cut at a frame that does not read; the frames
+    /// before it inflate to `stream`, and `unread` spans the cut frame to the
+    /// section end.
+    Cut {
+        stream: ExtractedStream,
+        unread: Range<usize>,
+    },
     /// The bytes at the magic frame no member, the frame states an empty
     /// stream, or the inflated bytes are not a Parasolid stream.
     None,
@@ -319,70 +336,78 @@ fn chained_wrapped_stream(
     let Some(mut frame_at) = magic_at.checked_add(WRAPPED_MAGIC_PREFIX.len()) else {
         return Ok(Wrapped::None);
     };
-    // A frame that runs past the section, or bytes after the frames that are
-    // neither a frame nor zero padding, leave the section unread.
-    let unread = Wrapped::Unread(chain_len_at..section_end);
-    let mut frames = 0usize;
+    // A frame that runs past the section, a member that does not inflate, or
+    // bytes after the frames that are neither a frame nor zero padding cut
+    // the section at that frame: the frames before it read, the rest does not.
     let mut frame_outputs = Vec::new();
-    while frame_at < section_end {
+    let cut = loop {
+        if frame_at >= section_end {
+            break None;
+        }
+        let start = frame_at;
         let Some(remaining) = payload.get(frame_at..section_end) else {
-            return Ok(unread);
+            break Some(start);
         };
         if remaining.iter().all(|byte| *byte == 0) {
-            break;
+            break None;
         }
         if remaining.len() < WRAPPED_FRAME_HEADER_LEN {
-            return Ok(unread);
+            break Some(start);
         }
         let Some(uncompressed_size) = frame_at
             .checked_add(chain_frame_hdr::UNCOMPRESSED_SIZE)
             .and_then(|at| View::u32_le_at(payload, at))
             .and_then(as_usize)
         else {
-            return Ok(unread);
+            break Some(start);
         };
         let Some(member_size) = frame_at
             .checked_add(chain_frame_hdr::ZLIB_MEMBER_SIZE)
             .and_then(|at| View::u32_le_at(payload, at))
             .and_then(as_usize)
         else {
-            return Ok(unread);
+            break Some(start);
         };
-        let Some(member_start) = frame_at.checked_add(WRAPPED_FRAME_HEADER_LEN) else {
-            return Ok(unread);
+        let Some(member_end) = frame_at
+            .checked_add(WRAPPED_FRAME_HEADER_LEN)
+            .and_then(|member_start| member_start.checked_add(member_size))
+            .filter(|member_end| *member_end <= section_end)
+        else {
+            break Some(start);
         };
-        let Some(member_end) = member_start.checked_add(member_size) else {
-            return Ok(unread);
-        };
-        if member_end > section_end {
-            return Ok(unread);
-        }
         frame_at = member_end;
         // A frame with no bytes on either side holds an empty stream.
         if uncompressed_size == 0 || member_size == 0 {
             continue;
         }
-        let Some(member) = payload.get(member_start..member_end) else {
-            return Ok(unread);
+        let Some(member) = payload.get(start + WRAPPED_FRAME_HEADER_LEN..member_end) else {
+            break Some(start);
         };
         let Some(frame) = inflate_zlib_frame(ctx, member, uncompressed_size)? else {
-            return Ok(unread);
+            break Some(start);
         };
         frame_outputs.push(frame);
-        let Some(next_frames) = frames.checked_add(1) else {
-            return Ok(unread);
-        };
-        frames = next_frames;
-    }
-    if frames == 0 {
-        return Ok(Wrapped::None);
+    };
+    let whole = |cut: Option<usize>| match cut {
+        Some(_) => Wrapped::Unread(chain_len_at..section_end),
+        None => Wrapped::None,
+    };
+    if frame_outputs.is_empty() {
+        return Ok(whole(cut));
     }
     let stream = if frame_outputs.len() == 1 {
         frame_outputs.remove(0)
     } else {
         ctx.concat_retained(&frame_outputs, "retain concatenated Parasolid stream")?
     };
-    extracted_stream(chain_len_at, stream).map(Wrapped::stream)
+    Ok(match (extracted_stream(chain_len_at, stream)?, cut) {
+        (None, cut) => whole(cut),
+        (Some(stream), None) => Wrapped::Stream(stream),
+        (Some(stream), Some(start)) => Wrapped::Cut {
+            stream,
+            unread: start..section_end,
+        },
+    })
 }
 
 fn extracted_stream(
