@@ -38,6 +38,7 @@ use crate::layout::move_transform_v3_frame_276 as move_v3_frame_276;
 use crate::layout::move_transform_v3_frame_286 as move_v3_frame_286;
 use crate::layout::move_transform_v3_frame_296 as move_v3_frame_296;
 use crate::layout::rigid_transform_leading_prefix as leading_move;
+use crate::layout::scale_axis_owner_modern_head as scale_axis_modern;
 use crate::layout::scale_axis_owner_prefix as scale_axis;
 use crate::layout::scale_counted_group_head as scale_counted;
 use crate::layout::scale_counted_group_suffix as scale_counted_suffix;
@@ -1257,24 +1258,41 @@ pub(super) fn exact_axis_owner_scale(
     }
     let [&x, &y, &z, &group, _, _, &center] = scope.reference_members().values_array()?;
     let start = usize::try_from(scope.byte_offset()).ok()?;
-    if bytes.get(start + scale_axis::ZERO_RUN_18..start + scale_axis::CENTER_REFERENCE)? != [0; 18]
-        || marked_record_reference(bytes, start + scale_axis::CENTER_REFERENCE)? != center
-        || *bytes.get(start + scale_axis::ZERO_BYTE)? != scale_axis::ZERO_BYTE_VALUE
-        || View::u32_le_at(bytes, start + scale_axis::ONE)? != scale_axis::ONE_VALUE
-        || View::u16_le_at(bytes, start + scale_axis::ZERO_WORD)? != scale_axis::ZERO_WORD_VALUE
-        || marked_record_reference(bytes, start + scale_axis::X_OWNER)? != x
-        || marked_record_reference(bytes, start + scale_axis::Y_OWNER)? != y
-        || marked_record_reference(bytes, start + scale_axis::Z_OWNER)? != z
-        || View::u32_le_at(bytes, start + scale_axis::GROUP_COUNT)? != scale_axis::GROUP_COUNT_VALUE
-        || marked_record_reference(bytes, start + scale_axis::GROUP_REFERENCE)? != group
+    // The modern form stores factor kind one and an unused factor before the center, which moves every later field.
+    let modern = View::u32_le_at(bytes, start + scale_axis_modern::FACTOR_KIND)?
+        == scale_axis_modern::FACTOR_KIND_VALUE;
+    let (head_closes, shift) = if modern {
+        (
+            bytes.get(
+                start + scale_axis_modern::LEADING_ZERO_RUN..start + scale_axis_modern::FACTOR_KIND,
+            )? == [0; 9]
+                && bytes.get(
+                    start + scale_axis_modern::TRAILING_ZERO_RUN..start + scale_axis_modern::LEN,
+                )? == [0; 9],
+            scale_axis_modern::LEN - scale_axis::CENTER_REFERENCE,
+        )
+    } else {
+        (
+            bytes.get(start + scale_axis::ZERO_RUN_18..start + scale_axis::CENTER_REFERENCE)?
+                == [0; 18],
+            0,
+        )
+    };
+    let at = start + shift;
+    if !head_closes
+        || marked_record_reference(bytes, at + scale_axis::CENTER_REFERENCE)? != center
+        || *bytes.get(at + scale_axis::ZERO_BYTE)? != scale_axis::ZERO_BYTE_VALUE
+        || View::u32_le_at(bytes, at + scale_axis::ONE)? != scale_axis::ONE_VALUE
+        || View::u16_le_at(bytes, at + scale_axis::ZERO_WORD)? != scale_axis::ZERO_WORD_VALUE
+        || marked_record_reference(bytes, at + scale_axis::X_OWNER)? != x
+        || marked_record_reference(bytes, at + scale_axis::Y_OWNER)? != y
+        || marked_record_reference(bytes, at + scale_axis::Z_OWNER)? != z
+        || View::u32_le_at(bytes, at + scale_axis::GROUP_COUNT)? != scale_axis::GROUP_COUNT_VALUE
+        || marked_record_reference(bytes, at + scale_axis::GROUP_REFERENCE)? != group
     {
         return None;
     }
-    scale_guid_closes_prefix(
-        bytes,
-        start + scale_axis::LEN,
-        scope.reference_count_offset(),
-    )?;
+    scale_guid_closes_prefix(bytes, at + scale_axis::LEN, scope.reference_count_offset())?;
     let point = exact_point_data_construction(bytes, records, [&center], stream_types)?;
     let stream = native_stream(&scope.id)?;
     let factor = |owner_index, ordinal, kind| {
