@@ -310,8 +310,9 @@ fn sketch(
             failure.get_or_insert("a sketch entity has no planar curve");
             continue;
         };
-        let outside =
-            context.outside_profile.contains(entity.id()) && !needed.contains(entity.id());
+        let outside = !entity.construction_read()
+            && context.outside_profile.contains(entity.id())
+            && !needed.contains(entity.id());
         if outside && !entity.construction {
             outside_profile.push(entity.id().clone());
         }
@@ -320,10 +321,10 @@ fn sketch(
             sketch: record.id.clone(),
             definition: EntityDefinition::Free(form),
             roles: roles.of(entity.id()),
-            construction: if entity.construction || outside || reading.is_some() {
-                Some(true)
+            construction: if entity.construction_read() {
+                Some(entity.construction)
             } else {
-                entity.construction_read().then_some(false)
+                (entity.construction || outside || reading.is_some()).then_some(true)
             },
             centerline: None,
             native: None,
@@ -536,10 +537,9 @@ pub(super) fn selection(picks: Vec<Picked>) -> Result<OrderedSelection, &'static
     })
 }
 
-/// The point entity at each end of the sketch's lines and arcs: the point
-/// whose native record the curve names as that end and whose position is the
-/// end's. An endpoint record that no point entity of the sketch carries gets
-/// a point minted at the first curve end that names it.
+/// Binds each curve end to a point that names its native record and lies at
+/// its position. A missing point is keyed by the first curve end that names
+/// the record.
 struct Roles {
     ends: HashMap<(SketchEntityId, bool), SketchEntityId>,
     minted: Vec<MintedPoint>,
@@ -550,7 +550,7 @@ struct Roles {
 struct MintedPoint {
     id: SketchEntityId,
     native: String,
-    position: [f64; 2],
+    position: FinitePoint2,
 }
 
 impl Roles {
@@ -581,6 +581,9 @@ impl Roles {
                 continue;
             };
             for (native, at, is_start) in [(first, start, true), (second, end, false)] {
+                let Some(end_point) = FinitePoint2::new(Point2::new(at[0], at[1])) else {
+                    continue;
+                };
                 let (id, position) = match points.get(native.as_str()) {
                     Some(Some(point)) => {
                         let Geometry::Point { position } = point.geometry.definition() else {
@@ -605,12 +608,13 @@ impl Roles {
                             minted.push(MintedPoint {
                                 id,
                                 native: native.clone(),
-                                position: at,
+                                position: end_point,
                             });
                             minted_at.insert(native.as_str(), minted.len() - 1);
                             minted.len() - 1
                         };
-                        (&minted[index].id, minted[index].position)
+                        let point = &minted[index];
+                        (&point.id, [point.position.u, point.position.v])
                     }
                 };
                 if coincident(position, at) {
@@ -625,22 +629,17 @@ impl Roles {
     fn minted(&self, sketch: &cadmpeg_ir::sketches::SketchId) -> Vec<SketchEntity<Planar>> {
         self.minted
             .iter()
-            .filter_map(|point| {
-                let [u, v] = point.position;
-                Some(SketchEntity {
-                    id: point.id.clone(),
-                    sketch: sketch.clone(),
-                    definition: EntityDefinition::Free(PlanarCurve::Point(FinitePoint2::new(
-                        Point2::new(u, v),
-                    )?)),
-                    roles: self.of(&point.id),
-                    construction: None,
-                    centerline: None,
-                    native: None,
-                    native_options: NativeOptions::new(),
-                    source_settings: NativeOptions::new(),
-                    native_ref: Some(point.native.clone()),
-                })
+            .map(|point| SketchEntity {
+                id: point.id.clone(),
+                sketch: sketch.clone(),
+                definition: EntityDefinition::Free(PlanarCurve::Point(point.position)),
+                roles: self.of(&point.id),
+                construction: None,
+                centerline: None,
+                native: None,
+                native_options: NativeOptions::new(),
+                source_settings: NativeOptions::new(),
+                native_ref: Some(point.native.clone()),
             })
             .collect()
     }
@@ -1008,10 +1007,10 @@ fn needed_state_zero<'a>(
         else {
             continue;
         };
-        if entity.construction || reading.is_some() {
+        if entity.construction || (!entity.construction_read() && reading.is_some()) {
             continue;
         }
-        if outside_profile.contains(entity.id()) {
+        if !entity.construction_read() && outside_profile.contains(entity.id()) {
             state_zero.insert(entity.id(), form);
         } else {
             live.insert(entity.id(), form);

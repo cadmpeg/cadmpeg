@@ -120,3 +120,73 @@ fn endpoint_records_without_point_entities_are_stated_as_points() {
         );
     }
 }
+
+#[test]
+fn a_read_flag_takes_precedence_over_outside_profile_inference() {
+    let (mut ir, _) = sketch_and_extrude();
+    let id = entity("diagonal");
+    let model = cadmpeg_ir::sketches::SketchEntity::new(
+        id.clone(),
+        ir.model.sketches[0].id.clone(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Line {
+            start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            end: cadmpeg_ir::math::Point2::new(50.0, 30.0),
+        }
+        .try_into()
+        .unwrap(),
+    )
+    .with_read_construction(false);
+    ir.model.sketch_entities.push(model);
+    project(&mut ir, &HashSet::from([id.clone()]));
+    assert_eq!(design_entity(&ir, &id).construction, Some(false));
+    assert!(!charge(&ir, "sketch_entities", id.as_str())
+        .iter()
+        .any(|field| field == "construction"));
+}
+
+#[test]
+fn a_bounded_ellipse_carries_its_endpoint_records() {
+    use cadmpeg_core::serde_erase::json;
+    use cadmpeg_ir::sketches::SketchEntity;
+
+    let (mut ir, _) = sketch_and_extrude();
+    let id = entity("ellipse");
+    let ellipse: SketchEntity = json::from_value(cadmpeg_core::json!({
+        "id": id.as_str(),
+        "sketch": ir.model.sketches[0].id.as_str(),
+        "construction": false,
+        "endpoint_refs": ["native:ellipse-start", "native:ellipse-end"],
+        "geometry": {
+            "kind": "ellipse",
+            "center": {"u": 10.0, "v": 10.0},
+            "major_angle": 0.0,
+            "major_radius": 3.0,
+            "minor_radius": 2.0,
+            "bounds": [0.0, std::f64::consts::FRAC_PI_2]
+        }
+    }))
+    .unwrap();
+    ir.model.sketch_entities.push(ellipse);
+    project(&mut ir, &HashSet::new());
+    let end = ir
+        .design
+        .sketch_entities
+        .iter()
+        .find(|point| point.native_ref.as_deref() == Some("native:ellipse-end"))
+        .unwrap();
+    assert!(matches!(
+        end.definition,
+        EntityDefinition::Free(PlanarCurve::Point(position))
+            if position.u == 10.0 && position.v == 12.0
+    ));
+    assert_eq!(
+        end.roles,
+        [EntityRole {
+            of: id.clone(),
+            role: DefiningRole::End
+        }]
+    );
+    assert!(!charge(&ir, "sketch_entities", id.as_str())
+        .iter()
+        .any(|field| field == "endpoint_refs"));
+}

@@ -597,3 +597,56 @@ fn endpoint_records_without_point_entities_are_stated_as_points() {
         );
     }
 }
+
+#[test]
+fn decoded_open_spline_carries_both_endpoint_records() {
+    let entities = crate::test_support::sketch_curves::open_cubic_entities();
+    let sources = cadmpeg_core::decode::unique_index(entities.iter().map(|entity| {
+        (
+            (
+                entity.identity.segment_token.as_str(),
+                entity.identity.record_ordinal,
+            ),
+            entity,
+        )
+    }));
+    let geometry =
+        crate::sketch::project_geometry(&entities[2], &sources).expect("decoded spline geometry");
+    let refs = crate::sketch::entity_endpoint_refs(&entities[2], &sources);
+    let [start, end] = refs.as_slice() else {
+        panic!("the spline record names both ends");
+    };
+    let curve = entity_id("spline");
+    let mut ir = fixture();
+    ir.model.sketch_entities.push(
+        LegacyEntity::new(curve.clone(), sketch_id(), geometry).with_endpoint_refs(refs.clone()),
+    );
+    run(&mut ir);
+    for (reference, role, position) in [
+        (start, DefiningRole::Start, Point2::new(0.0, 0.0)),
+        (end, DefiningRole::End, Point2::new(20.0, 0.0)),
+    ] {
+        let point = ir
+            .design
+            .sketch_entities
+            .iter()
+            .find(|entity| entity.native_ref.as_ref() == Some(reference))
+            .expect("point for the decoded record");
+        assert_eq!(
+            point.definition,
+            EntityDefinition::Free(PlanarCurve::Point(
+                FinitePoint2::new(position).expect("finite endpoint")
+            ))
+        );
+        assert_eq!(
+            point.roles,
+            [EntityRole {
+                of: curve.clone(),
+                role
+            }]
+        );
+    }
+    assert!(!entity_charge(&ir, curve.as_str())
+        .iter()
+        .any(|field| field == "endpoint_refs"));
+}

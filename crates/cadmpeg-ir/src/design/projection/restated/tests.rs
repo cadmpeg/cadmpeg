@@ -581,3 +581,31 @@ fn a_cell_parameter_ordinal_follows_the_cells_of_its_sheet() {
     assert_eq!(listed[parameter_id("sheet:cell:B1").as_str()], fields([]));
     assert_eq!(listed[parameter_id("sheet:cell:A2").as_str()], fields([]));
 }
+
+#[test]
+fn an_absent_flag_carries_only_an_unread_false() {
+    let mut ir = sketch_fixture();
+    let line = ir
+        .design
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id.as_str() == LINE)
+        .unwrap();
+    line.construction = None;
+    let model = ir
+        .model
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id().as_str() == LINE)
+        .unwrap();
+    model.construction = false;
+    assert_eq!(cuts(&ir)[LINE], fields([]));
+
+    ir.model
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id().as_str() == LINE)
+        .unwrap()
+        .read_construction(false);
+    assert_eq!(cuts(&ir)[LINE], fields(["construction"]));
+}

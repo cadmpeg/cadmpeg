@@ -3512,13 +3512,15 @@ fn assemble_sketch_block_profile(
                     .as_deref()
                     .unwrap_or(source_entity.id().as_str())
             );
-            assembled_entities.push(
-                SketchEntity::new(id.clone(), input.sketch_id.clone(), geometry)
-                    .with_construction(source_entity.construction)
-                    .with_native_ref(Some(native_ref))
-                    .with_geometry_ref(source_entity.geometry_ref.clone())
-                    .with_endpoint_refs(source_entity.endpoint_refs.clone()),
-            );
+            let mut entity = SketchEntity::new(id.clone(), input.sketch_id.clone(), geometry)
+                .with_construction(source_entity.construction)
+                .with_native_ref(Some(native_ref))
+                .with_geometry_ref(source_entity.geometry_ref.clone())
+                .with_endpoint_refs(source_entity.endpoint_refs.clone());
+            if source_entity.construction_read() {
+                entity.read_construction(source_entity.construction);
+            }
+            assembled_entities.push(entity);
         }
         let recovered_profiles = if source_sketch.profiles.is_empty() {
             Some(closed_marker_profiles_allowing_shared_endpoints(

@@ -204,10 +204,8 @@ pub(super) fn project(
     Ok(losses)
 }
 
-/// A point at each line or arc end of a sketch, from `entities`, whose
-/// endpoint record no point entity of the sketch carries: the point of the
-/// first end that names the record, its identity minted from that curve and
-/// end.
+/// A point for an endpoint record with no point entity, keyed by the first
+/// curve end that names the record.
 fn end_points<'a>(
     entities: impl Iterator<Item = &'a LegacyEntity> + Clone,
 ) -> Vec<(SketchEntityId, &'a str, FinitePoint2)> {

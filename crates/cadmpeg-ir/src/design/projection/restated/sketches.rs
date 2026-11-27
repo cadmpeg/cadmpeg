@@ -129,7 +129,10 @@ fn entity_cut(
     );
     leave(
         ModelSketchEntityField::Construction,
-        design.construction.unwrap_or(false) == model.construction,
+        match design.construction {
+            Some(construction) => construction == model.construction,
+            None => !model.construction && !model.construction_read(),
+        },
     );
     leave(
         ModelSketchEntityField::NativeRef,

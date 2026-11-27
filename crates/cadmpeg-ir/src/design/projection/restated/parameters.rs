@@ -190,10 +190,9 @@ pub(super) fn parameter_cut(
     );
     leave(
         ModelParameterField::Value,
-        model
-            .value
-            .as_ref()
-            .is_none_or(|value| value_carried(value, design)),
+        model.value.as_ref().is_none_or(|value| {
+            value_carried(value, design) || scalar_carried(model, value, design)
+        }),
     );
     let expression = expression_carried(model, design);
     leave(ModelParameterField::ExpressionText, expression);
@@ -263,6 +262,24 @@ fn value_carried(value: &ModelValue, design: &DesignParameter) -> bool {
     }
 }
 
+fn scalar_carried(model: &ModelParameter, value: &ModelValue, design: &DesignParameter) -> bool {
+    let (Some(native), ModelValue::Real(raw), Some(ParameterValue::Number(stated))) =
+        (&model.native_ref, value, &design.value)
+    else {
+        return false;
+    };
+    if !native.starts_with("sldprt:feature-input:scalar#")
+        || design.native_ref.as_ref() != Some(native)
+    {
+        return false;
+    }
+    match design.kind {
+        ValueKind::Quantity(Quantity::LENGTH) => same_number(raw.get() * 1000.0, stated.get()),
+        ValueKind::Quantity(Quantity::ANGLE) => same_number(raw.get(), stated.get()),
+        _ => false,
+    }
+}
+
 /// Whether `design` states `model`'s expression text and every parameter
 /// it references.
 fn expression_carried(model: &ModelParameter, design: &DesignParameter) -> bool {
@@ -281,7 +298,22 @@ fn expression_carried(model: &ModelParameter, design: &DesignParameter) -> bool 
     match &design.definition {
         ParameterDefinition::Expression(Expression::Source { tokens, .. }) => spells(tokens, text),
         ParameterDefinition::Expression(Expression::Neutral(neutral)) => {
-            match (literal(&neutral.0), literal_number(text)) {
+            let number_text = match (&model.display, design.display) {
+                (Some(ModelDisplay::Diameter), Some(DimensionDisplay::Diameter)) => text
+                    .strip_prefix("<MOD-DIAM>")
+                    .or_else(|| text.strip_prefix("&lt;MOD-DIAM&gt;")),
+                (Some(ModelDisplay::Radius), Some(DimensionDisplay::Radius)) => text
+                    .strip_prefix("<MOD-RHO>")
+                    .or_else(|| text.strip_prefix("&lt;MOD-RHO&gt;")),
+                _ => None,
+            };
+            let literal = literal(&neutral.0);
+            if let Some(number) = number_text {
+                return matches!((literal, number.trim().parse::<f64>()),
+                    (Some(Literal::Number(stated)), Ok(number))
+                        if number.is_finite() && same_number(stated, number));
+            }
+            match (literal, literal_number(text)) {
                 (Some(Literal::Number(stated)), Some(number)) => same_number(stated, number),
                 (Some(Literal::Flag(stated)), _) => text.eq_ignore_ascii_case(&stated.to_string()),
                 (Some(Literal::Text(stated)), _) => {

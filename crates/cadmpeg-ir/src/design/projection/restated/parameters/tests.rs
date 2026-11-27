@@ -174,3 +174,45 @@ fn the_driven_flag_agrees_with_the_definition() {
     )));
     assert_eq!(cut(&driven, &assigned), BTreeSet::from(["properties"]));
 }
+
+#[test]
+fn the_same_solidworks_scalar_is_carried_in_canonical_units() {
+    let mut model = model("12");
+    model.dependencies = DistinctMembers::default();
+    model.value = Some(ModelValue::Real(FiniteReal::new(0.012).unwrap()));
+    model.native_ref = Some("sldprt:feature-input:scalar#test".into());
+    let mut design = design(ParameterDefinition::Expression(Expression::Neutral(
+        Neutral(parse("12[mm]", NO_REFS, &[]).unwrap()),
+    )));
+    design.native_ref = model.native_ref.clone();
+    assert!(cut(&model, &design).is_empty());
+
+    design.value = Some(ParameterValue::Number(FiniteReal::new(0.012).unwrap()));
+    assert!(cut(&model, &design).contains("value"));
+
+    design.value = Some(ParameterValue::Number(FiniteReal::new(12.0).unwrap()));
+    design.native_ref = Some("sldprt:feature-input:scalar#other".into());
+    assert!(cut(&model, &design).contains("value"));
+}
+
+#[test]
+fn a_display_modifier_is_carried_by_the_matching_typed_field() {
+    let mut model = model("<MOD-DIAM>12");
+    model.dependencies = DistinctMembers::default();
+    model.display = Some(super::ModelDisplay::Diameter);
+    let mut design = design(ParameterDefinition::Expression(Expression::Neutral(
+        Neutral(parse("12[mm]", NO_REFS, &[]).unwrap()),
+    )));
+    design.display = Some(super::DimensionDisplay::Diameter);
+    assert!(cut(&model, &design).is_empty());
+
+    model.expression = "<MOD-DIAM>13".into();
+    assert!(cut(&model, &design).contains("expression"));
+
+    model.expression = "<MOD-DIAM>12 in".into();
+    assert!(cut(&model, &design).contains("expression"));
+
+    model.expression = "<MOD-DIAM>12".into();
+    design.display = Some(super::DimensionDisplay::Radius);
+    assert!(cut(&model, &design).contains("expression"));
+}
