@@ -279,6 +279,9 @@
             "operation": {
               "kind": "joint",
               "value": {
+                "alignment": {
+                  "kind": "nearest"
+                },
                 "connectors": [
                   {
                     "after": [
