@@ -154,6 +154,7 @@ pub(crate) fn apply(read: UpAxisRead, up_axis: &mut Option<UpAxis>, losses: &mut
         UpAxisRead::Absent => {}
         UpAxisRead::Stated(axis) => *up_axis = Some(axis),
         UpAxisRead::RecordUnreadable => {
+            *up_axis = None;
             losses.push(F3dLossCode::SettingsUpAxisRecordUnreadable.note(
                 "record 0 is not a whole AssetSettings record of the 494-byte form with the \
              AssetSettings key, so the document states no up axis",
