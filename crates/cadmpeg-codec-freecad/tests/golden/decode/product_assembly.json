@@ -5481,7 +5481,32 @@
       },
       "kind": "classified"
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "feature.link-placement-unresolved",
+            "kind": "feature_history_retained",
+            "namespace": "fcstd"
+          }
+        },
+        "message": "link fcstd:native:object#NestedBracketOccurrence composes its Placement after the linked object's own placement, which the scope holds no occurrence of; its Place states no placement, and its Placement and LinkTransform stay in its native record",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "feature.link-placement-unresolved",
+            "kind": "feature_history_retained",
+            "namespace": "fcstd"
+          }
+        },
+        "message": "link fcstd:native:object#ExternalOccurrence composes its Placement after the linked object's own placement, which the scope holds no occurrence of; its Place states no placement, and its Placement and LinkTransform stay in its native record",
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "SchemaVersion=4",
       "FileVersion=1",
