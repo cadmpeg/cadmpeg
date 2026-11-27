@@ -6,11 +6,12 @@
 //! the payload omits, so a drop is reported even when the backend has no code
 //! path that knows about the arena.
 
-use std::collections::{BTreeSet, HashSet};
+use std::borrow::Cow;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::decode::ArenaClass;
 
-use crate::design::projection::restated::{Restatements, Restater};
+use crate::design::projection::restated::{same_id_cuts, Restatements, Restater};
 use crate::document::{ArenaHome, CadIr};
 use crate::report::loss::LossNote;
 use crate::schema::{ArenaRecord, EntityKind};
@@ -95,6 +96,9 @@ fn arena_kind<T: ArenaRecord>(_: &[T]) -> EntityKind {
     T::KIND
 }
 
+/// The fields of a record a write leaves out.
+type Fields = BTreeSet<Cow<'static, str>>;
+
 /// The records of one arena a write charges.
 struct Charge<'ir> {
     kind: EntityKind,
@@ -103,13 +107,16 @@ struct Charge<'ir> {
     omitted: Vec<&'ir str>,
     /// The records written records restate without some fields, with the
     /// fields.
-    cut: Vec<(&'ir str, BTreeSet<&'static str>)>,
+    cut: Vec<(&'ir str, Fields)>,
 }
 
 /// What a write writes of the `design` layer.
 struct WrittenDesign<'ir> {
     ids: HashSet<&'ir str>,
     names: bool,
+    /// The fields each record a written `design` record of its identity
+    /// restates leaves out, where no projection stated them.
+    compared: HashMap<&'ir str, Fields>,
 }
 
 impl<'ir> WrittenDesign<'ir> {
@@ -122,29 +129,38 @@ impl<'ir> WrittenDesign<'ir> {
 
     /// The records of `records`, an arena the CADIR wire omits, that the
     /// write omits whole, and those it states in part with the fields it
-    /// leaves out, sorted. A record is carried when the write writes what
-    /// restates it, a written `design` record under its id where no
-    /// restatement is stated; the fields that every restater the write
-    /// writes leaves out are cut.
+    /// leaves out, sorted. The restaters of a record are the written records
+    /// the table names and the written `design` record of its identity that
+    /// the write compares with it. A record no written restater restates is
+    /// omitted; the fields that every written restater leaves out are cut.
     fn charge<T: ArenaRecord>(
         &self,
         records: &'ir [T],
         restated: &'ir Restatements,
-    ) -> (Vec<&'ir str>, Vec<(&'ir str, BTreeSet<&'static str>)>) {
+    ) -> (Vec<&'ir str>, Vec<(&'ir str, Fields)>) {
         let mut omitted = Vec::new();
         let mut cut = Vec::new();
         for id in records.iter().map(ArenaRecord::record_identity) {
-            match restated
+            let stated = restated
                 .get(id)
-                .map(|restating| restating.cut_by(|by| self.writes(by)))
-            {
-                Some(Some(fields)) => {
-                    if !fields.is_empty() {
-                        cut.push((id, fields));
-                    }
+                .and_then(|restating| restating.cut_by(|by| self.writes(by)))
+                .map(|fields| {
+                    fields
+                        .into_iter()
+                        .map(Cow::Borrowed)
+                        .collect::<BTreeSet<_>>()
+                });
+            let fields = match (stated, self.compared.get(id)) {
+                (None, None) => {
+                    omitted.push(id);
+                    continue;
                 }
-                None if self.ids.contains(id) => {}
-                Some(None) | None => omitted.push(id),
+                (Some(stated), None) => stated,
+                (None, Some(compared)) => compared.clone(),
+                (Some(stated), Some(compared)) => stated.intersection(compared).cloned().collect(),
+            };
+            if !fields.is_empty() {
+                cut.push((id, fields));
             }
         }
         cut.sort_unstable_by_key(|(id, _)| *id);
@@ -305,7 +321,7 @@ macro_rules! declare_arena_dispositions {
                             let records = cut
                                 .iter()
                                 .map(|(id, fields)| {
-                                    let fields = fields.iter().copied().collect::<Vec<_>>();
+                                    let fields = fields.iter().map(Cow::as_ref).collect::<Vec<_>>();
                                     format!("{id} ({})", fields.join(", "))
                                 })
                                 .collect::<Vec<_>>();
@@ -331,6 +347,7 @@ macro_rules! declare_arena_dispositions {
                 let mut ids = HashSet::new();
                 $(written_design_ids!(self, ids, ir, $field, $home);)*
                 WrittenDesign {
+                    compared: same_id_cuts(ir, &ids),
                     ids,
                     names: self.design == DesignArenaDispositions::uniform(ArenaDisposition::Written),
                 }

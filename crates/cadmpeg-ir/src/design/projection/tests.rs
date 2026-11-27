@@ -283,7 +283,7 @@ fn a_typed_operation_with_fewer_operands_leaves_out_its_definition_and_dependenc
         Some(vec!["definition", "dependencies"])
     );
     let every = project_fillet(base(), Vec::new(), vec![dependency], stored(&["a", "b"]));
-    assert_eq!(cut_by_itself(&every, FILLET), None);
+    assert_eq!(cut_by_itself(&every, FILLET), Some(Vec::new()));
 }
 
 /// A model feature's outputs are carried where a design record states that
@@ -306,7 +306,7 @@ fn the_outputs_of_a_feature_are_carried_only_by_a_state_after_it() {
         family: OperationFamily::Fillet,
     };
     let stated = project_fillet(unresolved(), current.clone(), Vec::new(), operation());
-    assert_eq!(cut_by_itself(&stated, FILLET), None);
+    assert_eq!(cut_by_itself(&stated, FILLET), Some(Vec::new()));
     let mut more = current;
     more.push(body("elsewhere"));
     let unstated = project_fillet(unresolved(), more, Vec::new(), operation());
