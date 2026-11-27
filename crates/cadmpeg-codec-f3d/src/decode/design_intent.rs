@@ -1042,7 +1042,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &body_selection_inputs,
         );
     losses.extend(selection_losses);
-    let (tool_losses, replaced_tools) = crate::history::combine_history_tools::bind(
+    let (tool_losses, replaced_tools, tool_results) = crate::history::combine_history_tools::bind(
         &mut model.features,
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
@@ -1064,6 +1064,10 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             geometry.primary_brep,
             &mut losses,
         ));
+    crate::history::combine_history_tools::add_result_states(
+        &mut model.feature_result_topologies,
+        tool_results,
+    );
     losses.extend(
         crate::history::combine_history_tools::align_with_result_states(
             &mut model.features,
