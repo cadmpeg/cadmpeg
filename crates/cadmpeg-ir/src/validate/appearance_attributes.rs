@@ -17,16 +17,17 @@ use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 use crate::schema::ArenaRecord;
 
-pub(super) fn check_appearance_attributes(
-    ir: &CadIr,
+pub(super) fn check_appearance_attributes_with<'ir>(
+    ir: &'ir CadIr,
     ids: &ModelIndex<'_>,
+    doc_records: &std::cell::OnceCell<DesignRecords<'ir>>,
     findings: &mut Vec<Finding>,
 ) {
     check_native_refs(ir, ids, findings);
     if ir.model.appearance_bindings.is_empty() && ir.model.attributes.is_empty() {
         return;
     }
-    let records = DesignRecords::of(ir);
+    let records = doc_records.get_or_init(|| DesignRecords::of(ir));
     let model = ModelRecords::of(ir);
     let assemblies: BTreeSet<&str> = ir
         .model
@@ -154,7 +155,7 @@ pub(super) fn check_appearance_attributes(
         if let AttributeTarget::Record { arena, id } = &attribute.target.entity {
             record(ir, findings, owner, arena, id.as_str());
         } else if let Some((kind, id)) =
-            unresolved_target(&attribute.target.entity, ids, &records, &model)
+            unresolved_target(&attribute.target.entity, ids, records, &model)
         {
             missing(findings, owner, kind, id);
         }

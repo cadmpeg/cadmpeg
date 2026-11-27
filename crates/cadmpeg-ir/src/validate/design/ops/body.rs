@@ -38,7 +38,7 @@ pub(super) struct RunKind {
 /// A spacing's counts are at least 1, a `List` is nonempty, and
 /// `Fit` and `UpTo` occur only where the run admits them.
 pub(super) fn check_spacing<Q>(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     field: &str,
     spacing: &Spacing<Q>,
     kind: RunKind,
@@ -96,31 +96,26 @@ fn literal_count<Q>(spacing: &Spacing<Q>) -> Option<u32> {
 /// its definition holds, and the ids the records of the sketches it owns or
 /// names hold.
 fn seed_bindings<'a>(index: &DesignRecords<'a>, seeds: &[&'a Feature]) -> BTreeSet<String> {
-    let design = &index.ir.design;
     let mut held = BTreeSet::new();
     for seed in seeds {
         let definition = super::wire_strings(&seed.definition);
-        let owned =
-            |sketch: &str, owner: &str| owner == seed.id.as_str() || definition.contains(sketch);
-        let sketches: BTreeSet<&str> = design
-            .sketches
+        let mut sketches: BTreeSet<&str> = index
+            .owned_sketches(seed.id.as_str())
             .iter()
-            .filter(|sketch| owned(sketch.id.as_str(), sketch.owner.as_str()))
             .map(|sketch| sketch.id.as_str())
             .collect();
-        for constraint in design
-            .sketch_constraints
-            .iter()
-            .filter(|constraint| sketches.contains(constraint.sketch.as_str()))
-        {
-            held.extend(super::wire_strings(&constraint.relation));
+        for name in &definition {
+            if index.sketches.contains_key(name.as_str()) {
+                sketches.insert(name.as_str());
+            }
         }
-        for entity in design
-            .sketch_entities
-            .iter()
-            .filter(|entity| sketches.contains(entity.sketch.as_str()))
-        {
-            held.extend(super::wire_strings(&entity.definition));
+        for sketch in sketches {
+            for constraint in index.sketch_constraints(sketch) {
+                held.extend(super::wire_strings(&constraint.relation));
+            }
+            for entity in index.sketch_entities_of(sketch) {
+                held.extend(super::wire_strings(&entity.definition));
+            }
         }
         held.extend(definition);
     }
@@ -143,7 +138,7 @@ fn seed_features<'a>(index: &DesignRecords<'a>, seeds: &PatternSeeds) -> Option<
 
 pub(super) fn check_pattern(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     pattern: &Pattern,
     findings: &mut Vec<Finding>,
 ) {
@@ -286,7 +281,7 @@ pub(super) fn check_pattern(
 /// container is ordered, the members' contiguity after the pattern decides it.
 fn check_member_containers(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     listed: &[&str],
     findings: &mut Vec<Finding>,
 ) {
@@ -358,7 +353,7 @@ pub(super) fn check_generators(index: &DesignRecords<'_>, findings: &mut Vec<Fin
 /// feature contiguously in its container.
 fn check_generated_members(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     what: &str,
     listed: &[&str],
     findings: &mut Vec<Finding>,
@@ -474,7 +469,7 @@ fn followed_layout<'a>(
 
 pub(super) fn check_indices(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     layout: &PatternLayout,
     indices: &[&InstanceIndex],
     findings: &mut Vec<Finding>,
@@ -550,7 +545,7 @@ pub(super) fn check_indices(
 
 pub(super) fn check_layout(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     layout: &PatternLayout,
     component: bool,
     bound: Option<&BTreeSet<String>>,
@@ -725,7 +720,7 @@ const RADIAL_RUN: RunKind = RunKind {
 };
 
 fn check_linear(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     layout: &LinearLayout,
     bound: Option<&BTreeSet<String>>,
     findings: &mut Vec<Finding>,
@@ -754,7 +749,7 @@ fn check_linear(
 }
 
 fn check_circular(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     layout: &CircularLayout,
     bound: Option<&BTreeSet<String>>,
     findings: &mut Vec<Finding>,
@@ -782,7 +777,7 @@ fn check_circular(
     check_orientation(site, layout.orientation.as_ref(), false, findings);
 }
 
-fn check_scale(site: Site<'_>, layout: &ScaleLayout, findings: &mut Vec<Finding>) {
+fn check_scale(site: Site<'_, '_>, layout: &ScaleLayout, findings: &mut Vec<Finding>) {
     site.bound(findings, |values| {
         (values.get(&layout.count)? < 2).then(|| "a Scale layout's count is below 2".to_owned())
     });
@@ -817,7 +812,7 @@ fn instances(stage: &CompositeStage) -> Option<u64> {
 }
 
 fn check_run<Q>(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     field: &str,
     run: &PatternRun<Q>,
     kind: RunKind,
@@ -849,7 +844,7 @@ fn check_run<Q>(
 }
 
 fn check_increments(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     increments: &[crate::design::ops::shared::Increment],
     bound: Option<&BTreeSet<String>>,
     findings: &mut Vec<Finding>,
@@ -878,7 +873,7 @@ fn check_increments(
 }
 
 fn check_orientation(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     orientation: Option<&InstanceOrientation>,
     path: bool,
     findings: &mut Vec<Finding>,
@@ -911,7 +906,7 @@ fn check_orientation(
 /// itself nor one that follows it.
 fn check_follow(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     followed: &OrderedSelection,
     findings: &mut Vec<Finding>,
 ) {
@@ -998,7 +993,7 @@ fn check_follow(
 
 pub(super) fn check_template_instance(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     instance: &TemplateInstance,
     findings: &mut Vec<Finding>,
 ) {
@@ -1053,7 +1048,7 @@ pub(super) fn check_template_instance(
 /// `Compound`, or where the definition states `assembly`". Where it states
 /// `assembly`, `target` is `None` (§6.7), which `check_assembly_feature`
 /// checks.
-pub(super) fn check_combine(site: Site<'_>, combine: &Combine, findings: &mut Vec<Finding>) {
+pub(super) fn check_combine(site: Site<'_, '_>, combine: &Combine, findings: &mut Vec<Finding>) {
     if matches!(combine.op, Some(BooleanOp::Sew)) {
         error(
             findings,
@@ -1109,7 +1104,7 @@ pub(super) fn check_combine(site: Site<'_>, combine: &Combine, findings: &mut Ve
     }
 }
 
-pub(super) fn check_split(site: Site<'_>, split: &Split, findings: &mut Vec<Finding>) {
+pub(super) fn check_split(site: Site<'_, '_>, split: &Split, findings: &mut Vec<Finding>) {
     match &split.mode {
         SplitMode::ByTools {
             targets,
@@ -1258,7 +1253,7 @@ pub(super) fn check_split(site: Site<'_>, split: &Split, findings: &mut Vec<Find
     }
 }
 
-fn check_kept<S>(site: Site<'_>, kept: &Kept<S>, findings: &mut Vec<Finding>) {
+fn check_kept<S>(site: Site<'_, '_>, kept: &Kept<S>, findings: &mut Vec<Finding>) {
     let Kept::Pieces { keep, remove } = kept else {
         return;
     };
@@ -1295,7 +1290,7 @@ fn check_kept<S>(site: Site<'_>, kept: &Kept<S>, findings: &mut Vec<Finding>) {
 }
 
 pub(super) fn check_transform_bodies(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     transform: &TransformBodies,
     findings: &mut Vec<Finding>,
 ) {
@@ -1346,7 +1341,7 @@ pub(super) fn check_transform_bodies(
 }
 
 fn check_transformation(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     transformation: &Transformation,
     findings: &mut Vec<Finding>,
 ) {
@@ -1396,7 +1391,7 @@ fn check_transformation(
     }
 }
 
-pub(super) fn check_flex(site: Site<'_>, flex: &Flex, findings: &mut Vec<Finding>) {
+pub(super) fn check_flex(site: Site<'_, '_>, flex: &Flex, findings: &mut Vec<Finding>) {
     if let Some(class) = picks::refused(&flex.bodies, picks::is_body) {
         error(
             findings,
@@ -1410,7 +1405,7 @@ pub(super) fn check_flex(site: Site<'_>, flex: &Flex, findings: &mut Vec<Finding
 }
 
 fn check_faces(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     field: &str,
     faces: &crate::design::selection::SetSelection,
     findings: &mut Vec<Finding>,
@@ -1424,17 +1419,21 @@ fn check_faces(
     }
 }
 
-pub(super) fn check_move_faces(site: Site<'_>, faces: &MoveFaces, findings: &mut Vec<Finding>) {
+pub(super) fn check_move_faces(site: Site<'_, '_>, faces: &MoveFaces, findings: &mut Vec<Finding>) {
     check_faces(site, "MoveFaces.faces", &faces.faces, findings);
     check_transformation(site, &faces.transformation, findings);
 }
 
-pub(super) fn check_delete_faces(site: Site<'_>, faces: &DeleteFaces, findings: &mut Vec<Finding>) {
+pub(super) fn check_delete_faces(
+    site: Site<'_, '_>,
+    faces: &DeleteFaces,
+    findings: &mut Vec<Finding>,
+) {
     check_faces(site, "DeleteFaces.faces", &faces.faces, findings);
 }
 
 pub(super) fn check_replace_faces(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     faces: &ReplaceFaces,
     findings: &mut Vec<Finding>,
 ) {
@@ -1461,7 +1460,7 @@ pub(super) fn check_replace_faces(
     }
 }
 
-pub(super) fn check_graft(site: Site<'_>, graft: &Graft, findings: &mut Vec<Finding>) {
+pub(super) fn check_graft(site: Site<'_, '_>, graft: &Graft, findings: &mut Vec<Finding>) {
     if picks::count(&graft.body).is_some_and(|count| count != 1)
         || picks::refused(&graft.body, picks::is_body).is_some()
     {

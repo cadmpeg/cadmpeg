@@ -31,7 +31,7 @@ use crate::pvs::Structure;
 /// Source attribute naming the structure member.
 const ATTRIBUTE_STRUCTURE_MEMBER: &str = "structure_member";
 /// Most occurrences one package decodes to.
-const MAX_OCCURRENCES: usize = 100_000;
+pub(crate) const MAX_OCCURRENCES: usize = 100_000;
 
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     let package = Package::open(ctx, root)?;

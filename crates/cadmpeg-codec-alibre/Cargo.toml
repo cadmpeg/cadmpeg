@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg-codec-alibre"
+description = "Inspect and decode Alibre Design AD_PRT part files."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/cadmpeg-codec-alibre"
+keywords = ["cad", "alibre", "ad_prt", "acis", "parser"]
+categories = ["encoding", "parser-implementations", "graphics"]
+exclude = ["tests/golden/**"]
+
+[dependencies]
+cadmpeg-asm.workspace = true
+cadmpeg-container.workspace = true
+cadmpeg-core.workspace = true
+cadmpeg-ir.workspace = true
+
+[dev-dependencies]
+cadmpeg-codec-step.workspace = true
+cadmpeg-measure.workspace = true
+cadmpeg-test-support = { workspace = true }
+
+[lints]
+workspace = true
