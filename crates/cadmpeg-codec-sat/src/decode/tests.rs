@@ -1144,6 +1144,7 @@ fn omitted_use_curve_interval_has_a_sat_loss_code() {
         Some((
             graph,
             super::Unprojected {
+                stream: &bytes,
                 whole_stream: false,
                 face_children: std::collections::BTreeMap::new(),
             },
