@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::json;
 use cadmpeg_ir::features::evaluation::{FeatureResultMembers, FeatureResultTopology};
 use cadmpeg_ir::features::operation_settings::BooleanKind;
 use cadmpeg_ir::features::selections::BodySelection;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::*;
 use crate::test_support::{combine::document, test_fixtures::parse};

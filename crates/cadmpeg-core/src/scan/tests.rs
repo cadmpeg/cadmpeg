@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{DesignScan, FeatureCensus, Readability, StopReason};
-use serde_json::json;
+use crate::json;
 
 #[test]
 fn scan_optional_fields_omit_absence_and_reject_null() {
     let scan = DesignScan::new(None);
-    let value = serde_json::to_value(&scan).expect("scan serialization");
+    let value = crate::serde_erase::json::to_value(&scan).expect("scan serialization");
     for field in [
         "format",
         "source_version",
@@ -17,23 +17,24 @@ fn scan_optional_fields_omit_absence_and_reject_null() {
         assert!(value.get(field).is_none(), "{field}");
         let mut invalid = value.clone();
         invalid[field] = serde_json::Value::Null;
-        let error =
-            serde_json::from_value::<DesignScan>(invalid).expect_err("optional null refusal");
+        let error = crate::serde_erase::json::from_value::<DesignScan>(invalid)
+            .expect_err("optional null refusal");
         assert!(error.to_string().contains(field), "{error}");
     }
     assert_eq!(
-        serde_json::from_value::<DesignScan>(value).expect("scan round trip"),
+        crate::serde_erase::json::from_value::<DesignScan>(value).expect("scan round trip"),
         scan
     );
     let census = FeatureCensus::default();
-    let mut value = serde_json::to_value(&census).expect("census serialization");
+    let mut value = crate::serde_erase::json::to_value(&census).expect("census serialization");
     assert!(value.get("total").is_none());
     assert_eq!(
-        serde_json::from_value::<FeatureCensus>(value.clone()).expect("census round trip"),
+        crate::serde_erase::json::from_value::<FeatureCensus>(value.clone())
+            .expect("census round trip"),
         census
     );
     value["total"] = serde_json::Value::Null;
-    assert!(serde_json::from_value::<FeatureCensus>(value)
+    assert!(crate::serde_erase::json::from_value::<FeatureCensus>(value)
         .expect_err("total null refusal")
         .to_string()
         .contains("total"));
@@ -53,11 +54,12 @@ fn scan_payload_enums_use_adjacent_wire_forms() {
         ),
     ] {
         assert_eq!(
-            serde_json::to_value(&value).expect("enum serialization"),
+            crate::serde_erase::json::to_value(&value).expect("enum serialization"),
             expected
         );
         assert_eq!(
-            serde_json::from_value::<Readability>(expected).expect("readability round trip"),
+            crate::serde_erase::json::from_value::<Readability>(expected)
+                .expect("readability round trip"),
             value
         );
     }
@@ -77,11 +79,12 @@ fn scan_payload_enums_use_adjacent_wire_forms() {
         ),
     ] {
         assert_eq!(
-            serde_json::to_value(&value).expect("enum serialization"),
+            crate::serde_erase::json::to_value(&value).expect("enum serialization"),
             expected
         );
         assert_eq!(
-            serde_json::from_value::<StopReason>(expected).expect("stop reason round trip"),
+            crate::serde_erase::json::from_value::<StopReason>(expected)
+                .expect("stop reason round trip"),
             value
         );
     }
@@ -93,11 +96,11 @@ where
 {
     let tag = json!({"kind": kind});
     assert_eq!(
-        serde_json::to_value(expected).expect("unit serialization"),
+        crate::serde_erase::json::to_value(expected).expect("unit serialization"),
         tag
     );
     assert_eq!(
-        &serde_json::from_value::<T>(tag).expect("bare tag reads"),
+        &crate::serde_erase::json::from_value::<T>(tag).expect("bare tag reads"),
         expected
     );
     for payload in [serde_json::Value::Null, json!({}), json!([]), json!(true)] {

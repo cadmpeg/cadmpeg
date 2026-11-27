@@ -698,6 +698,51 @@ fn conical_surface_accepts_a_finite_zero_half_angle() {
 }
 
 #[test]
+fn a_bare_cone_in_a_geometric_set_is_a_partial_face_with_no_loop() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(0.,0.,1.));
+#3=DIRECTION('',(1.,0.,0.));
+#4=AXIS2_PLACEMENT_3D('',#1,#2,#3);
+#5=CONICAL_SURFACE('',#4,2.,0.5);
+#6=GEOMETRIC_SET('',(#5));
+#7=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#6),#8);
+#8=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));",
+    );
+
+    let faces = &result.ir().geometry.faces;
+    assert_eq!(faces.len(), 1);
+    let face = &faces[0];
+    assert_eq!(
+        face.loops,
+        cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops: Vec::new() }
+    );
+    let face_id = face.id.as_str();
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TopologyFaceBoundaryUnstated.kind()
+            && loss.message.contains("a cone with no boundary")
+            && loss
+                .message
+                .split(|c: char| c.is_whitespace())
+                .any(|token| token == face_id)
+    }));
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("validate the neutral model");
+    assert!(
+        validation.findings.iter().all(|finding| !finding
+            .rule
+            .to_string()
+            .starts_with("topology.loopless-face")),
+        "findings: {:?}",
+        validation.findings
+    );
+    assert!(validation.findings.iter().any(|finding| {
+        finding.check == cadmpeg_ir::report::check::Check::TopologyPartial
+            && finding.entity.as_deref() == Some(face_id)
+    }));
+}
+
+#[test]
 fn conical_surface_accepts_a_negative_semi_angle() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));

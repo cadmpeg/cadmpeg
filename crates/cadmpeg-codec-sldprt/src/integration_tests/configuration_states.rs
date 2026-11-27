@@ -11,7 +11,9 @@ use crate::test_support::container::{
     make_block, native_envelope_fixture, outer_header, sldprt_with_colliding_sites,
 };
 use crate::test_support::history::resolved_feature_classes_with_ids;
-use crate::test_support::parasolid::{owned_triangle, parasolid_with_body};
+use crate::test_support::parasolid::{
+    owned_triangle, owned_triangle_with_resolution, parasolid_with_body,
+};
 use crate::test_support::tessellation::display_list_payload;
 
 /// Two configurations, each with its own one-triangle partition; `Second`,
@@ -176,9 +178,13 @@ fn a_stored_configuration_state_writes_its_partition() {
         panic!("one evaluation");
     };
     let stored = &evaluation.content.as_ref().unwrap().delta.records;
-    let sections = crate::writer::configuration_partitions(ir, 0.001)
-        .unwrap()
-        .sections;
+    let sections = crate::writer::configuration_partitions(
+        ir,
+        0.001,
+        cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
+    )
+    .unwrap()
+    .sections;
     let section = format!("Contents/Config-{}-Partition", first.source_index.unwrap());
     let (_, payload) = sections
         .iter()
@@ -203,7 +209,7 @@ fn write_without_source(
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     let mut written = Vec::new();
     let report = crate::SldprtCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .unwrap()
         .write_to(&mut written)
         .unwrap();
@@ -328,6 +334,113 @@ fn a_part_with_no_face_writes_every_partition_bodiless() {
             .any(|loss| loss.code.local_code() == "output.empty"),
         "{losses:#?}"
     );
+}
+
+/// A part written without its source reads back at the linear tolerance it
+/// was written with, also where a configuration other than the active one
+/// stores the bodies.
+#[test]
+fn every_configuration_written_without_its_source_states_the_written_linear_tolerance() {
+    for (source, linear) in [
+        (faceless_active_configuration(true), None),
+        (two_configurations(), Some(1.0e-7)),
+    ] {
+        let result = decode(source);
+        let mut ir = result.ir().clone();
+        if let Some(linear) = linear {
+            ir.tolerances.linear = cadmpeg_ir::scalar::PositiveLength::new(linear).unwrap();
+        }
+        let (losses, written) = write_without_source(&ir);
+        assert!(
+            !losses
+                .iter()
+                .any(|loss| loss.code.local_code() == "value.unwritable"
+                    && loss.message.contains("tolerances.linear")),
+            "{losses:#?}"
+        );
+        assert_eq!(decode(written).ir().tolerances.linear, ir.tolerances.linear);
+    }
+}
+
+/// A one-face body whose surface reference names no carrier, so the decode
+/// holds an untyped surface and a write of an edit patches its partition.
+fn untyped_surface_triangle() -> Vec<u8> {
+    use crate::test_support::parasolid::{
+        bridge, coedge, complete_fixture_vertex_owners, edge_use, loop_head, vertex_use,
+        world_point,
+    };
+    let mut body = bridge(10, 20, 999);
+    body.extend(loop_head(20, 30, 10));
+    body.extend(coedge(30, 20, 31, 50, 0, 40, false));
+    body.extend(coedge(31, 20, 32, 51, 0, 41, false));
+    body.extend(coedge(32, 20, 30, 52, 0, 42, false));
+    for edge in [40, 41, 42] {
+        body.extend(edge_use(edge, 0));
+    }
+    for (vertex, point) in [(50, 60), (51, 61), (52, 62)] {
+        body.extend(vertex_use(vertex, point));
+    }
+    body.extend(world_point(60, [0.0, 0.0, 0.0]));
+    body.extend(world_point(61, [1.0, 0.0, 0.0]));
+    body.extend(world_point(62, [0.0, 1.0, 0.0]));
+    complete_fixture_vertex_owners(&mut body);
+    body
+}
+
+/// An edit of the active configuration beside a configuration whose bodies
+/// store a coarser `res_linear` patches the active partition in place and
+/// keeps the other partition.
+#[test]
+fn an_edit_beside_a_coarser_configuration_patches_the_active_partition() {
+    let first = parasolid_with_body(
+        "partition body",
+        "SCH_SW_33103_11000",
+        &owned_triangle_with_resolution(0, 700, 0.0, 1.0e-6),
+    );
+    let second = parasolid_with_body(
+        "partition body",
+        "SCH_SW_33103_11000",
+        &untyped_surface_triangle(),
+    );
+    let mut partitions = outer_header();
+    partitions.extend(make_block(0x20, "Contents/Config-0-Partition", &first));
+    partitions.extend(make_block(0x21, "Contents/Config-1-Partition", &second));
+    let mut result = decode(two_configurations_of(partitions));
+    assert_eq!(
+        Some(result.ir().tolerances.linear),
+        cadmpeg_parasolid::precision::linear_precision(1.0e-6)
+    );
+    {
+        let mut ir = result.ir_mut();
+        let point = &mut ir.geometry.points[1];
+        let at = point.position().get();
+        point.set_position(
+            cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                at.x + 0.25,
+                at.y,
+                at.z,
+            ))
+            .unwrap(),
+        );
+    }
+    let mut written = Vec::new();
+    crate::test_support::plan_fixture_write_with_native_envelope(
+        result.ir(),
+        result.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
+    let scan = crate::test_support::container::scan(&written);
+    let payload = |name: &str| {
+        scan.blocks
+            .iter()
+            .find(|block| block.section.name() == Some(name))
+            .map_or_else(|| panic!("{name}"), |block| block.payload.clone())
+    };
+    assert_eq!(payload("Contents/Config-0-Partition"), first);
+    let active = payload("Contents/Config-1-Partition");
+    assert_ne!(active, second);
+    assert_eq!(active.len(), second.len());
 }
 
 /// `ir` with its current bodies, its stored bodies, or both made wire bodies,
@@ -621,7 +734,7 @@ fn a_part_written_with_its_partition_charges_no_producer_note() {
     let report = crate::SldprtCodec
         .plan(
             EncodeInput::new(result.ir(), Some(result.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap()
         .write_to(&mut written)

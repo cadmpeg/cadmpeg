@@ -13,6 +13,7 @@ use super::super::super::sketch::dimensions::{
     DimensionKind, Measure, PlannedDimension, DRIVEN_DECIMALS,
 };
 use super::super::super::types;
+use super::super::super::{Culprit, RecordFailure};
 use super::super::owned::Owned;
 use super::super::{count, Context, PARAMETER_DISCRIMINATOR};
 use super::{curve_payload, Item};
@@ -63,14 +64,14 @@ impl Item<'_> {
         &self,
         out: &mut DesignRecords,
         mut named: HashMap<u32, u32>,
-    ) -> Result<(), CodecError> {
+    ) -> Result<(), RecordFailure> {
         let records = self.records;
         if records.dimensions.is_empty() {
             return Ok(());
         }
         #[cfg(test)]
         if let Some(error) = super::super::super::requested_dimension_failure() {
-            return Err(error);
+            return Err(error.into());
         }
         let paired = self.ctx.class(types::DIMENSION_FRAME_PAIRED.guid)?;
         let mut stems = HashMap::<&str, u32>::new();
@@ -87,68 +88,81 @@ impl Item<'_> {
             .zip(&self.planned.dimensions)
             .zip(&records.dimensions)
         {
-            let semantic = dimension
-                .members
-                .iter()
-                .map(|member| self.record_of(*member))
-                .collect::<Result<Vec<_>, _>>()?;
-            let mut ascending = semantic.clone();
-            ascending.sort_unstable();
-            ascending.dedup();
-            let null_ordinal = NULL_LOCUS_ORDINAL
-                .checked_add(local)
-                .ok_or_else(|| CodecError::NotImplemented("dimension count exceeds u32".into()))?;
-            out.record(&self.ctx.class(frame_row(dimension.kind).guid)?, *frame)
-                .zeros(8)
-                .byte(1)
-                .u32(count(ascending.len() + 1)?)
-                .reference(0)
-                .u32(null_ordinal);
-            for member in &ascending {
-                let ordinal = named.entry(*member).or_insert(0);
-                out.reference(*member).u32(*ordinal);
-                *ordinal += 1;
-            }
-            out.byte(0);
-            self.measurement(out, dimension)?;
-            text_frame(out, dimension.driven);
-            let mut prefix = String::new();
-            if dimension.parameter.names_parameter {
-                prefix.push_str(FORMULA_PREFIX);
-            }
-            prefix.push_str(dimension.kind.symbol());
-            out.lp_utf16(&prefix)?.lp_utf16(&dimension.text())?;
-            kind_block(out, dimension)?;
-            out.reference(*owner).u32(count(semantic.len())?);
-            for member in &semantic {
-                out.reference(*member);
-            }
-            out.byte(0)
-                .header(&paired, *frame)
-                .zeros(8)
-                .reference(records.container)
-                .zeros(12)
-                .f32(1.0)
-                .zeros(2)
-                .reference(records.container);
-            let stem = dimension.kind.stem();
-            let suffix = stems.entry(stem).or_insert(FIRST_SUFFIX);
-            let kind = format!("{stem}-{suffix}");
-            *suffix += 1;
-            super::super::owned::write(
-                self.ctx,
-                out,
-                &Owned {
-                    owner: *owner,
-                    parameter: *parameter,
-                    companion: *companion,
-                    scope: records.scope,
-                    local,
-                    kind: &kind,
-                    value: &dimension.parameter,
-                    driven: dimension.driven,
-                },
-            )?;
+            let mut written = || {
+                #[cfg(test)]
+                if let Some(error) =
+                    super::super::super::requested_record_failure(&dimension.constraint)
+                {
+                    return Err(error);
+                }
+                let semantic = dimension
+                    .members
+                    .iter()
+                    .map(|member| self.record_of(*member))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let mut ascending = semantic.clone();
+                ascending.sort_unstable();
+                ascending.dedup();
+                let null_ordinal = NULL_LOCUS_ORDINAL.checked_add(local).ok_or_else(|| {
+                    CodecError::NotImplemented("dimension count exceeds u32".into())
+                })?;
+                out.record(&self.ctx.class(frame_row(dimension.kind).guid)?, *frame)
+                    .zeros(8)
+                    .byte(1)
+                    .u32(count(ascending.len() + 1)?)
+                    .reference(0)
+                    .u32(null_ordinal);
+                for member in &ascending {
+                    let ordinal = named.entry(*member).or_insert(0);
+                    out.reference(*member).u32(*ordinal);
+                    *ordinal += 1;
+                }
+                out.byte(0);
+                self.measurement(out, dimension)?;
+                text_frame(out, dimension.driven);
+                let mut prefix = String::new();
+                if dimension.parameter.names_parameter {
+                    prefix.push_str(FORMULA_PREFIX);
+                }
+                prefix.push_str(dimension.kind.symbol());
+                out.lp_utf16(&prefix)?.lp_utf16(&dimension.text())?;
+                kind_block(out, dimension)?;
+                out.reference(*owner).u32(count(semantic.len())?);
+                for member in &semantic {
+                    out.reference(*member);
+                }
+                out.byte(0)
+                    .header(&paired, *frame)
+                    .zeros(8)
+                    .reference(records.container)
+                    .zeros(12)
+                    .f32(1.0)
+                    .zeros(2)
+                    .reference(records.container);
+                let stem = dimension.kind.stem();
+                let suffix = stems.entry(stem).or_insert(FIRST_SUFFIX);
+                let kind = format!("{stem}-{suffix}");
+                *suffix += 1;
+                super::super::owned::write(
+                    self.ctx,
+                    out,
+                    &Owned {
+                        owner: *owner,
+                        parameter: *parameter,
+                        companion: *companion,
+                        scope: records.scope,
+                        local,
+                        kind: &kind,
+                        value: &dimension.parameter,
+                        driven: dimension.driven,
+                    },
+                )?;
+                Ok(())
+            };
+            written().map_err(|error| RecordFailure {
+                error,
+                culprit: Some(Culprit::Dimension(dimension.constraint.clone())),
+            })?;
         }
         Ok(())
     }

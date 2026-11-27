@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use crate::design::feature_project::hole::bind_hole_sketch_point_profiles;
 use crate::design::feature_project::sketch_geometry::bind_sketch_feature_geometry;
@@ -85,7 +86,7 @@ fn hole_scope(reference_type: u32, locations: Vec<DesignHoleLocation>) -> Design
         32,
     );
     let mut construction: crate::records::feature::hole::DesignHoleConstruction =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "point_record_index": 1, "point_record_byte_offset": 2,
             "position": [0.0, 0.0, 0.0], "position_offset": 3,
             "direction": [0.0, 0.0, 1.0], "direction_offset": 4,

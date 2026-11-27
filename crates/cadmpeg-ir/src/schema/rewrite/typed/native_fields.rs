@@ -7,34 +7,32 @@ use cadmpeg_core::CodecError;
 use serde_json::Value;
 
 /// Select a native field with a compile-time accessor to its owning type.
-pub fn rewrite_field<
-    Owner,
-    Field: RewriteIdentities,
-    F: FnMut(&str) -> Result<String, CodecError>,
->(
+pub fn rewrite_field<Owner, Field: RewriteIdentities>(
     ctx: &DecodeContext<'_>,
     value: &mut Value,
     name: &str,
-    map: &mut IdentityMap<'_, F>,
+    map: &mut IdentityMap<'_>,
     _owner_field: fn(&Owner) -> Option<&Field>,
 ) -> Result<(), CodecError> {
-    let Value::Object(fields) = value else {
-        return Ok(());
-    };
-
-    if let Some(value) = fields.get_mut(name) {
-        if !value.is_null() {
-            Field::rewrite_native_value(ctx, value, map)?;
-        }
+    match stated_field(value, name) {
+        Some(value) => Field::rewrite_native_value(ctx, value, map),
+        None => Ok(()),
     }
-    Ok(())
+}
+
+/// The member `name` of the object `value`, where it states a value.
+fn stated_field<'v>(value: &'v mut Value, name: &str) -> Option<&'v mut Value> {
+    let Value::Object(fields) = value else {
+        return None;
+    };
+    fields.get_mut(name).filter(|value| !value.is_null())
 }
 
 /// Rewrite an owner-declared native identity field without touching display text.
-pub(crate) fn rewrite_reference<F: FnMut(&str) -> Result<String, CodecError>>(
+pub(crate) fn rewrite_reference(
     value: &mut Value,
     name: &str,
-    map: &mut IdentityMap<'_, F>,
+    map: &mut IdentityMap<'_>,
 ) -> Result<(), CodecError> {
     let Value::Object(fields) = value else {
         return Ok(());
@@ -58,35 +56,23 @@ pub(crate) fn rewrite_reference<F: FnMut(&str) -> Result<String, CodecError>>(
 
 /// Native link fields preserve their string wire shape while owning identity semantics.
 pub(crate) trait FullFidelityReference: Sized {
-    fn rewrite<F: FnMut(&str) -> Result<String, CodecError>>(
-        self,
-        map: &mut IdentityMap<'_, F>,
-    ) -> Result<Self, CodecError>;
+    fn rewrite(self, map: &mut IdentityMap<'_>) -> Result<Self, CodecError>;
 }
 
 impl FullFidelityReference for String {
-    fn rewrite<F: FnMut(&str) -> Result<String, CodecError>>(
-        self,
-        map: &mut IdentityMap<'_, F>,
-    ) -> Result<Self, CodecError> {
+    fn rewrite(self, map: &mut IdentityMap<'_>) -> Result<Self, CodecError> {
         map.identity(&self)
     }
 }
 
 impl<T: FullFidelityReference> FullFidelityReference for Option<T> {
-    fn rewrite<F: FnMut(&str) -> Result<String, CodecError>>(
-        self,
-        map: &mut IdentityMap<'_, F>,
-    ) -> Result<Self, CodecError> {
+    fn rewrite(self, map: &mut IdentityMap<'_>) -> Result<Self, CodecError> {
         self.map(|value| value.rewrite(map)).transpose()
     }
 }
 
 impl<T: FullFidelityReference> FullFidelityReference for Vec<T> {
-    fn rewrite<F: FnMut(&str) -> Result<String, CodecError>>(
-        self,
-        map: &mut IdentityMap<'_, F>,
-    ) -> Result<Self, CodecError> {
+    fn rewrite(self, map: &mut IdentityMap<'_>) -> Result<Self, CodecError> {
         let mut references = Vec::new();
         for reference in self {
             references.push(reference.rewrite(map)?);

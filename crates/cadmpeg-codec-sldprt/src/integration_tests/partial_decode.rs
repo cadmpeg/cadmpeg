@@ -213,3 +213,30 @@ fn a_native_block_that_fails_its_crc_costs_that_block() {
     assert!(loss.message.contains(&format!("offset={offset} ")));
     assert!(names_a_stub(&decoded, loss));
 }
+
+#[test]
+fn a_wrapped_member_that_does_not_inflate_is_given_up_as_a_part() {
+    let mut file = compound_with_partition();
+    let magic = crate::layout::zlb_wrapper_header::MAGIC_VALUE;
+    let member = file
+        .windows(magic.len())
+        .rposition(|window| window == magic)
+        .expect("the partition wrapper")
+        + crate::layout::zlb_wrapper_header::LEN;
+    file[member + 2..member + 34].fill(0xff);
+    let decoded = decode(file);
+    assert!(decoded.ir().geometry.faces.is_empty());
+    let [loss] = unreadable(&decoded)[..] else {
+        panic!("one loss names the wrapped member");
+    };
+    assert!(loss
+        .message
+        .contains(&format!("part wrapped-member \"{PARTITION}\"")));
+    assert!(names_a_stub(&decoded, loss));
+    let absent = crate::loss::SldprtLossCode::ContainerNoParasolidStream.kind();
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == absent));
+}

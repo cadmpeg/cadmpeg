@@ -229,7 +229,7 @@ pub(super) fn state(key: &str, of: ProcessStateOf, base: ProcessBase) -> Process
 /// machining feature, a method group, a program that outputs the setup, a
 /// parameter, a toolpath, and the setup's stock and the state after the
 /// milling operation.
-pub(super) fn document() -> CadIr {
+pub(crate) fn document() -> CadIr {
     let mut ir = design::document();
     let process = &mut ir.process;
     process.setups.push(Setup {
@@ -432,7 +432,11 @@ pub(super) fn width_through(occurrence: &str) -> ParamRef {
 }
 
 pub(super) fn process_findings(ir: &CadIr) -> Vec<Finding> {
-    crate::validate::design::fixture::family_findings(ir, Check::Process, super::check_process)
+    crate::validate::design::fixture::family_findings(
+        ir,
+        Check::Process,
+        super::check_design_and_process,
+    )
 }
 
 #[track_caller]

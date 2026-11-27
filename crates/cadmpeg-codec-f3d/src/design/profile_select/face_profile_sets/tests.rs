@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::u64_from_index;
@@ -1113,7 +1114,7 @@ fn group_at(record_index: u32, ordinal: u32, members: &[u32]) -> DesignConstruct
     let member_offsets: Vec<u64> = (0..members.len())
         .map(|index| 11 * u64_from_index(index))
         .collect();
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("f3d:Design/BulkStream.dat:design-construction-operand-group#{record_index}"),
         "scope_record_index": 42,
         "scope_reference_ordinal": ordinal,
@@ -1149,7 +1150,7 @@ fn operand_in(
     ordinal: u32,
     slots: Vec<i64>,
 ) -> DesignFaceOperand {
-    let mut operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
+    let mut operand: DesignFaceOperand = json::from_value(cadmpeg_core::json!({
         "id": format!("f3d:Design/BulkStream.dat:design-face-operand#{record_index}"),
         "scope_record_index": 42,
         "scope_reference_ordinal": ordinal + 1,

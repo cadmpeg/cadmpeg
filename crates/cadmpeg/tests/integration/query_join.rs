@@ -3,6 +3,7 @@
 
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
@@ -131,7 +132,7 @@ fn join_json_envelope_matched_native_ref() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let value: serde_json::Value = json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["command"], "query");
     let rows = value["payload"].as_array().unwrap();
     assert_eq!(rows.len(), 1);
@@ -166,7 +167,7 @@ fn join_unmatched_and_right_file() {
         .output()
         .unwrap();
     assert!(unmatched.status.success());
-    let value: serde_json::Value = serde_json::from_slice(&unmatched.stdout).unwrap();
+    let value: serde_json::Value = json::from_slice(&unmatched.stdout).unwrap();
     let rows = value["payload"].as_array().unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["left"]["id"], "f2");
@@ -194,7 +195,7 @@ fn join_unmatched_and_right_file() {
         "{}",
         String::from_utf8_lossy(&cross.stderr)
     );
-    let value: serde_json::Value = serde_json::from_slice(&cross.stdout).unwrap();
+    let value: serde_json::Value = json::from_slice(&cross.stdout).unwrap();
     let rows = value["payload"].as_array().unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["key"], "n1");

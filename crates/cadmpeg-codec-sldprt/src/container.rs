@@ -349,12 +349,7 @@ impl ContainerScan<'_> {
     }
 }
 
-const COMPOUND_FILE_MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
-
-/// Whether `image` is a compound-file part rather than a block container.
-pub(crate) fn is_compound_file(image: &[u8]) -> bool {
-    image.starts_with(&COMPOUND_FILE_MAGIC)
-}
+pub(crate) const COMPOUND_FILE_MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const WRAPPED_PAYLOAD_MAGIC: [u8; 16] = zlb_hdr::MAGIC_VALUE;
 
 pub(crate) fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
@@ -464,6 +459,9 @@ pub(crate) const COMPOUND_STREAM_PART: &str = "compound-stream";
 pub(crate) const NATIVE_BLOCK_PART: &str = "native-block";
 /// The part the Parasolid streams of one owner are: extracted together.
 pub(crate) const PARASOLID_STREAMS_PART: &str = "parasolid-streams";
+/// The part one ZLB-wrapped zlib member of an owner is: inflated to its
+/// declared size.
+pub(crate) const WRAPPED_MEMBER_PART: &str = "wrapped-member";
 
 /// The classes of content a `SolidWorks` section's bytes can hold.
 const SECTION_HOLDS: [ArenaClass; 2] = [ArenaClass::Model, ArenaClass::Design];
@@ -571,24 +569,45 @@ fn native_block_part(bytes: &[u8], offset: usize, end: usize) -> Part<'_> {
     }
 }
 
-/// The Parasolid streams `payload` holds for its owner `section`. Where they
-/// cannot be extracted, `part`, the source bytes that hold them, is given up
-/// and the owner holds none.
+/// The Parasolid streams `payload`, the content of the stream `stream`,
+/// holds for its owner `section`. Where they cannot be extracted, `part`, the
+/// source bytes that hold them, is given up and the owner holds none. Each
+/// wrapped member that does not inflate is given up as its own part.
 fn extract_streams_for_owner(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
+    stream: &cadmpeg_ir::StreamName,
     section: Option<&str>,
     part: Part<'_>,
     given_up: &mut Vec<GivenUpPart>,
 ) -> Result<crate::parasolid::ExtractedStreams, CodecError> {
     match ctx.run_part(|| crate::parasolid::extract_streams_in_section(payload, section, ctx))? {
-        Ok(streams) => Ok(streams),
+        Ok(streams) => {
+            for span in &streams.unread {
+                let mut member = Part::at(
+                    "sldprt",
+                    WRAPPED_MEMBER_PART,
+                    u64_from_index(span.start),
+                    &payload[span.clone()],
+                    SECTION_HOLDS,
+                )
+                .in_stream(stream.clone())
+                .digest_only();
+                if let Some(section) = section {
+                    member = member.named(section);
+                }
+                given_up.push(ctx.give_up_part(
+                    member,
+                    CodecError::malformed(
+                        "the ZLB-wrapped zlib member does not inflate to its declared size",
+                    ),
+                )?);
+            }
+            Ok(streams)
+        }
         Err(error) => {
             given_up.push(ctx.give_up_part(part, error)?);
-            Ok(crate::parasolid::ExtractedStreams {
-                streams: Vec::new(),
-                probe_capped: false,
-            })
+            Ok(crate::parasolid::ExtractedStreams::of(Vec::new(), false))
         }
     }
 }
@@ -608,7 +627,8 @@ fn compound_stream(
         .named(path)
         .in_stream(stream.clone())
         .digest_only();
-    let extracted = extract_streams_for_owner(ctx, semantic_payload, Some(path), part, given_up)?;
+    let extracted =
+        extract_streams_for_owner(ctx, semantic_payload, &stream, Some(path), part, given_up)?;
     Ok(CompoundStream {
         path: stream,
         directory_id,
@@ -889,7 +909,12 @@ fn block_from_inflated(
     if let Some(name) = &section {
         part = part.named(name.as_str());
     }
-    let extracted = extract_streams_for_owner(ctx, &inflated, section.as_deref(), part, given_up)?;
+    let stream = section
+        .as_ref()
+        .and_then(|name| cadmpeg_ir::StreamName::try_from(name.clone()).ok())
+        .unwrap_or_else(|| cadmpeg_ir::stream_name!("block@").with_suffix(off));
+    let extracted =
+        extract_streams_for_owner(ctx, &inflated, &stream, section.as_deref(), part, given_up)?;
     let family = if extracted.streams.is_empty() {
         payload_family(&inflated)
     } else {
@@ -1276,7 +1301,10 @@ pub(crate) fn unread_active_partition_sections<'s>(scan: &'s ContainerScan<'_>) 
         .filter(|part| {
             matches!(
                 part.kind(),
-                COMPOUND_STREAM_PART | NATIVE_BLOCK_PART | PARASOLID_STREAMS_PART
+                COMPOUND_STREAM_PART
+                    | NATIVE_BLOCK_PART
+                    | PARASOLID_STREAMS_PART
+                    | WRAPPED_MEMBER_PART
             )
         })
         .filter_map(GivenUpPart::name)
@@ -1453,6 +1481,23 @@ pub(crate) fn xml_text(bytes: &[u8]) -> Option<String> {
     } else {
         std::str::from_utf8(bytes).ok().map(str::to_string)
     }
+}
+
+/// `text` stored in the encoding of `original`, a section that
+/// [`xml_text`] reads: its lead byte, then UTF-16LE after a byte-order mark
+/// or UTF-8.
+pub(crate) fn xml_bytes(original: &[u8], text: &str) -> Vec<u8> {
+    let (mut output, body) = match original.split_first() {
+        Some((lead, rest)) if XML_LEAD_MARKERS.contains(lead) => (vec![*lead], rest),
+        _ => (Vec::new(), original),
+    };
+    if body.starts_with(&[0xff, 0xfe]) {
+        output.extend_from_slice(&[0xff, 0xfe]);
+        output.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
+    } else {
+        output.extend_from_slice(text.as_bytes());
+    }
+    output
 }
 
 /// Metadata from the first parsed `swSolidWorks` envelope.

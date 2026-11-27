@@ -178,6 +178,7 @@ impl Measure {
 /// its measurement and the parameter it owns.
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::writer::generate::design) struct PlannedDimension {
+    pub(in crate::writer::generate::design) constraint: SketchConstraintId,
     pub(in crate::writer::generate::design) kind: DimensionKind,
     pub(in crate::writer::generate::design) members: Vec<Entity>,
     pub(in crate::writer::generate::design) measure: Measure,
@@ -248,11 +249,11 @@ impl Candidate<'_> {
         tolerances: Tolerances,
     ) -> Result<PlannedDimension, &'static str> {
         let Self {
+            constraint,
             kind,
             members,
             mut measure,
             binding,
-            ..
         } = self;
         let quantity = kind.quantity();
         let driven = match &binding {
@@ -329,6 +330,7 @@ impl Candidate<'_> {
             }
         };
         Ok(PlannedDimension {
+            constraint: constraint.clone(),
             kind,
             members,
             measure,

@@ -8,6 +8,7 @@ use crate::design::test_support::{indexed_record_offsets_for_test, with_test_dec
 use crate::loss::F3dLossCode;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::test_support::lp_utf16;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
@@ -99,7 +100,7 @@ fn face_group(members: &[u32]) -> DesignConstructionOperandGroup {
     let member_offsets = (0..members.len())
         .map(|ordinal| 1026 + 11 * ordinal)
         .collect::<Vec<_>>();
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": GROUP_ID,
         "scope_record_index": 77,
         "scope_reference_ordinal": 0,

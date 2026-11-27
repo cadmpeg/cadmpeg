@@ -482,12 +482,10 @@ impl NativeRecordId {
 }
 
 impl cadmpeg_ir::schema::rewrite::typed::RewriteIdentities for NativeRecordId {
-    fn rewrite_native_value<
-        RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
-    >(
+    fn rewrite_native_value(
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         _value: &mut serde_json::Value,
-        _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>,
+        _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         Ok(())
     }
@@ -500,10 +498,10 @@ impl cadmpeg_ir::schema::rewrite::typed::RewriteIdentities for NativeRecordId {
         Ok(())
     }
 
-    fn rewrite_identities<RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>,
+        map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let text =
             <String as cadmpeg_ir::schema::rewrite::typed::RewriteIdentities>::rewrite_identities(
