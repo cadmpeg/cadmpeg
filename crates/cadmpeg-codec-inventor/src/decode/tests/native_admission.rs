@@ -1105,10 +1105,10 @@ fn ufrx_count_above_the_decoder_bound_is_undecoded() {
     );
 }
 
-/// An OLE property set that names a code page outside the decoder's table is
-/// given up as undecoded, which does not refuse a pinned decode.
+/// A property section with an unsupported code page gives up its values.
+/// The set directory remains readable.
 #[test]
-fn property_set_in_an_unread_code_page_is_undecoded() {
+fn property_section_in_an_unread_code_page_is_undecoded() {
     let value = b"abc\0";
     let section_size = 8 + 2 * 8 + 8 + 8 + 4;
     let mut set = Vec::new();
@@ -1153,16 +1153,35 @@ fn property_set_in_an_unread_code_page_is_undecoded() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.message.contains("property-set"))
+        .filter(|loss| loss.message.contains("stream=\"inventor:ZProperty\""))
         .collect::<Vec<_>>();
-    assert_eq!(set_losses.len(), 1, "{set_losses:#?}");
+    let [loss] = set_losses.as_slice() else {
+        panic!("one loss for the set's section: {set_losses:#?}");
+    };
     assert_eq!(
-        set_losses[0].code,
+        loss.code,
         cadmpeg_ir::unknown::part::record_undecoded_kind()
     );
     assert!(
-        set_losses[0].message.contains("OLE code page 65000"),
-        "{}",
-        set_losses[0].message
+        loss.message.starts_with("part property-section "),
+        "{loss:?}"
     );
+    assert!(
+        loss.message
+            .contains(&format!("offset=48 length={section_size}")),
+        "{loss:?}"
+    );
+    assert!(loss.message.contains("OLE code page 65000"), "{loss:?}");
+    let sets = decoded
+        .ir()
+        .native
+        .namespace("inventor")
+        .expect("Inventor namespace")
+        .arena_as::<crate::native::PropertySetRecord>("property_sets")
+        .expect("the readable property set");
+    let [set] = sets.as_slice() else {
+        panic!("one set is retained: {sets:#?}");
+    };
+    assert_eq!(set.path, "ZProperty");
+    assert_eq!(set.section_count, 0);
 }
