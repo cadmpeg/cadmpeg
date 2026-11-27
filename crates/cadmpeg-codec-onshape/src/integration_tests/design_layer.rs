@@ -56,9 +56,12 @@ fn a_part_studio_without_a_thin_extrude_states_its_timeline() {
             && loss.message.ends_with("subject: Corner round")
     }));
     assert_eq!(ir.design.sketches.len(), 1);
+    // The four lines, and the two ends of the line the length constraint
+    // dimensions.
+    assert_eq!(ir.design.sketch_entities.len(), 6);
     assert_eq!(
-        ir.design.sketch_entities.len(),
-        ir.model.sketch_entities.len()
+        ir.design.sketch_constraints.len(),
+        ir.model.sketch_constraints.len()
     );
     validate(result);
 }
@@ -196,6 +199,69 @@ fn a_cadir_write_carries_the_restated_parameters() {
             omitted(&losses, parameter.id.as_str()).is_empty(),
             "{}: {losses:#?}",
             parameter.id
+        );
+    }
+}
+
+#[test]
+fn sketch_constraints_are_design_relations_on_stated_points() {
+    let result = decode(&fixture("plate-fillet"));
+    let wire = wire(&result);
+    let constraint = |native: &str| {
+        wire["design"]["sketch_constraints"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["id"] == id("constraint", native))
+            .unwrap()
+            .clone()
+    };
+    let line = id("entity", "Base sketch/line0");
+    assert_eq!(
+        constraint("Base sketch/horizontal")["relation"],
+        json!({"kind":"horizontal","value":{"a":{"kind":"entity","value":line}}})
+    );
+    let length = constraint("Base sketch/length");
+    assert_eq!(length["relation"]["kind"], "distance");
+    assert_eq!(
+        length["relation"]["value"]["a"],
+        json!({"kind":"entity","value":format!("{line}.start")})
+    );
+    assert_eq!(
+        length["relation"]["value"]["b"],
+        json!({"kind":"entity","value":format!("{line}.end")})
+    );
+    assert_eq!(
+        length["relation"]["value"]["value"],
+        json!({"kind":"parameter","value":id("parameter", "Base sketch/length")})
+    );
+    let end = wire["design"]["sketch_entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["id"] == format!("{line}.end"))
+        .unwrap();
+    assert_eq!(
+        end["definition"],
+        json!({"kind":"free","value":{"kind":"point","value":{"u":20.0,"v":0.0}}})
+    );
+    assert_eq!(end["roles"], json!([{"of":line,"role":{"kind":"end"}}]));
+    validate(result);
+}
+
+#[test]
+fn a_cadir_write_carries_the_restated_constraints() {
+    let result = decode(&fixture("plate-fillet"));
+    let (written, losses) = cadir_round_trip(&result);
+    assert_eq!(
+        written.design.sketch_constraints,
+        result.ir().design.sketch_constraints
+    );
+    for constraint in &result.ir().model.sketch_constraints {
+        assert!(
+            omitted(&losses, constraint.id.as_str()).is_empty(),
+            "{}: {losses:#?}",
+            constraint.id
         );
     }
 }

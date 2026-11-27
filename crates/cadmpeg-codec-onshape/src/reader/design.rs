@@ -23,6 +23,7 @@ use serde_json::Value;
 use super::{id, push, RollbackBar};
 use crate::loss::OnshapeLossCode;
 
+mod constraints;
 mod operation;
 mod parameters;
 mod sketches;
@@ -78,7 +79,16 @@ pub(super) fn project(
     let malformed = |reason: String| CodecError::malformed(reason);
     super::reserve_history(&mut ir.design.features, ir.model.features.len())
         .map_err(CodecError::from)?;
-    let sketch_failures = sketches::project(ctx, ir)?;
+    let sketched = sketches::project(ctx, ir)?;
+    for (constraint, reason) in &sketched.native {
+        note(
+            notes,
+            OnshapeLossCode::ConstraintNotSupported,
+            constraint.as_str(),
+            &format!("{reason}; the design states the constraint native"),
+        );
+    }
+    let sketch_failures = sketched.failures;
     let stated_sketches: BTreeSet<&str> = ir
         .design
         .sketches

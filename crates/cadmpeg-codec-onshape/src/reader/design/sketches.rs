@@ -17,14 +17,23 @@ use cadmpeg_ir::sketches::SketchGeometryDefinition as Geometry;
 use cadmpeg_ir::units::{UnitVector2, UnitVector3};
 use cadmpeg_ir::CadIr;
 
+/// What the sketch projection leaves to the notes.
+#[derive(Default)]
+pub(super) struct Outcome {
+    /// The sketch features whose sketch the design does not state, with the
+    /// reason.
+    pub(super) failures: BTreeMap<FeatureId, String>,
+    /// The constraints stated `Native`, with the reason.
+    pub(super) native: Vec<(cadmpeg_ir::sketches::SketchConstraintId, String)>,
+}
+
 /// Project every sketch of `ir` whose frame and curves the design states,
-/// and return the sketch features whose sketch it does not state, with the
-/// reason.
+/// with its constraints.
 pub(in crate::reader) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-) -> Result<BTreeMap<FeatureId, String>, CodecError> {
-    let mut failures = BTreeMap::new();
+) -> Result<Outcome, CodecError> {
+    let mut outcome = Outcome::default();
     for feature in &ir.model.features {
         let FeatureOperation::Sketch { sketch } = feature.evaluation.definition().operation()
         else {
@@ -38,21 +47,40 @@ pub(in crate::reader) fn project(
         };
         match sketch_records(source, feature, &ir.model.sketch_entities) {
             Ok((sketch, entities)) => {
+                let model: Vec<_> = ir
+                    .model
+                    .sketch_constraints
+                    .iter()
+                    .filter(|constraint| constraint.sketch == source.id)
+                    .collect();
+                let constraints = super::constraints::project(&sketch.id, &entities, &model);
                 ctx.charge_entities(
-                    cadmpeg_core::decode::u64_from_index(entities.len()) + 1,
+                    cadmpeg_core::decode::u64_from_index(
+                        entities.len() + constraints.points.len() + constraints.relations.len(),
+                    ) + 1,
                     "Onshape design sketch",
                 )?;
                 reserve(&mut ir.design.sketches, 1)?;
-                reserve(&mut ir.design.sketch_entities, entities.len())?;
+                reserve(
+                    &mut ir.design.sketch_entities,
+                    entities.len() + constraints.points.len(),
+                )?;
+                reserve(
+                    &mut ir.design.sketch_constraints,
+                    constraints.relations.len(),
+                )?;
                 ir.design.sketches.push(sketch);
                 ir.design.sketch_entities.extend(entities);
+                ir.design.sketch_entities.extend(constraints.points);
+                ir.design.sketch_constraints.extend(constraints.relations);
+                outcome.native.extend(constraints.native);
             }
             Err(reason) => {
-                failures.insert(feature.id.clone(), reason);
+                outcome.failures.insert(feature.id.clone(), reason);
             }
         }
     }
-    Ok(failures)
+    Ok(outcome)
 }
 
 fn reserve<T>(rows: &mut Vec<T>, count: usize) -> Result<(), CodecError> {

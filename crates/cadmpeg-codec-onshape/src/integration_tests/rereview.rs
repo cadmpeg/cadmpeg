@@ -71,22 +71,49 @@ fn history_admission_reserves_each_midpoint_output_arena() {
 #[test]
 fn midpoint_expansion_refuses_the_history_budget_before_emission() {
     let bytes = midpoint_sketch();
-    // History admits 17 entities, the design timeline 3 (one feature and its
-    // container and scope), the design sketch 7 (the sketch and its six
-    // entities), the stated root definition 1, and the member assets 3.
-    for ceiling in [15, 17, 18, 20, 21, 27, 28, 29, 31, 32] {
+    let full = crate::test_support::review::decode(&bytes);
+    let design = &full.ir().design;
+    // Each bound is the entity count the decode has admitted after one
+    // charge: the history 18; the design timeline its feature, container and
+    // scope; the design sketch the sketch, its entities and its constraints;
+    // the stated root definition 1; and the member assets 3.
+    let history = 18;
+    let count = |n: usize| u64::try_from(n).unwrap();
+    let timeline = history + count(design.features.len()) + 2;
+    let sketch = timeline
+        + count(
+            design.sketches.len() + design.sketch_entities.len() + design.sketch_constraints.len(),
+        );
+    let root = sketch + 1;
+    let assets = root + 3;
+    for ceiling in [
+        history - 1,
+        history,
+        timeline - 1,
+        timeline,
+        sketch - 1,
+        sketch,
+        root,
+        assets - 1,
+        assets,
+    ] {
         let mut policy = DecodePolicy::default();
         policy.limits.max_entities = ceiling;
         let arena = DecodeArena::new();
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let result = codec().decode_impl(&ctx, root);
-        let refused = match ceiling {
-            ..=17 => Some("Onshape history admission"),
-            18..=20 => Some("Onshape design timeline"),
-            21..=27 => Some("Onshape design sketch"),
-            28 => Some("root product definition"),
-            29..=31 => Some("Onshape asset"),
-            _ => None,
+        let (ctx, root_view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let result = codec().decode_impl(&ctx, root_view);
+        let refused = if ceiling < history {
+            Some("Onshape history admission")
+        } else if ceiling < timeline {
+            Some("Onshape design timeline")
+        } else if ceiling < sketch {
+            Some("Onshape design sketch")
+        } else if ceiling < root {
+            Some("root product definition")
+        } else if ceiling < assets {
+            Some("Onshape asset")
+        } else {
+            None
         };
         if let Some(operation) = refused {
             let CodecError::ResourceLimit(limit) = result.unwrap_err() else {
