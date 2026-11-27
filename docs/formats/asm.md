@@ -293,10 +293,10 @@ The `{+35,+44,+53}` triad is next/prev/partner. `+72` is the owner loop. **Partn
 +34 chunk[3] start_vertex   +43 chunk[4] t_start (f64)
 +52 chunk[5] end_vertex     +61 chunk[6] t_end (f64)
 +70 chunk[7] owner_coedge   +79 chunk[8] curve ref
-+89 chunk[9] sense byte     +90 0x07 'tangent'|'unknown' continuity text
++89 chunk[9] sense byte     +90 0x07 continuity token text
 ```
 
-`+52` is end_vertex and `+79` is curve, not the other way round. `owner_coedge` is a nullable back-reference selecting one use of the edge; it is retained independently of the radial-ring topology, validated against the selected coedge's edge, and written in both retained and source-less output. `t_start`/`t_end` are stored parameters on the edge's own parameterization: the referenced curve itself when the sense byte is forward (`0x0b`), its reverse `E(t) = C(−t)` when reversed (`0x0a`). A full-circle edge has identical start/end vertex with `t_start = -π`, `t_end = +π`; the shared vertex lies at the `t_start` angle from the major axis, so a full period's phase is significant, not a free normalization. The continuity text is descriptive metadata, **not** a curve-type discriminator. It is `tangent`, `tangent_not_g2`, or `unknown`; the 98-byte record holds a seven-character token, and `tangent_not_g2` moves the record end by seven bytes.
+`+52` is end_vertex and `+79` is curve, not the other way round. `owner_coedge` is a nullable back-reference selecting one use of the edge; it is retained independently of the radial-ring topology, validated against the selected coedge's edge, and written in both retained and source-less output. `t_start`/`t_end` are stored parameters on the edge's own parameterization: the referenced curve itself when the sense byte is forward (`0x0b`), its reverse `E(t) = C(−t)` when reversed (`0x0a`). A full-circle edge has identical start/end vertex with `t_start = -π`, `t_end = +π`; the shared vertex lies at the `t_start` angle from the major axis, so a full period's phase is significant, not a free normalization. The continuity text is descriptive metadata, **not** a curve-type discriminator. It is a `0x07` token string of up to 255 bytes, such as `tangent`, `tangent_not_g2`, or `unknown`. The 98-byte record holds a seven-character token, and a token of another length moves the record end by the difference.
 
 When the curve reference is null, the edge has no attributed 3D carrier. Its serialized endpoint doubles remain finite. No canonical carrier-domain ordering applies to those endpoints.
 

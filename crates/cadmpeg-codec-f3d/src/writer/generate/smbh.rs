@@ -29,8 +29,8 @@ use super::{
     index::NativeGenerationIndex,
     native_bytes::{
         native_curve_base, native_f64, native_history_tail, native_i64, native_ident,
-        native_intcurve_base, native_point, native_record_index, native_ref, native_string,
-        native_surface_base, native_transform, native_vector,
+        native_intcurve_base, native_length_prefixed_string, native_point, native_record_index,
+        native_ref, native_string, native_surface_base, native_transform, native_vector,
     },
     native_geometry::{
         native_cacheless_procedural_curve, native_cacheless_procedural_surface, native_nurbs_curve,
@@ -1803,9 +1803,9 @@ fn encode_source_less_edges_vertices_points(
         native_f64(records, range[1]);
         native_ref(records, edge_owners.get(&edge.id).copied().unwrap_or(-1));
         native_ref(records, curve_ref);
-        let (sense, continuity) = edge_record_metadata(topology, edge, &reversed_curves)?;
+        let (sense, continuity) = edge_record_metadata(topology, edge, &reversed_curves);
         records.push(native_bool(sense == Sense::Reversed));
-        native_string(records, &continuity)?;
+        native_length_prefixed_string(records, continuity)?;
         native_tolerant_edge_tail(records, topology, edge);
         records.push(0x11);
     }
@@ -2044,16 +2044,13 @@ fn native_tolerant_edge_tail(
     }
 }
 
-/// The continuity tokens of the ASM edge record (asm.md §5.2).
-pub(super) const WRITTEN_CONTINUITIES: [&str; 3] = ["tangent", "tangent_not_g2", "unknown"];
-
-/// The native sense and continuity of `edge`. An edge on a curve that a
+/// The native sense and continuity token of `edge`. An edge on a curve that a
 /// forward edge also uses runs forward on that curve.
-fn edge_record_metadata(
-    topology: &NativeGenerationIndex<'_>,
+fn edge_record_metadata<'a>(
+    topology: &NativeGenerationIndex<'a>,
     edge: &cadmpeg_ir::topology::Edge,
     reversed_curves: &HashSet<&CurveId>,
-) -> Result<(Sense, String), CodecError> {
+) -> (Sense, &'a str) {
     let metadata = topology.edge_continuities.get(edge.id.as_str()).copied();
     let sense = match retained_sense(topology, edge) {
         Sense::Reversed
@@ -2065,17 +2062,8 @@ fn edge_record_metadata(
         }
         Sense::Reversed | Sense::Forward => Sense::Forward,
     };
-    let continuity = metadata.map_or_else(
-        || "unknown".to_owned(),
-        |metadata| metadata.continuity.clone(),
-    );
-    if !WRITTEN_CONTINUITIES.contains(&continuity.as_str()) {
-        return Err(CodecError::malformed(format_args!(
-            "F3D edge {} has unsupported continuity token {continuity}",
-            edge.id
-        )));
-    }
-    Ok((sense, continuity))
+    let continuity = metadata.map_or("unknown", |metadata| metadata.continuity.as_str());
+    (sense, continuity)
 }
 
 fn apply_native_edge_owners(

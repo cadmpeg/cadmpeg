@@ -37,10 +37,11 @@ fn assert_no_whole_drop(report: &ExportReport) {
     }
 }
 
-/// Write `ir` with no source file and decode the written bytes.
-fn write_and_decode(ir: &CadIr) -> CadIr {
+/// Write `ir` with no source file; the write's report and the decoded
+/// written bytes.
+fn write_with_report(ir: &CadIr) -> (ExportReport, CadIr) {
     let mut bytes = Vec::new();
-    cadmpeg_ir::codec::write::Encoder::plan(
+    let report = cadmpeg_ir::codec::write::Encoder::plan(
         &crate::F3dCodec,
         cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
         cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
@@ -53,7 +54,24 @@ fn write_and_decode(ir: &CadIr) -> CadIr {
         &cadmpeg_ir::codec::DecodeOptions::default(),
     )
     .expect("the written file decodes");
-    decoded.into_parts().0
+    (report, decoded.into_parts().0)
+}
+
+/// Write `ir` with no source file and decode the written bytes.
+fn write_and_decode(ir: &CadIr) -> CadIr {
+    write_with_report(ir).1
+}
+
+/// `report` charges no loss whose message holds `fragment`.
+fn assert_no_loss_naming(report: &ExportReport, fragment: &str) {
+    assert!(
+        report
+            .losses
+            .iter()
+            .all(|loss| !loss.message.contains(fragment)),
+        "{:#?}",
+        report.losses
+    );
 }
 
 fn continuity(ir: &CadIr, edge: usize, record_index: u32, token: &str) -> EdgeContinuity {
@@ -67,7 +85,7 @@ fn continuity(ir: &CadIr, edge: usize, record_index: u32, token: &str) -> EdgeCo
 }
 
 #[test]
-fn an_edge_continuity_the_asm_edge_record_does_not_hold_is_dropped_alone() {
+fn an_edge_continuity_token_of_any_text_is_written() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let rows = vec![
         continuity(&ir, 0, 0, "convex"),
@@ -76,20 +94,14 @@ fn an_edge_continuity_the_asm_edge_record_does_not_hold_is_dropped_alone() {
     let convex = rows[0].id().clone();
     f3d_native_mut(&mut ir).edge_continuities = rows;
 
-    let report = assert_written_with_loss(
-        &ir,
-        None,
-        OMITTED,
-        "of edge continuities other than `tangent`, `tangent_not_g2` and `unknown`",
-    );
-    assert_no_whole_drop(&report);
-    assert!(
-        omitted(&report)
-            .iter()
-            .any(|message| message.ends_with(&format!(": {convex}"))),
-        "{:#?}",
-        report.losses
-    );
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_loss_naming(&report, &convex);
+    let tokens = f3d_native(&decoded)
+        .edge_continuities
+        .iter()
+        .filter(|row| row.continuity == "convex")
+        .count();
+    assert_eq!(tokens, 1);
 }
 
 #[test]
@@ -139,29 +151,51 @@ fn sketch_curve_links_that_share_a_coedge_are_written_in_order() {
     assert_ne!(links[1].target, links[2].target);
 }
 
+/// A body visibility record of the unit cube's body under ASM body key
+/// `asm_body_key`, which states `visible`.
+fn body_visibility(
+    ir: &CadIr,
+    asm_body_key: u64,
+    visible: bool,
+) -> crate::records::bodies::BodyVisibility {
+    crate::records::bodies::BodyVisibility::try_from(crate::records::bodies::BodyVisibilityWire {
+        id: format!("f3d:generated:body-visibility#{asm_body_key}"),
+        body: ir.geometry.bodies[0].id.clone(),
+        stream: "generated/Design1/BulkStream.dat".into(),
+        byte_offset: 0,
+        asm_body_key_offset: 0,
+        asm_body_key,
+        entity_suffix: 985,
+        visible,
+    })
+    .expect("a body visibility")
+}
+
 #[test]
-fn a_body_visibility_under_another_asm_key_is_dropped_and_the_body_keeps_its_visibility() {
+fn a_body_visibility_that_disagrees_with_its_body_is_written_from_the_body() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.bodies[0].visible = Some(false);
-    let body = ir.geometry.bodies[0].id.clone();
-    f3d_native_mut(&mut ir).body_visibilities =
-        vec![crate::records::bodies::BodyVisibility::try_from(
-            crate::records::bodies::BodyVisibilityWire {
-                id: "f3d:generated:body-visibility#4242".into(),
-                body,
-                stream: "generated/Design1/BulkStream.dat".into(),
-                byte_offset: 0,
-                asm_body_key_offset: 0,
-                asm_body_key: 4242,
-                entity_suffix: 985,
-                visible: false,
-            },
-        )
-        .expect("a body visibility")];
+    let row = body_visibility(&ir, 1, true);
+    f3d_native_mut(&mut ir).body_visibilities = vec![row];
 
-    let report = assert_written_with_loss(&ir, None, OMITTED, "of body visibilities whose body");
-    assert_no_whole_drop(&report);
-    let decoded = write_and_decode(&ir);
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_loss_naming(&report, "body visibilit");
+    assert_eq!(decoded.geometry.bodies[0].visible, Some(false));
+    let rows = &f3d_native(&decoded).body_visibilities;
+    assert_eq!(rows.len(), 1);
+    assert!(!rows[0].visible);
+    assert_eq!(rows[0].entity_suffix, 985);
+}
+
+#[test]
+fn a_body_visibility_under_another_asm_key_is_written_from_the_body() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    ir.geometry.bodies[0].visible = Some(false);
+    let row = body_visibility(&ir, 4242, false);
+    f3d_native_mut(&mut ir).body_visibilities = vec![row];
+
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_loss_naming(&report, "body visibilit");
     assert_eq!(decoded.geometry.bodies[0].visible, Some(false));
     assert_eq!(f3d_native(&decoded).body_visibilities.len(), 1);
 }
@@ -386,6 +420,215 @@ fn sketch_records_whose_owner_is_absent_are_dropped_alone() {
     assert_eq!(indices, [33]);
 }
 
+/// Give `native` sketch container `0_277`, whose header names the records
+/// `references`, and record header `33`.
+fn sketch_container(native: &mut crate::native::F3dNative, references: &[u32]) {
+    use crate::records::decal::DesignRecordHeader;
+    use crate::records::entity_header::{
+        DesignEntityHeader, DesignEntityRegistration, SegmentType, SegmentTypeData,
+        SketchHeaderReferences, DESIGN_MODULE_SKETCH,
+    };
+    use crate::records::identity::{DesignEntityId, Located, ReferenceRun};
+    use crate::records::references::DesignClassTag;
+
+    native.design_types = vec![SegmentType::try_new(
+        "f3d:generated/MetaStream.dat:design-type#0".into(),
+        SegmentTypeData {
+            byte_offset: 0,
+            module: DESIGN_MODULE_SKETCH.to_owned(),
+            entities: ReferenceRun::unlocated(vec![277]),
+            type_guid: "22222222-3333-4444-5555-666666666666"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
+            type_guid_offset: 0,
+            base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
+            version: 4,
+            version_offset: 0,
+        },
+    )
+    .expect("a sketch type")];
+    native.design_entity_headers = vec![DesignEntityHeader {
+        id: "f3d:generated:entity-header#0".into(),
+        byte_offset: 0,
+        entity_id: DesignEntityId::try_from("0_277".to_owned()).expect("entity ID"),
+        class_tag: DesignClassTag::try_from("256".to_owned()).expect("class tag"),
+        optional_slot_present: true,
+        registration: DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            Some(SketchHeaderReferences {
+                record_reference: Some(584),
+                record_reference_offset: 0,
+                references: references
+                    .iter()
+                    .map(|&value| Located { value, offset: 0 })
+                    .collect(),
+            }),
+            ReferenceRun::unlocated(Vec::new()),
+        )
+        .expect("a sketch registration"),
+    }];
+    native.design_record_headers = vec![DesignRecordHeader {
+        id: "f3d:generated:record-header#0".into(),
+        record_index: 33,
+        class_tag: DesignClassTag::try_from("350".to_owned()).expect("class tag"),
+        byte_offset: 0,
+    }];
+}
+
+/// Sketch point `700` with sketch owner `owner`, whose companion names the
+/// curves `incident_curves`.
+fn sketch_point(
+    owner: Option<u32>,
+    incident_curves: Vec<u32>,
+) -> crate::records::sketch_geometry::SketchPoint {
+    use crate::records::sketch_geometry::{
+        SketchPoint, SketchPointClosure, SketchPointCompanion, SketchPointDraft,
+        SketchPointRecordForm,
+    };
+
+    SketchPoint::try_from(SketchPointDraft {
+        id: "f3d:generated:sketch-point#0".into(),
+        record_index: 700,
+        owner_reference: owner,
+        geometry_group: None,
+        class_tag: crate::records::references::DesignClassTag::try_from("258".to_owned())
+            .expect("class tag"),
+        byte_offset: 0,
+        coordinate_offset: 89,
+        companion: SketchPointCompanion { incident_curves },
+        record_form: SketchPointRecordForm::version11(
+            500,
+            SketchPointClosure::Selector0State1,
+            Some(900),
+            0.0,
+        ),
+        paired_reference: 701,
+        coordinates: cadmpeg_ir::math::Point2::new(4.0, -7.5),
+    })
+    .expect("a sketch point")
+}
+
+/// The ids of the records `report` drops because they name a dropped
+/// sketch record.
+fn dropped_for_naming_a_dropped_record(report: &ExportReport) -> Vec<&str> {
+    omitted(report)
+        .into_iter()
+        .filter(|message| message.contains("of sketch records that name a dropped sketch record"))
+        .collect()
+}
+
+#[test]
+fn a_relation_that_names_a_dropped_point_is_dropped_with_it() {
+    use crate::records::sketch_relations::{
+        SketchRelation, SketchRelationDefinition, SketchRelationDraft, SketchRelationMember,
+        SketchRelationReturnMember,
+    };
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let mut native = f3d_native_mut(&mut ir);
+    sketch_container(&mut native, &[33, 40]);
+    native.sketch_points = vec![sketch_point(None, Vec::new())];
+    native.sketch_relations = vec![SketchRelation::try_new(SketchRelationDraft {
+        id: "f3d:generated:sketch-relation#0".into(),
+        record_index: 40,
+        class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned())
+            .expect("class tag"),
+        byte_offset: 0,
+        state_offset: 0,
+        owner_reference: 277,
+        owner_entity_id: None,
+        owner_reference_offset: 0,
+        auxiliary_references: crate::records::identity::ReferenceRun::located(Vec::new()),
+        rectangular_counted_reference_count: None,
+        members: vec![SketchRelationMember {
+            relation_ordinal: Some(0),
+            ..SketchRelationMember::from_index(700)
+        }]
+        .try_into()
+        .expect("uniform member resolution"),
+        definition: SketchRelationDefinition::new(0x11, None).expect("a relation definition"),
+        entity_genesis: None,
+        return_members: vec![SketchRelationReturnMember::from_index(700)]
+            .try_into()
+            .expect("uniform member resolution"),
+        raw_bytes: vec![0; 160],
+    })
+    .expect("a sketch relation")];
+    drop(native);
+
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_whole_drop(&report);
+    let cascade = dropped_for_naming_a_dropped_record(&report);
+    assert!(
+        cascade
+            .iter()
+            .any(|message| message.ends_with(": f3d:generated:sketch-relation#0")),
+        "{:#?}",
+        report.losses
+    );
+    let native = f3d_native(&decoded);
+    assert!(native.sketch_points.is_empty());
+    assert!(native.sketch_relations.is_empty());
+    let references = native
+        .design_entity_headers
+        .iter()
+        .flat_map(|header| header.reference_values().copied())
+        .collect::<Vec<_>>();
+    assert_eq!(references, [33]);
+}
+
+#[test]
+fn a_point_whose_companion_names_a_dropped_curve_is_dropped_with_it() {
+    use crate::records::sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let mut native = f3d_native_mut(&mut ir);
+    sketch_container(&mut native, &[33]);
+    native.sketch_points = vec![sketch_point(Some(277), vec![600])];
+    native.sketch_curve_identities = vec![SketchCurveIdentity {
+        id: "f3d:generated:sketch-curve#0".into(),
+        record_index: 600,
+        owner_reference: None,
+        geometry_group: None,
+        class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
+            .expect("class tag"),
+        byte_offset: 0,
+        geometry_offset: 133,
+        entity_genesis: None,
+        primary_id: std::num::NonZeroU64::new(700).expect("a nonzero identity"),
+        secondary_id: 701,
+        geometry: Some(
+            SketchCurveGeometry::line(
+                Point3::new(10.0, 20.0, 0.0),
+                Point3::new(40.0, 20.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .expect("a sketch line"),
+        ),
+        planar_z_noise: None,
+        tail_marker: None,
+    }];
+    drop(native);
+
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_whole_drop(&report);
+    let cascade = dropped_for_naming_a_dropped_record(&report);
+    assert!(
+        cascade
+            .iter()
+            .any(|message| message.ends_with(": f3d:generated:sketch-point#0")),
+        "{:#?}",
+        report.losses
+    );
+    let native = f3d_native(&decoded);
+    assert!(native.sketch_points.is_empty());
+    assert!(native.sketch_curve_identities.is_empty());
+    assert_eq!(native.design_entity_headers.len(), 1);
+}
+
 #[test]
 fn several_asm_histories_are_dropped_and_the_design_stream_is_written() {
     use crate::history_records::AsmHistory;
@@ -495,24 +738,19 @@ fn a_tolerant_coedge_range_past_the_knot_domain_by_round_off_is_written() {
 }
 
 #[test]
-fn a_tolerant_coedge_record_with_another_range_is_dropped_alone() {
+fn a_tolerant_coedge_record_with_another_range_is_written_with_the_use_curve_range() {
     let (ir, id) = tolerant_coedge_cube([-1.0, 3.0]);
-    let report = assert_written_with_loss(
-        &ir,
-        None,
-        OMITTED,
-        "of tolerant-coedge records whose parameter range does not give the use-curve range",
-    );
-    assert_no_whole_drop(&report);
-    assert!(
-        omitted(&report)
-            .iter()
-            .any(|message| message.ends_with(&format!(": {id}"))),
-        "{:#?}",
-        report.losses
-    );
-    let decoded = write_and_decode(&ir);
-    assert!(f3d_native(&decoded).tolerant_coedge_parameters.is_empty());
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_loss_naming(&report, &id);
+    assert_no_loss_naming(&report, "use curve");
+    let use_curve = decoded
+        .geometry
+        .coedges
+        .iter()
+        .find_map(|coedge| coedge.use_curve.as_ref())
+        .expect("the use curve reads back");
+    assert_eq!(use_curve.parameter_range.endpoints(), [-2.0, 3.0]);
+    assert_eq!(f3d_native(&decoded).tolerant_coedge_parameters.len(), 1);
     assert_eq!(decoded.geometry.bodies.len(), 1);
 }
 

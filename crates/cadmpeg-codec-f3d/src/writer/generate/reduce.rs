@@ -132,6 +132,16 @@ const UNWRITTEN_ARENAS: &[&str] = &[
     "mesh_surface_sentinels",
 ];
 
+/// The arenas whose records hold a Design record index that other sketch
+/// records name.
+const SKETCH_RECORD_ARENAS: &[&str] = &[
+    "design_record_headers",
+    "sketch_curve_identities",
+    "sketch_points",
+    "sketch_relations",
+    "sketch_texts",
+];
+
 /// The stage of an attempt that failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Stage {
@@ -181,6 +191,9 @@ pub(super) struct Failure {
 pub(super) enum NativeCause {
     /// Records the writer drops alone (W1).
     Records(Box<Unwritable>),
+    /// Records the writer writes from the neutral records in their place
+    /// (W2).
+    Regenerated(BTreeSet<String>),
     /// Parameter records. A typed feature scope, parameter owner or
     /// companion, sketch placement or dimension frame holds its decoded
     /// members and their offsets, and no byte form for the rest of its
@@ -257,6 +270,24 @@ impl Failure {
         }
     }
 
+    /// A failure of `stage` that the native records `records`, which the
+    /// writer writes from the neutral records, cause.
+    pub(super) fn regenerated(stage: Stage, records: BTreeSet<String>) -> Self {
+        Self {
+            stage,
+            error: CodecError::InvalidInput(format!(
+                "F3D native records the writer writes from the neutral records: {}",
+                records
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+            culprit: None,
+            native: Some(NativeCause::Regenerated(records)),
+        }
+    }
+
     /// A failure of the native Design path whose records hold parameter
     /// records.
     pub(super) fn parameter_records() -> Self {
@@ -289,6 +320,9 @@ pub(super) struct Reduction<'a> {
     native: NativeDispositions,
     design_dropped: bool,
     neutral_dropped: bool,
+    /// The record indices of the dropped sketch records and record headers:
+    /// no written record names them (W1).
+    dropped_sketch_records: BTreeSet<u32>,
     /// The form of the features whose states the writer cannot write.
     missing_states: MissingStateForm,
     /// The parts of the design scope's form dropped after a failure.
@@ -315,6 +349,7 @@ impl<'a> Reduction<'a> {
             native,
             design_dropped: false,
             neutral_dropped: false,
+            dropped_sketch_records: BTreeSet::new(),
             fallback: super::design::Fallback::default(),
             opened: BTreeMap::new(),
             assumed_arcs: Vec::new(),
@@ -350,6 +385,11 @@ impl<'a> Reduction<'a> {
     /// them.
     pub(super) fn fallback(&self) -> &super::design::Fallback {
         &self.fallback
+    }
+
+    /// The record indices of the dropped sketch records and record headers.
+    pub(super) fn dropped_sketch_records(&self) -> &BTreeSet<u32> {
+        &self.dropped_sketch_records
     }
 
     /// The losses, with `export:output.empty` when no geometry is written,
@@ -465,6 +505,9 @@ impl<'a> Reduction<'a> {
         }
         let dropped_cause = match native {
             Some(NativeCause::Records(unwritable)) => self.drop_unwritable(&unwritable),
+            Some(NativeCause::Regenerated(records)) => {
+                !self.remove_native_records(|record| records.contains(record.id())).is_empty()
+            }
             Some(NativeCause::ParameterRecords) => self.writes_design() && self.drop_design_stream(
                 "of the Design stream, which the generator writes from the design's neutral records (its feature scopes, parameter owners and companions, sketch placements and dimension frames hold no byte form that a write without the source file can store)",
             ),
@@ -1552,19 +1595,7 @@ impl<'a> Reduction<'a> {
     /// W1: drop the native records `unwritable` names. Returns whether the
     /// document held one of them.
     fn drop_unwritable(&mut self, unwritable: &Unwritable) -> bool {
-        let Some(namespace) = self.ir.to_mut().native.0.get_mut("f3d") else {
-            return false;
-        };
-        let mut dropped = Vec::new();
-        for records in namespace.arenas_mut().values_mut() {
-            records.retain(|record| {
-                let named = unwritable.records.contains(record.id());
-                if named {
-                    dropped.push(record.id().to_owned());
-                }
-                !named
-            });
-        }
+        let dropped = self.remove_native_records(|record| unwritable.records.contains(record.id()));
         let progressed = !dropped.is_empty();
         self.native.drop_records("f3d", &unwritable.reason, dropped);
         progressed
@@ -1889,22 +1920,43 @@ impl<'a> Reduction<'a> {
     /// W1: a native record that holds a reference to a removed entity is
     /// dropped. Returns the dropped record ids.
     fn remove_native_records_naming(&mut self, removed: &BTreeSet<String>) -> Vec<String> {
+        self.remove_native_records(|record| {
+            record.fields().map_or(true, |fields| {
+                fields.values().any(|value| mentions(value, removed))
+            })
+        })
+    }
+
+    /// Remove each native record `remove` selects, and keep the record index
+    /// of each sketch record and record header among them. Returns the
+    /// removed record ids.
+    fn remove_native_records(
+        &mut self,
+        remove: impl Fn(&cadmpeg_ir::NativeRecord) -> bool,
+    ) -> Vec<String> {
         let Some(namespace) = self.ir.to_mut().native.0.get_mut("f3d") else {
             return Vec::new();
         };
-        let mut dropped = Vec::new();
-        for records in namespace.arenas_mut().values_mut() {
+        let mut removed = Vec::new();
+        for (arena, records) in namespace.arenas_mut() {
+            let indexed = SKETCH_RECORD_ARENAS.contains(&arena.as_str());
             records.retain(|record| {
-                let names_removed = record.fields().map_or(true, |fields| {
-                    fields.values().any(|value| mentions(value, removed))
-                });
-                if names_removed {
-                    dropped.push(record.id().to_owned());
+                if !remove(record) {
+                    return true;
                 }
-                !names_removed
+                removed.push(record.id().to_owned());
+                if let Some(index) = indexed
+                    .then(|| record.field("record_index"))
+                    .flatten()
+                    .and_then(|index| index.as_u64())
+                    .and_then(|index| u32::try_from(index).ok())
+                {
+                    self.dropped_sketch_records.insert(index);
+                }
+                false
             });
         }
-        dropped
+        removed
     }
 }
 

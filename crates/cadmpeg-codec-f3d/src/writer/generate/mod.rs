@@ -28,8 +28,9 @@ mod records;
 mod reduce;
 mod smbh;
 use preconditions::{
-    replaced_by_stamp, unowned_sketch_records, unreachable_record_headers, unwritable_continuities,
-    unwritable_link_records, unwritable_tolerant_coedges, unwritable_tolerant_tails,
+    regenerated_body_visibilities, replaced_by_stamp, sketch_records_naming,
+    unowned_sketch_records, unreachable_record_headers, unwritable_link_records,
+    unwritable_tolerant_coedges, unwritable_tolerant_tails,
     validate_source_less_auxiliary_geometry, validate_source_less_design_bindings,
     validate_source_less_design_links, validate_source_less_design_ownership,
     validate_source_less_history_graph, validate_source_less_procedural_carriers,
@@ -88,6 +89,7 @@ pub(super) fn write_new(
             reduction.writes_neutral_design(),
             missing_states,
             reduction.fallback(),
+            reduction.dropped_sketch_records(),
             &mut staged,
         ) {
             Ok((coverage, losses)) => break (staged, coverage, losses),
@@ -139,6 +141,7 @@ fn writes_alone(target: &CadIr, stage: Stage) -> bool {
             false,
             MissingStateForm::GeometryTrue,
             &design::Fallback::default(),
+            &BTreeSet::new(),
             &mut std::io::Cursor::new(Vec::new()),
         )
         .is_ok(),
@@ -159,15 +162,17 @@ fn encode_brep(
 /// Write `target` once. `write_design` states whether its native Design
 /// records are written, and `write_neutral` whether its design scope is, in
 /// the form `missing_states` names; `fallback` names the parts of the design
-/// scope's form dropped after a failure. A failure names the stage that
-/// failed. Returns the arena coverage and the losses of the design scope's
-/// records.
+/// scope's form dropped after a failure; `dropped` holds the record indices
+/// of the dropped sketch records, which no written record names. A failure
+/// names the stage that failed. Returns the arena coverage and the losses of
+/// the design scope's records.
 fn attempt<W: Write + Seek>(
     target: &CadIr,
     write_design: bool,
     write_neutral: bool,
     missing_states: MissingStateForm,
     fallback: &design::Fallback,
+    dropped: &BTreeSet<u32>,
     staged: W,
 ) -> Result<(ArenaDispositions, Vec<LossNote>), Failure> {
     #[cfg(test)]
@@ -189,6 +194,12 @@ fn attempt<W: Write + Seek>(
     let loaded_native = f3d_native(target).map_err(Failure::design)?;
     let has_native = loaded_native.is_some();
     let mut native = loaded_native.unwrap_or_default();
+    for header in &mut native.design_entity_headers {
+        if let Some(list) = header.sketch_references_mut() {
+            list.references
+                .retain(|reference| !dropped.contains(&reference.value));
+        }
+    }
     if write_design && records::holds_parameter_records(&native) {
         return Err(Failure::parameter_records());
     }
@@ -218,18 +229,20 @@ fn attempt<W: Write + Seek>(
         attributes
     };
     if has_native {
-        if let Some(unwritable) =
-            unwritable_link_records(target, &native, &attributes).map_err(Failure::design)?
-        {
+        if let Some(unwritable) = unwritable_link_records(target, &native) {
             return Err(Failure::unwritable(Stage::Design, unwritable));
+        }
+        let regenerated =
+            regenerated_body_visibilities(target, &native, &attributes).map_err(Failure::design)?;
+        if !regenerated.is_empty() {
+            return Err(Failure::regenerated(Stage::Design, regenerated));
         }
         validate_source_less_design_links(target, &native).map_err(Failure::design)?;
     }
     let brep = if body_less {
         Ok(Vec::new())
     } else {
-        if let Some(unwritable) = unwritable_continuities(&native)
-            .or_else(|| unwritable_tolerant_coedges(target, &native))
+        if let Some(unwritable) = unwritable_tolerant_coedges(target, &native)
             .or_else(|| unwritable_tolerant_tails(target, &native))
         {
             return Err(Failure::unwritable(Stage::Brep, unwritable));
@@ -258,8 +271,9 @@ fn attempt<W: Write + Seek>(
     let design_bindings = validate_source_less_design_bindings(&native).map_err(Failure::design)?;
     let mut native_parameters = None;
     if write_design {
-        if let Some(unwritable) =
-            unowned_sketch_records(&native).or_else(|| unreachable_record_headers(&native))
+        if let Some(unwritable) = unowned_sketch_records(&native)
+            .or_else(|| sketch_records_naming(&native, dropped))
+            .or_else(|| unreachable_record_headers(&native))
         {
             return Err(Failure::unwritable(Stage::Design, unwritable));
         }

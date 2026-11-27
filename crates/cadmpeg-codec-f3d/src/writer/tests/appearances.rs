@@ -154,7 +154,7 @@ fn generated_source_less_drops_material_assignment_alone() {
 }
 
 #[test]
-fn generated_source_less_drops_collapsed_visibility_body_bindings() {
+fn generated_source_less_regenerates_collapsed_visibility_body_bindings() {
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source_less.geometry.bodies[0].visible = Some(false);
     let body = source_less.geometry.bodies[0].id.clone();
@@ -178,12 +178,26 @@ fn generated_source_less_drops_collapsed_visibility_body_bindings() {
         })
         .collect();
 
-    crate::test_support::assert_written_with_loss(
-        &source_less,
-        None,
-        "export/native.records-omitted",
-        "of body visibilities whose body",
+    let mut bytes = Vec::new();
+    let report = F3dCodec
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("source-less write");
+    assert!(
+        report
+            .losses
+            .iter()
+            .all(|loss| !loss.message.contains("body visibilit")),
+        "{:#?}",
+        report.losses
     );
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("source-less round trip");
+    let visibilities =
+        &crate::test_support::native_test::f3d_native(decoded.ir()).body_visibilities;
+    assert_eq!(visibilities.len(), 1);
+    assert!(!visibilities[0].visible);
 }
 
 #[test]

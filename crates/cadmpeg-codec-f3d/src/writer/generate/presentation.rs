@@ -168,7 +168,11 @@ impl GeneratedDesignRegistry {
         let mut guessed_visible = Vec::new();
 
         for body in &target.geometry.bodies {
-            let visible = match (body.visible, selection) {
+            let metadata = visibility_by_body.get(body.id.as_str()).copied();
+            let stated = body
+                .visible
+                .or_else(|| metadata.map(|metadata| metadata.visible));
+            let visible = match (stated, selection) {
                 (Some(visible), _) => visible,
                 (None, BodySelection::Every) => {
                     guessed_visible.push(body.id.to_string());
@@ -176,7 +180,6 @@ impl GeneratedDesignRegistry {
                 }
                 (None, BodySelection::Stated) => continue,
             };
-            let metadata = visibility_by_body.get(body.id.as_str()).copied();
             let asm_body_key = match metadata {
                 Some(metadata) => metadata.asm_body_key(),
                 None => u64::try_from(source_less_body_key(attributes, body)?).map_err(|_| {

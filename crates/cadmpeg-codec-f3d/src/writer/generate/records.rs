@@ -68,27 +68,28 @@ pub(super) fn native_tolerant_coedge_extension(
     index: &NativeGenerationIndex<'_>,
     coedge: &CoedgeId,
 ) -> Result<(), CodecError> {
-    let extension = index
-        .tolerant_coedges
-        .get(coedge.as_str())
-        .map(|parameters| &parameters.extension);
-    match extension {
+    let parameters = index.tolerant_coedges.get(coedge.as_str()).copied();
+    match parameters.map(|parameters| (&parameters.extension, parameters.parameter_range)) {
         None
-        | Some(
+        | Some((
             cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {}
             | cadmpeg_asm::brep::records::TolerantCoedgeExtension::Empty { target: None },
-        ) => {
+            _,
+        )) => {
             native_ref(records, -1);
             native_i64(records, 0);
             native_i64(records, 0);
             Ok(())
         }
-        Some(cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
-            target: None,
-            curve_reversed,
-            parameter_range,
-            ..
-        }) => {
+        Some((
+            cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
+                target: None,
+                curve_reversed,
+                parameter_range,
+                ..
+            },
+            record_range,
+        )) => {
             let model_coedge = target
                 .geometry
                 .coedges
@@ -111,6 +112,15 @@ pub(super) fn native_tolerant_coedge_extension(
                     "source-less F3D tolerant coedge {coedge} requires a NURBS use curve"
                 )));
             };
+            let written_range = if super::preconditions::reads_as_use_curve_range(
+                (*parameter_range).unwrap_or(record_range),
+                curve,
+                use_curve.parameter_range,
+            ) {
+                (*parameter_range).map(cadmpeg_ir::units::FiniteVector::get)
+            } else {
+                Some(use_curve.parameter_range.endpoints())
+            };
             let mut native_curve = curve.clone();
             if *curve_reversed {
                 native_curve.reverse_parameterization();
@@ -121,8 +131,7 @@ pub(super) fn native_tolerant_coedge_extension(
             records.push(0x0f);
             native_nurbs_curve(records, &native_curve)?;
             records.push(0x10);
-            if let Some(range) = *parameter_range {
-                let [start, end] = range.get();
+            if let Some([start, end]) = written_range {
                 records.push(0x0a);
                 native_f64(records, start);
                 records.push(0x0a);
@@ -166,11 +175,6 @@ pub(super) fn encode_design_bulkstream(
     parameters: ParameterRecords,
     neutral: Option<&super::design::frames::DesignRecords>,
 ) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
-    if holds_parameter_records(native) {
-        return Err(CodecError::NotImplemented(
-            "source-less F3D Design parameter records are not writable".into(),
-        ));
-    }
     let has_body_visibility = target
         .geometry
         .bodies

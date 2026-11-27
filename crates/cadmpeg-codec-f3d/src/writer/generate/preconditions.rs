@@ -309,13 +309,67 @@ pub(super) fn unowned_sketch_records(native: &F3dNative) -> Option<Unwritable> {
     )
 }
 
-/// The sketch-curve links and body visibilities the B-rep and Design
-/// streams cannot hold as they stand, the first family that holds one.
-pub(super) fn unwritable_link_records(
-    target: &CadIr,
+/// The sketch records that name the record index of a dropped sketch record
+/// or record header: the written record would name a record the Design
+/// stream does not hold. Each drop adds the indices of its records to
+/// `dropped`, so the attempts drop every record that a chain of references
+/// ties to a dropped one (W1).
+pub(super) fn sketch_records_naming(
     native: &F3dNative,
-    attributes: &super::attributes::AttributeIndex<'_>,
-) -> Result<Option<Unwritable>, CodecError> {
+    dropped: &BTreeSet<u32>,
+) -> Option<Unwritable> {
+    use crate::records::sketch_geometry::SketchTextLayout;
+
+    if dropped.is_empty() {
+        return None;
+    }
+    let names = |mut indices: Box<dyn Iterator<Item = u32> + '_>| {
+        indices.any(|index| dropped.contains(&index))
+    };
+    let records = native
+        .sketch_points
+        .iter()
+        .filter(|point| names(Box::new(point.companion().incident_curves.iter().copied())))
+        .map(|point| point.id.clone())
+        .chain(
+            native
+                .sketch_relations
+                .iter()
+                .filter(|relation| {
+                    names(Box::new(
+                        relation
+                            .all_member_indices()
+                            .chain(relation.auxiliary_references().values().copied()),
+                    ))
+                })
+                .map(|relation| relation.id.clone()),
+        )
+        .chain(
+            native
+                .sketch_texts
+                .iter()
+                .filter(|text| match text.layout {
+                    SketchTextLayout::TextexTag {
+                        first_reference,
+                        second_reference,
+                        ..
+                    } => names(Box::new(
+                        [first_reference, second_reference].into_iter().flatten(),
+                    )),
+                    SketchTextLayout::TxtTag { .. } => false,
+                })
+                .map(|text| text.id.clone()),
+        )
+        .collect();
+    Unwritable::of(
+        "of sketch records that name a dropped sketch record (the written record would name a record the Design stream does not hold)",
+        records,
+    )
+}
+
+/// The sketch-curve links and body visibilities the B-rep and Design
+/// streams cannot hold, the first family that holds one.
+pub(super) fn unwritable_link_records(target: &CadIr, native: &F3dNative) -> Option<Unwritable> {
     let coedges = target
         .geometry
         .coedges
@@ -337,15 +391,41 @@ pub(super) fn unwritable_link_records(
         "of sketch-curve links that name a coedge the document does not hold",
         unresolved,
     ) {
-        return Ok(Some(unwritable));
+        return Some(unwritable);
     }
+    let bodies = target
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| &body.id)
+        .collect::<HashSet<_>>();
+    Unwritable::of(
+        "of body visibilities whose body the write omits",
+        native
+            .body_visibilities
+            .iter()
+            .filter(|visibility| !bodies.contains(&visibility.body))
+            .map(|visibility| visibility.id().to_owned())
+            .collect(),
+    )
+}
+
+/// The body visibilities the writer writes from their body (W2): each one
+/// whose ASM body key differs from the key the body is written with, and
+/// each one that shares its body or its Design entity with another. The
+/// writer writes the visibility record of each body from the body.
+pub(super) fn regenerated_body_visibilities(
+    target: &CadIr,
+    native: &F3dNative,
+    attributes: &super::attributes::AttributeIndex<'_>,
+) -> Result<BTreeSet<String>, CodecError> {
     let bodies = target
         .geometry
         .bodies
         .iter()
         .map(|body| (&body.id, body))
         .collect::<HashMap<_, _>>();
-    let mut stale = BTreeSet::new();
+    let mut regenerated = BTreeSet::new();
     let mut by_body = BTreeMap::<_, Vec<&str>>::new();
     let mut by_suffix = BTreeMap::<u64, BTreeSet<u64>>::new();
     for visibility in &native.body_visibilities {
@@ -358,32 +438,28 @@ pub(super) fn unwritable_link_records(
             .or_default()
             .insert(visibility.asm_body_key());
         let Some(body) = bodies.get(&visibility.body) else {
-            stale.insert(visibility.id().to_owned());
             continue;
         };
         let key = u64::try_from(source_less_body_key(attributes, body)?).ok();
-        if body.visible != Some(visibility.visible) || key != Some(visibility.asm_body_key()) {
-            stale.insert(visibility.id().to_owned());
+        if key != Some(visibility.asm_body_key()) {
+            regenerated.insert(visibility.id().to_owned());
         }
     }
-    stale.extend(
+    regenerated.extend(
         by_body
             .into_values()
             .filter(|rows| rows.len() > 1)
             .flatten()
             .map(str::to_owned),
     );
-    stale.extend(
+    regenerated.extend(
         native
             .body_visibilities
             .iter()
             .filter(|visibility| by_suffix[&visibility.entity_suffix].len() > 1)
             .map(|visibility| visibility.id().to_owned()),
     );
-    Ok(Unwritable::of(
-        "of body visibilities whose body, ASM body key, Design entity or visibility differs from the body the writer writes (the writer writes the visibility of each body from the body)",
-        stale,
-    ))
+    Ok(regenerated)
 }
 
 /// The lengths of the arenas that the stamp of a regenerated design extends.
@@ -452,20 +528,6 @@ pub(super) fn replaced_by_stamp(native: &F3dNative, mark: StampMark) -> Option<U
     )
 }
 
-/// The edge continuities whose token the ASM edge record does not hold
-/// (asm.md §5.2): the edge is written with `unknown`.
-pub(super) fn unwritable_continuities(native: &F3dNative) -> Option<Unwritable> {
-    Unwritable::of(
-        "of edge continuities other than `tangent`, `tangent_not_g2` and `unknown`, the tokens the ASM edge record holds",
-        native
-            .edge_continuities
-            .iter()
-            .filter(|row| !super::smbh::WRITTEN_CONTINUITIES.contains(&row.continuity.as_str()))
-            .map(|row| row.id().clone())
-            .collect(),
-    )
-}
-
 /// The records of the groups that hold more than one record.
 fn shared<K>(groups: BTreeMap<K, Vec<String>>) -> BTreeSet<String> {
     groups
@@ -475,12 +537,25 @@ fn shared<K>(groups: BTreeMap<K, Vec<String>>) -> BTreeSet<String> {
         .collect()
 }
 
+/// Whether the decoder reads `range`, moved onto the knot domain of `curve`,
+/// as the use-curve range `use_range`.
+pub(super) fn reads_as_use_curve_range(
+    range: cadmpeg_ir::units::FiniteVector<2>,
+    curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
+    use_range: cadmpeg_ir::topology::ParameterInterval,
+) -> bool {
+    cadmpeg_ir::topology::ParameterInterval::from_finite_endpoints(range)
+        .map(|range| cadmpeg_asm::brep::emit::clamp_to_knot_domain(range, curve))
+        .is_ok_and(|range| range.endpoints() == use_range.endpoints())
+}
+
 /// The tolerant-coedge records the B-rep stream cannot hold as they stand,
 /// in groups by reason. The coedge record holds one extension, written
 /// inline, whose embedded curve is the coedge's NURBS use curve. The decoder
 /// reads the use-curve range from the record range moved onto the curve's
-/// knot domain, so a record whose moved range is the use-curve range is
-/// written as stored.
+/// knot domain. A record whose moved range is the use-curve range is written
+/// as stored, and any other record is written with the use-curve range where
+/// the decoder reads that range back (W2).
 pub(super) fn unwritable_tolerant_coedges(
     target: &CadIr,
     native: &F3dNative,
@@ -531,12 +606,12 @@ pub(super) fn unwritable_tolerant_coedges(
                     unwritable_curve.insert(id);
                     continue;
                 };
-                let read = cadmpeg_ir::topology::ParameterInterval::from_finite_endpoints(
-                    parameter_range.unwrap_or(parameters.parameter_range),
-                )
-                .map(|range| cadmpeg_asm::brep::emit::clamp_to_knot_domain(range, curve));
-                if !read
-                    .is_ok_and(|range| range.endpoints() == use_curve.parameter_range.endpoints())
+                let use_range = use_curve.parameter_range;
+                let stored = parameter_range.unwrap_or(parameters.parameter_range);
+                let regenerated = cadmpeg_ir::units::FiniteVector::new(use_range.endpoints());
+                if !reads_as_use_curve_range(stored, curve, use_range)
+                    && !regenerated
+                        .is_some_and(|range| reads_as_use_curve_range(range, curve, use_range))
                 {
                     other_range.insert(id);
                 }
@@ -564,7 +639,7 @@ pub(super) fn unwritable_tolerant_coedges(
             unwritable_curve,
         ),
         (
-            "of tolerant-coedge records whose parameter range does not give the use-curve range of their coedge",
+            "of tolerant-coedge records whose parameter range and use-curve range both read back as another range (the decoder moves the range onto the knot domain of the curve)",
             other_range,
         ),
         (
