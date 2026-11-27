@@ -4897,6 +4897,20 @@ fn length_reference(token: &str, reference: u32, index: &ProjectionIndex<'_>) ->
     }
 }
 
+/// The model value of a parameter record as a length in millimetres. The
+/// record stores centimetres.
+fn raw_length_reference(
+    token: &str,
+    reference: u32,
+    index: &ProjectionIndex<'_>,
+) -> Option<Length> {
+    let parameter = index
+        .parameters
+        .get(&(token, reference.checked_sub(1)?))
+        .and_then(Option::as_ref)?;
+    stitch::millimetres(parameter)
+}
+
 fn angle_parameter(
     source: &PmDcFeature,
     slot: usize,

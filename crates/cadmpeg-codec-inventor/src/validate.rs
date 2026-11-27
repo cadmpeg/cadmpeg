@@ -2707,17 +2707,7 @@ fn validate_features(
                     let raw = feature_parameters
                         .get(&(token, reference.checked_sub(1)?))?
                         .as_ref()?;
-                    match parameter_values
-                        .get(raw.id().as_str())?
-                        .as_ref()?
-                        .value
-                        .as_ref()?
-                    {
-                        cadmpeg_ir::features::parameters::ParameterValue::Length(value) => {
-                            Some(*value)
-                        }
-                        _ => None,
-                    }
+                    crate::feature::stitch::millimetres(raw)
                 },
             );
             if expected.is_none_or(|(expected, _)| {

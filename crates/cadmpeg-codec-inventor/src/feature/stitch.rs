@@ -43,6 +43,12 @@ const CONTROL_SLOTS: [usize; 2] = [3, 5];
 /// Slot of the tolerance parameter.
 const TOLERANCE_SLOT: usize = 4;
 
+/// The model value of a parameter record in millimetres. The record stores
+/// centimetres.
+pub(crate) fn millimetres(parameter: &crate::design::PmDcParameter) -> Option<Length> {
+    Length::new(parameter.model_value.get() * 10.0)
+}
+
 /// The neutral operation and the result wrapper that the PmDc slots give.
 /// `property` resolves a record reference index to a feature property, and
 /// `length` resolves one to the value of a length parameter.
@@ -113,7 +119,7 @@ pub(super) fn project(
     let (operation, wrapper) = operation(
         source,
         |reference| super::resolve_property(token, reference, index),
-        |reference| super::length_reference(token, reference, index),
+        |reference| super::raw_length_reference(token, reference, index),
     )?;
     let members = FeatureResultMembers::new(
         vec![cadmpeg_core::text::NonBlankString::new(wrapper.id())?],
@@ -167,7 +173,7 @@ pub(crate) fn losses(projected: usize) -> Vec<cadmpeg_ir::report::loss::LossNote
         return Vec::new();
     }
     vec![crate::loss::InventorLossCode::FeatureStitchControlsNative.note(format!(
-        "Typed {projected} Stitch Surface feature(s) as knits of their operand collection; the two Boolean controls stay source properties, and the role of slot 4 as the tolerance is assumed from its position."
+        "Typed {projected} Stitch Surface feature(s) as knits of their operand collection; the two Boolean controls stay source properties, and the length role, the centimetre unit, and the tolerance meaning of slot 4 are assumed from its position."
     ))]
 }
 
