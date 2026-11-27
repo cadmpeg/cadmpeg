@@ -44,7 +44,7 @@ pub(crate) fn plan(
                 notes,
             }) => return Ok(preserved_body(input, write_path, bytes, notes)),
             Ok(Preservation::SourceImageUnavailable) => source_image_unavailable(),
-            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => Consumption::Degraded {
                 reason: error.to_string(),
             },

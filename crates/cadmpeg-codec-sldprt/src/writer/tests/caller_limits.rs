@@ -3,12 +3,12 @@
 
 use std::sync::{Arc, OnceLock};
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, ResourceLimits};
 use cadmpeg_core::CodecError;
 
 use crate::test_support::container::sldprt_with_body;
 use crate::test_support::parasolid::triangle_body;
-use crate::writer::{retained_source_baseline, SemanticWriteCache};
+use crate::writer::{retained_source_baseline, RetainedImage, SemanticWriteCache};
 
 #[test]
 fn a_baseline_is_reused_under_equal_limits_and_not_under_tighter_ones() {
@@ -16,10 +16,11 @@ fn a_baseline_is_reused_under_equal_limits_and_not_under_tighter_ones() {
     let limits = ResourceLimits::desktop();
     let arena = DecodeArena::new();
     let policy = DecodePolicy { limits };
-    let source = DecodeContext::from_root_bytes(&image, &arena, &policy).unwrap();
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let source = RetainedImage::read(&ctx, &image).unwrap();
     let mut write = SemanticWriteCache::default();
     assert!(
-        retained_source_baseline(&mut write.source_baseline, Some(&source))
+        retained_source_baseline(&mut write.source_baseline, &ctx, Some(&source))
             .unwrap()
             .is_some()
     );
@@ -38,10 +39,12 @@ fn a_baseline_is_reused_under_equal_limits_and_not_under_tighter_ones() {
         .source_baseline
         .is_none());
     let policy = DecodePolicy { limits: tight };
-    let source = DecodeContext::from_root_bytes(&image, &arena, &policy).unwrap();
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
     let mut baseline = None;
     assert!(matches!(
-        retained_source_baseline(&mut baseline, Some(&source)),
+        RetainedImage::read(&ctx, &image).and_then(|source| {
+            retained_source_baseline(&mut baseline, &ctx, Some(&source)).map(drop)
+        }),
         Err(CodecError::ResourceLimit(_))
     ));
 }

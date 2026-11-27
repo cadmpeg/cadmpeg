@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use std::collections::{BTreeMap, HashSet};
 
-use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
@@ -22,18 +22,20 @@ const BLOCK_PREFIX: &str = "sldprt:file:block#";
 /// states it, and what the output holds for it. No serializer writes a saved
 /// property: `opaque_blocks` emits each carrier block the source fidelity
 /// holds bytes of as stored, so the output holds the properties a decode
-/// reads from those bytes.
+/// reads from those bytes. The read of the carriers charges `ctx`.
 pub(super) fn unwritten(
     ir: &CadIr,
     records: &[crate::SourceRecord<'_>],
     annotations: &Annotations,
-    policy: &DecodePolicy,
+    ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<String, Held>, CodecError> {
     let scan = carrier_scan(records, annotations);
     let input = scan.blocks.iter().map(|block| block.payload.len()).sum();
     let arena = DecodeArena::new();
-    let ctx = DecodeContext::for_loaded_input(&arena, policy, u64_from_index(input))?;
-    let stored = crate::metadata::saved_property_rows(&ctx, &scan)?;
+    let stored = ctx.with_arena(&arena, |ctx| {
+        ctx.charge_input(u64_from_index(input), "SLDPRT saved-property carriers")?;
+        crate::metadata::saved_property_rows(ctx, &scan)
+    })?;
     let carriers = scan
         .blocks
         .iter()

@@ -299,7 +299,7 @@ fn each_property_is_charged_by_the_carrier_bytes_the_write_emits() {
         &source,
         &records,
         &notes,
-        &cadmpeg_core::decode::DecodePolicy::desktop()
+        &cadmpeg_core::decode::test_support::service_decode_context()
     )
     .unwrap()
     .is_empty());
@@ -317,7 +317,7 @@ fn each_property_is_charged_by_the_carrier_bytes_the_write_emits() {
         &read_back,
         &records,
         &notes,
-        &cadmpeg_core::decode::DecodePolicy::desktop()
+        &cadmpeg_core::decode::test_support::service_decode_context()
     )
     .unwrap()
     .is_empty());
@@ -345,7 +345,7 @@ fn each_property_is_charged_by_the_carrier_bytes_the_write_emits() {
             &edited,
             &records,
             &notes,
-            &cadmpeg_core::decode::DecodePolicy::desktop()
+            &cadmpeg_core::decode::test_support::service_decode_context()
         )
         .unwrap()
         .into_iter()
@@ -370,7 +370,7 @@ fn each_property_is_charged_by_the_carrier_bytes_the_write_emits() {
             &source,
             &without_bytes,
             &notes,
-            &cadmpeg_core::decode::DecodePolicy::desktop()
+            &cadmpeg_core::decode::test_support::service_decode_context()
         )
         .unwrap()
         .into_iter()

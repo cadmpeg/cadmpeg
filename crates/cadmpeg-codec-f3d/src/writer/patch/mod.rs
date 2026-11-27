@@ -3,14 +3,15 @@
 //! patch a retained F3D archive in place.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Write};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
+use cadmpeg_ir::report::strictness::Strictness;
 
 use crate::loss::F3dLossCode;
 use crate::writer::primitives::{
@@ -80,12 +81,7 @@ pub(crate) fn write_semantic(
     }
     // The archive is input of the write's one session, so the caller's
     // ceilings bound every read of it (cadir-v11.md §2.5).
-    ctx.charge_input(
-        cadmpeg_core::decode::u64_from_index(source_image.len()),
-        "F3D patch source archive",
-    )?;
-    let policy = *ctx.policy();
-    let limits = policy.limits;
+    let source = ctx.open_input(source_image, "F3D patch source archive")?;
     let target_native = f3d_native(ctx, target)?;
     if let Some(native) = target_native.as_ref() {
         if !projects(
@@ -103,14 +99,11 @@ pub(crate) fn write_semantic(
     } else {
         validate_assembly_projection(ctx, target, None)?;
     }
-    let baseline = F3dCodec
-        .decode(
-            &mut Cursor::new(source_image),
-            &DecodeOptions {
-                policy,
-                ..DecodeOptions::default()
-            },
-        )
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let baseline = ctx
+        .with_arena(&arena, |ctx| {
+            F3dCodec.decode_with_context(ctx, source, &Strictness::default())
+        })
         .map_err(|failure| match failure {
             DecodeFailure::Codec(error) => error,
             other => CodecError::malformed(format!(
@@ -697,24 +690,7 @@ pub(crate) fn write_semantic(
                 }
                 continue;
             }
-            let mut bytes = Vec::new();
-            if zstd {
-                bytes.extend(crate::zip_write::expand_zstd_member(
-                    &mut entry,
-                    &name,
-                    cadmpeg_core::decode::u64_from_index(source_image.len()),
-                    limits,
-                )?);
-            } else {
-                let mut chunk = [0_u8; 16 * 1024];
-                loop {
-                    let read = entry.read(&mut chunk)?;
-                    if read == 0 {
-                        break;
-                    }
-                    bytes.extend_from_slice(&chunk[..read]);
-                }
-            }
+            let bytes = crate::zip_write::expand_member(ctx, &mut entry, &name, zstd)?;
             (name, options, bytes)
         };
         let expanded = zstd.then(|| bytes.clone());
@@ -769,7 +745,7 @@ pub(crate) fn write_semantic(
                     &bytes,
                     &protein_appearance_edits,
                     notes,
-                    limits,
+                    ctx,
                 )?;
                 bytes = patched_bytes;
                 patched_protein_appearances.extend(patched_guids);

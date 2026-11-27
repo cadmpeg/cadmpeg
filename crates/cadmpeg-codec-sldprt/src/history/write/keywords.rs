@@ -4,7 +4,7 @@
 //! names and texts of the history are made writable before it gets here
 //! (`writer::keywords_text`); this module escapes.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::HashSet;
@@ -45,7 +45,7 @@ pub(crate) fn history_member(
     retained: &[RetainedHistory<'_>],
     source_blocks: &[Option<&[u8]>],
     losses: &mut Vec<LossNote>,
-    limits: ResourceLimits,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     let mut originals = retained
         .iter()
@@ -70,7 +70,7 @@ pub(crate) fn history_member(
     let built = write_history(&mut text, history)
         .map(|()| text.out)
         .map_err(|error| format!("cannot be built: {}", detail(&error)));
-    checked_member(section, built, source, losses, limits)
+    checked_member(section, built, source, losses, ctx)
 }
 
 /// What of a Keywords member's source the output can hold.
@@ -111,14 +111,15 @@ fn prefix(member: &[u8]) -> Option<&[u8]> {
 }
 
 /// The member of the regenerated text when the decoder reads it back under
-/// `limits`, else the source, charging what is not written. A read-back that
-/// `limits` refuses refuses the write.
+/// the policy of `ctx`, else the source, charging what is not written. The
+/// read-back charges `ctx`, and a read-back the session refuses refuses the
+/// write.
 fn checked_member(
     section: &str,
     built: Result<String, String>,
     source: Source<'_>,
     losses: &mut Vec<LossNote>,
-    limits: ResourceLimits,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     let refusal = match built {
         Ok(text) => {
@@ -128,7 +129,7 @@ fn checked_member(
                 .unwrap_or(DEFAULT_PREFIX)
                 .to_vec();
             member.extend_from_slice(text.as_bytes());
-            match read_back(section, &member, &text, limits) {
+            match read_back(ctx, section, &member, &text) {
                 Ok(()) => return Ok(Some(member)),
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => format!("does not read back: {}", detail(&error)),
@@ -158,19 +159,21 @@ fn checked_member(
 }
 
 /// Reads `text`, the text of `member`, as the decoder reads it from a written
-/// file under `limits`: under the allowances of a decode whose input is no
-/// larger than the compressed block the writer writes for the member. The
-/// written file holds that block, so its decode has at least these allowances.
+/// file under the policy of `ctx`: under the per-expansion allowance of a
+/// decode whose input is no larger than the compressed block the writer writes
+/// for the member. The written file holds that block, so its decode has at
+/// least this allowance. The block, as input, and the parse of `text` charge
+/// `ctx`.
 fn read_back(
+    ctx: &DecodeContext<'_>,
     section: &str,
     member: &[u8],
     text: &str,
-    limits: ResourceLimits,
 ) -> Result<(), CodecError> {
     let block = crate::writer::block(member, section, 0)?;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&block, &arena, &DecodePolicy { limits })?;
-    let allowance = ctx.per_expand_allowance();
+    let allowance = ctx
+        .policy()
+        .per_expand_allowance(u64_from_index(block.len()));
     if u64::try_from(member.len())
         .ok()
         .is_none_or(|length| length > allowance)
@@ -181,6 +184,7 @@ fn read_back(
             block.len()
         )));
     }
+    ctx.charge_input(u64_from_index(block.len()), "the Keywords block")?;
     ctx.parse_xml(text, "the Keywords text").map(drop)
 }
 
@@ -424,6 +428,17 @@ mod tests {
     use super::{checked_member, Source, DEFAULT_PREFIX};
     use crate::loss::SldprtLossCode;
 
+    fn session(
+        limits: cadmpeg_core::decode::ResourceLimits,
+    ) -> cadmpeg_core::decode::DecodeContext<'static> {
+        let arena = Box::leak(Box::new(cadmpeg_core::decode::DecodeArena::new()));
+        cadmpeg_core::decode::DecodeContext::new(
+            arena,
+            &cadmpeg_core::decode::DecodePolicy { limits },
+            cadmpeg_core::decode::DecodeDepth::Full,
+        )
+    }
+
     const SOURCE: &[u8] =
         b"\x85<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<Keywords Name=\"Part\"/>";
 
@@ -434,7 +449,7 @@ mod tests {
             built,
             source,
             &mut losses,
-            cadmpeg_core::decode::ResourceLimits::desktop(),
+            &session(cadmpeg_core::decode::ResourceLimits::desktop()),
         )
         .unwrap();
         assert_eq!(losses.len(), 1, "{losses:?}");
@@ -452,7 +467,7 @@ mod tests {
             Ok(text.to_owned()),
             source,
             &mut losses,
-            cadmpeg_core::decode::ResourceLimits::desktop(),
+            &session(cadmpeg_core::decode::ResourceLimits::desktop()),
         )
         .unwrap();
         assert!(losses.is_empty(), "{losses:?}");
@@ -553,8 +568,8 @@ mod tests {
         );
     }
 
-    /// The parse of the read-back charges the caller's ceiling on the bytes
-    /// expanded in all, and a refusal there refuses the write.
+    /// The parse of the read-back charges the encode session's ceiling on the
+    /// bytes expanded in all, and a refusal there refuses the write.
     #[test]
     fn a_read_back_past_the_expanded_bytes_ceiling_refuses_the_write() {
         let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
@@ -565,7 +580,7 @@ mod tests {
             Ok(wide(1 << 10)),
             Source::Member(SOURCE),
             &mut losses,
-            limits,
+            &session(limits),
         );
         let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = refused else {
             panic!("expected a resource refusal: {refused:?}");

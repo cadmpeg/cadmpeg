@@ -932,26 +932,23 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
     let decoded = EditableDecodeResult::from(decoded);
     let records = crate::source_records(decoded.ir(), decoded.source_fidelity()).unwrap();
     let annotations = &decoded.source_fidelity().annotations;
-    assert!(super::patch_partition(
-        decoded.ir(),
-        annotations,
-        &records,
-        0.001,
-        &cadmpeg_core::decode::DecodePolicy::desktop()
-    )
-    .unwrap()
-    .is_some());
+    let image = records
+        .iter()
+        .find(|record| record.id.as_str() == "sldprt:file:source-image#0")
+        .and_then(|record| record.data)
+        .unwrap();
+    let scan = crate::test_support::container::scan(image);
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    assert!(
+        super::patch_partition(decoded.ir(), annotations, Some(&scan), 0.001, &ctx)
+            .unwrap()
+            .is_some()
+    );
     let mut changed = decoded.ir().clone();
     changed.geometry.faces[0].color =
         Some(cadmpeg_ir::topology::Color::new(0.2, 0.3, 0.4, 1.0).unwrap());
-    let error = super::patch_partition(
-        &changed,
-        annotations,
-        &records,
-        0.001,
-        &cadmpeg_core::decode::DecodePolicy::desktop(),
-    )
-    .unwrap_err();
+    let error =
+        super::patch_partition(&changed, annotations, Some(&scan), 0.001, &ctx).unwrap_err();
     assert!(error
         .to_string()
         .contains("cannot write changed face colours"));
@@ -981,14 +978,8 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
                 native_ref: None,
             });
     }
-    let error = super::patch_partition(
-        &changed,
-        annotations,
-        &records,
-        0.001,
-        &cadmpeg_core::decode::DecodePolicy::desktop(),
-    )
-    .unwrap_err();
+    let error =
+        super::patch_partition(&changed, annotations, Some(&scan), 0.001, &ctx).unwrap_err();
     assert!(error
         .to_string()
         .contains("cannot write changed pcurve geometry or metadata"));

@@ -11,7 +11,7 @@
 
 use std::collections::{BTreeSet, HashSet};
 
-use cadmpeg_core::decode::{DecodeContext, ResourceLimits};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::{DesignConfiguration, DesignParameter};
@@ -86,7 +86,6 @@ pub(crate) fn agreement(
     misread: &HashSet<(FeatureId, String)>,
     hash_ctx: &DecodeContext<'_>,
 ) -> Result<Agreement, CodecError> {
-    let limits = hash_ctx.policy().limits;
     let kept_definitions = &unwritten.kept_definitions;
     let Some(native) = native else {
         return Ok(Agreement::default());
@@ -127,16 +126,8 @@ pub(crate) fn agreement(
     let baseline = match source {
         Source::Decoded(baseline) => baseline,
         Source::Image(image) => {
-            decoded =
-                crate::decode::decode_for_read_back(image, limits).map_err(
-                    |failure| match failure {
-                        cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
-                        other => CodecError::malformed(format_args!(
-                            "SLDPRT retained source cannot be decoded: {other}"
-                        )),
-                    },
-                )?;
-            decoded.ir()
+            decoded = crate::writer::decode_source_image(hash_ctx, image)?;
+            &decoded.ir
         }
     };
     let mut out = Agreement::default();
@@ -159,7 +150,7 @@ pub(crate) fn agreement(
         parameter_edits(ir, baseline, unwritten, &mut out);
     }
     if native_changed {
-        native_edits(ir, native, baseline, limits, &mut out)?;
+        native_edits(ir, native, baseline, hash_ctx, &mut out)?;
     }
     if configurations_changed {
         configuration_design_edits(ir, baseline, &named, unwritten, &mut out);
@@ -474,14 +465,14 @@ fn native_edits(
     ir: &CadIr,
     native: &SldprtNative,
     source: &CadIr,
-    limits: ResourceLimits,
+    ctx: &DecodeContext<'_>,
     out: &mut Agreement,
 ) -> Result<(), CodecError> {
     let source_native = source
         .native
         .namespace("sldprt")
         .map(|namespace| {
-            SldprtNative::load_under(namespace, limits, source.tolerances.linear)
+            SldprtNative::load_in(ctx, namespace, source.tolerances.linear)
                 .map_err(CodecError::from)
         })
         .transpose()?;

@@ -332,6 +332,8 @@ impl SldprtCodec {
             .iter()
             .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
             .and_then(|record| record.data);
+        let opened = writer::RetainedImage::open(ctx, records)?;
+        let image_source = opened.as_ref();
         let shared_cache = std::cell::RefCell::new(writer::SemanticWriteCache::of_source(
             decoded,
             ctx.policy().limits,
@@ -347,23 +349,25 @@ impl SldprtCodec {
             } else {
                 &source.source_fidelity.codec_digests
             };
-            // The baseline is a check, so it runs in a session of its own.
             let arena = cadmpeg_core::decode::DecodeArena::new();
-            let check = DecodeContext::new(&arena, ctx.policy(), DecodeDepth::Full);
-            let result = writer::write_semantic_with_records_cached(
-                &source.ir,
-                &source.source_fidelity.annotations,
-                source_digests,
-                records,
-                writer::SemanticWriteControls {
-                    withheld: &[],
-                    shaped: &[],
-                    ctx: &check,
-                },
-                &mut cache,
-                &mut bytes,
-            )
-            .ok();
+            let result = ctx
+                .with_arena(&arena, |check| {
+                    writer::write_semantic_with_records_cached(
+                        &source.ir,
+                        &source.source_fidelity.annotations,
+                        source_digests,
+                        records,
+                        writer::SemanticWriteControls {
+                            withheld: &[],
+                            shaped: &[],
+                            ctx: check,
+                            source: image_source,
+                        },
+                        &mut cache,
+                        &mut bytes,
+                    )
+                })
+                .ok();
             let mut shared = shared_cache.borrow_mut();
             if shared.source_baseline.is_none() {
                 shared.source_baseline = cache.source_baseline;
@@ -371,29 +375,36 @@ impl SldprtCodec {
             result?;
             (image != Some(bytes.as_slice())).then_some(bytes)
         };
-        let ((bytes, output), mut read_back) = history::write::read_back::write_until_read_back(
+        let passes = history::write::read_back::write_until_read_back(
             ir,
             digests,
             &mut |withheld| {
                 let mut bytes = Vec::new();
                 let mut cache = shared_cache.borrow_mut();
-                let output = writer::write_semantic_with_records_cached(
-                    ir,
-                    annotations,
-                    digests,
-                    records,
-                    writer::SemanticWriteControls {
-                        withheld,
-                        shaped,
-                        ctx,
-                    },
-                    &mut cache,
-                    &mut bytes,
-                )?;
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let output = ctx.with_arena(&arena, |ctx| {
+                    writer::write_semantic_with_records_cached(
+                        ir,
+                        annotations,
+                        digests,
+                        records,
+                        writer::SemanticWriteControls {
+                            withheld,
+                            shaped,
+                            ctx,
+                            source: image_source,
+                        },
+                        &mut cache,
+                        &mut bytes,
+                    )
+                })?;
                 Ok((bytes, output))
             },
             &round_trip,
-        )?;
+        );
+        // A later path of the write compares the source this one decoded.
+        shared_cache.borrow().keep_source(decoded);
+        let ((bytes, output), mut read_back) = passes?;
         let writer::SemanticOutput {
             dialect,
             coverage,
@@ -406,19 +417,14 @@ impl SldprtCodec {
         } = output;
         let unwritten_edits = unwritten_edits.render(&read_back);
         let shared = shared_cache.into_inner();
-        shared.keep_source(decoded);
         let native = match shared.native {
             writer::CachedNative::Loaded(loaded) => loaded,
             writer::CachedNative::Unloaded => ir
                 .native
                 .namespace("sldprt")
                 .map(|namespace| {
-                    native::SldprtNative::load_under(
-                        namespace,
-                        ctx.policy().limits,
-                        ir.tolerances.linear,
-                    )
-                    .map_err(CodecError::from)
+                    native::SldprtNative::load_in(ctx, namespace, ir.tolerances.linear)
+                        .map_err(CodecError::from)
                 })
                 .transpose()?,
         };

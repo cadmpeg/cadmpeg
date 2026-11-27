@@ -522,7 +522,7 @@ impl<'a> Reduction<'a> {
             culprit,
             native,
         } = failure;
-        if matches!(error, CodecError::ResourceLimit(_) | CodecError::Io(_)) {
+        if matches!(error, CodecError::ResourceLimit(_)) {
             return Err(error);
         }
         let dropped_cause = match native {

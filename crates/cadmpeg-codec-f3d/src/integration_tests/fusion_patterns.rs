@@ -218,13 +218,14 @@ fn design_bulk_stream(bytes: &[u8]) -> Vec<u8> {
     let index = archive.index_for_name(NAME).expect("Design BulkStream");
     assert!(crate::zip_write::is_zstd_member(&mut archive, index).expect("method"));
     let mut member = archive.by_index_raw(index).expect("raw member");
-    crate::zip_write::expand_zstd_member(
-        &mut member,
-        NAME,
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-    )
-    .expect("expand BulkStream")
+    let session = cadmpeg_core::decode::test_support::service_decode_context();
+    session
+        .charge_input(
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
+            "the archive",
+        )
+        .expect("the archive fits the session");
+    crate::zip_write::expand_member(&session, &mut member, NAME, true).expect("expand BulkStream")
 }
 
 #[test]

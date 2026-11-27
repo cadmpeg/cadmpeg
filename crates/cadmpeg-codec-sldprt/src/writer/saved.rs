@@ -62,7 +62,7 @@ pub(crate) fn restore(
             losses.extend(unwritten_losses(&restored.unwritten));
             Ok(Some(restored.ir))
         }
-        Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => Err(error),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
             notes.push(format!(
                 "the history arenas of the document read from CADIR are not restored from its \

@@ -492,6 +492,7 @@ pub(crate) fn write_in_native_envelope(
         &policy,
         cadmpeg_core::decode::DecodeDepth::Full,
     );
+    let source = crate::writer::RetainedImage::open(&ctx, &records)?;
     crate::writer::write_semantic_with_records_cached(
         &ir,
         &fidelity.annotations,
@@ -501,6 +502,7 @@ pub(crate) fn write_in_native_envelope(
             withheld: &[],
             shaped: &[],
             ctx: &ctx,
+            source: source.as_ref(),
         },
         &mut crate::writer::SemanticWriteCache::default(),
         writer,

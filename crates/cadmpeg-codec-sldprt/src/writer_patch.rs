@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -11,29 +11,20 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::Annotations;
 
-use crate::SourceRecord;
-
 pub(crate) fn patch_partition(
     ir: &CadIr,
     annotations: &Annotations,
-    retained_records: &[SourceRecord<'_>],
+    source_scan: Option<&crate::container::ContainerScan<'_>>,
     scale: f64,
-    policy: &DecodePolicy,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<(String, Vec<u8>)>, CodecError> {
     if !crate::writer::requires_native_partition(ir) {
         return Ok(None);
     }
-    let Some(source) = retained_records
-        .iter()
-        .find(|record| record.id.as_str() == "sldprt:file:source-image#0")
-        .and_then(|record| record.data)
-    else {
+    let Some(scan) = source_scan else {
         return Ok(None);
     };
-    let arena = DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(source, &arena, policy)?;
-    let scan = crate::container::scan(&ctx, root)?;
-    let Some(selected) = crate::container::select_active_parasolid_site(&scan) else {
+    let Some(selected) = crate::container::select_active_parasolid_site(scan) else {
         return Ok(None);
     };
     let crate::container::Section::Block(block) = selected.section else {
@@ -82,11 +73,14 @@ pub(crate) fn patch_partition(
         .iter()
         .map(|(_, (_, payload, header))| (payload.as_slice(), *header))
         .collect::<Vec<_>>();
-    let native = crate::brep::graph::decode_bodies(
-        &ctx,
-        &bodies,
-        &cadmpeg_ir::stream_name!("native-patch-baseline"),
-    )?;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let native = ctx.with_arena(&arena, |ctx| {
+        crate::brep::graph::decode_bodies(
+            ctx,
+            &bodies,
+            &cadmpeg_ir::stream_name!("native-patch-baseline"),
+        )
+    })?;
     let colors = crate::writer::face_colors(ir);
     if native
         .faces

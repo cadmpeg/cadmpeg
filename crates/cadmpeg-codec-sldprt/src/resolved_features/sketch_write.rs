@@ -648,7 +648,7 @@ pub(super) fn same_sketch_point(left: Point2, right: Point2) -> bool {
 pub(super) fn patch_line_profiles(
     ir: &cadmpeg_ir::CadIr,
     native: &mut crate::native::SldprtNative,
-    limits: cadmpeg_core::decode::ResourceLimits,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut requested = BTreeMap::<(String, usize, u32), Point3>::new();
     let mut streams = BTreeMap::<(String, usize), StreamPatches>::new();
@@ -764,7 +764,7 @@ pub(super) fn patch_line_profiles(
                     "SLDPRT sketch lane {lane_id} is missing"
                 ))
             })?;
-        edit_stream(&mut lane.native_payload, stream, limits, |ctx, body| {
+        edit_stream(ctx, &mut lane.native_payload, stream, |ctx, body| {
             crate::brep::topology::patch_points(body, &patches.points).map_err(|attr| {
                 cadmpeg_core::CodecError::malformed(format_args!(
                     "SLDPRT sketch point {attr} is missing"
@@ -1003,23 +1003,37 @@ fn patch_direct_curve_body(
     Ok(())
 }
 
+/// Applies `edit` to the body of stream `stream_ordinal` of `payload`. The
+/// read of `payload` charges `ctx`.
 fn edit_stream(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     payload: &mut Vec<u8>,
     stream_ordinal: usize,
-    limits: cadmpeg_core::decode::ResourceLimits,
     edit: impl FnOnce(
         &cadmpeg_core::decode::DecodeContext<'_>,
         &mut [u8],
     ) -> Result<(), cadmpeg_core::CodecError>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::read_root(
-        &mut std::io::Cursor::new(payload.as_slice()),
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy { limits },
-        cadmpeg_core::decode::DecodeDepth::Full,
+    ctx.with_arena(&arena, |ctx| {
+        edit_stream_in(ctx, payload, stream_ordinal, edit)
+    })
+}
+
+fn edit_stream_in(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    payload: &mut Vec<u8>,
+    stream_ordinal: usize,
+    edit: impl FnOnce(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+        &mut [u8],
+    ) -> Result<(), cadmpeg_core::CodecError>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_input(
+        cadmpeg_core::decode::u64_from_index(payload.len()),
+        "SLDPRT sketch lane payload",
     )?;
-    let stream = crate::parasolid::extract_streams_with_offsets(payload, &ctx)?
+    let stream = crate::parasolid::extract_streams_with_offsets(payload, ctx)?
         .streams
         .into_iter()
         .nth(stream_ordinal)
@@ -1032,7 +1046,7 @@ fn edit_stream(
         .position(|candidate| candidate == stream.payload.as_slice())
     {
         return edit(
-            &ctx,
+            ctx,
             &mut payload[start + body_offset..start + stream.payload.len()],
         );
     }
@@ -1042,7 +1056,7 @@ fn edit_stream(
         )
     })?;
     let mut inflated = stream.payload;
-    edit(&ctx, &mut inflated[body_offset..])?;
+    edit(ctx, &mut inflated[body_offset..])?;
     let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
     encoder.write_all(&inflated)?;
     payload.splice(start..end, encoder.finish()?);

@@ -2,7 +2,6 @@
 //! Configuration records for native write.
 
 use crate::records::{Configuration, FeatureHistory};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::parameters::{DesignConfiguration, ParameterValue};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -153,7 +152,6 @@ fn sync_configuration_design_state(
     exact: Option<&crate::resolved_features::profiles::ExactProfiles>,
     edits: &mut super::edits::SourceEdits<'_>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
-    let policy = *edits.ctx().policy();
     let unbound = crate::resolved_features::profiles::ExactProfiles::default();
     let profiles = exact.unwrap_or(&unbound);
     let hash_ctx = edits.ctx();
@@ -176,17 +174,8 @@ fn sync_configuration_design_state(
         })
         .collect::<HashMap<_, _>>();
     let global_owners = global_parameter_owners(&ir.model.features);
-    let validation_bytes = native
-        .as_ref()
-        .into_iter()
-        .flat_map(|native| &native.feature_input_lanes)
-        .flat_map(|lane| lane.native_payload.iter().copied())
-        .collect::<Vec<_>>();
-    let validation_arena = DecodeArena::new();
-    let (validation_ctx, _) =
-        DecodeContext::from_root_bytes(&validation_bytes, &validation_arena, &policy)?;
     if parameters_with_incoherent_evaluated_values(
-        &validation_ctx,
+        hash_ctx,
         &ir.model.parameters,
         &feature_names,
         &global_owners,
@@ -203,15 +192,8 @@ fn sync_configuration_design_state(
         ));
     };
     let mut current_projection = ir.clone();
-    let design_bytes = native
-        .feature_input_lanes
-        .iter()
-        .flat_map(|lane| lane.native_payload.iter().copied())
-        .collect::<Vec<_>>();
-    let design_arena = DecodeArena::new();
-    let (design_ctx, _) = DecodeContext::from_root_bytes(&design_bytes, &design_arena, &policy)?;
     let unprojected = project_configuration_design_states(
-        &design_ctx,
+        hash_ctx,
         &mut current_projection,
         &native.feature_histories,
         &native.feature_input_lanes,
@@ -227,15 +209,8 @@ fn sync_configuration_design_state(
     settle_projected_configurations(&mut current_projection);
     align_configuration_parameter_kinds(&mut current_projection);
     let mut current_annotations = annotations.clone();
-    let projection_bytes = native
-        .feature_input_lanes
-        .iter()
-        .flat_map(|lane| lane.native_payload.iter().copied())
-        .collect::<Vec<_>>();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&projection_bytes, &arena, &policy)?;
     let (projection_losses, mut relation_points) = project_configuration_sketch_states(
-        &ctx,
+        hash_ctx,
         &mut current_projection,
         &native.feature_histories,
         &native.feature_input_lanes,
@@ -321,15 +296,8 @@ fn sync_configuration_design_state(
     patch_configuration_parameter_scalars(ir, native)?;
 
     let mut projected = ir.clone();
-    let design_bytes = native
-        .feature_input_lanes
-        .iter()
-        .flat_map(|lane| lane.native_payload.iter().copied())
-        .collect::<Vec<_>>();
-    let design_arena = DecodeArena::new();
-    let (design_ctx, _) = DecodeContext::from_root_bytes(&design_bytes, &design_arena, &policy)?;
     let unprojected = project_configuration_design_states(
-        &design_ctx,
+        hash_ctx,
         &mut projected,
         &native.feature_histories,
         &native.feature_input_lanes,
@@ -345,15 +313,8 @@ fn sync_configuration_design_state(
     settle_projected_configurations(&mut projected);
     align_configuration_parameter_kinds(&mut projected);
     let mut projected_annotations = annotations.clone();
-    let projection_bytes = native
-        .feature_input_lanes
-        .iter()
-        .flat_map(|lane| lane.native_payload.iter().copied())
-        .collect::<Vec<_>>();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&projection_bytes, &arena, &policy)?;
     let (projection_losses, projected_points) = project_configuration_sketch_states(
-        &ctx,
+        hash_ctx,
         &mut projected,
         &native.feature_histories,
         &native.feature_input_lanes,

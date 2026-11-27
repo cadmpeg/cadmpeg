@@ -3,18 +3,17 @@
 //! from the decode of its retained archive and the edits its `design`
 //! records state.
 
-use std::io::Cursor;
-
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::saved::{restore_history, saved_source, HistoryText};
 use cadmpeg_ir::codec::write::target::ResolvedWrite;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure};
 use cadmpeg_ir::design::expr::ExpressionDialect;
 use cadmpeg_ir::design::units::Unit;
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::features::parameters::DesignParameter;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::report::strictness::Strictness;
 
 use super::primitives::{configuration_targets, decoded_configurations, f3d_native};
 use crate::loss::F3dLossCode;
@@ -37,14 +36,12 @@ pub(crate) fn restore(
     let Some(image) = saved_source(ctx, input, ids::FILE_SOURCE_IMAGE_ID, replays)? else {
         return Ok(None);
     };
-    let restored = F3dCodec
-        .decode(
-            &mut Cursor::new(image),
-            &DecodeOptions {
-                policy: *ctx.policy(),
-                ..DecodeOptions::default()
-            },
-        )
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let restored = ctx
+        .with_arena(&arena, |ctx| {
+            let root = ctx.open_input(image, "F3D retained source archive")?;
+            F3dCodec.decode_with_context(ctx, root, &Strictness::default())
+        })
         .map_err(|failure| match failure {
             DecodeFailure::Codec(error) => error,
             other => CodecError::malformed(format!(
@@ -67,7 +64,7 @@ pub(crate) fn restore(
             unrestored(reason, notes, losses);
             Ok(None)
         }
-        Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => Err(error),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
             unrestored(error.to_string(), notes, losses);
             Ok(None)

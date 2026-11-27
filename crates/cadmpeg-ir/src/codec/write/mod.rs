@@ -105,9 +105,9 @@ pub trait EncoderBackend {
     const TARGET: Self::Target;
 
     /// Plans a write from the request resolved by [`Encoder::plan`], in the
-    /// encode's session `ctx`, which holds the caller's limits. The
-    /// cumulative ceilings hold per session: a decode session that the
-    /// writer opens of its own starts its totals at zero.
+    /// encode's session `ctx`, which holds the caller's limits. One encode
+    /// is one session: each read of the retained source charges `ctx`, so
+    /// the cumulative ceilings bound the whole write.
     fn plan_resolved(
         &self,
         ctx: &DecodeContext<'_>,

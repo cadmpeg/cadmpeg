@@ -143,7 +143,7 @@ fn protein_rejections_preserve_valid_records_and_report_notes() {
         &protein,
         &edits,
         &mut notes,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
     )
     .unwrap();
     assert_eq!(
@@ -223,7 +223,7 @@ fn a_zstandard_protein_archive_decodes_and_patches() {
         &protein,
         &edits,
         &mut notes,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
     )
     .expect("patch a Zstandard Protein archive");
     assert_eq!(
@@ -1739,7 +1739,7 @@ fn a_protein_appearance_record_truncated_past_its_guid_is_refused() {
         &protein,
         &edits,
         &mut Vec::new(),
-        cadmpeg_core::decode::ResourceLimits::desktop(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
     )
     .expect_err("a record that ends at its GUID places no colour carrier");
     assert!(

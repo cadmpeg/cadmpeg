@@ -28,9 +28,7 @@ pub(crate) use accounting::{Held, Unwritten, UnwrittenAttributes};
 
 use crate::native::SldprtNative;
 use cadmpeg_core::convert::f32_from_f64;
-use cadmpeg_core::decode::{
-    index_from_u32, DecodeArena, DecodeContext, DecodePolicy, ResourceLimits,
-};
+use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, ResourceLimits};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationTarget;
 use cadmpeg_ir::appearance::AppearanceTarget;
@@ -189,13 +187,61 @@ impl SemanticWriteCache {
     }
 }
 
-/// Per-pass withheld features and shaping edits for one semantic write, and
-/// the encode session it reads in.
+/// Per-pass withheld features and shaping edits for one semantic write, the
+/// encode session it reads in, and the retained source image it reads.
 #[derive(Clone, Copy)]
 pub(crate) struct SemanticWriteControls<'a> {
     pub(crate) withheld: &'a [(cadmpeg_ir::features::FeatureId, String)],
     pub(crate) shaped: &'a [crate::history::write::brep_agreement::ShapingEdit],
     pub(crate) ctx: &'a DecodeContext<'a>,
+    pub(crate) source: Option<&'a RetainedImage<'a>>,
+}
+
+/// The retained source image of an encode, read once as input of the encode
+/// session: its root view and its container scan.
+pub(crate) struct RetainedImage<'a> {
+    root: cadmpeg_core::decode::View<'a>,
+    scan: crate::container::ContainerScan<'a>,
+}
+
+impl<'a> RetainedImage<'a> {
+    /// Opens and scans the source image `records` retain, in `ctx`.
+    pub(crate) fn open(
+        ctx: &DecodeContext<'_>,
+        records: &[SourceRecord<'a>],
+    ) -> Result<Option<Self>, CodecError> {
+        source_image(records)
+            .map(|bytes| Self::read(ctx, bytes))
+            .transpose()
+    }
+
+    /// Opens and scans the source image `bytes`, in `ctx`.
+    fn read(ctx: &DecodeContext<'_>, bytes: &'a [u8]) -> Result<Self, CodecError> {
+        let root = ctx.open_input(bytes, SOURCE_IMAGE_INPUT)?;
+        let arena = DecodeArena::new();
+        let scan = ctx.with_arena(&arena, |ctx| crate::container::scan(ctx, root))?;
+        Ok(Self { root, scan })
+    }
+}
+
+const SOURCE_IMAGE_INPUT: &str = "SLDPRT retained source image";
+
+/// The source image `bytes` decoded in `ctx`, which reads them as input.
+pub(crate) fn decode_source_image(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<cadmpeg_ir::codec::Decoded, CodecError> {
+    decode_source_root(ctx, ctx.open_input(bytes, SOURCE_IMAGE_INPUT)?)
+}
+
+fn decode_source_root(
+    ctx: &DecodeContext<'_>,
+    root: cadmpeg_core::decode::View<'_>,
+) -> Result<cadmpeg_ir::codec::Decoded, CodecError> {
+    let arena = DecodeArena::new();
+    ctx.with_arena(&arena, |ctx| {
+        crate::decode::decode_without_digests(ctx, root)
+    })
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
@@ -216,10 +262,11 @@ pub(crate) fn write_semantic_with_records(
 ) -> Result<SemanticOutput, CodecError> {
     let mut cache = SemanticWriteCache::default();
     let arena = DecodeArena::new();
-    let policy = DecodePolicy {
+    let policy = cadmpeg_core::decode::DecodePolicy {
         limits: ResourceLimits::desktop(),
     };
     let ctx = DecodeContext::new(&arena, &policy, cadmpeg_core::decode::DecodeDepth::Full);
+    let source = RetainedImage::open(&ctx, retained_records)?;
     write_semantic_with_records_cached(
         ir,
         annotations,
@@ -229,6 +276,7 @@ pub(crate) fn write_semantic_with_records(
             withheld,
             shaped,
             ctx: &ctx,
+            source: source.as_ref(),
         },
         &mut cache,
         writer,
@@ -254,19 +302,18 @@ pub(crate) fn write_semantic_with_records_cached(
         withheld,
         shaped,
         ctx,
+        source: source_image,
     } = controls;
     let SemanticWriteCache {
         source_baseline,
         native: cached_native,
     } = cache;
-    let policy = *ctx.policy();
-    let limits = policy.limits;
     if matches!(cached_native, CachedNative::Unloaded) {
         let loaded = ir
             .native
             .namespace("sldprt")
             .map(|namespace| {
-                SldprtNative::load_under(namespace, limits, ir.tolerances.linear)
+                SldprtNative::load_in(ctx, namespace, ir.tolerances.linear)
                     .map_err(CodecError::from)
             })
             .transpose()?;
@@ -332,24 +379,13 @@ pub(crate) fn write_semantic_with_records_cached(
         )),
         );
     }
-    let source_arena = DecodeArena::new();
-    let source_context = source_image(retained_records)
-        .map(|bytes| DecodeContext::from_root_bytes(bytes, &source_arena, &policy))
-        .transpose()?;
-    let source_scan = source_context
-        .as_ref()
-        .map(|(ctx, root)| crate::container::scan(ctx, *root))
-        .transpose()?;
-    if source_scan
-        .as_ref()
-        .is_some_and(|scan| !scan.given_up.is_empty())
-    {
+    let source_scan = source_image.map(|image| &image.scan);
+    if source_scan.is_some_and(|scan| !scan.given_up.is_empty()) {
         return Err(CodecError::NotImplemented(
             "SLDPRT semantic writes require every part of the retained source to parse".into(),
         ));
     }
     let member_records = source_scan
-        .as_ref()
         .map(|scan| member_records(scan, retained_records, annotations))
         .transpose()?
         .flatten();
@@ -363,22 +399,17 @@ pub(crate) fn write_semantic_with_records_cached(
     // `export:value.unwritable` entries: texts cut to their field's width.
     let mut cut = Vec::new();
     for (id, held) in
-        default_properties::unwritten(&normalized, retained_records, annotations, &policy)?
+        default_properties::unwritten(&normalized, retained_records, annotations, ctx)?
     {
         unwritten.record(&id, Unwritten::SavedProperty, held);
     }
-    let retained_partition = retained_partition(
-        &normalized,
-        digests,
-        source_scan.as_ref(),
-        native.as_ref(),
-        ctx,
-    )?;
+    let retained_partition =
+        retained_partition(&normalized, digests, source_scan, native.as_ref(), ctx)?;
     if native
         .as_ref()
         .is_some_and(|native| !native.feature_histories.is_empty())
     {
-        retained_source_baseline(source_baseline, source_context.as_ref())?;
+        retained_source_baseline(source_baseline, ctx, source_image)?;
     }
     let linear_resolution = precision::written_linear_resolution(normalized.tolerances.linear);
     // The IR stores canonical millimetres; Parasolid stores metres.
@@ -390,9 +421,9 @@ pub(crate) fn write_semantic_with_records_cached(
         crate::writer_patch::patch_partition(
             &normalized,
             annotations,
-            retained_records,
+            source_scan,
             length_scale,
-            &policy,
+            ctx,
         )?
     } else {
         None
@@ -436,7 +467,7 @@ pub(crate) fn write_semantic_with_records_cached(
             digests,
             &mut native,
             annotations,
-            retained_records,
+            source_scan,
             &mut attempt_cut,
             &mut edits,
         ) {
@@ -487,7 +518,7 @@ pub(crate) fn write_semantic_with_records_cached(
         losses.extend(keywords_text::readable_keywords(&normalized, native));
     }
     if let Some(source_definitions) = &source_definitions {
-        losses.extend(source_definitions.notes(&normalized, native.as_ref(), limits));
+        losses.extend(source_definitions.notes(&normalized, native.as_ref(), ctx));
     }
     let validation = validate_with_model_snapshot(&mut normalized)?;
     let ir = &normalized;
@@ -510,7 +541,6 @@ pub(crate) fn write_semantic_with_records_cached(
     } else if brep_empty {
         losses.extend(reduce::faceless_bodies(ir));
         if source_scan
-            .as_ref()
             .is_some_and(|scan| crate::container::select_active_parasolid_site(scan).is_none())
         {
             // The source holds no partition either.
@@ -563,7 +593,7 @@ pub(crate) fn write_semantic_with_records_cached(
         ir,
         retained_records,
         annotations,
-        source_scan.as_ref(),
+        source_scan,
         &generated_partition_sections,
     );
     let mut retained_swobjects = owners.patchable.clone();
@@ -579,7 +609,7 @@ pub(crate) fn write_semantic_with_records_cached(
                 crate::codec_digests::baseline(digests, SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE);
             let material = swobjects_material_local_sha256(ctx, ir)?;
             if material_baseline != Some(material.as_str()) {
-                let baseline = retained_source_baseline(source_baseline, source_context.as_ref())?;
+                let baseline = retained_source_baseline(source_baseline, ctx, source_image)?;
                 losses.extend(materials::retained_materials_kept(
                     ir,
                     baseline.map(|baseline| &baseline.decoded.ir),
@@ -598,8 +628,7 @@ pub(crate) fn write_semantic_with_records_cached(
             // A source that does not decode leaves the note saying the write
             // cannot tell. A decode that the caller's limits refuse refuses
             // the write.
-            let baseline = match retained_source_baseline(source_baseline, source_context.as_ref())
-            {
+            let baseline = match retained_source_baseline(source_baseline, ctx, source_image) {
                 Ok(baseline) => baseline,
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(_) => None,
@@ -654,21 +683,17 @@ pub(crate) fn write_semantic_with_records_cached(
         members.push(&mut sections, &mut unwritten, "Units".into(), units);
     }
     if !ir.model.tessellations.is_empty() {
-        let baseline = retained_source_baseline(source_baseline, source_context.as_ref())?;
-        if let Some(retained) = retained_display_sections(
-            ir,
-            baseline.map(|baseline| &baseline.decoded),
-            source_scan.as_ref(),
-        ) {
+        let baseline = retained_source_baseline(source_baseline, ctx, source_image)?;
+        if let Some(retained) =
+            retained_display_sections(ir, baseline.map(|baseline| &baseline.decoded), source_scan)
+        {
             for (section, payload) in retained {
                 members.push(&mut sections, &mut unwritten, section, payload);
             }
         } else {
             let (payload, omitted) = match tessellation_payload(ir, length_scale) {
                 Ok(written) => written,
-                Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => {
-                    return Err(error)
-                }
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
                     let ids = ir
                         .model
@@ -724,8 +749,8 @@ pub(crate) fn write_semantic_with_records_cached(
         .as_ref()
         .is_some_and(|native| !native.feature_histories.is_empty())
     {
-        let baseline = retained_source_baseline(source_baseline, source_context.as_ref())?;
-        match (baseline, source_scan.as_ref()) {
+        let baseline = retained_source_baseline(source_baseline, ctx, source_image)?;
+        match (baseline, source_scan) {
             (Some(baseline), Some(scan)) => retained_history_sections(baseline, scan)?,
             _ => Vec::new(),
         }
@@ -750,7 +775,7 @@ pub(crate) fn write_semantic_with_records_cached(
             &retained_histories,
             &source_blocks,
             &mut losses,
-            limits,
+            ctx,
         )? {
             Some(payload) => history_members.push((section, history.id.as_str(), payload)),
             None => {
@@ -790,13 +815,13 @@ pub(crate) fn write_semantic_with_records_cached(
                 source_lanes.get(lane.id.as_str()).copied(),
                 histories,
                 &feature_input_renames,
-                limits,
+                ctx,
                 ir.tolerances.linear,
             )?,
         );
     }
     let patch_active_configuration = if input_active_configuration.is_some() {
-        let baseline = retained_source_baseline(source_baseline, source_context.as_ref())?;
+        let baseline = retained_source_baseline(source_baseline, ctx, source_image)?;
         baseline.is_none_or(|baseline| {
             active_configuration_intent(&baseline.decoded.ir) != input_active_configuration
         })
@@ -883,8 +908,8 @@ pub(crate) fn write_semantic_with_records_cached(
     let written_dialect =
         crate::dialect::SldprtDialect::from_declaration(written_declaration.as_deref()).id();
 
-    let type_ids = section_type_ids(source_scan.as_ref(), &sections);
-    let envelope = envelope::build(&sections, &type_ids, source_scan.as_ref())?;
+    let type_ids = section_type_ids(source_scan, &sections);
+    let envelope = envelope::build(&sections, &type_ids, source_scan)?;
     writer.write_all(&envelope.bytes)?;
     losses.extend(envelope.losses());
     let written_streams = sections
@@ -2177,11 +2202,7 @@ fn opaque_blocks(
                 .native
                 .namespace("sldprt")
                 .map(|namespace| {
-                    SldprtNative::load_under(
-                        namespace,
-                        patches.ctx.policy().limits,
-                        ir.tolerances.linear,
-                    )
+                    SldprtNative::load_in(patches.ctx, namespace, ir.tolerances.linear)
                 })
                 .transpose()
                 .map_err(CodecError::from)?;
@@ -2246,7 +2267,7 @@ fn opaque_blocks(
                 record.id.as_str(),
                 &mut payload,
                 &|id| patches.edited_parameters.contains(id),
-                patches.ctx.policy().limits,
+                patches.ctx,
             )?);
         }
         if let Some(active_name) = active_name {
@@ -2746,12 +2767,11 @@ fn prepare_history(
     digests: &CodecDigests,
     native: &mut Option<SldprtNative>,
     annotations: &Annotations,
-    retained_records: &[SourceRecord<'_>],
+    source_scan: Option<&crate::container::ContainerScan<'_>>,
     cut: &mut Vec<String>,
     edits: &mut crate::history::write::edits::SourceEdits<'_>,
 ) -> Result<crate::history::write::features::PreparedFeatures, CodecError> {
     let ctx = edits.ctx();
-    let limits = ctx.policy().limits;
     let feature_name_changes =
         crate::history::write::feature_name_changes(normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
@@ -2784,11 +2804,9 @@ fn prepare_history(
             annotations,
             edits,
             |lanes| {
-                source_image(retained_records)
-                    .map(|image| {
-                        crate::resolved_features::assembly::source_image_profiles(
-                            image, lanes, limits,
-                        )
+                source_scan
+                    .map(|scan| {
+                        crate::resolved_features::assembly::source_image_profiles(ctx, scan, lanes)
                     })
                     .transpose()
             },
@@ -2862,7 +2880,7 @@ fn lane_payload(
     stored: Option<&crate::records::FeatureInputLane>,
     histories: &[crate::records::FeatureHistory],
     renames: &[crate::history::write::features::FeatureInputRename],
-    limits: ResourceLimits,
+    ctx: &DecodeContext<'_>,
     linear: cadmpeg_ir::scalar::PositiveLength,
 ) -> Result<Vec<u8>, CodecError> {
     if stored == Some(lane) {
@@ -2870,7 +2888,7 @@ fn lane_payload(
         splice_renamed_names(lane, &mut payload, renames)?;
         return Ok(payload);
     }
-    resolved_feature_payload(lane, histories, renames, limits, linear)
+    resolved_feature_payload(lane, histories, renames, ctx, linear)
 }
 
 /// The bytes written for one feature-input lane.
@@ -2884,13 +2902,10 @@ fn resolved_feature_payload(
     lane: &crate::records::FeatureInputLane,
     histories: &[crate::records::FeatureHistory],
     renames: &[crate::history::write::features::FeatureInputRename],
-    limits: ResourceLimits,
+    ctx: &DecodeContext<'_>,
     linear: cadmpeg_ir::scalar::PositiveLength,
 ) -> Result<Vec<u8>, CodecError> {
     const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&lane.native_payload, &arena, &DecodePolicy { limits })?;
     let expected_classes =
         crate::resolved_features::names::class_declarations(&lane.native_payload, &lane.id)?;
     if lane.classes != expected_classes {
@@ -2902,7 +2917,7 @@ fn resolved_feature_payload(
     // Every field of an object-name record, the value included, states the
     // payload bytes at `offset`.
     let expected_names =
-        crate::resolved_features::names::object_names(&ctx, &lane.native_payload, &lane.id)?;
+        crate::resolved_features::names::object_names(ctx, &lane.native_payload, &lane.id)?;
     if lane.names.len() != expected_names.len()
         || lane
             .names
@@ -2956,7 +2971,7 @@ fn resolved_feature_payload(
         &expected_lane.classes,
     )?;
     crate::resolved_features::bindings::bind_scalar_operands(
-        &ctx,
+        ctx,
         histories,
         std::slice::from_mut(&mut expected_lane),
         linear,
@@ -3531,22 +3546,21 @@ fn active_configuration_intent(ir: &CadIr) -> Option<ActiveConfigurationIntent<'
 
 fn retained_source_baseline<'a>(
     baseline: &'a mut Option<Arc<RetainedSource>>,
-    source: Option<&(DecodeContext<'_>, cadmpeg_core::decode::View<'_>)>,
+    ctx: &DecodeContext<'_>,
+    source: Option<&RetainedImage<'_>>,
 ) -> Result<Option<&'a RetainedSource>, CodecError> {
     if baseline.is_none() {
-        let Some((ctx, root)) = source else {
+        let Some(image) = source else {
             return Ok(None);
         };
         let limits = ctx.policy().limits;
-        let mut decoded = crate::decode::decode_without_digests(ctx, *root)?;
+        let mut decoded = decode_source_root(ctx, image.root)?;
         sort_arenas(&mut decoded.ir);
         let native = decoded
             .ir
             .native
             .namespace("sldprt")
-            .map(|namespace| {
-                SldprtNative::load_under(namespace, limits, decoded.ir.tolerances.linear)
-            })
+            .map(|namespace| SldprtNative::load_in(ctx, namespace, decoded.ir.tolerances.linear))
             .transpose()?;
         *baseline = Some(Arc::new(RetainedSource {
             limits,

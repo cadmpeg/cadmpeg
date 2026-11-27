@@ -258,7 +258,7 @@ pub(crate) fn patch_protein_appearances(
     protein: &[u8],
     edits: &BTreeMap<String, ProteinAppearanceEdit>,
     notes: &mut Vec<String>,
-    limits: cadmpeg_core::decode::ResourceLimits,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<(Vec<u8>, std::collections::BTreeSet<String>), CodecError> {
     let mut archive = zip::ZipArchive::new(Cursor::new(protein)).map_err(|error| {
         CodecError::malformed(format_args!("cannot open nested Protein ZIP: {error}"))
@@ -295,16 +295,7 @@ pub(crate) fn patch_protein_appearances(
                     crate::container::MAX_ARCHIVE_BYTES
                 )));
             }
-            let bytes = if zstd {
-                crate::zip_write::expand_zstd_member(
-                    &mut entry,
-                    &name,
-                    cadmpeg_core::decode::u64_from_index(protein.len()),
-                    limits,
-                )?
-            } else {
-                crate::container::read_entry_bounded(&mut entry, declared_size, &name)?
-            };
+            let bytes = crate::zip_write::expand_member(ctx, &mut entry, &name, zstd)?;
             (name, options, bytes)
         };
         let expanded = zstd.then(|| bytes.clone());
