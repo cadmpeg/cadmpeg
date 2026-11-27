@@ -1000,3 +1000,56 @@ fn a_joined_loft_requires_a_solid_with_enough_faces_in_the_state_before_it() {
         Err(Unproved::StateFailed)
     ));
 }
+
+/// `legacy_model` with the attribute of the cap face `index` replaced by the
+/// generator `generator` and the tail `tail`.
+fn legacy_cap(index: usize, generator: i64, tail: [i64; 3]) -> CadIr {
+    let mut model = legacy_model();
+    let values = &mut model.model.attributes[index].values;
+    values[7] = Some(AttributeValue::Integer(generator));
+    values.truncate(9);
+    values.extend(tail.map(|value| Some(AttributeValue::Integer(value))));
+    model
+}
+
+#[test]
+fn a_joined_legacy_loft_admits_split_caps_and_one_unnamed_curve_per_section() {
+    let joined = |model: &CadIr, curves: fn(usize) -> Vec<i64>| {
+        legacy_loft_in(model, 17, [19, 23], curves, true).is_some()
+    };
+    let strict = |model: &CadIr, curves: fn(usize) -> Vec<i64>| {
+        legacy_loft(model, 17, [19, 23], curves).is_some()
+    };
+    // Two named faces of one section and none of the other.
+    let split = legacy_cap(1, 17, [0, 19, 260]);
+    assert!(joined(&split, legacy_curves));
+    assert!(!strict(&split, legacy_curves));
+    // One cap face, one curve of each section without a side face.
+    let one_cap = legacy_cap(1, 99, [0, 23, 260]);
+    let extra = |section: usize| [vec![8, 9], vec![3, 4]][section].clone();
+    assert!(joined(&one_cap, extra));
+    assert!(!strict(&one_cap, extra));
+    assert!(!strict(&legacy_model(), extra));
+    // Two unnamed curves of a section exceed the merged end.
+    assert!(!joined(&one_cap, |section| [vec![8, 9, 10], vec![3]]
+        [section]
+        .clone()));
+    // A cap of another section or no cap at all is not a loft cap.
+    assert!(!joined(&legacy_cap(1, 17, [0, 31, 260]), legacy_curves));
+    let mut capless = legacy_cap(0, 99, [0, 19, 260]);
+    capless.model.attributes[1] = legacy_cap(1, 99, [0, 23, 260]).model.attributes[1].clone();
+    assert!(!joined(&capless, legacy_curves));
+    // A named curve outside the section boundary is a face of another loft.
+    assert!(!joined(&one_cap, |section| [vec![9], vec![3]][section].clone()));
+    // A joined loft of another generator is not this loft.
+    assert!(legacy_loft_in(&split, 99, [19, 23], legacy_curves, true).is_none());
+}
+
+#[test]
+fn a_joined_loft_with_split_caps_is_proved_by_the_preceding_state() {
+    let states = PairStates {
+        after: (legacy_cap(1, 17, [0, 19, 260]), held),
+        before: (model(), held),
+    };
+    assert!(join_proof(Some(&states)).is_ok());
+}

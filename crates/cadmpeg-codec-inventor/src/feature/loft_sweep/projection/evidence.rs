@@ -584,7 +584,8 @@ pub(in crate::feature::loft_sweep) fn loft_proof(
 }
 
 /// Joined loft result proof (spec section 13.2). The state after the loft
-/// names every cap and side face of the loft in one solid body, and that body
+/// names the cap and side faces of the loft in one solid body (the legacy form
+/// can leave merged faces unnamed, see `legacy_loft_in`), and that body
 /// holds at least one face that the loft does not name: the oldest state that
 /// lists the loft holds the features before it and the loft only, so such a
 /// face belongs to a body of the state before the loft, and the loft merged
@@ -656,7 +657,7 @@ fn joined_result(
         |section, name| section_curves(section).contains(&name),
         true,
     )
-    .or_else(|| legacy_loft(ir, generator, sections, section_curves))?;
+    .or_else(|| legacy_loft_in(ir, generator, sections, section_curves, true))?;
     let owned = owned_faces_in(ir, generator, true)
         .map(|faces| {
             faces
@@ -793,6 +794,28 @@ pub(in crate::feature::loft_sweep) fn legacy_loft(
     sections: [u32; 2],
     section_curves: impl Fn(usize) -> Vec<i64>,
 ) -> Option<()> {
+    legacy_loft_in(ir, generator, sections, section_curves, false)
+}
+
+/// Most section curves of one section boundary that a joined loft result can
+/// leave without a side face: the side face on the joined end merges into a
+/// face of the body that the loft joins.
+const MAX_JOINED_UNNAMED_CURVES: usize = 1;
+
+/// Legacy loft result check. With `joined`, the result body also holds the
+/// faces of the body that the loft joined, and the join merges faces of the
+/// loft into faces of that body. A cap face can stay unnamed or split into
+/// several named faces of one section, and each section boundary can leave at
+/// most [`MAX_JOINED_UNNAMED_CURVES`] curve without a side face. At least one
+/// cap face is named, and every named face still names a curve or a section
+/// of the loft.
+fn legacy_loft_in(
+    ir: &CadIr,
+    generator: u32,
+    sections: [u32; 2],
+    section_curves: impl Fn(usize) -> Vec<i64>,
+    joined: bool,
+) -> Option<()> {
     let geometry = &ir.geometry;
     if sections[0] == sections[1] {
         return None;
@@ -815,7 +838,8 @@ pub(in crate::feature::loft_sweep) fn legacy_loft(
             let [0, section, 260] = named.tail[..] else {
                 return None;
             };
-            if !sections.iter().any(|source| i64::from(*source) == section) || !caps.insert(section)
+            if !sections.iter().any(|source| i64::from(*source) == section)
+                || (!caps.insert(section) && !joined)
             {
                 return None;
             }
@@ -830,11 +854,17 @@ pub(in crate::feature::loft_sweep) fn legacy_loft(
     }
     let complete = |found: &HashSet<i64>, section: usize| {
         let expected = section_curves(section);
+        let unnamed = expected.iter().filter(|name| !found.contains(name)).count();
         !expected.is_empty()
-            && found.len() == expected.len()
-            && expected.iter().all(|name| found.contains(name))
+            && found.iter().all(|name| expected.contains(name))
+            && unnamed <= if joined { MAX_JOINED_UNNAMED_CURVES } else { 0 }
     };
-    (caps.len() == 2 && complete(&first_curves, 0) && complete(&last_curves, 1)).then_some(())
+    let caps_named = if joined {
+        !caps.is_empty()
+    } else {
+        caps.len() == 2
+    };
+    (caps_named && complete(&first_curves, 0) && complete(&last_curves, 1)).then_some(())
 }
 
 /// Number of integers in one group of a legacy loft side tail:
