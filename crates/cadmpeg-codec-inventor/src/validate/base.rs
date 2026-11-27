@@ -221,26 +221,20 @@ pub(super) fn valid(
     // body of the history state that introduces it, which the validator
     // cannot decode: the feature needs a bound state of that key, and the
     // final model must not contradict the link. Bound means "introduced"
-    // only for a Base state (for Split it means consumed), and the validator
+    // only for a Base or derived state (for Split it means consumed), and the validator
     // trusts it because the state's body keys are not persisted.
-    label.class_id() != crate::feature::derived::CLASS_ID
-        && base::history_candidate(
-            output,
-            link,
-            segment_token,
-            *record_ordinal,
-            &data.body_native_keys,
-        )
-        && data.feature_history_states.iter().any(|state| {
-            state.feature == source.id()
-                && state.source_index == source.header.source_index
-                && state.state_after.is_some()
-                && matches!(
-                    state.kind.as_str(),
-                    crate::feature::history_states::BASE_TAG
-                        | crate::feature::history_states::NATIVE_BASE_KIND
-                )
-                && state.binding == crate::feature::history_states::Binding::Bound
-                && state.body_key == Some(base::result_key(link))
-        })
+    base::history_candidate(
+        output,
+        link,
+        segment_token,
+        *record_ordinal,
+        &data.body_native_keys,
+    ) && data.feature_history_states.iter().any(|state| {
+        state.feature == source.id()
+            && state.source_index == source.header.source_index
+            && state.state_after.is_some()
+            && crate::feature::history_states::creates_body(&state.kind)
+            && state.binding == crate::feature::history_states::Binding::Bound
+            && state.body_key == Some(base::result_key(link))
+    })
 }

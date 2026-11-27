@@ -39,6 +39,19 @@ pub(crate) const SPLIT_TAG: &str = "split_body";
 pub(crate) const BASE_TAG: &str = "base";
 /// Kind of a base feature whose result body does not join the current model.
 pub(crate) const NATIVE_BASE_KIND: &str = "native:Base";
+/// Source tag of a derived stored-body feature.
+pub(crate) const DERIVED_TAG: &str = "derived_part";
+
+/// Whether features of `kind` create their result body: Base and derived
+/// stored-body features, typed or native.
+pub(crate) fn creates_body(kind: &str) -> bool {
+    kind == BASE_TAG
+        || kind == NATIVE_BASE_KIND
+        || kind == DERIVED_TAG
+        || kind
+            .strip_prefix("native:InventorClass:")
+            .is_some_and(|class| class == super::derived::CLASS_ID.to_string())
+}
 /// Source tag of a loft feature.
 pub(crate) const LOFT_TAG: &str = "loft";
 
@@ -433,9 +446,18 @@ pub(crate) struct Inputs<'a> {
     pub(crate) properties: &'a [PmDcFeatureProperty],
 }
 
+/// Feature-label class whose wrappers a body-creating `kind` uses.
+fn class_of(kind: &str) -> super::ClassId {
+    if kind == DERIVED_TAG || kind.ends_with(&super::derived::CLASS_ID.to_string()) {
+        super::derived::CLASS_ID
+    } else {
+        super::BASE_CLASS_ID
+    }
+}
+
 /// Whether features of `kind` need a body-key check to bind.
 fn body_checked(kind: &str) -> bool {
-    matches!(kind, SPLIT_TAG | BASE_TAG | NATIVE_BASE_KIND)
+    kind == SPLIT_TAG || creates_body(kind)
 }
 
 /// Kind of a neutral feature: its source tag, with the native family of a
@@ -506,9 +528,9 @@ pub(crate) fn join(index: &StateIndex, inputs: &Inputs<'_>) -> Vec<FeatureHistor
         let kind = kind_of(model);
         let (check, wrapper) = match kind.as_str() {
             SPLIT_TAG => (Check::Split, target_wrapper(model).map(str::to_owned)),
-            BASE_TAG | NATIVE_BASE_KIND => (
+            _ if creates_body(&kind) => (
                 Check::Base,
-                super::base::wrappers(feature, super::BASE_CLASS_ID, |ordinal| {
+                super::base::wrappers(feature, class_of(&kind), |ordinal| {
                     properties
                         .get(&(feature.identity.segment_token.as_str(), ordinal))
                         .copied()

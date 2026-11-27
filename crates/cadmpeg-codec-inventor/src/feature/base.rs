@@ -628,12 +628,13 @@ pub(crate) fn project(
                 }
             }
             None => {
-                if derived.is_some() {
-                    projection.losses.push(crate::loss::InventorLossCode::FeatureDerivedResultNative.note(
-                        "Derived result-body operand (slot 1) has an unresolved current-model body join; the feature remains native.",
-                    ));
-                    continue;
-                }
+                let unresolved = |projection: &mut Projection| {
+                    if derived.is_some() {
+                        projection.losses.push(crate::loss::InventorLossCode::FeatureDerivedResultNative.note(
+                            "Derived result-body operand (slot 1) has an unresolved current-model body join; the feature remains native.",
+                        ));
+                    }
+                };
                 if !history_candidate(
                     output,
                     link,
@@ -641,21 +642,36 @@ pub(crate) fn project(
                     carrier.record_ordinal,
                     keys,
                 ) {
+                    unresolved(&mut projection);
                     continue;
                 }
+                let (code, noun) = if derived.is_some() {
+                    (
+                        crate::loss::InventorLossCode::FeatureDerivedResultNative,
+                        "Derived",
+                    )
+                } else {
+                    (
+                        crate::loss::InventorLossCode::FeatureBaseResultStateNative,
+                        "Base",
+                    )
+                };
                 match state_body(ctx, states, source.header.source_index, link)? {
                     StateBody::Held => {}
-                    StateBody::Absent => continue,
+                    StateBody::Absent => {
+                        unresolved(&mut projection);
+                        continue;
+                    }
                     StateBody::Failed => {
-                        projection.losses.push(crate::loss::InventorLossCode::FeatureBaseResultStateNative.note(
-                            "Base result body is absent from the current model and its history state does not decode to a body with the result key; the feature remains native.",
-                        ));
+                        projection.losses.push(code.note(format!(
+                            "{noun} result body is absent from the current model and its history state does not decode to a body with the result key; the feature remains native.",
+                        )));
                         continue;
                     }
                     StateBody::Bounded => {
-                        projection.losses.push(crate::loss::InventorLossCode::FeatureBaseResultStateNative.note(
-                            "Base result body is absent from the current model and its history state passed the local work cap of state views; the feature remains native.",
-                        ));
+                        projection.losses.push(code.note(format!(
+                            "{noun} result body is absent from the current model and its history state passed the local work cap of state views; the feature remains native.",
+                        )));
                         continue;
                     }
                 }
