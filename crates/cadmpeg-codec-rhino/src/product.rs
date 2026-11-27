@@ -7,6 +7,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -170,13 +171,15 @@ fn external_record(definition_uuid: Uuid, link: &LinkSource) -> Option<ExternalR
     })
 }
 
-/// Installs the source product graph without requiring occurrence expansion.
+/// Installs the source product graph without requiring occurrence expansion,
+/// and returns the losses and the given-up occurrence objects.
 pub(crate) fn install(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &Scan<'_>,
     ir: &mut CadIr,
-) -> Result<Vec<LossNote>, CodecError> {
+) -> Result<(Vec<LossNote>, Vec<GivenUpPart>), CodecError> {
     let mut losses = Vec::new();
+    let mut given_up = Vec::new();
     let mut object_records = HashMap::<Uuid, Vec<(usize, String)>>::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
         if let Some(identity) = object.identity() {
@@ -273,15 +276,21 @@ pub(crate) fn install(
                     "PRODUCT_OCCURRENCE/source={}/class={}",
                     identity.source_id, object.class_uuid
                 );
-                losses.push(
-                    loss.with_provenance(
-                        SourceProvenance::root(
-                            "rhino",
-                            cadmpeg_core::decode::u64_from_index(object.range.start),
-                        )
-                        .with_tag(tag),
-                    ),
+                let loss = loss.with_provenance(
+                    SourceProvenance::root(
+                        "rhino",
+                        cadmpeg_core::decode::u64_from_index(object.range.start),
+                    )
+                    .with_tag(tag),
                 );
+                given_up.push(crate::container::give_up_object_record(
+                    ctx,
+                    scan.data,
+                    source_order,
+                    object.range.clone(),
+                    &loss,
+                )?);
+                losses.push(loss);
                 continue;
             }
         };
@@ -327,7 +336,7 @@ pub(crate) fn install(
     namespace.set_arena(ctx, "product_definitions", &definitions)?;
     namespace.set_arena(ctx, "product_occurrences", &occurrences)?;
     namespace.set_arena(ctx, "external_references", &external)?;
-    Ok(losses)
+    Ok((losses, given_up))
 }
 
 #[cfg(test)]
@@ -355,13 +364,19 @@ mod tests {
             .source_id
             .clone();
         let mut ir = CadIr::empty();
-        let losses = install(
+        let (losses, given_up) = install(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             &scan,
             &mut ir,
         )
         .expect("other product records remain transferable");
         assert_eq!(losses.len(), 1);
+        assert_eq!(given_up.len(), 1);
+        assert!(given_up[0].loss().message.starts_with(&format!(
+            "part object-record stream=\"\" offset={source_offset} length={} record={}: ",
+            scan.objects[0].range().len(),
+            given_up[0].id()
+        )));
         let message = &losses[0].message;
         assert!(message.contains(&source_id));
         assert!(message.contains(&format!("at offset {source_offset}")));
@@ -453,7 +468,7 @@ mod tests {
             assert_eq!(occurrence["transform_units"], expected_units);
             assert_eq!(
                 occurrence["transform"],
-                serde_json::json!([
+                cadmpeg_core::json!([
                     [2.0, 1.0, 0.0, expected_translation[0]],
                     [0.0, 1.0, 0.0, expected_translation[1]],
                     [0.0, 0.0, 1.0, expected_translation[2]],
@@ -462,7 +477,7 @@ mod tests {
             );
             assert_eq!(
                 occurrence["links"],
-                serde_json::json!(["rhino:object:record#000000"])
+                cadmpeg_core::json!(["rhino:object:record#000000"])
             );
             assert_eq!(
                 decoded
@@ -538,7 +553,7 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(
             records[0].field("source_offset"),
-            Some(serde_json::json!(scan.objects[3].range().start))
+            Some(cadmpeg_core::json!(scan.objects[3].range().start))
         );
         let losses = decoded
             .report()
@@ -568,10 +583,20 @@ mod tests {
                     .as_str()
                 )
             );
+            let record = format!("rhino:object:record#{index:06}");
+            crate::container::tests::assert_part_given_up(
+                decoded.ir(),
+                decoded.source_fidelity(),
+                &decoded.report().losses,
+                "object-record",
+                source.range.start,
+                Some(&record),
+                &record,
+            );
             assert_eq!(
                 decoded
                     .source_fidelity()
-                    .retained_record(&format!("rhino:object:record#{index:06}"))
+                    .retained_record(&record)
                     .expect("complete malformed source retained")
                     .data(),
                 Some(objects[index].as_slice())

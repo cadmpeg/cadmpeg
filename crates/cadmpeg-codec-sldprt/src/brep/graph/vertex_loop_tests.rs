@@ -180,10 +180,73 @@ fn a_face_with_a_valid_ring_and_an_ambiguous_vertex_loop_fin_is_withheld() {
     }
     conflicting.push(b'?');
     body.extend(conflicting);
-    let brep = decode_scanned(&body);
+    let mut brep = decode_scanned(&body);
     assert!(brep.faces.is_empty());
+    assert!(brep.loops.is_empty());
     assert_eq!(brep.stats.unresolved_topology_fins, 1);
     assert_eq!(brep.stats.withheld_ambiguous_fin_faces, 1);
+    let losses = brep.take_losses().unwrap();
+    let [face] = losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one record.unreadable gives up the face: {losses:?}");
+    };
+    assert!(face.message.starts_with("record sldprt:brep:face#"));
+    assert!(face
+        .message
+        .contains("given up: sldprt/topology.ambiguous-fin-face-withheld: "));
+    assert!(face.message.contains("; dropped=[sldprt:brep:surf#"));
+    assert_dependents_reach(&losses, face, "sldprt:brep:loop#");
+}
+
+/// Each `record.dropped-with` note of `losses` needs, through other notes,
+/// the record `given_up` names, and one note drops a record whose id starts
+/// with `dependent`.
+fn assert_dependents_reach(
+    losses: &[cadmpeg_ir::report::loss::LossNote],
+    given_up: &cadmpeg_ir::report::loss::LossNote,
+    dependent: &str,
+) {
+    let notes = losses
+        .iter()
+        .filter(|loss| cadmpeg_ir::unknown::part::needs(loss).is_some())
+        .map(|loss| {
+            let words = loss.message.split_whitespace().collect::<Vec<_>>();
+            let [_, record, _, needs] = words[..] else {
+                panic!("a dropped-with note: {}", loss.message);
+            };
+            (record, needs)
+        })
+        .collect::<Vec<_>>();
+    let mut reached = std::collections::BTreeSet::from([given_up
+        .message
+        .split_whitespace()
+        .nth(1)
+        .expect("the given-up record")]);
+    loop {
+        let grown = notes
+            .iter()
+            .filter(|(_, needs)| reached.contains(needs))
+            .map(|(record, _)| *record)
+            .filter(|record| !reached.contains(record))
+            .collect::<Vec<_>>();
+        if grown.is_empty() {
+            break;
+        }
+        reached.extend(grown);
+    }
+    assert!(
+        notes.iter().all(|(record, _)| reached.contains(record)),
+        "{notes:?}"
+    );
+    assert!(
+        notes
+            .iter()
+            .any(|(record, _)| record.starts_with(dependent)),
+        "{notes:?}"
+    );
 }
 
 #[test]

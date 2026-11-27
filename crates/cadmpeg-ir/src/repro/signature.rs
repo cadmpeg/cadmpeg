@@ -108,7 +108,7 @@ impl Signature {
             .as_deref()
             .map_or_else(|| "document".into(), entity_kind);
         let signature_version = 1;
-        let fields = serde_json::json!([
+        let fields = cadmpeg_core::json!([
             signature_version,
             stage,
             codec,

@@ -201,26 +201,26 @@ mod tests {
             ]
         );
         for (field, value) in [
-            ("object_indices", serde_json::json!([null, 128, 0, 0])),
-            ("object_indices", serde_json::json!([null, 0, 4096, 0])),
-            ("object_indices", serde_json::json!([null, 0, 0, 65536])),
-            ("object_indices", serde_json::json!([null, 0, 0, null])),
+            ("object_indices", cadmpeg_core::json!([null, 128, 0, 0])),
+            ("object_indices", cadmpeg_core::json!([null, 0, 4096, 0])),
+            ("object_indices", cadmpeg_core::json!([null, 0, 0, 65536])),
+            ("object_indices", cadmpeg_core::json!([null, 0, 0, null])),
             (
                 "object_index_source_offsets",
-                serde_json::json!([114, 116, 117, 119]),
+                cadmpeg_core::json!([114, 116, 117, 119]),
             ),
             (
                 "object_index_source_offsets",
-                serde_json::json!([115, 116, 118, 117]),
+                cadmpeg_core::json!([115, 116, 118, 117]),
             ),
             (
                 "object_index_source_offsets",
-                serde_json::json!([114, 115, 116, 118]),
+                cadmpeg_core::json!([114, 115, 116, 118]),
             ),
-            ("payload_source_offset", serde_json::json!(123)),
-            ("byte_len", serde_json::json!(24)),
-            ("payload_byte_len", serde_json::json!(u64::MAX)),
-            ("source_offset", serde_json::json!(u64::MAX)),
+            ("payload_source_offset", cadmpeg_core::json!(123)),
+            ("byte_len", cadmpeg_core::json!(24)),
+            ("payload_byte_len", cadmpeg_core::json!(u64::MAX)),
+            ("source_offset", cadmpeg_core::json!(u64::MAX)),
         ] {
             let mut invalid: serde_json::Value = serde_json::from_str(WIRE).unwrap();
             invalid[field] = value;
@@ -235,13 +235,13 @@ mod tests {
     fn unlabeled_record_wire_accepts_the_last_representable_end() {
         let mut wire: serde_json::Value = serde_json::from_str(WIRE).unwrap();
         let start = u64::MAX - 25;
-        wire["source_offset"] = serde_json::json!(start);
+        wire["source_offset"] = cadmpeg_core::json!(start);
         wire["object_index_source_offsets"] =
-            serde_json::json!([start + 15, start + 16, start + 17, start + 19]);
-        wire["payload_source_offset"] = serde_json::json!(start + 22);
+            cadmpeg_core::json!([start + 15, start + 16, start + 17, start + 19]);
+        wire["payload_source_offset"] = cadmpeg_core::json!(start + 22);
         let record: FeatureUnlabeledOperationRecord = json::from_value(wire.clone()).unwrap();
         assert_eq!(json::to_value(record).unwrap(), wire);
-        wire["payload_byte_len"] = serde_json::json!(4);
+        wire["payload_byte_len"] = cadmpeg_core::json!(4);
         assert!(json::from_value::<FeatureUnlabeledOperationRecord>(wire)
             .unwrap_err()
             .to_string()

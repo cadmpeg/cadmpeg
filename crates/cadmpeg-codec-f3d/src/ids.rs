@@ -5,6 +5,7 @@
 //! length-prefixes. Callers build IDs through the named functions below.
 
 use crate::records::feature::combine::DesignCombineExternalBodyIdentity;
+use crate::records::feature::combine::DesignCombineLegacyExternalBodyIdentity;
 
 use crate::records::feature::{
     assembly::{DesignAssemblyAxialSelectorIdentity, DesignAssemblyLegacySelection},
@@ -558,6 +559,25 @@ pub(crate) fn neutral_combine_external_body_id(
             property_key.len(), property_key,
             u8::from(identity.external_version().is_some()), version_urn.len(), version_urn,
         )
+}
+
+/// Feature-input-local body key for one complete legacy external `Combine`
+/// selector path.
+pub(crate) fn neutral_combine_legacy_external_body_id(
+    identity: &DesignCombineLegacyExternalBodyIdentity,
+) -> String {
+    let selector_asset = identity_key_component(identity.selector_asset_id.as_str());
+    let selector_context = identity_key_component(identity.selector_context_id.as_str());
+    format!(
+        "f3d:feature-input:body#combine-legacy-external:{}:{}:{}:{}:{}:{}:{}",
+        selector_asset.len(),
+        selector_asset,
+        selector_context.len(),
+        selector_context,
+        identity.occurrence_reference,
+        identity.browser_node_entity,
+        identity.source_occurrence_identity,
+    )
 }
 
 /// Feature-input-local connector key for one pathless axial assembly selector.

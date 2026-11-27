@@ -7142,4 +7142,34 @@ object record remains opaque and no partial typed topology is committed.
 
 ## 21. Strict floors
 
-`rhino/object.framing-undecodable` records a framed object record that the decoder gave up (CADIR §3.3), and carries strict floor Warning (CADIR §3.2).
+No Rhino loss code carries a strict floor. The decoder gives up a framed
+record as a part (CADIR §3.3) when its framing does not decode, its payload
+does not parse, its unit system does not bind, its variant has no typed
+reading, or its list count is above its bound. The part kind identifies the
+record:
+
+| Part kind | Record |
+|---|---|
+| `object-record` | A record of the object table. |
+| `table-record` | A record of a presentation, settings, or instance-definition table, or a complete named-view, active-view, or named-construction-plane list. |
+| `view-record` | One view record of a named-view or active-view list. |
+| `v1-record` | One record of the version 1 flat stream. |
+
+A retained record keeps the bytes of each given-up record. For an object
+record, this is the object record `rhino:object:record#NNNNNN` of the document.
+For a table record or a view list, this is its opaque record in the source
+fidelity. For a version 1 record, this is its legacy record in the source
+fidelity. The part keeps the length and digest of its bytes. The `unknowns`
+stub of an `object-record` part links to its object record. The stubs of the
+other part kinds have no links.
+
+The `record.unreadable` charge of the part sets the floor that refuses a
+pinned decode (CADIR §3.2). The codec loss of the record stays in the report
+beside the charge. `rhino/object.framing-undecodable` counts the given-up
+object records of each class. When the decoder gives up a view or a view list,
+the source fidelity keeps the complete list as an opaque record.
+
+A view record of a counted view list whose frame does not read has no byte
+extent. Its `record.unreadable` charge names the id
+`rhino:document:view#<kind>-<index>` that the view takes when it decodes, at
+the offset of the view header. The decoder reads no later view of that list.

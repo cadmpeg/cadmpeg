@@ -8,6 +8,7 @@ use cadmpeg_ir::codec::write::{
 };
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
+use super::dispositions::appearances::AppearanceDrops;
 use crate::loss::IgesLossCode;
 
 /// Write the resolved version. A source of an off-catalog version is replayed
@@ -102,14 +103,22 @@ fn synthesized_body(
     ))
 }
 
-/// The file synthesized from `document`, and what it does with each native
-/// record of `document`.
+/// The file synthesized from `document` with the losses of the body names,
+/// the colours, the opacities, the appearances, and the appearance bindings
+/// it does not state, and what it does with each native record of
+/// `document`.
 pub(super) fn synthesis_and_dispositions(
     document: &CadIr,
     version: crate::IgesVersion,
 ) -> Result<(super::Synthesis, NativeDispositions), CodecError> {
-    let synthesis = super::degrade::synthesize_dropping(document, version)?;
-    let native = super::dispositions::native_dispositions(document, &synthesis.entities);
+    let mut synthesis = super::degrade::synthesize_dropping(document, version)?;
+    let native = super::dispositions::native_dispositions(document, &synthesis, version);
+    let appearances = AppearanceDrops::of(document, &synthesis);
+    let presentation =
+        super::dispositions::presentation::losses(document, &synthesis, &appearances);
+    synthesis
+        .losses
+        .extend(presentation.into_iter().chain(appearances.losses()));
     Ok((synthesis, native))
 }
 

@@ -521,21 +521,30 @@ pub(crate) struct Scope {
     conflicting_declaration_count: usize,
 }
 
-/// Parsed rows and unresolved-row count for one legacy declaration type.
+/// Parsed rows and unresolved rows for one legacy declaration type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TypedValues<T> {
     /// Complete typed rows in source order.
     pub(crate) rows: Vec<T>,
-    /// Source rows not represented by a complete typed value.
-    pub(crate) unresolved_count: usize,
+    /// Offsets of source rows not represented by a complete typed value.
+    pub(crate) unresolved: Vec<usize>,
 }
 
 impl<T> Default for TypedValues<T> {
     fn default() -> Self {
         Self {
             rows: Vec::new(),
-            unresolved_count: 0,
+            unresolved: Vec::new(),
         }
+    }
+}
+
+impl<K: LegacyCode> TypedValues<ValueRecord<K>> {
+    /// The id each unresolved row would hold as a record.
+    pub(crate) fn unresolved_ids(&self) -> impl Iterator<Item = SerializedOffsetId> + '_ {
+        self.unresolved
+            .iter()
+            .map(|&offset| value_record_id::<K>(offset))
     }
 }
 
@@ -560,6 +569,8 @@ pub(crate) struct Persistence {
     pub(crate) incomplete_string_array_count: usize,
     /// Type-10 rows that use an undefined continuation form.
     pub(crate) unresolved_string_value_count: usize,
+    /// Offsets of type-10 scalar rows that form no record.
+    pub(crate) unread_string_scalars: Vec<usize>,
     /// Type-3 nullable byte-string scalars in source order.
     pub(crate) type_3_values: TypedValues<Type3Record>,
     /// Type-4 byte-string scalars in source order.
@@ -577,6 +588,13 @@ pub(crate) struct Persistence {
 }
 
 impl Persistence {
+    /// The id each type-10 scalar row that forms no record would hold.
+    pub(crate) fn unread_string_scalar_ids(&self) -> impl Iterator<Item = SerializedOffsetId> + '_ {
+        self.unread_string_scalars
+            .iter()
+            .map(|&offset| value_record_id::<StringCode>(offset))
+    }
+
     /// Resolve one unambiguous native model identity from legacy string rows.
     ///
     /// A legacy persistence tree can carry `model_name` in more than one
@@ -1163,7 +1181,7 @@ fn scalar_string_records<K: LegacyCode<Payload = StringValue>>(
     parents: &BTreeMap<usize, usize>,
 ) -> TypedValues<ValueRecord<K>> {
     let mut records = Vec::new();
-    let mut unresolved = 0usize;
+    let mut unresolved = Vec::new();
     for scope in scopes {
         let declarations = declaration_index(scope);
         for value in &scope.values {
@@ -1179,7 +1197,7 @@ fn scalar_string_records<K: LegacyCode<Payload = StringValue>>(
                 .then(|| data.get(value.payload.clone()))
                 .flatten()
             else {
-                unresolved += 1;
+                unresolved.push(value.offset);
                 continue;
             };
             let payload = byte_string_value(bytes, null_token);
@@ -1197,7 +1215,7 @@ fn scalar_string_records<K: LegacyCode<Payload = StringValue>>(
     }
     TypedValues {
         rows: records,
-        unresolved_count: unresolved,
+        unresolved,
     }
 }
 
@@ -1205,10 +1223,11 @@ fn string_records(
     data: &[u8],
     scopes: &[Scope],
     parents: &BTreeMap<usize, usize>,
-) -> (Vec<StringRecord>, usize, usize) {
+) -> (Vec<StringRecord>, usize, usize, Vec<usize>) {
     let mut records = Vec::new();
     let mut incomplete_arrays = 0usize;
     let mut unresolved = 0usize;
+    let mut unread_scalars = Vec::new();
     for scope in scopes {
         let declarations = declaration_index(scope);
         let mut active_arrays = BTreeMap::<u32, (usize, u32)>::new();
@@ -1280,6 +1299,7 @@ fn string_records(
             } else {
                 if value.continuation.is_some() {
                     unresolved += 1;
+                    unread_scalars.push(value.offset);
                     continue;
                 }
                 StringPayload::Scalar {
@@ -1298,7 +1318,7 @@ fn string_records(
             });
         }
     }
-    (records, incomplete_arrays, unresolved)
+    (records, incomplete_arrays, unresolved, unread_scalars)
 }
 
 fn numeric_records<K, T>(
@@ -1312,7 +1332,7 @@ where
     K: LegacyCode<Payload = NumericPayload<T>>,
 {
     let mut records = Vec::new();
-    let mut unresolved = 0usize;
+    let mut unresolved = Vec::new();
     for scope in scopes {
         let declarations = declaration_index(scope);
         let mut index = 0;
@@ -1325,7 +1345,7 @@ where
                 continue;
             };
             let Some(payload_bytes) = data.get(value.payload.clone()) else {
-                unresolved += 1;
+                unresolved.push(value.offset);
                 index += 1;
                 continue;
             };
@@ -1333,12 +1353,12 @@ where
                 let mut next_index = index + 1;
                 let runs = if let Some(continuation) = &value.continuation {
                     let Some(bytes) = data.get(continuation.rows.clone()) else {
-                        unresolved += 1;
+                        unresolved.push(value.offset);
                         index += 1;
                         continue;
                     };
                     let Some(runs) = continuation_numeric_runs(bytes, scalar) else {
-                        unresolved += 1;
+                        unresolved.push(value.offset);
                         index += 1;
                         continue;
                     };
@@ -1368,7 +1388,7 @@ where
                     Vec::new()
                 };
                 let Some(payload) = NumericPayload::array(dimensions, runs) else {
-                    unresolved += next_index - index;
+                    unresolved.extend(scope.values[index..next_index].iter().map(|row| row.offset));
                     index = next_index;
                     continue;
                 };
@@ -1380,7 +1400,7 @@ where
                     .then(|| scalar(payload_bytes))
                     .flatten()
                 else {
-                    unresolved += 1;
+                    unresolved.push(value.offset);
                     index += 1;
                     continue;
                 };
@@ -1406,7 +1426,7 @@ where
     }
     TypedValues {
         rows: records,
-        unresolved_count: unresolved,
+        unresolved,
     }
 }
 
@@ -1537,8 +1557,12 @@ pub(crate) fn scan(
     let parents = parent_object_offsets(&scopes);
     let (objects, incomplete_object_array_count, unresolved_object_value_count) =
         object_records(data, &scopes, &parents);
-    let (string_values, incomplete_string_array_count, unresolved_string_value_count) =
-        string_records(data, &scopes, &parents);
+    let (
+        string_values,
+        incomplete_string_array_count,
+        unresolved_string_value_count,
+        unread_string_scalars,
+    ) = string_records(data, &scopes, &parents);
     let type_3_values = scalar_string_records(
         data,
         &scopes,
@@ -1575,6 +1599,7 @@ pub(crate) fn scan(
         string_values,
         incomplete_string_array_count,
         unresolved_string_value_count,
+        unread_string_scalars,
         type_3_values,
         type_4_values,
         type_5_values,
@@ -1588,11 +1613,15 @@ pub(crate) fn scan(
 impl<K: LegacyCode> ValueRecord<K> {
     /// Native identity derived from the source offset.
     pub(crate) fn id(&self) -> SerializedOffsetId {
-        SerializedOffsetId {
-            namespace: "legacy_ascii",
-            kind: K::CODE.identity_token(),
-            offset: self.offset,
-        }
+        value_record_id::<K>(self.offset)
+    }
+}
+
+fn value_record_id<K: LegacyCode>(offset: usize) -> SerializedOffsetId {
+    SerializedOffsetId {
+        namespace: "legacy_ascii",
+        kind: K::CODE.identity_token(),
+        offset,
     }
 }
 

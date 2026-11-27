@@ -15,8 +15,8 @@ use crate::validate::referential_integrity::check_typed_references;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::validate) enum NestRules {
     /// The rules history-body admission runs on a nest: coedge pairing, shell
-    /// connectivity, wire topology, edge ends, and topology tolerances, after
-    /// the identity, reference, and typed reference checks of a closed nest.
+    /// connectivity, wire topology, and edge ends, after the identity,
+    /// reference, and typed reference checks of a closed nest.
     Admission,
     /// Every rule of part 10 on one topology. With `caches`, each procedural
     /// curve is also compared with its solved carrier (Caches, K2).
@@ -58,7 +58,6 @@ pub(in crate::validate) fn check(
             super::graphs::check_shell_connectivity(&index, &mut findings);
             super::graphs::check_wire_topology(&alone, &mut findings);
             check_edge_endpoint_consistency(ctx, &index, &mut findings)?;
-            super::check_topology_tolerances(&alone, &mut findings);
         }
         NestRules::All { caches } => {
             super::super::check_topology_rules(ctx, &index, document, caches, &mut findings)?;

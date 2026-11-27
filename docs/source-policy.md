@@ -101,6 +101,12 @@ CPU affinity mask, capped by `PYTHON_CPU_COUNT` when it is set. Set
   `deserializer` binding. Each deserializer type compiles the read tree of
   every type it reads once more. Tests that check a reader agrees across
   deserializer types are listed in `JSON_READ_EXEMPT_FILES`.
+- A typed JSON value is written through `SerAdapter`: build JSON with
+  `cadmpeg_core::json!` and `cadmpeg_core::serde_erase::json::to_value`
+  (`json_second_serializer`). The rule rejects `serde_json::json!` and
+  `serde_json::to_value` outside `cadmpeg-derive`, which has no
+  `cadmpeg-core` dependency. `serde_json`'s `Value` serializer compiles the
+  write tree of every type it writes once more.
 
 ## Numeric casts
 

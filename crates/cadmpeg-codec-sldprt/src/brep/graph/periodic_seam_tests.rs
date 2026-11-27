@@ -201,7 +201,8 @@ fn synthesize_seams(brep: &mut Brep, derived: [bool; 2]) {
     for (index, derived) in derived.into_iter().enumerate() {
         if derived {
             annotations.exactness(
-                format!("test:seam:point#circle-{index}"),
+                cadmpeg_ir::ids::Identity::new(format!("test:seam:point#circle-{index}"))
+                    .expect("identity grammar"),
                 Exactness::Derived,
             );
         }

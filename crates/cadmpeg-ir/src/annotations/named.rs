@@ -5,9 +5,8 @@
 use std::collections::BTreeSet;
 
 use super::{AnnotationKey, AnnotationTarget, Annotations};
-use crate::document::{ArenaHome, CadIr, Topology};
-use crate::index::identities::IdentitySet;
-use crate::index::{ModelIndex, StandardIndex};
+use crate::document::{ArenaHome, ArenaName, CadIr, Topology};
+use crate::native::NativeRecord;
 
 /// The id and the delta records of each evaluation and process state of `ir`
 /// that has content.
@@ -38,8 +37,8 @@ pub(crate) fn delta_records(ir: &CadIr) -> BTreeSet<(&str, &str)> {
         .collect()
 }
 
-/// The ids of the records of the design and process arenas of `ir`. The
-/// model index holds the records of the other arenas and the native records.
+/// The ids of the records of the design and process arenas of `ir`, which
+/// the model index leaves out.
 pub(crate) fn design_and_process_records(ir: &CadIr) -> BTreeSet<&str> {
     ir.arenas()
         .record_ids()
@@ -49,24 +48,47 @@ pub(crate) fn design_and_process_records(ir: &CadIr) -> BTreeSet<&str> {
         .collect()
 }
 
+/// The ids of the records of `ir` that an annotation key names as an entity:
+/// the records of each arena, other than those of the arenas the CADIR wire
+/// omits where `wire` is set, and the native records.
+fn entities(ir: &CadIr, wire: bool) -> BTreeSet<&str> {
+    let arenas = ir
+        .arenas()
+        .record_ids()
+        .into_iter()
+        .filter(|(arena, _)| !(wire && ArenaName::WIRE_OMITTED.contains(arena)))
+        .flat_map(|(_, (_, ids))| ids);
+    let native = ir
+        .native
+        .0
+        .values()
+        .flat_map(|namespace| namespace.arenas().values())
+        .flatten()
+        .map(NativeRecord::id);
+    arenas.chain(native).collect()
+}
+
 /// The records of one document that an annotation key can name.
 struct Named<'ir> {
-    index: ModelIndex<'ir>,
-    records: BTreeSet<&'ir str>,
+    entities: BTreeSet<&'ir str>,
     deltas: BTreeSet<(&'ir str, &'ir str)>,
 }
 
 impl<'ir> Named<'ir> {
+    /// The records of `ir` in memory.
     fn of(ir: &'ir CadIr) -> Self {
         Self {
-            index: ModelIndex::build(ir),
-            records: design_and_process_records(ir),
+            entities: entities(ir, false),
             deltas: delta_records(ir),
         }
     }
 
-    fn names_entity(&self, id: &str) -> bool {
-        IdentitySet::contains(&self.index, id) || self.records.contains(id)
+    /// The records of the CADIR text of `ir` (§3.4).
+    fn written(ir: &'ir CadIr) -> Self {
+        Self {
+            entities: entities(ir, true),
+            deltas: delta_records(ir),
+        }
     }
 }
 
@@ -83,34 +105,74 @@ impl Removed {
     /// What `ir` names, before a removal.
     pub(crate) fn before(ir: &CadIr) -> Self {
         let named = Named::of(ir);
-        Self {
-            entities: named
-                .index
-                .identities(StandardIndex)
-                .chain(named.records.iter().copied())
-                .map(str::to_owned)
-                .collect(),
-            deltas: named
+        Self::of_records(
+            named.entities.into_iter().map(str::to_owned),
+            named
                 .deltas
-                .iter()
-                .map(|(qualifier, record)| ((*qualifier).to_owned(), (*record).to_owned()))
-                .collect(),
+                .into_iter()
+                .map(|(qualifier, record)| (qualifier.to_owned(), record.to_owned())),
+        )
+    }
+
+    /// What the CADIR text of `ir` leaves out of `ir` itself: each record
+    /// of an arena the wire omits whose id no written record has (§3.4).
+    pub(crate) fn omitted_by_the_wire(ir: &CadIr) -> Self {
+        let mut omitted = ir.arenas().wire_omitted_ids();
+        if omitted.is_empty() {
+            return Self::default();
+        }
+        let written = ir.arenas().written_among(&omitted);
+        omitted.retain(|id| !written.contains(id));
+        for namespace in ir.native.0.values() {
+            for record in namespace.arenas().values().flatten() {
+                omitted.remove(record.id());
+            }
+        }
+        Self::of_records(omitted.into_iter().map(str::to_owned), [])
+    }
+
+    /// The records `entities` and the delta records `deltas`, each a
+    /// `(qualifier, record)` pair, as a removal that took them out.
+    pub(crate) fn of_records(
+        entities: impl IntoIterator<Item = String>,
+        deltas: impl IntoIterator<Item = (String, String)>,
+    ) -> Self {
+        Self {
+            entities: entities.into_iter().collect(),
+            deltas: deltas.into_iter().collect(),
         }
     }
 
-    /// What of `self` and of `lost`, the ids of the records that left before
-    /// the document was built, `ir`, the document after the removal, does not
-    /// name.
-    pub(crate) fn after(mut self, lost: impl IntoIterator<Item = String>, ir: &CadIr) -> Self {
-        let named = Named::of(ir);
-        self.entities.extend(lost);
-        self.entities.retain(|id| !named.names_entity(id));
+    /// What of `self` `ir`, the document after the removal, does not name.
+    pub(crate) fn after(self, ir: &CadIr) -> Self {
+        if self.is_empty() {
+            return self;
+        }
+        self.left(&Named::of(ir))
+    }
+
+    /// What of `self` the CADIR text of `ir`, the document a write wrote,
+    /// does not name.
+    pub(crate) fn after_writing(self, ir: &CadIr) -> Self {
+        if self.is_empty() {
+            return self;
+        }
+        self.left(&Named::written(ir))
+    }
+
+    fn left(mut self, named: &Named<'_>) -> Self {
+        self.entities
+            .retain(|id| !named.entities.contains(id.as_str()));
         self.deltas.retain(|(qualifier, record)| {
             !named
                 .deltas
                 .contains(&(qualifier.as_str(), record.as_str()))
         });
         self
+    }
+
+    fn is_empty(&self) -> bool {
+        self.entities.is_empty() && self.deltas.is_empty()
     }
 
     /// Whether `key` names a removed record, a record of the delta of a
@@ -134,12 +196,9 @@ impl Annotations {
         self.provenance.is_empty() && self.exactness.is_empty()
     }
 
-    /// Removes each key that names a record of `removed`. Returns whether it
-    /// removed a key.
-    pub(crate) fn remove(&mut self, removed: &Removed) -> bool {
-        let count = self.provenance.len() + self.exactness.len();
+    /// Removes each key that names a record of `removed`.
+    pub(crate) fn remove(&mut self, removed: &Removed) {
         self.provenance.retain(|key, _| !removed.names(key));
         self.exactness.retain(|key, _| !removed.names(key));
-        count != self.provenance.len() + self.exactness.len()
     }
 }

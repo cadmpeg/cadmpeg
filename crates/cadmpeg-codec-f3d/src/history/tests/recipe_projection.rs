@@ -267,7 +267,7 @@ fn side_one_common_edge_requires_one_shared_candidate_without_incidence_fallback
 
 #[test]
 fn a_history_with_no_states_has_released_nothing_and_is_not_finalized() {
-    let document = serde_json::json!({
+    let document = cadmpeg_core::json!({
         "id": "history",
         "byte_offset": 0,
         "states": []

@@ -14,12 +14,13 @@ use crate::records::parameters::{DesignParameter, DesignParameterOwner};
 use crate::test_support::configuration_table::{
     bool_cell, expression_cell, object_target, property_target, string_cell, table_document, Row,
 };
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::parameters::{
     ConfigurationEvaluation, DesignParameter as NeutralParameter,
 };
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::BTreeMap;
 
 const ENTRY: &str =
@@ -582,12 +583,34 @@ fn unreadable_configuration_document_keeps_its_sibling_document() {
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let scan = crate::container::scan(&ctx, root).unwrap();
     let mut losses = Vec::new();
-    let decoded = super::decode_configurations(&ctx, &scan, &mut losses).unwrap();
+    let mut given_up = Vec::new();
+    let decoded = super::decode_configurations(&ctx, &scan, &mut losses, &mut given_up).unwrap();
     assert_eq!(decoded.documents.len(), 1);
     assert_eq!(decoded.documents[0].entry_name().as_str(), ENTRY);
-    assert_eq!(losses.len(), 1);
     assert_eq!(
-        losses[0].code,
-        crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.kind()
+        crate::test_support::loss_codes(&losses),
+        [crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.kind()]
+    );
+    assert_eq!(given_up.len(), 1);
+    assert_eq!(given_up[0].kind(), crate::container::ENTRY_PART);
+    assert_eq!(given_up[0].name(), Some(bad));
+    let unreadable = given_up[0].loss();
+    assert_eq!(
+        unreadable.code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(
+        unreadable
+            .message
+            .starts_with(&format!("part archive-entry {bad:?} stream=\"\" offset=")),
+        "{}",
+        unreadable.message
+    );
+    assert!(
+        unreadable
+            .message
+            .contains(&format!("record={}: ", given_up[0].id())),
+        "{}",
+        unreadable.message
     );
 }

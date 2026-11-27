@@ -20,7 +20,7 @@ fn assert_borrowed_wire<T: Serialize, W: Serialize>(id: &'static str, value: &T,
         json::to_vec(&wire).expect("owned wire")
     );
     let record = Record { id, value };
-    let expected = serde_json::json!({"id": id, "value": wire});
+    let expected = cadmpeg_core::json!({"id": id, "value": wire});
     PMDC_LIST_CLONE_COUNT.with(|count| count.set(0));
     cadmpeg_test_support::native_serialization::assert_native_limit(&record, expected);
     PMDC_LIST_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));

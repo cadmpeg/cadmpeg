@@ -1183,10 +1183,10 @@ mod feature_projection_tests {
         let history = feature_loop_history_entry_records(&scan);
         let geometry = json::to_value(&geometry[0]).expect("record serializes");
         let history = json::to_value(&history[0]).expect("record serializes");
-        assert_eq!(geometry["entry_ids"], serde_json::json!([4, 5]));
+        assert_eq!(geometry["entry_ids"], cadmpeg_core::json!([4, 5]));
         assert_eq!(
             history["field_bytes"],
-            serde_json::json!(["01", "02", "03", "04", "05"])
+            cadmpeg_core::json!(["01", "02", "03", "04", "05"])
         );
     }
 }
@@ -1287,7 +1287,7 @@ mod feature_choice_field_record_tests {
             .collect::<Vec<_>>();
         assert_eq!(
             serde_json::Value::Array(values),
-            serde_json::json!([
+            cadmpeg_core::json!([
                 {"kind":"empty"},
                 {"kind":"compact_int","value":7},
                 {"kind":"compact_int_array","values":[7,8]},
@@ -1488,13 +1488,13 @@ mod topology_projection_tests {
         let row_value = json::to_value(&rows[0]).expect("row serializes");
         assert_eq!(
             loop_value["half_edges"],
-            serde_json::json!([{"curve_id":8,"side":0}])
+            cadmpeg_core::json!([{"curve_id":8,"side":0}])
         );
         assert_eq!(
             crate::test_support::native_bytes(&row_value["body"]),
             [0xe3]
         );
-        assert_eq!(row_value["end"], serde_json::json!(23));
+        assert_eq!(row_value["end"], cadmpeg_core::json!(23));
     }
 }
 
@@ -1813,8 +1813,8 @@ mod curve_plane_projection_tests {
         let fc = json::to_value(&fc[0]).expect("record serializes");
         let plane = json::to_value(&plane[0]).expect("record serializes");
         assert_eq!(crate::test_support::native_bytes(&fc["body"]), [0xfc, 1]);
-        assert_eq!(fc["values_mm"], serde_json::json!([2.0]));
-        assert_eq!(plane["scalar_tokens"], serde_json::json!(["f9"]));
+        assert_eq!(fc["values_mm"], cadmpeg_core::json!([2.0]));
+        assert_eq!(plane["scalar_tokens"], cadmpeg_core::json!(["f9"]));
     }
 }
 
@@ -2462,10 +2462,10 @@ mod surface_projection_tests {
         assert_eq!(params["value_kind"], "cubic_knots");
         assert_eq!(
             params["scalar_values"],
-            serde_json::json!([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0])
+            cadmpeg_core::json!([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0])
         );
         assert_eq!(params["scalar_count"], 8);
-        assert_eq!(params["scalar_tokens"], serde_json::json!([]));
+        assert_eq!(params["scalar_tokens"], cadmpeg_core::json!([]));
         assert_eq!(
             crate::test_support::native_bytes(&params["body"]),
             [0xf8, 8, 0x18, 0xe6, 0x0f, 0xe6]
@@ -2547,13 +2547,16 @@ mod surface_projection_tests {
             .iter()
             .map(|parameter| json::to_value(parameter).expect("parameter serializes"))
             .collect::<Vec<_>>();
-        assert_eq!(values[1]["compact_values"], serde_json::json!([4]));
-        assert_eq!(values[2]["compact_values"], serde_json::json!([4, 5]));
-        assert_eq!(values[3]["compact_values"], serde_json::json!([7, 8]));
-        assert_eq!(values[4]["scalar_values"], serde_json::json!([null, null]));
-        assert_eq!(values[4]["scalar_tokens"], serde_json::json!([]));
-        assert_eq!(values[5]["scalar_tokens"], serde_json::json!(["", ""]));
-        assert_eq!(values[6]["scalar_values"], serde_json::json!([1.0, 2.0]));
+        assert_eq!(values[1]["compact_values"], cadmpeg_core::json!([4]));
+        assert_eq!(values[2]["compact_values"], cadmpeg_core::json!([4, 5]));
+        assert_eq!(values[3]["compact_values"], cadmpeg_core::json!([7, 8]));
+        assert_eq!(
+            values[4]["scalar_values"],
+            cadmpeg_core::json!([null, null])
+        );
+        assert_eq!(values[4]["scalar_tokens"], cadmpeg_core::json!([]));
+        assert_eq!(values[5]["scalar_tokens"], cadmpeg_core::json!(["", ""]));
+        assert_eq!(values[6]["scalar_values"], cadmpeg_core::json!([1.0, 2.0]));
         assert_eq!(
             crate::test_support::native_bytes(&values[7]["opaque"]),
             [0xe3]
@@ -2793,23 +2796,23 @@ mod curve_projection_tests {
         let replay = tabulated_cylinder_curve_replay_records(&scan);
         let parameter = json::to_value(&parameters[0]).expect("parameter serializes");
         let replay = json::to_value(&replay[0]).expect("replay serializes");
-        assert_eq!(parameter["scalar_values"], serde_json::json!([2.0]));
+        assert_eq!(parameter["scalar_values"], cadmpeg_core::json!([2.0]));
         assert_eq!(
             parameter["scalar_tokens"],
-            serde_json::json!([{"value":2.0,"raw":"f900","offset":1,"length":2}])
+            cadmpeg_core::json!([{"value":2.0,"raw":"f900","offset":1,"length":2}])
         );
-        assert_eq!(parameter["skipped_references"], serde_json::json!([9]));
+        assert_eq!(parameter["skipped_references"], cadmpeg_core::json!([9]));
         assert_eq!(
             parameter["references"],
-            serde_json::json!([{"entity_id":9,"offset":3,"length":2}])
+            cadmpeg_core::json!([{"entity_id":9,"offset":3,"length":2}])
         );
         assert_eq!(
             parameter["opaque_spans"],
-            serde_json::json!([{"raw":"e3","offset":5,"length":1}])
+            cadmpeg_core::json!([{"raw":"e3","offset":5,"length":1}])
         );
         assert_eq!(
             replay["control_point_bodies"],
-            serde_json::json!(["e3", "e3", "e3", "e3"])
+            cadmpeg_core::json!(["e3", "e3", "e3", "e3"])
         );
     }
 }
@@ -2985,11 +2988,11 @@ mod surface_parameter_projection_tests {
         assert_eq!(crate::test_support::native_bytes(&value["body"]), [249, 0]);
         assert_eq!(
             value["slots"],
-            serde_json::json!([{"value":1.0,"raw":"f900","offset":0,"length":2}])
+            cadmpeg_core::json!([{"value":1.0,"raw":"f900","offset":0,"length":2}])
         );
         assert_eq!(
             value["opaque_spans"],
-            serde_json::json!([{"raw":"e3","offset":2,"length":1}])
+            cadmpeg_core::json!([{"raw":"e3","offset":2,"length":1}])
         );
     }
 }
@@ -3275,13 +3278,13 @@ mod curve_expression_projection_tests {
         assert_eq!(value["assignments"][0]["target"]["kind"], "parameter");
         assert_eq!(
             value["solve_blocks"][0]["variables"],
-            serde_json::json!(["q"])
+            cadmpeg_core::json!(["q"])
         );
         assert_eq!(
             value["solve_blocks"][0]["solutions"],
-            serde_json::json!([2.0])
+            cadmpeg_core::json!([2.0])
         );
-        assert_eq!(value["prohibited_constructs"], serde_json::json!(["bad"]));
+        assert_eq!(value["prohibited_constructs"], cadmpeg_core::json!(["bad"]));
     }
 }
 
@@ -3808,13 +3811,16 @@ mod sketch_projection_tests {
         let value = json::to_value(&records[0]).expect("record serializes");
         assert_eq!(
             value["section_3d"]["reference_plane_entity_ids"],
-            serde_json::json!([3])
+            cadmpeg_core::json!([3])
         );
         assert_eq!(
             value["section_3d"]["reference_plane_rows"][0]["reference_type"],
             2
         );
-        assert_eq!(value["section_3d"]["dimension_ids"], serde_json::json!([4]));
+        assert_eq!(
+            value["section_3d"]["dimension_ids"],
+            cadmpeg_core::json!([4])
+        );
         assert!(value["section_3d"]["reference_planes"].is_null());
     }
 
@@ -3997,11 +4003,11 @@ mod feature_definition_projection_tests {
         );
         assert_eq!(
             value["outlines"][0]["local_values"],
-            serde_json::json!([2.0, null, null, null, null, null])
+            cadmpeg_core::json!([2.0, null, null, null, null, null])
         );
         assert_eq!(
             value["outlines"][0]["local_value_bodies"],
-            serde_json::json!(["f9", "", "", "", "", ""])
+            cadmpeg_core::json!(["f9", "", "", "", "", ""])
         );
     }
 }

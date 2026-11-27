@@ -446,3 +446,91 @@ fn a_stale_state_keeps_its_breaches_of_the_topology_rules() {
     ir.design.evaluations[0].status = EvaluationStatus::Stale;
     assert_finding(&ir, "miss the edge's vertex positions");
 }
+
+/// Each rule of `check_topology_rules`, with the references it follows from a
+/// record to the records it reads with it. A stored state's rules read the
+/// records its change reaches through references, so a rule that reads
+/// records no reference connects would report other findings there than on
+/// the whole state.
+const RULE_REFERENCES: &[(&str, &str)] = &[
+    ("check_coedge_pairing", "Coedge.radial_next, Coedge.edge"),
+    (
+        "check_child_list_reciprocity",
+        "Region.shells, Shell.region, Shell.members, Face.loops, Loop.face, Loop.coedges, \
+         Coedge.owner_loop",
+    ),
+    (
+        "check_closed_edges",
+        "Edge.ends, Edge.carrier, Coedge.edge, Coedge.owner_loop, Loop.coedges",
+    ),
+    (
+        "check_shell_connectivity",
+        "Coedge.owner_loop, Loop.face, Coedge.edge, Edge.ends, the vertices of a loop, Face.shell",
+    ),
+    (
+        "check_loopless_faces",
+        "Face.shell, Face.loops, Face.surface",
+    ),
+    (
+        "check_solid_edge_uses",
+        "Region.body, Region.shells, Face.shell, Face.loops, Coedge.owner_loop, Loop.face, \
+         Coedge.edge, Edge.carrier",
+    ),
+    ("check_partial_topology", "each record alone"),
+    (
+        "check_wire_topology",
+        "Coedge.edge, Edge.ends, Shell.members, Shell.region, Region.body, Face.shell",
+    ),
+    (
+        "check_carrier_reachability",
+        "Face.surface, Edge.carrier, Coedge.use_curve, Coedge.pcurves, Vertex.point, the \
+         references of a carrier's construction; the records of the document outside the \
+         topology",
+    ),
+    (
+        "check_parameter_domains",
+        "Edge.carrier, Coedge.use_curve, Coedge.pcurves, the references of a curve's construction",
+    ),
+    (
+        "check_edge_endpoint_consistency",
+        "Edge.carrier, Edge.ends, Vertex.point, Coedge.use_curve, Coedge.edge, the references \
+         of a curve's construction",
+    ),
+    (
+        "check_pcurve_surface_consistency",
+        "Coedge.pcurves, Coedge.owner_loop, Loop.face, Face.surface, Coedge.edge, Edge.ends, \
+         Vertex.point, the references of a carrier's construction; the work allowance of the \
+         pass",
+    ),
+    (
+        "check_procedural_support_consistency",
+        "the references of a curve's construction, Edge.carrier, Coedge.use_curve; the work \
+         allowance of the pass",
+    ),
+    ("check_topology_tolerances", "each record alone"),
+    ("check_subdivision_schemes", "each record alone"),
+];
+
+#[test]
+fn every_topology_rule_states_the_references_it_reads() {
+    let source = include_str!("../../../../validate.rs").replace("\r\n", "\n");
+    let start = source
+        .find("fn check_topology_rules(")
+        .expect("check_topology_rules is in validate.rs");
+    let body = &source[start..];
+    let body = &body[..body.find("\n}\n").expect("the function ends")];
+    let mut called: Vec<&str> = Vec::new();
+    for token in body.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')) {
+        if token.starts_with("check_")
+            && token != "check_topology_rules"
+            && !called.contains(&token)
+        {
+            called.push(token);
+        }
+    }
+    let listed: Vec<&str> = RULE_REFERENCES.iter().map(|(rule, _)| *rule).collect();
+    assert_eq!(
+        called, listed,
+        "state each rule of check_topology_rules in RULE_REFERENCES with the references it reads"
+    );
+}

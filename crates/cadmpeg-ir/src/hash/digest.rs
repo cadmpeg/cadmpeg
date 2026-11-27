@@ -135,12 +135,12 @@ mod tests {
             "é".repeat(32),
         ] {
             assert!(Sha256Digest::try_from(text.as_str()).is_err());
-            assert!(json::from_value::<Sha256Digest>(serde_json::json!(text)).is_err());
+            assert!(json::from_value::<Sha256Digest>(cadmpeg_core::json!(text)).is_err());
         }
         let digest = Sha256Digest::from_bytes([0; 32]);
         assert_eq!(digest.as_str(), "0".repeat(64));
         assert_eq!(
-            json::from_value::<Sha256Digest>(serde_json::json!(digest)).unwrap(),
+            json::from_value::<Sha256Digest>(cadmpeg_core::json!(digest)).unwrap(),
             digest
         );
     }

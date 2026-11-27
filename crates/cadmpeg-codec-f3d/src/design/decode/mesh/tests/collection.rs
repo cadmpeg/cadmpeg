@@ -23,12 +23,12 @@ fn flagged_collection_direct_owner_joins_all_imported_bodies() {
         assert_eq!(wire["collection_record"]["frame_length"], length);
         assert_eq!(
             wire["collection_body_reference_offsets"],
-            serde_json::json!(offsets)
+            cadmpeg_core::json!(offsets)
         );
         assert_eq!(wire["collection_flagged_data"]["word"], 9);
         assert_eq!(
             wire["collection_flagged_data"]["entries"],
-            serde_json::json!([])
+            cadmpeg_core::json!([])
         );
         assert_eq!(wire["collection_owner_reference_offset"], length - 11);
         assert_eq!(feature.bodies()[0].placement.record().record_index(), 104);

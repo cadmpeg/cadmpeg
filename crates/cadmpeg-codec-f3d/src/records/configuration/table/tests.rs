@@ -4,7 +4,8 @@ use super::{AdmittedTables, ConfiguredValue};
 use crate::test_support::configuration_table::{
     bool_cell, expression_cell, object_target, property_target, string_cell, table_document,
 };
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use serde_json::Value;
 
 const DEFINITION: &str = "/tables/0/asset/components/0/properties";
 const COLUMNS: &str = "/tables/0/asset/components/0/properties/columnData/value";

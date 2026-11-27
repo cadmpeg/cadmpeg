@@ -290,7 +290,7 @@ fn rhino_full_band_empty_archive_decodes_to_current_ir() {
                 value["source"]["attributes"]["container_kind"],
                 "3dm-chunks"
             );
-            assert_eq!(value["geometry"]["subds"], serde_json::json!([]));
+            assert_eq!(value["geometry"]["subds"], cadmpeg_core::json!([]));
         }
     }
 }
@@ -356,7 +356,7 @@ fn rhino_v1_to_v5_decode_metadata() {
             cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["ir_version"], cadmpeg_ir::IR_VERSION);
         assert_eq!(value["source"]["attributes"]["archive_version"], version);
-        assert_eq!(value["geometry"]["subds"], serde_json::json!([]));
+        assert_eq!(value["geometry"]["subds"], cadmpeg_core::json!([]));
     }
 }
 
