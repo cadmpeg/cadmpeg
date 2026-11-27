@@ -8,7 +8,7 @@ use cadmpeg_core::CodecError;
 
 use crate::test_support::container::sldprt_with_body;
 use crate::test_support::parasolid::triangle_body;
-use crate::writer::{retained_source_baseline, RetainedImage, SemanticWriteCache};
+use crate::writer::{retained_source_baseline, RetainedImage, SemanticWriteCache, SourceInput};
 
 #[test]
 fn a_baseline_is_reused_under_equal_limits_and_not_under_tighter_ones() {
@@ -17,7 +17,8 @@ fn a_baseline_is_reused_under_equal_limits_and_not_under_tighter_ones() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy { limits };
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
-    let source = RetainedImage::read(&ctx, &image).unwrap();
+    let input = SourceInput::new(&image);
+    let source = RetainedImage::open(&ctx, Some(&input)).unwrap().unwrap();
     let mut write = SemanticWriteCache::default();
     assert!(
         retained_source_baseline(&mut write.source_baseline, &ctx, Some(&source))
@@ -42,8 +43,8 @@ fn a_baseline_is_reused_under_equal_limits_and_not_under_tighter_ones() {
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
     let mut baseline = None;
     assert!(matches!(
-        RetainedImage::read(&ctx, &image).and_then(|source| {
-            retained_source_baseline(&mut baseline, &ctx, Some(&source)).map(drop)
+        RetainedImage::open(&ctx, Some(&SourceInput::new(&image))).and_then(|source| {
+            retained_source_baseline(&mut baseline, &ctx, source.as_ref()).map(drop)
         }),
         Err(CodecError::ResourceLimit(_))
     ));

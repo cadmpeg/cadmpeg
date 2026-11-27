@@ -57,10 +57,10 @@ impl Agreement {
     }
 }
 
-/// The document the caller edited: the retained source image, or that image
-/// decoded.
-pub(crate) enum Source<'a> {
-    Image(&'a [u8]),
+/// The document the caller edited: the retained source image as input of the
+/// encode, or that image decoded.
+pub(crate) enum Source<'a, 'i> {
+    Image(&'a crate::writer::SourceInput<'i>),
     Decoded(&'a CadIr),
 }
 
@@ -81,7 +81,7 @@ pub(crate) fn agreement(
     ir: &CadIr,
     digests: &CodecDigests,
     native: Option<&SldprtNative>,
-    source: Option<Source<'_>>,
+    source: Option<Source<'_, '_>>,
     unwritten: &UnwrittenEdits,
     misread: &HashSet<(FeatureId, String)>,
     hash_ctx: &DecodeContext<'_>,
@@ -125,8 +125,8 @@ pub(crate) fn agreement(
     let decoded;
     let baseline = match source {
         Source::Decoded(baseline) => baseline,
-        Source::Image(image) => {
-            decoded = crate::writer::decode_source_image(hash_ctx, image)?;
+        Source::Image(input) => {
+            decoded = crate::writer::decode_source_root(hash_ctx, input.root(hash_ctx)?)?;
             &decoded.ir
         }
     };

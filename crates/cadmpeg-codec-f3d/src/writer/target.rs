@@ -6,6 +6,7 @@ use cadmpeg_ir::codec::write::{
     carried_source_losses, target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput,
     ExportBody, NativeDisposition, NativeDispositions, PatchConsumption, WritePath,
 };
+use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::CadIr;
 
 use crate::loss::F3dLossCode;
@@ -34,10 +35,11 @@ pub(crate) fn plan(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
+    restored: Option<&DecodeResult>,
 ) -> Result<ExportBody, CodecError> {
     let off_catalog = target.entry().is_none();
     if off_catalog || target.preserves_source() {
-        let consumption = match preserve(ctx, input) {
+        let consumption = match preserve(ctx, input, restored) {
             Ok(Preservation::Written {
                 bytes,
                 write_path,
@@ -77,6 +79,7 @@ enum Preservation {
 fn preserve(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     input: EncodeInput<'_>,
+    restored: Option<&DecodeResult>,
 ) -> Result<Preservation, CodecError> {
     let Some((fidelity, record)) = input.fidelity.and_then(|sidecar| {
         sidecar
@@ -90,8 +93,9 @@ fn preserve(
     };
     let mut bytes = Vec::new();
     let mut notes = Vec::new();
-    let write_path =
-        F3dCodec::write_preserved_bytes(ctx, input.ir, fidelity, data, &mut bytes, &mut notes)?;
+    let write_path = F3dCodec::write_preserved_bytes(
+        ctx, input.ir, fidelity, data, restored, &mut bytes, &mut notes,
+    )?;
     Ok(Preservation::Written {
         bytes,
         write_path,

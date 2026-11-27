@@ -154,11 +154,12 @@ impl F3dCodec {
         ir: &CadIr,
         fidelity: &cadmpeg_ir::SourceFidelity,
         data: &[u8],
+        restored: Option<&cadmpeg_ir::codec::DecodeResult>,
         writer: &mut dyn Write,
         notes: &mut Vec<String>,
     ) -> Result<PreservedWritePath, CodecError> {
         if fidelity.edited(ctx, ir)? {
-            writer::patch::write_semantic(ctx, ir, data, writer, notes)?;
+            writer::patch::write_semantic(ctx, ir, data, restored, writer, notes)?;
             return Ok(PreservedWritePath::Patched);
         }
         writer.write_all(data)?;
@@ -253,7 +254,7 @@ impl EncoderBackend for F3dCodec {
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        writer::target::plan(ctx, input, &target)
+        writer::target::plan(ctx, input, &target, None)
     }
 
     fn restore(
@@ -263,8 +264,18 @@ impl EncoderBackend for F3dCodec {
         target: &ResolvedWrite<'_>,
         notes: &mut Vec<String>,
         losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    ) -> Result<Option<CadIr>, CodecError> {
+    ) -> Result<Option<cadmpeg_ir::codec::write::RestoredDocument>, CodecError> {
         writer::saved::restore(ctx, input, target, notes, losses)
+    }
+
+    fn plan_restored(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        target: ResolvedWrite<'_>,
+        source: &cadmpeg_ir::codec::DecodeResult,
+    ) -> Result<ExportBody, CodecError> {
+        writer::target::plan(ctx, input, &target, Some(source))
     }
 }
 

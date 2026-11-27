@@ -14,16 +14,17 @@ use cadmpeg_ir::Annotations;
 pub(crate) fn patch_partition(
     ir: &CadIr,
     annotations: &Annotations,
-    source_scan: Option<&crate::container::ContainerScan<'_>>,
+    source: Option<&crate::writer::RetainedImage<'_>>,
     scale: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(String, Vec<u8>)>, CodecError> {
     if !crate::writer::requires_native_partition(ir) {
         return Ok(None);
     }
-    let Some(scan) = source_scan else {
+    let Some(image) = source else {
         return Ok(None);
     };
+    let scan = &image.scan;
     let Some(selected) = crate::container::select_active_parasolid_site(scan) else {
         return Ok(None);
     };
@@ -73,14 +74,20 @@ pub(crate) fn patch_partition(
         .iter()
         .map(|(_, (_, payload, header))| (payload.as_slice(), *header))
         .collect::<Vec<_>>();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let native = ctx.with_arena(&arena, |ctx| {
-        crate::brep::graph::decode_bodies(
-            ctx,
-            &bodies,
-            &cadmpeg_ir::stream_name!("native-patch-baseline"),
-        )
-    })?;
+    let native = match image.patch_baseline.get() {
+        Some(native) => native,
+        None => {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let native = ctx.with_arena(&arena, |ctx| {
+                crate::brep::graph::decode_bodies(
+                    ctx,
+                    &bodies,
+                    &cadmpeg_ir::stream_name!("native-patch-baseline"),
+                )
+            })?;
+            image.patch_baseline.get_or_init(|| native)
+        }
+    };
     let colors = crate::writer::face_colors(ir);
     if native
         .faces
@@ -91,18 +98,18 @@ pub(crate) fn patch_partition(
             "SLDPRT native partition patch cannot write changed face colours".into(),
         ));
     }
-    if !same_pcurves(ir, &native) {
+    if !same_pcurves(ir, native) {
         return Err(CodecError::NotImplemented(
             "SLDPRT native partition patch cannot write changed pcurve geometry or metadata".into(),
         ));
     }
-    if !same_graph(ir, &native) {
+    if !same_graph(ir, native) {
         return Ok(None);
     }
     validate_changed_annotations(
         ir,
         annotations,
-        &native,
+        native,
         block.section.source_stream().as_str(),
     )?;
 
@@ -112,13 +119,13 @@ pub(crate) fn patch_partition(
     let Some(body) = payload.get_mut(header.body_offset..) else {
         return Ok(None);
     };
-    if patch_points(ir, annotations, &native, &point_values, body, scale)?.is_none() {
+    if patch_points(ir, annotations, native, &point_values, body, scale)?.is_none() {
         return Ok(None);
     }
-    if patch_surfaces(ir, annotations, &native, body, scale)?.is_none() {
+    if patch_surfaces(ir, annotations, native, body, scale)?.is_none() {
         return Ok(None);
     }
-    if patch_curves(ir, annotations, &native, body, scale)?.is_none() {
+    if patch_curves(ir, annotations, native, body, scale)?.is_none() {
         return Ok(None);
     }
     Ok(Some((

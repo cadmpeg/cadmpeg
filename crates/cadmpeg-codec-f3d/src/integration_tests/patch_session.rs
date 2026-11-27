@@ -178,3 +178,56 @@ fn a_member_that_does_not_inflate_declines_the_patch() {
 
     assert_patch_declined(&ir, Some(&fidelity), &format!("ZIP entry {UNREAD_MEMBER}"));
 }
+
+/// `archive` with a Deflate member of `size` bytes that the decoder does not
+/// read.
+fn with_unread_member(archive: &[u8], size: usize) -> Vec<u8> {
+    let mut out = repacked(archive, CompressionMethod::Stored);
+    let deflated = crate::zip_write::file_options(CompressionMethod::Deflated);
+    out.start_file(UNREAD_MEMBER, deflated).unwrap();
+    out.write_all(&vec![0x5a; size]).unwrap();
+    out.finish().unwrap().into_inner()
+}
+
+/// The largest inflated size the central directory of `archive` declares
+/// for one member.
+fn largest_member(archive: &[u8]) -> u64 {
+    let mut archive = zip::ZipArchive::new(Cursor::new(archive)).unwrap();
+    (0..archive.len())
+        .map(|index| archive.by_index(index).unwrap().size())
+        .max()
+        .unwrap()
+}
+
+/// A member that declares more bytes than one expansion of the session
+/// admits is a member the patch cannot rewrite: the patch declines, and the
+/// session stays open for the synthesis.
+#[test]
+fn a_member_past_the_per_expansion_allowance_declines_the_patch() {
+    let base = f3d_with_act_component_links(&[(4, 0)]);
+    let allowance = largest_member(&base);
+    let source = with_unread_member(&base, usize::try_from(allowance).unwrap() + 1);
+    let limits = ResourceLimits {
+        max_decompressed_bytes_per_expand: allowance,
+        ..ResourceLimits::default()
+    };
+    let (ir, fidelity) = renamed_link(decode_within(&source, limits).unwrap());
+
+    let plan = F3dCodec
+        .plan(EncodeInput {
+            limits,
+            ..EncodeInput::new(&ir, Some(&fidelity))
+        })
+        .unwrap();
+
+    let Some(cadmpeg_ir::report::export::SynthesisCause::PatchDeclined { reason }) =
+        plan.report().synthesis_cause()
+    else {
+        panic!("the patch declines: {:?}", plan.report().write_path());
+    };
+    assert!(
+        reason.contains(&format!("ZIP entry {UNREAD_MEMBER} declares"))
+            && reason.contains("-byte per-expansion allowance"),
+        "{reason}"
+    );
+}

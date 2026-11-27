@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Write};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeFailure};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeResult};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -51,6 +51,13 @@ use records::{
     patch_tolerant_coedge_parameters, patch_transform_hints, patch_wire_topologies,
 };
 
+/// The source image a patch compares the document with: decoded by the
+/// restore of the write, or opened as input of the session.
+enum Baseline<'a, 'v> {
+    Decoded(&'a DecodeResult),
+    Opened(cadmpeg_core::decode::View<'v>),
+}
+
 /// Apply supported semantic edits to a retained F3D archive.
 ///
 /// `source_image` must match the F3D source represented by `target`. The
@@ -64,10 +71,14 @@ use records::{
 /// this binary, which is the only setting in which
 /// [`decode::document_local_sha256`] means anything; the comparison is bitwise
 /// because the question is whether an unsupported field moved at all.
+///
+/// `restored` is the source image as the restore of a write read from CADIR
+/// decoded it in `ctx`; the patch decodes the image itself without one.
 pub(crate) fn write_semantic(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     source_image: &[u8],
+    restored: Option<&DecodeResult>,
     writer: &mut dyn Write,
     notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
@@ -81,7 +92,10 @@ pub(crate) fn write_semantic(
     }
     // The archive is input of the write's one session, so the caller's
     // ceilings bound every read of it (cadir-v11.md §2.5).
-    let source = ctx.open_input(source_image, "F3D patch source archive")?;
+    let source = match restored {
+        Some(decoded) => Baseline::Decoded(decoded),
+        None => Baseline::Opened(ctx.open_input(source_image, "F3D patch source archive")?),
+    };
     let target_native = f3d_native(ctx, target)?;
     if let Some(native) = target_native.as_ref() {
         if !projects(
@@ -99,17 +113,24 @@ pub(crate) fn write_semantic(
     } else {
         validate_assembly_projection(ctx, target, None)?;
     }
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let baseline = ctx
-        .with_arena(&arena, |ctx| {
-            F3dCodec.decode_with_context(ctx, source, &Strictness::default())
-        })
-        .map_err(|failure| match failure {
-            DecodeFailure::Codec(error) => error,
-            other => CodecError::malformed(format!(
-                "the salvage decode of the source image refused: {other}"
-            )),
-        })?;
+    let decoded;
+    let baseline = match source {
+        Baseline::Decoded(baseline) => baseline,
+        Baseline::Opened(source) => {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            decoded = ctx
+                .with_arena(&arena, |ctx| {
+                    F3dCodec.decode_with_context(ctx, source, &Strictness::default())
+                })
+                .map_err(|failure| match failure {
+                    DecodeFailure::Codec(error) => error,
+                    other => CodecError::malformed(format!(
+                        "the salvage decode of the source image refused: {other}"
+                    )),
+                })?;
+            &decoded
+        }
+    };
     if baseline
         .report()
         .losses
@@ -473,7 +494,9 @@ pub(crate) fn write_semantic(
                 .namespace_mut(cadmpeg_ir::codec_id!("f3d")),
         )?;
     }
-    if decode::document_local_sha256(&supported_target)? != decode::document_local_sha256(target)? {
+    if decode::document_local_sha256(ctx, &supported_target)?
+        != decode::document_local_sha256(ctx, target)?
+    {
         return Err(CodecError::NotImplemented(
             "modified F3D IR contains edits beyond supported point, line, and plane carriers"
                 .into(),

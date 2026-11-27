@@ -5830,19 +5830,20 @@ pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
 
 /// The machine-local digest by which the F3D patch path compares two documents
 /// it holds; see [`cadmpeg_ir::hash::document_local_sha256`].
-pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
+pub(crate) fn document_local_sha256(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<String, CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let digest = cadmpeg_ir::hash::document_local_sha256(
-        &ctx,
-        ir,
-        ir.source.as_ref(),
-        "f3d",
-        crate::ids::FILE_SOURCE_IMAGE_ID,
-    )?;
-    ctx.finish_session()?;
-    Ok(digest)
+    ctx.with_arena(&arena, |ctx| {
+        cadmpeg_ir::hash::document_local_sha256(
+            ctx,
+            ir,
+            ir.source.as_ref(),
+            "f3d",
+            crate::ids::FILE_SOURCE_IMAGE_ID,
+        )
+    })
 }
 
 fn annotation_stream(entry_name: &str) -> Result<StreamHandle, CodecError> {

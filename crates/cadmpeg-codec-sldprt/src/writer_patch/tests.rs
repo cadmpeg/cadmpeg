@@ -28,6 +28,7 @@ use crate::test_support::parasolid::triangle_body;
 use crate::test_support::parasolid::vertex_use;
 use crate::test_support::parasolid::world_point;
 use crate::test_support::parasolid::DIRTY_TERMINAL_KNOT;
+use crate::writer::{RetainedImage, SourceInput};
 use crate::SldprtCodec;
 
 #[test]
@@ -937,10 +938,11 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
         .find(|record| record.id.as_str() == "sldprt:file:source-image#0")
         .and_then(|record| record.data)
         .unwrap();
-    let scan = crate::test_support::container::scan(image);
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let input = SourceInput::new(image);
+    let source = RetainedImage::open(&ctx, Some(&input)).unwrap();
     assert!(
-        super::patch_partition(decoded.ir(), annotations, Some(&scan), 0.001, &ctx)
+        super::patch_partition(decoded.ir(), annotations, source.as_ref(), 0.001, &ctx)
             .unwrap()
             .is_some()
     );
@@ -948,7 +950,7 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
     changed.geometry.faces[0].color =
         Some(cadmpeg_ir::topology::Color::new(0.2, 0.3, 0.4, 1.0).unwrap());
     let error =
-        super::patch_partition(&changed, annotations, Some(&scan), 0.001, &ctx).unwrap_err();
+        super::patch_partition(&changed, annotations, source.as_ref(), 0.001, &ctx).unwrap_err();
     assert!(error
         .to_string()
         .contains("cannot write changed face colours"));
@@ -979,8 +981,61 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
             });
     }
     let error =
-        super::patch_partition(&changed, annotations, Some(&scan), 0.001, &ctx).unwrap_err();
+        super::patch_partition(&changed, annotations, source.as_ref(), 0.001, &ctx).unwrap_err();
     assert!(error
         .to_string()
         .contains("cannot write changed pcurve geometry or metadata"));
+}
+
+/// Each pass of one write patches against the partition the first pass
+/// decoded: passes after the first charge the session no further entities.
+#[test]
+fn every_pass_of_a_write_patches_against_one_partition_decode() {
+    let mut body = triangle_body();
+    body.extend(edge_use(40, 999));
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let decoded = EditableDecodeResult::from(decoded);
+    let records = crate::source_records(decoded.ir(), decoded.source_fidelity()).unwrap();
+    let annotations = &decoded.source_fidelity().annotations;
+    let passes = |max_entities: u64, count: usize| {
+        let limits = cadmpeg_core::decode::ResourceLimits {
+            max_entities,
+            ..cadmpeg_core::decode::ResourceLimits::desktop()
+        };
+        let policy = cadmpeg_core::decode::DecodePolicy { limits };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let ctx = cadmpeg_core::decode::DecodeContext::new(
+            &arena,
+            &policy,
+            cadmpeg_core::decode::DecodeDepth::Full,
+        );
+        let input = SourceInput::of(&records);
+        let source = RetainedImage::open(&ctx, input.as_ref())?;
+        (0..count)
+            .map(|_| {
+                super::patch_partition(decoded.ir(), annotations, source.as_ref(), 0.001, &ctx)
+                    .map(|patched| patched.is_some())
+            })
+            .collect::<Result<Vec<_>, _>>()
+    };
+    let (mut refused, mut admitted) = (0, 1 << 32);
+    assert!(passes(admitted, 1).unwrap().iter().all(|patched| *patched));
+    while admitted - refused > 1 {
+        let middle = refused + (admitted - refused) / 2;
+        if passes(middle, 1).is_ok() {
+            admitted = middle;
+        } else {
+            refused = middle;
+        }
+    }
+    assert!(matches!(
+        passes(refused, 1),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+    assert_eq!(passes(admitted, 3).unwrap(), [true; 3]);
 }

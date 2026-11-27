@@ -152,6 +152,60 @@ fn a_saved_design_patches_an_edited_point() {
     assert_eq!(from_saved, write(&held, &decoded).0);
 }
 
+/// The patch of a design read from CADIR compares it with the archive the
+/// restore decoded: the write reads the archive once, so an input ceiling
+/// that admits one decode of it admits the write.
+#[test]
+fn a_saved_design_patches_from_the_archive_its_restore_read() {
+    let source = crate::test_support::zip_test::f3d_with_smbh_and_manifest_version(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+        "3-3-0-0",
+    );
+    let decoded = decode(&source);
+    let mut read = saved(decoded.ir());
+    let at = read.geometry.points[0].position().get();
+    read.geometry.points[0].set_position(
+        FinitePoint3::new(Point3::new(at.x + 1.0, at.y, at.z)).expect("a finite point"),
+    );
+    let within = |max_input_bytes: u64| cadmpeg_core::decode::ResourceLimits {
+        max_input_bytes,
+        ..cadmpeg_core::decode::ResourceLimits::default()
+    };
+    let decodes = |max_input_bytes: u64| {
+        let options = DecodeOptions {
+            policy: cadmpeg_core::decode::DecodePolicy {
+                limits: within(max_input_bytes),
+            },
+            ..DecodeOptions::default()
+        };
+        F3dCodec
+            .decode(&mut Cursor::new(source.clone()), &options)
+            .is_ok()
+    };
+    let (mut refused, mut admitted) = (0, 1 << 32);
+    assert!(decodes(admitted));
+    while admitted - refused > 1 {
+        let middle = refused + (admitted - refused) / 2;
+        if decodes(middle) {
+            admitted = middle;
+        } else {
+            refused = middle;
+        }
+    }
+
+    let plan = F3dCodec
+        .plan(EncodeInput {
+            limits: within(admitted),
+            ..EncodeInput::new(&read, Some(decoded.source_fidelity()))
+        })
+        .expect("the write reads the archive once");
+    assert!(
+        matches!(plan.report().write_path(), WritePath::Patched { .. }),
+        "{:?}",
+        plan.report().losses
+    );
+}
+
 #[test]
 fn a_design_edit_the_history_cannot_state_is_named() {
     let decoded = decode(SOURCE);

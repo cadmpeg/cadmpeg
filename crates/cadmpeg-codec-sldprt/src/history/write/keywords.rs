@@ -162,8 +162,8 @@ fn checked_member(
 /// file under the policy of `ctx`: under the per-expansion allowance of a
 /// decode whose input is no larger than the compressed block the writer writes
 /// for the member. The written file holds that block, so its decode has at
-/// least this allowance. The block, as input, and the parse of `text` charge
-/// `ctx`.
+/// least this allowance. The parse of `text` charges `ctx` its expanded
+/// bytes; the block is output of the write, so it charges no input.
 fn read_back(
     ctx: &DecodeContext<'_>,
     section: &str,
@@ -184,7 +184,6 @@ fn read_back(
             block.len()
         )));
     }
-    ctx.charge_input(u64_from_index(block.len()), "the Keywords block")?;
     ctx.parse_xml(text, "the Keywords text").map(drop)
 }
 
@@ -461,13 +460,25 @@ mod tests {
     }
 
     fn written(text: &str, source: Source<'_>) -> Vec<u8> {
+        written_under(
+            text,
+            source,
+            cadmpeg_core::decode::ResourceLimits::desktop(),
+        )
+    }
+
+    fn written_under(
+        text: &str,
+        source: Source<'_>,
+        limits: cadmpeg_core::decode::ResourceLimits,
+    ) -> Vec<u8> {
         let mut losses = Vec::new();
         let member = checked_member(
             "Contents/Keywords",
             Ok(text.to_owned()),
             source,
             &mut losses,
-            &session(cadmpeg_core::decode::ResourceLimits::desktop()),
+            &session(limits),
         )
         .unwrap();
         assert!(losses.is_empty(), "{losses:?}");
@@ -594,5 +605,17 @@ mod tests {
             )
         );
         assert!(losses.is_empty(), "{losses:?}");
+    }
+
+    /// The written block is output of the write: its read-back charges the
+    /// session no input bytes.
+    #[test]
+    fn a_read_back_charges_no_input() {
+        let limits = cadmpeg_core::decode::ResourceLimits {
+            max_input_bytes: 1,
+            ..cadmpeg_core::decode::ResourceLimits::desktop()
+        };
+        let text = "<Keywords Name=\"Edited\"/>";
+        assert!(written_under(text, Source::Member(SOURCE), limits).ends_with(text.as_bytes()));
     }
 }

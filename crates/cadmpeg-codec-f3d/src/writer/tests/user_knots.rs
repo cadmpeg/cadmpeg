@@ -107,6 +107,7 @@ fn the_patch_reads_the_archive_in_the_write_session() {
             &ctx,
             &edited,
             &source,
+            None,
             &mut Vec::new(),
             &mut Vec::new(),
         )

@@ -45,7 +45,9 @@ pub(crate) fn is_zstd_member<R: Read + Seek>(
 /// `ctx`: a Zstandard member (`zstd`, opened with `by_index_raw`) expanded by
 /// [`cadmpeg_container::compression::expand_zstd_member_owned`], any other
 /// read through `zip`. Each is held to [`MAX_INFLATED_ENTRY_BYTES`] and to
-/// its declared size, and its expansion charges `ctx`. The session reads the
+/// its declared size, and its expansion charges `ctx`. A member that declares
+/// more than the per-expansion allowance of `ctx` is `NotImplemented`, so the
+/// write declines it and the session stays open. The session reads the
 /// archive that holds the member as input, so a member that decodes on read
 /// also expands here. Member bytes that do not expand to their declared size
 /// and CRC-32 are `Malformed`.
@@ -59,6 +61,13 @@ pub(crate) fn expand_member<R: Read>(
     if declared_size > MAX_INFLATED_ENTRY_BYTES {
         return Err(CodecError::malformed(format_args!(
             "ZIP entry {name} exceeds the {MAX_INFLATED_ENTRY_BYTES}-byte inflated limit"
+        )));
+    }
+    let allowance = ctx.per_expand_allowance();
+    if declared_size > allowance {
+        return Err(CodecError::NotImplemented(format!(
+            "ZIP entry {name} declares {declared_size} expanded bytes, past the \
+             {allowance}-byte per-expansion allowance of the session"
         )));
     }
     let arena = DecodeArena::new();

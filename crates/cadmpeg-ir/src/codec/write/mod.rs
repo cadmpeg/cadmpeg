@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 use std::io::Write;
 
-use crate::codec::FormatId;
+use crate::codec::{DecodeResult, FormatId};
 use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
 use crate::products::{ProductDefinition, Storage};
@@ -107,7 +107,9 @@ pub trait EncoderBackend {
     /// Plans a write from the request resolved by [`Encoder::plan`], in the
     /// encode's session `ctx`, which holds the caller's limits. One encode
     /// is one session: each read of the retained source charges `ctx`, so
-    /// the cumulative ceilings bound the whole write.
+    /// the cumulative ceilings bound the whole write. A decode that reads a
+    /// written output back runs in a session of its own under the caller's
+    /// limits: the output is not input of the encode.
     fn plan_resolved(
         &self,
         ctx: &DecodeContext<'_>,
@@ -131,8 +133,39 @@ pub trait EncoderBackend {
         _target: &<Self::Target as TargetDomain>::Resolved<'_>,
         _notes: &mut Vec<String>,
         _losses: &mut Vec<LossNote>,
-    ) -> Result<Option<CadIr>, CodecError> {
+    ) -> Result<Option<RestoredDocument>, CodecError> {
         Ok(None)
+    }
+
+    /// Plans a write as [`Self::plan_resolved`] does, from a document
+    /// [`Self::restore`] restored from `source`, the retained source as the
+    /// restore decoded it in `ctx`. A writer that compares the document with
+    /// its retained source reads `source` in place of a second decode.
+    fn plan_restored(
+        &self,
+        ctx: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        target: <Self::Target as TargetDomain>::Resolved<'_>,
+        _source: &DecodeResult,
+    ) -> Result<ExportBody, CodecError> {
+        self.plan_resolved(ctx, input, target)
+    }
+}
+
+/// The document [`EncoderBackend::restore`] restores for a write, and the
+/// retained source decoded in the encode's session that it restored from.
+#[derive(Debug)]
+pub struct RestoredDocument {
+    /// The document the write plans from.
+    pub ir: CadIr,
+    /// The retained source decoded, which [`EncoderBackend::plan_restored`]
+    /// plans with.
+    pub source: Option<DecodeResult>,
+}
+
+impl From<CadIr> for RestoredDocument {
+    fn from(ir: CadIr) -> Self {
+        Self { ir, source: None }
     }
 }
 
@@ -224,6 +257,9 @@ impl<E: EncoderBackend> Encoder for E {
         } else {
             plan_encode_set(self, &session, unchecked, outputs)?
         };
+        if let Some(limit) = session.resource_refusal() {
+            return Err(EncodeError::from_backend(CodecError::ResourceLimit(limit)));
+        }
         let (payloads, censuses) = payloads.into_iter().unzip();
         let mut plan = ExportPlan {
             report,
@@ -264,12 +300,20 @@ fn plan_output<E: EncoderBackend>(
         .restore(ctx, input, &target, &mut restore_notes, &mut restore_losses)
         .map_err(EncodeError::from_backend)?;
     let input = match &restored {
-        Some(ir) => EncodeInput { ir, ..input },
+        Some(restored) => EncodeInput {
+            ir: &restored.ir,
+            ..input
+        },
         None => input,
     };
-    let body = encoder
-        .plan_resolved(ctx, input, target.clone())
-        .map_err(EncodeError::from_backend)?;
+    let body = match restored
+        .as_ref()
+        .and_then(|restored| restored.source.as_ref())
+    {
+        Some(source) => encoder.plan_restored(ctx, input, target.clone(), source),
+        None => encoder.plan_resolved(ctx, input, target.clone()),
+    }
+    .map_err(EncodeError::from_backend)?;
     let ExportBody {
         bytes,
         census,

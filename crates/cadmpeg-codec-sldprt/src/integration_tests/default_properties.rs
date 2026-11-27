@@ -472,3 +472,47 @@ fn a_configuration_carrier_charges_only_its_edited_property_and_unit_mirror() {
     losses.assert_charged(Held::Source, "saved properties", &mirror);
     losses.assert_uncharged(&properties[0]);
 }
+
+/// One encode is one session: the retained image and the saved-property
+/// carriers the write reads are input of the same session, so a ceiling that
+/// holds each alone and not both refuses the encode.
+#[test]
+fn the_image_and_the_carriers_charge_one_input_ceiling() {
+    use cadmpeg_ir::codec::write::{EncodeError, EncodeInput, Encoder};
+    let mut decoded = fixture();
+    let mut ir = decoded.ir_mut();
+    let property = ir
+        .model
+        .attributes
+        .iter_mut()
+        .find(|row| row.name == "bounding_envelope" && is_property(row))
+        .unwrap();
+    property.values = vec![Some(AttributeValue::String("edited".into()))];
+    drop(ir);
+    let image = decoded
+        .source_fidelity()
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .and_then(|record| record.data())
+        .unwrap()
+        .len();
+    let limits = cadmpeg_core::decode::ResourceLimits {
+        max_input_bytes: u64::try_from(image).unwrap(),
+        ..cadmpeg_core::decode::ResourceLimits::desktop()
+    };
+    let refused = crate::SldprtCodec.plan(EncodeInput {
+        limits,
+        ..EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity()))
+    });
+    let Err(EncodeError::ResourceLimit(limit)) = refused else {
+        panic!("expected a resource refusal: {:?}", refused.map(drop));
+    };
+    assert_eq!(
+        (limit.dimension, limit.scope, limit.operation),
+        (
+            cadmpeg_core::decode::ResourceDimension::InputBytes,
+            cadmpeg_core::decode::LimitScope::Session,
+            "SLDPRT saved-property carriers"
+        )
+    );
+    assert!(write(&decoded).is_ok());
+}

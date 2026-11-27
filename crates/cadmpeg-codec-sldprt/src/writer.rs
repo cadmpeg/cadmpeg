@@ -2,6 +2,7 @@
 //! Semantic SLDPRT writer for analytic B-reps.
 
 use cadmpeg_core::serde_erase::json;
+use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::num::NonZeroU16;
@@ -28,7 +29,7 @@ pub(crate) use accounting::{Held, Unwritten, UnwrittenAttributes};
 
 use crate::native::SldprtNative;
 use cadmpeg_core::convert::f32_from_f64;
-use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, ResourceLimits};
+use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, ResourceLimits, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationTarget;
 use cadmpeg_ir::appearance::AppearanceTarget;
@@ -155,12 +156,13 @@ impl RetainedSource {
     }
 }
 
-/// Reusable decoded source baseline and native records across read-back retries
-/// of one semantic write.
+/// Reusable decoded source baseline, native records, and stored saved
+/// properties across read-back retries of one semantic write.
 #[derive(Default)]
 pub(crate) struct SemanticWriteCache {
     pub(crate) source_baseline: Option<Arc<RetainedSource>>,
     pub(crate) native: CachedNative,
+    pub(crate) saved_properties: Option<default_properties::StoredProperties>,
 }
 
 impl SemanticWriteCache {
@@ -176,6 +178,7 @@ impl SemanticWriteCache {
                 .filter(|source| source.limits == limits)
                 .cloned(),
             native: CachedNative::Unloaded,
+            saved_properties: None,
         }
     }
 
@@ -197,46 +200,76 @@ pub(crate) struct SemanticWriteControls<'a> {
     pub(crate) source: Option<&'a RetainedImage<'a>>,
 }
 
+/// The retained source image of one encode, opened as input of the encode
+/// session at most once.
+pub(crate) struct SourceInput<'a> {
+    bytes: &'a [u8],
+    root: OnceCell<View<'a>>,
+}
+
+impl<'a> SourceInput<'a> {
+    /// The source image `bytes` of one encode, not yet opened.
+    pub(crate) fn new(bytes: &'a [u8]) -> Self {
+        Self {
+            bytes,
+            root: OnceCell::new(),
+        }
+    }
+
+    /// The source image that `records` retain, not yet opened.
+    pub(crate) fn of(records: &[SourceRecord<'a>]) -> Option<Self> {
+        source_image(records).map(Self::new)
+    }
+
+    /// The image as stored.
+    pub(crate) fn bytes(&self) -> &'a [u8] {
+        self.bytes
+    }
+
+    /// The root view of the image, opened in `ctx` on the first call.
+    pub(crate) fn root(&self, ctx: &DecodeContext<'_>) -> Result<View<'a>, CodecError> {
+        if let Some(root) = self.root.get() {
+            return Ok(*root);
+        }
+        let root = ctx.open_input(self.bytes, SOURCE_IMAGE_INPUT)?;
+        Ok(*self.root.get_or_init(|| root))
+    }
+}
+
 /// The retained source image of an encode, read once as input of the encode
-/// session: its root view and its container scan.
+/// session: its root view, its container scan, and the Parasolid bodies of
+/// its active partition that a native patch compares with.
 pub(crate) struct RetainedImage<'a> {
-    root: cadmpeg_core::decode::View<'a>,
-    scan: crate::container::ContainerScan<'a>,
+    root: View<'a>,
+    pub(crate) scan: crate::container::ContainerScan<'a>,
+    pub(crate) patch_baseline: OnceCell<crate::brep::graph::Brep>,
 }
 
 impl<'a> RetainedImage<'a> {
-    /// Opens and scans the source image `records` retain, in `ctx`.
+    /// Opens and scans the source image of `input`, in `ctx`.
     pub(crate) fn open(
         ctx: &DecodeContext<'_>,
-        records: &[SourceRecord<'a>],
+        input: Option<&SourceInput<'a>>,
     ) -> Result<Option<Self>, CodecError> {
-        source_image(records)
-            .map(|bytes| Self::read(ctx, bytes))
-            .transpose()
-    }
-
-    /// Opens and scans the source image `bytes`, in `ctx`.
-    fn read(ctx: &DecodeContext<'_>, bytes: &'a [u8]) -> Result<Self, CodecError> {
-        let root = ctx.open_input(bytes, SOURCE_IMAGE_INPUT)?;
+        let Some(root) = input.map(|input| input.root(ctx)).transpose()? else {
+            return Ok(None);
+        };
         let arena = DecodeArena::new();
         let scan = ctx.with_arena(&arena, |ctx| crate::container::scan(ctx, root))?;
-        Ok(Self { root, scan })
+        Ok(Some(Self {
+            root,
+            scan,
+            patch_baseline: OnceCell::new(),
+        }))
     }
 }
 
 const SOURCE_IMAGE_INPUT: &str = "SLDPRT retained source image";
 
-/// The source image `bytes` decoded in `ctx`, which reads them as input.
-pub(crate) fn decode_source_image(
+/// The source image `root` decoded in `ctx`, without its local digests.
+pub(crate) fn decode_source_root(
     ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<cadmpeg_ir::codec::Decoded, CodecError> {
-    decode_source_root(ctx, ctx.open_input(bytes, SOURCE_IMAGE_INPUT)?)
-}
-
-fn decode_source_root(
-    ctx: &DecodeContext<'_>,
-    root: cadmpeg_core::decode::View<'_>,
+    root: View<'_>,
 ) -> Result<cadmpeg_ir::codec::Decoded, CodecError> {
     let arena = DecodeArena::new();
     ctx.with_arena(&arena, |ctx| {
@@ -266,7 +299,7 @@ pub(crate) fn write_semantic_with_records(
         limits: ResourceLimits::desktop(),
     };
     let ctx = DecodeContext::new(&arena, &policy, cadmpeg_core::decode::DecodeDepth::Full);
-    let source = RetainedImage::open(&ctx, retained_records)?;
+    let source = RetainedImage::open(&ctx, SourceInput::of(retained_records).as_ref())?;
     write_semantic_with_records_cached(
         ir,
         annotations,
@@ -307,6 +340,7 @@ pub(crate) fn write_semantic_with_records_cached(
     let SemanticWriteCache {
         source_baseline,
         native: cached_native,
+        saved_properties,
     } = cache;
     if matches!(cached_native, CachedNative::Unloaded) {
         let loaded = ir
@@ -398,8 +432,16 @@ pub(crate) fn write_semantic_with_records_cached(
     let mut losses = content_losses;
     // `export:value.unwritable` entries: texts cut to their field's width.
     let mut cut = Vec::new();
-    for (id, held) in
-        default_properties::unwritten(&normalized, retained_records, annotations, ctx)?
+    if saved_properties.is_none() {
+        *saved_properties = Some(default_properties::StoredProperties::read(
+            retained_records,
+            annotations,
+            ctx,
+        )?);
+    }
+    for (id, held) in saved_properties
+        .iter()
+        .flat_map(|stored| default_properties::unwritten(&normalized, stored))
     {
         unwritten.record(&id, Unwritten::SavedProperty, held);
     }
@@ -421,7 +463,7 @@ pub(crate) fn write_semantic_with_records_cached(
         crate::writer_patch::patch_partition(
             &normalized,
             annotations,
-            source_scan,
+            source_image,
             length_scale,
             ctx,
         )?

@@ -52,8 +52,9 @@ impl cadmpeg_ir::codec::write::EncoderBackend for SessionWrite<'_, '_> {
         target: &cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
         notes: &mut Vec<String>,
         losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    ) -> Result<Option<CadIr>, CodecError> {
+    ) -> Result<Option<cadmpeg_ir::codec::write::RestoredDocument>, CodecError> {
         crate::writer::saved::restore(ctx, input, target, notes, losses)
+            .map(|ir| ir.map(Into::into))
     }
 }
 
@@ -492,7 +493,10 @@ pub(crate) fn write_in_native_envelope(
         &policy,
         cadmpeg_core::decode::DecodeDepth::Full,
     );
-    let source = crate::writer::RetainedImage::open(&ctx, &records)?;
+    let source = crate::writer::RetainedImage::open(
+        &ctx,
+        crate::writer::SourceInput::of(&records).as_ref(),
+    )?;
     crate::writer::write_semantic_with_records_cached(
         &ir,
         &fidelity.annotations,

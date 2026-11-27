@@ -269,7 +269,8 @@ pub(crate) fn baseline_with_bytes(
     let mut bytes = Vec::new();
     // A part the semantic writer cannot write unedited has no differences of
     // its own.
-    let written = crate::writer::RetainedImage::open(&ctx, &records).and_then(|opened| {
+    let input = crate::writer::SourceInput::of(&records);
+    let written = crate::writer::RetainedImage::open(&ctx, input.as_ref()).and_then(|opened| {
         crate::writer::write_semantic_with_records_cached(
             part.ir(),
             &part.source_fidelity().annotations,

@@ -18,30 +18,44 @@ use crate::metadata::{
 const UNIT_PREFIX: &str = "sldprt:metadata:source_linear_unit_code#";
 const BLOCK_PREFIX: &str = "sldprt:file:block#";
 
+/// The saved-property attributes that the carriers among some retained
+/// records store, as the full decoder reads them, and the source offsets of
+/// those carriers.
+pub(crate) struct StoredProperties {
+    attributes: Vec<SourceAttribute>,
+    carriers: HashSet<usize>,
+}
+
+impl StoredProperties {
+    /// Reads the carriers among `records`, in `ctx`, which charges them as
+    /// input.
+    pub(super) fn read(
+        records: &[crate::SourceRecord<'_>],
+        annotations: &Annotations,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Self, CodecError> {
+        let scan = carrier_scan(records, annotations);
+        let input = scan.blocks.iter().map(|block| block.payload.len()).sum();
+        let arena = DecodeArena::new();
+        let attributes = ctx.with_arena(&arena, |ctx| {
+            ctx.charge_input(u64_from_index(input), "SLDPRT saved-property carriers")?;
+            crate::metadata::saved_property_rows(ctx, &scan)
+        })?;
+        let carriers = scan.blocks.iter().map(|block| block.offset).collect();
+        Ok(Self {
+            attributes,
+            carriers,
+        })
+    }
+}
+
 /// Each saved-property attribute the write does not write as the document
 /// states it, and what the output holds for it. No serializer writes a saved
 /// property: `opaque_blocks` emits each carrier block the source fidelity
 /// holds bytes of as stored, so the output holds the properties a decode
-/// reads from those bytes. The read of the carriers charges `ctx`.
-pub(super) fn unwritten(
-    ir: &CadIr,
-    records: &[crate::SourceRecord<'_>],
-    annotations: &Annotations,
-    ctx: &DecodeContext<'_>,
-) -> Result<BTreeMap<String, Held>, CodecError> {
-    let scan = carrier_scan(records, annotations);
-    let input = scan.blocks.iter().map(|block| block.payload.len()).sum();
-    let arena = DecodeArena::new();
-    let stored = ctx.with_arena(&arena, |ctx| {
-        ctx.charge_input(u64_from_index(input), "SLDPRT saved-property carriers")?;
-        crate::metadata::saved_property_rows(ctx, &scan)
-    })?;
-    let carriers = scan
-        .blocks
-        .iter()
-        .map(|block| block.offset)
-        .collect::<HashSet<_>>();
-    Ok(changed(&ir.model.attributes, &stored, &carriers))
+/// reads from those bytes, `stored`.
+pub(super) fn unwritten(ir: &CadIr, stored: &StoredProperties) -> BTreeMap<String, Held> {
+    changed(&ir.model.attributes, &stored.attributes, &stored.carriers)
 }
 
 /// The saved-property carriers among `records`: each retained block with
