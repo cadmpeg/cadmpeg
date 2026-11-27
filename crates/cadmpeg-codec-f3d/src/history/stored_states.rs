@@ -59,8 +59,11 @@ impl Budget {
     /// Whether a record table of `entries` entries fits the retained-byte
     /// allowance left, at the highest cost per entry seen.
     fn admits(&self, ctx: &DecodeContext<'_>, entries: usize) -> bool {
-        let estimate = self.rate.get().saturating_mul(u64_from_index(entries));
         let remaining = ctx.retained_allowance();
+        let Some(estimate) = self.rate.get().checked_mul(u64_from_index(entries)) else {
+            ctx.observe_retained_allowance(remaining, u64::MAX);
+            return false;
+        };
         ctx.observe_retained_allowance(remaining, estimate);
         estimate < remaining
     }
@@ -68,9 +71,12 @@ impl Budget {
     /// Takes into the cost per entry the bytes retained since `before`, the
     /// available retained bytes before a decode of `entries` table entries.
     fn spend(&self, ctx: &DecodeContext<'_>, before: u64, entries: usize) {
-        let cost = before.saturating_sub(ctx.retained_bytes_available());
-        if let Some(rate) = cost.checked_div(u64_from_index(entries)) {
-            self.rate.set(self.rate.get().max(rate.saturating_add(1)));
+        if let Some(rate) = before
+            .checked_sub(ctx.retained_bytes_available())
+            .and_then(|cost| cost.checked_div(u64_from_index(entries)))
+            .and_then(|rate| rate.checked_add(1))
+        {
+            self.rate.set(self.rate.get().max(rate));
         }
     }
 }
