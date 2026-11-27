@@ -213,7 +213,6 @@ fn discover(
             &typed_primary,
         )
     });
-    let admitted = admitted.unwrap();
     (admitted.occurrences, admitted.losses, admitted.superseded)
 }
 

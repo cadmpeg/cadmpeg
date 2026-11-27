@@ -5745,13 +5745,24 @@ fn extrusion_shape(
             None => cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
         }
     };
-    if required!(bool_selector(ctx, properties, "Reversed", false)?) {
-        let cadmpeg_ir::features::extents::ExtrudeDirection::Explicit { vector, .. } =
-            &mut direction
-        else {
-            return Ok(None);
-        };
-        *vector = vector.reversed();
+    // A Pocket cuts against the sketch normal unless `Reversed`; a Pad goes
+    // along it unless `Reversed`. A custom `Direction` is used as stored, and
+    // a `ReferenceAxis` direction is stored already negated for a Pocket, so
+    // only the sketch-normal direction of a non-symmetric Pocket flips here.
+    let from_profile_normal = !use_custom && reference_axis.is_none();
+    let pocket_flip = kind.contains("Pocket") && side_type != 2 && from_profile_normal;
+    if pocket_flip ^ required!(bool_selector(ctx, properties, "Reversed", false)?) {
+        use cadmpeg_ir::features::extents::ExtrudeDirection;
+        match &mut direction {
+            ExtrudeDirection::Explicit { vector, .. } => *vector = vector.reversed(),
+            ExtrudeDirection::ProfileNormal {} => {
+                direction = ExtrudeDirection::ReversedProfileNormal {};
+            }
+            ExtrudeDirection::ReversedProfileNormal {} => {
+                direction = ExtrudeDirection::ProfileNormal {};
+            }
+            ExtrudeDirection::Unresolved {} => return Ok(None),
+        }
     }
     let length_along_profile_normal = Some(required!(bool_selector(
         ctx,
@@ -8825,7 +8836,9 @@ fn axis_reference(
     let owned = required!(properties_by_owner.get(target).map(Vec::as_slice));
     let (origin, z_axis, x_axis, y_axis) = required!(placement_frame(owned));
     let direction = match object.type_name.as_str() {
-        "PartDesign::Line" | "App::Line" => z_axis,
+        // `App::Line` has base direction (1,0,0); `PartDesign::Line` (0,0,1).
+        "App::Line" => x_axis,
+        "PartDesign::Line" => z_axis,
         "PartDesign::Plane" | "App::Plane" => z_axis,
         "PartDesign::CoordinateSystem" => match selector {
             Some("X_Axis" | "XAxis" | "X") => x_axis,
