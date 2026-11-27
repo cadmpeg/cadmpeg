@@ -2,7 +2,6 @@
 //! Source-less F3D archive generation: assemble a ZIP archive from a neutral
 //! `CadIr` with no retained source.
 
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Seek, Write};
 
@@ -413,25 +412,16 @@ fn attempt<W: Write + Seek>(
         }
         let decoded = decoded_configurations(&native.design_configurations, &targets)
             .map_err(Failure::design)?;
-        let neutral = if held {
-            Cow::Borrowed(target.model.configurations.as_slice())
-        } else {
-            Cow::Owned(
-                crate::design_v11::configurations::restate(
-                    &decoded.configurations,
-                    &target.design,
-                    &target.model.product_definitions,
-                    targets.neutral_features,
-                    targets.neutral_parameters,
-                )
-                .into_rows(&mut table_losses),
-            )
-        };
-        let neutral = neutral.as_ref();
-        let (written, losses) = configuration_table::regenerate(
+        let neutral = configuration_table::stated_rows(
+            target,
+            &decoded.configurations,
+            &targets,
+            &mut table_losses,
+        );
+        let (mut written, losses) = configuration_table::regenerate(
             &native.design_configurations,
             &decoded,
-            neutral,
+            &neutral,
             &targets,
         )
         .map_err(Failure::design)?;
@@ -440,9 +430,20 @@ fn attempt<W: Write + Seek>(
             &native.design_configurations,
             decoded.table,
             &written,
-            neutral,
+            &neutral,
         );
         table_losses.extend(losses);
+        if let Some((index, payload)) = written.test_rows(
+            plan.active(),
+            configuration_table::stored_active(&decoded),
+            &targets,
+            &mut table_losses,
+        ) {
+            let document = written.documents[index]
+                .with_payload(payload)
+                .map_err(Failure::design)?;
+            written.documents.to_mut()[index] = document;
+        }
         table_losses.extend(
             written
                 .read_back(plan.active(), &targets)

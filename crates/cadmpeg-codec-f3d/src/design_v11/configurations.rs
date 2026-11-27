@@ -20,7 +20,8 @@
 //!
 //! [`restate`] is the inverse: it writes what the configurations resolve
 //! into the v10 rows of the configuration tables, from which the writer
-//! writes the tables.
+//! writes the tables. A parameter cell caches the value of its expression in
+//! the configuration of its row (f3d.md §1.2).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -35,7 +36,7 @@ use cadmpeg_ir::design::edit::{evaluate, Value};
 use cadmpeg_ir::design::expr::{
     Expression, ExpressionDialect, ExpressionToken, Neutral, Node, UnaryOp,
 };
-use cadmpeg_ir::design::parameter::{DesignParameter, ParameterValue};
+use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
 use cadmpeg_ir::design::units::{Quantity, Unit, ValueKind};
 use cadmpeg_ir::document::Design;
 use cadmpeg_ir::features::parameters::{
@@ -49,6 +50,7 @@ use cadmpeg_ir::products::ProductDefinition;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
 use cadmpeg_ir::schema::EntityKind;
+use cadmpeg_ir::units::Tolerances;
 
 use super::parameters::{cache, expression};
 use super::timeline::document_prefix;
@@ -284,14 +286,18 @@ pub(crate) struct Restated {
 struct Charges {
     /// One `<path>: <why>` per field that no row states.
     unstated: Vec<String>,
-    /// One `<path>` per parameter cell whose expression has no value here,
-    /// which states the parameter's own value as its evaluated value.
+    /// One `<path>: <cache>` per parameter cell whose expression has no
+    /// value here, with the value the cell caches in its place.
     uncached: Vec<String>,
+    /// One `<path>` per parameter cell that caches its expression's value in
+    /// place of a value the configuration states.
+    stale: Vec<String>,
 }
 
 impl Restated {
-    /// The rows; charges to `losses` each field that no row states, and each
-    /// cell whose evaluated value is the parameter's own.
+    /// The rows; charges to `losses` each field that no row states, each
+    /// cell whose cached value is not its expression's value, and each value
+    /// a configuration states that a cell does not cache.
     pub(crate) fn into_rows(self, losses: &mut Vec<LossNote>) -> Vec<LegacyConfiguration> {
         losses.extend(edit_dropped(
             EntityKind::DesignConfiguration,
@@ -301,8 +307,13 @@ impl Restated {
         ));
         losses.extend(value_unwritable(
             "F3D",
-            "writes these parameter cells with the parameter's own value as the evaluated value of their expression, which has no value here",
+            "writes these parameter cells with the cached value each names: the writer cannot evaluate the cell's expression in the configuration of its row",
             self.charges.uncached,
+        ));
+        losses.extend(value_unwritable(
+            "F3D",
+            "writes these parameter cells with the value of their expression in the configuration of their row in place of the value the configuration states, which that expression does not give there: a cell caches the value of its expression (f3d.md §1.2)",
+            self.charges.stale,
         ));
         self.rows
     }
@@ -320,24 +331,37 @@ struct Scoped<'a> {
     /// The v10 features whose states the rows set.
     history: &'a [LegacyFeature],
     active: &'a BTreeSet<&'a ConfigurationId>,
+    /// The scopes whose active configuration differs from the stored
+    /// tables' active row.
+    moved: &'a BTreeSet<&'a ProductDefinitionId>,
     records: &'a BTreeMap<&'a ConfigurationId, &'a DesignConfiguration>,
+    /// The rows the stored configuration tables project, by id.
+    stored: &'a BTreeMap<&'a ConfigurationId, &'a LegacyConfiguration>,
     definitions: &'a [ProductDefinition],
+    tolerances: &'a Tolerances,
 }
 
-/// `rows`, the v10 configurations of the configuration tables, with what
-/// the configurations of `design` state otherwise than [`project`] reads
-/// from them written in. A scope of `design` restates the rows of its
-/// documents where they name an active row or there are none. A row of
-/// such a scope with no configuration of its id is removed. A configuration
-/// with no row becomes a new row after the others, in arena order. The rows
-/// are numbered again in their order. `history` holds the v10 features
-/// whose states the rows set, and `own` the v10 parameters.
+/// `rows`, v10 configurations of the configuration tables, with what the
+/// configurations of `design` state otherwise than [`project`] reads from
+/// `stored`, the rows the stored tables project, written in: the neutral
+/// record wins (cadir-v11.md §3.4, W2), and a value of `rows` that `design`
+/// leaves as the stored tables state it is kept. A scope of `design`
+/// restates the rows of its documents where they name an active row or
+/// there are none. A row of such a scope that the stored tables hold and no
+/// configuration states is removed. A configuration with no row becomes a
+/// new row after the others, in arena order, unless the stored tables hold
+/// its row and it states what that row projects. The rows are numbered
+/// again in their order. `history` holds the v10 features whose states the
+/// rows set, `own` the v10 parameters, and `tolerances` the tolerances
+/// within which a cache agrees with its expression's value.
 pub(crate) fn restate(
     rows: &[LegacyConfiguration],
+    stored: &[LegacyConfiguration],
     design: &Design,
     definitions: &[ProductDefinition],
     history: &[LegacyFeature],
     own: &[LegacyParameter],
+    tolerances: &Tolerances,
 ) -> Restated {
     let scoped = design
         .scopes
@@ -370,6 +394,22 @@ pub(crate) fn restate(
     let restates = |scope: &ProductDefinitionId| {
         scoped.contains(scope) && named.get(scope).copied().unwrap_or(true)
     };
+    let moved = design
+        .scopes
+        .iter()
+        .filter(|scope| {
+            let active = stored
+                .iter()
+                .find(|row| row.active && scope_of(row).as_ref() == Some(&scope.definition))
+                .map(|row| &row.id);
+            scope.active_configuration.as_ref() != active
+        })
+        .map(|scope| &scope.definition)
+        .collect::<BTreeSet<_>>();
+    let stored = stored
+        .iter()
+        .map(|row| (&row.id, row))
+        .collect::<BTreeMap<_, _>>();
     let records = design
         .configurations
         .iter()
@@ -382,8 +422,11 @@ pub(crate) fn restate(
         own,
         history,
         active: &active,
+        moved: &moved,
         records: &records,
+        stored: &stored,
         definitions,
+        tolerances,
     };
     let mut out = Restated {
         rows: Vec::new(),
@@ -396,6 +439,9 @@ pub(crate) fn restate(
             continue;
         };
         let Some(record) = records.get(&row.id) else {
+            if !stored.contains_key(&row.id) {
+                out.rows.push(row.clone());
+            }
             continue;
         };
         held.insert(&row.id);
@@ -427,6 +473,12 @@ pub(crate) fn restate(
             ));
             continue;
         }
+        if stored
+            .get(&record.id)
+            .is_some_and(|row| states_row(record, row, &input(&record.scope)))
+        {
+            continue;
+        }
         let mut row = LegacyConfiguration {
             id: record.id.clone(),
             ordinal: 0,
@@ -452,7 +504,25 @@ pub(crate) fn restate(
     }
     out.charges.unstated.sort();
     out.charges.uncached.sort();
+    out.charges.stale.sort();
     out
+}
+
+/// Whether `record` states what the stored row `row` projects, and nothing
+/// a row cannot hold.
+fn states_row(record: &DesignConfiguration, row: &LegacyConfiguration, input: &Scoped<'_>) -> bool {
+    record.parent.is_none()
+        && record.comment.is_none()
+        && record.materials.is_empty()
+        && record.active_arrangements.is_empty()
+        && row.name.as_deref().unwrap_or_default() == record.name
+        && projected(
+            row,
+            input.scope,
+            input.features,
+            input.parameters,
+            &mut Omitted::default(),
+        ) == record.overrides
 }
 
 /// `record` and the configurations it inherits from, nearest first: its
@@ -520,20 +590,28 @@ fn resolved(chain: &[&DesignConfiguration]) -> Overrides {
 }
 
 /// Write into `row` what `record` resolves otherwise than the overrides the
-/// decoder projects from `row`, under the row's own activity: the active
-/// row projects none, so a removal applies to another row only. A row has
-/// no parent, so it states the values `record` inherits. Charges each field
-/// no row states, and each cell whose evaluated value is the parameter's
-/// own, to `charges`.
+/// decoder projects from the stored row of its id (else from `row`), under
+/// that row's activity or the record's: the active row projects none, and
+/// the active configuration states none, so a removal applies to another
+/// row only. A value `record` resolves as the stored row states
+/// it keeps `row`'s. A row has no parent, so it states the values `record`
+/// inherits. Each parameter cell caches its expression's value in the
+/// configuration (§5.11, Resolution). Charges to `charges` each field no row
+/// states, and each cache the cell does not take from its expression.
 fn overlay(
     row: &mut LegacyConfiguration,
     record: &DesignConfiguration,
     input: &Scoped<'_>,
     charges: &mut Charges,
 ) {
-    let stored_active = row.active;
+    let mut stored = input
+        .stored
+        .get(&row.id)
+        .map_or_else(|| row.clone(), |stored| (*stored).clone());
+    let stored_active = stored.active || input.active.contains(&record.id);
+    stored.active = stored_active;
     let projected = projected(
-        row,
+        &stored,
         input.scope,
         input.features,
         input.parameters,
@@ -542,10 +620,12 @@ fn overlay(
     let chain = chain(record, input.records);
     let resolved = resolved(&chain);
     let path = |field: &str| format!("design.configurations[{}].{field}", record.id);
-    if row.name.as_deref().unwrap_or_default() != record.name {
+    if stored.name.as_deref().unwrap_or_default() != record.name {
         row.name = Some(record.name.clone());
     }
-    row.active = input.active.contains(&record.id);
+    if input.moved.contains(input.scope) {
+        row.active = input.active.contains(&record.id);
+    }
     let scoped = input
         .parameters
         .iter()
@@ -560,10 +640,9 @@ fn overlay(
         .values()
         .filter_map(|parameter| Some((&parameter.id, parameter.name.as_ref()?.as_str())))
         .collect::<HashMap<_, _>>();
+    let mut values = Values::new(&resolved.parameters, &scoped);
+    let mut before = Values::new(&projected.parameters, &scoped);
     for (id, stated) in &resolved.parameters {
-        if projected.parameters.get(id) == Some(stated) {
-            continue;
-        }
         let field = path(&format!("overrides.parameters[{id}]"));
         let Some(parameter) = scoped.get(id) else {
             charges
@@ -571,6 +650,19 @@ fn overlay(
                 .push(format!("{field}: the scope holds no such parameter"));
             continue;
         };
+        let typed = |value: Option<ParameterValue>| {
+            value.and_then(|value| legacy_value(&value, &parameter.kind))
+        };
+        let evaluation = typed(values.evaluation(id));
+        if projected.parameters.get(id) == Some(stated) {
+            let moved = match (&evaluation, typed(before.evaluation(id))) {
+                (Some(now), Some(then)) => !agree(now, &then, input.tolerances),
+                _ => false,
+            };
+            if !moved {
+                continue;
+            }
+        }
         let own = input.own.iter().find(|own| own.id == *id);
         let text = match (&stated.expression, own) {
             (Some(expression), _) => {
@@ -593,25 +685,55 @@ fn overlay(
                 continue;
             }
         };
-        let value = stated
+        let stated_value = stated
             .value
             .as_ref()
             .and_then(|value| legacy_value(value, &parameter.kind));
-        if stated.value.is_some() && value.is_none() {
+        let charged = stated.value.is_some() && stated_value.is_none();
+        if charged {
             charges.unstated.push(format!(
                 "{field}.value: the value is not of the parameter's kind"
             ));
         }
-        let value = value.or_else(|| {
-            let evaluated = stated
-                .expression
-                .as_ref()
-                .and_then(|expression| evaluated(expression, parameter, &resolved, &scoped));
-            if evaluated.is_none() {
-                charges.uncached.push(field.clone());
-            }
-            evaluated.or_else(|| own.and_then(|own| own.value.clone()))
-        });
+        let cell = stored
+            .parameter_overrides
+            .get(id)
+            .filter(|cell| **cell == text)
+            .and_then(|_| stored.parameter_values.get(id));
+        let value = match (evaluation, &stated.expression) {
+            (Some(evaluated), _) => match stated_value {
+                Some(stated) if agree(&stated, &evaluated, input.tolerances) => Some(stated),
+                Some(_) => {
+                    charges.stale.push(field);
+                    Some(evaluated)
+                }
+                None => Some(evaluated),
+            },
+            (None, Some(_)) => match (stated_value, cell) {
+                (Some(stated), _) => Some(stated),
+                (None, Some(cell)) => Some(cell.clone()),
+                (None, None) => {
+                    if !charged {
+                        charges
+                            .uncached
+                            .push(format!("{field}: the parameter's own value"));
+                    }
+                    own.and_then(|own| own.value.clone())
+                }
+            },
+            (None, None) => match (cell, stated_value) {
+                (Some(cell), Some(stated)) => {
+                    if !agree(cell, &stated, input.tolerances) {
+                        charges.uncached.push(format!(
+                            "{field}: the stored cell's value in place of the stated value"
+                        ));
+                    }
+                    Some(cell.clone())
+                }
+                (Some(cell), None) => Some(cell.clone()),
+                (None, stated) => stated.or_else(|| own.and_then(|own| own.value.clone())),
+            },
+        };
         row.parameter_overrides.insert(id.clone(), text);
         match value {
             Some(value) => {
@@ -690,7 +812,6 @@ fn overlay(
         stored_active,
         &mut charges.unstated,
     );
-    let theme = "theme tables (`childTables`), which f3d.md §1.2 does not read";
     for (stated, field, why) in [
         (
             record.parent.is_some(),
@@ -705,12 +826,12 @@ fn overlay(
         (
             !record.active_arrangements.is_empty(),
             "active_arrangements",
-            format!("a row selects its appearance theme from the {theme}"),
+            "a row has no cell for an arrangement".to_owned(),
         ),
         (
             !record.materials.is_empty(),
             "materials",
-            format!("a row selects its material theme from the {theme}"),
+            "a row has no cell for a material".to_owned(),
         ),
         (
             !resolved.occurrences.is_empty(),
@@ -724,40 +845,120 @@ fn overlay(
     }
 }
 
-/// The v10 value of `expression`, the expression of `parameter` in a
-/// configuration that resolves `resolved`. A reference takes the value that
-/// configuration states for its parameter, else that parameter's own cache
-/// among `scoped`. `None` where the expression has no value.
-fn evaluated(
-    expression: &Expression,
-    parameter: &DesignParameter,
-    resolved: &Overrides,
-    scoped: &HashMap<&ParameterId, &DesignParameter>,
-) -> Option<LegacyValue> {
-    let Expression::Neutral(Neutral(node)) = expression else {
-        return None;
-    };
-    let mut reference = |reference: &ParameterRef| {
-        let (RefTarget::Parameter(id), None) = (&reference.target, &reference.through) else {
+/// The deepest chain of references through which [`Values`] evaluates a
+/// parameter's value.
+const REFERENCE_DEPTH: usize = 64;
+
+/// The relative tolerance within which a cache that is neither a length nor
+/// an angle agrees with its expression's value, as validation compares
+/// caches.
+const CACHE_RELATIVE_TOLERANCE: f64 = 1e-9;
+
+/// The values of a scope's parameters in a configuration that resolves
+/// `overrides` (cadir-v11.md §5.11, Resolution).
+struct Values<'a> {
+    overrides: &'a BTreeMap<ParameterId, ParameterOverride>,
+    scoped: &'a HashMap<&'a ParameterId, &'a DesignParameter>,
+    evaluated: HashMap<ParameterId, Option<ParameterValue>>,
+    open: Vec<ParameterId>,
+}
+
+impl<'a> Values<'a> {
+    fn new(
+        overrides: &'a BTreeMap<ParameterId, ParameterOverride>,
+        scoped: &'a HashMap<&'a ParameterId, &'a DesignParameter>,
+    ) -> Self {
+        Self {
+            overrides,
+            scoped,
+            evaluated: HashMap::new(),
+            open: Vec::new(),
+        }
+    }
+
+    /// The value of the expression of `id` in the configuration: its
+    /// override's expression, else its own, with each reference taking the
+    /// referenced parameter's [`Self::value`]. `None` where the expression is
+    /// not a neutral tree, has no value of the parameter's kind, or reaches
+    /// `id` again or deeper than [`REFERENCE_DEPTH`].
+    fn evaluation(&mut self, id: &ParameterId) -> Option<ParameterValue> {
+        if let Some(value) = self.evaluated.get(id) {
+            return value.clone();
+        }
+        if self.open.contains(id) || self.open.len() >= REFERENCE_DEPTH {
             return None;
-        };
-        let target = scoped.get(id)?;
-        let value = resolved
-            .parameters
+        }
+        let (overrides, scoped) = (self.overrides, self.scoped);
+        let parameter = *scoped.get(id)?;
+        let expression = match overrides
             .get(id)
-            .and_then(|stated| stated.value.as_ref())
-            .or(target.value.as_ref())?;
-        edit_value(value, &target.kind)
-    };
-    let value = match (evaluate(node, &mut reference).ok()?, &parameter.kind) {
+            .and_then(|stated| stated.expression.as_ref())
+        {
+            Some(expression) => Some(expression),
+            None => match &parameter.definition {
+                ParameterDefinition::Expression(expression) => Some(expression),
+                _ => None,
+            },
+        };
+        let value = match expression {
+            Some(Expression::Neutral(Neutral(node))) => {
+                self.open.push(id.clone());
+                let value = evaluate(node, &mut |reference: &ParameterRef| {
+                    let (RefTarget::Parameter(target), None) =
+                        (&reference.target, &reference.through)
+                    else {
+                        return None;
+                    };
+                    let kind = &scoped.get(target)?.kind;
+                    edit_value(&self.value(target)?, kind)
+                });
+                self.open.pop();
+                value.ok().and_then(|value| typed(value, &parameter.kind))
+            }
+            _ => None,
+        };
+        self.evaluated.insert(id.clone(), value.clone());
+        value
+    }
+
+    /// The value of `id` in the configuration: its [`Self::evaluation`],
+    /// else the value its override states, else its own cache.
+    fn value(&mut self, id: &ParameterId) -> Option<ParameterValue> {
+        self.evaluation(id)
+            .or_else(|| self.overrides.get(id)?.value.clone())
+            .or_else(|| self.scoped.get(id)?.value.clone())
+    }
+}
+
+/// The value of a parameter of `kind` that the evaluator's `value` states.
+fn typed(value: Value, kind: &ValueKind) -> Option<ParameterValue> {
+    Some(match (value, kind) {
         (Value::Number { value, quantity }, ValueKind::Quantity(kind)) if quantity == *kind => {
             ParameterValue::Number(FiniteReal::new(value)?)
         }
         (Value::Boolean(flag), ValueKind::Boolean) => ParameterValue::Boolean(flag),
         (Value::Text(text), ValueKind::Text) => ParameterValue::Text(text),
         _ => return None,
-    };
-    legacy_value(&value, &parameter.kind)
+    })
+}
+
+/// Whether the cache `left` agrees with `right`: a length within the linear
+/// tolerance, an angle within the angular tolerance, a real within
+/// [`CACHE_RELATIVE_TOLERANCE`], another value exactly.
+fn agree(left: &LegacyValue, right: &LegacyValue, tolerances: &Tolerances) -> bool {
+    match (left, right) {
+        (LegacyValue::Length(left), LegacyValue::Length(right)) => {
+            (left.get() - right.get()).abs() <= tolerances.linear.get()
+        }
+        (LegacyValue::Angle(left), LegacyValue::Angle(right)) => {
+            (left.get() - right.get()).abs() <= tolerances.angular.get()
+        }
+        (LegacyValue::Real(left), LegacyValue::Real(right)) => {
+            (left.get() - right.get()).abs()
+                <= CACHE_RELATIVE_TOLERANCE * left.get().abs().max(right.get().abs())
+        }
+        _ => left == right,
+    }
 }
 
 /// The value the evaluator takes for `value`, a value of a parameter of

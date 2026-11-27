@@ -51,26 +51,28 @@ use records::{
 };
 
 /// `target` with the configuration table documents that state its
-/// configurations, where the stored documents project others (cadir-v11.md
-/// §5.11). Adds to `losses` what the documents state otherwise.
+/// configurations, where its documents project others (cadir-v11.md
+/// §5.11); `stored` holds the documents of the archive. Adds to `losses`
+/// what the documents state otherwise.
 fn restated_tables(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
+    stored: &[crate::records::configuration::DesignConfiguration],
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<CadIr>, CodecError> {
     let Some(native) = f3d_native(ctx, target)? else {
         return Ok(None);
     };
-    let Some(patched) = crate::writer::generate::configuration_table::patched(target, &native)?
-    else {
+    let patched = crate::writer::generate::configuration_table::patched(target, &native, stored)?;
+    losses.extend(patched.losses);
+    let Some(documents) = patched.documents else {
         return Ok(None);
     };
-    losses.extend(patched.losses);
     let mut restated = target.clone();
     restated
         .native
         .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
-        .set_arena(ctx, "design_configurations", &patched.documents)?;
+        .set_arena(ctx, "design_configurations", &documents)?;
     Ok(Some(restated))
 }
 
@@ -114,10 +116,6 @@ pub(crate) fn write_semantic(
     let policy = *ctx.policy();
     let limits = policy.limits;
     let mut table_losses = Vec::new();
-    let restated = restated_tables(ctx, target, &mut table_losses)?;
-    let target = restated.as_ref().unwrap_or(target);
-    let target_native = f3d_native(ctx, target)?;
-    validate_assembly_projection(ctx, target, target_native.as_ref())?;
     let baseline = F3dCodec
         .decode(
             &mut Cursor::new(source_image),
@@ -143,6 +141,17 @@ pub(crate) fn write_semantic(
         ));
     }
     let baseline_native = f3d_native(ctx, baseline.ir())?;
+    let restated = restated_tables(
+        ctx,
+        target,
+        baseline_native
+            .as_ref()
+            .map_or(&[][..], |native| native.design_configurations.as_slice()),
+        &mut table_losses,
+    )?;
+    let target = restated.as_ref().unwrap_or(target);
+    let target_native = f3d_native(ctx, target)?;
+    validate_assembly_projection(ctx, target, target_native.as_ref())?;
     let natives = PatchNatives {
         baseline: baseline_native.as_ref(),
         target: target_native.as_ref(),
@@ -870,14 +879,24 @@ pub(crate) fn write_semantic(
         }
         table_losses.extend(cadmpeg_ir::codec::write::value_unwritable(
             "F3D",
-            "names this row active in the DesignConfigurationRoot record, and writes the Design stream and the B-rep in the state of the row the stored record named: the patch does not compute the model in the state of another row",
+            "names this row active in the DesignConfigurationRoot record and in the testRowData entries of its configuration table document, and writes the Design stream and the B-rep in the state of the row the stored record named: the patch does not compute the model in the state of another row",
             [root.row.clone()],
         ));
     }
+    let (kept, unrooted) = configuration_edits
+        .kept
+        .iter()
+        .cloned()
+        .partition::<Vec<_>, _>(|kept| kept.rooted);
     table_losses.extend(cadmpeg_ir::codec::write::value_unwritable(
         "F3D",
         "keeps the stored DesignConfigurationRoot record, which names the first row active in place of the second: the patch rewrites a stored record in place, where the row is in the same table and its id has the same length",
-        configuration_edits.kept.iter().cloned(),
+        kept.into_iter().map(|kept| kept.entry),
+    ));
+    table_losses.extend(cadmpeg_ir::codec::write::value_unwritable(
+        "F3D",
+        "writes no DesignConfigurationRoot record for the row each names active: the patch rewrites a stored record in place, and the archive holds none",
+        unrooted.into_iter().map(|kept| kept.entry),
     ));
     if patched_protein_appearances.len() != protein_appearance_edits.len() {
         return Err(CodecError::NotImplemented(

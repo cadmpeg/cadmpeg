@@ -1231,3 +1231,61 @@ fn configurations_decoded_after_an_owner_conflict_are_written_as_stated() {
         assert!(losses.is_empty(), "edited {edited}: {losses:#?}");
     }
 }
+
+/// A move of the active row from `c1` to `tall` writes the stored
+/// `testRowData` entry with the value of row `tall`, and charges the rewrite.
+#[test]
+fn a_moved_active_row_writes_the_test_rows_of_its_row() {
+    let natives = natives();
+    let targets = natives.targets();
+    let mut documents = active_in_source("c1");
+    let mut payload = documents[0].payload().clone();
+    payload.insert(
+        "testRowData".into(),
+        json!([json!({
+            "DataType": "StringOptionValue",
+            "ColumnUniqueID": "P",
+            "Value": "Configuration 1",
+            "Option": 1
+        })
+        .to_string()]),
+    );
+    documents[0] = documents[0].with_payload(payload).unwrap();
+    let decoded = project(&documents, &targets).unwrap();
+    let mut configurations = decoded.configurations.clone();
+    configuration(&mut configurations, "c1").active = false;
+    configuration(&mut configurations, "tall").active = true;
+    let (written, _) = regenerate(&documents, &decoded, &configurations, &targets).unwrap();
+    let tall = id("tall");
+    let stored = super::stored_active(&decoded);
+    assert_eq!(stored, Some(id("c1").as_str()));
+    let mut losses = Vec::new();
+    let (index, payload) = written
+        .test_rows(Some(tall.as_str()), stored, &targets, &mut losses)
+        .expect("rewritten testRowData");
+    assert_eq!(index, 0);
+    let entries = payload["testRowData"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| serde_json::from_str::<serde_json::Value>(entry.as_str().unwrap()).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        entries,
+        vec![json!({
+            "ColumnUniqueID": "P",
+            "DataType": "StringOptionValue",
+            "Option": 1,
+            "Value": "Tall"
+        })]
+    );
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.message.contains("writes the testRowData entries")),
+        "{losses:#?}"
+    );
+    assert!(written
+        .test_rows(stored, stored, &targets, &mut Vec::new())
+        .is_none());
+}

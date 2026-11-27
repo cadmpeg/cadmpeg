@@ -6,14 +6,52 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::features::parameters::DesignParameter as NeutralParameter;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+use cadmpeg_ir::report::export::ExportReport;
+use cadmpeg_ir::{CadIr, SourceFidelity};
 use serde_json::{Map, Value};
 
 use crate::design::configurations::ConfigurationTargets;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::parameters::{DesignParameter, DesignParameterOwner};
 use crate::test_support::{indexed_header, lp_ascii, lp_utf16};
+use crate::F3dCodec;
+
+/// `ir` with no source and no unknown native records.
+pub(crate) fn unsourced(ir: &CadIr) -> CadIr {
+    let mut ir = ir.clone();
+    ir.source = None;
+    ir.set_native_unknowns(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        "f3d",
+        &[],
+    )
+    .unwrap();
+    ir
+}
+
+/// `ir` written with `fidelity`: the report, which names one of the write
+/// paths `paths`, and the bytes.
+pub(crate) fn written_on(
+    ir: &CadIr,
+    fidelity: Option<&SourceFidelity>,
+    paths: &[&str],
+) -> (ExportReport, Vec<u8>) {
+    let mut bytes = Vec::new();
+    let report = F3dCodec
+        .plan(EncodeInput::new(ir, fidelity))
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write");
+    let path = report.write_path().to_string();
+    assert!(
+        paths.contains(&path.as_str()),
+        "{path}: {:#?}",
+        report.losses
+    );
+    (report, bytes)
+}
 
 /// The Design stream of the parameter records of [`Natives`].
 pub(crate) const STREAM: &str = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat";

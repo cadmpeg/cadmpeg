@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The design arenas of a Fusion document read from CADIR JSON, restored
 //! from the decode of its retained archive and the edits its `design`
-//! records state. The configurations of the `design` records are written
-//! into the rows of the configuration tables.
+//! records state. The rows of the configuration tables are the ones the
+//! retained archive projects; the writer writes the configurations of the
+//! `design` records into them.
 
 use std::io::Cursor;
 
@@ -14,11 +15,10 @@ use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::design::expr::ExpressionDialect;
 use cadmpeg_ir::design::units::Unit;
 use cadmpeg_ir::document::{CadIr, Model};
-use cadmpeg_ir::features::parameters::DesignParameter;
+use cadmpeg_ir::features::parameters::{DesignConfiguration, DesignParameter};
 use cadmpeg_ir::report::loss::LossNote;
 
 use super::primitives::{configuration_targets, decoded_configurations, f3d_native};
-use crate::design_v11::configurations::{restate, Restated};
 use crate::loss::F3dLossCode;
 use crate::{ids, F3dCodec};
 
@@ -60,7 +60,7 @@ pub(crate) fn restore(
         });
     match restored {
         Ok((mut restored, rows)) if restored.unwritten.is_empty() => {
-            restored.ir.model.configurations = rows.into_rows(losses);
+            restored.ir.model.configurations = rows;
             Ok(Some(restored.ir))
         }
         Ok((restored, _)) => {
@@ -81,13 +81,12 @@ pub(crate) fn restore(
 }
 
 /// The rows of the configuration tables `ir` was read with, as the decoder
-/// states them, with the configurations of its `design` records written in:
-/// the neutral record wins over the stored tables (cadir-v11.md §3.4, W2).
+/// states them.
 fn reproject(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
-) -> Result<Restated, CodecError> {
-    let base = match f3d_native(ctx, ir)? {
+) -> Result<Vec<DesignConfiguration>, CodecError> {
+    Ok(match f3d_native(ctx, ir)? {
         Some(native) => {
             decoded_configurations(
                 &native.design_configurations,
@@ -96,14 +95,7 @@ fn reproject(
             .configurations
         }
         None => Vec::new(),
-    };
-    Ok(restate(
-        &base,
-        &ir.design,
-        &ir.model.product_definitions,
-        &ir.model.features,
-        &ir.model.parameters,
-    ))
+    })
 }
 
 /// Records and charges why the history arenas were not restored.

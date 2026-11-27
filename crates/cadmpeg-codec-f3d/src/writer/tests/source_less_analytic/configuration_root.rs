@@ -10,7 +10,8 @@ use cadmpeg_test_support::EditableDecodeResult;
 
 use super::generated_configuration_document;
 use crate::test_support::configuration_table::{
-    root_record, set_active_row, table_document, with_root_segment, ROOT_RECORD,
+    root_record, set_active_row, table_document, unsourced, with_root_segment, written_on,
+    ROOT_RECORD,
 };
 use crate::test_support::native_test::f3d_native;
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
@@ -26,15 +27,7 @@ fn source_less(archive: Vec<u8>) -> cadmpeg_ir::CadIr {
             .decode(&mut Cursor::new(archive), &DecodeOptions::default())
             .expect("configuration decode"),
     );
-    let (mut ir, _, _) = decoded.into_parts();
-    ir.source = None;
-    ir.set_native_unknowns(
-        &cadmpeg_core::decode::test_support::service_decode_context(),
-        "f3d",
-        &[],
-    )
-    .unwrap();
-    ir
+    unsourced(decoded.ir())
 }
 
 /// An archive that holds the generated configuration document.
@@ -612,16 +605,7 @@ fn a_document_read_from_cadir_writes_its_tables_with_and_without_the_sidecar() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("patched round trip");
     assert_eq!(f3d_native(round_trip.ir()).design_configurations, expected);
-    let mut unsourced = read.clone();
-    unsourced.source = None;
-    unsourced
-        .set_native_unknowns(
-            &cadmpeg_core::decode::test_support::service_decode_context(),
-            "f3d",
-            &[],
-        )
-        .unwrap();
-    let (_, generated) = write_and_decode(&unsourced);
+    let (_, generated) = write_and_decode(&unsourced(&read));
     assert_eq!(
         f3d_native(generated.ir()).design_configurations,
         f3d_native(round_trip.ir()).design_configurations
@@ -705,29 +689,6 @@ fn contradicted(ir: &mut cadmpeg_ir::CadIr) -> (String, String) {
     (configuration.id.to_string(), feature.id.to_string())
 }
 
-/// `ir` written with `fidelity`: the report, which must name the patched
-/// write path.
-fn patched(
-    ir: &cadmpeg_ir::CadIr,
-    fidelity: &cadmpeg_ir::SourceFidelity,
-) -> cadmpeg_ir::report::export::ExportReport {
-    let mut bytes = Vec::new();
-    let report = F3dCodec
-        .plan(EncodeInput::new(ir, Some(fidelity)))
-        .and_then(|plan| plan.write_to(&mut bytes))
-        .expect("write");
-    assert!(
-        matches!(
-            report.write_path(),
-            cadmpeg_ir::report::export::WritePath::Patched { .. }
-        ),
-        "{:?}: {:#?}",
-        report.write_path(),
-        report.losses
-    );
-    report
-}
-
 #[test]
 fn a_suppression_the_active_row_contradicts_is_charged_and_the_patch_is_kept() {
     let decoded = EditableDecodeResult::from(
@@ -744,7 +705,7 @@ fn a_suppression_the_active_row_contradicts_is_charged_and_the_patch_is_kept() {
     assert!(!decoded.ir().model.configurations.is_empty());
     let mut ir = decoded.ir().clone();
     let (configuration, _) = contradicted(&mut ir);
-    let report = patched(&ir, decoded.source_fidelity());
+    let (report, _) = written_on(&ir, Some(decoded.source_fidelity()), &["patched"]);
     assert!(
         report
             .losses
@@ -782,7 +743,7 @@ fn a_definition_no_column_holds_is_charged_and_the_patch_is_kept() {
         .unwrap()
         .feature_states
         .insert(feature.id.clone(), state);
-    let report = patched(&ir, decoded.source_fidelity());
+    let (report, _) = written_on(&ir, Some(decoded.source_fidelity()), &["patched"]);
     assert!(
         report
             .losses

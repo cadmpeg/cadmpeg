@@ -1662,7 +1662,17 @@ fn validate_fixed_design_string(id: &str, before: &str, after: &str) -> Result<(
 pub(super) struct ConfigurationEdits {
     pub(super) documents: BTreeMap<String, Vec<u8>>,
     pub(super) root: Option<RootEdit>,
-    pub(super) kept: Vec<String>,
+    pub(super) kept: Vec<KeptRoot>,
+}
+
+/// An active row of a document that the patch does not write.
+#[derive(Clone)]
+pub(super) struct KeptRoot {
+    /// Whether the archive holds a record of the document.
+    pub(super) rooted: bool,
+    /// The document, the row the stored record names, and the row the
+    /// document names.
+    pub(super) entry: String,
 }
 
 /// The bytes of a `DesignConfigurationRoot` record after its class tag and
@@ -1778,11 +1788,16 @@ pub(super) fn validate_configuration_edits(
                     ),
                 });
             }
-            (stored, written) => edits.kept.push(format!(
-                "{name}: {} in place of {}",
-                row(stored),
-                row(written)
-            )),
+            (stored, written) => edits.kept.push(match stored {
+                Some(_) => KeptRoot {
+                    rooted: true,
+                    entry: format!("{name}: {} in place of {}", row(stored), row(written)),
+                },
+                None => KeptRoot {
+                    rooted: false,
+                    entry: format!("{name}: {}", row(written)),
+                },
+            }),
         }
         if before.payload() != after.payload() {
             edits.documents.insert(

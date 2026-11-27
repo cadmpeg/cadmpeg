@@ -205,7 +205,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         &root_edit,
         Some(decoded.source_fidelity()),
         "export/value.unwritable",
-        "no row in place of row medium of table 1",
+        "the patch rewrites a stored record in place, and the archive holds none",
     );
     assert!(
         matches!(

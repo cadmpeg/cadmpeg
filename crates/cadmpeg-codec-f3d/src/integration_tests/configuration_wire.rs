@@ -7,17 +7,16 @@ use std::io::{Cursor, Write};
 use std::num::NonZeroI8;
 
 use cadmpeg_core::serde_erase::json;
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::design::configuration::{
     DefinitionOverride, DesignConfiguration, ParameterOverride, PartNumber,
 };
+use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{Expression, Neutral, Node};
 use cadmpeg_ir::design::parameter::ParameterValue;
 use cadmpeg_ir::design::units::{Unit, UnitFactor, UnitSymbol};
 use cadmpeg_ir::features::parameters::ParameterValue as LegacyValue;
 use cadmpeg_ir::features::{FeatureId, ParameterId};
-use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 use cadmpeg_ir::{CadIr, SourceFidelity};
@@ -30,7 +29,7 @@ use crate::records::configuration::{
 };
 use crate::test_support::configuration_table::{
     bool_cell, expression_cell, object_target, property_target, root_record, string_cell,
-    table_document, with_root_segment_in, ROOT_RECORD,
+    table_document, with_root_segment_in, written_on, ROOT_RECORD,
 };
 use crate::test_support::native_test::f3d_native;
 use crate::F3dCodec;
@@ -113,7 +112,8 @@ fn object(target: &ColumnTarget) -> Value {
 /// columns are a part number `P`, a feature `S` and, where `width` holds, a
 /// length parameter `W`, and whose rows are `a` (`20 mm`, computed), `b`
 /// (`7 mm`, suppressed) and `c` (`12 mm`, computed), with a root record
-/// that names row `a` active, decoded.
+/// that names row `a` active and a `testRowData` entry of each column with
+/// the value of row `a`, decoded.
 fn fixture(width: bool) -> (DecodeResult, Fixture) {
     let plain = decode(SOURCE);
     let ir = plain.ir();
@@ -133,12 +133,36 @@ fn fixture(width: bool) -> (DecodeResult, Fixture) {
         b.push(("W", expression_cell("7 mm", 0.7)));
         c.push(("W", expression_cell("12 mm", 1.2)));
     }
-    let document = table_document(
+    let mut document = table_document(
         "1",
         &columns,
         &[("a", "A", a), ("b", "B", b), ("c", "C", c)],
         &["a", "b", "c"],
     );
+    let mut entries = vec![
+        cadmpeg_core::json!({"DataType": "StringOptionValue", "ColumnUniqueID": "P", "Value": "A-1", "Option": 1}),
+        cadmpeg_core::json!({"DataType": "BoolValue", "ColumnUniqueID": "S", "Value": true}),
+    ];
+    if width {
+        let name = &ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == length)
+            .expect("the length parameter")
+            .name;
+        entries.push(cadmpeg_core::json!({
+            "DataType": "ParameterDoubleValue",
+            "ColumnUniqueID": "W",
+            "UserName": name,
+            "Expression": "20 mm",
+            "Value": 2.0
+        }));
+    }
+    document["testRowData"] = entries
+        .iter()
+        .map(|entry| Value::from(entry.to_string()))
+        .collect();
     let bytes = with_root_segment_in(
         replaced(SOURCE, &entry, &json::to_vec(&document).unwrap()),
         "FusionDesignSegmentType2",
@@ -264,18 +288,39 @@ fn saved(ir: &CadIr) -> CadIr {
 /// `ir` written with `sidecar` from the retained archive and decoded again,
 /// with the losses of the write.
 fn written_with_losses(ir: &CadIr, sidecar: &SourceFidelity) -> (DecodeResult, Vec<LossNote>) {
-    let mut bytes = Vec::new();
-    let report = F3dCodec
-        .plan(EncodeInput::new(ir, Some(sidecar)))
-        .and_then(|plan| plan.write_to(&mut bytes))
-        .expect("write");
-    assert!(
-        !matches!(report.write_path(), WritePath::Synthesized { .. }),
-        "{:?}: {:#?}",
-        report.write_path(),
-        report.losses
-    );
+    let (report, bytes) = written_on(ir, Some(sidecar), &["verbatim_replay", "patched"]);
     (decode(&bytes), report.losses)
+}
+
+/// The `testRowData` entry of the column `column` of the table document at
+/// `entry` of `ir`.
+fn test_row(ir: &CadIr, entry: &str, column: &str) -> Value {
+    let documents = f3d_native(ir).design_configurations;
+    let mut entries = documents[table(&documents, entry)].payload()["testRowData"]
+        .as_array()
+        .expect("testRowData")
+        .iter()
+        .map(|entry| serde_json::from_str::<Value>(entry.as_str().unwrap()).unwrap())
+        .filter(|entry| entry["ColumnUniqueID"] == column)
+        .collect::<Vec<_>>();
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    entries.remove(0)
+}
+
+/// The losses of `losses` that name `path`.
+fn naming<'a>(losses: &'a [LossNote], path: &str) -> Vec<&'a LossNote> {
+    losses
+        .iter()
+        .filter(|loss| loss.message.contains(path))
+        .collect()
+}
+
+/// The id of the active configuration of the scope of `ir` that has one.
+fn active(ir: &CadIr) -> Option<&cadmpeg_ir::features::ConfigurationId> {
+    ir.design
+        .scopes
+        .iter()
+        .find_map(|scope| scope.active_configuration.as_ref())
 }
 
 /// `ir` written with `sidecar` from the retained archive and decoded again.
@@ -579,14 +624,264 @@ fn an_override_of_one_member_writes_the_cell_it_resolves_to() {
         .overrides
         .parameters
         .insert(fixture.width.clone(), value);
-    let round_trip = written(&read, decoded.source_fidelity());
+    let c = named(&read, "C").id.clone();
+    let (round_trip, losses) = written_with_losses(&read, decoded.source_fidelity());
     let (text, evaluated) = parameter_cell(round_trip.ir(), &fixture.entry, "b", &fixture.width);
     assert_eq!(text, "9 mm");
     assert!((evaluated - 0.9).abs() < 1e-9, "{evaluated}");
-    let (expression, _) = own(round_trip.ir(), &fixture.width);
+    let (expression, millimetres) = own(round_trip.ir(), &fixture.width);
     let (text, cached) = parameter_cell(round_trip.ir(), &fixture.entry, "c", &fixture.width);
     assert_eq!(text, expression);
-    assert!((cached - 0.5).abs() < 1e-9, "{cached}");
+    assert!((cached - millimetres / 10.0).abs() < 1e-9, "{cached}");
+    let stale = naming(
+        &losses,
+        &format!(
+            "design.configurations[{c}].overrides.parameters[{}]",
+            fixture.width
+        ),
+    );
+    assert_eq!(stale.len(), 1, "{losses:#?}");
+    assert_eq!(stale[0].code.to_string(), "export/value.unwritable");
+    assert!(
+        stale[0].message.contains("value of their expression"),
+        "{stale:#?}"
+    );
+}
+
+#[test]
+fn a_value_of_another_kind_is_charged_once() {
+    let (decoded, fixture) = fixture(true);
+    let mut read = saved(decoded.ir());
+    let c = named_mut(&mut read, "C");
+    c.overrides.parameters.insert(
+        fixture.width.clone(),
+        ParameterOverride {
+            expression: None,
+            value: Some(ParameterValue::Boolean(true)),
+        },
+    );
+    let c = c.id.clone();
+    let (_, losses) = written_with_losses(&read, decoded.source_fidelity());
+    let charged = naming(
+        &losses,
+        &format!(
+            "design.configurations[{c}].overrides.parameters[{}]",
+            fixture.width
+        ),
+    );
+    assert_eq!(charged.len(), 1, "{losses:#?}");
+}
+
+/// An expression-only override that names another parameter caches the
+/// value that parameter takes in the same configuration, its override there
+/// among them.
+#[test]
+fn an_expression_that_names_a_parameter_caches_its_override_in_the_same_row() {
+    let (decoded, fixture) = fixture(true);
+    let mut ir = decoded.ir().clone();
+    let mut depth = ir
+        .design
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id == fixture.width)
+        .expect("the design parameter")
+        .clone();
+    depth.id = ParameterId::mint("synthetic:test:parameter#depth").unwrap();
+    depth.name = Some(cadmpeg_core::text::NonBlankString::new("depth").unwrap());
+    let depth_id = depth.id.clone();
+    ir.design.parameters.push(depth);
+    let mut referenced = length_override(4.5);
+    referenced.value = None;
+    let b = named_mut(&mut ir, "B");
+    b.overrides.parameters.insert(depth_id.clone(), referenced);
+    b.overrides.parameters.insert(
+        fixture.width.clone(),
+        ParameterOverride {
+            expression: Some(Expression::Neutral(Neutral(Node::Reference(
+                ParameterRef {
+                    target: RefTarget::Parameter(depth_id),
+                    through: None,
+                },
+            )))),
+            value: None,
+        },
+    );
+    let mut losses = Vec::new();
+    let rows = crate::design_v11::configurations::restate(
+        &ir.model.configurations,
+        &ir.model.configurations,
+        &ir.design,
+        &ir.model.product_definitions,
+        &ir.model.features,
+        &ir.model.parameters,
+        &ir.tolerances,
+    )
+    .into_rows(&mut losses);
+    let b = rows
+        .iter()
+        .find(|row| row.name.as_deref() == Some("B"))
+        .expect("row B");
+    assert_eq!(
+        b.parameter_overrides
+            .get(&fixture.width)
+            .map(String::as_str),
+        Some("depth"),
+        "{losses:#?}"
+    );
+    let Some(LegacyValue::Length(cached)) = b.parameter_values.get(&fixture.width) else {
+        panic!("a length: {:?}", b.parameter_values.get(&fixture.width));
+    };
+    assert!((cached.get() - 4.5).abs() < 1e-9, "{cached:?}: {losses:#?}");
+}
+
+/// A held decode whose design scope names row `b` active, with no other
+/// edit: the root record and the `testRowData` entries name row `b`.
+#[test]
+fn an_active_row_moved_in_the_design_of_a_held_decode_writes_its_test_row() {
+    let (decoded, fixture) = fixture(true);
+    let mut ir = decoded.ir().clone();
+    assert!(ir.model.omitted_arenas_held());
+    let b = named(&ir, "B").id.clone();
+    ir.design
+        .scopes
+        .iter_mut()
+        .find(|scope| scope.active_configuration.is_some())
+        .unwrap()
+        .active_configuration = Some(b.clone());
+    let (round_trip, losses) = written_with_losses(&ir, decoded.source_fidelity());
+    assert_eq!(active(round_trip.ir()), Some(&b), "{losses:#?}");
+    let width = test_row(round_trip.ir(), &fixture.entry, "W");
+    assert_eq!(width["Expression"], "7 mm", "{width}");
+    assert!(
+        (width["Value"].as_f64().unwrap() - 0.7).abs() < 1e-9,
+        "{width}"
+    );
+    assert_eq!(
+        test_row(round_trip.ir(), &fixture.entry, "S")["Value"],
+        false
+    );
+    assert_eq!(
+        test_row(round_trip.ir(), &fixture.entry, "P")["Value"],
+        "B-1"
+    );
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.message.contains("testRowData")),
+        "{losses:#?}"
+    );
+}
+
+/// The editor's switch to row `b` marks the current state stale, so the
+/// write regenerates the design, and the generator charges the
+/// configuration it does not write.
+#[test]
+fn an_active_row_moved_through_the_editor_is_charged_where_it_is_not_written() {
+    let (decoded, _) = fixture(true);
+    let mut ir = decoded.ir().clone();
+    let b = named(&ir, "B").id.clone();
+    let scope = ir
+        .design
+        .scopes
+        .iter()
+        .find(|scope| scope.active_configuration.is_some())
+        .unwrap()
+        .definition
+        .clone();
+    ir.edit()
+        .unwrap()
+        .set_active_configuration(&scope, &b)
+        .unwrap();
+    let (report, _) = written_on(&ir, Some(decoded.source_fidelity()), &["synthesized"]);
+    assert!(
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("active configuration")
+                && loss.message.contains(b.as_str())),
+        "{:#?}",
+        report.losses
+    );
+}
+
+/// A cell edited in the native table alone, of a row a design configuration
+/// states: the design wins (cadir-v11.md §3.4, W2), in the write of the
+/// decode and of the CADIR read with the sidecar, and in the rows the
+/// generator restates without it.
+#[test]
+fn a_native_cell_edit_loses_to_the_design_configuration() {
+    use crate::records::configuration::table::{set_cell, CellData};
+    let (decoded, fixture) = fixture(true);
+    let edit = |ir: &mut CadIr| {
+        crate::test_support::native_test::update_f3d_native(ir, |native| {
+            let document = native
+                .design_configurations
+                .iter_mut()
+                .find(|document| *document.entry_name() == fixture.entry)
+                .unwrap();
+            let mut payload = document.payload().clone();
+            set_cell(
+                &mut payload,
+                0,
+                "b",
+                "W",
+                Some(&CellData::Expression {
+                    expression: "3 mm".into(),
+                    value: FiniteReal::new(0.3).unwrap(),
+                }),
+            );
+            *document = document.with_payload(payload).unwrap();
+        });
+    };
+    let mut held = decoded.ir().clone();
+    edit(&mut held);
+    let mut read = saved(decoded.ir());
+    edit(&mut read);
+    for (path, target) in [("decode", &held), ("CADIR read", &read)] {
+        let (round_trip, losses) = written_with_losses(target, decoded.source_fidelity());
+        assert_eq!(
+            parameter_cell(round_trip.ir(), &fixture.entry, "b", &fixture.width).0,
+            "7 mm",
+            "{path}: {losses:#?}"
+        );
+    }
+    let rows = crate::test_support::configuration_table::project(&read);
+    let mut losses = Vec::new();
+    let restated = crate::design_v11::configurations::restate(
+        &rows,
+        &rows,
+        &read.design,
+        &read.model.product_definitions,
+        &read.model.features,
+        &read.model.parameters,
+        &read.tolerances,
+    )
+    .into_rows(&mut losses);
+    let b = restated
+        .iter()
+        .find(|row| row.name.as_deref() == Some("B"))
+        .expect("row B");
+    assert_eq!(
+        b.parameter_overrides
+            .get(&fixture.width)
+            .map(String::as_str),
+        Some("7 mm"),
+        "{losses:#?}"
+    );
+}
+
+#[test]
+fn a_cell_edited_in_the_design_of_a_held_decode_reaches_the_written_table() {
+    let (decoded, fixture) = fixture(true);
+    let mut ir = decoded.ir().clone();
+    named_mut(&mut ir, "B")
+        .overrides
+        .parameters
+        .insert(fixture.width.clone(), length_override(9.0));
+    let round_trip = written(&ir, decoded.source_fidelity());
+    let (text, cached) = parameter_cell(round_trip.ir(), &fixture.entry, "b", &fixture.width);
+    assert_eq!(text, "9 mm");
+    assert!((cached - 0.9).abs() < 1e-9, "{cached}");
 }
 
 #[test]

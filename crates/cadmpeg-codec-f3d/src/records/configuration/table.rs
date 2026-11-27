@@ -516,6 +516,37 @@ pub(crate) fn push_test_row(payload: &mut Map<String, Value>, entry: &Map<String
     true
 }
 
+/// Write the members of `entry`, a test-row cell, into each `testRowData`
+/// entry of `payload` whose `ColumnUniqueID` is the entry's. Returns
+/// whether an entry changed and whether one holds the column.
+pub(crate) fn set_test_row(
+    payload: &mut Map<String, Value>,
+    entry: &Map<String, Value>,
+) -> (bool, bool) {
+    let Some(cells) = payload.get_mut("testRowData").and_then(Value::as_array_mut) else {
+        return (false, false);
+    };
+    let column = entry.get("ColumnUniqueID");
+    let (mut changed, mut held) = (false, false);
+    for cell in cells {
+        let Some(mut stored) = cell
+            .as_str()
+            .and_then(|text| serde_json::from_str::<Map<String, Value>>(text).ok())
+            .filter(|stored| stored.get("ColumnUniqueID") == column)
+        else {
+            continue;
+        };
+        held = true;
+        let before = stored.clone();
+        stored.extend(entry.clone());
+        if stored != before {
+            *cell = Value::from(Value::Object(stored).to_string());
+            changed = true;
+        }
+    }
+    (changed, held)
+}
+
 /// Add the column `id` with the title `title` and the configured `object`
 /// to the table at `position` of the `tables` array: its `columnData` entry
 /// and its `columnOrder` entry.
