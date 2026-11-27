@@ -955,12 +955,55 @@ fn a_result_body_of_the_loft_faces_alone_is_not_a_join() {
 }
 
 #[test]
-fn a_joined_loft_requires_the_complete_result_in_the_state_after_it() {
+fn a_joined_loft_admits_a_state_after_it_with_one_cap_merged_away() {
+    // `consumed_cap` names the cap of the last section and both curves. The
+    // join merges the other cap into the joined body.
     let states = PairStates {
         after: (consumed_cap(), held),
         before: (model(), held),
     };
-    assert!(matches!(join_proof(Some(&states)), Err(Unproved::Result)));
+    assert!(join_proof(Some(&states)).is_ok());
+}
+
+#[test]
+fn a_joined_loft_requires_the_named_result_in_the_state_after_it() {
+    let joined = |after: CadIr, curves: fn(usize) -> Vec<i64>| {
+        let states = PairStates {
+            after: (after, held),
+            before: (model(), held),
+        };
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        loft_join_proof(&ctx, Some(&states), 17, [19, 23], curves)
+    };
+    // No named cap face.
+    let mut capless = legacy_cap(0, 99, [0, 19, 260]);
+    capless.model.attributes[1] = legacy_cap(1, 99, [0, 23, 260]).model.attributes[1].clone();
+    assert!(matches!(
+        joined(capless, legacy_curves),
+        Err(Unproved::Result)
+    ));
+    // A named curve that the section boundary does not hold.
+    assert!(matches!(
+        joined(legacy_model(), |section| [vec![9], vec![3]][section]
+            .clone()),
+        Err(Unproved::Result)
+    ));
+    // Two curves of one section without a side face.
+    assert!(matches!(
+        joined(legacy_model(), |section| [vec![8, 9, 10], vec![3]][section]
+            .clone()),
+        Err(Unproved::Result)
+    ));
+    // Another generator names no face.
+    let states = PairStates {
+        after: (legacy_model(), held),
+        before: (model(), held),
+    };
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    assert!(matches!(
+        loft_join_proof(&ctx, Some(&states), 99, [19, 23], legacy_curves),
+        Err(Unproved::Result)
+    ));
 }
 
 #[test]
