@@ -10,42 +10,43 @@ use crate::design::selection::OrderedSelection;
 use crate::features::{ConfigurationId, ParameterId};
 use crate::scalar::Length;
 use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities, TextReplacements};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn state_references_visit_and_rewrite_each_v11_evaluated_form() {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (source, expected, target) in [
         (
-            serde_json::json!({"kind":"state","value":{"kind":"start","value":"test:model:container#one"}}),
-            serde_json::json!({"kind":"state","value":{"kind":"start","value":"test:placed:container#one"}}),
+            cadmpeg_core::json!({"kind":"state","value":{"kind":"start","value":"test:model:container#one"}}),
+            cadmpeg_core::json!({"kind":"state","value":{"kind":"start","value":"test:placed:container#one"}}),
             "test:model:container#one",
         ),
         (
-            serde_json::json!({"kind":"state","value":{"kind":"after","value":{"kind":"feature","value":"test:model:feature#one"}}}),
-            serde_json::json!({"kind":"state","value":{"kind":"after","value":{"kind":"feature","value":"test:placed:feature#one"}}}),
+            cadmpeg_core::json!({"kind":"state","value":{"kind":"after","value":{"kind":"feature","value":"test:model:feature#one"}}}),
+            cadmpeg_core::json!({"kind":"state","value":{"kind":"after","value":{"kind":"feature","value":"test:placed:feature#one"}}}),
             "test:model:feature#one",
         ),
         (
-            serde_json::json!({"kind":"state","value":{"kind":"after","value":{"kind":"container","value":"test:model:container#one"}}}),
-            serde_json::json!({"kind":"state","value":{"kind":"after","value":{"kind":"container","value":"test:placed:container#one"}}}),
+            cadmpeg_core::json!({"kind":"state","value":{"kind":"after","value":{"kind":"container","value":"test:model:container#one"}}}),
+            cadmpeg_core::json!({"kind":"state","value":{"kind":"after","value":{"kind":"container","value":"test:placed:container#one"}}}),
             "test:model:container#one",
         ),
         (
-            serde_json::json!({"kind":"tool","value":"test:model:feature#one"}),
-            serde_json::json!({"kind":"tool","value":"test:placed:feature#one"}),
+            cadmpeg_core::json!({"kind":"tool","value":"test:model:feature#one"}),
+            cadmpeg_core::json!({"kind":"tool","value":"test:placed:feature#one"}),
             "test:model:feature#one",
         ),
     ] {
         for configuration in [false, true] {
-            let mut source = serde_json::json!({"of":source});
-            let mut expected = serde_json::json!({"of":expected});
+            let mut source = cadmpeg_core::json!({"of":source});
+            let mut expected = cadmpeg_core::json!({"of":expected});
             let mut targets = vec![target.to_owned()];
             if configuration {
                 source["configuration"] = "test:model:configuration#one".into();
                 expected["configuration"] = "test:placed:configuration#one".into();
                 targets.insert(0, "test:model:configuration#one".to_owned());
             }
-            let state: StateRef = serde_json::from_value(source.clone()).unwrap();
+            let state: StateRef = json::from_value(source.clone()).unwrap();
             let mut seen = Vec::new();
             state
                 .visit_identity_references(&ctx, &mut |id| {
@@ -58,7 +59,7 @@ fn state_references_visit_and_rewrite_each_v11_evaluated_form() {
             let mut map = IdentityMap::new(rewrite);
             let state = state.rewrite_identities(&ctx, &mut map).unwrap();
             map.finish().unwrap();
-            assert_eq!(serde_json::to_value(state).unwrap(), expected);
+            assert_eq!(json::to_value(state).unwrap(), expected);
         }
     }
 }
@@ -66,7 +67,7 @@ fn state_references_visit_and_rewrite_each_v11_evaluated_form() {
 #[test]
 fn construction_graph_walks_nested_selections_bindings_and_configuration_keys() {
     let literal = "test:model:parameter#one";
-    let selection: OrderedSelection = serde_json::from_value(serde_json::json!({
+    let selection: OrderedSelection = json::from_value(cadmpeg_core::json!({
         "at":{"kind":"input"},
         "picks":{"kind":"named","value":[{
             "target":{"kind":"datum","value":{"feature":"test:model:feature#datum"}},
@@ -149,7 +150,7 @@ fn construction_graph_walks_nested_selections_bindings_and_configuration_keys() 
         .with_text_replacements(&replacements);
     let rewritten = input.rewrite_identities(&ctx, &mut map).unwrap();
     map.finish().unwrap();
-    let text = serde_json::to_string(&rewritten).unwrap();
+    let text = json::to_string(&rewritten).unwrap();
     assert!(text.contains("test:placed:feature#datum"));
     assert!(text.contains("test:placed:configuration#two"));
     let Some(InputReference::Built(built)) = rewritten.reference else {

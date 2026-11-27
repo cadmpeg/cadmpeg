@@ -613,9 +613,7 @@ impl<'ir> Measurer<'ir> {
 
         let mut faces: HashMap<&'ir str, FaceResult<'ir>> =
             HashMap::with_capacity(geometry.faces.len());
-        let parallel_workers = std::thread::available_parallelism()
-            .map_or(1, std::num::NonZeroUsize::get)
-            .min(6);
+        let parallel_workers = cadmpeg_core::parallelism().min(6);
         let pass_remaining = pass.remaining();
         let face_limit = pass.face_limit();
         let edge_limit = pass.edge_limit();
@@ -1269,9 +1267,11 @@ mod tests {
         });
         let options = MeasureOptions::default();
         let ctx_sep = service_context();
-        let mut expected = crate::session::findings(&ctx_sep, &cube, options).expect("findings");
-        expected
-            .extend(crate::declared_findings(&ctx_sep, &cube, options).expect("declared findings"));
+        let mut expected =
+            crate::session::findings(&ctx_sep, &cube, options.clone()).expect("findings");
+        expected.extend(
+            crate::declared_findings(&ctx_sep, &cube, options.clone()).expect("declared findings"),
+        );
         ctx_sep.finish_session().expect("session");
 
         let ctx_combined = service_context();

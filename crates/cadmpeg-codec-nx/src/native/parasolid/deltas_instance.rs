@@ -475,6 +475,7 @@ pub(in crate::native) fn admit(
 mod tests {
     use super::*;
     use crate::test_support::with_decode_context;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_parasolid::test_support::owned_deltas;
 
     #[test]
@@ -490,29 +491,29 @@ mod tests {
             instance.validate_source(&schema, &bytes).unwrap();
             assert!(cadmpeg_ir::ids::is_valid_identity(&schema.id));
             assert!(cadmpeg_ir::ids::is_valid_identity(&instance.id));
-            let wire = serde_json::to_value(&instance).unwrap();
-            let round_trip: ParasolidDeltasInstance = serde_json::from_value(wire.clone()).unwrap();
+            let wire = json::to_value(&instance).unwrap();
+            let round_trip: ParasolidDeltasInstance = json::from_value(wire.clone()).unwrap();
             assert_eq!(round_trip, instance);
             for (key, value) in [
-                ("schema", serde_json::json!("missing")),
-                ("identity_offset", serde_json::json!(0)),
-                ("byte_len", serde_json::json!(1)),
-                ("stream_ordinal", serde_json::json!(2)),
+                ("schema", cadmpeg_core::json!("missing")),
+                ("identity_offset", cadmpeg_core::json!(0)),
+                ("byte_len", cadmpeg_core::json!(1)),
+                ("stream_ordinal", cadmpeg_core::json!(2)),
             ] {
                 let mut bad = wire.clone();
                 bad[key] = value;
-                let value: ParasolidDeltasInstance = serde_json::from_value(bad).unwrap();
+                let value: ParasolidDeltasInstance = json::from_value(bad).unwrap();
                 assert!(value.validate(&schema).is_err());
             }
             for field_key in ["byte_len", "inflated_offset"] {
                 let mut bad = wire.clone();
                 bad["fields"][0][field_key] = 0.into();
-                let value: ParasolidDeltasInstance = serde_json::from_value(bad).unwrap();
+                let value: ParasolidDeltasInstance = json::from_value(bad).unwrap();
                 assert!(value.validate(&schema).is_err());
             }
             let mut bad = wire.clone();
-            bad["fields"][0]["values"] = serde_json::json!([]);
-            assert!(serde_json::from_value::<ParasolidDeltasInstance>(bad)
+            bad["fields"][0]["values"] = cadmpeg_core::json!([]);
+            assert!(json::from_value::<ParasolidDeltasInstance>(bad)
                 .unwrap()
                 .validate(&schema)
                 .is_err());
@@ -549,12 +550,12 @@ mod tests {
                 let instance =
                     ParasolidDeltasInstance::from_owned(&bytes, 0, &owner.events()[2], &schema)
                         .unwrap();
-                let wire = serde_json::to_value(&instance).unwrap();
+                let wire = json::to_value(&instance).unwrap();
                 assert_eq!(
                     wire["fields"][10]["values"][0]["value"],
                     format!("{bits:016x}")
                 );
-                let restored: ParasolidDeltasInstance = serde_json::from_value(wire).unwrap();
+                let restored: ParasolidDeltasInstance = json::from_value(wire).unwrap();
                 restored.validate_source(&schema, &bytes).unwrap();
             });
         }
@@ -570,11 +571,11 @@ mod tests {
         with_decode_context(|_ctx| {
             let owner = cadmpeg_parasolid::records::DeltasRecords::read(&bytes).unwrap();
             let schema = ParasolidDeltasSchema::from_owned(&bytes, 0, &owner.definitions()[2]);
-            let wire = serde_json::to_value(&schema).unwrap();
+            let wire = json::to_value(&schema).unwrap();
             assert_eq!(wire["custom_name"], "MY_KIND");
             assert_eq!(wire["custom_description"], "custom");
             assert!(wire["definition"].get("custom_name").is_none());
-            let restored: ParasolidDeltasSchema = serde_json::from_value(wire).unwrap();
+            let restored: ParasolidDeltasSchema = json::from_value(wire).unwrap();
             assert_eq!(restored, schema);
         });
     }

@@ -85,6 +85,7 @@ mod tests {
     // Wire fixtures exercise both legal compact encodings and malformed input.
     #![allow(clippy::unwrap_used)]
     use super::DataBlockObjectFrame;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn object_frames_derive_identity_from_the_exact_non_null_token() {
@@ -100,14 +101,14 @@ mod tests {
             );
             let frame: DataBlockObjectFrame = serde_json::from_str(&wire).unwrap();
             assert_eq!(frame.object.atom.value(), value);
-            assert_eq!(serde_json::to_string(&frame).unwrap(), wire);
+            assert_eq!(json::to_string(&frame).unwrap(), wire);
             assert_eq!(
-                serde_json::to_vec(&frame).unwrap(),
-                serde_json::to_vec(&super::ObjectFrameWire::from(frame.clone())).unwrap()
+                json::to_vec(&frame).unwrap(),
+                json::to_vec(&super::ObjectFrameWire::from(frame.clone())).unwrap()
             );
-            let mut invalid = serde_json::to_value(frame).unwrap();
-            invalid["object_id"] = serde_json::json!(value + 1);
-            assert!(serde_json::from_value::<DataBlockObjectFrame>(invalid)
+            let mut invalid = json::to_value(frame).unwrap();
+            invalid["object_id"] = cadmpeg_core::json!(value + 1);
+            assert!(json::from_value::<DataBlockObjectFrame>(invalid)
                 .unwrap_err()
                 .to_string()
                 .contains("object_id/raw_object_id"));
@@ -125,12 +126,12 @@ mod tests {
 
     #[test]
     fn object_frame_native_limit_refuses_before_raw_token_copy() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "nx:feature:object-frame#0", "data_block": "nx:om:data-block#0",
             "ordinal": 1, "object_id": 370, "raw_object_id": "8172",
             "source_offset": 100
         });
-        let frame: DataBlockObjectFrame = serde_json::from_value(wire.clone()).unwrap();
+        let frame: DataBlockObjectFrame = json::from_value(wire.clone()).unwrap();
         cadmpeg_test_support::native_serialization::assert_native_limit(&frame, wire);
     }
 }

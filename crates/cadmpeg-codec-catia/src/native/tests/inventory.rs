@@ -780,9 +780,9 @@ fn native_namespace_rejects_alias_row_views_disagreeing_with_their_source_bytes(
     let native = crate::native::CatiaNative::decode(&bytes);
 
     for (field, replacement) in [
-        ("lead", serde_json::json!("NonSurfaceAlias")),
-        ("tag", serde_json::json!(0)),
-        ("entity_record_ordinal", serde_json::json!(0xff)),
+        ("lead", cadmpeg_core::json!("NonSurfaceAlias")),
+        ("tag", cadmpeg_core::json!(0)),
+        ("entity_record_ordinal", cadmpeg_core::json!(0xff)),
     ] {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         native.store(&mut namespace).expect("store alias row");

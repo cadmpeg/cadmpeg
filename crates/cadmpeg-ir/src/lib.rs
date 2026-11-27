@@ -15,8 +15,8 @@
 //! without embedding validation. Start a hand-built document with [`CadIr::empty`], populate its
 //! arenas, call [`CadIr::finalize`] to establish canonical identity order, then
 //! call [`validate_neutral()`]. Use [`CadIr::to_canonical_json`] (sorted view)
-//! and [`CadIr::from_json`] for the versioned JSON form, and [`diff()`] for
-//! identity-based structural comparison.
+//! to write the versioned JSON form and [`CadIr::read`] to read it, and
+//! [`diff()`] for identity-based structural comparison.
 //!
 //! Format crates implement [`CodecBackend`]; callers use the sealed [`Codec`]
 //! entry points. Detection selects a codec from a byte prefix, inspection
@@ -44,6 +44,7 @@ pub mod annotations;
 pub mod appearance;
 pub mod assets;
 pub mod attributes;
+pub mod bounds;
 pub mod bytes;
 pub mod codec;
 pub mod compare;
@@ -59,6 +60,7 @@ pub mod eval;
 pub mod examples;
 pub mod features;
 pub mod geometry;
+pub(crate) mod give_up;
 pub mod hash;
 pub mod history_body;
 
@@ -97,6 +99,7 @@ pub use diff::{
     diff, ArenaDiff, ArenaKind, AttributeChange, DialectsChange, IrDiff, ModifiedEntity,
     NonEmptyFields, SourceDiff,
 };
+pub use document::read::{CadirRead, ReadFailure, ReadOptions};
 pub use document::{
     ArenaHome, ArenaName, CadIr, CensusKey, ScopeViolation, SourceMeta, IR_VERSION,
 };
@@ -155,7 +158,7 @@ pub use subd::{
 pub use unknown::{NativeUnknownRecord, UnknownRecord};
 pub use validate::admit::{
     admit, admit_with_additional_native_identities, admit_with_annotations, Admission,
-    CATIA_ADMISSION, DRAFT_CORE, RHINO_DRAFT, RHINO_INSTANCE,
+    CATIA_ADMISSION, DRAFT_CORE, HISTORY_BODY_ADMISSION, RHINO_DRAFT, RHINO_INSTANCE,
 };
 pub use validate::{validate_neutral, validate_neutral_with_source_fidelity};
 

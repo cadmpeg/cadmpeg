@@ -41,7 +41,7 @@ fn component_link_root_counts_are_findings_after_a_complete_decode() {
         let plan = F3dCodec
             .plan(
                 EncodeInput::new(&ir, Some(&fidelity)),
-                TargetRequest::Inherit,
+                TargetRequest::Unnamed,
             )
             .unwrap();
         let mut replay = Vec::new();
@@ -81,7 +81,7 @@ fn non_root_component_link_references_patch_and_decode_without_coercion() {
     let report = F3dCodec
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap()
         .write_to(&mut bytes)

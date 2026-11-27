@@ -12,13 +12,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, ArenaClass, DecodeContext};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{
     Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
 };
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetData};
+use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::{
     NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis,
@@ -41,6 +42,7 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FinitePoint2;
+use cadmpeg_ir::unknown::part::{dropped_with, GivenUpRecord};
 use cadmpeg_ir::CadIr;
 
 use crate::brep::patch::Trims;
@@ -193,6 +195,8 @@ struct Tallies {
     brep_elements: BTreeMap<String, usize>,
     /// Geometry subsets of `BrepArray` prims, by prim.
     brep_subsets: BTreeMap<String, usize>,
+    /// Faces of `BrepArray` prims stated partial, with the reason.
+    unstated_boundaries: Vec<String>,
     xform: Vec<String>,
     subdivision: usize,
     rejected_faces: usize,
@@ -202,7 +206,8 @@ struct Tallies {
     dropped_primvars: BTreeSet<String>,
     rejected_curves: usize,
     rejected_patches: Vec<String>,
-    rejected_joints: Vec<String>,
+    /// Joint prims left out of the document, with the cause.
+    rejected_joints: Vec<(physics::JointRejection, String)>,
     joint_properties: Vec<String>,
     /// `PhysX` properties that were not carried, by attribute path.
     solver_properties: Vec<String>,
@@ -223,6 +228,12 @@ struct Tallies {
     external: usize,
     metadata: BTreeMap<String, usize>,
     api_schemas: BTreeMap<String, usize>,
+    /// Records given up whole, each named by the id of the record that its
+    /// prim would define, with the code of their aggregate loss as the error.
+    given_up: Vec<GivenUpRecord>,
+    /// The `record.dropped-with` notes of the records dropped only because
+    /// they need a given-up record.
+    dependents: Vec<LossNote>,
 }
 
 /// Layer metadata keys the model reads (spec §4.3).
@@ -303,16 +314,19 @@ struct Builder<'s, 'l, 'c, 'a> {
     pending_physx: Vec<physx::PendingSettings>,
     admitted: u64,
     transferred: bool,
+    /// Whether the stage holds joints that the decode depth leaves out of
+    /// the design.
+    joints_beyond_depth: bool,
 }
 
-/// Writes the model of the root layer stack of `layers` into `ir`. Returns
-/// whether any geometry was transferred.
+/// Writes the model of the root layer stack of `layers` into `ir` and its
+/// losses into `body`. Returns whether any geometry was transferred.
 pub(crate) fn build<'a>(
     ctx: &DecodeContext<'a>,
     layers: &crate::layers::Layers<'a>,
     metrics: &Metrics,
     ir: &mut CadIr,
-    losses: &mut Vec<LossNote>,
+    body: &mut DecodeBody,
 ) -> Result<bool, CodecError> {
     let stage = crate::stage::compose(ctx, layers)?;
     let admitted = u64_from_index(ir.entity_count());
@@ -339,6 +353,7 @@ pub(crate) fn build<'a>(
         pending_physx: Vec::new(),
         admitted,
         transferred: false,
+        joints_beyond_depth: false,
     };
     for root in stage.roots.clone() {
         builder.prim(root, None, &IDENTITY)?;
@@ -348,6 +363,7 @@ pub(crate) fn build<'a>(
     builder.joints(pending)?;
     builder.finish_physx()?;
     let transferred = builder.transferred;
+    let joints_beyond_depth = builder.joints_beyond_depth;
     let issues = std::mem::take(&mut builder.issues);
     let tallies = std::mem::take(&mut builder.tallies);
     builder.ir.finalize();
@@ -359,14 +375,16 @@ pub(crate) fn build<'a>(
         .filter(|key| !LAYER_KEYS_READ.contains(key))
         .collect();
     if !layer_keys.is_empty() {
-        losses.push(UsdLossCode::MetadataNotTransferred.note(format!(
-            "layer metadata was not transferred: {}",
-            joined(layer_keys.into_iter().map(str::to_owned))
-        )));
+        body.losses
+            .push(UsdLossCode::MetadataNotTransferred.note(format!(
+                "layer metadata was not transferred: {}",
+                joined(layer_keys.into_iter().map(str::to_owned))
+            )));
     }
-    losses.extend(layers.losses.iter().cloned());
+    body.losses.extend(layers.losses.iter().cloned());
     if !layers.unavailable.is_empty() {
-        losses.push(UsdLossCode::CompositionLayerUnavailable.note(format!(
+        body.losses
+            .push(UsdLossCode::CompositionLayerUnavailable.note(format!(
             "{} named layers did not open: {}",
             layers.unavailable.len(),
             joined(
@@ -377,8 +395,11 @@ pub(crate) fn build<'a>(
             )
         )));
     }
-    losses.extend(composition_losses(&stage));
-    losses.extend(tally_losses(&tallies, &issues, metrics));
+    body.losses.extend(composition_losses(&stage));
+    body.losses.extend(tally_losses(&tallies, &issues, metrics));
+    if joints_beyond_depth {
+        body.source_holds(ArenaClass::Design);
+    }
     Ok(transferred)
 }
 
@@ -842,6 +863,7 @@ impl Builder<'_, '_, '_, '_> {
         let Some(mesh) = crate::schema::mesh::read(self.stage, prim, &mut self.issues) else {
             if prim.external.is_empty() {
                 self.tallies.rejected_meshes.push(prim.path.clone());
+                self.give_up_mesh(prim, key, UsdLossCode::MeshRejected.kind(), &[]);
             }
             return Ok(None);
         };
@@ -877,6 +899,12 @@ impl Builder<'_, '_, '_, '_> {
                 self.tallies
                     .rejected_meshes
                     .push(format!("{}: {reason}", prim.path));
+                self.give_up_mesh(
+                    prim,
+                    key,
+                    format_args!("{}: {reason}", UsdLossCode::MeshRejected.kind()),
+                    &mesh.subsets,
+                );
                 return Ok(None);
             }
         };
@@ -891,7 +919,7 @@ impl Builder<'_, '_, '_, '_> {
                 visible: None,
             }));
         self.meshed.insert(key.to_owned());
-        let target = AppearanceTarget::Tessellation(crate::ids::tessellation(key).to_string());
+        let target = AppearanceTarget::Tessellation(crate::ids::tessellation(key));
         self.material(prim, key, target)?;
         for subset in &mesh.subsets {
             self.subset_material(&subset.path, key)?;
@@ -899,6 +927,51 @@ impl Builder<'_, '_, '_, '_> {
         self.transferred = true;
         self.admit("usd_mesh")?;
         Ok(None)
+    }
+
+    /// Gives up the tessellation that mesh `prim` would define for `key`,
+    /// for `error`, and drops with it each appearance binding that would
+    /// target it.
+    fn give_up_mesh(
+        &mut self,
+        prim: &Prim<'_>,
+        key: &str,
+        error: impl std::fmt::Display,
+        subsets: &[crate::schema::mesh::Subset],
+    ) {
+        let tessellation = crate::ids::tessellation(key);
+        self.tallies
+            .given_up
+            .push(GivenUpRecord::new(&tessellation, error));
+        // The readers run again only to learn which bindings exist; their
+        // issues were tallied on the first read.
+        let mut issues = Issues::default();
+        if matches!(
+            crate::schema::shading::bound_material(self.stage, prim, &mut issues),
+            Some(Bound::Surface(_))
+        ) {
+            self.tallies.dependents.push(dropped_with(
+                crate::ids::appearance_binding(key),
+                &tessellation,
+            ));
+        }
+        for subset in subsets {
+            let bound = self
+                .stage
+                .find(&subset.path)
+                .and_then(|prim| {
+                    prim.relationship_targets("material:binding")
+                        .into_iter()
+                        .next()
+                })
+                .map(|target| crate::schema::shading::material(self.stage, &target, &mut issues));
+            if matches!(bound, Some(Bound::Surface(_))) {
+                self.tallies.dependents.push(dropped_with(
+                    crate::ids::subset_binding(key, &subset.path),
+                    &tessellation,
+                ));
+            }
+        }
     }
 
     fn tessellation(&self, key: &str, mesh: &MeshData) -> Result<Tessellation, String> {
@@ -1069,7 +1142,7 @@ impl Builder<'_, '_, '_, '_> {
         self.ir.model.appearance_bindings.push(AppearanceBinding {
             id: crate::ids::subset_binding(key, path),
             target: AppearanceTarget::TriangleGroup {
-                tessellation: crate::ids::tessellation(key).to_string(),
+                tessellation: crate::ids::tessellation(key),
                 group: path.to_owned(),
             }
             .into(),
@@ -1183,6 +1256,10 @@ impl Builder<'_, '_, '_, '_> {
     ) -> Result<Option<cadmpeg_ir::ids::BodyId>, CodecError> {
         let Some(curves) = curves else {
             self.tallies.rejected_curves += 1;
+            self.tallies.given_up.push(GivenUpRecord::new(
+                crate::ids::body(key),
+                UsdLossCode::CurvesRejected.kind(),
+            ));
             return Ok(None);
         };
         self.tallies.rejected_curves += curves.rejected;
@@ -1279,6 +1356,12 @@ impl Builder<'_, '_, '_, '_> {
             self.admit("usd_curve")?;
         }
         if edges.is_empty() {
+            if !curves.curves.is_empty() || curves.rejected > 0 {
+                self.tallies.given_up.push(GivenUpRecord::new(
+                    crate::ids::body(key),
+                    UsdLossCode::CurvesRejected.kind(),
+                ));
+            }
             return Ok(None);
         }
         let region = crate::ids::region(key);
@@ -1302,10 +1385,18 @@ impl Builder<'_, '_, '_, '_> {
     ) -> Result<Option<cadmpeg_ir::ids::BodyId>, CodecError> {
         let Some(patch) = crate::schema::patch::read(prim, &mut self.issues) else {
             self.tallies.rejected_patches.push(prim.path.clone());
+            self.tallies.given_up.push(GivenUpRecord::new(
+                crate::ids::body(key),
+                UsdLossCode::NurbsPatchRejected.kind(),
+            ));
             return Ok(None);
         };
         let Some(surface) = self.patch_surface(&patch) else {
             self.tallies.rejected_patches.push(prim.path.clone());
+            self.tallies.given_up.push(GivenUpRecord::new(
+                crate::ids::body(key),
+                UsdLossCode::NurbsPatchRejected.kind(),
+            ));
             return Ok(None);
         };
         let reason = match crate::brep::patch::bounded(&patch) {
@@ -1747,6 +1838,15 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
         ),
     );
     push(
+        UsdLossCode::TopologyFaceBoundaryUnstated,
+        !tallies.unstated_boundaries.is_empty(),
+        format!(
+            "faces of BrepArray prims do not state their boundary in full and are stated \
+             partial: {}",
+            joined(tallies.unstated_boundaries.iter().cloned())
+        ),
+    );
+    push(
         UsdLossCode::XformMalformed,
         !tallies.xform.is_empty(),
         format!(
@@ -1822,16 +1922,24 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
             joined(tallies.rejected_patches.iter().cloned())
         ),
     );
-    push(
-        UsdLossCode::JointRejected,
-        !tallies.rejected_joints.is_empty(),
-        format!(
-            "{} joints name no body, or a body that is not a transferred prim, or have a \
-             malformed frame, and were not transferred: {}",
-            tallies.rejected_joints.len(),
-            joined(tallies.rejected_joints.iter().cloned())
-        ),
-    );
+    for cause in physics::JointRejection::ALL {
+        let paths: Vec<String> = tallies
+            .rejected_joints
+            .iter()
+            .filter(|(rejection, _)| *rejection == cause)
+            .map(|(_, path)| path.clone())
+            .collect();
+        push(
+            UsdLossCode::JointRejected,
+            !paths.is_empty(),
+            format!(
+                "{} joints {} and were not transferred: {}",
+                paths.len(),
+                cause.several(),
+                joined(paths)
+            ),
+        );
+    }
     push(
         UsdLossCode::PhysicsPropertyNotTransferred,
         !tallies.physics_properties.is_empty(),
@@ -1949,6 +2057,8 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
             joined(issues.animated.iter().cloned())
         ),
     );
+    losses.extend(tallies.given_up.iter().cloned().map(GivenUpRecord::loss));
+    losses.extend(tallies.dependents.iter().cloned());
     losses
 }
 

@@ -164,6 +164,7 @@ impl<'de, T: CountedValue + Deserialize<'de>> Deserialize<'de> for CountedValues
 #[cfg(test)]
 mod tests {
     use super::CountedValues;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn counted_integer_values_preserve_unsigned_values_and_reject_empty_lanes() {
@@ -171,7 +172,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(values.as_slice(), &[u32::MAX]);
-        assert_eq!(serde_json::to_string(&values).unwrap(), "[4294967295]");
+        assert_eq!(json::to_string(&values).unwrap(), "[4294967295]");
         assert!(CountedValues::<u32>::read_be_lane(&[]).unwrap().is_none());
         assert!(CountedValues::new(Vec::<u32>::new()).is_err());
         assert!(serde_json::from_str::<CountedValues<u32>>("[]").is_err());
@@ -180,14 +181,14 @@ mod tests {
     #[test]
     fn finite_values_preserve_json_and_reject_empty_or_nonfinite_values() {
         let values = CountedValues::new(vec![1.0, -2.0]).unwrap();
-        assert_eq!(serde_json::to_string(&values).unwrap(), "[1.0,-2.0]");
+        assert_eq!(json::to_string(&values).unwrap(), "[1.0,-2.0]");
         assert_eq!(
             serde_json::from_str::<CountedValues<f64>>("[1.0,-2.0]").unwrap(),
             values
         );
         let axes = CountedValues::new(vec![[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]]).unwrap();
         let wire = "[[[1.0,2.0,3.0],[4.0,5.0,6.0]]]";
-        assert_eq!(serde_json::to_string(&axes).unwrap(), wire);
+        assert_eq!(json::to_string(&axes).unwrap(), wire);
         assert_eq!(
             serde_json::from_str::<CountedValues<[[f64; 3]; 2]>>(wire).unwrap(),
             axes

@@ -1118,3 +1118,40 @@ fn a_driven_parameter_names_its_owner_and_its_display_with_its_dimension() {
     );
     assert_eq!(driving(&decoded).get("Gap"), Some(&Some(false)));
 }
+
+#[test]
+fn a_failure_in_one_dimension_drops_that_dimension_alone() {
+    let gap = constraint_id(SKETCH, "gap");
+    let _failing = super::fail_records([gap.as_str()]);
+    let (report, decoded) = write(&on_xy());
+    assert_eq!(decoded.model.sketches.len(), 1);
+    let bound = bound_kinds(&decoded);
+    for (_, name) in DIMENSIONS {
+        assert_eq!(
+            bound.contains_key(name),
+            name != "Gap",
+            "{name}: {bound:#?}"
+        );
+    }
+    let omitted = omitted(&report);
+    assert!(
+        omitted.contains(&format!(
+            "without {gap}: the writer cannot write its records (not implemented yet: a test failure of the records of {gap})"
+        )),
+        "{omitted}"
+    );
+    for (constraint, _) in DIMENSIONS
+        .iter()
+        .filter(|(constraint, _)| *constraint != "gap")
+    {
+        assert!(
+            !omitted.contains(constraint_id(SKETCH, constraint).as_str()),
+            "{omitted}"
+        );
+    }
+    assert!(decoded
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "Gap" && parameter.owner.is_none()));
+}

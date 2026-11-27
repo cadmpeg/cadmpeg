@@ -18,7 +18,7 @@ use crate::records::{
 
 use crate::resolved_features::feature_sources::FeatureSources;
 
-const SLDPRT_ARENA_NAMES: &[&str] = &[
+pub(crate) const SLDPRT_ARENA_NAMES: &[&str] = &[
     "configurations",
     "feature_histories",
     "feature_input_body_selections",
@@ -340,20 +340,24 @@ impl SldprtNative {
         records.chain(objects)
     }
 
+    /// Loads and admits `namespace`; `linear` is the linear tolerance of the
+    /// document that holds it, under which its relation instances are derived.
     pub(crate) fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
+        linear: cadmpeg_ir::scalar::PositiveLength,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         // A native field can contain 256 containers; reconstruction adds the record root.
         policy.limits.max_recursion_depth = 257;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-        Self::load_with_context(&ctx, namespace)
+        Self::load_with_context(&ctx, namespace, linear)
     }
 
     pub(crate) fn load_with_context(
         ctx: &DecodeContext<'_>,
         namespace: &cadmpeg_ir::NativeNamespace,
+        linear: cadmpeg_ir::scalar::PositiveLength,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         macro_rules! read_arena {
             ($name:literal) => {
@@ -826,7 +830,7 @@ impl SldprtNative {
             lane.sketch_entities
                 .sort_by_key(super::records::SketchInputEntity::ordinal);
         }
-        lanes::admit(&native, ctx)?;
+        lanes::admit(&native, ctx, linear)?;
         Ok(native)
     }
 

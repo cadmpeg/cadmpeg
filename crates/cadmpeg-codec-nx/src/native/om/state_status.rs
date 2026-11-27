@@ -226,17 +226,18 @@ impl<'de> Deserialize<'de> for StateStatusPayload<String, Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::OmOperationStateStatus;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn om_status_payload_streams_once_with_native_retained_limit() {
-        let expected = serde_json::json!({
+        let expected = cadmpeg_core::json!({
             "id": "nx:om:status#1", "section_link": "section", "ordinal": 0,
             "status_code": 65, "raw_status_code": "41",
             "object_index": 1, "raw_object_index": "01",
             "payload": {"Opaque":{"raw":"020111"}},
             "source_entry": "om", "source_offset": 0, "end_offset": 5
         });
-        let record: OmOperationStateStatus = serde_json::from_value(expected.clone()).unwrap();
+        let record: OmOperationStateStatus = json::from_value(expected.clone()).unwrap();
         cadmpeg_test_support::native_serialization::assert_native_limit(&record, expected);
     }
 
@@ -258,21 +259,21 @@ mod tests {
                 r#"{{"id":"status","section_link":"section","ordinal":0,"status_code":65,"raw_status_code":"41","object_index":1,"raw_object_index":"01","payload":{payload},"source_entry":"om","source_offset":0,"end_offset":{end}}}"#
             );
             let row: OmOperationStateStatus = serde_json::from_str(&json).unwrap();
-            assert_eq!(serde_json::to_string(&row).unwrap(), json);
+            assert_eq!(json::to_string(&row).unwrap(), json);
             let wire: serde_json::Value = serde_json::from_str(&json).unwrap();
             let mut mismatch = wire.clone();
             mismatch["end_offset"] = (end + 1).into();
-            assert!(serde_json::from_value::<OmOperationStateStatus>(mismatch)
+            assert!(json::from_value::<OmOperationStateStatus>(mismatch)
                 .unwrap_err()
                 .to_string()
                 .contains("end_offset"));
             let mut boundary = wire.clone();
             boundary["source_offset"] = (u64::MAX - end).into();
             boundary["end_offset"] = u64::MAX.into();
-            assert!(serde_json::from_value::<OmOperationStateStatus>(boundary).is_ok());
+            assert!(json::from_value::<OmOperationStateStatus>(boundary).is_ok());
             let mut overflow = wire;
             overflow["source_offset"] = (u64::MAX - end + 1).into();
-            assert!(serde_json::from_value::<OmOperationStateStatus>(overflow)
+            assert!(json::from_value::<OmOperationStateStatus>(overflow)
                 .unwrap_err()
                 .to_string()
                 .contains("source_offset"));

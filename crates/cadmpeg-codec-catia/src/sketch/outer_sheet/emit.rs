@@ -32,7 +32,7 @@ use super::{SheetLine, SheetPlan};
 const ADMIT: &str = "admit outer sketch sheet entities";
 
 struct Annotation {
-    id: String,
+    key: cadmpeg_ir::annotations::AnnotationKey,
     offset: u64,
     tag: &'static str,
     fields: &'static [&'static str],
@@ -98,22 +98,23 @@ fn ports(line: &SheetLine) -> [(u32, Point2); 2] {
 fn annotation(
     prepared: &mut Prepared,
     (model, staged): (&ModelIndex<'_>, &HashSet<String>),
-    id: impl Display,
+    key: impl Into<cadmpeg_ir::annotations::AnnotationKey>,
     offset: u64,
     tag: &'static str,
     fields: &'static [&'static str],
 ) -> Result<(), CodecError> {
-    let id = id.to_string();
-    if model.contains(&id, StandardIndex)
-        || staged.contains(&id)
-        || !prepared.identities.insert(id.clone())
+    let key = key.into();
+    let id = key.as_str();
+    if model.contains(id, StandardIndex)
+        || staged.contains(id)
+        || !prepared.identities.insert(id.to_owned())
     {
         return Err(CodecError::malformed(
             "outer sheet entity identity is repeated",
         ));
     }
     prepared.annotations.push(Annotation {
-        id,
+        key,
         offset,
         tag,
         fields,
@@ -283,31 +284,39 @@ fn prepare_component(
     let Some(area) = polygon_area_twice(&polygon).filter(|area| area.get() != 0.0) else {
         return Ok(false);
     };
-    for (id, tag, fields) in [
-        (body.as_str(), "split_fill_component", &["kind"][..]),
+    for (key, tag, fields) in [
         (
-            region.as_str(),
+            cadmpeg_ir::annotations::AnnotationKey::from(&body),
+            "split_fill_component",
+            &["kind"][..],
+        ),
+        (
+            cadmpeg_ir::annotations::AnnotationKey::from(&region),
             "fill_component_region",
             &["body", "shells"][..],
         ),
         (
-            shell.as_str(),
+            cadmpeg_ir::annotations::AnnotationKey::from(&shell),
             "open_fill_component_shell",
             &["region", "members"][..],
         ),
-        (surface.as_str(), "sketch_chart_plane", &["geometry"][..]),
         (
-            face.as_str(),
+            cadmpeg_ir::annotations::AnnotationKey::from(&surface),
+            "sketch_chart_plane",
+            &["geometry"][..],
+        ),
+        (
+            cadmpeg_ir::annotations::AnnotationKey::from(&face),
             "planar_fill_component",
             &["shell", "surface", "sense", "loops"][..],
         ),
         (
-            loop_id.as_str(),
+            cadmpeg_ir::annotations::AnnotationKey::from(&loop_id),
             "closed_fill_boundary",
             &["face", "boundary"][..],
         ),
     ] {
-        annotation(prepared, existing, id, plan.source_offset, tag, fields)?;
+        annotation(prepared, existing, &key, plan.source_offset, tag, fields)?;
     }
     prepared.geometry.bodies.push(Body {
         id: body.clone(),
@@ -430,14 +439,14 @@ pub(super) fn emit(
     for note in prepared.annotations {
         crate::assemble::annotate(
             annotations,
-            &note.id,
+            &note.key,
             "outer-sketch",
             note.offset,
             note.tag,
             Exactness::Derived,
         )?;
         for field in note.fields {
-            annotations.derived(&note.id, field)?;
+            annotations.derived(&note.key, field)?;
         }
     }
     append_topology(&mut ir.geometry, &mut prepared.geometry);

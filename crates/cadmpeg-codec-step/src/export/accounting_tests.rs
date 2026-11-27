@@ -49,39 +49,40 @@ fn pmi_dropped_by_schema_does_not_skip_later_losses() {
         .iter()
         .any(|loss| loss.code == StepLossCode::PmiAnnotationNotWritten.kind()));
     assert!(
-        report
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("source-native record(s)")),
+        report.losses.iter().any(
+            |loss| loss.code.to_string() == "export/native.records-omitted"
+                && loss.message.ends_with(
+                    "of `f3d` arena `asm_histories` which the STEP writer does not write: \
+                         f3d:test:asm-history#0"
+                )
+        ),
         "{:?}",
         report.losses
     );
 }
 
 fn product(ir: &mut cadmpeg_ir::CadIr) {
-    ir.model
-        .product_definitions
-        .push(cadmpeg_ir::products::ProductDefinition {
-            sketches: Vec::default(),
+    ir.model.product_definitions = vec![cadmpeg_ir::products::ProductDefinition {
+        sketches: Vec::default(),
 
-            id: "test:model:product-definition#empty".try_into().unwrap(),
-            kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
-            source_name: None,
-            label: None,
-            description: None,
-            part_number: None,
-            bom_properties: std::collections::BTreeMap::default(),
-            bodies: Vec::new(),
-            native_ref: None,
-            generated_from: None,
-            storage: cadmpeg_ir::products::Storage::Embedded,
-            occurrences: Vec::new(),
-            instance_bodies: Vec::new(),
-            representations: Vec::new(),
-            units: None,
-            general_tolerance: None,
-            active: None,
-        });
+        id: "test:model:product-definition#empty".try_into().unwrap(),
+        kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
+        source_name: None,
+        label: None,
+        description: None,
+        part_number: None,
+        bom_properties: std::collections::BTreeMap::default(),
+        bodies: Vec::new(),
+        native_ref: None,
+        generated_from: None,
+        storage: cadmpeg_ir::products::Storage::Embedded,
+        occurrences: Vec::new(),
+        instance_bodies: Vec::new(),
+        representations: Vec::new(),
+        units: None,
+        general_tolerance: None,
+        active: None,
+    }];
 }
 
 #[test]
@@ -154,7 +155,7 @@ fn solid_and_sheet_shell_wire_members_have_counted_export_losses() {
 }
 
 #[test]
-fn missing_local_product_refuses_occurrences_of_the_root_and_nested_definitions_before_output() {
+fn an_occurrence_of_a_missing_product_is_left_out_of_the_root_and_nested_definitions() {
     use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
     use cadmpeg_ir::transform::Transform;
     for nested in [false, true] {
@@ -191,17 +192,92 @@ fn missing_local_product_refuses_occurrences_of_the_root_and_nested_definitions_
             "test:model:product-definition#missing".try_into().unwrap(),
             Some(Transform::identity()),
         ));
-        let mut output = vec![0xaa];
-        let error = write_step(
+        let mut output = Vec::new();
+        let report = write_step(
             &ir,
             &mut output,
             StepSchema::Ap242Edition3,
             &StepWriteOptions::default(),
         )
-        .unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("1 occurrence record(s) whose local product definition is missing"));
-        assert_eq!(output, [0xaa]);
+        .expect("an occurrence of a missing product is left out");
+        assert!(
+            report.losses.iter().any(|loss| {
+                loss.code == StepLossCode::OccurrenceNoLocalProduct.kind()
+                    && loss.severity == cadmpeg_ir::report::Severity::Warning
+                    && loss.message.contains("test:model:occurrence#missing")
+            }),
+            "{:?}",
+            report.losses
+        );
+        assert!(
+            !report
+                .losses
+                .iter()
+                .any(|loss| loss.code.to_string() == "export/record.invalid"),
+            "{:?}",
+            report.losses
+        );
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .expect("decode the written file")
+            .into_parts()
+            .0;
+        assert_eq!(
+            decoded.model.occurrences.len(),
+            ir.model.occurrences.len() - 1,
+            "nested: {nested}"
+        );
     }
+}
+
+/// The cage filter and the dangling-occurrence filter compose: the cage body
+/// and the occurrence of a missing product are both left out, each charged,
+/// and the rest is written.
+#[test]
+fn a_cage_body_and_an_occurrence_of_a_missing_product_are_both_left_out() {
+    use cadmpeg_ir::products::{ExternalDocument, Occurrence, Storage};
+    use cadmpeg_ir::transform::Transform;
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    product(&mut ir);
+    let missing: cadmpeg_ir::ids::OccurrenceId =
+        "test:model:occurrence#missing".try_into().unwrap();
+    let owner = &mut ir.model.product_definitions[0];
+    owner.occurrences.push(missing.clone());
+    owner.storage = Storage::File {
+        document: ExternalDocument::default(),
+        source: None,
+    };
+    ir.model.occurrences.push(Occurrence::new(
+        missing.clone(),
+        "test:model:product-definition#missing".try_into().unwrap(),
+        Some(Transform::identity()),
+    ));
+    let cage = cadmpeg_test_support::cages::push_cage_body(&mut ir, "step");
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("the cage body and the dangling occurrence are left out");
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code == StepLossCode::OccurrenceNoLocalProduct.kind()
+                && loss.message.contains(missing.as_str())
+        }),
+        "{:?}",
+        report.losses
+    );
+    cadmpeg_test_support::cages::assert_cage_body_dropped(&report, &cage, "MANIFOLD_SOLID_BREP", 1);
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode the written file")
+        .into_parts()
+        .0;
+    assert_eq!(
+        decoded.model.occurrences.len(),
+        ir.model.occurrences.len() - 1
+    );
+    assert_eq!(decoded.geometry.bodies.len(), 1);
 }

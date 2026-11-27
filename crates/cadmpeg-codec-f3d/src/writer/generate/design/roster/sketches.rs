@@ -16,6 +16,7 @@ use super::super::sketch::{
     CurveGeometry, Entity, OriginPlane, PlannedSketch, RelationKind, Support,
 };
 use super::super::types;
+use super::super::{Culprit, Part, RecordFailure};
 use super::{count, Context, AGGREGATE};
 use crate::writer::generate::presentation::TypeRow;
 use cadmpeg_ir::math::portable::Portable;
@@ -238,26 +239,31 @@ pub(super) fn write(
     ctx: &Context<'_>,
     sketches: &[PlannedSketch<'_>],
     out: &mut DesignRecords,
-) -> Result<(), CodecError> {
+) -> Result<(), RecordFailure> {
     let roster = &ctx.roster.sketches;
     let Some(root) = roster.root else {
         return Ok(());
     };
     #[cfg(test)]
     if let Some(error) = super::super::requested_sketch_failure() {
-        return Err(error);
+        return Err(error.into());
     }
     let classes = Classes::of(ctx)?;
     let mut identity = FIRST_IDENTITY;
-    for (ordinal, (records, planned)) in (1u32..).zip(roster.items.iter().zip(sketches)) {
+    for (position, (ordinal, (records, planned))) in
+        (1u32..).zip(roster.items.iter().zip(sketches)).enumerate()
+    {
         let item = Item {
             ctx,
             classes: &classes,
             records,
             planned,
             ordinal,
+            rolled_back: position >= ctx.marker,
         };
-        identity = item.write(out, identity)?;
+        identity = item
+            .write(out, identity)
+            .map_err(|failure| failure.or_named(|| Culprit::Sketch(planned.feature.clone())))?;
     }
     let containers = roster
         .items
@@ -404,12 +410,18 @@ struct Item<'a> {
     /// The item's ordinal in the `Sketch` family and in the sketch
     /// collection, from `1`.
     ordinal: u32,
+    /// Whether the item stands after the timeline marker.
+    rolled_back: bool,
 }
 
 impl Item<'_> {
     /// The item's records, with point and curve identities from `identity`.
     /// Returns the next free identity.
-    fn write(&self, out: &mut DesignRecords, mut identity: u64) -> Result<u64, CodecError> {
+    fn write(&self, out: &mut DesignRecords, mut identity: u64) -> Result<u64, RecordFailure> {
+        #[cfg(test)]
+        if let Some(error) = super::super::requested_record_failure(self.planned.feature) {
+            return Err(error.into());
+        }
         self.container(out)?;
         self.frame(out)?;
         let mut next = || {
@@ -456,7 +468,8 @@ impl Item<'_> {
         self.scope(out)?;
         self.placement_path(out)?;
         self.placement(out)?;
-        self.dimensions(out, ordinals)?;
+        self.dimensions(out, ordinals)
+            .map_err(|failure| failure.or_named(|| Culprit::Part(Part::Dimensions)))?;
         Ok(identity)
     }
 
@@ -783,6 +796,7 @@ impl Item<'_> {
                 tracked: records.tracked,
                 companion: records.scope_companion,
                 stamps: records.scope_stamps,
+                rolled_back: self.rolled_back,
             },
         );
         let mut entries = vec![
@@ -1043,10 +1057,15 @@ pub(super) struct ItemTail {
     pub(super) tracked: u32,
     pub(super) companion: u32,
     pub(super) stamps: u32,
+    /// Whether the item stands after the timeline marker: its rolled-back
+    /// flag `s1`.
+    pub(super) rolled_back: bool,
 }
 
-/// The 78-byte feature item tail of an unsuppressed item with no label,
-/// the paired header and the owner collection reference.
+/// The 78-byte feature item tail of an unsuppressed item with no label and
+/// no history state, the paired header and the owner collection reference.
+/// An item after the timeline marker sets both `s0` and `s1` (f3d.md §3.1,
+/// "In every form, the state bytes").
 pub(super) fn item_tail(out: &mut DesignRecords, classes: &Classes, tail: &ItemTail) {
     out.u32(tail.ordinal)
         .u32(0)
@@ -1061,8 +1080,8 @@ pub(super) fn item_tail(out: &mut DesignRecords, classes: &Classes, tail: &ItemT
         .u32(EPOCH)
         .reference(tail.companion)
         .byte(1)
-        .byte(0)
-        .byte(0)
+        .byte(u8::from(tail.rolled_back))
+        .byte(u8::from(tail.rolled_back))
         .reference(tail.stamps)
         .zeros(2)
         .header(&classes.object, tail.scope)

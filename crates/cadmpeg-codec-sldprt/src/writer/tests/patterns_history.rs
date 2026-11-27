@@ -2,6 +2,7 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -35,7 +36,7 @@ fn decoded_object_names(payload: &[u8], parent: &str) -> Vec<crate::records::Fea
 fn named_invalid(ir: &cadmpeg_ir::CadIr, fidelity: &cadmpeg_ir::SourceFidelity, finding: &str) {
     let report = crate::test_support::plan_fixture_with_native_envelope(
         cadmpeg_ir::codec::write::EncodeInput::new(ir, Some(fidelity)),
-        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
     )
     .unwrap()
     .write_to(&mut Vec::new())
@@ -1161,13 +1162,11 @@ fn semantic_writer_retains_partial_native_rib_construction() {
                    })));
     let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope_declined(
         &detached,
         decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("unresolved rib construction"));
+    );
+    assert!(error.contains("unresolved rib construction"));
 
     decoded.ir_mut().model.features[0].name = Some("Renamed web".into());
     let mut encoded = Vec::new();
@@ -1385,7 +1384,7 @@ fn semantic_writer_applies_neutral_feature_edits() {
 }
 
 #[test]
-fn semantic_writer_rejects_conflicting_feature_edits() {
+fn semantic_writer_patch_declines_conflicting_feature_edits() {
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
@@ -1418,13 +1417,9 @@ fn semantic_writer_rejects_conflicting_feature_edits() {
         });
     }
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("conflicting neutral and native"));
+    let error =
+        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
+    assert!(error.contains("conflicting neutral and native"));
 }
 
 #[test]
@@ -1507,7 +1502,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         SketchInputKind::LineOrCircle
     );
     assert_eq!(
-        serde_json::to_string(&SketchInputKind::LineOrCircle).unwrap(),
+        json::to_string(&SketchInputKind::LineOrCircle).unwrap(),
         r#""line_or_circle""#
     );
 
@@ -1690,7 +1685,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
 }
 
 #[test]
-fn semantic_writer_rejects_edited_feature_input_class_index() {
+fn semantic_writer_patch_declines_edited_feature_input_class_index() {
     let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0]);
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -1707,13 +1702,9 @@ fn semantic_writer_rejects_edited_feature_input_class_index() {
     .iter()
     .any(|finding| finding.message.contains("class index does not match")));
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("class index does not match"));
+    let error =
+        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
+    assert!(error.contains("class index does not match"));
 }
 
 #[test]
@@ -1735,6 +1726,7 @@ fn semantic_writer_rewrites_feature_input_name_values() {
         lane,
         &native.feature_histories,
         std::slice::from_ref(&rename),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
 
@@ -1760,8 +1752,13 @@ fn semantic_writer_refuses_a_feature_input_name_value_that_disagrees_with_its_pa
     let mut lane = native.feature_input_lanes[0].clone();
     lane.names[1].value = "Depth".into();
 
-    let error =
-        crate::writer::resolved_feature_payload(&lane, &native.feature_histories, &[]).unwrap_err();
+    let error = crate::writer::resolved_feature_payload(
+        &lane,
+        &native.feature_histories,
+        &[],
+        cadmpeg_ir::units::Tolerances::default().linear,
+    )
+    .unwrap_err();
 
     assert!(
         error
@@ -1772,7 +1769,7 @@ fn semantic_writer_refuses_a_feature_input_name_value_that_disagrees_with_its_pa
 }
 
 #[test]
-fn semantic_writer_rejects_edited_feature_input_scalar_index() {
+fn semantic_writer_patch_declines_edited_feature_input_scalar_index() {
     let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0]);
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -1790,13 +1787,9 @@ fn semantic_writer_rejects_edited_feature_input_scalar_index() {
     .iter()
     .any(|finding| finding.message.contains("scalar index does not match")));
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("scalar index does not match"));
+    let error =
+        crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
+    assert!(error.contains("scalar index does not match"));
 }
 
 #[test]

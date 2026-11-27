@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn unit_feature_directions_admit_only_unit_vectors_on_the_wire() {
     use crate::features::geometry::FinitePoint3;
@@ -20,19 +22,19 @@ fn unit_feature_directions_admit_only_unit_vectors_on_the_wire() {
         key: &str,
     ) {
         for refused in [
-            serde_json::json!({"x": 0.0, "y": 0.0, "z": 2.0}),
-            serde_json::json!({"x": 0.0, "y": 0.0, "z": 0.0}),
-            serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0 + 2.0e-9}),
+            cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 2.0}),
+            cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 0.0}),
+            cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 1.0 + 2.0e-9}),
         ] {
             let mut wire = wire.clone();
             wire.pointer_mut(payload).unwrap()[key] = refused;
-            let error = serde_json::from_value::<T>(wire).unwrap_err().to_string();
+            let error = json::from_value::<T>(wire).unwrap_err().to_string();
             assert!(error.contains("direction must have unit length"), "{error}");
         }
         let mut near_unit = wire.clone();
         near_unit.pointer_mut(payload).unwrap()[key] =
-            serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0 + 5.0e-10});
-        assert!(serde_json::from_value::<T>(near_unit).is_ok());
+            cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 1.0 + 5.0e-10});
+        assert!(json::from_value::<T>(near_unit).is_ok());
     }
 
     let operations = [
@@ -68,19 +70,19 @@ fn unit_feature_directions_admit_only_unit_vectors_on_the_wire() {
         ),
     ];
     for (operation, key) in operations {
-        let wire = serde_json::to_value(&operation).unwrap();
-        let decoded: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+        let wire = json::to_value(&operation).unwrap();
+        let decoded: FeatureOperation = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(decoded).unwrap(), wire);
         refuses::<FeatureOperation>(&wire, "/value", key);
     }
 
-    let binormal = serde_json::to_value(SweepOrientation::Binormal {
+    let binormal = json::to_value(SweepOrientation::Binormal {
         direction: UnitVector3::Z_AXIS,
     })
     .unwrap();
     refuses::<SweepOrientation>(&binormal, "", "direction");
 
-    let helical = serde_json::to_value(HelicalSweepConstruction {
+    let helical = json::to_value(HelicalSweepConstruction {
         profile: PlanarProfileRef::Native("helix:profile".into()),
         axis_origin: FinitePoint3::ZERO,
         axis_direction: UnitVector3::Z_AXIS,

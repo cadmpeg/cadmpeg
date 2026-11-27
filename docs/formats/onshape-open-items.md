@@ -14,15 +14,11 @@ Note: Unresolved quantities retain their feature as Native with `history.not-sup
 
 ## ONSHAPE-003 — Exact next-face coverage
 
-Question: Which stored source operands identify the resolved `UP_TO_NEXT` target for curved profiles and multiple candidate faces?
+Question: Which stored data establish the `UP_TO_NEXT` target for a `booleanScope` selection, and for non-planar or nearly parallel faces?
 
-Known: One stored planar target with a closed convex line boundary establishes exact first intersection and complete coverage for a closed convex line profile.
+Known: Planar faces of live bodies with closed line boundaries establish exact first intersection and complete coverage for a closed convex line profile. Each body stores `type` and `consumedByComposite`.
 
-Need: Stored target-identity and boundary encodings for curved carriers and competing faces.
-
-Conflict: Finite boundary samples can miss a narrow recess or an uncovered interior.
-
-Note: Unresolved `UP_TO_NEXT` forms retain their feature as Native with `history.not-supported`.
+Need: A stored statement of how a `booleanScope` selection limits the next face. Stored exact intersection data for a non-planar face, a loop that is not one closed chain of line edges, and a plane that is nearly parallel to the travel direction.
 
 ## ONSHAPE-004 — Thin sides of mixed curve groups
 
@@ -107,3 +103,60 @@ Need: Build offset planes on planar faces with each orientation value, attach as
 Conflict: Reversing the support normal changes the offset side. The surface normal and orientation value leave the in-plane axis unresolved.
 
 Note: A face-supported offset plane retains its feature as Native with `plane.not-supported` until its attachment frame is proved.
+
+## ONSHAPE-040 — Face sketch attachment sense against face orientation
+
+Question: Does the sign of the `sketchMatrix` normal of a face sketch follow the rollback face `orientation` value?
+
+Known: The `sketchMatrix` normal sign and the face `orientation` value are both stored.
+
+Need: Place sketches on faces whose `orientation` is `false` and on faces whose surface normal points into the solid. Compare the matrix normal with the surface normal and the orientation value.
+
+## ONSHAPE-011 — Assembly mate frames and parameter quantities
+
+Question: Which coordinate frame owns `matedCS` for a path through a
+subassembly, and which feature parameters establish enabled mate limits,
+offsets, and their signs relative to the evaluated connector frames?
+
+Known: An assembly definition stores mate types and pairs of evaluated
+connectors in `featureData.matedEntities`. `matedOccurrence` is an ordered
+instance-ID path and can traverse a subassembly. Each `matedCS` stores
+three-component `origin`, `xAxis`, `yAxis`, and `zAxis` arrays. Occurrence
+transforms hold 16 row-major coefficients in the root assembly frame.
+The feature response stores native mate parameters by `parameterId`.
+
+Need: Save two instances of a subassembly with distinct rotations and a mate
+to a child with an offset connector. Change the child's placement and compare
+`matedCS` with the child and subassembly occurrence transforms. Save a two-part
+revolute assembly with a lower angular limit, then an upper angular limit,
+then an angular offset. Repeat with a slider's lower and upper travel limits.
+Compare feature parameters and evaluated connector frames after each change.
+
+Note: Nested frames use the part-local reading and charge
+`assembly.mate-frame-assumed`. Unresolved solved sense charges
+`assembly.mate-frame-unresolved`; a planar mate then retains its native
+response. Enabled or unclassified parameters beyond the plain mate set charge
+`assembly.mate-limits-unresolved` with their IDs. A boolean `enable` switch is
+not charged. A switch set to `false` silences the limit or offset parameters
+whose names carry its own qualifying words, and a switch with more qualifying
+words than a parameter silences that parameter. Source responses remain assets.
+
+## ONSHAPE-012 — Derived insert placement and configuration
+
+Question: How do a stored `placement`, `location`, mate connector value, `configuration`, `partIdentity`, `includeMateConnectors`, `includeProperties` or `preserveActiveSheetMetal` of an `importDerived` feature move, select or add to the inserted bodies?
+
+Known: The feature specification stores `placement` as `AT_ORIGIN` or `AT_MATE_CONNECTOR`, a `location` query list, the mate connector values `mateConnectorIndex`, `mateConnectorId` and `mateConnectorIndexInFeature`, and a `configuration` array and `partIdentity` in the `partStudio` record, and the Boolean controls `includeMateConnectors`, `includeProperties` and `preserveActiveSheetMetal`. Every one of them has a default, and the default places the bodies at their source placement.
+
+Need: `importDerived` features that store a non-default value of one of these fields, with the rollback states before and after each feature and the referenced studio.
+
+## ONSHAPE-030 — Shell wall sense with opposite direction
+
+Question: Does a stored `oppositeDirection` of `true` on a `shell` feature grow the wall outward from the original boundary, and which side of an opening face carries the wall?
+
+Known: A `false` value places the wall inside the original boundary. The Onshape `shell` specification names the control "Opposite direction" and lists no other direction control.
+
+Need: A stored shell with `oppositeDirection` set to `true`, its input body and its final STEP body.
+
+Conflict: None.
+
+Note: The decoder retains a shell with `oppositeDirection` set to `true`, the hollow form or an unlisted parameter as Native with `shell.not-supported` or `history.not-supported`.

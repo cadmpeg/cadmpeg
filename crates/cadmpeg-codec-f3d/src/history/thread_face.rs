@@ -216,7 +216,11 @@ fn live_faces(
         let face = unique(input.faces.iter().filter(|face| {
             super::body_closures::stable_ref(face.id.as_str()) == Some(slot)
                 && if face.id.as_str().starts_with("f3d:brep:entity#") {
-                    member.is_some() && member == input.primary_brep
+                    member
+                        .zip(input.primary_brep)
+                        .is_some_and(|(member, brep)| {
+                            crate::ids::encoded_identity_key_component_matches(member, brep)
+                        })
                 } else {
                     super::face_resolution::entity_in_brep_source(face.id.as_str(), source)
                 }
@@ -227,7 +231,11 @@ fn live_faces(
                 .filter(|_| {
                     let surface = face.surface.as_str();
                     if surface.starts_with("f3d:brep:entity#") {
-                        member.is_some() && member == input.primary_brep
+                        member
+                            .zip(input.primary_brep)
+                            .is_some_and(|(member, brep)| {
+                                crate::ids::encoded_identity_key_component_matches(member, brep)
+                            })
                     } else {
                         super::face_resolution::entity_in_brep_source(surface, source)
                     }

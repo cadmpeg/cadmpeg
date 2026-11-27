@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use cadmpeg_core::serde_erase::json;
 
 fn grid<C>(omitted_instances: Vec<[u32; 2]>) -> PatternTransform<C> {
     PatternTransform::Linear {
@@ -49,19 +50,15 @@ fn grid_counts_include_both_directions_and_exclude_omitted_positions() {
     );
     let pattern = PatternKind::<CompositePattern>::new(grid(vec![[2, 1], [1, 0]])).unwrap();
     assert_eq!(pattern.occurrence_count(), Some(4));
-    let wire = serde_json::to_value(&pattern).unwrap();
+    let wire = json::to_value(&pattern).unwrap();
     assert_eq!(wire["count"], 3);
     assert_eq!(wire["second"]["count"], 2);
     assert_eq!(wire["omitted_instances"], json!([[2, 1], [1, 0]]));
-    assert_eq!(
-        serde_json::from_value::<PatternKind>(wire).unwrap(),
-        pattern
-    );
+    assert_eq!(json::from_value::<PatternKind>(wire).unwrap(), pattern);
     let empty =
-        serde_json::to_value(PatternKind::<CompositePattern>::new(grid(Vec::new())).unwrap())
-            .unwrap();
+        json::to_value(PatternKind::<CompositePattern>::new(grid(Vec::new())).unwrap()).unwrap();
     assert_eq!(empty["omitted_instances"], json!([]));
-    assert!(serde_json::from_value::<PatternKind>(empty).is_ok());
+    assert!(json::from_value::<PatternKind>(empty).is_ok());
 }
 
 #[test]

@@ -525,12 +525,14 @@ impl SketchPointClosure10 {
     }
 }
 
-/// Version-10 inline-typed closure: `(0, 0)`, `(0, 1)`, or `(2, 1)`.
+/// Version-10 inline-typed closure: `(0, 0)`, `(0, 1)`, `(1, 0)`, `(2, 1)`, or `(4, 0)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SketchPointClosure10Inline {
     Selector0State0,
     Selector0State1,
+    Selector1State0,
     Selector2State1,
+    Selector4State0,
 }
 
 impl SketchPointClosure10Inline {
@@ -538,8 +540,10 @@ impl SketchPointClosure10Inline {
         match closure {
             SketchPointClosure::Selector0State0 => Some(Self::Selector0State0),
             SketchPointClosure::Selector0State1 => Some(Self::Selector0State1),
+            SketchPointClosure::Selector1State0 => Some(Self::Selector1State0),
             SketchPointClosure::Selector2State1 => Some(Self::Selector2State1),
-            _ => None,
+            SketchPointClosure::Selector4State0 => Some(Self::Selector4State0),
+            SketchPointClosure::Selector1State1 | SketchPointClosure::Selector4State1 => None,
         }
     }
 
@@ -547,7 +551,9 @@ impl SketchPointClosure10Inline {
         match self {
             Self::Selector0State0 => SketchPointClosure::Selector0State0,
             Self::Selector0State1 => SketchPointClosure::Selector0State1,
+            Self::Selector1State0 => SketchPointClosure::Selector1State0,
             Self::Selector2State1 => SketchPointClosure::Selector2State1,
+            Self::Selector4State0 => SketchPointClosure::Selector4State0,
         }
     }
 }
@@ -1372,7 +1378,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
                 persistent_id,
                 flags: seven_flags(flags)?,
                 closure: SketchPointClosure10Inline::from_closure(closure).ok_or_else(|| {
-                    "sketch point version-10 inline closure must be (0,0), (0,1), or (2,1)"
+                    "sketch point version-10 inline closure must be (0,0), (0,1), (1,0), (2,1), or (4,0)"
                         .to_string()
                 })?,
             },
@@ -2514,7 +2520,8 @@ impl SketchNurbsPoles {
 #[cfg(test)]
 mod tests {
     use super::{SketchCurveGeometry, SketchPoint, SketchSurface, SketchText};
-    use serde_json::json;
+    use cadmpeg_core::json;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn point_closure_preserves_selector_one_state_one() {
@@ -2532,10 +2539,10 @@ mod tests {
             wire["flags"] = json!("0000000000000000");
             wire["record_form"]["padded_paired_reference"] = json!(false);
             wire["record_form"]["trailing_reference"] = json!(17);
-            let point: SketchPoint = serde_json::from_value(wire).unwrap();
-            let serialized = serde_json::to_value(&point).unwrap();
+            let point: SketchPoint = json::from_value(wire).unwrap();
+            let serialized = json::to_value(&point).unwrap();
             assert_eq!(serialized["closure"], json!({"selector": 1, "state": 1}));
-            let restored: SketchPoint = serde_json::from_value(serialized.clone()).unwrap();
+            let restored: SketchPoint = json::from_value(serialized.clone()).unwrap();
             assert_eq!(restored, point);
             let mut version_ten = serialized;
             version_ten["record_form"]["kind"] = json!(if kind == "version11" {
@@ -2543,8 +2550,31 @@ mod tests {
             } else {
                 "version10_inline_typed"
             });
-            let error = serde_json::from_value::<SketchPoint>(version_ten).unwrap_err();
+            let error = json::from_value::<SketchPoint>(version_ten).unwrap_err();
             assert!(error.to_string().contains("version-10"));
+        }
+    }
+
+    #[test]
+    fn version_ten_inline_point_closure_admits_its_five_pairs() {
+        let form = json!({"kind": "version10_inline_typed", "trailing_reference": 17});
+        for (selector, state) in [(0, 0), (0, 1), (1, 0), (2, 1), (4, 0)] {
+            let mut wire = native_point_wire(&form);
+            wire["closure"] = json!({"selector": selector, "state": state});
+            let point: SketchPoint = json::from_value(wire).unwrap();
+            let serialized = json::to_value(&point).unwrap();
+            assert_eq!(
+                serialized["closure"],
+                json!({"selector": selector, "state": state})
+            );
+            let restored: SketchPoint = json::from_value(serialized).unwrap();
+            assert_eq!(restored, point);
+        }
+        for (selector, state) in [(1, 1), (4, 1)] {
+            let mut wire = native_point_wire(&form);
+            wire["closure"] = json!({"selector": selector, "state": state});
+            let error = json::from_value::<SketchPoint>(wire).unwrap_err();
+            assert!(error.to_string().contains("version-10 inline closure"));
         }
     }
 
@@ -2644,31 +2674,31 @@ mod tests {
         let mut wire = native_point_wire(&form);
         wire["coordinates"] = json!({"u": 0.0, "v": 0.0});
         wire["flags"] = json!("0000000101010000");
-        let point: SketchPoint = serde_json::from_value(wire.clone()).unwrap();
+        let point: SketchPoint = json::from_value(wire.clone()).unwrap();
         assert!(point.validate_for_write(&[]).is_ok());
         let mut negative_zero = wire.clone();
         negative_zero["coordinates"] = json!({"u": -0.0, "v": -0.0});
         negative_zero["depth"] = json!(-0.0);
-        let point: SketchPoint = serde_json::from_value(negative_zero).unwrap();
+        let point: SketchPoint = json::from_value(negative_zero).unwrap();
         assert!(point.validate_for_write(&[]).is_ok());
         let mut invalid = wire.clone();
         invalid["coordinates"] = json!({"u": 1.0, "v": 0.0});
-        let point: SketchPoint = serde_json::from_value(invalid).unwrap();
+        let point: SketchPoint = json::from_value(invalid).unwrap();
         assert!(point.validate_for_write(&[]).is_err());
         for flags in ["0000000001010000", "0000010101010000"] {
             let mut invalid = wire.clone();
             invalid["flags"] = json!(flags);
-            let point: SketchPoint = serde_json::from_value(invalid).unwrap();
+            let point: SketchPoint = json::from_value(invalid).unwrap();
             assert!(point.validate_for_write(&[]).is_err());
         }
         wire["flags"] = json!("0101000101000100");
         wire["coordinates"] = json!({"u": 2.0, "v": 3.0});
         wire["closure"] = json!({"selector": 2, "state": 1});
         wire["companion"] = json!({"incident_curves": [7]});
-        let point: SketchPoint = serde_json::from_value(wire.clone()).unwrap();
+        let point: SketchPoint = json::from_value(wire.clone()).unwrap();
         assert!(point.validate_for_write(&[]).is_ok());
         wire["companion"] = json!({"incident_curves": []});
-        let point: SketchPoint = serde_json::from_value(wire).unwrap();
+        let point: SketchPoint = json::from_value(wire).unwrap();
         assert!(point.validate_for_write(&[]).is_ok());
     }
 
@@ -2680,8 +2710,8 @@ mod tests {
         wire["flags"] = json!("0000000000000001");
         wire["closure"] = json!({"selector": 0, "state": 1});
         wire["companion"] = json!({"incident_curves": [7]});
-        let point: SketchPoint = serde_json::from_value(wire.clone()).unwrap();
-        let curve: super::SketchCurveIdentity = serde_json::from_value(json!({
+        let point: SketchPoint = json::from_value(wire.clone()).unwrap();
+        let curve: super::SketchCurveIdentity = json::from_value(json!({
             "id": "f3d:stream:sketch-curve#7", "record_index": 7,
             "class_tag": "000", "byte_offset": 0, "geometry_offset": 0,
             "owner_reference": 17, "primary_id": 1, "secondary_id": 0,
@@ -2706,7 +2736,7 @@ mod tests {
             .validate_for_write(std::slice::from_ref(&curve))
             .is_err());
         wire["closure"] = json!({"selector": 4, "state": 0});
-        let wrong_closure: SketchPoint = serde_json::from_value(wire).unwrap();
+        let wrong_closure: SketchPoint = json::from_value(wire).unwrap();
         assert!(wrong_closure.validate_for_write(&[curve]).is_err());
     }
 
@@ -2720,12 +2750,9 @@ mod tests {
             json!({"kind": "version11", "padded_paired_reference": false, "companion_prefix_present_zero": false}),
             json!({"kind": "version11_inline_typed", "trailing_reference": 3, "companion_prefix_present_zero": false}),
         ] {
-            let point: SketchPoint = serde_json::from_value(native_point_wire(&form)).unwrap();
+            let point: SketchPoint = json::from_value(native_point_wire(&form)).unwrap();
             let owned = super::SketchPointSerde::from(point.clone());
-            assert_eq!(
-                serde_json::to_vec(&point).unwrap(),
-                serde_json::to_vec(&owned).unwrap()
-            );
+            assert_eq!(json::to_vec(&point).unwrap(), json::to_vec(&owned).unwrap());
         }
     }
 
@@ -2737,17 +2764,14 @@ mod tests {
         }));
         wire["owner_reference"] = json!(17);
         wire["geometry_group"] = json!(50);
-        let point: SketchPoint = serde_json::from_value(wire).unwrap();
+        let point: SketchPoint = json::from_value(wire).unwrap();
         assert_eq!(point.owner_reference, Some(17));
         assert_eq!(point.geometry_group, Some(50));
-        let written = serde_json::to_value(&point).unwrap();
+        let written = json::to_value(&point).unwrap();
         assert_eq!(written["geometry_group"], json!(50));
         let owned = super::SketchPointSerde::from(point.clone());
-        assert_eq!(
-            serde_json::to_vec(&point).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
-        );
-        let curve: super::SketchCurveIdentity = serde_json::from_value(json!({
+        assert_eq!(json::to_vec(&point).unwrap(), json::to_vec(&owned).unwrap());
+        let curve: super::SketchCurveIdentity = json::from_value(json!({
             "id": "f3d:stream:sketch-curve#7", "record_index": 7,
             "class_tag": "000", "byte_offset": 0, "geometry_offset": 0,
             "owner_reference": 17, "geometry_group": 50,
@@ -2756,10 +2780,7 @@ mod tests {
         .unwrap();
         assert_eq!(curve.owner_reference, Some(17));
         assert_eq!(curve.geometry_group, Some(50));
-        assert_eq!(
-            serde_json::to_value(&curve).unwrap()["geometry_group"],
-            json!(50)
-        );
+        assert_eq!(json::to_value(&curve).unwrap()["geometry_group"], json!(50));
     }
 
     #[test]
@@ -2769,13 +2790,13 @@ mod tests {
             "byte_offset": 120, "ordinal": 3, "members": [41, 60],
             "sketch_reference": 17
         });
-        let group: super::SketchGeometryGroup = serde_json::from_value(wire.clone()).unwrap();
+        let group: super::SketchGeometryGroup = json::from_value(wire.clone()).unwrap();
         assert_eq!(group.record_index, 50);
         assert_eq!(group.byte_offset, 120);
         assert_eq!(group.ordinal, 3);
         assert_eq!(group.members, [41, 60]);
         assert_eq!(group.sketch_reference, 17);
-        assert_eq!(serde_json::to_value(&group).unwrap(), wire);
+        assert_eq!(json::to_value(&group).unwrap(), wire);
     }
 
     #[test]
@@ -2785,7 +2806,7 @@ mod tests {
             id: &'static str,
             value: &'a SketchPoint,
         }
-        let point: SketchPoint = serde_json::from_value(native_point_wire(&json!({
+        let point: SketchPoint = json::from_value(native_point_wire(&json!({
             "kind": "version11", "padded_paired_reference": false,
             "companion_prefix_present_zero": false
         })))
@@ -2805,12 +2826,9 @@ mod tests {
     #[test]
     fn sketch_text_borrowed_wire_matches_owned_wire_bytes() {
         for extended in [false, true] {
-            let text: SketchText = serde_json::from_value(native_text_wire(extended)).unwrap();
+            let text: SketchText = json::from_value(native_text_wire(extended)).unwrap();
             let owned = super::SketchTextSerde::from(text.clone());
-            assert_eq!(
-                serde_json::to_vec(&text).unwrap(),
-                serde_json::to_vec(&owned).unwrap()
-            );
+            assert_eq!(json::to_vec(&text).unwrap(), json::to_vec(&owned).unwrap());
         }
     }
 
@@ -2821,7 +2839,7 @@ mod tests {
             id: &'static str,
             value: &'a SketchText,
         }
-        let text: SketchText = serde_json::from_value(native_text_wire(true)).unwrap();
+        let text: SketchText = json::from_value(native_text_wire(true)).unwrap();
         let record = NestedRecord {
             id: "f3d:native:sketch-text#0",
             value: &text,
@@ -2872,11 +2890,11 @@ mod tests {
             native_nurbs_wire(&[]),
             native_nurbs_wire(&[1.0, 2.0]),
         ] {
-            let geometry: SketchCurveGeometry = serde_json::from_value(wire).unwrap();
+            let geometry: SketchCurveGeometry = json::from_value(wire).unwrap();
             let owned = super::SketchCurveGeometryWire::from(geometry.clone());
             assert_eq!(
-                serde_json::to_vec(&geometry).unwrap(),
-                serde_json::to_vec(&owned).unwrap()
+                json::to_vec(&geometry).unwrap(),
+                json::to_vec(&owned).unwrap()
             );
         }
     }
@@ -2889,7 +2907,7 @@ mod tests {
             value: &'a SketchCurveGeometry,
         }
         let geometry: SketchCurveGeometry =
-            serde_json::from_value(native_nurbs_wire(&[1.0, 2.0])).unwrap();
+            json::from_value(native_nurbs_wire(&[1.0, 2.0])).unwrap();
         let record = NestedRecord {
             id: "f3d:native:sketch-curve#0",
             value: &geometry,
@@ -2906,47 +2924,44 @@ mod tests {
     fn native_arc_refuses_zero_sweep() {
         let mut wire = native_arc_wire();
         wire["end_angle"] = json!(0.0);
-        assert!(serde_json::from_value::<SketchCurveGeometry>(wire).is_err());
+        assert!(json::from_value::<SketchCurveGeometry>(wire).is_err());
     }
 
     #[test]
     fn native_arc_refuses_angle_past_full_turn() {
         let mut wire = native_arc_wire();
         wire["end_angle"] = json!(7.0);
-        assert!(serde_json::from_value::<SketchCurveGeometry>(wire).is_err());
+        assert!(json::from_value::<SketchCurveGeometry>(wire).is_err());
     }
 
     #[test]
     fn native_arc_refuses_zero_radius() {
         let mut wire = native_arc_wire();
         wire["radius"] = json!(0.0);
-        assert!(serde_json::from_value::<SketchCurveGeometry>(wire).is_err());
+        assert!(json::from_value::<SketchCurveGeometry>(wire).is_err());
     }
 
     #[test]
     fn native_arc_refuses_nonperpendicular_frame() {
         let mut wire = native_arc_wire();
         wire["reference_direction"] = json!({"x": 0.0, "y": 0.0, "z": 1.0});
-        assert!(serde_json::from_value::<SketchCurveGeometry>(wire).is_err());
+        assert!(json::from_value::<SketchCurveGeometry>(wire).is_err());
     }
 
     #[test]
     fn native_surface_wire_round_trip_preserves_flat_shape() {
         let wire = native_surface_wire();
-        let surface: SketchSurface = serde_json::from_value(wire.clone()).expect("valid surface");
-        assert_eq!(
-            serde_json::to_value(surface).expect("serialize surface"),
-            wire
-        );
+        let surface: SketchSurface = json::from_value(wire.clone()).expect("valid surface");
+        assert_eq!(json::to_value(surface).expect("serialize surface"), wire);
     }
 
     #[test]
     fn sketch_surface_borrowed_wire_matches_owned_wire_bytes() {
-        let surface: SketchSurface = serde_json::from_value(native_surface_wire()).unwrap();
+        let surface: SketchSurface = json::from_value(native_surface_wire()).unwrap();
         let owned = super::SketchSurfaceWire::from(surface.clone());
         assert_eq!(
-            serde_json::to_vec(&surface).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            json::to_vec(&surface).unwrap(),
+            json::to_vec(&owned).unwrap()
         );
     }
 
@@ -2957,7 +2972,7 @@ mod tests {
             id: &'static str,
             value: &'a SketchSurface,
         }
-        let surface: SketchSurface = serde_json::from_value(native_surface_wire()).unwrap();
+        let surface: SketchSurface = json::from_value(native_surface_wire()).unwrap();
         let record = NestedRecord {
             id: "f3d:native:sketch-surface#0",
             value: &surface,
@@ -2974,21 +2989,21 @@ mod tests {
     fn native_surface_refuses_zero_degree() {
         let mut wire = native_surface_wire();
         wire["u_degree"] = json!(0);
-        assert!(serde_json::from_value::<SketchSurface>(wire).is_err());
+        assert!(json::from_value::<SketchSurface>(wire).is_err());
     }
 
     #[test]
     fn native_surface_refuses_decreasing_knots() {
         let mut wire = native_surface_wire();
         wire["u_knots"] = json!([0.0, 1.0, 0.0, 1.0]);
-        assert!(serde_json::from_value::<SketchSurface>(wire).is_err());
+        assert!(json::from_value::<SketchSurface>(wire).is_err());
     }
 
     #[test]
     fn native_surface_refuses_ragged_control_grid() {
         let mut wire = native_surface_wire();
         wire["control_points"][1].as_array_mut().expect("row").pop();
-        assert!(serde_json::from_value::<SketchSurface>(wire).is_err());
+        assert!(json::from_value::<SketchSurface>(wire).is_err());
     }
 
     #[test]
@@ -3000,7 +3015,7 @@ mod tests {
             "direction": {"x": 1.0, "y": 0.0, "z": 0.0},
             "normal": {"x": 0.0, "y": 0.0, "z": 1.0}
         });
-        assert!(serde_json::from_value::<SketchCurveGeometry>(geometry).is_err());
+        assert!(json::from_value::<SketchCurveGeometry>(geometry).is_err());
     }
 
     #[test]
@@ -3012,7 +3027,7 @@ mod tests {
             "direction": {"x": 1.0, "y": 0.0, "z": 0.0},
             "normal": {"x": 0.0, "y": 0.0, "z": 1.0}
         });
-        assert!(serde_json::from_value::<SketchCurveGeometry>(geometry).is_err());
+        assert!(json::from_value::<SketchCurveGeometry>(geometry).is_err());
     }
 
     #[test]
@@ -3024,6 +3039,6 @@ mod tests {
             "direction": {"x": 1.0, "y": 0.0, "z": 0.0},
             "normal": {"x": 0.0, "y": 0.0, "z": 1.0}
         });
-        assert!(serde_json::from_value::<SketchCurveGeometry>(geometry).is_err());
+        assert!(json::from_value::<SketchCurveGeometry>(geometry).is_err());
     }
 }

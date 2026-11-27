@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use cadmpeg_core::serde_erase::json;
 
 use super::pattern::listed;
 use crate::design::feature_project::mirror::project_mirror;
@@ -286,12 +287,12 @@ fn an_assumed_mirror_plane_scope_needs_a_framed_work_plane_and_records_its_loss(
             panic!("mirror transform");
         };
         assert_eq!(
-            serde_json::to_value(plane_origin).unwrap(),
-            serde_json::json!({"x": 50.0, "y": 0.0, "z": 0.0})
+            json::to_value(plane_origin).unwrap(),
+            cadmpeg_core::json!({"x": 50.0, "y": 0.0, "z": 0.0})
         );
         assert_eq!(
-            serde_json::to_value(plane_normal).unwrap(),
-            serde_json::json!({"x": 1.0, "y": 0.0, "z": 0.0})
+            json::to_value(plane_normal).unwrap(),
+            cadmpeg_core::json!({"x": 1.0, "y": 0.0, "z": 0.0})
         );
         if mode == Mode::Assumed {
             assert_eq!(losses.len(), 1);
@@ -385,12 +386,12 @@ fn mirror_compact_seed_fallback_keeps_work_plane_and_records_loss() {
             panic!("mirror plane transform");
         };
         assert_eq!(
-            serde_json::to_value(plane_origin).unwrap(),
-            serde_json::json!({"x": 50.0, "y": 20.0, "z": 30.0})
+            json::to_value(plane_origin).unwrap(),
+            cadmpeg_core::json!({"x": 50.0, "y": 20.0, "z": 30.0})
         );
         assert_eq!(
-            serde_json::to_value(plane_normal).unwrap(),
-            serde_json::json!({"x": 1.0, "y": 0.0, "z": 0.0})
+            json::to_value(plane_normal).unwrap(),
+            cadmpeg_core::json!({"x": 1.0, "y": 0.0, "z": 0.0})
         );
         if substituted {
             assert_eq!(
