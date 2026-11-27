@@ -4,7 +4,9 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use crate::design::dimension::Dimension;
 use crate::design::expr::{Expression, ExpressionToken, Node, UnaryOp};
+use crate::design::ops::sketch::{RadialMeasure, SketchConstraint, SketchRelation, SketchSpace};
 use crate::design::parameter::{
     DesignParameter, DimensionDisplay, ParameterDefinition, ParameterOwner, ParameterValue,
 };
@@ -14,6 +16,8 @@ use crate::features::parameters::{
     DesignParameter as ModelParameter, DimensionDisplay as ModelDisplay,
     ParameterValue as ModelValue,
 };
+use crate::features::tree::FeatureTreeNodeRole;
+use crate::features::FeatureOperation as ModelOperation;
 use crate::ids::ProductDefinitionId;
 
 use super::super::fields::{Field, ModelParameterField};
@@ -66,6 +70,16 @@ pub(super) fn parameter_cuts<'ir>(
         })
         .collect::<HashMap<_, _>>();
     let misplaced = misplaced(&ir.model.parameters, &cells);
+    let tables = user_tables(ir);
+    let measured = measured(ir);
+    let evaluated = if pairs
+        .iter()
+        .any(|(model, design)| model.value.is_some() && design.value.is_none())
+    {
+        ir.uncached_values()
+    } else {
+        BTreeMap::new()
+    };
     pairs
         .into_iter()
         .map(|(model, design)| {
@@ -74,18 +88,107 @@ pub(super) fn parameter_cuts<'ir>(
                 Some(ParameterOwner::Feature(feature)) => components.get(feature.as_str()).copied(),
                 Some(ParameterOwner::Container(_) | ParameterOwner::Attribute(_)) | None => None,
             };
-            (
-                id,
-                parameter_cut(
-                    model,
-                    design,
-                    component,
-                    misplaced.contains(id),
-                    &ir.model.restated,
-                ),
-            )
+            let held = Held {
+                component,
+                misplaced: misplaced.contains(id),
+                user_table: model
+                    .owner
+                    .as_ref()
+                    .is_some_and(|owner| tables.contains(owner.as_str())),
+                evaluated: evaluated.get(&model.id),
+                measured: model.display.as_ref().is_some_and(|display| {
+                    measured
+                        .get(id)
+                        .is_some_and(|displays| displays.contains(&design_display(*display)))
+                }),
+            };
+            (id, parameter_cut(model, design, &held, &ir.model.restated))
         })
         .collect()
+}
+
+/// What the design holds of a model parameter besides its design parameter.
+#[derive(Default)]
+pub(super) struct Held<'ir> {
+    /// The definition the design states for the feature that owns the
+    /// design parameter.
+    pub(super) component: Option<&'ir ProductDefinitionId>,
+    /// The design does not hold the record's position.
+    pub(super) misplaced: bool,
+    /// The record's owner is a table of the scope's user parameters.
+    pub(super) user_table: bool,
+    /// The value the design parameter's definition evaluates to, where it
+    /// states no value.
+    pub(super) evaluated: Option<&'ir ParameterValue>,
+    /// A radial dimension of the record's display binds the parameter.
+    pub(super) measured: bool,
+}
+
+/// The model features that list the user parameters of a scope (an
+/// equations node) and that no design record states: a design parameter
+/// with no owner is a user parameter of its scope (§5.12).
+fn user_tables(ir: &CadIr) -> HashSet<&str> {
+    let stated = ir
+        .design
+        .features
+        .iter()
+        .map(|feature| feature.id.as_str())
+        .collect::<HashSet<_>>();
+    ir.model
+        .features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.evaluation.definition().operation(),
+                ModelOperation::TreeNode {
+                    role: FeatureTreeNodeRole::Equations,
+                    ..
+                }
+            )
+        })
+        .map(|feature| feature.id.as_str())
+        .filter(|id| !stated.contains(id) && ir.model.restated.get(id).is_none())
+        .collect()
+}
+
+/// Each parameter that a diameter or radius dimension of a sketch binds,
+/// with the display the dimension measures (D7).
+fn measured(ir: &CadIr) -> HashMap<&str, Vec<DimensionDisplay>> {
+    fn bound<S: SketchSpace>(
+        constraints: &[SketchConstraint<S>],
+    ) -> impl Iterator<Item = (&str, DimensionDisplay)> {
+        constraints
+            .iter()
+            .filter_map(|constraint| match &constraint.relation {
+                SketchRelation::Radial {
+                    measure,
+                    value: Dimension::Parameter(parameter) | Dimension::Negated(parameter),
+                    ..
+                } => {
+                    let display = match measure {
+                        RadialMeasure::Diameter => DimensionDisplay::Diameter,
+                        RadialMeasure::Radius => DimensionDisplay::Radius,
+                        RadialMeasure::MajorRadius | RadialMeasure::MinorRadius => return None,
+                    };
+                    Some((parameter.as_str(), display))
+                }
+                _ => None,
+            })
+    }
+    let mut measured = HashMap::<_, Vec<_>>::new();
+    for (parameter, display) in
+        bound(&ir.design.sketch_constraints).chain(bound(&ir.design.spatial_sketch_constraints))
+    {
+        measured.entry(parameter).or_default().push(display);
+    }
+    measured
+}
+
+fn design_display(display: ModelDisplay) -> DimensionDisplay {
+    match display {
+        ModelDisplay::Diameter => DimensionDisplay::Diameter,
+        ModelDisplay::Radius => DimensionDisplay::Radius,
+    }
 }
 
 /// The parameters of `models` whose position by `ordinal` among the
@@ -138,14 +241,12 @@ fn misplaced<'ir>(
     misplaced
 }
 
-/// The fields `design` leaves out of `model`. `component`: the definition
-/// the design states for the feature that owns `design`. `misplaced`: the
-/// design does not hold `model`'s position.
+/// The fields `design` leaves out of `model`, where the rest of the design
+/// holds `held`.
 pub(super) fn parameter_cut(
     model: &ModelParameter,
     design: &DesignParameter,
-    component: Option<&ProductDefinitionId>,
-    misplaced: bool,
+    held: &Held<'_>,
     restated: &Restatements,
 ) -> BTreeSet<&'static str> {
     let mut cut = BTreeSet::new();
@@ -156,16 +257,15 @@ pub(super) fn parameter_cut(
     };
     leave(
         ModelParameterField::ProductDefinition,
-        model
-            .product_definition
-            .as_ref()
-            .is_none_or(|definition| *definition == design.scope || Some(definition) == component),
+        model.product_definition.as_ref().is_none_or(|definition| {
+            *definition == design.scope || Some(definition) == held.component
+        }),
     );
     leave(
         ModelParameterField::Owner,
-        owner_carried(model, design, restated),
+        owner_carried(model, design, held.user_table, restated),
     );
-    leave(ModelParameterField::Ordinal, !misplaced);
+    leave(ModelParameterField::Ordinal, !held.misplaced);
     let source_name = model
         .properties
         .iter()
@@ -180,20 +280,23 @@ pub(super) fn parameter_cut(
     );
     leave(
         ModelParameterField::Display,
-        model.display.as_ref().is_none_or(|display| {
-            design.display
-                == Some(match display {
-                    ModelDisplay::Diameter => DimensionDisplay::Diameter,
-                    ModelDisplay::Radius => DimensionDisplay::Radius,
-                })
-        }),
+        model
+            .display
+            .as_ref()
+            .is_none_or(|display| match design.display {
+                Some(stated) => stated == design_display(*display),
+                None => held.measured,
+            }),
     );
     leave(
         ModelParameterField::Value,
-        model
-            .value
-            .as_ref()
-            .is_none_or(|value| value_carried(value, design)),
+        model.value.as_ref().is_none_or(|value| {
+            design
+                .value
+                .as_ref()
+                .or(held.evaluated)
+                .is_some_and(|stated| value_carried(value, &design.kind, stated))
+        }),
     );
     let expression = expression_carried(model, design);
     leave(ModelParameterField::ExpressionText, expression);
@@ -213,11 +316,13 @@ pub(super) fn parameter_cut(
     cut
 }
 
-/// Whether `design` states `model`'s owner: the feature itself, or the
-/// container that restates it under another identity.
+/// Whether `design` states `model`'s owner: the feature itself, the
+/// container that restates it under another identity, or no owner where
+/// the owner is a table of user parameters (`user_table`).
 fn owner_carried(
     model: &ModelParameter,
     design: &DesignParameter,
+    user_table: bool,
     restated: &Restatements,
 ) -> bool {
     let Some(owner) = &model.owner else {
@@ -232,7 +337,8 @@ fn owner_carried(
                 })
             })
         }
-        Some(ParameterOwner::Attribute(_)) | None => false,
+        Some(ParameterOwner::Attribute(_)) => false,
+        None => user_table,
     }
 }
 
@@ -241,24 +347,25 @@ fn same_number(left: f64, right: f64) -> bool {
     format!("{left:.14e}") == format!("{right:.14e}")
 }
 
-/// Whether `design` states the value `value` in the quantity it implies.
-fn value_carried(value: &ModelValue, design: &DesignParameter) -> bool {
+/// Whether `stated`, of the kind `kind`, is the value `value` in the
+/// quantity it implies.
+fn value_carried(value: &ModelValue, kind: &ValueKind, stated: &ParameterValue) -> bool {
     let quantity = |quantity: Quantity, number: f64| {
-        design.kind == ValueKind::Quantity(quantity)
-            && matches!(&design.value, Some(ParameterValue::Number(stated)) if same_number(stated.get(), number))
+        *kind == ValueKind::Quantity(quantity)
+            && matches!(stated, ParameterValue::Number(stated) if same_number(stated.get(), number))
     };
     match value {
         ModelValue::Length(length) => quantity(Quantity::LENGTH, length.get()),
         ModelValue::Angle(angle) => quantity(Quantity::ANGLE, angle.get()),
         ModelValue::Real(real) => quantity(Quantity::REAL, real.get()),
         ModelValue::Integer(integer) => {
-            matches!(&design.value, Some(ParameterValue::Integer(stated)) if stated == integer)
+            matches!(stated, ParameterValue::Integer(stated) if stated == integer)
         }
         ModelValue::Boolean(flag) => {
-            matches!(&design.value, Some(ParameterValue::Boolean(stated)) if stated == flag)
+            matches!(stated, ParameterValue::Boolean(stated) if stated == flag)
         }
         ModelValue::String(text) => {
-            matches!(&design.value, Some(ParameterValue::Text(stated)) if stated == text)
+            matches!(stated, ParameterValue::Text(stated) if stated == text)
         }
     }
 }

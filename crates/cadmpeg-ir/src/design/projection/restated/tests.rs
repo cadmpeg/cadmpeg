@@ -581,3 +581,125 @@ fn a_cell_parameter_ordinal_follows_the_cells_of_its_sheet() {
     assert_eq!(listed[parameter_id("sheet:cell:B1").as_str()], fields([]));
     assert_eq!(listed[parameter_id("sheet:cell:A2").as_str()], fields([]));
 }
+
+/// A model feature `key` of the operation `operation`.
+fn model_feature(
+    key: &str,
+    operation: crate::features::FeatureOperation,
+) -> crate::features::Feature {
+    crate::features::Feature {
+        product_definition: None,
+        id: FeatureId::mint(format!("test:design:feature#{key}")).unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: crate::features::selections::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: crate::features::FeatureContent::default(),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
+            crate::features::FeatureDefinition::Operation(operation),
+        ),
+        native_ref: None,
+    }
+}
+
+/// A design parameter with no owner is a user parameter of its scope
+/// (§5.12): it carries a model owner that is an equations node no design
+/// record states, and names an owner that is another feature.
+#[test]
+fn a_user_parameter_carries_its_equations_table_owner() {
+    use crate::features::tree::{FeatureTreeNodeRole, TreeChildren};
+    let cut = |operation| {
+        let table = model_feature("table", operation);
+        let mut model = model_parameter("width", 0);
+        model.owner = Some(table.id.clone());
+        let mut ir = parameter_ir(vec![model], vec![design_parameter("width", "width")]);
+        ir.model.features.push(table);
+        cuts(&ir)[parameter_id("width").as_str()].clone()
+    };
+    assert_eq!(
+        cut(crate::features::FeatureOperation::TreeNode {
+            role: FeatureTreeNodeRole::Equations,
+            children: TreeChildren::default(),
+        }),
+        fields([])
+    );
+    assert_eq!(
+        cut(crate::features::FeatureOperation::TreeNode {
+            role: FeatureTreeNodeRole::FeatureFolder,
+            children: TreeChildren::default(),
+        }),
+        fields(["owner"])
+    );
+}
+
+/// A design parameter with no cache carries the model value its neutral
+/// definition evaluates to, through the parameters it references that have
+/// none either, and names another value.
+#[test]
+fn an_uncached_parameter_carries_the_value_its_definition_evaluates_to() {
+    use crate::design::dimension::{ParameterRef, RefTarget};
+    use crate::design::expr::{parse, Expression, Neutral};
+    let neutral = |text: &str, refs: &[&str]| {
+        let refs = refs
+            .iter()
+            .map(|key| ParameterRef {
+                target: RefTarget::Parameter(parameter_id(key)),
+                through: None,
+            })
+            .collect::<Vec<_>>();
+        ParameterDefinition::Expression(Expression::Neutral(Neutral(
+            parse(text, &refs, &[]).unwrap(),
+        )))
+    };
+    let cut = |depth: &str| {
+        let mut width = design_parameter("width", "width");
+        width.definition = neutral("1[cm]", &[]);
+        width.value = None;
+        let mut design = design_parameter("depth", "depth");
+        design.definition = neutral(depth, &["width"]);
+        design.value = None;
+        cuts(&parameter_ir(
+            vec![model_parameter("depth", 0)],
+            vec![design, width],
+        ))[parameter_id("depth").as_str()]
+        .clone()
+    };
+    assert_eq!(cut("$0 + 2[mm]"), fields([]));
+    assert_eq!(cut("$0 + 3[mm]"), fields(["value"]));
+}
+
+/// A parameter that a radial dimension binds states no display where the
+/// dimension measures the model display (D7): it carries that display, and
+/// names one the dimension does not measure.
+#[test]
+fn a_parameter_carries_the_display_its_radial_dimension_measures() {
+    use crate::design::ops::sketch::RadialMeasure;
+    use crate::features::parameters::DimensionDisplay as ModelDisplay;
+    let cut = |measure| {
+        let mut model = model_parameter("diameter", 0);
+        model.display = Some(ModelDisplay::Diameter);
+        let mut ir = parameter_ir(vec![model], vec![design_parameter("diameter", "diameter")]);
+        ir.design
+            .sketch_constraints
+            .push(SketchConstraint::<Planar> {
+                id: SketchConstraintId::mint(CONSTRAINT).unwrap(),
+                sketch: sketch_id(),
+                relation: SketchRelation::Radial {
+                    of: entity_id(LINE),
+                    measure,
+                    value: Dimension::Parameter(parameter_id("diameter")),
+                },
+                name: None,
+                active: None,
+                native_options: NativeOptions::new(),
+                source_settings: NativeOptions::new(),
+                native_ref: None,
+            });
+        cuts(&ir)[parameter_id("diameter").as_str()].clone()
+    };
+    assert_eq!(cut(RadialMeasure::Diameter), fields([]));
+    assert_eq!(cut(RadialMeasure::Radius), fields(["display"]));
+}

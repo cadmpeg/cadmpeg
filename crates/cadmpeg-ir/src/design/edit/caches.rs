@@ -603,6 +603,54 @@ impl CadIr {
         }
     }
 
+    /// The value each design parameter with no cache and a neutral
+    /// expression evaluates to in the base, in dependency order: a
+    /// reference reads the cache of its parameter or the value this
+    /// evaluation gave it. A parameter it cannot evaluate has no entry.
+    pub(crate) fn uncached_values(&self) -> BTreeMap<ParameterId, ParameterValue> {
+        let index = self.parameter_index();
+        let mut pending: BTreeSet<ParameterId> = self
+            .design
+            .parameters
+            .iter()
+            .filter(|parameter| {
+                parameter.value.is_none()
+                    && matches!(
+                        parameter.definition,
+                        ParameterDefinition::Expression(Expression::Neutral(_))
+                    )
+            })
+            .map(|parameter| parameter.id.clone())
+            .collect();
+        let mut values = BTreeMap::new();
+        loop {
+            let mut done = Vec::new();
+            for parameter in &pending {
+                let record = &self.design.parameters[index[parameter]];
+                let ParameterDefinition::Expression(expression) = &record.definition else {
+                    continue;
+                };
+                let value_of = |target: &ParameterId| match values.get(target) {
+                    Some(value) => cache_value(&self.design.parameters[index[target]].kind, value),
+                    None => self.cache_in(target, None),
+                };
+                if let Attempt::Done(value) = attempt(expression, &record.kind, &pending, &value_of)
+                {
+                    done.push((parameter.clone(), value));
+                }
+            }
+            if done.is_empty() {
+                return values;
+            }
+            for (parameter, value) in done {
+                pending.remove(&parameter);
+                if let Some(value) = value {
+                    values.insert(parameter, value);
+                }
+            }
+        }
+    }
+
     /// Recomputes the value of every override of a parameter of `targets`
     /// that has a neutral expression it can evaluate, clears the value of
     /// every other one, and removes an override left with neither.

@@ -442,3 +442,132 @@ fn a_wave_face_link_with_unresolved_bodies_keeps_its_nx_kind() {
         }
     );
 }
+
+/// The fields a CADIR write of `ir` names for the model parameter `id`:
+/// none where it carries the parameter whole.
+fn parameter_charge(ir: &CadIr, id: &str) -> Vec<String> {
+    use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(ir, None))
+        .expect("the CADIR writer drops what it cannot write");
+    let Some(loss) = plan.report().losses.iter().find(|loss| {
+        loss.code.local_code() == "arena.omitted"
+            && loss.message.contains("model arena `parameters`")
+    }) else {
+        return Vec::new();
+    };
+    let (omitted, part) = loss
+        .message
+        .split_once(" stated in part: ")
+        .unwrap_or((loss.message.as_str(), ""));
+    assert!(!omitted.contains(id), "{}", loss.message);
+    part.split_once(&format!("{id} ("))
+        .and_then(|(_, fields)| fields.split_once(')'))
+        .map(|(fields, _)| fields.split(", ").map(str::to_owned).collect())
+        .unwrap_or_default()
+}
+
+/// An NX expression `name` of the expression table `table`, in
+/// millimetres, with the formula `formula` and the value the decoder
+/// evaluated.
+fn expression(
+    table: &FeatureId,
+    name: &str,
+    formula: &str,
+    value: f64,
+    dependencies: &[&str],
+) -> cadmpeg_ir::features::parameters::DesignParameter {
+    let id = |name: &str| {
+        cadmpeg_ir::features::ParameterId::mint(format!("nx:om-entry-0:parameter#{name}"))
+            .expect("id")
+    };
+    cadmpeg_ir::features::parameters::DesignParameter {
+        product_definition: None,
+        id: id(name),
+        owner: Some(table.clone()),
+        ordinal: 0,
+        name: name.to_owned(),
+        expression: formula.to_owned(),
+        display: None,
+        value: Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(value).expect("length"),
+        )),
+        dependencies: dependencies.iter().map(|name| id(name)).collect(),
+        properties: BTreeMap::from([(
+            cadmpeg_core::text::NonBlankString::new("unit".to_owned()).expect("key"),
+            "millimeter".to_owned(),
+        )]),
+        pmi: None,
+        native_ref: Some(format!("nx:om-entry-0:expression#{name}")),
+    }
+}
+
+/// An NX expression is a user parameter of the part (§5.12) and states no
+/// value NX does not store, so its design parameter has no owner and a
+/// formula of references has no cache; the design still holds the
+/// expression table as its owner and the value its tree evaluates to, and
+/// a CADIR write names neither.
+#[test]
+fn a_write_carries_the_owner_and_value_of_an_nx_expression() {
+    use cadmpeg_ir::design::edit::{evaluate, Value};
+    use cadmpeg_ir::design::expr::{Expression, Neutral};
+    use cadmpeg_ir::design::parameter::ParameterDefinition;
+
+    let mut ir = CadIr::empty();
+    let table = feature("equations", 0, equations());
+    ir.model.parameters = vec![
+        expression(&table.id, "p1", "10", 10.0, &[]),
+        expression(&table.id, "p2", "15", 15.0, &[]),
+        expression(&table.id, "p3", "p1 + p2", 25.0, &["p1", "p2"]),
+    ];
+    ir.model.features = vec![table, feature("a", 1, sketch())];
+    project_ir(&mut ir);
+
+    let design = |name: &str| {
+        ir.design
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id.as_str() == format!("nx:om-entry-0:parameter#{name}"))
+            .expect("design parameter")
+    };
+    let sum = design("p3");
+    assert_eq!(sum.owner, None);
+    assert_eq!(sum.value, None);
+    let ParameterDefinition::Expression(Expression::Neutral(Neutral(tree))) = &sum.definition
+    else {
+        panic!("a neutral tree: {:?}", sum.definition)
+    };
+    let evaluated = evaluate(tree, &mut |reference| {
+        let cadmpeg_ir::design::dimension::RefTarget::Parameter(target) = &reference.target else {
+            return None;
+        };
+        let addend = design(target.as_str().rsplit('#').next()?);
+        match addend.value {
+            Some(cadmpeg_ir::design::parameter::ParameterValue::Number(value)) => {
+                Some(Value::Number {
+                    value: value.get(),
+                    quantity: cadmpeg_ir::design::units::Quantity::LENGTH,
+                })
+            }
+            _ => None,
+        }
+    })
+    .expect("the tree evaluates");
+    assert_eq!(
+        evaluated,
+        Value::Number {
+            value: 25.0,
+            quantity: cadmpeg_ir::design::units::Quantity::LENGTH,
+        }
+    );
+    for name in ["p1", "p2", "p3"] {
+        let charge = parameter_charge(&ir, &format!("nx:om-entry-0:parameter#{name}"));
+        assert!(
+            !charge
+                .iter()
+                .any(|field| field == "owner" || field == "value"),
+            "{name}: {charge:?}"
+        );
+    }
+}

@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::text::NonBlankString;
 
-use super::{parameter_cut, Restatements};
+use super::{parameter_cut, Held, Restatements};
 use crate::design::dimension::{ParameterRef, RefTarget};
 use crate::design::expr::{parse, Expression, ExpressionDialect, ExpressionToken, Neutral};
 use crate::design::options::NativeOptions;
@@ -78,7 +78,7 @@ fn width() -> ParameterRef {
 }
 
 fn cut(model: &ModelParameter, design: &DesignParameter) -> BTreeSet<&'static str> {
-    parameter_cut(model, design, None, false, &Restatements::default())
+    parameter_cut(model, design, &Held::default(), &Restatements::default())
 }
 
 /// A design parameter whose tree states the expression and its reference
@@ -148,7 +148,15 @@ fn a_parameter_leaves_out_each_field_it_does_not_hold() {
     design.name = NonBlankString::new("other".to_owned());
     let model = model("width + 2");
     assert_eq!(
-        parameter_cut(&model, &design, None, true, &Restatements::default()),
+        parameter_cut(
+            &model,
+            &design,
+            &Held {
+                misplaced: true,
+                ..Held::default()
+            },
+            &Restatements::default()
+        ),
         BTreeSet::from(["name", "ordinal", "value"])
     );
 }
