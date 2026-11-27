@@ -77,6 +77,9 @@ pub(crate) enum FreecadLossCode {
     FeatureRemovalWithoutBase,
     /// A primitive has no admitted local-to-model frame.
     FeaturePrimitivePlacementUnresolved,
+    /// A link that follows its linked object's own placement places an
+    /// object the scope holds no own occurrence of.
+    FeatureLinkPlacementUnresolved,
     /// A design parameter stores an empty expression; its stored value stands
     /// as its definition.
     ParameterExpressionEmpty,
@@ -165,6 +168,7 @@ impl FreecadLossCode {
         Self::FeatureRevolutionNotTransferred,
         Self::FeatureRemovalWithoutBase,
         Self::FeaturePrimitivePlacementUnresolved,
+        Self::FeatureLinkPlacementUnresolved,
         Self::ParameterExpressionEmpty,
         Self::SketchNativeGeometry,
         Self::SketchNurbsNative,
@@ -225,6 +229,7 @@ impl FreecadLossCode {
             Self::PersistenceCountNoncanonical => "metadata.persistence-count-noncanonical",
             Self::FeatureCyclicHistory => "feature.cyclic-history",
             Self::FeaturePrimitivePlacementUnresolved => "feature.primitive-placement-unresolved",
+            Self::FeatureLinkPlacementUnresolved => "feature.link-placement-unresolved",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::FeatureRevolutionNotTransferred => "feature.revolution-not-transferred",
             Self::ParameterExpressionEmpty => "parameter.expression-empty",
@@ -302,6 +307,7 @@ impl FreecadLossCode {
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchProfileMatchingBounded
             | Self::ParameterExpressionEmpty
+            | Self::FeatureLinkPlacementUnresolved
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved
             | Self::PersistenceCountNoncanonical
@@ -351,7 +357,8 @@ impl FreecadLossCode {
             | Self::FeatureNativeKindRetained
             | Self::FeatureRevolutionNotTransferred
             | Self::FeatureRemovalWithoutBase
-            | Self::FeaturePrimitivePlacementUnresolved => LossTaxonomy::FeatureHistoryRetained,
+            | Self::FeaturePrimitivePlacementUnresolved
+            | Self::FeatureLinkPlacementUnresolved => LossTaxonomy::FeatureHistoryRetained,
             Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchNativeGeometry
@@ -452,6 +459,7 @@ mod tests {
                 "feature.revolution-not-transferred",
                 "feature.removal-without-base",
                 "feature.primitive-placement-unresolved",
+                "feature.link-placement-unresolved",
                 "parameter.expression-empty",
                 "sketch.native-geometry",
                 "sketch.nurbs-native",

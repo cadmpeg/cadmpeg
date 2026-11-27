@@ -551,24 +551,35 @@ fn decode_keeps_document_objects_and_model_entities_additive() {
             &DecodeOptions::default(),
         )
         .expect("decode stored feature");
-    assert_eq!(decoded.ir().entity_count(), 2);
+    let ir = decoded.ir();
+    assert_eq!(
+        (
+            ir.design.scopes.len(),
+            ir.design.containers.len(),
+            ir.design.features.len()
+        ),
+        (1, 1, 1)
+    );
+    let entities = ir.entity_count();
+    assert_eq!(entities, 2 + 3);
 
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_entities = 2;
+    options.policy.limits.max_entities = u64::try_from(entities).unwrap();
     let error = FcstdCodec
         .decode(&mut Cursor::new(archive(document)), &options)
-        .expect_err("one document object plus two model entities require a limit of three");
+        .expect_err(
+            "one document object plus the IR entities exceed a limit of the entities alone",
+        );
     assert!(
         matches!(
             error,
             cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
-                    && limit.operation == "root product definition"
         ),
         "{error:?}"
     );
 
-    options.policy.limits.max_entities = 3;
+    options.policy.limits.max_entities = u64::try_from(entities + 1).unwrap();
     FcstdCodec
         .decode(&mut Cursor::new(archive(document)), &options)
         .expect("the exact additive entity limit must admit the fixture");

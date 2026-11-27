@@ -640,6 +640,7 @@
             "asm_body_key": 42,
             "asm_body_key_offset": 25,
             "body": "f3d:brep:entity#1",
+            "browser_node_entity": 900,
             "byte_offset": 719,
             "entity_suffix": 985,
             "stream": "FusionAssetName[Active]/Design1/BulkStream.dat",

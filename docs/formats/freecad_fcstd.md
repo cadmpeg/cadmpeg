@@ -726,6 +726,13 @@ The chain resolves each local product target through its unique product record. 
 no product record contributes its persisted `LinkPlacement` matrix or its restored `Placement`
 matrix directly.
 Prototype cycles are invalid in both the native and neutral product graphs.
+
+CADIR decision: a scalar link whose `LinkTransform` is true and whose linked object has no own
+occurrence in the document's scope emits `feature.link-placement-unresolved`; its v11 `Place`
+states no placement. The occurrence's transform holds the link's placement and scale composed
+after the linked object's placement where the document holds that object, and the link's
+placement and scale alone where the object is in a document that was not read.
+
 Component identity keeps the stable source object name separately from its user-visible label,
 description, part number, and additional named BOM fields. Generated BOM spreadsheets remain
 spreadsheet objects; they are not treated as the authoritative identity of their source component.

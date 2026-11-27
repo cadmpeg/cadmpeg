@@ -1337,6 +1337,7 @@ pub(crate) struct DecodedBodyVisibility {
     pub(crate) byte_offset: u64,
     pub(crate) asm_body_key_offset: u64,
     pub(crate) entity_suffix: u64,
+    pub(crate) browser_node_entity: u64,
     pub(crate) visible: bool,
 }
 
@@ -1370,6 +1371,7 @@ pub(crate) fn decode_all_body_visibility(
                         byte_offset: node.byte_offset,
                         asm_body_key_offset: u64_from_index(binding.asm_key_offset),
                         entity_suffix: binding.entity_suffix,
+                        browser_node_entity: node.entity,
                         visible: !node.hidden,
                     },
                 );
@@ -1382,6 +1384,7 @@ pub(crate) fn decode_all_body_visibility(
 /// Visibility selected from one typed browser-node record.
 #[derive(Debug, Clone, Copy)]
 struct BrowserNodeVisibility {
+    entity: u64,
     byte_offset: u64,
     hidden: bool,
 }
@@ -1434,6 +1437,7 @@ fn typed_browser_node_hidden_flags(
             out.insert(
                 entity_suffix,
                 BrowserNodeVisibility {
+                    entity: u64::from(node.record_index),
                     byte_offset: node.hidden_offset,
                     hidden: node.hidden,
                 },

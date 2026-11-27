@@ -1352,6 +1352,7 @@ pub(crate) fn append_design_losses(
         | BodySelection::GeneratedSet { .. } => false,
         BodySelection::Generated { bodies, .. } => bodies.is_empty(),
         BodySelection::Local { bodies, .. } => bodies.is_empty(),
+        BodySelection::Occurrence { bodies, .. } => bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => true,
     };
     let profile_data = crate::resolved_features::profile_data::FeatureProfileData::new(&ir.model);
