@@ -34,6 +34,7 @@ fn equation_function_six_derives_positive_point_distance() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
+            rows_end: 0,
             declared_count: 5,
             entity_ref: None,
             rows: vec![
@@ -139,6 +140,7 @@ fn equation_function_forty_three_derives_unique_axis_distance_scalar() {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(crate::feature::definitions::FeatureVariableTable {
+                rows_end: 0,
                 declared_count: 8,
                 entity_ref: None,
                 rows: vec![
@@ -263,6 +265,7 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
+            rows_end: 0,
             declared_count: 5,
             entity_ref: None,
             rows: vec![
@@ -320,10 +323,12 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
             .equation_id;
     let mut disabled_equation = definition.clone();
     disabled_equation.relations = Some(crate::feature::definitions::FeatureRelationTable {
+        rows_end: None,
         declared_count: 1,
         entity_ref: None,
         rows: Vec::new(),
         skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 1,
                 entity_ref: 901,
@@ -339,6 +344,7 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
             }],
         }),
         triples: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 1,
                 entity_ref: 903,
@@ -405,6 +411,7 @@ fn equation_function_thirty_three_solves_unique_equal_line_length_coordinate() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
+            rows_end: 0,
             declared_count: 9,
             entity_ref: None,
             rows: vec![

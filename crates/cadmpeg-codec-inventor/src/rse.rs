@@ -9,7 +9,6 @@ use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{Identity, IdentityKey};
 use cadmpeg_ir::unknown::part::Part;
-use cadmpeg_ir::StreamName;
 
 use crate::database::{
     parse_database, parse_registry, parse_revisions, DatabaseHeader, RevisionTable, RseDatabase,
@@ -373,8 +372,10 @@ pub(crate) struct RseInventory<'a> {
     pub(crate) registry: ParsedState<SegmentRegistry>,
     pub(crate) revisions: ParsedState<RevisionTable>,
     pub(crate) segments: Vec<SegmentDescriptor<'a>>,
-    pub(crate) unpaired_metadata: Vec<SegmentToken>,
-    pub(crate) unpaired_bulk: Vec<SegmentToken>,
+    /// The metadata streams without a bulk stream, by token.
+    pub(crate) unpaired_metadata: Vec<(SegmentToken, CompoundStreamId)>,
+    /// The bulk streams without a metadata stream, by token.
+    pub(crate) unpaired_bulk: Vec<(SegmentToken, CompoundStreamId)>,
     pub(crate) active_carrier: ActiveCarrierState<'a>,
 }
 
@@ -523,14 +524,14 @@ impl<'a> RseInventory<'a> {
         }
         let segments = frame_segment_records(segments)?;
         let unpaired_metadata = metadata
-            .keys()
-            .filter(|token| !bulk.contains_key(*token))
-            .cloned()
+            .iter()
+            .filter(|(token, _)| !bulk.contains_key(*token))
+            .map(|(token, stream)| (token.clone(), *stream))
             .collect();
         let unpaired_bulk = bulk
-            .keys()
-            .filter(|token| !metadata.contains_key(*token))
-            .cloned()
+            .iter()
+            .filter(|(token, _)| !metadata.contains_key(*token))
+            .map(|(token, stream)| (token.clone(), *stream))
             .collect();
         let document_kind = document_kind_for_segments(&segments);
         let active_carrier = select_active_carrier(&segments, &document_kind);
@@ -886,18 +887,20 @@ pub(crate) fn database_band(path: &str) -> Option<StorageBand> {
 /// whose stub links to the `RSe` record `ordinal` of that segment.
 pub(crate) fn bulk_record_part<'b>(
     kind: &'static str,
-    (token, ordinal): (&str, u32),
+    (token, ordinal): (&IdentityKey, u32),
     offset: u64,
     bytes: &'b [u8],
     holds: ArenaClass,
-) -> Result<Part<'b>, CodecError> {
-    let stream = StreamName::try_from(format!("RSeStorage/B{token}:expanded"))
-        .map_err(CodecError::malformed)?;
-    let record = Identity::try_from(format!("inventor:rse:record#{token}-{ordinal}"))
-        .map_err(CodecError::malformed)?;
-    Ok(Part::at("inventor", kind, offset, bytes, [holds])
+) -> Part<'b> {
+    let stream =
+        cadmpeg_ir::stream_name!("RSeStorage/B").with_suffix(format_args!("{token}:expanded"));
+    let record = Identity::compose(
+        &cadmpeg_ir::identity_namespace!("inventor", "rse", "record"),
+        token.clone().dash(ordinal),
+    );
+    Part::at("inventor", kind, offset, bytes, [holds])
         .in_stream(stream)
-        .contained_in(record))
+        .contained_in(record)
 }
 
 #[cfg(test)]

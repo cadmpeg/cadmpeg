@@ -627,10 +627,12 @@ mod tests {
         let mut definition =
             point_definition(2, vec![line(10, Some(0)), line(20, None)], Vec::new());
         definition.relations = Some(crate::feature::definitions::FeatureRelationTable {
+            rows_end: None,
             declared_count: 1,
             entity_ref: None,
             rows: Vec::new(),
             skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+                rows_end: None,
                 header: crate::feature::definitions::FeatureSolverTableHeader {
                     declared_count: 1,
                     entity_ref: 0,
@@ -999,10 +1001,12 @@ mod tests {
         let mut conflicting_orientation = incomplete_axis;
         conflicting_orientation.relations =
             Some(crate::feature::definitions::FeatureRelationTable {
+                rows_end: None,
                 declared_count: 1,
                 entity_ref: None,
                 rows: Vec::new(),
                 skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+                    rows_end: None,
                     header: crate::feature::definitions::FeatureSolverTableHeader {
                         declared_count: 1,
                         entity_ref: 0,
@@ -1092,10 +1096,12 @@ mod tests {
             .rows
             .edit_ordinary(|rows| rows[0].vertical_horizontal = None);
         unary_orientation.relations = Some(crate::feature::definitions::FeatureRelationTable {
+            rows_end: None,
             declared_count: 1,
             entity_ref: None,
             rows: Vec::new(),
             skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+                rows_end: None,
                 header: crate::feature::definitions::FeatureSolverTableHeader {
                     declared_count: 1,
                     entity_ref: 0,
