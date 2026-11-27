@@ -2,7 +2,6 @@
 //! Exact thicken and shell scope frames.
 
 use super::shared_frames::exact_fixed_scalar;
-use super::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_guid_end;
 use crate::design::design_feature_family;
@@ -322,12 +321,20 @@ struct WallSlotFrame {
     auxiliary: Vec<u32>,
 }
 
-fn wall_slot(bytes: &[u8], at: usize) -> Option<(Option<(u32, usize)>, usize)> {
+fn reference_len(typed: bool) -> usize {
+    if typed {
+        crate::bytes::TYPED_LOCAL_REFERENCE_LEN
+    } else {
+        WALL_SLOT_LEN
+    }
+}
+
+fn wall_slot(bytes: &[u8], at: usize, typed: bool) -> Option<(Option<(u32, usize)>, usize)> {
     match bytes.get(at)? {
         0 => Some((None, at.checked_add(1)?)),
         1 => Some((
-            Some((marked_record_reference(bytes, at)?, at)),
-            at.checked_add(WALL_SLOT_LEN)?,
+            Some((crate::bytes::local_reference_target(bytes, at, typed)?, at)),
+            at.checked_add(reference_len(typed))?,
         )),
         _ => None,
     }
@@ -346,10 +353,11 @@ fn wall_slot_frame(
     bytes: &[u8],
     scope: &DesignParameterScope,
     prefix: WallSlotPrefix,
+    typed: bool,
 ) -> Option<WallSlotFrame> {
     let start = usize::try_from(scope.byte_offset()).ok()?;
-    let (inside, cursor) = wall_slot(bytes, prefix.slots_at(bytes, start)?)?;
-    let (outside, cursor) = wall_slot(bytes, cursor)?;
+    let (inside, cursor) = wall_slot(bytes, prefix.slots_at(bytes, start)?, typed)?;
+    let (outside, cursor) = wall_slot(bytes, cursor, typed)?;
     let mut auxiliary = Vec::new();
     let group_count_at = match prefix {
         WallSlotPrefix::Cornered => zero_run_end(bytes, cursor, CORNERED_ZERO_RUN)?,
@@ -360,11 +368,11 @@ fn wall_slot_frame(
             let count_at = zero_run_end(bytes, cursor, COUNTED_ZERO_RUN)?;
             let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
             let first = count_at.checked_add(4)?;
-            let end = first.checked_add(count.checked_mul(WALL_SLOT_LEN)?)?;
+            let end = first.checked_add(count.checked_mul(reference_len(typed))?)?;
             auxiliary = bytes
                 .get(first..end)?
-                .chunks_exact(WALL_SLOT_LEN)
-                .map(|entry| marked_record_reference(entry, 0))
+                .chunks_exact(reference_len(typed))
+                .map(|entry| crate::bytes::local_reference_target(entry, 0, typed))
                 .collect::<Option<Vec<_>>>()?;
             zero_run_end(bytes, end, COUNTED_ZERO_RUN)?
         }
@@ -373,8 +381,8 @@ fn wall_slot_frame(
         return None;
     }
     let group_at = group_count_at.checked_add(4)?;
-    let group = marked_record_reference(bytes, group_at)?;
-    let guid_end = fixed_guid_end(bytes, group_at.checked_add(WALL_SLOT_LEN)?)?;
+    let group = crate::bytes::local_reference_target(bytes, group_at, typed)?;
+    let guid_end = fixed_guid_end(bytes, group_at.checked_add(reference_len(typed))?)?;
     let table_at = zero_run_end(bytes, guid_end, TABLE_ZERO_RUN)?;
     (u64::try_from(table_at).ok()? == scope.reference_count_offset()).then_some(WallSlotFrame {
         prefix,
@@ -391,9 +399,14 @@ pub(super) fn exact_shell_wall_slots(
     scope: &DesignParameterScope,
     losses: &mut Vec<LossNote>,
 ) -> Option<DesignDirectFaceOperation> {
-    let mut frames = WallSlotPrefix::ALL
+    let mut frames = [false, true]
         .into_iter()
-        .filter_map(|prefix| wall_slot_frame(bytes, scope, prefix));
+        .flat_map(|typed| {
+            WallSlotPrefix::ALL
+                .into_iter()
+                .map(move |prefix| (prefix, typed))
+        })
+        .filter_map(|(prefix, typed)| wall_slot_frame(bytes, scope, prefix, typed));
     let (Some(frame), None) = (frames.next(), frames.next()) else {
         return None;
     };

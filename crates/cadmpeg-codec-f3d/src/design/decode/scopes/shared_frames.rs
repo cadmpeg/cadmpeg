@@ -49,6 +49,13 @@ pub(in crate::design) struct FixedScalarFrame<T = FiniteReal> {
     pub(in crate::design) value_offset: u64,
 }
 
+/// The type GUIDs of the scopes that own a typed fixed scalar frame: `Extrude`
+/// and `Shell`.
+const TYPED_SCALAR_OWNER_TYPES: [&str; 2] = [
+    "DD405BC2-D673-44F0-8833-5CB2A1C186C7",
+    "E8063467-BC05-4688-8196-AECB90F0EFEE",
+];
+
 pub(in crate::design) fn exact_fixed_scalar(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -81,7 +88,7 @@ pub(in crate::design) fn exact_fixed_scalar(
             companion_indices.sort_unstable();
             if bytes.get(start + 11..start + 19) != Some(&[0; 8])
                 || bytes.get(start + 19..start + 24) != Some(&[1, 1, 0, 0, 0])
-                || owner.1 != "DD405BC2-D673-44F0-8833-5CB2A1C186C7"
+                || !TYPED_SCALAR_OWNER_TYPES.contains(&owner.1)
                 || repeated_owner != owner
                 || trailing_owner != owner
                 || companion_indices != [record_index.checked_add(1)?, record_index.checked_add(2)?]
@@ -176,8 +183,12 @@ mod tests {
     use super::exact_fixed_scalar;
     use super::typed_extrude_scalar;
 
-    #[test]
-    fn typed_fixed_scalar_keeps_its_owner_ordinal_and_value() {
+    const EXTRUDE_TYPE: &[u8; 36] = b"DD405BC2-D673-44F0-8833-5CB2A1C186C7";
+    const SHELL_TYPE: &[u8; 36] = b"E8063467-BC05-4688-8196-AECB90F0EFEE";
+
+    /// A typed fixed scalar frame for record 30 whose owner scope is record 10
+    /// of type `owner_type`.
+    fn typed_scalar(owner_type: &[u8; 36]) -> Vec<u8> {
         let mut bytes = vec![0; typed_extrude_scalar::LEN];
         bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
         bytes[4..7].copy_from_slice(b"326");
@@ -189,16 +200,36 @@ mod tests {
             bytes[offset + 9..offset + 13].copy_from_slice(&36u32.to_le_bytes());
             bytes[offset + 13..offset + 49].copy_from_slice(guid);
         };
-        reference(24, 10, b"DD405BC2-D673-44F0-8833-5CB2A1C186C7");
+        reference(24, 10, owner_type);
         reference(88, 31, b"7A6A3D31-BE74-4E19-9115-20642944C2E4");
-        reference(147, 10, b"DD405BC2-D673-44F0-8833-5CB2A1C186C7");
+        reference(147, 10, owner_type);
         reference(200, 32, b"6CCF41D5-40BE-48ED-A834-18F3EAED6C57");
-        reference(252, 10, b"DD405BC2-D673-44F0-8833-5CB2A1C186C7");
+        reference(252, 10, owner_type);
         bytes[75] = 1;
         bytes[80..88].copy_from_slice(&(-2.5f64).to_le_bytes());
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(b"260");
         bytes.extend_from_slice(&30u32.to_le_bytes());
+        bytes
+    }
+
+    #[test]
+    fn a_typed_fixed_scalar_belongs_to_an_extrude_or_a_shell_scope() {
+        for owner in [EXTRUDE_TYPE, SHELL_TYPE] {
+            let bytes = typed_scalar(owner);
+            let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+            let scalar = exact_fixed_scalar(&bytes, &records, 30).expect("typed fixed scalar");
+            assert_eq!(scalar.owner_record_index, Some(10));
+            assert_eq!(scalar.value.get(), -2.5);
+        }
+        let bytes = typed_scalar(b"00000000-0000-0000-0000-000000000000");
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        assert!(exact_fixed_scalar(&bytes, &records, 30).is_none());
+    }
+
+    #[test]
+    fn typed_fixed_scalar_keeps_its_owner_ordinal_and_value() {
+        let mut bytes = typed_scalar(EXTRUDE_TYPE);
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         let scalar = exact_fixed_scalar(&bytes, &records, 30).expect("typed fixed scalar");
         assert_eq!(scalar.owner_record_index, Some(10));

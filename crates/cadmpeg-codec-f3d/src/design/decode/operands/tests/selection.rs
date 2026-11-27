@@ -1233,6 +1233,73 @@ fn a_nested_selection_reads_the_compact_sketch_point_identity() {
     }
 }
 
+/// A nested entity-selection member 100 whose reference to its `N+3` record is
+/// the typed reference of the inline-typed generation.
+fn typed_nested_selection(identity: &[u8]) -> Vec<u8> {
+    use crate::test_support::{indexed_header, lp_ascii, lp_utf16};
+    let record_index = 100;
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"369", record_index);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.push(1);
+    bytes.extend_from_slice(&u64::from(record_index + 3).to_le_bytes());
+    lp_ascii(&mut bytes, "90055C05-546C-4EE7-B3C9-3DD922AD0C9C");
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    lp_utf16(&mut bytes, "7b3dec6f-f69c-4bfa-a537-9274f341c66e");
+    lp_utf16(&mut bytes, "2b40eee7-408c-429b-9216-8b6f7e9a62c9");
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 4]);
+    indexed_header(&mut bytes, *b"257", record_index);
+    indexed_header(&mut bytes, *b"306", record_index + 1);
+    indexed_header(&mut bytes, *b"359", record_index + 2);
+    indexed_header(&mut bytes, *b"360", record_index + 3);
+    bytes.extend_from_slice(identity);
+    indexed_header(&mut bytes, *b"400", record_index + 4);
+    bytes
+}
+
+#[test]
+fn a_nested_selection_reads_a_typed_reference_to_its_identity_record() {
+    let mut identity = vec![0; 10];
+    identity.extend_from_slice(&265u64.to_le_bytes());
+    let typed = typed_nested_selection(&identity);
+    let frame = super::super::entity_selections::parse_entity_selection_frame_with(
+        &typed, 100, 0, "369", false,
+    )
+    .expect("typed nested reference");
+    assert_eq!(frame.primary_identity, 265);
+    assert_eq!(frame.identity_record_index, 103);
+    assert_eq!(frame.next_record_index, 104);
+    assert_eq!(frame.asset_id, "7b3dec6f-f69c-4bfa-a537-9274f341c66e");
+    assert!(frame.secondary.is_none());
+
+    // The plain spelling of the same member offsets every later field 40 bytes less.
+    let plain = nested_selection_with_identity(&identity);
+    let plain_frame = super::super::entity_selections::parse_entity_selection_frame_with(
+        &plain, 100, 0, "369", false,
+    )
+    .expect("plain nested reference");
+    assert_eq!(frame.asset_id_offset, plain_frame.asset_id_offset + 40);
+    assert_eq!(frame.next_byte_offset, plain_frame.next_byte_offset + 40);
+
+    let type_guid_at = 11 + 10 + 1 + 8 + 4;
+    let mut wrong_target = typed.clone();
+    wrong_target[22..30].copy_from_slice(&105u64.to_le_bytes());
+    let mut bad_guid = typed.clone();
+    bad_guid[type_guid_at] = b' ';
+    let mut nonzero_tail = typed.clone();
+    nonzero_tail[type_guid_at + 36] = 1;
+    for invalid in [wrong_target, bad_guid, nonzero_tail] {
+        assert!(
+            super::super::entity_selections::parse_entity_selection_frame_with(
+                &invalid, 100, 0, "369", false,
+            )
+            .is_none()
+        );
+    }
+}
+
 #[test]
 fn a_compact_sketch_point_identity_round_trips_through_the_operand_record() {
     use crate::records::topology::entity_selection::{
