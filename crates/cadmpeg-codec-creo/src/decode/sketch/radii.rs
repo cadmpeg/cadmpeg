@@ -798,6 +798,7 @@ mod tests {
             offset: 0,
         });
         definition.relations = Some(FeatureRelationTable {
+            rows_end: None,
             declared_count: 3,
             entity_ref: None,
             rows: vec![FeatureRelation {
@@ -980,6 +981,7 @@ mod tests {
             outlines: Vec::new(),
             variables: Some(crate::feature::definitions::test_support::with_points(
                 crate::feature::definitions::FeatureVariableTable {
+                    rows_end: 0,
                     declared_count: 0,
                     entity_ref: None,
                     rows: Vec::new(),

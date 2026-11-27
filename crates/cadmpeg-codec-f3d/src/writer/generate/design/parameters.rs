@@ -524,12 +524,11 @@ pub(in crate::writer::generate) fn plan(
 /// otherwise the root scope's parameters, and a loss naming each neutral
 /// parameter that no scope parameter restates. It never refuses.
 pub(in crate::writer::generate) fn native_or_neutral(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
-    native: &F3dNative,
-) -> Result<ParameterSource, CodecError> {
-    if target.model.parameters == native_projection(ctx, native)? {
-        return Ok(ParameterSource::Native);
+    projected: &[cadmpeg_ir::features::parameters::DesignParameter],
+) -> ParameterSource {
+    if target.model.parameters == projected {
+        return ParameterSource::Native;
     }
     let mut plan = super::root_scope(target).map_or_else(
         || ParameterPlan {
@@ -553,53 +552,50 @@ pub(in crate::writer::generate) fn native_or_neutral(
             .map(|row| row.id.to_string())
             .filter(|id| !restated.contains(id.as_str())),
     ));
-    Ok(ParameterSource::Neutral(plan))
+    ParameterSource::Neutral(plan)
 }
 
-/// The native records' parameters as the decoder projects them.
-fn native_projection(
+/// The native records' features and parameters as the decoder projects them.
+pub(in crate::writer::generate) fn native_projection(
     decode_ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     native: &F3dNative,
-) -> Result<Vec<cadmpeg_ir::features::parameters::DesignParameter>, CodecError> {
+) -> Result<crate::design::feature_project::ProjectedParameterDesign, CodecError> {
     let foot_origin =
         crate::design::decode::placement_construction::work_planes::foot_origin_placements(
             &native.design_sketch_placements,
             &native.design_parameter_scopes,
             &native.design_placement_constructions,
         );
-    Ok(
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            decode_ctx,
-            &crate::design::feature_project::ProjectInputs {
-                native: &native.design_parameters,
-                source_parameters: &native.design_parameters,
-                owners: &native.design_parameter_owners,
-                scopes: &native.design_parameter_scopes,
-                timelines: &native.design_feature_timelines,
-                construction_groups: &native.design_construction_operand_groups,
-                fillet_radius_groups: &native.design_fillet_radius_groups,
-                edge_operands: &native.design_edge_operands,
-                edge_identity_operands: &native.design_edge_identity_operands,
-                edge_treatment_vertex_operands: &native.design_edge_treatment_vertex_operands,
-                entity_selection_operands: &native.design_entity_selection_operands,
-                design_types: &native.design_types,
-                curve_identities: &native.sketch_curve_identities,
-                face_operands: &native.design_face_operands,
-                face_source_groups: &native.design_face_source_groups,
-                body_recipe_operands: &native.design_body_recipe_operands,
-                placements: &native.design_sketch_placements,
-                foot_origin: Some(&foot_origin),
-                placement_constructions: &native.design_placement_constructions,
-                body_bindings: &native.design_body_bindings,
-                component_naming_spaces: &native.design_component_naming_spaces,
-                histories: &native.asm_histories,
-                face_boundaries: &native.asm_face_boundaries,
-                sheet_metal_settings: &native.design_sheet_metal_settings,
-                construction_recipes: &native.construction_recipes,
-                persistent_subentity_tags: &native.persistent_subentity_tags,
-            },
-        )?
-        .parameters,
+    crate::design::feature_project::project_parameter_design_with_edge_identities(
+        decode_ctx,
+        &crate::design::feature_project::ProjectInputs {
+            native: &native.design_parameters,
+            source_parameters: &native.design_parameters,
+            owners: &native.design_parameter_owners,
+            scopes: &native.design_parameter_scopes,
+            timelines: &native.design_feature_timelines,
+            construction_groups: &native.design_construction_operand_groups,
+            fillet_radius_groups: &native.design_fillet_radius_groups,
+            edge_operands: &native.design_edge_operands,
+            edge_identity_operands: &native.design_edge_identity_operands,
+            edge_treatment_vertex_operands: &native.design_edge_treatment_vertex_operands,
+            entity_selection_operands: &native.design_entity_selection_operands,
+            design_types: &native.design_types,
+            curve_identities: &native.sketch_curve_identities,
+            face_operands: &native.design_face_operands,
+            face_source_groups: &native.design_face_source_groups,
+            body_recipe_operands: &native.design_body_recipe_operands,
+            placements: &native.design_sketch_placements,
+            foot_origin: Some(&foot_origin),
+            placement_constructions: &native.design_placement_constructions,
+            body_bindings: &native.design_body_bindings,
+            component_naming_spaces: &native.design_component_naming_spaces,
+            histories: &native.asm_histories,
+            face_boundaries: &native.asm_face_boundaries,
+            sheet_metal_settings: &native.design_sheet_metal_settings,
+            construction_recipes: &native.construction_recipes,
+            persistent_subentity_tags: &native.persistent_subentity_tags,
+        },
     )
 }
 
@@ -621,6 +617,18 @@ pub(in crate::writer::generate) fn encode(
 }
 
 impl ParameterPlan {
+    /// The records and names assigned to source parameters in the new stream.
+    pub(in crate::writer::generate) fn destinations(
+        &self,
+        indices: &[u32],
+    ) -> super::super::configuration_table::DestinationParameters<'_> {
+        self.written
+            .iter()
+            .zip(indices)
+            .map(|(parameter, &index)| (parameter.source.clone(), (index, parameter.name.as_str())))
+            .collect()
+    }
+
     /// The record indices of the written parameters, allocated in
     /// `registry`, in written order.
     pub(in crate::writer::generate) fn allocate(

@@ -424,13 +424,14 @@ pub(crate) fn build_asm() -> Vec<u8> {
 
 /// [`build_asm`] with `table` as its component table.
 pub(crate) fn build_asm_with(table: Vec<u8>) -> Vec<u8> {
-    let part = build_prt_raw(
-        "test",
-        &[
-            ("BasBasData", b"\xe0\x0amodel_name\0TOP_ASSY\0".to_vec()),
-            ("NeuAsmSld", neu_asm_payload(table)),
-        ],
-    );
+    build_asm_sections(&[("NeuAsmSld", neu_asm_payload(table))])
+}
+
+/// An `ASSEMBLY` file with model name `TOP_ASSY` and `sections` after it.
+pub(crate) fn build_asm_sections(sections: &[(&str, Vec<u8>)]) -> Vec<u8> {
+    let mut all = vec![("BasBasData", b"\xe0\x0amodel_name\0TOP_ASSY\0".to_vec())];
+    all.extend(sections.iter().cloned());
+    let part = build_prt_raw("test", &all);
     let header_end = part
         .iter()
         .position(|&byte| byte == b'\n')

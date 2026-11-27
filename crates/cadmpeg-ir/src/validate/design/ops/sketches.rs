@@ -6,8 +6,6 @@
 use crate::report::check::Ruled;
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde_json::Value;
-
 use super::body::{self, RunKind};
 use super::{error, Site};
 use crate::design::dimension::Dimension;
@@ -79,6 +77,7 @@ trait Space: SketchSpace + Sized {
     fn constraint(id: &Self::Constraint) -> &str;
     fn shape(curve: &Self::Curve) -> Shape;
     fn entities<'a>(index: &DesignRecords<'a>) -> &'a [SketchEntity<Self>];
+    fn entity_by_id<'a>(index: &DesignRecords<'a>, id: &str) -> Option<&'a SketchEntity<Self>>;
     fn constraints<'a>(index: &DesignRecords<'a>) -> &'a [SketchConstraint<Self>];
 }
 
@@ -119,6 +118,10 @@ impl Space for Planar {
 
     fn entities<'a>(index: &DesignRecords<'a>) -> &'a [SketchEntity<Self>] {
         &index.ir.design.sketch_entities
+    }
+
+    fn entity_by_id<'a>(index: &DesignRecords<'a>, id: &str) -> Option<&'a SketchEntity<Self>> {
+        index.sketch_entities.get(id).copied()
     }
 
     fn constraints<'a>(index: &DesignRecords<'a>) -> &'a [SketchConstraint<Self>] {
@@ -166,6 +169,10 @@ impl Space for Spatial {
 
     fn entities<'a>(index: &DesignRecords<'a>) -> &'a [SketchEntity<Self>] {
         &index.ir.design.spatial_sketch_entities
+    }
+
+    fn entity_by_id<'a>(index: &DesignRecords<'a>, id: &str) -> Option<&'a SketchEntity<Self>> {
+        index.spatial_sketch_entities.get(id).copied()
     }
 
     fn constraints<'a>(index: &DesignRecords<'a>) -> &'a [SketchConstraint<Self>] {
@@ -251,12 +258,8 @@ fn curve<S: SketchSpace>(entity: &SketchEntity<S>) -> Option<&S::Curve> {
     }
 }
 
-fn shape_in<S: Space>(index: &DesignRecords<'_>, id: &str) -> Option<Shape> {
-    S::entities(index)
-        .iter()
-        .find(|entity| S::entity(&entity.id) == id)
-        .and_then(curve)
-        .map(S::shape)
+fn shape_in<'a, S: Space + 'a>(index: &DesignRecords<'a>, id: &str) -> Option<Shape> {
+    S::entity_by_id(index, id).and_then(curve).map(S::shape)
 }
 
 /// The stated shape of the sketch entity a pick targets. `None` where the
@@ -332,7 +335,14 @@ impl<'a> Sketches<'a> {
     }
 }
 
-pub(super) fn check_sketches(index: &DesignRecords<'_>, wire: &Value, findings: &mut Vec<Finding>) {
+pub(super) fn check_sketches(
+    index: &DesignRecords<'_>,
+    sketch_regions: &[(
+        &crate::sketches::SketchId,
+        &crate::design::selection::SketchRegion,
+    )],
+    findings: &mut Vec<Finding>,
+) {
     let sketches = Sketches::new(index);
     check_ownership(index, findings);
     for sketch in &index.ir.design.sketches {
@@ -358,7 +368,7 @@ pub(super) fn check_sketches(index: &DesignRecords<'_>, wire: &Value, findings: 
     check_space::<Planar>(index, &sketches, findings);
     check_space::<Spatial>(index, &sketches, findings);
     check_block_cycles(index, findings);
-    check_regions(index, wire, findings);
+    check_regions(index, sketch_regions, findings);
 }
 
 /// Each sketch's owner exists and owns it by its operation, its overrides,
@@ -366,6 +376,8 @@ pub(super) fn check_sketches(index: &DesignRecords<'_>, wire: &Value, findings: 
 fn check_ownership(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     let design = &index.ir.design;
     let mut overridden: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    let mut override_defs: BTreeMap<&str, Vec<&crate::design::feature::FeatureDefinition>> =
+        BTreeMap::new();
     let overrides = design
         .configurations
         .iter()
@@ -374,6 +386,10 @@ fn check_ownership(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     for overrides in overrides {
         for (feature, state) in &overrides.features {
             if let Some(definition) = &state.definition {
+                override_defs
+                    .entry(feature.as_str())
+                    .or_default()
+                    .push(definition);
                 let named = match &definition.operation {
                     FeatureOperation::Sketch(sketch) => Some(sketch.as_str()),
                     FeatureOperation::SpatialSketch(sketch) => Some(sketch.as_str()),
@@ -386,6 +402,7 @@ fn check_ownership(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
             }
         }
     }
+    let mut cached_strings: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
     let owners = design
         .sketches
         .iter()
@@ -437,7 +454,7 @@ fn check_ownership(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
                         .get(owner)
                         .is_some_and(|named| named.contains(sketch))
             }
-            None => names_sketch(index, feature, sketch),
+            None => names_sketch(feature, &override_defs, &mut cached_strings, sketch),
         };
         if !owns {
             error(
@@ -454,17 +471,9 @@ fn check_ownership(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
             _ => continue,
         };
         let owner = if planar {
-            design
-                .sketches
-                .iter()
-                .find(|s| s.id.as_str() == own)
-                .map(|s| s.owner.as_str())
+            index.sketches.get(own).map(|s| s.owner.as_str())
         } else {
-            design
-                .spatial_sketches
-                .iter()
-                .find(|s| s.id.as_str() == own)
-                .map(|s| s.owner.as_str())
+            index.spatial_sketches.get(own).map(|s| s.owner.as_str())
         };
         if owner != Some(feature.id.as_str()) {
             error(
@@ -481,21 +490,28 @@ fn check_ownership(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
 
 /// Whether a feature's definition, or a definition override of it, names
 /// the sketch.
-fn names_sketch(index: &DesignRecords<'_>, feature: &Feature, sketch: &str) -> bool {
-    let design = &index.ir.design;
-    let overrides = design
-        .configurations
-        .iter()
-        .map(|c| &c.overrides)
-        .chain(design.arrangements.iter().map(|a| &a.overrides))
-        .filter_map(|overrides| overrides.features.get(&feature.id)?.definition.as_ref());
-    std::iter::once(&feature.definition)
-        .chain(overrides)
-        .any(|definition| super::wire_strings(definition).contains(sketch))
+fn names_sketch<'a>(
+    feature: &'a Feature,
+    override_defs: &BTreeMap<&'a str, Vec<&'a crate::design::feature::FeatureDefinition>>,
+    cached_strings: &mut BTreeMap<&'a str, BTreeSet<String>>,
+    sketch: &str,
+) -> bool {
+    let strings = cached_strings
+        .entry(feature.id.as_str())
+        .or_insert_with(|| {
+            let mut found = super::wire_strings(&feature.definition);
+            if let Some(defs) = override_defs.get(feature.id.as_str()) {
+                for definition in defs {
+                    found.extend(super::wire_strings(*definition));
+                }
+            }
+            found
+        });
+    strings.contains(sketch)
 }
 
-fn check_space<S: Space>(
-    index: &DesignRecords<'_>,
+fn check_space<'a, S: Space + 'a>(
+    index: &DesignRecords<'a>,
     sketches: &Sketches<'_>,
     findings: &mut Vec<Finding>,
 ) {
@@ -1626,20 +1642,18 @@ fn check_block_cycles(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
 
 /// Every `SketchRegion` pick: a nonempty outer boundary of non-construction
 /// curves of its sketch, and fragments below their counts.
-fn check_regions(index: &DesignRecords<'_>, wire: &Value, findings: &mut Vec<Finding>) {
-    let entities: BTreeMap<&str, &SketchEntity<Planar>> = index
-        .ir
-        .design
-        .sketch_entities
-        .iter()
-        .map(|e| (e.id.as_str(), e))
-        .collect();
-    for found in super::tagged(wire, "sketch_region") {
-        let Ok(PickTarget::SketchRegion { sketch, region }) =
-            cadmpeg_core::serde_erase::from_json_value::<PickTarget>(found)
-        else {
-            continue;
-        };
+pub(super) fn check_regions(
+    index: &DesignRecords<'_>,
+    sketch_regions: &[(
+        &crate::sketches::SketchId,
+        &crate::design::selection::SketchRegion,
+    )],
+    findings: &mut Vec<Finding>,
+) {
+    if sketch_regions.is_empty() {
+        return;
+    }
+    for &(sketch, region) in sketch_regions {
         let at = sketch.as_str();
         if region.outer.is_empty() {
             error(
@@ -1652,9 +1666,9 @@ fn check_regions(index: &DesignRecords<'_>, wire: &Value, findings: &mut Vec<Fin
             );
         }
         for boundary in region.outer.iter().chain(region.holes.iter().flatten()) {
-            let entity = entities.get(boundary.entity.as_str());
+            let entity = index.sketch_entities.get(boundary.entity.as_str()).copied();
             let curve = entity.is_some_and(|entity| {
-                entity.sketch == sketch
+                &entity.sketch == sketch
                     && entity.construction != Some(true)
                     && curve(entity).is_none_or(|c| Planar::shape(c) != Shape::Point)
             });

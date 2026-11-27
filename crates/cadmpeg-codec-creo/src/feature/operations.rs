@@ -490,12 +490,13 @@ fn agreeing_recipe_binding(bindings: &[FeatureRecipeBinding]) -> Option<FeatureR
 fn inline_recipe_resolution(record: &[u8]) -> RecipeState {
     let mut found = None;
     for (name, recipe) in FEATURE_RECIPES {
-        for _ in record.windows(name.len()).filter(|window| *window == *name) {
-            if found.is_some() {
-                return RecipeState::Conflicting { candidate: None };
-            }
-            found = Some(*recipe);
+        let Some(first) = cadmpeg_core::bytes::find(record, name) else {
+            continue;
+        };
+        if found.is_some() || cadmpeg_core::bytes::find_from(record, name, first + 1).is_some() {
+            return RecipeState::Conflicting { candidate: None };
         }
+        found = Some(*recipe);
     }
     found.into()
 }

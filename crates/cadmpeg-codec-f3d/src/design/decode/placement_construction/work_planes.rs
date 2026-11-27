@@ -212,7 +212,7 @@ pub(crate) fn decode_work_plane_feature_names(
     scan: &crate::container::ContainerScan,
 ) -> Result<std::collections::BTreeMap<(String, u32), WorkPlaneFeatureName>, cadmpeg_core::CodecError>
 {
-    use crate::design::decode::meta::{metadata_for_bulk_stream, typed_primary_frames};
+    use crate::design::decode::meta::{metadata_for_bulk_stream, scan_typed_primary_frames};
     use crate::records::entity_header::DESIGN_MODULE_GEOMETRY;
     use std::collections::BTreeMap;
 
@@ -225,8 +225,9 @@ pub(crate) fn decode_work_plane_feature_names(
         let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
-        let frames = typed_primary_frames(
-            bytes,
+        let frames = scan_typed_primary_frames(
+            scan,
+            &entry.name,
             &meta,
             WORK_PLANE_FEATURE_NAME_TYPE_GUID,
             "work-plane",
