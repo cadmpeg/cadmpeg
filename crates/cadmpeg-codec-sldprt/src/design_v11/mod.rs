@@ -122,7 +122,11 @@ pub(crate) struct Projection {
 /// lines go to `losses`. Interim: a body the geometry of such a part holds
 /// outside the active configuration's bodies is one more unproduced body of
 /// its scope, and a loss names it. A feature node under a tree node that is
-/// no timeline member states no design feature, and a loss names it.
+/// no timeline member states no design feature, and a loss names it, unless
+/// it owns a sketch that no timeline member restates: it is then a member of
+/// the sketches' `Group`. A reference-dimension parameter that no dimension
+/// binds is a `Driven` parameter of its owner where that owner is a design
+/// feature.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -145,6 +149,10 @@ pub(crate) fn project(
     } = part;
     let active = equations::active_slot(histories, ir.source.as_ref());
     let mut timeline = tree::timeline(histories)?;
+    timeline.grouped = sketch::owners_outside(&ir.model, &timeline.features);
+    timeline
+        .skipped
+        .retain(|(_, feature)| !timeline.grouped.contains(feature));
     let mut skipped = NamedCount::default();
     for (_, feature) in &timeline.skipped {
         skipped.push(feature.as_str());
@@ -248,9 +256,17 @@ pub(crate) fn project(
         &ir.tolerances,
     ));
     losses.extend(equations::link(&mut parameters, &linking));
+    let design_features = timeline
+        .features
+        .iter()
+        .chain(group.iter().flat_map(|(_, members)| members))
+        .map(|feature| &feature.id)
+        .collect::<HashSet<_>>();
     losses.extend(parameters::references_unbound(
         &ir.model.parameters,
-        &parameters,
+        &mut parameters,
+        &design_features,
+        &definition,
     ));
     configurations::parameter_overrides(
         &mut configurations,

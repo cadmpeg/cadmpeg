@@ -39,6 +39,10 @@ pub(super) struct Timeline {
     /// The feature nodes under a tree node that is no member, by native
     /// record, with the feature each would have become.
     pub(super) skipped: Vec<(String, FeatureId)>,
+    /// The features outside the timeline that own a sketch no member
+    /// restates: members of the scope's root `Group`, which own their
+    /// dimensions.
+    pub(super) grouped: HashSet<FeatureId>,
 }
 
 impl Timeline {

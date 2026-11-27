@@ -318,6 +318,43 @@ pub(super) fn project(
     Ok(out)
 }
 
+/// The v10 features outside `features`, the timeline's, that [`outside`]
+/// makes members of the root `Group`: of each sketch and spatial sketch
+/// record of `model` that no feature of `features` owns, the first feature
+/// whose operation names it.
+pub(super) fn owners_outside(
+    model: &cadmpeg_ir::document::Model,
+    features: &[Feature],
+) -> HashSet<FeatureId> {
+    let timeline = features
+        .iter()
+        .map(|feature| &feature.id)
+        .collect::<HashSet<_>>();
+    let mut owners = HashSet::new();
+    let mut add = |owning: Vec<&cadmpeg_ir::features::Feature>| {
+        if let Some(first) = owning.first() {
+            if owning.iter().all(|feature| !timeline.contains(&feature.id)) {
+                owners.insert(first.id.clone());
+            }
+        }
+    };
+    for record in &model.sketches {
+        add(model
+            .features
+            .iter()
+            .filter(|feature| owned_sketch(feature).is_some_and(|(sketch, _)| sketch == &record.id))
+            .collect());
+    }
+    for record in &model.spatial_sketches {
+        add(model
+            .features
+            .iter()
+            .filter(|feature| owned_spatial_sketch(feature) == Some(&record.id))
+            .collect());
+    }
+    owners
+}
+
 /// The owners of the sketches of `context` that no feature of `features`
 /// restates, each sketch restated as its owner's operation. The owner is the
 /// v10 feature whose operation names the sketch, where no feature of

@@ -267,7 +267,7 @@ fn fixtures_survive_the_semantic_write_path() {
                 let written = decode_container(bytes);
                 let expected = match &source {
                     Ok(decoded) if omits_every_body(decoded.ir(), &report.losses) => {
-                        brep_free_text(fixture, decoded, written.as_ref().ok())
+                        brep_free_text(fixture, decoded)
                     }
                     _ => expected,
                 };
@@ -373,20 +373,16 @@ fn omits_every_body(
 }
 
 /// [`neutral_text`] of `decoded` without its B-rep: the document a write
-/// states when it omits every body. A definition that a design scope of
-/// `written`, the decode of the write, spans is typed as a part: the design
-/// of a part whose configurations the write keeps types its definition.
-fn brep_free_text(bytes: &[u8], decoded: &DecodeResult, written: Option<&DecodeResult>) -> String {
+/// states when it omits every body. The write keeps the active
+/// configuration, and a part with configurations whose tree holds no feature
+/// states a scope, which types the part's root definition.
+fn brep_free_text(bytes: &[u8], decoded: &DecodeResult) -> String {
     let mut ir = decoded.ir().clone();
     ir.geometry = cadmpeg_ir::document::Topology::default();
-    let scoped = written
-        .into_iter()
-        .flat_map(|written| &written.ir().design.scopes)
-        .map(|scope| scope.definition.clone())
-        .collect::<Vec<_>>();
+    let configured = !ir.model.configurations.is_empty();
     for definition in &mut ir.model.product_definitions {
         definition.bodies.clear();
-        if scoped.contains(&definition.id) {
+        if configured && definition.id.as_str() == ROOT_DEFINITION {
             definition.kind = Some(cadmpeg_ir::products::ProductDefinitionKind::Part);
         }
     }
@@ -394,6 +390,9 @@ fn brep_free_text(bytes: &[u8], decoded: &DecodeResult, written: Option<&DecodeR
     let sections = section_identities(&scan).expect("unique admitted source member identities");
     snapshot_text(&normalized_document(&ir, &sections))
 }
+
+/// The id of a part's root definition, the part file itself.
+const ROOT_DEFINITION: &str = "sldprt:model:product-definition#root";
 
 /// Whether `message` names record `id` as a whole token.
 fn names_record(message: &str, id: &str) -> bool {

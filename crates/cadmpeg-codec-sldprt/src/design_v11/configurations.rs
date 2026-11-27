@@ -5,7 +5,9 @@
 //! active at decode, which states no overrides. Another configuration states
 //! the material it assigns where that differs from the active one's, the
 //! value of each parameter where its stored state differs from the active
-//! one's (see [`super::parameters::configuration_override`]).
+//! one's (see [`super::parameters::configuration_override`]): a literal
+//! where the parameter's expression is one literal or reads no value the
+//! configuration changes, else a cache.
 //!
 //! Interim: the decoder reads a feature's suppression from the history,
 //! which every configuration shares, so no configuration states a
@@ -200,7 +202,10 @@ pub(super) fn unread_states(
 
 /// States in each configuration that is not active the parameter values in
 /// which its decoded state, the model configuration of the same id in
-/// `decoded`, differs from the active configuration's.
+/// `decoded`, differs from the active configuration's. A first pass finds
+/// the parameters whose value the configuration does not change, so that a
+/// parameter whose expression reads only those states its value as a
+/// literal (see [`super::parameters::configuration_override`]).
 pub(super) fn parameter_overrides(
     configurations: &mut Configurations,
     decoded: &[cadmpeg_ir::features::parameters::DesignConfiguration],
@@ -211,6 +216,10 @@ pub(super) fn parameter_overrides(
     let base = decoded
         .iter()
         .find(|configuration| active.as_ref().is_some_and(|id| configuration.id == *id));
+    let active_value = |parameter: &DesignParameter| {
+        base.and_then(|base| base.parameter_values.get(&parameter.id))
+            .cloned()
+    };
     for record in records.iter_mut() {
         if active.as_ref() == Some(&record.id) {
             continue;
@@ -221,16 +230,32 @@ pub(super) fn parameter_overrides(
         else {
             continue;
         };
+        let unchanged = parameters
+            .iter()
+            .filter(|parameter| {
+                state
+                    .parameter_values
+                    .get(&parameter.id)
+                    .is_none_or(|stored| {
+                        super::parameters::stores_same(
+                            parameter,
+                            stored.clone(),
+                            active_value(parameter),
+                        )
+                    })
+            })
+            .map(|parameter| &parameter.id)
+            .collect::<HashSet<_>>();
         for parameter in parameters {
             let Some(stored) = state.parameter_values.get(&parameter.id) else {
                 continue;
             };
-            let active = base.and_then(|base| base.parameter_values.get(&parameter.id));
             if let Some(entry) = super::parameters::configuration_override(
                 parameter,
                 stored.clone(),
-                active.cloned(),
+                active_value(parameter),
                 length_unit,
+                &|id| unchanged.contains(id),
             ) {
                 record
                     .overrides

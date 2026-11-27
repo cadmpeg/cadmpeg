@@ -240,7 +240,8 @@ fn a_configuration_storing_the_active_configurations_values_states_no_override()
 
 /// A neutral expression that references nothing takes another
 /// configuration's stored value as a literal in the part's length unit; an
-/// expression with a reference keeps its text.
+/// expression whose reference the configuration changes, or whose text names
+/// a parameter the decoder did not resolve, keeps its text.
 #[test]
 fn an_expression_that_references_nothing_takes_the_stored_value_as_its_literal() {
     use cadmpeg_ir::design::expr::AddOp;
@@ -261,6 +262,7 @@ fn an_expression_that_references_nothing_takes_the_stored_value_as_its_literal()
         value("Large"),
         Some(value("Default")),
         Some(UnitSymbol::Mm),
+        &|_| false,
     )
     .unwrap();
     assert_eq!(
@@ -274,9 +276,93 @@ fn an_expression_that_references_nothing_takes_the_stored_value_as_its_literal()
         stored(&ir, "Large").parameter_values[&doubled.id].clone(),
         Some(stored(&ir, "Default").parameter_values[&doubled.id].clone()),
         Some(UnitSymbol::Mm),
+        &|_| false,
     )
     .unwrap();
     assert_eq!(entry.expression, None);
+
+    let mut unresolved = doubled.clone();
+    unresolved.definition = ParameterDefinition::Expression(Expression::Source {
+        dialect: cadmpeg_ir::design::expr::ExpressionDialect::SolidWorks,
+        tokens: vec![cadmpeg_ir::design::expr::ExpressionToken::Text(
+            "\"Width\" * 2".to_owned(),
+        )],
+    });
+    let entry = crate::design_v11::parameters::configuration_override(
+        &unresolved,
+        stored(&ir, "Large").parameter_values[&doubled.id].clone(),
+        Some(stored(&ir, "Default").parameter_values[&doubled.id].clone()),
+        Some(UnitSymbol::Mm),
+        &|_| true,
+    )
+    .unwrap();
+    assert_eq!(entry.expression, None);
+}
+
+/// `Large` stores the active configuration's `D1` and another `D2`, whose
+/// expression `D1 * 2` reads only `D1`: the configuration does not evaluate
+/// that expression, and its override states the stored `D2` as a literal in
+/// the part's length unit.
+#[test]
+fn a_value_its_expressions_references_do_not_explain_is_a_literal_override() {
+    use super::super::configurations::{parameter_overrides, Configurations};
+    use cadmpeg_ir::features::parameters::ParameterValue as Stored;
+
+    let mut ir = with_configured_radius("30mm", &[0.025, 0.025]);
+    let (radius, doubled) = (
+        parameter_named(&ir, "D1").id.clone(),
+        parameter_named(&ir, "D2").id.clone(),
+    );
+    let large = ir
+        .model
+        .configurations
+        .iter_mut()
+        .find(|configuration| configuration.name.as_deref() == Some("Large"))
+        .unwrap();
+    let Some(Stored::Length(stored_radius)) = large.parameter_values.get(&radius) else {
+        panic!("a length: {large:#?}");
+    };
+    assert!((stored_radius.get() - 25.0).abs() < 1e-9);
+    large.parameter_values.insert(
+        doubled.clone(),
+        Stored::Length(cadmpeg_ir::scalar::Length::new(70.0).unwrap()),
+    );
+    let mut configurations = Configurations {
+        records: ir
+            .design
+            .configurations
+            .iter()
+            .cloned()
+            .map(|mut record| {
+                record.overrides = cadmpeg_ir::design::configuration::Overrides::default();
+                record
+            })
+            .collect(),
+        active: ir.design.scopes[0].active_configuration.clone(),
+    };
+    parameter_overrides(
+        &mut configurations,
+        &ir.model.configurations,
+        &ir.design.parameters,
+        Some(UnitSymbol::Mm),
+    );
+
+    let large = configurations
+        .records
+        .iter()
+        .find(|record| record.name == "Large")
+        .unwrap();
+    assert!(!large.overrides.parameters.contains_key(&radius));
+    let entry = &large.overrides.parameters[&doubled];
+    let millimetres = crate::design_v11::parameters::number_node(70.0, Some(UnitSymbol::Mm));
+    assert_eq!(
+        entry.expression,
+        Some(Expression::Neutral(Neutral(millimetres.unwrap())))
+    );
+    let Some(ParameterValue::Number(value)) = &entry.value else {
+        panic!("a number: {entry:#?}");
+    };
+    assert!((value.get() - 70.0).abs() < 1e-9);
 }
 
 /// Each configuration that is not active is named for its unread

@@ -129,3 +129,53 @@ fn a_dimension_only_a_lane_scalar_states_keeps_its_native_reference() {
         .expect("the design restates the dimension under the decoder's id");
     assert_eq!(parameter.native_ref, legacy.native_ref);
 }
+
+/// The decoder's reading of the history may hold a feature the history does
+/// not: each parameter still takes its text from the history's record of its
+/// own feature.
+#[test]
+fn a_feature_only_the_reading_holds_leaves_each_parameter_its_own_record_text() {
+    let mut ir = decode(&with_history(
+        sldprt_with_body(&triangle_body()),
+        br#"<Keywords Name="Bracket">
+            <Extrusion Name="Boss" Type="BossExtrude" id="7">
+                <Dimension Name="D1">12.5mm</Dimension>
+            </Extrusion>
+        </Keywords>"#,
+        &[],
+    ));
+    let native = crate::native::SldprtNative::load_under(
+        ir.native.namespace("sldprt").unwrap(),
+        cadmpeg_core::decode::ResourceLimits::default(),
+        ir.tolerances.linear,
+    )
+    .unwrap();
+    let histories = native.feature_histories.clone();
+    let mut read = histories.clone();
+    let boss = read[0]
+        .features
+        .iter()
+        .position(|feature| feature.name == "Boss")
+        .unwrap();
+    let mut extra = read[0].features[boss].clone();
+    extra.id = format!("{}-extra", extra.id);
+    extra.name = "Extra".to_owned();
+    extra.parameters.clear();
+    read[0].features[boss].parameters.insert(
+        cadmpeg_core::text::NonBlankString::new("D1".to_owned()).unwrap(),
+        "99mm".to_owned(),
+    );
+    read[0].features.insert(boss, extra);
+    super::super::outside_history::project_from(
+        &mut ir,
+        &histories,
+        &read,
+        &native.feature_input_lanes,
+        super::super::super::EquationManagers::default(),
+    );
+
+    let Some(ParameterValue::Number(value)) = parameter_named(&ir, "D1").value else {
+        panic!("a number");
+    };
+    assert!((value.get() - 12.5).abs() < 1e-9, "{value:?}");
+}

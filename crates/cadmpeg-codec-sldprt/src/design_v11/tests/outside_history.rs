@@ -16,7 +16,7 @@ use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
-use super::{assert_no_design_findings, sketch_and_extrude, ROOT};
+use super::{assert_no_design_findings, sketch_and_extrude, sketch_and_extrude_with, ROOT};
 use crate::loss::SldprtLossCode;
 
 /// Project the design of `ir` again from `histories`, with the rollback at
@@ -41,6 +41,18 @@ pub(in crate::design_v11) fn project_with(
     lanes: &[crate::records::FeatureInputLane],
     equations: super::super::EquationManagers,
 ) -> Vec<LossNote> {
+    project_from(ir, histories, histories, lanes, equations)
+}
+
+/// [`project_with`] whose parameters come from `parameter_histories`, the
+/// histories with the decoder's readings of other records added.
+pub(in crate::design_v11) fn project_from(
+    ir: &mut CadIr,
+    histories: &[crate::records::FeatureHistory],
+    parameter_histories: &[crate::records::FeatureHistory],
+    lanes: &[crate::records::FeatureInputLane],
+    equations: super::super::EquationManagers,
+) -> Vec<LossNote> {
     ir.design = cadmpeg_ir::document::Design::default();
     ir.model
         .product_definitions
@@ -61,7 +73,7 @@ pub(in crate::design_v11) fn project_with(
         ir,
         super::super::Part {
             histories,
-            parameter_histories: histories,
+            parameter_histories,
             lanes,
             configuration_maps: &maps,
             bodies,
@@ -268,4 +280,85 @@ fn a_part_without_history_states_its_sketches_in_one_group_with_its_bodies_unpro
         "{losses:#?}"
     );
     assert_no_design_findings(&ir);
+}
+
+/// A sketch under the annotations node, which no timeline feature restates,
+/// is the operation of its own feature in the root `Group`: that feature is
+/// a design feature, and it owns the sketch's dimensions.
+#[test]
+fn a_sketch_under_the_annotations_node_is_a_group_member_that_owns_its_dimensions() {
+    let (mut ir, native) = sketch_and_extrude_with(
+        br#"<Keywords Name="Block">
+            <Feature Name="Front" id="2"/>
+            <Feature Name="Top" id="3"/>
+            <Feature Name="Right" id="4"/>
+            <Sketch Name="Origin" Type="OriginProfileFeature" id="106"/>
+            <Feature Name="Annotations" Type="Annotations" id="101">
+                <Sketch Name="Sketch1" Type="ProfileFeature" id="8">
+                    <Dimension Name="D1">50</Dimension>
+                    <Dimension Name="D2">30</Dimension>
+                    <Dimension Name="D3">&lt;MOD-DIAM&gt;10</Dimension>
+                </Sketch>
+            </Feature>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7">
+                <Dimension Name="D1">10</Dimension>
+            </Extrusion>
+        </Keywords>"#,
+        &[("moDetailCabinet_c", "Annotations", 101)],
+    );
+    let losses = project(
+        &mut ir,
+        &native.feature_histories,
+        &native.feature_input_lanes,
+    );
+
+    let sketch = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Sketch1"))
+        .unwrap()
+        .id
+        .clone();
+    let (_, members) = group(&ir);
+    assert!(
+        members.contains(&Member::Feature(sketch.clone())),
+        "{members:#?}"
+    );
+    for name in ["D1", "D2"] {
+        let legacy = ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.owner.as_ref() == Some(&sketch) && parameter.name == name)
+            .unwrap();
+        let parameter = ir
+            .design
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == legacy.id)
+            .unwrap_or_else(|| panic!("{name} is stated: {losses:#?}"));
+        assert_eq!(
+            parameter.owner,
+            Some(cadmpeg_ir::design::parameter::ParameterOwner::Feature(
+                sketch.clone()
+            ))
+        );
+        assert!(
+            !named(
+                &losses,
+                SldprtLossCode::DesignParameterOwnerOutsideTimeline,
+                legacy.id.as_str()
+            ),
+            "{losses:#?}"
+        );
+    }
+    assert!(
+        !named(
+            &losses,
+            SldprtLossCode::DesignFeatureOutsideTimeline,
+            sketch.as_str()
+        ),
+        "{losses:#?}"
+    );
 }

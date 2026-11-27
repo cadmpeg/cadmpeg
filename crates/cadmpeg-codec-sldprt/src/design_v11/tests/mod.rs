@@ -654,17 +654,25 @@ pub(super) fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
 /// sketch `Sketch1` and its extrude `Boss`, with the v10 records the decoder
 /// types them from.
 fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNative) {
-    let mut ir = part_with_history(
-        keywords,
-        &[
-            ("moRefPlane_c", "Front", 2),
-            ("moRefPlane_c", "Top", 3),
-            ("moRefPlane_c", "Right", 4),
-            ("moOriginProfileFeature_c", "Origin", 106),
-            ("moProfileFeature_c", "Sketch1", 8),
-            ("moExtrusion_c", "Boss", 7),
-        ],
-    );
+    sketch_and_extrude_with(keywords, &[])
+}
+
+/// [`sketch_and_extrude_from`] whose history also declares the tree nodes
+/// `nodes`, by class, name and id.
+fn sketch_and_extrude_with(
+    keywords: &[u8],
+    nodes: &[(&str, &str, u32)],
+) -> (CadIr, crate::native::SldprtNative) {
+    let mut classes = vec![
+        ("moRefPlane_c", "Front", 2),
+        ("moRefPlane_c", "Top", 3),
+        ("moRefPlane_c", "Right", 4),
+        ("moOriginProfileFeature_c", "Origin", 106),
+        ("moProfileFeature_c", "Sketch1", 8),
+        ("moExtrusion_c", "Boss", 7),
+    ];
+    classes.extend_from_slice(nodes);
+    let mut ir = part_with_history(keywords, &classes);
     let native = crate::native::SldprtNative::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),

@@ -65,6 +65,7 @@ use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::design::parameter::{
     DesignParameter, DimensionDisplay, ParameterDefinition, ParameterOwner, ParameterValue,
 };
+use cadmpeg_ir::design::projection::sketch::{driven_parameter, stored_quantity};
 use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
@@ -76,8 +77,11 @@ use crate::history::literals::dimension_display;
 use crate::history::parameters::eval::exact_integer_f64;
 use crate::history::parameters::{
     expression_identifier_tokens, native_parameter_is_length, parse_native_parameter_literal,
+    ExpressionIdentifier,
 };
-use crate::history::project::{neutral_parameter_id, projected_parameter_names};
+use crate::history::project::{
+    neutral_feature_id, neutral_parameter_id, projected_parameter_names,
+};
 use crate::loss::{NamedCount, SldprtLossCode};
 use crate::records::{
     ArchiveParameterClass, Feature, FeatureHistory, FeatureInputLane, FeatureInputScalarRole,
@@ -889,8 +893,10 @@ impl<'a> Entries<'a> {
 /// The entries of the features of `parameter_histories`, each id the
 /// decoder's own (its ordinal among the enriched feature's names), and the
 /// ids of the parameters of the features outside the timeline that are no
-/// equations folder. A dimension the history names keeps the history's
-/// feature and text.
+/// equations folder and no member of the sketches' `Group`. A dimension the
+/// history names keeps the history's feature and text: each enriched
+/// feature is paired with the feature of the same record in the same
+/// history of `histories`.
 fn entries<'a>(
     histories: &'a [FeatureHistory],
     parameter_histories: &'a [FeatureHistory],
@@ -904,47 +910,64 @@ fn entries<'a>(
     let mut entries = Vec::new();
     let mut outside = Vec::new();
     let mut user_names = HashSet::new();
-    let features =
-        |histories: &'a [FeatureHistory]| histories.iter().flat_map(|history| &history.features);
-    for (feature, enriched) in features(histories).zip(features(parameter_histories)) {
-        debug_assert_eq!(feature.id, enriched.id);
-        let owner = match timeline.features_by_record.get(&enriched.id) {
-            Some(owner) => Some(owner.clone()),
-            None if timeline.equation_records.contains(&enriched.id) => None,
-            None => {
-                for (ordinal, name) in projected_parameter_names(enriched).into_iter().enumerate() {
-                    if enriched.parameters.contains_key(name.as_str()) {
-                        outside.push(Outside {
-                            id: neutral_parameter_id(enriched, ordinal)?,
-                            beneath: under.contains(enriched.id.as_str()),
-                        });
+    for (index, history) in parameter_histories.iter().enumerate() {
+        let mut raw = HashMap::new();
+        for feature in histories
+            .get(index)
+            .into_iter()
+            .flat_map(|history| &history.features)
+        {
+            raw.entry(feature.id.as_str()).or_insert(feature);
+        }
+        for enriched in &history.features {
+            let feature = raw.get(enriched.id.as_str()).copied();
+            let owner = match timeline.features_by_record.get(&enriched.id) {
+                Some(owner) => Some(owner.clone()),
+                None if timeline.equation_records.contains(&enriched.id) => None,
+                None => match neutral_feature_id(&enriched.id)
+                    .ok()
+                    .filter(|id| timeline.grouped.contains(id))
+                {
+                    Some(grouped) => Some(grouped),
+                    None => {
+                        for (ordinal, name) in
+                            projected_parameter_names(enriched).into_iter().enumerate()
+                        {
+                            if enriched.parameters.contains_key(name.as_str()) {
+                                outside.push(Outside {
+                                    id: neutral_parameter_id(enriched, ordinal)?,
+                                    beneath: under.contains(enriched.id.as_str()),
+                                });
+                            }
+                        }
+                        continue;
                     }
-                }
-                continue;
-            }
-        };
-        for (ordinal, name) in projected_parameter_names(enriched).into_iter().enumerate() {
-            let (text, added) = match feature.parameters.get(name.as_str()) {
-                Some(text) => (text, false),
-                None => match enriched.parameters.get(name.as_str()) {
-                    Some(text) => (text, true),
-                    None => continue,
                 },
             };
-            if owner.is_none() && !user_names.insert(name.clone()) {
-                continue;
+            for (ordinal, name) in projected_parameter_names(enriched).into_iter().enumerate() {
+                let (text, added) =
+                    match feature.and_then(|feature| feature.parameters.get(name.as_str())) {
+                        Some(text) => (text, false),
+                        None => match enriched.parameters.get(name.as_str()) {
+                            Some(text) => (text, true),
+                            None => continue,
+                        },
+                    };
+                if owner.is_none() && !user_names.insert(name.clone()) {
+                    continue;
+                }
+                let Some(key) = NonBlankString::new(name) else {
+                    continue;
+                };
+                entries.push(Entry {
+                    feature: feature.unwrap_or(enriched),
+                    owner: owner.clone(),
+                    name: key,
+                    id: neutral_parameter_id(enriched, ordinal)?,
+                    text,
+                    added,
+                });
             }
-            let Some(key) = NonBlankString::new(name) else {
-                continue;
-            };
-            entries.push(Entry {
-                feature,
-                owner: owner.clone(),
-                name: key,
-                id: neutral_parameter_id(enriched, ordinal)?,
-                text,
-                added,
-            });
         }
     }
     Ok((entries, outside))
@@ -1336,29 +1359,58 @@ fn added(entry: &Entry<'_>, readings: &Readings<'_>) -> Reading {
     }
 }
 
-/// The note naming, with its stored expression, each reference-dimension
-/// parameter of `decoded` that no parameter of `stated` states: no sketch
-/// dimension of the design binds it, and a `Driven` parameter is bound by
-/// its dimension (§5.12).
+/// States in `stated`, for each reference-dimension parameter of `decoded`
+/// that no parameter of `stated` states, a `Driven` parameter of its owner,
+/// where that owner is a feature of `features` and the parameter's record
+/// stores a length, an angle or a real: a model parameter that no dimension
+/// binds is legal (§5.12). Its value is the stored value, with the radius or
+/// diameter display its record states, and its name the record's where no
+/// other parameter of the owner has it. Returns the note naming, with its
+/// stored expression, each other one.
 pub(super) fn references_unbound(
     decoded: &[cadmpeg_ir::features::parameters::DesignParameter],
-    stated: &[DesignParameter],
+    stated: &mut Vec<DesignParameter>,
+    features: &HashSet<&FeatureId>,
+    scope: &ProductDefinitionId,
 ) -> Option<LossNote> {
-    let stated = stated
+    use cadmpeg_ir::features::parameters::DimensionDisplay as V10;
+    let ids = stated
         .iter()
-        .map(|parameter| &parameter.id)
+        .map(|parameter| parameter.id.clone())
         .collect::<HashSet<_>>();
     let mut unbound = NamedCount::default();
     for parameter in decoded.iter().filter(|parameter| {
-        is_reference_relation_parameter(parameter) && !stated.contains(&parameter.id)
+        is_reference_relation_parameter(parameter) && !ids.contains(&parameter.id)
     }) {
-        unbound.push(&format!("{} = {}", parameter.id, parameter.expression));
+        let owner = parameter
+            .owner
+            .as_ref()
+            .filter(|owner| features.contains(owner));
+        let (Some(owner), Some(quantity)) = (owner, stored_quantity(decoded, &parameter.id)) else {
+            unbound.push(&format!("{} = {}", parameter.id, parameter.expression));
+            continue;
+        };
+        let owned = ParameterOwner::Feature(owner.clone());
+        let name = NonBlankString::new(parameter.name.clone()).filter(|name| {
+            stated.iter().all(|other| {
+                other.owner.as_ref() != Some(&owned) || other.name.as_ref() != Some(name)
+            })
+        });
+        let mut driven = driven_parameter(decoded, &parameter.id, quantity, scope, owner, name);
+        driven.display = parameter
+            .display
+            .filter(|_| quantity == Quantity::LENGTH)
+            .map(|display| match display {
+                V10::Diameter => DimensionDisplay::Diameter,
+                V10::Radius => DimensionDisplay::Radius,
+            });
+        stated.push(driven);
     }
     (!unbound.is_empty()).then(|| {
         SldprtLossCode::DesignParameterReferenceUnbound.note(format!(
             "{} reference-dimension parameters state no design parameter: no sketch dimension \
-             of the design binds them, and a driven parameter is bound by its dimension: \
-             {unbound}",
+             of the design binds them, and their owner is no design feature or their record \
+             stores no length, angle or real: {unbound}",
             unbound.count()
         ))
     })
@@ -1368,30 +1420,30 @@ pub(super) fn references_unbound(
 /// it, where that value differs at [`LITERAL_DIGITS`] significant digits
 /// from `active`, the value the active configuration stores, else from the
 /// parameter's (§5.11). A parameter whose expression is one literal has the
-/// stored value as a literal in the same unit; one whose neutral expression
-/// references nothing, which the stored value then replaces, has it as the
-/// literal a record stores with no text, in the length unit `length_unit`;
-/// any other expression keeps its text, and the override states the value
-/// alone, a cache.
+/// stored value as a literal in the same unit. One whose expression reads
+/// only parameters for which `unchanged` holds, those whose value the
+/// configuration does not change, does not evaluate that expression in the
+/// configuration: the stored value replaces it, as the literal a record
+/// stores with no text, in the length unit `length_unit`. Any other
+/// expression keeps its text, and the override states the value alone, a
+/// cache.
 pub(super) fn configuration_override(
     parameter: &DesignParameter,
     stored: cadmpeg_ir::features::parameters::ParameterValue,
     active: Option<cadmpeg_ir::features::parameters::ParameterValue>,
     length_unit: Option<UnitSymbol>,
+    unchanged: &dyn Fn(&ParameterId) -> bool,
 ) -> Option<ParameterOverride> {
     let ParameterDefinition::Expression(expression) = &parameter.definition else {
         return None;
     };
     let value = typed_cache(&parameter.kind, stored)?;
-    let base = active
-        .and_then(|active| typed_cache(&parameter.kind, active))
-        .or_else(|| parameter.value.clone());
-    if base.is_some_and(|base| same_value(&base, &value)) {
+    if compared(parameter, active).is_some_and(|base| same_value(&base, &value)) {
         return None;
     }
     let expression = literal_like(expression, &value)
         .or_else(|| {
-            references_nothing(expression)
+            reads_unchanged(expression, unchanged)
                 .then(|| stored_literal(&parameter.kind, &value, length_unit))
                 .flatten()
         })
@@ -1402,20 +1454,66 @@ pub(super) fn configuration_override(
     })
 }
 
-/// Whether `expression` is neutral and no node of it reads a value other
-/// than its own literals: no reference, measure, law parameter or bend
-/// variable.
-fn references_nothing(expression: &Expression) -> bool {
-    let Expression::Neutral(Neutral(node)) = expression else {
-        return false;
+/// Whether a configuration that stores `stored` for `parameter` stores, at
+/// [`LITERAL_DIGITS`] significant digits, the value it is compared with (see
+/// [`configuration_override`]). A stored value that is not of the
+/// parameter's kind is not known to be the same.
+pub(super) fn stores_same(
+    parameter: &DesignParameter,
+    stored: cadmpeg_ir::features::parameters::ParameterValue,
+    active: Option<cadmpeg_ir::features::parameters::ParameterValue>,
+) -> bool {
+    typed_cache(&parameter.kind, stored)
+        .zip(compared(parameter, active))
+        .is_some_and(|(value, base)| same_value(&base, &value))
+}
+
+/// The value a configuration's stored value for `parameter` is compared
+/// with: `active`, the active configuration's, typed as the parameter's
+/// kind, else the parameter's own.
+fn compared(
+    parameter: &DesignParameter,
+    active: Option<cadmpeg_ir::features::parameters::ParameterValue>,
+) -> Option<ParameterValue> {
+    active
+        .and_then(|active| typed_cache(&parameter.kind, active))
+        .or_else(|| parameter.value.clone())
+}
+
+/// Whether every value `expression` reads other than its own literals is a
+/// parameter of this document, named through no occurrence, for which
+/// `unchanged` holds. A neutral expression reads no measure, law parameter
+/// or bend variable; a source expression has tokens, and its text reads no
+/// name the decoder did not resolve.
+fn reads_unchanged(expression: &Expression, unchanged: &dyn Fn(&ParameterId) -> bool) -> bool {
+    let reads = |reference: &ParameterRef| match reference {
+        ParameterRef {
+            target: RefTarget::Parameter(id),
+            through: None,
+        } => unchanged(id),
+        _ => false,
+    };
+    let node = match expression {
+        Expression::Neutral(Neutral(node)) => node,
+        Expression::Source { tokens, .. } => {
+            return !tokens.is_empty()
+                && tokens.iter().all(|token| match token {
+                    ExpressionToken::Reference(reference) => reads(reference),
+                    ExpressionToken::Text(text) => expression_identifier_tokens(text)
+                        .is_some_and(|names| names.iter().all(ExpressionIdentifier::is_syntax)),
+                });
+        }
     };
     let mut stack = vec![node];
     while let Some(node) = stack.pop() {
-        if matches!(
-            node,
-            Node::Reference(_) | Node::Measure(_) | Node::LawParameter | Node::Bend(_)
-        ) {
-            return false;
+        match node {
+            Node::Reference(reference) => {
+                if !reads(reference) {
+                    return false;
+                }
+            }
+            Node::Measure(_) | Node::LawParameter | Node::Bend(_) => return false,
+            _ => {}
         }
         stack.extend(node.operands());
     }
