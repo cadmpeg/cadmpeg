@@ -23,29 +23,28 @@ mod sequential {
     }
 
     pub(crate) struct ScopedJoinHandle<'scope, T> {
-        result: T,
+        result: std::thread::Result<T>,
         scope: PhantomData<&'scope ()>,
     }
 
     impl<'scope> Scope<'scope, '_> {
-        // `&self` and the `Result` are `std::thread::scope`'s own signatures.
-        #[allow(clippy::unused_self)]
         pub(crate) fn spawn<F, T>(&'scope self, work: F) -> ScopedJoinHandle<'scope, T>
         where
             F: FnOnce() -> T + Send + 'scope,
             T: Send + 'scope,
         {
+            // `&self` is `std::thread::scope`'s own signature.
+            let Self { scope: _, env: _ } = self;
             ScopedJoinHandle {
-                result: work(),
+                result: Ok(work()),
                 scope: PhantomData,
             }
         }
     }
 
     impl<T> ScopedJoinHandle<'_, T> {
-        #[allow(clippy::unnecessary_wraps)]
         pub(crate) fn join(self) -> std::thread::Result<T> {
-            Ok(self.result)
+            self.result
         }
     }
 
