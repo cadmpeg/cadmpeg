@@ -2616,18 +2616,6 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** The decoder keeps a native mesh source selection and reports `feature.mesh-import-empty-source-assumed`. Unjoined nonempty body runs report `feature.mesh-import-tessellations-unresolved`. Unreadable source frames report `feature.mesh-import-source-unparsed`. DR-292 tracks the operation GUID bindings.
 
-### DR-1070. Import placement of a moved mesh body
-
-**Question.** Does a `Base Mesh Feature` store the placement of its mesh at insert apart from the mesh-body matrices?
-
-**Known.** The two equal matrices of a mesh-body record combine the import placement with each later `Modify` of the body. A mesh inserted at the origin with millimetre units stores the f64 nearest f32 `0.1` on the diagonal; a later `Modify` adds its translation to column 3. No other record of the Design stream stores a matrix with that scale. The decoder states the current mesh and reports `feature.mesh-import-placement-combined` with the `Modify` features that moved it.
-
-**Need.** A save that places the mesh at insert with a known translation and rotation, then moves it with `Modify`, with the `Base Mesh Feature` scope and the mesh-body record compared against an unplaced insert.
-
-**Conflict.** None.
-
-**Note.** The decoder reports `feature.mesh-import-placement-combined`.
-
 ### DR-473. Geometry states of mesh operation scopes
 
 **Question.** Which tessellation does each output-geometry and input-geometry reference of a mesh operation scope select?
