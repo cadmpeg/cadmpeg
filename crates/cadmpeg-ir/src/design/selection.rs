@@ -71,7 +71,7 @@ pub trait Keyed {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(
     try_from = "Vec<T>",
-    bound(deserialize = "T: Deserialize<'de> + Keyed, O: MemberOrder")
+    bound(deserialize = "T: ::serde::de::DeserializeOwned + Keyed, O: MemberOrder")
 )]
 pub struct Members<T, O> {
     items: Vec<T>,
@@ -145,7 +145,7 @@ impl<T: Keyed, O: MemberOrder> TryFrom<Vec<T>> for Members<T, O> {
             && items.windows(2).any(|pair| pair[0].key() > pair[1].key())
             && !cadmpeg_core::read_session::repair(
                 cadmpeg_core::read_session::Repair::Spelling,
-                || "an unordered member list states its members out of identity-key order".into(),
+                &|| "an unordered member list states its members out of identity-key order".into(),
             )
         {
             return Err("an unordered member list states its members out of identity-key order");
@@ -336,9 +336,7 @@ impl Ord for WitnessKey<'_> {
     }
 }
 
-/// The reading form of [`Picked`]. Each pick nested in its domain has
-/// passed the pick ceiling; the conversion admits this one level above the
-/// deepest of them.
+/// The reading form of [`Picked`].
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]

@@ -45,7 +45,7 @@ fn write(decoded: &EditableDecodeResult) -> (ExportReport, Vec<u8>) {
     let mut output = Vec::new();
     let report = crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .unwrap()
     .write_to(&mut output)
@@ -68,10 +68,10 @@ fn write_without_source_image(decoded: &mut EditableDecodeResult) -> (ExportRepo
     crate::test_support::make_source_image_unavailable(decoded.source_fidelity_mut());
     let mut output = Vec::new();
     let report = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .unwrap()
         .write_to(&mut output)
         .unwrap();
@@ -489,7 +489,7 @@ fn an_unedited_write_without_a_sidecar_reports_no_stale_solid() {
     let decoded = decode_without_envelope(&source);
     assert!(has_synthesized_snapshot(&decoded));
     let report = SldprtCodec
-        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(decoded.ir(), None))
         .unwrap()
         .write_to(&mut Vec::new())
         .unwrap();
@@ -795,7 +795,7 @@ fn a_dependency_its_operands_do_not_state_is_written_and_named() {
     let ir = decoded.ir().clone();
     let report = crate::test_support::plan_fixture_with_native_envelope(
         cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(decoded.source_fidelity())),
-        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
     )
     .unwrap()
     .write_to(&mut Vec::new())

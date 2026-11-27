@@ -67,6 +67,7 @@ impl TryFrom<u8> for AttributeField {
 #[cfg(test)]
 mod tests {
     use super::AttributeField;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn declared_fields_preserve_numeric_wire_and_reject_unknown_codes() {
@@ -74,7 +75,7 @@ mod tests {
             let wire = code.to_string();
             let field: AttributeField = serde_json::from_str(&wire).unwrap();
             assert_eq!(field.code(), code);
-            assert_eq!(serde_json::to_string(&field).unwrap(), wire);
+            assert_eq!(json::to_string(&field).unwrap(), wire);
         }
         for code in [11, 255] {
             assert!(serde_json::from_str::<AttributeField>(&code.to_string()).is_err());

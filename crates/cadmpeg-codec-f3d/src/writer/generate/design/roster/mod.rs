@@ -23,10 +23,12 @@ mod views;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::record_residual_unavailable;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
 
 use super::frames::DesignRecords;
+use super::{Culprit, Part, RecordFailure};
 use crate::records::parameters::DesignParameterDiscriminator;
 use crate::records::references::DesignClassTag;
 use crate::writer::generate::presentation::TypeRow;
@@ -276,20 +278,45 @@ impl<'a> ItemRecords<'a> {
         }
     }
 
-    /// Every record of the item.
-    fn write(&self, ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), CodecError> {
-        #[cfg(test)]
-        if let Some(error) = super::requested_item_failure() {
-            return Err(error);
-        }
+    /// The feature the item writes.
+    fn feature(&self) -> &'a FeatureId {
         match &self.kind {
-            ItemKind::Extrude { plan, records } => {
-                extrude::write(ctx, plan, records, &self.place, out)
-            }
-            ItemKind::Revolve { plan, records } => {
-                revolve::write(ctx, plan, records, &self.place, out)
-            }
+            ItemKind::Extrude { plan, .. } => plan.feature,
+            ItemKind::Revolve { plan, .. } => plan.feature,
         }
+    }
+
+    /// Every record of the item. A failure names the item.
+    fn write(&self, ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), RecordFailure> {
+        let mut written = || {
+            #[cfg(test)]
+            if let Some(error) = super::requested_record_failure(&format_args!(
+                "{}{}",
+                if self.place.rolled().is_some() {
+                    "rolled "
+                } else {
+                    ""
+                },
+                self.feature()
+            )) {
+                return Err(error);
+            }
+            match &self.kind {
+                ItemKind::Extrude { plan, records } => {
+                    extrude::write(ctx, plan, records, &self.place, out)
+                }
+                ItemKind::Revolve { plan, records } => {
+                    revolve::write(ctx, plan, records, &self.place, out)
+                }
+            }
+        };
+        written().map_err(|error| RecordFailure {
+            error,
+            culprit: Some(Culprit::Item {
+                feature: self.feature().clone(),
+                rolled: self.place.rolled().is_some(),
+            }),
+        })
     }
 
     /// The values the writer chooses where the specification leaves the
@@ -795,13 +822,15 @@ impl Context<'_> {
     /// at `body` in [`Self::bodies`] names: the scope of the geometry item
     /// whose state makes it, else the `Base Feature` scope.
     pub(super) fn item_scope(&self, body: usize) -> u32 {
-        self.roster
-            .items
-            .iter()
-            .find(
-                |item| matches!(item.place.standing, Standing::Built(state) if state.body == body),
-            )
-            .map_or(SCOPE, ItemRecords::scope)
+        self.built(body).map_or(SCOPE, ItemRecords::scope)
+    }
+
+    /// The geometry item whose state makes the result body at `body` in
+    /// [`Self::bodies`].
+    fn built(&self, body: usize) -> Option<&ItemRecords<'_>> {
+        self.roster.items.iter().find(
+            |item| matches!(item.place.standing, Standing::Built(state) if state.body == body),
+        )
     }
 
     /// The number of result bodies as a u32.
@@ -854,21 +883,24 @@ pub(super) fn archive(
     ctx: &Context<'_>,
     mut records: DesignRecords,
     streams: Option<(&[u8], &[u8])>,
-) -> Result<(Members, Vec<LossNote>), CodecError> {
+) -> Result<(Members, Vec<LossNote>), RecordFailure> {
     if streams.is_some() == ctx.roster.bodies.is_empty() {
         return Err(CodecError::malformed(format_args!(
             "a design with {} result bodies and {} B-rep streams",
             ctx.roster.bodies.len(),
             if streams.is_some() { "its" } else { "no" }
-        )));
+        ))
+        .into());
     }
     fixed::write(ctx, &mut records)?;
     units::write(ctx, &mut records)?;
     views::write(ctx, &mut records)?;
     component::write(ctx, &mut records)?;
     bodies::write(ctx, &mut records)?;
-    planes::write(ctx, &mut records)?;
-    sketches::write(ctx, ctx.sketches, &mut records)?;
+    planes::write(ctx, &mut records)
+        .map_err(|failure| failure.or_named(|| Culprit::Part(Part::Planes)))?;
+    sketches::write(ctx, ctx.sketches, &mut records)
+        .map_err(|failure| failure.or_named(|| Culprit::Part(Part::Sketches)))?;
     for item in ctx.roster.geometry() {
         item.write(ctx, &mut records)?;
     }

@@ -48,7 +48,7 @@ fn appearance(schema: Option<&str>) -> Appearance {
 fn assert_loss(ir: &CadIr, code: SldprtLossCode, prefix: &str) {
     let plan = crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .unwrap();
     let loss = plan
@@ -121,7 +121,7 @@ fn unbound_appearance_without_material_schema_has_counted_export_loss() {
     ir.model.appearances[0].schema = Some("moVisualProperties_c".into());
     let plan = crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .unwrap();
     assert!(!plan
@@ -155,7 +155,7 @@ fn tessellation_body_faces_and_deflection_each_have_export_loss() {
     ir.model.tessellations.push(mesh);
     let plan = crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .unwrap();
     for field in ["body binding", "face binding", "chordal deflection"] {
@@ -172,7 +172,13 @@ fn generated_wire_and_general_bodies_refuse_solid_lump_conversion() {
     for kind in [BodyKind::Wire, BodyKind::General] {
         let mut ir = cube();
         ir.geometry.bodies[0].kind = kind;
-        let error = crate::writer::brep_body(&ir, 0.001, false).unwrap_err();
+        let error = crate::writer::brep_body(
+            &ir,
+            0.001,
+            cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
+            false,
+        )
+        .unwrap_err();
         assert!(error.to_string().contains("as a solid lump"));
     }
 }
@@ -205,7 +211,13 @@ fn regenerated_shell_wire_members_and_pcurve_uses_have_counted_losses() {
     ir.geometry.pcurves.push(pcurve);
     // The topology writer ignores the shell members and the coedge relation;
     // accounting belongs to that write, irrespective of neutral admission.
-    crate::writer::brep_body(&ir, 0.001, false).unwrap();
+    crate::writer::brep_body(
+        &ir,
+        0.001,
+        cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
+        false,
+    )
+    .unwrap();
     let losses = super::super::accounting::losses(&ir, &CodecDigests::new(), true);
     for (code, field) in [
         (
@@ -270,9 +282,7 @@ fn a_body_on_an_opaque_carrier_without_a_retained_partition_is_omitted() {
         .id
         .as_str()
         .to_owned();
-    let plan = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .unwrap();
+    let plan = SldprtCodec.plan(EncodeInput::new(&ir, None)).unwrap();
     assert!(plan.report().losses.iter().any(|loss| {
         loss.code.local_code() == "writer.bodies-omitted"
             && loss.message.contains(&format!("edge {edge}"))
@@ -490,7 +500,7 @@ fn a_parameter_without_a_feature_record_is_dropped_with_a_loss() {
 
     let mut output = Vec::new();
     let report = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None))
         .unwrap()
         .write_to(&mut output)
         .unwrap();

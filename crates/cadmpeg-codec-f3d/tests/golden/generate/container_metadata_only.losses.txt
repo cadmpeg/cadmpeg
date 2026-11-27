@@ -1,2 +1,1 @@
-f3d/source.preserved-image-unavailable Blocking preserved F3D source image is unavailable; regenerated from IR
 export/output.empty Warning the F3D design is written with no body: the document holds no geometry the writer can encode

@@ -31,12 +31,16 @@ fn closed_planar_copious_curve_over_the_pair_budget_is_skipped_with_a_loss() {
             count,
         ),
     };
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file(&[ring(32_770), ring(5)])),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+    // 9² pairs exceed the pass's 80, and the 5² of the second ring fit.
+    let result = crate::reader::decode_with_test_limits(
+        &owned_test_file(&[ring(9), ring(5)]),
+        &DecodeOptions::default(),
+        crate::reader::DecodeLimits::with_projection(crate::entities::geometry::ProjectionLimits {
+            planar_point_pairs: 80,
+            ..crate::entities::geometry::ProjectionLimits::DEFAULT
+        }),
+    )
+    .unwrap();
 
     let curve_ids: Vec<_> = result
         .ir()
@@ -49,7 +53,7 @@ fn closed_planar_copious_curve_over_the_pair_budget_is_skipped_with_a_loss() {
     assert!(curve_ids.contains(&"iges:model:curve#D3"), "{curve_ids:?}");
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::GeometryNotProjected.kind()
-            && loss.message.contains("32770 points")
+            && loss.message.contains("9 points")
             && loss.message.contains("MAX_PLANAR_POINT_PAIRS")
     }));
 }
@@ -484,14 +488,25 @@ fn semantic_copious_projection_uses_entity_boundary_before_generic_candidate() {
 #[test]
 fn strict_decode_refuses_an_unusable_required_copious_geometry_record() {
     let bytes = copious_data_file(11, b"106,2,2,0,0,0,1,0,0;", "00000000");
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir().geometry.curves.is_empty());
+    assert_eq!(
+        crate::test_support::code_count(result.report(), IgesLossCode::GeometryNotProjected),
+        1
+    );
+    crate::test_support::assert_gives_up(result.report(), &[("entity", 1)]);
+
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let failure = IgesCodec
-        .decode(&mut Cursor::new(bytes), &options)
-        .unwrap_err();
-    assert!(
-        matches!(failure, cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } if rejection.loss().code == IgesLossCode::GeometryNotProjected.kind())
-    );
+    match IgesCodec.decode(&mut Cursor::new(bytes), &options) {
+        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }) => {
+            crate::test_support::assert_given_up(rejection.loss(), ("entity", 1));
+        }
+        other => panic!("expected a strict refusal, got {other:?}"),
+    }
 }
 
 #[test]

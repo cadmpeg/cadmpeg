@@ -17,7 +17,8 @@ use crate::design::selection::{
 use super::super::constructions::input_selections;
 use super::super::matching::{Matcher, StateTopology};
 use super::super::sheets;
-use super::{all_entities, entities, resolved_entities, straight_length, Entity, Probe};
+use super::apart::straight_length;
+use super::{all_entities, entities, resolved_entities, Entity, Probe};
 
 /// The bodies and faces an operand selection resolves to in a state.
 struct Operands<'a> {
@@ -289,11 +290,13 @@ impl<'a> Probe<'_, 'a> {
         }
         let mut short = BTreeMap::new();
         for state in self.states(&corners.at) {
-            let Some(thinnest) =
-                sheets::entering(self.index, self.feature.id.as_str(), state.configuration)
-                    .and_then(|entering| entering.thicknesses)
-                    .and_then(|thicknesses| thicknesses.into_iter().reduce(f64::min))
-            else {
+            let Some(thinnest) = sheets::entering(
+                self.index,
+                self.feature.id.as_str(),
+                sheets::Reading::of(state.configuration),
+            )
+            .and_then(|entering| entering.thicknesses)
+            .and_then(|thicknesses| thicknesses.into_iter().reduce(f64::min)) else {
                 continue;
             };
             let Some(topology) = state.matcher.topology() else {

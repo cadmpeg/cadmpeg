@@ -272,7 +272,8 @@ pub enum TargetRefusalKind {
     },
     /// A catalog target was selected explicitly but this input cannot reach it.
     ExplicitUnavailable {
-        /// Canonical catalog target selected by the token.
+        /// The row the token names: a catalog target, or a replay row the
+        /// writer reaches only from a source of that dialect.
         target: DialectId,
         /// Token supplied by the caller, retained verbatim.
         requested: TargetToken,
@@ -286,16 +287,11 @@ pub enum TargetRefusalKind {
         /// Input-conditioned reason the writer cannot preserve it.
         reason: String,
     },
-    /// Same-format inheritance found source metadata without a dialect.
-    UnrecordedSource,
-    /// Inheritance had no same-format source and the catalog declares no default.
-    NoDefault {
-        /// Why no same-format source identity was available to inherit.
-        source: DefaultSource,
-    },
-    /// A cross-format default was selected but this input cannot reach it.
+    /// Inheritance with no recorded source dialect selected the catalog
+    /// default, or the newest row of a catalog that declares no default, and
+    /// this input cannot reach it.
     DefaultUnavailable {
-        /// Canonical catalog default.
+        /// The selected catalog row.
         target: DialectId,
         /// Why the catalog default, rather than source inheritance, was selected.
         source: DefaultSource,
@@ -331,7 +327,8 @@ impl Serialize for TargetRefusal {
     }
 }
 
-/// Why inheritance must select an encoder catalog default.
+/// Why inheritance selected the catalog default, or the newest row of a
+/// catalog that declares no default.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case", tag = "kind", content = "value")]
 pub enum DefaultSource {
@@ -339,6 +336,8 @@ pub enum DefaultSource {
     NoSource,
     /// The document's source belongs to another format.
     ForeignFormat(String),
+    /// The document's source is of this format and records no dialect.
+    UnrecordedDialect,
 }
 
 impl TargetRefusal {
@@ -406,22 +405,6 @@ impl fmt::Display for TargetRefusal {
                 f,
                 "{format} cannot preserve source dialect {source}: {reason}"
             )?,
-            TargetRefusalKind::UnrecordedSource => write!(
-                f,
-                "{format} cannot inherit a write target: the {format} source records no dialect; name an explicit target"
-            )?,
-            TargetRefusalKind::NoDefault {
-                source: DefaultSource::ForeignFormat(source_format),
-            } => write!(
-                f,
-                "{format} cannot inherit a write target from source format {source_format}: this encoder declares no cross-format default"
-            )?,
-            TargetRefusalKind::NoDefault {
-                source: DefaultSource::NoSource,
-            } => write!(
-                f,
-                "{format} cannot select an inherited write target: the document records no source format and this encoder declares no default"
-            )?,
             TargetRefusalKind::DefaultUnavailable {
                 target,
                 source,
@@ -476,8 +459,8 @@ mod tests {
         );
 
         assert_eq!(
-            serde_json::to_value(refusal).expect("target refusal serializes"),
-            serde_json::json!({
+            crate::serde_erase::json::to_value(refusal).expect("target refusal serializes"),
+            crate::json!({
                 "format": "fcstd",
                 "refusal": {
                     "kind": "explicit_unavailable",
@@ -506,8 +489,8 @@ mod tests {
     fn empty_catalog_refusal_retains_its_format() {
         let refusal = TargetRefusal::unknown_explicit("future", TargetCatalog::empty("cadir"));
         assert_eq!(
-            serde_json::to_value(&refusal).expect("serialize target refusal"),
-            serde_json::json!({
+            crate::serde_erase::json::to_value(&refusal).expect("serialize target refusal"),
+            crate::json!({
                 "format": "cadir",
                 "refusal": {"kind": "unknown_explicit", "requested": "future"},
                 "available": []
@@ -597,43 +580,24 @@ mod tests {
     }
 
     #[test]
-    fn missing_default_names_a_foreign_source_without_inventing_a_dialect() {
+    fn an_unreachable_row_for_an_unrecorded_source_names_the_missing_dialect() {
         let refusal = TargetRefusal::new(
-            TargetRefusalKind::NoDefault {
-                source: DefaultSource::ForeignFormat("step".into()),
+            TargetRefusalKind::DefaultUnavailable {
+                target: TARGETS[0].id.clone(),
+                source: DefaultSource::UnrecordedDialect,
+                reason: "no Document.xml is retained".into(),
             },
             TargetCatalog::new(TARGETS, None),
         );
 
         assert_eq!(
-            ({
-                let wire = serde_json::to_value(&refusal).expect("serialize refusal");
-                wire["refusal"]
-                    .get("requested")
-                    .or_else(|| wire["refusal"].get("source"))
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::to_owned)
-            })
-            .as_deref(),
-            None
+            crate::serde_erase::json::to_value(&refusal).expect("serialize refusal")["refusal"]
+                ["source"],
+            crate::json!({"kind": "unrecorded_dialect"})
         );
-        assert_eq!(refusal.available(), TARGETS);
         assert_eq!(
             refusal.to_string(),
-            "fcstd cannot inherit a write target from source format step: this encoder declares no cross-format default; available targets: fcstd:schema-4"
-        );
-    }
-
-    #[test]
-    fn unrecorded_same_format_source_is_not_a_missing_default() {
-        let refusal = TargetRefusal::new(
-            TargetRefusalKind::UnrecordedSource,
-            TargetCatalog::new(TARGETS, None),
-        );
-
-        assert_eq!(
-            refusal.to_string(),
-            "fcstd cannot inherit a write target: the fcstd source records no dialect; name an explicit target; available targets: fcstd:schema-4"
+            "fcstd cannot write default target fcstd:schema-4: no Document.xml is retained; available targets: fcstd:schema-4"
         );
     }
 }

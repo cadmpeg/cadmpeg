@@ -40,6 +40,7 @@ fn main() -> Result<(), SeedError> {
     generate_nx_submodule_seeds()?;
     generate_inventor_submodule_seeds()?;
     generate_rhino_submodule_seeds()?;
+    generate_ironcad_submodule_seeds()?;
     println!("All sub-module seeds generated.");
     Ok(())
 }
@@ -506,6 +507,7 @@ fn generate_inventor_submodule_seeds() -> Result<(), SeedError> {
         "minimal",
         &synthetic_solidedge_seed()?,
     )?;
+    write_seed("seeds/ironcad_codec", "minimal", &synthetic_ironcad_seed()?)?;
     write_seed("seeds/compound_snapshot", "minimal", &cfb)?;
     write_seed(
         "seeds/inventor_database",
@@ -768,6 +770,80 @@ fn synthetic_solidedge_seed() -> std::io::Result<Vec<u8>> {
     Ok(file)
 }
 
+/// A scene compound file: the `Brep Data`, `Shape Data`, and `Document Data`
+/// root streams below a root storage that carries the scene class identifier.
+fn synthetic_ironcad_seed() -> std::io::Result<Vec<u8>> {
+    const SECTOR: usize = 512;
+    const FREE: u32 = 0xffff_ffff;
+    const END: u32 = 0xffff_fffe;
+    const FAT: u32 = 0xffff_fffd;
+    let mut file = vec![0_u8; 1536];
+    file[..8].copy_from_slice(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+    put_u16(&mut file, 24, 0x003e);
+    put_u16(&mut file, 26, 3);
+    put_u16(&mut file, 28, 0xfffe);
+    put_u16(&mut file, 30, 9);
+    put_u16(&mut file, 32, 6);
+    put_u32(&mut file, 44, 1);
+    put_u32(&mut file, 48, 0);
+    put_u32(&mut file, 56, 4096);
+    put_u32(&mut file, 60, END);
+    put_u32(&mut file, 68, END);
+    for index in 0..109 {
+        put_u32(&mut file, 76 + index * 4, FREE);
+    }
+    put_u32(&mut file, 76, 1);
+
+    let directory = sector_mut(&mut file, SECTOR, 0);
+    for entry in directory.chunks_exact_mut(128) {
+        entry.fill(0);
+        entry[68..80].fill(0xff);
+    }
+    directory_entry(
+        directory,
+        0,
+        DirectoryEntry {
+            name: "Root Entry",
+            object_type: 5,
+            left: FREE,
+            right: FREE,
+            child: 2,
+            start_sector: END,
+            size: 0,
+        },
+    )?;
+    // Scene root class 0002c52b-0000-0000-c000-000000000046, first three fields little-endian.
+    directory[80..96].copy_from_slice(&[
+        0x2b, 0xc5, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x46,
+    ]);
+    for (index, name, left, right) in [
+        (1, "Brep Data", FREE, FREE),
+        (2, "Shape Data", 1, 3),
+        (3, "Document Data", FREE, FREE),
+    ] {
+        directory_entry(
+            directory,
+            index,
+            DirectoryEntry {
+                name,
+                object_type: 2,
+                left,
+                right,
+                child: FREE,
+                start_sector: END,
+                size: 0,
+            },
+        )?;
+    }
+
+    let fat = sector_mut(&mut file, SECTOR, 1);
+    fat.fill(0xff);
+    put_u32(fat, 0, END);
+    put_u32(fat, slot_offset(1), FAT);
+    Ok(file)
+}
+
 fn synthetic_registry_seed() -> Vec<u8> {
     let mut bytes = Vec::new();
     push_u32(&mut bytes, 0);
@@ -862,6 +938,201 @@ fn push_u16(bytes: &mut Vec<u8>, value: u16) {
 
 fn push_u32(bytes: &mut Vec<u8>, value: u32) {
     bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+// ============================================================================
+// IronCAD scene records, interned ACIS streams, and native Parasolid transmits
+// ============================================================================
+
+fn generate_ironcad_submodule_seeds() -> std::io::Result<()> {
+    println!("Generating IronCAD sub-module seeds...");
+    let too_long = || std::io::Error::other("IronCAD seed name exceeds its length byte");
+    write_seed(
+        "seeds/asm_acis_interned",
+        "body_lump",
+        &interned_acis_seed().ok_or_else(too_long)?,
+    )?;
+    write_seed("seeds/parasolid_native", "point", &native_parasolid_seed())?;
+    let mut tree = vec![0];
+    tree.extend(ironcad_tree_seed());
+    write_seed("seeds/ironcad_scene", "record_tree", &tree)?;
+    let mut records = vec![1];
+    records.extend(public_access_seed().ok_or_else(too_long)?);
+    write_seed("seeds/ironcad_scene", "public_access", &records)?;
+    let mut units = vec![2];
+    for name in ["Millimeters", "mm", "Degrees", "deg", "Centimeters", "Kilograms"] {
+        units.extend(scene_name(name).ok_or_else(too_long)?);
+    }
+    write_seed("seeds/ironcad_scene", "document_units", &units)?;
+    Ok(())
+}
+
+/// An interned identifier token: text, `%`, and the little-endian name id.
+fn interned_name(text: &str, id: u32) -> Option<Vec<u8>> {
+    let mut out = vec![0x0d, u8::try_from(text.len() + 5).ok()?];
+    out.extend_from_slice(text.as_bytes());
+    out.push(b'%');
+    out.extend_from_slice(&id.to_le_bytes());
+    Some(out)
+}
+
+fn sab_ref(value: i32) -> Vec<u8> {
+    let mut out = vec![0x0c];
+    out.extend_from_slice(&value.to_le_bytes());
+    out
+}
+
+fn sab_long(value: i32) -> Vec<u8> {
+    let mut out = vec![0x04];
+    out.extend_from_slice(&value.to_le_bytes());
+    out
+}
+
+/// A header extension, a body, a lump, a repeated lump name, and the end marker.
+fn interned_acis_seed() -> Option<Vec<u8>> {
+    let prefix = [sab_ref(-1), sab_long(-1), sab_long(-1), sab_ref(-1)].concat();
+    let mut out = vec![0x0a, 0x07, 3];
+    out.extend_from_slice(b"key");
+    out.extend(interned_name("body", 1)?);
+    out.extend_from_slice(&prefix);
+    out.extend([sab_long(0), sab_ref(1), sab_ref(-1), sab_ref(-1)].concat());
+    out.push(0x11);
+    out.extend(interned_name("lump", 2)?);
+    out.extend_from_slice(&prefix);
+    out.extend([sab_ref(-1), sab_ref(-1), sab_ref(0)].concat());
+    out.push(0x11);
+    out.extend(interned_name("", 2)?);
+    out.extend_from_slice(&prefix);
+    out.extend([sab_ref(-1), sab_ref(-1), sab_ref(0)].concat());
+    out.push(0x11);
+    out.extend_from_slice(&[0x0d, 16]);
+    out.extend_from_slice(b"End-of-ACIS-data");
+    Some(out)
+}
+
+/// A native transmit with an embedded declaration and one POINT node.
+fn native_parasolid_seed() -> Vec<u8> {
+    let description = b": TRANSMIT FILE created by modeller version 3401176";
+    let schema = b"SCH_3401176_34101_13006";
+    let mut out = vec![0x41];
+    out.extend_from_slice(&u16::try_from(description.len()).unwrap_or(0).to_le_bytes());
+    out.extend_from_slice(description);
+    out.extend_from_slice(&u32::try_from(schema.len()).unwrap_or(0).to_le_bytes());
+    out.extend_from_slice(schema);
+    out.extend_from_slice(&231_u16.to_le_bytes());
+    out.extend_from_slice(&0_u32.to_le_bytes());
+    out.extend_from_slice(&29_u16.to_le_bytes());
+    out.push(7);
+    out.extend_from_slice(b"CCCCCCA\x05extra");
+    out.extend_from_slice(&0_u16.to_le_bytes());
+    out.extend_from_slice(&0_u32.to_le_bytes());
+    out.extend_from_slice(b"\x01dZ");
+    out.extend_from_slice(&1_u32.to_le_bytes());
+    out.extend_from_slice(&7_u32.to_le_bytes());
+    for _ in 0..4 {
+        out.extend_from_slice(&0_u32.to_le_bytes());
+    }
+    for value in [1.0_f64, 2.0, 3.0] {
+        out.extend_from_slice(&value.to_le_bytes());
+    }
+    out.extend_from_slice(&9_u32.to_le_bytes());
+    out.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
+    out
+}
+
+/// A tree node holding `items`, with its length counting the length field.
+fn tree_node(items: &[Vec<u8>]) -> Vec<u8> {
+    let content = items.concat();
+    let mut out = u64::try_from(content.len() + 8).unwrap_or(0).to_le_bytes().to_vec();
+    out.extend(content);
+    out
+}
+
+/// A kernel record with canonical header words.
+fn kernel_record(kernel: u32, body: &[u8]) -> Vec<u8> {
+    let mut out = u32::try_from(24 + body.len()).unwrap_or(0).to_le_bytes().to_vec();
+    for word in [0x0009_b401, kernel, 1, 1, 1, 0] {
+        out.extend_from_slice(&u32::to_le_bytes(word));
+    }
+    out.extend_from_slice(body);
+    out
+}
+
+/// One part pair: a feature record inside a node, then the result record.
+fn ironcad_tree_seed() -> Vec<u8> {
+    tree_node(&[
+        tree_node(&[
+            tree_node(&[tree_node(&[])]),
+            kernel_record(0x8000_0002, b"feature"),
+        ]),
+        kernel_record(0x8000_0002, b"result"),
+        tree_node(&[]),
+    ])
+}
+
+/// A scene-record name: `ff ff fe`, the code-unit count, and UTF-16LE units.
+fn scene_name(text: &str) -> Option<Vec<u8>> {
+    let mut out = vec![0xff, 0xff, 0xfe];
+    out.push(u8::try_from(text.encode_utf16().count()).ok()?);
+    out.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
+    Some(out)
+}
+
+/// A `Public Access` property of `kind` with `value` bytes.
+fn scene_property(name: &str, kind: u16, value: &[u8]) -> Vec<u8> {
+    let name: Vec<u8> = name
+        .encode_utf16()
+        .chain([0])
+        .flat_map(u16::to_le_bytes)
+        .collect();
+    let mut out = vec![0xf4, 0xff];
+    out.extend_from_slice(&u32::try_from(name.len()).unwrap_or(0).to_le_bytes());
+    out.extend(name);
+    out.extend_from_slice(&kind.to_le_bytes());
+    out.extend_from_slice(value);
+    out
+}
+
+fn scene_text(text: &str) -> Vec<u8> {
+    let units: Vec<u8> = text
+        .encode_utf16()
+        .chain([0])
+        .flat_map(u16::to_le_bytes)
+        .collect();
+    let mut out = u32::try_from(units.len()).unwrap_or(0).to_le_bytes().to_vec();
+    out.extend(units);
+    out
+}
+
+/// A feature record, a part record with properties and a translated matrix,
+/// and an assembly record.
+fn public_access_seed() -> Option<Vec<u8>> {
+    const PROPERTY_SET: [u8; 20] = [
+        0x02, 0x00, 0x00, 0x00, 0x4a, 0x00, 0xe1, 0x3d, 0x2d, 0x92, 0xcf, 0x11, 0xac, 0x2e, 0x00,
+        0xa0, 0x24, 0x58, 0x1e, 0x5c,
+    ];
+    let part = |name: &str, translation: [f64; 3]| {
+        let mut out = scene_name(name)?;
+        out.extend_from_slice(&PROPERTY_SET);
+        out.extend(scene_property("MassDensity", 5, &7800.0_f64.to_le_bytes()));
+        out.extend(scene_property("PartName", 8, &scene_text(name)));
+        out.extend(scene_property("ModelGUID", 8, &scene_text("{0}")));
+        out.extend_from_slice(&[0; 41]);
+        let mut matrix = [0.0_f64; 16];
+        for index in [0, 5, 10, 15] {
+            matrix[index] = 1.0;
+        }
+        matrix[12..15].copy_from_slice(&translation);
+        for value in matrix {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+        Some(out)
+    };
+    let mut out = scene_name("Block")?;
+    out.extend_from_slice(&[0, 0, 0, 0, 1, 0, 0, 0]);
+    out.extend(part("Part", [0.02, 0.03, 0.05])?);
+    out.extend(part("Assembly", [0.0; 3])?);
+    Some(out)
 }
 
 fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {

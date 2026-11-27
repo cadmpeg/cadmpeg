@@ -252,6 +252,7 @@ impl InputCatalog {
                             feature = "fcstd",
                             feature = "f3d",
                             feature = "solidedge",
+                            feature = "ironcad",
                             feature = "inventor",
                             feature = "sldprt",
                             feature = "catia",
@@ -629,6 +630,21 @@ mod tests {
         assert_eq!(descriptor.extensions(), ["par", "psm", "asm"]);
         assert!(descriptor.codec().is_some());
         assert!(crate::Format::from_name("solidedge")
+            .expect("registry loads")
+            .is_none());
+    }
+
+    #[cfg(feature = "ironcad")]
+    #[test]
+    fn ironcad_is_registered_as_a_read_only_family_codec() {
+        let catalog = InputCatalog::with_builtins();
+        let descriptor = catalog
+            .descriptors()
+            .find(|descriptor| descriptor.format_id().as_str() == "ironcad")
+            .expect("IronCAD descriptor exists");
+        assert_eq!(descriptor.extensions(), ["ics"]);
+        assert!(descriptor.codec().is_some());
+        assert!(crate::Format::from_name("ironcad")
             .expect("registry loads")
             .is_none());
     }

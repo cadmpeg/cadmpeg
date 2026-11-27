@@ -131,7 +131,10 @@ fn decode_classifies_the_package_and_reports_a_broken_stream_as_blocking() {
     assert!(!result.report().geometry_transferred());
     assert_eq!(
         loss_codes(&result),
-        [EdrawingsLossCode::ModelMalformed.kind()]
+        [
+            EdrawingsLossCode::ModelMalformed.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
+        ]
     );
     let note = result.report().losses.first().unwrap();
     assert_eq!(note.severity, cadmpeg_ir::report::Severity::Blocking);
@@ -188,7 +191,10 @@ fn a_truncated_zlib_stream_decodes_with_a_blocking_stream_loss() {
     let result = decode(&package_of(&cut, &[])).unwrap();
     assert_eq!(
         loss_codes(&result),
-        [EdrawingsLossCode::StreamMalformed.kind()]
+        [
+            EdrawingsLossCode::StreamMalformed.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
+        ]
     );
     assert!(!result.report().geometry_transferred());
 }
@@ -230,7 +236,10 @@ fn hostile_packages_are_errors_and_never_panics() {
     let result = decode(&package_of(&empty, &[])).unwrap();
     assert_eq!(
         loss_codes(&result),
-        [EdrawingsLossCode::StreamMalformed.kind()]
+        [
+            EdrawingsLossCode::StreamMalformed.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
+        ]
     );
 }
 

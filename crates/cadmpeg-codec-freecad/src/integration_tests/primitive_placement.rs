@@ -3,6 +3,7 @@
 
 use crate::test_support::test_archive::{archive, assert_valid_document};
 use crate::FcstdCodec;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::parameters::ParameterValue;
 use cadmpeg_ir::features::primitives::PrimitiveSolidKind;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
@@ -610,11 +611,10 @@ fn primitive_placement_composes_body_and_validator_rejects_changed_frame() {
         .iter_mut()
         .find(|f| f.name.as_deref() == Some("Box"))
         .unwrap();
-    let mut value = serde_json::to_value(&*feature).unwrap();
+    let mut value = json::to_value(&*feature).unwrap();
     value["definition"]["value"]["value"]["placement"] =
-        serde_json::to_value(cadmpeg_ir::features::geometry::FeatureRigidPlacement::identity())
-            .unwrap();
-    *feature = serde_json::from_value(value).unwrap();
+        json::to_value(cadmpeg_ir::features::geometry::FeatureRigidPlacement::identity()).unwrap();
+    *feature = json::from_value(value).unwrap();
     assert!(crate::test_support::validate_native(&changed)
         .iter()
         .any(|f| f.message.contains("primitive placement")));
@@ -890,13 +890,13 @@ fn primitive_placement_validator_refuses_neutral_definition_for_unknown_mode() {
             .unwrap()
     };
     let known_feature = &known.ir().model.features[box_feature(known.ir())];
-    let mut definition = serde_json::to_value(known_feature).unwrap()["definition"].clone();
+    let mut definition = json::to_value(known_feature).unwrap()["definition"].clone();
     definition.as_object_mut().unwrap().remove("placement");
     let mut changed = unknown.ir().clone();
     let index = box_feature(&changed);
-    let mut value = serde_json::to_value(&changed.model.features[index]).unwrap();
+    let mut value = json::to_value(&changed.model.features[index]).unwrap();
     value["definition"] = definition;
-    changed.model.features[index] = serde_json::from_value(value).unwrap();
+    changed.model.features[index] = json::from_value(value).unwrap();
     assert!(crate::test_support::validate_native(&changed)
         .iter()
         .any(|f| f.message.contains("primitive placement")));

@@ -2,9 +2,10 @@
 //! The matching rule of §5.7 on the fixture's cube: `Bounded` and `Meeting`
 //! names through the state's adjacency, and the narrowing by `index`.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde_json::json;
+use cadmpeg_core::json;
 
 use super::super::fixture::{design_findings, document};
 use super::super::selections::Stored;
@@ -24,7 +25,7 @@ fn face_name(face: usize, index: Option<u32>) -> TopoName {
     if let Some(index) = index {
         value["index"] = json!(index);
     }
-    serde_json::from_value(json!({"kind": "generated", "value": value})).unwrap()
+    json::from_value(json!({"kind": "generated", "value": value})).unwrap()
 }
 
 fn bounded(faces: &[TopoName], ends: &[TopoName]) -> TopoName {

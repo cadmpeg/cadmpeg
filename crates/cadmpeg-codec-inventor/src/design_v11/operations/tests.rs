@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::design::ops::{
     body as body_ops, dressup as dressup_ops,
     shared::{Limit, LinearLayout, PatternLayout, Spacing, Span},
@@ -12,7 +14,7 @@ use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{FeatureContent, FeatureId};
 use cadmpeg_ir::scalar::{Length, PositiveLength};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::*;
 
@@ -29,13 +31,14 @@ fn legacy(kind: &str, value: Value) -> LegacyOperation {
         ("kind".to_owned(), Value::String(kind.to_owned())),
         ("value".to_owned(), value),
     ]);
-    serde_json::from_value(Value::Object(fields)).expect("synthetic operation")
+    json::from_value(Value::Object(fields)).expect("synthetic operation")
 }
 
 fn project_value(kind: &str, value: Value) -> FeatureOperation {
-    let operation = typed(&legacy(kind, value), &[], &[]).expect("typed projection");
-    let wire = serde_json::to_value(&operation).expect("v11 wire");
-    let decoded: FeatureOperation = serde_json::from_value(wire).expect("admitted v11 operation");
+    let operation = typed(&legacy(kind, value), selections::SketchData::default(), &[])
+        .expect("typed projection");
+    let wire = json::to_value(&operation).expect("v11 wire");
+    let decoded: FeatureOperation = json::from_value(wire).expect("admitted v11 operation");
     assert_eq!(operation, decoded);
     operation
 }
@@ -62,7 +65,9 @@ fn extrude() -> LegacyOperation {
 
 #[test]
 fn extrude_keeps_direction_sides_and_output() {
-    let FeatureOperation::Extrude(value) = typed(&extrude(), &[], &[]).expect("extrude") else {
+    let FeatureOperation::Extrude(value) =
+        typed(&extrude(), selections::SketchData::default(), &[]).expect("extrude")
+    else {
         panic!("extrude");
     };
     assert_eq!(value.output.body, Some(BodyForm::Solid));
@@ -101,7 +106,9 @@ fn symmetric_extrude_keeps_total_travel() {
             draft: None,
         },
     };
-    let FeatureOperation::Extrude(value) = typed(&operation, &[], &[]).expect("extrude") else {
+    let FeatureOperation::Extrude(value) =
+        typed(&operation, selections::SketchData::default(), &[]).expect("extrude")
+    else {
         panic!("extrude");
     };
     assert_eq!(
@@ -187,6 +194,58 @@ fn chamfer_keeps_size_and_flip() {
         assert_eq!(value.sets[0].flip, Some(Dimension::Literal(true)));
         assert!(value.sets[0].size.is_some());
     }
+}
+
+#[test]
+fn unequal_two_distance_chamfer_with_a_support_state_names_its_reference_face() {
+    use cadmpeg_ir::features::evaluation::FeatureInputTopology;
+    use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalEdgeId, HistoricalFaceId};
+    let state =
+        FeatureInputTopologyId::mint("inventor:design:feature-input#synthetic").expect("id");
+    let edge = HistoricalEdgeId::mint("inventor:input-edge#synthetic-7").expect("id");
+    let face = HistoricalFaceId::mint("inventor:input-face#synthetic-9").expect("id");
+    let input = FeatureInputTopology {
+        id: state.clone(),
+        input_of: FeatureId::mint("inventor:design:feature#synthetic").expect("id"),
+        bodies: DistinctMembers::default(),
+        faces: std::iter::once(face).collect(),
+        edges: std::iter::once(edge.clone()).collect(),
+        vertices: DistinctMembers::default(),
+        face_owners: Vec::new(),
+        face_geometry: Vec::new(),
+        body_writers: Vec::new(),
+        edge_geometry: Vec::new(),
+        native_ref: None,
+    };
+    let selection = old::selections::EdgeSelection::historical(
+        state,
+        vec![edge],
+        "inventor:pmdc:selection#synthetic".into(),
+    )
+    .expect("selection");
+    let operation = legacy(
+        "chamfer",
+        json!({"groups":[{"edges":json::to_value(&selection).expect("edges"),"spec":{"kind":"two_distances","first":2.0,"second":4.0}}],"flip_direction":true}),
+    );
+    let expected_reference =
+        selections::support_face(&selection, std::slice::from_ref(&input)).expect("support face");
+    let FeatureOperation::Chamfer(value) =
+        typed(&operation, selections::SketchData::default(), &[input]).expect("typed")
+    else {
+        panic!("chamfer");
+    };
+    assert_eq!(
+        value.sets[0].size,
+        Some(dressup_ops::ChamferSize::Distances {
+            first: Dimension::Literal(positive(2.0)),
+            second: Dimension::Literal(positive(4.0)),
+        })
+    );
+    // The first distance lies on the support face, which the reference names;
+    // with a named reference no side swap is stated.
+    assert_eq!(value.sets[0].reference, Some(expected_reference));
+    assert_eq!(value.sets[0].flip, None);
+    assert!(typed(&operation, selections::SketchData::default(), &[]).is_err());
 }
 
 #[test]
@@ -566,6 +625,46 @@ fn combine_keeps_target_tools_operation_and_retention() {
 }
 
 #[test]
+fn stitch_keeps_operand_elements_tolerance_and_output() {
+    use cadmpeg_ir::features::selections::{BodySelection, NativeSelections};
+    let names = vec![
+        "inventor:wrapper#a".to_owned(),
+        "inventor:wrapper#b".to_owned(),
+    ];
+    let bodies = old::SewBodySelection::try_from(BodySelection::NativeSet(
+        NativeSelections::try_from(names).expect("distinct operands"),
+    ))
+    .expect("sew operands");
+    let operation = typed(
+        &LegacyOperation::SewBodies {
+            bodies,
+            gap_tolerance: Some(positive(2.5)),
+        },
+        selections::SketchData::default(),
+        &[],
+    )
+    .expect("typed knit");
+    let wire = json::to_value(&operation).expect("v11 wire");
+    let decoded: FeatureOperation = json::from_value(wire).expect("admitted v11 operation");
+    assert_eq!(operation, decoded);
+    let FeatureOperation::Knit(knit) = operation else {
+        panic!("knit");
+    };
+    assert_eq!(
+        knit.tolerance,
+        Some(Dimension::Literal(
+            cadmpeg_ir::scalar::NonNegativeLength::from(positive(2.5))
+        ))
+    );
+    assert_eq!(knit.output.solid, None);
+    assert_eq!(knit.output.boolean, None);
+    assert!(matches!(
+        &knit.elements.picks,
+        cadmpeg_ir::design::selection::Picks::Named(members) if members.as_slice().len() == 2
+    ));
+}
+
+#[test]
 fn trim_keeps_unknown_and_reverse_sides() {
     for (side, expected) in [
         ("unresolved", None),
@@ -635,7 +734,7 @@ fn unresolved_and_reversing_operands_take_the_native_gate() {
 fn split_face_and_surface_trim_keep_every_selection() {
     let FeatureOperation::Split(value) = project_value(
         "split_face",
-        json!({"targets":native_selection(),"tool":{"kind":"plane","value":{"plane":"inventor:design:feature#plane"}},"method":serde_json::to_value(cadmpeg_ir::features::surfaces::SplitFaceMethod::default()).expect("method")}),
+        json!({"targets":native_selection(),"tool":{"kind":"plane","value":{"plane":"inventor:design:feature#plane"}},"method":cadmpeg_core::serde_erase::json::to_value(cadmpeg_ir::features::surfaces::SplitFaceMethod::default()).expect("method")}),
     ) else {
         panic!("split face");
     };
@@ -841,23 +940,51 @@ fn next_material_exit_stays_native_when_v11_has_a_first_face_limit() {
 }
 
 #[test]
-fn unsupported_body_move_order_and_symmetric_indices_stay_native() {
-    let move_body = legacy(
+fn body_move_applies_rotation_before_translation() {
+    let FeatureOperation::TransformBodies(value) = project_value(
         "move_body",
         json!({"bodies":native_selection(),"translation":[1.0,0.0,0.0],"rotation":{"origin":[0.0,0.0,0.0],"direction":[0.0,0.0,1.0],"angle":0.5},"copies":0}),
-    );
+    ) else {
+        panic!("move");
+    };
+    assert!(matches!(
+        value.transformation.steps.as_slice(),
+        [
+            body_ops::TransformStep::Rotate { .. },
+            body_ops::TransformStep::Components { .. }
+        ]
+    ));
+}
+
+#[test]
+fn body_move_without_translation_keeps_one_rotation() {
+    let FeatureOperation::TransformBodies(value) = project_value(
+        "move_body",
+        json!({"bodies":native_selection(),"translation":[0.0,0.0,0.0],"rotation":{"origin":[0.0,0.0,0.0],"direction":[0.0,0.0,1.0],"angle":0.5},"copies":0}),
+    ) else {
+        panic!("move");
+    };
+    assert!(matches!(
+        value.transformation.steps.as_slice(),
+        [
+            body_ops::TransformStep::Components { .. },
+            body_ops::TransformStep::Rotate { .. }
+        ]
+    ));
+}
+
+#[test]
+fn unsupported_symmetric_indices_stay_native() {
     let symmetric = legacy(
         "pattern",
         json!({"seeds":[{"kind":"feature","value":"inventor:design:feature#seed"}],"pattern":{"kind":"linear","direction":[1.0,0.0,0.0],"spacing":3.0,"count":3,"omitted_instances":[],"symmetric":true}}),
     );
-    for operation in [move_body, symmetric] {
-        let mut ir = part(operation);
-        assert_eq!(project_part(&mut ir).len(), 1);
-        assert!(matches!(
-            ir.design.features[0].definition.operation,
-            FeatureOperation::Native { .. }
-        ));
-    }
+    let mut ir = part(symmetric);
+    assert_eq!(project_part(&mut ir).len(), 1);
+    assert!(matches!(
+        ir.design.features[0].definition.operation,
+        FeatureOperation::Native { .. }
+    ));
 }
 
 #[test]
@@ -901,9 +1028,16 @@ fn whole_profile_regions_keep_outer_and_hole_members() {
         )
         .expect("regions"),
     );
-    let FeatureOperation::Extrude(value) =
-        typed(&operation, &[source], &[]).expect("profile projection")
-    else {
+    let FeatureOperation::Extrude(value) = typed(
+        &operation,
+        selections::SketchData {
+            sketches: &[source],
+            entities: &[],
+            arrangements: None,
+        },
+        &[],
+    )
+    .expect("profile projection") else {
         panic!("extrude");
     };
     let cadmpeg_ir::design::selection::Picks::Named(picks) = value.profile.picks else {
@@ -1111,7 +1245,9 @@ fn extrude_plane_targets_keep_frames_native_names_and_source_modes() {
             draft: None,
         },
     };
-    let FeatureOperation::Extrude(value) = typed(&operation, &[], &[]).expect("extrude") else {
+    let FeatureOperation::Extrude(value) =
+        typed(&operation, selections::SketchData::default(), &[]).expect("extrude")
+    else {
         panic!("extrude");
     };
     let Some(cadmpeg_ir::design::ops::swept::ExtrudeOrigin::Plane(start)) = value.origin else {
@@ -1160,6 +1296,40 @@ fn split_face_path_keeps_native_projection_controls() {
         losses[0].code,
         InventorLossCode::FeatureDesignOperationNative.kind()
     );
+}
+
+#[test]
+fn an_extrude_to_a_native_face_projects_a_geometry_limit_and_validates() {
+    let mut operation = extrude();
+    let LegacyOperation::Extrude { extent, .. } = &mut operation else {
+        panic!("extrude");
+    };
+    *extent = cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+        side: cadmpeg_ir::features::extents::ExtrudeSide {
+            termination: cadmpeg_ir::features::extents::LinearTermination::ToFace {
+                face: cadmpeg_ir::features::selections::FaceSelection::Native(
+                    "inventor:pmdc:selection#synthetic".into(),
+                ),
+                offset: None,
+            },
+            draft: None,
+        },
+    };
+    let FeatureOperation::Extrude(value) =
+        typed(&operation, selections::SketchData::default(), &[]).expect("extrude")
+    else {
+        panic!("extrude");
+    };
+    let Some(Span::Between { end, .. }) = value.span else {
+        panic!("span");
+    };
+    assert!(matches!(*end, Limit::ToGeometry { offset: None, .. }));
+    let mut ir = part(operation);
+    project_part(&mut ir);
+    assert!(validate(&ir).expect("v11 validation").is_empty());
+    let neutral =
+        cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).expect("neutral validation");
+    assert_eq!(neutral.error_count(), 0, "{:?}", neutral.findings);
 }
 
 mod review;

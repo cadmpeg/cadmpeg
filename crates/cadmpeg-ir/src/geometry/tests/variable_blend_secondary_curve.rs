@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::geometry::blends::RollingBallSupportCurve;
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct SecondaryCurveWire {
@@ -27,20 +28,20 @@ fn the_secondary_curve_carries_its_own_bounds() {
             "parameter_range": [null, 4.0]
         }}),
     ] {
-        let decoded: SecondaryCurveWire = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+        let decoded: SecondaryCurveWire = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(decoded).unwrap(), wire);
     }
 }
 
 #[test]
 fn secondary_bounds_without_a_curve_have_no_encoding() {
-    let error = serde_json::from_value::<SecondaryCurveWire>(json!({
+    let error = json::from_value::<SecondaryCurveWire>(json!({
         "secondary_range": [2.0, null]
     }))
     .unwrap();
     assert!(error.secondary_curve.is_none());
 
-    let error = serde_json::from_value::<SecondaryCurveWire>(json!({
+    let error = json::from_value::<SecondaryCurveWire>(json!({
         "secondary_curve": {"parameter_range": [2.0, null]}
     }))
     .unwrap_err()

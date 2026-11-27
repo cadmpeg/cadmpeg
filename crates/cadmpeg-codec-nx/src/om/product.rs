@@ -90,14 +90,15 @@ impl<'a> ProductRecord<'a> {
 #[cfg(test)]
 mod tests {
     use super::{ProductRecord, ProductRecordForm, ProductText};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn product_text_preserves_wire_and_length_bound() {
         let text = format!("NX {}", "x".repeat(250));
 
         let value = ProductText::new(text.as_str()).unwrap().into_owned();
-        let wire = serde_json::to_string(&value).unwrap();
-        assert_eq!(wire, serde_json::to_string(&text).unwrap());
+        let wire = json::to_string(&value).unwrap();
+        assert_eq!(wire, json::to_string(&text).unwrap());
         assert_eq!(
             serde_json::from_str::<ProductText<String>>(&wire).unwrap(),
             value
@@ -105,7 +106,7 @@ mod tests {
         for text in ["NX", "NX μ", "NX \n", &format!("NX {}", "x".repeat(251))] {
             assert!(ProductText::new(text).is_err());
             let error =
-                serde_json::from_str::<ProductText<String>>(&serde_json::to_string(text).unwrap())
+                serde_json::from_str::<ProductText<String>>(&json::to_string(text).unwrap())
                     .unwrap_err();
             assert!(error.to_string().contains("product_version/version"));
         }

@@ -5,7 +5,6 @@ use crate::test_support::smbh_blends_test::synthetic_rb_blend_spl_sur_smbh;
 use crate::test_support::smbh_curves_test::with_legacy_subtype;
 use crate::test_support::zip_test::f3d_with_smbh;
 use crate::F3dCodec;
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -180,7 +179,7 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less rolling-ball encode");
     let round_trip = F3dCodec
@@ -239,7 +238,7 @@ fn generated_rolling_ball_surface_aliases_decode_and_write_canonically() {
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source_less, None))
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("canonical rolling-ball encode");
         let round_trip = F3dCodec

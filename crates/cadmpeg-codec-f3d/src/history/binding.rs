@@ -139,9 +139,7 @@ pub(crate) fn bind_with_cache_and_preframed(
     let mut binder = Binder::new(&archive, saved_limit, work);
     binder.source_subtypes = Some(&source_subtypes);
     binder.header = parsed_header.as_ref();
-    let workers = std::thread::available_parallelism()
-        .map_or(1, std::num::NonZeroUsize::get)
-        .min(6);
+    let workers = cadmpeg_core::parallelism().min(6);
     if workers > 1 && states.len() >= 8 {
         if let Some(parallel_stats) = try_bind_parallel(
             ctx,
@@ -1254,7 +1252,7 @@ fn try_bind_parallel(
     let order_ref = &order;
     let cursor_ref = &next_cursor;
 
-    let worker_results = std::thread::scope(|scope| {
+    let worker_results = crate::scoped::scope(|scope| {
         let handles: Vec<_> = (0..workers)
             .map(|_| {
                 let cp = checkpoint.clone();
@@ -1541,7 +1539,7 @@ fn try_bind_parallel(
             let num_threads = workers.min(full_transition_jobs.len());
             let mut results: Vec<Option<(usize, AsmHistoricalTransition)>> =
                 (0..full_transition_jobs.len()).map(|_| None).collect();
-            let batches = std::thread::scope(|scope| {
+            let batches = crate::scoped::scope(|scope| {
                 let handles: Vec<_> = (0..num_threads)
                     .map(|_| {
                         scope.spawn(move || {

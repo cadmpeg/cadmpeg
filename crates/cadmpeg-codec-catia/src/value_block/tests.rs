@@ -4,14 +4,15 @@
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
 use super::{tokenize, InlineBytes, InlineBytesWire, ValueBlock, ValueField};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn inline_bytes_borrowed_wire_preserves_json_bytes() {
     let value = InlineBytes::try_from(vec![1, 2, 3]).expect("inline bytes");
     let owned: InlineBytesWire = value.clone().into();
     assert_eq!(
-        serde_json::to_vec(&value).expect("borrowed inline JSON"),
-        serde_json::to_vec(&owned).expect("owned inline JSON")
+        json::to_vec(&value).expect("borrowed inline JSON"),
+        json::to_vec(&owned).expect("owned inline JSON")
     );
 }
 
@@ -30,7 +31,7 @@ fn inline_bytes_retained_limit_refuses_json_record() {
         value: &value,
     };
     let arena_name = "inline_values";
-    let json_len = serde_json::to_vec(&record).expect("inline JSON").len();
+    let json_len = json::to_vec(&record).expect("inline JSON").len();
     let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -197,28 +198,25 @@ fn serialized_length_must_match_payload() {
         pos: 12,
         payload: vec![0x87, 0xe8],
     };
-    let mut wire = serde_json::to_value(&block).unwrap();
+    let mut wire = json::to_value(&block).unwrap();
     assert_eq!(wire["declared_len"], 8);
-    assert_eq!(
-        serde_json::from_value::<ValueBlock>(wire.clone()).unwrap(),
-        block
-    );
-    wire["declared_len"] = serde_json::json!(7);
-    assert!(serde_json::from_value::<ValueBlock>(wire).is_err());
+    assert_eq!(json::from_value::<ValueBlock>(wire.clone()).unwrap(), block);
+    wire["declared_len"] = cadmpeg_core::json!(7);
+    assert!(json::from_value::<ValueBlock>(wire).is_err());
 }
 
 #[test]
 fn serialized_inline_code_must_match_the_inline_byte_count() {
     let bytes = InlineBytes::try_from(vec![1, 2, 3]).unwrap();
-    let mut wire = serde_json::to_value(&bytes).unwrap();
-    assert_eq!(wire["code"], serde_json::json!(0xea));
+    let mut wire = json::to_value(&bytes).unwrap();
+    assert_eq!(wire["code"], cadmpeg_core::json!(0xea));
     assert_eq!(
-        serde_json::from_value::<InlineBytes>(wire.clone()).unwrap(),
+        json::from_value::<InlineBytes>(wire.clone()).unwrap(),
         bytes
     );
 
-    wire["code"] = serde_json::json!(0xeb);
-    let error = serde_json::from_value::<InlineBytes>(wire)
+    wire["code"] = cadmpeg_core::json!(0xeb);
+    let error = json::from_value::<InlineBytes>(wire)
         .expect_err("inline code disagreeing with the byte count");
     assert!(error.to_string().contains("code"), "{error}");
 }
@@ -226,7 +224,7 @@ fn serialized_inline_code_must_match_the_inline_byte_count() {
 #[test]
 fn inline_bytes_serialization_refuses_wrapped_length() {
     let bytes = InlineBytes(vec![0; 256].into());
-    assert!(serde_json::to_value(&bytes).is_err());
+    assert!(json::to_value(&bytes).is_err());
 }
 
 #[test]

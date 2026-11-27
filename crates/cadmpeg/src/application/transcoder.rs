@@ -5,9 +5,10 @@ use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result as AnyResult};
-use cadmpeg_core::decode::DecodeDepth;
+use cadmpeg_core::decode::{DecodeDepth, ResourceLimits};
 use cadmpeg_ir::codec::write::{
     target::TargetRequest, EncodeError, EncodeInput, Encoder, ExportPlan, MissingStateForm,
+    OutputNames, Outputs,
 };
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::report::{
@@ -140,16 +141,15 @@ impl TargetSelection {
 
     /// Builds the encoder request.
     ///
-    /// Flag absence is [`TargetRequest::Inherit`] unconditionally. What that
-    /// resolves to is the encoder's answer, not the command line's:
+    /// Flag absence is [`TargetRequest::Unnamed`]. What that resolves to is
+    /// the encoder's answer, not the command line's:
     /// [`Encoder::plan`](cadmpeg_ir::codec::write::Encoder::plan) preserves the source
-    /// dialect within one format and selects the catalog default when there is
-    /// nothing to inherit: no source or a source of another format. Deciding
-    /// the cross-format default here as well would write the same rule twice.
+    /// dialect within one format and takes the catalog default, without a
+    /// loss, when the source is of another format or absent.
     fn request(&self) -> TargetRequest<'_> {
         match self.request.as_deref() {
             Some(id) => TargetRequest::Explicit(id),
-            None => TargetRequest::Inherit,
+            None => TargetRequest::Unnamed,
         }
     }
 }
@@ -415,6 +415,8 @@ pub(crate) struct PreparedConversion {
     destination: ResolvedDestination,
     write_strictness: Strictness,
     missing_states: MissingStateForm,
+    /// The session ceilings, which the write takes as the decode does.
+    limits: ResourceLimits,
 }
 
 /// The outcome of the conversion's check.
@@ -474,6 +476,7 @@ pub(crate) fn prepare(
         destination,
         write_strictness: policy.strictness.write(),
         missing_states: policy.missing_states,
+        limits: source.options.policy.limits,
     })
 }
 
@@ -489,18 +492,24 @@ impl PreparedConversion {
     /// the encoder charges `export:record.invalid` for each check Error in
     /// what the output writes and refuses where the strictness refuses.
     pub(crate) fn plan(self) -> Result<PlannedConversion, ApplicationError> {
+        let names = self.output_names()?;
         // Resolution is the encoder's, and so is its refusal: the message
         // already names the requested id and the whole catalog, and it
         // reflects this build's feature set. Restating it here would be a
         // second vocabulary to keep in step with the first.
         let mut input = EncodeInput::new(&self.document.ir, self.document.fidelity())
             .with_assets(&self.assets)
+            .with_target(self.selection.request())
+            .with_limits(self.limits)
             .with_missing_states(self.missing_states)
             .with_strictness(&self.write_strictness);
         if let Some(report) = self.validation.report() {
             input = input.with_validation(report);
         }
-        let plan = match self.encoder.plan(input, self.selection.request()) {
+        if let Some(names) = &names {
+            input = input.with_outputs(Outputs::Named(names));
+        }
+        let plan = match self.encoder.plan(input) {
             Ok(plan) => plan,
             Err(error) => {
                 return Err(plan_refusal(
@@ -518,6 +527,45 @@ impl PreparedConversion {
             prepared: self,
             carried_errors: carried,
         })
+    }
+
+    /// The names of an encode that writes more than one file: the
+    /// destination's file name for the root definition's output, and
+    /// `<stem>-<n>.<extension>` beside it for the n-th other output. `None`
+    /// where the encode writes one file, which the destination names.
+    fn output_names(&self) -> Result<Option<OutputNames>, ApplicationError> {
+        let definitions = self.encoder.output_definitions(&self.document.ir);
+        if definitions.len() < 2 {
+            return Ok(None);
+        }
+        let ResolvedDestination::File(path) = &self.destination else {
+            return Err(ApplicationError::from(anyhow!(
+                "the {} encode writes {} files, and standard output takes one; name an output file",
+                self.selection.format.name(),
+                definitions.len()
+            ))
+            .at_stage(RefusalStage::Plan));
+        };
+        let text =
+            |part: Option<&std::ffi::OsStr>| part.map(|part| part.to_string_lossy().into_owned());
+        let file_name = text(path.file_name()).unwrap_or_default();
+        let stem = text(path.file_stem()).unwrap_or_default();
+        let extension = text(path.extension());
+        let mut names = OutputNames::new();
+        for (position, definition) in definitions.into_iter().enumerate() {
+            let Some(definition) = definition else {
+                continue;
+            };
+            let name = match (position, &extension) {
+                (0, _) => file_name.clone(),
+                (_, Some(extension)) => format!("{stem}-{position}.{extension}"),
+                (_, None) => format!("{stem}-{position}"),
+            };
+            if let Some(name) = cadmpeg_core::text::NonBlankString::new(name) {
+                names.insert(definition, name);
+            }
+        }
+        Ok(Some(names))
     }
 
     /// Returns the selected output format.
@@ -545,6 +593,17 @@ impl PlannedConversion {
         &self.prepared
     }
 
+    /// The path each output of the plan is written to; none for standard
+    /// output.
+    pub(crate) fn output_paths(&self) -> Vec<PathBuf> {
+        match &self.prepared.destination {
+            ResolvedDestination::File(path) => {
+                artifact_store::output_paths(path, self.plan.outputs())
+            }
+            ResolvedDestination::Stdout => Vec::new(),
+        }
+    }
+
     /// Writes the destination artifact and optional CADIR sidecar.
     pub(crate) fn write(self) -> AnyResult<ExportEmission> {
         emit_export_plan(
@@ -552,7 +611,6 @@ impl PlannedConversion {
             self.prepared.selection.format,
             &self.prepared.destination,
             &self.prepared.document.origin,
-            &self.prepared.document.ir,
         )
     }
 }
@@ -565,9 +623,10 @@ pub(crate) struct ExportEmission {
 
 /// Destination-specific facts needed by the presentation layer.
 pub(crate) enum EmittedArtifact {
-    /// A file and its CADIR sidecar disposition.
+    /// The files written, in the plan's output order, and the CADIR sidecar
+    /// disposition.
     File {
-        path: PathBuf,
+        written: Vec<artifact_store::WrittenFile>,
         sidecar: SidecarPersistOutcome,
     },
     /// Standard output with no sidecar requirement.
@@ -612,26 +671,24 @@ pub(crate) fn emit_export_plan(
     format: Format,
     destination: &ResolvedDestination,
     origin: &LoadOrigin,
-    ir: &cadmpeg_ir::CadIr,
 ) -> AnyResult<ExportEmission> {
     let needs_sidecar = format == Format::Cadir
         && matches!(
             origin,
-            LoadOrigin::Decoded { .. } | LoadOrigin::Restored { .. }
+            LoadOrigin::Decoded { .. } | LoadOrigin::Restored { .. } | LoadOrigin::Read { .. }
         );
     if let ResolvedDestination::File(path) = destination {
-        let (report, cadir_sha256) = artifact_store::write_plan_atomic(path, plan)?;
-        let sidecar = if format == Format::Cadir {
-            artifact_store::persist_decode_sidecar(path, &cadir_sha256, origin, ir)?
-        } else {
-            SidecarPersistOutcome::Absent
+        let annotations = plan.annotations().cloned();
+        let (report, written) = artifact_store::write_plan_atomic(path, plan)?;
+        let sidecar = match written.iter().find(|file| &file.path == path) {
+            Some(file) if format == Format::Cadir => {
+                artifact_store::persist_decode_sidecar(path, &file.sha256, origin, annotations)?
+            }
+            Some(_) | None => SidecarPersistOutcome::Absent,
         };
         Ok(ExportEmission {
             report,
-            artifact: EmittedArtifact::File {
-                path: path.to_owned(),
-                sidecar,
-            },
+            artifact: EmittedArtifact::File { written, sidecar },
         })
     } else {
         let stdout = io::stdout().lock();

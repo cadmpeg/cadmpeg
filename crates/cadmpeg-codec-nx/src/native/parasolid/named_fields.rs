@@ -111,6 +111,7 @@ impl TryFrom<FieldNamesWire> for ParasolidAttributeFieldNames {
 #[cfg(test)]
 mod tests {
     use super::ParasolidAttributeFieldNames;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn field_name_wire_preserves_pairs_empty_names_and_empty_lists() {
@@ -119,16 +120,15 @@ mod tests {
                 r#"{{"id":"relation","stream_ordinal":3,"attribute_definition":"definition","field_names_record":"list","value_records":{records},"names":{names}}}"#
             );
             let relation: ParasolidAttributeFieldNames = serde_json::from_str(&json).unwrap();
-            assert_eq!(serde_json::to_string(&relation).unwrap(), json);
+            assert_eq!(json::to_string(&relation).unwrap(), json);
             assert_eq!(
-                serde_json::to_vec(&relation).unwrap(),
-                serde_json::to_vec(&super::FieldNamesWire::from(relation.clone())).unwrap()
+                json::to_vec(&relation).unwrap(),
+                json::to_vec(&super::FieldNamesWire::from(relation.clone())).unwrap()
             );
             for field in ["value_records", "names"] {
-                let mut wire = serde_json::to_value(&relation).unwrap();
+                let mut wire = json::to_value(&relation).unwrap();
                 wire[field].as_array_mut().unwrap().push("extra".into());
-                let error =
-                    serde_json::from_value::<ParasolidAttributeFieldNames>(wire).unwrap_err();
+                let error = json::from_value::<ParasolidAttributeFieldNames>(wire).unwrap_err();
                 assert!(error.to_string().contains("value_records/names"));
             }
         }

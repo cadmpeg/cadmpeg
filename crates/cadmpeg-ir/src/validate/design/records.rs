@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 
-use crate::design::configuration::{Arrangement, DesignConfiguration};
+use crate::design::configuration::{Arrangement, DesignConfiguration, FeatureStateOverride};
 use crate::design::container::{Container, Rollback};
 use crate::design::evaluation::Evaluation;
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation};
@@ -15,7 +15,7 @@ use crate::design::parameter::DesignParameter;
 use crate::design::refs::{Evaluated, Member, Position};
 use crate::design::scope::DesignScope;
 use crate::document::CadIr;
-use crate::features::ConfigurationId;
+use crate::features::{ConfigurationId, FeatureId};
 use crate::products::{Occurrence, ProductDefinition, Storage};
 
 /// A member of a container, by identity.
@@ -384,24 +384,39 @@ impl<'a> DesignRecords<'a> {
         self.scope_configurations.contains_key(scope)
     }
 
-    /// The definition of `feature` that applies in `configuration` (§5.10,
-    /// §5.11): the nearest definition override on the configuration's chain,
-    /// else the feature's own.
+    /// The overrides of `feature` that apply in `configuration` under
+    /// `arrangement`, nearest first: the arrangement's, then those of the
+    /// configuration and its parents (§5.1, §5.10, §5.11).
+    pub(in crate::validate) fn feature_overrides(
+        &self,
+        feature: &FeatureId,
+        configuration: Option<&str>,
+        arrangement: Option<&'a Arrangement>,
+    ) -> Vec<&'a FeatureStateOverride> {
+        arrangement
+            .map(|arrangement| &arrangement.overrides)
+            .into_iter()
+            .chain(
+                self.configuration_chain(configuration)
+                    .into_iter()
+                    .map(|configuration| &configuration.overrides),
+            )
+            .filter_map(|overrides| overrides.features.get(feature))
+            .collect()
+    }
+
+    /// The definition of `feature` that applies in `configuration` under
+    /// `arrangement`: the nearest definition override, else the feature's
+    /// own.
     pub(in crate::validate) fn definition_in(
         &self,
         feature: &'a Feature,
         configuration: Option<&str>,
+        arrangement: Option<&'a Arrangement>,
     ) -> &'a FeatureDefinition {
-        self.configuration_chain(configuration)
+        self.feature_overrides(&feature.id, configuration, arrangement)
             .into_iter()
-            .find_map(|configuration| {
-                configuration
-                    .overrides
-                    .features
-                    .get(&feature.id)?
-                    .definition
-                    .as_ref()
-            })
+            .find_map(|stated| stated.definition.as_ref())
             .unwrap_or(&feature.definition)
     }
 

@@ -884,7 +884,7 @@ fn nx_text_payload_projects_semantic_text_and_font_family() {
     let annotation = text_semantic_annotation("nx:test:text#1", 7, &["plate label", "Arial"])
         .expect("annotation admission")
         .expect("valid text annotation");
-    assert_eq!(annotation.object, "nx:test:text#1");
+    assert_eq!(annotation.object.as_str(), "nx:test:text#1");
     assert_eq!(
         annotation.kind,
         cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text

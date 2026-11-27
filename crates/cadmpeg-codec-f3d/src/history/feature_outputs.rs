@@ -225,9 +225,7 @@ pub(crate) fn bind_feature_outputs(
         let order = history
             .states_oldest_first()
             .unwrap_or_else(|| (0..history.states().len()).collect());
-        let workers = std::thread::available_parallelism()
-            .map_or(1, std::num::NonZeroUsize::get)
-            .min(6);
+        let workers = cadmpeg_core::parallelism().min(6);
         let keep_materialized = history.states().len() <= super::KEEP_MATERIALIZED_MAX_STATES;
         if keep_materialized && workers > 1 && order.len() >= 8 {
             super::output_measure::measure_history_states_parallel(

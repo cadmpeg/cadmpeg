@@ -170,20 +170,23 @@ impl CodecBackend for RhinoCodec {
 
 impl EncoderBackend for RhinoCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    const NAME: &'static str = "Rhino";
     /// Writes B-rep, meshes and placements only; design arenas are refused, not
     /// read.
     const REQUEST: DecodeDepth = DecodeDepth::Geometry;
+    const REUSES_SOURCE: bool = false;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(RhinoArchiveVersion::TARGETS, Some(3));
 
-    /// Synthesis-only encoder. An off-catalog Rhino source cannot be reproduced
-    /// because 3DM has no retained-image path.
+    /// Synthesis-only encoder. 3DM has no retained-image path, so an
+    /// off-catalog Rhino source is written as the catalog default.
     fn plan_resolved(
         &self,
+        ctx: &DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        writer::target::plan(input, &target)
+        writer::target::plan(ctx, input, &target)
     }
 }
 

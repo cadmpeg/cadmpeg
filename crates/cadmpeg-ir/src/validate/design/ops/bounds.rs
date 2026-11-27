@@ -130,7 +130,10 @@ impl<'a> Site<'a> {
             return Vec::new();
         }
         let in_force = |configuration: Option<&str>| {
-            std::ptr::eq(index.definition_in(feature, configuration), definition)
+            std::ptr::eq(
+                index.definition_in(feature, configuration, None),
+                definition,
+            )
         };
         if configurations.is_empty() {
             return if in_force(None) {

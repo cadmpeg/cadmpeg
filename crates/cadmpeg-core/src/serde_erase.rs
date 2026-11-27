@@ -1031,6 +1031,90 @@ pub fn serialize_to_json_value(
     serialize_with(serde_json::value::Serializer, body)
 }
 
+/// Serializes `value` into a [`serde_json::Value`] through [`SerAdapter`],
+/// keeping `serde_json::value::Serializer` compiled once in `cadmpeg-core`.
+pub fn to_json_value<T: Serialize + ?Sized>(
+    value: &T,
+) -> Result<serde_json::Value, serde_json::Error> {
+    serialize_to_json_value(&|adapter| value.serialize(adapter))
+}
+
+struct ErasedValue<'a>(&'a dyn ErasedSerialize);
+
+impl Serialize for ErasedValue<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serialize_with(serializer, |adapter: SerAdapter<'_>| {
+            self.0.erased_serialize(adapter.0)
+        })
+    }
+}
+
+/// Serializes an erased value via `serde_json::json!` using a single
+/// monomorphization (`ErasedValue`) inside `cadmpeg-core`.
+#[doc(hidden)]
+pub fn json_value_from_erased(value: &dyn ErasedSerialize) -> serde_json::Value {
+    crate::__serde_json::json!(ErasedValue(value))
+}
+
+/// Serializes an erased value directly into a compact JSON string inside
+/// `cadmpeg-core`, keeping `serde_json::Serializer` compiled once.
+pub fn serialize_to_json_string(
+    body: &dyn Fn(SerAdapter<'_>) -> Result<(), SerError>,
+) -> Result<String, serde_json::Error> {
+    let bytes = serialize_to_json_vec(body)?;
+    String::from_utf8(bytes).map_err(ser::Error::custom)
+}
+
+/// Serializes an erased value directly into a compact JSON byte vector inside
+/// `cadmpeg-core`, keeping `serde_json::Serializer` compiled once.
+pub fn serialize_to_json_vec(
+    body: &dyn Fn(SerAdapter<'_>) -> Result<(), SerError>,
+) -> Result<Vec<u8>, serde_json::Error> {
+    let mut bytes = Vec::new();
+    let mut serializer = serde_json::Serializer::new(&mut bytes);
+    serialize_with(&mut serializer, body)?;
+    Ok(bytes)
+}
+
+/// Serializes an erased value directly into a pretty-printed JSON byte vector
+/// inside `cadmpeg-core`, keeping `serde_json::Serializer` compiled once.
+pub fn serialize_to_json_vec_pretty(
+    body: &dyn Fn(SerAdapter<'_>) -> Result<(), SerError>,
+) -> Result<Vec<u8>, serde_json::Error> {
+    let mut bytes = Vec::new();
+    let mut serializer = serde_json::Serializer::pretty(&mut bytes);
+    serialize_with(&mut serializer, body)?;
+    Ok(bytes)
+}
+
+/// Serializes `value` into a compact JSON string through [`SerAdapter`],
+/// keeping `serde_json::Serializer` compiled once in `cadmpeg-core`.
+pub fn to_json_string<T: Serialize + ?Sized>(value: &T) -> Result<String, serde_json::Error> {
+    serialize_to_json_string(&|adapter| value.serialize(adapter))
+}
+
+/// Serializes `value` into a pretty-printed JSON string through [`SerAdapter`],
+/// keeping `serde_json::Serializer` compiled once in `cadmpeg-core`.
+pub fn to_json_string_pretty<T: Serialize + ?Sized>(
+    value: &T,
+) -> Result<String, serde_json::Error> {
+    let bytes = serialize_to_json_vec_pretty(&|adapter| value.serialize(adapter))?;
+    String::from_utf8(bytes).map_err(ser::Error::custom)
+}
+
+/// Serializes `value` into a compact JSON byte vector through [`SerAdapter`],
+/// keeping `serde_json::Serializer` compiled once in `cadmpeg-core`.
+pub fn to_json_vec<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, serde_json::Error> {
+    serialize_to_json_vec(&|adapter| value.serialize(adapter))
+}
+
+/// Serializes `value` into a pretty-printed JSON byte vector through
+/// [`SerAdapter`], keeping `serde_json::Serializer` compiled once in
+/// `cadmpeg-core`.
+pub fn to_json_vec_pretty<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, serde_json::Error> {
+    serialize_to_json_vec_pretty(&|adapter| value.serialize(adapter))
+}
+
 /// Error produced while driving an erased [`Deserializer`].
 #[derive(Debug)]
 pub struct DeError {
@@ -1543,7 +1627,7 @@ impl<'de> VariantAccess<'de> for VariantAdapter<'_, 'de> {
     }
 
     fn tuple_variant<V: Visitor<'de>>(self, len: usize, visitor: V) -> Result<V::Value, DeError> {
-        let mut slot = VisitorSlot {
+        let mut slot = SeqVisitorSlot {
             visitor: Some(visitor),
             output: None,
         };
@@ -1557,7 +1641,7 @@ impl<'de> VariantAccess<'de> for VariantAdapter<'_, 'de> {
         fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, DeError> {
-        let mut slot = VisitorSlot {
+        let mut slot = StructVisitorSlot {
             visitor: Some(visitor),
             output: None,
         };
@@ -1586,6 +1670,48 @@ impl<'a, 'de> EnumAccess<'de> for EnumAdapter<'a, 'de> {
             .output
             .ok_or_else(|| de::Error::custom("erased enum seed produced no value"))?;
         Ok((value, VariantAdapter(variant)))
+    }
+}
+
+struct ErasedExpected<'a, 'de>(&'a dyn ErasedVisitor<'de>);
+
+impl de::Expected for ErasedExpected<'_, '_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.erased_expecting(formatter)
+    }
+}
+
+fn unexpected_visit_event<'de>(
+    event: VisitEvent<'_, 'de>,
+    visitor: &dyn ErasedVisitor<'de>,
+) -> DeError {
+    let expected = ErasedExpected(visitor);
+    match event {
+        VisitEvent::Bool(value) => de::Error::invalid_type(de::Unexpected::Bool(value), &expected),
+        VisitEvent::I64(value) => de::Error::invalid_type(de::Unexpected::Signed(value), &expected),
+        VisitEvent::U64(value) => {
+            de::Error::invalid_type(de::Unexpected::Unsigned(value), &expected)
+        }
+        VisitEvent::F64(value) => de::Error::invalid_type(de::Unexpected::Float(value), &expected),
+        VisitEvent::Str(value) | VisitEvent::BorrowedStr(value) => {
+            de::Error::invalid_type(de::Unexpected::Str(value), &expected)
+        }
+        VisitEvent::String(value) => {
+            de::Error::invalid_type(de::Unexpected::Str(&value), &expected)
+        }
+        VisitEvent::Bytes(value) => {
+            de::Error::invalid_type(de::Unexpected::Bytes(value), &expected)
+        }
+        VisitEvent::None | VisitEvent::Some(_) => {
+            de::Error::invalid_type(de::Unexpected::Option, &expected)
+        }
+        VisitEvent::Unit => de::Error::invalid_type(de::Unexpected::Unit, &expected),
+        VisitEvent::NewtypeStruct(_) => {
+            de::Error::invalid_type(de::Unexpected::NewtypeStruct, &expected)
+        }
+        VisitEvent::Seq(_) => de::Error::invalid_type(de::Unexpected::Seq, &expected),
+        VisitEvent::Map(_) => de::Error::invalid_type(de::Unexpected::Map, &expected),
+        VisitEvent::Enum(_) => de::Error::invalid_type(de::Unexpected::Enum, &expected),
     }
 }
 
@@ -1622,10 +1748,105 @@ impl<'de, V: Visitor<'de>> ErasedVisitor<'de> for VisitorSlot<V, V::Value> {
     }
 }
 
+macro_rules! specialized_visitor_slot {
+    ($name:ident, |$visitor:ident, $event:ident| { $($pat:pat => $arm:expr),* $(,)? }) => {
+        struct $name<V, T> {
+            visitor: Option<V>,
+            output: Option<T>,
+        }
+
+        impl<'de, V: Visitor<'de>> ErasedVisitor<'de> for $name<V, V::Value> {
+            fn erased_expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match &self.visitor {
+                    Some(visitor) => visitor.expecting(formatter),
+                    None => formatter.write_str("a value"),
+                }
+            }
+
+            fn erased_visit(&mut self, $event: VisitEvent<'_, 'de>) -> Result<(), DeError> {
+                match $event {
+                    $(
+                        $pat => {
+                            let $visitor = self.visitor.take().ok_or_else(DeError::consumed)?;
+                            self.output = Some($arm?);
+                            Ok(())
+                        }
+                    )*
+                    other => Err(unexpected_visit_event(other, self)),
+                }
+            }
+        }
+    };
+}
+
+specialized_visitor_slot!(BoolVisitorSlot, |visitor, event| {
+    VisitEvent::Bool(value) => visitor.visit_bool(value),
+});
+
+specialized_visitor_slot!(NumVisitorSlot, |visitor, event| {
+    VisitEvent::I64(value) => visitor.visit_i64(value),
+    VisitEvent::U64(value) => visitor.visit_u64(value),
+    VisitEvent::F64(value) => visitor.visit_f64(value),
+});
+
+specialized_visitor_slot!(StrVisitorSlot, |visitor, event| {
+    VisitEvent::Str(value) => visitor.visit_str(value),
+    VisitEvent::BorrowedStr(value) => visitor.visit_borrowed_str(value),
+    VisitEvent::String(value) => visitor.visit_string(value),
+});
+
+specialized_visitor_slot!(BytesVisitorSlot, |visitor, event| {
+    VisitEvent::Bytes(value) => visitor.visit_bytes(value),
+    VisitEvent::Str(value) => visitor.visit_str(value),
+    VisitEvent::BorrowedStr(value) => visitor.visit_borrowed_str(value),
+    VisitEvent::String(value) => visitor.visit_string(value),
+    VisitEvent::Seq(seq) => visitor.visit_seq(SeqAdapter(seq)),
+});
+
+specialized_visitor_slot!(OptionVisitorSlot, |visitor, event| {
+    VisitEvent::None => visitor.visit_none(),
+    VisitEvent::Some(deserializer) => visitor.visit_some(DeAdapter(deserializer)),
+    VisitEvent::Unit => visitor.visit_unit(),
+});
+
+specialized_visitor_slot!(UnitVisitorSlot, |visitor, event| {
+    VisitEvent::Unit => visitor.visit_unit(),
+    VisitEvent::None => visitor.visit_none(),
+});
+
+specialized_visitor_slot!(NewtypeVisitorSlot, |visitor, event| {
+    VisitEvent::NewtypeStruct(deserializer) => visitor.visit_newtype_struct(DeAdapter(deserializer)),
+});
+
+specialized_visitor_slot!(SeqVisitorSlot, |visitor, event| {
+    VisitEvent::Seq(seq) => visitor.visit_seq(SeqAdapter(seq)),
+});
+
+specialized_visitor_slot!(MapVisitorSlot, |visitor, event| {
+    VisitEvent::Map(map) => visitor.visit_map(MapAdapter(map)),
+});
+
+specialized_visitor_slot!(StructVisitorSlot, |visitor, event| {
+    VisitEvent::Seq(seq) => visitor.visit_seq(SeqAdapter(seq)),
+    VisitEvent::Map(map) => visitor.visit_map(MapAdapter(map)),
+});
+
+specialized_visitor_slot!(EnumVisitorSlot, |visitor, event| {
+    VisitEvent::Enum(data) => visitor.visit_enum(EnumAdapter(data)),
+});
+
+specialized_visitor_slot!(IdentVisitorSlot, |visitor, event| {
+    VisitEvent::Str(value) => visitor.visit_str(value),
+    VisitEvent::BorrowedStr(value) => visitor.visit_borrowed_str(value),
+    VisitEvent::String(value) => visitor.visit_string(value),
+    VisitEvent::Bytes(value) => visitor.visit_bytes(value),
+    VisitEvent::U64(value) => visitor.visit_u64(value),
+});
+
 macro_rules! forward_de_adapter {
-    ($($method:ident => $erased:ident ($($arg:ident: $ty:ty),*)),* $(,)?) => {$(
+    ($($method:ident => $erased:ident ($($arg:ident: $ty:ty),*) via $slot:ident),* $(,)?) => {$(
         fn $method<V: Visitor<'de>>(self, $($arg: $ty,)* visitor: V) -> Result<V::Value, DeError> {
-            let mut slot = VisitorSlot {
+            let mut slot = $slot {
                 visitor: Some(visitor),
                 output: None,
             };
@@ -1640,37 +1861,37 @@ impl<'de> Deserializer<'de> for DeAdapter<'_, 'de> {
     type Error = DeError;
 
     forward_de_adapter!(
-        deserialize_any => erased_deserialize_any(),
-        deserialize_bool => erased_deserialize_bool(),
-        deserialize_i8 => erased_deserialize_i8(),
-        deserialize_i16 => erased_deserialize_i16(),
-        deserialize_i32 => erased_deserialize_i32(),
-        deserialize_i64 => erased_deserialize_i64(),
-        deserialize_i128 => erased_deserialize_i128(),
-        deserialize_u8 => erased_deserialize_u8(),
-        deserialize_u16 => erased_deserialize_u16(),
-        deserialize_u32 => erased_deserialize_u32(),
-        deserialize_u64 => erased_deserialize_u64(),
-        deserialize_u128 => erased_deserialize_u128(),
-        deserialize_f32 => erased_deserialize_f32(),
-        deserialize_f64 => erased_deserialize_f64(),
-        deserialize_char => erased_deserialize_char(),
-        deserialize_str => erased_deserialize_str(),
-        deserialize_string => erased_deserialize_string(),
-        deserialize_bytes => erased_deserialize_bytes(),
-        deserialize_byte_buf => erased_deserialize_byte_buf(),
-        deserialize_option => erased_deserialize_option(),
-        deserialize_unit => erased_deserialize_unit(),
-        deserialize_unit_struct => erased_deserialize_unit_struct(name: &'static str),
-        deserialize_newtype_struct => erased_deserialize_newtype_struct(name: &'static str),
-        deserialize_seq => erased_deserialize_seq(),
-        deserialize_tuple => erased_deserialize_tuple(len: usize),
-        deserialize_tuple_struct => erased_deserialize_tuple_struct(name: &'static str, len: usize),
-        deserialize_map => erased_deserialize_map(),
-        deserialize_struct => erased_deserialize_struct(name: &'static str, fields: &'static [&'static str]),
-        deserialize_enum => erased_deserialize_enum(name: &'static str, variants: &'static [&'static str]),
-        deserialize_identifier => erased_deserialize_identifier(),
-        deserialize_ignored_any => erased_deserialize_ignored_any(),
+        deserialize_any => erased_deserialize_any() via VisitorSlot,
+        deserialize_bool => erased_deserialize_bool() via BoolVisitorSlot,
+        deserialize_i8 => erased_deserialize_i8() via NumVisitorSlot,
+        deserialize_i16 => erased_deserialize_i16() via NumVisitorSlot,
+        deserialize_i32 => erased_deserialize_i32() via NumVisitorSlot,
+        deserialize_i64 => erased_deserialize_i64() via NumVisitorSlot,
+        deserialize_i128 => erased_deserialize_i128() via NumVisitorSlot,
+        deserialize_u8 => erased_deserialize_u8() via NumVisitorSlot,
+        deserialize_u16 => erased_deserialize_u16() via NumVisitorSlot,
+        deserialize_u32 => erased_deserialize_u32() via NumVisitorSlot,
+        deserialize_u64 => erased_deserialize_u64() via NumVisitorSlot,
+        deserialize_u128 => erased_deserialize_u128() via NumVisitorSlot,
+        deserialize_f32 => erased_deserialize_f32() via NumVisitorSlot,
+        deserialize_f64 => erased_deserialize_f64() via NumVisitorSlot,
+        deserialize_char => erased_deserialize_char() via StrVisitorSlot,
+        deserialize_str => erased_deserialize_str() via StrVisitorSlot,
+        deserialize_string => erased_deserialize_string() via StrVisitorSlot,
+        deserialize_bytes => erased_deserialize_bytes() via BytesVisitorSlot,
+        deserialize_byte_buf => erased_deserialize_byte_buf() via BytesVisitorSlot,
+        deserialize_option => erased_deserialize_option() via OptionVisitorSlot,
+        deserialize_unit => erased_deserialize_unit() via UnitVisitorSlot,
+        deserialize_unit_struct => erased_deserialize_unit_struct(name: &'static str) via UnitVisitorSlot,
+        deserialize_newtype_struct => erased_deserialize_newtype_struct(name: &'static str) via NewtypeVisitorSlot,
+        deserialize_seq => erased_deserialize_seq() via SeqVisitorSlot,
+        deserialize_tuple => erased_deserialize_tuple(len: usize) via SeqVisitorSlot,
+        deserialize_tuple_struct => erased_deserialize_tuple_struct(name: &'static str, len: usize) via SeqVisitorSlot,
+        deserialize_map => erased_deserialize_map() via MapVisitorSlot,
+        deserialize_struct => erased_deserialize_struct(name: &'static str, fields: &'static [&'static str]) via StructVisitorSlot,
+        deserialize_enum => erased_deserialize_enum(name: &'static str, variants: &'static [&'static str]) via EnumVisitorSlot,
+        deserialize_identifier => erased_deserialize_identifier() via IdentVisitorSlot,
+        deserialize_ignored_any => erased_deserialize_ignored_any() via VisitorSlot,
     );
 
     fn is_human_readable(&self) -> bool {
@@ -2244,4 +2465,123 @@ pub fn deserialize_with<'de, T, D: Deserializer<'de>>(
     let mut guard = DeGuard::new(deserializer);
     let value = read(guard.adapter());
     guard.finish(value)
+}
+
+/// Drives `read` with a [`DeAdapter`] backed by `deserializer`.
+pub fn deserialize_erased<'de, D: Deserializer<'de>>(
+    deserializer: D,
+    read: &mut dyn FnMut(DeAdapter<'_, 'de>) -> Result<(), DeError>,
+) -> Result<(), D::Error> {
+    let mut guard = DeGuard::new(deserializer);
+    let outcome = read(guard.adapter());
+    guard.finish(outcome)
+}
+
+/// Drives `read` with a [`DeAdapter`] backed by `value`, keeping
+/// `serde_json::Value`'s erased deserializer compiled once in `cadmpeg-core`.
+pub fn with_json_value_deserializer<'de>(
+    value: &'de serde_json::Value,
+    read: &mut dyn FnMut(DeAdapter<'_, 'de>) -> Result<(), DeError>,
+) -> Result<(), serde_json::Error> {
+    deserialize_erased(value, read)
+}
+
+/// `error` without the text position the parser appends to its message.
+///
+/// A reader of text that it wrote itself, or that another reader cut out of
+/// a larger text, states a refusal the way a reader of the value would: the
+/// position would name a place in text the caller never sees.
+pub fn without_position(error: serde_json::Error) -> serde_json::Error {
+    if error.line() == 0 {
+        return error;
+    }
+    let text = error.to_string();
+    let position = format!(" at line {} column {}", error.line(), error.column());
+    match text.strip_suffix(&position) {
+        Some(stated) => de::Error::custom(stated),
+        None => error,
+    }
+}
+
+/// Reads `T` from JSON text whose writer bounded its nesting: the parser's
+/// recursion limit is lifted, text after the value is refused, and a refusal
+/// carries no text position ([`without_position`]).
+///
+/// Every typed read in the workspace goes through `serde_json`'s `StrRead`
+/// deserializer, so each type's read compiles once.
+///
+/// # Errors
+///
+/// Returns the refusal of `T`, or of text after the value.
+pub fn from_json_str<T: de::DeserializeOwned>(text: &str) -> Result<T, serde_json::Error> {
+    let mut deserializer = serde_json::Deserializer::from_str(text);
+    deserializer.disable_recursion_limit();
+    let parsed = T::deserialize(&mut deserializer).map_err(without_position)?;
+    deserializer.end().map_err(without_position)?;
+    Ok(parsed)
+}
+
+/// Deserializes `T` from a [`serde_json::Value`] by writing the value as text
+/// and reading it with [`from_json_str`], so `T` compiles no read against
+/// `serde_json::Value`'s deserializer.
+pub fn from_json_value<T: de::DeserializeOwned>(
+    value: &serde_json::Value,
+) -> Result<T, serde_json::Error> {
+    let text = serde_json::to_string(value)?;
+    from_json_str(&text)
+}
+
+/// Deserializes `T` from UTF-8 JSON bytes with `serde_json::from_str`, so
+/// `T` compiles its read against `StrRead`, the deserializer every other
+/// typed read uses, and not against `SliceRead` as well.
+pub fn from_json_slice<T: de::DeserializeOwned>(slice: &[u8]) -> Result<T, serde_json::Error> {
+    let text = std::str::from_utf8(slice).map_err(de::Error::custom)?;
+    serde_json::from_str(text)
+}
+
+/// Drop-in JSON helpers matching `serde_json`'s free-function signatures while
+/// routing serialization through [`SerAdapter`] and deserialization through
+/// `serde_json`'s `StrRead` deserializer.
+pub mod json {
+    use serde::{de::DeserializeOwned, Serialize};
+
+    /// Serializes `value` into a [`serde_json::Value`] via [`super::to_json_value`].
+    pub fn to_value<T: Serialize>(value: T) -> serde_json::Result<serde_json::Value> {
+        super::to_json_value(&value)
+    }
+
+    /// Deserializes `T` from `value` via [`super::from_json_value`],
+    /// consuming `value` as `serde_json::from_value` does.
+    pub fn from_value<T: DeserializeOwned>(value: serde_json::Value) -> serde_json::Result<T> {
+        let read = super::from_json_value(&value);
+        drop(value);
+        read
+    }
+
+    /// Serializes `value` into a compact JSON string via [`super::to_json_string`].
+    pub fn to_string<T: ?Sized + Serialize>(value: &T) -> serde_json::Result<String> {
+        super::to_json_string(value)
+    }
+
+    /// Serializes `value` into a pretty-printed JSON string via
+    /// [`super::to_json_string_pretty`].
+    pub fn to_string_pretty<T: ?Sized + Serialize>(value: &T) -> serde_json::Result<String> {
+        super::to_json_string_pretty(value)
+    }
+
+    /// Serializes `value` into compact JSON bytes via [`super::to_json_vec`].
+    pub fn to_vec<T: ?Sized + Serialize>(value: &T) -> serde_json::Result<Vec<u8>> {
+        super::to_json_vec(value)
+    }
+
+    /// Serializes `value` into pretty-printed JSON bytes via
+    /// [`super::to_json_vec_pretty`].
+    pub fn to_vec_pretty<T: ?Sized + Serialize>(value: &T) -> serde_json::Result<Vec<u8>> {
+        super::to_json_vec_pretty(value)
+    }
+
+    /// Deserializes `T` from UTF-8 JSON bytes via [`super::from_json_slice`].
+    pub fn from_slice<T: DeserializeOwned>(slice: &[u8]) -> serde_json::Result<T> {
+        super::from_json_slice(slice)
+    }
 }

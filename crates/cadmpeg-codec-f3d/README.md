@@ -128,7 +128,7 @@ DR-31 records the remaining placement and control questions.
 
 ```rust,no_run
 use cadmpeg_codec_f3d::F3dCodec;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::fs::File;
 
@@ -140,10 +140,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut output = File::create("part-edited.f3d")?;
     F3dCodec
-        .plan(
-            EncodeInput::new(result.ir(), Some(result.source_fidelity())),
-            TargetRequest::Inherit,
-        )?
+        .plan(EncodeInput::new(result.ir(), Some(result.source_fidelity())))?
         .write_to(&mut output)?;
     Ok(())
 }
