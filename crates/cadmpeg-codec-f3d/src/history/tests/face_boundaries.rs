@@ -422,3 +422,57 @@ fn bounded_face_identity_requires_a_complete_named_face_boundary() {
     bind_edge_identity_bounded_face_rules(&mut identities, &[face]);
     assert_eq!(identities[0].resolved_edge_slots, [6]);
 }
+
+#[test]
+fn bounded_face_chamfer_identity_drops_the_tangent_loop_edges_of_the_named_face() {
+    let transition = [1, 2, 3, 4];
+    let (identity, mut face) = named_face_member(
+        0,
+        &transition,
+        face_context(30, 50, &[TOP]),
+        face_context(32, 52, &[BOTTOM]),
+    );
+    face.tangent_boundary_edge_slots = vec![1, 3];
+    let mut identities = vec![identity];
+    let losses = bind_edge_identity_bounded_face_rules(&mut identities, &[face]);
+    assert_eq!(identities[0].resolved_edge_slots, [2, 4]);
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn bounded_face_chamfer_identity_keeps_every_sharp_loop_edge_of_the_named_face() {
+    let transition = [1, 2, 3, 4];
+    let (identity, face) = named_face_member(
+        0,
+        &transition,
+        face_context(30, 50, &[TOP]),
+        face_context(32, 52, &[BOTTOM]),
+    );
+    let mut identities = vec![identity];
+    let losses = bind_edge_identity_bounded_face_rules(&mut identities, &[face]);
+    assert_eq!(identities[0].resolved_edge_slots, TOP);
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn bounded_face_chamfer_identity_keeps_an_undetermined_loop_edge_with_a_loss() {
+    let transition = [1, 2, 3, 4];
+    let (identity, mut face) = named_face_member(
+        0,
+        &transition,
+        face_context(30, 50, &[TOP]),
+        face_context(32, 52, &[BOTTOM]),
+    );
+    face.tangent_boundary_edge_slots = vec![1];
+    face.undetermined_continuity_edge_slots = vec![3, 9];
+    let mut identities = vec![identity];
+    let losses = bind_edge_identity_bounded_face_rules(&mut identities, &[face]);
+    assert_eq!(identities[0].resolved_edge_slots, [2, 3, 4]);
+    assert_eq!(
+        losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>(),
+        [crate::loss::F3dLossCode::HistoricalEdgeContinuityAssumedSharp.kind()]
+    );
+}

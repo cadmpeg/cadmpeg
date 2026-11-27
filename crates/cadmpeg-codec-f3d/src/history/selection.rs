@@ -2434,13 +2434,16 @@ pub(super) fn complete_compact_edge_treatment_deletions(
 /// coedge edge of every loop of the preceding face that the recipe's first
 /// reference names, in the treatment transition edge set. When the first
 /// reference names no unique preceding face, the rule selects the transition
-/// edges on the recipe's exact preceding support face.
+/// edges on the recipe's exact preceding support face. A Chamfer member drops
+/// each edge whose two adjacent faces meet with tangent continuity, and keeps
+/// each edge whose continuity is undetermined with a loss.
 pub(crate) fn bind_edge_identity_bounded_face_rules(
     operands: &mut [DesignEdgeIdentityOperand],
     face_operands: &[crate::records::topology::face::DesignFaceOperand],
-) {
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use crate::records::recipes::ConstructionRecipeKind;
 
+    let mut losses = Vec::new();
     for operand in operands {
         operand.resolved_edge_slots.clear();
         if operand.resolved_edge_slot.is_some() {
@@ -2487,15 +2490,31 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
             .flat_map(|boundary| &boundary.loops)
             .flat_map(|loop_| loop_.boundary.coedges().map(|row| row.edge_slot))
         {
-            if transition.contains(&edge) && seen.insert(edge) {
+            if transition.contains(&edge)
+                && !face.tangent_boundary_edge_slots.contains(&edge)
+                && seen.insert(edge)
+            {
                 resolved.push(edge);
             }
+        }
+        let undetermined = resolved
+            .iter()
+            .filter(|edge| face.undetermined_continuity_edge_slots.contains(edge))
+            .count();
+        if undetermined != 0 {
+            losses.push(
+                crate::loss::F3dLossCode::HistoricalEdgeContinuityAssumedSharp.note(format!(
+                    "Chamfer face member {} keeps {undetermined} loop edge(s) of its face with the assumption that the edge is sharp, because the preceding topology does not give the continuity of the two faces at the edge.",
+                    operand.id
+                )),
+            );
         }
         operand.resolved_edge_slots = resolved;
         if !operand.resolved_edge_slots.is_empty() {
             operand.resolution_identity_id = Some(face.id.clone());
         }
     }
+    losses
 }
 
 /// The preceding face that the first recipe reference of a bounded-face
