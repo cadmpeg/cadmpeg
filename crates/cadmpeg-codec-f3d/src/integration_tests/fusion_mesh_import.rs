@@ -204,3 +204,51 @@ fn a_moved_then_removed_mesh_body_holds_the_state_after_its_move() {
         [15.0, 0.0, 0.0, 25.0, 10.0, 10.0],
     );
 }
+
+#[test]
+fn a_geometry_depth_decode_keeps_a_removed_mesh_body_in_its_native_record() {
+    // Fusion: Insert Mesh of a 10 mm cube from the origin, then MeshRemove.
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(&include_bytes!("../../../../corpus/f3d/mesh_import_remove.f3d")[..]),
+            &DecodeOptions {
+                depth: cadmpeg_core::decode::DecodeDepth::Geometry,
+                ..DecodeOptions::default()
+            },
+        )
+        .expect("decode the corpus file");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).unwrap();
+    assert!(validation.is_ok(), "{validation:#?}");
+    assert!(result.ir().model.tessellations.is_empty());
+    let native = crate::test_support::native_test::f3d_native(result.ir());
+    let removed = native
+        .design_mesh_features
+        .iter()
+        .flat_map(crate::records::mesh::DesignMeshFeature::removed_bodies)
+        .collect::<Vec<_>>();
+    let [body] = removed.as_slice() else {
+        panic!("the native record keeps the removed body");
+    };
+    assert_eq!(body.tessellation_id, None);
+    let unstated = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == F3dLossCode::FeatureMeshRemovedStateUnresolved.kind())
+        .collect::<Vec<_>>();
+    let [loss] = unstated.as_slice() else {
+        panic!("one removed-state loss: {unstated:#?}");
+    };
+    assert!(loss
+        .message
+        .contains("the decode depth leaves out the design history"));
+    let findings = crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, result.ir()).unwrap()
+    });
+    assert!(
+        !findings.iter().any(|finding| finding.message
+            == "Fusion Design mesh feature has an invalid frame or object graph"),
+        "{findings:#?}"
+    );
+}

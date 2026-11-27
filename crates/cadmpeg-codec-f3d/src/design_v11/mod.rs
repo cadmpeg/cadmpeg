@@ -76,7 +76,7 @@ pub(crate) fn project(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     project_design(ctx, ir, depth, losses)?;
-    mesh_states::bind(ctx, ir, losses)
+    mesh_states::bind(ctx, ir, depth, losses)
 }
 
 /// [`project`] without the states of removed mesh bodies.
