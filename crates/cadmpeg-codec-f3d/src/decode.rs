@@ -7021,8 +7021,12 @@ pub(crate) fn apply_body_presentation_names(
         else {
             continue;
         };
-        let presentations =
-            crate::design::decode::presentation::body_presentations(bytes, &metadata)?;
+        let presentations = crate::design::decode::presentation::scan_body_presentations(
+            scan,
+            &entry.name,
+            bytes,
+            &metadata,
+        )?;
         for presentation in presentations {
             let Some(name) = presentation.name.as_deref() else {
                 continue;

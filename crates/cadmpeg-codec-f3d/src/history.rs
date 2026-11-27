@@ -209,6 +209,7 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
 /// A [`HistoryFailure`] when a `delta_state` record does not read, so no
 /// state of the history is kept: it names where the history partition
 /// starts.
+#[cfg(test)]
 pub(crate) fn decode(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
@@ -217,8 +218,34 @@ pub(crate) fn decode(
     remaining_retained_bytes: &mut u64,
     binding_work: &cadmpeg_core::decode::WorkBudget,
 ) -> Result<Option<AsmHistory>, HistoryFailure> {
-    let framing = HistoryFraming::scan(bytes, stream);
-    let start = framing.partition_start().unwrap_or(0);
+    decode_with_senses(
+        ctx,
+        bytes,
+        stream,
+        width,
+        remaining_retained_bytes,
+        binding_work,
+        None,
+    )
+}
+
+/// [`decode`], recording the chamfer face senses of the history's bound
+/// transitions into `chamfer_senses` when it is given.
+///
+/// # Errors
+///
+/// A [`HistoryFailure`] when a `delta_state` record does not read, so no
+/// state of the history is kept: it names where the history partition
+/// starts.
+pub(crate) fn decode_with_senses(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    stream: &str,
+    width: RefWidth,
+    remaining_retained_bytes: &mut u64,
+    binding_work: &cadmpeg_core::decode::WorkBudget,
+    chamfer_senses: Option<&mut chamfer_supports::ChamferSenses>,
+) -> Result<Option<AsmHistory>, HistoryFailure> {
     decode_framed(
         ctx,
         bytes,
@@ -226,9 +253,12 @@ pub(crate) fn decode(
         width,
         remaining_retained_bytes,
         binding_work,
-        framing,
+        chamfer_senses,
     )
-    .map_err(|error| HistoryFailure { start, error })
+    .map_err(|error| HistoryFailure {
+        start: partition_start(bytes).unwrap_or(0),
+        error,
+    })
 }
 
 /// Where the ASM history partition of the BREP stream `bytes` starts: at
@@ -254,9 +284,9 @@ fn decode_framed(
     width: RefWidth,
     remaining_retained_bytes: &mut u64,
     binding_work: &cadmpeg_core::decode::WorkBudget,
-    framing: HistoryFraming,
+    chamfer_senses: Option<&mut chamfer_supports::ChamferSenses>,
 ) -> Result<Option<AsmHistory>, cadmpeg_core::CodecError> {
-    let _chamfer_orientation = chamfer_supports::HistoryScope::enter(&framing.history_id);
+    let framing = HistoryFraming::scan(bytes, stream);
     let mut states = Vec::new();
     let mut preframed_records = Vec::new();
     for (ordinal, &offset) in framing.delta_offsets.iter().enumerate() {
@@ -302,6 +332,9 @@ fn decode_framed(
     bind_snapshot_revision_ids(&mut states);
     let binding_budget_exceeded = admit_history_binding(ctx, &states, remaining_retained_bytes)?
         == HistoryBindingAdmission::Skipped;
+    let mut stream_senses = chamfer_senses
+        .as_ref()
+        .map(|_| chamfer_supports::StreamChamferSenses::default());
     let cached_archive = if binding_budget_exceeded {
         drop(preframed_records);
         for state in &mut states {
@@ -321,6 +354,7 @@ fn decode_framed(
             width,
             binding_work,
             Some(&mut preframed),
+            stream_senses.as_mut(),
         )?
     };
     if states.is_empty() {
@@ -329,6 +363,9 @@ fn decode_framed(
     let history = framing.into_history(bytes, width, binding_budget_exceeded, states);
     if let Some(archive) = cached_archive {
         history.cache_record_archive(archive);
+    }
+    if let (Some(out), Some(senses)) = (chamfer_senses, stream_senses) {
+        out.record_history(history.id.clone(), senses);
     }
     Ok(Some(history))
 }
@@ -389,10 +426,7 @@ fn state_header(bytes: &[u8], offset: usize, width: RefWidth) -> DeltaStateHeade
     }
 }
 
-/// Drop chamfer face senses recorded for the design decode that just finished.
-pub(crate) fn clear_chamfer_orientation() {
-    chamfer_supports::clear();
-}
+pub(crate) use chamfer_supports::ChamferSenses;
 
 /// Stream-level layout of one ASM history: its preamble and `delta_state` offsets.
 struct HistoryFraming {
@@ -656,9 +690,18 @@ fn bind_complete_record_tables(
     width: RefWidth,
     work: &cadmpeg_core::decode::WorkBudget,
     preframed: Option<&mut HashMap<usize, cadmpeg_asm::sab::Record>>,
+    chamfer_senses: Option<&mut chamfer_supports::StreamChamferSenses>,
 ) -> Result<Option<crate::history_records::CachedRecordArchive>, cadmpeg_core::CodecError> {
-    binding::bind_with_cache_and_preframed(ctx, states, bytes, width, work, preframed)
-        .map(|(_, cache)| cache)
+    binding::bind_with_cache_and_preframed_senses(
+        ctx,
+        states,
+        bytes,
+        width,
+        work,
+        preframed,
+        chamfer_senses,
+    )
+    .map(|(_, cache)| cache)
 }
 
 pub(crate) fn decode_record_archive(
