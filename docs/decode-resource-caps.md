@@ -206,7 +206,9 @@ loss: `feature.history-body-bounded` for a history body,
 `feature.base-source-bounded` for the source check of an Inventor Base
 feature, and `feature.profile-body-undecoded` for an Inventor profile body.
 `cadmpeg_asm::brep::inspect_with_header` and `inspect_with_table` take a
-`ScratchContext` for the temporary graph.
+`ScratchContext` for the temporary graph. The inspection reads framed records
+and uses the shell membership marks. The Model path copies the withheld and
+passthrough spans and emits the provenance records.
 
 Trace replay checks the scratch charges and allowance observations in order.
 It releases the temporary retained bytes when the scratch ends. A trace of a

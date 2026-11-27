@@ -24,7 +24,7 @@ use super::geometry::{
     pcurve_ranges_on_domain, procedural_surface_definition_is_exact_carrier, record_reversed,
     reverse_procedural_curve_definition, vertex_point_ref,
 };
-use super::{count_kind, id, AsmBrep, Carriers, Purpose, Reachable, WireShellTopology};
+use super::{count_kind, id, AsmBrep, Carriers, DecodePurpose, Reachable, WireShellTopology};
 /// Pass 1: classify carriers and decode analytic geometry. Returns the seeded
 /// carrier maps and the set of carriers whose native normal is inward.
 pub(super) fn decode_analytic_carriers(
@@ -79,7 +79,7 @@ pub(super) struct TopologyContext<'a, 'ctx, 'record> {
     pub(super) ctx: &'a cadmpeg_core::decode::DecodeContext<'ctx>,
     pub(super) by_index: &'a HashMap<i64, &'record Record>,
     pub(super) token_table: &'a nurbs::toks::SubtypeTable,
-    pub(super) purpose: Purpose,
+    pub(super) purpose: DecodePurpose,
     pub(super) format: IdFormat,
 }
 
@@ -139,7 +139,7 @@ pub(super) fn keep_faces_and_carriers(
         kept_faces.insert(i64::try_from(r.index).map_err(|_| {
             cadmpeg_core::CodecError::malformed("ASM record index exceeds the i64 range")
         })?);
-        if purpose == Purpose::History {
+        if purpose == DecodePurpose::History {
             let native_kind = (surf_rec.head() == "spline")
                 .then(|| nurbs::toks::owned_construction_subtype(&surf_rec.tokens))
                 .flatten();
@@ -330,7 +330,7 @@ pub(super) fn walk_reachable_topology(
                     }
                     if let Some(pc) = coedge_pcurve_ref(ce) {
                         if let Some(prec) = by_index.get(&pc) {
-                            if purpose == Purpose::History {
+                            if purpose == DecodePurpose::History {
                                 pcurve_geo.entry(super::PcurveRecordIndex(pc)).or_insert(
                                     PcurveGeometry::Line(
                                         cadmpeg_ir::geometry::pcurve::LinePcurve::U_AXIS,
@@ -503,7 +503,7 @@ pub(super) fn walk_reachable_topology(
                                                     });
                                                 procedural_curve_defs.insert(cv, super::ProceduralCurveSource::Cacheless(Box::new(definition)));
                                                 kept_curves.insert(cv);
-                                            } else if purpose == Purpose::History {
+                                            } else if purpose == DecodePurpose::History {
                                                 curve_geo.insert(cv, CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }));
                                                 kept_curves.insert(cv);
                                             } else {
@@ -791,7 +791,7 @@ fn keep_wire_edge(
                 super::ProceduralCurveSource::Cacheless(Box::new(definition)),
             );
             kept_curves.insert(curve_index);
-        } else if purpose == Purpose::History {
+        } else if purpose == DecodePurpose::History {
             entry.insert(CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                 record: None,
             }));

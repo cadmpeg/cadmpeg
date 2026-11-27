@@ -999,7 +999,7 @@ fn container_rows(
         &mut out,
         ContainerInputs {
             records: &records,
-            bytes,
+            shell_bytes: Some(bytes),
             by_index: &by_index,
             reach: &reach,
             wire: &WireShellTopology::default(),
@@ -1040,7 +1040,7 @@ fn container_rows_precollected(
         &mut out,
         ContainerInputs {
             records: &owned,
-            bytes,
+            shell_bytes: Some(bytes),
             by_index: &by_index,
             reach: &reach,
             wire: &WireShellTopology::default(),

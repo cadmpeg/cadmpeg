@@ -12,7 +12,9 @@ use crate::feature::history_states::{
     frame_chain, index_chain, prepare, Closed, Framing, Prepared, Reading,
 };
 use crate::kernel::{parse_carrier, ActiveCarrier};
-use crate::test_support::history_carrier::{carrier_bytes, framed_carrier, put_plain, REF};
+use crate::test_support::history_carrier::{
+    carrier_bytes, framed_carrier, put_plain, put_sphere_solid, CURRENT_BODY_KEY, REF,
+};
 
 /// Source index that a naming tag first lists in the older state of the
 /// carrier, and in its head state.
@@ -111,38 +113,46 @@ fn a_passthrough_record_over_the_scratch_limit_leaves_room_for_the_document() {
     with_chain(|_, carrier, _| {
         let header = carrier.header.as_ref().expect("carrier header");
         let mut bytes = Vec::new();
-        put_plain(&mut bytes, header.width, "face", &[(REF, -1); 8]);
-        let span = cadmpeg_core::decode::u64_from_index(bytes.len());
+        put_plain(&mut bytes, header.width, "asmheader", &[]);
+        put_sphere_solid(&mut bytes, header.width, 1, CURRENT_BODY_KEY, -1);
+        put_plain(&mut bytes, header.width, "face", &[(REF, -1); 1024]);
+        let limit = 8192;
         let policy = DecodePolicy {
             limits: ResourceLimits {
-                max_retained_bytes: span - 1,
+                max_retained_bytes: limit,
                 ..ResourceLimits::default()
             },
         };
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input fits");
         let records = cadmpeg_asm::sab::frame(&ctx, &bytes, 0, bytes.len(), header.width, None)
-            .expect("orphan face frames");
-        let [face] = records.as_slice() else {
-            panic!("one face record");
-        };
+            .expect("sphere and orphan face frame");
+        let face = records.last().expect("orphan face record");
         assert_eq!(face.head(), "face");
-        assert_eq!(face.len, bytes.len());
         assert_eq!(face.ref_at(5), None);
-        let slot = i64::try_from(face.index).expect("face slot fits i64");
-        let decoded = decode_scratch(
-            &ctx,
-            &bytes,
-            header,
-            &HashMap::from([(slot, face.clone())]),
-            &BTreeMap::from([(slot, slot)]),
-            0,
-        )
-        .expect("an optional state leaves the document decoding");
-
-        assert!(matches!(decoded, Decoded::Bounded));
-        assert!(ctx.resource_refusal().is_none());
-        ctx.retain_bytes(span - 1, "kept document bytes")
+        assert!(cadmpeg_core::decode::u64_from_index(face.len) > limit);
+        let archive: HashMap<_, _> = records
+            .into_iter()
+            .map(|record| {
+                (
+                    i64::try_from(record.index).expect("record index fits i64"),
+                    record,
+                )
+            })
+            .collect();
+        let versions = archive.keys().map(|&slot| (slot, slot)).collect();
+        let Decoded::Scratch(scratch) = decode_scratch(&ctx, header, &archive, &versions, 0)
+            .expect("an optional state leaves the document decoding")
+        else {
+            panic!("the sphere fits the scratch allowance");
+        };
+        assert_eq!(scratch.model.geometry.bodies.len(), 1);
+        assert_eq!(scratch.model.geometry.faces.len(), 1);
+        assert!(matches!(
+            &scratch.model.geometry.surfaces[0].geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
+        ));
+        ctx.retain_bytes(limit, "kept document bytes")
             .expect("kept output fits the full allowance");
     });
 }

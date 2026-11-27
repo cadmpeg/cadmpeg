@@ -1022,7 +1022,6 @@ fn fill_history(
                         match identity_body_slot(
                             ctx,
                             (archive, versions),
-                            bytes,
                             (&header.metadata, subtypes),
                             identity,
                         ) {
@@ -1074,7 +1073,6 @@ fn fill_history(
                 match build(
                     ctx,
                     (archive, versions),
-                    bytes,
                     (&header.metadata, subtypes),
                     want,
                     (produced, consumed),
@@ -1290,7 +1288,6 @@ fn build(
         &super::HistoricalRecordArchive,
         &super::binding::FastMap<i64, i64>,
     ),
-    bytes: &[u8],
     tables: (
         &cadmpeg_asm::kernel_header::KernelHeader,
         &cadmpeg_asm::nurbs::toks::SubtypeTable,
@@ -1305,7 +1302,6 @@ fn build(
             let brep = match cadmpeg_asm::brep::inspect_with_table(
                 scratch,
                 table,
-                bytes,
                 (Some(tables.0), tables.1),
                 "f3d:history",
                 crate::ids::ID_FORMAT,
@@ -1492,7 +1488,6 @@ fn identity_body_slot(
         &super::HistoricalRecordArchive,
         &super::binding::FastMap<i64, i64>,
     ),
-    bytes: &[u8],
     tables: (
         &cadmpeg_asm::kernel_header::KernelHeader,
         &cadmpeg_asm::nurbs::toks::SubtypeTable,
@@ -1506,7 +1501,6 @@ fn identity_body_slot(
         match cadmpeg_asm::brep::inspect_with_table(
             scratch,
             &table,
-            bytes,
             (Some(tables.0), tables.1),
             "f3d:history",
             crate::ids::ID_FORMAT,

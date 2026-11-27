@@ -149,7 +149,6 @@ pub(crate) fn inspect_kernel_carrier(
     inspect_with_header(
         scratch,
         &records,
-        carrier.bytes.window(),
         Some(&header.metadata),
         &carrier_stream(carrier),
         cadmpeg_asm::asm_format!("inventor"),

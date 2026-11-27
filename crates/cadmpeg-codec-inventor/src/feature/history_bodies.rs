@@ -231,7 +231,6 @@ pub(crate) fn build(
         }
         return Ok(built);
     };
-    let bytes = carrier.bytes.window();
     let work = WorkBudget::new(MAX_HISTORY_BODY_WORK);
     let mut by_ordinal = BTreeMap::<u32, Vec<usize>>::new();
     for (index, want) in wants.iter().enumerate() {
@@ -267,7 +266,7 @@ pub(crate) fn build(
         let Scratch {
             body_keys: keys,
             model: scratch,
-        } = match decode_scratch(ctx, bytes, header, archive, versions, ordinal) {
+        } = match decode_scratch(ctx, header, archive, versions, ordinal) {
             Ok(Decoded::Scratch(scratch)) => *scratch,
             Ok(Decoded::Failed) => return,
             Ok(Decoded::Bounded) => {

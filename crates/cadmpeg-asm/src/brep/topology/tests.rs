@@ -2,7 +2,7 @@
 
 use super::{keep_faces_and_carriers, walk_reachable_topology, TopologyContext};
 use crate::brep::records::WireMembers;
-use crate::brep::{AsmBrep, Carriers, Purpose, Reachable};
+use crate::brep::{AsmBrep, Carriers, DecodePurpose, Reachable};
 use crate::kernel_header::RefWidth;
 use crate::nurbs;
 use crate::nurbs::proc_surface::DecodedProceduralSurfaceDefinition;
@@ -114,7 +114,7 @@ fn faces_sharing_one_loop_walk_and_list_its_ring_once() {
             ctx: &ctx,
             by_index: &by_index,
             token_table: &table,
-            purpose: Purpose::Model,
+            purpose: DecodePurpose::Model,
             format,
         },
         &mut AsmBrep::default(),
@@ -302,7 +302,7 @@ fn collect_wires(records: &[Record]) -> (AsmBrep, crate::brep::WireShellTopology
             ctx: &ctx,
             by_index: &by_index,
             token_table: &table,
-            purpose: Purpose::Model,
+            purpose: DecodePurpose::Model,
             format: crate::asm_format!("f3d"),
         },
         &mut out,
@@ -551,7 +551,7 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
                     ctx: &asm_decode_ctx,
                     by_index: &by_index,
                     token_table: &table,
-                    purpose: Purpose::Model,
+                    purpose: DecodePurpose::Model,
                     format,
                 },
                 &mut out,
@@ -621,7 +621,7 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
             ctx: &asm_decode_ctx,
             by_index: &by_index,
             token_table: &table,
-            purpose: Purpose::History,
+            purpose: DecodePurpose::History,
             format: crate::asm_format!("f3d"),
         },
         &mut out,
@@ -696,7 +696,7 @@ fn history_reaches_cacheless_helix_constructions_from_face_and_wire_edges() {
             ctx: &ctx,
             by_index: &by_index,
             token_table: &table,
-            purpose: Purpose::History,
+            purpose: DecodePurpose::History,
             format: crate::asm_format!("f3d"),
         };
         let mut out = AsmBrep::default();

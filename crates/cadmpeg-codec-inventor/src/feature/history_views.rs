@@ -137,14 +137,7 @@ impl<'c, 'a> StateViews<'c, 'a> {
             return Ok(StateModel::Failed);
         };
         Ok(
-            match decode_scratch(
-                ctx,
-                self.carrier.bytes.window(),
-                header,
-                archive,
-                &versions,
-                ordinal,
-            )? {
+            match decode_scratch(ctx, header, archive, &versions, ordinal)? {
                 Decoded::Scratch(scratch) => StateModel::Model(Box::new(scratch.model)),
                 Decoded::Failed => StateModel::Failed,
                 Decoded::Bounded => StateModel::Bounded,
@@ -174,7 +167,6 @@ pub(crate) enum Decoded {
 /// transfer them into a scratch model.
 pub(crate) fn decode_scratch(
     ctx: &DecodeContext<'_>,
-    bytes: &[u8],
     header: &BinaryHeader,
     archive: &HashMap<i64, Record>,
     versions: &BTreeMap<i64, i64>,
@@ -188,7 +180,6 @@ pub(crate) fn decode_scratch(
         let brep = match inspect_with_header(
             scratch,
             &table,
-            bytes,
             Some(&header.metadata),
             &stream,
             cadmpeg_asm::asm_format!("inventor"),

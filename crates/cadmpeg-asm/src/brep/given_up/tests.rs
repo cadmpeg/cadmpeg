@@ -70,14 +70,7 @@ fn inspect(source: &str) -> AsmBrep {
         let parsed = crate::sat::parse(ctx, bytes).expect("synthetic SAT stream");
         let header = parsed.header.as_kernel_header();
         ctx.scratch(|scratch| {
-            inspect_with_header(
-                scratch,
-                &parsed.records,
-                bytes,
-                Some(&header),
-                "stream",
-                FORMAT,
-            )
+            inspect_with_header(scratch, &parsed.records, Some(&header), "stream", FORMAT)
         })
         .expect("synthetic cone decodes")
         .expect("the graph fits the retained allowance")
@@ -218,6 +211,8 @@ fn an_inspecting_decode_marks_the_shell_and_lists_no_record() {
         brep.faces.len(),
         decode(&source, DecodePurpose::Model).faces.len()
     );
+    assert!(brep.annotation_records.is_empty());
+    assert!(brep.unknowns.is_empty());
 }
 
 /// The cone's face 3 stands on a surface reference that names no record.
