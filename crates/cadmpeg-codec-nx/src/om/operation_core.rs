@@ -13,7 +13,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::bytes::NativeBytes;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", content = "bytes", rename_all = "snake_case")]
 pub(crate) enum OperationCore {
     DeleteFace(#[serde(deserialize_with = "deserialize_delete_face")] NativeBytes<Vec<u8>>),

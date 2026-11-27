@@ -4,7 +4,7 @@
 use crate::om::reference_value::{DirectReference, RecordReference, Tagged28};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 enum Value {
     PersistentHandle(u32),

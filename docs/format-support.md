@@ -76,7 +76,7 @@ its result.
 | STEP Part 21                                      | L8    |
 | Solid Edge `.par`, `.psm`, and `.asm`             | L2    |
 | IronCAD `.ics`                                    | L0    |
-| Onshape bundle                                    | L0    |
+| Onshape bundle                                    | L4    |
 
 <!-- /generated: ladder-table -->
 
@@ -782,7 +782,7 @@ See [`formats/ironcad.md`](formats/ironcad.md) and
 
 <!-- generated: dialects onshape -->
 
-**Ladder: L0.**
+**Ladder: L4.**
 
 | Dialect            | Read     | Write |
 | ------------------ | -------- | ----- |
@@ -792,11 +792,15 @@ See [`formats/ironcad.md`](formats/ironcad.md) and
 <!-- /generated: dialects onshape -->
 
 The decoder reads the Part Studios and the root assembly of an offline
-version 1 bundle. It composes final STEP geometry and maps supported
-sketches, variables, extrusions, revolves, fillets, chamfers and holes.
-Historical picks use rollback topology. An assembly maps to product
-definitions, occurrences with placements and suppression, grounded joints,
-and mate joints with evaluated connector frames. Mate limits and offsets stay
-in the native feature responses. Original members remain embedded assets. Synthetic tests
-pin the reader projection and resource bounds. Real-file evaluation is
-pending.
+version 1 bundle, with captured Derived studios. It composes final STEP
+geometry and maps sketches on default planes, offset planes and model faces,
+variables, extrusions (including up to next), revolves, sweeps, fillets,
+chamfers, holes, shells and subtractions after a Derived insert. Historical
+picks use rollback topology. An assembly maps to product definitions,
+occurrences with placements and suppression, grounded joints, and mate joints
+with evaluated connector frames. Mate limits and offsets stay in the native
+feature responses. Original members remain embedded assets. Typed features
+with operation semantics, sketch geometry, ordering and dependencies set L4. A
+recorded evaluation backs it. Body and face colours and the full sketch
+constraint and feature-family set are not yet established, so L5 and L6 are
+not claimed. Synthetic tests pin the reader projection and resource bounds.

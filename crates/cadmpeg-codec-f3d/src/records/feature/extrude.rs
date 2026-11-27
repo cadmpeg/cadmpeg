@@ -368,7 +368,7 @@ pub(crate) enum DesignExtrudePrologue {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(rename_all = "snake_case", tag = "layout")]
 enum DesignExtrudePrologueWire {
     /// Early distance-only layout with a nullable prefix field.

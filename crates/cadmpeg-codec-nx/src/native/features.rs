@@ -2469,7 +2469,9 @@ impl TryFrom<FeatureSketchPointUseWire> for FeatureSketchPointUse {
 }
 
 /// Exact ordered dependency from a sketch point to a datum coordinate system.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, cadmpeg_derive::DeserializeTagged,
+)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(super) enum FeatureSketchDatumCsysBlockRelation {
     /// The named-point span and coordinate-system construction address one block.
