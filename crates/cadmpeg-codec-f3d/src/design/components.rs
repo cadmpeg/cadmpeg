@@ -406,6 +406,8 @@ struct PathPoseOutcome {
     /// Occurrences placed from the closing matrix of an unmarked object
     /// prelude that no component-path carrier of a complete stream names.
     object_prelude_placements: usize,
+    /// Design streams that store at least one component-path record.
+    path_streams: BTreeSet<String>,
     /// Carriers of the occurrences that took a path pose.
     applied_carriers: BTreeSet<String>,
     /// Expanded instances with an independently resolved world pose.
@@ -1100,6 +1102,13 @@ impl<'a> Projector<'a> {
     /// applies only when exactly one expanded occurrence matches. Two
     /// carriers that pose one occurrence differently apply to neither.
     fn apply_path_poses(&mut self) -> Result<(), cadmpeg_core::CodecError> {
+        self.path_poses.path_streams = self
+            .sources
+            .paths
+            .iter()
+            .filter_map(|path| crate::ids::native_stream(&path.id))
+            .map(str::to_owned)
+            .collect();
         if self.sources.paths.is_empty() {
             return Ok(());
         }
@@ -1449,11 +1458,7 @@ impl<'a> Projector<'a> {
                 .is_some_and(|(stream, components)| {
                     components.unadmitted_paths == 0
                         && !self.path_poses.blocked_streams.contains(stream)
-                        && self
-                            .sources
-                            .paths
-                            .iter()
-                            .any(|path| crate::ids::native_stream(&path.id) == Some(stream))
+                        && self.path_poses.path_streams.contains(stream)
                 })
     }
 
