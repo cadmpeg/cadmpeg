@@ -1943,42 +1943,6 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "geometry.not-projected",
-            "kind": "geometry_not_transferred",
-            "namespace": "iges"
-          }
-        },
-        "message": "IGES entity type 508 form 1 geometry was not projected: loop edge-use tuple is invalid",
-        "provenance": {
-          "format": "iges",
-          "offset": 1539,
-          "stream": "iges",
-          "tag": "directory_entry:D17"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "geometry.not-projected",
-            "kind": "geometry_not_transferred",
-            "namespace": "iges"
-          }
-        },
-        "message": "IGES entity type 510 form 1 geometry was not projected: face loop is missing",
-        "provenance": {
-          "format": "iges",
-          "offset": 1701,
-          "stream": "iges",
-          "tag": "directory_entry:D19"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
             "code": "record.unreadable",
             "kind": "decode_diagnostic",
             "namespace": "decode",
@@ -1992,42 +1956,6 @@
           "tag": "parameter-data"
         },
         "severity": "error"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "entity.retained-unprojected",
-            "kind": "record_not_typed",
-            "namespace": "iges"
-          }
-        },
-        "message": "IGES entity type 502 form 1 retained without neutral projection",
-        "provenance": {
-          "format": "iges",
-          "offset": 891,
-          "stream": "iges",
-          "tag": "directory_entry:D9"
-        },
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "entity.retained-unprojected",
-            "kind": "record_not_typed",
-            "namespace": "iges"
-          }
-        },
-        "message": "IGES entity type 504 form 1 retained without neutral projection",
-        "provenance": {
-          "format": "iges",
-          "offset": 1053,
-          "stream": "iges",
-          "tag": "directory_entry:D11"
-        },
-        "severity": "warning"
       }
     ],
     "notes": [

@@ -1749,7 +1749,7 @@
           }
         },
         "severity": "warning",
-        "message": "part design-record stream=\"FusionAssetName[Active]/Design1/BulkStream.dat\" offset=3171 length=122 record=f3d:source:part#c510818212c763df3d5fbd332fe95584b7818cd592d11c8dd0d56e55bea56813: malformed container: Sketch curve record 1500 in FusionAssetName[Active]/Design1/BulkStream.dat remains in the source archive because its decoding failed: malformed container: F3D sketch-curve record has no usable curve identity; dropped=[]",
+        "message": "part design-record stream=\"FusionAssetName[Active]/Design1/BulkStream.dat\" offset=3171 length=122 record=f3d:source:part#c510818212c763df3d5fbd332fe95584b7818cd592d11c8dd0d56e55bea56813: not implemented yet: Sketch curve record 1500 in FusionAssetName[Active]/Design1/BulkStream.dat remains in the source archive because its decoding failed: malformed container: F3D sketch-curve record has no usable curve identity; dropped=[]",
         "provenance": {
           "format": "f3d",
           "stream": "FusionAssetName[Active]/Design1/BulkStream.dat",

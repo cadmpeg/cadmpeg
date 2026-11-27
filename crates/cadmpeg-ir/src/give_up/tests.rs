@@ -1501,6 +1501,9 @@ fn cube_with_model_records() -> CadIr {
             "id": "test:model:point-cloud#1",
             "definition": definition,
             "positions": [[0.0, 0.0, 0.0]],
+            "normals": [],
+            "colors": [],
+            "channels": [],
             "native_ref": "test:native:point#1",
         }))
         .unwrap(),
@@ -1642,6 +1645,31 @@ fn the_typed_walk_names_what_the_schema_walk_names() {
             cube.geometry.faces[0].id.as_str().to_owned(),
             "test:native:face#1".to_owned()
         ])
+    );
+    let records = cube_with_model_records();
+    let names = |field: &'static str, id: &str| {
+        model
+            .get(&(Arena::home("model", field).unwrap(), id.to_owned()))
+            .cloned()
+            .unwrap_or_default()
+    };
+    assert!(
+        names("presentation_layers", "test:model:layer#1")
+            .contains(cube.geometry.faces[0].id.as_str()),
+        "{model:?}"
+    );
+    assert!(
+        names("point_clouds", "test:model:point-cloud#1")
+            .contains(records.model.product_definitions[0].id.as_str()),
+        "{model:?}"
+    );
+    assert!(
+        names("drawings", "test:model:drawing#view").contains("test:model:drawing#page"),
+        "{model:?}"
+    );
+    assert!(
+        names("drawings", "test:model:drawing#page").contains("test:model:drawing#view"),
+        "{model:?}"
     );
 
     let history = crate::examples::unit_cube_with_history_body().unwrap();
