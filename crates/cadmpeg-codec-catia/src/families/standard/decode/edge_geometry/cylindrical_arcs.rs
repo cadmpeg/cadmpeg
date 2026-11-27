@@ -95,6 +95,43 @@ pub(in crate::families::standard::decode) fn ranges(
         }
     };
 
+    // Pre-pass: invalidate pre-assigned circular arc ranges that contradict
+    // topology so the fixed-point solver below can re-assign consistent arcs:
+    //  1) Two-edge circular loops where both edges chose the SAME overlapping
+    //     arc instead of complementary arcs (degenerate zero-area loop).
+    //  2) Coaxial circular edges on a revolution-surface loop whose pure vertex
+    //     endpoints all lie strictly on the opposite arc side.
+    let mut invalidated = BTreeSet::<usize>::new();
+    for face_topology in topology.faces() {
+        for boundary in face_topology.boundaries() {
+            let [u0, u1] = boundary.coedges() else {
+                continue;
+            };
+            let (e0, e1) = (u0.edge_row, u1.edge_row);
+            if e0 == e1 {
+                continue;
+            }
+            let (Some(&r0), Some(&r1)) = (active_ranges.get(&e0), active_ranges.get(&e1)) else {
+                continue;
+            };
+            let (Some(c0), Some(c1)) = (edge_circle(e0), edge_circle(e1)) else {
+                continue;
+            };
+            if !same_circle_carrier(c0, c1)
+                || !same_distinct_unordered_pair(endpoints(e0), endpoints(e1))
+            {
+                continue;
+            }
+            if circles_overlap_same_arc(c0, r0, c1, r1) {
+                invalidated.insert(e0);
+                invalidated.insert(e1);
+            }
+        }
+    }
+    for row in invalidated {
+        active_ranges.remove(&row);
+    }
+
     let commit_proposals = |proposals: BTreeMap<usize, Option<[f64; 2]>>,
                             recovered: &mut BTreeMap<usize, Option<[f64; 2]>>,
                             active_ranges: &mut BTreeMap<usize, [f64; 2]>,
@@ -314,16 +351,14 @@ pub(in crate::families::standard::decode) fn ranges(
             continue;
         }
 
-        // Pass 3: Unambiguous face-box disambiguation for unranged circular
-        // edges where tessellation box shortfall prevented exact-zero fitting.
+        // Pass 3: Unambiguous face-box disambiguation for unranged circular and
+        // elliptic edges where tessellation box shortfall prevented exact-zero
+        // fitting.
         let mut proposals = BTreeMap::<usize, Option<[f64; 2]>>::new();
         for (row, incident_faces) in edge_incident_faces.iter().enumerate() {
             if active_ranges.contains_key(&row) || conflicted.contains(&row) {
                 continue;
             }
-            let Some(circle) = edge_circle(row) else {
-                continue;
-            };
             let ends = endpoints(row);
             if ends[0].distance(ends[1]) <= ANALYTIC_CURVE_ENDPOINT_TOLERANCE {
                 continue;
@@ -332,7 +367,14 @@ pub(in crate::families::standard::decode) fn ranges(
                 .iter()
                 .filter_map(|&f| face_bounds.get(f).and_then(|b| *b))
                 .collect();
-            if let Some(range) = unambiguous_box_circle_range(circle, ends, &bounds) {
+            let proposed = if let Some(circle) = edge_circle(row) {
+                unambiguous_box_circle_range(circle, ends, &bounds)
+            } else if let Some(ellipse) = edge_ellipse(row) {
+                unambiguous_box_ellipse_range(ellipse, ends, &bounds)
+            } else {
+                None
+            };
+            if let Some(range) = proposed {
                 merge_proposal(&mut proposals, row, range);
             }
         }
@@ -345,9 +387,10 @@ pub(in crate::families::standard::decode) fn ranges(
             continue;
         }
 
-        // Pass 4: Complementary antipodal semicircle pair breaking on 2-edge
-        // circular loops where both edges remain unranged. Resolves one pair at
-        // a time and re-enters Pass 1 so cylinder/cone walls propagate the
+        // Pass 4: Complementary 2-edge circular loop pair breaking where both
+        // edges remain unranged (antipodal semicircles or non-antipodal
+        // complementary arcs invalidated by overlap). Resolves one pair at a
+        // time and re-enters Pass 1 so cylinder/cone walls propagate the
         // choice consistently to the opposite rim.
         let mut broke_pair = false;
         'pair_search: for (face_idx, face_topology) in topology.faces().iter().enumerate() {
@@ -373,12 +416,6 @@ pub(in crate::families::standard::decode) fn ranges(
                 let ends0 = endpoints(e0);
                 let ends1 = endpoints(e1);
                 if !same_distinct_unordered_pair(ends0, ends1) {
-                    continue;
-                }
-                let radius = c0.radius().get();
-                if (ends0[0].distance(ends0[1]) - 2.0 * radius).abs()
-                    > ANALYTIC_CURVE_ENDPOINT_TOLERANCE
-                {
                     continue;
                 }
                 let Some((r0, r1)) = assign_antipodal_semicircle_pair(
@@ -641,6 +678,23 @@ fn same_distinct_unordered_pair(a: [Point3; 2], b: [Point3; 2]) -> bool {
         || (a[0].distance(b[1]) <= tol && a[1].distance(b[0]) <= tol)
 }
 
+fn circles_overlap_same_arc(
+    c0: &CircleCurve,
+    r0: [f64; 2],
+    c1: &CircleCurve,
+    r1: [f64; 2],
+) -> bool {
+    let mid0 = r0[0].midpoint(r0[1]);
+    let ref0 = *c0.frame().reference().as_raw();
+    let tan0 = c0.frame().axis().as_raw().cross(ref0);
+    let mid_dir0 = ref0.scale(mid0.cos()) + tan0.scale(mid0.sin());
+
+    let ref1 = *c1.frame().reference().as_raw();
+    let tan1 = c1.frame().axis().as_raw().cross(ref1);
+    let theta1 = mid_dir0.dot(tan1).atan2(mid_dir0.dot(ref1));
+    theta1.is_finite() && angle_strictly_in_periodic_arc(theta1, r1)
+}
+
 fn complementary_circle_range(
     known: &CircleCurve,
     known_range: [f64; 2],
@@ -697,6 +751,61 @@ fn unambiguous_box_circle_range(
     }
     let max_allowed = (BOX_MAX_EXCESS_FRACTION * radius).min(BOX_MAX_EXCESS_MM);
     let min_other = BOX_MAX_EXCESS_FRACTION * radius;
+    if pos_gap <= max_allowed
+        && neg_gap >= min_other
+        && neg_gap >= BOX_DISAMBIGUATION_RATIO * pos_gap.max(ANALYTIC_CURVE_ENDPOINT_TOLERANCE)
+    {
+        return Some(pos);
+    }
+    if neg_gap <= max_allowed
+        && pos_gap >= min_other
+        && pos_gap >= BOX_DISAMBIGUATION_RATIO * neg_gap.max(ANALYTIC_CURVE_ENDPOINT_TOLERANCE)
+    {
+        return Some(neg);
+    }
+    None
+}
+
+fn unambiguous_box_ellipse_range(
+    ellipse: &EllipseCurve,
+    ends: [Point3; 2],
+    bounds: &[StandardFaceBounds],
+) -> Option<[f64; 2]> {
+    if bounds.is_empty() {
+        return None;
+    }
+    let geom = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(*ellipse));
+    let a0 = standard_analytic_curve_angle(&geom, ends[0])?;
+    let a1 = standard_analytic_curve_angle(&geom, ends[1])?;
+    let sweep_pos = (a1 - a0).rem_euclid(std::f64::consts::TAU);
+    let sweep_neg = (a0 - a1).rem_euclid(std::f64::consts::TAU);
+    if sweep_pos <= EPS_STANDARD_DECODE_GEOMETRY || sweep_neg <= EPS_STANDARD_DECODE_GEOMETRY {
+        return None;
+    }
+    let pos = crate::nurbs::canonical_periodic_range([a0, a0 + sweep_pos])?;
+    let neg_ordered = crate::nurbs::canonical_periodic_range([a1, a1 + sweep_neg])?;
+    let neg = [neg_ordered[1], neg_ordered[0]];
+
+    let center = ellipse.center().get();
+    let reference = *ellipse.frame().reference().as_raw();
+    let tangent = ellipse.frame().axis().as_raw().cross(reference);
+    let cosine = reference.scale(ellipse.major_radius().get());
+    let sine = tangent.scale(ellipse.minor_radius().get());
+    let scale = ellipse.minor_radius().get();
+
+    let max_raw_gap = |ordered: [f64; 2]| -> f64 {
+        bounds
+            .iter()
+            .map(|b| arc_bounds::branch_bounds_gap(center, cosine, sine, ordered, b).0)
+            .fold(0.0_f64, f64::max)
+    };
+    let pos_gap = max_raw_gap(pos);
+    let neg_gap = max_raw_gap(neg_ordered);
+    if !pos_gap.is_finite() || !neg_gap.is_finite() {
+        return None;
+    }
+    let max_allowed = (BOX_MAX_EXCESS_FRACTION * scale).min(BOX_MAX_EXCESS_MM);
+    let min_other = BOX_MAX_EXCESS_FRACTION * scale;
     if pos_gap <= max_allowed
         && neg_gap >= min_other
         && neg_gap >= BOX_DISAMBIGUATION_RATIO * pos_gap.max(ANALYTIC_CURVE_ENDPOINT_TOLERANCE)
@@ -912,5 +1021,62 @@ mod tests {
             .expect("lower semicircle selected by opposite-rim vertex");
         assert!((range[0] - TAU).abs() < 1.0e-12);
         assert!((range[1] - PI).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn unambiguous_box_ellipse_range_selects_branch_inside_face_bounds() {
+        use cadmpeg_ir::scalar::{FiniteReal, NonNegativeLength};
+
+        let ellipse = EllipseCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            10.0,
+            5.0,
+        )
+        .expect("ellipse");
+        let ends = [Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 5.0, 0.0)];
+        let center = [
+            FiniteReal::new(5.0).expect("finite"),
+            FiniteReal::new(2.5).expect("finite"),
+            FiniteReal::new(0.0).expect("finite"),
+        ];
+        let bounds = StandardFaceBounds {
+            aabb_center: center,
+            aabb_half_extents: [
+                NonNegativeLength::new(5.05).expect("non-negative"),
+                NonNegativeLength::new(2.55).expect("non-negative"),
+                NonNegativeLength::new(0.1).expect("non-negative"),
+            ],
+            sphere_center: center,
+            sphere_radius: NonNegativeLength::new(6.0).expect("non-negative"),
+        };
+        let range = unambiguous_box_ellipse_range(&ellipse, ends, &[bounds])
+            .expect("first-quadrant arc fits inside the face box");
+        assert!(range[0].abs() < 1.0e-12);
+        assert!((range[1] - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn circles_overlap_same_arc_distinguishes_duplicate_from_complementary_arcs() {
+        let circle = CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            4.0,
+        )
+        .expect("circle");
+        assert!(circles_overlap_same_arc(
+            &circle,
+            [0.0, PI],
+            &circle,
+            [0.0, PI]
+        ));
+        assert!(!circles_overlap_same_arc(
+            &circle,
+            [0.0, PI],
+            &circle,
+            [PI, TAU]
+        ));
     }
 }
