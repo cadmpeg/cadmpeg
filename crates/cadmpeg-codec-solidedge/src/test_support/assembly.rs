@@ -97,14 +97,32 @@ fn occurrence_body(spec: &OccurrenceSpec) -> Vec<u8> {
     body
 }
 
+/// Bytes before the count of the visibility table (§9.4).
+const VISIBILITY_HEADER_LEN: usize = 104;
+/// The first word of a hidden-occurrence record (§9.4).
+const HIDDEN_RECORD_WORD: u32 = 0x4000_0002;
+
+/// The `IOT/Default` stream that states `hidden` as the hidden occurrences.
+pub(crate) fn visibility_stream(hidden: &[u32]) -> Vec<u8> {
+    let mut bytes = vec![0_u8; VISIBILITY_HEADER_LEN];
+    bytes.extend_from_slice(&u32::try_from(hidden.len()).unwrap().to_le_bytes());
+    for id in hidden {
+        bytes.extend_from_slice(&HIDDEN_RECORD_WORD.to_le_bytes());
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(&id.to_le_bytes());
+    }
+    bytes
+}
+
 /// A document whose references collection lists `listed` and that holds the
-/// occurrence objects `occurrences` and the sites `sites`.
+/// occurrence objects `occurrences` and the sites `sites`. It has no
+/// visibility table.
 pub(crate) fn assembly_document(
     listed: &[u32],
     occurrences: &[OccurrenceSpec],
     sites: &[SiteSpec<'_>],
 ) -> Vec<u8> {
-    assembly_document_with_structure(listed, occurrences, sites, None)
+    assembly_document_with_table(listed, occurrences, sites, None)
 }
 
 /// The stream of an occurrence structure list: a 20-byte header with the entry
@@ -129,7 +147,38 @@ pub(crate) fn assembly_document_with_structure(
     sites: &[SiteSpec<'_>],
     structure: Option<Vec<u8>>,
 ) -> Vec<u8> {
-    let files = assembly_streams(listed, occurrences, sites, structure);
+    document_of(assembly_streams(
+        listed,
+        occurrences,
+        sites,
+        structure,
+        None,
+    ))
+}
+
+/// As [`assembly_document`], with a visibility table that hides the objects
+/// `hidden`.
+pub(crate) fn assembly_document_with_visibility(
+    listed: &[u32],
+    occurrences: &[OccurrenceSpec],
+    sites: &[SiteSpec<'_>],
+    hidden: &[u32],
+) -> Vec<u8> {
+    assembly_document_with_table(listed, occurrences, sites, Some(visibility_stream(hidden)))
+}
+
+/// As [`assembly_document`], with the bytes `table` as the `IOT/Default`
+/// stream, or no such stream for `None`.
+pub(crate) fn assembly_document_with_table(
+    listed: &[u32],
+    occurrences: &[OccurrenceSpec],
+    sites: &[SiteSpec<'_>],
+    table: Option<Vec<u8>>,
+) -> Vec<u8> {
+    document_of(assembly_streams(listed, occurrences, sites, None, table))
+}
+
+fn document_of(files: Vec<(String, Vec<u8>)>) -> Vec<u8> {
     let borrowed: Vec<(&str, Vec<u8>)> = files
         .iter()
         .map(|(name, bytes)| (name.as_str(), bytes.clone()))
@@ -143,6 +192,7 @@ fn assembly_streams(
     occurrences: &[OccurrenceSpec],
     sites: &[SiteSpec<'_>],
     structure: Option<Vec<u8>>,
+    table: Option<Vec<u8>>,
 ) -> Vec<(String, Vec<u8>)> {
     let mut collection = vec![0_u8; 12];
     put_words(&mut collection, 16, &[u32::try_from(listed.len()).unwrap()]);
@@ -189,6 +239,9 @@ fn assembly_streams(
     files.extend(streams);
     if let Some(structure) = structure {
         files.push(("Preview/Structure/IOT".to_owned(), structure));
+    }
+    if let Some(table) = table {
+        files.push(("IOT/Default".to_owned(), table));
     }
     files
 }
@@ -294,7 +347,7 @@ pub(crate) fn family_document(
     )];
     for member in members {
         let listed: Vec<u32> = member.occurrences.iter().map(|spec| spec.id).collect();
-        for (path, bytes) in assembly_streams(&listed, &member.occurrences, sites, None) {
+        for (path, bytes) in assembly_streams(&listed, &member.occurrences, sites, None, None) {
             files.push((format!("{}/{path}", member.name), bytes));
         }
         files.push((format!("{}/PSMroots", member.name), Vec::new()));

@@ -797,89 +797,6 @@ source = "spec"
 anchor = "| 1069 | `u32` thread designation length `k`, in UTF-16 code units |"
 
 [[record]]
-name = "topology_proxy_edge"
-kind = "byte"
-parsed_by = "crates/cadmpeg-codec-solidedge/src/edge.rs"
-section = "7.6"
-anchor = "A `CLSID_JMTopologyProxy` object of 559 bytes selects one straight edge."
-size = 559
-
-[[record.gap]]
-offset = 0
-size = 121
-note = "§7.6 states no field before the edge start point."
-
-[[record.field]]
-name = "start"
-offset = 121
-type = "f64[3]"
-source = "spec"
-anchor = "`f64` values at object offsets 121, 129 and 137 are the edge start point,"
-
-[[record.field]]
-name = "direction"
-offset = 145
-type = "f64[3]"
-source = "spec"
-anchor = "the `f64` values at offsets 145, 153 and 161 are the unit edge direction,"
-
-[[record.gap]]
-offset = 169
-size = 8
-note = "§7.6 states no field between the edge direction and the edge length."
-
-[[record.field]]
-name = "length"
-offset = 177
-type = "f64"
-source = "spec"
-anchor = "and the `f64` at offset 177 is the edge length."
-
-[[record.gap]]
-offset = 185
-size = 374
-note = "§7.6 states no field after the edge length."
-
-[[record]]
-name = "topology_proxy_edge_tail"
-kind = "byte"
-parsed_by = "crates/cadmpeg-codec-solidedge/src/edge.rs"
-section = "7.6"
-anchor = "A proxy of another size `S` stores the edge start point at offset `S` - 438."
-size = 438
-
-[[record.field]]
-name = "start"
-offset = 0
-type = "f64[3]"
-source = "spec"
-anchor = "A proxy of another size `S` stores the edge start point at offset `S` - 438."
-
-[[record.field]]
-name = "direction"
-offset = 24
-type = "f64[3]"
-source = "spec"
-anchor = "The unit edge direction follows the start point after 24 bytes, and the edge"
-
-[[record.gap]]
-offset = 48
-size = 8
-note = "§7.6 states no field between the edge direction and the edge length."
-
-[[record.field]]
-name = "length"
-offset = 56
-type = "f64"
-source = "spec"
-anchor = "length follows it after 56 bytes."
-
-[[record.gap]]
-offset = 64
-size = 374
-note = "§7.6 states no field after the edge length."
-
-[[record]]
 name = "ref_axis"
 kind = "byte"
 parsed_by = "crates/cadmpeg-codec-solidedge/src/extents.rs"
@@ -1124,10 +1041,20 @@ type = "u32"
 source = "spec"
 anchor = "| 8 | `u32` identifier of the `CLSID_JAsmReference` object (§9.2) |"
 
-[[record.gap]]
+[[record.field]]
+name = "marker"
 offset = 12
-size = 8
-note = "§9.4 states no field after the occurrence identifier."
+type = "u32"
+value = 2147483687
+source = "spec"
+anchor = "| 12 | `u32` `0x80000027` |"
+
+[[record.field]]
+name = "sequence"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "| 16 | `u32` sequence number |"
 
 [[record]]
 name = "file_moniker"

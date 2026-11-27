@@ -262,32 +262,6 @@ pub(crate) mod hole_thread {
     pub(crate) const DESIGNATION_LENGTH: usize = 1069;
 }
 
-/// Byte offsets for the `topology_proxy_edge` record.
-///
-/// Spec §7.6. Record length 559 B.
-pub(crate) mod topology_proxy_edge {
-    /// Offset of `start` (`f64[3]`, little-endian). Spec §7.6.
-    pub(crate) const START: usize = 121;
-    /// Offset of `direction` (`f64[3]`, little-endian). Spec §7.6.
-    pub(crate) const DIRECTION: usize = 145;
-    /// Offset of `length` (`f64`, little-endian). Spec §7.6.
-    pub(crate) const LENGTH: usize = 177;
-}
-
-/// Byte offsets for the `topology_proxy_edge_tail` record.
-///
-/// Spec §7.6. Record length 438 B.
-pub(crate) mod topology_proxy_edge_tail {
-    /// Record length in bytes. Spec §7.6.
-    pub(crate) const LEN: usize = 438;
-    /// Offset of `start` (`f64[3]`, little-endian). Spec §7.6.
-    pub(crate) const START: usize = 0;
-    /// Offset of `direction` (`f64[3]`, little-endian). Spec §7.6.
-    pub(crate) const DIRECTION: usize = 24;
-    /// Offset of `length` (`f64`, little-endian). Spec §7.6.
-    pub(crate) const LENGTH: usize = 56;
-}
-
 /// Byte offsets for the `ref_axis` record.
 ///
 /// Spec §6.4. Record length 61 B.
@@ -376,6 +350,12 @@ pub(crate) mod occurrence_structure_entry {
     pub(crate) const FLAGS: usize = 0;
     /// Offset of `object` (`u32`, little-endian). Spec §9.4.
     pub(crate) const OBJECT: usize = 8;
+    /// Offset of `marker` (`u32`, little-endian). Spec §9.4.
+    pub(crate) const MARKER: usize = 12;
+    /// Stated value of `marker` (`u32`). Spec §9.4.
+    pub(crate) const MARKER_VALUE: u32 = 0x8000_0027;
+    /// Offset of `sequence` (`u32`, little-endian). Spec §9.4.
+    pub(crate) const SEQUENCE: usize = 16;
 }
 
 /// Byte offsets for the `file_moniker` record.

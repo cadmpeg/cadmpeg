@@ -10,13 +10,15 @@
 //! assembly's own folder, which the decode does not know. A moniker that does
 //! not read leaves the definition without a path. An occurrence that does not
 //! read adds `assembly.occurrence-unread`, a site whose link does not read adds
-//! `assembly.reference-unread`. The occurrence structure list (§9.4) states
+//! `assembly.reference-unread`. The visibility table (§9.4) states each
+//! occurrence's display state; the occurrence structure list (§9.4) states
 //! each occurrence's display state and suppression: an occurrence it does not
 //! list is suppressed, and a listed occurrence is hidden where its flags say
-//! so. A document without a readable list states neither and adds
-//! `assembly.visibility-unread` once. The state word states whether the
-//! occurrence is grounded, so it states no suppression. A document with no
-//! references collection adds nothing.
+//! so. The table decides the display state where it reads, and the list where
+//! it does not. A document where neither reads states no display state and no
+//! suppression and adds `assembly.visibility-unread` once. The state word
+//! states whether the occurrence is grounded, so it states no suppression. A
+//! document with no references collection adds nothing.
 //!
 //! Stored lengths are metres and CADIR states millimetres. The stored rotation
 //! `R` maps a row vector `p` to `p R + t`; CADIR applies a transform to a
@@ -60,6 +62,14 @@ const PATH_END: u16 = 0xFFFF;
 const STRUCTURE_STREAM: &str = "Preview/Structure/IOT";
 /// The flag of a structure entry that marks a hidden occurrence (§9.4).
 const HIDDEN_FLAG: u32 = 0x2;
+/// The stream that lists the hidden occurrences (§9.4).
+const VISIBILITY_STREAM: &str = "IOT/Default";
+/// Offset of the record count of the visibility table, after its header (§9.4).
+const VISIBILITY_COUNT_AT: usize = 104;
+/// Length of one hidden-occurrence record (§9.4).
+const VISIBILITY_RECORD_LEN: usize = 12;
+/// Offset of the occurrence identifier within a record (§9.4).
+const VISIBILITY_ID_AT: usize = 8;
 
 /// Largest deviation of a rotation entry from an orthonormal matrix.
 const EPS_ORTHO: f64 = 1e-6;
@@ -275,6 +285,34 @@ fn structure_flags(bytes: &[u8]) -> Option<BTreeMap<u32, u32>> {
     Some(flags)
 }
 
+/// The object identifiers of the hidden occurrences, or `None` where the
+/// visibility table is absent or shorter than its count states.
+fn hidden_occurrences<'a>(
+    ctx: &DecodeContext<'a>,
+    snapshot: &DocStreams<'_, 'a>,
+) -> Option<BTreeSet<u32>> {
+    let entry = snapshot.stream(VISIBILITY_STREAM)?;
+    let view = snapshot.open(ctx, entry).ok()?;
+    let bytes = view.window();
+    let count = usize::try_from(View::u32_le_at(bytes, VISIBILITY_COUNT_AT)?).ok()?;
+    let first = VISIBILITY_COUNT_AT.checked_add(4)?;
+    let end = count
+        .checked_mul(VISIBILITY_RECORD_LEN)
+        .and_then(|len| first.checked_add(len))?;
+    if bytes.len() < end {
+        return None;
+    }
+    let mut hidden = BTreeSet::new();
+    for index in 0..count {
+        let at = index
+            .checked_mul(VISIBILITY_RECORD_LEN)?
+            .checked_add(first)?
+            .checked_add(VISIBILITY_ID_AT)?;
+        hidden.insert(View::u32_le_at(bytes, at)?);
+    }
+    Some(hidden)
+}
+
 fn site_stream(site: u32) -> String {
     format!("JSite{site}/\u{1}Ole")
 }
@@ -316,6 +354,7 @@ pub(crate) fn project<'a>(
             listing.ids.len()
         )));
     }
+    let hidden = hidden_occurrences(ctx, snapshot);
     let mut definitions: BTreeMap<u32, ProductDefinitionId> = BTreeMap::new();
     let mut placed = BTreeSet::new();
     let mut new_definitions = Vec::new();
@@ -374,7 +413,8 @@ pub(crate) fn project<'a>(
                 None
             }
         };
-        occurrences.push((id, Occurrence::new(occurrence_id(id), prototype, transform)));
+        let occurrence = Occurrence::new(occurrence_id(id), prototype, transform);
+        occurrences.push((id, occurrence));
     }
     if occurrences.is_empty() {
         return Ok(());
@@ -383,18 +423,23 @@ pub(crate) fn project<'a>(
         .stream(STRUCTURE_STREAM)
         .and_then(|entry| snapshot.open(ctx, entry).ok())
         .and_then(|view| structure_flags(view.window()));
-    match &structure {
-        Some(flags) => {
-            for (id, occurrence) in &mut occurrences {
-                let entry = flags.get(id);
-                occurrence.suppressed = Some(entry.is_none() || snapshot.excludes(*id));
-                occurrence.visible = entry.map(|bits| bits & HIDDEN_FLAG == 0);
-            }
+    if let Some(flags) = &structure {
+        for (id, occurrence) in &mut occurrences {
+            let entry = flags.get(id);
+            occurrence.suppressed = Some(entry.is_none() || snapshot.excludes(*id));
+            occurrence.visible = entry.map(|bits| bits & HIDDEN_FLAG == 0);
         }
-        None => losses.push(SolidEdgeLossCode::AssemblyVisibilityUnread.note(
-            "the occurrence structure list does not read; the occurrences state no suppression \
-             or visibility",
-        )),
+    }
+    if let Some(hidden) = &hidden {
+        for (id, occurrence) in &mut occurrences {
+            occurrence.visible = Some(!hidden.contains(id));
+        }
+    }
+    if hidden.is_none() && structure.is_none() {
+        losses.push(SolidEdgeLossCode::AssemblyVisibilityUnread.note(
+            "neither the visibility table nor the occurrence structure list of the assembly \
+             reads; the occurrences state no visibility or suppression",
+        ));
     }
     for (id, occurrence) in &mut occurrences {
         if snapshot.excludes(*id) {
