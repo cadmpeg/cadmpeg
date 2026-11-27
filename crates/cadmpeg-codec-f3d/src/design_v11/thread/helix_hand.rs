@@ -61,10 +61,7 @@ pub(super) fn paths<'a>(
 ///
 /// A thread face has a path radius between the minor radius less one pitch and
 /// the major radius plus one pitch.
-pub(super) fn hand(
-    paths: &[HelicalPath],
-    construction: &DesignThreadConstruction,
-) -> Option<Hand> {
+pub(super) fn hand(paths: &[HelicalPath], construction: &DesignThreadConstruction) -> Option<Hand> {
     if !construction.modeled {
         return None;
     }

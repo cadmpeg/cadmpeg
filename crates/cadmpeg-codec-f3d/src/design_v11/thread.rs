@@ -68,9 +68,17 @@ pub(super) fn project(
     }
     for legacy in legacy.values() {
         let Some(scope) = legacy.native_ref.as_deref().and_then(|id| scopes.get(id)) else {
+            losses.push(unprojected(
+                &legacy.id,
+                "its Thread scope is not in the native scope arena",
+            ));
             continue;
         };
         let Some(construction) = scope.thread_construction() else {
+            losses.push(unprojected(
+                &legacy.id,
+                "its scope has no admitted construction",
+            ));
             continue;
         };
         let LegacyOperation::CosmeticThread { face, extent, .. } =
@@ -122,9 +130,11 @@ pub(super) fn project(
             .iter_mut()
             .find(|feature| feature.id == legacy.id)
         else {
+            losses.push(unprojected(&legacy.id, "its design feature is absent"));
             continue;
         };
         let Some(face) = selection(face) else {
+            losses.push(unprojected(&legacy.id, "its face selection is unresolved"));
             continue;
         };
         feature.definition.operation = FeatureOperation::Thread(Box::new(Thread {
@@ -136,6 +146,15 @@ pub(super) fn project(
         }));
     }
     Ok(())
+}
+
+fn unprojected(
+    feature: &cadmpeg_ir::features::FeatureId,
+    reason: &str,
+) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::F3dLossCode::ThreadV11Unprojected.note(format!(
+        "Thread {feature} keeps its native construction because {reason}."
+    ))
 }
 
 fn selection(face: &FaceSelection) -> Option<SetSelection> {

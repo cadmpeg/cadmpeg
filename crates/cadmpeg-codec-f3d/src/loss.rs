@@ -425,6 +425,8 @@ pub(crate) enum F3dLossCode {
     ThreadDetailNative,
     /// A Hole-owned Thread retains its specification in native records.
     ThreadHoleNative,
+    /// A Thread keeps its native construction because its v11 operation has no admitted face selection or owner.
+    ThreadV11Unprojected,
     /// The nominal diameter of a Thread with a fractional nominal size is
     /// read as its stored major diameter.
     ThreadFractionalSizeDiameterAssumed,
@@ -1708,6 +1710,7 @@ impl F3dLossCode {
         Self::ThreadAngleNative,
         Self::ThreadDetailNative,
         Self::ThreadHoleNative,
+        Self::ThreadV11Unprojected,
         Self::ThreadFractionalSizeDiameterAssumed,
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
@@ -2786,6 +2789,7 @@ impl F3dLossCode {
             Self::ThreadAngleNative => "feature.thread-angle-native",
             Self::ThreadDetailNative => "feature.thread-detail-native",
             Self::ThreadHoleNative => "feature.thread-hole-native",
+            Self::ThreadV11Unprojected => "feature.thread-v11-unprojected",
             Self::ThreadFractionalSizeDiameterAssumed => {
                 "feature.thread-fractional-size-diameter-assumed"
             }
@@ -3956,6 +3960,7 @@ impl F3dLossCode {
             | Self::ThreadAngleNative
             | Self::ThreadDetailNative
             | Self::ThreadHoleNative
+            | Self::ThreadV11Unprojected
             | Self::ThreadFractionalSizeDiameterAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
@@ -4757,6 +4762,7 @@ impl F3dLossCode {
             | Self::ThreadAngleNative
             | Self::ThreadDetailNative
             | Self::ThreadHoleNative
+            | Self::ThreadV11Unprojected
             | Self::ThreadFractionalSizeDiameterAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
@@ -5600,6 +5606,7 @@ mod tests {
                 "feature.thread-angle-native",
                 "feature.thread-detail-native",
                 "feature.thread-hole-native",
+                "feature.thread-v11-unprojected",
                 "feature.thread-fractional-size-diameter-assumed",
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",
