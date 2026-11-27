@@ -40,7 +40,8 @@ The writer emits a USDA layer in metres, or in the units and with the up axis
 that the scene options of the write (`EncodeInput::scene`) select, with one
 root prim per root occurrence. Each occurrence becomes an `Xform` prim with a `matrix4d` placement, and a
 definition placed more than once is written once under the abstract
-`Prototypes` prim. Tessellations become `Mesh` prims, faces on NURBS surfaces
+`Prototypes` prim, as is a definition that no occurrence places, other than
+the root. Tessellations become `Mesh` prims, faces on NURBS surfaces
 of untessellated bodies become `NurbsPatch` prims (a body with no `BrepArray`
 prim writes its trimmed faces with their classified loops as trim curves), wire edges and free curves
 become `NurbsCurves` prims, and appearances become `UsdPreviewSurface`

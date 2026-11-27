@@ -8,7 +8,7 @@ use cadmpeg_core::serde_erase::json;
 /// messages of its losses of `code` and the document its bytes read back as.
 fn written_with_losses(ir: &CadIr, code: &str) -> (Vec<String>, CadIr) {
     let plan = CadirEncoder
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, None))
         .expect("the CADIR writer drops what it cannot write and does not refuse");
     let messages = plan
         .report()
@@ -60,10 +60,7 @@ fn the_cadir_writer_does_not_check_feature_parent_relations_it_omits() {
     let write = |ir: &CadIr| {
         let reject_errors = Strictness::default().with_code("export:record.invalid");
         let plan = CadirEncoder
-            .plan(
-                EncodeInput::new(ir, None).with_strictness(&reject_errors),
-                TargetRequest::Unnamed,
-            )
+            .plan(EncodeInput::new(ir, None).with_strictness(&reject_errors))
             .expect("the writer checks no relation it omits");
         let invalid = plan
             .report()
@@ -681,10 +678,7 @@ fn the_cadir_writer_drops_the_annotations_of_the_records_it_leaves_out() {
     fidelity.annotations = builder.build();
 
     let plan = CadirEncoder
-        .plan(
-            EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(&ir, Some(&fidelity)))
         .expect("a scope breach does not refuse the write");
     let annotations = plan
         .annotations()
@@ -778,10 +772,7 @@ fn the_cadir_writer_states_the_annotations_of_the_records_it_writes() {
     fidelity.annotations = builder.build();
 
     let plan = CadirEncoder
-        .plan(
-            EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(&ir, Some(&fidelity)))
         .expect("the write does not refuse");
     let annotations = plan
         .annotations()

@@ -204,7 +204,7 @@ Spec §5.2 · layout: byte offsets · size: 98 B
 | 70 | 9 | `chunk7_owner_coedge` | `sab_ref8` | little | spec | +70 chunk[7] owner_coedge |
 | 79 | 9 | `chunk8_curve` | `sab_ref8` | little | spec | +79 chunk[8] curve ref |
 | 89 | 1 | `chunk9_sense` | `enum8` | little | spec | +89 chunk[9] sense byte |
-| 90 | 9 | `chunk10_continuity` | `bytes[9]` | little | derived | Width derived from the `0x07` tag encoding (tag byte, one length byte, N text bytes) and the two stated seven-character literals. |
+| 90 | 9 | `chunk10_continuity` | `bytes[9]` | little | derived | Width derived from the `0x07` tag encoding (tag byte, one length byte, N text bytes) for the seven-character token the stated record size holds. |
 
 Unstated regions:
 

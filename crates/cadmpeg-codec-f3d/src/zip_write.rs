@@ -12,7 +12,7 @@
 use std::io::{Read, Seek, Write};
 
 use cadmpeg_container::compression::expand_zstd_member_owned;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, ResourceLimits};
 use cadmpeg_core::CodecError;
 use zip::read::ZipFile;
 use zip::write::SimpleFileOptions;
@@ -53,6 +53,7 @@ pub(crate) fn expand_zstd_member<R: Read>(
     entry: &mut ZipFile<'_, R>,
     name: &str,
     archive_len: u64,
+    limits: ResourceLimits,
 ) -> Result<Vec<u8>, CodecError> {
     let declared_size = entry.size();
     if declared_size > MAX_INFLATED_ENTRY_BYTES {
@@ -64,7 +65,7 @@ pub(crate) fn expand_zstd_member<R: Read>(
     let compressed_size = entry.compressed_size();
     let stored = read_entry_bounded(entry, compressed_size, name)?;
     let arena = DecodeArena::new();
-    let ctx = DecodeContext::for_loaded_input(&arena, &DecodePolicy::default(), archive_len)?;
+    let ctx = DecodeContext::for_loaded_input(&arena, &DecodePolicy { limits }, archive_len)?;
     expand_zstd_member_owned(&ctx, &stored, ExpandSpec::Exact(declared_size), crc32).map_err(
         |error| match error {
             CodecError::Malformed(message) => {
@@ -137,8 +138,13 @@ mod tests {
         let mut zip = ZipArchive::new(Cursor::new(archive.as_slice())).expect("open the archive");
         assert!(is_zstd_member(&mut zip, 0).expect("read the method"));
         let mut entry = zip.by_index_raw(0).expect("open the member raw");
-        let expanded = expand_zstd_member(&mut entry, "large.bin", archive_len)
-            .expect("expand a member above the base allowance");
+        let expanded = expand_zstd_member(
+            &mut entry,
+            "large.bin",
+            archive_len,
+            cadmpeg_core::decode::ResourceLimits::desktop(),
+        )
+        .expect("expand a member above the base allowance");
         assert!(expanded == plain, "the member expands to its plaintext");
     }
 }

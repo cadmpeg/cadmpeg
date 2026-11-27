@@ -9,10 +9,12 @@ use std::rc::Rc;
 
 use super::*;
 use crate::feature::history_states::{
-    frame_chain, index_chain, prepare, Closed, Framing, Prepared, Reading,
+    frame_chain, index_chain, prepare, Closed, Framing, Prepared, Reading, StateIndex,
 };
 use crate::kernel::{parse_carrier, ActiveCarrier};
-use crate::test_support::history_carrier::{carrier_bytes, framed_carrier};
+use crate::test_support::history_carrier::{
+    carrier_bytes, framed_carrier, CURRENT_BODY_KEY, SPHERE_BODY_KEY,
+};
 
 /// Source index that a naming tag first lists in the older state of the
 /// carrier, and in its head state.
@@ -24,6 +26,15 @@ const ALIAS: u32 = 7;
 /// Runs `check` on the two-state carrier: the older state holds a sphere
 /// solid, and the head state holds a different solid body.
 fn with_chain<R>(
+    check: impl FnOnce(&DecodeContext<'_>, &ActiveCarrier<'_>, &Closed<'_>) -> R,
+) -> R {
+    with_edited_index(|_| {}, check)
+}
+
+/// Runs `check` on the two-state carrier after `edit` changed its state
+/// index.
+fn with_edited_index<R>(
+    edit: impl FnOnce(&mut StateIndex),
     check: impl FnOnce(&DecodeContext<'_>, &ActiveCarrier<'_>, &Closed<'_>) -> R,
 ) -> R {
     let payload = framed_carrier(&carrier_bytes(RefWidth::Eight, false));
@@ -46,6 +57,7 @@ fn with_chain<R>(
         panic!("the chain reads");
     };
     index.first = HashMap::from([(OLDER, 0), (ALIAS, 0), (HEAD, 1)]);
+    edit(&mut index);
     let closed = Closed::new(*chain, index);
     check(&ctx, &carrier, &closed)
 }
@@ -188,5 +200,80 @@ fn the_cache_holds_at_most_its_limit_of_models() {
         views.decoded.borrow_mut().clear();
         let second = decoded(views.after(ctx, OLDER));
         assert_eq!(first.geometry.faces.len(), second.geometry.faces.len());
+    });
+}
+
+#[test]
+fn a_state_introduces_a_key_that_it_holds_and_the_state_before_does_not() {
+    with_chain(|_, carrier, closed| {
+        let views = StateViews::new(carrier, closed, 1 << 20);
+        // The head state holds the current body, and the older state does
+        // not.
+        assert!(views.introduces(HEAD, CURRENT_BODY_KEY));
+        // The older state is the oldest state and has no state before it.
+        assert!(!views.introduces(OLDER, SPHERE_BODY_KEY));
+        assert!(!views.introduces(ALIAS, SPHERE_BODY_KEY));
+        // The head state no longer holds the archived body.
+        assert!(!views.introduces(HEAD, SPHERE_BODY_KEY));
+        assert!(!views.introduces(HEAD, 99));
+    });
+}
+
+#[test]
+fn a_key_that_both_states_hold_is_not_introduced() {
+    with_edited_index(
+        |index| index.states[0].body_keys = vec![CURRENT_BODY_KEY, SPHERE_BODY_KEY],
+        |_, carrier, closed| {
+            let views = StateViews::new(carrier, closed, 1 << 20);
+            assert!(!views.introduces(HEAD, CURRENT_BODY_KEY));
+        },
+    );
+}
+
+#[test]
+fn a_source_without_a_first_state_introduces_nothing() {
+    with_chain(|_, carrier, closed| {
+        let views = StateViews::new(carrier, closed, 1 << 20);
+        assert!(!views.introduces(99, CURRENT_BODY_KEY));
+    });
+    with_edited_index(
+        |index| {
+            index.first.remove(&HEAD);
+        },
+        |_, carrier, closed| {
+            let views = StateViews::new(carrier, closed, 1 << 20);
+            assert!(!views.introduces(HEAD, CURRENT_BODY_KEY));
+        },
+    );
+}
+
+#[test]
+fn the_state_before_is_the_next_older_state() {
+    with_chain(|ctx, carrier, closed| {
+        let views = StateViews::new(carrier, closed, 1 << 20);
+        // The head state lists HEAD first, so the state before it is the
+        // older state, which `after` of OLDER decodes.
+        let before = decoded(views.before(ctx, HEAD));
+        let older = decoded(views.after(ctx, OLDER));
+        assert_eq!(before.geometry.faces.len(), older.geometry.faces.len());
+        assert!(matches!(
+            &before.geometry.surfaces[0].geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
+        ));
+    });
+}
+
+#[test]
+fn no_state_precedes_the_oldest_state_or_an_unlisted_source() {
+    with_chain(|ctx, carrier, closed| {
+        let views = StateViews::new(carrier, closed, 1 << 20);
+        // OLDER and ALIAS first appear in the state at history position 0.
+        for source in [OLDER, ALIAS, 99] {
+            assert!(matches!(
+                &*model(views.before(ctx, source)),
+                StateModel::Unavailable
+            ));
+        }
+        assert!(!closed.archive_built());
     });
 }

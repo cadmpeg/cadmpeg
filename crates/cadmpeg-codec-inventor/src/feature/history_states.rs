@@ -11,9 +11,9 @@ use std::cell::{OnceCell, RefCell};
 use std::collections::{BTreeSet, HashMap};
 
 use cadmpeg_asm::history::{
-    archived_active_record_count, decode_record_archive, frame_history_chain,
-    historical_record_archive, insert_only_active_record_count, walk_entity_versions, ChainFraming,
-    DeltaStateView, HistoryChain, RecordArchiveFrames,
+    archived_active_record_count, decode_record_archive_with_preframed,
+    frame_history_chain_with_preframed, historical_record_archive, insert_only_active_record_count,
+    walk_entity_versions, ChainFraming, DeltaStateView, HistoryChain, RecordArchiveFrames,
 };
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_asm::sab::{Record, Token};
@@ -39,6 +39,19 @@ pub(crate) const SPLIT_TAG: &str = "split_body";
 pub(crate) const BASE_TAG: &str = "base";
 /// Kind of a base feature whose result body does not join the current model.
 pub(crate) const NATIVE_BASE_KIND: &str = "native:Base";
+/// Source tag of a derived stored-body feature.
+pub(crate) const DERIVED_TAG: &str = "derived_part";
+
+/// Whether features of `kind` create their result body: Base and derived
+/// stored-body features, typed or native.
+pub(crate) fn creates_body(kind: &str) -> bool {
+    kind == BASE_TAG
+        || kind == NATIVE_BASE_KIND
+        || kind == DERIVED_TAG
+        || kind
+            .strip_prefix("native:InventorClass:")
+            .is_some_and(|class| class == super::derived::CLASS_ID.to_string())
+}
 /// Source tag of a loft feature.
 pub(crate) const LOFT_TAG: &str = "loft";
 
@@ -185,15 +198,33 @@ pub(crate) enum Prepared<'a> {
     Ready(Box<Chain<'a>>),
 }
 
+/// Framed `delta_state` chain paired with its preframed records keyed by byte
+/// offset, so preparing the record archive reuses them without re-lexing.
+pub(crate) struct FramedChain {
+    chain: HistoryChain,
+    preframed: RefCell<HashMap<usize, Record>>,
+}
+
+impl std::ops::Deref for FramedChain {
+    type Target = HistoryChain;
+
+    fn deref(&self) -> &Self::Target {
+        &self.chain
+    }
+}
+
 /// Frame the chain of `bytes` and check it against the archived records.
 pub(crate) fn prepare<'a>(
     ctx: &DecodeContext<'_>,
-    chain: &'a HistoryChain,
+    chain: &'a FramedChain,
     bytes: &'a [u8],
     width: RefWidth,
 ) -> Result<Prepared<'a>, CodecError> {
     let views = chain.views(bytes);
-    let Some(frames) = decode_record_archive(ctx, &views, bytes, width)? else {
+    let mut preframed = chain.preframed.borrow_mut();
+    let Some(frames) =
+        decode_record_archive_with_preframed(ctx, &views, bytes, width, Some(&mut *preframed))?
+    else {
         return Ok(Prepared::Unread(Unread::Unclosed));
     };
     let archived_ids = views
@@ -229,7 +260,7 @@ pub(crate) enum Framing {
     /// The chain does not frame.
     Unread(Unread),
     /// Every state frames.
-    Framed(HistoryChain),
+    Framed(FramedChain),
 }
 
 /// Frame the `delta_state` chain of `bytes` as a stream of the given reference width.
@@ -238,10 +269,14 @@ pub(crate) fn frame_chain(
     bytes: &[u8],
     width: RefWidth,
 ) -> Result<Framing, CodecError> {
-    Ok(match frame_history_chain(ctx, bytes, width)? {
+    let (framing, preframed) = frame_history_chain_with_preframed(ctx, bytes, width)?;
+    Ok(match framing {
         ChainFraming::Absent => Framing::Absent,
         ChainFraming::Unframed => Framing::Unread(Unread::Unclosed),
-        ChainFraming::Framed(chain) => Framing::Framed(chain),
+        ChainFraming::Framed(chain) => Framing::Framed(FramedChain {
+            chain,
+            preframed: RefCell::new(preframed),
+        }),
     })
 }
 
@@ -350,7 +385,7 @@ pub(crate) enum UnboundReason {
 }
 
 /// Outcome of the join of one feature.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub(crate) enum Binding {
     /// The feature has a state pair and, for Split and Base, a confirmed body key.
@@ -433,14 +468,23 @@ pub(crate) struct Inputs<'a> {
     pub(crate) properties: &'a [PmDcFeatureProperty],
 }
 
+/// Feature-label class whose wrappers a body-creating `kind` uses.
+pub(crate) fn class_of(kind: &str) -> super::ClassId {
+    if kind == DERIVED_TAG || kind.ends_with(&super::derived::CLASS_ID.to_string()) {
+        super::derived::CLASS_ID
+    } else {
+        super::BASE_CLASS_ID
+    }
+}
+
 /// Whether features of `kind` need a body-key check to bind.
 fn body_checked(kind: &str) -> bool {
-    matches!(kind, SPLIT_TAG | BASE_TAG | NATIVE_BASE_KIND)
+    kind == SPLIT_TAG || creates_body(kind)
 }
 
 /// Kind of a neutral feature: its source tag, with the native family of a
 /// feature that has no neutral construction.
-fn kind_of(feature: &Feature) -> String {
+pub(crate) fn kind_of(feature: &Feature) -> String {
     let tag = feature.source_tag.clone().unwrap_or_default();
     match feature.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if tag == "native" => {
@@ -506,9 +550,9 @@ pub(crate) fn join(index: &StateIndex, inputs: &Inputs<'_>) -> Vec<FeatureHistor
         let kind = kind_of(model);
         let (check, wrapper) = match kind.as_str() {
             SPLIT_TAG => (Check::Split, target_wrapper(model).map(str::to_owned)),
-            BASE_TAG | NATIVE_BASE_KIND => (
+            _ if creates_body(&kind) => (
                 Check::Base,
-                super::base::wrappers(feature, super::BASE_CLASS_ID, |ordinal| {
+                super::base::wrappers(feature, class_of(&kind), |ordinal| {
                     properties
                         .get(&(feature.identity.segment_token.as_str(), ordinal))
                         .copied()
@@ -828,7 +872,51 @@ pub(crate) fn losses(projection: &Projection) -> Vec<LossNote> {
         )));
     }
     notes.extend(body_losses(&projection.bodies.outcome));
+    for (nest, why) in &projection.bodies.unbuilt {
+        notes.push(body_given_up(nest, *why));
+    }
     notes
+}
+
+/// The give-up of the body that the nest `nest` would hold.
+fn body_given_up(
+    nest: &cadmpeg_ir::ids::HistoryBodyId,
+    why: super::history_bodies::Unbuilt,
+) -> LossNote {
+    use super::history_bodies::{Open, Unbuilt};
+    use crate::loss::InventorLossCode;
+    let (code, detail) = match why {
+        Unbuilt::Undecoded => (
+            InventorLossCode::FeatureHistoryBodyUndecoded,
+            "the history state of the body did not materialize or decode",
+        ),
+        Unbuilt::Unsolved => (
+            InventorLossCode::FeatureHistoryBodyUndecoded,
+            "a carrier of the body has no solved form",
+        ),
+        Unbuilt::NotClosed(Open::Reference) => (
+            InventorLossCode::FeatureHistoryBodyNotClosed,
+            "the body has a reference outside the body",
+        ),
+        Unbuilt::NotClosed(Open::Kind) => (
+            InventorLossCode::FeatureHistoryBodyNotClosed,
+            "the body is not a solid body",
+        ),
+        Unbuilt::NotClosed(Open::Edge) => (
+            InventorLossCode::FeatureHistoryBodyNotClosed,
+            "the body has an edge that does not join two coedges",
+        ),
+        Unbuilt::Unlinked => (
+            InventorLossCode::FeatureHistoryBodyUnlinked,
+            "the feature of the body is not projected",
+        ),
+        Unbuilt::Bounded => (
+            InventorLossCode::FeatureHistoryBodyBounded,
+            "the body passed the local cap of history bodies",
+        ),
+    };
+    cadmpeg_ir::unknown::part::GivenUpRecord::new(nest, format_args!("{}: {detail}", code.kind()))
+        .loss()
 }
 
 /// Losses of the nests: bodies that were asked for and not produced.

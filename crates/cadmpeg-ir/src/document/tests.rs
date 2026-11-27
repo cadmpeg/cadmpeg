@@ -1003,19 +1003,6 @@ fn a_classified_source_carries_its_format_once() {
     assert!(error.to_string().contains("format"), "{error}");
 }
 
-#[cfg(feature = "schema")]
-#[test]
-fn source_metadata_schema_requires_its_identity_and_has_no_singular_dialect() {
-    let schema = json::to_value(schemars::schema_for!(SourceMeta)).unwrap();
-    let required = schema["required"].as_array().unwrap();
-
-    assert!(
-        required.iter().any(|field| field == "identity"),
-        "{schema:#}"
-    );
-    assert!(schema["properties"].get("dialect").is_none(), "{schema:#}");
-}
-
 #[test]
 fn parent_only_wire_preserves_regeneration_without_tree_membership() {
     use crate::features::tree::FeatureTreeNodeRole;

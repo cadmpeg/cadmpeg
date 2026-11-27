@@ -239,6 +239,29 @@ fn a_projection_boundary_must_reference_a_shape_aspect() {
         .any(|loss| loss.code.local_code() == "pmi.zone-unresolved"));
 }
 
+/// A zone whose defining-tolerance list is unset names no owner: it is
+/// given up for that, not reported as shared.
+#[test]
+fn a_zone_that_names_no_defining_tolerance_is_given_up() {
+    let source = ZONES.replace("(#10),#21", "$,#21");
+    assert_ne!(source, ZONES);
+    let result = decode_inline(&source);
+    let charges: Vec<&str> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.message.contains("tolerance zone #20"))
+        .map(|loss| loss.message.as_str())
+        .collect();
+    let [charge] = charges.as_slice() else {
+        panic!("{:?}", result.report().losses);
+    };
+    assert!(charge.contains("names no defining tolerance"), "{charge}");
+    assert!(!charge.contains("shared"), "{charge}");
+    assert!(constraints(&result, "profile").zones.is_empty());
+}
+
 #[test]
 fn a_zone_whose_owner_is_no_geometric_tolerance_is_given_up() {
     let source = ZONES.replace("(#10),#21", "(#6),#21");

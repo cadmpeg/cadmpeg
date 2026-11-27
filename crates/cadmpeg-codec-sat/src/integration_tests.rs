@@ -289,3 +289,68 @@ End-of-ACIS-data\n";
         Some(source.as_slice())
     );
 }
+
+/// A closed cone whose apex vertex states no point: the shared ASM decode
+/// reads the vertex and leaves it out.
+const CONE_WITH_POINTLESS_APEX: &str = "23200 0 1 0 \n\
+14 cadmpeg-tests 4 ACIS 0 \n\
+1 1e-06 1e-10 \n\
+body $-1 -1 $-1 $1 $-1 $-1 #\n\
+lump $-1 -1 $-1 $-1 $2 $0 #\n\
+shell $-1 -1 $-1 $-1 $-1 $3 $-1 $1 #\n\
+face $-1 -1 $-1 $4 $5 $2 $-1 $7 forward single #\n\
+face $-1 -1 $-1 $-1 $6 $2 $-1 $8 forward single #\n\
+loop $-1 -1 $-1 $9 $10 $3 #\n\
+loop $-1 -1 $-1 $-1 $11 $4 #\n\
+cone-surface $-1 -1 $-1 0 0 0 0 0 1 5 0 0 1 I I -0.4472135954999579 0.8944271909999159 5 forward I I I I #\n\
+plane-surface $-1 -1 $-1 0 0 0 0 0 -1 1 0 0 forward_v I I I I #\n\
+loop $-1 -1 $-1 $-1 $12 $3 #\n\
+coedge $-1 -1 $-1 $10 $10 $11 $13 forward $5 0 $-1 #\n\
+coedge $-1 -1 $-1 $11 $11 $10 $13 reversed $6 0 $-1 #\n\
+coedge $-1 -1 $-1 $12 $12 $-1 $14 forward $9 0 $-1 #\n\
+edge $-1 -1 $-1 $15 0 $15 6.283185307179586 $10 $17 forward @7 unknown #\n\
+edge $-1 -1 $-1 $16 1 $16 0 $12 $-1 forward @7 unknown #\n\
+vertex $-1 -1 $-1 $13 0 $18 #\n\
+vertex $-1 -1 $-1 $14 0 $-1 #\n\
+ellipse-curve $-1 -1 $-1 0 0 0 0 0 1 5 0 0 1 I I #\n\
+point $-1 -1 $-1 5 0 0 #\n\
+point $-1 -1 $-1 0 0 10 #\n\
+End-of-ACIS-data \n";
+
+#[test]
+fn a_vertex_the_shared_decode_leaves_out_is_given_up_and_refuses_a_pinned_decode() {
+    let source = CONE_WITH_POINTLESS_APEX.as_bytes();
+    let offset = CONE_WITH_POINTLESS_APEX
+        .find("vertex $-1 -1 $-1 $14 0 $-1 #")
+        .unwrap();
+    let head = format!("part vertex stream=\"\" offset={offset} ");
+    let admitted = decode_bytes(source);
+    let charge = admitted
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.message.starts_with(&head)
+        })
+        .unwrap_or_else(|| panic!("{:#?}", admitted.report().losses));
+    assert!(charge.message.contains("the vertex record states no point"));
+    assert!(
+        charge.message.contains("sat:brep:entity#16"),
+        "{}",
+        charge.message
+    );
+
+    let mut options = cadmpeg_ir::codec::DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = SatCodec
+        .decode(&mut std::io::Cursor::new(source), &options)
+        .expect_err("a pinned decode refuses a given-up vertex");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+}

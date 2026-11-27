@@ -375,7 +375,6 @@ fn sort_reference_evidence(
 
 pub(crate) struct FormProjection<'scan> {
     scan: &'scan ContainerScan<'scan>,
-    indices: HashMap<String, IndexedRecordOffsets>,
     groups: ReferenceGroups,
     published: HashMap<String, HashSet<Vec<u8>>>,
 }
@@ -384,7 +383,6 @@ impl<'scan> FormProjection<'scan> {
     pub(crate) fn new(scan: &'scan ContainerScan<'scan>) -> Self {
         Self {
             scan,
-            indices: HashMap::new(),
             groups: ReferenceGroups::default(),
             published: HashMap::new(),
         }
@@ -455,13 +453,7 @@ impl<'scan> FormProjection<'scan> {
                 entry,
                 entry.and_then(|entry| scan.entry_view(&entry.name)),
             ) {
-                self.indices.try_reserve(1).map_err(|_| {
-                    group_allocation_error::<(String, IndexedRecordOffsets)>(ctx, 1)
-                })?;
-                let records = self
-                    .indices
-                    .entry(group_string(ctx, &entry.name)?)
-                    .or_insert_with(|| IndexedRecordOffsets::build(bytes.window()));
+                let records = scan.design_record_offsets(&entry.name)?;
                 let mut inputs = form_inputs(scope)?;
                 inputs.parameters = retained.inputs().parameters.clone();
                 let mut facts = FormFacts {
@@ -470,7 +462,7 @@ impl<'scan> FormProjection<'scan> {
                 };
                 let source = FormSource {
                     bytes: bytes.window(),
-                    records,
+                    records: &records,
                     scope,
                     cages,
                     stream: &entry.name,
@@ -3038,22 +3030,12 @@ fn body_membership(
     if slots.is_empty() {
         return Ok(ordinary.unwrap_or_else(|| FormConstruction::default().membership().clone()));
     }
-    if slots.len() > 1 {
-        note(
-            losses,
-            F3dLossCode::FeatureFormCageOrderAssumed,
-            &scope.id,
-            "body-record index establishes cage order",
-        );
-    }
     let cardinality = if closed {
         Some(u32::try_from(slots.len()).map_err(CodecError::malformed)?)
     } else {
         None
     };
-    let order = if slots.len() > 1 {
-        FormOrder::Assumed
-    } else if closed {
+    let order = if slots.len() > 1 || closed {
         FormOrder::Source
     } else {
         FormOrder::Unknown

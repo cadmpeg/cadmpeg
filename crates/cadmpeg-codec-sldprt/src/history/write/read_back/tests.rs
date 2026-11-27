@@ -48,9 +48,10 @@ fn first_real(value: &mut serde_json::Value) -> Option<&mut serde_json::Value> {
 /// The write's claims for the edit of feature `id`, each edit called written
 /// or not.
 fn claims(source: &CadIr, input: &CadIr, id: &FeatureId, written: bool) -> ReadBackClaims {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let source_native = crate::test_support::native::sldprt_native(source);
     let mut edits =
-        SourceEdits::new(input, None, Some((source, Some(&source_native))), &[]).unwrap();
+        SourceEdits::new(input, None, Some((source, Some(&source_native))), &[], &ctx).unwrap();
     let find = |ir: &CadIr| {
         ir.model
             .features
@@ -675,12 +676,19 @@ fn a_writer_difference_and_an_unread_part_are_named_by_their_losses() {
         ..ReadBack::default()
     };
 
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let source_native = crate::test_support::native::sldprt_native(&source);
-    let notes = SourceEdits::new(&input, None, Some((&source, Some(&source_native))), &[])
-        .unwrap()
-        .into_parts()
-        .unwritten
-        .render(&read_back);
+    let notes = SourceEdits::new(
+        &input,
+        None,
+        Some((&source, Some(&source_native))),
+        &[],
+        &ctx,
+    )
+    .unwrap()
+    .into_parts()
+    .unwritten
+    .render(&read_back);
 
     for code in [
         SldprtLossCode::WriterReadBackDiffers,

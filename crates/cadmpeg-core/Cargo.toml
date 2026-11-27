@@ -35,5 +35,9 @@ thiserror.workspace = true
 [dev-dependencies]
 toml.workspace = true
 
+[[test]]
+name = "schema_derives"
+required-features = ["schema"]
+
 [lints]
 workspace = true

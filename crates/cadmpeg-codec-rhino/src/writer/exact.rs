@@ -10,6 +10,7 @@
 
 use std::cmp::Ordering;
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
 use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
@@ -800,9 +801,13 @@ pub(super) fn clamped_surface(
 }
 
 /// The point of the pcurve `geometry` at `parameter`.
-fn pcurve_point(geometry: &PcurveGeometry, parameter: f64) -> Result<Point2, String> {
+fn pcurve_point(
+    ctx: &DecodeContext<'_>,
+    geometry: &PcurveGeometry,
+    parameter: f64,
+) -> Result<Point2, String> {
     match cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
         geometry,
         parameter,
     )) {
@@ -816,7 +821,11 @@ fn pcurve_point(geometry: &PcurveGeometry, parameter: f64) -> Result<Point2, Str
 
 /// The clamped 2D spline (in x and y) that equals the pcurve `geometry`
 /// over `range`, a range in its own parameter that may run backward.
-pub(super) fn pcurve_spline(geometry: &PcurveGeometry, range: [f64; 2]) -> Result<Spline, String> {
+pub(super) fn pcurve_spline(
+    ctx: &DecodeContext<'_>,
+    geometry: &PcurveGeometry,
+    range: [f64; 2],
+) -> Result<Spline, String> {
     let forward = [range[0].min(range[1]), range[0].max(range[1])];
     if forward[0].partial_cmp(&forward[1]) != Some(Ordering::Less) {
         return Err("the pcurve's parameter interval is empty".into());
@@ -825,8 +834,8 @@ pub(super) fn pcurve_spline(geometry: &PcurveGeometry, range: [f64; 2]) -> Resul
     let vector = |point: Point2| Vector3::new(point.u, point.v, 0.0);
     let spline = match geometry {
         PcurveGeometry::Line(_) => Spline::segment(
-            lift(pcurve_point(geometry, forward[0])?),
-            lift(pcurve_point(geometry, forward[1])?),
+            lift(pcurve_point(ctx, geometry, forward[0])?),
+            lift(pcurve_point(ctx, geometry, forward[1])?),
             forward,
         ),
         PcurveGeometry::Nurbs { nurbs } => {
@@ -834,9 +843,9 @@ pub(super) fn pcurve_spline(geometry: &PcurveGeometry, range: [f64; 2]) -> Resul
         }
         PcurveGeometry::Circle(_) | PcurveGeometry::Ellipse(_) | PcurveGeometry::Harmonic(_) => {
             // center + x cos t + y sin t, read from its points at 0, pi/2, pi.
-            let at_zero = pcurve_point(geometry, 0.0)?;
-            let at_quarter = pcurve_point(geometry, std::f64::consts::FRAC_PI_2)?;
-            let at_half = pcurve_point(geometry, std::f64::consts::PI)?;
+            let at_zero = pcurve_point(ctx, geometry, 0.0)?;
+            let at_quarter = pcurve_point(ctx, geometry, std::f64::consts::FRAC_PI_2)?;
+            let at_half = pcurve_point(ctx, geometry, std::f64::consts::PI)?;
             let center = Point2::new(0.5 * (at_zero.u + at_half.u), 0.5 * (at_zero.v + at_half.v));
             let x = Point2::new(at_zero.u - center.u, at_zero.v - center.v);
             let y = Point2::new(at_quarter.u - center.u, at_quarter.v - center.v);
@@ -846,9 +855,9 @@ pub(super) fn pcurve_spline(geometry: &PcurveGeometry, range: [f64; 2]) -> Resul
         }
         PcurveGeometry::Parabola(_) => {
             // vertex + x t^2 + y t, read from its points at -1, 0, 1.
-            let before = pcurve_point(geometry, -1.0)?;
-            let vertex = pcurve_point(geometry, 0.0)?;
-            let after = pcurve_point(geometry, 1.0)?;
+            let before = pcurve_point(ctx, geometry, -1.0)?;
+            let vertex = pcurve_point(ctx, geometry, 0.0)?;
+            let after = pcurve_point(ctx, geometry, 1.0)?;
             let x = Point2::new(
                 0.5 * (after.u + before.u) - vertex.u,
                 0.5 * (after.v + before.v) - vertex.v,
@@ -863,9 +872,9 @@ pub(super) fn pcurve_spline(geometry: &PcurveGeometry, range: [f64; 2]) -> Resul
         }
         PcurveGeometry::Hyperbola(_) => {
             // center + x cosh t + y sinh t, read from its points at -1, 0, 1.
-            let before = pcurve_point(geometry, -1.0)?;
-            let at_zero = pcurve_point(geometry, 0.0)?;
-            let after = pcurve_point(geometry, 1.0)?;
+            let before = pcurve_point(ctx, geometry, -1.0)?;
+            let at_zero = pcurve_point(ctx, geometry, 0.0)?;
+            let after = pcurve_point(ctx, geometry, 1.0)?;
             let (cosh, sinh) = (1.0_f64.portable_cosh(), 1.0_f64.portable_sinh());
             let even = Point2::new(0.5 * (after.u + before.u), 0.5 * (after.v + before.v));
             let x = Point2::new(
@@ -885,7 +894,7 @@ pub(super) fn pcurve_spline(geometry: &PcurveGeometry, range: [f64; 2]) -> Resul
     };
     // A rebuilt pcurve must agree with the source at its ends and middle.
     if !matches!(geometry, PcurveGeometry::Nurbs { .. }) {
-        check_pcurve_ends(geometry, &spline, forward)?;
+        check_pcurve_ends(ctx, geometry, &spline, forward)?;
     }
     Ok(if range[0] > range[1] {
         spline.reversed()
@@ -895,6 +904,7 @@ pub(super) fn pcurve_spline(geometry: &PcurveGeometry, range: [f64; 2]) -> Resul
 }
 
 fn check_pcurve_ends(
+    ctx: &DecodeContext<'_>,
     geometry: &PcurveGeometry,
     spline: &Spline,
     range: [f64; 2],
@@ -902,7 +912,7 @@ fn check_pcurve_ends(
     let points = spline.points();
     let ends = [(range[0], points.first()), (range[1], points.last())];
     for (parameter, pole) in ends {
-        let expected = pcurve_point(geometry, parameter)?;
+        let expected = pcurve_point(ctx, geometry, parameter)?;
         let pole = pole.ok_or("the rebuilt pcurve has no control point")?;
         let scale = 1.0 + expected.u.abs().max(expected.v.abs());
         let tolerance = REBUILT_PCURVE_TOLERANCE * scale;
