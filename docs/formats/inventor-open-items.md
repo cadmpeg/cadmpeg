@@ -396,7 +396,7 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Known.** Section 13.7 defines the four slots. The pair of a true slot 1 and a false slot 2 leaves a solid body closed and changes its face count. The pair of two false Booleans removes exactly the selected faces and can leave a sheet. A true slot 2 occurs with a false slot 1.
 
-**Need.** Whether each pair extends the neighbouring faces or fills the opening with a new face. The deleted faces require agreement with the faces of the input and result bodies.
+**Need.** Whether each pair extends the neighbouring faces or fills the opening with a new face. The deleted faces require agreement with the faces of the input and result bodies. The slot-3 ordered body selection requires its operand-or-result ownership and a body-revision join.
 
 **Conflict.** Within the pair of a true slot 1 and a false slot 2, one form loses faces and one form gains a face.
 
