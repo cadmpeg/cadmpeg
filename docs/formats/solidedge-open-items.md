@@ -48,14 +48,6 @@
 
 **Need.** A document saved with one feature suppressed, one saved with the rollback position moved, and a no-edit resave of each.
 
-### DR-1016. Feature navigator final word after unsuppression
-
-**Question.** How much does an unsuppression add to the final word?
-
-**Known.** Suppress, unsuppress and suppress again on one feature store a word that rises at each step. The first suppression adds the number of later non-folder items (§4.1).
-
-**Need.** The same three steps on features with other counts of later items, to separate the added amount from the later-item count and from `n`.
-
 ### DR-1017. Group feature kind and feature operands
 
 **Question.** Which field separates a mirror copy from a pattern in a `CLSID_JMGroup` feature, and where does a feature store its profile, extent and direction?
