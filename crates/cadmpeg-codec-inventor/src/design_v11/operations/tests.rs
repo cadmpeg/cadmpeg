@@ -1215,4 +1215,38 @@ fn split_face_path_keeps_native_projection_controls() {
     );
 }
 
+#[test]
+fn an_extrude_to_a_native_face_projects_a_geometry_limit_and_validates() {
+    let mut operation = extrude();
+    let LegacyOperation::Extrude { extent, .. } = &mut operation else {
+        panic!("extrude");
+    };
+    *extent = cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+        side: cadmpeg_ir::features::extents::ExtrudeSide {
+            termination: cadmpeg_ir::features::extents::LinearTermination::ToFace {
+                face: cadmpeg_ir::features::selections::FaceSelection::Native(
+                    "inventor:pmdc:selection#synthetic".into(),
+                ),
+                offset: None,
+            },
+            draft: None,
+        },
+    };
+    let FeatureOperation::Extrude(value) =
+        typed(&operation, selections::SketchData::default(), &[]).expect("extrude")
+    else {
+        panic!("extrude");
+    };
+    let Some(Span::Between { end, .. }) = value.span else {
+        panic!("span");
+    };
+    assert!(matches!(*end, Limit::ToGeometry { offset: None, .. }));
+    let mut ir = part(operation);
+    project_part(&mut ir);
+    assert!(validate(&ir).expect("v11 validation").is_empty());
+    let neutral =
+        cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).expect("neutral validation");
+    assert_eq!(neutral.error_count(), 0, "{:?}", neutral.findings);
+}
+
 mod review;

@@ -182,6 +182,12 @@ const SURFACE_TYPE: [u8; 16] = [
 ];
 /// Surface-form value of a plane in a surface record.
 const PLANE_SURFACE_FORM: u32 = 25;
+/// Surface form 29 and the byte length of its class parameters after the value.
+const FORM_29_SURFACE_FORM: u32 = 29;
+const FORM_29_PARAMETER_BYTES: usize = 116;
+/// Surface form 73 and the byte length of its class parameters after the value.
+const FORM_73_SURFACE_FORM: u32 = 73;
+const FORM_73_PARAMETER_BYTES: usize = 156;
 /// First segment major version whose surface records store a u32 extension
 /// value after the three references.
 const SURFACE_EXTENSION_FIRST_MAJOR: u8 = 22;
@@ -361,6 +367,20 @@ pub(crate) enum PmDcFeaturePropertyKind {
         values: Vec<u32>,
         origin: [cadmpeg_ir::scalar::FiniteReal; 3],
         references: [PmDcReferenceList; 2],
+    },
+    /// A parametric face surface of form 29 or 73. The record keeps its
+    /// fixed fields; the class parameters that follow them select no body face.
+    ParametricSurface {
+        references: [crate::pmdc::PmDcReference; 3],
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_surface_extension"
+        )]
+        extension: Option<u32>,
+        state: u8,
+        surface_form: u32,
+        value: u32,
     },
     PlaneSurface {
         references: [crate::pmdc::PmDcReference; 3],
@@ -1581,6 +1601,31 @@ fn parse_surface(
         .transpose()?;
     let state = cursor.u8("surface state")?;
     let form = cursor.u32("surface form")?;
+    let parameter_bytes = match form {
+        FORM_29_SURFACE_FORM => Some(FORM_29_PARAMETER_BYTES),
+        FORM_73_SURFACE_FORM => Some(FORM_73_PARAMETER_BYTES),
+        _ => None,
+    };
+    if let Some(parameter_bytes) = parameter_bytes {
+        let value = cursor.u32("surface value")?;
+        if cursor.remaining() != parameter_bytes {
+            return Err(CodecError::malformed(format_args!(
+                "Inventor PmDc form {form} surface has {} class-parameter bytes, expected {parameter_bytes}",
+                cursor.remaining()
+            )));
+        }
+        return Ok(Some(property(
+            version,
+            header,
+            PmDcFeaturePropertyKind::ParametricSurface {
+                references,
+                extension,
+                state,
+                surface_form: form,
+                value,
+            },
+        )));
+    }
     if form != PLANE_SURFACE_FORM {
         return Ok(None);
     }
@@ -4061,11 +4106,16 @@ fn extrusion_side(
             if side_has_point(source, slots) {
                 return None;
             }
-            let (plane, native, source) = extent_target_plane(source, index, 11, 13, 18)?;
-            LinearTermination::ToPlane {
-                plane,
-                native,
-                source: Some(source),
+            match extent_target_plane(source, index, 11, 13, 18) {
+                Some((plane, native, source)) => LinearTermination::ToPlane {
+                    plane,
+                    native,
+                    source: Some(source),
+                },
+                None if extent == EXTENT_TO => {
+                    extent_target_parametric_face(source, index, 11, 13, 18)?
+                }
+                None => return None,
             }
         }
         _ => return None,
@@ -4217,6 +4267,59 @@ fn extent_target_plane(
         native,
         cadmpeg_ir::features::extents::PlaneTargetSource::FaceSurface,
     ))
+}
+
+/// The extent-7 target that is a model face whose surface record has form 29
+/// or 73. The record stores no carrier that selects the face, so the
+/// termination names the surface record as a native face selection.
+fn extent_target_parametric_face(
+    source: &PmDcFeature,
+    index: &ProjectionIndex<'_>,
+    plane_slot: usize,
+    flag_slot: usize,
+    surface_slot: usize,
+) -> Option<LinearTermination> {
+    let references = source.properties.references();
+    if references.get(plane_slot)?.index() != 0 {
+        return None;
+    }
+    let token = source.identity.segment_token.as_str();
+    let flag = resolve_property(token, references.get(flag_slot)?.index(), index)?;
+    if flag.identity.type_id.as_str() != type_id_string(TERMINATION_FLAG_TYPE)
+        || !matches!(
+            flag.kind,
+            PmDcFeaturePropertyKind::TerminationFlag { value: 1 }
+        )
+    {
+        return None;
+    }
+    let surface = resolve_property(token, references.get(surface_slot)?.index(), index)?;
+    if surface.identity.type_id.as_str() != type_id_string(SURFACE_TYPE) {
+        return None;
+    }
+    let PmDcFeaturePropertyKind::ParametricSurface {
+        references: surface_references,
+        extension,
+        state,
+        value,
+        ..
+    } = surface.kind
+    else {
+        return None;
+    };
+    if !extrusion::zero_surface_controls(
+        surface.save_version_major,
+        surface_references,
+        extension,
+        state,
+    ) || value != 1
+    {
+        return None;
+    }
+    Some(LinearTermination::ToFace {
+        face: cadmpeg_ir::features::selections::FaceSelection::Native(surface.id()),
+        offset: None,
+    })
 }
 
 /// Build a model-space plane frame from an origin in centimetres and two

@@ -1448,6 +1448,10 @@ fn validate_features_with_raw(
             PmDcFeaturePropertyKind::PlaneSurface {
                 references: surface,
                 ..
+            }
+            | PmDcFeaturePropertyKind::ParametricSurface {
+                references: surface,
+                ..
             } => {
                 references.extend(surface.iter().map(|reference| reference.index()));
             }

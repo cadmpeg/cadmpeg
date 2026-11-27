@@ -286,9 +286,9 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Question.** Which records join an extrusion's stored planar termination surface to its selected input-body face and history revision? What roles do the other surface reference, state, and value forms have?
 
-**Known.** The zero-control face-surface form in section 13 stores three null references and a complete plane frame. The target source distinguishes this stored face surface from a work plane or work point. Its body-face identity stays native with `feature.extrusion-target-face-native`, once per face-surface start or termination. A face item's selector joins a stored face revision by the rule of section 13.
+**Known.** The zero-control face-surface form in section 13 stores three null references and a complete plane frame. The target source distinguishes this stored face surface from a work plane or work point. Its body-face identity stays native with `feature.extrusion-target-face-native`, once per face-surface start or termination. A zero-control parametric surface of form 29 or 73 in the termination slot terminates the extrusion at a native face selection of the surface record. A face item's selector joins a stored face revision by the rule of section 13.
 
-**Need.** A face identity for the stored termination surface requires its selector and the input-body revision of the selected face. Other surface controls require their selection, frame, and polarity roles.
+**Need.** A face identity for the stored termination surface requires its selector and the input-body revision of the selected face. A parametric termination surface requires the record that identifies its face; its class parameters do not. Other surface controls require their selection, frame, and polarity roles.
 
 ### DE-13. Coil construction operands
 
