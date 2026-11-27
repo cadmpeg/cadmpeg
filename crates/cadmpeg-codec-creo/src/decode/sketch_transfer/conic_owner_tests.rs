@@ -71,10 +71,12 @@ fn definition(circles: bool, selector: u32) -> FeatureDefinition {
         section_3d: None,
         dimensions: None,
         relations: Some(FeatureRelationTable {
+            rows_end: None,
             declared_count: 1,
             entity_ref: None,
             rows: Vec::new(),
             skamps: Some(SolverSubtable::Declared {
+                rows_end: None,
                 header: FeatureSolverTableHeader {
                     declared_count: 1,
                     entity_ref: 91,

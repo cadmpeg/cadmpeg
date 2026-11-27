@@ -1,6 +1,7 @@
 mod binding;
 mod circle;
 mod evidence;
+mod population_merge;
 mod topology_bounds;
 mod transfer;
 

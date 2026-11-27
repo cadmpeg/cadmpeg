@@ -69,8 +69,16 @@ fn charges_the_object_model(loss: &LossNote) -> bool {
         && loss.severity == Severity::Error
         && loss
             .message
-            .split_whitespace()
-            .any(|token| token == "nx:container:object-model#0")
+            .starts_with("part object-model stream=\"nx:container\" offset=0 length=")
+}
+
+/// The stub id of the part that a charge gives up.
+fn charged_record(loss: &LossNote) -> &str {
+    loss.message
+        .split_once(" record=")
+        .and_then(|(_, rest)| rest.split_once(": "))
+        .map(|(id, _)| id)
+        .expect("the charge names its record")
 }
 
 fn assert_attachment_given_up(result: &EditableDecodeResult) {
@@ -167,6 +175,31 @@ fn attachment_failure_after_every_write_equals_failure_before_any_write() {
             );
         }
     }
+}
+
+#[test]
+fn the_attachment_charge_gives_up_the_container_bytes_as_a_part() {
+    let bytes = prt_with_arrangements();
+    let length = bytes.len();
+    let contained = decode_failing_at(bytes, Point::Exit);
+    let losses = &contained.report().losses;
+    let charge = losses
+        .iter()
+        .find(|loss| charges_the_object_model(loss))
+        .unwrap_or_else(|| panic!("the container is given up as a part: {losses:#?}"));
+    assert!(
+        charge.message.starts_with(&format!(
+            "part object-model stream=\"nx:container\" offset=0 length={length} record="
+        )),
+        "{charge:#?}"
+    );
+    let stub = charged_record(charge);
+    let unknowns = contained.ir().native_unknowns("nx").expect("unknowns read");
+    assert!(unknowns.iter().any(|unknown| unknown.id.as_str() == stub));
+    assert!(contained.source_fidelity().retained_record(stub).is_some());
+    assert!(losses
+        .iter()
+        .all(|loss| !loss.message.contains("nx:container:object-model#0")));
 }
 
 #[test]

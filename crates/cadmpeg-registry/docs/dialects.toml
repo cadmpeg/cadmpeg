@@ -1205,6 +1205,34 @@ discriminants = { magic = "none" }
 witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:43"
 
 # --------------------------------------------------------------------------
+# Alibre Design parts (.AD_PRT)
+# --------------------------------------------------------------------------
+# An `.AD_PRT` is a Microsoft Compound File with a flat root. Detection requires
+# the two streams `SAB_DATA` and `STEP_DATA`. The `SAB_DATA` stream holds the
+# part body as a Spatial ACIS binary stream and selects the row by its magic
+# `ACIS BinaryFile`. The kernel save format is classified on the separate `acis:`
+# layer. A `SAB_DATA` stream without that magic is refused.
+[format.alibre]
+complete = false
+aliases = ["adprt"]
+
+[[dialect]]
+id = "alibre:cfb-acis-binary"
+title = "Alibre Design part, compound file with an ACIS binary body"
+discriminants = { cfb_streams = "SAB_DATA and STEP_DATA", sab_magic = "ACIS BinaryFile" }
+seam = "the host row is Admitted when the ACIS stream frames. The separate kernel layer is acis:save-format-binary-other with Unverified admission at the stream's save format 33, and it charges source.kernel-dialect-unverified"
+witness = "corpus:corpus/alibre/box.AD_PRT"
+
+[[dialect]]
+# Mandatory `unknown` row (B4). A `SAB_DATA` stream whose leading bytes are not
+# the ACIS binary magic or that has no record-stream boundary is refused.
+id = "alibre:unknown"
+unknown_kind = "refused-residual"
+title = "Alibre Design part whose SAB_DATA stream is not an ACIS binary stream"
+discriminants = { cfb_streams = "SAB_DATA and STEP_DATA", sab_magic = "any other" }
+witness = "code:crates/cadmpeg-codec-alibre/src/dialect.rs:56"
+
+# --------------------------------------------------------------------------
 # PTC Creo View / ProductView .pvz packages
 # --------------------------------------------------------------------------
 # A `.pvz` is a ZIP package holding one `.pvs` structure member and `.ol`

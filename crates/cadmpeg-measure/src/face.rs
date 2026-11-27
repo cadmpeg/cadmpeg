@@ -2,7 +2,8 @@
 //! The measurement of one face: carrier, boundary, region, area, lengths,
 //! box and orientation.
 
-use std::collections::{BTreeSet, HashMap};
+use crate::FastMap;
+use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_ir::source_fidelity::SourceFidelity;
@@ -205,7 +206,7 @@ pub(crate) struct FaceFlux {
 pub(crate) struct FaceInput<'a, 'ir> {
     pub(crate) work: Work,
     pub(crate) owners: &'a Owners<'ir>,
-    pub(crate) edges: &'a HashMap<&'ir str, EdgeGeometry<'ir>>,
+    pub(crate) edges: &'a FastMap<&'ir str, EdgeGeometry<'ir>>,
     pub(crate) fidelity: Option<&'a SourceFidelity>,
     pub(crate) body: Option<&'ir str>,
     pub(crate) placement: Outcome<Placement>,
