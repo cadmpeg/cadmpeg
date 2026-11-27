@@ -192,8 +192,6 @@ A loft result with the `NMx_*` class chains requires a result check for a side f
 
 A line whose stored endpoints differ, with each coordinate difference at most four times the machine epsilon of binary64 times the larger coordinate magnitude of the pair, is read as one position and reports `sketch.line-endpoints-rounding-assumed`. Such a difference requires a rule that proves it is rounding.
 
-DeleteFace Boolean slots 1 and 2 require their construction roles and polarity. Its slot-3 body selection requires operand/result ownership and a body-revision join. Its slot-0 face items require selected-input-face revision joins.
-
 Tagging slot 0 requires its input and result body revisions, its topology-naming effect, and its geometry-effect rule before a neutral construction or a non-modeling history node can represent it. Multiple slot-0 collection members require their body-order and naming rules. The Tagging state, outline value, property-list metadata, collection-list metadata, and other segment versions require their meanings.
 
 ### DE-02. Compound parameter units and function expressions
@@ -385,6 +383,16 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 **Need.** At least three distinct designs with stored states before and after the Cut. The profile, active depth parameter or termination rule, sheet-normal relation, and direction require exact joins that reproduce each stored result. Controlled changes must separate a zero depth, an inactive parameter, and a sheet-thickness termination.
 
 **Note.** The decoder reports `feature.extrusion-operands-native` for this form. Projection and validation use the same extrusion-operand predicate.
+
+### DE-28. DeleteFace healing controls
+
+**Question.** Which heal mode does each pair of slot-1 and slot-2 Boolean values of a DeleteFace feature select?
+
+**Known.** Section 13.7 defines the four slots. The pair of a true slot 1 and a false slot 2 leaves a solid body closed and changes its face count. The pair of two false Booleans removes exactly the selected faces and can leave a sheet. A true slot 2 occurs with a false slot 1.
+
+**Need.** Whether each pair extends the neighbouring faces or fills the opening with a new face. The deleted faces require agreement with the faces of the input and result bodies.
+
+**Conflict.** Within the pair of a true slot 1 and a false slot 2, one form loses faces and one form gains a face.
 
 ### DE-27. Rectangular-pattern direction from several cached lines
 
