@@ -6,8 +6,8 @@
 //! not resolve them to faces, so the operands are unstated and each
 //! feature adds `sheet-metal.bend-operand-unread`.
 //!
-//! The bends proxy of an unfold states the width and the two layer radii of
-//! the bend it selects; they are native options of the unfold. Stored lengths
+//! The bends proxy of an unfold states the width, the two layer radii and the
+//! angle of the bend it selects; they are native options of the unfold. Stored lengths
 //! are metres; the design states millimetres.
 
 use cadmpeg_ir::design::dimension::Dimension;
@@ -16,6 +16,7 @@ use cadmpeg_ir::design::ops::sheet_metal::{SheetMetal, SheetMetalKind};
 use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::Angle;
 
 use self::bends::bend_faces;
 use super::{features_of, millimetres, option_key};
@@ -63,6 +64,9 @@ fn bend_options(
         if let (Some(key), Some(length)) = (option_key(name), millimetres(metres)) {
             options.insert(key, NativeOption::Length(Dimension::Literal(length)));
         }
+    }
+    if let (Some(key), Some(angle)) = (option_key("bend_angle"), Angle::new(faces.angle)) {
+        options.insert(key, NativeOption::Angle(Dimension::Literal(angle)));
     }
     options
 }

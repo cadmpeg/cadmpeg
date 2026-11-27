@@ -55,6 +55,19 @@ fn option_mm(result: &DecodeResult, name: &str) -> Option<f64> {
     })
 }
 
+fn option_angle(result: &DecodeResult, name: &str) -> Option<f64> {
+    let FeatureOperation::SheetMetal(sheet) = &result.ir().design.features[0].definition.operation
+    else {
+        panic!("expected a sheet-metal operation");
+    };
+    sheet.native_options.iter().find_map(|(key, value)| {
+        let NativeOption::Angle(Dimension::Literal(angle)) = value else {
+            return None;
+        };
+        (key.as_str() == format!("solidedge:{name}")).then(|| angle.get())
+    })
+}
+
 fn kind(result: &DecodeResult) -> &SheetMetalKind {
     let FeatureOperation::SheetMetal(sheet) = &result.ir().design.features[0].definition.operation
     else {
@@ -101,6 +114,7 @@ fn the_bends_proxy_of_an_unfold_states_the_bend_width_and_radii() {
     let proxy = bends_proxy(&BendSpec {
         radii: [0.003, 0.001],
         widths: [0.04, 0.04],
+        ..BendSpec::default()
     });
     let result = decode_bends("JMUnfoldFunction", &proxy, UNFOLD_BENDS);
     assert!((option_mm(&result, "bend_width").unwrap() - 40.0).abs() <= EPS_VALUE);
@@ -109,10 +123,62 @@ fn the_bends_proxy_of_an_unfold_states_the_bend_width_and_radii() {
 }
 
 #[test]
+fn the_bends_proxy_of_an_unfold_states_the_bend_angle_of_any_span() {
+    for angle in [
+        std::f64::consts::FRAC_PI_4,
+        std::f64::consts::FRAC_PI_2,
+        std::f64::consts::FRAC_PI_3,
+        3.0 * std::f64::consts::FRAC_PI_4,
+    ] {
+        let proxy = bends_proxy(&BendSpec {
+            angle,
+            ..BendSpec::default()
+        });
+        let faces = bend_faces(&proxy_with_frame(&proxy)).unwrap();
+        assert!((faces.angle - angle).abs() <= EPS_VALUE);
+        let result = decode_bends("JMUnfoldFunction", &proxy, UNFOLD_BENDS);
+        assert!((option_angle(&result, "bend_angle").unwrap() - angle).abs() <= EPS_VALUE);
+    }
+}
+
+#[test]
+fn a_bends_proxy_with_a_zero_or_full_turn_angle_states_no_bend() {
+    for angle in [0.0, std::f64::consts::TAU] {
+        let proxy = bends_proxy(&BendSpec {
+            angle,
+            ..BendSpec::default()
+        });
+        assert!(bend_faces(&proxy_with_frame(&proxy)).is_none());
+    }
+}
+
+#[test]
+fn a_bends_proxy_with_different_arc_spans_states_no_bend() {
+    let mut proxy = proxy_with_frame(&bends_proxy(&BendSpec::default()));
+    // End angle of the first arc of the second group: 695 + 10 + 89.
+    let at = 695 + 10 + 89;
+    proxy[at..at + 8].copy_from_slice(&1.0_f64.to_le_bytes());
+    assert!(bend_faces(&proxy).is_none());
+}
+
+#[test]
+fn the_flat_length_of_a_bend_follows_the_neutral_factor_and_setback() {
+    // Section 10.6: L1 + L2 - 2 (r + t) tan(a / 2) + (r + K t) a.
+    let developed = |l1: f64, l2: f64, r: f64, t: f64, k: f64, a: f64| {
+        l1 + l2 - 2.0 * (r + t) * (a / 2.0).tan() + (r + k * t) * a
+    };
+    let quarter = developed(40.0, 15.0, 1.0, 2.0, 0.44, std::f64::consts::FRAC_PI_2);
+    assert!((quarter - (55.0 - 6.0 + 1.88 * std::f64::consts::FRAC_PI_2)).abs() <= EPS_VALUE);
+    // A straight sheet (a = 0) keeps the sum of the lengths.
+    assert!((developed(40.0, 15.0, 1.0, 2.0, 0.44, 0.0) - 55.0).abs() <= EPS_VALUE);
+}
+
+#[test]
 fn the_radii_of_the_two_groups_may_come_in_either_order() {
     let proxy = bends_proxy(&BendSpec {
         radii: [0.001, 0.003],
         widths: [0.03, 0.03],
+        ..BendSpec::default()
     });
     let faces = bend_faces(&proxy_with_frame(&proxy)).unwrap();
     assert!((faces.inside_radius - 0.001).abs() <= EPS_VALUE);
@@ -125,6 +191,7 @@ fn a_bends_proxy_with_different_group_widths_states_no_bend() {
     let proxy = bends_proxy(&BendSpec {
         radii: [0.003, 0.001],
         widths: [0.03, 0.04],
+        ..BendSpec::default()
     });
     assert!(bend_faces(&proxy_with_frame(&proxy)).is_none());
 }
@@ -134,6 +201,7 @@ fn a_bends_proxy_with_equal_group_radii_states_no_bend() {
     let proxy = bends_proxy(&BendSpec {
         radii: [0.002, 0.002],
         widths: [0.03, 0.03],
+        ..BendSpec::default()
     });
     assert!(bend_faces(&proxy_with_frame(&proxy)).is_none());
 }

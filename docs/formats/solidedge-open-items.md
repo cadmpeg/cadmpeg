@@ -112,13 +112,13 @@
 
 **Need.** A base contour flange with a different corner relief. The interface that creates a base contour flange has no relief argument.
 
-### DR-1057. Bend proxy header fields and the length of a flat bend
+### DR-1057. Bend proxy header fields and the identity of the selected bend
 
-**Question.** Which fields of the bend proxies of §10.6 state the bend angle, the developed length of a flat bend and the identity of the selected bend?
+**Question.** Which fields of the bend proxies of §10.6 state the identity of the selected bend?
 
-**Known.** The `u32` at proxy offset 90 differs between the bends of one unfold and can differ for one bend in two unfolds. The 16 bytes at proxy offset 66 are equal in every proxy of one document.
+**Known.** The `u32` at proxy offset 90 differs between the bends of one unfold and can differ for one bend in two unfolds. It holds `9` in the bends proxy of each unfold of a single bend. The 16 bytes at proxy offset 66 are equal in every proxy of one document and differ between documents.
 
-**Need.** Bends of angles other than 90 degrees in an unfold and a refold, the same bend at two radii or thicknesses, and an unfold feature with several selected bends.
+**Need.** Two unfolds of the same bend in different model states, and the same bend in documents that have equal geometry.
 
 ### DR-1058. Close corners between flanges at other angles
 

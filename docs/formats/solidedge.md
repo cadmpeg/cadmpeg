@@ -961,8 +961,16 @@ group starts at proxy offset 237 and the second group at offset 695. The two
 arcs of a group have the same radius and the two straight edges of a group have
 the same length, the bend width. The two groups have the two radii of the bend:
 the inside radius and the inside radius plus the sheet thickness, in either
-order. For a bend of 90 degrees, the end angle of each arc minus its start
-angle is pi / 2.
+order. The end angle of each arc minus its start angle is the bend angle: the
+angle through which the sheet turns, in radians. It is the same for the four
+arcs of the proxy and can be less or more than pi / 2.
+
+The flat length of a bend is (r + K t) a, with r the inside radius, t the sheet
+thickness, K the neutral factor of the feature that created the bend and a the
+bend angle. The outside setback of a bend is (r + t) tan(a / 2). A flat part
+of two faces joined by one bend has the developed length L1 + L2 - 2 (r + t)
+tan(a / 2) + (r + K t) a, with L1 and L2 the lengths of the two faces measured
+to the virtual sharp of the outside surfaces.
 
 The geometry record of a bends proxy of 1410 bytes starts at object offset 140
 and holds the cylindrical face of the first group. The geometry class

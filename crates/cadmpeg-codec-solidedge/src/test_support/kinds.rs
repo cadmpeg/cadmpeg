@@ -78,6 +78,8 @@ pub(crate) struct BendSpec {
     /// The length of the straight edges of the first and of the second layer
     /// face.
     pub(crate) widths: [f64; 2],
+    /// The span of every arc, in radians.
+    pub(crate) angle: f64,
 }
 
 impl Default for BendSpec {
@@ -85,6 +87,7 @@ impl Default for BendSpec {
         Self {
             radii: [0.003, 0.001],
             widths: [0.03, 0.03],
+            angle: std::f64::consts::FRAC_PI_2,
         }
     }
 }
@@ -108,11 +111,7 @@ pub(crate) fn bends_proxy(spec: &BendSpec) -> Vec<u8> {
             put_reals(&mut proxy, next + 1, &[0.0, 0.0, 0.0]);
             put_reals(&mut proxy, next + 25, &[0.0, 1.0, 0.0]);
             put_reals(&mut proxy, next + 49, &[0.0, 0.0, spec.radii[group]]);
-            put_reals(
-                &mut proxy,
-                next + 73,
-                &[1.0, 0.0, std::f64::consts::FRAC_PI_2],
-            );
+            put_reals(&mut proxy, next + 73, &[1.0, 0.0, spec.angle]);
             next += ARC_BYTES;
             proxy[next - 8] = 3;
             put_reals(&mut proxy, next + 1, &[0.0, 0.0, 0.0]);

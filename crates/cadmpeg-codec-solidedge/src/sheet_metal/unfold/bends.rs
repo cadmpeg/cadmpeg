@@ -28,8 +28,12 @@ const KIND_ARC: u8 = 16;
 const ARC_BYTES: usize = 97;
 /// Bytes from the kind byte of an arc to its radius vector.
 const ARC_RADIUS_VECTOR: usize = 49;
+/// Bytes from the kind byte of an arc to its start angle; the end angle follows.
+const ARC_START_ANGLE: usize = 81;
 /// Two radii or two lengths of one group agree within this distance, in metres.
 const EPS_SAME_LENGTH: f64 = 1e-9;
+/// Two bend angles agree within this distance, in radians.
+const EPS_SAME_ANGLE: f64 = 1e-9;
 
 /// The bend a bends proxy selects, in metres.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -40,12 +44,15 @@ pub(super) struct BendFaces {
     pub(super) inside_radius: f64,
     /// The larger radius of the two layer faces.
     pub(super) outside_radius: f64,
+    /// The bend angle: the end angle of each arc minus its start angle, in
+    /// radians.
+    pub(super) angle: f64,
 }
 
-/// The arc radius and the straight-edge length of a layer-face group that
-/// starts at `at`. `None` where the group does not hold the edges of a
+/// The arc radius, the straight-edge length and the arc span of a layer-face
+/// group that starts at `at`. `None` where the group does not hold the edges of a
 /// cylindrical layer face.
-fn layer_face(bytes: &[u8], at: usize) -> Option<(f64, f64)> {
+fn layer_face(bytes: &[u8], at: usize) -> Option<(f64, f64, f64)> {
     if View::u32_le_at(bytes, at)? != 1
         || usize::try_from(View::u32_le_at(bytes, at.checked_add(4)?)?).ok()? != GROUP_EDGES
         || View::u16_le_at(bytes, at.checked_add(8)?)? != MARKER_WORD
@@ -54,8 +61,13 @@ fn layer_face(bytes: &[u8], at: usize) -> Option<(f64, f64)> {
     }
     let mut radii = [0.0_f64; 2];
     let mut lengths = [0.0_f64; 2];
+    let mut spans = [0.0_f64; 2];
     let mut next = at.checked_add(MARKER_BYTES)?;
-    for (radius, length) in radii.iter_mut().zip(lengths.iter_mut()) {
+    for ((radius, length), span) in radii
+        .iter_mut()
+        .zip(lengths.iter_mut())
+        .zip(spans.iter_mut())
+    {
         if *bytes.get(next)? != KIND_ARC {
             return None;
         }
@@ -66,6 +78,9 @@ fn layer_face(bytes: &[u8], at: usize) -> Option<(f64, f64)> {
             sum += value * value;
         }
         *radius = sum.sqrt();
+        let start = View::f64_le_at(bytes, next.checked_add(ARC_START_ANGLE)?)?;
+        let end = View::f64_le_at(bytes, next.checked_add(ARC_START_ANGLE + 8)?)?;
+        *span = end - start;
         next = next.checked_add(ARC_BYTES)?;
         if *bytes.get(next)? != KIND_LINE {
             return None;
@@ -74,24 +89,29 @@ fn layer_face(bytes: &[u8], at: usize) -> Option<(f64, f64)> {
         next = next.checked_add(LINE_BYTES)?;
     }
     let same = |a: f64, b: f64| (a - b).abs() <= EPS_SAME_LENGTH;
-    if !same(radii[0], radii[1]) || !same(lengths[0], lengths[1]) {
+    if !same(radii[0], radii[1])
+        || !same(lengths[0], lengths[1])
+        || (spans[0] - spans[1]).abs() > EPS_SAME_ANGLE
+    {
         return None;
     }
-    Some((radii[0], lengths[0]))
+    Some((radii[0], lengths[0], spans[0]))
 }
 
 /// The bend a bends proxy of an unfold selects. `None` where the proxy is not
 /// of 1410 bytes, a group does not hold the four edges of a cylindrical layer
-/// face, the two groups state different widths or the same radius, or a value
-/// is not finite and positive.
+/// face, the two groups state different widths or angles or the same radius, or a
+/// value is not finite and positive, or the bend angle is a full turn or more.
 pub(super) fn bend_faces(bytes: &[u8]) -> Option<BendFaces> {
     if bytes.len() != PROXY_BYTES {
         return None;
     }
-    let (first_radius, first_width) = layer_face(bytes, GROUP_STARTS[0])?;
-    let (second_radius, second_width) = layer_face(bytes, GROUP_STARTS[1])?;
+    let (first_radius, first_width, first_angle) = layer_face(bytes, GROUP_STARTS[0])?;
+    let (second_radius, second_width, second_angle) = layer_face(bytes, GROUP_STARTS[1])?;
     let valid = |value: f64| value.is_finite() && value > 0.0;
     if !(valid(first_radius) && valid(second_radius) && valid(first_width))
+        || !(valid(first_angle) && first_angle < std::f64::consts::TAU)
+        || (first_angle - second_angle).abs() > EPS_SAME_ANGLE
         || (first_width - second_width).abs() > EPS_SAME_LENGTH
         || (first_radius - second_radius).abs() <= EPS_SAME_LENGTH
     {
@@ -101,5 +121,6 @@ pub(super) fn bend_faces(bytes: &[u8]) -> Option<BendFaces> {
         width: first_width,
         inside_radius: first_radius.min(second_radius),
         outside_radius: first_radius.max(second_radius),
+        angle: first_angle,
     })
 }
