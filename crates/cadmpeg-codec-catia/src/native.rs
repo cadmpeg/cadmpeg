@@ -4699,7 +4699,7 @@ fn record_has_separator_roles(record: &CatiaObjectRecord) -> bool {
     matches!(record.head.get(1), Some(HeadToken::Separator))
 }
 
-fn design_object_id(graph_offset: u64, owner_entity_id: u32) -> String {
+pub(crate) fn design_object_id(graph_offset: u64, owner_entity_id: u32) -> String {
     format!("catia:outer:design-object#{graph_offset:010}-{owner_entity_id:010}")
 }
 

@@ -212,6 +212,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A saved part whose formula has an `and` or `or` with a left operand that decides the result and a right operand that fails at the saved inputs, for example a division by an input whose saved value is zero: compare the formula's stored result with the decided value. A stored result equal to the decided value confirms the reading of `catia.md` §7.3.
 
+### DI-34. Ordered and plain geometrical sets
+
+**Question.** Which stored field tells an ordered geometrical set from a geometrical set?
+
+**Known.** `catia.md` §7.3.2 defines the compact `GSMTool` record and its `_FtrList` member list. Its compact prefix is `00 08 <class-tag> <second-tag>`, and the second tag selects the catalog entry `Open_body`. A `GSMTool` payload stores one `_FtrList` segment or stores no segment. A `HybridBody` record that `MainTool` selects is the main body. A `HybridBody` record that no container lists stores an `_FtrList` whose members have classes such as `Boolean`, `String`, `ConstraintPRT`, and `RelationSet`, and members with no compact class. The design layer names each `GSMTool` record and each unlisted `HybridBody` record in the loss `design.tree-records-unstated`.
+
+**Need.** Two saves of one part that differ in one control: a geometrical set saved as an ordered geometrical set, then saved as a plain geometrical set. Compare the compact prefix, the second-tag entry, and the payload segments of the two `GSMTool` records.
+
 ## 3. Standard nested `V5_CFV2`
 
 ### SN-02. Rolling-ball scalar-jet semantics and tail control

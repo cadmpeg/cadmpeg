@@ -173,7 +173,7 @@ pub(crate) enum CatiaLossCode {
     HistoryRelationDependenciesBounded,
     /// Typed two-definition value chains stay native without a neutral parameter.
     HistoryDefinitionChainsRetained,
-    /// The part's feature history is not read, so its bodies are unproduced.
+    /// No feature result is read, so the part's bodies are unproduced.
     HistoryFeaturesUnread,
     /// Design parameters and `Range` nominals read stored `E7` and `E8` literals
     /// as the values one and zero.
@@ -181,6 +181,15 @@ pub(crate) enum CatiaLossCode {
     /// Parameters that hold an input parameter the decoder resolved as text,
     /// or omit it, and state no dependency on that parameter.
     DesignParameterReferenceAsText,
+    /// Feature-tree records the design layer does not state: a set whose
+    /// ordered or unordered kind is unread, a set whose member list is unread
+    /// or that no set lists, and a listed record with no compact class.
+    DesignTreeRecordsUnstated,
+    /// Features read from a record whose compact class contradicts the
+    /// reading; the reading is not restated.
+    DesignFeaturesContradicted,
+    /// Features that no stated set lists are members of the part's group.
+    DesignFeaturesUngrouped,
     /// Materials, unbound NURBS caches, and document metadata were not transferred.
     AttributesMaterialsMetadataNotTransferred,
     /// Dimension scalars retain no admitted physical-quantity discriminator.
@@ -271,6 +280,9 @@ impl CatiaLossCode {
         Self::HistoryFeaturesUnread,
         Self::HistoryParameterLiteralAssumed,
         Self::DesignParameterReferenceAsText,
+        Self::DesignTreeRecordsUnstated,
+        Self::DesignFeaturesContradicted,
+        Self::DesignFeaturesUngrouped,
         Self::AttributesMaterialsMetadataNotTransferred,
         Self::AttributesDimensionQuantityUnresolved,
         Self::AttributesPmiToleranceUntransferred,
@@ -364,6 +376,9 @@ impl CatiaLossCode {
             Self::HistoryFeaturesUnread => "history.features-unread",
             Self::HistoryParameterLiteralAssumed => "history.parameter-literal-assumed",
             Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
+            Self::DesignTreeRecordsUnstated => "design.tree-records-unstated",
+            Self::DesignFeaturesContradicted => "design.features-contradicted",
+            Self::DesignFeaturesUngrouped => "design.features-ungrouped",
             Self::AttributesMaterialsMetadataNotTransferred => {
                 "attributes.materials-metadata-not-transferred"
             }
@@ -486,6 +501,9 @@ impl CatiaLossCode {
             | Self::HistoryFeaturesUnread => LossTaxonomy::FeatureHistoryRetained,
             Self::TopologyUnselectedBodiesRetained => LossTaxonomy::FeatureHistoryRetained,
             Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
+            Self::DesignTreeRecordsUnstated
+            | Self::DesignFeaturesContradicted
+            | Self::DesignFeaturesUngrouped => LossTaxonomy::FeatureHistoryRetained,
         }
     }
 
@@ -588,6 +606,9 @@ mod tests {
                 "history.features-unread",
                 "history.parameter-literal-assumed",
                 "design.parameter-reference-as-text",
+                "design.tree-records-unstated",
+                "design.features-contradicted",
+                "design.features-ungrouped",
                 "attributes.materials-metadata-not-transferred",
                 "attributes.dimension-quantity-unresolved",
                 "attributes.pmi-tolerance-untransferred",
