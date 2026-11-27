@@ -5202,8 +5202,10 @@ fn attach_standard_topology_inner(
             }
         }
         let directed_native_edge_tags: HashSet<u32> = native_edges.keys().copied().collect();
-        for (&edge, &vertices) in consolidated_edge_vertices {
-            native_edges.entry(edge).or_insert(vertices);
+        if !has_visualization_endpoint_pairs {
+            for (&edge, &vertices) in consolidated_edge_vertices {
+                native_edges.entry(edge).or_insert(vertices);
+            }
         }
         let graph_endpoint_pairs = standard_native_graph_endpoint_pairs(
             topology_graph.as_ref(),
@@ -5385,12 +5387,16 @@ fn attach_standard_topology_inner(
                 narrowed_by_successors = *options != before;
             }
         }
+        let any_unordered_native_port =
+            native_port_options.iter().enumerate().any(|(edge, pair)| {
+                pair.is_some() && !directed_native_edge_tags.contains(&supports[edge].tag)
+            });
         let graph_propagated_endpoint_pairs = match native_endpoint_evidence.as_ref() {
             Some(pairs) => {
-                let port_ordered_seeds = if all_directed_ports || native_edges.is_empty() {
-                    &ordered_endpoint_pairs
-                } else {
+                let port_ordered_seeds = if any_unordered_native_port {
                     pairs
+                } else {
+                    &ordered_endpoint_pairs
                 };
                 let Some(propagated) =
                     missing_edge::propagate_partial_edge_port_points_with_ordered_seeds(
@@ -6136,7 +6142,7 @@ fn attach_standard_topology_inner(
                 | crate::families::standard::records::StandardCurveGeometry::Bspline => None,
             })
             .collect::<Vec<_>>();
-        let native_fbb_topology = if all_directed_ports
+        let native_fbb_topology = if (all_directed_ports || has_visualization_endpoint_pairs)
             && edge_table_form == EdgeTableForm::FbbOnly
             && !has_open_face_domains
         {
