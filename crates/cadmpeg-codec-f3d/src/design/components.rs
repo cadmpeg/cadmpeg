@@ -171,6 +171,7 @@ pub(crate) fn project_local_components_with_types(
             )?;
         }
     }
+    projector.path_poses.operation_placed = projector.occurrences.keys().cloned().collect();
     projector.place_root_contained_carriers()?;
     projector.attach_root_occurrences();
     projector.expand_nested_carriers()?;
@@ -408,6 +409,9 @@ struct PathPoseOutcome {
     object_prelude_placements: usize,
     /// Design streams that store at least one component-path record.
     path_streams: BTreeSet<String>,
+    /// Occurrences that an assembly operation or a derived-instance
+    /// construction placed before any carrier matrix was read.
+    operation_placed: BTreeSet<String>,
     /// Carriers of the occurrences that took a path pose.
     applied_carriers: BTreeSet<String>,
     /// Expanded instances with an independently resolved world pose.
@@ -1513,6 +1517,7 @@ impl<'a> Projector<'a> {
             .iter()
             .filter(|(key, (_, carrier))| {
                 !rejected.contains(key.as_str())
+                    && !self.path_poses.operation_placed.contains(key.as_str())
                     && carrier.is_some_and(|carrier| unnamed(key, carrier))
             })
             .count();
