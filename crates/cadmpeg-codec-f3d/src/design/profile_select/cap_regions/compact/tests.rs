@@ -840,7 +840,7 @@ fn an_intersect_does_not_keep_a_region_over_no_material() {
     lines.push(("second", (2.0, 0.0), (2.0, 1.0)));
     let before = [strip(1, 0.0, 0.0, 2.0), strip(2, -2.0, 0.0, 2.0)];
     let after = [strip(3, 0.0, 1.0, 2.0), strip(4, -2.0, 1.0, 2.0)];
-    let (selected, _) = run_intersect(
+    let (selected, flags) = run_intersect(
         &lines,
         &before,
         &after,
@@ -848,6 +848,8 @@ fn an_intersect_does_not_keep_a_region_over_no_material() {
         &["first", "second", "bottom", "top"],
         two_down(),
     );
+    // Straight curves and decided islands leave no assumption.
+    assert!(flags.iter().all(|flag| !flag));
     let curves = selected_curves(selected);
     assert!(curves.iter().any(|curve| curve.ends_with("#first")));
     assert!(curves.iter().any(|curve| curve.ends_with("#second")));
@@ -1202,6 +1204,15 @@ fn the_extent_interval_follows_the_start_direction_and_sides() {
         ),
         Some((-2.0, 2.0))
     );
+    // A symmetric extent mirrors across the profile plane, whatever the start.
+    assert_eq!(
+        interval(
+            offset(2.0),
+            forward(),
+            ExtrudeExtent::Symmetric { side: blind(4.0) }
+        ),
+        Some((-2.0, 2.0))
+    );
     assert_eq!(
         interval(
             offset(2.0),
@@ -1264,4 +1275,27 @@ fn an_intersect_keeps_a_region_over_no_material_when_its_profile_names_it() {
         two_down(),
     );
     assert!(selected.is_none());
+}
+
+/// Material that a plane gains over a removed face after the transition
+/// contradicts the removal.
+#[test]
+fn an_intersect_refuses_material_gained_over_a_removed_region() {
+    let mut lines = rectangle("outer", 0.0, 2.0).to_vec();
+    lines.push(("middle", (1.0, 0.0), (1.0, 1.0)));
+    let named = ["middle", "right", "bottom", "top"];
+    let before = [strip(1, 0.0, 0.0, 1.0)];
+    let run = |after: &[super::super::tests::PlaneFace]| {
+        run_intersect(
+            &lines,
+            &before,
+            after,
+            BooleanOp::Intersect,
+            &named,
+            two_down(),
+        )
+        .0
+    };
+    assert!(run(&[]).is_some());
+    assert!(run(&[strip(2, -1.0, 0.0, 1.0)]).is_none());
 }

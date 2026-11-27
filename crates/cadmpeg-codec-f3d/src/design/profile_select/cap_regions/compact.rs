@@ -588,18 +588,13 @@ pub(in crate::design::profile_select) fn removed_candidate(
     ) else {
         return Ok(None);
     };
-    let work = ProfileGeometryWork::new();
-    let Some(regions) = atomic_sketch_regions(
-        sketch,
-        resolution.entities,
-        tolerance,
-        &work,
-        resolution.ctx,
-    )?
+    let work = resolution.profile_work;
+    let Some(regions) =
+        atomic_sketch_regions(sketch, resolution.entities, tolerance, work, resolution.ctx)?
     else {
         return Ok(None);
     };
-    let Some(sampled) = sample_regions(&regions, tolerance, resolution.profile_work) else {
+    let Some(sampled) = sample_regions(&regions, tolerance, work) else {
         return Ok(None);
     };
     let selected: Vec<_> = sampled
@@ -1000,7 +995,8 @@ fn edge_height_is_bounded(
 }
 
 /// The heights above the sketch plane that the tool of a blind Extrude spans,
-/// from its start plane along its direction. `None` for a start, direction or
+/// from its start plane along its direction, or on both sides of the profile
+/// plane for a symmetric extent. `None` for a start, direction or
 /// side that is not a blind distance without draft.
 fn extent_interval(sweep: &Sweep<'_>) -> Option<(f64, f64)> {
     let start = match sweep.start {
@@ -1023,8 +1019,10 @@ fn extent_interval(sweep: &Sweep<'_>) -> Option<(f64, f64)> {
             (start - sign * blind(second)?, start + sign * blind(first)?)
         }
         ExtrudeExtent::Symmetric { side } => {
+            // The mirrored side spans both sides of the profile plane, not of
+            // an offset start.
             let half = blind(side)? / 2.0;
-            (start - half, start + half)
+            (-half, half)
         }
     };
     Some((first.min(second), first.max(second)))
@@ -1331,12 +1329,12 @@ pub(in crate::design::profile_select) fn intersect_candidate(
     if !intersect_agrees(&planes, &sampled, &removed, &kept) {
         return Ok(None);
     }
-    let local = work.assumed_flags();
-    let mut merged = resolution.profile_work.assumed_flags();
-    for (flag, local) in merged.iter_mut().zip(local) {
-        *flag |= local;
+    if kept
+        .iter()
+        .any(|index| sampled[*index].region.island_absence_assumed)
+    {
+        work.note_island_absence_assumed();
     }
-    resolution.profile_work.set_assumed_flags(merged);
     Ok(Some(candidate))
 }
 
