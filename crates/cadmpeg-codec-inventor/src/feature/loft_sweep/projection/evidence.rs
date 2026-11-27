@@ -805,13 +805,13 @@ pub(in crate::feature::loft_sweep) fn legacy_loft(
 /// Most section curves of one section boundary that a joined loft result can
 /// leave without a side face: the side face on the joined end merges into a
 /// face of the body that the loft joins.
-const MAX_JOINED_UNNAMED_CURVES: usize = 1;
+const JOINED_UNNAMED_CURVES_PER_SECTION: usize = 1;
 
 /// Legacy loft result check. With `joined`, the result body also holds the
 /// faces of the body that the loft joined, and the join merges faces of the
 /// loft into faces of that body. A cap face can stay unnamed or split into
 /// several named faces of one section, and each section boundary can leave at
-/// most [`MAX_JOINED_UNNAMED_CURVES`] curve without a side face. At least one
+/// most [`JOINED_UNNAMED_CURVES_PER_SECTION`] curve without a side face. At least one
 /// cap face is named, and every named face still names a curve or a section
 /// of the loft.
 fn legacy_loft_in(
@@ -862,7 +862,12 @@ fn legacy_loft_in(
         let unnamed = expected.iter().filter(|name| !found.contains(name)).count();
         !expected.is_empty()
             && found.iter().all(|name| expected.contains(name))
-            && unnamed <= if joined { MAX_JOINED_UNNAMED_CURVES } else { 0 }
+            && unnamed
+                <= if joined {
+                    JOINED_UNNAMED_CURVES_PER_SECTION
+                } else {
+                    0
+                }
     };
     let caps_named = if joined {
         !caps.is_empty()

@@ -1008,10 +1008,11 @@ fn a_joined_loft_requires_the_named_result_in_the_state_after_it() {
 
 #[test]
 fn a_joined_loft_requires_a_solid_with_enough_faces_in_the_state_before_it() {
-    for (before, outcome) in [
-        (CadIr::empty(), held as fn(&CadIr) -> StateModel),
+    let cases: [(CadIr, fn(&CadIr) -> StateModel); 2] = [
+        (CadIr::empty(), held),
         (model(), |_| StateModel::Unavailable),
-    ] {
+    ];
+    for (before, outcome) in cases {
         let states = PairStates {
             after: (legacy_model(), held),
             before: (before, outcome),

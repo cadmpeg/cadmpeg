@@ -454,5 +454,8 @@ fn surface_loft_class_is_its_own_family_and_refuses_solid_admission() {
     ));
     assert!(crate::feature::FeatureFamily::SurfaceLoft.admits_definition(&definition));
     assert!(!crate::feature::FeatureFamily::Loft.admits_definition(&definition));
-    assert!(!controls::matches_definition(&definition, BooleanOp::NewBody));
+    assert!(!controls::matches_definition(
+        &definition,
+        BooleanOp::NewBody
+    ));
 }
