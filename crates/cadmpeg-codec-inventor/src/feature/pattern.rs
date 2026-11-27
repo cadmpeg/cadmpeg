@@ -83,7 +83,8 @@ fn single_segment() -> u32 {
     1
 }
 
-fn is_single_segment(segments: &u32) -> bool {
+/// serde's `skip_serializing_if` passes the field by reference.
+fn is_single_segment<T: PartialEq<u32>>(segments: &T) -> bool {
     *segments == 1
 }
 
