@@ -2278,6 +2278,16 @@ The same two-edge ambiguity can remain after the candidate-boundary, deletion, a
 
 **Note.** The decoder reports this selection with `design.flagged-base-feature-body-selected`. The `Base Feature` of such a design has no history partition, so its output state chain stays unbound and the decoder reports `feature.output-state-chain-unbound`.
 
+### DR-1080. Two-sided distance Extrude with distances of opposite sign, with a draft or a wall thickness
+
+**Question.** Where does a two-sided distance Extrude with distances of opposite sign put its solid when a side has a draft, and when it has a wall thickness?
+
+**Known.** `f3d.md` §3.1 states that the two distances place the solid's ends at `AlongDistance` and at the negated `AgainstDistance` on the profile normal, with the solid between them. A controlled save confirms this for solid Extrudes with every sign pair (+20/−5, −20/+5, −20/−5 and +20/+5 mm give final bodies spanning 5…20, −20…−5, −20…5 and −5…20 mm), and two Extrudes of another design agree. The decoder reads distances of opposite sign as a one-sided Extrude from an offset profile plane at the nearer end. In the same save, an Extrude of −20/+5 mm with a 5° draft on side one spans −20…0 mm: the solid reaches the profile plane. Wall-thickness Extrudes of open chains of +20/−5 and −20/+5 mm span 5…20 and −20…−5 mm, but a wall-thickness Extrude of a closed profile of 50/−2 mm in another design records a body centre 25 mm above its profile plane. Recorded body centres are bounding-box centres in the controlled save, so that body spans 0…50 mm, not 2…50 mm; its parameter roles and extent form equal those of the open-chain Extrudes. The decoder keeps both forms native.
+
+**Need.** Saves of drafted Extrudes with distances of opposite sign, with the draft on either side and with several drafts, and wall-thickness Extrudes with distances of opposite sign of a closed profile and of an open chain, with each wall location.
+
+**Conflict.** None.
+
 ### DR-646. Entry order of a multi-body suffix result-body frame
 
 **Question.** How does a `Base Feature` suffix result-body frame with more than one body order its body, repeated, and result entries?
