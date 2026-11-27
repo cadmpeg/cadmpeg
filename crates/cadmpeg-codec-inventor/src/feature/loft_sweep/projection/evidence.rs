@@ -490,14 +490,10 @@ pub(in crate::feature::loft_sweep) fn loft_owned_consistent(
                 && if name == LEGACY_CAP_CLASS {
                     matches!(tail[..], [0, section, 260] if uses(section))
                 } else {
-                    matches!(
-                        tail[..],
-                        [2, first_curve, first_section, 258, 0, 0, last_curve, last_section, 258, 0, 0]
-                            if first_section == i64::from(sections[0])
-                                && last_section == i64::from(sections[1])
-                                && first_curves.contains(&first_curve)
-                                && last_curves.contains(&last_curve)
-                    )
+                    legacy_side_groups(tail, sections).is_some_and(|(first, last)| {
+                        first.iter().all(|curve| first_curves.contains(curve))
+                            && last.iter().all(|curve| last_curves.contains(curve))
+                    })
                 }
         } else {
             continue;
@@ -691,15 +687,9 @@ pub(in crate::feature::loft_sweep) fn legacy_loft(
                 return None;
             }
         } else {
-            let [2, first_curve, first_section, 258, 0, 0, last_curve, last_section, 258, 0, 0] =
-                named.tail[..]
-            else {
-                return None;
-            };
-            if first_section != i64::from(sections[0])
-                || last_section != i64::from(sections[1])
-                || !first_curves.insert(first_curve)
-                || !last_curves.insert(last_curve)
+            let (first, last) = legacy_side_groups(&named.tail, sections)?;
+            if !first.into_iter().all(|curve| first_curves.insert(curve))
+                || !last.into_iter().all(|curve| last_curves.insert(curve))
             {
                 return None;
             }
@@ -712,6 +702,37 @@ pub(in crate::feature::loft_sweep) fn legacy_loft(
             && expected.iter().all(|name| found.contains(name))
     };
     (caps.len() == 2 && complete(&first_curves, 0) && complete(&last_curves, 1)).then_some(())
+}
+
+/// Number of integers in one group of a legacy loft side tail:
+/// `curve, section, 258, 0, 0`.
+const LEGACY_GROUP_LEN: usize = 5;
+
+/// The curve names of a legacy loft side tail, split by section. The tail
+/// holds the group count `n` of at least 2, then `n` groups
+/// `curve, section, 258, 0, 0`. The groups of the first section come before
+/// the groups of the last section, and each section has at least one group.
+fn legacy_side_groups(tail: &[i64], sections: [u32; 2]) -> Option<(Vec<i64>, Vec<i64>)> {
+    let (&count, groups) = tail.split_first()?;
+    let count = usize::try_from(count).ok().filter(|count| *count >= 2)?;
+    if groups.len() != count.checked_mul(LEGACY_GROUP_LEN)? {
+        return None;
+    }
+    let mut first = Vec::new();
+    let mut last = Vec::new();
+    for group in groups.chunks_exact(LEGACY_GROUP_LEN) {
+        let [curve, section, 258, 0, 0] = *group else {
+            return None;
+        };
+        if section == i64::from(sections[0]) && last.is_empty() {
+            first.push(curve);
+        } else if section == i64::from(sections[1]) {
+            last.push(curve);
+        } else {
+            return None;
+        }
+    }
+    (!first.is_empty() && !last.is_empty()).then_some((first, last))
 }
 
 /// The section groups and member index of a loft side-face tag.

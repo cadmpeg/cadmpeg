@@ -495,6 +495,111 @@ fn legacy_loft_refuses_a_cap_side_or_name_that_is_not_the_positional_form() {
     assert!(check(&other_body).is_none());
 }
 
+/// `legacy_model` with the tail of its side face replaced by `tail`.
+fn legacy_side(tail: &[i64]) -> CadIr {
+    let mut model = legacy_model();
+    let values = &mut model.model.attributes[2].values;
+    values.truncate(9);
+    values.extend(
+        tail.iter()
+            .map(|value| Some(AttributeValue::Integer(*value))),
+    );
+    model
+}
+
+/// The side tail of one face between a first-section boundary of curves 8
+/// and 9 and a last-section boundary of curve 3: two groups of the first
+/// section, then one of the last.
+const MERGED_SIDE: [i64; 16] = [3, 8, 19, 258, 0, 0, 9, 19, 258, 0, 0, 3, 23, 258, 0, 0];
+
+fn merged_curves(section: usize) -> Vec<i64> {
+    [vec![8, 9], vec![3]][section].clone()
+}
+
+#[test]
+fn a_legacy_side_face_can_join_several_curves_of_one_section() {
+    let model = legacy_side(&MERGED_SIDE);
+    assert!(legacy_loft(&model, 17, [19, 23], merged_curves).is_some());
+    assert!(loft_result(&model, 17, [19, 23], merged_curves).is_some());
+    assert!(loft_final_proof(&model, 17, [19, 23], merged_curves, false).is_some());
+    // The side face names both curves of the first boundary, so a boundary
+    // with only one of them, or with a third curve, is not complete.
+    assert!(legacy_loft(&model, 17, [19, 23], legacy_curves).is_none());
+    assert!(legacy_loft(&model, 17, [19, 23], |section| {
+        [vec![8, 9, 10], vec![3]][section].clone()
+    })
+    .is_none());
+    // The last section can hold the several curves.
+    let last = legacy_side(&[3, 8, 19, 258, 0, 0, 3, 23, 258, 0, 0, 4, 23, 258, 0, 0]);
+    assert!(legacy_loft(&last, 17, [19, 23], |section| {
+        [vec![8], vec![3, 4]][section].clone()
+    })
+    .is_some());
+}
+
+#[test]
+fn a_legacy_side_tail_with_more_than_two_groups_keeps_the_group_form() {
+    let check = |tail: &[i64]| legacy_loft(&legacy_side(tail), 17, [19, 23], merged_curves);
+    assert!(check(&MERGED_SIDE).is_some());
+    // The group count disagrees with the groups.
+    let mut count = MERGED_SIDE;
+    count[0] = 2;
+    assert!(check(&count).is_none());
+    count[0] = 4;
+    assert!(check(&count).is_none());
+    // A group of the last section comes before a group of the first section.
+    assert!(check(&[3, 8, 19, 258, 0, 0, 3, 23, 258, 0, 0, 9, 19, 258, 0, 0]).is_none());
+    // A section that the loft does not use.
+    assert!(check(&[3, 8, 19, 258, 0, 0, 9, 40, 258, 0, 0, 3, 23, 258, 0, 0]).is_none());
+    // Every group of the face joins one section.
+    assert!(check(&[3, 8, 19, 258, 0, 0, 9, 19, 258, 0, 0, 3, 19, 258, 0, 0]).is_none());
+    assert!(check(&[3, 8, 23, 258, 0, 0, 9, 23, 258, 0, 0, 3, 23, 258, 0, 0]).is_none());
+    // A group tail other than 0, 0.
+    let mut member = MERGED_SIDE;
+    member[4] = 4;
+    member[5] = 1;
+    assert!(check(&member).is_none());
+    let mut curve_tail = MERGED_SIDE;
+    curve_tail[8] = 257;
+    assert!(check(&curve_tail).is_none());
+    // One group, no group, or a negative count.
+    assert!(check(&[1, 8, 19, 258, 0, 0]).is_none());
+    assert!(check(&[0]).is_none());
+    assert!(check(&[-3, 8, 19, 258, 0, 0, 9, 19, 258, 0, 0, 3, 23, 258, 0, 0]).is_none());
+    // A curve that two faces name, or that one face names twice.
+    let mut repeated = MERGED_SIDE;
+    repeated[6] = 8;
+    assert!(check(&repeated).is_none());
+    let mut duplicate = legacy_side(&MERGED_SIDE);
+    let mut other = duplicate.model.attributes[2].clone();
+    other.target =
+        AttributeTarget::Face(json::from_value(json!("test:model:face#f3")).expect("face id"))
+            .into();
+    other.values[7] = Some(AttributeValue::Integer(17));
+    duplicate.model.attributes[3] = other;
+    assert!(legacy_loft(&duplicate, 17, [19, 23], merged_curves).is_none());
+}
+
+#[test]
+fn a_bound_state_screens_a_merged_side_tail_like_the_two_group_form() {
+    let model = |tail: &[i64]| {
+        let mut model = legacy_side(tail);
+        model.model.attributes.remove(0);
+        model
+    };
+    let screen = |tail: &[i64]| loft_owned_consistent(&model(tail), 17, [19, 23], merged_curves);
+    assert!(screen(&MERGED_SIDE));
+    assert!(!screen(&[
+        3, 8, 19, 258, 0, 0, 3, 23, 258, 0, 0, 9, 19, 258, 0, 0
+    ]));
+    assert!(!screen(&[
+        3, 8, 19, 258, 0, 0, 99, 19, 258, 0, 0, 3, 23, 258, 0, 0
+    ]));
+    assert!(!screen(&[
+        3, 8, 19, 258, 0, 0, 9, 19, 258, 0, 0, 99, 23, 258, 0, 0
+    ]));
+}
+
 /// A source of history-state models that answers every request with one
 /// fixed outcome and records the source indices it was asked for.
 struct FixedStates {
