@@ -230,6 +230,10 @@
           {
             "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:unknown#0",
             "links": []
+          },
+          {
+            "id": "f3d:source:part#41742afaf94bce5444f6c381b0b23532b451f9e337cf36a2e1e0174f9a663ec1",
+            "links": []
           }
         ],
         "vertex_ownerships": [],
@@ -309,6 +313,25 @@
         },
         "severity": "warning",
         "message": "Materials/appearances (.protein assets, ACT/design assignments) were not transferred."
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "namespace": "decode",
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "strict_floor": "error"
+          }
+        },
+        "severity": "error",
+        "message": "part asm-history stream=\"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh\" offset=147 length=30 record=f3d:source:part#41742afaf94bce5444f6c381b0b23532b451f9e337cf36a2e1e0174f9a663ec1: malformed container: the ASM delta_state record at byte 147 of FusionAssetName[Active]/Breps.BlobParts/Body1.smbh has a missing or mistagged header integer; dropped=[]",
+        "provenance": {
+          "format": "f3d",
+          "stream": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "offset": 147,
+          "tag": "asm-history"
+        }
       }
     ],
     "notes": [
@@ -356,10 +379,22 @@
         "untyped": [
           "model"
         ]
+      },
+      "f3d:source:part#41742afaf94bce5444f6c381b0b23532b451f9e337cf36a2e1e0174f9a663ec1": {
+        "bytes": {
+          "data": "EQ0LZGVsdGFfc3RhdGUAAAAAAAAAAAAAAAAAAAAA",
+          "kind": "inline"
+        },
+        "offset": 147,
+        "stream": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+        "untyped": [
+          "design"
+        ]
       }
     },
     "unrepresented": [
-      "model"
+      "model",
+      "design"
     ]
   }
 }

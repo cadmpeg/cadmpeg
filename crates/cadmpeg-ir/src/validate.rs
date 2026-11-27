@@ -46,7 +46,6 @@ mod topology;
 
 use annotations_native::{check_annotations, check_native_links};
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
-use drawings::check_drawings;
 use evaluation_cycles::check_evaluation_cycles;
 use geometry_consistency::{
     check_edge_endpoint_consistency, check_pcurve_surface_consistency,
@@ -56,9 +55,7 @@ use geometry_payloads::check_tessellations;
 use identity_order::check_identity_and_order;
 use pmi::check_pmi;
 use presentation::check_presentation;
-use products::check_products;
 use referential_integrity::check_typed_references;
-use semantic_annotations::check_semantic_annotations;
 use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
 use topology::graphs::{
@@ -67,9 +64,7 @@ use topology::graphs::{
 };
 use topology::nested::NestRules;
 use topology::procedural_owners::check_procedural_owners;
-use topology::{
-    check_references, check_subdivision_schemes, check_tolerances, check_topology_tolerances,
-};
+use topology::{check_subdivision_schemes, check_tolerances, check_topology_tolerances};
 
 /// Every topology rule, with procedural curves compared with their solved
 /// carriers: the rules validation runs on a history body's nest.
@@ -160,12 +155,14 @@ fn validate_model_with_index<'ir>(
     let _depth = ctx.enter_nested("IR neutral validation")?;
 
     let mut findings = Vec::new();
+    let design_records = std::rc::Rc::new(design::records::DesignRecords::new(ir));
+    let doc_records = std::cell::OnceCell::new();
 
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
     check_identity_and_order(ids, &products::decode_set::file_keys(ir), &mut findings)?;
     check_tolerances(ir, &mut findings);
-    check_references(ctx, ir, ids, &mut findings)?;
+    topology::check_references_with(ctx, ir, ids, &doc_records, &mut findings)?;
     check_procedural_owners(ir, &mut findings);
     check_evaluation_cycles(ctx, ir, ids, &mut findings)?;
     check_pmi(ir, &mut findings);
@@ -174,16 +171,16 @@ fn validate_model_with_index<'ir>(
     check_tessellations(ids, &mut findings);
     check_sketches(ctx, ir, &mut findings)?;
     check_spreadsheets(ir, &mut findings);
-    check_products(ctx, ir, &mut findings)?;
+    products::check_products_with(ctx, ir, &design_records, &mut findings)?;
     physics::check_physics(ir, &mut findings);
     point_clouds::check_point_clouds(ir, &mut findings);
     check_presentation(ids, &mut findings);
-    appearance_attributes::check_appearance_attributes(ir, ids, &mut findings);
-    check_drawings(ir, ids, &mut findings);
-    check_semantic_annotations(ir, ids, &mut findings);
+    appearance_attributes::check_appearance_attributes_with(ir, ids, &doc_records, &mut findings);
+    drawings::check_drawings_with(ir, ids, &doc_records, &mut findings);
+    semantic_annotations::check_semantic_annotations_with(ir, ids, &doc_records, &mut findings);
     check_typed_references(ctx, ir, ids, &mut findings)?;
     history_bodies::check_history_bodies(ctx, ir, ids, nests, &mut findings)?;
-    process::check_design_and_process(ctx, ir, ids, &mut findings)?;
+    process::check_design_and_process_with(ctx, design_records, ids, &mut findings)?;
 
     Ok(ValidationReport {
         entity_counts: crate::document::census::count(ids.native_view()),
