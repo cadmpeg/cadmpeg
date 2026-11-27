@@ -56,6 +56,7 @@ pub(crate) enum SolidEdgeLossCode {
     CurveConstructionDropped,
     RegionFacesUntransferred,
     BodyPlacementUnread,
+    BodyConstruction,
 }
 
 impl SolidEdgeLossCode {
@@ -193,6 +194,7 @@ impl SolidEdgeLossCode {
                 "body.placement-unread",
                 LossTaxonomy::AssemblyPlacementsNotTransferred,
             ),
+            Self::BodyConstruction => ("body.construction", LossTaxonomy::MetadataNotTransferred),
             Self::BodiesPending => ("body.decode-pending", LossTaxonomy::MissingGeometryStream),
         };
         LossNote::new(LossKind::namespaced(NAMESPACE, code, taxonomy), message)
