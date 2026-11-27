@@ -9,7 +9,7 @@ use cadmpeg_core::CodecError;
 
 use super::OutputNames;
 use crate::document::CadIr;
-use crate::features::FeatureId;
+use crate::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use crate::give_up::{Arena, Released, Seed};
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::products::{ExternalDocument, OperandContainer, ProductDefinition, Storage};
@@ -24,8 +24,10 @@ use crate::tessellation::Meshed;
 /// each `Embedded` definition that no occurrence places, and the bodies that
 /// no definition lists. Each other definition that an occurrence of the
 /// output places stays as a link: a `File` definition becomes an `External`
-/// one named by its output's name. The output of a definition other than the
-/// root holds that definition as its root, with the definition's own source.
+/// one named by its output's name. Each output holds its definition as its
+/// root, and takes the definition's own source where it records one; where
+/// it records none, the root output keeps the document's source and any
+/// other output has none (§3.4, `Inherit`).
 ///
 /// The records of each definition the output does not hold belong to that
 /// definition's own output, so this one drops them: the definition's
@@ -163,15 +165,18 @@ pub(super) fn output_document(
     let (others, mut unowned) = unheld_records(ir, &definitions, root, &held);
     if is_root {
         unowned.clear();
-    } else {
-        let own = definition.and_then(|definition| {
-            out.model
-                .product_definitions
-                .iter_mut()
-                .find(|stated| &stated.id == definition)
-        });
-        if let Some(Storage::File { source, .. }) = own.map(|own| &mut own.storage) {
-            out.source = source.take();
+    }
+    let own = definition.and_then(|definition| {
+        out.model
+            .product_definitions
+            .iter_mut()
+            .find(|stated| &stated.id == definition)
+    });
+    if let Some(Storage::File { source, .. }) = own.map(|own| &mut own.storage) {
+        match source.take() {
+            Some(source) => out.source = Some(source),
+            None if !is_root => out.source = None,
+            None => {}
         }
     }
     if gone.is_empty() && others.is_empty() && unowned.is_empty() {
@@ -182,14 +187,20 @@ pub(super) fn output_document(
 }
 
 /// What the outputs of an encode set hold of its document: the first output
-/// that holds each record, by its position, and, from the removals that
-/// planned each output, the records each record named that the output left
-/// out, by output, and each record that an output holds in a partial form.
+/// that holds each record, by its position, and what each written output
+/// left out, by its position.
 #[derive(Default)]
 pub(super) struct Holdings {
     held: BTreeMap<String, usize>,
-    needs: BTreeMap<usize, BTreeMap<String, BTreeSet<String>>>,
-    partial: BTreeSet<(String, usize)>,
+    outputs: BTreeMap<usize, Output>,
+}
+
+/// What the removals that planned one output left out of it.
+struct Output {
+    /// The records each record named that the output left out.
+    needs: BTreeMap<String, BTreeSet<String>>,
+    /// The records the output holds in a partial form.
+    partial: BTreeSet<String>,
 }
 
 /// How an entry of `export:record.unheld` stands to the output it names.
@@ -203,39 +214,51 @@ enum Unheld {
 
 impl Holdings {
     /// Adds `document`, the document of the written output at `output`, and
-    /// what planning it `released`.
+    /// what planning it `released`. A record that the removals marked, or
+    /// whose delta they changed, is a partial copy where `document` still
+    /// holds it: a seed removed after another removal marked it is gone.
     pub(super) fn add(&mut self, output: usize, document: &CadIr, released: Released) {
         let holds = record_ids(document);
-        for record in released
+        let partial = released
             .marked
             .into_iter()
             .chain(released.states.into_keys().map(|(_, state)| state))
-        {
-            if holds.contains(&record) {
-                self.partial.insert((record, output));
-            }
-        }
+            .filter(|record| holds.contains(record))
+            .collect();
         for id in holds {
             self.held.entry(id).or_insert(output);
         }
-        self.needs.insert(output, released.needs);
+        self.outputs.insert(
+            output,
+            Output {
+                needs: released.needs,
+                partial,
+            },
+        );
     }
 
     /// The `export:record.unheld` losses of the outputs added so far, the
     /// output at each position named by `names`: each record of `ir` that
-    /// no output holds, and each record that an output holds in a partial
-    /// form, each with the records of other outputs that it needs in each
-    /// output that left it out or holds it in part (§3.4, Encode sets).
-    pub(super) fn losses(&self, format: &str, ir: &CadIr, names: &[String]) -> Vec<LossNote> {
+    /// no output holds, other than those of `named`, which another loss
+    /// names, and each record that an output holds in a partial form, each
+    /// with the records of other outputs that it needs in each output that
+    /// left it out or holds it in part (§3.4, Encode sets).
+    pub(super) fn losses(
+        &self,
+        format: &str,
+        ir: &CadIr,
+        names: &[String],
+        named: &BTreeSet<&str>,
+    ) -> Vec<LossNote> {
         let lost = record_ids(ir)
             .into_iter()
-            .filter(|id| !self.held.contains_key(id))
+            .filter(|id| !self.held.contains_key(id) && !named.contains(id.as_str()))
             .flat_map(|id| {
                 let entries: Vec<String> = self
-                    .needs
+                    .outputs
                     .iter()
-                    .filter(|(_, needs)| needs.contains_key(&id))
-                    .map(|(output, _)| self.entry(&id, *output, Unheld::Dropped, names))
+                    .filter(|(_, left)| left.needs.contains_key(&id))
+                    .map(|(output, left)| self.entry(&id, *output, left, Unheld::Dropped, names))
                     .collect();
                 if entries.is_empty() {
                     vec![id]
@@ -243,10 +266,11 @@ impl Holdings {
                     entries
                 }
             });
-        let partial = self
-            .partial
-            .iter()
-            .map(|(id, output)| self.entry(id, *output, Unheld::Partial, names));
+        let partial = self.outputs.iter().flat_map(|(output, left)| {
+            left.partial
+                .iter()
+                .map(|id| self.entry(id, *output, left, Unheld::Partial, names))
+        });
         super::loss::record_unheld(
             format,
             "holds these records in no output of the encode set",
@@ -261,20 +285,25 @@ impl Holdings {
         .collect()
     }
 
-    /// The entry of `record` at the output at `output`, which left it out or
-    /// holds it in part: its id, that output's name, and each record of
-    /// another output that it needs there, with that output's name. A
-    /// record it needs that no output holds stands for the records that one
-    /// needs in the same output.
-    fn entry(&self, record: &str, output: usize, form: Unheld, names: &[String]) -> String {
+    /// The entry of `record` at the output at `output`, whose removals
+    /// `left` states and which left it out or holds it in part: its id,
+    /// that output's name, and each record of another output that it needs
+    /// there, with that output's name. A record it needs that no output
+    /// holds stands for the records that one needs in the same output.
+    fn entry(
+        &self,
+        record: &str,
+        output: usize,
+        left: &Output,
+        form: Unheld,
+        names: &[String],
+    ) -> String {
         let name = |output: usize| format!("{:?}", names.get(output).map_or("", String::as_str));
         let mut entry = match form {
             Unheld::Dropped => format!("{record} from {}", name(output)),
             Unheld::Partial => format!("{record} in {}", name(output)),
         };
-        let Some(needs) = self.needs.get(&output) else {
-            return entry;
-        };
+        let needs = &left.needs;
         let mut causes = BTreeSet::new();
         let mut seen = BTreeSet::from([record]);
         let mut pending: Vec<&str> = vec![record];
@@ -356,11 +385,16 @@ enum Reach {
 /// parameter by its product definition and by its owner feature; a history
 /// body by the feature that produced it; a sketch by each definition that
 /// lists it; a mesh of a definition, a point cloud, and a design scope by
-/// their definition; a record of the `assembly_joints` arena by the
-/// definition that lists the occurrences its connectors name, and by the
-/// root definition where they name the occurrences of no definition or of
-/// several. A connector on `Root {}` names the root of the document that
-/// holds the joint, whichever output that is.
+/// their definition; a native record by the `File` definition whose key
+/// qualifies its scope, and by the root definition where its scope is
+/// unqualified (§2.2). A record of the `assembly_joints` arena goes with the
+/// `Joint` feature that names it (§6.7, D30). Without one, it belongs to the
+/// file it was read from, whose root a connector on `Root {}` names: the
+/// definition whose key qualifies its scope; where its scope is unqualified,
+/// the root definition where a connector is on `Root {}`, and otherwise the
+/// definition that lists the occurrences its connectors name, or the root
+/// definition where they name the occurrences of no definition or of
+/// several.
 fn unheld_records(
     ir: &CadIr,
     definitions: &BTreeMap<&ProductDefinitionId, &ProductDefinition>,
@@ -448,21 +482,50 @@ fn unheld_records(
                 .map(move |occurrence| (occurrence, &definition.id))
         })
         .collect();
+    let files: BTreeMap<&str, &ProductDefinitionId> = definitions
+        .iter()
+        .filter(|(_, definition)| matches!(definition.storage, Storage::File { .. }))
+        .filter_map(|(id, _)| Some((id.as_str().split_once('#')?.1, *id)))
+        .collect();
+    let scoped = |id: &str| {
+        let scope = id.split(':').nth(1).unwrap_or_default();
+        scope
+            .split_once('@')
+            .map(|(key, _)| of(files.get(key).copied()))
+    };
+    let joint_features: BTreeMap<&str, Reach> = model
+        .features
+        .iter()
+        .filter_map(|stated| match stated.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { joint }) => {
+                Some((joint.as_str(), of(stated.product_definition.as_ref())))
+            }
+            _ => None,
+        })
+        .collect();
     let joints = model.assembly_joints.iter().map(|joint| {
-        let named: BTreeSet<Option<&ProductDefinitionId>> = joint
-            .connectors()
-            .filter_map(|connector| match &connector.operand.container {
-                OperandContainer::Occurrence { occurrence, .. } => {
-                    Some(placing.get(occurrence).copied())
+        let id = joint.id.as_str();
+        let reach = joint_features
+            .get(id)
+            .copied()
+            .or_else(|| scoped(id))
+            .unwrap_or_else(|| {
+                let mut named = BTreeSet::new();
+                for connector in joint.connectors() {
+                    match &connector.operand.container {
+                        OperandContainer::Occurrence { occurrence, .. } => {
+                            named.insert(placing.get(occurrence).copied());
+                        }
+                        OperandContainer::Root {} => return of(root),
+                        OperandContainer::External { .. } => {}
+                    }
                 }
-                OperandContainer::Root {} | OperandContainer::External { .. } => None,
-            })
-            .collect();
-        let owner = match named.into_iter().collect::<Vec<_>>().as_slice() {
-            [owner @ Some(_)] => *owner,
-            _ => root,
-        };
-        (joint.id.as_str(), of(owner))
+                match named.into_iter().collect::<Vec<_>>().as_slice() {
+                    [owner @ Some(_)] => of(*owner),
+                    _ => of(root),
+                }
+            });
+        (id, reach)
     });
     let mut others = Vec::new();
     let mut unowned = Vec::new();
@@ -496,20 +559,11 @@ fn unheld_records(
     sort("model", "point_clouds", &mut { point_clouds });
     sort("design", "scopes", &mut { scopes });
     sort("model", "assembly_joints", &mut { joints });
-    let files: BTreeMap<&str, &ProductDefinitionId> = definitions
-        .iter()
-        .filter(|(_, definition)| matches!(definition.storage, Storage::File { .. }))
-        .filter_map(|(id, _)| Some((id.as_str().split_once('#')?.1, *id)))
-        .collect();
     for (codec, namespace) in &ir.native.0 {
         for (arena, records) in namespace.arenas() {
             for record in records {
                 let id = record.id();
-                let scope = id.split(':').nth(1).unwrap_or_default();
-                let reach = match scope.split_once('@') {
-                    Some((key, _)) => of(files.get(key).copied()),
-                    None => of(root),
-                };
+                let reach = scoped(id).unwrap_or_else(|| of(root));
                 let seed = Seed {
                     arena: Arena::Native {
                         codec: codec.as_str().to_owned(),

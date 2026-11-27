@@ -706,9 +706,10 @@ fn a_record_that_needs_a_record_of_another_output_is_charged_where_no_output_hol
 }
 
 /// [`two_file_document_with_records`] where the part places an embedded
-/// pin, with a joint grounded on the root, a joint grounded on the pin, a
-/// joint between the part's occurrence and the pin, and a joint between the
-/// root of its own document and the pin.
+/// pin, with joints of the root file: one grounded on the root, one
+/// grounded on the pin, one between the part's occurrence and the pin, one
+/// between the root and the pin, and one on the root that a `Joint` feature
+/// of the part names; and a joint of the part's file grounded on its root.
 fn document_with_joints() -> CadIr {
     use crate::products::{
         AssemblyJoint, JointConnector, JointId, JointOperand, Occurrence, PairedJointKind,
@@ -778,10 +779,35 @@ fn document_with_joints() -> CadIr {
             ],
             None,
         ),
+        AssemblyJoint::grounded(
+            id("featured"),
+            connector(JointOperand::root("origin", Vec::new())),
+            None,
+        ),
+        AssemblyJoint::grounded(
+            JointId::mint("test:part@1:joint#own").unwrap(),
+            connector(JointOperand::root("origin", Vec::new())),
+            None,
+        ),
     ];
+    let mut featured = ir.model.features[1].clone();
+    featured.id = "test:model:feature#featured".try_into().unwrap();
+    featured.evaluation = crate::features::evaluation::FeatureEvaluation::from_definition(
+        crate::features::FeatureDefinition::Operation(
+            crate::features::FeatureOperation::AssemblyJoint {
+                joint: id("featured"),
+            },
+        ),
+    );
+    ir.model.features.push(featured);
     ir
 }
 
+/// A joint goes with the `Joint` feature that names it, and otherwise to
+/// the output of the file it was read from, so that a connector on
+/// `Root {}` keeps naming that file's root; a joint of the root file that
+/// names no root goes to the output of the definition that lists its
+/// occurrences.
 #[test]
 fn a_joint_belongs_to_the_output_of_the_definition_that_lists_its_occurrences() {
     let ir = document_with_joints();
@@ -802,18 +828,24 @@ fn a_joint_belongs_to_the_output_of_the_definition_that_lists_its_occurrences() 
     part_joints.sort();
     assert_eq!(
         part_joints,
-        ["test:model:joint#local", "test:model:joint#pin"]
+        [
+            "test:model:joint#featured",
+            "test:model:joint#pin",
+            "test:part@1:joint#own"
+        ]
     );
+    assert!(ids_of(&documents[1], "features").contains(&"test:model:feature#featured".to_owned()));
     let [message] = unheld(plan.report())[..] else {
         panic!("one record.unheld loss: {:?}", plan.report().losses)
     };
-    assert!(
-        message.contains(
-            r#"test:model:joint#mixed from "assembly.out" needs test:model:occurrence#pin of "part.out""#
-        ),
-        "{message}"
-    );
-    assert!(!message.contains("test:model:joint#local"), "{message}");
+    for joint in ["local", "mixed"] {
+        assert!(
+            message.contains(&format!(
+                r#"test:model:joint#{joint} from "assembly.out" needs test:model:occurrence#pin of "part.out""#
+            )),
+            "{joint} in {message}"
+        );
+    }
 }
 
 /// The names of `assembly.out` and `part.out` for [`two_file_document`].
@@ -825,7 +857,8 @@ fn two_names() -> OutputNames {
 }
 
 /// A record that only an output whose plan fails holds is held by no
-/// output, and the report names it beside the unwritten output.
+/// output, and the report names it beside the unwritten output, which
+/// names that output's definition.
 #[test]
 fn a_record_only_an_unwritten_output_holds_is_charged_as_unheld() {
     let ir = two_file_document_with_records();
@@ -846,6 +879,18 @@ fn a_record_only_an_unwritten_output_holds_is_charged_as_unheld() {
         assert!(message.contains(record), "{record} in {message}");
     }
     assert!(!message.contains("test:model:feature#part"), "{message}");
+    assert!(!message.contains("test:model:definition#root"), "{message}");
+    let unwritten = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| code_name(&loss.code) == "export:output.unwritten")
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert!(
+        matches!(unwritten[..], [one] if one.contains("test:model:definition#root")),
+        "{unwritten:?}"
+    );
 }
 
 /// A native record of no stored definition's scope that names a feature of
@@ -927,11 +972,55 @@ fn each_output_charges_a_record_with_its_own_needs() {
 /// whole, so no output charges it.
 #[test]
 fn a_stored_state_an_output_changes_and_drops_is_not_charged_as_partial() {
+    let ir = document_with_state();
+    let names = two_names();
+    let planned = PlannedDocuments::default();
+    let plan = planned
+        .plan(EncodeInput::new(&ir, None).with_outputs(Outputs::Named(&names)))
+        .unwrap();
+    let documents = planned.0.into_inner().unwrap();
+    assert_eq!(ids_of(&documents[0], "design.evaluations"), [STATE]);
+    assert!(ids_of(&documents[1], "design.evaluations").is_empty());
+    for message in unheld(plan.report()) {
+        assert!(!message.contains(STATE), "{message}");
+    }
+}
+
+/// The stored state of [`document_with_state`] that the part output
+/// changes and then drops is a dropped record of that output, and the
+/// removals state no change to its delta.
+#[test]
+fn a_stored_state_an_output_changes_and_drops_states_no_changed_delta() {
+    let ir = document_with_state();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let (_, released) = crate::codec::write::encode_set::output_document(
+        &ctx,
+        &ir,
+        Some(&definition_id("part")),
+        Some(&definition_id("root")),
+        &two_names(),
+    )
+    .unwrap();
+    assert!(released.dropped.contains(STATE), "{:?}", released.dropped);
+    assert!(
+        released.states.keys().all(|(_, state)| state != STATE),
+        "{:?}",
+        released.stated()
+    );
+}
+
+/// The stored state of [`document_with_state`].
+const STATE: &str = "test:design:evaluation#root";
+
+/// [`two_file_document_with_records`] with a stored state of the root whose
+/// delta restates a face of the cube.
+fn document_with_state() -> CadIr {
     use crate::design::evaluation::{
         Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
     };
     use crate::design::refs::{Evaluated, Position};
-    const STATE: &str = "test:design:evaluation#root";
     let mut ir = two_file_document_with_records();
     let face = ir.geometry.faces[0].clone();
     ir.design.evaluations.push(Evaluation {
@@ -954,17 +1043,7 @@ fn a_stored_state_an_output_changes_and_drops_is_not_charged_as_partial() {
         }),
         native_ref: None,
     });
-    let names = two_names();
-    let planned = PlannedDocuments::default();
-    let plan = planned
-        .plan(EncodeInput::new(&ir, None).with_outputs(Outputs::Named(&names)))
-        .unwrap();
-    let documents = planned.0.into_inner().unwrap();
-    assert_eq!(ids_of(&documents[0], "design.evaluations"), [STATE]);
-    assert!(ids_of(&documents[1], "design.evaluations").is_empty());
-    for message in unheld(plan.report()) {
-        assert!(!message.contains(STATE), "{message}");
-    }
+    ir
 }
 
 /// A carrier that only a dropped record reached leaves the output with it,
@@ -1077,11 +1156,20 @@ fn per_file_targets(
     ir: &CadIr,
     request: crate::codec::write::target::TargetRequest<'_>,
 ) -> (Vec<String>, crate::report::export::ExportReport) {
-    let names = two_names();
+    targets_named(ir, &two_names(), request)
+}
+
+/// The payloads and the report of an encode of `ir` under `request`, with
+/// the output names `names`.
+fn targets_named(
+    ir: &CadIr,
+    names: &OutputNames,
+    request: crate::codec::write::target::TargetRequest<'_>,
+) -> (Vec<String>, crate::report::export::ExportReport) {
     let plan = PerFileCatalogEncoder
         .plan(
             EncodeInput::new(ir, None)
-                .with_outputs(Outputs::Named(&names))
+                .with_outputs(Outputs::Named(names))
                 .with_target(request),
         )
         .unwrap();
@@ -1118,14 +1206,20 @@ fn an_inherit_target_resolves_per_output_file() {
     );
     assert_eq!(written, ["test:old", "test:new"]);
     assert_eq!(target_losses(&report), []);
-    assert!(
-        report.notes.iter().any(|note| note.starts_with(
-            "the output \"part.out\" holds definition test:model:definition#part, written as \
-             test:new;"
-        )),
-        "{:?}",
-        report.notes
-    );
+    for (output, definition, dialect) in [
+        ("assembly.out", "root", "test:old"),
+        ("part.out", "part", "test:new"),
+    ] {
+        let note = format!(
+            "the output \"{output}\" holds definition test:model:definition#{definition}, \
+             written as {dialect};"
+        );
+        assert!(
+            report.notes.iter().any(|stated| stated.starts_with(&note)),
+            "{note} in {:?}",
+            report.notes
+        );
+    }
 
     let (written, report) =
         per_file_targets(&sourced_document(test_source(None)), TargetRequest::Inherit);
@@ -1187,4 +1281,212 @@ fn an_output_name_with_list_separators_reads_as_one_name() {
         ),
         "{message}"
     );
+}
+
+/// A source of format `step` that records no dialect.
+fn step_source() -> crate::document::SourceMeta {
+    json::from_value(cadmpeg_core::json!({
+        "identity": {"kind": "unclassified", "format": "step"},
+        "attributes": {},
+    }))
+    .unwrap()
+}
+
+/// A document of the `File` definitions `files`, in arena order: each
+/// keyed by its key, with its source, holding a body of its key, and
+/// placing one occurrence of each definition its keys name.
+fn file_document(files: &[(&str, Option<crate::document::SourceMeta>, &[&str])]) -> CadIr {
+    use crate::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
+    let mut ir = CadIr::empty();
+    for (key, source, places) in files {
+        let mut definition = ProductDefinition::new(
+            definition_id(key),
+            Storage::File {
+                document: ExternalDocument::default(),
+                source: source.clone(),
+            },
+        );
+        let body = bare_body(key);
+        definition.bodies.push(body.id.clone());
+        ir.geometry.bodies.push(body);
+        for placed in *places {
+            let occurrence =
+                crate::ids::OccurrenceId::try_from(format!("test:model:occurrence#{key}-{placed}"))
+                    .unwrap();
+            definition.occurrences.push(occurrence.clone());
+            ir.model
+                .occurrences
+                .push(Occurrence::new(occurrence, definition_id(placed), None));
+        }
+        ir.model.product_definitions.push(definition);
+    }
+    ir
+}
+
+/// The key of a test id: its text after `#`.
+fn key(id: &str) -> &str {
+    id.rsplit_once('#').map_or(id, |(_, key)| key)
+}
+
+/// The name `<key>.out` of the output of each `File` definition of `ir`.
+fn file_names(ir: &CadIr) -> OutputNames {
+    ir.model
+        .product_definitions
+        .iter()
+        .filter(|definition| matches!(definition.storage, crate::products::Storage::File { .. }))
+        .map(|definition| {
+            (
+                definition.id.clone(),
+                output_name(&format!("{}.out", key(definition.id.as_str()))),
+            )
+        })
+        .collect()
+}
+
+/// The document of each output of `ir`, as the keys of its root
+/// definitions, of its bodies, and the paths of its links, with the report.
+fn planned_files(ir: &CadIr) -> (Vec<String>, crate::report::export::ExportReport) {
+    let names = file_names(ir);
+    let planned = PlannedDocuments::default();
+    let plan = planned
+        .plan(EncodeInput::new(ir, None).with_outputs(Outputs::Named(&names)))
+        .unwrap();
+    let documents = planned.0.into_inner().unwrap();
+    let outputs = documents
+        .iter()
+        .map(|document| {
+            let definitions = &document.model.product_definitions;
+            let roots = definitions
+                .iter()
+                .filter(|definition| definition.is_root())
+                .map(|definition| key(definition.id.as_str()))
+                .collect::<Vec<_>>();
+            let bodies = document
+                .geometry
+                .bodies
+                .iter()
+                .map(|body| key(body.id.as_str()))
+                .collect::<Vec<_>>();
+            let links = definitions
+                .iter()
+                .filter_map(|definition| match &definition.storage {
+                    crate::products::Storage::External(document) => document
+                        .path
+                        .as_ref()
+                        .map(cadmpeg_core::text::NonBlankString::as_str),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            format!(
+                "{}|{}|{}",
+                roots.join("+"),
+                bodies.join(","),
+                links.join(",")
+            )
+        })
+        .collect();
+    (outputs, plan.report().clone())
+}
+
+/// A `File` definition with no source that an occurrence places is a
+/// component file whose source is unrecorded: it is an output of its own,
+/// with its bodies, and the root is the definition that no occurrence
+/// places, wherever it stands in the arena. A child that the root and
+/// another child both place is linked from both (§8.1, §3.4).
+#[test]
+fn every_file_definition_other_than_the_root_is_an_output() {
+    let ir = file_document(&[
+        ("extra", None, &[]),
+        ("root", None, &["part", "extra"]),
+        ("part", Some(step_source()), &["extra"]),
+    ]);
+    assert_eq!(
+        PlannedDocuments::default().output_definitions(&ir),
+        [
+            Some(definition_id("root")),
+            Some(definition_id("extra")),
+            Some(definition_id("part"))
+        ]
+    );
+    let (outputs, report) = planned_files(&ir);
+    assert_eq!(
+        outputs,
+        [
+            "root|root|extra.out,part.out",
+            "extra|extra|",
+            "part|part|extra.out"
+        ]
+    );
+    assert_eq!(unheld(&report), Vec::<&str>::new());
+}
+
+/// The output of a placed `File` definition with no source takes the
+/// catalog default: an `Inherit` target charges
+/// `target.source-dialect-displaced` naming the output, and a request that
+/// names no target charges nothing (§3.4).
+#[test]
+fn a_file_definition_with_no_source_is_written_in_the_default_dialect() {
+    use crate::codec::write::target::TargetRequest;
+    let mut ir = file_document(&[
+        ("extra", None, &[]),
+        ("root", None, &["part", "extra"]),
+        ("part", Some(test_source(Some("test:old"))), &[]),
+    ]);
+    ir.source = Some(test_source(Some("test:old")));
+    let names = file_names(&ir);
+    let (written, report) = targets_named(&ir, &names, TargetRequest::Inherit);
+    assert_eq!(written, ["test:old", "test:new", "test:old"]);
+    let losses = target_losses(&report);
+    assert!(
+        matches!(
+            &losses[..],
+            [(code, message)] if code == "target.source-dialect-displaced"
+                && message.starts_with("in the output \"extra.out\", the document records no source;")
+        ),
+        "{losses:?}"
+    );
+    let (written, report) = targets_named(&ir, &names, TargetRequest::Unnamed);
+    assert_eq!(written, ["test:old", "test:new", "test:old"]);
+    assert_eq!(target_losses(&report), []);
+}
+
+/// Of several `File` definitions with no source that no occurrence places,
+/// the first is the root, and each other is an output of its own.
+#[test]
+fn a_second_unplaced_file_definition_is_an_output_of_its_own() {
+    let ir = file_document(&[("root", None, &[]), ("other", None, &[])]);
+    let (outputs, report) = planned_files(&ir);
+    assert_eq!(outputs, ["root|root|", "other|other|"]);
+    assert_eq!(unheld(&report), Vec::<&str>::new());
+}
+
+/// Where every `File` definition is placed, the one with no source is the
+/// root, and each output links the other.
+#[test]
+fn a_cycle_of_file_definitions_has_the_one_with_no_source_as_its_root() {
+    let ir = file_document(&[
+        ("part", Some(step_source()), &["root"]),
+        ("root", None, &["part"]),
+    ]);
+    let (outputs, report) = planned_files(&ir);
+    assert_eq!(outputs, ["root|root|part.out", "part|part|root.out"]);
+    assert_eq!(unheld(&report), Vec::<&str>::new());
+}
+
+/// Where no `File` definition has no source, the one that no occurrence
+/// places is the root: its output holds it as the root definition and
+/// resolves an `Inherit` target from its own source (§3.4).
+#[test]
+fn a_file_definition_with_a_source_that_no_occurrence_places_is_the_root() {
+    use crate::codec::write::target::TargetRequest;
+    let mut ir = file_document(&[
+        ("top", Some(test_source(Some("test:new"))), &["part"]),
+        ("part", Some(test_source(Some("test:old"))), &[]),
+    ]);
+    ir.source = Some(test_source(Some("test:old")));
+    let (outputs, _) = planned_files(&ir);
+    assert_eq!(outputs, ["top|top|part.out", "part|part|"]);
+    let (written, report) = targets_named(&ir, &file_names(&ir), TargetRequest::Inherit);
+    assert_eq!(written, ["test:new", "test:old"]);
+    assert_eq!(target_losses(&report), []);
 }
