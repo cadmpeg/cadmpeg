@@ -1609,3 +1609,30 @@ fn external_geometry_extension_refindex_is_authoritative_and_mirrors_must_agree(
         );
     }
 }
+
+#[test]
+fn sketches_attached_to_each_other_keep_their_native_definitions() {
+    // The decoder keeps each object of a dependency cycle as its native
+    // definition, so neither is a sketch record whose picks could close the
+    // cycle; the validator's Warning for a cycle of picks is the design
+    // layer's own (§5.3).
+    let sketch_on = |support: &str| {
+        format!(
+            r#"<Property name="AttachmentSupport" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="{support}" sub=""/></LinkSubList></Property><Property name="MapMode" type="App::PropertyEnumeration"><Integer value="5"/></Property><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>"#
+        )
+    };
+    let document = format!(
+        "<Document SchemaVersion=\"4\" FileVersion=\"1\">\n<Objects Count=\"2\">\n <Object type=\"Sketcher::SketchObject\" name=\"First\" id=\"1\"/>\n <Object type=\"Sketcher::SketchObject\" name=\"Second\" id=\"2\"/>\n</Objects>\n<ObjectData Count=\"2\">\n <Object name=\"First\"><Properties Count=\"3\">{}</Properties></Object>\n <Object name=\"Second\"><Properties Count=\"3\">{}</Properties></Object>\n</ObjectData></Document>",
+        sketch_on("Second"),
+        sketch_on("First"),
+    );
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(&document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_valid_document(decoded.ir());
+    let ir = decoded.ir();
+    assert!(ir.design.sketches.is_empty(), "{:?}", ir.design.sketches);
+}

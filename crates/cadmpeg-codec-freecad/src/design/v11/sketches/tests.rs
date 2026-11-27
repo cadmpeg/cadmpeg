@@ -772,27 +772,6 @@ fn a_deactivated_attachment_decides_no_anchor() {
 }
 
 #[test]
-fn sketches_attached_to_each_other_keep_their_native_definitions() {
-    // The decoder keeps each object of a dependency cycle as its native
-    // definition, so neither is a sketch record whose picks could close the
-    // cycle; the validator's Warning for a cycle of picks is the design
-    // layer's own (§5.3).
-    let ir = decode(&document(&[
-        (
-            "Sketcher::SketchObject",
-            "First",
-            sketch_on(&link("Second", ""), 5, &[]),
-        ),
-        (
-            "Sketcher::SketchObject",
-            "Second",
-            sketch_on(&link("First", ""), 5, &[]),
-        ),
-    ]));
-    assert!(ir.design.sketches.is_empty(), "{:?}", ir.design.sketches);
-}
-
-#[test]
 fn a_sketch_attached_to_an_app_link_picks_it_by_native_name() {
     // An `App::Link` places an occurrence and has no result of its own
     // (§5.3), so no design pick restates it.
