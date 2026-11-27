@@ -1422,6 +1422,16 @@ fn byte_accounting(
         .cloned()
         .collect::<Vec<_>>();
     omitted.sort_unstable_by_key(|left| left.start);
+    // Every byte of a record span is claimed above, and the record lexed
+    // under the parser's admission, which this lexer's admission contains.
+    // Its tokens and trivia would claim nothing, so the walk resumes after it.
+    let mut record_spans = exchange
+        .records()
+        .values()
+        .map(|record| record.span.clone())
+        .collect::<Vec<_>>();
+    record_spans.sort_unstable_by_key(|span| span.start);
+    let mut next_record = 0;
     let mut cursor = 0;
     loop {
         let token = match lexer.next_token() {
@@ -1446,6 +1456,22 @@ fn byte_accounting(
                 break;
             }
         };
+        while record_spans
+            .get(next_record)
+            .is_some_and(|span| span.start < token.span.start)
+        {
+            next_record += 1;
+        }
+        if let Some(span) = record_spans
+            .get(next_record)
+            .filter(|span| span.start == token.span.start)
+        {
+            claim_trivia(input, cursor..span.start, &mut classes, draft)?;
+            lexer.seek(span.end);
+            cursor = span.end;
+            next_record += 1;
+            continue;
+        }
         claim_range(
             &mut classes,
             &token.span,
@@ -1532,7 +1558,10 @@ fn claim_trivia(
                 format_args!("trivia byte at {at}"),
             )?;
             at += 1;
-        } else if let Some(after_print_control) = crate::lex::print_control_end(input, at) {
+        } else if let Some(after_print_control) = (byte == b'\\')
+            .then(|| crate::lex::print_control_end(input, at))
+            .flatten()
+        {
             if after_print_control > end {
                 return Err(CodecError::malformed(format_args!(
                     "STEP print control directive at byte {at} ends at {after_print_control}, but its trivia run ends at {end}"

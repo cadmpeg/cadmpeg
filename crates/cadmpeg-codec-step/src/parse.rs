@@ -532,17 +532,20 @@ impl Exchange {
         self.entity_ids().keys().any(|name| matches(name))
     }
 
-    pub(crate) fn matching_entity_ids<'a>(
-        &'a self,
-        matches: impl Fn(&str) -> bool + 'a,
-    ) -> impl Iterator<Item = u64> + 'a {
-        self.records.iter().filter_map(move |(&id, record)| {
-            record
-                .partials
-                .iter()
-                .any(|partial| matches(&partial.name))
-                .then_some(id)
-        })
+    /// The ids of the records with a partial whose name `matches`, ascending.
+    pub(crate) fn matching_entity_ids(
+        &self,
+        matches: impl Fn(&str) -> bool,
+    ) -> std::vec::IntoIter<u64> {
+        let mut ids = self
+            .entity_ids()
+            .iter()
+            .filter(|(name, _)| matches(name))
+            .flat_map(|(_, ids)| ids.iter().copied())
+            .collect::<Vec<_>>();
+        ids.sort_unstable();
+        ids.dedup();
+        ids.into_iter()
     }
 
     pub(crate) fn entities(&self, name: &str) -> impl Iterator<Item = (u64, &RawRecord)> {
@@ -553,17 +556,13 @@ impl Exchange {
             .map(|id| (*id, &self.records[id]))
     }
 
+    /// The records with a partial named in `names`, in ascending id order.
     pub(crate) fn entities_any<'a>(
         &'a self,
-        names: &'a [&str],
+        names: &[&str],
     ) -> impl Iterator<Item = (u64, &'a RawRecord)> + 'a {
-        self.records.iter().filter_map(move |(&id, record)| {
-            record
-                .partials
-                .iter()
-                .any(|partial| names.contains(&partial.name.as_str()))
-                .then_some((id, record))
-        })
+        self.matching_entity_ids(|name| names.contains(&name))
+            .map(|id| (id, &self.records[&id]))
     }
 }
 
