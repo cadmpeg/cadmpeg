@@ -14,7 +14,7 @@ use crate::records::topology::historical_context::DesignHistoricalFaceSupportCon
 
 /// Greatest sine of the angle between the unit surface normals of two faces
 /// that meet with tangent continuity at an edge.
-const EPS_HISTORY_EDGE_TANGENT_NORMAL_SINE_E6: f64 = 1.0e-6;
+const EPS_HISTORY_EDGE_TANGENT_NORMAL_SINE: f64 = 1.0e-9;
 
 /// Loop edges of support-context boundaries, by continuity class. An edge in
 /// neither list is sharp.
@@ -60,7 +60,7 @@ pub(super) fn edge_is_tangent(
     };
     let [first, second] = normals;
     Ok(Some(
-        first.cross(second).norm() <= EPS_HISTORY_EDGE_TANGENT_NORMAL_SINE_E6,
+        first.cross(second).norm() <= EPS_HISTORY_EDGE_TANGENT_NORMAL_SINE,
     ))
 }
 
