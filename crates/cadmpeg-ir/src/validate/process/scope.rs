@@ -2,7 +2,8 @@
 //! Scope (part 7): every setup machines a design scope; a record no setup
 //! holds resolves from the one scope of the setups that use it; every
 //! workpiece index, selection anchor, and occurrence path resolves from its
-//! setup's scope.
+//! setup's scope, and each pick with no context resolves in that scope's
+//! anchored state by the design rule (§5.8).
 
 use std::collections::BTreeSet;
 
@@ -11,13 +12,17 @@ use super::walk::Walked;
 use crate::design::dimension::{ParamRef, ParameterRef};
 use crate::design::selection::{Anchor, OccurrencePath, PickContext};
 use crate::report::check::Finding;
-use crate::validate::design::evaluations::check_position;
+use crate::validate::design::evaluations::{check_position, check_resulting_position};
+use crate::validate::design::index::DesignIndex;
+use crate::validate::design::matching::Matchers;
 use crate::validate::design::records::{MemberKey, PositionKey};
-use crate::validate::design::selections;
+use crate::validate::design::selections::{self, ProcessPick};
 
-pub(super) fn check_scope(
-    records: &ProcessRecords<'_>,
-    walked: &[Walked<'_>],
+pub(super) fn check_scope<'a>(
+    records: &ProcessRecords<'a>,
+    walked: &[Walked<'a>],
+    index: &DesignIndex<'a>,
+    matchers: &Matchers<'a>,
     findings: &mut Vec<Finding>,
 ) {
     for setup in &records.ir.process.setups {
@@ -26,20 +31,28 @@ pub(super) fn check_scope(
             super::error(
                 findings,
                 setup.id.as_str(),
-                format_args!("setup's scope {scope} names no definition with a design scope"),
+                crate::rule!(
+                    "process.setup-scope-names-no-definition-design",
+                    "setup's scope {scope} names no definition with a design scope"
+                ),
             );
         }
     }
-    let moved = selections::moved_occurrences(records.ir);
+    let moved = records.design.moved_occurrences();
+    let mut picks = Vec::new();
     for record in walked {
-        check_record(records, record, &moved, findings);
+        check_record(records, record, moved, &mut picks, findings);
     }
+    super::as_process(findings, |findings| {
+        selections::check_process_picks(index, matchers, &picks, findings);
+    });
 }
 
-fn check_record(
-    records: &ProcessRecords<'_>,
-    record: &Walked<'_>,
+fn check_record<'w, 'a>(
+    records: &ProcessRecords<'a>,
+    record: &'w Walked<'a>,
     moved: &BTreeSet<&str>,
+    picks: &mut Vec<ProcessPick<'w>>,
     findings: &mut Vec<Finding>,
 ) {
     let id = record.id;
@@ -54,7 +67,8 @@ fn check_record(
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "process.setups-use-record-machine-several-scopes",
                     "the setups that use the record machine several scopes: {}",
                     scopes.into_iter().collect::<Vec<_>>().join(", ")
                 ),
@@ -78,7 +92,8 @@ fn check_record(
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "process.no-setup-uses-record-holds-no",
                     "no setup uses the record, so it holds no selection and no `through` path"
                 ),
             );
@@ -96,7 +111,7 @@ fn check_record(
                 super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!("process.workpiece-indexes-none-workpieces-setup", 
                         "workpiece {index} at {at} indexes none of the {count} workpieces of setup {setup}"
                     ),
                 );
@@ -111,14 +126,15 @@ fn check_record(
             Anchor::Input => super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!("process.selection-anchored-input-process-selection-anchored", 
                     "selection at {at} is anchored `input`; a process selection is anchored `current` or `pinned`"
                 ),
             ),
             Anchor::Pinned(position) => {
                 let position = PositionKey::of(position);
                 let exists = super::as_process(findings, |findings| {
-                    check_position(records.design, position, id, findings)
+                    check_position(&records.design, position, id, findings)
+                        && check_resulting_position(&records.design, position, id, findings)
                 });
                 if exists {
                     let member = match position {
@@ -129,7 +145,7 @@ fn check_record(
                         super::error(
                             findings,
                             id,
-                            format_args!(
+                            crate::rule!("process.selection-pinned-not-setup-scope", 
                                 "selection at {at} is pinned at {position}, which is not in the setup's scope {scope}"
                             ),
                         );
@@ -141,6 +157,20 @@ fn check_record(
     }
     for path in through {
         check_path(records, scope, path, moved, id, findings);
+    }
+    if let Some(definition) = records.design.definitions.get(scope) {
+        picks.extend(
+            record
+                .found
+                .anchored_picks()
+                .filter(|(_, pick)| pick.context.is_none())
+                .map(|(anchor, pick)| ProcessPick {
+                    record: id,
+                    scope: &definition.id,
+                    anchor,
+                    pick,
+                }),
+        );
     }
     for (at, context) in &record.found.contexts {
         let what = format!("pick context at {at}");
@@ -179,7 +209,10 @@ fn check_definition(
         super::error(
             findings,
             id,
-            format_args!("{what} names {definition}, which is no product definition"),
+            crate::rule!(
+                "process.names-no-product-definition",
+                "{what} names {definition}, which is no product definition"
+            ),
         );
     }
     exists
@@ -195,7 +228,7 @@ fn check_path(
     findings: &mut Vec<Finding>,
 ) {
     super::as_process(findings, |findings| {
-        selections::check_path(records.design, Some(from), path, moved, id, findings);
+        selections::check_path(&records.design, Some(from), path, moved, id, findings);
     });
 }
 

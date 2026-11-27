@@ -163,7 +163,7 @@ fn a_package_embeds_the_images_of_its_textures() {
         ("wood.png", b"wood"),
         ("orm.png", b"orm"),
     ])
-    .expect("package");
+    .0;
     let first = decode_bytes(&source);
     let embedded = |result: &cadmpeg_ir::codec::DecodeResult| -> Vec<Vec<u8>> {
         result
@@ -196,8 +196,7 @@ fn a_package_embeds_the_images_of_its_textures() {
 #[test]
 fn textures_that_name_one_package_member_share_its_asset() {
     let root = QUAD.replace("./orm.png", "./wood.png");
-    let source = crate::usdz::package(&[("root.usda", root.as_bytes()), ("wood.png", b"wood")])
-        .expect("package");
+    let source = crate::usdz::package(&[("root.usda", root.as_bytes()), ("wood.png", b"wood")]).0;
     let result = decode_bytes(&source);
     let model = &result.ir().model;
     let [first, second] = model.appearances[0].textures.as_slice() else {
@@ -230,8 +229,9 @@ fn a_package_holds_the_images_that_its_asset_source_reads() {
     let write = |assets: &Files| {
         let plan = crate::UsdCodec
             .plan(
-                EncodeInput::new(first.ir(), None).with_assets(assets),
-                TargetRequest::Explicit("usdz"),
+                EncodeInput::new(first.ir(), None)
+                    .with_assets(assets)
+                    .with_target(TargetRequest::Explicit("usdz")),
             )
             .expect("plan the write");
         let mut bytes = Vec::new();

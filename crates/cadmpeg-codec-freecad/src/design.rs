@@ -5702,13 +5702,24 @@ fn extrusion_shape(
             None => cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
         }
     };
-    if required!(bool_selector(ctx, properties, "Reversed", false)?) {
-        let cadmpeg_ir::features::extents::ExtrudeDirection::Explicit { vector, .. } =
-            &mut direction
-        else {
-            return Ok(None);
-        };
-        *vector = vector.reversed();
+    // A Pocket cuts against the sketch normal unless `Reversed`; a Pad goes
+    // along it unless `Reversed`. A custom `Direction` is used as stored, and
+    // a `ReferenceAxis` direction is stored already negated for a Pocket, so
+    // only the sketch-normal direction of a non-symmetric Pocket flips here.
+    let from_profile_normal = !use_custom && reference_axis.is_none();
+    let pocket_flip = kind.contains("Pocket") && side_type != 2 && from_profile_normal;
+    if pocket_flip ^ required!(bool_selector(ctx, properties, "Reversed", false)?) {
+        use cadmpeg_ir::features::extents::ExtrudeDirection;
+        match &mut direction {
+            ExtrudeDirection::Explicit { vector, .. } => *vector = vector.reversed(),
+            ExtrudeDirection::ProfileNormal {} => {
+                direction = ExtrudeDirection::ReversedProfileNormal {};
+            }
+            ExtrudeDirection::ReversedProfileNormal {} => {
+                direction = ExtrudeDirection::ProfileNormal {};
+            }
+            ExtrudeDirection::Unresolved {} => return Ok(None),
+        }
     }
     let length_along_profile_normal = Some(required!(bool_selector(
         ctx,
@@ -5749,6 +5760,7 @@ pub(crate) fn resolve_operation_selections(
     entries: &[EntryRecord],
     occurrences: &[crate::topology_transfer::TopologyOccurrence],
     cycle_affected: &BTreeSet<String>,
+    intermediate: &HashSet<&str>,
 ) -> Result<(), CodecError> {
     let mut dress_up_bases = HashSet::new();
     let mut face_selection = false;
@@ -5909,17 +5921,26 @@ pub(crate) fn resolve_operation_selections(
         }
         (!ids.is_empty()).then_some(ids)
     };
+    // A selection resolves only into the current model: the records of an
+    // intermediate payload belong to a state of its Body or to the object's
+    // native record, not to the geometry (§5.4, §5.5).
+    let current =
+        |id: &str| crate::native::payload_of(id, |key| intermediate.contains(key)).is_none();
     let face_ids = ir
         .geometry
         .faces
         .iter()
-        .map(|face| face.id.as_str().to_owned())
+        .map(|face| face.id.as_str())
+        .filter(|id| current(id))
+        .map(str::to_owned)
         .collect::<HashSet<_>>();
     let edge_ids = ir
         .geometry
         .edges
         .iter()
-        .map(|edge| edge.id.as_str().to_owned())
+        .map(|edge| edge.id.as_str())
+        .filter(|id| current(id))
+        .map(str::to_owned)
         .collect::<HashSet<_>>();
     let faces = |selection: &mut cadmpeg_ir::features::selections::FaceSelection| {
         let cadmpeg_ir::features::selections::FaceSelection::Native(native) = selection else {
@@ -5996,6 +6017,7 @@ pub(crate) fn resolve_operation_selections(
         .bodies
         .iter()
         .map(|body| body.id.as_str())
+        .filter(|id| current(id))
         .collect::<HashSet<_>>();
     let bodies = |selection: &mut BodySelection, owner: &str| {
         let BodySelection::Native(native) = selection else {
@@ -8771,7 +8793,9 @@ fn axis_reference(
     let owned = required!(properties_by_owner.get(target).map(Vec::as_slice));
     let (origin, z_axis, x_axis, y_axis) = required!(placement_frame(owned));
     let direction = match object.type_name.as_str() {
-        "PartDesign::Line" | "App::Line" => z_axis,
+        // `App::Line` has base direction (1,0,0); `PartDesign::Line` (0,0,1).
+        "App::Line" => x_axis,
+        "PartDesign::Line" => z_axis,
         "PartDesign::Plane" | "App::Plane" => z_axis,
         "PartDesign::CoordinateSystem" => match selector {
             Some("X_Axis" | "XAxis" | "X") => x_axis,
@@ -9269,19 +9293,26 @@ fn is_fillet(kind: &str) -> bool {
 fn is_chamfer(kind: &str) -> bool {
     matches!(kind, "Part::Chamfer" | "PartDesign::Chamfer")
 }
-/// Mark the bodies a document keeps only as intermediate shapes as not
-/// displayed, and return them: a feature's tool shape (any shape property
-/// other than `Shape`) and the shape of every member of a `PartDesign::Body`,
-/// including its `Tip`. A body shows its `Tip` result through its own `Shape`.
-/// This runs after GUI transfer, so these structural roles win over stored
-/// member visibility. No definition owns an intermediate body: a member's
-/// shape is a state of its Body, not a body of the current model (§5.4).
-pub(crate) fn hide_intermediate_bodies(
-    ir: &mut cadmpeg_ir::CadIr,
-    objects: &[ObjectRecord],
-    properties: &[PropertyRecord],
-    payloads: &[ShapePayloadRecord],
-) -> HashSet<cadmpeg_ir::ids::BodyId> {
+/// A shape payload the document keeps beside its current model: a
+/// feature's tool shape (any shape property other than `Shape`), the `Shape`
+/// of every member of a `PartDesign::Body`, including its `Tip`, and the
+/// `Shape` of a datum, which is its display shape (§6.2). A Body shows its
+/// `Tip` result through its own `Shape`.
+pub(crate) struct IntermediatePayload<'a> {
+    /// The payload.
+    pub(crate) payload: &'a ShapePayloadRecord,
+    /// The object that stores it.
+    pub(crate) owner: &'a str,
+    /// The name of its shape property.
+    pub(crate) property: &'a str,
+}
+
+/// The document's intermediate payloads, in payload order.
+pub(crate) fn intermediate_payloads<'a>(
+    objects: &'a [ObjectRecord],
+    properties: &'a [PropertyRecord],
+    payloads: &'a [ShapePayloadRecord],
+) -> Vec<IntermediatePayload<'a>> {
     let mut properties_by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     let mut property_by_id = HashMap::<&str, &PropertyRecord>::new();
     for property in properties {
@@ -9294,7 +9325,13 @@ pub(crate) fn hide_intermediate_bodies(
             .or_insert(property);
     }
     let mut members = HashSet::new();
-    for object in objects.iter().filter(|object| is_body(&object.type_name)) {
+    for object in objects {
+        if is_datum(&object.type_name) {
+            members.insert(object.id().as_str());
+        }
+        if !is_body(&object.type_name) {
+            continue;
+        }
         let owned = properties_by_owner
             .get(object.id().as_str())
             .map_or(&[][..], Vec::as_slice);
@@ -9303,25 +9340,65 @@ pub(crate) fn hide_intermediate_bodies(
                 group
                     .links()
                     .iter()
-                    .filter_map(|link| link.as_ref()?.object())
-                    .map(str::to_owned),
+                    .filter_map(|link| link.as_ref()?.object()),
             );
         }
     }
-    let hidden = payloads.iter().filter_map(|payload| {
-        let property = property_by_id.get(payload.property.as_str())?;
-        (property.name != "Shape" || members.contains(&property.owner))
-            .then_some(payload.id.as_str())
-    });
-    let hidden = crate::gui::select_shape_bodies(ir, hidden)
-        .into_iter()
-        .collect::<HashSet<_>>();
+    payloads
+        .iter()
+        .filter_map(|payload| {
+            let property = property_by_id.get(payload.property.as_str())?;
+            (property.name != "Shape" || members.contains(property.owner.as_str())).then_some(
+                IntermediatePayload {
+                    payload,
+                    owner: property.owner.as_str(),
+                    property: property.name.as_str(),
+                },
+            )
+        })
+        .collect()
+}
+
+/// Mark the bodies of the intermediate payloads as not displayed. This runs
+/// after GUI transfer, so these structural roles win over stored member
+/// visibility.
+pub(crate) fn hide_intermediate_bodies(
+    ir: &mut cadmpeg_ir::CadIr,
+    intermediate: &[IntermediatePayload<'_>],
+) {
+    let hidden = crate::gui::select_shape_bodies(
+        ir,
+        intermediate
+            .iter()
+            .map(|intermediate| intermediate.payload.id.as_str()),
+    )
+    .into_iter()
+    .collect::<HashSet<_>>();
     for body in &mut ir.geometry.bodies {
         if hidden.contains(&body.id) {
             body.visible = Some(false);
         }
     }
-    hidden
+}
+
+/// Whether an object of type `kind` stores in `AddSubShape` the tool body it
+/// combines with the state it enters (§5.4): an additive or subtractive
+/// feature or a hole. A dress-up's and a pattern's `AddSubShape` hold other
+/// material.
+pub(crate) fn stores_tool_body(kind: &str) -> bool {
+    matches!(
+        kind,
+        "PartDesign::Pad"
+            | "PartDesign::Pocket"
+            | "PartDesign::Revolution"
+            | "PartDesign::Groove"
+            | "PartDesign::Hole"
+    ) || kind.starts_with("PartDesign::Additive")
+        || kind.starts_with("PartDesign::Subtractive")
+}
+
+pub(crate) fn is_datum_object(kind: &str) -> bool {
+    is_datum(kind)
 }
 
 fn is_body(kind: &str) -> bool {

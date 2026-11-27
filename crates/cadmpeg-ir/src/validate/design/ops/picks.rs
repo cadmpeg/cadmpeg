@@ -142,6 +142,11 @@ pub(in crate::validate) fn classes<O: MemberOrder>(selection: &Selection<O>) -> 
     }
 }
 
+/// A point or a plane, as a spine limit is (§6.6).
+pub(in crate::validate) const fn is_point_or_plane(class: Class) -> bool {
+    is_point(class) || is_plane(class)
+}
+
 /// The first stated class of `selection` that `allowed` refuses. An
 /// `Unknown` class is never refused.
 pub(in crate::validate) fn refused<O: MemberOrder>(
@@ -154,7 +159,7 @@ pub(in crate::validate) fn refused<O: MemberOrder>(
 }
 
 /// Whether two selections name one pick: equal identity keys.
-pub(super) fn share_pick<A: MemberOrder, B: MemberOrder>(
+pub(in crate::validate::design) fn share_pick<A: MemberOrder, B: MemberOrder>(
     first: &Selection<A>,
     second: &Selection<B>,
 ) -> bool {

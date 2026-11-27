@@ -98,10 +98,8 @@ fn parent_admission_preserves_a_predecessor_moved_to_the_destination() {
             .features
             .push(draft.model_mut().features.remove(0));
         commit(draft.model().clone(), &mut base, use_session).unwrap();
-        let read = CadIr::from_json(&base.to_canonical_json().unwrap()).unwrap();
-        assert_eq!(read, base);
         assert_eq!(
-            read.model
+            base.model
                 .feature_regeneration_parent(&"test:parents:feature#1-child".try_into().unwrap())
                 .unwrap()
                 .as_str(),

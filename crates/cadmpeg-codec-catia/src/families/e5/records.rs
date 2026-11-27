@@ -20,7 +20,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveAngle, PositiveLength};
+use cadmpeg_ir::scalar::{FiniteReal, PositiveAngle, PositiveLength};
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 use crate::families::e5::graph::Sign;
@@ -285,6 +285,7 @@ pub(super) fn e5_edges(data: &[u8]) -> Vec<E5Edge> {
 /// records. The E5 plane class does not serialize a standalone normal.
 pub(in crate::families) fn e5_surfaces(
     data: &[u8],
+    origin: usize,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<E5Surface>, CodecError> {
     let mut out = Vec::new();
@@ -320,7 +321,7 @@ pub(in crate::families) fn e5_surfaces(
                     ],
                 ))
             }),
-            0xe7 => e5_nurbs_surface(data, record, refusal)?
+            0xe7 => e5_nurbs_surface(data, record, origin, refusal)?
                 .map(|geometry| (geometry, [FiniteReal::ONE, FiniteReal::ONE])),
             _ => None,
         };
@@ -623,9 +624,14 @@ pub(in crate::families) fn e5_surface_wrappers(data: &[u8]) -> Vec<E5SurfaceWrap
     out
 }
 
+/// The part a refused `e5 0d 03 e7` record is given up as (`catia.md`,
+/// Partial decode).
+const E5_NURBS_SURFACE_PART: &str = "e5-nurbs-surface";
+
 fn e5_nurbs_surface(
     data: &[u8],
     record: E5Record,
+    origin: usize,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<SurfaceGeometry>, CodecError> {
     let Some(mut view) = View::over_retained(data).child(record.pos + 13, record.end()) else {
@@ -668,8 +674,7 @@ fn e5_nurbs_surface(
     let mut control_points = Vec::new();
 
     for _ in 0..control_count {
-        let Some(point) =
-            (|| FinitePoint3::new(Point3::new(view.f64_le()?, view.f64_le()?, view.f64_le()?)))()
+        let Some(point) = (|| Some(Point3::new(view.f64_le()?, view.f64_le()?, view.f64_le()?)))()
         else {
             return Ok(None);
         };
@@ -679,7 +684,7 @@ fn e5_nurbs_surface(
         let mut weights = Vec::new();
 
         for _ in 0..control_count {
-            let Some(weight) = view.f64_le().and_then(NonZeroReal::new) else {
+            let Some(weight) = view.f64_le() else {
                 return Ok(None);
             };
             weights.push(weight);
@@ -726,6 +731,31 @@ fn e5_nurbs_surface(
     if !view.is_empty() {
         return Ok(None);
     }
+    let Some(bytes) = data.get(record.pos..record.end()) else {
+        return Ok(None);
+    };
+    let frame = crate::nurbs::SourceFrame {
+        kind: E5_NURBS_SURFACE_PART,
+        offset: origin + record.pos,
+        bytes,
+    };
+    let lanes = crate::nurbs::finite_poles("e5 surface poles", control_points).and_then(|poles| {
+        let weights = weights
+            .map(|weights| crate::nurbs::usable_weights("e5 surface weights", weights))
+            .transpose()?;
+        Ok((poles, weights))
+    });
+    let (control_points, weights) = match lanes {
+        Ok(lanes) => lanes,
+        Err(error) => {
+            return Ok(crate::nurbs::give_up_refused::<SurfaceGeometry>(
+                Err(error),
+                refusal,
+                format_args!("e5 NURBS surface record at byte {}", record.pos),
+                frame,
+            ))
+        }
+    };
     let u_knots = u_expanded_knots;
     let v_knots = v_expanded_knots;
     let mut point_rows = Vec::new();
@@ -757,7 +787,7 @@ fn e5_nurbs_surface(
     } else {
         cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Polynomial { rows: point_rows }
     };
-    Ok(crate::nurbs::note_refusal(
+    Ok(crate::nurbs::give_up_refused(
         NurbsSurface::new(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 u_degree,
@@ -776,6 +806,7 @@ fn e5_nurbs_surface(
         ),
         refusal,
         format_args!("e5 NURBS surface record at byte {}", record.pos),
+        frame,
     )
     .map(SolvedSurfaceGeometry::Nurbs)
     .map(SurfaceGeometry::Solved))
@@ -1064,7 +1095,7 @@ mod tests {
         for mode in [0, 1] {
             let mut bytes = Vec::new();
             append_e5_record(&mut bytes, 0xe7, 116, &nurbs_surface_payload(mode));
-            let surfaces = e5_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
+            let surfaces = e5_surfaces(&bytes, 0, &mut crate::nurbs::LaneRefusals::new())
                 .expect("decode the E5 surfaces");
             let [surface] = surfaces.as_slice() else {
                 panic!("E7 surface did not decode");
@@ -1089,9 +1120,11 @@ mod tests {
         payload.pop();
         let mut bytes = Vec::new();
         append_e5_record(&mut bytes, 0xe7, 116, &payload);
-        assert!(e5_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
-            .expect("decode the E5 surfaces")
-            .is_empty());
+        assert!(
+            e5_surfaces(&bytes, 0, &mut crate::nurbs::LaneRefusals::new())
+                .expect("decode the E5 surfaces")
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1119,6 +1152,7 @@ mod tests {
             assert!(
                 crate::test_support::with_service_context(|_ctx| e5_surfaces(
                     &bytes,
+                    0,
                     &mut crate::nurbs::LaneRefusals::new()
                 ))
                 .expect("service resource budget")

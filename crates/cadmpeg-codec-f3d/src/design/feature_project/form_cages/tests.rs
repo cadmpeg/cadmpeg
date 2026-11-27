@@ -7,6 +7,7 @@
 )]
 
 use cadmpeg_core::decode::index_from_u32;
+use cadmpeg_core::serde_erase::json;
 
 use super::{
     form_body_references, form_cage_serializers, form_cage_surface, form_class_325_cage_surface,
@@ -1093,6 +1094,15 @@ fn body_construction(
     scope: &crate::records::feature::scope::DesignParameterScope,
     cages: &[cadmpeg_ir::SubdSurface],
 ) -> FormConstruction {
+    body_construction_with_losses(bytes, meta, scope, cages).0
+}
+
+fn body_construction_with_losses(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    cages: &[cadmpeg_ir::SubdSurface],
+) -> (FormConstruction, Vec<cadmpeg_ir::report::loss::LossNote>) {
     use std::io::{Cursor, Write};
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
@@ -1108,6 +1118,7 @@ fn body_construction(
     }
     let archive = archive.finish().unwrap().into_inner();
     let mut result = None;
+    let mut losses = Vec::new();
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
             let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
@@ -1142,7 +1153,7 @@ fn body_construction(
                 (&types, &serializers),
                 (&mut facts, &mut groups),
                 None,
-                &mut Vec::new(),
+                &mut losses,
             )?;
             result = Some(
                 FormConstruction::try_new(facts.inputs, facts.observations, membership).unwrap(),
@@ -1151,7 +1162,7 @@ fn body_construction(
         })
     })
     .unwrap();
-    result.unwrap()
+    (result.unwrap(), losses)
 }
 
 #[test]
@@ -1354,6 +1365,79 @@ fn form_body_records_bind_the_owning_scope_cages_in_body_record_order() {
 }
 
 #[test]
+fn form_body_record_index_order_is_the_source_cage_order() {
+    let bytes = two_body_form_stream();
+    let cages = [
+        neutral_form_cage("f3d:model:subd#2", SECOND_CAGE_UUID),
+        neutral_form_cage("f3d:model:subd#1", FIRST_CAGE_UUID),
+    ];
+    let scope = form_scope(201, vec![205, 207]);
+    let (complete, losses) =
+        body_construction_with_losses(&bytes, &two_body_form_meta(), &scope, &cages);
+    assert!(losses.is_empty(), "{losses:?}");
+    let FormMembership::Complete { order, .. } = complete.membership() else {
+        panic!("complete");
+    };
+    assert_eq!(*order, FormKnownOrder::Source);
+    let (partial, _) =
+        body_construction_with_losses(&bytes, &two_body_form_meta(), &scope, &cages[..1]);
+    let FormMembership::Partial { order, members, .. } = partial.membership() else {
+        panic!("partial");
+    };
+    assert_eq!(*order, FormOrder::Source);
+    let bindings = members
+        .iter()
+        .map(|member| &partial.observations()[member.observation.0].binding)
+        .collect::<Vec<_>>();
+    assert!(
+        matches!(bindings.as_slice(), [FormCageBinding::Undecoded { .. }, FormCageBinding::Decoded { cage, .. }] if cage.as_str() == "f3d:model:subd#2"),
+        "{bindings:?}"
+    );
+    let open = [
+        form_selection_group_frame(207, 201, 1),
+        form_serializer_frame(299, 296, FIRST_CAGE_UUID),
+        form_body_frame(300, 7, [201, 22, 296, 301], None),
+        form_serializer_frame(499, 496, SECOND_CAGE_UUID),
+        form_body_frame(500, 23, [201, 22, 496, 999], None),
+    ]
+    .concat();
+    let (open, _) = body_construction_with_losses(&open, &two_body_form_meta(), &scope, &cages);
+    let FormMembership::Partial {
+        cardinality: None,
+        order,
+        members,
+    } = open.membership()
+    else {
+        panic!("open");
+    };
+    assert_eq!(*order, FormOrder::Source);
+    assert_eq!(members.len(), 2);
+}
+
+#[test]
+fn form_body_order_disagreeing_with_an_owned_list_order_leaves_order_unknown() {
+    let complete = FormConstruction::complete(vec![
+        cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#a").unwrap(),
+        cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#b").unwrap(),
+    ])
+    .unwrap();
+    let claim = |members: [usize; 2]| FormMembership::Complete {
+        members: members.into_iter().map(FormObservationIndex).collect(),
+        order: FormKnownOrder::Source,
+        certainty: FormKnownOrder::Source,
+    };
+    let mut facts = super::FormFacts {
+        inputs: FormInputs::default(),
+        observations: complete.observations().to_vec(),
+    };
+    let membership = facts.reconcile(claim([0, 1]), claim([1, 0]));
+    assert!(
+        matches!(membership, FormMembership::Partial { order: FormOrder::Unknown, ref members, .. } if members.len() == 2),
+        "{membership:?}"
+    );
+}
+
+#[test]
 fn form_registry_aliases_do_not_duplicate_bodies_or_serializer_alternatives() {
     let bytes = two_body_form_stream();
     let mut meta = two_body_form_meta();
@@ -1422,7 +1506,7 @@ fn form_missing_sources_preserve_native_parameters_metadata_and_repeated_binding
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
     use std::io::Cursor;
     let scope = form_scope(201, vec![205, 207]);
-    let row: Feature = serde_json::from_value(serde_json::json!({
+    let row: Feature = json::from_value(cadmpeg_core::json!({
         "id":"f3d:model:feature#form", "ordinal":7, "name":"Form", "suppressed":true,
         "dependencies":["f3d:model:feature#previous"], "source_properties":{"reference:0":"205"},
         "outputs":["f3d:model:body#result"], "native_ref":scope.id,
@@ -1512,7 +1596,7 @@ fn form_native_source_reference_takes_precedence_over_derived_feature_identity()
         ),
         (Some(scopes[1].id.clone()), vec![208, 209]),
     ] {
-        let mut feature: Feature = serde_json::from_value(serde_json::json!({
+        let mut feature: Feature = json::from_value(cadmpeg_core::json!({
             "id":crate::ids::neutral_feature_id(&scopes[0]), "ordinal":7, "suppressed":true,
             "outputs":["f3d:model:body#result"],
             "definition":{"kind":"operation","value":{"kind":"native","value":{"kind":"Form","parameters":{"extra":"sin(angle)"}}}},
@@ -1763,7 +1847,7 @@ fn form_source_recovery_propagates_a_resource_refusal() {
         ctx.retain_bytes(1, "Form test fuse"),
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
-    let mut rows = vec![serde_json::from_value(serde_json::json!({"id":"f3d:model:feature#form","ordinal":0,"definition":{"kind":"operation","value":{"kind":"native","value":{"kind":"Form","parameters":{}}}},"dependencies":[],"source_properties":{},"source_content":[],"outputs":[]})).unwrap()];
+    let mut rows = vec![json::from_value(cadmpeg_core::json!({"id":"f3d:model:feature#form","ordinal":0,"definition":{"kind":"operation","value":{"kind":"native","value":{"kind":"Form","parameters":{}}}},"dependencies":[],"source_properties":{},"source_content":[],"outputs":[]})).unwrap()];
     let original = rows.clone();
     let mut losses = Vec::new();
     crate::test_support::zip_test::with_scan(&archive, |scan| {

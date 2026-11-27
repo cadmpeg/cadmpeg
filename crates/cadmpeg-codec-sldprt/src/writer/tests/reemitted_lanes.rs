@@ -48,7 +48,14 @@ fn a_reemitted_lane_keeps_a_reclassified_markers_code() {
     let mut payload = lane.native_payload.to_vec();
     payload[167..171].copy_from_slice(&1u32.to_le_bytes());
     lane.native_payload = payload.into();
-    let written = crate::writer::resolved_feature_payload(&lane, &[], &[]).unwrap();
+    let written = crate::writer::resolved_feature_payload(
+        &lane,
+        &[],
+        &[],
+        cadmpeg_core::decode::ResourceLimits::service(),
+        cadmpeg_ir::units::Tolerances::default().linear,
+    )
+    .unwrap();
     assert_eq!(&written[167..171], &1u32.to_le_bytes());
 }
 
@@ -76,14 +83,28 @@ fn a_reemitted_lane_keeps_unchanged_coordinates_in_their_layout() {
     lane.sketch_entities = markers;
     lane.classes = crate::resolved_features::names::class_declarations(&payload, &lane.id).unwrap();
     lane.native_payload = payload.clone().into();
-    let written = crate::writer::resolved_feature_payload(&lane, &[], &[]).unwrap();
+    let written = crate::writer::resolved_feature_payload(
+        &lane,
+        &[],
+        &[],
+        cadmpeg_core::decode::ResourceLimits::service(),
+        cadmpeg_ir::units::Tolerances::default().linear,
+    )
+    .unwrap();
     assert_eq!(&written[150 + 48..150 + 170], &payload[150 + 48..150 + 170]);
     // A change to coordinates this layout keeps elsewhere is refused, not
     // written at +66 and +74.
     let mut edited = lane.clone();
     edited.sketch_entities[0].coordinates_m =
         cadmpeg_ir::units::FiniteVector::new([coordinates[0] + 0.001, coordinates[1]]);
-    let error = crate::writer::resolved_feature_payload(&edited, &[], &[]).unwrap_err();
+    let error = crate::writer::resolved_feature_payload(
+        &edited,
+        &[],
+        &[],
+        cadmpeg_core::decode::ResourceLimits::service(),
+        cadmpeg_ir::units::Tolerances::default().linear,
+    )
+    .unwrap_err();
     assert!(
         error.to_string().contains("keeps them elsewhere"),
         "{error}"
@@ -95,7 +116,7 @@ fn a_reemitted_lane_keeps_unchanged_coordinates_in_their_layout() {
 /// from `Contents/Config-0-ResolvedFeatures`.
 #[test]
 fn a_config_objects_lane_is_written_to_its_own_member() {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
     let lanes = |bytes: &[u8]| {
@@ -105,9 +126,12 @@ fn a_config_objects_lane_is_written_to_its_own_member() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let native =
-            crate::native::SldprtNative::load(decoded.ir().native.namespace("sldprt").unwrap())
-                .unwrap();
+        let native = crate::native::SldprtNative::load_under(
+            decoded.ir().native.namespace("sldprt").unwrap(),
+            cadmpeg_core::decode::ResourceLimits::default(),
+            decoded.ir().tolerances.linear,
+        )
+        .unwrap();
         let mut lanes = native
             .feature_input_lanes
             .iter()
@@ -128,13 +152,10 @@ fn a_config_objects_lane_is_written_to_its_own_member() {
     let (decoded, expected) = lanes(&source);
     assert_eq!(expected.len(), 2, "{expected:?}");
     let (ir, _, mut fidelity) = decoded.into_parts();
-    fidelity.content_digest = cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]);
+    fidelity.content_digest = None;
     let mut written = Vec::new();
     crate::SldprtCodec
-        .plan(
-            EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(&ir, Some(&fidelity)))
         .unwrap()
         .write_to(&mut written)
         .unwrap();
@@ -155,9 +176,12 @@ fn a_config_objects_lane_without_provenance_is_written_to_its_own_member() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let native =
-            crate::native::SldprtNative::load(decoded.ir().native.namespace("sldprt").unwrap())
-                .unwrap();
+        let native = crate::native::SldprtNative::load_under(
+            decoded.ir().native.namespace("sldprt").unwrap(),
+            cadmpeg_core::decode::ResourceLimits::default(),
+            decoded.ir().tolerances.linear,
+        )
+        .unwrap();
         let mut lanes = native
             .feature_input_lanes
             .iter()
@@ -180,10 +204,7 @@ fn a_config_objects_lane_without_provenance_is_written_to_its_own_member() {
     let (ir, _, _) = decoded.into_parts();
     let mut written = Vec::new();
     crate::SldprtCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit("sldprt:unknown"),
-        )
+        .plan(EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit("sldprt:unknown")))
         .unwrap()
         .write_to(&mut written)
         .unwrap();

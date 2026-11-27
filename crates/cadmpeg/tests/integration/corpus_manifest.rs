@@ -73,7 +73,8 @@ fn manifest_path() -> PathBuf {
     repo_root().join("corpus/manifest.toml")
 }
 
-/// Classifies one fixture: the primary layer's registry id, as `inspect()` reads it.
+/// Classifies one fixture: the primary layer's registry id, as the codec's
+/// classification path reads it.
 ///
 /// The manifest's format vocabulary is the input catalog's ids, and
 /// `cadmpeg-registry` owns that catalog, so the lookup selects its input
@@ -90,12 +91,11 @@ fn classify(format: &str, bytes: &[u8]) -> String {
         .find(|descriptor| descriptor.format_id().as_str() == format)
         .and_then(cadmpeg_registry::InputDescriptor::codec)
         .unwrap_or_else(|| panic!("manifest format {format:?} has no codec in this build"));
-    let summary = codec
-        .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
-        .unwrap_or_else(|error| panic!("inspecting a {format} fixture: {error}"));
-    summary
-        .dialects()
-        .unwrap_or_else(|| panic!("{format} inspect reported no primary layer"))
+    let dialects = codec
+        .classify_dialects(&mut Cursor::new(bytes), &InspectOptions::default())
+        .unwrap_or_else(|error| panic!("classifying a {format} fixture: {error}"));
+    dialects
+        .unwrap_or_else(|| panic!("{format} classification reported no primary layer"))
         .primary()
         .dialect()
         .as_str()

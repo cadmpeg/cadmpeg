@@ -658,7 +658,7 @@ pub(super) fn transfer_closed_face_topology(
                 Exactness::Derived
             ));
             admitted!(annotations
-                .derived(&edge_id, "curve")
+                .derived(&edge_id, "carrier.curve")
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from));
             admitted!(annotations
@@ -671,7 +671,7 @@ pub(super) fn transfer_closed_face_topology(
                 .map_err(cadmpeg_core::CodecError::from));
             if param_range.is_some() {
                 admitted!(annotations
-                    .derived(&edge_id, "param_range")
+                    .derived(&edge_id, "carrier.param_range")
                     .map(|_| ())
                     .map_err(cadmpeg_core::CodecError::from));
             }
@@ -806,11 +806,11 @@ pub(super) fn transfer_closed_face_topology(
                     .map(|_| ())
                     .map_err(cadmpeg_core::CodecError::from));
                 admitted!(annotations
-                    .derived(loop_id, "coedges")
+                    .derived(loop_id, "boundary.coedges")
                     .map(|_| ())
                     .map_err(cadmpeg_core::CodecError::from));
                 admitted!(annotations
-                    .derived(loop_id, "vertex_uses")
+                    .derived(loop_id, "boundary.vertex_uses")
                     .map(|_| ())
                     .map_err(cadmpeg_core::CodecError::from));
                 let ring =
@@ -920,10 +920,6 @@ pub(super) fn transfer_closed_face_topology(
                     if use_curve.is_some() {
                         admitted!(annotations
                             .derived(&coedge_id, "use_curve")
-                            .map(|_| ())
-                            .map_err(cadmpeg_core::CodecError::from));
-                        admitted!(annotations
-                            .derived(&coedge_id, "use_curve_parameter_range")
                             .map(|_| ())
                             .map_err(cadmpeg_core::CodecError::from));
                     }

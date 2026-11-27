@@ -55,7 +55,7 @@ fn compressed_arrays_read_back() {
     );
     let (parsed, bytes) = with_context(text.as_bytes(), |ctx| {
         let layer = parse_layer(ctx, text.as_bytes()).expect("parse");
-        let bytes = crate::usdc::write::write(&layer).expect("write");
+        let bytes = crate::usdc::write::write(&layer).expect("write").0;
         (layer, bytes)
     });
     let (read, unread) = with_root(&bytes, |ctx, root| {

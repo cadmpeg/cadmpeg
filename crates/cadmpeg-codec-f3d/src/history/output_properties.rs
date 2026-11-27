@@ -207,6 +207,8 @@ fn resolved_body_selection_slots(selection: &BodySelection) -> Option<Vec<i64>> 
         | BodySelection::NativeSet(_)
         | BodySelection::Unresolved
         | BodySelection::Generated { .. }
+        | BodySelection::GeneratedSet { .. }
+        | BodySelection::Occurrence { .. }
         | BodySelection::Local { .. } => None,
     }
 }

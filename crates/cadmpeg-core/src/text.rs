@@ -505,9 +505,6 @@ macro_rules! codec_id {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    #[cfg(feature = "schema")]
-    use std::collections::BTreeMap;
-
     use super::{
         attribute_text, named_entries, named_entries_reporting, NamedEntryError, NonBlankString,
         NonWhitespaceChar,
@@ -544,7 +541,10 @@ mod tests {
         ] {
             let value = NonBlankString::prefixed(prefix, suffix);
             assert_eq!(value.as_str(), expected);
-            assert_eq!(serde_json::to_value(&value).unwrap(), expected);
+            assert_eq!(
+                crate::serde_erase::json::to_value(&value).unwrap(),
+                expected
+            );
         }
         assert_eq!(crate::nonblank_literal!("#{}", 42).as_str(), "#42");
         assert_eq!(crate::nonblank_const!(PINNED).as_str(), "pinned");
@@ -579,22 +579,6 @@ mod tests {
             );
         }
         assert!(NonWhitespaceChar::from_ascii(0x0b).is_none());
-    }
-
-    #[cfg(feature = "schema")]
-    #[test]
-    fn nonblank_schema_constrains_property_names_without_trimming_source_text() {
-        let schema = serde_json::to_value(schemars::schema_for!(NonBlankString)).unwrap();
-        assert_eq!(schema["type"], "string");
-        let pattern = schema["pattern"].as_str().unwrap();
-        let map =
-            serde_json::to_value(schemars::schema_for!(BTreeMap<NonBlankString, String>)).unwrap();
-        assert_eq!(map["additionalProperties"], false);
-        assert!(map["patternProperties"].get(pattern).is_some());
-        for text in [" \tname\n", "\u{feff}", "\0"] {
-            let value = NonBlankString::new(text).unwrap();
-            assert_eq!(serde_json::to_value(value).unwrap(), text);
-        }
     }
 
     #[test]

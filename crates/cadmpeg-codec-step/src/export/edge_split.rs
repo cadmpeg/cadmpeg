@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Preserve open edge topology at the representation uncertainty.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::{
@@ -12,9 +12,28 @@ use cadmpeg_ir::index::{ModelIndex, StandardIndex};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::Edge;
 
-pub(super) fn midpoint(index: &ModelIndex<'_>, edge: &Edge) -> Result<Option<Point3>, CodecError> {
+/// How an open edge is written.
+pub(super) enum Split {
+    /// As one `EDGE_CURVE`: its ends do not coincide.
+    Whole,
+    /// As two `EDGE_CURVE`s meeting at this point of its curve: its ends
+    /// coincide within the linear tolerance, and one `EDGE_CURVE` between
+    /// them would read as closed.
+    At(Point3),
+    /// As one `EDGE_CURVE` although its ends coincide: no point of its curve
+    /// strictly between them was found.
+    Unsplittable,
+}
+
+/// How `edge` is written. An error is a decode-context or resource failure
+/// of the parameter search.
+pub(super) fn midpoint(
+    index: &ModelIndex<'_>,
+    edge: &Edge,
+    ctx: &DecodeContext<'_>,
+) -> Result<Split, CodecError> {
     let Some(ends) = edge.ends.as_ref().filter(|ends| ends.start != ends.end) else {
-        return Ok(None);
+        return Ok(Split::Whole);
     };
     let position = |id: &cadmpeg_ir::ids::VertexId| {
         let vertex = index.vertices(id.as_str(), StandardIndex)?;
@@ -26,22 +45,16 @@ pub(super) fn midpoint(index: &ModelIndex<'_>, edge: &Edge) -> Result<Option<Poi
         )
     };
     let (Some(start), Some(end)) = (position(&ends.start), position(&ends.end)) else {
-        return Ok(None);
+        return Ok(Split::Whole);
     };
     if !curve_endpoints_coincident([start, end], index.ir().tolerances.linear.get()) {
-        return Ok(None);
+        return Ok(Split::Whole);
     }
     let Some(curve_id) = edge.curve() else {
-        return Ok(None);
-    };
-    let refused = || {
-        CodecError::NotImplemented(format!(
-        "STEP cannot split open edge {} at its parameter midpoint within the declared uncertainty",
-        edge.id
-    ))
+        return Ok(Split::Whole);
     };
     let Some(curve) = index.curves(curve_id.as_str(), StandardIndex) else {
-        return Ok(None);
+        return Ok(Split::Whole);
     };
     let domain = parameter_domain(index, &curve.id);
     let range = edge
@@ -54,12 +67,9 @@ pub(super) fn midpoint(index: &ModelIndex<'_>, edge: &Edge) -> Result<Option<Poi
     let [first, last] = match range {
         Some(range) => range,
         None => {
-            let arena = DecodeArena::new();
-            let policy = DecodePolicy::service();
-            let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0)?;
             let parameter = |point, seed| {
                 model_curve_parameter_near_point_in_index_with_tolerance(
-                    &ctx,
+                    ctx,
                     index,
                     curve_id,
                     point,
@@ -71,30 +81,35 @@ pub(super) fn midpoint(index: &ModelIndex<'_>, edge: &Edge) -> Result<Option<Poi
                 Some(ParameterDomain::Bounded(range) | ParameterDomain::Search(range)) => range,
                 _ => [0.0, 1.0],
             };
-            let first = parameter(start, seeds[0])?.ok_or_else(refused)?.get();
-            let mut last = parameter(end, seeds[1])?.ok_or_else(refused)?.get();
+            let first = parameter(start, seeds[0])?;
+            let last = parameter(end, seeds[1])?;
+            if let Some(limit) = ctx.resource_refusal() {
+                return Err(limit.into());
+            }
+            let (Some(first), Some(last)) = (first, last) else {
+                return Ok(Split::Unsplittable);
+            };
+            let (first, mut last) = (first.get(), last.get());
             if let Some(ParameterDomain::Periodic(period)) = domain {
                 let span = (last - first).rem_euclid(period);
                 last = first + if span == 0.0 { period } else { span };
             } else if last <= first {
-                return Err(refused());
+                return Ok(Split::Unsplittable);
             }
-            ctx.finish_session()?;
             [first, last]
         }
     };
     let middle = first * 0.5 + last * 0.5;
     if middle == first || middle == last {
-        return Err(refused());
+        return Ok(Split::Unsplittable);
     }
     let point = finite_or_refusal(model_curve_point_by_id(
-        EvaluationAdmission::Standard,
+        EvaluationAdmission::Write(ctx),
         index,
         curve_id,
         middle,
-    ))?
-    .ok_or_else(refused)?;
-    Ok(Some(point.get()))
+    ))?;
+    Ok(point.map_or(Split::Unsplittable, |point| Split::At(point.get())))
 }
 
 #[derive(Clone, Copy)]

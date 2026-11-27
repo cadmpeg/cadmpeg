@@ -8,11 +8,12 @@ use crate::records::feature::scope::{
 };
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::selections::BodySelection;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn group(record_index: u32, role: DesignOperandRole) -> DesignConstructionOperandGroup {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("f3d:test:group#{record_index}"),
         "scope_record_index": 12,
         "scope_reference_ordinal": 0,

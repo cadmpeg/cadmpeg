@@ -525,11 +525,11 @@ pub(crate) fn metadata_for_bulk_stream(
     let prefix = bulk_entry_name
         .strip_suffix("BulkStream.dat")
         .ok_or_else(|| CodecError::Malformed("Design stream has no BulkStream suffix".into()))?;
-    let Some(meta_entry) = scan
-        .entries
-        .iter()
-        .find(|entry| entry.name.strip_prefix(prefix) == Some("MetaStream.dat"))
-    else {
+    let meta_name = format!("{prefix}MetaStream.dat");
+    if scan.has_entry(&meta_name) {
+        return scan.parsed_metastream(&meta_name).map(Some);
+    }
+    let Some(meta_entry) = scan.entries.iter().find(|entry| entry.name == meta_name) else {
         return Ok(None);
     };
     scan.parsed_metastream(&meta_entry.name).map(Some)
@@ -581,84 +581,21 @@ pub(super) fn record_header_class_tag(
 }
 
 #[derive(Clone)]
-struct CachedDesignPrimaryFrame {
-    entity_id: u64,
-    class_tag: crate::records::references::DesignClassTag,
-    start: usize,
-    member_end: usize,
-    end: usize,
-    type_ordinal: usize,
+pub(crate) struct CachedDesignPrimaryFrame {
+    pub(crate) entity_id: u64,
+    pub(crate) class_tag: crate::records::references::DesignClassTag,
+    pub(crate) start: usize,
+    pub(crate) member_end: usize,
+    pub(crate) end: usize,
+    pub(crate) type_ordinal: usize,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct PrimaryFrameCacheKey {
-    bytes_len: usize,
-    records_len: usize,
-    types_len: usize,
-    secondary_len: usize,
-    fingerprint: [u64; 2],
-}
-
-#[inline]
-fn mix64(h: u64, v: u64) -> u64 {
-    // wrapping-exception: 64-bit multiplicative cache-key mixing operates modulo 2^64
-    (h.rotate_left(5) ^ v).wrapping_mul(0x517c_c1b7_2722_0a95)
-}
-
-fn mix_bytes_128(mut lo: u64, mut hi: u64, slice: &[u8]) -> [u64; 2] {
-    let mut chunks = slice.chunks_exact(16);
-    for chunk in &mut chunks {
-        let a = View::u64_le_at(chunk, 0).unwrap_or(0);
-        let b = View::u64_le_at(chunk, 8).unwrap_or(0);
-        lo = mix64(lo, a);
-        hi = mix64(hi, b);
-    }
-    let rem = chunks.remainder();
-    if !rem.is_empty() {
-        let mut tail = [0_u8; 16];
-        tail[..rem.len()].copy_from_slice(rem);
-        let a = View::u64_le_at(&tail, 0).unwrap_or(0);
-        let b = View::u64_le_at(&tail, 8).unwrap_or(0);
-        lo = mix64(lo, a);
-        hi = mix64(hi, b);
-    }
-    [mix64(lo, hi), mix64(hi, lo)]
-}
-
-fn primary_frame_cache_key(
+pub(crate) fn collect_cached_design_primary_frames(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
-) -> PrimaryFrameCacheKey {
-    use cadmpeg_core::decode::u64_from_index;
-
-    let [mut lo, mut hi] = mix_bytes_128(
-        mix64(0x9e37_79b9_7f4a_7c15, u64_from_index(bytes.len())),
-        mix64(0xc2b2_ae3d_27d4_eb4f, u64_from_index(meta.records.len())),
-        bytes,
-    );
-    for rec in &meta.records {
-        lo = mix64(lo, rec.entity_id);
-        hi = mix64(hi, rec.bulk_offset);
-    }
-    for rec in &meta.secondary_records {
-        lo = mix64(lo, rec.entity_id);
-        hi = mix64(hi, rec.bulk_offset);
-    }
-    for ty in &meta.types {
-        [lo, hi] = mix_bytes_128(lo, hi, ty.type_guid.as_str().as_bytes());
-        lo = mix64(lo, u64_from_index(ty.entities.len()));
-        for &entity_id in ty.entities.values() {
-            lo = mix64(lo, entity_id);
-            hi = mix64(hi, entity_id.rotate_left(17));
-        }
-    }
-    PrimaryFrameCacheKey {
-        bytes_len: bytes.len(),
-        records_len: meta.records.len(),
-        types_len: meta.types.len(),
-        secondary_len: meta.secondary_records.len(),
-        fingerprint: [lo, hi],
-    }
+) -> Result<Vec<CachedDesignPrimaryFrame>, CodecError> {
+    collect_design_primary_frames_with_cache(bytes, meta, "", &mut Vec::new(), &mut Vec::new())
+        .map(|(_, cached)| cached)
 }
 
 /// Resolve every live sibling record from the primary index. The primary
@@ -671,69 +608,47 @@ pub(super) fn design_primary_frames<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
-    use std::cell::RefCell;
-
-    thread_local! {
-        static CACHE: RefCell<Vec<(PrimaryFrameCacheKey, Vec<CachedDesignPrimaryFrame>)>> =
-            const { RefCell::new(Vec::new()) };
-    }
-
-    let key = primary_frame_cache_key(bytes, meta);
-    if let Some(frames) = CACHE.with(|cache| {
-        let cache = cache.borrow();
-        cache
-            .iter()
-            .find(|(k, _)| *k == key)
-            .and_then(|(_, cached)| {
-                cached
-                    .iter()
-                    .map(|entry| {
-                        Some(DesignPrimaryFrame {
-                            entity_id: entry.entity_id,
-                            class_tag: entry.class_tag.clone(),
-                            start: entry.start,
-                            member_end: entry.member_end,
-                            end: entry.end,
-                            design_type: meta.types.get(entry.type_ordinal)?,
-                        })
-                    })
-                    .collect::<Option<Vec<_>>>()
-            })
-    }) {
-        return Ok(frames);
-    }
-
-    let (frames, cached) =
-        collect_design_primary_frames_with_cache(bytes, meta, "", &mut Vec::new())?;
-    if cached.len() <= 16_384 {
-        CACHE.with(|cache| {
-            let mut cache = cache.borrow_mut();
-            if cache.len() >= 4 {
-                cache.remove(0);
-            }
-            cache.push((key, cached));
-        });
-    }
-    Ok(frames)
+    collect_design_primary_frames_with_cache(bytes, meta, "", &mut Vec::new(), &mut Vec::new())
+        .map(|(frames, _)| frames)
 }
 
-/// Resolve the frames as `design_primary_frames` does and charge one loss for
-/// each frame whose header is unread. A caller that discards `losses` leaves
-/// the charge to the prerequisite pass, which reports each frame once.
-fn collect_design_primary_frames<'a>(
-    bytes: &[u8],
+pub(super) fn scan_design_primary_frames<'a>(
+    scan: &ContainerScan,
+    bulk_entry_name: &str,
     meta: &'a crate::metastream::MetaStream,
-    stream: &str,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
-    collect_design_primary_frames_with_cache(bytes, meta, stream, losses).map(|(frames, _)| frames)
+    let Some(cached) = scan.design_primary_frames(bulk_entry_name)? else {
+        return Ok(Vec::new());
+    };
+    cached
+        .iter()
+        .map(|entry| {
+            let design_type = meta.types.get(entry.type_ordinal).ok_or_else(|| {
+                CodecError::Malformed(
+                    "F3D cached primary frame type ordinal is outside MetaStream".into(),
+                )
+            })?;
+            Ok(DesignPrimaryFrame {
+                entity_id: entry.entity_id,
+                class_tag: entry.class_tag.clone(),
+                start: entry.start,
+                member_end: entry.member_end,
+                end: entry.end,
+                design_type,
+            })
+        })
+        .collect()
 }
 
+/// Resolve the frames as `design_primary_frames` does, and give up each frame
+/// whose header is unread. A caller that discards `losses` and `given_up`
+/// leaves the charge to the prerequisite pass, which reports each frame once.
 fn collect_design_primary_frames_with_cache<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
     stream: &str,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    given_up: &mut Vec<super::record::GivenUpFrame>,
 ) -> Result<(Vec<DesignPrimaryFrame<'a>>, Vec<CachedDesignPrimaryFrame>), CodecError> {
     let indexed = crate::metastream::primary_record_frames(meta, bytes.len())?;
     let mut registered_entities = HashSet::new();
@@ -745,10 +660,12 @@ fn collect_design_primary_frames_with_cache<'a>(
     let mut cached = Vec::with_capacity(indexed.len());
     let mut frames = Vec::with_capacity(indexed.len());
     for frame in indexed {
-        if let Some((type_ordinal, primary_frame)) = super::record::recover(
+        if let Some((type_ordinal, primary_frame)) = super::record::recover_frame(
             design_primary_frame(bytes, meta, &registered_entities, &frame),
             losses,
+            given_up,
             crate::loss::F3dLossCode::PrimaryRecordUndecoded,
+            super::record::RecordFrame::new(stream, frame.start, frame.end),
             format_args!(
                 "Design primary record {} at byte {} in {stream}",
                 frame.entity_id, frame.start
@@ -835,10 +752,19 @@ fn design_primary_frame<'a>(
     ))
 }
 
+/// The losses of the primary frames whose header is unread, and the frames
+/// the decode gives up for them.
 pub(crate) fn decode_primary_frame_losses(
     scan: &ContainerScan,
-) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
+) -> Result<
+    (
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+        Vec<super::record::GivenUpFrame>,
+    ),
+    CodecError,
+> {
     let mut losses = Vec::new();
+    let mut given_up = Vec::new();
     for entry in scan
         .entries
         .iter()
@@ -849,26 +775,49 @@ pub(crate) fn decode_primary_frame_losses(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         // Keep structural index errors with the reader that needs this stream.
-        if let Err(error) = collect_design_primary_frames(bytes, &meta, &entry.name, &mut losses) {
+        if let Err(error) = collect_design_primary_frames_with_cache(
+            bytes,
+            &meta,
+            &entry.name,
+            &mut losses,
+            &mut given_up,
+        ) {
             if super::record::is_fatal(&error) {
                 return Err(error);
             }
         }
     }
-    Ok(losses)
+    Ok((losses, given_up))
 }
 
+#[cfg(test)]
 pub(super) fn unambiguous_design_primary_frames<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
-    let mut frames = design_primary_frames(bytes, meta)?;
+    let frames = design_primary_frames(bytes, meta)?;
+    Ok(filter_unambiguous_design_primary_frames(frames, meta))
+}
+
+pub(super) fn scan_unambiguous_design_primary_frames<'a>(
+    scan: &ContainerScan,
+    bulk_entry_name: &str,
+    meta: &'a crate::metastream::MetaStream,
+) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
+    let frames = scan_design_primary_frames(scan, bulk_entry_name, meta)?;
+    Ok(filter_unambiguous_design_primary_frames(frames, meta))
+}
+
+fn filter_unambiguous_design_primary_frames<'a>(
+    mut frames: Vec<DesignPrimaryFrame<'a>>,
+    meta: &crate::metastream::MetaStream,
+) -> Vec<DesignPrimaryFrame<'a>> {
     let mut registered = HashMap::<u64, usize>::new();
     for entity_id in meta.types.iter().flat_map(|row| row.entities.values()) {
         *registered.entry(*entity_id).or_default() += 1;
     }
     frames.retain(|frame| registered.get(&frame.entity_id) == Some(&1));
-    Ok(frames)
+    frames
 }
 
 /// One primary `BulkStream` frame selected through a registered Design type.
@@ -884,6 +833,27 @@ pub(super) struct TypedPrimaryFrame<'a> {
 /// `MetaStream` primary index and verify its dynamic class tag.
 pub(super) fn typed_primary_frames<'a>(
     bytes: &[u8],
+    meta: &'a crate::metastream::MetaStream,
+    type_guid: &str,
+    record_kind: &str,
+) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
+    let primary_frames = design_primary_frames(bytes, meta)?;
+    typed_primary_frames_from(&primary_frames, meta, type_guid, record_kind)
+}
+
+pub(super) fn scan_typed_primary_frames<'a>(
+    scan: &ContainerScan,
+    bulk_entry_name: &str,
+    meta: &'a crate::metastream::MetaStream,
+    type_guid: &str,
+    record_kind: &str,
+) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
+    let primary_frames = scan_design_primary_frames(scan, bulk_entry_name, meta)?;
+    typed_primary_frames_from(&primary_frames, meta, type_guid, record_kind)
+}
+
+pub(super) fn typed_primary_frames_from<'a>(
+    primary_frames: &[DesignPrimaryFrame<'a>],
     meta: &'a crate::metastream::MetaStream,
     type_guid: &str,
     record_kind: &str,
@@ -910,7 +880,6 @@ pub(super) fn typed_primary_frames<'a>(
 
     let mut resolved_entities = HashSet::new();
     let mut frames = Vec::new();
-    let primary_frames = design_primary_frames(bytes, meta)?;
     let valid_entities = primary_frames
         .iter()
         .map(|frame| frame.entity_id)
@@ -1165,7 +1134,8 @@ pub(super) fn stream_types_by_class_tag<'a>(
 }
 
 /// Compare an encoded native `MetaStream` scope with the `BulkStream`'s sibling
-/// name without materializing either name.
+/// name without materializing either name. The `@` that qualifies the scope of
+/// an archive member's record matches itself.
 pub(crate) fn meta_scope_matches_bulk(scope: &str, bulk_entry_name: &str) -> bool {
     let Some(prefix) = bulk_entry_name.strip_suffix("BulkStream.dat") else {
         return false;
@@ -1176,11 +1146,14 @@ pub(crate) fn meta_scope_matches_bulk(scope: &str, bulk_entry_name: &str) -> boo
     else {
         return false;
     };
-    let mut observed = encoded.bytes();
+    let mut observed = encoded.bytes().peekable();
     for character in prefix.chars() {
+        if character == '@' && observed.next_if_eq(&b'@').is_some() {
+            continue;
+        }
         let mut buffer = [0; 4];
         let bytes = character.encode_utf8(&mut buffer).as_bytes();
-        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+        if cadmpeg_ir::ids::IdentityKeyTail::escapes(character) {
             const HEX: &[u8; 16] = b"0123456789ABCDEF";
             for byte in bytes {
                 if observed.next() != Some(b'%')
@@ -1482,6 +1455,7 @@ pub(crate) fn decode_feature_timelines(
                     stream.timeline(type_ordinal, design_type, *entity_id, entity_source_ordinal),
                     &mut pending_losses,
                     crate::loss::F3dLossCode::FeatureTimelineUndecoded,
+                    super::record::DesignRecord::entity(bulk_name, *entity_id),
                     format_args!("Feature timeline record {entity_id} in {bulk_name}"),
                 )?
                 else {

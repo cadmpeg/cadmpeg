@@ -5,9 +5,10 @@ use std::collections::BTreeMap;
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot, CompoundStreamId};
 use cadmpeg_container::compression::{inflate_zlib_exact, inflate_zstd_exact};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::ids::IdentityKey;
+use cadmpeg_ir::ids::{Identity, IdentityKey};
+use cadmpeg_ir::unknown::part::Part;
 
 use crate::database::{
     parse_database, parse_registry, parse_revisions, DatabaseHeader, RevisionTable, RseDatabase,
@@ -371,8 +372,10 @@ pub(crate) struct RseInventory<'a> {
     pub(crate) registry: ParsedState<SegmentRegistry>,
     pub(crate) revisions: ParsedState<RevisionTable>,
     pub(crate) segments: Vec<SegmentDescriptor<'a>>,
-    pub(crate) unpaired_metadata: Vec<SegmentToken>,
-    pub(crate) unpaired_bulk: Vec<SegmentToken>,
+    /// The metadata streams without a bulk stream, by token.
+    pub(crate) unpaired_metadata: Vec<(SegmentToken, CompoundStreamId)>,
+    /// The bulk streams without a metadata stream, by token.
+    pub(crate) unpaired_bulk: Vec<(SegmentToken, CompoundStreamId)>,
     pub(crate) active_carrier: ActiveCarrierState<'a>,
 }
 
@@ -521,14 +524,14 @@ impl<'a> RseInventory<'a> {
         }
         let segments = frame_segment_records(segments)?;
         let unpaired_metadata = metadata
-            .keys()
-            .filter(|token| !bulk.contains_key(*token))
-            .cloned()
+            .iter()
+            .filter(|(token, _)| !bulk.contains_key(*token))
+            .map(|(token, stream)| (token.clone(), *stream))
             .collect();
         let unpaired_bulk = bulk
-            .keys()
-            .filter(|token| !metadata.contains_key(*token))
-            .cloned()
+            .iter()
+            .filter(|(token, _)| !metadata.contains_key(*token))
+            .map(|(token, stream)| (token.clone(), *stream))
             .collect();
         let document_kind = document_kind_for_segments(&segments);
         let active_carrier = select_active_carrier(&segments, &document_kind);
@@ -877,6 +880,27 @@ pub(crate) fn database_band(path: &str) -> Option<StorageBand> {
         && components.next().is_none())
     .then(|| StorageBand::parse(band))
     .flatten()
+}
+
+/// A part of `kind` holding content of the class `holds`, whose `bytes`
+/// start at `offset` in the expanded bulk stream of the segment `token`, and
+/// whose stub links to the `RSe` record `ordinal` of that segment.
+pub(crate) fn bulk_record_part<'b>(
+    kind: &'static str,
+    (token, ordinal): (&IdentityKey, u32),
+    offset: u64,
+    bytes: &'b [u8],
+    holds: ArenaClass,
+) -> Part<'b> {
+    let stream =
+        cadmpeg_ir::stream_name!("RSeStorage/B").with_suffix(format_args!("{token}:expanded"));
+    let record = Identity::compose(
+        &cadmpeg_ir::identity_namespace!("inventor", "rse", "record"),
+        token.clone().dash(ordinal),
+    );
+    Part::at("inventor", kind, offset, bytes, [holds])
+        .in_stream(stream)
+        .contained_in(record)
 }
 
 #[cfg(test)]

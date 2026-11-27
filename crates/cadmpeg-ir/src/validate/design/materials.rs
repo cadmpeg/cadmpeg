@@ -18,7 +18,6 @@ use super::index::DesignIndex;
 use super::matching::Matchers;
 use super::names::derived_kinds;
 use super::selections::{resolving_definition, Stored};
-use super::states::Extent;
 
 pub(super) fn check<'a>(
     index: &DesignIndex<'a>,
@@ -53,12 +52,7 @@ pub(super) fn check<'a>(
             .get(scope)
             .and_then(|record| record.active_configuration.as_ref())
             == Some(&configuration.id);
-        let extents: Vec<&Extent<'a>> = matchers
-            .states()
-            .extents
-            .iter()
-            .filter(|extent| extent.scope == scope)
-            .collect();
+        let extents = matchers.states().extents_for_scope(scope);
         let matcher = (active && !extents.is_empty())
             .then(|| matchers.get(&Stored::Extents(extents)))
             .flatten();
@@ -77,13 +71,16 @@ pub(super) fn check<'a>(
                     super::error(
                         findings,
                         at,
-                        format_args!("a material's target picks something other than a body"),
+                        crate::rule!(
+                            "design.material-target-picks-something-other-body",
+                            "a material's target picks something other than a body"
+                        ),
                     );
                 }
                 let definition = resolving_definition(index, Some(&configuration.scope), pick);
                 if let Some(definition) = definition {
                     if !spanned.is_empty() && !spanned.contains(definition) {
-                        super::error(findings, at, format_args!("a material's target picks in {definition}, which is no definition the scope spans"));
+                        super::error(findings, at, crate::rule!("design.material-target-picks-no-definition-scope", "a material's target picks in {definition}, which is no definition the scope spans"));
                     }
                 }
                 match &pick.resolved {
@@ -94,7 +91,8 @@ pub(super) fn check<'a>(
                                     super::error(
                                         findings,
                                         at,
-                                        format_args!(
+                                        crate::rule!(
+                                            "design.material-target-resolves-no-body",
                                             "a material's target resolves to {}, which is no body",
                                             entity.id()
                                         ),
@@ -105,7 +103,7 @@ pub(super) fn check<'a>(
                             let owner = owners.get(body.as_str());
                             if let Some(owner) = owner {
                                 if !spanned.is_empty() && !spanned.contains(owner) {
-                                    super::error(findings, at, format_args!("a material's target resolves to {}, a body of {owner}, which is no definition the scope spans", body.as_str()));
+                                    super::error(findings, at, crate::rule!("design.material-target-resolves-body-no-definition", "a material's target resolves to {}, a body of {owner}, which is no definition the scope spans", body.as_str()));
                                 }
                             }
                             chosen.insert(body.as_str());
@@ -127,7 +125,7 @@ pub(super) fn check<'a>(
             }
             for (earlier, bodies) in &selected {
                 if let Some(body) = bodies.intersection(&chosen).next() {
-                    super::error(findings, at, format_args!("materials {earlier} and {entry} both select body {body}; no two entries select one body"));
+                    super::error(findings, at, crate::rule!("design.materials-both-select-body-no-two", "materials {earlier} and {entry} both select body {body}; no two entries select one body"));
                 }
             }
             selected.push((entry, chosen));

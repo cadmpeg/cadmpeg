@@ -149,6 +149,7 @@ fn finite_nonzero_signed_sphere_radius_is_valid_without_a_size_floor() {
         )
         .unwrap(),
     ));
+    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
@@ -187,7 +188,10 @@ fn tessellation_reference_validation_preserves_finding_order() {
         .unwrap(),
     );
     let mut findings = Vec::new();
-    super::check_tessellations(&ir, &mut findings);
+    super::check_tessellations(
+        &crate::index::ModelIndex::new_model_only(&ir),
+        &mut findings,
+    );
     assert_eq!(findings.len(), 2);
     for (finding, message) in findings.iter().zip([
         "references a missing tessellation body",

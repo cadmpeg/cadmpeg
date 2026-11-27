@@ -5,6 +5,7 @@ use crate::feature::tests::{
     raw_parameter, reference, reference_list, test_feature, test_property,
 };
 use crate::record_identity::{Located, RecordTypeId};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::scalar::{Angle, FiniteReal};
 
 struct Fixture {
@@ -96,6 +97,10 @@ impl Fixture {
     }
 
     fn admitted(&self) -> Result<[PmDcReference; 2], NativeReason> {
+        self.admitted_with_op().map(|(links, _)| links)
+    }
+
+    fn admitted_with_op(&self) -> Result<([PmDcReference; 2], BooleanOp), NativeReason> {
         sections(
             &self.source,
             |r| {
@@ -236,21 +241,21 @@ fn positional_definition() -> FeatureDefinition {
 fn validator_refuses_each_construction_value_outside_the_positional_form() {
     let f = Fixture::new();
     let definition = positional_definition();
-    assert!(matches_definition(&definition));
-    let base = serde_json::to_value(&definition).expect("definition");
+    assert!(matches_definition(&definition, BooleanOp::NewBody));
+    let base = json::to_value(&definition).expect("definition");
     for (field, value) in [
-        ("closed", serde_json::json!(true)),
-        ("solid", serde_json::json!(false)),
-        ("ruled", serde_json::json!(true)),
-        ("linearize", serde_json::json!(true)),
-        ("op", serde_json::json!("join")),
-        ("max_degree", serde_json::json!(3)),
-        ("allow_multi_profile_faces", serde_json::json!(true)),
+        ("closed", cadmpeg_core::json!(true)),
+        ("solid", cadmpeg_core::json!(false)),
+        ("ruled", cadmpeg_core::json!(true)),
+        ("linearize", cadmpeg_core::json!(true)),
+        ("op", cadmpeg_core::json!("join")),
+        ("max_degree", cadmpeg_core::json!(3)),
+        ("allow_multi_profile_faces", cadmpeg_core::json!(true)),
     ] {
         let mut changed = base.clone();
         changed["value"]["value"][field] = value;
-        let changed = serde_json::from_value(changed).expect("changed loft");
-        assert!(!matches_definition(&changed));
+        let changed = json::from_value(changed).expect("changed loft");
+        assert!(!matches_definition(&changed, BooleanOp::NewBody));
     }
     assert!(validates(
         &f.source,
@@ -295,10 +300,36 @@ fn native_loft_refusals_pin_the_operand_result_and_scalar_losses() {
             InventorLossCode::FeatureLoftControlsUnresolved.kind()
         );
     }
-    assert_eq!(
-        NativeReason::ResultTopology.note().code,
-        InventorLossCode::FeatureLoftResultOperandsNative.kind()
-    );
+    for reason in [
+        NativeReason::ResultTopology,
+        NativeReason::ResultStateFailed,
+        NativeReason::ResultStateBounded,
+        NativeReason::ResultJoin,
+    ] {
+        assert_eq!(
+            reason.note().code,
+            InventorLossCode::FeatureLoftResultOperandsNative.kind()
+        );
+    }
+    for (reason, detail) in [
+        (
+            NativeReason::ResultStateFailed,
+            "history state of the loft does not decode",
+        ),
+        (
+            NativeReason::ResultStateBounded,
+            "history state of the loft passed the local work cap of state views",
+        ),
+        (
+            NativeReason::ResultJoin,
+            "joined result body does not merge with a body of the preceding history state",
+        ),
+    ] {
+        assert_eq!(
+            reason.note().message,
+            format!("Retained Inventor solid loft natively: {detail}.")
+        );
+    }
     assert_eq!(
         NativeReason::SectionParameters.note().code,
         InventorLossCode::FeatureLoftSectionScalarsNative.kind()
@@ -424,4 +455,314 @@ fn validator_checks_vector_lengths_controls_sections_and_both_scalars() {
         });
         assert!(!accepts(&f));
     }
+}
+
+#[test]
+fn part_operation_one_is_a_new_body_and_three_is_a_join() {
+    let mut f = Fixture::new();
+    assert_eq!(
+        f.admitted_with_op().map(|(_, op)| op),
+        Ok(BooleanOp::NewBody)
+    );
+    for (value, expected) in [
+        (3, Ok(BooleanOp::Join)),
+        (2, Err(NativeReason::Slot(1))),
+        (4, Err(NativeReason::Slot(1))),
+        (0, Err(NativeReason::Slot(1))),
+    ] {
+        f.properties[1] = edited(&f.properties[1], |p| match &mut p.kind {
+            PmDcFeaturePropertyKind::Enumeration { value: slot, .. } => *slot = value,
+            _ => panic!("operation"),
+        });
+        assert_eq!(f.admitted_with_op().map(|(_, op)| op), expected);
+    }
+    // Another enumeration type is not the part operation.
+    f.properties[1] = edited(&f.properties[1], |p| match &mut p.kind {
+        PmDcFeaturePropertyKind::Enumeration {
+            type_value, value, ..
+        } => {
+            *type_value = 4;
+            *value = 3;
+        }
+        _ => panic!("operation"),
+    });
+    assert_eq!(f.admitted_with_op(), Err(NativeReason::Slot(1)));
+}
+
+#[test]
+fn the_validator_requires_the_definition_operation_to_equal_the_source_operation() {
+    let mut f = Fixture::new();
+    f.properties[1] = edited(&f.properties[1], |p| match &mut p.kind {
+        PmDcFeaturePropertyKind::Enumeration { value, .. } => *value = 3,
+        _ => panic!("operation"),
+    });
+    let new_body = positional_definition();
+    let mut joined = json::to_value(&new_body).expect("definition");
+    joined["value"]["value"]["op"] = cadmpeg_core::json!("join");
+    let joined: FeatureDefinition = json::from_value(joined).expect("joined loft");
+    assert!(matches_definition(&joined, BooleanOp::Join));
+    assert!(!matches_definition(&joined, BooleanOp::NewBody));
+    let check = |definition: &FeatureDefinition| {
+        validates(
+            &f.source,
+            definition,
+            |r| f.properties.get(usize::try_from(r.record_ordinal()?).ok()?),
+            |r| {
+                let i = usize::try_from(r.record_ordinal()?).ok()?.checked_sub(9)?;
+                Some((f.parameters.get(i)?, f.values.get(i)?))
+            },
+        )
+    };
+    assert!(check(&joined));
+    assert!(!check(&new_body));
+}
+
+/// A surface loft fixture: slot 6 holds the result wrapper, slot 13 is null,
+/// the first section is the face loop (its `source_value` is its own source
+/// index), and the second section selects a sketch wire.
+fn surface_fixture() -> Fixture {
+    let mut f = Fixture::new();
+    f.source = test_feature(20, 14, &[(0, 0), (1, 1), (2, 2), (9, 3), (10, 4), (6, 5)]);
+    f.properties[1] = edited(&f.properties[1], |p| {
+        let PmDcFeaturePropertyKind::Enumeration { value, .. } = &mut p.kind else {
+            panic!("part operation");
+        };
+        *value = 5;
+    });
+    f.properties[5] = edited(&f.properties[5], |p| {
+        p.kind = PmDcFeaturePropertyKind::SurfaceBody { body: reference(0) };
+    });
+    f.properties[6] = edited(&f.properties[6], |p| {
+        p.header.source_index = 7;
+        let PmDcFeaturePropertyKind::LoftSection { source_value, .. } = &mut p.kind else {
+            panic!("section");
+        };
+        *source_value = 7;
+    });
+    f
+}
+
+impl Fixture {
+    fn admitted_surface(&self) -> Result<SurfaceSections, NativeReason> {
+        surface_sections(
+            &self.source,
+            |r| {
+                self.properties
+                    .iter()
+                    .find(|p| Some(p.identity.record_ordinal) == r.record_ordinal())
+            },
+            |r| {
+                let ordinal = usize::try_from(r.record_ordinal()?).ok()?.checked_sub(9)?;
+                Some((self.parameters.get(ordinal)?, self.values.get(ordinal)?))
+            },
+        )
+    }
+}
+
+#[test]
+fn surface_loft_admits_one_sketch_section_and_one_face_loop_in_either_order() {
+    let f = surface_fixture();
+    let admitted = f.admitted_surface().expect("surface loft");
+    assert!(!admitted.sketch_first);
+    assert_eq!(admitted.face_loop.entity_link, reference(100));
+    assert_eq!(admitted.sketch.entity_link, reference(101));
+    assert_eq!(admitted.face_loop.record, reference(7));
+    let mut swapped = surface_fixture();
+    swapped.properties[0] = edited(&swapped.properties[0], |p| {
+        p.kind = PmDcFeaturePropertyKind::References {
+            family: PmDcFeatureReferenceFamily::LoftSections,
+            items: reference_list(&[8, 7]),
+        };
+    });
+    assert!(swapped.admitted_surface().expect("swapped").sketch_first);
+}
+
+#[test]
+fn surface_loft_refuses_forms_outside_the_positional_surface_vector() {
+    // The solid form is not a surface loft: slot 1 holds value 1 and slot 13
+    // holds the result collection.
+    assert!(Fixture::new().admitted_surface().is_err());
+    // Two sketch sections, or two face loops, are not the stored form.
+    let mut both_loops = surface_fixture();
+    both_loops.properties[7] = edited(&both_loops.properties[7], |p| {
+        p.header.source_index = 8;
+        let PmDcFeaturePropertyKind::LoftSection { source_value, .. } = &mut p.kind else {
+            panic!("section");
+        };
+        *source_value = 8;
+    });
+    assert_eq!(
+        both_loops.admitted_surface(),
+        Err(NativeReason::SectionRecord)
+    );
+    let mut both_sketch = surface_fixture();
+    both_sketch.properties[6] = edited(&both_sketch.properties[6], |p| {
+        let PmDcFeaturePropertyKind::LoftSection { source_value, .. } = &mut p.kind else {
+            panic!("section");
+        };
+        *source_value = 1;
+    });
+    assert_eq!(
+        both_sketch.admitted_surface(),
+        Err(NativeReason::SectionRecord)
+    );
+    // The result wrapper must be a surface body, and slot 13 stays null.
+    let mut no_body = surface_fixture();
+    no_body.properties[5] = edited(&no_body.properties[5], |p| {
+        p.kind = PmDcFeaturePropertyKind::Boolean {
+            name: String::new(),
+            name_value: 0,
+            value: false,
+        };
+    });
+    assert_eq!(
+        no_body.admitted_surface(),
+        Err(NativeReason::ResultCollection)
+    );
+    let mut solid_slot = surface_fixture();
+    solid_slot.source = test_feature(
+        20,
+        14,
+        &[(0, 0), (1, 1), (2, 2), (6, 5), (9, 3), (10, 4), (13, 5)],
+    );
+    assert_eq!(solid_slot.admitted_surface(), Err(NativeReason::Controls));
+}
+
+#[test]
+fn surface_definition_is_the_unguided_new_body_sheet_loft() {
+    let solid = positional_definition();
+    assert!(!matches_surface_definition(&solid));
+    let mut base = json::to_value(&solid).expect("definition");
+    base["value"]["value"]["solid"] = cadmpeg_core::json!(false);
+    let surface: FeatureDefinition = json::from_value(base.clone()).expect("surface loft");
+    assert!(matches_surface_definition(&surface));
+    assert!(!matches_definition(&surface, BooleanOp::NewBody));
+    for (field, value) in [
+        ("closed", cadmpeg_core::json!(true)),
+        ("ruled", cadmpeg_core::json!(true)),
+        ("linearize", cadmpeg_core::json!(true)),
+        ("op", cadmpeg_core::json!("join")),
+        ("max_degree", cadmpeg_core::json!(3)),
+    ] {
+        let mut changed = base.clone();
+        changed["value"]["value"][field] = value;
+        let changed = json::from_value(changed).expect("changed loft");
+        assert!(!matches_surface_definition(&changed));
+    }
+}
+
+#[test]
+fn a_solid_loft_with_a_bad_source_value_keeps_its_section_record_reason() {
+    let mut f = Fixture::new();
+    f.properties[6] = edited(&f.properties[6], |p| {
+        let PmDcFeaturePropertyKind::LoftSection { source_value, .. } = &mut p.kind else {
+            panic!("section");
+        };
+        *source_value = 2;
+    });
+    assert_eq!(f.admitted(), Err(NativeReason::SectionRecord));
+    // The reason holds whatever later section check also fails.
+    f.properties[8] = edited(&f.properties[8], |p| {
+        let PmDcFeaturePropertyKind::Enumeration { value, .. } = &mut p.kind else {
+            panic!("condition");
+        };
+        *value = 1;
+    });
+    assert_eq!(f.admitted(), Err(NativeReason::SectionRecord));
+}
+
+#[test]
+fn the_face_loop_participant_is_the_other_participant_with_its_record_type() {
+    use crate::feature::loft_sweep::slots::SURFACE_LOFT_CLASS;
+    use crate::feature::tests::test_label;
+    let participant = type_id_string(FACE_LOOP_PARTICIPANT_TYPE);
+    let other = type_id_string(SECTION_TYPE);
+    // Participant values are record ordinals plus one.
+    let label = test_label(20, 1, SURFACE_LOFT_CLASS, &[51, 52]);
+    let typed = |ordinal: u32| match ordinal {
+        51 => Some(participant.as_str()),
+        50 => Some(other.as_str()),
+        _ => None,
+    };
+    assert!(face_loop_participant(&label, 50, typed));
+    // The sketch participant is the first one here: it is not the loop.
+    assert!(!face_loop_participant(&label, 51, typed));
+    assert!(!face_loop_participant(&label, 49, typed));
+    assert!(!face_loop_participant(&label, 50, |_| None));
+    let alone = test_label(20, 1, SURFACE_LOFT_CLASS, &[51]);
+    assert!(!face_loop_participant(&alone, 50, typed));
+    let twice = test_label(20, 1, SURFACE_LOFT_CLASS, &[51, 51]);
+    assert!(!face_loop_participant(&twice, 50, typed));
+}
+
+#[test]
+fn only_a_surface_loft_with_a_native_section_counts_as_unresolved() {
+    use cadmpeg_ir::features::profiles::{LoftSection, PlanarProfileRef, ProfileRef};
+    let mut base = json::to_value(positional_definition()).expect("definition");
+    base["value"]["value"]["solid"] = cadmpeg_core::json!(false);
+    let surface: FeatureDefinition = json::from_value(base.clone()).expect("surface loft");
+    let FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) = &surface else {
+        panic!("loft");
+    };
+    // The sketch sections of the positional definition are resolved.
+    assert!(!has_native_section(&surface));
+    let mut native = sections.clone();
+    native[0] = LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::native(
+        "record".to_owned(),
+    )));
+    let mut with_native = base.clone();
+    with_native["value"]["value"]["sections"] = json::to_value(&native).expect("sections");
+    let with_native: FeatureDefinition = json::from_value(with_native).expect("loft");
+    assert!(has_native_section(&with_native));
+    // The solid loft keeps its own accounting.
+    let mut solid = json::to_value(&with_native).expect("definition");
+    solid["value"]["value"]["solid"] = cadmpeg_core::json!(true);
+    let solid: FeatureDefinition = json::from_value(solid).expect("solid loft");
+    assert!(!has_native_section(&solid));
+}
+
+#[test]
+fn the_slot_6_wrapper_must_not_be_named_by_an_earlier_feature() {
+    let f = surface_fixture();
+    // The loft is feature 20 at position 5; its wrapper is record 5.
+    let other = |ordinal: u32, wrapper: Option<u32>| {
+        let slots: Vec<(usize, u32)> = wrapper.map(|w| (3, w)).into_iter().collect();
+        test_feature(ordinal, 14, &slots)
+    };
+    let features = [f.source.clone(), other(21, Some(5)), other(22, None)];
+    let at = |feature: &PmDcFeature| Some(u64::from(feature.identity.record_ordinal));
+    // A later feature that names the wrapper consumes it.
+    assert!(!wrapper_used_earlier(&f.source, &features, at));
+    // An earlier feature that names it created or owns it.
+    let earlier = |feature: &PmDcFeature| Some(100 - u64::from(feature.identity.record_ordinal));
+    assert!(wrapper_used_earlier(&f.source, &features, earlier));
+    // A feature without a position cannot be ordered.
+    let unplaced = |feature: &PmDcFeature| (feature.identity.record_ordinal == 20).then_some(5);
+    assert!(wrapper_used_earlier(&f.source, &features, unplaced));
+    // A loft without a position, or without a wrapper, is refused.
+    assert!(wrapper_used_earlier(&f.source, &features, |_| None));
+    let bare = test_feature(20, 14, &[]);
+    assert!(wrapper_used_earlier(&bare, &features, at));
+}
+
+#[test]
+fn a_section_with_source_index_1_is_refused_in_either_surface_form() {
+    // A sketch section with source index 1 stores source_value 1, which is
+    // also its own index: it would read as a face loop.
+    let mut sketch = surface_fixture();
+    sketch.properties[7] = edited(&sketch.properties[7], |p| p.header.source_index = 1);
+    assert_eq!(sketch.admitted_surface(), Err(NativeReason::SectionRecord));
+    // A face-loop section with source index 1 stores the same value.
+    let mut face_loop = surface_fixture();
+    face_loop.properties[6] = edited(&face_loop.properties[6], |p| {
+        p.header.source_index = 1;
+        let PmDcFeaturePropertyKind::LoftSection { source_value, .. } = &mut p.kind else {
+            panic!("section");
+        };
+        *source_value = 1;
+    });
+    assert_eq!(
+        face_loop.admitted_surface(),
+        Err(NativeReason::SectionRecord)
+    );
 }

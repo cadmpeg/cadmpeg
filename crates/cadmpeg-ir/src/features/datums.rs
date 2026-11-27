@@ -224,7 +224,7 @@ impl JsonSchema for DatumAxis {
         let mut schema = DatumAxisDraft::json_schema(generator);
         schema.insert(
             "allOf".into(),
-            serde_json::json!([{"anyOf": [
+            cadmpeg_core::json!([{"anyOf": [
                 {"required":["origin"]}, {"required":["direction"]},
                 {"properties":{"inputs":{"minItems":1}}},
                 {"properties":{"native_options":{"minProperties":1}}},

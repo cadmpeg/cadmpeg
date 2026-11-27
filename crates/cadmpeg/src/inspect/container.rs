@@ -45,10 +45,7 @@ pub(in crate::inspect) enum Listing {
 /// ZIP central directory or CFB directory does not parse.
 pub(super) fn list(bytes: &[u8], limits: ResourceLimits) -> Result<Listing> {
     let arena = DecodeArena::new();
-    let policy = DecodePolicy {
-        limits,
-        ..DecodePolicy::default()
-    };
+    let policy = DecodePolicy { limits };
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .context("the file does not fit the resource-limit profile")?;
     match detect(bytes) {
@@ -78,10 +75,7 @@ pub(super) fn list(bytes: &[u8], limits: ResourceLimits) -> Result<Listing> {
 /// the member fails structural, size, or integrity checks.
 pub(super) fn extract(bytes: &[u8], limits: ResourceLimits, name: &str) -> Result<Vec<u8>> {
     let arena = DecodeArena::new();
-    let policy = DecodePolicy {
-        limits,
-        ..DecodePolicy::default()
-    };
+    let policy = DecodePolicy { limits };
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .context("the file does not fit the resource-limit profile")?;
     match detect(bytes) {
@@ -209,7 +203,7 @@ pub(super) fn render_json(listing: &Listing) -> Result<String> {
             entries
                 .iter()
                 .map(|entry| {
-                    serde_json::json!({
+                    cadmpeg_core::json!({
                         "name": entry.name,
                         "compression": entry.compression.label(),
                         "crc32": entry.crc32,
@@ -226,14 +220,14 @@ pub(super) fn render_json(listing: &Listing) -> Result<String> {
             "cfb",
             rows.iter()
                 .map(|entry| match entry {
-                    CompoundEntry::Storage(storage) => serde_json::json!({
+                    CompoundEntry::Storage(storage) => cadmpeg_core::json!({
                         "kind": "storage",
                         "path": storage.path(),
                         "size": null,
                         "allocation": null,
                         "directory_id": entry.directory_id(),
                     }),
-                    CompoundEntry::Stream(stream) => serde_json::json!({
+                    CompoundEntry::Stream(stream) => cadmpeg_core::json!({
                         "kind": "stream",
                         "path": stream.path(),
                         "size": stream.logical_size(),
@@ -244,7 +238,7 @@ pub(super) fn render_json(listing: &Listing) -> Result<String> {
                 .collect(),
         ),
     };
-    let payload = serde_json::json!({
+    let payload = cadmpeg_core::json!({
         "subcommand": "container",
         "container_kind": container_kind,
         "entries": entries,

@@ -12,13 +12,18 @@ use cadmpeg_ir::math::Point3;
 
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
+mod cages;
 mod computed_values;
 mod coverage;
+mod edge_forms;
 mod encoding;
+mod exact_forms;
 mod free_geometry;
 mod model;
 mod nurbs;
+mod partial;
 mod planar;
+mod reported_writes;
 mod targets;
 
 #[test]
@@ -38,6 +43,29 @@ fn empty_point_cloud_cannot_emit_infinite_bounds() {
     assert!(super::point_cloud_payload(&[]).is_err());
 }
 
+/// Writes `ir` as archive version 8 and reads the archive back: the decoded
+/// document and each write loss as `namespace/code: message`.
+fn written(ir: &CadIr) -> (CadIr, Vec<String>) {
+    let mut bytes = Vec::new();
+    let report = RhinoCodec
+        .plan(
+            cadmpeg_ir::codec::write::EncodeInput::new(ir, None).with_target(
+                TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            ),
+        )
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("the writer writes the document");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the written archive decodes");
+    let losses = report
+        .losses
+        .iter()
+        .map(|loss| format!("{}: {}", loss.code, loss.message))
+        .collect();
+    (decoded.ir().clone(), losses)
+}
+
 fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usize) {
     for version in [
         RhinoArchiveVersion::V5,
@@ -48,8 +76,8 @@ fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usi
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                cadmpeg_ir::codec::write::EncodeInput::new(ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");

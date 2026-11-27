@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::products::{
     ExternalDocument, GeneralTolerance, MemberAction, Occurrence, ProductDefinition,
@@ -12,15 +14,15 @@ use crate::products::{
 
 /// The value reads, and writes back as the same JSON.
 fn reads_back<T: DeserializeOwned + Serialize>(wire: &Value) -> T {
-    let value: T = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(&serde_json::to_value(&value).unwrap(), wire);
+    let value: T = json::from_value(wire.clone()).unwrap();
+    assert_eq!(&json::to_value(&value).unwrap(), wire);
     value
 }
 
 /// The value is refused, and the refusal names `named`.
 fn refused<T: DeserializeOwned + std::fmt::Debug>(wire: Value, named: &str) {
     let text = wire.to_string();
-    let error = serde_json::from_value::<T>(wire).unwrap_err();
+    let error = json::from_value::<T>(wire).unwrap_err();
     assert!(error.to_string().contains(named), "{text}: {error}");
 }
 
@@ -57,7 +59,6 @@ fn definition() -> Value {
             "features": [],
             "default": true
         }],
-        "sketches": [],
         "units": {"length": "mm", "angle": "deg"},
         "general_tolerance": {
             "linear": {"kind": "iso2768", "value": "medium"},
@@ -82,8 +83,7 @@ fn a_definition_reads_back_with_every_field_stated() {
         "bodies": [],
         "occurrences": [],
         "instance_bodies": [],
-        "representations": [],
-        "sketches": []
+        "representations": []
     });
     let read: ProductDefinition = reads_back(&minimal);
     assert_eq!(read.kind, None);
@@ -110,7 +110,6 @@ fn an_unstated_definition_field_has_one_spelling() {
         "occurrences",
         "instance_bodies",
         "representations",
-        "sketches",
         "bom_properties",
     ] {
         let mut wire = definition();

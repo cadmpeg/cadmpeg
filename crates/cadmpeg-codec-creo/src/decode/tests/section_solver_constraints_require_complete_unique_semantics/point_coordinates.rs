@@ -9,6 +9,7 @@ use crate::decode::sketch::skamp::{
 };
 use crate::feature::definitions::test_support::{append_points, with_points};
 use crate::feature::definitions::{ScalarLane, VariableType};
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
 #[test]
@@ -37,6 +38,7 @@ fn section_solver_point_coordinates_merge_compatible_and_reject_conflicting_inci
     synchronize_segment_count(&mut coincident_definition);
     coincident_definition.variables = Some(with_points(
         crate::feature::definitions::FeatureVariableTable {
+            rows_end: 0,
             declared_count: 0,
             entity_ref: None,
             rows: Vec::new(),
@@ -292,7 +294,7 @@ fn section_solver_point_coordinates_merge_compatible_and_reject_conflicting_inci
         .into_iter()
         .find(|point| point.point_id == 2)
         .expect("conflicting point record");
-    let conflicting_record = serde_json::to_value(conflicting_record).expect("point record");
+    let conflicting_record = json::to_value(conflicting_record).expect("point record");
     assert_eq!(conflicting_record["state"], "conflicting");
     assert_eq!(
         [&conflicting_record["u"], &conflicting_record["v"]],

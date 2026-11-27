@@ -739,6 +739,7 @@ fn resolves_oblique_reference_from_an_earlier_extruded_line() {
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::test_support::with_points(
             FeatureVariableTable {
+                rows_end: 0,
                 declared_count: 0,
                 entity_ref: None,
                 rows: Vec::new(),
@@ -1122,6 +1123,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::test_support::with_points(
             FeatureVariableTable {
+                rows_end: 0,
                 declared_count: 0,
                 entity_ref: None,
                 rows: Vec::new(),
@@ -1330,6 +1332,7 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::test_support::with_points(
             FeatureVariableTable {
+                rows_end: 0,
                 declared_count: 0,
                 entity_ref: None,
                 rows: Vec::new(),

@@ -6,7 +6,7 @@ use std::hash::{BuildHasherDefault, Hasher};
 
 /// Fast deterministic hasher for bounded internal document identity tables.
 #[derive(Default)]
-struct IdentityHasher(u64);
+pub struct IdentityHasher(u64);
 
 impl IdentityHasher {
     #[inline]
@@ -38,9 +38,20 @@ impl Hasher for IdentityHasher {
             self.mix(u64::from_ne_bytes(tail));
         }
     }
+
+    #[inline]
+    fn write_u64(&mut self, value: u64) {
+        self.mix(value);
+    }
+
+    #[inline]
+    fn write_usize(&mut self, value: usize) {
+        self.write(&value.to_ne_bytes());
+    }
 }
 
-type FastBuildHasher = BuildHasherDefault<IdentityHasher>;
+/// Builds the fast deterministic hasher of identity tables.
+pub type FastBuildHasher = BuildHasherDefault<IdentityHasher>;
 
 /// Membership query over a set of identities.
 pub(crate) trait IdentitySet {

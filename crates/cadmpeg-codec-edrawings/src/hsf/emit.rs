@@ -3,7 +3,9 @@
 //!
 //! Each library body that an instance references becomes one body, built from
 //! the triangles of all its shells by the mesh B-rep module. An instance
-//! references a list of bodies, its body set. A file with one instance and no
+//! references a list of bodies, its body set. A library body that several body
+//! sets list becomes one body for each set, so that each body has one owning
+//! definition. A file with one instance and no
 //! sub-assembly is a plain part: one part definition holds the bodies, and the
 //! instance matrix moves the points. Any other file is an assembly: one part
 //! definition per distinct body set, one group definition for the assembly and
@@ -12,24 +14,27 @@
 //! when it has one, with `structure.subassembly-placement-assumed`, and the
 //! identity otherwise.
 
-use std::collections::BTreeMap;
+use std::collections::{btree_map, BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::ids::{BodyId, IdentityKey, UnknownId};
 use cadmpeg_ir::products::{
     ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::{dropped_with, GivenUpPart, GivenUpRecord};
 
 use super::scene::{Component, Scene};
 use super::shape::{append_shell, MeshData, MILLIMETRES_PER_METRE};
 use crate::dialect::Grammar;
 use crate::loss::EdrawingsLossCode;
-use crate::mesh_brep::{add_mesh_body, MeshBrepOptions, MeshInput, MAX_POSITIONS, MAX_TRIANGLES};
+use crate::mesh_brep::{
+    add_mesh_body, MeshBrepError, MeshBrepOptions, MeshInput, MAX_POSITIONS, MAX_TRIANGLES,
+};
 
 /// Operation name for the retained mesh bytes.
 const RETAIN_MESH: &str = "edrawings_mesh";
@@ -230,8 +235,8 @@ struct BodySets {
     sets: Vec<Vec<usize>>,
     /// Index into `sets` by instance node.
     of_instance: BTreeMap<usize, usize>,
-    /// Instances that name no library body.
-    unresolved: Vec<String>,
+    /// Instance nodes that name no library body.
+    unresolved: Vec<usize>,
     /// Include references that name no library body in instances that name
     /// another one.
     dangling: usize,
@@ -263,7 +268,7 @@ fn body_sets(scene: &Scene<'_>, instances: &[usize]) -> BodySets {
             }
         }
         if set.is_empty() {
-            result.unresolved.push(display_name(scene, index));
+            result.unresolved.push(index);
             continue;
         }
         result.dangling += missing;
@@ -319,12 +324,23 @@ fn appearance_losses(scene: &Scene<'_>, built: &[usize], losses: &mut Vec<LossNo
     }
 }
 
-/// Emits `scene` into `ir`. Returns whether any body was built.
+/// The id of the body built under `scope`.
+fn body_id(scope: &str) -> BodyId {
+    BodyId::compose(
+        &cadmpeg_ir::identity_namespace!("edrawings", "model", "body"),
+        IdentityKey::encode_segment(scope),
+    )
+}
+
+/// Emits `scene` into `ir`, and gives up into `given_up` the object records
+/// and the tree nodes it does not transfer. Returns whether any body was
+/// built.
 pub(super) fn emit(
     ctx: &DecodeContext<'_>,
     scene: &Scene<'_>,
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<bool, CodecError> {
     let instances: Vec<usize> = (0..scene.nodes.len())
         .filter(|&i| scene.nodes.get(i).is_some_and(|n| n.is_instance))
@@ -332,15 +348,28 @@ pub(super) fn emit(
     let single = instances.len() == 1 && scene.nodes.len() == 1;
     let sets = body_sets(scene, &instances);
 
-    // The library bodies in order of first use.
+    // The library bodies in order of first use, each built for the first set
+    // that lists it; every later set that lists it gets a copy of its own.
     let mut order: Vec<usize> = Vec::new();
     let mut position: BTreeMap<usize, usize> = BTreeMap::new();
-    for set in &sets.sets {
+    let mut builds: Vec<(usize, String)> = Vec::new();
+    let mut build_of: BTreeMap<(usize, usize), usize> = BTreeMap::new();
+    for (set_index, set) in sets.sets.iter().enumerate() {
         for &body in set {
             position.entry(body).or_insert_with(|| {
                 order.push(body);
+                builds.push((body, format!("body{}", order.len() - 1)));
+                build_of.insert((set_index, body), builds.len() - 1);
                 order.len() - 1
             });
+        }
+    }
+    for (set_index, set) in sets.sets.iter().enumerate() {
+        for &body in set {
+            if let (Some(&k), None) = (position.get(&body), build_of.get(&(set_index, body))) {
+                builds.push((body, format!("body{k}-{set_index}")));
+                build_of.insert((set_index, body), builds.len() - 1);
+            }
         }
     }
     let first_instance_of_set = |set: usize| {
@@ -358,15 +387,19 @@ pub(super) fn emit(
     let mut totals = Totals::default();
     let mut shell_failures: Vec<String> = Vec::new();
     let mut shell_failure_count = 0_usize;
+    let mut shell_parts: BTreeMap<u32, Option<UnknownId>> = BTreeMap::new();
+    let shell_code = EdrawingsLossCode::ModelShellInvalid.kind();
     let mut failed_bodies: Vec<String> = Vec::new();
+    let mut body_charges: Vec<LossNote> = Vec::new();
+    let body_code = EdrawingsLossCode::GeometryBodyFailed.kind();
     let mut admitted = u64_from_index(ir.entity_count());
     let options = MeshBrepOptions::default();
     let lone_set = matches!(sets.sets.as_slice(), [set] if set.len() == 1);
     let world = single_node
         .and_then(|node| scene.nodes.get(node))
         .and_then(|n| n.matrix);
-    for (k, &body_index) in order.iter().enumerate() {
-        let Some(library) = scene.bodies.get(body_index) else {
+    for (body_index, scope) in &builds {
+        let Some(library) = scene.bodies.get(*body_index) else {
             built.push(None);
             continue;
         };
@@ -375,6 +408,7 @@ pub(super) fn emit(
             _ => body_name(&library.path).to_owned(),
         };
         let mut mesh = MeshData::default();
+        let mut failed_shell: Option<UnknownId> = None;
         for &slot in &library.slots {
             if let Err(error) = append_shell(
                 scene,
@@ -384,6 +418,30 @@ pub(super) fn emit(
                 &mut mesh,
             ) {
                 shell_failure_count += 1;
+                if let btree_map::Entry::Vacant(entry) = shell_parts.entry(slot) {
+                    let part = match scene.objects.get(&slot) {
+                        Some(stored) => {
+                            let part = super::give_up_span(
+                                ctx,
+                                scene,
+                                super::OBJECT_PART,
+                                stored.span,
+                                CodecError::malformed(format_args!(
+                                    "{shell_code}: {}",
+                                    error.text()
+                                )),
+                            )?;
+                            let id = part.id().clone();
+                            given_up.push(part);
+                            Some(id)
+                        }
+                        None => None,
+                    };
+                    entry.insert(part);
+                }
+                if failed_shell.is_none() {
+                    failed_shell = shell_parts.get(&slot).cloned().flatten();
+                }
                 if shell_failures.len() < MAX_LISTED {
                     shell_failures.push(format!("object {slot} of {name}: {}", error.text()));
                 }
@@ -394,12 +452,11 @@ pub(super) fn emit(
                 + u64_from_index(mesh.triangles.len()) * TRIANGLE_BYTES,
             RETAIN_MESH,
         )?;
-        let scope = format!("body{k}");
         let colour = library
             .colour
             .map(|[r, g, b]| Color::from_rgba8(r, g, b, u8::MAX));
         let input = MeshInput {
-            scope: &scope,
+            scope,
             name: Some(&name),
             color: colour,
             positions: &mesh.positions,
@@ -432,6 +489,11 @@ pub(super) fn emit(
             }
             Err(error) => {
                 failed_bodies.push(format!("{name} ({error})"));
+                let body = body_id(scope);
+                body_charges.push(match (&error, &failed_shell) {
+                    (MeshBrepError::Empty, Some(shell)) => dropped_with(&body, shell),
+                    _ => GivenUpRecord::new(&body, format_args!("{body_code}: {error}")).loss(),
+                });
                 built.push(None);
             }
         }
@@ -454,13 +516,33 @@ pub(super) fn emit(
             failed_bodies.len(),
             lead(&failed_bodies)
         )));
+        losses.append(&mut body_charges);
     }
     if !sets.unresolved.is_empty() {
+        let names: Vec<String> = sets
+            .unresolved
+            .iter()
+            .map(|&index| display_name(scene, index))
+            .collect();
         losses.push(EdrawingsLossCode::ModelObjectInvalid.note(format!(
             "{} instances name no library body and were left out: {}",
-            sets.unresolved.len(),
-            lead(&sets.unresolved)
+            names.len(),
+            lead(&names)
         )));
+        let code = EdrawingsLossCode::ModelObjectInvalid.kind();
+        for node in sets
+            .unresolved
+            .iter()
+            .filter_map(|&index| scene.nodes.get(index))
+        {
+            given_up.push(super::give_up_span(
+                ctx,
+                scene,
+                super::NODE_PART,
+                node.span,
+                CodecError::malformed(format_args!("{code}: the instance names no library body")),
+            )?);
+        }
     }
     if sets.dangling > 0 {
         losses.push(EdrawingsLossCode::ModelObjectInvalid.note(format!(
@@ -517,11 +599,13 @@ pub(super) fn emit(
     if let Some(message) = dropped_message(&totals) {
         losses.push(EdrawingsLossCode::GeometryDegenerateTriangles.note(message));
     }
-    let built_libraries: Vec<usize> = order
+    let built_libraries: Vec<usize> = builds
         .iter()
         .zip(&built)
         .filter(|(_, body)| body.is_some())
-        .map(|(&library, _)| library)
+        .map(|(&(library, _), _)| library)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
         .collect();
     appearance_losses(scene, &built_libraries, losses);
 
@@ -530,8 +614,8 @@ pub(super) fn emit(
     for (set_index, set) in sets.sets.iter().enumerate() {
         let bodies: Vec<BodyId> = set
             .iter()
-            .filter_map(|body| position.get(body))
-            .filter_map(|&k| built.get(k).and_then(Option::as_ref))
+            .filter_map(|&body| build_of.get(&(set_index, body)))
+            .filter_map(|&build| built.get(build).and_then(Option::as_ref))
             .map(|body| body.id.clone())
             .collect();
         if bodies.is_empty() {
@@ -615,8 +699,8 @@ pub(super) fn emit(
             assembly_definition.get(&index)
         };
         let Some(&definition) = definition else {
-            if node.is_instance && sets.of_instance.contains_key(&index) {
-                dropped_occurrences.push(display_name(scene, index));
+            if let Some(&set) = sets.of_instance.get(&index) {
+                dropped_occurrences.push((index, set));
             }
             continue;
         };
@@ -628,9 +712,8 @@ pub(super) fn emit(
             invalid_placements.push(display_name(scene, index));
             Transform::identity()
         });
-        let number = ir.model.occurrences.len();
         let mut occurrence = Occurrence::new(
-            crate::ids::occurrence(number),
+            crate::ids::occurrence(index),
             crate::ids::definition(definition),
             Some(transform),
         );
@@ -654,12 +737,27 @@ pub(super) fn emit(
         )));
     }
     if !dropped_occurrences.is_empty() {
+        let names: Vec<String> = dropped_occurrences
+            .iter()
+            .map(|&(index, _)| display_name(scene, index))
+            .collect();
         losses.push(EdrawingsLossCode::StructureOccurrenceDropped.note(format!(
             "{} instances have no occurrence because none of their bodies was built, and their \
              placements were not transferred: {}",
-            dropped_occurrences.len(),
-            lead(&dropped_occurrences)
+            names.len(),
+            lead(&names)
         )));
+        for &(index, set) in &dropped_occurrences {
+            let body = sets
+                .sets
+                .get(set)
+                .and_then(|bodies| bodies.first())
+                .and_then(|&body| build_of.get(&(set, body)))
+                .and_then(|&build| builds.get(build));
+            if let Some((_, scope)) = body {
+                losses.push(dropped_with(crate::ids::occurrence(index), body_id(scope)));
+            }
+        }
     }
     // EDR-09: a matrix on a sub-assembly has no observed case.
     let matrixed: Vec<String> = scene

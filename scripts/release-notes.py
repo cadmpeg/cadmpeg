@@ -4,15 +4,21 @@
 
 The notes have these sections, each only when it has content:
 
-* Compatibility: an IR_VERSION change, and every line of the
-  ``## Breaking change`` section of a pull-request description.
+* Compatibility: an IR_VERSION change, curated ``### Breaking`` lines from
+  changelog fragments added by the release, and every line of the
+  ``## Breaking change`` section of a pull-request description (collapsed
+  below the curated lines when fragments supply ``### Breaking`` notes).
 * Support levels: changed headline levels in ``dialect-support.toml``.
 * Changes: one collapsed list per area, from the commit subject scope.
 * Contributors: the GitHub logins of the change authors, without bots.
 
 The changes are the first-parent commits after the previous release tag.
+The fragments are the ``changelog.d/*.md`` files that the release adds
+(``changelog.d/README.md`` states their form).
 Pull-request data comes from the GitHub GraphQL API through ``gh``, so ``gh``
-must be authenticated.
+must be authenticated. A commit whose merged pull request GitHub does not
+associate with it (a rewritten history) takes the pull request its subject
+names.
 """
 
 from __future__ import annotations
@@ -24,6 +30,7 @@ import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 
 IR_FILE = "crates/cadmpeg-ir/src/document.rs"
 IR_VERSION = re.compile(r'pub const IR_VERSION: &str = "(\d+)";')
@@ -36,6 +43,11 @@ HEADING = re.compile(r"^#{1,6}\s")
 COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 BREAKING = re.compile(r"^Breaking:\s*", re.IGNORECASE)
 NO_NOTE = {"", "-", "none", "n/a", "na"}
+FIRST_SENTENCE = re.compile(r"[.:;](?:\s|$)")
+FRAGMENT_DIR = "changelog.d"
+FRAGMENT_README = "README.md"
+FRAGMENT_HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$")
+FRAGMENT_BREAKING = re.compile(r"^breaking(?: changes?)?$", re.IGNORECASE)
 GRAPHQL_BATCH = 40
 SHORT_SHA = 10
 
@@ -56,10 +68,12 @@ AREAS = {
     "creo": "Creo",
     "pvz": "Creo View",
     "edrawings": "eDrawings",
+    "alibre": "Alibre",
     "nx": "NX",
     "rhino": "Rhino",
     "catia": "CATIA",
     "solidedge": "Solid Edge",
+    "ironcad": "IronCAD",
     "sat": "ACIS",
     "asm": "Shape Manager",
     "parasolid": "Parasolid",
@@ -83,6 +97,12 @@ fragment change on Commit {
   associatedPullRequests(first: 5) {
     nodes { number body mergeCommit { oid } author { __typename login } }
   }
+}
+"""
+NUMBERED_FRAGMENT = """
+fragment numbered on IssueOrPullRequest {
+  __typename
+  ... on PullRequest { number body mergedAt author { __typename login } }
 }
 """
 
@@ -141,21 +161,42 @@ def login_of(actor: dict | None) -> str | None:
     return None if not login or login.endswith("[bot]") else login
 
 
-def apply_github(change: Change, commit: dict | None) -> None:
-    """Take the pull request merged as `change`, or else the commit author."""
-    if commit is None:
-        return
+def apply_github(change: Change, commit: dict | None, numbered: dict | None = None) -> None:
+    """Take the pull request merged as `change`, else the merged pull request
+    its subject names, else the commit author."""
     pulls = [
         pull
-        for pull in commit["associatedPullRequests"]["nodes"]
+        for pull in ((commit or {}).get("associatedPullRequests") or {}).get("nodes", [])
         if (pull.get("mergeCommit") or {}).get("oid") == change.sha
     ]
+    if not pulls and numbered and numbered.get("__typename") == "PullRequest" and numbered.get("mergedAt"):
+        pulls = [numbered]
     if pulls:
         change.number = pulls[0]["number"]
         change.body = pulls[0].get("body") or ""
         change.login = login_of(pulls[0].get("author"))
-    else:
+    elif commit is not None:
         change.login = login_of((commit.get("author") or {}).get("user"))
+
+
+def graphql_data(output: str, stderr: str, optional: str) -> dict:
+    """The response data, refusing every error but a missing `optional` alias."""
+    try:
+        response = json.loads(output)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(f"GitHub GraphQL failed: {stderr.strip() or error}") from error
+    errors = [
+        error
+        for error in response.get("errors") or []
+        if not (
+            error.get("type") == "NOT_FOUND"
+            and len(error.get("path") or []) == 2
+            and str(error["path"][1]).startswith(optional)
+        )
+    ]
+    if errors or not response.get("data"):
+        raise RuntimeError(f"GitHub GraphQL errors: {errors or response}")
+    return response["data"]
 
 
 def fetch_github(repo: str, changes: list[Change]) -> None:
@@ -164,28 +205,36 @@ def fetch_github(repo: str, changes: list[Change]) -> None:
         batch = changes[start : start + GRAPHQL_BATCH]
         fields = "\n".join(
             f'c{index}: object(oid: "{change.sha}") {{ ...change }}'
+            + (
+                f"\np{index}: issueOrPullRequest(number: {change.number}) {{ ...numbered }}"
+                if change.number is not None
+                else ""
+            )
             for index, change in enumerate(batch)
         )
         query = (
             "query($owner: String!, $name: String!) {\n"
             f"  repository(owner: $owner, name: $name) {{\n{fields}\n  }}\n}}\n{CHANGE_FRAGMENT}"
+            + (NUMBERED_FRAGMENT if any(change.number is not None for change in batch) else "")
         )
-        output = subprocess.run(
+        # gh exits non-zero on any GraphQL error, also on a subject number
+        # that names no issue or pull request; graphql_data decides.
+        result = subprocess.run(
             ["gh", "api", "graphql", "-f", f"query={query}", "-f", f"owner={owner}", "-f", f"name={name}"],
-            check=True,
+            check=False,
             stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-        ).stdout
-        response = json.loads(output)
-        if response.get("errors"):
-            raise RuntimeError(f"GitHub GraphQL errors: {response['errors']}")
-        repository = response["data"]["repository"]
+        )
+        repository = graphql_data(result.stdout, result.stderr, "p")["repository"]
         for index, change in enumerate(batch):
-            apply_github(change, repository.get(f"c{index}"))
+            apply_github(change, repository.get(f"c{index}"), repository.get(f"p{index}"))
 
 
 def breaking_notes(body: str) -> list[str]:
-    """Lines of the first `## Breaking change` section, without comments and placeholders."""
+    """Lines of the first `## Breaking change` section, without comments and
+    placeholders. A line whose first sentence is a placeholder ("None. ...")
+    states no break."""
     notes = []
     inside = False
     for line in COMMENT.sub("", body).splitlines():
@@ -198,9 +247,58 @@ def breaking_notes(body: str) -> list[str]:
         for bullet in ("- ", "* "):
             text = text.removeprefix(bullet)
         text = text.strip()
-        if text.lower().rstrip(".") not in NO_NOTE:
+        if FIRST_SENTENCE.split(text, maxsplit=1)[0].strip().lower() not in NO_NOTE:
             notes.append(text)
     return notes
+
+
+def fragment_breaking_notes(texts: list[str]) -> list[str]:
+    """Bullet lines under ``### Breaking`` headings in changelog fragments, in order.
+
+    An indented line after a bullet continues it. Bullets outside a
+    ``### Breaking`` (or ``### Breaking change(s)``) section are ignored.
+    """
+    notes: list[str] = []
+    for text in texts:
+        inside = False
+        continuing = False
+        for line in COMMENT.sub("", text).splitlines():
+            stripped = line.strip()
+            match = FRAGMENT_HEADING.match(stripped)
+            if match:
+                inside = bool(FRAGMENT_BREAKING.match(match.group(1)))
+                continuing = False
+            elif inside and stripped.startswith(("- ", "* ")):
+                bullet_text = stripped[2:].strip()
+                if bullet_text:
+                    notes.append(bullet_text)
+                    continuing = True
+                else:
+                    continuing = False
+            elif inside and stripped and continuing and line[:1].isspace():
+                notes[-1] = f"{notes[-1]} {stripped}"
+            else:
+                continuing = False
+    return notes
+
+
+def added_fragments(previous: str, tag: str) -> list[str]:
+    """The fragments present at `tag` and absent at `previous`, by file name."""
+    names = git(
+        "diff",
+        "--name-only",
+        "--no-renames",
+        "--diff-filter=A",
+        previous,
+        tag,
+        "--",
+        f"{FRAGMENT_DIR}/*.md",
+    ).split()
+    return [
+        git_file(tag, name) or ""
+        for name in sorted(names)
+        if PurePosixPath(name).name != FRAGMENT_README
+    ]
 
 
 def areas_of(subject: str) -> tuple[list[str], str]:
@@ -225,7 +323,7 @@ def ir_change(old: str | None, new: str | None) -> str | None:
         return None
     return (
         f"CADIR documents, decode sidecars, and CLI reports use IR {after.group(1)}. "
-        f"This release does not read IR {before.group(1)} files."
+        f"This release does not read IR {before.group(1)} files: decode the source files again."
     )
 
 
@@ -288,15 +386,25 @@ def render(
     dependency_updates: int,
     ir_line: str | None,
     support: list[str],
+    curated_breaking: list[str] | None = None,
 ) -> str:
-    compatibility = [ir_line] if ir_line else []
-    for change in changes:
-        for note in breaking_notes(change.body):
-            compatibility.append(f"{BREAKING.sub('', note)} {change.reference()}")
+    curated = list(curated_breaking or ())
+    compatibility = ([ir_line] if ir_line else []) + curated
+    by_pull_request = [
+        f"{BREAKING.sub('', note)} {change.reference()}"
+        for change in changes
+        for note in breaking_notes(change.body)
+    ]
 
     parts = []
-    if compatibility:
-        parts.append(f"## Compatibility\n\n{bullets(compatibility)}")
+    if curated and by_pull_request:
+        parts.append(
+            f"## Compatibility\n\n{bullets(compatibility)}\n\n"
+            f"<details><summary><b>Breaking changes by pull request</b> ({len(by_pull_request)})</summary>"
+            f"\n\n{bullets(by_pull_request)}\n\n</details>"
+        )
+    elif compatibility or by_pull_request:
+        parts.append(f"## Compatibility\n\n{bullets(compatibility + by_pull_request)}")
     if support:
         parts.append(f"## Support levels\n\n{bullets(support)}")
     groups = group_changes(changes, dependency_updates)
@@ -338,6 +446,7 @@ def main(argv: list[str] | None = None) -> int:
             dependency_updates,
             ir_change(git_file(previous, IR_FILE), git_file(args.tag, IR_FILE)),
             support_changes(git_file(previous, SUPPORT_FILE), git_file(args.tag, SUPPORT_FILE)),
+            fragment_breaking_notes(added_fragments(previous, args.tag)),
         )
     )
     return 0

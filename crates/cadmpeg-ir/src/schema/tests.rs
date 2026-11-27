@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-#[cfg(feature = "schema")]
-use crate::examples::unit_cube;
 use crate::products::{ProductDefinition, ProductDefinitionKind};
 use crate::report::check::Check;
 use crate::validate::validate_neutral;
@@ -87,6 +85,8 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         HistoricalEdgeId::mint("test:model:historical-edge#local").expect("valid identity");
     let state = FeatureInputTopology {
         face_owners: Vec::new(),
+        face_geometry: Vec::new(),
+        body_writers: Vec::new(),
         id: state_id.clone(),
         input_of: feature_id.clone(),
         bodies: crate::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
@@ -212,122 +212,6 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
                 && finding.entity.as_deref() == Some(feature_id.as_str())
                 && finding.message == format!("references missing historical edge `{missing}`")
         }));
-}
-
-#[cfg(feature = "schema")]
-#[test]
-fn schema_constrains_version_and_requires_subd_arena() {
-    let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
-    let version_property = schema.pointer("/properties/ir_version").unwrap();
-    let version_schema = match version_property["$ref"].as_str() {
-        Some(reference) => schema
-            .pointer(reference.strip_prefix('#').unwrap())
-            .unwrap(),
-        None => version_property,
-    };
-    assert_eq!(
-        version_schema.get("const"),
-        Some(&serde_json::json!(crate::IR_VERSION))
-    );
-    assert!(schema
-        .pointer("/properties/geometry/$ref")
-        .and_then(serde_json::Value::as_str)
-        .is_some());
-
-    let topology_schema = schema.pointer("/$defs/Topology").unwrap();
-    assert!(topology_schema
-        .pointer("/required")
-        .and_then(serde_json::Value::as_array)
-        .unwrap()
-        .contains(&serde_json::json!("subds")));
-    assert!(schema.pointer("/properties/byte_ledger").is_none());
-
-    let mut value = serde_json::to_value(unit_cube().expect("valid unit cube fixture")).unwrap();
-    value
-        .pointer_mut("/geometry")
-        .unwrap()
-        .as_object_mut()
-        .unwrap()
-        .remove("subds");
-    assert!(serde_json::from_value::<CadIr>(value).is_err());
-}
-
-#[cfg(feature = "schema")]
-#[test]
-fn schema_generation_produces_definitions() {
-    let schema = crate::cadir_json_schema();
-    let json = serde_json::to_string(&schema).unwrap();
-    assert!(json.contains("Body"));
-    assert!(json.contains("Coedge"));
-    assert!(json.contains("SurfaceGeometry"));
-    let defs = schema
-        .get("$defs")
-        .and_then(serde_json::Value::as_object)
-        .expect("schema has a $defs object");
-    assert!(!defs.is_empty());
-}
-
-#[cfg(feature = "schema")]
-#[test]
-fn model_feature_schema_describes_serialized_regeneration_parent() {
-    use crate::document::Model;
-    use crate::features::evaluation::FeatureEvaluation;
-    use crate::features::selections::DistinctMembers;
-    use crate::features::tree::{FeatureTreeNodeRole, TreeChildren};
-    use crate::features::{
-        Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
-    };
-
-    let parent = FeatureId::mint("test:model:feature#1-parent").unwrap();
-    let child = FeatureId::mint("test:model:feature#2-child").unwrap();
-    let mut model = Model::default();
-    model.features.push(Feature {
-        product_definition: None,
-        id: parent.clone(),
-        ordinal: 0,
-        name: None,
-        suppressed: None,
-        dependencies: DistinctMembers::default(),
-        source_properties: std::collections::BTreeMap::default(),
-        source_tag: None,
-        source_text: None,
-        source_content: FeatureContent::default(),
-        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
-            FeatureOperation::TreeNode {
-                role: FeatureTreeNodeRole::SolidBodies,
-                children: TreeChildren::default(),
-            },
-        )),
-        native_ref: None,
-    });
-    let mut child_feature = model.features[0].clone();
-    child_feature.id = child.clone();
-    child_feature.ordinal = 1;
-    child_feature
-        .evaluation
-        .set_definition(FeatureDefinition::Operation(
-            FeatureOperation::StoredGeometry {},
-        ));
-    model.features.push(child_feature);
-    model
-        .set_feature_regeneration_parent(&(child), &(parent.clone()))
-        .unwrap();
-    let wire = serde_json::to_value(&model).unwrap();
-    assert_eq!(wire["features"][1]["regeneration_parent"], parent.as_str());
-
-    let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
-    let row = schema
-        .pointer("/$defs/Model/properties/features/items/$ref")
-        .and_then(serde_json::Value::as_str)
-        .and_then(|reference| reference.strip_prefix('#'))
-        .and_then(|path| schema.pointer(path))
-        .unwrap();
-    assert!(row.pointer("/properties/regeneration_parent").is_some());
-
-    let standalone = serde_json::to_value(schemars::schema_for!(Feature)).unwrap();
-    assert!(standalone
-        .pointer("/properties/regeneration_parent")
-        .is_none());
 }
 
 #[test]

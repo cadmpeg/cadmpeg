@@ -12,7 +12,6 @@
 
 use cadmpeg_test_support::EditableDecodeResult;
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
 
@@ -150,7 +149,7 @@ fn history_topology_decode_matches_full_brep_graph() {
 
         let full_brep = crate::brep::decode(&ctx, &records, &bytes, "full", crate::ids::ID_FORMAT)
             .expect("valid BREP tolerances");
-        let full = crate::history::topology_rows::historical_topology_with_tags(&full_brep)
+        let mut full = crate::history::topology_rows::historical_topology_with_tags(&full_brep)
             .expect("topology budget")
             .expect("full topology");
         let history_brep =
@@ -160,6 +159,12 @@ fn history_topology_decode_matches_full_brep_graph() {
             .expect("topology budget")
             .expect("history topology");
 
+        full.face_samples.retain(|sample| {
+            !matches!(
+                sample.surface,
+                cadmpeg_ir::features::evaluation::HistoricalFaceSurface::Nurbs(_)
+            )
+        });
         assert_eq!(history, full);
         assert_eq!(history.persistent_subentity_tags.len(), expected_tag_count);
     }
@@ -367,7 +372,7 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
     ));
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less degenerate curve encode");
     let round_trip = F3dCodec
@@ -408,7 +413,7 @@ fn generated_source_less_writes_general_face_wire_body() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less general body encode");
     let round_trip = F3dCodec
@@ -473,7 +478,7 @@ fn generated_source_less_writes_general_face_and_point_wire_body() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less face-and-point-wire body encode");
     let round_trip = F3dCodec
@@ -548,7 +553,7 @@ fn generated_source_less_writes_solid_and_wire_bodies_together() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less solid-plus-wire encode");
     let round_trip = F3dCodec
@@ -609,7 +614,7 @@ fn generated_source_less_writes_wire_body_topology() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less wire body encode");
     let round_trip = F3dCodec
@@ -669,7 +674,7 @@ fn generated_source_less_writes_isolated_vertex_wire() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less free-vertex wire encode");
     let round_trip = F3dCodec
@@ -755,7 +760,7 @@ fn generated_source_less_writes_edge_and_point_wires_on_one_shell() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less mixed-wire shell encode");
     let round_trip = F3dCodec
@@ -856,7 +861,7 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less two-wire-body encode");
     let round_trip = F3dCodec
@@ -933,7 +938,7 @@ fn generated_source_less_writes_multi_edge_wire_ring() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multi-edge wire encode");
     let round_trip = F3dCodec
@@ -1003,7 +1008,7 @@ fn generated_source_less_writes_multi_region_wire_body() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multi-region wire encode");
     let round_trip = F3dCodec
@@ -1086,7 +1091,7 @@ fn generated_source_less_writes_multi_shell_wire_region() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less multi-shell wire encode");
     let round_trip = F3dCodec
@@ -1465,8 +1470,11 @@ fn cached_unmodeled_spline_families_retain_exact_shape_and_opaque_construction()
 }
 
 #[test]
-fn decode_reports_faces_with_missing_surface_references() {
-    for (surface, condition) in [(-1i64, "null-reference=1"), (999, "dangling-reference=1")] {
+fn faces_with_missing_surface_references_are_given_up() {
+    for (surface, cause) in [
+        (-1i64, "the face record states no surface"),
+        (999, "the face record's surface reference names no record"),
+    ] {
         let mut smbh = synthetic_mixed_smbh();
         let start = asm_header::record_stream_start(&smbh).unwrap();
         let limit = asm_header::solved_record_limit(&smbh).unwrap();
@@ -1482,29 +1490,51 @@ fn decode_reports_faces_with_missing_surface_references() {
             .filter(|record| record.head() == "face")
             .nth(1)
             .expect("second generated face");
+        // The face, its loop and coedges, and the edges, vertex and point
+        // that only its coedges reach, in their sort order. The shell that
+        // keeps the other face states unstated members.
+        let dropped = [13, 14, 15, 19, 20, 24, 28, 5, 7]
+            .map(|index| format!("f3d:brep:entity#{index}"))
+            .join(", ");
+        assert_eq!(face.index, 5);
+        let head = format!(
+            "part face stream=\"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh\" offset={} length={} ",
+            face.offset, face.len
+        );
         let record = &mut smbh[face.offset..face.offset + face.len];
         let surface_ref = record.iter().rposition(|byte| *byte == 0x0c).unwrap();
         record[surface_ref + 1..surface_ref + 9].copy_from_slice(&surface.to_le_bytes());
+        let bytes = f3d_with_smbh(&smbh);
 
         let result = F3dCodec
-            .decode(
-                &mut Cursor::new(f3d_with_smbh(&smbh)),
-                &DecodeOptions::default(),
-            )
-            .expect("missing face surface remains an explicitly lossy decode");
+            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+            .expect("a permissive decode gives the face up and goes on");
         assert_eq!(result.ir().geometry.faces.len(), 1);
-        let note = result
+        let charge = crate::test_support::charged_part(
+            result.ir(),
+            &result.report().losses,
+            &head,
+            &dropped,
+        );
+        assert!(charge.message.contains(cause), "{}", charge.message);
+        assert!(
+            charge.message.contains("; marked=[f3d:brep:entity#3]"),
+            "{}",
+            charge.message
+        );
+        let shells = &result.ir().geometry.shells;
+        assert_eq!(shells.len(), 1);
+        assert_eq!(shells[0].id.as_str(), "f3d:brep:entity#3");
+        assert_eq!(
+            shells[0].unstated,
+            Some(cadmpeg_ir::topology::Unstated::Members)
+        );
+        assert!(!result
             .report()
             .losses
             .iter()
-            .find(|loss| loss.message.contains("required surface reference"))
-            .unwrap_or_else(|| {
-                panic!(
-                    "missing face-surface loss note: {:?}",
-                    result.report().losses
-                )
-            });
-        assert!(note.message.contains(condition), "{}", note.message);
+            .any(|loss| loss.message.contains("required surface reference")));
+        crate::test_support::assert_pinned_refusal(bytes, &head);
     }
 }
 

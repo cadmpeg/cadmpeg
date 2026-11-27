@@ -10534,10 +10534,10 @@ anchor = "With flag `1` the head continues as the 97-byte frame"
 name = "constructed_reference_plane_matrix_frame"
 kind = "byte"
 section = "2"
-anchor = "stores a 121-byte matrix reference-plane frame immediately after the class name"
+anchor = "store a 121-byte matrix reference-plane frame immediately after the class name"
 size = 121
 endianness = "little"
-note = "Offsets begin immediately after the `moConstraintCoincLineAtAnglePlaneRefplaneData_c` class name."
+note = "Offsets begin immediately after the `moConstraintCoincLineAtAnglePlaneRefplaneData_c`, `moConstraintCoincLinePerpPlaneRefplaneData_c`, or `moPerLinePtRefPlnData_c` class name."
 
 [[record.field]]
 name = "origin"
@@ -10566,6 +10566,51 @@ offset = 49
 type = "f64[9]"
 source = "spec"
 anchor = "A right-handed orthonormal 3×3 matrix occupies the unaligned f64 fields at offsets `+49` through `+113` in row-major order"
+
+[[record]]
+name = "constructed_reference_plane_minimal_frame"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
+kind = "byte"
+section = "2"
+anchor = "The 81-byte frame has byte `0` at `+48`"
+size = 81
+endianness = "little"
+note = "Offsets begin immediately after the `moDefaultRefPlnData_c`, `moConstraintPrllPlnTanOneCylinderRefplaneData_c`, `moFaceRefPlnData_c`, or `moPerLinePtRefPlnData_c` class name."
+
+[[record.field]]
+name = "origin"
+offset = 0
+type = "f64[3]"
+source = "spec"
+anchor = "Three f64 values at offsets `+0`, `+8`, and `+16` store xyz origin coordinates in metres"
+
+[[record.field]]
+name = "normal"
+offset = 24
+type = "f64[3]"
+source = "spec"
+anchor = "Three f64 values at `+24`, `+32`, and `+40` store the unit normal"
+
+[[record.field]]
+name = "frame_marker"
+offset = 48
+type = "u8"
+source = "spec"
+anchor = "The 81-byte frame has byte `0` at `+48`"
+
+[[record.field]]
+name = "translation"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "the negated origin as three f64 at `+49`, `+57`, and `+65`"
+
+[[record.field]]
+name = "scale"
+offset = 73
+type = "f64"
+source = "spec"
+anchor = "and f64 `1` at `+73`"
 
 [[record]]
 name = "component_face_nested_reference_prefix"
@@ -10844,8 +10889,47 @@ source = "spec"
 anchor = "name length at `+5`"
 
 [[record]]
+name = "revolution_turn_block"
+parsed_by = ["crates/cadmpeg-codec-sldprt/src/carchive/rules/feature.rs", "crates/cadmpeg-codec-sldprt/src/resolved_features/turn_sense.rs"]
+kind = "byte"
+section = "Extrusion feature objects"
+anchor = "Then comes the nine-byte turn block"
+size = 9
+endianness = "little"
+
+[[record.field]]
+name = "lead"
+offset = 0
+type = "bytes[2]"
+source = "spec"
+anchor = "the nine-byte turn block: two zero bytes"
+value = [0x0, 0x0]
+
+[[record.field]]
+name = "reverse"
+offset = 2
+type = "u8"
+source = "spec"
+anchor = "the reverse byte at +2"
+
+[[record.field]]
+name = "pad"
+offset = 3
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero bytes at +3"
+value = [0x0, 0x0]
+
+[[record.field]]
+name = "word"
+offset = 5
+type = "u32"
+source = "spec"
+anchor = "a little-endian u32 at +5"
+
+[[record]]
 name = "revolution_line_reference_record_tail"
-parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs"
+parsed_by = ["crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs", "crates/cadmpeg-codec-sldprt/src/carchive/rules/feature.rs"]
 kind = "byte"
 section = "2"
 anchor = "The record ends with its tail"
@@ -10881,6 +10965,32 @@ type = "bytes[1]"
 source = "spec"
 anchor = "one zero byte at tail offset `+56`"
 value = [0x0]
+
+[[record]]
+name = "axis_tail_version_15000_prefix"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/carchive/rules/feature.rs"
+kind = "byte"
+section = "Extrusion feature objects"
+anchor = "An axis tail is the handle block of the edge form up to the version"
+size = 24
+endianness = "little"
+note = "Offsets begin at the handle block's version word; the seven f64 of the tail follow at +24."
+
+[[record.field]]
+name = "version"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "twenty zero bytes in files of `swVersion` 15000"
+value = 15000
+
+[[record.field]]
+name = "zeros"
+offset = 4
+type = "bytes[20]"
+source = "spec"
+anchor = "twenty zero bytes in files of `swVersion` 15000"
+value = [0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0]
 
 [[record]]
 name = "revolution_line_reference_nested_end"
@@ -12328,6 +12438,37 @@ type = "u16"
 source = "spec"
 anchor = "and u16 `0`"
 value = 0
+
+[[record]]
+name = "three_int_identity_own"
+kind = "byte"
+section = "2.3"
+anchor = "three little-endian u32"
+size = 12
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/carchive/rules/idrep.rs"
+note = "Own bytes of a three-integer identity representation; they follow its `moFR_c` object."
+
+[[record.field]]
+name = "word_0"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "three little-endian u32"
+
+[[record.field]]
+name = "word_4"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "three little-endian u32"
+
+[[record.field]]
+name = "word_8"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "three little-endian u32"
 
 [[record]]
 name = "view_bytes"

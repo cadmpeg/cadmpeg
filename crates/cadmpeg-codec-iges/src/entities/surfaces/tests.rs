@@ -109,9 +109,17 @@ fn type_140_indicator_parameters_use_bounded_midpoint_or_unbounded_origin() {
 
 #[test]
 fn decode_type_140_uses_the_bounded_support_midpoint_normal() {
-    for indicator in [
-        "-0.4082482904638631D0,-0.4082482904638631D0,0.8164965809277261D0",
-        "0,0,1",
+    // The midpoint normal admits the first indicator, which reaches the NURBS
+    // support that has no exact offset carrier; it rejects the second.
+    for (indicator, reason) in [
+        (
+            "-0.4082482904638631D0,-0.4082482904638631D0,0.8164965809277261D0",
+            "support surface has no exact analytic offset carrier",
+        ),
+        (
+            "0,0,1",
+            "offset indicator is not the support normal at the designated parameters",
+        ),
     ] {
         let result = IgesCodec
             .decode(
@@ -127,11 +135,22 @@ fn decode_type_140_uses_the_bounded_support_midpoint_normal() {
             .iter()
             .any(|surface| surface.id.as_str() == "iges:model:surface#D1"));
         assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
-        assert_eq!(result.report().losses.len(), 1);
+        assert_eq!(
+            result.report().losses.len(),
+            2,
+            "{:#?}",
+            result.report().losses
+        );
         assert_eq!(
             result.report().losses[0].code,
             IgesLossCode::GeometryNotProjected.kind()
         );
+        assert!(
+            result.report().losses[0].message.contains(reason),
+            "{}",
+            result.report().losses[0].message
+        );
+        crate::test_support::assert_gives_up(result.report(), &[("entity", 3)]);
     }
 }
 
@@ -155,6 +174,7 @@ fn decode_skips_a_nurbs_surface_over_its_pole_limit() {
         loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains("surface pole count exceeds 1000000")
     }));
+    crate::test_support::assert_gives_up(decoded.report(), &[("entity", 1)]);
 }
 
 #[test]
@@ -565,21 +585,22 @@ fn ruled_carrier_of_long_interleaved_rails_partitions_by_search() {
 fn ruled_rails_over_the_blend_limit_are_skipped_with_a_loss() {
     use crate::test_support::test_curves_and_surfaces::planar_nurbs_parameters;
 
-    // One aligned span of degree 4096 + 4097 needs 8194² blends, over 2^26.
+    // 129 + 129 - 1 aligned spans of degree 255 + 256 need 257 * 512² blends,
+    // over 2^26.
     let rail = |label: &str, degree: u32, y: f64| OwnedTestEntity {
         entity_type: 126,
         form: 0,
         label: label.into(),
         status: "00010000",
-        parameters: planar_nurbs_parameters(degree, 1, false, |index| {
+        parameters: planar_nurbs_parameters(degree, 129, false, |index| {
             [f64::from(index) / f64::from(degree), y]
         }),
     };
     let result = IgesCodec
         .decode(
             &mut Cursor::new(owned_test_file(&[
-                rail("RAIL1", 4096, 0.0),
-                rail("RAIL2", 4097, 1.0),
+                rail("RAIL1", 255, 0.0),
+                rail("RAIL2", 256, 1.0),
                 OwnedTestEntity {
                     entity_type: 118,
                     form: 1,

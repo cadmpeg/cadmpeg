@@ -43,7 +43,8 @@ fn fcstd_inspect_and_container_decode_work_automatically_and_forced() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let value: serde_json::Value =
+            cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["source"]["identity"]["kind"], "classified");
         assert!(
             value["source"]["identity"]["dialects"]["primary"]["dialect"]
@@ -80,7 +81,8 @@ fn iges_dump_report_classifies_codec_refusal() {
         .code(2)
         .stderr(predicate::str::contains("decode failed"));
 
-    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let value: serde_json::Value =
+        cadmpeg_core::serde_erase::json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert_eq!(value["command"], "dump");
     assert_eq!(value["status"], "refused");
     assert_eq!(value["refusal"]["stage"], "decode");
@@ -123,7 +125,8 @@ fn a_file_of_one_iges_start_card_is_detected_and_dumped() {
         ])
         .assert()
         .success();
-    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let value: serde_json::Value =
+        cadmpeg_core::serde_erase::json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert!(value["decode_report"]["losses"]
         .as_array()
         .unwrap()
@@ -155,7 +158,8 @@ fn convert_decode_failure_writes_a_refusal_report() {
         .code(2)
         .stderr(predicate::str::contains("decode failed"));
 
-    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let value: serde_json::Value =
+        cadmpeg_core::serde_erase::json::from_slice(&fs::read(report).unwrap()).unwrap();
     assert_eq!(value["command"], "convert");
     assert_eq!(value["status"], "refused");
     assert_eq!(value["refusal"]["stage"], "decode");
@@ -192,7 +196,8 @@ fn rhino_inspect_detects_archive_and_reports_tables_in_text_and_json() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let value: serde_json::Value =
+        cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["command"], "inspect");
     assert_eq!(value["selection"]["kind"], "detected");
     assert_eq!(value["selection"]["confidence"], "high");
@@ -241,7 +246,8 @@ fn rhino_forced_input_format_and_3dm_alias_bypass_detection() {
             .output()
             .unwrap();
         assert!(output.status.success());
-        let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let value: serde_json::Value =
+            cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["ir_version"], cadmpeg_ir::IR_VERSION);
         assert!(
             value["source"]["identity"]["dialects"]["primary"]["dialect"]
@@ -270,7 +276,8 @@ fn rhino_full_band_empty_archive_decodes_to_current_ir() {
                 "archive {version}: {}",
                 String::from_utf8_lossy(&output.stderr)
             );
-            let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            let value: serde_json::Value =
+                cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
             assert_eq!(value["ir_version"], cadmpeg_ir::IR_VERSION);
             assert!(
                 value["source"]["identity"]["dialects"]["primary"]["dialect"]
@@ -283,7 +290,7 @@ fn rhino_full_band_empty_archive_decodes_to_current_ir() {
                 value["source"]["attributes"]["container_kind"],
                 "3dm-chunks"
             );
-            assert_eq!(value["geometry"]["subds"], serde_json::json!([]));
+            assert_eq!(value["geometry"]["subds"], cadmpeg_core::json!([]));
         }
     }
 }
@@ -300,7 +307,8 @@ fn rhino_point_archive_inspect_decode_and_validate_expose_geometry() {
         .output()
         .unwrap();
     assert!(inspect.status.success());
-    let summary: serde_json::Value = serde_json::from_slice(&inspect.stdout).unwrap();
+    let summary: serde_json::Value =
+        cadmpeg_core::serde_erase::json::from_slice(&inspect.stdout).unwrap();
     assert_eq!(
         summary["summary"]["entries"][2]["attributes"]["record_count"],
         "1"
@@ -312,7 +320,8 @@ fn rhino_point_archive_inspect_decode_and_validate_expose_geometry() {
         .output()
         .unwrap();
     assert!(decoded.status.success());
-    let ir: serde_json::Value = serde_json::from_slice(&decoded.stdout).unwrap();
+    let ir: serde_json::Value =
+        cadmpeg_core::serde_erase::json::from_slice(&decoded.stdout).unwrap();
     assert_eq!(ir["geometry"]["points"][0]["position"]["x"], 1.25);
     assert_eq!(ir["geometry"]["points"][0]["position"]["y"], -2.5);
     assert_eq!(ir["geometry"]["points"][0]["position"]["z"], 3.75);
@@ -343,10 +352,11 @@ fn rhino_v1_to_v5_decode_metadata() {
             .output()
             .unwrap();
         assert!(output.status.success());
-        let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let value: serde_json::Value =
+            cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["ir_version"], cadmpeg_ir::IR_VERSION);
         assert_eq!(value["source"]["attributes"]["archive_version"], version);
-        assert_eq!(value["geometry"]["subds"], serde_json::json!([]));
+        assert_eq!(value["geometry"]["subds"], cadmpeg_core::json!([]));
     }
 }
 
@@ -402,7 +412,7 @@ fn cadir_override_bypasses_native_detection() {
     let input = fixture(
         dir.path(),
         "no-extension",
-        &unit_cube().expect("unit cube fixture is admitted"),
+        &cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted"),
     );
     Command::cargo_bin("cadmpeg")
         .unwrap()

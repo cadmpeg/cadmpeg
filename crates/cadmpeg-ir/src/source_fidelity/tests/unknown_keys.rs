@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use serde_json::Value;
 
 use crate::source_fidelity::DecodeSidecar;
 
@@ -156,7 +158,7 @@ fn complete_sidecar_refuses_repeated_retained_keys_before_replacement() {
     let fixture = fixture();
     let text = fixture.to_string();
     let record = &fixture["fidelity"]["retained_records"][FIRST];
-    let member = format!("{}:{record}", serde_json::to_string(FIRST).unwrap());
+    let member = format!("{}:{record}", json::to_string(FIRST).unwrap());
     assert_eq!(text.matches(&member).count(), 1);
     let repeated = text.replace(&member, &format!("{member},{member}"));
     let error = DecodeSidecar::from_json(&repeated).unwrap_err();

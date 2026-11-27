@@ -29,7 +29,8 @@ fn refs(args: &str) -> Vec<&str> {
 
 #[test]
 fn a_four_use_edge_is_split_into_two_material_use_pairs() {
-    let ir = cadmpeg_test_support::polyhedron::edge_touching_cubes().unwrap();
+    let mut ir = cadmpeg_test_support::polyhedron::edge_touching_cubes().unwrap();
+    cadmpeg_ir::examples::add_document_root(&mut ir);
     let checked = cadmpeg_ir::validate_neutral(&ir, Vec::new()).unwrap();
     assert!(checked.is_ok(), "{:?}", checked.findings);
 

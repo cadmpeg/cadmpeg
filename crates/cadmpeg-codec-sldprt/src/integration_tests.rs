@@ -3,11 +3,14 @@
 
 mod scan;
 
+mod encode_sets;
 mod extrude_direction;
 mod mesh_bodies;
 mod native_skeleton;
+mod part_tolerances;
 mod profile_data;
 mod root_definition;
+mod saved_cadir;
 mod scalar_relation_values;
 mod sweep_path_section;
 mod swift_nominal;
@@ -217,11 +220,7 @@ fn presentation_pipeline_binds_materials_face_colors_tessellation_and_pmi() {
     let tessellation_exactness = &display.source_fidelity().annotations.exactness()
         [display.ir().model.tessellations[0].id.as_str()];
     assert_eq!(
-        tessellation_exactness.fields()["body"],
-        cadmpeg_ir::Exactness::Derived
-    );
-    assert_eq!(
-        tessellation_exactness.fields()["faces"],
+        tessellation_exactness.fields()["of"],
         cadmpeg_ir::Exactness::Derived
     );
     assert_valid(&display);
@@ -335,13 +334,13 @@ fn plan(
     result: &EditableDecodeResult,
     fidelity: bool,
     request: cadmpeg_ir::codec::write::target::TargetRequest<'_>,
-) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
     SldprtCodec.plan(
         cadmpeg_ir::codec::write::EncodeInput::new(
             result.ir(),
             fidelity.then(|| result.source_fidelity()),
-        ),
-        request,
+        )
+        .with_target(request),
     )
 }
 
@@ -402,55 +401,132 @@ fn inherit_replays_a_versioned_part_and_names_its_dialect() {
     assert_eq!(classify(written), "sldprt:sw-version-12000-plus");
 }
 
-/// A source dialect outside the one-row catalog refuses under `Inherit` once
-/// there is nothing to preserve. There is no fall-through to the catalog row: a
-/// same-format conversion never silently changes what the part is, and the
-/// refusal names both the source's dialect and the escape.
+/// A document read back from CADIR JSON holds no feature history. Unedited,
+/// it replays its retained part; edited, it writes what the decoded part
+/// with the same edit writes, its history restored from the retained part
+/// rather than read as every feature removed.
 #[test]
-fn inherit_refuses_an_off_catalog_source_dialect_with_nothing_retained() {
+fn a_cadir_read_part_replays_unedited_and_writes_an_edit_as_its_decode_does() {
+    let source = versioned_part();
+    let result = decode(source.clone());
+    assert!(!result.ir().model.features.is_empty());
+    let mut read = cadmpeg_ir::CadIr::from_json(&result.ir().to_canonical_json().unwrap()).unwrap();
+    assert!(read.model.features.is_empty());
+    assert!(!read.model.omitted_arenas_held());
+
+    let unedited = SldprtCodec
+        .plan(cadmpeg_ir::codec::write::EncodeInput::new(
+            &read,
+            Some(result.source_fidelity()),
+        ))
+        .expect("an unedited read replays");
+    assert!(matches!(
+        unedited.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+    ));
+    let mut written = Vec::new();
+    unedited.write_to(&mut written).unwrap();
+    assert_eq!(written, source);
+
+    let written = |ir: &cadmpeg_ir::CadIr| {
+        let mut bytes = Vec::new();
+        SldprtCodec
+            .plan(cadmpeg_ir::codec::write::EncodeInput::new(
+                ir,
+                Some(result.source_fidelity()),
+            ))
+            .and_then(|plan| plan.write_to(&mut bytes))
+            .map(|_| bytes)
+            .map_err(|error| error.to_string())
+    };
+    read.geometry.bodies[0].name = Some("edited".into());
+    let mut held = result.ir().clone();
+    held.geometry.bodies[0].name = Some("edited".into());
+    assert_eq!(written(&read), written(&held));
+}
+
+/// A source dialect outside the one-row catalog is written as the catalog row
+/// under `Inherit` once there is nothing to preserve (§3.4, Refusals). The
+/// report names the row the emitted envelope states, and
+/// `sldprt/target.source-dialect-displaced` names both dialects.
+#[test]
+fn inherit_writes_an_off_catalog_source_dialect_with_nothing_retained_as_the_row() {
     let result = decode(versioned_part());
-    let error = plan(
+    let plan = plan(
         &result,
         false,
         cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
     )
-    .expect_err("a versioned row is not a synthesis target");
-    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
+    .expect("a versioned source is written as the catalog row");
+    assert_eq!(named_target(&plan), "sldprt:unknown");
+    let charged: Vec<_> = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code().starts_with("target."))
+        .cloned()
+        .collect();
+    let [loss] = charged.as_slice() else {
+        panic!("expected one target loss, got {charged:#?}");
     };
-    assert_eq!(refusal.format(), "sldprt");
     assert_eq!(
-        ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref(),
-        Some("sldprt:sw-version-12000-plus")
+        loss.code,
+        cadmpeg_ir::codec::write::target::target_loss_kind(
+            cadmpeg_ir::loss_namespace!("sldprt"),
+            cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED
+        )
     );
     assert!(
-        refusal
-            .available()
-            .iter()
-            .any(|target| target.id.as_str() == "sldprt:unknown"),
-        "{:?}",
-        refusal.available()
+        loss.message.contains("sldprt:sw-version-12000-plus")
+            && loss.message.contains("sldprt:unknown"),
+        "{}",
+        loss.message
     );
-    let reason = serde_json::to_value(refusal).expect("serialize refusal")["refusal"]["reason"]
-        .as_str()
-        .map(str::to_owned)
-        .expect("delivery refusal carries its reason");
+
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_eq!(classify(written), "sldprt:unknown");
+}
+
+/// A part read from CADIR JSON with no retained source holds native records
+/// whose history arenas it does not carry, so the patch of its source dialect
+/// refuses. The part is then synthesized at the catalog row (§3.4, Paths),
+/// and `sldprt/target.source-dialect-displaced` names both dialects.
+#[test]
+fn inherit_synthesizes_an_off_catalog_cadir_read_part_at_the_catalog_row() {
+    let result = decode(versioned_part());
+    let read = cadmpeg_ir::CadIr::from_json(&result.ir().to_canonical_json().unwrap()).unwrap();
+    assert!(!read.model.omitted_arenas_held());
+    let plan = SldprtCodec
+        .plan(cadmpeg_ir::codec::write::EncodeInput::new(&read, None))
+        .expect("the part is synthesized at the catalog row");
+    assert_eq!(named_target(&plan), "sldprt:unknown");
+    let charged: Vec<_> = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code().starts_with("target."))
+        .cloned()
+        .collect();
+    let [loss] = charged.as_slice() else {
+        panic!("expected one target loss, got {charged:#?}");
+    };
+    assert_eq!(
+        loss.code,
+        cadmpeg_ir::codec::write::target::target_loss_kind(
+            cadmpeg_ir::loss_namespace!("sldprt"),
+            cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED
+        )
+    );
     assert!(
-        reason.contains("sldprt:unknown"),
-        "the refusal must name the declared synthesis alternative: {reason}"
+        loss.message.contains("sldprt:sw-version-12000-plus")
+            && loss.message.contains("sldprt:unknown"),
+        "{}",
+        loss.message
     );
-    assert!(
-        reason.contains("that envelope is sldprt:unknown"),
-        "{reason}"
-    );
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_eq!(classify(written), "sldprt:unknown");
 }
 
 /// Cross-dialect synthesis does not consume the retained Native envelope: it
@@ -501,10 +577,10 @@ fn the_patch_path_names_the_preserved_dialect() {
     );
 
     let plan = SldprtCodec
-        .plan(
-            cadmpeg_ir::codec::write::EncodeInput::new(&edited, Some(result.source_fidelity())),
-            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
-        )
+        .plan(cadmpeg_ir::codec::write::EncodeInput::new(
+            &edited,
+            Some(result.source_fidelity()),
+        ))
         .expect("an edited part still preserves its dialect");
     assert!(matches!(
         plan.report().write_path(),
@@ -533,6 +609,59 @@ fn the_patch_path_names_the_preserved_dialect() {
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
     assert_eq!(classify(written), claimed);
+}
+
+/// A part holding an empty `__ZLB` stream: its wrapper states a zero
+/// uncompressed size and a zero member size.
+fn versioned_part_with_an_empty_wrapped_stream() -> Vec<u8> {
+    let mut bytes = sldprt_with_body_and_history(&triangle_body());
+    bytes.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<?xml version="1.0"?><swSolidWorks swVersion="13100"><swModel swName="part" swConfigurationName="Default"/></swSolidWorks>"#,
+    ));
+    let mut empty = crate::layout::zlb_wrapper_header::MAGIC_VALUE.to_vec();
+    empty.extend_from_slice(&[0; 8]);
+    bytes.extend(make_block(0x43, "Contents/Empty__ZLB", &empty));
+    crate::test_support::container::native_envelope_fixture(&bytes)
+}
+
+#[test]
+fn an_empty_wrapped_stream_gives_up_nothing_and_an_edit_patches() {
+    let result = decode(versioned_part_with_an_empty_wrapped_stream());
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != cadmpeg_ir::unknown::part::record_unreadable_kind()),
+        "{:#?}",
+        result.report().losses
+    );
+    let mut edited = result.ir().clone();
+    let moved = edited.geometry.points[0].position().get();
+    edited.geometry.points[0].set_position(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            moved.x + 1.0,
+            moved.y,
+            moved.z,
+        ))
+        .expect("a finite position is a point"),
+    );
+    let plan = SldprtCodec
+        .plan(cadmpeg_ir::codec::write::EncodeInput::new(
+            &edited,
+            Some(result.source_fidelity()),
+        ))
+        .expect("an edited part still preserves its dialect");
+    assert!(
+        matches!(
+            plan.report().write_path(),
+            cadmpeg_ir::report::export::WritePath::Patched { .. }
+        ),
+        "{:?}",
+        plan.report().write_path()
+    );
 }
 
 #[test]
@@ -572,10 +701,10 @@ fn digest_only_source_image_writes_retained_records_in_a_synthesized_envelope() 
         .data()
         .is_none());
     let plan = SldprtCodec
-        .plan(
-            cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)),
-            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
-        )
+        .plan(cadmpeg_ir::codec::write::EncodeInput::new(
+            &ir,
+            Some(&fidelity),
+        ))
         .expect("the retained records keep the source's swSolidWorks envelope");
     assert!(plan.report().losses.iter().any(|loss| {
         loss.code == crate::loss::SldprtLossCode::SourcePreservedImageUnavailable.kind()
@@ -650,7 +779,7 @@ fn generation_with_retained_envelope_tokens_names_the_catalog_row() {
     let ir = source_less_cube();
     let plan = crate::test_support::plan_fixture_with_native_envelope(
         cadmpeg_ir::codec::write::EncodeInput::new(&ir, None),
-        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
     )
     .expect("nothing to inherit, so the catalog default stands in");
     assert!(matches!(
@@ -679,6 +808,8 @@ mod partial_decode;
 mod partition_sketches;
 
 mod configuration_states;
+
+mod dimension_class_loss;
 
 fn face_table_bytes() -> Vec<u8> {
     let mut out = descriptor(4, 8, 1, &3_u32.to_le_bytes());

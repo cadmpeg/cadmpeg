@@ -7,13 +7,15 @@
 //! walk down an evaluation's chain of bases, so no state is materialized.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::rc::Rc;
 
-use crate::design::evaluation::{CurrentState, Evaluation, StateBase};
+use crate::design::evaluation::{CurrentState, Evaluation, StateBase, StateDelta};
 use crate::design::names::NameEntry;
 use crate::design::refs::EntityRef;
 use crate::design::selection::OccurrencePath;
 use crate::document::{CadIr, Topology};
-use crate::topology::{EdgeCarrier, ShellMember};
+use crate::ids::ProductDefinitionId;
+use crate::topology::EdgeCarrier;
 
 use super::records::PositionKey;
 use super::resolved::{records, Arena};
@@ -48,11 +50,13 @@ pub(super) struct Instance<'a> {
 }
 
 /// The resolved states of a document's evaluations and current states.
-pub(super) struct States<'a> {
+pub(in crate::validate) struct States<'a> {
     ir: &'a CadIr,
     geometry: HashMap<&'a str, Arena>,
     layers: HashMap<&'a str, Layer<'a>>,
-    pub(super) extents: Vec<Extent<'a>>,
+    pub(super) extents: Vec<Rc<Extent<'a>>>,
+    extents_by_scope: HashMap<&'a str, Vec<usize>>,
+    extent_by_scope_position: HashMap<(&'a str, PositionKey<'a>), usize>,
     pub(super) instances: Vec<Instance<'a>>,
 }
 
@@ -65,13 +69,13 @@ pub(super) struct Chain<'s, 'a> {
 }
 
 /// Where a lookup in an evaluation's chain stops.
-enum Bottom<'a> {
+enum Bottom<'s, 'a> {
     Empty,
-    Current(&'a Extent<'a>),
+    Current(&'s Extent<'a>),
 }
 
 impl<'a> States<'a> {
-    pub(super) fn new(ir: &'a CadIr) -> Self {
+    pub(in crate::validate) fn new(ir: &'a CadIr) -> Self {
         let mut layers = HashMap::new();
         for evaluation in &ir.design.evaluations {
             let Some(content) = &evaluation.content else {
@@ -95,18 +99,18 @@ impl<'a> States<'a> {
             .scopes
             .iter()
             .any(|scope| !scope.current.is_empty());
-        let mut extents: Vec<Extent<'a>> = Vec::new();
+        let mut extents: Vec<Rc<Extent<'a>>> = Vec::new();
         let mut instances: Vec<Instance<'a>> = Vec::new();
         if has_extents {
             let reach = Reach::new(&ir.geometry);
             for scope in &ir.design.scopes {
                 for state in &scope.current {
-                    extents.push(Extent {
+                    extents.push(Rc::new(Extent {
                         scope: scope.definition.as_str(),
                         state,
                         records: reach
                             .reached_from(state.bodies.iter().map(crate::ids::BodyId::as_str)),
-                    });
+                    }));
                 }
             }
             for definition in &ir.model.product_definitions {
@@ -119,27 +123,54 @@ impl<'a> States<'a> {
                 }
             }
         }
+        let mut extents_by_scope: HashMap<&'a str, Vec<usize>> = HashMap::new();
+        let mut extent_by_scope_position: HashMap<(&'a str, PositionKey<'a>), usize> =
+            HashMap::new();
+        for (i, extent) in extents.iter().enumerate() {
+            extents_by_scope.entry(extent.scope).or_default().push(i);
+            extent_by_scope_position
+                .entry((extent.scope, PositionKey::of(&extent.state.at)))
+                .or_insert(i);
+        }
         Self {
             ir,
             geometry: entities(&ir.geometry),
             layers,
             extents,
+            extents_by_scope,
+            extent_by_scope_position,
             instances,
         }
     }
 
     /// The extent of `scope`'s current state at `at`.
-    pub(super) fn extent(&self, scope: &str, at: PositionKey<'_>) -> Option<&Extent<'a>> {
-        self.extents
-            .iter()
-            .find(|extent| extent.scope == scope && PositionKey::of(&extent.state.at) == at)
+    fn extent_ref(&self, scope: &str, at: PositionKey<'_>) -> Option<&Extent<'a>> {
+        self.extent_by_scope_position
+            .get(&(scope, at))
+            .map(|&i| self.extents[i].as_ref())
+    }
+
+    /// The extent of `scope`'s current state at `at`.
+    pub(super) fn extent(&self, scope: &str, at: PositionKey<'_>) -> Option<Rc<Extent<'a>>> {
+        self.extent_by_scope_position
+            .get(&(scope, at))
+            .map(|&i| self.extents[i].clone())
+    }
+
+    /// Every current-state extent of `scope`, in arena order.
+    pub(super) fn extents_for_scope(&self, scope: &str) -> Vec<Rc<Extent<'a>>> {
+        self.extents_by_scope
+            .get(scope)
+            .map_or_else(Vec::new, |indices| {
+                indices.iter().map(|&i| self.extents[i].clone()).collect()
+            })
     }
 
     /// Every entity of the current geometry within `extents` that
     /// `Design.names` names, with its entry.
     pub(super) fn extent_table(
         &self,
-        extents: &[&Extent<'a>],
+        extents: &[Rc<Extent<'a>>],
     ) -> Vec<(&'a EntityRef, &'a NameEntry)> {
         self.ir
             .design
@@ -240,8 +271,9 @@ impl<'a> States<'a> {
                 StateBase::Empty => return Some(chain),
                 StateBase::Evaluation(base) => at = self.layers.get(base.as_str())?,
                 StateBase::Current(position) => {
-                    chain.bottom =
-                        Some(self.extent(evaluation.scope.as_str(), PositionKey::of(position))?);
+                    chain.bottom = Some(
+                        self.extent_ref(evaluation.scope.as_str(), PositionKey::of(position))?,
+                    );
                     return Some(chain);
                 }
             }
@@ -252,35 +284,73 @@ impl<'a> States<'a> {
     /// The instance paths with bodies in the resolved state of a stored
     /// evaluation, down to the first base outside the evaluations.
     pub(super) fn instance_paths(&self, evaluation: &str) -> Vec<&'a OccurrencePath> {
-        let mut paths = BTreeMap::new();
+        let (paths, _) = self.merged(evaluation, |delta| &delta.instance_bodies);
+        paths
+            .into_iter()
+            .filter_map(|(path, bodies)| bodies.map(|_| path))
+            .collect()
+    }
+
+    /// The owner of each occurrence that the resolved state of a stored
+    /// evaluation restates in `members`.
+    pub(super) fn members(&self, evaluation: &str) -> BTreeMap<&'a str, &'a ProductDefinitionId> {
+        let (members, _) = self.merged(evaluation, |delta| &delta.members);
+        members
+            .into_iter()
+            .filter_map(|(occurrence, owner)| owner.map(|owner| (occurrence.as_str(), owner)))
+            .collect()
+    }
+
+    /// The paths with a pose in the resolved state of a stored evaluation,
+    /// the poses of the current state its chain ends on included.
+    pub(super) fn pose_paths(&self, evaluation: &str) -> Vec<&'a OccurrencePath> {
+        let (mut poses, bottom) = self.merged(evaluation, |delta| &delta.poses);
+        if let Some(extent) = bottom {
+            for (path, pose) in &extent.state.poses {
+                poses.entry(path).or_insert(Some(pose));
+            }
+        }
+        poses
+            .into_iter()
+            .filter_map(|(path, pose)| pose.map(|_| path))
+            .collect()
+    }
+
+    /// Each key of one delta map in a stored evaluation's chain, with its
+    /// entry in the topmost delta that states it (`None` removes it), and the
+    /// current state's extent the chain ends on, where it ends on one.
+    fn merged<K: Ord, V>(
+        &self,
+        evaluation: &str,
+        map: impl Fn(&'a StateDelta) -> &'a BTreeMap<K, Option<V>>,
+    ) -> (BTreeMap<&'a K, Option<&'a V>>, Option<&Extent<'a>>) {
+        let mut entries = BTreeMap::new();
         let Some(mut at) = self.layers.get(evaluation) else {
-            return Vec::new();
+            return (entries, None);
         };
         for _ in 0..=self.layers.len() {
             if let Some(content) = &at.evaluation.content {
-                for (path, bodies) in &content.delta.instance_bodies {
-                    paths.entry(path).or_insert(bodies.is_some());
+                for (key, value) in map(&content.delta) {
+                    entries.entry(key).or_insert(value.as_ref());
                 }
             }
             match self.bottom_or_next(at) {
                 Some(Ok(next)) => at = next,
-                Some(Err(_)) | None => break,
+                Some(Err(Bottom::Current(extent))) => return (entries, Some(extent)),
+                Some(Err(Bottom::Empty)) | None => break,
             }
         }
-        paths
-            .into_iter()
-            .filter_map(|(path, held)| held.then_some(path))
-            .collect()
+        (entries, None)
     }
 
-    fn bottom_or_next(&self, layer: &Layer<'a>) -> Option<Result<&Layer<'a>, Bottom<'_>>> {
+    fn bottom_or_next(&self, layer: &Layer<'a>) -> Option<Result<&Layer<'a>, Bottom<'_, 'a>>> {
         let evaluation = layer.evaluation;
         let content = evaluation.content.as_ref()?;
         Some(match &content.base {
             StateBase::Empty => Err(Bottom::Empty),
             StateBase::Evaluation(base) => Ok(self.layers.get(base.as_str())?),
             StateBase::Current(position) => Err(Bottom::Current(
-                self.extent(evaluation.scope.as_str(), PositionKey::of(position))?,
+                self.extent_ref(evaluation.scope.as_str(), PositionKey::of(position))?,
             )),
         })
     }
@@ -303,10 +373,7 @@ impl<'a> Reach<'a> {
         for shell in &topology.shells {
             add(shell.region.as_str(), shell.id.as_str());
             for member in &shell.members {
-                match member {
-                    ShellMember::WireEdge { id } => add(shell.id.as_str(), id.as_str()),
-                    ShellMember::FreeVertex { id } => add(shell.id.as_str(), id.as_str()),
-                }
+                add(shell.id.as_str(), member.as_str());
             }
         }
         for face in &topology.faces {

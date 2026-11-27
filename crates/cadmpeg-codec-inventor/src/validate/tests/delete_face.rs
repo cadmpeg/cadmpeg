@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn delete_face_validation_keeps_unresolved_controls_native() -> TestResult {
@@ -13,22 +14,22 @@ fn delete_face_validation_keeps_unresolved_controls_native() -> TestResult {
         (
             2,
             4,
-            "slots 1 and 2 Boolean construction roles are unresolved",
+            "the slot 1 and 2 Boolean pair has no resolved heal mode",
         ),
         (2, 3, "property vector differs from the four-slot form"),
         (2, 5, "property vector differs from the four-slot form"),
         (8, 4, "property vector marker differs from type 2"),
     ] {
         let source = crate::feature::tests::test_feature(0, count, &[]);
-        let mut wire = serde_json::to_value(&source)?;
-        wire["properties"]["marker"] = serde_json::json!(marker);
+        let mut wire = json::to_value(&source)?;
+        wire["properties"]["marker"] = cadmpeg_core::json!(marker);
         if marker == 8 {
-            wire["properties"]["metadata"]["width"] = serde_json::json!("u16");
+            wire["properties"]["metadata"]["width"] = cadmpeg_core::json!("u16");
         }
-        let source: crate::feature::PmDcFeature = serde_json::from_value(wire)?;
+        let source: crate::feature::PmDcFeature = json::from_value(wire)?;
         let identity = &source.identity;
         let mut data = empty_data();
-        data.records.push(serde_json::from_value(serde_json::json!({
+        data.records.push(json::from_value(cadmpeg_core::json!({
             "id": format!("inventor:rse:record#{}-0", identity.segment_token),
             "token": identity.segment_token.as_str(), "ordinal": 0,
             "selector": 0, "type_index": 0, "type_id": identity.type_id.as_str(),

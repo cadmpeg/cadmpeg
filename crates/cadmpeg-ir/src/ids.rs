@@ -7,7 +7,7 @@
 //! only be unique within their owning state.
 //!
 //! Entity IDs follow `<format>:<scope>:<kind>#<key>` (exactly three colon
-//! components before `#`). Compose typed IDs from an [`IdentityNamespace`]
+//! components before `#`, the first a codec id). Compose typed IDs from an [`IdentityNamespace`]
 //! and an [`IdentityKey`]; validate existing strings with [`is_valid_identity`].
 
 pub mod comparison;
@@ -28,9 +28,14 @@ use std::fmt::{self, Display};
 
 /// True when `id` matches `<format>:<scope>:<kind>#<key>`.
 ///
-/// The key is non-empty, contains no `#`, and the whole id has no whitespace.
+/// The format is a codec id (§2.2), the key is non-empty and contains no
+/// `#`, and the whole id has no whitespace.
 #[must_use]
 pub fn is_valid_identity(id: &str) -> bool {
+    let format = id.split_once(':').map_or(id, |(format, _)| format);
+    if !cadmpeg_core::text::is_codec_id(format.as_bytes()) {
+        return false;
+    }
     let mut separators = 0_u8;
     let mut key = false;
     let mut nonempty = false;
@@ -124,7 +129,7 @@ impl schemars::JsonSchema for Identity {
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
         // A strict end assertion also refuses a trailing line break.
         let pattern = format!(
-            r"^(?:[^:#{SCHEMA_WHITESPACE}]+:){{2}}[^:#{SCHEMA_WHITESPACE}]+#[^#{SCHEMA_WHITESPACE}]+(?![\s\S])"
+            r"^[a-z0-9]+:[^:#{SCHEMA_WHITESPACE}]+:[^:#{SCHEMA_WHITESPACE}]+#[^#{SCHEMA_WHITESPACE}]+(?![\s\S])"
         );
         schemars::json_schema!({"type": "string", "pattern": pattern})
     }
@@ -208,6 +213,12 @@ impl Identity {
     }
 }
 
+impl From<&Identity> for Identity {
+    fn from(value: &Identity) -> Self {
+        value.clone()
+    }
+}
+
 impl TryFrom<String> for Identity {
     type Error = IdentityError;
     fn try_from(value: String) -> Result<Self, Self::Error> {
@@ -219,6 +230,12 @@ impl TryFrom<&str> for Identity {
     type Error = IdentityError;
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Self::new(value)
+    }
+}
+
+impl AsRef<Identity> for Identity {
+    fn as_ref(&self) -> &Identity {
+        self
     }
 }
 
@@ -781,14 +798,17 @@ pub struct StaticIdentityNamespace {
 }
 
 impl StaticIdentityNamespace {
-    /// Admit a static namespace, returning `None` for invalid grammar.
+    /// Admit a static namespace whose format is a codec id, returning
+    /// `None` for invalid grammar.
     #[must_use]
     pub const fn new(
         format: &'static str,
         scope: &'static str,
         kind: &'static str,
     ) -> Option<Self> {
-        if valid_component_text(format) && valid_component_text(scope) && valid_component_text(kind)
+        if cadmpeg_core::text::is_codec_id(format.as_bytes())
+            && valid_component_text(scope)
+            && valid_component_text(kind)
         {
             Some(Self {
                 format,
@@ -810,7 +830,8 @@ pub struct IdentityNamespace {
 }
 
 impl IdentityNamespace {
-    /// Admit a namespace assembled from runtime text.
+    /// Admit a namespace assembled from runtime text whose format is a
+    /// codec id.
     pub fn new(
         format: impl Into<String>,
         scope: impl Into<String>,
@@ -819,6 +840,12 @@ impl IdentityNamespace {
         let format = format.into();
         let scope = scope.into();
         let kind = kind.into();
+        if !cadmpeg_core::text::is_codec_id(format.as_bytes()) {
+            return Err(IdentityError::InvalidComponent {
+                label: "format",
+                value: format,
+            });
+        }
         let format_component = Self::component("format", format)?;
         let scope_component = Self::component("scope", scope)?;
         let kind_component = Self::component("kind", kind)?;
@@ -839,15 +866,15 @@ impl IdentityNamespace {
         }
     }
 
-    /// Combine three already-admitted runtime components.
+    /// Combine a codec's format id with two admitted runtime components.
     #[must_use]
     pub fn from_components(
-        format: &IdentityComponent,
+        format: crate::codec::FormatId,
         scope: &IdentityComponent,
         kind: &IdentityComponent,
     ) -> Self {
         Self {
-            format: format.clone(),
+            format: IdentityComponent(std::borrow::Cow::Borrowed(format.as_str())),
             scope: scope.clone(),
             kind: kind.clone(),
         }
@@ -944,18 +971,24 @@ impl IdentityKeyTail {
         }
     }
 
-    /// Escape identity separators, the escape byte, and Unicode whitespace
-    /// in one source component.
+    /// Escape identity separators, the decode-set qualifier `@`, the escape
+    /// byte, and Unicode whitespace in one source component.
     #[inline]
     #[must_use]
     pub fn percent_encode(value: &str) -> Self {
         if value
             .bytes()
-            .all(|byte| byte > 0x20 && byte < 0x80 && !matches!(byte, b':' | b'#' | b'%'))
+            .all(|byte| byte > 0x20 && byte < 0x80 && !matches!(byte, b':' | b'#' | b'%' | b'@'))
         {
             return Self(value.to_owned());
         }
         Self::percent_encode_slow(value)
+    }
+
+    /// Whether [`Self::percent_encode`] escapes `character`.
+    #[must_use]
+    pub fn escapes(character: char) -> bool {
+        matches!(character, ':' | '#' | '%' | '@') || character.is_whitespace()
     }
 
     #[cold]
@@ -963,7 +996,7 @@ impl IdentityKeyTail {
     fn percent_encode_slow(value: &str) -> Self {
         let mut encoded = String::with_capacity(value.len());
         for character in value.chars() {
-            if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+            if Self::escapes(character) {
                 let mut bytes = [0; 4];
                 for byte in character.encode_utf8(&mut bytes).as_bytes() {
                     const HEX: &[u8; 16] = b"0123456789ABCDEF";
@@ -1238,7 +1271,8 @@ impl Identity {
 /// Failure to mint an entity identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IdentityError {
-    /// A colon-separated namespace component is empty or contains separators.
+    /// A colon-separated namespace component is empty or contains separators,
+    /// or the format component is not a codec id.
     InvalidComponent {
         /// Component name (`format`, `scope`, or `kind`).
         label: &'static str,
@@ -1271,6 +1305,12 @@ impl fmt::Display for IdentityError {
 
 impl std::error::Error for IdentityError {}
 
+impl From<IdentityError> for cadmpeg_core::CodecError {
+    fn from(error: IdentityError) -> Self {
+        Self::malformed(format_args!("{error}"))
+    }
+}
+
 macro_rules! id_type {
     ($(#[$meta:meta])* $name:ident $(, $helper:ident)*) => {
         $(#[$meta])*
@@ -1280,15 +1320,16 @@ macro_rules! id_type {
         pub struct $name($crate::ids::Identity);
 
         impl $crate::schema::rewrite::typed::RewriteIdentities for $name {
-            fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<(), cadmpeg_core::CodecError> {
+            fn rewrite_native_value(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_>) -> Result<(), cadmpeg_core::CodecError> {
                 <$crate::ids::Identity as $crate::schema::rewrite::typed::RewriteIdentities>::rewrite_native_value(ctx, value, map)
             }
 
             fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
-                $crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.0, ctx, visitor)
+                $crate::schema::rewrite::typed::visiting_id_type(std::any::type_name::<Self>(), || {
+                    $crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.0, ctx, visitor)
+                })
             }
-            fn rewrite_identities<F>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<Self, cadmpeg_core::CodecError>
-            where F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError> {
+            fn rewrite_identities(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_>) -> Result<Self, cadmpeg_core::CodecError> {
                 $crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.0, ctx, map).map(Self)
             }
         }
@@ -1323,8 +1364,24 @@ macro_rules! id_type {
             }
         }
 
+        impl AsRef<$crate::ids::Identity> for $name {
+            fn as_ref(&self) -> &$crate::ids::Identity { &self.0 }
+        }
+
         impl From<$name> for $crate::ids::Identity {
             fn from(value: $name) -> Self { value.0 }
+        }
+
+        impl From<&$name> for $crate::ids::Identity {
+            fn from(value: &$name) -> Self { value.0.clone() }
+        }
+
+        impl From<$name> for $crate::annotations::AnnotationKey {
+            fn from(value: $name) -> Self { Self::from(value.0) }
+        }
+
+        impl From<&$name> for $crate::annotations::AnnotationKey {
+            fn from(value: &$name) -> Self { Self::from(&value.0) }
         }
 
         impl From<$crate::ids::Identity> for $name {
@@ -1392,8 +1449,7 @@ macro_rules! local_id_type {
             fn visit_local_members(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
                 visitor(&self.0)
             }
-            fn rewrite_identities<F>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<Self, cadmpeg_core::CodecError>
-            where F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError> {
+            fn rewrite_identities(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_>) -> Result<Self, cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("typed rewrite tuple")?;
                 $crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.0, ctx, map).map(Self)
             }
@@ -1539,7 +1595,7 @@ id_type!(
 );
 id_type!(
     /// Identifies a [`crate::subd::SubdSurface`] carrier.
-    SubdId, compose
+    SubdId, compose, key
 );
 id_type!(
     /// Identifies a [`crate::topology::Point`] carrier (a vertex position).
@@ -1572,10 +1628,10 @@ impl NativeId {
 }
 
 impl crate::schema::rewrite::typed::RewriteIdentities for NativeId {
-    fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_native_value(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         value: &mut serde_json::Value,
-        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         <Identity as crate::schema::rewrite::typed::RewriteIdentities>::rewrite_native_value(
             ctx, value, map,
@@ -1590,10 +1646,10 @@ impl crate::schema::rewrite::typed::RewriteIdentities for NativeId {
         Ok(())
     }
 
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.0, ctx, map)
             .map(Self)

@@ -14,7 +14,7 @@ fn body_write_native_check_rejects_zero_class_indices() {
         } else {
             "nx:feature-history:unlabeled-operation-body-write#0"
         };
-        let mut wire = serde_json::json!({
+        let mut wire = cadmpeg_core::json!({
             "id": id, "operation_record":"record", "ordinal":0,
             "body_identity":11, "group_node":1, "raw_group_node":"01",
             "group_node_source_offset":103, "endpoint_class_index":17,
@@ -30,7 +30,7 @@ fn body_write_native_check_rejects_zero_class_indices() {
             assert!(crate::NxCodec::validate_native(ctx, &ir, None)
                 .unwrap()
                 .is_empty());
-            wire["endpoint_class_index"] = serde_json::json!(0);
+            wire["endpoint_class_index"] = cadmpeg_core::json!(0);
             ir.native
                 .namespace_mut(cadmpeg_ir::codec_id!("nx"))
                 .set_arena(ctx, arena, &[&wire])

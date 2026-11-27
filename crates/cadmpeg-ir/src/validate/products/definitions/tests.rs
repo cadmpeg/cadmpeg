@@ -336,15 +336,18 @@ fn representation_features_need_the_design_class() {
     shown.features.push(fixture::feature("plane"));
     part.representations.push(shown);
     ir.model.product_definitions.push(part);
-    let violation = ir.set_scope(ContentScope::geometry()).unwrap_err();
+    ir.set_scope(ContentScope::geometry());
     assert_eq!(
-        violation.arena.map(crate::document::ArenaName::as_str),
-        Some("product_definitions")
+        ir.scope_violations(),
+        [crate::document::ScopeViolation::Referenced {
+            class: cadmpeg_core::decode::ArenaClass::Design,
+            arena: crate::document::ArenaName::parse("product_definitions").unwrap(),
+        }]
     );
     ir.model.product_definitions[0].representations[0]
         .features
         .clear();
-    assert!(ir.set_scope(ContentScope::geometry()).is_ok());
+    assert!(ir.scope_violations().is_empty());
 }
 
 #[test]
@@ -407,4 +410,91 @@ fn a_placement_with_a_singular_linear_part_is_a_warning() {
         found(&ir, FRAGMENT),
         [(Severity::Warning, Some(occurrence("b").as_str().to_owned()))]
     );
+}
+
+/// A nested override's path resolves from the overridden occurrence's
+/// prototype and states no step configuration (§5.8, §5.11).
+#[test]
+fn a_nested_override_path_resolves_from_the_prototype_unconfigured() {
+    let nested = |keys: &[&str]| NestedOverride {
+        path: path(keys),
+        transform: None,
+        suppressed: None,
+        visible: None,
+        representation: None,
+    };
+    let mut ir = assembly();
+    occurrence_mut(&mut ir, "a").overrides.push(nested(&["b"]));
+    assert_eq!(found(&ir, "occurrence path"), Vec::new());
+    assert_eq!(found(&ir, "step configuration"), Vec::new());
+
+    let mut ir = assembly();
+    occurrence_mut(&mut ir, "a").overrides.push(nested(&["a"]));
+    assert_eq!(
+        found(&ir, "is not an occurrence of the previous step's prototype"),
+        error_on("a", "occurrence")
+    );
+
+    let mut ir = assembly();
+    let mut configured = nested(&["b"]);
+    configured.path.0[0].configuration = Some(ConfigurationRef::Local(id("configuration", "base")));
+    occurrence_mut(&mut ir, "a").overrides.push(configured);
+    assert_eq!(
+        found(&ir, "a nested override's path states a step configuration"),
+        error_on("a", "occurrence")
+    );
+}
+
+/// An instance-body path and a representation member's path state no step
+/// configuration (§5.8).
+#[test]
+fn product_paths_state_no_step_configuration() {
+    let mut ir = assembly();
+    let body = fixture::body(&ir);
+    let mut entry = path(&["a", "b"]);
+    entry.0[1].configuration = Some(ConfigurationRef::Local(id("configuration", "base")));
+    definition_mut(&mut ir, "assembly")
+        .instance_bodies
+        .push(InstanceBodies {
+            occurrence: entry,
+            bodies: vec![body],
+        });
+    assert_eq!(
+        found(&ir, "an instance-body path states a step configuration"),
+        error_on("assembly", "definition")
+    );
+}
+
+#[test]
+fn a_definition_unit_system_names_units_of_their_quantities() {
+    use crate::design::units::{UnitSymbol, UnitSystem};
+    let mut ir = fixture::document();
+    definition_mut(&mut ir, "part").units = Some(UnitSystem {
+        length: UnitSymbol::In,
+        angle: UnitSymbol::Deg,
+        mass: Some(UnitSymbol::Lb),
+        time: Some(UnitSymbol::Min),
+    });
+    assert!(found(&ir, "unit `").is_empty());
+
+    definition_mut(&mut ir, "part").units = Some(UnitSystem {
+        length: UnitSymbol::Deg,
+        angle: UnitSymbol::Mm,
+        mass: Some(UnitSymbol::S),
+        time: Some(UnitSymbol::Kg),
+    });
+    for (what, unit) in [
+        ("length", "deg"),
+        ("angle", "mm"),
+        ("mass", "s"),
+        ("time", "kg"),
+    ] {
+        assert_eq!(
+            found(
+                &ir,
+                &format!("the definition's {what} unit `{unit}` is no {what} unit")
+            ),
+            error_on("part", "definition"),
+        );
+    }
 }

@@ -629,7 +629,8 @@ impl DesignScopeTailFlags {
                 "{subject} stores {bytes}; a state byte that is not zero is read as set (open item DR-1032)"
             ))
         });
-        let active = (self.no_result && !self.suppressed()).then(|| {
+        let assumed = self.unevaluated || !self.rolled_back;
+        let active = (self.no_result && assumed && !self.suppressed()).then(|| {
             let code = if self.unevaluated {
                 F3dLossCode::FeatureUnevaluatedStateAssumed
             } else {
@@ -878,10 +879,10 @@ macro_rules! design_feature_kinds {
                     Self::Native(name) => name.visit_identity_references(ctx, visitor),
                 }
             }
-            fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+            fn rewrite_identities(
                 self,
                 ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-                map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
+                map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>,
             ) -> Result<Self, cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("rewrite native scope payload")?;
                 match self {
@@ -3636,6 +3637,12 @@ impl DesignParameterScope {
     }
     pub(crate) fn history_state_id(&self) -> Option<i64> {
         self.history_state_id
+    }
+    /// The suppression that the scope tail or the Thread companion stores.
+    pub(crate) fn stored_suppression(&self) -> Option<bool> {
+        self.tail_flags
+            .map(|flags| flags.suppressed())
+            .or(self.companion_suppressed.as_ref().map(|flag| flag.value))
     }
     pub(crate) fn previous_history_state_id(&self) -> Option<i64> {
         self.previous_history_state_id

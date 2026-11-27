@@ -121,17 +121,12 @@ pub(crate) fn prepare_parameters_for_write(
     feature_parameter_changes_authorized: bool,
     edits: &mut SourceEdits<'_>,
 ) -> Result<(), CodecError> {
-    let hash_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &hash_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
+    let hash_ctx = edits.ctx();
 
-    let neutral_hash = parameter_hash(&hash_ctx, &ir.model.parameters)?;
+    let neutral_hash = parameter_hash(hash_ctx, &ir.model.parameters)?;
     let native_hash = native
         .as_ref()
-        .map(|value| native_parameter_hash(&hash_ctx, &value.feature_histories))
+        .map(|value| native_parameter_hash(hash_ctx, &value.feature_histories))
         .transpose()?;
     let baseline_neutral =
         crate::codec_digests::baseline(digests, "sldprt_neutral_parameter_local_sha256");
@@ -166,14 +161,14 @@ pub(crate) fn prepare_parameters_for_write(
             let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
                 &lane_bytes,
                 &arena,
-                &cadmpeg_core::decode::DecodePolicy::service(),
+                hash_ctx.policy(),
             )?;
             let projected = native
                 .as_ref()
                 .map(|value| project_parameters(&ctx, &value.feature_histories))
                 .transpose()?
                 .unwrap_or_default();
-            if parameter_hash(&hash_ctx, &projected)? == neutral_hash {
+            if parameter_hash(hash_ctx, &projected)? == neutral_hash {
                 Ok(())
             } else {
                 Err(CodecError::Malformed(
@@ -250,7 +245,7 @@ fn sync_neutral_parameters(
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &lane_bytes,
         &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
+        edits.ctx().policy(),
     )?;
     let global_owners = global_parameter_owners(&ir.model.features);
     if let Some(native) = native.as_ref() {
@@ -306,10 +301,25 @@ fn sync_neutral_parameters(
             continue;
         }
         let Some(owner_id) = parameter.owner.as_ref() else {
-            return Err(CodecError::NotImplemented(format!(
-                "global SLDPRT parameter {} cannot be written to a feature record",
-                parameter.id.as_str()
-            )));
+            if !edits.has_source() {
+                return Err(CodecError::NotImplemented(format!(
+                    "global SLDPRT parameter {} cannot be written to a feature record",
+                    parameter.id.as_str()
+                )));
+            }
+            if edits.parameter_edited(&parameter.id) {
+                edits.parameter_unwritten(
+                    &parameter.id,
+                    UnwrittenPart::Whole,
+                    format!(
+                        "Global SLDPRT parameter {} is not written: each written parameter is an \
+                         entry of its owner feature's record, and the parameter has no owner \
+                         feature.",
+                        parameter.id.as_str()
+                    ),
+                );
+            }
+            continue;
         };
         let Some(owner) = features.get(owner_id) else {
             return Err(CodecError::malformed(format_args!(
@@ -407,9 +417,20 @@ fn sync_neutral_parameters(
         owner_parameters.push(parameter);
     }
     let Some(native) = native.as_mut() else {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT parameters require feature records".into(),
-        ));
+        let mut held = desired.values().flatten().collect::<Vec<_>>();
+        held.sort_by(|left, right| left.id.cmp(&right.id));
+        for parameter in held {
+            edits.parameter_unwritten(
+                &parameter.id,
+                UnwrittenPart::Whole,
+                format!(
+                    "Parameter {} is not written: each written parameter is an entry of its \
+                     owner feature's record, and the part holds no feature record.",
+                    parameter.id.as_str()
+                ),
+            );
+        }
+        return Ok(());
     };
     let record_ids = ir
         .model

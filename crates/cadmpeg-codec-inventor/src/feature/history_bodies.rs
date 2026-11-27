@@ -9,13 +9,10 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
-use cadmpeg_asm::brep::{decode_with_header, DecodePurpose};
-use cadmpeg_asm::history::{
-    historical_record_archive, materialize_record_table, walk_entity_versions,
-};
+use cadmpeg_asm::history::walk_entity_versions;
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::{CadIr, Topology};
+use cadmpeg_ir::document::Topology;
 use cadmpeg_ir::features::{Feature, FeatureId};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -27,8 +24,9 @@ use cadmpeg_ir::schema::EntitySchema;
 use cadmpeg_ir::topology::{BodyKind, EdgeCarrier};
 
 use super::history_states::{
-    Binding, Chain, FeatureHistoryState, BASE_TAG, NATIVE_BASE_KIND, SPLIT_TAG,
+    Binding, Closed, FeatureHistoryState, BASE_TAG, NATIVE_BASE_KIND, SPLIT_TAG,
 };
+use super::history_views::{decode_scratch, Scratch};
 use crate::kernel::ActiveCarrier;
 
 /// Cap of nests per part. A nest materializes and decodes a whole history state.
@@ -50,6 +48,8 @@ enum Role {
 /// One body to extract.
 #[derive(Debug, Clone, Copy)]
 struct Want {
+    /// Ordinal of the request among all requests of the part.
+    index: usize,
     /// Index of the feature record.
     record: usize,
     /// Oldest-first ordinal of the state that holds the body.
@@ -85,15 +85,42 @@ pub(crate) struct Built {
     pub(crate) bodies: Vec<HistoryBody>,
     /// Identity of the nest of each feature record, by record index.
     pub(crate) links: HashMap<usize, HistoryBodyId>,
+    /// The nest that each request whose body was given up would have, and
+    /// why the body was given up.
+    pub(crate) unbuilt: Vec<(HistoryBodyId, Unbuilt)>,
     /// Counts.
     pub(crate) outcome: Outcome,
+}
+
+/// Why a request gives no nest for a body that its state holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Unbuilt {
+    /// The carrier or the state did not materialize or decode.
+    Undecoded,
+    /// A carrier of the body has no solved form.
+    Unsolved,
+    /// The body is not a closed manifold solid.
+    NotClosed(Open),
+    /// The feature of the body is not a projected feature.
+    Unlinked,
+    /// The request passed the nest or work cap.
+    Bounded,
+}
+
+impl Built {
+    fn give_up(&mut self, want: &Want, why: Unbuilt) -> Result<(), CodecError> {
+        self.unbuilt.push((nest_id(want.index)?, why));
+        Ok(())
+    }
 }
 
 /// Result of the extraction of one body.
 enum Extract {
     Nest(Box<BodyTopology>),
-    /// The state holds no body with the key, or a carrier has no solved form.
+    /// The state holds no body with the key.
     Absent,
+    /// A carrier of the body has no solved form.
+    Unsolved,
     /// The body is not a closed manifold solid.
     NotClosed(Open),
 }
@@ -147,11 +174,8 @@ fn wants(records: &[FeatureHistoryState], outcome: &mut Outcome) -> Vec<Want> {
             continue;
         };
         outcome.requested += 1;
-        if wants.len() == MAX_HISTORY_BODIES {
-            outcome.bounded += 1;
-            continue;
-        }
         wants.push(Want {
+            index: wants.len(),
             record,
             ordinal,
             state_id: 0,
@@ -162,33 +186,49 @@ fn wants(records: &[FeatureHistoryState], outcome: &mut Outcome) -> Vec<Want> {
     wants
 }
 
+/// Gives up the requests of `wants` past the nest cap.
+fn bound(mut wants: Vec<Want>, built: &mut Built) -> Result<Vec<Want>, CodecError> {
+    for want in wants.split_off(wants.len().min(MAX_HISTORY_BODIES)) {
+        built.outcome.bounded += 1;
+        built.give_up(&want, Unbuilt::Bounded)?;
+    }
+    Ok(wants)
+}
+
 /// Materialize the states of the bound Base and Split features of `records`
 /// and keep the bodies they name.
 pub(crate) fn build(
     ctx: &DecodeContext<'_>,
     carrier: &ActiveCarrier<'_>,
-    chain: Chain<'_>,
+    closed: &Closed<'_>,
     records: &[FeatureHistoryState],
     model_features: &[Feature],
 ) -> Result<Built, CodecError> {
     let mut built = Built::default();
-    let mut wants = wants(records, &mut built.outcome);
+    let requested = wants(records, &mut built.outcome);
+    let mut wants = bound(requested, &mut built)?;
     let Ok(header) = carrier.header.as_ref() else {
         built.outcome.undecoded += wants.len();
+        for want in &wants {
+            built.give_up(want, Unbuilt::Undecoded)?;
+        }
         return Ok(built);
     };
     if wants.is_empty() {
         return Ok(built);
     }
-    let Chain {
+    let Closed {
         views,
-        frames,
         archived_ids,
         active_count,
-    } = chain;
+        ..
+    } = closed;
     let state_count = views.len();
-    let Some(archive) = historical_record_archive(&views, frames) else {
+    let Some(archive) = closed.archive() else {
         built.outcome.undecoded += wants.len();
+        for want in &wants {
+            built.give_up(want, Unbuilt::Undecoded)?;
+        }
         return Ok(built);
     };
     let bytes = carrier.bytes.window();
@@ -201,7 +241,7 @@ pub(crate) fn build(
     let mut failure = None;
     let mut bounded = HashSet::<usize>::new();
     let mut visited = 0_usize;
-    walk_entity_versions(&views, active_count, &archived_ids, |slot, versions| {
+    walk_entity_versions(views, *active_count, archived_ids, |slot, versions| {
         let visit = visited;
         visited += 1;
         let Some(ordinal) = state_count
@@ -224,45 +264,17 @@ pub(crate) fn build(
             bounded.extend(indices.iter().copied());
             return;
         }
-        let Some(table) = materialize_record_table(versions, |revision| archive.get(&revision))
-        else {
-            return;
-        };
-        let stream = format!("inventor:history:{ordinal}");
-        let brep = match decode_with_header(
-            ctx,
-            &table,
-            bytes,
-            Some(&header.metadata),
-            &stream,
-            cadmpeg_asm::asm_format!("inventor"),
-            DecodePurpose::Model,
-        ) {
-            Ok(brep) => brep,
-            Err(error @ CodecError::ResourceLimit(_)) => {
+        let Scratch {
+            body_keys: keys,
+            model: scratch,
+        } = match decode_scratch(ctx, bytes, header, archive, versions, ordinal) {
+            Ok(Some(scratch)) => scratch,
+            Ok(None) => return,
+            Err(error) => {
                 failure = Some(error);
                 return;
             }
-            Err(_) => return,
         };
-        drop(table);
-        let keys = brep
-            .body_native_keys
-            .iter()
-            .filter_map(|record| Some((record.body.as_str().to_owned(), record.asm_body_key?)))
-            .collect::<Vec<_>>();
-        let mut scratch = CadIr::empty();
-        if let Err(error) = cadmpeg_asm::brep::transfer::transfer_into_ir(
-            ctx,
-            &mut scratch,
-            cadmpeg_ir::codec_id!("inventor"),
-            brep,
-        ) {
-            if matches!(error, CodecError::ResourceLimit(_)) {
-                failure = Some(error);
-            }
-            return;
-        }
         for &index in indices {
             let key = u64::try_from(wants[index].key).ok();
             let body = keys
@@ -295,13 +307,24 @@ pub(crate) fn build(
     for (index, want) in wants.iter().enumerate() {
         if bounded.contains(&index) {
             built.outcome.bounded += 1;
+            built.give_up(want, Unbuilt::Bounded)?;
             continue;
         }
         match extracted.remove(&index) {
-            None | Some(Extract::Absent) => built.outcome.undecoded += 1,
-            Some(Extract::NotClosed(open)) => built.outcome.open[open.slot()] += 1,
+            Some(Extract::Absent) => built.outcome.undecoded += 1,
+            None => {
+                built.outcome.undecoded += 1;
+                built.give_up(want, Unbuilt::Undecoded)?;
+            }
+            Some(Extract::Unsolved) => {
+                built.outcome.undecoded += 1;
+                built.give_up(want, Unbuilt::Unsolved)?;
+            }
+            Some(Extract::NotClosed(open)) => {
+                built.outcome.open[open.slot()] += 1;
+                built.give_up(want, Unbuilt::NotClosed(open))?;
+            }
             Some(Extract::Nest(topology)) => {
-                let ordinal = built.bodies.len();
                 let record = &records[want.record];
                 let Some(feature) = features
                     .get(record.feature.as_str())
@@ -309,9 +332,10 @@ pub(crate) fn build(
                 else {
                     // A history body names the feature it comes from.
                     built.outcome.unlinked += 1;
+                    built.give_up(want, Unbuilt::Unlinked)?;
                     continue;
                 };
-                let body = nest(ctx, ordinal, want, feature, *topology)?;
+                let body = nest(ctx, want, feature, *topology)?;
                 ctx.charge_entities(
                     cadmpeg_core::decode::u64_from_index(body.topology.record_count()),
                     "admit history body records",
@@ -326,15 +350,20 @@ pub(crate) fn build(
     Ok(built)
 }
 
+/// The identity of the nest of request `ordinal`.
+fn nest_id(ordinal: usize) -> Result<HistoryBodyId, CodecError> {
+    HistoryBodyId::mint(format!("inventor:{NEST_SCOPE}:nest#h{ordinal:04}"))
+        .map_err(|error| CodecError::malformed(format_args!("{error}")))
+}
+
 /// The nest in the history-body scope, with the feature link of its role.
 fn nest(
     ctx: &DecodeContext<'_>,
-    ordinal: usize,
     want: &Want,
     feature: FeatureId,
     topology: BodyTopology,
 ) -> Result<HistoryBody, CodecError> {
-    let prefix = format!("h{ordinal:04}-");
+    let prefix = format!("h{:04}-", want.index);
     let mut map = IdentityMap::new(|id: &str| {
         let malformed = || CodecError::malformed(format_args!("history body identity {id}"));
         let (format, rest) = id.split_once(':').ok_or_else(malformed)?;
@@ -350,10 +379,10 @@ fn nest(
         Role::Split => (None, Some(feature)),
     };
     Ok(HistoryBody {
-        id: HistoryBodyId::mint(format!("inventor:{NEST_SCOPE}:nest#h{ordinal:04}"))
-            .map_err(|error| CodecError::malformed(format_args!("{error}")))?,
+        id: nest_id(want.index)?,
         produced_by,
         consumed_by,
+        state_of: None,
         state: HistoryStateRef {
             ordinal: want.ordinal,
             identifier: want.state_id,
@@ -633,7 +662,7 @@ fn extract(
     topology.pcurves = retain(&geometry.pcurves, &reached);
     topology.points = retain(&geometry.points, &reached);
     if !solve(&mut topology) {
-        return Ok(Extract::Absent);
+        return Ok(Extract::Unsolved);
     }
     if missing != 0 || escapes(ctx, &topology)? {
         return Ok(Extract::NotClosed(Open::Reference));

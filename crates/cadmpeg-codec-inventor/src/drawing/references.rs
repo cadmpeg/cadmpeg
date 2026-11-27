@@ -50,27 +50,27 @@ pub(crate) struct Tables {
 }
 
 impl Tables {
+    /// The tables of metadata sections 7, 8, and 10, or the index in
+    /// `meta.tables.sections` of the section that does not read and its error.
     pub(super) fn read(
         ctx: &DecodeContext<'_>,
         token: &IdentityKey,
         meta: &SegmentMeta<'_>,
-    ) -> Result<Self, CodecError> {
-        let sections = [
-            &meta.tables.sections[6],
-            &meta.tables.sections[7],
-            &meta.tables.sections[9],
-        ];
+    ) -> Result<Self, (usize, CodecError)> {
+        let sections = SECTIONS.map(|index| &meta.tables.sections[index]);
         let counts = sections.map(|section| section.discriminator);
         let payloads = sections.map(|section| section.payload);
-        let (pairs, revisions, external) = parse(ctx, counts, payloads)?;
+        let (pairs, revisions, external) =
+            parse(ctx, counts, payloads).map_err(|(at, error)| (SECTIONS[at], error))?;
         let mut retained = [
             NativeBytes::default(),
             NativeBytes::default(),
             NativeBytes::default(),
         ];
-        for (target, payload) in retained.iter_mut().zip(payloads) {
-            let mut bytes =
-                ctx.alloc_filled(payload.remaining(), 0_u8, "retain drawing reference table")?;
+        for ((target, payload), index) in retained.iter_mut().zip(payloads).zip(SECTIONS) {
+            let mut bytes = ctx
+                .alloc_filled(payload.remaining(), 0_u8, "retain drawing reference table")
+                .map_err(|error| (index, error))?;
             bytes.copy_from_slice(payload.unread());
             *target = bytes.into();
         }
@@ -100,7 +100,7 @@ impl Tables {
             Ok((pairs, revisions, external)) => {
                 Ok(pairs == self.pairs && revisions == self.revisions && external == self.external)
             }
-            Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+            Err((_, error @ CodecError::ResourceLimit(_))) => Err(error),
             Err(_) => Ok(false),
         }
     }
@@ -126,6 +126,10 @@ impl Tables {
 
 type Parsed = (Vec<Pair>, Vec<Revision>, Vec<External>);
 
+/// The indices in the section list of the metadata sections 7, 8, and 10,
+/// which store the segment-pair, revision, and external-reference tables.
+const SECTIONS: [usize; 3] = [6, 7, 9];
+
 fn read_entries<T: Clone>(
     ctx: &DecodeContext<'_>,
     count: u32,
@@ -150,11 +154,13 @@ fn read_entries<T: Clone>(
     Ok(entries)
 }
 
+/// The three tables, or the index in `payloads` of the table that does not
+/// read and its error.
 fn parse(
     ctx: &DecodeContext<'_>,
     counts: [u32; 3],
     payloads: [View<'_>; 3],
-) -> Result<Parsed, CodecError> {
+) -> Result<Parsed, (usize, CodecError)> {
     let pairs = read_entries(
         ctx,
         counts[0],
@@ -167,7 +173,8 @@ fn parse(
                 revision_id: reader::array(view, "drawing reference revision")?.into(),
             })
         },
-    )?;
+    )
+    .map_err(|error| (0, error))?;
     let revisions = read_entries(
         ctx,
         counts[1],
@@ -181,7 +188,8 @@ fn parse(
                 reference_count: reader::u16(view, "drawing revision reference count")?,
             })
         },
-    )?;
+    )
+    .map_err(|error| (1, error))?;
     let external = read_entries(
         ctx,
         counts[2],
@@ -195,8 +203,37 @@ fn parse(
                 header_id: reader::u16(view, "drawing external header identifier")?,
             })
         },
-    )?;
+    )
+    .map_err(|error| (2, error))?;
     Ok((pairs, revisions, external))
+}
+
+/// The id of the given-up record that `record` fails its links for: for a
+/// sheet, the first local view it names that `refused` holds by its segment
+/// token and ordinal; for a cached view, the reference tables of its own
+/// segment that `failed_tables` holds by segment token.
+pub(super) fn refused_link<'r>(
+    record: &super::Record,
+    refused: &'r std::collections::BTreeMap<(String, u32), String>,
+    failed_tables: &'r std::collections::BTreeMap<String, String>,
+) -> Option<&'r str> {
+    let token = record.segment_token.as_str();
+    match &record.fields {
+        super::records::Fields::Sheet {
+            views,
+            auxiliary_lists,
+            ..
+        } => views
+            .references()
+            .iter()
+            .chain(auxiliary_lists[2].references())
+            .filter(|reference| reference.qualified())
+            .filter_map(|reference| reference.record_ordinal())
+            .find_map(|ordinal| refused.get(&(token.to_owned(), ordinal)))
+            .map(String::as_str),
+        super::records::Fields::CachedView { .. } => failed_tables.get(token).map(String::as_str),
+        super::records::Fields::View { .. } | super::records::Fields::ModelReference { .. } => None,
+    }
 }
 
 pub(super) fn record_links_are_valid(

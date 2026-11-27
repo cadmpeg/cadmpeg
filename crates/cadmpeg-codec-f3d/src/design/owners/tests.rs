@@ -5,6 +5,7 @@ use crate::records::{
     feature::scope::{DesignFeatureKind, DesignParameterScope},
     recipes::DesignComponentNamingSpace,
 };
+use cadmpeg_core::serde_erase::json;
 
 fn space(record: u64, uuid: &str) -> DesignComponentNamingSpace {
     DesignComponentNamingSpace {
@@ -42,9 +43,9 @@ fn model(native: &F3dNative) -> Model {
     let mut model = Model::default();
     for space in &native.design_component_naming_spaces {
         model.product_definitions.push(
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": crate::ids::neutral_component_id(&space.context_uuid), "kind": "part",
-                "bom_properties": {}, "storage": {"kind": "embedded"}, "occurrences": [], "instance_bodies": [], "representations": [], "bodies": [], "sketches": []
+                "bom_properties": {}, "storage": {"kind": "embedded"}, "occurrences": [], "instance_bodies": [], "representations": [], "bodies": []
             }))
             .unwrap(),
         );
@@ -124,9 +125,9 @@ fn product_history_owner_reports_missing_and_multiple_definitions() {
     native
         .design_component_naming_spaces
         .push(space(30, "33333333-3333-3333-3333-333333333333"));
-    model.product_definitions.push(serde_json::from_value(serde_json::json!({
+    model.product_definitions.push(json::from_value(cadmpeg_core::json!({
         "id": crate::ids::neutral_component_id(&native.design_component_naming_spaces[2].context_uuid), "kind": "part",
-                "bom_properties": {}, "storage": {"kind": "embedded"}, "occurrences": [], "instance_bodies": [], "representations": [], "bodies": [], "sketches": []
+                "bom_properties": {}, "storage": {"kind": "embedded"}, "occurrences": [], "instance_bodies": [], "representations": [], "bodies": []
     })).unwrap());
     losses.clear();
     attach(&native, &mut model, &mut losses).unwrap();
@@ -150,7 +151,7 @@ fn product_history_owner_attaches_bound_planar_sketch_to_component() {
 
     let native = native();
     let mut model = model(&native);
-    let sketch: cadmpeg_ir::sketches::Sketch = serde_json::from_value(serde_json::json!({
+    let sketch: cadmpeg_ir::sketches::Sketch = json::from_value(cadmpeg_core::json!({
         "id": "test:model:sketch#profile",
         "placement": {"kind": "unresolved"},
         "profiles": []
@@ -293,7 +294,7 @@ fn product_history_owner_follows_the_one_definition_holding_every_output() {
 
 fn sketch_model(native: &F3dNative, sketch_id: &str) -> (Model, cadmpeg_ir::sketches::SketchId) {
     let mut model = model(native);
-    let sketch: cadmpeg_ir::sketches::Sketch = serde_json::from_value(serde_json::json!({
+    let sketch: cadmpeg_ir::sketches::Sketch = json::from_value(cadmpeg_core::json!({
         "id": sketch_id,
         "placement": {"kind": "unresolved"},
         "profiles": []
@@ -546,7 +547,7 @@ fn unadmitted_output_membership_retains_every_output_and_releases_the_owner() {
     model.product_definitions[0].bodies = vec![owned.clone()];
     model.product_definitions[1].bodies = vec![unadmitted.clone()];
     native.design_body_bindings.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "f3d:Design/BulkStream.dat:design-body-binding#1000",
             "stream": "Design/BulkStream.dat",
             "pair_count": 1, "pair_ordinal": 0,

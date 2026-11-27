@@ -140,7 +140,6 @@ fn append_oriented_wire_curve(
             "oriented_support_model_curve_construction",
             Exactness::Derived,
         )?;
-        annotations.derived(&construction_id, "curve")?;
         annotations.derived(&construction_id, "definition")?;
         let mut definition = definition;
         let cached =
@@ -595,7 +594,7 @@ fn transfer_closed_wire_loops(
                     "standalone_wire_edge",
                     Exactness::Derived,
                 )?;
-                annotations.derived(&edge_id, "curve")?;
+                annotations.derived(&edge_id, "carrier.curve")?;
                 annotations.derived(&edge_id, "ends.start")?;
                 annotations.derived(&edge_id, "ends.end")?;
                 admission.charge()?;
@@ -611,7 +610,7 @@ fn transfer_closed_wire_loops(
                     native_ref: None,
                 });
                 if param_range.is_some() {
-                    annotations.derived(&edge_id, "param_range")?;
+                    annotations.derived(&edge_id, "carrier.param_range")?;
                 }
                 edge_ids.push(edge_id);
                 counts.edges += 1;
@@ -985,7 +984,6 @@ pub(in crate::families) fn try_decode_zero_entity(
             admitted!(annotate(&mut annotations, &curve_id, "zero_entity_a9_03", u64_from_index(support.pos), role, Exactness::Derived));
             admitted!(annotations.derived(&curve_id, "geometry").map_err(cadmpeg_core::CodecError::from));
             admitted!(annotate(&mut annotations, &construction_id, "zero_entity_a9_03", u64_from_index(support.pos), role, Exactness::Derived));
-            admitted!(annotations.derived(&construction_id, "curve").map_err(cadmpeg_core::CodecError::from));
             admitted!(annotations.derived(&construction_id, "definition").map_err(cadmpeg_core::CodecError::from));
             admitted!(admission.charge());
             ir.geometry.curves.push(Curve {
@@ -1101,7 +1099,33 @@ pub(in crate::families) fn try_decode_zero_entity(
     } else {
         CatiaLossCode::TopologyZeroEntityFaceUnresolved
     };
-    let losses = vec![topology_loss.note(topology_message.to_string())];
+    let mut losses = vec![topology_loss.note(topology_message.to_string())];
+    if topology_counts.is_none() {
+        let face_records =
+            crate::families::zero_entity::records::zero_entity_face_ordinals_in_range(
+                &scan.data,
+                preamble.clone(),
+            )
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>();
+        let code = topology_loss.kind();
+        losses.extend(face_records.into_iter().map(|ordinal| {
+            cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                cadmpeg_ir::ids::Identity::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-face"),
+                    ordinal,
+                ),
+                format_args!("{code}: the face has no complete allocation graph or face geometry"),
+            )
+            .loss()
+        }));
+    }
+    admitted!(crate::families::zero_entity::records::drop_supports_with_refused_carriers(
+        &scan.data,
+        preamble,
+        refusal,
+        refused_carrier_support_records,
+    ));
     Some(Ok(FamilyOutput {
         ir,
         report: DecodeBody {
@@ -1113,10 +1137,60 @@ pub(in crate::families) fn try_decode_zero_entity(
         },
         annotations: annotations.build(),
         unknowns,
+        given_up: Vec::new(),
         admitted_model_entities: admission.admitted(),
     }))
     })()
     .transpose()
+}
+
+/// The curve the route mints for `support` on a NURBS carrier when the
+/// support's pcurve bounds a parameter range, and the construction of that
+/// curve unless an exact model curve can replace it.
+fn refused_carrier_support_records(
+    support: &crate::families::zero_entity::records::ZeroEntitySupportOccurrence,
+) -> Result<Vec<cadmpeg_ir::ids::Identity>, cadmpeg_core::CodecError> {
+    let Some(PcurveGeometry::Nurbs { nurbs }) = support.pcurve.as_ref() else {
+        return Ok(Vec::new());
+    };
+    let bounded = usize::try_from(nurbs.degree())
+        .ok()
+        .and_then(|degree| {
+            Some(*nurbs.knots().get(degree)? < *nurbs.knots().get(nurbs.pole_rows().count())?)
+        })
+        .unwrap_or(false);
+    if !bounded {
+        return Ok(Vec::new());
+    }
+    let mut records = vec![cadmpeg_ir::ids::Identity::from(
+        crate::resource::compose_u32_id(
+            &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "support-curve"),
+            support.record_ordinal,
+            CurveId::mint,
+        )?,
+    )];
+    let poles: Vec<_> = nurbs
+        .control_points()
+        .into_iter()
+        .map(cadmpeg_ir::units::FinitePoint2::get)
+        .collect();
+    let isoparametric = poles.first().is_some_and(|first| {
+        poles.iter().all(|pole| pole.u == first.u) || poles.iter().all(|pole| pole.v == first.v)
+    });
+    if support.uv_endpoints.is_none() || nurbs.periodic() || !isoparametric {
+        records.push(cadmpeg_ir::ids::Identity::from(
+            crate::resource::compose_u32_id(
+                &cadmpeg_ir::identity_namespace!(
+                    "catia",
+                    "zero-entity",
+                    "support-curve-construction"
+                ),
+                support.record_ordinal,
+                ProceduralCurveId::mint,
+            )?,
+        ));
+    }
+    Ok(records)
 }
 
 #[cfg(test)]

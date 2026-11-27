@@ -163,11 +163,11 @@ class Context:
 
 
 def is_test_path(path: str) -> bool:
-    """Whether a Rust path holds only test code by its location."""
-    parts = Path(path).parts
-    stem = Path(path).stem
-    return (bool(TEST_SEGMENTS & set(parts[:-1])) or stem in TEST_SEGMENTS
-            or stem.endswith("_tests"))
+    """Whether a Rust path holds only test code by its location: a test
+    directory or file, or a `*_tests` module file or one of its children."""
+    path = Path(path)
+    return any(part in TEST_SEGMENTS or part.endswith("_tests")
+               for part in (*path.parent.parts, path.stem))
 
 
 def crate_of(path: str) -> str | None:

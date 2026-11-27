@@ -18,6 +18,7 @@ mod output;
 mod schema;
 mod schema_infer;
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::io::{BufReader, Read, Seek, SeekFrom};
@@ -308,7 +309,7 @@ struct ExportReportProbe {
     losses: Vec<LossProbe>,
 }
 
-#[derive(Deserialize)]
+#[derive(cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum ExportIdentityProbe {
     Cadir {},
@@ -356,6 +357,8 @@ struct FindingProbe {
     #[serde(default)]
     check: Option<String>,
     #[serde(default)]
+    rule: Option<String>,
+    #[serde(default)]
     severity: Option<String>,
     #[serde(default)]
     message: Option<String>,
@@ -395,25 +398,26 @@ impl LossCodeProbe {
 #[cfg(test)]
 mod tests {
     use super::{push_decode_dialect_summary, DecodeReportProbe};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn summary_cells_keep_text_and_json_distinct_from_field_names() {
         let text = super::SummaryCell::from("not JSON".to_owned());
         let structured = super::SummaryCell::from(
-            serde_json::value::to_raw_value(&serde_json::json!({"a": 1})).unwrap(),
+            serde_json::value::to_raw_value(&cadmpeg_core::json!({"a": 1})).unwrap(),
         );
         let rows = std::collections::BTreeMap::from([
             ("ordinary_dialects", text),
             ("other_name", structured),
         ]);
-        let value = serde_json::to_value(&rows).unwrap();
+        let value = json::to_value(&rows).unwrap();
         assert_eq!(value["ordinary_dialects"], "not JSON");
-        assert_eq!(value["other_name"], serde_json::json!({"a": 1}));
+        assert_eq!(value["other_name"], cadmpeg_core::json!({"a": 1}));
     }
 
     #[test]
     fn decode_summary_names_every_extra_dialect_layer() {
-        let decode: DecodeReportProbe = serde_json::from_value(serde_json::json!({
+        let decode: DecodeReportProbe = json::from_value(cadmpeg_core::json!({
             "dialects": {
                 "primary": {
                     "dialect": "f3d:archive-2",
@@ -658,7 +662,7 @@ enum ArtifactKind {
 /// The sniff skips every value it does not name, so a view that goes on to
 /// materialize the document pays for one body parse, not two.
 fn sniff_kind(bytes: &[u8], path: &Path) -> Result<ArtifactKind> {
-    let sniff: KindProbe = serde_json::from_slice(bytes).with_context(|| {
+    let sniff: KindProbe = json::from_slice(bytes).with_context(|| {
         format!(
             "{} is not a JSON object; query reads a command report (--report/-o), \
              a decoded CADIR document, or a .fidelity.json decode sidecar",
@@ -698,17 +702,17 @@ fn classify_kind(sniff: &KindProbe, path: &Path) -> Result<ArtifactKind> {
 fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {
     match sniff_kind(bytes, path)? {
         ArtifactKind::Report => {
-            let report: ReportProbe = serde_json::from_slice(bytes)
+            let report: ReportProbe = json::from_slice(bytes)
                 .with_context(|| format!("parsing the command report {}", path.display()))?;
             Ok(Artifact::Report(Box::new(report)))
         }
         ArtifactKind::Cadir => {
-            let cadir: CadirProbe = serde_json::from_slice(bytes)
+            let cadir: CadirProbe = json::from_slice(bytes)
                 .with_context(|| format!("parsing the CADIR document {}", path.display()))?;
             Ok(Artifact::Cadir(cadir))
         }
         ArtifactKind::Sidecar => {
-            let sidecar: SidecarProbe = serde_json::from_slice(bytes)
+            let sidecar: SidecarProbe = json::from_slice(bytes)
                 .with_context(|| format!("parsing the decode sidecar {}", path.display()))?;
             Ok(Artifact::Sidecar(sidecar))
         }
@@ -771,7 +775,7 @@ impl SummaryCell {
 }
 
 fn counts_json(map: &BTreeMap<String, u64>) -> serde_json::Value {
-    serde_json::json!(map)
+    cadmpeg_core::json!(map)
 }
 
 fn summary(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
@@ -1070,14 +1074,14 @@ impl Serialize for DialectMatchOutput<'_> {
 
 fn admission_value(matched: &DialectMatch) -> Value {
     match matched.admission() {
-        Admission::Admitted => serde_json::json!("admitted"),
-        Admission::Unverified { using } => serde_json::json!({
+        Admission::Admitted => cadmpeg_core::json!("admitted"),
+        Admission::Unverified { using } => cadmpeg_core::json!({
             "unverified": {
                 "using": matched.grammar_id(using)
             }
         }),
-        Admission::Residual => serde_json::json!("residual"),
-        Admission::Refused => serde_json::json!("refused"),
+        Admission::Residual => cadmpeg_core::json!("residual"),
+        Admission::Refused => cadmpeg_core::json!("refused"),
     }
 }
 
@@ -1208,8 +1212,9 @@ fn findings(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
         let payload = rows
             .iter()
             .map(|finding| {
-                serde_json::json!({
+                cadmpeg_core::json!({
                     "check": finding.check,
+                    "rule": finding.rule,
                     "severity": finding.severity,
                     "message": finding.message,
                     "entity": finding.entity,
@@ -1218,12 +1223,13 @@ fn findings(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
             .collect();
         print_json("findings", serde_json::Value::Array(payload))?;
     } else {
-        println!("severity\tcheck\tentity\tmessage");
+        println!("severity\tcheck\trule\tentity\tmessage");
         for finding in rows {
             println!(
-                "{}\t{}\t{}\t{}",
+                "{}\t{}\t{}\t{}\t{}",
                 opt(finding.severity.as_ref()),
                 opt(finding.check.as_ref()),
+                opt(finding.rule.as_ref()),
                 opt(finding.entity.as_ref()),
                 opt(finding.message.as_ref()),
             );
@@ -1280,7 +1286,7 @@ fn losses(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
             .iter()
             .chain(export_losses)
             .map(|loss| {
-                serde_json::json!({
+                cadmpeg_core::json!({
                     "code": loss.code.as_ref().map(LossCodeProbe::display),
                     "severity": loss.severity,
                     "message": loss.message,
@@ -1336,7 +1342,7 @@ fn counts(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
             if args.json {
                 let mut map = serde_json::Map::new();
                 for (namespace, arena, entries) in &rows {
-                    map.insert(format!("{namespace}.{arena}"), serde_json::json!(entries));
+                    map.insert(format!("{namespace}.{arena}"), cadmpeg_core::json!(entries));
                 }
                 print_json("counts", serde_json::Value::Object(map))?;
             } else {

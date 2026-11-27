@@ -10,7 +10,6 @@ use super::EditError;
 use crate::design::evaluation::StateBase;
 use crate::design::ids::EvaluationId;
 use crate::design::names::NameEntry;
-use crate::design::read::Ceiling;
 use crate::design::refs::{EntityRef, Position};
 use crate::design::selection::OccurrencePath;
 use crate::document::Topology;
@@ -141,6 +140,20 @@ pub enum StateResolutionError {
     Composition(#[from] EditError),
 }
 
+impl StateResolutionError {
+    /// The §2.5 refusal a chain past the ceiling is, and no refusal for any
+    /// other failure.
+    #[must_use]
+    pub fn resource_limit(&self) -> Option<cadmpeg_core::decode::ResourceLimit> {
+        match self {
+            Self::ChainDepthExceeded { limit } => {
+                crate::validate::state_chain_refusal(*limit, limit.checked_add(1)?)
+            }
+            _ => None,
+        }
+    }
+}
+
 impl CadIr {
     /// Resolves the extent of the scope's current state at `at` (§5.5).
     ///
@@ -181,7 +194,7 @@ impl CadIr {
         id: &EvaluationId,
         limits: &ResourceLimits,
     ) -> Result<ResolvedState, StateResolutionError> {
-        let limit = Ceiling::StateChain.of(limits);
+        let limit = limits.max_state_chain_depth;
         let mut seen = BTreeSet::new();
         let scope = &self
             .design

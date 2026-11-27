@@ -3,14 +3,248 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "unordered",
+          "value": {
+            "id": "fcstd:design:container#document:group",
+            "kind": "group",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Box"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Cylinder"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Triangle"
+              }
+            ]
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "primitive"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Box",
+          "name": "Box",
+          "native_ref": "fcstd:native:object#Box"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "primitive"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Cylinder",
+          "name": "Cylinder",
+          "native_ref": "fcstd:native:object#Cylinder"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#Triangle:Shape:Triangle.Shape.brp:7%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Triangle",
+          "name": "Triangle",
+          "native_ref": "fcstd:native:object#Triangle"
+        }
+      ],
       "names": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "42[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Box:Length",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Length",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Box:Length",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Box"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 42.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "360[deg]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Cylinder:Angle",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 1,
+              "length": 0,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Angle",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Cylinder:Angle",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Cylinder"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 6.283185307179586
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "11[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Cylinder:Radius",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Radius",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Cylinder:Radius",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Cylinder"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 11.0
+          }
+        }
+      ],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Box"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Box",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Cylinder"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Cylinder:Shape:Cylinder.Shape.brp:9%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Cylinder",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Triangle"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Triangle:Shape:Triangle.Shape.brp:7%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Triangle",
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "fcstd:model:product_definition#document:root",
+          "occurrences": {},
+          "roots": [
+            "fcstd:design:container#document:group"
+          ],
+          "unproduced": []
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
@@ -2821,11 +3055,9 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [
         {
@@ -3814,181 +4046,8 @@
           "views": []
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "primitive",
-              "value": {
-                "op": "new_body",
-                "placement": [
-                  [
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0
-                  ]
-                ],
-                "solid": {
-                  "height": 10.0,
-                  "kind": "box",
-                  "length": 42.0,
-                  "width": 20.0
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Box",
-          "name": "Box",
-          "native_ref": "fcstd:native:object#Box",
-          "ordinal": 0,
-          "outputs": [
-            "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "MapMode": "0",
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Box"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "primitive",
-              "value": {
-                "op": "new_body",
-                "placement": [
-                  [
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0
-                  ]
-                ],
-                "solid": {
-                  "angle": 6.283185307179586,
-                  "height": 10.0,
-                  "kind": "cylinder",
-                  "radius": 11.0
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Cylinder",
-          "name": "Cylinder",
-          "native_ref": "fcstd:native:object#Cylinder",
-          "ordinal": 15,
-          "outputs": [
-            "fcstd:model:body#Cylinder:Shape:Cylinder.Shape.brp:9%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "MapMode": "0",
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Cylinder"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "stored_geometry",
-              "value": {}
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Triangle",
-          "name": "Triangle",
-          "native_ref": "fcstd:native:object#Triangle",
-          "ordinal": 13,
-          "outputs": [
-            "fcstd:model:body#Triangle:Shape:Triangle.Shape.brp:7%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature"
-        }
-      ],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [
-        {
-          "dependencies": [],
-          "expression": "42.0000000000000000",
-          "id": "fcstd:design:parameter#Box:Length",
-          "name": "Length",
-          "native_ref": "fcstd:native:property#Box:Length",
-          "ordinal": 8,
-          "owner": "fcstd:design:feature#Box",
-          "properties": {},
-          "value": {
-            "kind": "length",
-            "value": 42.0
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "360.0000000000000000",
-          "id": "fcstd:design:parameter#Cylinder:Angle",
-          "name": "Angle",
-          "native_ref": "fcstd:native:property#Cylinder:Angle",
-          "ordinal": 0,
-          "owner": "fcstd:design:feature#Cylinder",
-          "properties": {},
-          "value": {
-            "kind": "angle",
-            "value": 6.283185307179586
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "11.0000000000000000",
-          "id": "fcstd:design:parameter#Cylinder:Radius",
-          "name": "Radius",
-          "native_ref": "fcstd:native:property#Cylinder:Radius",
-          "ordinal": 14,
-          "owner": "fcstd:design:feature#Cylinder",
-          "properties": {},
-          "value": {
-            "kind": "length",
-            "value": 11.0
-          }
-        }
-      ],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -4007,7 +4066,6 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -4786,14 +4844,7 @@
           "value": 10.0
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },

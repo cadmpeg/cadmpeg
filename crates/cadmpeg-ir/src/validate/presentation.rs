@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Presentation state and layer validation.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use super::record_finding;
 use crate::document::CadIr;
 use crate::index::identities::{BorrowedIdentities, IdentitySet};
@@ -22,7 +24,7 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
         let mut assets_valid = true;
         'states: for state in document.states() {
             for asset in &state.assets {
-                if !all_ids.contains(asset) {
+                if !all_ids.contains(asset.as_str()) {
                     assets_valid = false;
                     break 'states;
                 }
@@ -34,14 +36,18 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 Some(document.id.as_str()),
-                format_args!("{}", "invalid document presentation state"),
+                crate::rule!(
+                    "presentation.invalid-document-presentation-state",
+                    "{}",
+                    "invalid document presentation state"
+                ),
             );
         }
     }
 
     for view in &ir.model.view_presentations {
         let mut references_valid = match &view.object {
-            Some(object) => all_ids.contains(object),
+            Some(object) => all_ids.contains(object.as_str()),
             None => true,
         };
         if references_valid {
@@ -55,7 +61,11 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 Some(view.id.as_str()),
-                format_args!("{}", "invalid view presentation reference"),
+                crate::rule!(
+                    "presentation.invalid-view-presentation-reference",
+                    "{}",
+                    "invalid view presentation reference"
+                ),
             );
         }
     }
@@ -88,19 +98,27 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
             add(layer.id.as_str(), ());
         }
     });
+    let mut parents: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     for layer in &ir.model.presentation_layers {
-        if layer
-            .parent
-            .as_ref()
-            .is_some_and(|parent| !layers.contains(parent.as_str()))
-        {
-            record_finding(
-                findings,
-                Check::ReferentialIntegrity,
-                Severity::Error,
-                Some(layer.id.as_str()),
-                format_args!("{}", "unresolved presentation-layer parent"),
-            );
+        if let Some(parent) = &layer.parent {
+            if layers.contains(parent.as_str()) {
+                parents
+                    .entry(layer.id.as_str())
+                    .or_default()
+                    .insert(parent.as_str());
+            } else {
+                record_finding(
+                    findings,
+                    Check::ReferentialIntegrity,
+                    Severity::Error,
+                    Some(layer.id.as_str()),
+                    crate::rule!(
+                        "presentation.unresolved-presentation-layer-parent",
+                        "{}",
+                        "unresolved presentation-layer parent"
+                    ),
+                );
+            }
         }
         for item in &layer.items {
             let resolved = match &item.entity {
@@ -144,9 +162,25 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
                     Check::Presentation,
                     crate::report::Severity::Error,
                     Some(layer.id.as_str()),
-                    format_args!("{}", "unresolved presentation-layer item"),
+                    crate::rule!(
+                        "presentation.unresolved-presentation-layer-item",
+                        "{}",
+                        "unresolved presentation-layer item"
+                    ),
                 );
             }
         }
+    }
+    for layer in super::cycles::on_cycles(&parents) {
+        record_finding(
+            findings,
+            Check::Presentation,
+            Severity::Error,
+            Some(layer),
+            crate::rule!(
+                "presentation.presentation-layer-own-ancestor-through-parent",
+                "presentation layer is its own ancestor through `parent`"
+            ),
+        );
     }
 }

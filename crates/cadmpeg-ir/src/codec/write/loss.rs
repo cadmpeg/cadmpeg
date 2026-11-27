@@ -64,6 +64,39 @@ pub(crate) enum ExportLossCode {
     /// A patched file has no digest, so the writer cannot tell which records
     /// are edited (§3.4, Paths item 4).
     EditUnverified,
+    /// A value is written at a coarser resolution than the document states
+    /// (§3.2).
+    ValueQuantized,
+    /// A synthesized or empty file of a same-format source drops the bytes of
+    /// an `untyped` retained record (§3.4, Paths).
+    SourceDropped,
+    /// A link of a patched file names the file the source names, not the
+    /// caller's output name (§3.4, Paths item 4).
+    LinkUnwritten,
+    /// A definition no occurrence places is written placed, in a target that
+    /// cannot hold an unplaced definition (§3.4, Encode sets).
+    DefinitionPlaced,
+    /// A fit's deviations are written as the dimension's own (§5.12).
+    FitRestated,
+    /// A fit is written without a tolerance (§5.12).
+    FitDropped,
+    /// The deviations a definition's general tolerance gives are written as
+    /// each dimension's own (§8.1).
+    GeneralToleranceRestated,
+    /// A definition's general tolerance is written on no dimension (§8.1).
+    GeneralToleranceDropped,
+    /// A feature is written as an equivalent construction of the target's own
+    /// features (§3.4, Lowering a typed operation).
+    FeatureLowered,
+    /// One edge of a dependency cycle is dropped (§3.4, Dependency cycles).
+    DependencyCycleBroken,
+    /// The output of a definition of an encode set is not written, while
+    /// another output is (§3.4, Encode sets).
+    OutputUnwritten,
+    /// No output of an encode set holds a record of the document, or the
+    /// output that holds it holds it without a record of another output it
+    /// names (§3.4, Encode sets).
+    RecordUnheld,
 }
 
 impl ExportLossCode {
@@ -86,6 +119,18 @@ impl ExportLossCode {
             Self::SourceCarried => "source.carried",
             Self::SourceUnchecked => "source.unchecked",
             Self::EditUnverified => "edit.unverified",
+            Self::ValueQuantized => "value.quantized",
+            Self::SourceDropped => "source.dropped",
+            Self::LinkUnwritten => "link.unwritten",
+            Self::DefinitionPlaced => "definition.placed",
+            Self::FitRestated => "fit.restated",
+            Self::FitDropped => "fit.dropped",
+            Self::GeneralToleranceRestated => "general_tolerance.restated",
+            Self::GeneralToleranceDropped => "general_tolerance.dropped",
+            Self::FeatureLowered => "feature.lowered",
+            Self::DependencyCycleBroken => "dependency.cycle-broken",
+            Self::OutputUnwritten => "output.unwritten",
+            Self::RecordUnheld => "record.unheld",
         }
     }
 
@@ -102,9 +147,24 @@ impl ExportLossCode {
             | Self::RecordResidualUnavailable
             | Self::ValueUnwritable
             | Self::SourceUnchecked
-            | Self::EditUnverified => Severity::Warning,
-            Self::ParameterRenamed | Self::SourceCarried => Severity::Info,
-            Self::EditDropped(_) | Self::RecordInvalid(_) | Self::RuleInvalid => Severity::Error,
+            | Self::EditUnverified
+            | Self::SourceDropped
+            | Self::DefinitionPlaced
+            | Self::FitDropped
+            | Self::GeneralToleranceDropped
+            | Self::DependencyCycleBroken
+            | Self::RecordUnheld => Severity::Warning,
+            Self::ParameterRenamed
+            | Self::SourceCarried
+            | Self::ValueQuantized
+            | Self::FitRestated
+            | Self::GeneralToleranceRestated
+            | Self::FeatureLowered => Severity::Info,
+            Self::EditDropped(_)
+            | Self::RecordInvalid(_)
+            | Self::RuleInvalid
+            | Self::LinkUnwritten
+            | Self::OutputUnwritten => Severity::Error,
         }
     }
 
@@ -113,7 +173,13 @@ impl ExportLossCode {
         let kind = match self {
             Self::ArenaOmitted(kind) | Self::EditDropped(kind) | Self::RecordInvalid(kind) => kind,
             Self::NativeRecordsOmitted => return LossTaxonomy::PassthroughRecordOmitted,
-            Self::SourceCarried | Self::SourceUnchecked => return LossTaxonomy::RecordNotTyped,
+            Self::SourceCarried | Self::SourceUnchecked | Self::SourceDropped => {
+                return LossTaxonomy::RecordNotTyped;
+            }
+            Self::LinkUnwritten | Self::OutputUnwritten | Self::RecordUnheld => {
+                return LossTaxonomy::AssemblyComponentsExternal;
+            }
+            Self::DefinitionPlaced => return LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::OutputEmpty => return LossTaxonomy::NoExportableSolids,
             Self::FacePartial | Self::SolidPartial => {
                 return LossTaxonomy::TopologyNotTransferred;
@@ -125,7 +191,14 @@ impl ExportLossCode {
             | Self::RecordResidualUnavailable
             | Self::ValueUnwritable
             | Self::RuleInvalid
-            | Self::EditUnverified => return LossTaxonomy::ParametricRecordOmitted,
+            | Self::EditUnverified
+            | Self::ValueQuantized
+            | Self::FitRestated
+            | Self::FitDropped
+            | Self::GeneralToleranceRestated
+            | Self::GeneralToleranceDropped
+            | Self::FeatureLowered
+            | Self::DependencyCycleBroken => return LossTaxonomy::ParametricRecordOmitted,
         };
         match kind {
             EntityKind::Body
@@ -339,6 +412,136 @@ where
     )))
 }
 
+/// `export:value.quantized`: the writer writes these values at a coarser
+/// resolution than the document states. Each entry names the record and the
+/// value (§3.2).
+#[must_use]
+pub fn value_quantized<I, S>(format: &str, reason: &str, ids: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    listed(ExportLossCode::ValueQuantized, format, reason, ids)
+}
+
+/// `export:link.unwritten`: each of these links of a patched file names the
+/// file the source names, not the caller's output name (§3.4, Paths item 4).
+#[must_use]
+pub fn link_unwritten<I, S>(format: &str, reason: &str, ids: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    listed(ExportLossCode::LinkUnwritten, format, reason, ids)
+}
+
+/// `export:output.unwritten`: the output of `definition` is not written, for
+/// `cause`, while another output of the encode set is (§3.4, Encode sets).
+#[must_use]
+pub(super) fn output_unwritten(format: &str, definition: &str, cause: &str) -> LossNote {
+    ExportLossCode::OutputUnwritten.note(format!(
+        "the {format} write holds no output of definition {definition}: {cause}"
+    ))
+}
+
+/// `export:record.unheld`: no output of the encode set holds these records,
+/// or the output that holds each holds it without the records of other
+/// outputs it names. Each entry names the record and each record of another
+/// output that it needs, with that output's name (§3.4, Encode sets).
+#[must_use]
+pub(super) fn record_unheld<I, S>(format: &str, reason: &str, entries: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    listed(ExportLossCode::RecordUnheld, format, reason, entries)
+}
+
+/// `export:definition.placed`: the target cannot hold a definition that no
+/// occurrence places, and the writer writes these definitions placed (§3.4,
+/// Encode sets).
+#[must_use]
+pub fn definition_placed<I, S>(format: &str, reason: &str, ids: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    listed(ExportLossCode::DefinitionPlaced, format, reason, ids)
+}
+
+/// `export:fit.restated`: the writer writes the deviations of these
+/// parameters' fits as the dimensions' own (§5.12).
+#[must_use]
+pub fn fit_restated<I, S>(format: &str, reason: &str, ids: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    listed(ExportLossCode::FitRestated, format, reason, ids)
+}
+
+/// `export:fit.dropped`: the writer writes these parameters' fits as no
+/// tolerance (§5.12).
+#[must_use]
+pub fn fit_dropped<I, S>(format: &str, reason: &str, ids: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    listed(ExportLossCode::FitDropped, format, reason, ids)
+}
+
+/// `export:general_tolerance.restated`: the writer writes the deviations
+/// these definitions' general tolerances give as each dimension's own (§8.1).
+#[must_use]
+pub fn general_tolerance_restated<I, S>(format: &str, reason: &str, ids: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    listed(
+        ExportLossCode::GeneralToleranceRestated,
+        format,
+        reason,
+        ids,
+    )
+}
+
+/// `export:general_tolerance.dropped`: the target holds no tolerance on the
+/// dimensions to which these definitions' general tolerances apply, and the
+/// writer writes none (§8.1).
+#[must_use]
+pub fn general_tolerance_dropped<I, S>(format: &str, reason: &str, ids: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    listed(ExportLossCode::GeneralToleranceDropped, format, reason, ids)
+}
+
+/// `export:feature.lowered`: the writer writes these features as equivalent
+/// constructions of the target's own features (§3.4, Lowering a typed operation).
+#[must_use]
+pub fn feature_lowered<I, S>(format: &str, reason: &str, ids: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    listed(ExportLossCode::FeatureLowered, format, reason, ids)
+}
+
+/// `export:dependency.cycle-broken`: the target cannot hold a dependency
+/// cycle, and the writer drops one edge of each cycle at these entries
+/// (§3.4, Dependency cycles).
+#[must_use]
+pub fn dependency_cycle_broken<I, S>(format: &str, reason: &str, ids: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    listed(ExportLossCode::DependencyCycleBroken, format, reason, ids)
+}
+
 /// `export:edit.dropped`: the output holds these records of `kind` as the
 /// source file stores them, without the document's edit (§3.4, Paths item 4).
 /// Each entry names a record, or the file where the writer's digests do not
@@ -352,6 +555,13 @@ where
     listed(ExportLossCode::EditDropped(kind), format, reason, ids)
 }
 
+/// `export:edit.dropped` for one record, or the file, with a message that
+/// names it and why its edit is not written (§3.4, Paths item 4).
+#[must_use]
+pub fn edit_dropped_note(kind: EntityKind, message: impl Into<String>) -> LossNote {
+    ExportLossCode::EditDropped(kind).note(message)
+}
+
 /// `export:output.empty`: the written file holds no geometry (§3.5).
 #[must_use]
 pub fn output_empty(message: impl Into<String>) -> LossNote {
@@ -363,7 +573,7 @@ pub fn output_empty(message: impl Into<String>) -> LossNote {
 #[must_use]
 pub fn face_partial(format: &str, face: &crate::ids::FaceId) -> LossNote {
     ExportLossCode::FacePartial.note(format!(
-        "{format} writes no partial face: {face} does not state every loop"
+        "{format} writes no partial face: {face} does not state its boundary in full"
     ))
 }
 
@@ -437,12 +647,7 @@ pub fn carried_source_losses(fidelity: Option<&SourceFidelity>, path: &WritePath
         WritePath::VerbatimReplay => false,
         WritePath::Patched { .. } => true,
     };
-    let records: Vec<String> = fidelity
-        .into_iter()
-        .flat_map(SourceFidelity::retained_records)
-        .filter(|(_, record)| !record.untyped().is_empty())
-        .map(|(id, record)| format!("{id} ({})", class_list(record.untyped())))
-        .collect();
+    let records = untyped_records(fidelity);
     if records.is_empty() {
         return Vec::new();
     }
@@ -458,6 +663,31 @@ pub fn carried_source_losses(fidelity: Option<&SourceFidelity>, path: &WritePath
         )));
     }
     losses
+}
+
+/// `export:source.dropped` for a synthesized file of a same-format source:
+/// the note names each `untyped` retained record of `fidelity` and its
+/// classes (§3.4, Paths). `None` when `fidelity` holds no such record.
+pub(super) fn dropped_source_loss(fidelity: Option<&SourceFidelity>) -> Option<LossNote> {
+    let records = untyped_records(fidelity);
+    if records.is_empty() {
+        return None;
+    }
+    Some(ExportLossCode::SourceDropped.note(format!(
+        "the synthesized file holds none of the bytes of the untyped retained records of its \
+         source file: {}",
+        records.join("; ")
+    )))
+}
+
+/// Each `untyped` retained record of `fidelity`, with the classes it can hold.
+fn untyped_records(fidelity: Option<&SourceFidelity>) -> Vec<String> {
+    fidelity
+        .into_iter()
+        .flat_map(SourceFidelity::retained_records)
+        .filter(|(_, record)| !record.untyped().is_empty())
+        .map(|(id, record)| format!("{id} ({})", class_list(record.untyped())))
+        .collect()
 }
 
 #[cfg(test)]

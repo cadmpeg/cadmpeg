@@ -18,6 +18,7 @@ pub(crate) fn patch_partition(
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
     scale: f64,
+    policy: &DecodePolicy,
 ) -> Result<Option<(String, Vec<u8>)>, CodecError> {
     if !crate::writer::requires_native_partition(ir) {
         return Ok(None);
@@ -30,7 +31,7 @@ pub(crate) fn patch_partition(
         return Ok(None);
     };
     let arena = DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(source, &arena, &DecodePolicy::desktop())?;
+    let (ctx, root) = DecodeContext::from_root_bytes(source, &arena, policy)?;
     let scan = crate::container::scan(&ctx, root)?;
     let Some(selected) = crate::container::select_active_parasolid_site(&scan) else {
         return Ok(None);
@@ -186,7 +187,7 @@ fn annotation_offset(
     section: &str,
 ) -> Result<usize, CodecError> {
     let id = id.to_string();
-    let provenance = annotations.provenance.get(&id).ok_or_else(|| {
+    let provenance = annotations.provenance.get(id.as_str()).ok_or_else(|| {
         CodecError::malformed(format_args!(
             "SLDPRT mutation requires provenance annotation for {id}"
         ))
@@ -205,7 +206,7 @@ fn raw_annotation_offset(
     id: impl std::fmt::Display,
 ) -> Result<usize, CodecError> {
     let id = id.to_string();
-    let provenance = annotations.provenance.get(&id).ok_or_else(|| {
+    let provenance = annotations.provenance.get(id.as_str()).ok_or_else(|| {
         CodecError::malformed(format_args!(
             "SLDPRT mutation requires provenance annotation for {id}"
         ))

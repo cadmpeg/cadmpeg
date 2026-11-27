@@ -6,8 +6,12 @@
 //! the payload omits, so a drop is reported even when the backend has no code
 //! path that knows about the arena.
 
+use std::borrow::Cow;
+use std::collections::{BTreeSet, HashMap, HashSet};
+
 use cadmpeg_core::decode::ArenaClass;
 
+use crate::design::projection::restated::{same_id_cuts, Restatements, Restater};
 use crate::document::{ArenaHome, CadIr};
 use crate::report::loss::LossNote;
 use crate::schema::{ArenaRecord, EntityKind};
@@ -62,6 +66,23 @@ impl ArenaCoverage {
         }
     }
 
+    /// Whether the payload writes records of an arena the CADIR wire omits
+    /// ([`crate::document::ArenaName::WIRE_OMITTED`]): a write that takes
+    /// content from them, which a document read from CADIR JSON does not hold.
+    pub(super) fn reads_wire_omitted(&self) -> bool {
+        macro_rules! any_carried {
+            ($($field:ident: $ty:ty, $class:ident, $home:ident;)*) => {
+                |dispositions: &ArenaDispositions| false $(|| dispositions.$field.carries())*
+            };
+        }
+        match self {
+            Self::Complete => false,
+            Self::Declared(dispositions) => {
+                (crate::document::wire_omitted_arenas!(any_carried))(dispositions)
+            }
+        }
+    }
+
     /// One loss per non-empty arena this coverage omits.
     pub(super) fn omission_losses(&self, ir: &CadIr, format: &str) -> Vec<LossNote> {
         match self {
@@ -73,6 +94,78 @@ impl ArenaCoverage {
 
 fn arena_kind<T: ArenaRecord>(_: &[T]) -> EntityKind {
     T::KIND
+}
+
+/// The fields of a record a write leaves out.
+type Fields = BTreeSet<Cow<'static, str>>;
+
+/// The records of one arena a write charges.
+struct Charge<'ir> {
+    kind: EntityKind,
+    label: &'static str,
+    /// The records the write omits whole.
+    omitted: Vec<&'ir str>,
+    /// The records written records restate without some fields, with the
+    /// fields.
+    cut: Vec<(&'ir str, Fields)>,
+}
+
+/// What a write writes of the `design` layer.
+struct WrittenDesign<'ir> {
+    ids: HashSet<&'ir str>,
+    names: bool,
+    /// The fields each record a written `design` record of its identity
+    /// restates leaves out, where no projection stated them.
+    compared: HashMap<&'ir str, Fields>,
+}
+
+impl<'ir> WrittenDesign<'ir> {
+    fn writes(&self, restater: &Restater) -> bool {
+        match restater {
+            Restater::Record(id) => self.ids.contains(id.as_str()),
+            Restater::Names => self.names,
+        }
+    }
+
+    /// The records of `records`, an arena the CADIR wire omits, that the
+    /// write omits whole, and those it states in part with the fields it
+    /// leaves out, sorted. The restaters of a record are the written records
+    /// the table names and the written `design` record of its identity that
+    /// the write compares with it. A record no written restater restates is
+    /// omitted; the fields that every written restater leaves out are cut.
+    fn charge<T: ArenaRecord>(
+        &self,
+        records: &'ir [T],
+        restated: &'ir Restatements,
+    ) -> (Vec<&'ir str>, Vec<(&'ir str, Fields)>) {
+        let mut omitted = Vec::new();
+        let mut cut = Vec::new();
+        for id in records.iter().map(ArenaRecord::record_identity) {
+            let stated = restated
+                .get(id)
+                .and_then(|restating| restating.cut_by(|by| self.writes(by)))
+                .map(|fields| {
+                    fields
+                        .into_iter()
+                        .map(Cow::Borrowed)
+                        .collect::<BTreeSet<_>>()
+                });
+            let fields = match (stated, self.compared.get(id)) {
+                (None, None) => {
+                    omitted.push(id);
+                    continue;
+                }
+                (Some(stated), None) => stated,
+                (None, Some(compared)) => compared.clone(),
+                (Some(stated), Some(compared)) => stated.intersection(compared).cloned().collect(),
+            };
+            if !fields.is_empty() {
+                cut.push((id, fields));
+            }
+        }
+        cut.sort_unstable_by_key(|(id, _)| *id);
+        (omitted, cut)
+    }
 }
 
 /// Whether a v10 design record restates the records of this design arena.
@@ -171,6 +264,17 @@ macro_rules! split_arena_dispositions {
     };
 }
 
+/// Adds the identities of the records of a `design` arena whose disposition
+/// carries them to `$ids`; arenas of other homes add none.
+macro_rules! written_design_ids {
+    ($dispositions:expr, $ids:ident, $ir:expr, $field:ident, design) => {
+        if $dispositions.design.$field.carries() {
+            $ids.extend($ir.design.$field.iter().map(ArenaRecord::record_identity));
+        }
+    };
+    ($dispositions:expr, $ids:ident, $ir:expr, $field:ident, $home:ident) => {};
+}
+
 macro_rules! declare_arena_dispositions {
     ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         split_arena_dispositions! { [] [] [] $($field: $home;)* }
@@ -190,46 +294,100 @@ macro_rules! declare_arena_dispositions {
             pub fn omitted(&self, ir: &CadIr) -> Vec<&'static str> {
                 self.charged_omissions(ir)
                     .into_iter()
-                    .map(|(_, label, _)| label)
+                    .map(|charge| charge.label)
                     .collect()
             }
 
             fn omission_losses(&self, ir: &CadIr, format: &str) -> Vec<LossNote> {
                 self.charged_omissions(ir)
                     .into_iter()
-                    .map(|(kind, label, records)| {
+                    .map(|Charge { kind, label, omitted, cut }| {
+                        let mut clauses = Vec::new();
+                        if !omitted.is_empty() {
+                            // A write that omits the cages writes nothing of
+                            // the bodies that hold only cages (§5.6).
+                            let bodies = if kind == EntityKind::SubdSurface {
+                                super::cages::cage_bodies_clause(&super::cages::cage_bodies(ir))
+                            } else {
+                                String::new()
+                            };
+                            clauses.push(format!(
+                                "{} record(s) omitted: {}{bodies}",
+                                omitted.len(),
+                                omitted.join(", "),
+                            ));
+                        }
+                        if !cut.is_empty() {
+                            let records = cut
+                                .iter()
+                                .map(|(id, fields)| {
+                                    let fields = fields.iter().map(Cow::as_ref).collect::<Vec<_>>();
+                                    format!("{id} ({})", fields.join(", "))
+                                })
+                                .collect::<Vec<_>>();
+                            clauses.push(format!(
+                                "{} record(s) stated in part: {}",
+                                records.len(),
+                                records.join(", "),
+                            ));
+                        }
                         ExportLossCode::ArenaOmitted(kind).note(format!(
-                            "the {format} write does not represent model arena `{label}`: \
-                             {records} record(s) omitted",
+                            "the {format} write does not represent model arena `{label}`: {}",
+                            clauses.join("; "),
                         ))
                     })
                     .collect()
             }
 
-            /// Each arena of `ir` whose records the write omits and charges: its
-            /// kind, label and record count.
-            fn charged_omissions(&self, ir: &CadIr) -> Vec<(EntityKind, &'static str, usize)> {
+            /// What restates a record of an arena the CADIR wire omits that the
+            /// payload writes: the `design` records whose disposition carries
+            /// them, and the name table, which only a write of every `design`
+            /// arena writes.
+            fn written_design<'ir>(&self, ir: &'ir CadIr) -> WrittenDesign<'ir> {
+                let mut ids = HashSet::new();
+                $(written_design_ids!(self, ids, ir, $field, $home);)*
+                WrittenDesign {
+                    compared: same_id_cuts(ir, &ids),
+                    ids,
+                    names: self.design == DesignArenaDispositions::uniform(ArenaDisposition::Written),
+                }
+            }
+
+            /// Each arena of `ir` whose records the write omits and charges,
+            /// with the ids of the records it omits and of those it states in
+            /// part, sorted (§3.2).
+            fn charged_omissions<'ir>(&self, ir: &'ir CadIr) -> Vec<Charge<'ir>> {
                 // While the document holds a v10 design record, the v11 design
                 // arenas with a v10 counterpart restate content the v10 path
                 // writes.
                 let restated = ir.arenas().holds(ArenaClass::Design, ArenaHome::Model);
+                let written_design = self.written_design(ir);
                 let mut charged = Vec::new();
                 $(
-                    // The document root is the written document itself.
-                    let records = if arena_kind(&ir.$home.$field) == EntityKind::ProductDefinition {
-                        crate::products::stated_definitions(&ir.model.product_definitions).count()
-                    } else {
-                        ir.$home.$field.len()
-                    };
+                    let label = crate::document::arena_label!($field, $home);
+                    let kind = arena_kind(&ir.$home.$field);
                     if disposition!(self, $field, $home) == ArenaDisposition::Omitted
-                        && records != 0
-                        && !(restated && has_v10_counterpart(arena_kind(&ir.$home.$field)))
+                        && !(restated && has_v10_counterpart(kind))
                     {
-                        charged.push((
-                            arena_kind(&ir.$home.$field),
-                            crate::document::arena_label!($field, $home),
-                            records,
-                        ));
+                        // The document root is the written document itself.
+                        let (mut omitted, cut): (Vec<&str>, _) = if kind == EntityKind::ProductDefinition {
+                            let ids = crate::products::stated_definitions(&ir.model.product_definitions)
+                                .map(ArenaRecord::record_identity)
+                                .collect();
+                            (ids, Vec::new())
+                        } else if crate::document::ArenaName::WIRE_OMITTED
+                            .iter()
+                            .any(|arena| arena.as_str() == label)
+                        {
+                            written_design.charge(&ir.$home.$field, ir.model.restated())
+                        } else {
+                            let ids = ir.$home.$field.iter().map(|record| record.record_identity()).collect();
+                            (ids, Vec::new())
+                        };
+                        if !omitted.is_empty() || !cut.is_empty() {
+                            omitted.sort_unstable();
+                            charged.push(Charge { kind, label, omitted, cut });
+                        }
                     }
                 )*
                 charged
@@ -239,3 +397,28 @@ macro_rules! declare_arena_dispositions {
 }
 
 crate::document::every_arena_registry!(declare_arena_dispositions);
+
+/// What a CADIR write does with each arena: it writes every arena but those
+/// the wire omits ([`crate::document::ArenaName::WIRE_OMITTED`]), which the
+/// wrapper names in an `arena.omitted` loss.
+pub(super) fn cadir_dispositions() -> ArenaDispositions {
+    macro_rules! written {
+        ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+            ArenaDispositions {
+                $($field: ArenaDisposition::Written,)*
+                design: DesignArenaDispositions::uniform(ArenaDisposition::Written),
+                process: ProcessArenaDispositions::uniform(ArenaDisposition::Written),
+            }
+        };
+    }
+    macro_rules! omit {
+        ($($field:ident: $ty:ty, $class:ident, $home:ident;)*) => {
+            |dispositions: &mut ArenaDispositions| {
+                $(dispositions.$field = ArenaDisposition::Omitted;)*
+            }
+        };
+    }
+    let mut dispositions = crate::document::arena_registry!(written);
+    (crate::document::wire_omitted_arenas!(omit))(&mut dispositions);
+    dispositions
+}

@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::decode::ResourceLimit;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{edit_dropped, output_empty, record_invalid, rule_invalid};
 use cadmpeg_ir::design::refs::EntityRef;
@@ -37,11 +37,12 @@ const DOMAIN_END_ROUNDOFF_RELATIVE: f64 = 1.0e-9;
 /// A generated partition bounds every edge by its vertices. A range the
 /// decode derives from those vertices is stated by them; any other range is
 /// not written. A line edge decodes with no range, so its range is not
-/// written either.
+/// written either. Each range is evaluated in the encode session `ctx`.
 pub(super) fn edge_ranges_omitted(
     ir: &CadIr,
     annotations: &Annotations,
-) -> Result<Option<LossNote>, ResourceLimit> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<LossNote>, CodecError> {
     let points = ir
         .geometry
         .points
@@ -80,7 +81,7 @@ pub(super) fn edge_ranges_omitted(
         let stated = match curves.get(curve.as_str()) {
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_))) | None => false,
             Some(CurveGeometry::Solved(geometry)) => {
-                range_stated_by_vertices(edge, geometry, &vertices)?
+                range_stated_by_vertices(ctx, edge, geometry, &vertices)?
             }
             Some(_) => false,
         };
@@ -166,10 +167,11 @@ fn derived_range(annotations: &Annotations, edge: &Edge) -> bool {
 /// carrier that closes on itself gives its closure vertex two parameters, so
 /// only its whole domain is stated, by a closed edge.
 fn range_stated_by_vertices(
+    ctx: &DecodeContext<'_>,
     edge: &Edge,
     geometry: &SolvedCurveGeometry,
     vertices: &HashMap<&str, (Point3, f64)>,
-) -> Result<bool, ResourceLimit> {
+) -> Result<bool, CodecError> {
     let (Some(range), Some(ends)) = (edge.param_range(), edge.ends.as_ref()) else {
         return Ok(false);
     };
@@ -181,11 +183,14 @@ fn range_stated_by_vertices(
         return Ok(false);
     };
     // A point the carrier states no finite value for fixes no range end.
-    let at =
-        |parameter| match curve_point_solved(EvaluationAdmission::Standard, geometry, parameter) {
-            Ok(point) => Ok(Some(point.get())),
-            Err(failure) => failure.non_finite().map(|_| None),
-        };
+    let at = |parameter| match curve_point_solved(
+        EvaluationAdmission::Write(ctx),
+        geometry,
+        parameter,
+    ) {
+        Ok(point) => Ok(Some(point.get())),
+        Err(failure) => failure.non_finite().map(|_| None),
+    };
     let (Some(at_start), Some(at_end)) = (at(start_t)?, at(end_t)?) else {
         return Ok(false);
     };
@@ -221,6 +226,9 @@ pub(super) fn unwritable_content(
     retained: bool,
     digests: &CodecDigests,
 ) -> Result<Vec<LossNote>, CodecError> {
+    // The SLDPRT form holds no cage, so a cage body is not written either
+    // (§5.6); `WriterSubdOmitted` below names the cage and its body.
+    let cage_bodies = cadmpeg_ir::codec::write::remove_cage_bodies(ir);
     let mut losses = Vec::new();
     let mut named = Vec::new();
     for face in &mut ir.geometry.faces {
@@ -276,14 +284,21 @@ pub(super) fn unwritable_content(
          record has no field for; each is written with its name and base colour",
         &named,
     ));
-    losses.extend(note(
-        SldprtLossCode::WriterSubdOmitted,
-        "subdivision surface(s) have no SLDPRT form and are not written",
-        &std::mem::take(&mut ir.geometry.subds)
-            .iter()
-            .map(|subd| subd.id.as_str().to_owned())
-            .collect::<Vec<_>>(),
-    ));
+    losses.extend(
+        note(
+            SldprtLossCode::WriterSubdOmitted,
+            "subdivision surface(s) have no SLDPRT form and are not written",
+            &std::mem::take(&mut ir.geometry.subds)
+                .iter()
+                .map(|subd| subd.id.as_str().to_owned())
+                .collect::<Vec<_>>(),
+        )
+        .map(|mut loss| {
+            loss.message
+                .push_str(&cadmpeg_ir::codec::write::cage_bodies_clause(&cage_bodies));
+            loss
+        }),
+    );
     losses.extend(pmi(ir, retained, digests)?);
     losses.extend(active_configuration(ir));
     Ok(losses)
@@ -547,8 +562,8 @@ pub(super) fn empty_output(ir: &CadIr) -> Option<LossNote> {
 
 /// Each Error the written document's validation finds is written from the
 /// canonical side (§3.4, Refusals): one note per kind of the records the
-/// findings name, and one for the findings that name no record of a model
-/// arena.
+/// findings name, and one that names the rule of each finding that names no
+/// record of a model arena.
 pub(super) fn invalid_records(ir: &CadIr, validation: &ValidationReport) -> Vec<LossNote> {
     let index = ModelIndex::new_model_only(ir);
     let mut grouped = Vec::<(EntityKind, Vec<String>)>::new();
@@ -560,8 +575,8 @@ pub(super) fn invalid_records(ir: &CadIr, validation: &ValidationReport) -> Vec<
         let entity = finding.entity.as_deref();
         let Some((id, kind)) = entity.and_then(|id| Some((id, index.neutral_kind(id)?))) else {
             rules.push(match entity {
-                Some(id) => format!("{} ({id}: {})", finding.check, finding.message),
-                None => format!("{} ({})", finding.check, finding.message),
+                Some(id) => format!("{} ({id}: {})", finding.rule, finding.message),
+                None => format!("{} ({})", finding.rule, finding.message),
             });
             continue;
         };
@@ -850,5 +865,74 @@ fn unwritable_surface(geometry: &SurfaceGeometry) -> Option<String> {
             Some("a surface the writer has no record for".to_owned())
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::geometry::analytic::CircleCurve;
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+    use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier, EdgeEnds};
+
+    const START: &str = "test:model:entity#start-vertex";
+    const END: &str = "test:model:entity#end-vertex";
+
+    /// The quarter of the unit circle from +x to +y, whose vertices lie at
+    /// both range ends, judged under `limits`.
+    fn quarter_arc_stated(limits: ResourceLimits) -> Result<bool, CodecError> {
+        let edge = Edge {
+            id: EdgeId::mint("test:model:entity#edge").unwrap(),
+            carrier: EdgeCarrier::new(
+                Some(CurveId::mint("test:model:entity#curve").unwrap()),
+                Some([0.0, std::f64::consts::FRAC_PI_2]),
+            )
+            .unwrap(),
+            ends: Some(EdgeEnds::new(
+                VertexId::mint(START).unwrap(),
+                VertexId::mint(END).unwrap(),
+            )),
+            tolerance: None,
+            native_ref: None,
+        };
+        let geometry = SolvedCurveGeometry::Circle(
+            CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+            )
+            .unwrap(),
+        );
+        let vertices = HashMap::from([
+            (
+                START,
+                (Point3::new(1.0, 0.0, 0.0), super::LINEAR_RESOLUTION_MM),
+            ),
+            (
+                END,
+                (Point3::new(0.0, 1.0, 0.0), super::LINEAR_RESOLUTION_MM),
+            ),
+        ]);
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy { limits })?;
+        super::range_stated_by_vertices(&ctx, &edge, &geometry, &vertices)
+    }
+
+    #[test]
+    fn a_range_its_vertices_fix_is_stated_under_desktop_limits() {
+        assert!(quarter_arc_stated(ResourceLimits::desktop()).unwrap());
+    }
+
+    #[test]
+    fn range_evaluation_nests_apart_from_the_session_recursion_limit() {
+        let mut limits = ResourceLimits::desktop();
+        limits.max_recursion_depth = 0;
+        assert!(quarter_arc_stated(limits).unwrap());
     }
 }

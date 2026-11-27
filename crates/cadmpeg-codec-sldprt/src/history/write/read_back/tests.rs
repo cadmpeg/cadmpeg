@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::source_fidelity::CodecDigests;
 use std::collections::HashSet;
 
@@ -21,12 +22,12 @@ fn edited() -> (CadIr, CadIr, FeatureId) {
         if feature.name.is_none() {
             continue;
         }
-        let mut wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+        let mut wire = json::to_value(feature.evaluation.definition()).unwrap();
         let Some(leaf) = first_real(&mut wire) else {
             continue;
         };
-        *leaf = serde_json::json!(leaf.as_f64().unwrap() + 1.0);
-        if let Ok(definition) = serde_json::from_value(wire) {
+        *leaf = cadmpeg_core::json!(leaf.as_f64().unwrap() + 1.0);
+        if let Ok(definition) = json::from_value(wire) {
             feature.evaluation.set_definition(definition);
             let id = feature.id.clone();
             return (source, input, id);
@@ -47,7 +48,10 @@ fn first_real(value: &mut serde_json::Value) -> Option<&mut serde_json::Value> {
 /// The write's claims for the edit of feature `id`, each edit called written
 /// or not.
 fn claims(source: &CadIr, input: &CadIr, id: &FeatureId, written: bool) -> ReadBackClaims {
-    let mut edits = SourceEdits::new(input, None, Some(source), &[]).unwrap();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let source_native = crate::test_support::native::sldprt_native(source);
+    let mut edits =
+        SourceEdits::new(input, None, Some((source, Some(&source_native))), &[], &ctx).unwrap();
     let find = |ir: &CadIr| {
         ir.model
             .features
@@ -84,7 +88,7 @@ fn judge_settled(
     Judge::new(input, &CodecDigests::new(), &|_| None).judge(
         claims,
         &UnwrittenEdits::default(),
-        (source, &[], &[]),
+        ((source, &Document::of(source).unwrap()), &[], &[]),
         written,
         Some(settled),
         &mut |_| Vec::new(),
@@ -186,10 +190,14 @@ fn a_change_with_no_written_edit_left_is_unexplained() {
 /// `ir` with every id that names block `from` naming block `to`, as a write
 /// that moves the block re-lays it.
 fn moved(ir: &CadIr, from: &str, to: &str) -> CadIr {
-    let text = serde_json::to_string(ir)
-        .unwrap()
-        .replace(&format!("#{from}:"), &format!("#{to}:"));
-    serde_json::from_str(&text).unwrap()
+    let replace = |text: &str| text.replace(&format!("#{from}:"), &format!("#{to}:"));
+    crate::test_support::readback::edited_json(
+        ir,
+        &mut |value| {
+            *value = serde_json::from_str(&replace(&value.to_string())).unwrap();
+        },
+        &replace,
+    )
 }
 
 /// The block that holds the feature history: the offset in the id of the
@@ -235,17 +243,12 @@ fn a_moved_sketch_is_a_difference_of_that_sketch() {
         .model
         .sketches
         .iter()
-        .position(|sketch| {
-            serde_json::to_value(sketch)
-                .unwrap()
-                .pointer(pointer)
-                .is_some()
-        })
+        .position(|sketch| json::to_value(sketch).unwrap().pointer(pointer).is_some())
         .expect("a planar sketch states its origin");
-    let mut wire = serde_json::to_value(&written.model.sketches[index]).unwrap();
+    let mut wire = json::to_value(&written.model.sketches[index]).unwrap();
     let origin = wire.pointer_mut(pointer).unwrap();
-    *origin = serde_json::json!(origin.as_f64().unwrap() + 1.0);
-    written.model.sketches[index] = serde_json::from_value(wire).unwrap();
+    *origin = cadmpeg_core::json!(origin.as_f64().unwrap() + 1.0);
+    written.model.sketches[index] = json::from_value(wire).unwrap();
     let (stated, read) = (
         Document::of(&source).unwrap(),
         Document::of(&written).unwrap(),
@@ -283,23 +286,23 @@ fn travel_edited(other: bool) -> (CadIr, CadIr, FeatureId) {
         .features
         .iter_mut()
         .find(|feature| {
-            let wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+            let wire = json::to_value(feature.evaluation.definition()).unwrap();
             super::settled_travel(&wire) == Some("/value/value/direction")
                 && wire.pointer("/value/value/direction/kind")
-                    == Some(&serde_json::json!("profile_normal"))
+                    == Some(&cadmpeg_core::json!("profile_normal"))
                 && !crate::history::extrude_direction::reversal_flag(&feature.source_properties)
         })
         .expect("an extrusion along its profile normal");
-    let mut wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+    let mut wire = json::to_value(feature.evaluation.definition()).unwrap();
     *wire.pointer_mut("/value/value/direction").unwrap() =
-        serde_json::json!({"kind": "reversed_profile_normal"});
+        cadmpeg_core::json!({"kind": "reversed_profile_normal"});
     if other {
         let leaf = first_real(&mut wire).unwrap();
-        *leaf = serde_json::json!(leaf.as_f64().unwrap() + 1.0);
+        *leaf = cadmpeg_core::json!(leaf.as_f64().unwrap() + 1.0);
     }
     feature
         .evaluation
-        .set_definition(serde_json::from_value(wire).unwrap());
+        .set_definition(json::from_value(wire).unwrap());
     let id = feature.id.clone();
     (source, input, id)
 }
@@ -399,15 +402,25 @@ fn with_string(ir: &CadIr, matches: fn(&str) -> bool, edit: fn(&str) -> String) 
             _ => false,
         }
     }
-    let mut wire = serde_json::to_value(ir).unwrap();
     let homes = ["geometry", "model", "design", "process"];
-    assert!(
-        homes
-            .iter()
-            .any(|home| walk(&mut wire[*home], matches, edit)),
-        "a string to edit"
+    let mut edited = false;
+    let ir = crate::test_support::readback::edited_json(
+        ir,
+        &mut |value| {
+            if edited {
+                return;
+            }
+            edited = match value.as_object() {
+                Some(fields) if homes.iter().any(|home| fields.contains_key(*home)) => homes
+                    .iter()
+                    .any(|home| walk(&mut value[*home], matches, edit)),
+                _ => walk(value, matches, edit),
+            };
+        },
+        &str::to_owned,
     );
-    serde_json::from_value(wire).unwrap()
+    assert!(edited, "a string to edit");
+    ir
 }
 
 /// The differences between FTC-06 and FTC-06 written at another block
@@ -532,7 +545,7 @@ fn a_difference_the_unedited_write_has_is_named_by_arena() {
     let read_back = Judge::new(&input, &CodecDigests::new(), &|_| None).judge(
         &claims,
         &UnwrittenEdits::default(),
-        (&source, &[], &[]),
+        ((&source, &Document::of(&source).unwrap()), &[], &[]),
         &written,
         Some(&HashSet::new()),
         &mut |stated| {
@@ -588,38 +601,50 @@ fn a_record_an_edit_reaches_reads_back_with_the_edit_applied() {
         super::substitutes(&numbers, &texts, &stated, &written)
     };
 
-    assert!(agrees(serde_json::json!(152.4), serde_json::json!(153.4)));
     assert!(agrees(
-        serde_json::json!("6"),
-        serde_json::json!("6.03937007874016")
+        cadmpeg_core::json!(152.4),
+        cadmpeg_core::json!(153.4)
     ));
     assert!(agrees(
-        serde_json::json!("6[in]"),
-        serde_json::json!("6.03937007874016[in]")
+        cadmpeg_core::json!("6"),
+        cadmpeg_core::json!("6.03937007874016")
     ));
     assert!(agrees(
-        serde_json::json!("152.4mm"),
-        serde_json::json!("153.4mm")
+        cadmpeg_core::json!("6[in]"),
+        cadmpeg_core::json!("6.03937007874016[in]")
     ));
-    assert!(!agrees(serde_json::json!(152.4), serde_json::json!(160.0)));
-    assert!(!agrees(serde_json::json!("6"), serde_json::json!("153.4")));
+    assert!(agrees(
+        cadmpeg_core::json!("152.4mm"),
+        cadmpeg_core::json!("153.4mm")
+    ));
     assert!(!agrees(
-        serde_json::json!("6[in]"),
-        serde_json::json!("6.03937007874016[mm]")
+        cadmpeg_core::json!(152.4),
+        cadmpeg_core::json!(160.0)
     ));
-    assert!(!agrees(serde_json::json!(100.0), serde_json::json!(101.0)));
+    assert!(!agrees(
+        cadmpeg_core::json!("6"),
+        cadmpeg_core::json!("153.4")
+    ));
+    assert!(!agrees(
+        cadmpeg_core::json!("6[in]"),
+        cadmpeg_core::json!("6.03937007874016[mm]")
+    ));
+    assert!(!agrees(
+        cadmpeg_core::json!(100.0),
+        cadmpeg_core::json!(101.0)
+    ));
     let numbers = [(0.0, 1.0)];
     assert!(super::substitutes(
         &numbers,
         &[],
-        &serde_json::json!("0mm,0mm,-209.55mm"),
-        &serde_json::json!("1mm,0mm,-209.55mm")
+        &cadmpeg_core::json!("0mm,0mm,-209.55mm"),
+        &cadmpeg_core::json!("1mm,0mm,-209.55mm")
     ));
     assert!(!super::substitutes(
         &numbers,
         &[],
-        &serde_json::json!("0mm,0mm,-209.55mm"),
-        &serde_json::json!("1mm,1mm,-209.55mm")
+        &cadmpeg_core::json!("0mm,0mm,-209.55mm"),
+        &cadmpeg_core::json!("1mm,1mm,-209.55mm")
     ));
 }
 
@@ -651,11 +676,19 @@ fn a_writer_difference_and_an_unread_part_are_named_by_their_losses() {
         ..ReadBack::default()
     };
 
-    let notes = SourceEdits::new(&input, None, Some(&source), &[])
-        .unwrap()
-        .into_parts()
-        .unwritten
-        .render(&read_back);
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let source_native = crate::test_support::native::sldprt_native(&source);
+    let notes = SourceEdits::new(
+        &input,
+        None,
+        Some((&source, Some(&source_native))),
+        &[],
+        &ctx,
+    )
+    .unwrap()
+    .into_parts()
+    .unwritten
+    .render(&read_back);
 
     for code in [
         SldprtLossCode::WriterReadBackDiffers,

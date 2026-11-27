@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Body boxes from the box pass, against the body rows of a full pass.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::ids::LoopId;
 use cadmpeg_ir::topology::{BodyKind, EdgeCarrier, FaceLoops, LoopBoundary, Sense};
 use cadmpeg_ir::transform::Transform;
@@ -20,7 +21,7 @@ use crate::test_support::builders::{
 use crate::value::{BoxKind, Quantity, Reading};
 
 fn json<T: serde::Serialize>(value: &T) -> serde_json::Value {
-    serde_json::to_value(value).expect("a quantity serializes")
+    json::to_value(value).expect("a quantity serializes")
 }
 
 /// The agreement of each body of `ir`.

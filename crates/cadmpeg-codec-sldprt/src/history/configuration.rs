@@ -682,6 +682,37 @@ pub(crate) fn project_configuration_sketch_states(
     ),
     cadmpeg_core::CodecError,
 > {
+    project_configuration_sketch_states_with_cache(
+        ctx,
+        ir,
+        histories,
+        crate::resolved_features::lane_cache::CachedLanes {
+            lanes,
+            context: crate::resolved_features::lane_cache::CachedLaneContext::default(),
+        },
+        exact,
+        annotations,
+        plane_bindings,
+    )
+}
+
+pub(crate) fn project_configuration_sketch_states_with_cache(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::CadIr,
+    histories: &[FeatureHistory],
+    input_lanes: crate::resolved_features::lane_cache::CachedLanes<'_, '_, '_>,
+    exact: &crate::resolved_features::profiles::ExactProfiles,
+    annotations: &mut cadmpeg_ir::Annotations,
+    plane_bindings: &mut crate::resolved_features::compact_reference_planes::PlaneBindings,
+) -> Result<
+    (
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+        crate::resolved_features::relation_geometry::RelationPointNotes,
+    ),
+    cadmpeg_core::CodecError,
+> {
+    let lanes = input_lanes.lanes;
+    let cache = input_lanes.context.cache;
     let mut losses = Vec::new();
     let mut relation_points =
         crate::resolved_features::relation_geometry::RelationPointNotes::default();
@@ -691,6 +722,7 @@ pub(crate) fn project_configuration_sketch_states(
         &ir.geometry.points,
         &ir.geometry.curves,
     );
+    let base_definitions = configuration_definitions(&ir.model.features);
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
@@ -703,65 +735,66 @@ pub(crate) fn project_configuration_sketch_states(
         let states = &ir.model.configurations[configuration_index].feature_states;
         let mut features = copy_configuration_state_features(&ir.model.features, states);
         inherit_configuration_reference_plane_semantics(ctx, &mut features, &ir.model.features)?;
-        let mut reusable_spatial_sketches = HashSet::new();
-        for sketch in &ir.model.spatial_sketches {
-            if sketch.configuration.is_none()
-                || sketch.native_ref.as_deref() == Some(scoped_lanes[0].id.as_str())
-                || scoped_lanes[0]
-                    .configuration
-                    .as_deref()
-                    .is_some_and(|configuration| {
-                        sketch.configuration.as_deref() == Some(configuration)
-                    })
-            {
-                reusable_spatial_sketches.insert(&sketch.id);
+        if !ir.model.spatial_sketches.is_empty() {
+            let mut reusable_spatial_sketches = HashSet::new();
+            for sketch in &ir.model.spatial_sketches {
+                if sketch.configuration.is_none()
+                    || sketch.native_ref.as_deref() == Some(scoped_lanes[0].id.as_str())
+                    || scoped_lanes[0]
+                        .configuration
+                        .as_deref()
+                        .is_some_and(|configuration| {
+                            sketch.configuration.as_deref() == Some(configuration)
+                        })
+                {
+                    reusable_spatial_sketches.insert(&sketch.id);
+                }
             }
-        }
-        let base_definitions = configuration_definitions(&ir.model.features);
-        for feature in &mut features {
-            if let FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch }) =
-                feature.evaluation.definition()
-            {
-                let id = feature.id.as_str();
-                let text = if let Some((prefix, suffix)) = id.split_once(":model:feature#") {
-                    format!("{prefix}:model:spatial-sketch#{suffix}")
-                } else {
-                    id.to_owned()
-                };
-                let Ok(expected) = cadmpeg_ir::sketches::SpatialSketchId::mint(text) else {
+            for feature in &mut features {
+                if let FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch }) =
+                    feature.evaluation.definition()
+                {
+                    let id = feature.id.as_str();
+                    let text = if let Some((prefix, suffix)) = id.split_once(":model:feature#") {
+                        format!("{prefix}:model:spatial-sketch#{suffix}")
+                    } else {
+                        id.to_owned()
+                    };
+                    let Ok(expected) = cadmpeg_ir::sketches::SpatialSketchId::mint(text) else {
+                        continue;
+                    };
+                    if sketch.is_none() && reusable_spatial_sketches.contains(&expected) {
+                        feature
+                            .evaluation
+                            .set_definition(FeatureDefinition::Operation(
+                                FeatureOperation::SpatialSketch {
+                                    sketch: Some(expected),
+                                },
+                            ));
+                    }
+                    continue;
+                }
+                let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch }) =
+                    feature.evaluation.definition()
+                else {
                     continue;
                 };
-                if sketch.is_none() && reusable_spatial_sketches.contains(&expected) {
+                let Some(FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
+                    sketch: Some(base_sketch),
+                })) = base_definitions.get(&feature.id).copied()
+                else {
+                    continue;
+                };
+                if sketch.id().is_none() && reusable_spatial_sketches.contains(base_sketch) {
+                    let copied = base_sketch.clone();
                     feature
                         .evaluation
                         .set_definition(FeatureDefinition::Operation(
                             FeatureOperation::SpatialSketch {
-                                sketch: Some(expected),
+                                sketch: Some(copied),
                             },
                         ));
                 }
-                continue;
-            }
-            let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch }) =
-                feature.evaluation.definition()
-            else {
-                continue;
-            };
-            let Some(FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
-                sketch: Some(base_sketch),
-            })) = base_definitions.get(&feature.id).copied()
-            else {
-                continue;
-            };
-            if sketch.id().is_none() && reusable_spatial_sketches.contains(base_sketch) {
-                let copied = base_sketch.clone();
-                feature
-                    .evaluation
-                    .set_definition(FeatureDefinition::Operation(
-                        FeatureOperation::SpatialSketch {
-                            sketch: Some(copied),
-                        },
-                    ));
             }
         }
         let mut parameters = std::mem::take(&mut ir.model.parameters);
@@ -788,20 +821,37 @@ pub(crate) fn project_configuration_sketch_states(
                 scoped_lanes,
                 exact,
             );
+            let shared_plane_frames = HashMap::from([(
+                std::ptr::from_ref(&scoped_lanes[0]).addr(),
+                crate::resolved_features::curves::lane_sketch_plane_frames(
+                    &features,
+                    histories,
+                    &scoped_lanes[0],
+                ),
+            )]);
+            let cached_context = crate::resolved_features::lane_cache::CachedLaneContext {
+                cache,
+                plane_frames: Some(&shared_plane_frames),
+            };
+            let scoped_cached_lanes = crate::resolved_features::lane_cache::CachedLanes {
+                lanes: scoped_lanes,
+                context: cached_context,
+            };
             plane_bindings.extend(
-                crate::resolved_features::profiles::project_compact_sketch_profiles(
+                crate::resolved_features::profiles::project_compact_sketch_profiles_with_cache(
                     ctx,
                     &mut features,
                     &mut ir.model.sketches,
                     &mut ir.model.sketch_entities,
                     histories,
-                    scoped_lanes,
+                    scoped_cached_lanes,
                     &mut losses,
                 )?,
             );
             let mut held_handles = held_handles;
             plane_bindings.extend(
-                crate::resolved_features::profiles::project_marker_backed_sketches(
+                crate::resolved_features::profiles::project_marker_backed_sketches_with_cache(
+                    cached_context,
                     ctx,
                     &mut features,
                     &mut ir.model.sketches,
@@ -898,15 +948,6 @@ pub(crate) fn project_configuration_sketch_states(
                 held_handles,
                 &mut losses,
             );
-            crate::resolved_features::relation_geometry::project_relation_bindings(
-                ctx,
-                &mut ir.model.sketch_constraints,
-                &ir.model.sketches,
-                &features,
-                &ir.model.sketch_entities,
-                &parameters,
-                scoped_lanes,
-            )?;
             crate::resolved_features::holes::project_profiled_hole_constructions(
                 ctx,
                 &mut features,
@@ -941,7 +982,7 @@ pub(crate) fn project_configuration_sketch_states(
                     points: &ir.geometry.points,
                 },
             )?;
-            crate::resolved_features::holes::project_hole_axes(
+            crate::resolved_features::holes::project_hole_axes_with_cache(
                 ctx,
                 &mut features,
                 &ir.model.sketch_entities,
@@ -955,16 +996,16 @@ pub(crate) fn project_configuration_sketch_states(
                     points: &ir.geometry.points,
                 },
                 histories,
-                scoped_lanes,
+                scoped_cached_lanes,
             )?;
-            crate::resolved_features::relation_geometry::project_relation_bindings(
+            crate::resolved_features::relation_geometry::project_relation_bindings_with_cache(
                 ctx,
                 &mut ir.model.sketch_constraints,
                 &ir.model.sketches,
                 &features,
                 &ir.model.sketch_entities,
                 &parameters,
-                scoped_lanes,
+                scoped_cached_lanes,
             )?;
             crate::resolved_features::sweeps::bind(
                 &mut features,
@@ -1537,6 +1578,56 @@ fn configuration_surface_carriers(
         }
     }
     surfaces
+}
+
+/// Relative tolerance of two stored numbers that state one value.
+const EPS_CONFIGURATION_DISPLAYED_NUMBER: f64 = 1.0e-9;
+
+/// Keep each configuration's value of a parameter whose bare Keywords number
+/// became a length in step with it (`docs/formats/sldprt.md`). A configuration
+/// states such a value as a real or integer in the unit the parameter was
+/// displayed in. The value is the parameter's length where it is the displayed
+/// number, and that number converted to millimetres otherwise.
+pub(crate) fn convert_refined_configuration_values(
+    ir: &mut cadmpeg_ir::CadIr,
+    refined: &[crate::pmi::RefinedLength],
+) {
+    for refined in refined {
+        let Some(ParameterValue::Length(length)) = ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == refined.parameter)
+            .and_then(|parameter| parameter.value.as_ref())
+        else {
+            continue;
+        };
+        let length = *length;
+        for configuration in &mut ir.model.configurations {
+            let Some(value) = configuration.parameter_values.get_mut(&refined.parameter) else {
+                continue;
+            };
+            let number = match &*value {
+                ParameterValue::Real(real) => real.get(),
+                ParameterValue::Integer(integer) => match exact_integer_f64(*integer) {
+                    Some(number) => number,
+                    None => continue,
+                },
+                _ => continue,
+            };
+            let shown = refined.displayed.number;
+            let converted = if (number - shown).abs()
+                <= EPS_CONFIGURATION_DISPLAYED_NUMBER * number.abs().max(shown.abs())
+            {
+                Some(length)
+            } else {
+                Length::new(number * refined.displayed.mm_per_unit)
+            };
+            if let Some(converted) = converted {
+                *value = ParameterValue::Length(converted);
+            }
+        }
+    }
 }
 
 /// Give configuration-local numeric overrides the kind established by their

@@ -4,8 +4,8 @@
 
 use std::io::Cursor;
 
+use cadmpeg_core::json;
 use cadmpeg_ir::{Codec, DecodeOptions};
-use serde_json::json;
 
 use crate::F3dCodec;
 
@@ -20,7 +20,7 @@ fn decoded(bytes: &[u8]) -> serde_json::Value {
     let validation =
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).unwrap();
     assert!(validation.is_ok(), "{validation:#?}");
-    serde_json::to_value(result.ir()).expect("serialize the IR")
+    cadmpeg_test_support::wire::in_memory_json(result.ir())
 }
 
 /// The definition of the feature named `name`.
@@ -222,6 +222,7 @@ fn design_bulk_stream(bytes: &[u8]) -> Vec<u8> {
         &mut member,
         NAME,
         cadmpeg_core::decode::u64_from_index(bytes.len()),
+        cadmpeg_core::decode::ResourceLimits::desktop(),
     )
     .expect("expand BulkStream")
 }

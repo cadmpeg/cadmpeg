@@ -10,7 +10,8 @@
 //! error. A saved-cache disagreement or an unavailable comparison is a
 //! warning.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use crate::{fast_map_with_capacity, FastMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -101,18 +102,15 @@ pub(crate) struct ResolvedDeclared<'ir> {
 /// Resolve each declared measure of `ir` to its member bodies and collect the
 /// union of body ids that must be measured.
 pub(crate) fn resolve_declared(ir: &CadIr) -> ResolvedDeclared<'_> {
-    let bodies: HashMap<&str, &Body> = ir
-        .geometry
-        .bodies
-        .iter()
-        .map(|body| (body.id.as_str(), body))
-        .collect();
-    let definitions: HashMap<&str, &cadmpeg_ir::products::ProductDefinition> = ir
-        .model
-        .product_definitions
-        .iter()
-        .map(|definition| (definition.id.as_str(), definition))
-        .collect();
+    let mut bodies: FastMap<&str, &Body> = fast_map_with_capacity(ir.geometry.bodies.len());
+    for body in &ir.geometry.bodies {
+        bodies.insert(body.id.as_str(), body);
+    }
+    let mut definitions: FastMap<&str, &cadmpeg_ir::products::ProductDefinition> =
+        fast_map_with_capacity(ir.model.product_definitions.len());
+    for definition in &ir.model.product_definitions {
+        definitions.insert(definition.id.as_str(), definition);
+    }
     let members: Vec<Result<Vec<&Body>, Unmeasured>> = ir
         .model
         .declared_measures
@@ -151,6 +149,7 @@ pub(crate) fn findings_from_rows(
             Ok(None) => continue,
             Ok(Some(message)) => Finding {
                 check: Check::DeclaredMeasure,
+                rule: cadmpeg_ir::rule_name!("measure/declared.declared-quantity-differs"),
                 severity: match measure.basis {
                     Some(MeasureBasis::Cache) => Severity::Warning,
                     None | Some(MeasureBasis::Validation) => Severity::Error,
@@ -167,6 +166,7 @@ pub(crate) fn findings_from_rows(
                     }
                 }
                 Finding {
+                    rule: cadmpeg_ir::rule_name!("measure/declared.declared-not-compared"),
                     check: Check::DeclaredMeasure,
                     severity: Severity::Warning,
                     message: format!(
@@ -249,8 +249,8 @@ fn target_ids(target: &DeclaredTarget) -> Vec<String> {
 
 /// The bodies a declared measure covers.
 fn member_bodies<'ir>(
-    bodies_by_id: &HashMap<&'ir str, &'ir Body>,
-    definitions_by_id: &HashMap<&'ir str, &'ir cadmpeg_ir::products::ProductDefinition>,
+    bodies_by_id: &FastMap<&'ir str, &'ir Body>,
+    definitions_by_id: &FastMap<&'ir str, &'ir cadmpeg_ir::products::ProductDefinition>,
     measure: &DeclaredMeasure,
 ) -> Result<Vec<&'ir Body>, Unmeasured> {
     let body = |id: &BodyId| bodies_by_id.get(id.as_str()).copied();

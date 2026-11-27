@@ -18,7 +18,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedCurveGeometry, SolvedSurfaceGeometry};
-use cadmpeg_ir::ids::{CurveId, VertexId};
+use cadmpeg_ir::ids::{CurveId, FaceId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
@@ -1217,18 +1217,34 @@ fn predefined_associativity_valid(
         }
         9 => {
             let child_count = record.count(2).filter(|count| *count > 0);
+            let linked = |index: usize| {
+                existing_pointer(record, index, entries)
+                    .and_then(|sequence| records.get(&sequence))
+                    .is_some_and(|member| {
+                        has_association_back_pointer(
+                            member,
+                            entry.sequence,
+                            trailing_pointer_analysis,
+                        )
+                    })
+            };
+            // The legacy bounded-plane face gives up the slot of a child
+            // pointer that names no entry, and of a Type 108 child without
+            // its back pointer, and keeps its other holes.
+            let plane_parent = existing_pointer(record, 3, entries)
+                .and_then(|parent| entries.get(&parent))
+                .is_some_and(|parent| parent.entity_type == 108 && parent.form == 1);
+            let plane_slot = |index: usize| {
+                plane_parent
+                    && match existing_pointer(record, index, entries) {
+                        Some(child) => entries
+                            .get(&child)
+                            .is_some_and(|child| child.entity_type == 108),
+                        None => record.integer(index).is_some(),
+                    }
+            };
             let members_valid = child_count.is_some_and(|count| {
-                (3..4 + count).all(|index| {
-                    existing_pointer(record, index, entries)
-                        .and_then(|sequence| records.get(&sequence))
-                        .is_some_and(|member| {
-                            has_association_back_pointer(
-                                member,
-                                entry.sequence,
-                                trailing_pointer_analysis,
-                            )
-                        })
-                })
+                linked(3) && (4..4 + count).all(|index| linked(index) || plane_slot(index))
             });
             record.integer(1) == Some(1)
                 && child_count.is_some_and(|count| end == 4 + count)
@@ -1750,7 +1766,7 @@ fn plane_face_draft(
     surface_sequence: u32,
     source_sequence: u32,
     stem: &crate::ids::Stem,
-    boundary_edges: Vec<Edge>,
+    boundary_edges: Vec<(usize, Edge)>,
     resolution: f64,
     sequences: &mut super::geometry::SourceSequences,
     ctx: &DecodeContext<'_>,
@@ -1771,7 +1787,7 @@ fn plane_face_draft(
     sequences.record_face(&face_id, source_sequence);
     let mut candidate = ModelDraft::new();
     let mut loop_ids = Vec::new();
-    for (boundary_index, edge) in boundary_edges.into_iter().enumerate() {
+    for (boundary_index, edge) in boundary_edges {
         let edge_id = edge.id.clone();
 
         ctx.charge_entities(1, "iges_geometry_structure")?;
@@ -1881,6 +1897,32 @@ impl LegacyPlaneError {
 struct LegacyPlaneSource<'a> {
     entry: &'a DirectoryEntry,
     record: &'a ParameterRecord,
+    /// The sequence of the Type 108 Form 1 face that bounds the hole.
+    parent: u32,
+    trailing_pointer_analysis: &'a BTreeMap<u32, TrailingPointerAnalysis>,
+}
+
+/// A child of a Type 402 Form 9 relation that bounds no hole of the
+/// relation's face: the loop it would state, the child it names, and why.
+struct LostHole {
+    loop_id: cadmpeg_ir::ids::LoopId,
+    child: LostChild,
+}
+
+/// The child of a [`LostHole`].
+enum LostChild {
+    /// The child pointer names no Directory entry.
+    Dangling(i64),
+    /// The child at this Directory sequence bounds no hole, and why.
+    Unbounded(u32, &'static str),
+}
+
+/// The face a Type 402 Form 9 relation states: its draft, the Type 108
+/// planes it bounds with, and the children that bound no hole of it.
+struct LegacyFace {
+    draft: ModelDraft,
+    planes: Vec<u32>,
+    lost: Vec<LostHole>,
 }
 
 fn legacy_single_parent_face(
@@ -1891,100 +1933,163 @@ fn legacy_single_parent_face(
     rules: PlaneBoundaryRules<'_>,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
-) -> Result<Option<(ModelDraft, Vec<u32>)>, LegacyPlaneError> {
-    let LegacyPlaneSource { entry, record } = source;
-    let Some(parent_sequence) = existing_pointer(record, 3, entries) else {
-        return Ok(None);
-    };
-    let Some(parent_entry) = entries.get(&parent_sequence) else {
-        return Ok(None);
-    };
-    if parent_entry.entity_type != 108 || parent_entry.form != 1 {
-        return Ok(None);
-    }
+) -> Result<Option<LegacyFace>, LegacyPlaneError> {
+    const INVALID_CHILD: &str = "legacy single-parent plane hole has an invalid child pointer";
+    let LegacyPlaneSource {
+        entry,
+        record,
+        parent: parent_sequence,
+        trailing_pointer_analysis,
+    } = source;
     let Some(child_count) = record.count(2).filter(|count| *count > 0) else {
         return Err("legacy single-parent plane hole has no children".into());
     };
     let mut children = Vec::new();
     for offset in 0..child_count {
-        let Some(child) = existing_pointer(record, 4 + offset, entries) else {
-            return Err("legacy single-parent plane hole has an invalid child pointer".into());
+        let Some(pointer) = record.integer(4 + offset) else {
+            return Err(INVALID_CHILD.into());
         };
-        children.push(child);
+        children.push((pointer, existing_pointer(record, 4 + offset, entries)));
     }
-    if children.iter().any(|sequence| {
-        entries
-            .get(sequence)
-            .is_some_and(|child| child.entity_type != 108)
-    }) {
+    let has_plane_child = children.iter().any(|(_, sequence)| {
+        sequence
+            .and_then(|sequence| entries.get(&sequence))
+            .is_some_and(|child| child.entity_type == 108)
+    });
+    if !has_plane_child && children.iter().all(|(_, sequence)| sequence.is_some()) {
         return Ok(None);
     }
-    if children.iter().any(|sequence| {
-        entries
-            .get(sequence)
-            .is_none_or(|child| child.form != -1 || !child.status.is_physically_dependent())
-    }) {
-        return Err(
-            "legacy single-parent plane hole requires negative, physically dependent Type 108 children"
-                .into(),
-        );
-    }
 
-    let mut boundary_sequences = Vec::new();
-    for sequence in std::iter::once(parent_sequence).chain(children.iter().copied()) {
-        boundary_sequences.push(
-            records
-                .get(&sequence)
-                .and_then(|plane| existing_pointer(plane, 5, entries))
-                .ok_or("legacy single-parent plane has an invalid boundary pointer")?,
-        );
-    }
     let index = ModelIndex::new_model_only(ir);
-    let parent_plane = plane_carrier(&index, parent_sequence)
-        .ok_or("legacy single-parent parent plane was not projected")?;
     let resolution = rules.resolution;
-    let mut boundary_edges = Vec::new();
-    for (boundary_index, (plane_sequence, boundary_sequence)) in std::iter::once(parent_sequence)
-        .chain(children.iter().copied())
-        .zip(boundary_sequences.iter().copied())
-        .enumerate()
-    {
-        let plane = plane_carrier(&index, plane_sequence)
-            .ok_or("legacy single-parent child plane was not projected")?;
-        if !planes_are_coplanar(parent_plane, plane, resolution) {
-            return Err("legacy single-parent plane boundaries are not coplanar".into());
-        }
+    let stem =
+        crate::ids::Stem::word_directory(crate::ids::Word::LegacySingleParent, entry.sequence);
+    let boundary_edge = |boundary_index: usize,
+                         plane_sequence: u32,
+                         plane: (Point3, Vector3)|
+     -> Result<(usize, Edge), LegacyPlaneError> {
+        let boundary_sequence = records
+            .get(&plane_sequence)
+            .and_then(|plane| existing_pointer(plane, 5, entries))
+            .ok_or("legacy single-parent plane has an invalid boundary pointer")?;
         let mut edge = plane_boundary_edge(&index, plane, boundary_sequence, entries, rules, ctx)
             .map_err(|error| match error.legacy_message() {
             Ok(message) => LegacyPlaneError::Invalid(message),
             Err(resource) => LegacyPlaneError::Resource(resource),
         })?;
-        let edge_id = crate::ids::edge(
-            &crate::ids::Stem::word_directory(crate::ids::Word::LegacySingleParent, entry.sequence)
-                .tail_index(boundary_index),
-        );
-        edge.id = edge_id.clone();
+        edge.id = crate::ids::edge(&stem.tail_index(boundary_index));
         if let Some(ends) = &mut edge.ends {
             ends.end = ends.start.clone();
         }
-        boundary_edges.push(edge);
+        Ok((boundary_index, edge))
+    };
+    let parent_plane = plane_carrier(&index, parent_sequence)
+        .ok_or("legacy single-parent parent plane was not projected")?;
+    let mut boundary_edges = vec![boundary_edge(0, parent_sequence, parent_plane)?];
+    let mut planes = vec![parent_sequence];
+    // Each child bounds its own hole: one that does not leaves the holes of
+    // the others stated (§3.3).
+    let mut lost = Vec::new();
+    for (offset, (pointer, child)) in children
+        .into_iter()
+        .enumerate()
+        .filter(|(_, (_, child))| has_plane_child || child.is_none())
+    {
+        let boundary_index = offset + 1;
+        let Some(child) = child else {
+            lost.push(LostHole {
+                loop_id: crate::ids::r#loop(&stem.slot(boundary_index)),
+                child: LostChild::Dangling(pointer),
+            });
+            continue;
+        };
+        let hole = entries
+            .get(&child)
+            .filter(|child| child.entity_type == 108)
+            .ok_or("legacy single-parent plane hole names a child that is not a Type 108 plane")
+            .and_then(|child_entry| {
+                records
+                    .get(&child)
+                    .is_some_and(|child_record| {
+                        has_association_back_pointer(
+                            child_record,
+                            entry.sequence,
+                            trailing_pointer_analysis,
+                        )
+                    })
+                    .then_some(child_entry)
+                    .ok_or(
+                        "legacy single-parent plane hole child carries no association back \
+                         pointer to the relation",
+                    )
+            })
+            .and_then(|child| {
+                (child.form == -1 && child.status.is_physically_dependent()).then_some(()).ok_or(
+                    "legacy single-parent plane hole requires negative, physically dependent Type 108 children",
+                )
+            })
+            .and_then(|()| {
+                plane_carrier(&index, child)
+                    .ok_or("legacy single-parent child plane was not projected")
+            })
+            .and_then(|plane| {
+                planes_are_coplanar(parent_plane, plane, resolution)
+                    .then_some(plane)
+                    .ok_or("legacy single-parent plane boundaries are not coplanar")
+            })
+            .map_err(LegacyPlaneError::Invalid)
+            .and_then(|plane| boundary_edge(boundary_index, child, plane));
+        match hole {
+            Ok(edge) => {
+                boundary_edges.push(edge);
+                planes.push(child);
+            }
+            Err(LegacyPlaneError::Invalid(why)) => lost.push(LostHole {
+                loop_id: crate::ids::r#loop(&stem.slot(boundary_index)),
+                child: LostChild::Unbounded(child, why),
+            }),
+            Err(resource) => return Err(resource),
+        }
     }
-    let stem =
-        crate::ids::Stem::word_directory(crate::ids::Word::LegacySingleParent, entry.sequence);
+    let mut draft = plane_face_draft(
+        parent_sequence,
+        entry.sequence,
+        &stem,
+        boundary_edges,
+        resolution,
+        sequences,
+        ctx,
+    )?;
+    if !lost.is_empty() {
+        state_holes_unstated(&mut draft);
+    }
+    Ok(Some(LegacyFace {
+        draft,
+        planes,
+        lost,
+    }))
+}
 
-    children.insert(0, parent_sequence);
-    Ok(Some((
-        plane_face_draft(
-            parent_sequence,
-            entry.sequence,
-            &stem,
-            boundary_edges,
-            resolution,
-            sequences,
-            ctx,
-        )?,
-        children,
-    )))
+/// States the face of `candidate` with its holes not stated in full, for a
+/// face whose Type 402 Form 9 hole the projection gives up (§5.6).
+fn state_holes_unstated(candidate: &mut ModelDraft) {
+    for face in &mut candidate.geometry_mut().faces {
+        face.loops = match std::mem::replace(
+            &mut face.loops,
+            cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        ) {
+            cadmpeg_ir::topology::FaceLoops::Classified { outer, inner } => {
+                cadmpeg_ir::topology::FaceLoops::PartialClassified {
+                    outer: Some(outer),
+                    inner,
+                }
+            }
+            cadmpeg_ir::topology::FaceLoops::Unspecified { loops } => {
+                cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops }
+            }
+            partial => partial,
+        };
+    }
 }
 
 enum FlowPointer {
@@ -2279,15 +2384,28 @@ pub(crate) fn placement_affine(
     ))
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct ProjectInputs<'a> {
+    pub(super) directory: &'a [DirectoryEntry],
+    pub(super) parameters: &'a [ParameterRecord],
+    pub(super) trailing_pointer_analysis: &'a BTreeMap<u32, TrailingPointerAnalysis>,
+    pub(super) global: &'a ProjectedGlobal,
+    pub(super) limits: super::geometry::ProjectionLimits,
+}
+
 pub(super) fn project(
     ir: &mut CadIr,
-    directory: &[DirectoryEntry],
-    parameters: &[ParameterRecord],
-    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
-    global: &ProjectedGlobal,
+    inputs: ProjectInputs<'_>,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<(ProjectionOutcome, BTreeMap<u32, PlacementRejection>), CodecError> {
+    let ProjectInputs {
+        directory,
+        parameters,
+        trailing_pointer_analysis,
+        global,
+        limits,
+    } = inputs;
     let mut records = BTreeMap::new();
     for record in parameters {
         records.insert(record.directory_sequence, record);
@@ -2298,7 +2416,7 @@ pub(super) fn project(
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
-    let planar_pairs = PlanarPairBudget::new();
+    let planar_pairs = PlanarPairBudget::new(limits);
     let boundary_rules = PlaneBoundaryRules {
         resolution: global.minimum_resolution_mm(),
         pairs: &planar_pairs,
@@ -2306,8 +2424,13 @@ pub(super) fn project(
     let mut placement_rejections = BTreeMap::new();
     let mut assemblies = BTreeMap::new();
     let mut attribute_shapes = BTreeMap::<u32, Vec<(i64, usize)>>::new();
-    let mut legacy_face_candidates = Vec::<(&DirectoryEntry, ModelDraft)>::new();
+    let mut legacy_face_candidates = Vec::<(&DirectoryEntry, u32, FaceId, ModelDraft)>::new();
     let mut legacy_plane_sequences = BTreeSet::new();
+    let mut failed_holes = Vec::<(&DirectoryEntry, u32, cadmpeg_ir::report::loss::LossNote)>::new();
+    let mut lost_holes = Vec::<(&DirectoryEntry, FaceId, LostHole)>::new();
+    // The Type 402 Form 9 relation that names each Type 108 child of a
+    // Type 108 Form 1 parent.
+    let mut hole_relations = BTreeMap::<u32, u32>::new();
     let mut flows = BTreeMap::new();
     for entry in directory
         .iter()
@@ -2333,7 +2456,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2..=15 | 18..=36))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -2537,7 +2660,7 @@ pub(super) fn project(
         if fields_valid && attachment_valid && reference_designator_valid && owner_kind_valid {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("property value layout, attachment, or owner kind is invalid"),
@@ -2550,7 +2673,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -2625,7 +2748,7 @@ pub(super) fn project(
                 attribute_shapes.insert(entry.sequence, shape);
             }
         } else {
-            super::push_entity_loss(&mut losses, entry, format_args!("attribute-table definition header, value type, value, or display link is invalid"));
+            super::push_entity_finding(&mut losses, entry, format_args!("attribute-table definition header, value type, value, or display link is invalid"));
         }
     }
 
@@ -2634,7 +2757,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 422 && matches!(entry.form, 0..=1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -2679,7 +2802,7 @@ pub(super) fn project(
         if values_valid {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!(
@@ -2694,7 +2817,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 316 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -2729,7 +2852,7 @@ pub(super) fn project(
         if units_valid && directory_valid {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!(
@@ -2742,7 +2865,7 @@ pub(super) fn project(
 
     for entry in directory.iter().filter(|entry| entry.entity_type == 302) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -2775,7 +2898,7 @@ pub(super) fn project(
         if directory_valid && classes_valid && cursor == record.parameter_end() {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!(
@@ -2791,7 +2914,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 1 | 7 | 14 | 15))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -2820,7 +2943,7 @@ pub(super) fn project(
         if members_valid {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("group member list or required association back pointer is invalid"),
@@ -2833,7 +2956,7 @@ pub(super) fn project(
             && matches!(entry.form, 2 | 5 | 6 | 8 | 9 | 10 | 11 | 12 | 13 | 16 | 21)
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -2861,33 +2984,55 @@ pub(super) fn project(
             };
         if valid {
             decoded.insert(entry.sequence);
-            if entry.form == 9 {
+            let parent = existing_pointer(record, 3, &entries).filter(|parent| {
+                entries
+                    .get(parent)
+                    .is_some_and(|parent| parent.entity_type == 108 && parent.form == 1)
+            });
+            if let (9, Some(parent)) = (entry.form, parent) {
+                let count = record.count(2).unwrap_or(0);
+                hole_relations.extend(
+                    (4..4 + count)
+                        .filter_map(|index| existing_pointer(record, index, &entries))
+                        .map(|child| (child, entry.sequence)),
+                );
                 match legacy_single_parent_face(
                     ir,
-                    LegacyPlaneSource { entry, record },
+                    LegacyPlaneSource {
+                        entry,
+                        record,
+                        parent,
+                        trailing_pointer_analysis,
+                    },
                     &entries,
                     &records,
                     boundary_rules,
                     ctx,
                     sequences,
                 ) {
-                    Ok(Some((candidate, plane_sequences))) => {
-                        for sequence in plane_sequences {
-                            legacy_plane_sequences.insert(sequence);
-                        }
-
-                        legacy_face_candidates.push((entry, candidate));
+                    Ok(Some(LegacyFace {
+                        draft,
+                        planes,
+                        lost,
+                    })) => {
+                        legacy_plane_sequences.extend(planes);
+                        let face = crate::ids::face(&crate::ids::Stem::word_directory(
+                            crate::ids::Word::LegacySingleParent,
+                            entry.sequence,
+                        ));
+                        lost_holes.extend(lost.into_iter().map(|hole| (entry, face.clone(), hole)));
+                        legacy_face_candidates.push((entry, parent, face, draft));
                     }
                     Ok(None) => {}
-                    Err(reason) => super::push_entity_loss(
-                        &mut losses,
+                    Err(reason) => failed_holes.push((
                         entry,
-                        format_args!("{}", reason.non_resource()?),
-                    ),
+                        parent,
+                        super::entity_note(entry, format_args!("{}", reason.non_resource()?)),
+                    )),
                 }
             }
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!(
@@ -2906,13 +3051,36 @@ pub(super) fn project(
         if legacy_plane_sequences.contains(&entry.sequence) {
             continue;
         }
-        let Some(record) = records.get(&entry.sequence).copied() else {
-            continue;
-        };
-        let Some(plane) = plane_carrier(&index, entry.sequence) else {
+        let stem = crate::ids::Stem::word_directory(crate::ids::Word::BoundedPlane, entry.sequence);
+        let face = crate::ids::face(&stem);
+        let (Some(record), Some(plane)) = (
+            records.get(&entry.sequence).copied(),
+            plane_carrier(&index, entry.sequence),
+        ) else {
+            if entry.form == 1 {
+                super::give_up_record(
+                    &mut losses,
+                    entry,
+                    face,
+                    Some(entry.sequence),
+                    super::entity_note(
+                        entry,
+                        format_args!("bounded plane face has no projected plane"),
+                    ),
+                );
+            }
             continue;
         };
         let Some(boundary_sequence) = existing_pointer(record, 5, &entries) else {
+            if entry.form == 1 {
+                super::give_up_record(
+                    &mut losses,
+                    entry,
+                    face,
+                    None,
+                    super::entity_note(entry, format_args!("plane boundary pointer is invalid")),
+                );
+            }
             continue;
         };
         match entry.form {
@@ -2925,18 +3093,11 @@ pub(super) fn project(
                 ctx,
             ) {
                 Ok(mut edge) => {
-                    edge.id = crate::ids::edge(&crate::ids::Stem::word_directory(
-                        crate::ids::Word::BoundedPlane,
-                        entry.sequence,
-                    ));
+                    edge.id = crate::ids::edge(&stem);
                     if let Some(ends) = &mut edge.ends {
                         ends.end = ends.start.clone();
                     }
-                    let stem = crate::ids::Stem::word_directory(
-                        crate::ids::Word::BoundedPlane,
-                        entry.sequence,
-                    );
-                    let boundary_edges = vec![edge];
+                    let boundary_edges = vec![(0, edge)];
                     let candidate = plane_face_draft(
                         entry.sequence,
                         entry.sequence,
@@ -2948,20 +3109,28 @@ pub(super) fn project(
                     );
                     match candidate {
                         Ok(candidate) => {
-                            legacy_face_candidates.push((entry, candidate));
+                            legacy_face_candidates.push((entry, entry.sequence, face, candidate));
                         }
-                        Err(reason) => super::push_entity_loss(
+                        Err(reason) => super::give_up_record(
                             &mut losses,
                             entry,
-                            format_args!("{}", reason.non_resource()?),
+                            face,
+                            None,
+                            super::entity_note(entry, format_args!("{}", reason.non_resource()?)),
                         ),
                     }
                 }
-                Err(reason) => super::push_entity_loss(
-                    &mut losses,
-                    entry,
-                    format_args!("{}", reason.message()?),
-                ),
+                Err(reason) => {
+                    let needs = matches!(reason, PlaneBoundaryError::MissingEdge)
+                        .then_some(boundary_sequence);
+                    super::give_up_record(
+                        &mut losses,
+                        entry,
+                        face,
+                        needs,
+                        super::entity_note(entry, format_args!("{}", reason.message()?)),
+                    );
+                }
             },
             -1 => match plane_boundary_edge(
                 &index,
@@ -2971,14 +3140,25 @@ pub(super) fn project(
                 boundary_rules,
                 ctx,
             ) {
-                Ok(_) => super::push_entity_loss(
-                    &mut losses,
-                    entry,
-                    format_args!(
-                        "negative bounded plane requires an enclosing positive plane face"
+                Ok(_) => match hole_relations.get(&entry.sequence) {
+                    Some(relation) => super::push_entity_finding(
+                        &mut losses,
+                        entry,
+                        format_args!(
+                            "negative bounded plane is a child of the Type 402 Form 9 \
+                             relation at Directory sequence {relation}, whose face does not \
+                             state its hole"
+                        ),
                     ),
-                ),
-                Err(reason) => super::push_entity_loss(
+                    None => super::push_entity_finding(
+                        &mut losses,
+                        entry,
+                        format_args!(
+                            "negative bounded plane requires an enclosing positive plane face"
+                        ),
+                    ),
+                },
+                Err(reason) => super::push_entity_finding(
                     &mut losses,
                     entry,
                     format_args!("{}", reason.message()?),
@@ -2990,14 +3170,70 @@ pub(super) fn project(
 
     drop(index);
     let mut commit_session = CommitSession::new(ir, ctx, None)?;
-    for (entry, candidate) in legacy_face_candidates {
-        if commit_session.commit_model(candidate)?.is_err() {
-            super::push_entity_loss(
+    let mut partial_faces = BTreeMap::new();
+    let mut committed_faces = BTreeSet::new();
+    for (entry, parent, face, mut candidate) in legacy_face_candidates {
+        let partial = failed_holes
+            .iter()
+            .any(|(_, hole_parent, _)| *hole_parent == parent);
+        if partial {
+            state_holes_unstated(&mut candidate);
+        }
+        let committed = commit_session.commit_model(candidate)?.is_ok();
+        if committed && partial {
+            partial_faces.insert(parent, face.clone());
+        }
+        if committed {
+            committed_faces.insert(face.clone());
+        }
+        if !committed {
+            super::give_up_record(
                 &mut losses,
                 entry,
-                format_args!("legacy single-parent plane hole failed neutral topology validation"),
+                face,
+                None,
+                super::entity_note(
+                    entry,
+                    format_args!("plane face failed neutral topology validation"),
+                ),
             );
         }
+    }
+    for (entry, face, hole) in lost_holes {
+        let why = match hole.child {
+            LostChild::Dangling(pointer) => super::attributed_note(
+                entry,
+                crate::loss::IgesLossCode::EntityNotProjected,
+                format_args!(
+                    "IGES entity type {} form {} child pointer {pointer} names no Directory \
+                     entry, so its slot bounds no hole of the face",
+                    entry.entity_type, entry.form
+                ),
+            ),
+            LostChild::Unbounded(child, why) => super::attributed_note(
+                entry,
+                crate::loss::IgesLossCode::EntityNotProjected,
+                format_args!(
+                    "IGES entity type {} form {} hole bounded by Directory sequence {child} was \
+                     not projected: {why}",
+                    entry.entity_type, entry.form
+                ),
+            ),
+        };
+        let marked = committed_faces.contains(&face).then_some(face);
+        super::give_up_marking(&mut losses, entry, hole.loop_id, marked, why);
+    }
+    for (entry, parent, why) in failed_holes {
+        super::give_up_marking(
+            &mut losses,
+            entry,
+            crate::ids::face(&crate::ids::Stem::word_directory(
+                crate::ids::Word::LegacySingleParent,
+                entry.sequence,
+            )),
+            partial_faces.get(&parent).cloned(),
+            why,
+        );
     }
 
     let mut visited_flows = BTreeSet::new();
@@ -3032,7 +3268,7 @@ pub(super) fn project(
         if flow_targets_valid && !cyclic {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!(
@@ -3048,7 +3284,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 416 && matches!(entry.form, 0..=4))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -3064,7 +3300,7 @@ pub(super) fn project(
         if fields_valid {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!(
@@ -3093,7 +3329,7 @@ pub(super) fn project(
         .filter(|entry| matches!(entry.entity_type, 412 | 414) && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -3150,7 +3386,7 @@ pub(super) fn project(
         if target_valid && !cyclic && transform_valid && fields_valid {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!(
@@ -3165,7 +3401,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 132 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -3229,7 +3465,7 @@ pub(super) fn project(
         {
             decoded.insert(entry.sequence);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!(
@@ -3245,7 +3481,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 430 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -3259,7 +3495,7 @@ pub(super) fn project(
         if let Some(target) = target {
             solid_instances.insert(entry.sequence, target);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("solid-instance target pointer is invalid"),
@@ -3286,7 +3522,7 @@ pub(super) fn project(
         if target_valid && transform_valid && !cyclic {
             decoded.insert(*sequence);
         } else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("solid-instance form, target, transform, or acyclicity is invalid"),
@@ -3299,7 +3535,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 184 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("Parameter Data record is missing"),
@@ -3307,7 +3543,7 @@ pub(super) fn project(
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("solid-assembly item count is not positive"),
@@ -3333,7 +3569,7 @@ pub(super) fn project(
             items.push(item);
         }
         if !items_valid {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!("solid-assembly item tuple is invalid"),
@@ -3409,7 +3645,7 @@ pub(super) fn project(
             || cyclic
             || !own_transform_valid
         {
-            super::push_entity_loss(
+            super::push_entity_finding(
                 &mut losses,
                 entry,
                 format_args!(
@@ -3503,9 +3739,15 @@ pub(super) fn project(
             placement_rejections
                 .entry(entry.sequence)
                 .or_insert(PlacementRejection::InvalidDefinition);
-            super::push_entity_loss(
+            super::push_entity_loss_needing(
                 &mut losses,
                 entry,
+                super::pointer(record, 1).filter(|target| {
+                    placement_valid
+                        && entries
+                            .get(target)
+                            .is_none_or(|target| target.entity_type == 308)
+                }),
                 format_args!("subfigure-instance definition pointer is invalid"),
             );
             continue;
@@ -3650,6 +3892,7 @@ pub(super) fn project(
         if !placement_valid {
             placement_rejections.insert(entry.sequence, PlacementRejection::InvalidPlacement);
         }
+        let connect_points_valid = connect_points.is_some();
         let (Some(definition), Some(connect_points)) = (definition, connect_points) else {
             placement_rejections
                 .entry(entry.sequence)
@@ -3657,9 +3900,20 @@ pub(super) fn project(
                     Some(definition) => PlacementRejection::InvalidMetadata { definition },
                     None => PlacementRejection::InvalidDefinition,
                 });
-            super::push_entity_loss(
+            super::push_entity_loss_needing(
                 &mut losses,
                 entry,
+                super::pointer(record, 1).filter(|target| {
+                    definition.is_none()
+                        && entries
+                            .get(target)
+                            .is_none_or(|target| target.entity_type == 320)
+                        && connect_points_valid
+                        && placement_valid
+                        && type_flag_valid
+                        && designator_valid
+                        && display_valid
+                }),
                 format_args!("network instance definition or count is invalid"),
             );
             continue;
@@ -3724,9 +3978,12 @@ pub(super) fn project(
             placement_rejections
                 .entry(*sequence)
                 .or_insert(PlacementRejection::InvalidDefinition);
-            super::push_entity_loss(
+            super::push_entity_loss_needing(
                 &mut losses,
                 entry,
+                instance_fields_valid
+                    .contains(sequence)
+                    .then_some(*definition_sequence),
                 format_args!("subfigure-instance placement or decoded definition is invalid"),
             );
         }
@@ -3792,9 +4049,12 @@ pub(super) fn project(
                     PlacementRejection::InvalidDefinition
                 },
             );
-            super::push_entity_loss(
+            super::push_entity_loss_needing(
                 &mut losses,
                 entry,
+                (network_instance_fields_valid.contains(sequence)
+                    && !decoded.contains(&instance.definition))
+                .then_some(instance.definition),
                 format_args!("network instance placement or connection list is invalid"),
             );
         }

@@ -153,9 +153,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             None,
         ));
     }
-    let derived_census = ir
-        .scope()
-        .design
+    let derived_census = (ir.scope().design && ir.model.omitted_arenas_held())
         .then(|| design::census(&objects, &ir.model.features));
     match derived_census {
         None => {}
@@ -794,6 +792,7 @@ fn finding(check: Check, message: impl Into<String>, entity: Option<String>) -> 
     Finding {
         related: Vec::new(),
         check,
+        rule: cadmpeg_ir::rule_name!("freecad/lib.native-records"),
         severity: FindingSeverity::Error,
         message: message.into(),
         entity,
@@ -904,7 +903,6 @@ impl CodecBackend for FcstdCodec {
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
         let mut gui_losses = Vec::new();
-        let mut intermediate_bodies = HashSet::new();
         let mut transfer_losses = Vec::new();
         // One `classify` call feeds the report identity, loss, and notes. A
         // given-up `Document.xml` declares no dialect, so the source is not
@@ -974,6 +972,7 @@ impl CodecBackend for FcstdCodec {
             )?;
             let mut entry_records = container::entry_records(ctx, &scan, &graph.properties)?;
             let shape_payloads = brep::parse_payloads(ctx, &graph.properties, &entry_records)?;
+            let mut element_maps_given_up = Vec::new();
             let (string_tables, mut element_maps) = element_map::parse(
                 ctx,
                 document_xml,
@@ -981,6 +980,7 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &entry_records,
                 &mut scan.losses,
+                &mut element_maps_given_up,
             )?;
             namespace.set_arena(ctx, "objects", &graph.objects)?;
             namespace.set_arena(ctx, "extensions", &graph.extensions)?;
@@ -1064,6 +1064,8 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &mut transfer_losses,
             )?;
+            let intermediate =
+                design::intermediate_payloads(&graph.objects, &graph.properties, &shape_payloads);
             if ctx.depth() >= DecodeDepth::Design {
                 let (cycle_affected, design_losses) = design::transfer(
                     ctx,
@@ -1086,6 +1088,10 @@ impl CodecBackend for FcstdCodec {
                     &entry_records,
                     &topology_occurrences,
                     &cycle_affected_design_objects,
+                    &intermediate
+                        .iter()
+                        .map(|intermediate| crate::native::id_key(&intermediate.payload.id))
+                        .collect(),
                 )?;
             }
             transfer_losses.extend(drawing_content::transfer(
@@ -1146,7 +1152,6 @@ impl CodecBackend for FcstdCodec {
                     .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
                     .set_arena(ctx, "design_census", &design_census)?;
             }
-            element_map::bind_topology(&mut element_maps, &topology_occurrences);
             let mut gui_graph = if let Some(gui_view) = scan.data.get("GuiDocument.xml") {
                 gui::transfer(
                     ctx,
@@ -1166,20 +1171,45 @@ impl CodecBackend for FcstdCodec {
             } else {
                 gui::Graph::default()
             };
-            intermediate_bodies = design::hide_intermediate_bodies(
-                &mut ir,
-                &graph.objects,
-                &graph.properties,
-                &shape_payloads,
-            );
+            design::hide_intermediate_bodies(&mut ir, &intermediate);
             if ctx.depth() >= DecodeDepth::Design {
                 design::v11::project(
+                    ctx,
                     &mut ir,
                     product::document_definition_id()?,
                     &graph.objects,
                     &graph.properties,
+                    &product_nodes,
                     &mut transfer_losses,
-                );
+                )?;
+            }
+            design::v11::states::state(
+                ctx,
+                &mut ir,
+                &intermediate,
+                &graph.objects,
+                &graph.properties,
+                &mut transfer_losses,
+            )?;
+            // A persistent name binds the record of the current model it names;
+            // the records of other states are not bound.
+            let stated = design::v11::states::record_ids(&ir.geometry)
+                .into_iter()
+                .collect::<HashSet<_>>();
+            element_map::bind_topology(
+                &mut element_maps,
+                topology_occurrences
+                    .iter()
+                    .filter(|occurrence| stated.contains(&occurrence.topology_id)),
+            );
+            for part in element_maps_given_up {
+                scan.losses
+                    .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
+            }
+            if let Some(part) = gui_graph.given_up.take() {
+                gui_graph
+                    .losses
+                    .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
             }
             gui_losses = std::mem::take(&mut gui_graph.losses);
             ctx.admit_entities(
@@ -1296,14 +1326,11 @@ impl CodecBackend for FcstdCodec {
             &mut admitted_entities,
             "admit FCStd entities",
         )?;
-        if let Some(root) = ir.state_root_definition(
+        ir.state_root_definition(
             ctx,
             product::document_definition_id()?,
             cadmpeg_ir::products::ExternalDocument::default(),
-        )? {
-            root.bodies
-                .retain(|body| product::is_shape_body(body) && !intermediate_bodies.contains(body));
-        }
+        )?;
         design::v11::state_unproduced(&mut ir);
         // Only the FCStd writer reads this digest. Below `Full` it patches
         // without one and reports the edits unverified, so the serialization and
@@ -1334,18 +1361,22 @@ impl CodecBackend for FcstdCodec {
 
 impl EncoderBackend for FcstdCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    const NAME: &'static str = "FCStd";
     /// Writes the feature tree and patches retained sources, so it plans from
     /// the design records.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = true;
     type Target = Catalog;
-    const TARGET: Catalog = Catalog::new(dialect::TARGETS, None);
+    const TARGET: Catalog =
+        Catalog::new(dialect::TARGETS, None).with_replay_rows(dialect::REPLAY_ROWS);
 
     fn plan_resolved(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        writer::target::plan(input, &target)
+        writer::target::plan(ctx, input, &target)
     }
 }
 

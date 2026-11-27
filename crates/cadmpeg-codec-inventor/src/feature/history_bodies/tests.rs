@@ -15,6 +15,9 @@ use cadmpeg_ir::topology::BodyKind;
 use super::*;
 use crate::feature::history_states::{StateRef, UnboundReason};
 use crate::kernel::parse_carrier;
+use crate::test_support::history_carrier::{
+    carrier_bytes, framed_carrier, CURRENT_BODY_KEY, SPHERE_BODY_KEY,
+};
 
 fn feature(native: &str) -> Feature {
     Feature {
@@ -100,11 +103,25 @@ fn requests_over_the_cap_are_counted_as_bounded() {
     let records = (0..=MAX_HISTORY_BODIES)
         .map(|index| record(BASE_TAG, &format!("base{index}"), Some(0), Some(7)))
         .collect::<Vec<_>>();
-    let mut outcome = Outcome::default();
-    let wants = wants(&records, &mut outcome);
+    let mut built = Built::default();
+    let requested = wants(&records, &mut built.outcome);
+    let wants = bound(requested, &mut built).expect("bound");
     assert_eq!(wants.len(), MAX_HISTORY_BODIES);
-    assert_eq!(outcome.requested, MAX_HISTORY_BODIES + 1);
-    assert_eq!(outcome.bounded, 1);
+    assert_eq!(built.outcome.requested, MAX_HISTORY_BODIES + 1);
+    assert_eq!(built.outcome.bounded, 1);
+    assert_eq!(
+        given_up(&built),
+        [("inventor:history-body:nest#h0008", Unbuilt::Bounded)]
+    );
+}
+
+/// The nests that `built` gives up, by identity.
+fn given_up(built: &Built) -> Vec<(&str, Unbuilt)> {
+    built
+        .unbuilt
+        .iter()
+        .map(|(id, why)| (id.as_str(), *why))
+        .collect()
 }
 
 // Extraction of one body from a decoded state.
@@ -209,7 +226,7 @@ fn a_procedural_carrier_without_a_cache_is_absent() {
             .expect("identity"),
         cache: None,
     };
-    assert!(matches!(extract_cube(&geometry), Extract::Absent));
+    assert!(matches!(extract_cube(&geometry), Extract::Unsolved));
 }
 
 #[test]
@@ -217,7 +234,7 @@ fn a_carrier_of_unknown_shape_is_absent() {
     let mut geometry = cube();
     geometry.surfaces[0].geometry =
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
-    assert!(matches!(extract_cube(&geometry), Extract::Absent));
+    assert!(matches!(extract_cube(&geometry), Extract::Unsolved));
 }
 
 #[test]
@@ -238,6 +255,7 @@ fn a_nest_moves_into_its_own_scope_and_validates_as_a_document() {
     };
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let want = Want {
+        index: 3,
         record: 0,
         ordinal: 2,
         state_id: 44,
@@ -245,7 +263,7 @@ fn a_nest_moves_into_its_own_scope_and_validates_as_a_document() {
         role: Role::Split,
     };
     let consumer = feature("split");
-    let body = nest(&ctx, 3, &want, consumer.id.clone(), *topology).expect("nest");
+    let body = nest(&ctx, &want, consumer.id.clone(), *topology).expect("nest");
     assert_eq!(body.id.as_str(), "inventor:history-body:nest#h0003");
     assert_eq!(body.consumed_by.as_ref(), Some(&consumer.id));
     assert!(body.produced_by.is_none());
@@ -286,224 +304,6 @@ fn a_nest_moves_into_its_own_scope_and_validates_as_a_document() {
     assert!(ir.geometry.bodies.is_empty());
 }
 
-// Materialization of a history state from bytes.
-
-const SPHERE_BODY_KEY: i64 = 9;
-const CURRENT_BODY_KEY: i64 = 7;
-
-fn put_ref(out: &mut Vec<u8>, width: RefWidth, tag: u8, value: i64) {
-    out.push(tag);
-    match width {
-        RefWidth::Four => out.extend_from_slice(
-            &i32::try_from(value)
-                .expect("fixture value fits i32")
-                .to_le_bytes(),
-        ),
-        RefWidth::Eight => out.extend_from_slice(&value.to_le_bytes()),
-    }
-}
-
-fn put_name(out: &mut Vec<u8>, name: &str) {
-    let parts: Vec<&str> = name.split('-').collect();
-    for (index, part) in parts.iter().enumerate() {
-        out.push(if index + 1 == parts.len() { 0x0d } else { 0x0e });
-        out.push(u8::try_from(part.len()).expect("fixture name fits a byte"));
-        out.extend_from_slice(part.as_bytes());
-    }
-}
-
-/// A record whose payload is references and integers: `(tag, value)` pairs.
-fn put_plain(out: &mut Vec<u8>, width: RefWidth, name: &str, fields: &[(u8, i64)]) {
-    put_fields(out, width, name, fields);
-    out.push(0x11);
-}
-
-/// The name and fields of a record, before its terminator.
-fn put_fields(out: &mut Vec<u8>, width: RefWidth, name: &str, fields: &[(u8, i64)]) {
-    put_name(out, name);
-    for &(tag, value) in fields {
-        put_ref(out, width, tag, value);
-    }
-}
-
-const REF: u8 = 0x0c;
-const INT: u8 = 0x04;
-
-fn put_header(out: &mut Vec<u8>, width: RefWidth) {
-    let (magic, len): (&[u8], usize) = match width {
-        RefWidth::Four => (b"ASM BinaryFile4", 31),
-        RefWidth::Eight => (b"ASM BinaryFile8", 47),
-    };
-    out.extend_from_slice(magic);
-    out.extend_from_slice(&23_200_u32.to_le_bytes());
-    out.resize(len, 0);
-    for _ in 0..3 {
-        out.extend_from_slice(&[0x07, 0]);
-    }
-    for _ in 0..3 {
-        out.push(0x06);
-        out.extend_from_slice(&1.0f64.to_le_bytes());
-    }
-}
-
-/// The records of a sphere solid below a body, from slot `body + 1` on:
-/// lump, shell, face, sphere surface. `body` is the slot of the body record.
-fn put_sphere_solid(out: &mut Vec<u8>, width: RefWidth, body: i64, key: i64, refer: i64) {
-    let (lump, shell, face, surface) = (body + 1, body + 2, body + 3, body + 4);
-    put_plain(
-        out,
-        width,
-        "body",
-        &[
-            (REF, -1),
-            (INT, key),
-            (REF, refer),
-            (REF, lump),
-            (REF, -1),
-            (REF, -1),
-        ],
-    );
-    put_plain(
-        out,
-        width,
-        "lump",
-        &[
-            (REF, -1),
-            (INT, -1),
-            (REF, -1),
-            (REF, -1),
-            (REF, shell),
-            (REF, body),
-        ],
-    );
-    put_plain(
-        out,
-        width,
-        "shell",
-        &[
-            (REF, -1),
-            (INT, -1),
-            (REF, -1),
-            (REF, -1),
-            (REF, -1),
-            (REF, face),
-            (REF, -1),
-            (REF, lump),
-        ],
-    );
-    put_fields(
-        out,
-        width,
-        "face",
-        &[
-            (REF, -1),
-            (INT, -1),
-            (REF, -1),
-            (REF, -1),
-            (REF, -1),
-            (REF, shell),
-            (REF, -1),
-            (REF, surface),
-        ],
-    );
-    out.extend_from_slice(&[0x0b, 0x0b, 0x11]);
-    put_name(out, "sphere-surface");
-    put_ref(out, width, REF, -1);
-    put_ref(out, width, INT, -1);
-    put_ref(out, width, REF, -1);
-    out.push(0x13);
-    for value in [0.0f64, 0.0, 0.0] {
-        out.extend_from_slice(&value.to_le_bytes());
-    }
-    out.push(0x06);
-    out.extend_from_slice(&2.5f64.to_le_bytes());
-    for triple in [[1.0f64, 0.0, 0.0], [0.0, 0.0, 1.0]] {
-        out.push(0x14);
-        for value in triple {
-            out.extend_from_slice(&value.to_le_bytes());
-        }
-    }
-    out.extend_from_slice(&[0x0b; 5]);
-    out.push(0x11);
-}
-
-/// A `delta_state` record with one board of `(old, new)` changes.
-fn put_state(
-    out: &mut Vec<u8>,
-    width: RefWidth,
-    ids: (i64, i64, i64, i64),
-    changes: &[(i64, i64)],
-) {
-    let (id, previous, next, node) = ids;
-    put_name(out, "delta_state");
-    for value in [id, 1, 0] {
-        put_ref(out, width, INT, value);
-    }
-    for value in [previous, next, node, -1, -1] {
-        put_ref(out, width, REF, value);
-    }
-    out.push(0x0b);
-    put_ref(out, width, INT, 1);
-    put_ref(out, width, REF, node);
-    put_ref(out, width, INT, 1);
-    for &(old, new) in changes {
-        put_ref(out, width, INT, 1);
-        put_ref(out, width, REF, old);
-        put_ref(out, width, REF, new);
-    }
-    put_ref(out, width, INT, 0);
-    put_ref(out, width, INT, 0);
-    out.push(0x11);
-}
-
-/// A carrier whose current body has key 7 and whose older state holds the same
-/// sphere solid under key 9. `dangling` makes the archived body refer to a slot
-/// that no state holds.
-fn carrier_bytes(width: RefWidth, dangling: bool) -> Vec<u8> {
-    let mut out = Vec::new();
-    put_header(&mut out, width);
-    put_plain(&mut out, width, "asmheader", &[]);
-    put_sphere_solid(&mut out, width, 1, CURRENT_BODY_KEY, -1);
-    // Slot 1 of the older state is the archived revision 6.
-    put_state(&mut out, width, (13, -1, 1, 0), &[(6, 1)]);
-    let refer = if dangling { 99 } else { -1 };
-    put_plain(
-        &mut out,
-        width,
-        "body",
-        &[
-            (REF, -1),
-            (INT, SPHERE_BODY_KEY),
-            (REF, refer),
-            (REF, 2),
-            (REF, -1),
-            (REF, -1),
-        ],
-    );
-    put_state(
-        &mut out,
-        width,
-        (12, 0, -1, 1),
-        &[(-1, 1), (-1, 2), (-1, 3), (-1, 4), (-1, 5)],
-    );
-    out
-}
-
-fn framed_carrier(bytes: &[u8]) -> Vec<u8> {
-    let mut payload = Vec::new();
-    payload.extend_from_slice(&1_u32.to_le_bytes());
-    payload.extend_from_slice(&2_u16.to_le_bytes());
-    payload.extend_from_slice(&3_u32.to_le_bytes());
-    payload.extend_from_slice(&4_u32.to_le_bytes());
-    payload.extend_from_slice(bytes);
-    payload.extend_from_slice(&5_u32.to_le_bytes());
-    payload.push(1);
-    payload.extend_from_slice(&(-1_i32).to_le_bytes());
-    payload.extend_from_slice(&6_u32.to_le_bytes());
-    payload.extend_from_slice(&u32::MAX.to_le_bytes());
-    payload
-}
-
 fn build_from(
     width: RefWidth,
     dangling: bool,
@@ -529,7 +329,11 @@ fn build_from(
     else {
         panic!("the chain closes");
     };
-    build(&ctx, &carrier, *chain, records, features).expect("build")
+    let closed = crate::feature::history_states::Closed::new(
+        *chain,
+        crate::feature::history_states::StateIndex::default(),
+    );
+    build(&ctx, &carrier, &closed, records, features).expect("build")
 }
 
 fn split(key: i64) -> FeatureHistoryState {
@@ -598,6 +402,7 @@ fn a_body_key_that_the_older_state_lacks_gives_no_nest() {
     assert!(built.bodies.is_empty());
     assert_eq!(built.outcome.requested, 1);
     assert_eq!(built.outcome.undecoded, 1);
+    assert!(built.unbuilt.is_empty(), "{:?}", built.unbuilt);
 }
 
 #[test]
@@ -610,6 +415,10 @@ fn a_state_with_a_reference_to_no_slot_gives_no_nest() {
     );
     assert!(built.bodies.is_empty());
     assert_eq!(built.outcome.undecoded, 1);
+    assert_eq!(
+        given_up(&built),
+        [("inventor:history-body:nest#h0000", Unbuilt::Undecoded)]
+    );
 }
 
 #[test]
@@ -623,6 +432,10 @@ fn a_decoded_body_of_an_unprojected_feature_gives_no_nest() {
             unlinked: 1,
             ..Outcome::default()
         }
+    );
+    assert_eq!(
+        given_up(&built),
+        [("inventor:history-body:nest#h0000", Unbuilt::Unlinked)]
     );
 }
 
@@ -706,4 +519,55 @@ fn the_losses_name_each_count() {
         "{}",
         notes[1].message
     );
+}
+
+#[test]
+fn each_given_up_body_is_charged_by_its_nest() {
+    let nest = |index| nest_id(index).expect("nest id");
+    let notes = super::super::history_states::losses(&super::super::history_states::Projection {
+        schema_assumed: 0,
+        records: Vec::new(),
+        unread: None,
+        bodies: Built {
+            unbuilt: vec![
+                (nest(1), Unbuilt::NotClosed(Open::Edge)),
+                (nest(9), Unbuilt::Bounded),
+            ],
+            outcome: Outcome {
+                requested: 10,
+                open: [0, 0, 1],
+                bounded: 1,
+                ..Outcome::default()
+            },
+            ..Built::default()
+        },
+    });
+    let charges = notes
+        .iter()
+        .filter(|note| note.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|note| note.message.as_str())
+        .collect::<Vec<_>>();
+    let [closed, bounded] = charges.as_slice() else {
+        panic!("one charge per given-up body: {notes:#?}");
+    };
+    for (message, nest, code) in [
+        (
+            closed,
+            "h0001",
+            crate::loss::InventorLossCode::FeatureHistoryBodyNotClosed,
+        ),
+        (
+            bounded,
+            "h0009",
+            crate::loss::InventorLossCode::FeatureHistoryBodyBounded,
+        ),
+    ] {
+        assert!(
+            message.starts_with(&format!(
+                "record inventor:history-body:nest#{nest} given up: {}: ",
+                code.kind()
+            )),
+            "{message}"
+        );
+    }
 }

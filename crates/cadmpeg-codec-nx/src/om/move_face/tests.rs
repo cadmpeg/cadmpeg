@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{CoreView, MoveFaceCore};
+use cadmpeg_core::serde_erase::json;
 
 use crate::test_support::move_face::core;
 
@@ -34,15 +35,14 @@ fn move_face_core_wire_rejects_incomplete_storage_and_trailing_lane() {
     for len in 0..bytes.len() - 1 {
         assert!(CoreView::parse(&bytes[..len]).is_none(), "prefix {len}");
     }
-    let wire =
-        serde_json::to_value(cadmpeg_ir::native::bytes::NativeBytes::from(bytes.clone())).unwrap();
-    let decoded: MoveFaceCore = serde_json::from_value(wire.clone()).unwrap();
+    let wire = json::to_value(cadmpeg_ir::native::bytes::NativeBytes::from(bytes.clone())).unwrap();
+    let decoded: MoveFaceCore = json::from_value(wire.clone()).unwrap();
     assert_eq!(decoded.as_bytes().len(), bytes.len());
-    assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+    assert_eq!(json::to_value(decoded).unwrap(), wire);
     let mut extra = bytes.clone();
     extra.extend([1, 2]);
-    assert!(serde_json::from_value::<MoveFaceCore>(
-        serde_json::to_value(cadmpeg_ir::native::bytes::NativeBytes::from(extra)).unwrap()
+    assert!(json::from_value::<MoveFaceCore>(
+        json::to_value(cadmpeg_ir::native::bytes::NativeBytes::from(extra)).unwrap()
     )
     .is_err());
     let view = CoreView::parse(&bytes).unwrap();
@@ -147,11 +147,11 @@ fn move_face_retained_core_honors_native_serialization_limits() {
         core: MoveFaceCore,
     }
     let bytes = cadmpeg_ir::native::bytes::NativeBytes::from(core(2));
-    let value = serde_json::to_value(bytes).unwrap();
+    let value = json::to_value(bytes).unwrap();
     let record = Record {
         id: "nx:feature:core#0",
-        core: serde_json::from_value(value.clone()).unwrap(),
+        core: json::from_value(value.clone()).unwrap(),
     };
-    let wire = serde_json::json!({"id": record.id, "core": value});
+    let wire = cadmpeg_core::json!({"id": record.id, "core": value});
     cadmpeg_test_support::native_serialization::assert_native_limit(&record, wire);
 }

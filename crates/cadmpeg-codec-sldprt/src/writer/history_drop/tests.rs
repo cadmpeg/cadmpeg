@@ -122,3 +122,68 @@ fn a_second_failure_that_names_no_record_leaves_out_every_parameter() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("other:model:parameter#width"));
 }
+
+/// A stored-geometry feature of `key` whose result is `outputs`.
+fn feature_producing(key: &str, outputs: &[&str]) -> cadmpeg_ir::features::Feature {
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let mut evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::StoredGeometry {},
+    ));
+    evaluation.edit(|_, produced| {
+        produced.extend(
+            outputs
+                .iter()
+                .map(|body| cadmpeg_ir::ids::BodyId::mint(*body).unwrap()),
+        );
+    });
+    cadmpeg_ir::features::Feature {
+        product_definition: None,
+        id: cadmpeg_ir::features::FeatureId::mint(key).unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation,
+        native_ref: None,
+    }
+}
+
+#[test]
+fn a_feature_whose_result_body_is_absent_is_left_out_and_named() {
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.geometry.bodies.push(cadmpeg_ir::topology::Body {
+        id: cadmpeg_ir::ids::BodyId::mint("other:model:body#held").unwrap(),
+        kind: cadmpeg_ir::topology::BodyKind::Solid,
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+        unstated: None,
+        native_ref: None,
+    });
+    ir.model.features.extend([
+        feature_producing("other:model:feature#held", &["other:model:body#held"]),
+        feature_producing(
+            "other:model:feature#elsewhere",
+            &["other:model:body#elsewhere"],
+        ),
+    ]);
+    let loss = super::features_without_result(&mut ir).unwrap();
+    assert_eq!(
+        ir.model
+            .features
+            .iter()
+            .map(|feature| feature.id.as_str())
+            .collect::<Vec<_>>(),
+        ["other:model:feature#held"]
+    );
+    assert_eq!(loss.code.local_code(), "writer.feature-result-absent");
+    assert!(loss.message.contains("other:model:feature#elsewhere"));
+    assert!(!loss.message.contains("other:model:feature#held"));
+    assert!(super::features_without_result(&mut ir).is_none());
+}

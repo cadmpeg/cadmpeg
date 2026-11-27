@@ -8,6 +8,7 @@ use crate::stream_error::StreamFailure;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::ops::ControlFlow;
 
 /// Classified entity change of a `BulletinBoard` entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -268,12 +269,30 @@ pub fn walk_entity_versions(
     archived_ids: &[i64],
     mut visit: impl FnMut(usize, &BTreeMap<i64, i64>),
 ) -> bool {
+    matches!(
+        walk_entity_versions_until(states, active_count, archived_ids, |ordinal, versions| {
+            visit(ordinal, versions);
+            true
+        }),
+        ControlFlow::Continue(true)
+    )
+}
+
+/// [`walk_entity_versions`] that stops when `visit` returns false. Returns
+/// `Break` for a stopped walk and `Continue` with the result of the full walk
+/// otherwise.
+pub fn walk_entity_versions_until(
+    states: &[DeltaStateView<'_>],
+    active_count: i64,
+    archived_ids: &[i64],
+    mut visit: impl FnMut(usize, &BTreeMap<i64, i64>) -> bool,
+) -> ControlFlow<(), bool> {
     let mut by_node = HashMap::with_capacity(states.len());
     for (ordinal, state) in states.iter().enumerate() {
         by_node.insert(state.node_index, ordinal);
     }
     if by_node.len() != states.len() {
-        return false;
+        return ControlFlow::Continue(false);
     }
     let mut heads = states
         .iter()
@@ -281,10 +300,10 @@ pub fn walk_entity_versions(
         .filter(|(_, state)| state.previous_ref.is_none())
         .map(|(ordinal, _)| ordinal);
     let Some(mut ordinal) = heads.next() else {
-        return false;
+        return ControlFlow::Continue(false);
     };
     if heads.next().is_some() {
-        return false;
+        return ControlFlow::Continue(false);
     }
 
     let mut versions = BTreeMap::new();
@@ -295,25 +314,27 @@ pub fn walk_entity_versions(
     loop {
         let state = &states[ordinal];
         if !visited.insert(state.node_index) {
-            return false;
+            return ControlFlow::Continue(false);
         }
-        visit(ordinal, &versions);
+        if !visit(ordinal, &versions) {
+            return ControlFlow::Break(());
+        }
         for change in &state.changes {
             match *change {
                 EntityChange::Update { old, new } => {
                     if !versions.contains_key(&new) || archived_ids.binary_search(&old).is_err() {
-                        return false;
+                        return ControlFlow::Continue(false);
                     }
                     versions.insert(new, old);
                 }
                 EntityChange::Insert { new } => {
                     if versions.remove(&new).is_none() {
-                        return false;
+                        return ControlFlow::Continue(false);
                     }
                 }
                 EntityChange::Delete { old } => {
                     if versions.contains_key(&old) || archived_ids.binary_search(&old).is_err() {
-                        return false;
+                        return ControlFlow::Continue(false);
                     }
                     versions.insert(old, old);
                 }
@@ -323,11 +344,13 @@ pub fn walk_entity_versions(
             break;
         };
         let Some(&next_ordinal) = by_node.get(&next) else {
-            return false;
+            return ControlFlow::Continue(false);
         };
         ordinal = next_ordinal;
     }
-    visited.len() == states.len() && versions.len() == 1 && versions.get(&0) == Some(&0)
+    ControlFlow::Continue(
+        visited.len() == states.len() && versions.len() == 1 && versions.get(&0) == Some(&0),
+    )
 }
 
 /// Hash-map variant of [`walk_entity_versions`] avoiding `BTreeMap` overhead
@@ -845,6 +868,28 @@ pub fn frame_history_chain(
     bytes: &[u8],
     width: RefWidth,
 ) -> Result<ChainFraming, CodecError> {
+    frame_history_chain_inner(ctx, bytes, width, None)
+}
+
+/// Variant of [`frame_history_chain`] that also returns the framed [`Record`]
+/// values keyed by byte offset so a subsequent [`decode_record_archive_with_preframed`]
+/// call can reuse them without re-lexing archived records.
+pub fn frame_history_chain_with_preframed(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    width: RefWidth,
+) -> Result<(ChainFraming, HashMap<usize, Record>), CodecError> {
+    let mut preframed = HashMap::new();
+    let framing = frame_history_chain_inner(ctx, bytes, width, Some(&mut preframed))?;
+    Ok((framing, preframed))
+}
+
+fn frame_history_chain_inner(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    width: RefWidth,
+    mut preframed: Option<&mut HashMap<usize, Record>>,
+) -> Result<ChainFraming, CodecError> {
     let offsets = delta_state_offsets(bytes);
     if offsets.is_empty() {
         return Ok(ChainFraming::Absent);
@@ -875,18 +920,22 @@ pub fn frame_history_chain(
             StateRecords::Framed(records) => records,
             StateRecords::Unframed { .. } => return Ok(ChainFraming::Unframed),
         };
+        let mut chain_records = Vec::with_capacity(framed.len());
+        for record in framed {
+            chain_records.push(ChainRecord {
+                revision_id: None,
+                offset: record.offset,
+                len: record.len,
+                name: record.name.clone(),
+            });
+            if let Some(map) = preframed.as_deref_mut() {
+                map.insert(record.offset, record);
+            }
+        }
         states.push(ChainState {
             header,
             changes,
-            records: framed
-                .into_iter()
-                .map(|record| ChainRecord {
-                    revision_id: None,
-                    offset: record.offset,
-                    len: record.len,
-                    name: record.name,
-                })
-                .collect(),
+            records: chain_records,
         });
     }
     if states.is_empty() {

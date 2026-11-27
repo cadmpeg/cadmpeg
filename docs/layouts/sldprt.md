@@ -2673,7 +2673,7 @@ Parsed by:
 
 Spec §2 · layout: byte offsets · size: 121 B
 
-Offsets begin immediately after the `moConstraintCoincLineAtAnglePlaneRefplaneData_c` class name.
+Offsets begin immediately after the `moConstraintCoincLineAtAnglePlaneRefplaneData_c`, `moConstraintCoincLinePerpPlaneRefplaneData_c`, or `moPerLinePtRefPlnData_c` class name.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -2681,6 +2681,23 @@ Offsets begin immediately after the `moConstraintCoincLineAtAnglePlaneRefplaneDa
 | 24 | 24 | `normal` | `f64[3]` | little | spec | Its origin, normal, and byte `1` use offsets `+0` through `+48` of the 97-byte frame |
 | 48 | 1 | `frame_marker` | `u8` | little | spec | Its origin, normal, and byte `1` use offsets `+0` through `+48` of the 97-byte frame |
 | 49 | 72 | `basis_matrix` | `f64[9]` | little | spec | A right-handed orthonormal 3×3 matrix occupies the unaligned f64 fields at offsets `+49` through `+113` in row-major order |
+
+## `constructed_reference_plane_minimal_frame`
+
+Spec §2 · layout: byte offsets · size: 81 B
+
+Offsets begin immediately after the `moDefaultRefPlnData_c`, `moConstraintPrllPlnTanOneCylinderRefplaneData_c`, `moFaceRefPlnData_c`, or `moPerLinePtRefPlnData_c` class name.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `origin` | `f64[3]` | little | spec | Three f64 values at offsets `+0`, `+8`, and `+16` store xyz origin coordinates in metres |
+| 24 | 24 | `normal` | `f64[3]` | little | spec | Three f64 values at `+24`, `+32`, and `+40` store the unit normal |
+| 48 | 1 | `frame_marker` | `u8` | little | spec | The 81-byte frame has byte `0` at `+48` |
+| 49 | 24 | `translation` | `f64[3]` | little | spec | the negated origin as three f64 at `+49`, `+57`, and `+65` |
+| 73 | 8 | `scale` | `f64` | little | spec | and f64 `1` at `+73` |
 
 ## `component_face_nested_reference_prefix`
 
@@ -2793,6 +2810,21 @@ Parsed by:
 | 1 | 4 | `class_marker` | `bytes[4]` | little | spec | the class marker at `+1` · value `[255, 255, 1, 0]` |
 | 5 | 2 | `name_length` | `u16` | little | spec | name length at `+5` |
 
+## `revolution_turn_block`
+
+Spec §Extrusion feature objects · layout: byte offsets · size: 9 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/carchive/rules/feature.rs`
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/turn_sense.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `lead` | `bytes[2]` | little | spec | the nine-byte turn block: two zero bytes · value `[0, 0]` |
+| 2 | 1 | `reverse` | `u8` | little | spec | the reverse byte at +2 |
+| 3 | 2 | `pad` | `bytes[2]` | little | spec | two zero bytes at +3 · value `[0, 0]` |
+| 5 | 4 | `word` | `u32` | little | spec | a little-endian u32 at +5 |
+
 ## `revolution_line_reference_record_tail`
 
 Spec §2 · layout: byte offsets · size: 57 B
@@ -2801,6 +2833,7 @@ Offsets begin at the tail, the last seven values of an moLineRef_w scalar record
 
 Parsed by:
 - `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs`
+- `crates/cadmpeg-codec-sldprt/src/carchive/rules/feature.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -2808,6 +2841,20 @@ Parsed by:
 | 8 | 24 | `point` | `f64[3]` | little | spec | a point on the axis in metres at tail offset `+8` |
 | 32 | 24 | `direction` | `f64[3]` | little | spec | the unit axis direction at tail offset `+32` |
 | 56 | 1 | `zero` | `bytes[1]` | little | spec | one zero byte at tail offset `+56` · value `[0]` |
+
+## `axis_tail_version_15000_prefix`
+
+Spec §Extrusion feature objects · layout: byte offsets · size: 24 B
+
+Offsets begin at the handle block's version word; the seven f64 of the tail follow at +24.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/carchive/rules/feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `version` | `u32` | little | spec | twenty zero bytes in files of `swVersion` 15000 · value `15000` |
+| 4 | 20 | `zeros` | `bytes[20]` | little | spec | twenty zero bytes in files of `swVersion` 15000 · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 
 ## `revolution_line_reference_nested_end`
 
@@ -3255,6 +3302,21 @@ Parsed by:
 | 16 | 4 | `record_id` | `u32` | little | spec | a little-endian u32 record identifier |
 | 20 | 16 | `marker` | `bytes[16]` | little | spec | the 16 bytes `7d c3 94 25 ad 49 b2 54 7d c3 94 25 ad 49 b2 54` · value `[125, 195, 148, 37, 173, 73, 178, 84, 125, 195, 148, 37, 173, 73, 178, 84]` |
 | 36 | 2 | `zero_tail` | `u16` | little | spec | and u16 `0` · value `0` |
+
+## `three_int_identity_own`
+
+Spec §2.3 · layout: byte offsets · size: 12 B
+
+Own bytes of a three-integer identity representation; they follow its `moFR_c` object.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/carchive/rules/idrep.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `word_0` | `u32` | little | spec | three little-endian u32 |
+| 4 | 4 | `word_4` | `u32` | little | spec | three little-endian u32 |
+| 8 | 4 | `word_8` | `u32` | little | spec | three little-endian u32 |
 
 ## `view_bytes`
 

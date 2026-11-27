@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, LimitScope, ResourceLimit};
@@ -336,12 +337,12 @@ fn a_state_chain_past_the_ceiling_refuses_the_session_and_is_no_finding() {
         ),
         "{refusal:?}"
     );
-    let text = serde_json::to_string(&ir).unwrap();
+    let text = json::to_string(&ir).unwrap();
     assert!(read::from_str::<CadIr>(&text, &policy.limits).is_err());
     let ir = state_chain(depth);
     let findings = findings_under(&ir, &policy).unwrap();
     assert!(findings.is_empty(), "{findings:#?}");
-    let text = serde_json::to_string(&ir).unwrap();
+    let text = json::to_string(&ir).unwrap();
     assert!(read::from_str::<CadIr>(&text, &policy.limits).is_ok());
 }
 
@@ -546,5 +547,55 @@ fn a_stored_feature_names_bodies_of_the_state_after_it() {
     assert_finding(&ir, "which is no body of the state after it");
 }
 
+#[test]
+fn a_stored_feature_names_definition_meshes_of_its_scope() {
+    use crate::tessellation::{Meshed, Tessellation, TessellationMesh};
+    let with_mesh = |of: Meshed| {
+        let mut ir = document();
+        let mesh = Tessellation::new(
+            id("tessellation", "mesh"),
+            TessellationMesh::List {
+                vertices: vec![
+                    crate::math::Point3::new(0.0, 0.0, 0.0),
+                    crate::math::Point3::new(1.0, 0.0, 0.0),
+                    crate::math::Point3::new(0.0, 1.0, 0.0),
+                ],
+                triangles: vec![[0, 1, 2]],
+            },
+            Vec::new(),
+        )
+        .unwrap()
+        .with_of(of);
+        ir.model.tessellations.push(mesh);
+        ir.design.features[1].definition.operation = FeatureOperation::Stored {
+            bodies: Some(Vec::new()),
+            tessellations: vec![id("tessellation", "mesh")],
+            origin: StoredOrigin::Base {},
+        };
+        ir
+    };
+    let definition = |key| Meshed::Definition {
+        definition: id("definition", key),
+        name: None,
+        color: None,
+        visible: None,
+    };
+    let ir = with_mesh(definition("part"));
+    assert!(!design_findings(&ir)
+        .iter()
+        .any(|finding| finding.message.contains("stored feature names")));
+    assert_finding(
+        &with_mesh(definition("other")),
+        "a mesh of test:design:definition#other, which the feature's scope does not span",
+    );
+    assert_finding(
+        &with_mesh(Meshed::Display {
+            definition: id("definition", "part"),
+        }),
+        "whose `of` is not `Definition`",
+    );
+}
+
+mod own_results;
 mod tool_bodies;
 mod unproduced;

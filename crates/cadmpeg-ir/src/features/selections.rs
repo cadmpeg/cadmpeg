@@ -1021,6 +1021,25 @@ pub enum BodySelection {
         /// Format-native persistent selection reference.
         native: SelectionReference,
     },
+    /// Bodies in intermediate regenerated feature results from independently
+    /// retained native selection members.
+    GeneratedSet {
+        /// Checked rows in native member order.
+        members: BodyMembers<GeneratedBodyRef>,
+    },
+    /// Bodies of the prototype of a placed occurrence, in the occurrence's frame.
+    Occurrence {
+        /// Placed occurrence whose prototype owns the bodies.
+        occurrence: OccurrenceId,
+        /// Native keys of nested occurrences, outermost first; empty when the
+        /// occurrence's prototype owns the bodies.
+        occurrence_path: Vec<String>,
+        /// Selected bodies.
+        #[cfg_attr(feature = "schema", schemars(with = "Vec<BodyId>"))]
+        bodies: DistinctMembers<BodyId>,
+        /// Format-native selection expression.
+        native: String,
+    },
     /// Persistent bodies in the consuming feature's regeneration input state.
     Local {
         /// Ordered feature-input-local body identities.
