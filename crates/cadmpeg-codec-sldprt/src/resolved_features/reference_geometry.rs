@@ -276,10 +276,20 @@ pub(crate) fn enrich_history_reference_planes(
             let explicit = if offset_frames.is_some() {
                 None
             } else if anchored_frames.is_empty() {
+                let tagged = || {
+                    constraint
+                        .is_none()
+                        .then(|| tagged_plane_data_frame(lane, start, end))
+                        .flatten()
+                };
                 match explicit_reference_plane_frame(bytes) {
-                    Ok(frame) => frame,
-                    Err(()) if constraint.is_some() => None,
-                    Err(()) => continue,
+                    Ok(Some(frame)) => Some(frame),
+                    Ok(None) => tagged(),
+                    Err(()) => match tagged() {
+                        Some(frame) => Some(frame),
+                        None if constraint.is_some() => None,
+                        None => continue,
+                    },
                 }
             } else {
                 let [frame] = anchored_frames.as_slice() else {
@@ -627,10 +637,6 @@ fn display_shows(text: &str, distance: Length, unit: Option<UnitSymbol>) -> bool
 /// whose second triple is a unit vector and whose flag byte is `0` or `1`.
 fn plane_data_head(lane: &FeatureInputLane, start: usize, end: usize) -> Option<(Point3, Vector3)> {
     let payload: &[u8] = &lane.native_payload;
-    let units = usize::from(*payload.get(start.checked_add(NAME_MARKER.len())?)?);
-    let body = start
-        .checked_add(NAME_MARKER.len() + 1)?
-        .checked_add(units.checked_mul(2)?)?;
     let declared = lane
         .classes
         .iter()
@@ -643,34 +649,74 @@ fn plane_data_head(lane: &FeatureInputLane, start: usize, end: usize) -> Option<
                 .checked_add(CLASS_MARKER.len() + 2 + class.name.len())
         })
         .collect::<HashSet<_>>();
-    let tagged = |at: usize| {
-        declared.contains(&at)
-            || at
-                .checked_sub(PLANE_DATA_TOKEN_ZEROS + 2)
-                .and_then(|zeros| payload.get(zeros..at - 2))
-                .is_some_and(|zeros| zeros.iter().all(|byte| *byte == 0))
-                && View::u16_le_at(payload, at - 2).is_some_and(is_class_token)
-    };
-    let head = |at: usize| {
-        let bytes = payload.get(at..at.checked_add(data_head::LEN)?)?;
-        let scalar = |offset| View::f64_le_at(bytes, offset).filter(|value| value.is_finite());
-        let point = Point3::new(
-            scalar(data_head::POINT)? * NATIVE_TO_MM,
-            scalar(data_head::POINT + 8)? * NATIVE_TO_MM,
-            scalar(data_head::POINT + 16)? * NATIVE_TO_MM,
-        );
-        let normal = Vector3::new(
-            scalar(data_head::NORMAL)?,
-            scalar(data_head::NORMAL + 8)?,
-            scalar(data_head::NORMAL + 16)?,
-        );
-        ((normal.norm() - 1.0).abs() <= REFERENCE_PLANE_FRAME_TOLERANCE
-            && bytes[data_head::FLAG] <= 1)
-            .then_some((point, normal))
-    };
-    (body..end.min(payload.len()))
-        .filter(|at| tagged(*at))
-        .find_map(head)
+    (plane_name_end(payload, start)?..end.min(payload.len()))
+        .filter(|at| declared.contains(at) || behind_class_token(payload, *at))
+        .find_map(|at| plane_data_head_at(payload, at))
+}
+
+/// The frame at the head of the plane-data object of the reference plane
+/// whose object spans `start..end`, where that object follows a class token
+/// behind six zero bytes (`sldprt.md` §2): the 121-byte matrix frame, else the
+/// 97-byte fixed frame, else the 81-byte frame.
+fn tagged_plane_data_frame(
+    lane: &FeatureInputLane,
+    start: usize,
+    end: usize,
+) -> Option<(Point3, Vector3, Vector3)> {
+    let payload: &[u8] = &lane.native_payload;
+    let end = end.min(payload.len());
+    let at = (plane_name_end(payload, start)?..end).find(|at| {
+        behind_class_token(payload, *at) && plane_data_head_at(payload, *at).is_some()
+    })?;
+    let frame = |len: usize| payload.get(at..at.checked_add(len)?.min(end));
+    frame(matrix_plane::LEN)
+        .filter(|bytes| bytes.len() == matrix_plane::LEN)
+        .and_then(matrix_reference_plane_frame)
+        .or_else(|| {
+            frame(fixed_plane::LEN)
+                .filter(|bytes| bytes.len() == fixed_plane::LEN)
+                .and_then(fixed_reference_plane_frame)
+        })
+        .or_else(|| {
+            frame(minimal_plane::LEN)
+                .filter(|bytes| bytes.len() == minimal_plane::LEN)
+                .and_then(minimal_reference_plane_frame)
+        })
+}
+
+/// The offset after the name of the feature object that starts at `start`.
+fn plane_name_end(payload: &[u8], start: usize) -> Option<usize> {
+    let units = usize::from(*payload.get(start.checked_add(NAME_MARKER.len())?)?);
+    start
+        .checked_add(NAME_MARKER.len() + 1)?
+        .checked_add(units.checked_mul(2)?)
+}
+
+/// Whether the bytes before `at` are six zero bytes and a class token.
+fn behind_class_token(payload: &[u8], at: usize) -> bool {
+    at.checked_sub(PLANE_DATA_TOKEN_ZEROS + 2)
+        .and_then(|zeros| payload.get(zeros..at - 2))
+        .is_some_and(|zeros| zeros.iter().all(|byte| *byte == 0))
+        && View::u16_le_at(payload, at - 2).is_some_and(is_class_token)
+}
+
+/// The point and unit normal of a plane-data head at `at`, whose flag byte is
+/// `0` or `1`.
+fn plane_data_head_at(payload: &[u8], at: usize) -> Option<(Point3, Vector3)> {
+    let bytes = payload.get(at..at.checked_add(data_head::LEN)?)?;
+    let scalar = |offset| View::f64_le_at(bytes, offset).filter(|value| value.is_finite());
+    let point = Point3::new(
+        scalar(data_head::POINT)? * NATIVE_TO_MM,
+        scalar(data_head::POINT + 8)? * NATIVE_TO_MM,
+        scalar(data_head::POINT + 16)? * NATIVE_TO_MM,
+    );
+    let normal = Vector3::new(
+        scalar(data_head::NORMAL)?,
+        scalar(data_head::NORMAL + 8)?,
+        scalar(data_head::NORMAL + 16)?,
+    );
+    ((normal.norm() - 1.0).abs() <= REFERENCE_PLANE_FRAME_TOLERANCE && bytes[data_head::FLAG] <= 1)
+        .then_some((point, normal))
 }
 
 /// Give each offset reference plane the distance its `D1` parameter object

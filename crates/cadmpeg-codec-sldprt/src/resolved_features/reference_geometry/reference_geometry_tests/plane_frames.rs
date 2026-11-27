@@ -1,13 +1,18 @@
 //! Tests for the `reference_geometry` module's plane-frame pairs.
 
-use super::super::super::CLASS_MARKER;
+use super::super::super::{CLASS_MARKER, NAME_MARKER};
 use super::super::{
-    constraint_reference_plane_frame, minimal_reference_plane_frame,
-    offset_reference_plane_frame_pair,
+    constraint_reference_plane_frame, enrich_history_reference_planes,
+    minimal_reference_plane_frame, offset_reference_plane_frame_pair, tagged_plane_data_frame,
 };
+use crate::layout::constructed_reference_plane_fixed_frame as fixed_plane;
 use crate::layout::constructed_reference_plane_matrix_frame as matrix_plane;
 use crate::layout::constructed_reference_plane_minimal_frame as minimal_plane;
+use crate::records::{
+    Feature, FeatureHistory, FeatureInputLane, FeatureInputName, FeatureSource, ObjectId,
+};
 use cadmpeg_ir::math::{Point3, Vector3};
+use std::collections::BTreeMap;
 #[test]
 fn offset_plane_frame_pair_accepts_complete_matrix_frames() {
     let sine = 0.390_731_128_489_273_27_f64;
@@ -187,4 +192,153 @@ fn a_line_point_plane_reads_its_81_byte_frame() {
         read(&minimal_frame([1e307, 0.0, 0.0], up, [-1e307, -0.0, -0.0])),
         None
     );
+}
+
+/// A matrix frame at origin `(0.0125, 0, 0)` m whose rows are `rows`.
+fn matrix_rows(normal: [f64; 3], rows: [[f64; 3]; 3]) -> [u8; matrix_plane::LEN] {
+    let mut frame = [0; matrix_plane::LEN];
+    let values = [0.0125, 0.0, 0.0]
+        .into_iter()
+        .chain(normal)
+        .enumerate()
+        .map(|(index, value)| (8 * index, value))
+        .chain(
+            rows.into_iter()
+                .flatten()
+                .enumerate()
+                .map(|(index, value)| (49 + 8 * index, value)),
+        );
+    for (offset, value) in values {
+        frame[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    frame[48] = 1;
+    frame
+}
+
+/// A plane object named `Plane3` whose plane-data object is written as
+/// `token` behind six zero bytes and stores `frame`, and the offset of the
+/// frame.
+fn tagged_plane_object(token: u16, frame: &[u8]) -> (Vec<u8>, usize) {
+    let mut payload = NAME_MARKER.to_vec();
+    payload.push(6);
+    payload.extend("Plane3".encode_utf16().flat_map(u16::to_le_bytes));
+    payload.extend([0x05, 0x01, 0x02]);
+    payload.extend([0; 6]);
+    payload.extend(token.to_le_bytes());
+    let at = payload.len();
+    payload.extend_from_slice(frame);
+    (payload, at)
+}
+
+fn plane_lane(payload: Vec<u8>) -> FeatureInputLane {
+    FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload.into(),
+        classes: Vec::new(),
+        names: vec![FeatureInputName {
+            id: "name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: ObjectId::from_value(2080),
+            value: "Plane3".into(),
+        }],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    }
+}
+
+const UP_ROWS: [[f64; 3]; 3] = [[0.0, 1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]];
+
+#[test]
+fn a_tagged_plane_data_object_stores_its_frame_after_the_token() {
+    let frame = matrix_rows([0.0, 0.0, 1.0], UP_ROWS);
+    let (payload, _) = tagged_plane_object(0x816d, &frame);
+    let end = payload.len();
+    let lane = plane_lane(payload);
+    assert_eq!(
+        tagged_plane_data_frame(&lane, 0, end),
+        Some((
+            Point3::new(12.5, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(0.0, -1.0, 0.0),
+        ))
+    );
+    let lane = plane_lane(tagged_plane_object(0, &frame).0);
+    assert_eq!(tagged_plane_data_frame(&lane, 0, end), None);
+}
+
+#[test]
+fn a_tagged_plane_frame_is_read_within_its_object() {
+    let (payload, at) = tagged_plane_object(0x816d, &matrix_rows([0.0, 0.0, 1.0], UP_ROWS));
+    let lane = plane_lane(payload);
+    assert_eq!(
+        tagged_plane_data_frame(&lane, 0, at + fixed_plane::LEN),
+        Some((
+            Point3::new(12.5, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        ))
+    );
+}
+
+#[test]
+fn a_plane_with_a_tagged_frame_and_a_second_frame_states_the_tagged_one() {
+    let (mut payload, _) = tagged_plane_object(0x816d, &matrix_rows([0.0, 0.0, 1.0], UP_ROWS));
+    payload.extend([0xaa; 16]);
+    let mut other = matrix_rows(
+        [1.0, 0.0, 0.0],
+        [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+    );
+    other[..8].copy_from_slice(&0.5_f64.to_le_bytes());
+    payload.extend_from_slice(&other);
+    payload.extend([0xaa; 16]);
+    let mut histories = vec![FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![Feature {
+            id: "plane".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: FeatureSource::from_value(2080),
+            ordinal: 0,
+            name: "Plane3".into(),
+            kind: "Plane".into(),
+            input_class: None,
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    }];
+
+    enrich_history_reference_planes(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &mut histories,
+        &[plane_lane(payload)],
+        None,
+    )
+    .unwrap();
+
+    let properties = &histories[0].features[0].properties;
+    assert_eq!(
+        properties.get("Origin"),
+        Some(&"12.5mm,0mm,0mm".to_string())
+    );
+    assert_eq!(properties.get("Normal"), Some(&"0,0,1".to_string()));
+    assert_eq!(properties.get("UAxis"), Some(&"0,-1,0".to_string()));
 }
