@@ -54,8 +54,7 @@ fn write_3dm(ir: &CadIr, path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut output = File::create(path)?;
     RhinoCodec::default()
         .plan(
-            EncodeInput::new(ir, None),
-            TargetRequest::Explicit("rhino:archive-70"),
+            EncodeInput::new(ir, None).with_target(TargetRequest::Explicit("rhino:archive-70")),
         )?
         .write_to(&mut output)?;
     Ok(())

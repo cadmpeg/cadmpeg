@@ -15,10 +15,7 @@ pub(crate) fn codec() -> OnshapeCodec {
 }
 fn encode_step(ir: &cadmpeg_ir::CadIr) -> Vec<u8> {
     let plan = cadmpeg_codec_step::StepCodec::default()
-        .plan(
-            EncodeInput::new(ir, None),
-            TargetRequest::Explicit("step:ap214"),
-        )
+        .plan(EncodeInput::new(ir, None).with_target(TargetRequest::Explicit("step:ap214")))
         .unwrap();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
