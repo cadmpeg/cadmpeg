@@ -85,7 +85,7 @@ fn loaded_cadir_compares_native_metadata_with_its_rebound_sidecar() {
         .find(|schema| schema["definition"]["kind"] == 240)
         .unwrap();
     assert_eq!(schema["custom_name"], "MY_KIND");
-    schema["custom_name"] = serde_json::json!("EDITED_KIND");
+    schema["custom_name"] = cadmpeg_core::json!("EDITED_KIND");
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();

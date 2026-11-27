@@ -1,4 +1,5 @@
 use crate::math::portable::Portable;
+use cadmpeg_core::serde_erase::json;
 
 #[cfg(target_pointer_width = "64")]
 #[test]
@@ -44,21 +45,14 @@ fn feature_scalars_reject_nonfinite_constructor_and_serde_values() {
         let angle = Angle::new(value).unwrap();
         assert_eq!(length.get(), value);
         assert_eq!(angle.get(), value);
+        assert_eq!(json::to_value(length).unwrap(), cadmpeg_core::json!(value));
+        assert_eq!(json::to_value(angle).unwrap(), cadmpeg_core::json!(value));
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(length).unwrap(),
-            serde_json::json!(value)
-        );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(angle).unwrap(),
-            serde_json::json!(value)
-        );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<Length>(serde_json::json!(value))
-                .unwrap(),
+            json::from_value::<Length>(cadmpeg_core::json!(value)).unwrap(),
             length
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<Angle>(serde_json::json!(value)).unwrap(),
+            json::from_value::<Angle>(cadmpeg_core::json!(value)).unwrap(),
             angle
         );
     }
@@ -78,10 +72,7 @@ fn positive_lengths_reject_zero_negative_and_nonfinite_values() {
     }
     let length = PositiveLength::new(2.5).unwrap();
     assert_eq!(length.get(), 2.5);
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(length).unwrap(),
-        serde_json::json!(2.5)
-    );
+    assert_eq!(json::to_value(length).unwrap(), cadmpeg_core::json!(2.5));
     assert_eq!(
         serde_json::from_str::<PositiveLength>("2.5").unwrap(),
         length
@@ -94,24 +85,18 @@ fn positive_i64_admits_the_full_positive_signed_lane() {
 
     for value in [0_i64, -1] {
         assert!(PositiveI64::new(value).is_none());
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<PositiveI64>(serde_json::json!(value))
-                .is_err()
-        );
+        assert!(json::from_value::<PositiveI64>(cadmpeg_core::json!(value)).is_err());
     }
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<PositiveI64>(serde_json::json!(1.5)).is_err()
-    );
+    assert!(json::from_value::<PositiveI64>(cadmpeg_core::json!(1.5)).is_err());
 
     let maximum = PositiveI64::new(i64::MAX).unwrap();
     assert_eq!(maximum.get(), i64::MAX);
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(maximum).unwrap(),
-        serde_json::json!(i64::MAX)
+        json::to_value(maximum).unwrap(),
+        cadmpeg_core::json!(i64::MAX)
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<PositiveI64>(serde_json::json!(i64::MAX))
-            .unwrap(),
+        json::from_value::<PositiveI64>(cadmpeg_core::json!(i64::MAX)).unwrap(),
         maximum
     );
 }
@@ -698,8 +683,8 @@ fn finite_binary32_preserves_source_precision_and_rejects_nonfinite_values() {
         let value = FiniteBinary32::new(source).unwrap();
         assert_eq!(value.get().to_bits(), source.to_bits());
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
-            cadmpeg_core::serde_erase::json::to_string(&(source + 0.0)).unwrap()
+            json::to_string(&value).unwrap(),
+            json::to_string(&(source + 0.0)).unwrap()
         );
     }
     for source in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {

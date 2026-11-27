@@ -5,6 +5,7 @@ use crate::design::feature_project::{
 use crate::design::test_support::{indexed_record_offsets_for_test, with_test_decode_context};
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::test_support::lp_utf16;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
@@ -48,7 +49,7 @@ fn named_delete_scope(kind: &str, label: &str) -> Vec<u8> {
 }
 
 fn face_group() -> DesignConstructionOperandGroup {
-    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "f3d:Design/BulkStream.dat:group#100",
         "scope_record_index": 77,
         "scope_reference_ordinal": 0,

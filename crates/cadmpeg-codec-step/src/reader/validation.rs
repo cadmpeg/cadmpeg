@@ -108,6 +108,10 @@ pub(super) fn decode(
     let mut typed = HashSet::new();
     let mut validation_points = BTreeSet::new();
     let mut validation_representations = BTreeSet::new();
+    // An item reads the same in every property that lists it, so an item
+    // given up once is not read again.
+    let mut given_up_items = BTreeSet::new();
+    let mut unsupported_points = BTreeMap::new();
 
     for (relation_id, relation) in exchange.entities("PROPERTY_DEFINITION_REPRESENTATION") {
         let Some(relation) = relation.partial("PROPERTY_DEFINITION_REPRESENTATION") else {
@@ -142,6 +146,9 @@ pub(super) fn decode(
                 .clone()
         });
         for &item_id in item_ids {
+            if given_up_items.contains(&item_id) {
+                continue;
+            }
             let Some(item) = exchange.records().get(&item_id) else {
                 continue;
             };
@@ -150,13 +157,23 @@ pub(super) fn decode(
             }
             let scale = geometry.units.length([item_id, representation_id]).get();
             let Some(stated) = stated(item_id, item, exchange, &mut losses) else {
-                losses.push(StepLossCode::ValidationItemUnsupported.note(format!(
+                let why = StepLossCode::ValidationItemUnsupported.note(format!(
                     "geometric validation property #{property_id} has unsupported item #{item_id}"
-                )));
+                ));
+                // A point stays in the document where another record
+                // references it; it is given up when it is removed below.
+                if item.partial("CARTESIAN_POINT").is_some() {
+                    unsupported_points.insert(item_id, why.clone());
+                    losses.push(why);
+                } else {
+                    losses.extend(super::give_up_instance(exchange, item_id, why));
+                }
+                given_up_items.insert(item_id);
                 continue;
             };
             let Some(quantity) = scaled(stated, item_id, item, exchange, scale, &mut losses, ctx)?
             else {
+                given_up_items.insert(item_id);
                 continue;
             };
             for id in [property_id, relation_id, representation_id, item_id] {
@@ -217,6 +234,9 @@ pub(super) fn decode(
             !validation_points.contains(&id) || referenced_validation_points.contains(&id);
         if !retained {
             removed_points.insert(point.id.as_str().to_owned());
+            if let Some(why) = unsupported_points.get(&id) {
+                exchange.lost().give_up_for(id, why);
+            }
         }
         retained
     });
@@ -505,9 +525,13 @@ fn measure_scale(
     match resolved {
         Some(scale) => Ok(Some(scale)),
         None => {
-            losses.push(StepLossCode::ValidationMeasureUnitUnresolved.note(format!(
-                "geometric validation {kind} measure #{id} unit scale did not resolve; the quantity is not compared",
-            )));
+            losses.extend(super::give_up_instance(
+                exchange,
+                id,
+                StepLossCode::ValidationMeasureUnitUnresolved.note(format!(
+                    "geometric validation {kind} measure #{id} unit scale did not resolve; the quantity is not compared",
+                )),
+            ));
             Ok(None)
         }
     }

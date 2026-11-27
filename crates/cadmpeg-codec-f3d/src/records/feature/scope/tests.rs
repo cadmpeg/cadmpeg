@@ -1,20 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Absence spellings of the flattened scope-record readers.
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn named_scope_reference_fields_use_omission_for_absence() {
     use super::DesignNamedScopeReferences;
     use crate::records::identity::Located;
 
-    let empty: DesignNamedScopeReferences =
-        cadmpeg_core::serde_erase::json::from_slice(b"{}").unwrap();
+    let empty: DesignNamedScopeReferences = json::from_slice(b"{}").unwrap();
     assert_eq!(empty, DesignNamedScopeReferences::default());
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&empty).unwrap(),
-        b"{}"
-    );
+    assert_eq!(json::to_vec(&empty).unwrap(), b"{}");
 
-    let populated: DesignNamedScopeReferences = cadmpeg_core::serde_erase::json::from_slice(
+    let populated: DesignNamedScopeReferences = json::from_slice(
         br#"{"middle":{"value":17,"offset":23},"closing":{"value":19,"offset":34}}"#,
     )
     .unwrap();
@@ -32,18 +30,16 @@ fn named_scope_reference_fields_use_omission_for_absence() {
             offset: 34
         })
     );
-    let bytes = cadmpeg_core::serde_erase::json::to_vec(&populated).unwrap();
+    let bytes = json::to_vec(&populated).unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_slice::<DesignNamedScopeReferences>(&bytes).unwrap(),
+        json::from_slice::<DesignNamedScopeReferences>(&bytes).unwrap(),
         populated
     );
     for (bytes, key) in [
         (br#"{"middle":null}"#.as_slice(), "middle"),
         (br#"{"closing":null}"#.as_slice(), "closing"),
     ] {
-        let error =
-            cadmpeg_core::serde_erase::json::from_slice::<DesignNamedScopeReferences>(bytes)
-                .unwrap_err();
+        let error = json::from_slice::<DesignNamedScopeReferences>(bytes).unwrap_err();
         assert!(error.to_string().contains(key));
     }
 }
@@ -56,8 +52,8 @@ fn sketch_entity_binding_borrowed_wire_matches_owned_wire_bytes() {
     .unwrap();
     let owned = super::DesignSketchEntityBindingWire::from(binding.clone());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&binding).unwrap(),
-        cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
+        json::to_vec(&binding).unwrap(),
+        json::to_vec(&owned).unwrap()
     );
 }
 
@@ -94,8 +90,8 @@ fn parameter_scope_borrowed_wire_matches_owned_json_bytes() {
     );
     let owned = super::DesignParameterScopeSerde::from(scope.clone());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&scope).expect("borrowed scope wire"),
-        cadmpeg_core::serde_erase::json::to_vec(&owned).expect("owned scope wire")
+        json::to_vec(&scope).expect("borrowed scope wire"),
+        json::to_vec(&owned).expect("owned scope wire")
     );
 }
 
@@ -106,10 +102,8 @@ fn parameter_scope_native_writer_refuses_retained_limit_before_outer_clone() {
         super::DesignScopePayload::WorkPoint(None),
         1,
     );
-    let expected = cadmpeg_core::serde_erase::json::to_value(
-        super::DesignParameterScopeSerde::from(scope.clone()),
-    )
-    .expect("owned scope wire");
+    let expected = json::to_value(super::DesignParameterScopeSerde::from(scope.clone()))
+        .expect("owned scope wire");
     super::SCOPE_CLONE_COUNT.with(|count| count.set(0));
     cadmpeg_test_support::native_serialization::assert_native_limit(&scope, expected);
     super::SCOPE_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
@@ -122,7 +116,7 @@ fn parameter_scope_nested_vertex_recipe_streams_without_cloning() {
         DesignWorkPointRule, DesignWorkPointRuleForm,
     };
 
-    let recipe = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    let recipe = json::from_value(cadmpeg_core::json!({
         "record_index": 2,
         "byte_offset": 10,
         "class_tag": "369",
@@ -167,14 +161,14 @@ fn parameter_scope_nested_vertex_recipe_streams_without_cloning() {
     }
     let owned = super::DesignParameterScopeSerde::from(scope.clone());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&scope).expect("borrowed scope wire"),
-        cadmpeg_core::serde_erase::json::to_vec(&owned).expect("owned scope wire")
+        json::to_vec(&scope).expect("borrowed scope wire"),
+        json::to_vec(&owned).expect("owned scope wire")
     );
     super::SCOPE_CLONE_COUNT.with(|count| count.set(0));
     crate::records::feature::work_geometry::WORK_GEOMETRY_CLONE_COUNT.with(|count| count.set(0));
     cadmpeg_test_support::native_serialization::assert_native_limit(
         &scope,
-        cadmpeg_core::serde_erase::json::to_value(owned).expect("owned scope value"),
+        json::to_value(owned).expect("owned scope value"),
     );
     super::SCOPE_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     crate::records::feature::work_geometry::WORK_GEOMETRY_CLONE_COUNT
@@ -195,14 +189,11 @@ fn work_plane_frame_wire_refuses_a_null_key() {
         "work_plane_reference_offset",
         "work_plane_construction",
     ] {
-        let mut wire = serde_json::json!({});
+        let mut wire = cadmpeg_core::json!({});
         wire[key] = serde_json::Value::Null;
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<Probe>(wire.clone()).is_err(),
-            "{wire}"
-        );
+        assert!(json::from_value::<Probe>(wire.clone()).is_err(), "{wire}");
     }
-    let absent: Probe = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({})).unwrap();
+    let absent: Probe = json::from_value(cadmpeg_core::json!({})).unwrap();
     assert!(absent.frame.is_none());
 }
 
@@ -219,14 +210,11 @@ fn joint_origin_frame_wire_refuses_a_null_key() {
         "joint_origin_reference",
         "joint_origin_reference_offset",
     ] {
-        let mut wire = serde_json::json!({});
+        let mut wire = cadmpeg_core::json!({});
         wire[key] = serde_json::Value::Null;
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<Probe>(wire.clone()).is_err(),
-            "{wire}"
-        );
+        assert!(json::from_value::<Probe>(wire.clone()).is_err(), "{wire}");
     }
-    let absent: Probe = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({})).unwrap();
+    let absent: Probe = json::from_value(cadmpeg_core::json!({})).unwrap();
     assert!(absent.frame.is_none());
 }
 
@@ -238,14 +226,11 @@ fn sketch_entity_wire_refuses_a_null_key() {
         entity: Option<super::DesignSketchEntityBinding>,
     }
     for key in ["entity_id", "entity_suffix", "entity_reference_offset"] {
-        let mut wire = serde_json::json!({});
+        let mut wire = cadmpeg_core::json!({});
         wire[key] = serde_json::Value::Null;
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<Probe>(wire.clone()).is_err(),
-            "{wire}"
-        );
+        assert!(json::from_value::<Probe>(wire.clone()).is_err(), "{wire}");
     }
-    let absent: Probe = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({})).unwrap();
+    let absent: Probe = json::from_value(cadmpeg_core::json!({})).unwrap();
     assert!(absent.entity.is_none());
 }
 
@@ -340,13 +325,13 @@ fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
         DesignWorkPointInput, DesignWorkPointInputCarrier, DesignWorkPointRule,
         DesignWorkPointRuleForm,
     };
-    let reference = serde_json::json!({
+    let reference = cadmpeg_core::json!({
         "selector": 1, "selector_offset": 1, "token": "f3d:model:face#one", "token_offset": 2,
         "design_reference": 1, "design_reference_offset": 3,
         "candidate_faces": ["f3d:model:face#one"], "candidate_edges": ["f3d:model:edge#one"],
         "alternate_selector_faces": ["f3d:model:face#one"], "alternate_selector_edges": ["f3d:model:edge#one"]
     });
-    let recipe: DesignVertexRecipe = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    let recipe: DesignVertexRecipe = json::from_value(cadmpeg_core::json!({
         "record_index": 2, "byte_offset": 10, "class_tag": "369", "paired_byte_offset": 20,
         "paired_class_tag": "261", "recipe_record_index": 5, "recipe_record_byte_offset": 30,
         "recipe_id": "f3d:design:recipe#1", "recipe_prefix_offset": 41,
@@ -416,7 +401,7 @@ fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
         ))
     };
     let expected = cadmpeg_ir::schema::rewrite::identities(&ctx, scope.clone(), remap).unwrap();
-    let mut expected = cadmpeg_core::serde_erase::json::to_value(expected)
+    let mut expected = json::to_value(expected)
         .unwrap()
         .as_object()
         .unwrap()
@@ -440,7 +425,7 @@ fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
         .unwrap();
     let record = &native.arenas()["design_parameter_scopes"][0];
     let expected = cadmpeg_ir::schema::rewrite::identities(&ctx, plane_scope, remap).unwrap();
-    let mut expected = cadmpeg_core::serde_erase::json::to_value(expected)
+    let mut expected = json::to_value(expected)
         .unwrap()
         .as_object()
         .unwrap()
@@ -469,7 +454,7 @@ fn emboss_scope() -> super::DesignParameterScope {
         super::DesignFeatureKind::Emboss,
         40,
     );
-    let construction = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    let construction = json::from_value(cadmpeg_core::json!({
         "control_words": [7, 9],
         "native_pair": [17, 23],
         "depth_owner": {"value": 60, "offset": 29},
@@ -502,45 +487,29 @@ fn emboss_scope_wire_retains_native_controls_and_matches_the_borrowed_writer() {
     let scope = emboss_scope();
     assert!(scope.payload().is_uninterpreted());
     let owned = super::DesignParameterScopeSerde::from(scope.clone());
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&scope).unwrap(),
-        cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
-    );
-    let json = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
-    let restored: super::DesignParameterScope =
-        cadmpeg_core::serde_erase::json::from_value(json).unwrap();
+    assert_eq!(json::to_vec(&scope).unwrap(), json::to_vec(&owned).unwrap());
+    let json = json::to_value(&scope).unwrap();
+    let restored: super::DesignParameterScope = json::from_value(json).unwrap();
     assert_eq!(restored, scope);
 }
 
 #[test]
 fn emboss_scope_wire_refuses_another_family_and_invalid_owner_links() {
-    let source = cadmpeg_core::serde_erase::json::to_value(emboss_scope()).unwrap();
+    let source = json::to_value(emboss_scope()).unwrap();
     let mut wrong_kind = source.clone();
-    wrong_kind["kind"] = serde_json::json!("Thread");
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<super::DesignParameterScope>(wrong_kind)
-            .is_err()
-    );
+    wrong_kind["kind"] = cadmpeg_core::json!("Thread");
+    assert!(json::from_value::<super::DesignParameterScope>(wrong_kind).is_err());
     for field in ["depth_owner", "face_group", "profile_group"] {
         let mut changed = source.clone();
-        changed["emboss_construction"][field]["value"] = serde_json::json!(90);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<super::DesignParameterScope>(changed)
-                .is_err()
-        );
+        changed["emboss_construction"][field]["value"] = cadmpeg_core::json!(90);
+        assert!(json::from_value::<super::DesignParameterScope>(changed).is_err());
     }
     let mut wrong_offset = source.clone();
-    wrong_offset["emboss_construction"]["depth_owner"]["offset"] = serde_json::json!(30);
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<super::DesignParameterScope>(wrong_offset)
-            .is_err()
-    );
+    wrong_offset["emboss_construction"]["depth_owner"]["offset"] = cadmpeg_core::json!(30);
+    assert!(json::from_value::<super::DesignParameterScope>(wrong_offset).is_err());
     let mut null_profile = source;
     null_profile["emboss_construction"]["sketch_profile"] = serde_json::Value::Null;
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<super::DesignParameterScope>(null_profile)
-            .is_err()
-    );
+    assert!(json::from_value::<super::DesignParameterScope>(null_profile).is_err());
 }
 
 #[test]
@@ -625,26 +594,19 @@ fn hole_extent_without_point_carrier_round_trips_and_checks_kind() {
                 hole_type: None,
             });
         }
-        let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
-        let decoded: DesignParameterScope =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        let wire = json::to_value(&scope).unwrap();
+        let decoded: DesignParameterScope = json::from_value(wire.clone()).unwrap();
         assert_eq!(decoded.hole_extent(), scope.hole_extent());
         assert!(decoded.hole_construction().is_none());
         let mut invalid = wire.clone();
-        invalid["hole_extent"]["extent_control"] = serde_json::json!(2);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(invalid).is_err()
-        );
+        invalid["hole_extent"]["extent_control"] = cadmpeg_core::json!(2);
+        assert!(json::from_value::<DesignParameterScope>(invalid).is_err());
         let mut invalid = wire.clone();
-        invalid["kind"] = serde_json::json!("Thread");
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(invalid).is_err()
-        );
+        invalid["kind"] = cadmpeg_core::json!("Thread");
+        assert!(json::from_value::<DesignParameterScope>(invalid).is_err());
         let mut invalid = wire;
         invalid["hole_extent"] = serde_json::Value::Null;
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(invalid).is_err()
-        );
+        assert!(json::from_value::<DesignParameterScope>(invalid).is_err());
     }
 }
 
@@ -655,12 +617,11 @@ fn occurrence_transfer_intent_wire_accepts_absence_and_partial_value_but_refuses
         super::DesignScopePayload::CopyPaste(None),
         1,
     );
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
+    let mut wire = json::to_value(&scope).unwrap();
     assert!(wire.get("occurrence_transfer_intent").is_none());
-    let loaded: super::DesignParameterScope =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    let loaded: super::DesignParameterScope = json::from_value(wire.clone()).unwrap();
     assert!(loaded.occurrence_transfer_intent.is_none());
-    let partial = serde_json::json!({
+    let partial = cadmpeg_core::json!({
         "mode": "copy",
         "relation_record_index": null,
         "occurrence_record_index": null,
@@ -671,15 +632,13 @@ fn occurrence_transfer_intent_wire_accepts_absence_and_partial_value_but_refuses
         "target_transform": null
     });
     wire["occurrence_transfer_intent"] = partial.clone();
-    let loaded: super::DesignParameterScope =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    let loaded: super::DesignParameterScope = json::from_value(wire.clone()).unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(loaded).unwrap()["occurrence_transfer_intent"],
+        json::to_value(loaded).unwrap()["occurrence_transfer_intent"],
         partial
     );
     wire["occurrence_transfer_intent"] = serde_json::Value::Null;
-    let error = cadmpeg_core::serde_erase::json::from_value::<super::DesignParameterScope>(wire)
-        .unwrap_err();
+    let error = json::from_value::<super::DesignParameterScope>(wire).unwrap_err();
     assert!(error.to_string().contains("occurrence_transfer_intent"));
 }
 
@@ -697,18 +656,12 @@ fn native_profile_wire_round_trips_and_rejects_null() {
             &mut Vec::new(),
         )
         .unwrap();
-        let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
-        let loaded: DesignParameterScope =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(loaded).unwrap(),
-            wire
-        );
+        let wire = json::to_value(&scope).unwrap();
+        let loaded: DesignParameterScope = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(loaded).unwrap(), wire);
         let mut invalid = wire;
         invalid["extrude_native_profiles"] = serde_json::Value::Null;
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(invalid).is_err()
-        );
+        assert!(json::from_value::<DesignParameterScope>(invalid).is_err());
     });
 }
 
@@ -737,18 +690,17 @@ fn fillet_sets_round_trip_and_belong_to_fillet_scopes() {
             }],
         });
     }
-    let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
+    let wire = json::to_value(&scope).unwrap();
     assert_eq!(wire["fillet_sets"]["sets"][0]["group_record_index"], 3);
-    let decoded: DesignParameterScope =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    let decoded: DesignParameterScope = json::from_value(wire.clone()).unwrap();
     assert_eq!(decoded.fillet_sets(), scope.fillet_sets());
     assert!(!decoded.payload().is_uninterpreted());
     let mut invalid = wire.clone();
-    invalid["kind"] = serde_json::json!("Chamfer");
-    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(invalid).is_err());
+    invalid["kind"] = cadmpeg_core::json!("Chamfer");
+    assert!(json::from_value::<DesignParameterScope>(invalid).is_err());
     let mut invalid = wire;
     invalid["fillet_sets"] = serde_json::Value::Null;
-    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(invalid).is_err());
+    assert!(json::from_value::<DesignParameterScope>(invalid).is_err());
 }
 
 #[test]
@@ -779,18 +731,17 @@ fn chamfer_sets_round_trip_and_belong_to_chamfer_scopes() {
             }],
         });
     }
-    let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
+    let wire = json::to_value(&scope).unwrap();
     assert_eq!(wire["chamfer_sets"]["sets"][0]["group_record_index"], 3);
-    let decoded: DesignParameterScope =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    let decoded: DesignParameterScope = json::from_value(wire.clone()).unwrap();
     assert_eq!(decoded.chamfer_sets(), scope.chamfer_sets());
     assert!(!decoded.payload().is_uninterpreted());
     let mut invalid = wire.clone();
-    invalid["kind"] = serde_json::json!("Fillet");
-    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(invalid).is_err());
+    invalid["kind"] = cadmpeg_core::json!("Fillet");
+    assert!(json::from_value::<DesignParameterScope>(invalid).is_err());
     let mut invalid = wire;
     invalid["chamfer_sets"] = serde_json::Value::Null;
-    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(invalid).is_err());
+    assert!(json::from_value::<DesignParameterScope>(invalid).is_err());
 }
 
 #[test]
@@ -798,27 +749,22 @@ fn work_plane_scope_display_name_wire_validates_bounds_and_kind() {
     use super::{DesignFeatureKind, DesignParameterScope, DesignParameterScopeSerde};
     let mut scope = crate::test_support::work_plane::scope_referencing(&[73]);
     scope.display_name = Some("Body Split".into());
-    let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
-    let owned =
-        cadmpeg_core::serde_erase::json::to_value(DesignParameterScopeSerde::from(scope.clone()))
-            .unwrap();
+    let wire = json::to_value(&scope).unwrap();
+    let owned = json::to_value(DesignParameterScopeSerde::from(scope.clone())).unwrap();
     assert_eq!(wire, owned);
-    let loaded: DesignParameterScope =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    let loaded: DesignParameterScope = json::from_value(wire.clone()).unwrap();
     assert_eq!(loaded, scope);
 
     for bad in ["", "   ", "Bad\nName", &"x".repeat(257)] {
         let mut invalid = wire.clone();
-        invalid["display_name"] = serde_json::json!(bad);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(invalid).is_err()
-        );
+        invalid["display_name"] = cadmpeg_core::json!(bad);
+        assert!(json::from_value::<DesignParameterScope>(invalid).is_err());
     }
 
     let mut non_work_plane = DesignParameterScope::empty("scope", DesignFeatureKind::Extrude, 1);
     non_work_plane.display_name = Some("Body Split".into());
-    let bad_kind = cadmpeg_core::serde_erase::json::to_value(&non_work_plane).unwrap();
-    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(bad_kind).is_err());
+    let bad_kind = json::to_value(&non_work_plane).unwrap();
+    assert!(json::from_value::<DesignParameterScope>(bad_kind).is_err());
 }
 
 #[test]
@@ -828,7 +774,7 @@ fn captured_position_scope_wire_checks_exact_row_extent_and_offsets() {
         Some(cadmpeg_ir::transform::Transform::identity().rows()),
     ]);
     scope.captured_positions = Some(
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "rows": [
                 {"target": {"value": 700, "offset": 35}},
                 {"target": {"value": 703, "offset": 48}, "matrix": {
@@ -839,49 +785,39 @@ fn captured_position_scope_wire_checks_exact_row_extent_and_offsets() {
         }))
         .unwrap(),
     );
-    let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
-    let decoded =
-        cadmpeg_core::serde_erase::json::from_value::<super::DesignParameterScope>(wire.clone())
-            .unwrap();
+    let wire = json::to_value(&scope).unwrap();
+    let decoded = json::from_value::<super::DesignParameterScope>(wire.clone()).unwrap();
     assert_eq!(decoded, scope);
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(super::DesignParameterScopeSerde::from(scope))
-            .unwrap(),
+        json::to_value(super::DesignParameterScopeSerde::from(scope)).unwrap(),
         wire
     );
     for field in ["target", "matrix"] {
         let mut invalid = wire.clone();
-        invalid["captured_positions"]["rows"][1][field]["offset"] = serde_json::json!(1);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<super::DesignParameterScope>(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains("captured_positions")
-        );
+        invalid["captured_positions"]["rows"][1][field]["offset"] = cadmpeg_core::json!(1);
+        assert!(json::from_value::<super::DesignParameterScope>(invalid)
+            .unwrap_err()
+            .to_string()
+            .contains("captured_positions"));
     }
     let mut invalid = wire.clone();
     invalid["captured_positions"]["rows"]
         .as_array_mut()
         .unwrap()
         .pop();
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<super::DesignParameterScope>(invalid)
-            .is_err()
-    );
+    assert!(json::from_value::<super::DesignParameterScope>(invalid).is_err());
     let mut invalid = wire;
     invalid["captured_positions"] = serde_json::Value::Null;
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<super::DesignParameterScope>(invalid)
-            .unwrap_err()
-            .to_string()
-            .contains("captured_positions")
-    );
+    assert!(json::from_value::<super::DesignParameterScope>(invalid)
+        .unwrap_err()
+        .to_string()
+        .contains("captured_positions"));
 }
 
 #[test]
 fn a_chamfer_scope_with_fixed_lanes_and_a_set_list_round_trips_as_one_payload() {
     let chamfer = |extra: serde_json::Value| {
-        let mut value = serde_json::json!({
+        let mut value = cadmpeg_core::json!({
             "id": "f3d:test/Design/BulkStream.dat:scope", "byte_offset": 0, "class_tag": "300",
             "record_index": 1, "frame_length": 200, "kind": "Chamfer", "kind_offset": 32,
             "feature_ordinal": 1, "feature_ordinal_offset": 128,
@@ -908,29 +844,27 @@ fn a_chamfer_scope_with_fixed_lanes_and_a_set_list_round_trips_as_one_payload() 
         }
         value
     };
-    let value = chamfer(serde_json::json!({}));
-    let scope: super::DesignParameterScope =
-        cadmpeg_core::serde_erase::json::from_value(value.clone()).unwrap();
+    let value = chamfer(cadmpeg_core::json!({}));
+    let scope: super::DesignParameterScope = json::from_value(value.clone()).unwrap();
     assert!(scope.fixed_chamfer_parameters().is_some());
     assert!(scope.chamfer_sets().is_some());
-    let written = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
+    let written = json::to_value(&scope).unwrap();
     assert_eq!(
         written["fixed_chamfer_parameters"],
         value["fixed_chamfer_parameters"]
     );
     assert_eq!(written["chamfer_sets"], value["chamfer_sets"]);
-    let reread: super::DesignParameterScope =
-        cadmpeg_core::serde_erase::json::from_value(written).unwrap();
+    let reread: super::DesignParameterScope = json::from_value(written).unwrap();
     assert_eq!(reread.chamfer_sets(), scope.chamfer_sets());
 
-    let mixed = chamfer(serde_json::json!({
+    let mixed = chamfer(cadmpeg_core::json!({
         "fixed_fillet_parameters": { "groups": [{
             "radii": [0.3], "radius_record_indexes": [5], "radius_offsets": [0],
             "intermediate_parameters": [], "intermediate_parameter_record_indexes": [],
             "intermediate_parameter_offsets": []
         }] }
     }));
-    let error = cadmpeg_core::serde_erase::json::from_value::<super::DesignParameterScope>(mixed)
+    let error = json::from_value::<super::DesignParameterScope>(mixed)
         .unwrap_err()
         .to_string();
     assert!(error.contains("more than one payload family: fixed_fillet_parameters, chamfer"));

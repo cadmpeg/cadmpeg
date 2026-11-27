@@ -67,7 +67,7 @@ fn a_retained_f3d_with_zstandard_members_patches() {
     }];
     let mut generated = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut generated))
         .expect("generate a timestamp carrier");
     let retained = every_member_as_zstandard(&generated);
@@ -91,7 +91,7 @@ fn a_retained_f3d_with_zstandard_members_patches() {
     let report = F3dCodec
         .plan(
             EncodeInput::new(&target, Some(&fidelity)),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .and_then(|plan| plan.write_to(&mut patched))
         .expect("patch an archive whose members are all Zstandard");

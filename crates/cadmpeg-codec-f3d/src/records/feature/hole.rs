@@ -776,80 +776,53 @@ impl Serialize for DesignHoleFaceSelection {
 #[cfg(test)]
 mod tests {
     use super::{DesignHoleConstruction, DesignHoleFaceSelection};
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_test_support::native_serialization::assert_native_limit;
 
     #[test]
     fn hole_extent_round_trip_checks_control() {
         for control in [0, 1] {
-            let value = serde_json::json!({"extent_control": control, "saved_non_distance_depth": {"value": 1.0, "offset": 5}});
-            let extent: super::DesignHoleExtent =
-                cadmpeg_core::serde_erase::json::from_value(value.clone()).unwrap();
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(extent).unwrap(),
-                value
-            );
+            let value = cadmpeg_core::json!({"extent_control": control, "saved_non_distance_depth": {"value": 1.0, "offset": 5}});
+            let extent: super::DesignHoleExtent = json::from_value(value.clone()).unwrap();
+            assert_eq!(json::to_value(extent).unwrap(), value);
         }
-        let directed = serde_json::json!({
+        let directed = cadmpeg_core::json!({
             "extent_control": 0, "direction_control": {"value": 1, "offset": 7}
         });
-        let extent: super::DesignHoleExtent =
-            cadmpeg_core::serde_erase::json::from_value(directed.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(extent).unwrap(),
-            directed
-        );
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<super::DesignHoleExtent>(
-                serde_json::json!({"direction_control": {"value": 2, "offset": 7}})
-            )
-            .is_err()
-        );
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<super::DesignHoleExtent>(
-                serde_json::json!({"direction_control": null})
-            )
-            .is_err()
-        );
+        let extent: super::DesignHoleExtent = json::from_value(directed.clone()).unwrap();
+        assert_eq!(json::to_value(extent).unwrap(), directed);
+        assert!(json::from_value::<super::DesignHoleExtent>(
+            cadmpeg_core::json!({"direction_control": {"value": 2, "offset": 7}})
+        )
+        .is_err());
+        assert!(json::from_value::<super::DesignHoleExtent>(
+            cadmpeg_core::json!({"direction_control": null})
+        )
+        .is_err());
         let worded =
-            serde_json::json!({"leading_word": {"value": 2, "offset": 3}, "extent_control": 0});
-        let extent: super::DesignHoleExtent =
-            cadmpeg_core::serde_erase::json::from_value(worded.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(extent).unwrap(),
-            worded
-        );
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<super::DesignHoleExtent>(
-                serde_json::json!({"leading_word": null, "extent_control": 0})
-            )
-            .is_err()
-        );
-        let bare = serde_json::json!({});
-        let extent: super::DesignHoleExtent =
-            cadmpeg_core::serde_erase::json::from_value(bare.clone()).unwrap();
+            cadmpeg_core::json!({"leading_word": {"value": 2, "offset": 3}, "extent_control": 0});
+        let extent: super::DesignHoleExtent = json::from_value(worded.clone()).unwrap();
+        assert_eq!(json::to_value(extent).unwrap(), worded);
+        assert!(json::from_value::<super::DesignHoleExtent>(
+            cadmpeg_core::json!({"leading_word": null, "extent_control": 0})
+        )
+        .is_err());
+        let bare = cadmpeg_core::json!({});
+        let extent: super::DesignHoleExtent = json::from_value(bare.clone()).unwrap();
         assert_eq!(extent.extent_control, None);
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(extent).unwrap(),
-            bare
-        );
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<super::DesignHoleExtent>(
-                serde_json::json!({"extent_control": null})
-            )
-            .is_err()
-        );
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<super::DesignHoleExtent>(
-                serde_json::json!({"extent_control": 2})
-            )
-            .is_err()
-        );
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<super::DesignHoleExtent>(
-                serde_json::json!({"extent_control": 1, "saved_non_distance_depth": null})
-            )
-            .is_err()
-        );
+        assert_eq!(json::to_value(extent).unwrap(), bare);
+        assert!(json::from_value::<super::DesignHoleExtent>(
+            cadmpeg_core::json!({"extent_control": null})
+        )
+        .is_err());
+        assert!(json::from_value::<super::DesignHoleExtent>(
+            cadmpeg_core::json!({"extent_control": 2})
+        )
+        .is_err());
+        assert!(json::from_value::<super::DesignHoleExtent>(
+            cadmpeg_core::json!({"extent_control": 1, "saved_non_distance_depth": null})
+        )
+        .is_err());
     }
 
     fn carrier(
@@ -861,13 +834,13 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(index, (reference_type, position))| {
-                serde_json::json!({
+                cadmpeg_core::json!({
                     "record_index": index, "position": position,
                     "position_offset": index, "reference_type": reference_type
                 })
             })
             .collect();
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "point_record_index": 1, "point_record_byte_offset": 2,
             "position": position, "position_offset": 3,
             "direction": [0.0, 0.0, 1.0], "direction_offset": 4,
@@ -936,14 +909,13 @@ mod tests {
         u_axis: [f64; 3],
         v_axis: [f64; 3],
     ) -> DesignHoleConstruction {
-        let mut value =
-            cadmpeg_core::serde_erase::json::to_value(carrier(19, A, &[(17, position)])).unwrap();
-        value["locations"][0]["plane"] = serde_json::json!({
+        let mut value = json::to_value(carrier(19, A, &[(17, position)])).unwrap();
+        value["locations"][0]["plane"] = cadmpeg_core::json!({
             "selection_record_index": 1, "record_index": 2,
             "origin": origin, "origin_offset": 3,
             "u_axis": u_axis, "v_axis": v_axis
         });
-        cadmpeg_core::serde_erase::json::from_value(value).unwrap()
+        json::from_value(value).unwrap()
     }
 
     #[test]
@@ -970,7 +942,7 @@ mod tests {
     #[test]
     fn face_point_carrier_off_its_record_needs_the_plane_and_one_record() {
         assert_eq!(entry_points(&carrier(19, A, &[(17, B)])), None);
-        let mut two = cadmpeg_core::serde_erase::json::to_value(plane_located(
+        let mut two = json::to_value(plane_located(
             B,
             [0.0, 0.0, 2.0],
             [1.0, 0.0, 0.0],
@@ -979,32 +951,30 @@ mod tests {
         .unwrap();
         let first = two["locations"][0].clone();
         two["locations"].as_array_mut().unwrap().push(first);
-        let two: DesignHoleConstruction = cadmpeg_core::serde_erase::json::from_value(two).unwrap();
+        let two: DesignHoleConstruction = json::from_value(two).unwrap();
         assert_eq!(entry_points(&two), None);
         // Another point-data rule never takes its position from the plane.
-        let mut other = cadmpeg_core::serde_erase::json::to_value(plane_located(
+        let mut other = json::to_value(plane_located(
             B,
             [0.0, 0.0, 2.0],
             [1.0, 0.0, 0.0],
             [0.0, 1.0, 0.0],
         ))
         .unwrap();
-        other["locations"][0]["reference_type"] = serde_json::json!(12);
-        let other: DesignHoleConstruction =
-            cadmpeg_core::serde_erase::json::from_value(other).unwrap();
+        other["locations"][0]["reference_type"] = cadmpeg_core::json!(12);
+        let other: DesignHoleConstruction = json::from_value(other).unwrap();
         assert_eq!(entry_points(&other), None);
     }
 
     #[test]
     fn a_location_plane_round_trips() {
         let located = plane_located(B, [0.0, 0.0, 2.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
-        let value = cadmpeg_core::serde_erase::json::to_value(&located).unwrap();
+        let value = json::to_value(&located).unwrap();
         assert_eq!(
             value["locations"][0]["plane"]["origin"],
-            serde_json::json!([0.0, 0.0, 2.0])
+            cadmpeg_core::json!([0.0, 0.0, 2.0])
         );
-        let decoded: DesignHoleConstruction =
-            cadmpeg_core::serde_erase::json::from_value(value).unwrap();
+        let decoded: DesignHoleConstruction = json::from_value(value).unwrap();
         assert_eq!(decoded, located);
     }
 
@@ -1038,17 +1008,16 @@ mod tests {
     #[test]
     fn hole_locations_round_trip_and_stay_absent_when_empty() {
         let located = carrier(19, A, &[(17, A)]);
-        let value = cadmpeg_core::serde_erase::json::to_value(&located).unwrap();
+        let value = json::to_value(&located).unwrap();
         assert_eq!(
             value["locations"],
-            serde_json::json!([{
+            cadmpeg_core::json!([{
                 "record_index": 0, "position": A, "position_offset": 0, "reference_type": 17
             }])
         );
-        let decoded: DesignHoleConstruction =
-            cadmpeg_core::serde_erase::json::from_value(value).unwrap();
+        let decoded: DesignHoleConstruction = json::from_value(value).unwrap();
         assert_eq!(decoded, located);
-        let bare = cadmpeg_core::serde_erase::json::to_value(carrier(19, A, &[])).unwrap();
+        let bare = json::to_value(carrier(19, A, &[])).unwrap();
         assert!(bare.get("locations").is_none());
     }
 
@@ -1060,7 +1029,7 @@ mod tests {
             construction: &'a DesignHoleConstruction,
         }
 
-        let construction = serde_json::json!({
+        let construction = cadmpeg_core::json!({
             "point_record_index": 1, "point_record_byte_offset": 2,
             "position": [0.0, 1.0, 2.0], "position_offset": 3,
             "direction": [0.0, 0.0, 1.0], "direction_offset": 4,
@@ -1069,15 +1038,14 @@ mod tests {
             "input_record_indices": [8], "input_record_offsets": [9]
         });
         let admitted: DesignHoleConstruction =
-            cadmpeg_core::serde_erase::json::from_value(construction.clone())
-                .expect("valid fixture");
+            json::from_value(construction.clone()).expect("valid fixture");
         let row = Row {
             id: "f3d:design:hole#1",
             construction: &admitted,
         };
         assert_native_limit(
             &row,
-            serde_json::json!({"id": row.id, "construction": construction}),
+            cadmpeg_core::json!({"id": row.id, "construction": construction}),
         );
     }
 
@@ -1089,7 +1057,7 @@ mod tests {
             selection: &'a DesignHoleFaceSelection,
         }
 
-        let selection = serde_json::json!({
+        let selection = cadmpeg_core::json!({
             "record_index": 1, "byte_offset": 2, "class_tag": "451",
             "asset_id": "11111111-1111-1111-1111-111111111111",
             "asset_id_offset": 3,
@@ -1100,14 +1068,14 @@ mod tests {
             "next_record_index": 9, "next_byte_offset": 10
         });
         let admitted: DesignHoleFaceSelection =
-            cadmpeg_core::serde_erase::json::from_value(selection.clone()).expect("valid fixture");
+            json::from_value(selection.clone()).expect("valid fixture");
         let row = Row {
             id: "f3d:design:hole-selection#1",
             selection: &admitted,
         };
         assert_native_limit(
             &row,
-            serde_json::json!({"id": row.id, "selection": selection}),
+            cadmpeg_core::json!({"id": row.id, "selection": selection}),
         );
     }
 }

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Thin sketch projection failures preserve bundle history.
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions, Decoded};
-use serde_json::json;
 
 use super::projection::stored_thin;
 use crate::reader::id;
@@ -28,13 +29,13 @@ fn imported_sketches(
                 "u_axis":{"x":1.0,"y":0.0,"z":0.0}}})
         };
         decoded.ir.model.sketches.push(
-            cadmpeg_core::serde_erase::json::from_value(json!({
+            json::from_value(json!({
                 "id":id("sketch",name),"placement":placement,"profiles":[]
             }))
             .unwrap(),
         );
         decoded.ir.model.features.push(
-            cadmpeg_core::serde_erase::json::from_value(json!({
+            json::from_value(json!({
                 "id":id("feature",name),"ordinal":ordinal + 10,"dependencies":[],
                 "source_properties":{},"source_content":[],"outputs":[],
                 "definition":{"kind":"operation","value":{"kind":"sketch","value":{
@@ -49,7 +50,7 @@ fn imported_sketches(
             json!({"kind":"point","position":{"u":0.0,"v":0.0}})
         };
         decoded.ir.model.sketch_entities.push(
-            cadmpeg_core::serde_erase::json::from_value(json!({
+            json::from_value(json!({
                 "id":id("entity",name),"sketch":id("sketch",name),
                 "endpoint_refs":[],"construction":false,"geometry":geometry
             }))

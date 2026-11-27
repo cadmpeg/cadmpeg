@@ -115,7 +115,7 @@ fn the_cadir_writer_keeps_a_scope_that_holds_an_expression_past_its_bound() {
     let before = errors(&ir);
 
     let plan = CadirEncoder
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .expect("an expression past the bound does not refuse the write");
     let unwritable = plan
         .report()

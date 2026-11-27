@@ -3,6 +3,7 @@
 
 use crate::features::selections::{BodyMember, BodyMembers, BodySelection};
 use crate::ids::{BodyId, HistoricalBodyId};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn ordered_members_reject_empty_sets_and_duplicates() {
@@ -16,7 +17,7 @@ fn ordered_members_reject_empty_sets_and_duplicates() {
         let json_rows = bodies
             .iter()
             .zip(&native)
-            .map(|(body, native)| serde_json::json!({"body": body, "native": native}))
+            .map(|(body, native)| cadmpeg_core::json!({"body": body, "native": native}))
             .collect::<Vec<_>>();
         let rows = bodies
             .into_iter()
@@ -30,12 +31,7 @@ fn ordered_members_reject_empty_sets_and_duplicates() {
             })
             .collect::<Vec<_>>();
         assert!(BodyMembers::try_from_rows(rows).is_err());
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<BodyMembers<BodyId>>(serde_json::json!(
-                json_rows
-            ))
-            .is_err()
-        );
+        assert!(json::from_value::<BodyMembers<BodyId>>(cadmpeg_core::json!(json_rows)).is_err());
     }
 }
 
@@ -89,21 +85,21 @@ fn historical_body_members_refuse_the_deleted_parallel_arrays() {
             .unwrap(),
         members,
     };
-    let wire = cadmpeg_core::serde_erase::json::to_value(&selection).unwrap();
+    let wire = json::to_value(&selection).unwrap();
     assert!(wire["value"].get("bodies").is_none());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<BodySelection>(wire.clone()).unwrap(),
+        json::from_value::<BodySelection>(wire.clone()).unwrap(),
         selection
     );
 
     let mut restated = wire;
     let value = restated["value"].as_object_mut().unwrap();
-    value.insert("bodies".into(), serde_json::json!(["b", "a"]));
+    value.insert("bodies".into(), cadmpeg_core::json!(["b", "a"]));
     value.insert(
         "native".into(),
-        serde_json::json!(["native-first", "native-second"]),
+        cadmpeg_core::json!(["native-first", "native-second"]),
     );
-    let error = cadmpeg_core::serde_erase::json::from_value::<BodySelection>(restated)
+    let error = json::from_value::<BodySelection>(restated)
         .unwrap_err()
         .to_string();
     assert!(error.contains("unknown field `bodies`"), "{error}");
@@ -130,12 +126,12 @@ fn generated_body_members_keep_one_native_per_row() {
     let selection = BodySelection::GeneratedSet {
         members: BodyMembers::try_from_rows(vec![row(&first, "a"), row(&second, "b")]).unwrap(),
     };
-    let wire = cadmpeg_core::serde_erase::json::to_value(&selection).unwrap();
+    let wire = json::to_value(&selection).unwrap();
     assert_eq!(wire["kind"], "generated_set");
     assert_eq!(wire["value"]["members"][1]["body"]["local_id"], "2");
     assert_eq!(wire["value"]["members"][1]["native"], "b");
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<BodySelection>(wire.clone()).unwrap(),
+        json::from_value::<BodySelection>(wire.clone()).unwrap(),
         selection
     );
     assert!(crate::features::SewBodySelection::try_from(selection).is_ok());
@@ -144,8 +140,8 @@ fn generated_body_members_keep_one_native_per_row() {
     restated["value"]
         .as_object_mut()
         .unwrap()
-        .insert("native".into(), serde_json::json!("a"));
-    let error = cadmpeg_core::serde_erase::json::from_value::<BodySelection>(restated)
+        .insert("native".into(), cadmpeg_core::json!("a"));
+    let error = json::from_value::<BodySelection>(restated)
         .unwrap_err()
         .to_string();
     assert!(error.contains("unknown field `native`"), "{error}");

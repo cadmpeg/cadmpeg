@@ -192,6 +192,7 @@ mod tests {
         FeatureOperationRecord, OperationRecordSpan, OperationRecordWire,
         OPERATION_RECORD_INTO_WIRE_COUNT,
     };
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn operation_record_wire_preserves_optional_identity_and_exact_span() {
@@ -200,14 +201,10 @@ mod tests {
                 r#"{{"id":"record","operation_label":"label","ordinal":0,"byte_len":70,"sha256":"e3435e1ec46c3583cddf3562de1ac4b15f5cf950be3f42d3dd273d6f5b756b95","payload_byte_len":40,"payload_sha256":"47ac2ba87d3f6c174479809b0a1ea8f32a654ec0044301278e6c822375d33e75"{identity},"payload_source_offset":120,"source_offset":90}}"#
             );
             let record: FeatureOperationRecord = serde_json::from_str(&wire).unwrap();
+            assert_eq!(json::to_string(&record).unwrap(), wire);
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_string(&record).unwrap(),
-                wire
-            );
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
-                cadmpeg_core::serde_erase::json::to_vec(&OperationRecordWire::from(record.clone()))
-                    .unwrap()
+                json::to_vec(&record).unwrap(),
+                json::to_vec(&OperationRecordWire::from(record.clone())).unwrap()
             );
             for (field, value) in [
                 ("byte_len", 80),
@@ -216,20 +213,18 @@ mod tests {
                 ("source_offset", 121),
             ] {
                 let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
-                invalid[field] = serde_json::json!(value);
-                assert!(
-                    cadmpeg_core::serde_erase::json::from_value::<FeatureOperationRecord>(invalid)
-                        .unwrap_err()
-                        .to_string()
-                        .contains(field)
-                );
+                invalid[field] = cadmpeg_core::json!(value);
+                assert!(json::from_value::<FeatureOperationRecord>(invalid)
+                    .unwrap_err()
+                    .to_string()
+                    .contains(field));
             }
         }
     }
 
     #[test]
     fn operation_record_native_limit_refuses_before_owned_wire_conversion() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "nx:feature-history:operation-record#0", "operation_label": "label", "ordinal": 0,
             "byte_len": 70,
             "sha256": "e3435e1ec46c3583cddf3562de1ac4b15f5cf950be3f42d3dd273d6f5b756b95",
@@ -237,8 +232,7 @@ mod tests {
             "payload_sha256": "47ac2ba87d3f6c174479809b0a1ea8f32a654ec0044301278e6c822375d33e75",
             "payload_source_offset": 120, "source_offset": 90
         });
-        let record: FeatureOperationRecord =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        let record: FeatureOperationRecord = json::from_value(wire.clone()).unwrap();
         OPERATION_RECORD_INTO_WIRE_COUNT.with(|count| count.set(0));
         cadmpeg_test_support::native_serialization::assert_native_limit(&record, wire);
         OPERATION_RECORD_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
@@ -249,7 +243,7 @@ mod tests {
         let bytes = crate::test_support::move_face::core(2);
         let length = bytes.len();
         let digest = cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes);
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "nx:feature-history:operation-record#0", "operation_label": "label", "ordinal": 0,
             "byte_len": length + 30,
             "sha256": "e3435e1ec46c3583cddf3562de1ac4b15f5cf950be3f42d3dd273d6f5b756b95",
@@ -257,31 +251,23 @@ mod tests {
             "core": {"kind": "move_face", "bytes": cadmpeg_ir::native::bytes::NativeBytes::from(bytes)},
             "payload_source_offset": 120, "source_offset": 90
         });
-        let record: FeatureOperationRecord =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&record).unwrap(),
-            wire
-        );
+        let record: FeatureOperationRecord = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(&record).unwrap(), wire);
         cadmpeg_test_support::native_serialization::assert_native_limit(&record, wire.clone());
         let mut changed = wire.clone();
         changed["payload_sha256"] =
-            serde_json::json!(cadmpeg_ir::hash::digest::Sha256Digest::digest(b"unrelated"));
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<FeatureOperationRecord>(changed)
-                .unwrap_err()
-                .to_string()
-                .contains("payload_sha256")
-        );
+            cadmpeg_core::json!(cadmpeg_ir::hash::digest::Sha256Digest::digest(b"unrelated"));
+        assert!(json::from_value::<FeatureOperationRecord>(changed)
+            .unwrap_err()
+            .to_string()
+            .contains("payload_sha256"));
         let mut changed = wire;
-        changed["payload_byte_len"] = serde_json::json!(length + 1);
-        changed["byte_len"] = serde_json::json!(length + 31);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<FeatureOperationRecord>(changed)
-                .unwrap_err()
-                .to_string()
-                .contains("lengths disagree")
-        );
+        changed["payload_byte_len"] = cadmpeg_core::json!(length + 1);
+        changed["byte_len"] = cadmpeg_core::json!(length + 31);
+        assert!(json::from_value::<FeatureOperationRecord>(changed)
+            .unwrap_err()
+            .to_string()
+            .contains("lengths disagree"));
     }
 
     #[test]
@@ -290,7 +276,7 @@ mod tests {
 
         let bytes = crate::test_support::move_face::core(2);
         let length = bytes.len();
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "nx:feature-history:operation-record#0", "operation_label": "label", "ordinal": 0,
             "byte_len": length + 30,
             "sha256": "e3435e1ec46c3583cddf3562de1ac4b15f5cf950be3f42d3dd273d6f5b756b95",
@@ -315,13 +301,15 @@ mod tests {
             for (field, value) in [
                 (
                     "core",
-                    serde_json::json!({"kind": "move_face", "bytes": "00"}),
+                    cadmpeg_core::json!({"kind": "move_face", "bytes": "00"}),
                 ),
                 (
                     "payload_sha256",
-                    serde_json::json!(cadmpeg_ir::hash::digest::Sha256Digest::digest(b"unrelated")),
+                    cadmpeg_core::json!(cadmpeg_ir::hash::digest::Sha256Digest::digest(
+                        b"unrelated"
+                    )),
                 ),
-                ("byte_len", serde_json::json!(length + 31)),
+                ("byte_len", cadmpeg_core::json!(length + 31)),
             ] {
                 let mut bad = wire.clone();
                 bad[field] = value;

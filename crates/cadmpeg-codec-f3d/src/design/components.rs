@@ -2500,6 +2500,7 @@ mod tests {
         },
         scope::DesignParameterScope,
     };
+    use cadmpeg_core::serde_erase::json;
 
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -2594,7 +2595,7 @@ mod tests {
     }
 
     fn binding(offset: u64, entity_suffix: u64, body: &str) -> DesignBodyBinding {
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": format!("{STREAM}:design-body-binding#{offset}"),
             "stream": "Design/BulkStream.dat",
             "pair_count": 1,

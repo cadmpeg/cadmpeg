@@ -3,6 +3,7 @@
 
 use crate::test_support::test_b2::b2_adjacent_face_counted_owner_stream;
 use crate::wire::records::{consolidated_records, consolidated_records_in_range_sources};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn compact_face_double_three_counted_owner_survives_native_wire_roundtrip() {
@@ -19,12 +20,10 @@ fn compact_face_double_three_counted_owner_survives_native_wire_roundtrip() {
     let face = packet.face_node.as_ref().expect("face relation");
     assert_eq!(face.terminal, [0x03, 0x03]);
     assert_eq!(face.target.checked_add(1), packet.payload.final_reference());
-    let wire = cadmpeg_core::serde_erase::json::to_value(packet).expect("owner wire");
+    let wire = json::to_value(packet).expect("owner wire");
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(
-            wire
-        )
-        .expect("valid owner wire"),
+        json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(wire)
+            .expect("valid owner wire"),
         *packet
     );
 }
@@ -49,13 +48,11 @@ fn owned_child_face_target_survives_native_projection_and_wire_roundtrip() {
     assert_eq!(face.frame.pos, 0);
     assert_eq!(face.target, 1);
     assert_eq!(packet.frame.pos, 23);
-    let wire = cadmpeg_core::serde_erase::json::to_value(packet).expect("owner wire");
+    let wire = json::to_value(packet).expect("owner wire");
     assert_eq!(wire["face_node"]["target_encoding"], "owned_child");
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(
-            wire
-        )
-        .expect("valid owner wire"),
+        json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(wire)
+            .expect("valid owner wire"),
         *packet
     );
 
@@ -67,12 +64,10 @@ fn owned_child_face_target_survives_native_projection_and_wire_roundtrip() {
         panic!("retain the owner packet");
     };
     assert!(packet.face_node.is_none());
-    let wire = cadmpeg_core::serde_erase::json::to_value(packet).expect("owner wire");
+    let wire = json::to_value(packet).expect("owner wire");
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(
-            wire
-        )
-        .expect("owner wire without an unsupported face link"),
+        json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(wire)
+            .expect("owner wire without an unsupported face link"),
         *packet
     );
 }
@@ -111,12 +106,10 @@ fn owner_incidence_preserves_reversed_physical_extents() {
     assert_eq!(node.source_offset, 0);
     assert_eq!(node.frame.payload.as_slice(), &stream[5..split]);
     assert_eq!(packet.frame.payload.as_slice(), &stream[split + 5..]);
-    let wire = cadmpeg_core::serde_erase::json::to_value(packet).expect("owner wire");
+    let wire = json::to_value(packet).expect("owner wire");
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(
-            wire
-        )
-        .expect("source-aware wire"),
+        json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(wire)
+            .expect("source-aware wire"),
         *packet
     );
 }
@@ -155,7 +148,7 @@ fn owner_wire_refuses_frame_field_and_logical_incidence_mutations() {
     let bytes = b2_adjacent_face_counted_owner_stream();
     let native = crate::native::CatiaNative::decode(&bytes);
     let packet = &native.consolidated_owner_packets[0];
-    let valid = cadmpeg_core::serde_erase::json::to_value(packet).expect("owner wire");
+    let valid = json::to_value(packet).expect("owner wire");
     for field in [
         "value",
         "encoding",
@@ -167,22 +160,19 @@ fn owner_wire_refuses_frame_field_and_logical_incidence_mutations() {
     ] {
         let mut invalid = valid.clone();
         match field {
-            "value" => invalid["payload"]["references"][0] = serde_json::json!(0),
+            "value" => invalid["payload"]["references"][0] = cadmpeg_core::json!(0),
             "encoding" => {
-                invalid["payload"]["reference_encodings"][0] = serde_json::json!("owned_child");
+                invalid["payload"]["reference_encodings"][0] = cadmpeg_core::json!("owned_child");
             }
-            "tail" => invalid["payload"]["tail"] = serde_json::json!("01"),
-            "node-target" => invalid["face_node"]["target"] = serde_json::json!(0),
-            "node-offset" => invalid["face_node"]["source_offset"] = serde_json::json!(1),
-            "owner-offset" => invalid["source_offset"] = serde_json::json!(0),
-            "frame" => invalid["frame"]["payload"] = serde_json::json!(""),
+            "tail" => invalid["payload"]["tail"] = cadmpeg_core::json!("01"),
+            "node-target" => invalid["face_node"]["target"] = cadmpeg_core::json!(0),
+            "node-offset" => invalid["face_node"]["source_offset"] = cadmpeg_core::json!(1),
+            "owner-offset" => invalid["source_offset"] = cadmpeg_core::json!(0),
+            "frame" => invalid["frame"]["payload"] = cadmpeg_core::json!(""),
             _ => unreachable!("known mutation"),
         }
         assert!(
-            cadmpeg_core::serde_erase::json::from_value::<
-                crate::native::CatiaConsolidatedOwnerPacket,
-            >(invalid)
-            .is_err(),
+            json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(invalid).is_err(),
             "accepted {field}"
         );
     }
@@ -245,28 +235,20 @@ fn counted_numeric_bounds_round_trip_and_reject_changed_projection() {
             .expect("small owner frame");
     let native = crate::native::CatiaNative::decode(&bytes);
     let packet = &native.consolidated_owner_packets[0];
-    let wire = cadmpeg_core::serde_erase::json::to_value(packet).expect("owner wire");
+    let wire = json::to_value(packet).expect("owner wire");
     assert!(wire["payload"]["numeric_bounds"].is_object());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(
-            wire.clone()
-        )
-        .expect("valid wire"),
+        json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(wire.clone())
+            .expect("valid wire"),
         *packet
     );
     let mut invalid = wire.clone();
-    invalid["payload"]["numeric_bounds"]["upper"][0] = serde_json::json!(1.0);
-    assert!(cadmpeg_core::serde_erase::json::from_value::<
-        crate::native::CatiaConsolidatedOwnerPacket,
-    >(invalid)
-    .is_err());
+    invalid["payload"]["numeric_bounds"]["upper"][0] = cadmpeg_core::json!(1.0);
+    assert!(json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(invalid).is_err());
     let mut absent = wire;
     absent["payload"]
         .as_object_mut()
         .expect("payload object")
         .remove("numeric_bounds");
-    assert!(cadmpeg_core::serde_erase::json::from_value::<
-        crate::native::CatiaConsolidatedOwnerPacket,
-    >(absent)
-    .is_err());
+    assert!(json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(absent).is_err());
 }

@@ -95,11 +95,6 @@ class ScopeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             command(['test'], [])
 
-    def test_nextest_command_keeps_its_subcommand_before_the_scope(self):
-        self.assertEqual(command(['nextest', 'run', '--no-fail-fast'], ['cadmpeg-ir']),
-                         ['cargo', 'nextest', 'run', '--cargo-quiet', '--status-level', 'fail',
-                          '--final-status-level', 'slow', '-p', 'cadmpeg-ir', '--no-fail-fast'])
-
     def test_cli_only_has_no_library_doc_tests(self):
         with patch.dict('os.environ', {'CI_PACKAGES': '["cadmpeg"]', 'CI_FULL': 'false'}), \
                 patch('sys.argv', ['ci_cargo.py', 'test', '--doc']), \

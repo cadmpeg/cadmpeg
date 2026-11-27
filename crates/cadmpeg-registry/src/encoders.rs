@@ -23,6 +23,7 @@ pub fn build_encoder(format: Format) -> Box<dyn Encoder> {
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::DecodeDepth;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::codec::write::target::TargetRequest;
     use cadmpeg_ir::codec::FormatId;
 
@@ -104,8 +105,7 @@ mod tests {
             assert_eq!(refusal.format(), encoder.id().as_str());
             assert_eq!(
                 ({
-                    let wire = cadmpeg_core::serde_erase::json::to_value(refusal)
-                        .expect("serialize refusal");
+                    let wire = json::to_value(refusal).expect("serialize refusal");
                     wire["refusal"]
                         .get("requested")
                         .or_else(|| wire["refusal"].get("source"))

@@ -2,6 +2,7 @@
 
 use crate::geometry::nurbs::{BsplineSurface, NurbsError};
 use crate::math::Point3;
+use cadmpeg_core::serde_erase::json;
 
 fn points() -> Vec<Vec<Point3>> {
     vec![
@@ -52,7 +53,7 @@ fn bspline_constructor_keeps_poles_moves_knots_and_preserves_wire() {
             .collect::<Vec<_>>(),
         points()
     );
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "u_degree": 1,
         "v_degree": 1,
         "u_knots": [0.0, 0.0, 1.0, 1.0],
@@ -62,13 +63,9 @@ fn bspline_constructor_keeps_poles_moves_knots_and_preserves_wire() {
             [{"x": 3.0, "y": 0.0, "z": 0.0}, {"x": 4.0, "y": 0.0, "z": 0.0}]
         ]
     });
+    assert_eq!(json::to_value(&surface).expect("wire"), wire);
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&surface).expect("wire"),
-        wire
-    );
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<BsplineSurface>(wire)
-            .expect("context-free reconstruction"),
+        json::from_value::<BsplineSurface>(wire).expect("context-free reconstruction"),
         surface
     );
 }

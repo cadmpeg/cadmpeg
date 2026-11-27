@@ -634,7 +634,7 @@ impl JsonSchema for FormConstruction {
     }
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         let mut schema = FormWire::json_schema(generator);
-        schema.insert("allOf".into(), serde_json::json!([{
+        schema.insert("allOf".into(), cadmpeg_core::json!([{
             "if": {"required":["cages"], "properties":{"cages":{"properties":{"kind":{"const":"complete"}}}}},
             "then": {"properties":{"cages":{"properties":{"value":{"uniqueItems":true}}},"cage_inputs":{"properties":{"membership":{"properties":{"kind":{"const":"complete"}}}}}}},
             "else": {"not":{"required":["cage_inputs"]}, "properties":{"cages":{"properties":{"value":{"properties":{"membership":{"properties":{"kind":{"const":"partial"}}}}}}}}}
@@ -1123,7 +1123,7 @@ fn form_reference_runs_schema(generator: &mut schemars::SchemaGenerator) -> sche
     schema.insert("items".into(), run.into());
     schema.insert(
         "anyOf".into(),
-        serde_json::json!([{"maxItems": 0}, {"minItems": 2}]),
+        cadmpeg_core::json!([{"maxItems": 0}, {"minItems": 2}]),
     );
     schema
 }

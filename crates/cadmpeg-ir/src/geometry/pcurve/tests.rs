@@ -7,6 +7,7 @@ use crate::{
     math::Point2,
     test_support::nurbs::pcurve,
 };
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn admitted_pcurve_parts_keep_rational_pole_storage() {
@@ -340,10 +341,10 @@ fn asm_inline_pcurve_metadata_lives_under_its_own_nested_key() {
         },
         native_ref: None,
     };
-    let value = cadmpeg_core::serde_erase::json::to_value(&pcurve).unwrap();
+    let value = json::to_value(&pcurve).unwrap();
     assert_eq!(
         value,
-        serde_json::json!({
+        cadmpeg_core::json!({
             "id": "test:model:pcurve#inline",
             "geometry": {
                 "kind": "line",
@@ -361,27 +362,24 @@ fn asm_inline_pcurve_metadata_lives_under_its_own_nested_key() {
         })
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<crate::geometry::pcurve::Pcurve>(value)
-            .unwrap(),
+        json::from_value::<crate::geometry::pcurve::Pcurve>(value).unwrap(),
         pcurve
     );
 }
 
 #[test]
 fn incomplete_asm_inline_pcurve_metadata_is_rejected() {
-    let result = cadmpeg_core::serde_erase::json::from_value::<crate::geometry::pcurve::Pcurve>(
-        serde_json::json!({
-            "id": "test:model:pcurve#incomplete",
-            "geometry": {
-                "kind": "line",
-                "origin": {"u": 1.0, "v": 2.0},
-                "direction": {"u": 3.0, "v": 4.0}
-            },
-            "wrapper_reversed": false,
-            "native_tail_flags": [true, false, true, false],
-            "uv_offset": [-1.0, 2.0]
-        }),
-    );
+    let result = json::from_value::<crate::geometry::pcurve::Pcurve>(cadmpeg_core::json!({
+        "id": "test:model:pcurve#incomplete",
+        "geometry": {
+            "kind": "line",
+            "origin": {"u": 1.0, "v": 2.0},
+            "direction": {"u": 3.0, "v": 4.0}
+        },
+        "wrapper_reversed": false,
+        "native_tail_flags": [true, false, true, false],
+        "uv_offset": [-1.0, 2.0]
+    }));
     assert!(result.is_err());
 }
 
@@ -403,39 +401,31 @@ fn line_pcurve_direction_uses_the_shared_nonzero_vector_contract() {
     for u in [0.0, 1e-300, below] {
         assert!(LinePcurve::try_new(origin, Point2::new(u, 0.0)).is_err());
         let wire =
-            serde_json::json!({"origin": {"u": 0.0, "v": 0.0}, "direction": {"u": u, "v": 0.0}});
-        assert!(cadmpeg_core::serde_erase::json::from_value::<LinePcurve>(wire).is_err());
+            cadmpeg_core::json!({"origin": {"u": 0.0, "v": 0.0}, "direction": {"u": u, "v": 0.0}});
+        assert!(json::from_value::<LinePcurve>(wire).is_err());
     }
     let wire =
-        serde_json::json!({"origin": {"u": 0.0, "v": 0.0}, "direction": {"u": above, "v": 0.0}});
+        cadmpeg_core::json!({"origin": {"u": 0.0, "v": 0.0}, "direction": {"u": above, "v": 0.0}});
     let line = LinePcurve::try_new(origin, Point2::new(above, 0.0)).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(line).unwrap(),
-        wire
-    );
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<LinePcurve>(wire).unwrap(),
-        line
-    );
+    assert_eq!(json::to_value(line).unwrap(), wire);
+    assert_eq!(json::from_value::<LinePcurve>(wire).unwrap(), line);
 }
 
 /// One-pcurve document built on the unit cube, used to drive the pcurve
 /// carriers over the same route a checked-in document takes.
 fn document_with_pcurve(geometry: &serde_json::Value) -> serde_json::Value {
-    let mut document =
-        cadmpeg_core::serde_erase::json::to_value(unit_cube().expect("valid unit cube fixture"))
-            .unwrap();
-    document["geometry"]["pcurves"] = serde_json::json!([{
+    let mut document = json::to_value(unit_cube().expect("valid unit cube fixture")).unwrap();
+    document["geometry"]["pcurves"] = cadmpeg_core::json!([{
         "id": "synthetic:cube:pcurve#0",
         "geometry": geometry.clone(),
-        "metadata": cadmpeg_core::serde_erase::json::to_value(super::PcurveMetadata::default()).unwrap(),
+        "metadata": json::to_value(super::PcurveMetadata::default()).unwrap(),
     }]);
     document
 }
 
 #[test]
 fn every_pcurve_carrier_refuses_an_unknown_key_on_the_document_route() {
-    let line = serde_json::json!({
+    let line = cadmpeg_core::json!({
         "kind": "line",
         "origin": {"u": 0.0, "v": 0.0},
         "direction": {"u": 1.0, "v": 0.0},
@@ -444,7 +434,7 @@ fn every_pcurve_carrier_refuses_an_unknown_key_on_the_document_route() {
         ("line", line.clone()),
         (
             "polar_harmonic",
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "polar_harmonic",
                 "radial_center": {"u": 0.0, "v": 0.0},
                 "radial_cos": {"u": 1.0, "v": 0.0},
@@ -456,7 +446,7 @@ fn every_pcurve_carrier_refuses_an_unknown_key_on_the_document_route() {
         ),
         (
             "spherical_great_circle",
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "spherical_great_circle",
                 "azimuth_origin": 0.0,
                 "azimuth_rate": 1.0,
@@ -466,7 +456,7 @@ fn every_pcurve_carrier_refuses_an_unknown_key_on_the_document_route() {
         ),
         (
             "circle",
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "circle",
                 "center": {"u": 0.0, "v": 0.0},
                 "x_axis": {"u": 1.0, "v": 0.0},
@@ -476,7 +466,7 @@ fn every_pcurve_carrier_refuses_an_unknown_key_on_the_document_route() {
         ),
         (
             "ellipse",
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "ellipse",
                 "center": {"u": 0.0, "v": 0.0},
                 "x_axis": {"u": 1.0, "v": 0.0},
@@ -487,7 +477,7 @@ fn every_pcurve_carrier_refuses_an_unknown_key_on_the_document_route() {
         ),
         (
             "harmonic",
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "harmonic",
                 "center": {"u": 0.0, "v": 0.0},
                 "cosine": {"u": 1.0, "v": 0.0},
@@ -496,7 +486,7 @@ fn every_pcurve_carrier_refuses_an_unknown_key_on_the_document_route() {
         ),
         (
             "parabola",
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "parabola",
                 "vertex": {"u": 0.0, "v": 0.0},
                 "x_axis": {"u": 1.0, "v": 0.0},
@@ -506,7 +496,7 @@ fn every_pcurve_carrier_refuses_an_unknown_key_on_the_document_route() {
         ),
         (
             "hyperbola",
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "hyperbola",
                 "center": {"u": 0.0, "v": 0.0},
                 "x_axis": {"u": 1.0, "v": 0.0},
@@ -517,7 +507,7 @@ fn every_pcurve_carrier_refuses_an_unknown_key_on_the_document_route() {
         ),
         (
             "hyperbolic",
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "hyperbolic",
                 "center": {"u": 0.0, "v": 0.0},
                 "cosine": {"u": 1.0, "v": 0.0},
@@ -526,7 +516,7 @@ fn every_pcurve_carrier_refuses_an_unknown_key_on_the_document_route() {
         ),
         (
             "trimmed",
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "trimmed",
                 "parameter_range": [0.0, 1.0],
                 "same_sense": true,
@@ -535,7 +525,7 @@ fn every_pcurve_carrier_refuses_an_unknown_key_on_the_document_route() {
         ),
         (
             "offset",
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "offset",
                 "distance": 1.0,
                 "basis": line,
@@ -544,13 +534,13 @@ fn every_pcurve_carrier_refuses_an_unknown_key_on_the_document_route() {
     ];
     for (kind, geometry) in cases {
         let document = document_with_pcurve(&geometry);
-        cadmpeg_core::serde_erase::json::from_value::<crate::CadIr>(document)
+        json::from_value::<crate::CadIr>(document)
             .unwrap_or_else(|error| panic!("{kind} is a legal carrier: {error}"));
 
         let mut stray = geometry.as_object().unwrap().clone();
-        stray.insert("zz_bogus".into(), serde_json::json!(1));
+        stray.insert("zz_bogus".into(), cadmpeg_core::json!(1));
         let document = document_with_pcurve(&serde_json::Value::Object(stray));
-        let error = cadmpeg_core::serde_erase::json::from_value::<crate::CadIr>(document)
+        let error = json::from_value::<crate::CadIr>(document)
             .unwrap_err()
             .to_string();
         assert!(error.contains("zz_bogus"), "{kind}: {error}");

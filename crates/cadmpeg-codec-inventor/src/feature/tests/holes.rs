@@ -15,6 +15,7 @@ use crate::pmdc::{PmDcReferenceList, PmDcU32List};
 use crate::record_identity::Located;
 use crate::test_support::test_fixtures::content;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::extents::LinearTermination;
 use cadmpeg_ir::features::holes::{HoleKind, HolePlacement};
@@ -434,8 +435,7 @@ fn hole_extents_keep_their_termination_kind() {
                 panic!("hole extent");
             };
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(extent).expect("termination JSON")
-                    ["kind"],
+                json::to_value(extent).expect("termination JSON")["kind"],
                 expected
             );
             if let LinearTermination::Blind { length } = extent {
