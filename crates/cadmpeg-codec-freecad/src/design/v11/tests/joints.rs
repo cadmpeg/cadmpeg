@@ -938,36 +938,62 @@ fn a_joint_flag_of_another_type_is_charged() {
         r#"<Property name="Suppressed" type="App::PropertyBool"><Bool value="true"/></Property>"#;
     let count = r#"<Object name="Hinge"><Properties Count="14">"#;
     assert!(ASSEMBLY.contains(suppressed) && ASSEMBLY.contains(count));
-    let document = ASSEMBLY
-        .replace(
-            count,
-            r#"<Object name="Hinge"><Properties Count="15">"#,
-        )
-        .replace(
-            suppressed,
-            &format!(
-                r#"{suppressed}<Property name="Activated" type="App::PropertyString"><String value="true"/></Property>"#
-            ),
-        );
-    let decoded = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(&document)),
-            &DecodeOptions {
-                depth: DecodeDepth::Design,
-                ..DecodeOptions::default()
-            },
-        )
-        .unwrap();
-    let (feature, _) = joint_feature(decoded.ir(), "Hinge");
-    assert_eq!(feature.suppressed, Some(Dimension::Literal(true)));
     let unread = crate::loss::FreecadLossCode::FeatureJointFlagUnread.note("");
-    let charged = decoded
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| loss.code == unread.code)
-        .map(|loss| loss.message.as_str())
-        .collect::<Vec<_>>();
-    assert_eq!(charged.len(), 1, "{:?}", decoded.report().losses);
-    assert!(charged[0].contains("Hinge"), "{charged:?}");
+    for (type_name, payload) in [("String", r#"<String value="true"/>"#), ("Bool", "<Bool/>")] {
+        let document = ASSEMBLY
+            .replace(count, r#"<Object name="Hinge"><Properties Count="15">"#)
+            .replace(
+                suppressed,
+                &format!(
+                    r#"{suppressed}<Property name="Activated" type="App::Property{type_name}">{payload}</Property>"#
+                ),
+            );
+        let bytes = archive(&document);
+        for depth in [
+            DecodeDepth::Geometry,
+            DecodeDepth::Design,
+            DecodeDepth::Full,
+        ] {
+            let decoded = FcstdCodec
+                .decode(
+                    &mut Cursor::new(&bytes),
+                    &DecodeOptions {
+                        depth,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .unwrap();
+            let ir = decoded.ir();
+            let legacy = ir
+                .model
+                .assembly_joints
+                .iter()
+                .find(|joint| {
+                    joint
+                        .native_ref
+                        .as_deref()
+                        .is_some_and(|native| native.ends_with("Hinge"))
+                })
+                .unwrap();
+            assert!(legacy.suppressed, "{type_name} {depth}");
+            if depth >= DecodeDepth::Design {
+                let (feature, _) = joint_feature(ir, "Hinge");
+                assert_eq!(feature.suppressed, Some(Dimension::Literal(true)));
+            }
+            let charged = decoded
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code == unread.code)
+                .map(|loss| loss.message.as_str())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                charged.len(),
+                1,
+                "{type_name} {depth}: {:?}",
+                decoded.report().losses
+            );
+            assert!(charged[0].contains("Hinge"), "{charged:?}");
+        }
+    }
 }

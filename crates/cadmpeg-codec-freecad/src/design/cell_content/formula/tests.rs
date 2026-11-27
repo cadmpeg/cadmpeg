@@ -237,6 +237,7 @@ fn a_function_that_raises_is_refused_by_a_comparison() {
     scope.insert("A1", &[quantity(Quantity::LENGTH)]);
     scope.insert("Cell", &[Int, Float]);
     scope.insert("Whole", &[Int]);
+    scope.insert("Flag", &[Boolean]);
     for text in [
         "cos(5 mm) == 1",
         "sqrt(2 mm) != 1",
@@ -248,15 +249,17 @@ fn a_function_that_raises_is_refused_by_a_comparison() {
         "not(None) == 1",
         "hypot(3 mm; 4 °) == 1",
         "pow(16 mm^4; 0.25) == 1",
+        "pow(16 mm; -9) == 1",
         // A property the model does not resolve may hold no number, and a
-        // power of a unit by a `float` the file does not store may raise.
+        // power of a unit by an unstored number may raise.
         "round(Shape) == 1",
         "pow(A1; Cell) == 1",
+        "pow(A1; Whole) == 1",
     ] {
         assert_eq!(kind_in(text, &mut scope), Kind::Unknown, "{text:?}");
     }
-    // A power of a quantity by an `int` the file does not store evaluates.
-    for text in ["cos(30 °) == 1", "pow(A1; Whole) == 1", "not(5 mm) == 1"] {
+    // A Boolean exponent takes zero or one and fits in the unit exponent range.
+    for text in ["cos(30 °) == 1", "pow(A1; Flag) == 1", "not(5 mm) == 1"] {
         assert_eq!(kind_in(text, &mut scope), Kind::Boolean, "{text:?}");
     }
 }
@@ -303,6 +306,7 @@ fn an_aggregate_passes_over_a_value_that_is_no_number() {
         ("sum(Proxy; 2 mm)", LENGTH),
         ("sum(Placement; 2 mm)", LENGTH),
         ("sum(Base; list(1; 2); 2 mm)", LENGTH),
+        ("sum(-Base; 2 mm)", LENGTH),
         ("count(Placement; 2 mm; 3 °)", REAL),
         // An argument of unknown kind, and one that raises.
         ("sum(Shape; 2 mm)", Kind::Unknown),
@@ -326,6 +330,7 @@ fn stddev_of_fewer_than_two_values_raises() {
         ("stddev(2 mm)", Kind::Unknown),
         ("stddev(2 mm; <<a>>)", Kind::Unknown),
         ("stddev(2 mm; 3 mm)", LENGTH),
+        ("stddev(2 mm^4; 3 mm^4) == 1", Kind::Unknown),
     ] {
         assert_eq!(kind_in(text, &mut scope), expected, "{text:?}");
     }

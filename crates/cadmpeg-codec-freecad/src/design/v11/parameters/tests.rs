@@ -10,7 +10,7 @@ use cadmpeg_ir::features::parameters::ParameterValue as LegacyValue;
 use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 
-use crate::test_support::test_archive::{archive, assert_valid_document};
+use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
 
 const CONSTRAINT_BOUND: &[u8] = include_bytes!(concat!(
@@ -454,14 +454,123 @@ fn a_lone_reference_to_a_formula_cell_takes_the_cells_quantity() {
 
 /// Decodes `document` and returns its IR and loss notes.
 fn decode_with_losses(document: &str) -> (CadIr, Vec<cadmpeg_ir::report::loss::LossNote>) {
+    decode_archive_with_losses(&archive(document))
+}
+
+fn decode_archive_with_losses(bytes: &[u8]) -> (CadIr, Vec<cadmpeg_ir::report::loss::LossNote>) {
     let decoded = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(document)),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     assert_valid_document(decoded.ir());
     (decoded.ir().clone(), decoded.report().losses.clone())
+}
+
+#[test]
+fn a_python_property_takes_its_json_class_from_the_named_member() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object name="Sheet" type="Spreadsheet::Sheet"/><Object name="Vars" type="App::VarSet"/></Objects>
+<ObjectData Count="2">
+<Object name="Vars"><Properties Count="5">
+<Property name="Flag" type="App::PropertyPythonObject"><Python file="flag.json" value="0" json="yes"/></Property>
+<Property name="List" type="App::PropertyPythonObject"><Python file="items.json"/></Property>
+<Property name="Integer" type="App::PropertyPythonObject"><Python file="integer.json"/></Property>
+<Property name="Missing" type="App::PropertyPythonObject"><Python file="missing.json"/></Property>
+<Property name="Legacy" type="App::PropertyPythonObject"><Python value="\nfalse" json="yes"/></Property>
+</Properties></Object>
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="6">
+<Cell address="A1" content="=Vars.Flag"/>
+<Cell address="A2" content="=sum(Vars.List; 2 mm)"/>
+<Cell address="A3" content="=cos(Vars.List) == 1"/>
+<Cell address="A4" content="=&lt;&lt;x&gt;&gt; * (Vars.Integer - Vars.Integer)"/>
+<Cell address="A5" content="=Vars.Missing == 1"/>
+<Cell address="A6" content="=Vars.Legacy"/>
+</Cells></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let bytes = archive_entries(&[
+        ("Document.xml", document.as_bytes()),
+        ("flag.json", b"true"),
+        (
+            "items.json",
+            br#"[{"label":"NaN","value":-Infinity},Infinity,NaN]"#,
+        ),
+        (
+            "integer.json",
+            b"99999999999999999999999999999999999999999999999",
+        ),
+    ]);
+    let (ir, losses) = decode_archive_with_losses(&bytes);
+    for (address, expected, assumed) in [
+        ("A1", ValueKind::Boolean, false),
+        ("A2", ValueKind::Quantity(Quantity::LENGTH), false),
+        ("A3", ValueKind::Quantity(Quantity::REAL), true),
+        ("A4", ValueKind::Text, false),
+        ("A5", ValueKind::Quantity(Quantity::REAL), true),
+        ("A6", ValueKind::Boolean, false),
+    ] {
+        let id = format!("fcstd:design:parameter#Sheet:cell:{address}");
+        assert_eq!(parameter(&ir, &id).kind, expected, "{address}");
+        assert_eq!(
+            charged(
+                &losses,
+                crate::loss::FreecadLossCode::ParameterQuantityAssumed,
+                &id
+            ),
+            assumed,
+            "{address}"
+        );
+    }
+}
+
+#[test]
+fn a_formula_reads_typed_values_through_local_links_and_shape_paths() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object name="Sheet" type="Spreadsheet::Sheet"/><Object name="Vars" type="App::VarSet"/><Object name="Stock" type="Part::Feature"/></Objects>
+<ObjectData Count="3">
+<Object name="Vars"><Properties Count="2">
+<Property name="Ref" type="App::PropertyLink"><Link value="Stock"/></Property>
+<Property name="Again" type="App::PropertyXLink"><XLink file="" name="Vars"/></Property>
+</Properties></Object>
+<Object name="Stock"><Properties Count="3">
+<Property name="Width" type="App::PropertyLength"><Float value="12"/></Property>
+<Property name="Shape" type="Part::PropertyPartShape"><Part file="stock.brp"/></Property>
+<Property name="Empty" type="Part::PropertyPartShape"><Part file="empty.brp"/></Property>
+</Properties></Object>
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="6">
+<Cell address="A1" content="=sum(Vars.Again.Ref.Width; 2 mm)"/>
+<Cell address="A2" content="=&lt;&lt;%s&gt;&gt; % Vars.Ref.Width"/>
+<Cell address="A3" content="=str(Stock.Shape.Length)"/>
+<Cell address="A4" content="=str(Stock.Empty.Length)"/>
+<Cell address="A5" content="=round(Vars.Ref.Shape) == 1"/>
+<Cell address="A6" content="=sum(Sheet.cells; 3 mm)"/>
+</Cells></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let shape = b"CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 1\nVe 0.001 1 2 3 0 0 1001000 *\n+1 0 *";
+    let bytes = archive_entries(&[
+        ("Document.xml", document.as_bytes()),
+        ("stock.brp", shape),
+        ("empty.brp", b""),
+    ]);
+    let (ir, losses) = decode_archive_with_losses(&bytes);
+    for (address, expected, assumed) in [
+        ("A1", ValueKind::Quantity(Quantity::LENGTH), false),
+        ("A2", ValueKind::Text, false),
+        ("A3", ValueKind::Text, false),
+        ("A4", ValueKind::Quantity(Quantity::REAL), true),
+        ("A5", ValueKind::Quantity(Quantity::REAL), true),
+        ("A6", ValueKind::Quantity(Quantity::LENGTH), false),
+    ] {
+        let id = format!("fcstd:design:parameter#Sheet:cell:{address}");
+        assert_eq!(parameter(&ir, &id).kind, expected, "{address}");
+        assert_eq!(
+            charged(
+                &losses,
+                crate::loss::FreecadLossCode::ParameterQuantityAssumed,
+                &id
+            ),
+            assumed,
+            "{address}"
+        );
+    }
 }
 
 fn charged(

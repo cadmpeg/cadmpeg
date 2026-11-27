@@ -34,6 +34,10 @@ use crate::design::cell_content::{self, CellContent, CellKind};
 use crate::loss::FreecadLossCode;
 use crate::native::{ObjectRecord, PropertyRecord};
 
+use super::DesignSources;
+
+mod python;
+
 /// The property type of a sketch's constraints, whose values `FreeCAD` stores
 /// in millimetres and radians.
 const CONSTRAINT_LIST: &str = "Sketcher::PropertyConstraintList";
@@ -57,11 +61,11 @@ pub(super) fn project(
     definition: &ProductDefinitionId,
     containers: &BTreeMap<FeatureId, ContainerId>,
     features: &[Feature],
-    objects: &[ObjectRecord],
-    properties: &[PropertyRecord],
+    sources: &DesignSources<'_, '_>,
     losses: &mut Vec<LossNote>,
 ) -> Vec<DesignParameter> {
-    let carriers = properties
+    let carriers = sources
+        .properties
         .iter()
         .map(|property| (property.id.as_str(), property.type_name.as_str()))
         .collect::<HashMap<_, _>>();
@@ -96,7 +100,7 @@ pub(super) fn project(
             .and_then(|property| carriers.get(property).copied())
             == Some(SHEET)
     };
-    let catalog = Catalog::new(&by_id, objects, properties);
+    let catalog = Catalog::new(&by_id, sources);
     let minted = minted
         .iter()
         .map(|parameter| &parameter.id)
@@ -197,14 +201,18 @@ struct Catalog<'a> {
     objects: HashMap<FeatureId, &'a ObjectRecord>,
     /// The feature of each object, by the object's id.
     features: HashMap<&'a str, FeatureId>,
-    /// The type of each property, by its owner's id and its name.
-    types: HashMap<(&'a str, &'a str), &'a str>,
+    /// The property by its owner's id and its name.
+    properties: HashMap<(&'a str, &'a str), &'a PropertyRecord>,
+    /// The local object held by each scalar link with no sub-selection.
+    linked: HashMap<(&'a str, &'a str), &'a ObjectRecord>,
     /// The link properties whose value is a tuple or `None`, by owner's id
     /// and name: an `XLink` that stores a sub-name, and a link that stores no
     /// target.
     refused: HashSet<(&'a str, &'a str)>,
     /// The value of each Python object property, by owner's id and name.
     python: HashMap<(&'a str, &'a str), Value>,
+    /// Whether each admitted shape payload has a root.
+    shapes: HashMap<&'a str, bool>,
     /// Each parameter by its owner and a name a path gives it: a
     /// property's name, `Constraints.<name>`, and a cell's alias and
     /// address. A name that two parameters share names neither.
@@ -217,7 +225,11 @@ struct Catalog<'a> {
 enum Target<'a> {
     /// A parameter, with the value of its property where the property has a
     /// stated type.
-    Parameter(&'a ParameterId, Option<Value>),
+    Parameter {
+        id: &'a ParameterId,
+        typed: Option<Value>,
+        indirect: bool,
+    },
     /// A property that is no parameter, with its value.
     Property(Value),
     /// A property of another document or of a sub-object.
@@ -228,8 +240,7 @@ enum Target<'a> {
 impl<'a> Catalog<'a> {
     fn new(
         parameters: &'a BTreeMap<&'a ParameterId, &'a LegacyParameter>,
-        objects: &'a [ObjectRecord],
-        properties: &'a [PropertyRecord],
+        sources: &DesignSources<'a, '_>,
     ) -> Self {
         let mut catalog = Self {
             parameters,
@@ -237,37 +248,46 @@ impl<'a> Catalog<'a> {
             labels: HashMap::new(),
             objects: HashMap::new(),
             features: HashMap::new(),
-            types: HashMap::new(),
+            properties: HashMap::new(),
+            linked: HashMap::new(),
             refused: HashSet::new(),
             python: HashMap::new(),
+            shapes: sources
+                .shapes
+                .iter()
+                .map(|shape| {
+                    let has_root = crate::brep::Tables::from_payload(shape)
+                        .is_some_and(|tables| !tables.roots.is_empty());
+                    (shape.property.as_str(), has_root)
+                })
+                .collect(),
             named: HashMap::new(),
             cells: HashMap::new(),
         };
-        for object in objects {
+        for object in sources.objects {
             catalog.names.insert(object.name().as_str(), object);
             if let Ok(feature) = crate::design::feature_id(object) {
                 catalog.objects.insert(feature.clone(), object);
                 catalog.features.insert(object.id().as_str(), feature);
             }
         }
-        let ids = objects
+        let ids = sources
+            .objects
             .iter()
             .map(|object| (object.id().as_str(), object))
             .collect::<HashMap<_, _>>();
         let mut holders = HashMap::new();
-        for property in properties {
+        for property in sources.properties {
             holders.insert(property.id.as_str(), property.owner.as_str());
-            catalog.types.insert(
-                (property.owner.as_str(), property.name.as_str()),
-                property.type_name.as_str(),
-            );
+            let held = (property.owner.as_str(), property.name.as_str());
+            catalog.properties.insert(held, property);
             let empty = |tag: &str, key: &str| {
                 property.values().iter().any(|value| {
                     value.tag == tag && value.attributes.get(key).is_some_and(String::is_empty)
                 })
             };
             let refused = match property.type_name.as_str() {
-                "App::PropertyXLink" => {
+                "App::PropertyXLink" | "App::PropertyXLinkHidden" => {
                     empty("XLink", "name")
                         || property.values().iter().any(|value| {
                             value.tag == "XLink"
@@ -282,15 +302,28 @@ impl<'a> Catalog<'a> {
                 _ => false,
             };
             if refused {
-                catalog
-                    .refused
-                    .insert((property.owner.as_str(), property.name.as_str()));
+                catalog.refused.insert(held);
+            } else if matches!(
+                property.type_name.as_str(),
+                "App::PropertyLink"
+                    | "App::PropertyLinkChild"
+                    | "App::PropertyLinkGlobal"
+                    | "App::PropertyLinkHidden"
+                    | "App::PropertyXLink"
+                    | "App::PropertyXLinkHidden"
+            ) {
+                if let [Some(link)] = property.links() {
+                    if link.document().is_none() && link.subelements().is_empty() {
+                        if let Some(target) = link.object().and_then(|id| ids.get(id)) {
+                            catalog.linked.insert(held, *target);
+                        }
+                    }
+                }
             }
             if property.type_name == "App::PropertyPythonObject" {
-                catalog.python.insert(
-                    (property.owner.as_str(), property.name.as_str()),
-                    python_object(property),
-                );
+                catalog
+                    .python
+                    .insert(held, python::object(property, sources.entries));
             }
             let label = (property.name == "Label" && property.type_name == "App::PropertyString")
                 .then(|| property.values().iter().find(|value| value.tag == "String"))
@@ -361,7 +394,7 @@ impl<'a> Catalog<'a> {
             return Target::Unresolved;
         };
         let components = path.components.as_slice();
-        let (object, rest) = match components.split_first() {
+        let (mut object, mut rest) = match components.split_first() {
             Some((first, rest)) if path.origin != Origin::Own && !rest.is_empty() => {
                 let named = (path.origin != Origin::Label)
                     .then(|| self.names.get(first.as_str()).copied())
@@ -373,31 +406,56 @@ impl<'a> Catalog<'a> {
             }
             _ => (*own, components),
         };
-        let Some((property, _)) = rest.split_first() else {
-            return Target::Unresolved;
-        };
         if path.indexed {
             return Target::Unresolved;
         }
-        let Some(feature) = self.features.get(object.id().as_str()) else {
-            return Target::Unresolved;
-        };
-        let key = std::iter::once(property.replace('$', ""))
-            .chain(rest[1..].iter().cloned())
-            .collect::<Vec<_>>()
-            .join(".");
-        let held = (object.id().as_str(), property.as_str());
-        let typed = self.types.get(&held).map(|type_name| {
-            if self.refused.contains(&held) {
-                Value::of(&[Class::Refused])
-            } else {
-                property_value(type_name, &rest[1..], self.python.get(&held))
+        let mut indirect = false;
+        while let Some((name, sub)) = rest.split_first() {
+            let held = (object.id().as_str(), name.as_str());
+            if !sub.is_empty() {
+                if let Some(target) = self.linked.get(&held) {
+                    if matches!(sub, [label] if matches!(label.as_str(), "Label" | "Label2")) {
+                        return Target::Property(Value::of(&[Class::Text]));
+                    }
+                    object = target;
+                    rest = sub;
+                    indirect = true;
+                    continue;
+                }
             }
-        });
-        if let Some(Some(id)) = self.named.get(&(feature.clone(), key)) {
-            return Target::Parameter(id, typed);
+            let typed = self.properties.get(&held).map(|property| {
+                if self.refused.contains(&held) {
+                    Value::of(&[Class::Refused])
+                } else {
+                    property_value(
+                        &property.type_name,
+                        sub,
+                        self.python.get(&held),
+                        self.shapes.get(property.id.as_str()).copied(),
+                        indirect,
+                    )
+                }
+            });
+            let key = std::iter::once(name.replace('$', ""))
+                .chain(sub.iter().cloned())
+                .collect::<Vec<_>>()
+                .join(".");
+            if let Some(feature) = self.features.get(object.id().as_str()) {
+                if let Some(Some(id)) = self.named.get(&(feature.clone(), key)) {
+                    return Target::Parameter {
+                        id,
+                        typed,
+                        indirect,
+                    };
+                }
+            }
+            return match typed {
+                Some(value) => Target::Property(value),
+                None if indirect => Target::Property(Value::any()),
+                None => Target::Unresolved,
+            };
         }
-        typed.map_or(Target::Unresolved, Target::Property)
+        Target::Unresolved
     }
 
     /// The cells of the sheet `owner` from `from` to `to`, each an address or
@@ -439,7 +497,13 @@ impl<'a> Catalog<'a> {
 /// Python object property. A link property's `Label` and `Label2` are those
 /// of the object it names; a link with sub-names and a color are tuples, and
 /// an integer set is a `set`.
-fn property_value(type_name: &str, sub: &[String], python: Option<&Value>) -> Value {
+fn property_value(
+    type_name: &str,
+    sub: &[String],
+    python: Option<&Value>,
+    shape_has_root: Option<bool>,
+    indirect: bool,
+) -> Value {
     let sub = sub.iter().map(String::as_str).collect::<Vec<_>>();
     let quantity = |quantity| Value::of(&[Class::Quantity(Some(quantity))]);
     match (type_name.strip_prefix("App::Property"), sub.as_slice()) {
@@ -451,10 +515,26 @@ fn property_value(type_name: &str, sub: &[String], python: Option<&Value>) -> Va
         ) => Value::of(&[Class::Float]),
         (Some("Bool"), []) => Value::of(&[Class::Boolean]),
         (Some("Placement"), ["Base", "x" | "y" | "z"])
-        | (Some("VectorDistance" | "Position"), ["x" | "y" | "z"]) => quantity(Quantity::LENGTH),
-        (Some("Placement"), ["Rotation", "Angle"]) => quantity(Quantity::ANGLE),
+        | (Some("VectorDistance" | "Position" | "Direction"), ["x" | "y" | "z"])
+            if !indirect =>
+        {
+            quantity(Quantity::LENGTH)
+        }
+        (Some("Placement"), ["Rotation", "Angle"]) | (Some("Rotation"), ["Angle"]) if !indirect => {
+            quantity(Quantity::ANGLE)
+        }
+        (Some("Placement"), ["Base", "x" | "y" | "z"] | ["Rotation", "Angle"])
+        | (Some("Rotation"), ["Angle"] | ["Axis", "x" | "y" | "z"])
+        | (
+            Some("Vector" | "VectorDistance" | "Position" | "Direction"),
+            ["x" | "y" | "z" | "Length"],
+        ) => Value::of(&[Class::Float]),
+        (Some("Placement"), ["Base"] | ["Rotation", "Axis"]) | (Some("Rotation"), ["Axis"]) => {
+            Value::of(&[Class::Vector])
+        }
+        (Some("Placement"), ["Rotation"]) => Value::of(&[Class::Object]),
         (Some("Quantity" | "QuantityConstraint"), []) => Value::of(&[Class::Quantity(None)]),
-        (Some("String" | "Enumeration" | "File" | "FileIncluded" | "Font"), [])
+        (Some("String" | "Enumeration" | "File" | "FileIncluded" | "Font" | "UUID"), [])
         | (
             Some("Link" | "LinkChild" | "LinkGlobal" | "LinkHidden" | "XLink"),
             ["Label" | "Label2"],
@@ -481,56 +561,32 @@ fn property_value(type_name: &str, sub: &[String], python: Option<&Value>) -> Va
         (Some(name), []) if name.ends_with("List") => Value::of(&[Class::Object]),
         (Some("PythonObject"), []) => python.cloned().unwrap_or_else(Value::any),
         (Some(name), []) => property_quantity(name).map_or_else(Value::any, quantity),
+        (None, ["Length" | "Area" | "Volume"]) if type_name == "Part::PropertyPartShape" => {
+            Value::of(match shape_has_root {
+                Some(true) => &[Class::Float],
+                Some(false) => &[Class::Raises],
+                None => &[Class::Float, Class::Raises],
+            })
+        }
+        (None, []) if type_name == "Part::PropertyShapeHistory" => Value::of(&[Class::Refused]),
         (None, [])
             if matches!(
                 type_name,
                 "Part::PropertyPartShape"
                     | "Part::PropertyGeometryList"
+                    | "Part::PropertyTopoShapeList"
+                    | "Part::PropertyFilletEdges"
+                    | "Part::PropertyShapeCache"
                     | "Sketcher::PropertyConstraintList"
+                    | "Spreadsheet::PropertySheet"
+                    | "Spreadsheet::PropertyColumnWidths"
+                    | "Spreadsheet::PropertyRowHeights"
             ) =>
         {
             Value::of(&[Class::Object])
         }
         _ => Value::any(),
     }
-}
-
-/// The value of a Python object property as `PropertyPythonObject::Restore`
-/// reads it: an instance of the class its `module` and `class` name, the
-/// value of its JSON text, or `None`.
-fn python_object(property: &PropertyRecord) -> Value {
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
-    let Some(python) = property.values().iter().find(|value| value.tag == "Python") else {
-        return Value::any();
-    };
-    let attribute = |key: &str| python.attributes.get(key).map(String::as_str);
-    if attribute("file").is_some() {
-        return Value::any();
-    }
-    if attribute("module").is_some() && attribute("class").is_some() || attribute("json").is_none()
-    {
-        return Value::of(&[Class::Refused]);
-    }
-    let text = attribute("value").unwrap_or_default();
-    let text = if attribute("encoded") == Some("yes") {
-        match STANDARD.decode(text).map(String::from_utf8) {
-            Ok(Ok(text)) => text,
-            Ok(Err(_)) | Err(_) => return Value::any(),
-        }
-    } else {
-        text.to_owned()
-    };
-    Value::of(&[match serde_json::from_str::<serde_json::Value>(&text) {
-        Ok(serde_json::Value::Null) => Class::Refused,
-        Ok(serde_json::Value::Bool(_)) => Class::Boolean,
-        Ok(serde_json::Value::Number(_)) if text.trim().contains(['.', 'e', 'E']) => Class::Float,
-        Ok(serde_json::Value::Number(_)) => Class::Int,
-        Ok(serde_json::Value::String(_)) => Class::Text,
-        Ok(serde_json::Value::Array(_) | serde_json::Value::Object(_)) => Class::Object,
-        Err(_) if matches!(text.trim(), "NaN" | "Infinity" | "-Infinity") => Class::Float,
-        Err(_) if text.contains("NaN") || text.contains("Infinity") => return Value::any(),
-        Err(_) => Class::Refused,
-    }])
 }
 
 /// The quantity of a quantity property `App::Property<name>`.
@@ -633,8 +689,8 @@ fn cell_values<'a>(
         for reference in node.references() {
             match reference {
                 Reference::Path(path) => {
-                    if let Target::Parameter(target, _) = catalog.resolve(owner, path) {
-                        sources.insert(target);
+                    if let Target::Parameter { id, .. } = catalog.resolve(owner, path) {
+                        sources.insert(id);
                     }
                 }
                 Reference::Range(from, to) => {
@@ -752,7 +808,7 @@ impl Lookup<'_, '_> {
 impl Scope for Lookup<'_, '_> {
     fn path(&mut self, path: &Path) -> Value {
         match self.catalog.resolve(self.owner, path) {
-            Target::Parameter(id, typed) => self.parameter(id, typed),
+            Target::Parameter { id, typed, .. } => self.parameter(id, typed),
             Target::Property(value) => value,
             Target::Outside | Target::Unresolved => Value::any(),
         }
@@ -1140,18 +1196,22 @@ fn translated(
 ) -> Expression {
     let mut spans = BTreeMap::new();
     let mut dropped = Vec::new();
+    let mut indirect = Vec::new();
     for reference in node.references() {
         let Reference::Path(path) = reference else {
             continue;
         };
         match context.catalog.resolve(parameter.owner.as_ref(), path) {
-            Target::Parameter(id, _)
-                if context.minted.contains(&parameter.id)
-                    || context.minted.contains(id)
-                    || parameter
-                        .dependencies
-                        .iter()
-                        .any(|dependency| dependency == id) =>
+            Target::Parameter {
+                id,
+                indirect: false,
+                ..
+            } if context.minted.contains(&parameter.id)
+                || context.minted.contains(id)
+                || parameter
+                    .dependencies
+                    .iter()
+                    .any(|dependency| dependency == id) =>
             {
                 let reference = ParameterRef {
                     target: RefTarget::Parameter(id.clone()),
@@ -1162,7 +1222,13 @@ fn translated(
             Target::Property(_) | Target::Outside => {
                 dropped.push(text.get(path.span.clone()).unwrap_or(text));
             }
-            Target::Parameter(..) | Target::Unresolved => {}
+            Target::Parameter { indirect: true, .. } => {
+                indirect.push(text.get(path.span.clone()).unwrap_or(text));
+            }
+            Target::Parameter {
+                indirect: false, ..
+            }
+            | Target::Unresolved => {}
         }
     }
     if !dropped.is_empty() {
@@ -1171,6 +1237,13 @@ fn translated(
              the source's text",
             parameter.id.as_str(),
             dropped.join(", ")
+        )));
+    }
+    if !indirect.is_empty() {
+        losses.push(FreecadLossCode::ParameterDependencyDropped.note(format!(
+            "FCStd parameter {} references {} through a link; the reference stays the +             source's text",
+            parameter.id.as_str(),
+            indirect.join(", ")
         )));
     }
     let mut tokens = Vec::new();

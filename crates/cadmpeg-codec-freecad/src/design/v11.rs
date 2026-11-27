@@ -14,7 +14,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::construction::{kinds, Construction, FrameValue, PostStep};
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
@@ -66,6 +66,13 @@ pub(crate) struct Assembly<'a> {
     pub(crate) topology: &'a [crate::topology_transfer::TopologyOccurrence],
 }
 
+pub(crate) struct DesignSources<'a, 'data> {
+    pub(crate) objects: &'a [ObjectRecord],
+    pub(crate) properties: &'a [PropertyRecord],
+    pub(crate) entries: &'a BTreeMap<String, View<'data>>,
+    pub(crate) shapes: &'a [crate::brep::ShapePayloadRecord],
+}
+
 /// Project the decoded design of `ir` into its v11 design layer, a scope of
 /// the root definition `definition`. A record the projection cannot state in
 /// full is stated as far as it is read, with a loss in `losses` (§3.3). The
@@ -81,11 +88,15 @@ pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     definition: ProductDefinitionId,
-    objects: &[ObjectRecord],
-    properties: &[PropertyRecord],
+    sources: &DesignSources<'_, '_>,
     assembly: &Assembly<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    let DesignSources {
+        objects,
+        properties,
+        ..
+    } = *sources;
     let source = Source::of(objects, properties);
     let history = History::of(&ir.model.features, &source);
     let sheets = sheets(ir, &history);
@@ -202,8 +213,7 @@ pub(crate) fn project(
         &definition,
         &body_containers,
         &features,
-        objects,
-        properties,
+        sources,
         losses,
     );
     if features.is_empty() && parameters.is_empty() {

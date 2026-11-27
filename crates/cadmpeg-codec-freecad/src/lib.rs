@@ -994,7 +994,8 @@ impl CodecBackend for FcstdCodec {
             namespace.set_arena(ctx, "string_tables", string_tables.as_slice())?;
             let product_nodes = product::transfer(&graph.objects, &graph.properties, &scan.data)?;
             namespace.set_arena(ctx, "product_nodes", &product_nodes)?;
-            let joint_records = joint::transfer(ctx, &graph.objects, &graph.properties)?;
+            let joint_records =
+                joint::transfer(ctx, &graph.objects, &graph.properties, &mut transfer_losses)?;
             namespace.set_arena(ctx, "joints", &joint_records)?;
             let drawings = drawing::transfer(ctx, &graph.objects, &graph.properties)?;
             let annotations = annotation::transfer(ctx, &graph.objects, &graph.properties)?;
@@ -1177,8 +1178,12 @@ impl CodecBackend for FcstdCodec {
                     ctx,
                     &mut ir,
                     product::document_definition_id()?,
-                    &graph.objects,
-                    &graph.properties,
+                    &design::v11::DesignSources {
+                        objects: &graph.objects,
+                        properties: &graph.properties,
+                        entries: &scan.data,
+                        shapes: &shape_payloads,
+                    },
                     &design::v11::Assembly {
                         links: &product_nodes,
                         joints: &joint_records,

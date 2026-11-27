@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::f64::consts::{PI, TAU};
 
+use crate::loss::FreecadLossCode;
 use crate::native::joint::{JointBody, JointConnectorRecord, JointRecord, PairedJointFamily};
 use crate::native::{sole_named_property, LinkTarget, ObjectRecord, PropertyRecord};
 use cadmpeg_core::decode::DecodeContext;
@@ -11,12 +12,14 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
     AssemblyJoint, JointConnector, JointId, JointLimits, JointOperand, Occurrence, PairedJointKind,
 };
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 
 pub(crate) fn transfer(
     ctx: &DecodeContext<'_>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<JointRecord>, CodecError> {
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
@@ -125,11 +128,18 @@ pub(crate) fn transfer(
                     | "Activated"
             )
         }) {
-            let value = match scalar_parameter(property) {
-                Ok(value) => value,
-                // The design projection charges a flag it does not read.
-                Err(_) if property.name == "Activated" => None,
-                Err(error) => return Err(error),
+            let value = scalar_parameter(property);
+            let value = if property.name == "Activated" {
+                let flag = value.ok().flatten();
+                if flag.is_none() {
+                    losses.push(FreecadLossCode::FeatureJointFlagUnread.note(format!(
+                        "joint {} has an unreadable Activated flag; the property stays native",
+                        object.id()
+                    )));
+                }
+                flag
+            } else {
+                value?
             };
             if let Some(value) = value {
                 parameters.insert(property.name.clone(), value);

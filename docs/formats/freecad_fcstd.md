@@ -664,7 +664,8 @@ rules, with the cells it references read first in dependency order:
   stores no target), a tuple (an `App::PropertyLinkSub` value, a link that stores a sub-name, a
   color, `tuple()`), a set (an `App::PropertyIntegerSet` value), a conditional with a refused
   branch, and an operand that raises.
-- An `App::PropertyPythonObject` value is the value of its stored JSON text: `true` and `false`
+- An `App::PropertyPythonObject` value is the value of its JSON text in the `Python` element or
+  its named archive member. `true` and `false`
   are Boolean, a number is an `int` where its text contains no `.`, `e`, or `E` and a `float`
   otherwise, `NaN`, `Infinity`, and `-Infinity` are `float` values, a string is text, and an array
   or an object is an object that is no number. `null`, a stored class instance (a `module` and a
@@ -678,31 +679,36 @@ rules, with the cells it references read first in dependency order:
   function does not take. `<`, `<=`, `>`, and `>=` compare two strings, two values of one
   quantity, a Boolean and a number, and a quantity and a dimensionless `int` or `float`; they
   raise on text and a number. In arithmetic and in a function argument, a Boolean is a
-  dimensionless number. A unit exponent of 8 or more raises.
+  dimensionless number. A unit exponent outside −8 through 7 raises.
 - A reference to a cell, by alias, address, or `.address`, takes that cell's kind. A reference to a
   typed property of an object, or a placement or vector component, takes the property's quantity;
   a string, enumeration, or file property is text. `Label` and `Label2` of the object that a link
-  property names are text, where the link stores no sub-name.
+  property names are text, where the link stores no sub-name. A path through a scalar local link
+  follows the target's Python attributes. The placement and vector coordinates obtained this
+  way are `float` values. A non-null shape's
+  `Length`, `Area`, and `Volume` are `float` values. Access to those properties of a null shape
+  raises.
 - Addition and subtraction of equal quantities keep the quantity; a
   product and a quotient add and subtract the exponents of the units; the remainder of a quantity
   keeps its quantity, and the remainder of a plain number by a quantity raises;
-  `x ^ n` and `pow(x, n)` multiply each exponent by the constant `n` where each product is an
-  integer. `pow(x, n)` raises where `n` differs from an integer by `1e-9` or more and `x` is not
-  dimensionless, so `pow(16 mm^4; 0.25)` raises.
+  For a quantity `x`, `x ^ n` with a plain numeric exponent and `pow(x, n)` multiply each unit
+  exponent by `n` where each product is an integer. When `n` is a dimensionless quantity object,
+  `x ^ n` multiplies each unit exponent by the integer part of `n`. For a unit-bearing base,
+  `pow(x, n)` also requires `n - round(n) < 1e-9`, with halves rounded away from zero.
 - `abs`, `round`, `trunc`, `ceil`, `floor`, `mod`, `hypot`, `cath`, `href`, `sum`, `min`, `max`,
   `average`, and `stddev` keep the quantity of their values. An aggregate (`sum`, `min`, `max`,
   `average`, `stddev`, `count`, `and`, `or`) passes over an argument that is no number (text, a
   refused value, an object that is no number), raises at a cell of a range that holds no number,
   and raises at an argument that raises; `sum`, `min`, `max`, `average`, and `stddev` raise on
-  values of two different quantities, and `stddev` of fewer than two values raises; `sqrt` and
-  `cbrt` divide its
+  values of two different quantities. `stddev` requires at least two values and a unit that can
+  be squared. `sqrt` and `cbrt` divide the unit
   exponents; `cos`, `sin`, `tan`, `exp`, `log`, `log10`, `sinh`, `cosh`, `tanh`, `not`, `and`, `or`,
   `count`, and `vdot` give a real; `acos`, `asin`, `atan`, `atan2`, and `vangle` give an angle; and
   `vlinedist` and `vplanedist` give a length.
 
 Where the file does not determine the result's kind, as for a reference to another document, to a
 property with no stated quantity, to a property or object that the document does not store, to an
-`App::PropertyPythonObject` value stored in a separate file, or to a cell of a reference cycle,
+`App::PropertyPythonObject` with an unreadable archive member, or to a cell of a reference cycle,
 the product of a string and
 a `float` or a quantity, `Label` of a link that stores a sub-name, an ordering of a string and a
 number, of two different quantities, or of a quantity and a function result, and a comparison with

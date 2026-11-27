@@ -22,8 +22,8 @@ const INTEGRAL: f64 = 1e-9;
 /// of a unit's exponent and a power as that integer.
 const UNIT_POWER: f64 = f64::EPSILON;
 
-/// The least exponent of a unit that `Unit::checkRange` refuses
-/// (`unitExponentLimit`).
+/// The exclusive upper bound and the magnitude of the inclusive lower
+/// bound of a unit exponent (`Unit::checkRange`).
 const UNIT_EXPONENT_LIMIT: i8 = 8;
 
 /// The magnitude below which an integral number is a Python `int`
@@ -343,7 +343,11 @@ impl<'a> Node<'a> {
                 then,
                 otherwise,
             } => {
-                let raises = condition.value(scope).contains(Raises);
+                let condition = condition.value(scope);
+                if condition.classes() == [Raises] {
+                    return condition;
+                }
+                let raises = condition.contains(Raises);
                 let mut value = then.value(scope);
                 value.join(otherwise.value(scope));
                 if raises {
@@ -474,7 +478,8 @@ fn signed(class: Class) -> Value {
         Int | Boolean => Value::of(&[Int]),
         Float => Value::of(&[Float]),
         Text | Refused | Raises => Value::of(&[Raises]),
-        Vector | Object => Value::of(&OBJECT_RESULT),
+        Vector => Value::of(&[Vector]),
+        Object => Value::of(&OBJECT_RESULT),
     }
 }
 
@@ -642,11 +647,12 @@ fn power(left: Class, right: Class, exponent: Option<f64>) -> Value {
             None => Value::of(&[Int, Float]),
         },
         (Int | Float | Boolean, Int | Float | Boolean) => Value::of(&[Float]),
-        (Class::Quantity(base), Int | Boolean) => unit_power(base, exponent, true),
-        (Class::Quantity(base), Float) => unit_power(base, exponent, false),
+        (Class::Quantity(base), Int | Float | Boolean) => {
+            unit_power(base, exponent, right == Boolean)
+        }
         (Class::Quantity(base), Class::Quantity(unit)) => {
             let mut value = match unit {
-                Some(Quantity::REAL) | None => unit_power(base, exponent.map(f64::trunc), true),
+                Some(Quantity::REAL) | None => unit_power(base, exponent.map(f64::trunc), false),
                 Some(_) => Value::default(),
             };
             if unit != Some(Quantity::REAL) {
@@ -660,15 +666,16 @@ fn power(left: Class, right: Class, exponent: Option<f64>) -> Value {
 /// A quantity object of unit `base` to the power `exponent` (`Unit::pow`):
 /// each exponent of the unit times the power is an integer, or it raises.
 /// An exponent the file does not store gives a unit the model does not know,
-/// and raises unless it is `integral`.
-fn unit_power(base: Option<Quantity>, exponent: Option<f64>, integral: bool) -> Value {
+/// and may overflow unless it is a Boolean.
+fn unit_power(base: Option<Quantity>, exponent: Option<f64>, boolean: bool) -> Value {
     match (base, exponent) {
         (Some(Quantity::REAL), _) => Value::of(&[Class::Quantity(Some(Quantity::REAL))]),
         (Some(base), Some(exponent)) => Value::of(&[
             pow_unit(base, exponent).map_or(Raises, |quantity| Class::Quantity(Some(quantity)))
         ]),
-        (None, Some(exponent)) if exponent.fract() == 0.0 => Value::of(&[Class::Quantity(None)]),
-        (Some(_) | None, None) if integral => Value::of(&[Class::Quantity(None)]),
+        (None, Some(0.0)) => Value::of(&[Class::Quantity(Some(Quantity::REAL))]),
+        (None, Some(1.0)) => Value::of(&[Class::Quantity(None)]),
+        (Some(_) | None, None) if boolean => Value::of(&[Class::Quantity(None)]),
         (Some(_) | None, _) => Value::of(&[Class::Quantity(None), Raises]),
     }
 }
@@ -689,7 +696,7 @@ fn combine(left: Quantity, right: Quantity, sign: i8) -> Option<Quantity> {
 fn exponent(value: i32) -> Option<i8> {
     i8::try_from(value)
         .ok()
-        .filter(|value| *value < UNIT_EXPONENT_LIMIT)
+        .filter(|value| (-UNIT_EXPONENT_LIMIT..UNIT_EXPONENT_LIMIT).contains(value))
 }
 
 /// `quantity` to the power `power` (`Unit::pow`): each product of an
@@ -1076,18 +1083,14 @@ fn pow_call(
     let mut value = match unit {
         Some(Quantity::REAL) | None => match (base, exponent) {
             (Some(Quantity::REAL), _) => Value::of(&[Class::Quantity(Some(Quantity::REAL))]),
-            (_, Some(exponent)) if exponent - exponent.round() >= INTEGRAL => Value::of(&[Raises]),
-            (Some(base), Some(exponent)) => {
-                Value::of(&[pow_unit(base, exponent)
-                    .map_or(Raises, |quantity| Class::Quantity(Some(quantity)))])
+            (base, Some(exponent)) if exponent - exponent.round() >= INTEGRAL => {
+                if base.is_none() {
+                    Value::of(&[Class::Quantity(Some(Quantity::REAL)), Raises])
+                } else {
+                    Value::of(&[Raises])
+                }
             }
-            (None, Some(exponent)) if exponent.fract() == 0.0 => {
-                Value::of(&[Class::Quantity(None)])
-            }
-            (Some(_) | None, None) if matches!(class, Int | Boolean) => {
-                Value::of(&[Class::Quantity(None)])
-            }
-            (Some(_) | None, _) => Value::of(&[Class::Quantity(None), Raises]),
+            (base, exponent) => unit_power(base, exponent, class == Boolean),
         },
         Some(_) => Value::default(),
     };
@@ -1236,12 +1239,22 @@ fn collect(
     next: &mut Vec<Collected>,
     value: &mut Value,
 ) {
+    let unit = unit(class);
+    if collector == Collector::StdDev && state.unit == First::Empty {
+        match unit {
+            Some(unit) if combine(unit, unit, 1).is_none() => {
+                value.insert(Raises);
+                return;
+            }
+            None => value.insert(Raises),
+            Some(_) => {}
+        }
+    }
     let counted = Collected {
         count: (state.count + 1).min(2),
         whole: state.whole && matches!(class, Int | Boolean),
         ..state
     };
-    let unit = unit(class);
     match (collector, state.unit) {
         (Collector::Count, _) | (_, First::Empty) => push(
             next,
