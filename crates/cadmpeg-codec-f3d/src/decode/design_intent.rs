@@ -2402,9 +2402,11 @@ fn extend_related_design_records(
         &design.asm_histories,
         &prereqs.design_types,
     );
-    crate::history::selection::bind_edge_identity_bounded_face_rules(
-        &mut design.design_edge_identity_operands,
-        &design.design_face_operands,
+    profile_losses.extend(
+        crate::history::selection::bind_edge_identity_bounded_face_rules(
+            &mut design.design_edge_identity_operands,
+            &design.design_face_operands,
+        ),
     );
     let mut placement_given_up = Vec::new();
     design.design_sketch_placements = crate::design::decode::sketch::decode_sketch_placements(

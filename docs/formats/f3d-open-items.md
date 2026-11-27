@@ -3362,6 +3362,18 @@ The bounded-face programs of these groups have 13, 23, and 12 nodes. The first t
 
 **Note.** None.
 
+### DR-1068. Edges of a native group in a shared treatment transition
+
+**Question.** Does the one native group of a constant-radius `Fillet` scope take exactly the transition edges that the other groups of the scope do not take, and which of those edges does each member name?
+
+**Known.** The scope stores two or more groups with the same constant radius. The native group has role `0x0000001000000000`. Each of its members is a full-layout class-313 edge identity whose local identity names the member's own bounded-face recipe record. Each recipe stores the same historical support contexts as the other members: every preceding face that the transition changes, each with its full boundary. The recipe references of a member start with one or two design references that differ between members and end with the same design references for every member. Every identity of every group in the scope carries the same transition edge set and the same radius candidates; each candidate has the group radius. Each transition edge lies on one support face and on one other preceding face. The other faces of the leftover edges are as many as the native group's members, and each holds two leftover edges. The edges that the sibling groups take lie between two support faces. A sibling one-member group with role `0x0000000800000000` has a recipe whose deleted and changed boundary sets equal the transition set; its member can be a lost reference. The decoder gives the native group the leftover set in increasing stable-slot order and charges `history.edge-selection-leftover-assumed`. A whole-face member selects every coedge edge of every loop of the preceding face that its first recipe reference names, in the transition edge set. This selection includes edges that an edge group of the same scope selects. The decoder resolves such a member from the named face and gives its group the full selection.
+
+**Need.** A Fusion save of a `Fillet` with two edge sets of one radius: the first set picks one edge, the second set picks the faces that hold two edges each. Save it again with each face of the second set removed in turn, and compare the member recipes and the treated edges in the input topology.
+
+**Conflict.** None.
+
+**Note.** None.
+
 ### DR-376. Stored name of a Sketch renamed in the timeline
 
 **Question.** Where does a Sketch renamed in the timeline store its name?
@@ -3652,13 +3664,13 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Question.** Which edges do two bounded-face members of a Chamfer edge group select, and how do their boundary nodes assign the transition edges to each member?
 
-**Known.** A Chamfer edge group with role `0x0000001000000000` can name two members. The compact identity prefix of each member names a local record. Each local record carries `bounded_face_recipe_data`, followed by a counted program with twenty parsed nodes. Both operands retain the same four preceding candidate faces. Their prefix references also name eleven further faces. References with two of the Design values have empty candidate lanes. The input topology has fifteen faces and thirty-eight edges. Each compact identity retains the same twenty-two transition edge candidates, in five runs of consecutive edge slots of five, three, six, three, and five slots, with one slot between adjacent runs. Each selected-face candidate has a four-edge preceding loop. The group has a 0.4 mm equal-distance Chamfer specification.
+**Known.** A Chamfer edge group with role `0x0000001000000000` can name two members. The compact identity prefix of each member names a local record. Each local record carries `bounded_face_recipe_data`, followed by a counted program with twenty parsed nodes. Both operands retain the same four preceding candidate faces. Their prefix references also name eleven further faces. References with two of the Design values have empty candidate lanes. The input topology has fifteen faces and thirty-eight edges. Each compact identity retains the same twenty-two transition edge candidates, in five runs of consecutive edge slots of five, three, six, three, and five slots, with one slot between adjacent runs. Each selected-face candidate has a four-edge preceding loop. The group has a 0.4 mm equal-distance Chamfer specification. A whole-face full-layout member of a Chamfer group selects every coedge edge of every loop of the preceding face that its first recipe reference names, in the transition edge set, except each loop edge at which the face meets its neighbour with tangent continuity. When the continuity of a loop edge is undetermined, the decoder keeps the edge and charges `history.edge-continuity-assumed-sharp`. Two members that name two adjacent faces together select every edge of both faces, and each member keeps the edge that the two faces share.
 
-**Need.** Independent Chamfer designs with bounded-face members, including one selected face, two adjacent selected faces, and a face whose boundary splits before the operation. Establish the selected boundary, the treatment of tangent boundary edges, and the binding of empty prefix lanes.
+**Need.** Independent Chamfer designs with bounded-face members, including one selected face, two adjacent selected faces, and a face whose boundary splits before the operation. Establish the selected boundary and the binding of empty prefix lanes.
 
 **Conflict.** A complete twenty-node program, four face candidates, and a shared transition set permit several member assignments. Selecting every transition candidate assumes a group-level rule.
 
-**Note.** The decoder retains the bounded-face operands and compact identity candidates. The group stays native with `feature.edge-selection-native`. DR-224 tracks Fillet transition ambiguities; DR-244 tracks treatment groups whose transitions supply no candidate set. The same form also occurs as a Chamfer group with two bounded-face members and 13 transition candidates. A Chamfer can also retain one unresolved bounded-face group beside a resolved edge group.
+**Note.** The decoder retains the bounded-face operands and compact identity candidates. DR-224 tracks Fillet transition ambiguities; DR-244 tracks treatment groups whose transitions supply no candidate set. The same form also occurs as a Chamfer group with two bounded-face members and 13 transition candidates. A Chamfer can also retain one unresolved bounded-face group beside a resolved edge group.
 
 ### DR-482. Source binding of timeline-owned Base Feature results
 
