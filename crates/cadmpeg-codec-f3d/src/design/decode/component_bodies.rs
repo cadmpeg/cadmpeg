@@ -92,10 +92,22 @@ pub(crate) struct BodyMemberships {
     pub(crate) complete: bool,
 }
 
-pub(crate) fn owners(
+pub(crate) fn owners_from_scan(
+    ctx: &DecodeContext<'_>,
+    scan: &crate::container::ContainerScan<'_>,
+    entry_name: &str,
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<BodyMemberships, CodecError> {
+    let frames = super::meta::scan_design_primary_frames(scan, entry_name, meta)?;
+    owners_with_frames(ctx, bytes, meta, &frames)
+}
+
+fn owners_with_frames(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
+    frames: &[super::meta::DesignPrimaryFrame<'_>],
 ) -> Result<BodyMemberships, CodecError> {
     let mut result: BTreeMap<u64, OwnerResolution> = BTreeMap::new();
     let registered_containers = meta
@@ -125,7 +137,7 @@ pub(crate) fn owners(
         }
     }
     let lookup = |entity| registered.get(&entity).copied().flatten();
-    for frame in super::meta::design_primary_frames(bytes, meta)? {
+    for frame in frames {
         if !supported_container(frame.design_type) {
             continue;
         }

@@ -64,7 +64,16 @@ pub(super) fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<F
     let groups_by_index = &ctx.groups_by_index;
     let mut member_slots = HashSet::new();
     let mut member_records = HashSet::new();
-    for member in &native.design_extrude_selection_members {
+    let finalized_history = history::projection_was_finalized(&native.asm_histories);
+    let expected_histories = (!finalized_history).then(|| {
+        history::selection::extrude_selection_identity_kinds(
+            &native.design_extrude_selection_members,
+            &native.design_component_naming_spaces,
+            &native.design_body_bindings,
+            &native.asm_histories,
+        )
+    });
+    for (member_ordinal, member) in native.design_extrude_selection_members.iter().enumerate() {
         let native_stream = design_stream(&member.id);
         let group = groups_by_index.get(&(native_stream, member.group_record_index));
         let header = records_by_index.get(&(native_stream, member.record_index()));
@@ -122,13 +131,7 @@ pub(super) fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<F
                 .map(|wrapper| wrapper.byte_offset)
                 .cmp(&right.wrappers().first().map(|wrapper| wrapper.byte_offset))
         });
-        let expected_history = history::selection::historical_extrude_selection_identity_kind(
-            member,
-            &native.design_component_naming_spaces,
-            &native.design_body_bindings,
-            &native.asm_histories,
-        );
-        let history_matches = if history::projection_was_finalized(&native.asm_histories) {
+        let history_matches = if finalized_history {
             if let Some(binding) = member.historical.as_ref() {
                 binding
                     .state_ids
@@ -148,8 +151,10 @@ pub(super) fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<F
                 true
             }
         } else {
-            expected_history
+            expected_histories
                 .as_ref()
+                .and_then(|expected| expected.get(member_ordinal))
+                .and_then(Option::as_ref)
                 .map(|(kind, entity_ref, states)| (*kind, *entity_ref, states.as_slice()))
                 == member.historical.as_ref().map(|binding| {
                     (

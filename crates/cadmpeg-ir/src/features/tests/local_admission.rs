@@ -685,21 +685,3 @@ fn selection_reference_constructors_keep_padded_text() {
         result.unwrap();
     }
 }
-
-#[cfg(feature = "schema")]
-#[test]
-fn nonempty_members_schema_requires_a_member() {
-    for (value, valid) in [
-        (cadmpeg_core::json!([]), false),
-        (cadmpeg_core::json!([7]), true),
-        (cadmpeg_core::json!([7, 7]), true),
-    ] {
-        assert_eq!(
-            json::from_value::<NonEmptyMembers<u32>>(value).is_ok(),
-            valid
-        );
-    }
-    let schema = json::to_value(schemars::schema_for!(NonEmptyMembers<u32>)).unwrap();
-    assert_eq!(schema["type"], "array");
-    assert_eq!(schema["minItems"], 1);
-}

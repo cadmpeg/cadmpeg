@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The forms of decoded sketch records that a planar sketch (§6.1 of the
 //! CADIR v11 specification) states as they are: its curves, its frame, and
-//! the relations and dimensions of the decoded vocabulary.
+//! the relations and dimensions of the decoded vocabulary. The comparison of
+//! a projected entity with its decoded record reads the same curve.
 
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::text::NonBlankString;
@@ -75,7 +76,11 @@ pub fn planar_curve(geometry: &SketchGeometry) -> Option<PlanarCurve> {
             }
         }
         SketchGeometryDefinition::Nurbs { curve } => PlanarCurve::Nurbs(curve.clone()),
-        _ => return None,
+        SketchGeometryDefinition::Hyperbola { .. }
+        | SketchGeometryDefinition::Parabola { .. }
+        | SketchGeometryDefinition::Text { .. }
+        | SketchGeometryDefinition::ExternalReference { .. }
+        | SketchGeometryDefinition::Native { .. } => return None,
     })
 }
 

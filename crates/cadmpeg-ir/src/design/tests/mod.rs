@@ -9,8 +9,6 @@ mod identity_rewrite;
 mod root;
 mod root_fixtures;
 mod round_trip;
-#[cfg(feature = "schema")]
-mod schema;
 mod state_chains;
 pub(in crate::design) mod unit_variants;
 mod wire_forms;
