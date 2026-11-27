@@ -18,7 +18,8 @@ use cadmpeg_ir::design::ops::sketch::{
 };
 use cadmpeg_ir::design::options::NativeOption;
 use cadmpeg_ir::design::parameter::DesignParameter;
-use cadmpeg_ir::design::selection::{Ordered, PickTarget, Picks, PrincipalEntity};
+use cadmpeg_ir::design::refs::{Member, Position};
+use cadmpeg_ir::design::selection::{Anchor, Ordered, PickTarget, Picks, PrincipalEntity};
 use cadmpeg_ir::sketches::SketchEntityId;
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 
@@ -480,6 +481,41 @@ fn attached_sketches(attached: &[(&str, &str, u32)]) -> String {
             ),
         )
         .replace("</ObjectData>", &format!("{data}</ObjectData>"))
+}
+
+#[test]
+fn a_body_sketch_attached_to_a_later_member_reads_the_state_after_it() {
+    let document = attached_sketches(&[("Later", r#"<Link obj="XY_Plane" sub=""/>"#, 5)])
+        .replacen(
+            r#"<Link obj="XY_Plane" sub=""/>"#,
+            r#"<Link obj="Later" sub=""/>"#,
+            1,
+        )
+        .replace(
+            r#"<Property name="Tip" type="App::PropertyLink"><Link value="Sketch"/>"#,
+            r#"<Property name="Tip" type="App::PropertyLink"><Link value="Later"/>"#,
+        );
+    let ir = decode(&document);
+    let later = cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Later").unwrap();
+    let [input] = placement(&ir, "Sketch").inputs.as_slice() else {
+        panic!("{:?}", placement(&ir, "Sketch"));
+    };
+    let Some(cadmpeg_ir::design::construction::InputReference::Picks(selection)) = &input.reference
+    else {
+        panic!("{input:?}");
+    };
+    assert_eq!(
+        selection.at,
+        Anchor::Pinned(Position::After(Member::Feature(later)))
+    );
+    let [input] = placement(&ir, "Later").inputs.as_slice() else {
+        panic!("{:?}", placement(&ir, "Later"));
+    };
+    let Some(cadmpeg_ir::design::construction::InputReference::Picks(selection)) = &input.reference
+    else {
+        panic!("{input:?}");
+    };
+    assert_eq!(selection.at, Anchor::Input);
 }
 
 #[test]

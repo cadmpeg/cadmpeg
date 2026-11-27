@@ -17,6 +17,7 @@ use cadmpeg_ir::design::construction::{
     kinds, Construction, ConstructionInput, FrameAxis, InputReference, InputRole, PostStep,
     Relation, ScalarDimension, SourceMode, Subject,
 };
+use cadmpeg_ir::design::container::Container;
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::design::feature::{Feature, FeatureOperation, LinkState, OperationFamily};
@@ -31,7 +32,7 @@ use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use cadmpeg_ir::design::projection::sketch::{
     native_entity_kind, planar_curve, stored_frame, LocusPoints, StoredPoints,
 };
-use cadmpeg_ir::design::refs::Member;
+use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::selection::{
     Anchor, Members, NativeOwner, OrderedSelection, PickTarget, Picked, Picks, PrincipalEntity,
     Selection,
@@ -131,6 +132,8 @@ pub(super) struct Scope<'a> {
     pub(super) bodies: HashMap<&'a str, ContainerId>,
     /// The members of the root `Group`.
     pub(super) grouped: &'a BTreeSet<Member>,
+    /// The design containers of the document.
+    pub(super) containers: &'a [Container],
 }
 
 /// What a link to an object of the document picks.
@@ -144,6 +147,9 @@ struct Targets {
     sketches: HashMap<String, SketchId>,
     /// The `PartDesign::Plane` objects.
     planes: HashSet<String>,
+    /// The ordered container of each feature a Body holds, and its index
+    /// among the container's members.
+    order: HashMap<FeatureId, (ContainerId, usize)>,
 }
 
 /// The sketch of each sketch feature among `features` and its records. Each
@@ -211,6 +217,23 @@ pub(super) fn project(
             .filter(|object| object.type_name == "PartDesign::Plane")
             .map(|object| object.id().clone())
             .collect(),
+        order: scope
+            .containers
+            .iter()
+            .filter_map(|container| match container {
+                Container::Ordered { id, members, .. } => Some((id, members)),
+                Container::Unordered { .. } => None,
+            })
+            .flat_map(|(id, members)| {
+                members
+                    .iter()
+                    .enumerate()
+                    .filter_map(move |(index, member)| match member {
+                        Member::Feature(feature) => Some((feature.clone(), (id.clone(), index))),
+                        Member::Container(_) => None,
+                    })
+            })
+            .collect(),
     };
     let mut out = Projected::default();
     for feature in features.iter_mut() {
@@ -232,16 +255,12 @@ fn sketch(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), ResourceLimit> {
     let model = &scope.ir.model;
-    let anchor = if scope.grouped.contains(&Member::Feature(feature.id.clone())) {
-        Anchor::Current
-    } else {
-        Anchor::Input
-    };
     let entities = model
         .sketch_entities
         .iter()
         .filter(|entity| entity.sketch == record.id && !builtin(entity.id()))
         .collect::<Vec<_>>();
+    let anchor = anchor(scope, targets, &feature.id, record, &entities);
     let constraints = model
         .sketch_constraints
         .iter()
@@ -1333,6 +1352,82 @@ fn origins(scope: &Scope<'_>) -> HashMap<String, PickTarget> {
     out
 }
 
+/// The state the selections of the sketch `feature` read (§5.8): the
+/// current geometry for a member of the root `Group`. In a Body, the state
+/// after the last member the sketch links by its support or its external
+/// geometry that the Body places after the sketch, as `FreeCAD` computes an
+/// object after each object it links (§5.3); else the state entering the
+/// sketch.
+fn anchor(
+    scope: &Scope<'_>,
+    targets: &Targets,
+    feature: &FeatureId,
+    record: &LegacySketch,
+    entities: &[&LegacyEntity],
+) -> Anchor {
+    if scope.grouped.contains(&Member::Feature(feature.clone())) {
+        return Anchor::Current;
+    }
+    let Some((container, index)) = targets.order.get(feature) else {
+        return Anchor::Input;
+    };
+    let supports = record
+        .native_ref
+        .as_deref()
+        .map(|object| support_links(scope, object))
+        .unwrap_or_default();
+    let externals = entities.iter().filter_map(|entity| {
+        scope
+            .stored
+            .externals
+            .get(entity.id())
+            .and_then(|stored| stored.link.as_ref())
+    });
+    supports
+        .iter()
+        .chain(externals)
+        .filter_map(|(object, _)| {
+            let (linked, _) = targets.features.get(object)?;
+            let (within, at) = targets.order.get(linked)?;
+            (within == container && at > index).then_some((*at, linked))
+        })
+        .max_by_key(|(at, _)| *at)
+        .map_or(Anchor::Input, |(_, linked)| {
+            Anchor::Pinned(Position::After(Member::Feature(linked.clone())))
+        })
+}
+
+/// The links of the support of the sketch `object`, one per subelement, as
+/// `FreeCAD` reads each subelement of a link as one reference.
+fn support_links(scope: &Scope<'_>, object: &str) -> Vec<(String, Vec<String>)> {
+    let property = |name| scope.source.property(object, name);
+    property("AttachmentSupport")
+        .or_else(|| property("Support"))
+        .map(|support| {
+            support
+                .links()
+                .iter()
+                .flatten()
+                .filter_map(|link| {
+                    let object = link.object()?;
+                    let subelements = link
+                        .subelements()
+                        .iter()
+                        .filter(|sub| !sub.is_empty())
+                        .map(|sub| (object.to_owned(), vec![sub.clone()]))
+                        .collect::<Vec<_>>();
+                    Some(if subelements.is_empty() {
+                        vec![(object.to_owned(), Vec::new())]
+                    } else {
+                        subelements
+                    })
+                })
+                .flatten()
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
 /// The plane of the sketch `record` of `feature` (§6.1 Placement): no input
 /// where its attachment is off, else the inputs of its support in the
 /// attachment mode (`support`), then `MapReversed` and the
@@ -1360,32 +1455,7 @@ fn plane(
         return construction;
     };
     let property = |name| scope.source.property(object, name);
-    // `FreeCAD` reads each subelement of a link as one reference.
-    let links = property("AttachmentSupport")
-        .or_else(|| property("Support"))
-        .map(|support| {
-            support
-                .links()
-                .iter()
-                .flatten()
-                .filter_map(|link| {
-                    let object = link.object()?;
-                    let subelements = link
-                        .subelements()
-                        .iter()
-                        .filter(|sub| !sub.is_empty())
-                        .map(|sub| (object.to_owned(), vec![sub.clone()]))
-                        .collect::<Vec<_>>();
-                    Some(if subelements.is_empty() {
-                        vec![(object.to_owned(), Vec::new())]
-                    } else {
-                        subelements
-                    })
-                })
-                .flatten()
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    let links = support_links(scope, object);
     let mode = property("MapMode").and_then(crate::attachment::map_mode_name);
     let Some(mode) = mode.filter(|mode| *mode != "Deactivated") else {
         return construction;
