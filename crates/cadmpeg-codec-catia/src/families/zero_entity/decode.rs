@@ -1101,9 +1101,12 @@ pub(in crate::families) fn try_decode_zero_entity(
     };
     let mut losses = vec![topology_loss.note(topology_message.to_string())];
     if topology_counts.is_none() {
-        let face_records = support_runs
-            .iter()
-            .filter_map(|run| run.face.as_ref().map(|face| face.record_ordinal))
+        let face_records =
+            crate::families::zero_entity::records::zero_entity_face_ordinals_in_range(
+                &scan.data,
+                preamble.clone(),
+            )
+            .into_iter()
             .collect::<std::collections::BTreeSet<_>>();
         let code = topology_loss.kind();
         losses.extend(face_records.into_iter().map(|ordinal| {

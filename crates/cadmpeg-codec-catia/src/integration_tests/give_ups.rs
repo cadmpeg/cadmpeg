@@ -15,7 +15,9 @@ use crate::test_support::test_container::{
     main_stream, standard_catpart_from_streams, surf_stream, zero_entity_nurbs_catpart,
 };
 use crate::test_support::test_e5::{append_e5_record, e5_catpart_appending};
-use crate::test_support::test_zero_entity::zero_entity_support_stream;
+use crate::test_support::test_zero_entity::{
+    zero_entity_face_support_stream, zero_entity_support_stream,
+};
 use crate::CatiaCodec;
 use cadmpeg_test_support::EditableDecodeResult;
 
@@ -182,6 +184,39 @@ fn a_refused_zero_entity_carrier_drops_the_curves_of_its_support_records() {
     let curves = &result.ir().geometry.curves;
     assert_eq!(curves.len(), 1, "the plane's support curve stays");
     assert_ne!(curves[0].id, curve);
+}
+
+/// A refused zero-entity carrier leaves the surface roster short of the face
+/// roster, so no face binds a support run and the closed topology does not
+/// transfer. The decode charges each face record by its record ordinal.
+#[test]
+fn a_refused_zero_entity_carrier_charges_the_faces_of_the_closed_topology() {
+    let mut bytes = vec![0u8; 16];
+    bytes[..8].copy_from_slice(crate::container::OUTER_MAGIC);
+    let stream = zero_entity_face_support_stream();
+    let support = stream[0x6a + 12..0x6a + 12 + 0x71 + 12].to_vec();
+    bytes.extend(stream);
+    let mut nurbs = zero_entity_nurbs_catpart().split_off(16);
+    nurbs[167..175].copy_from_slice(&f64::NAN.to_le_bytes());
+    bytes.extend(nurbs);
+    bytes.extend(support);
+    // The face record is the third framed record.
+    let face = cadmpeg_ir::ids::Identity::compose(
+        &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-face"),
+        3,
+    );
+
+    let result = decode(bytes);
+    let charges = unreadable(&result);
+    assert!(
+        charges.iter().any(|loss| loss
+            .message
+            .split_whitespace()
+            .nth(1)
+            .is_some_and(|id| id == face.as_str())),
+        "{charges:?}"
+    );
+    assert!(result.ir().geometry.faces.is_empty());
 }
 
 /// A face record whose E5 reference graph does not parse builds no face; the

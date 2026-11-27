@@ -1143,6 +1143,14 @@ pub(crate) fn oriented_closed_model_endpoints(
         .then_some(complete)
 }
 
+/// The record ordinal of each zero-entity face record in `range`.
+pub(crate) fn zero_entity_face_ordinals_in_range(data: &[u8], range: Range<usize>) -> Vec<u32> {
+    zero_entity_faces_from_records(data, &zero_entity_records_in_range(data, range))
+        .iter()
+        .map(|face| face.record_ordinal)
+        .collect()
+}
+
 fn zero_entity_faces_from_records(
     data: &[u8],
     records: &[ZeroEntityRecord],
