@@ -387,13 +387,16 @@ type PlannedOutputBody = (
 /// ([`encode_set::output_document`]), in the encode's session `ctx`, and
 /// merges their reports into the first written output's, the root's where
 /// it is written: the coverage is that output's, and the losses and notes
-/// are every output's. Only the root output reads the decode's sidecar.
+/// are every output's, with a note per written output that names it and
+/// the target it is written as. Only the root output reads the decode's
+/// sidecar.
 ///
 /// An output whose plan fails is not written, and the report charges
 /// `export:output.unwritten` naming its definition, while another output is
-/// written. The report charges `export:record.unheld` for each record that
-/// no output holds, or that an output holds without a record of another
-/// output it names ([`encode_set::Holdings`]). The encode refuses where no
+/// written. The report charges `export:record.unheld` for each other record
+/// that no written output holds, or that a written output holds without a
+/// record of another output it names ([`encode_set::Holdings`]), and each
+/// `target.*` loss names the output it charges. The encode refuses where no
 /// output can be written, with the first output's refusal, and where the
 /// session runs out (§3.4, Refusals).
 /// Returns the outputs written with the payload and census of each, and the
@@ -429,13 +432,12 @@ fn plan_encode_set<E: EncoderBackend>(
             encode_set::output_document(ctx, input.ir, definition, root.as_ref(), &names)
                 .map_err(EncodeError::from_backend)
                 .and_then(|(document, released)| {
-                    holdings.add(position, &document, released);
                     let fidelity = if definition == root.as_ref() {
                         input.fidelity
                     } else {
                         None
                     };
-                    plan_output(
+                    let planned = plan_output(
                         encoder,
                         ctx,
                         EncodeInput {
@@ -443,9 +445,11 @@ fn plan_encode_set<E: EncoderBackend>(
                             fidelity,
                             ..input
                         },
-                    )
+                    )?;
+                    holdings.add(position, &document, released);
+                    Ok(planned)
                 });
-        let (report, coverage, bytes, annotations) = match planned_output {
+        let (mut report, coverage, bytes, annotations) = match planned_output {
             Ok(planned_output) => planned_output,
             Err(EncodeError::ResourceLimit(limit)) => {
                 return Err(EncodeError::ResourceLimit(limit))
@@ -455,13 +459,12 @@ fn plan_encode_set<E: EncoderBackend>(
                 continue;
             }
         };
+        name_target_losses::<E>(&mut report, &output_names[position]);
         let census = report.census.clone();
         match &mut planned {
             None => {
                 let mut report = report;
-                if output.definition != root {
-                    report.notes.insert(0, output_note(&output, &report));
-                }
+                report.notes.insert(0, output_note(&output, &report));
                 planned = Some((report, coverage));
             }
             Some((merged, _)) => merge_output(merged, &output, report)?,
@@ -478,11 +481,13 @@ fn plan_encode_set<E: EncoderBackend>(
             |(_, error)| error,
         ));
     };
-    for (output, error) in unwritten {
+    let mut named = std::collections::BTreeSet::new();
+    for (output, error) in &unwritten {
         let definition = output
             .definition
             .as_ref()
             .map_or("", ProductDefinitionId::as_str);
+        named.insert(definition);
         report.losses.push(loss::output_unwritten(
             E::FORMAT.as_str(),
             definition,
@@ -491,7 +496,7 @@ fn plan_encode_set<E: EncoderBackend>(
     }
     report
         .losses
-        .extend(holdings.losses(E::FORMAT.as_str(), input.ir, &output_names));
+        .extend(holdings.losses(E::FORMAT.as_str(), input.ir, &output_names, &named));
     Ok((report, coverage, written, payloads, root_annotations))
 }
 
@@ -506,16 +511,32 @@ type PlannedSet = (
     Option<crate::annotations::Annotations>,
 );
 
-/// The note that names the definition `output` holds and the write path of
-/// its `report`.
+/// Names `output`, an output of an encode set, in each `target.*` loss of
+/// its `report`, so that each states the file it charges (§3.4).
+fn name_target_losses<E: EncoderBackend>(report: &mut ExportReport, output: &str) {
+    for loss in &mut report.losses {
+        let code = loss.code.local_code();
+        if loss.code.namespace() == E::FORMAT.as_str()
+            && (code == target::SOURCE_DIALECT_DISPLACED || code == target::REQUEST_DISPLACED)
+        {
+            loss.message = format!("in the output {output:?}, {}", loss.message);
+        }
+    }
+}
+
+/// The note that names the definition `output` holds, the target its
+/// `report` states, and its write path.
 fn output_note(output: &PlannedOutput, report: &ExportReport) -> String {
     let name = output.name.as_ref().map_or("", NonBlankString::as_str);
     let definition = output
         .definition
         .as_ref()
         .map_or("", ProductDefinitionId::as_str);
+    let target = report
+        .target()
+        .map_or_else(String::new, |target| format!(", written as {target}"));
     format!(
-        "the output {name} holds definition {definition}; its write path is {}",
+        "the output {name:?} holds definition {definition}{target}; its write path is {}",
         report.write_path()
     )
 }
@@ -533,7 +554,7 @@ fn merge_output(
     if let Some(cause) = report.synthesis_cause() {
         merged
             .notes
-            .push(format!("the output {name} was synthesized: {cause}"));
+            .push(format!("the output {name:?} was synthesized: {cause}"));
     }
     if merged.census.basis == report.census.basis {
         for (key, count) in report.census.counts {
@@ -546,7 +567,7 @@ fn merge_output(
         }
     } else {
         merged.notes.push(format!(
-            "the output {name} counts its records on another basis than the root output's, \
+            "the output {name:?} counts its records on another basis than the root output's, \
              and the census counts the root output's alone"
         ));
     }
@@ -678,26 +699,34 @@ pub struct PlannedOutput {
 }
 
 /// The definitions whose outputs a writer produces (§3.4, Encode sets): the
-/// root definition, `None` where the document states none, then, for a
-/// format that stores one definition per file, every other `File`
-/// definition in arena order.
+/// root definition, `None` where the document states no `File` definition,
+/// then, for a format that stores one definition per file, every other
+/// `File` definition in arena order, with or without a `source` (§8.1).
+///
+/// The root is the `File` definition that no occurrence places, as the
+/// placed instance tree starts there, and that has no `source`, as the
+/// root definition has none (§8.1); where no definition meets both, the
+/// first in that order of preference, then in arena order.
 fn output_definitions(ir: &CadIr, per_file: bool) -> Vec<Option<&ProductDefinition>> {
-    let definitions = &ir.model.product_definitions;
-    let root = definitions.iter().find(|definition| definition.is_root());
+    let model = &ir.model;
+    let placed: std::collections::BTreeSet<&ProductDefinitionId> = model
+        .occurrences
+        .iter()
+        .map(|occurrence| &occurrence.prototype)
+        .collect();
+    let files = || {
+        model
+            .product_definitions
+            .iter()
+            .filter(|definition| matches!(definition.storage, Storage::File { .. }))
+    };
+    let root =
+        files().min_by_key(|definition| (placed.contains(&definition.id), !definition.is_root()));
+    let root_id = root.map(|root| &root.id);
     std::iter::once(root)
         .chain(
-            definitions
-                .iter()
-                .filter(|definition| {
-                    per_file
-                        && matches!(
-                            definition.storage,
-                            Storage::File {
-                                source: Some(_),
-                                ..
-                            }
-                        )
-                })
+            files()
+                .filter(|definition| per_file && Some(&definition.id) != root_id)
                 .map(Some),
         )
         .collect()
