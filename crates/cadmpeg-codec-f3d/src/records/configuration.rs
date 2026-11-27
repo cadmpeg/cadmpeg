@@ -52,6 +52,10 @@ enum ConfigurationContent {
     Rule,
 }
 
+/// The most UTF-16 code units the reader admits for the table id or the row
+/// id of a `DesignConfigurationRoot` record (f3d.md §1.2).
+pub(crate) const ID_WIDTH: usize = 256;
+
 /// Active row that the Design `DesignConfigurationRoot` record names.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -157,6 +161,17 @@ impl DesignConfiguration {
             content,
             active_row: None,
         })
+    }
+
+    /// This document with `payload` in place of its own: the same entry,
+    /// identity scope and active row.
+    pub(crate) fn with_payload(&self, payload: Map<String, Value>) -> Result<Self, CodecError> {
+        let mut document = Self::try_new(self.entry_name.clone(), self.kind(), payload)?;
+        document.identity_scope = self.identity_scope.clone();
+        if let Some(active_row) = &self.active_row {
+            document.set_active_row(active_row.clone())?;
+        }
+        Ok(document)
     }
 
     /// Attach the active row of a table document.
@@ -271,14 +286,14 @@ impl From<DesignConfiguration> for DesignConfigurationWire {
     }
 }
 
-/// Encode the native source document.
+/// Encode `payload`, the document of configuration entry `entry_name`.
 pub(crate) fn encode_configuration_payload(
-    configuration: &DesignConfiguration,
+    entry_name: &str,
+    payload: &Map<String, Value>,
 ) -> Result<Vec<u8>, CodecError> {
-    json::to_vec(configuration.payload()).map_err(|error| {
+    json::to_vec(payload).map_err(|error| {
         CodecError::malformed(format_args!(
-            "cannot encode F3D configuration JSON {}: {error}",
-            configuration.entry_name()
+            "cannot encode F3D configuration JSON {entry_name}: {error}"
         ))
     })
 }

@@ -75,6 +75,7 @@ pub(crate) fn is_model_name(name: &str) -> bool {
 
 /// An admitted package: the archive and its model member.
 pub(crate) struct Package<'a> {
+    root: View<'a>,
     archive: ArchiveSnapshot<'a>,
 }
 
@@ -87,12 +88,26 @@ impl<'a> Package<'a> {
                 "not an eDrawings package: the archive has no eModel member".into(),
             ));
         }
-        Ok(Self { archive })
+        Ok(Self { root, archive })
     }
 
     /// Opens the model member.
     pub(crate) fn model(&self, ctx: &DecodeContext<'a>) -> Result<View<'a>, CodecError> {
         self.archive.open(ctx, MODEL_MEMBER)
+    }
+
+    /// The stored bytes of the model member, as the archive frames them.
+    pub(crate) fn stored_model(&self) -> Result<View<'a>, CodecError> {
+        let entry = self
+            .archive
+            .entry(MODEL_MEMBER)
+            .ok_or_else(|| CodecError::malformed("the archive has no eModel member"))?;
+        let range = entry.stored_range()?;
+        usize::try_from(range.start)
+            .ok()
+            .zip(usize::try_from(range.end).ok())
+            .and_then(|(start, end)| View::over_retained(self.root.window()).child(start, end))
+            .ok_or_else(|| CodecError::malformed("the eModel member escapes the package"))
     }
 
     /// Number of members.

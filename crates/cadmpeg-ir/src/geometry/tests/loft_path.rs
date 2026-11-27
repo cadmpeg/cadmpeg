@@ -22,13 +22,13 @@ fn loft_path_carries_endpoints_inside_its_curve_object() {
     };
     let wire = json::to_value(&path).expect("serializes");
     assert_eq!(wire["path"]["curve"], "test:model:curve#path");
-    assert_eq!(wire["path"]["endpoints"], serde_json::json!([0.0, 1.0]));
+    assert_eq!(wire["path"]["endpoints"], cadmpeg_core::json!([0.0, 1.0]));
     assert_eq!(
         json::from_value::<LoftPath>(wire).expect("round trip"),
         path
     );
 
-    let flat = serde_json::json!({
+    let flat = cadmpeg_core::json!({
         "endpoints": [0.0, 1.0],
         "auxiliaries": [],
         "flag": 4,
@@ -36,7 +36,7 @@ fn loft_path_carries_endpoints_inside_its_curve_object() {
     let error = json::from_value::<LoftPath>(flat).unwrap_err().to_string();
     assert!(error.contains("endpoints"), "{error}");
 
-    let orphan = serde_json::json!({
+    let orphan = cadmpeg_core::json!({
         "path": {"endpoints": [0.0, 1.0]},
         "auxiliaries": [],
         "flag": 4,

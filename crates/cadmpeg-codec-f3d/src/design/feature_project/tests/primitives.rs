@@ -113,7 +113,7 @@ fn stored_body_box_requires_dimensions_and_preserves_local_offsets() {
     assert!(project_solid_primitive(&scope, &[], &mut Vec::new()).is_none());
     if let DesignScopePayloadMut::BoxPrimitive(slot) = scope.payload_mut() {
         *slot = Some(
-            json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "length":2.0,"length_record_index":61,"length_offset":0,
                 "width":3.0,"width_record_index":62,"width_offset":0,
                 "height":4.0,"height_record_index":63,"height_offset":0,
@@ -170,7 +170,7 @@ fn typed_reference_box_projects_frame_and_agrees_with_corner_extents() {
         .unwrap();
     if let DesignScopePayloadMut::BoxPrimitive(slot) = scope.payload_mut() {
         *slot = Some(
-            json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "length":1.2,"length_record_index":71,"length_offset":0,
                 "width":0.8,"width_record_index":72,"width_offset":0,
                 "height":2.5,"height_record_index":73,"height_offset":0,
@@ -419,7 +419,7 @@ fn esfera_primitiva_projects_like_sphere() {
     scope.source_kind = Some("EsferaPrimitiva".to_owned());
     if let DesignScopePayloadMut::SpherePrimitive(slot) = scope.payload_mut() {
         *slot = Some(
-            json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "transform": [
                     [1.0, 0.0, 0.0, 1.0],
                     [0.0, 1.0, 0.0, 2.0],

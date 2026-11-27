@@ -201,7 +201,7 @@ mod tests {
         let table: RmFastLoadObjectIdTable = serde_json::from_str(json).unwrap();
         assert_eq!(json::to_string(&table).unwrap(), json);
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-        wire["raw_count"] = serde_json::json!("01000000");
+        wire["raw_count"] = cadmpeg_core::json!("01000000");
         assert!(json::from_value::<RmFastLoadObjectIdTable>(wire)
             .unwrap_err()
             .to_string()
@@ -211,7 +211,7 @@ mod tests {
         let member: RmFastLoadObjectId = serde_json::from_str(json).unwrap();
         assert_eq!(json::to_string(&member).unwrap(), json);
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-        wire["raw"] = serde_json::json!("00000000");
+        wire["raw"] = cadmpeg_core::json!("00000000");
         assert!(json::from_value::<RmFastLoadObjectId>(wire)
             .unwrap_err()
             .to_string()

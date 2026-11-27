@@ -329,6 +329,9 @@ pub(crate) struct AsmHistoricalTopology {
     /// Model-space samples of the bounded curve carriers of edges in this state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) edge_samples: Vec<AsmHistoricalEdgeSample>,
+    /// Model-space carrier surfaces of faces in this state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) face_samples: Vec<AsmHistoricalFaceSample>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -481,6 +484,14 @@ pub(crate) struct AsmHistoricalEdgeSample {
         deserialize_with = "deserialize_edge_sample_carrier"
     )]
     pub(crate) carrier: Option<cadmpeg_ir::features::evaluation::HistoricalEdgeCarrier>,
+}
+
+/// Carrier surface of one face and the face's sense on it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct AsmHistoricalFaceSample {
+    pub(crate) face: i64,
+    pub(crate) surface: cadmpeg_ir::features::evaluation::HistoricalFaceSurface,
+    pub(crate) reversed: bool,
 }
 
 /// Ordered stable entity-slot relation in a historical B-rep.
@@ -1326,6 +1337,8 @@ pub(crate) struct AsmHistoricalRowsDelta {
     pub(crate) point_positions: AsmHistoricalRowDelta<AsmHistoricalPoint>,
     #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
     pub(crate) edge_samples: AsmHistoricalRowDelta<AsmHistoricalEdgeSample>,
+    #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
+    pub(crate) face_samples: AsmHistoricalRowDelta<AsmHistoricalFaceSample>,
 }
 
 impl AsmHistoricalRow for AsmHistoricalEntityTags {
@@ -1369,6 +1382,12 @@ impl AsmHistoricalRow for AsmHistoricalEdge {
 impl AsmHistoricalRow for AsmHistoricalEdgeSample {
     fn key(&self) -> i64 {
         self.edge
+    }
+}
+
+impl AsmHistoricalRow for AsmHistoricalFaceSample {
+    fn key(&self) -> i64 {
+        self.face
     }
 }
 

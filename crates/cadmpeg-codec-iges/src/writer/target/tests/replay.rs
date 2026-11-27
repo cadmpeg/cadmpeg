@@ -93,7 +93,7 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
     let source = unclassified.source.take().expect("decoded source exists");
     let format = source.format().to_owned();
     unclassified.source = Some(
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": format},
             "attributes": source.attributes,
         }))

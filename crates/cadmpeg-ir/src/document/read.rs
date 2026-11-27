@@ -28,9 +28,10 @@ use serde_json::Value;
 use self::loss::ReadLossCode;
 use self::text::{Found, Member, Scanner, Span};
 use super::{one_zero, CadIr, Design, Model, Process, Topology};
+use crate::annotations::Removed;
 use crate::bounds::MAX_DOCUMENT_DEPTH;
 use crate::design::evaluation::Cycles;
-use crate::native::{Native, NativeRecord};
+use crate::native::{Native, NativeConvertError, NativeRecord};
 use crate::report::loss::LossNote;
 use crate::report::strictness::Strictness;
 use crate::report::Severity;
@@ -69,16 +70,63 @@ pub struct ReadOptions {
     pub strictness: Strictness,
 }
 
-/// A document read from CADIR text, with its report.
+/// A document read from CADIR text, with its report. The caller takes the
+/// document with [`CadirRead::with_sidecar`], which reconciles a decode
+/// sidecar with the read, or with [`CadirRead::without_sidecar`] where no
+/// sidecar matches the text.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CadirRead {
     /// The document.
-    pub document: CadIr,
+    document: CadIr,
     /// What the read repaired, left out, and gave up.
-    pub report: Vec<LossNote>,
+    report: Vec<LossNote>,
     /// The text of each part the read gave up, retained `untyped` under the
     /// id of its `unknowns` stub (§3.3).
-    pub fidelity: SourceFidelity,
+    fidelity: SourceFidelity,
+    /// Each record the read gave up, and each record it dropped with one.
+    removed: Removed,
+}
+
+impl CadirRead {
+    /// The document, the read's report, and the source fidelity of the read:
+    /// the text of each part the read gave up, retained `untyped` under the
+    /// id of its `unknowns` stub (§3.3).
+    #[must_use]
+    pub fn without_sidecar(self) -> (CadIr, Vec<LossNote>, SourceFidelity) {
+        (self.document, self.report, self.fidelity)
+    }
+
+    /// The document, the read's report, and `sidecar`, the source fidelity
+    /// of a decode sidecar that matches the text read, reconciled with the
+    /// read (§3.3): without the annotations of each record the read gave up
+    /// and of each record it dropped with one, and with the retained text of
+    /// each part the read gave up under the id of its stub, where `sidecar`
+    /// retains no text under that id.
+    ///
+    /// # Errors
+    ///
+    /// A retained text the sidecar refuses.
+    pub fn with_sidecar(
+        self,
+        mut sidecar: SourceFidelity,
+    ) -> Result<(CadIr, Vec<LossNote>, SourceFidelity), NativeConvertError> {
+        let Self {
+            document,
+            report,
+            fidelity,
+            removed,
+        } = self;
+        if !sidecar.annotations.is_empty() {
+            sidecar.annotations.remove(&removed.after(&document));
+        }
+        let (_, retained) = fidelity.into_parts();
+        for (id, record) in retained {
+            if sidecar.retained_record(id.as_str()).is_none() {
+                sidecar.insert_retained_record(id, record)?;
+            }
+        }
+        Ok((document, report, sidecar))
+    }
 }
 
 /// Why a read states no document.
@@ -132,17 +180,21 @@ impl CadIr {
             parts: Vec::new(),
             part_entries: BTreeMap::new(),
             lost: Vec::new(),
+            removed: Removed::default(),
             stop: None,
             refusal: None,
         };
         let (document, fidelity) = reader.document()?;
-        let report = reader.report;
+        let Reader {
+            report, removed, ..
+        } = reader;
         match options.strictness.first_refused(&report, false) {
             Some(entry) => Err(ReadFailure::StrictRejected { report, entry }),
             None => Ok(CadirRead {
                 document,
                 report,
                 fidelity,
+                removed,
             }),
         }
     }
@@ -178,6 +230,9 @@ struct Reader<'r, 'a> {
     /// The id of each record the read gave up, with the report entry that
     /// names it.
     lost: Vec<(String, usize)>,
+    /// Each record that `lost` names, and each record the release of one
+    /// dropped.
+    removed: Removed,
     stop: Option<text::Stop>,
     refusal: Option<ResourceLimit>,
 }
@@ -356,8 +411,24 @@ impl Reader<'_, '_> {
         }
         let lost = std::mem::take(&mut self.lost);
         let ids: Vec<String> = lost.iter().map(|(id, _)| id.clone()).collect();
-        let released = match crate::give_up::release_lost(self.ctx, document, &ids) {
-            Ok(released) => released,
+        let mut released = Vec::new();
+        let outcome = crate::give_up::release_lost(self.ctx, document, &ids, &mut released);
+        self.removed = Removed::of_records(
+            ids.iter()
+                .chain(released.iter().flat_map(|(_, release)| &release.dropped))
+                .cloned(),
+            released
+                .iter()
+                .flat_map(|(_, release)| &release.states)
+                .flat_map(|((_, state), delta)| {
+                    delta
+                        .dropped
+                        .iter()
+                        .map(|record| (state.clone(), record.clone()))
+                }),
+        );
+        match outcome {
+            Ok(()) => {}
             Err(error @ CodecError::ResourceLimit(_)) => return Err(session_failure(&error)),
             Err(other) => {
                 self.report.push(
@@ -373,7 +444,7 @@ impl Reader<'_, '_> {
                 );
                 return Ok(());
             }
-        };
+        }
         let mut released = released.into_iter().peekable();
         for (id, entry) in lost {
             let Some((_, release)) = released.next_if(|(released, _)| *released == id) else {

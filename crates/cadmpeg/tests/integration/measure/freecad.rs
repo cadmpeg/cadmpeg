@@ -6,6 +6,8 @@
 use std::f64::consts::PI;
 use std::path::{Path, PathBuf};
 
+use assert_cmd::Command;
+use predicates::prelude::predicate;
 use serde_json::Value;
 
 use super::{assert_measured, assert_volume_or_candidate, measure_json};
@@ -161,4 +163,20 @@ fn freecad_compound_whole_faces() {
     let sphere_volume = 4.0 * PI * 64.0 / 3.0;
     let torus_volume = 2.0 * PI * PI * 6.0 * 4.0;
     assert_measured(&body["volume"], sphere_volume + torus_volume, 1.0);
+}
+
+/// A measurement decodes at geometry depth, so the load notes the
+/// document's sub-full scope.
+#[test]
+fn a_geometry_depth_decode_notes_its_sub_full_scope() {
+    let path = corpus("core_design_product.FCStd");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["measure", path.to_str().unwrap()])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(format!(
+            "note: {}: the document's scope excludes design, process",
+            path.display()
+        )));
 }

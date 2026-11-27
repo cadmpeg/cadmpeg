@@ -1147,7 +1147,7 @@ fn patched_retained_metadata(
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
     crate::annotations::note(
         &mut annotations,
-        id,
+        cadmpeg_ir::ids::Identity::new(id.as_str()).expect("identity grammar"),
         &cadmpeg_ir::stream_name!("SWObjects"),
         0,
         "metadata",
@@ -1305,7 +1305,7 @@ fn retained_part_edits_require_root_ownership_and_preserve_scalar_form() {
         let mut annotations = cadmpeg_ir::annotations::Annotations::default();
         crate::annotations::note(
             &mut annotations,
-            id,
+            cadmpeg_ir::ids::Identity::new(id).expect("identity grammar"),
             &cadmpeg_ir::stream_name!("SWObjects"),
             offset,
             "moPart_c",

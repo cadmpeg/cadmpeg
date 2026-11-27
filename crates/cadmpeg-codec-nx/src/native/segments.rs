@@ -202,21 +202,21 @@ impl Clone for SegmentStreamLink {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct SegmentBodyBinding {
     /// Globally unique binding identity.
-    pub(super) id: String,
+    pub(crate) id: String,
     /// Validated stream-wrapper link owning the metadata tuple.
-    pub(super) stream_link: String,
+    pub(crate) stream_link: String,
     /// Zero-based stream ordinal in the retained stream roster.
-    pub(super) stream_ordinal: u32,
+    pub(crate) stream_ordinal: u32,
     /// Partition or plain cached-body stream classification.
-    pub(super) stream_kind: crate::parasolid::StreamKind,
+    pub(crate) stream_kind: crate::parasolid::StreamKind,
     /// Object index used by feature-history body operands.
-    pub(super) body_object_index: u32,
+    pub(crate) body_object_index: u32,
     /// Second object index naming the same body image in feature history.
-    pub(super) body_alias_object_index: u32,
+    pub(crate) body_alias_object_index: u32,
     /// Serialized role word completing the five-word segment tuple.
-    pub(super) stream_role: u32,
+    pub(crate) stream_role: u32,
     /// Absolute file offset of the object-index word in the segment index.
-    pub(super) source_offset: u64,
+    pub(crate) source_offset: u64,
 }
 
 /// Return the one segment body binding named by an object index.
@@ -261,17 +261,17 @@ pub(super) fn unique_segment_body_alias_binding(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct SegmentBodyLineageStatus {
     /// Globally unique status identity.
-    pub(super) id: String,
+    pub(crate) id: String,
     /// Segment binding whose alias pair names the body image.
-    pub(super) segment_body_binding: String,
+    pub(crate) segment_body_binding: String,
     /// First serialized body identity.
-    pub(super) body_object_index: u32,
+    pub(crate) body_object_index: u32,
     /// Alias identity naming the same body image.
-    pub(super) body_alias_object_index: u32,
+    pub(crate) body_alias_object_index: u32,
     /// Whether the image remains terminal after retained history.
-    pub(super) terminal: bool,
+    pub(crate) terminal: bool,
     /// Absolute source offset of the segment binding.
-    pub(super) source_offset: u64,
+    pub(crate) source_offset: u64,
 }
 
 /// Validated link from a segment-index word to a framed OM section.

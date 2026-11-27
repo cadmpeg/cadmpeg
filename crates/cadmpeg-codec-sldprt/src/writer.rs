@@ -30,6 +30,7 @@ use crate::native::SldprtNative;
 use cadmpeg_core::convert::f32_from_f64;
 use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::annotations::AnnotationTarget;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::attributes::AttributeValue;
 use cadmpeg_ir::codec::write::capacity::{TextCapacity, TextUnit};
@@ -41,18 +42,18 @@ use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface},
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
 use cadmpeg_ir::schema::EntityKind;
 use cadmpeg_ir::source_fidelity::CodecDigests;
 use cadmpeg_ir::topology::{BodyKind, Color, Face, FaceBoundary, LoopBoundary, Region, Sense};
 use cadmpeg_ir::Annotations;
+use cadmpeg_parasolid::precision;
 
 use crate::SourceRecord;
 
 use crate::container::MARKER;
 
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
-const TYPED_BODY_LINEAR_RESOLUTION: f64 = 1.0e-8;
 
 pub(crate) const SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_swobjects_local_sha256";
 pub(crate) const SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE: &str =
@@ -60,6 +61,8 @@ pub(crate) const SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE: &str =
 pub(crate) const SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE: &str =
     "sldprt_swobjects_metadata_identity_local_sha256";
 pub(crate) const PMI_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_pmi_local_sha256";
+pub(crate) const LINEAR_TOLERANCE_LOCAL_DIGEST_ATTRIBUTE: &str =
+    "sldprt_linear_tolerance_local_sha256";
 
 /// Opaque solved carriers require a retained native partition.
 pub(crate) fn requires_native_partition(ir: &CadIr) -> bool {
@@ -338,9 +341,13 @@ pub(crate) fn write_semantic_with_records_cached(
     {
         retained_source_baseline(source_baseline, source_context.as_ref())?;
     }
+    let linear_resolution = precision::written_linear_resolution(normalized.tolerances.linear);
     // The IR stores canonical millimetres; Parasolid stores metres.
     let length_scale = 0.001;
-    let patched_partition = if retained_partition.is_none() {
+    let patched_partition = if retained_partition.is_none()
+        && crate::codec_digests::baseline(digests, LINEAR_TOLERANCE_LOCAL_DIGEST_ATTRIBUTE)
+            == Some(linear_tolerance_local_sha256(&normalized)?.as_str())
+    {
         crate::writer_patch::patch_partition(
             &normalized,
             annotations,
@@ -449,6 +456,8 @@ pub(crate) fn write_semantic_with_records_cached(
     losses.extend(reduce::empty_output(ir));
     let brep_empty = ir.geometry.faces.is_empty();
     let coverage = semantic_coverage(retained_partition.is_some());
+    let regenerated = retained_partition.is_none() && patched_partition.is_none();
+    let written_resolution = linear_resolution.unwrap_or(precision::DEFAULT_LINEAR_RESOLUTION);
     let mut bodiless_partitions = Vec::new();
     let mut encodable = None;
     let partition_sections = if let Some(retained) = retained_partition {
@@ -464,7 +473,7 @@ pub(crate) fn write_semantic_with_records_cached(
             // The source holds no partition either.
             Vec::new()
         } else {
-            let generated = faceless_partitions(ir, length_scale)?;
+            let generated = faceless_partitions(ir, length_scale, written_resolution)?;
             bodiless_partitions.extend(generated.bodiless);
             losses.extend(generated.losses);
             generated.sections
@@ -476,7 +485,7 @@ pub(crate) fn write_semantic_with_records_cached(
             "the body is not written",
         ));
         let encoded = body_drop::encode_without_unwritable_bodies(ir, None, |ir| {
-            generated_partitions(ir, length_scale)
+            generated_partitions(ir, length_scale, written_resolution)
         })?;
         losses.extend(encoded.losses);
         let written = encoded.reduced.as_ref().unwrap_or(ir);
@@ -489,6 +498,12 @@ pub(crate) fn write_semantic_with_records_cached(
         generated.sections
     };
     let ir = encodable.as_ref().unwrap_or(ir);
+    if regenerated && partition_sections.len() > bodiless_partitions.len() {
+        losses.extend(linear_tolerance_unstated(
+            ir.tolerances.linear,
+            linear_resolution,
+        ));
+    }
     losses.extend(cadmpeg_ir::codec::write::record_residual_unavailable(
         "SLDPRT",
         "writes each of these partitions, which hold no body, as a partition and a deltas \
@@ -780,7 +795,7 @@ pub(crate) fn write_semantic_with_records_cached(
         let written = native_skeleton(
             ir,
             native.as_ref(),
-            solidworks_history,
+            (solidworks_history, written_resolution),
             &left_out,
             &mut sections,
         );
@@ -887,7 +902,7 @@ const SKELETON_RESOLVED: &str = "Contents/Config-0-ResolvedFeatures";
 fn native_skeleton(
     ir: &CadIr,
     native: Option<&SldprtNative>,
-    solidworks_history: bool,
+    (solidworks_history, linear_resolution): (bool, f64),
     left_out: &[native::from_ir::SourceFeature],
     sections: &mut Vec<(String, Vec<u8>)>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, String> {
@@ -951,6 +966,7 @@ fn native_skeleton(
                 active: &active,
                 features: &features,
                 bodies: &bodies,
+                linear_resolution,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -1629,6 +1645,15 @@ fn section_type_ids(
         .collect()
 }
 
+/// The digest of the linear tolerance of `ir`, which the BODY records of a
+/// patched partition keep (`parasolid.md` §4).
+pub(crate) fn linear_tolerance_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
+    let bytes = json::to_vec(&ir.tolerances.linear).map_err(|error| {
+        CodecError::malformed(format_args!("cannot hash SLDPRT linear tolerance: {error}"))
+    })?;
+    Ok(cadmpeg_ir::hash::sha256_hex(&bytes))
+}
+
 pub(crate) fn pmi_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     let bytes = json::to_vec(&ir.model.pmi)
         .map_err(|error| CodecError::malformed(format_args!("cannot hash SLDPRT PMI: {error}")))?;
@@ -1647,16 +1672,49 @@ pub(crate) struct Generated {
     losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
-/// The partitions the writer generates from the document's bodies.
-fn generated_partitions(ir: &CadIr, length_scale: f64) -> Result<Generated, CodecError> {
+/// The `export:value.unwritable` note of a document linear tolerance
+/// `linear` that the written BODY nodes, each storing `written` (metres), do
+/// not state.
+fn linear_tolerance_unstated(
+    linear: PositiveLength,
+    written: Option<f64>,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let reason = match written {
+        None => format!(
+            "writes the modeller default `res_linear`, {:e} m, in each BODY, because the \
+             linear tolerance in metres is not a positive finite value",
+            precision::DEFAULT_LINEAR_RESOLUTION
+        ),
+        Some(res_linear) => {
+            let stated = precision::linear_precision(res_linear)?;
+            if stated == linear {
+                return None;
+            }
+            format!(
+                "writes `res_linear` {res_linear:e} m in each BODY, which states the linear \
+                 tolerance {} mm",
+                stated.get()
+            )
+        }
+    };
+    cadmpeg_ir::codec::write::value_unwritable("SLDPRT", &reason, ["tolerances.linear"])
+}
+
+/// The partitions the writer generates from the document's bodies, each
+/// BODY storing `linear_resolution` (metres).
+fn generated_partitions(
+    ir: &CadIr,
+    length_scale: f64,
+    linear_resolution: f64,
+) -> Result<Generated, CodecError> {
     if ir.geometry.faces.is_empty() {
-        return faceless_partitions(ir, length_scale);
+        return faceless_partitions(ir, length_scale, linear_resolution);
     }
     if !ir.model.configurations.is_empty() {
-        return configuration_partitions(ir, length_scale);
+        return configuration_partitions(ir, length_scale, linear_resolution);
     }
     Ok(Generated {
-        sections: vec![partition(ir, 0, length_scale)?],
+        sections: vec![partition(ir, 0, length_scale, linear_resolution)?],
         ..Generated::default()
     })
 }
@@ -1667,13 +1725,14 @@ fn partition(
     document: &CadIr,
     index: u32,
     length_scale: f64,
+    linear_resolution: f64,
 ) -> Result<(String, Vec<u8>), CodecError> {
     let schema_32001 = document
         .geometry
         .bodies
         .iter()
         .any(|body| body.kind == BodyKind::Sheet);
-    let body = brep_body(document, length_scale, schema_32001)?;
+    let body = brep_body(document, length_scale, linear_resolution, schema_32001)?;
     let schema = if schema_32001 {
         "SCH_SW_32001_11000"
     } else {
@@ -1688,6 +1747,7 @@ fn partition(
 pub(crate) fn configuration_partitions(
     ir: &CadIr,
     length_scale: f64,
+    linear_resolution: f64,
 ) -> Result<Generated, CodecError> {
     let configured = ir
         .model
@@ -1732,10 +1792,21 @@ pub(crate) fn configuration_partitions(
         })?;
         match (configuration.bodies.as_deref(), stored) {
             (_, Some(state)) => {
-                stored_partition(&state, configuration, index, length_scale, &mut generated)?;
+                stored_partition(
+                    &state,
+                    configuration,
+                    index,
+                    (length_scale, linear_resolution),
+                    &mut generated,
+                )?;
             }
             (Some(bodies), None) if !bodies.is_empty() => {
-                let section = partition(&body_subset(ir, bodies)?, index, length_scale)?;
+                let section = partition(
+                    &body_subset(ir, bodies)?,
+                    index,
+                    length_scale,
+                    linear_resolution,
+                )?;
                 generated.sections.push(section);
             }
             _ => {
@@ -1755,7 +1826,7 @@ fn stored_partition(
     state: &CadIr,
     configuration: &DesignConfiguration,
     index: u32,
-    length_scale: f64,
+    (length_scale, linear_resolution): (f64, f64),
     generated: &mut Generated,
 ) -> Result<(), CodecError> {
     let encoded =
@@ -1763,7 +1834,7 @@ fn stored_partition(
             if state.geometry.bodies.is_empty() {
                 return Ok(None);
             }
-            partition(state, index, length_scale).map(Some)
+            partition(state, index, length_scale, linear_resolution).map(Some)
         })?;
     generated.losses.extend(encoded.losses);
     let section = match encoded.partitions {
@@ -1801,6 +1872,7 @@ fn stored_state(ir: &CadIr, configuration: &DesignConfiguration) -> Option<CadIr
     let (_, state) = crate::decode::retired_states::stored_state(ir, configuration)?;
     let mut subset = CadIr::empty();
     subset.geometry = state.records.clone();
+    subset.tolerances = ir.tolerances;
     Some(subset)
 }
 
@@ -1809,7 +1881,11 @@ fn stored_state(ir: &CadIr, configuration: &DesignConfiguration) -> Option<CadIr
 /// holds the state the design stores for it writes that state, as
 /// [`configuration_partitions`] does; every other partition holds no body.
 /// A file with no partition is not an SLDPRT part its readers detect.
-fn faceless_partitions(ir: &CadIr, length_scale: f64) -> Result<Generated, CodecError> {
+fn faceless_partitions(
+    ir: &CadIr,
+    length_scale: f64,
+    linear_resolution: f64,
+) -> Result<Generated, CodecError> {
     let mut indices = BTreeMap::<u32, Option<(CadIr, &DesignConfiguration)>>::new();
     for configuration in &ir.model.configurations {
         let Some(index) = configuration.source_index else {
@@ -1827,7 +1903,13 @@ fn faceless_partitions(ir: &CadIr, length_scale: f64) -> Result<Generated, Codec
     for (index, state) in indices {
         match state {
             Some((state, configuration)) => {
-                stored_partition(&state, configuration, index, length_scale, &mut generated)?;
+                stored_partition(
+                    &state,
+                    configuration,
+                    index,
+                    (length_scale, linear_resolution),
+                    &mut generated,
+                )?;
             }
             None => {
                 let section = bodiless_partition(index, &mut generated.bodiless)?;
@@ -2090,7 +2172,7 @@ fn opaque_blocks(
             continue;
         }
         let Some(data) = record.data else {
-            unavailable.push(format!("{section} ({})", record.id.as_str()));
+            unavailable.push(format!("{} ({section})", record.id.as_str()));
             continue;
         };
         let mut payload = data.to_vec();
@@ -2152,7 +2234,7 @@ struct OpaqueBlocks {
     /// members the write generates for it.
     replaced: Vec<String>,
     /// Each retained block whose bytes the source fidelity does not hold,
-    /// as its stream and id.
+    /// as its id and stream.
     unavailable: Vec<String>,
     /// The losses of the edited records that keep their stored bytes.
     kept_edits: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -2272,7 +2354,9 @@ fn patch_retained_swobjects_metadata(
         .map(|attribute| attribute.id.as_str())
         .collect::<HashSet<_>>();
     for (key, provenance) in &annotations.provenance {
-        let id = key.as_str();
+        let AnnotationTarget::Entity(id) = key.target() else {
+            continue;
+        };
         let stream = provenance.stream();
         if id.starts_with("sldprt:metadata:")
             && !id.starts_with("sldprt:metadata:source_linear_unit_code#")
@@ -3802,12 +3886,21 @@ fn named_record(error: CodecError, id: &str) -> CodecError {
     }
 }
 
+/// The partition body of `ir`, each BODY storing `linear_resolution`
+/// (metres).
 pub(crate) fn brep_body(
     ir: &CadIr,
     length_scale: f64,
+    linear_resolution: f64,
     schema_32001: bool,
 ) -> Result<Vec<u8>, CodecError> {
-    brep_body_from(ir, length_scale, schema_32001, FIRST_NODE_INDEX)
+    brep_body_from(
+        ir,
+        length_scale,
+        linear_resolution,
+        schema_32001,
+        FIRST_NODE_INDEX,
+    )
 }
 
 /// The first node index of a stream (`parasolid.md` §1).
@@ -3817,6 +3910,7 @@ const FIRST_NODE_INDEX: u32 = 2;
 pub(crate) fn brep_body_from(
     ir: &CadIr,
     length_scale: f64,
+    linear_resolution: f64,
     schema_32001: bool,
     first: u32,
 ) -> Result<Vec<u8>, CodecError> {
@@ -4228,6 +4322,7 @@ pub(crate) fn brep_body_from(
             color_attrs: &color_attrs,
             face_color_definition,
             schema_32001,
+            linear_resolution,
         },
         &mut next,
         &mut out,
@@ -4251,6 +4346,8 @@ struct HierarchyIdentities<'a> {
     color_attrs: &'a HashMap<cadmpeg_ir::ids::FaceId, u32>,
     face_color_definition: Option<(u32, u32)>,
     schema_32001: bool,
+    /// The `res_linear` (metres) each BODY stores.
+    linear_resolution: f64,
 }
 
 fn write_body_hierarchy(
@@ -4260,13 +4357,12 @@ fn write_body_hierarchy(
     out: &mut Vec<u8>,
 ) -> Result<(), CodecError> {
     let HierarchyIdentities {
-        body_attrs,
         faces,
-        surfaces,
         face_owners,
         color_attrs,
         face_color_definition,
         schema_32001,
+        ..
     } = *identities;
     let shells = ir
         .geometry
@@ -4358,7 +4454,7 @@ fn write_body_hierarchy(
             "face is not assigned to a body".into(),
         ));
     }
-    write_typed_body_hierarchy(ir, faces, surfaces, body_attrs, next, out)?;
+    write_typed_body_hierarchy(ir, identities, next, out)?;
     if let Some((key_node, definition_node)) = face_color_definition {
         attribute_definition(out, key_node, definition_node)?;
     }
@@ -4392,12 +4488,17 @@ fn write_body_hierarchy(
 /// without a second identity map.
 fn write_typed_body_hierarchy(
     ir: &CadIr,
-    faces: &HashMap<cadmpeg_ir::ids::FaceId, u32>,
-    surfaces: &HashMap<cadmpeg_ir::ids::SurfaceId, u32>,
-    body_attrs: &HashMap<cadmpeg_ir::ids::BodyId, u32>,
+    identities: &HierarchyIdentities<'_>,
     next: &mut u32,
     out: &mut Vec<u8>,
 ) -> Result<(), CodecError> {
+    let HierarchyIdentities {
+        body_attrs,
+        faces,
+        surfaces,
+        linear_resolution,
+        ..
+    } = *identities;
     let region_attrs = ir
         .geometry
         .regions
@@ -4445,7 +4546,7 @@ fn write_typed_body_hierarchy(
             pointer(out, value)?;
         }
         bef64(out, 1000.0);
-        bef64(out, TYPED_BODY_LINEAR_RESOLUTION);
+        bef64(out, linear_resolution);
         for value in [1_u32, 1, 1] {
             pointer(out, value)?;
         }

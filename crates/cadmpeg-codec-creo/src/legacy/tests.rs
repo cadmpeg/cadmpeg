@@ -279,7 +279,7 @@ fn type_2_reals_decode_compact_bits_runs_and_child_rows() {
         .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.real_values.rows.len(), 4);
-    assert_eq!(persistence.real_values.unresolved_count, 0);
+    assert!(persistence.real_values.unresolved.is_empty());
     assert_eq!(
         persistence.real_values.rows[0].payload,
         RealPayload::Scalar {
@@ -336,7 +336,7 @@ fn type_2_reals_withhold_incomplete_or_nonfinite_values() {
         .expect("the fixture states every scope inside its own bytes");
 
     assert!(persistence.real_values.rows.is_empty());
-    assert_eq!(persistence.real_values.unresolved_count, 3);
+    assert_eq!(persistence.real_values.unresolved.len(), 3);
 }
 
 #[test]
@@ -348,7 +348,7 @@ fn type_1_integers_decode_signed_scalars_runs_and_child_rows() {
         .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.integer_values.rows.len(), 3);
-    assert_eq!(persistence.integer_values.unresolved_count, 0);
+    assert!(persistence.integer_values.unresolved.is_empty());
     assert_eq!(
         persistence.integer_values.rows[0].payload,
         IntegerPayload::Scalar { value: i32::MIN }
@@ -389,7 +389,7 @@ fn type_1_integers_withhold_incomplete_arrays_and_overflow() {
         .expect("the fixture states every scope inside its own bytes");
 
     assert!(persistence.integer_values.rows.is_empty());
-    assert_eq!(persistence.integer_values.unresolved_count, 2);
+    assert_eq!(persistence.integer_values.unresolved.len(), 2);
 }
 
 #[test]
@@ -407,7 +407,7 @@ fn remaining_numeric_types_decode_their_scalar_and_array_grammars() {
         .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.type_5_values.rows.len(), 2);
-    assert_eq!(persistence.type_5_values.unresolved_count, 0);
+    assert!(persistence.type_5_values.unresolved.is_empty());
     assert_eq!(
         persistence.type_5_values.rows[1].payload,
         UnsignedPayload::array(
@@ -423,7 +423,7 @@ fn remaining_numeric_types_decode_their_scalar_and_array_grammars() {
         .expect("numeric array work admission")
     );
     assert_eq!(persistence.type_6_values.rows.len(), 2);
-    assert_eq!(persistence.type_6_values.unresolved_count, 0);
+    assert!(persistence.type_6_values.unresolved.is_empty());
     assert_eq!(
         persistence.type_6_values.rows[0].payload,
         RealPayload::Scalar {
@@ -431,11 +431,11 @@ fn remaining_numeric_types_decode_their_scalar_and_array_grammars() {
         }
     );
     assert_eq!(persistence.type_7_values.rows.len(), 2);
-    assert_eq!(persistence.type_7_values.unresolved_count, 0);
+    assert!(persistence.type_7_values.unresolved.is_empty());
     assert_eq!(persistence.type_9_values.rows.len(), 1);
-    assert_eq!(persistence.type_9_values.unresolved_count, 0);
+    assert!(persistence.type_9_values.unresolved.is_empty());
     assert_eq!(persistence.type_11_values.rows.len(), 2);
-    assert_eq!(persistence.type_11_values.unresolved_count, 0);
+    assert!(persistence.type_11_values.unresolved.is_empty());
     assert_eq!(
         persistence.type_11_values.rows[1].payload,
         UnsignedPayload::array(
@@ -458,11 +458,11 @@ fn remaining_numeric_types_withhold_undefined_values() {
         .expect("the fixture states every scope inside its own bytes");
 
     assert!(persistence.type_5_values.rows.is_empty());
-    assert_eq!(persistence.type_5_values.unresolved_count, 1);
+    assert_eq!(persistence.type_5_values.unresolved.len(), 1);
     assert!(persistence.type_6_values.rows.is_empty());
-    assert_eq!(persistence.type_6_values.unresolved_count, 1);
+    assert_eq!(persistence.type_6_values.unresolved.len(), 1);
     assert!(persistence.type_11_values.rows.is_empty());
-    assert_eq!(persistence.type_11_values.unresolved_count, 1);
+    assert_eq!(persistence.type_11_values.unresolved.len(), 1);
 }
 
 #[test]
@@ -478,7 +478,7 @@ fn type_3_and_type_4_decode_exact_scalar_bytes() {
         .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.type_3_values.rows.len(), 3);
-    assert_eq!(persistence.type_3_values.unresolved_count, 1);
+    assert_eq!(persistence.type_3_values.unresolved.len(), 1);
     assert_eq!(persistence.type_3_values.rows[0].payload, StringValue::Null);
     assert_eq!(
         persistence.type_3_values.rows[1].payload,
@@ -495,7 +495,7 @@ fn type_3_and_type_4_decode_exact_scalar_bytes() {
     assert_eq!(persistence.type_3_values.rows[0].parent, Some(root_offset));
 
     assert_eq!(persistence.type_4_values.rows.len(), 2);
-    assert_eq!(persistence.type_4_values.unresolved_count, 0);
+    assert!(persistence.type_4_values.unresolved.is_empty());
     assert_eq!(
         persistence.type_4_values.rows[0].payload,
         StringValue::Utf8 {
@@ -614,12 +614,12 @@ fn array_completeness_wire_retains_continuation_failures() {
     assert_eq!(persistence.unresolved_string_value_count, 2);
     assert_eq!(
         json::to_value(&persistence.string_values[0].payload).unwrap(),
-        serde_json::json!({"form": "array", "dimensions": [1],
+        cadmpeg_core::json!({"form": "array", "dimensions": [1],
             "values": [{"form": "utf8", "text": "value"}], "complete": false})
     );
     assert_eq!(
         json::to_value(&persistence.string_values[1].payload).unwrap(),
-        serde_json::json!({"form": "array", "dimensions": [1],
+        cadmpeg_core::json!({"form": "array", "dimensions": [1],
             "values": [], "complete": false})
     );
     let payload = ObjectPayload::Array {
@@ -628,7 +628,7 @@ fn array_completeness_wire_retains_continuation_failures() {
     };
     assert_eq!(
         json::to_value(payload).unwrap(),
-        serde_json::json!({
+        cadmpeg_core::json!({
             "form": "array", "dimensions": [1, 2], "elements": ["first", "second"],
             "complete": true
         })
@@ -792,11 +792,11 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
     assert_eq!(reals.len(), 1);
     assert_eq!(
         reals[0].field("name"),
-        Some(serde_json::json!("rel_accuracy"))
+        Some(cadmpeg_core::json!("rel_accuracy"))
     );
     assert_eq!(
         reals[0].field("payload"),
-        Some(serde_json::json!({"form": "scalar", "value": 1.0}))
+        Some(cadmpeg_core::json!({"form": "scalar", "value": 1.0}))
     );
     let integers = &result
         .ir()
@@ -807,11 +807,11 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
     assert_eq!(integers.len(), 1);
     assert_eq!(
         integers[0].field("name"),
-        Some(serde_json::json!("feat_id"))
+        Some(cadmpeg_core::json!("feat_id"))
     );
     assert_eq!(
         integers[0].field("payload"),
-        Some(serde_json::json!({"form": "scalar", "value": 42}))
+        Some(cadmpeg_core::json!({"form": "scalar", "value": 42}))
     );
     let objects = &result
         .ir()
@@ -822,7 +822,7 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
     assert_eq!(objects.len(), 1);
     assert_eq!(
         integers[0].field("parent"),
-        Some(serde_json::json!(objects[0].id()))
+        Some(cadmpeg_core::json!(objects[0].id()))
     );
     let strings = &result
         .ir()
@@ -833,15 +833,15 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
     assert_eq!(strings.len(), 2);
     let principal = strings
         .iter()
-        .find(|record| record.field("name") == Some(serde_json::json!("principal_sys_units")))
+        .find(|record| record.field("name") == Some(cadmpeg_core::json!("principal_sys_units")))
         .expect("principal-unit string");
     let encoded = strings
         .iter()
-        .find(|record| record.field("name") == Some(serde_json::json!("encoded")))
+        .find(|record| record.field("name") == Some(cadmpeg_core::json!("encoded")))
         .expect("encoded string");
     assert_eq!(
         principal.field("payload"),
-        Some(serde_json::json!({
+        Some(cadmpeg_core::json!({
             "form": "scalar",
             "value": {
                 "form": "utf8",
@@ -851,7 +851,7 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
     );
     assert_eq!(
         encoded.field("payload"),
-        Some(serde_json::json!({
+        Some(cadmpeg_core::json!({
             "form": "scalar",
             "value": {"form": "bytes", "bytes": "e9"}
         }))
@@ -933,13 +933,13 @@ fn legacy_numbered_numeric_families_emit_exact_native_values() {
     assert_eq!(
         native.arenas()["legacy_type_6_values"]
             .iter()
-            .find(|record| record.field("name") == Some(serde_json::json!("six")))
+            .find(|record| record.field("name") == Some(cadmpeg_core::json!("six")))
             .and_then(|record| record.field("payload")),
-        Some(serde_json::json!({"form": "scalar", "value": 2.0}))
+        Some(cadmpeg_core::json!({"form": "scalar", "value": 2.0}))
     );
     assert_eq!(
         native.arenas()["legacy_type_11_values"][0].field("payload"),
-        Some(serde_json::json!({
+        Some(cadmpeg_core::json!({
             "form": "array",
             "dimensions": [1],
             "runs": [{"count": 1, "value": 14633}]
@@ -947,7 +947,9 @@ fn legacy_numbered_numeric_families_emit_exact_native_values() {
     );
     assert_eq!(
         native.arenas()["legacy_type_11_values"][0].field("parent"),
-        Some(serde_json::json!(native.arenas()["legacy_objects"][0].id()))
+        Some(cadmpeg_core::json!(
+            native.arenas()["legacy_objects"][0].id()
+        ))
     );
 }
 
@@ -987,19 +989,21 @@ fn legacy_type_3_and_type_4_emit_exact_scalar_bytes() {
     assert_eq!(native.arenas()["legacy_type_4_values"].len(), 1);
     assert_eq!(
         native.arenas()["legacy_type_3_values"][0].field("payload"),
-        Some(serde_json::json!({"form": "null"}))
+        Some(cadmpeg_core::json!({"form": "null"}))
     );
     assert_eq!(
         native.arenas()["legacy_type_3_values"][1].field("payload"),
-        Some(serde_json::json!({"form": "utf8", "text": "texture-name"}))
+        Some(cadmpeg_core::json!({"form": "utf8", "text": "texture-name"}))
     );
     assert_eq!(
         native.arenas()["legacy_type_4_values"][0].field("payload"),
-        Some(serde_json::json!({"form": "utf8", "text": "NULL"}))
+        Some(cadmpeg_core::json!({"form": "utf8", "text": "NULL"}))
     );
     assert_eq!(
         native.arenas()["legacy_type_4_values"][0].field("parent"),
-        Some(serde_json::json!(native.arenas()["legacy_objects"][0].id()))
+        Some(cadmpeg_core::json!(
+            native.arenas()["legacy_objects"][0].id()
+        ))
     );
 }
 
@@ -1213,26 +1217,26 @@ fn typed_value_results_keep_grammar_and_unresolved_counts_together() {
     let persistence = scan(data, std::iter::once(0..data.len()))
         .expect("the fixture states every scope inside its own bytes");
     assert_eq!(persistence.type_3_values.rows[0].payload, StringValue::Null);
-    assert_eq!(persistence.type_3_values.unresolved_count, 2);
+    assert_eq!(persistence.type_3_values.unresolved.len(), 2);
     assert_eq!(
         persistence.type_4_values.rows[0].payload,
         StringValue::Utf8 {
             text: "NULL".to_owned()
         }
     );
-    assert_eq!(persistence.type_4_values.unresolved_count, 0);
+    assert!(persistence.type_4_values.unresolved.is_empty());
     assert_eq!(
         persistence.type_5_values.rows[0].payload,
         NumericPayload::Scalar { value: 7 }
     );
-    assert_eq!(persistence.type_5_values.unresolved_count, 1);
+    assert_eq!(persistence.type_5_values.unresolved.len(), 1);
     assert_eq!(
         persistence.type_6_values.rows[0].payload,
         NumericPayload::Scalar {
             value: Real::from_bits(1.0f64.to_bits())
         }
     );
-    assert_eq!(persistence.type_6_values.unresolved_count, 0);
+    assert!(persistence.type_6_values.unresolved.is_empty());
 }
 
 #[test]
@@ -1262,7 +1266,7 @@ fn numeric_array_withholds_child_at_maximum_depth() {
         persistence.integer_values.rows[0].payload,
         IntegerPayload::Scalar { value: 7 }
     ));
-    assert_eq!(persistence.integer_values.unresolved_count, 1);
+    assert_eq!(persistence.integer_values.unresolved.len(), 1);
 }
 
 #[test]

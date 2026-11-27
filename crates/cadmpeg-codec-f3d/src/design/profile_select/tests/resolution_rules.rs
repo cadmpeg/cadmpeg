@@ -1038,7 +1038,7 @@ fn unresolved_explicit_region_fixture(
     Vec<crate::records::sketch_geometry::SketchCurveIdentity>,
     crate::records::feature::scope::DesignParameterScope,
 ) {
-    use serde_json::json;
+    use cadmpeg_core::json;
 
     let sketch_id = SketchId::mint("f3d:model:sketch#explicit_conflict").unwrap();
     let specs = [
@@ -1148,7 +1148,7 @@ fn unresolved_explicit_region_fixture(
 
 #[test]
 fn unresolved_explicit_region_rejects_conflicting_group_and_accepts_agreeing_group() {
-    use serde_json::json;
+    use cadmpeg_core::json;
 
     crate::test_support::with_decode_context(|ctx| {
         let (sketch, entities, curves, scope) = unresolved_explicit_region_fixture(None);
@@ -1241,7 +1241,7 @@ fn unresolved_explicit_region_rejects_conflicting_group_and_accepts_agreeing_gro
 
 #[test]
 fn unresolved_explicit_region_rejects_conflicting_transition_and_accepts_agreeing_transition() {
-    use serde_json::json;
+    use cadmpeg_core::json;
 
     crate::test_support::with_decode_context(|ctx| {
         let (sketch, entities, curves, scope) = unresolved_explicit_region_fixture(Some((1, 0)));
@@ -1325,8 +1325,8 @@ fn unresolved_explicit_region_rejects_conflicting_transition_and_accepts_agreein
 
 #[test]
 fn unresolved_explicit_region_requires_hole_agreement() {
+    use cadmpeg_core::json;
     use cadmpeg_ir::features::profiles::SketchProfileRegion;
-    use serde_json::json;
 
     let (sketch, entities, curves, scope) = unresolved_explicit_region_fixture(None);
     let crate::records::feature::scope::DesignScopePayload::Extrude(Some(ref extrude_scope)) =
@@ -1448,7 +1448,7 @@ fn unresolved_explicit_region_requires_hole_agreement() {
 
 #[test]
 fn explicit_region_with_extended_incidence_refuses_fallback_for_trimmed_curve_portions() {
-    use serde_json::json;
+    use cadmpeg_core::json;
 
     crate::test_support::with_decode_context(|ctx| {
         let (sketch, entities, curves, fixture_scope) = unresolved_explicit_region_fixture(None);
@@ -1577,7 +1577,7 @@ fn explicit_region_with_extended_incidence_refuses_fallback_for_trimmed_curve_po
 
 #[test]
 fn resolved_explicit_profiles_reject_partial_or_hole_candidates() {
-    use serde_json::json;
+    use cadmpeg_core::json;
 
     crate::test_support::with_decode_context(|ctx| {
         let sketch_id = SketchId::mint("f3d:model:sketch#resolved_exp_conflict").unwrap();

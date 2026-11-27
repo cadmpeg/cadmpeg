@@ -4,11 +4,12 @@
 //! `value` on a unit arm, and a restated object key.
 
 use cadmpeg_core::decode::ResourceLimits;
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::{AttributeJson, AttributeTarget, AttributeValue, SourceAttribute};
 use crate::bounds::MAX_DOCUMENT_DEPTH;
@@ -70,19 +71,19 @@ fn every_target_arm_reads_back() {
 fn target_order_agrees_with_equality() {
     let targets = [
         AttributeTarget::Document,
-        AttributeTarget::Tessellation("test:model:tessellation#1".into()),
-        AttributeTarget::Tessellation("test:model:tessellation#2".into()),
+        AttributeTarget::Tessellation("test:model:tessellation#1".try_into().unwrap()),
+        AttributeTarget::Tessellation("test:model:tessellation#2".try_into().unwrap()),
         AttributeTarget::Record {
             arena: cadmpeg_core::text::NonBlankString::new("point_clouds").unwrap(),
-            id: "test:model:cloud#1".into(),
+            id: "test:model:cloud#1".try_into().unwrap(),
         },
         AttributeTarget::Record {
             arena: cadmpeg_core::text::NonBlankString::new("point_clouds").unwrap(),
-            id: "test:model:cloud#2".into(),
+            id: "test:model:cloud#2".try_into().unwrap(),
         },
         AttributeTarget::Record {
             arena: cadmpeg_core::text::NonBlankString::new("assets").unwrap(),
-            id: "test:model:cloud#1".into(),
+            id: "test:model:cloud#1".try_into().unwrap(),
         },
     ];
     for a in &targets {

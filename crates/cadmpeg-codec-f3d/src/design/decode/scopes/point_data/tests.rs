@@ -365,7 +365,7 @@ fn work_point_rule_rejects_an_incompatible_input_carrier() {
     .expect("work point frame");
     let mut wire = json::to_value(&frame.rule).expect("serialize valid rule");
 
-    wire["inputs"][1]["carrier"] = serde_json::json!({
+    wire["inputs"][1]["carrier"] = cadmpeg_core::json!({
         "kind": "edge_recipe", "operand_id": "f3d:native:edge-operand#wrong-role"
     });
     assert!(json::from_value::<DesignWorkPointRule>(wire).is_err());

@@ -782,45 +782,45 @@ mod tests {
     #[test]
     fn hole_extent_round_trip_checks_control() {
         for control in [0, 1] {
-            let value = serde_json::json!({"extent_control": control, "saved_non_distance_depth": {"value": 1.0, "offset": 5}});
+            let value = cadmpeg_core::json!({"extent_control": control, "saved_non_distance_depth": {"value": 1.0, "offset": 5}});
             let extent: super::DesignHoleExtent = json::from_value(value.clone()).unwrap();
             assert_eq!(json::to_value(extent).unwrap(), value);
         }
-        let directed = serde_json::json!({
+        let directed = cadmpeg_core::json!({
             "extent_control": 0, "direction_control": {"value": 1, "offset": 7}
         });
         let extent: super::DesignHoleExtent = json::from_value(directed.clone()).unwrap();
         assert_eq!(json::to_value(extent).unwrap(), directed);
         assert!(json::from_value::<super::DesignHoleExtent>(
-            serde_json::json!({"direction_control": {"value": 2, "offset": 7}})
+            cadmpeg_core::json!({"direction_control": {"value": 2, "offset": 7}})
         )
         .is_err());
         assert!(json::from_value::<super::DesignHoleExtent>(
-            serde_json::json!({"direction_control": null})
+            cadmpeg_core::json!({"direction_control": null})
         )
         .is_err());
         let worded =
-            serde_json::json!({"leading_word": {"value": 2, "offset": 3}, "extent_control": 0});
+            cadmpeg_core::json!({"leading_word": {"value": 2, "offset": 3}, "extent_control": 0});
         let extent: super::DesignHoleExtent = json::from_value(worded.clone()).unwrap();
         assert_eq!(json::to_value(extent).unwrap(), worded);
         assert!(json::from_value::<super::DesignHoleExtent>(
-            serde_json::json!({"leading_word": null, "extent_control": 0})
+            cadmpeg_core::json!({"leading_word": null, "extent_control": 0})
         )
         .is_err());
-        let bare = serde_json::json!({});
+        let bare = cadmpeg_core::json!({});
         let extent: super::DesignHoleExtent = json::from_value(bare.clone()).unwrap();
         assert_eq!(extent.extent_control, None);
         assert_eq!(json::to_value(extent).unwrap(), bare);
         assert!(json::from_value::<super::DesignHoleExtent>(
-            serde_json::json!({"extent_control": null})
+            cadmpeg_core::json!({"extent_control": null})
         )
         .is_err());
         assert!(json::from_value::<super::DesignHoleExtent>(
-            serde_json::json!({"extent_control": 2})
+            cadmpeg_core::json!({"extent_control": 2})
         )
         .is_err());
         assert!(json::from_value::<super::DesignHoleExtent>(
-            serde_json::json!({"extent_control": 1, "saved_non_distance_depth": null})
+            cadmpeg_core::json!({"extent_control": 1, "saved_non_distance_depth": null})
         )
         .is_err());
     }
@@ -834,13 +834,13 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(index, (reference_type, position))| {
-                serde_json::json!({
+                cadmpeg_core::json!({
                     "record_index": index, "position": position,
                     "position_offset": index, "reference_type": reference_type
                 })
             })
             .collect();
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "point_record_index": 1, "point_record_byte_offset": 2,
             "position": position, "position_offset": 3,
             "direction": [0.0, 0.0, 1.0], "direction_offset": 4,
@@ -910,7 +910,7 @@ mod tests {
         v_axis: [f64; 3],
     ) -> DesignHoleConstruction {
         let mut value = json::to_value(carrier(19, A, &[(17, position)])).unwrap();
-        value["locations"][0]["plane"] = serde_json::json!({
+        value["locations"][0]["plane"] = cadmpeg_core::json!({
             "selection_record_index": 1, "record_index": 2,
             "origin": origin, "origin_offset": 3,
             "u_axis": u_axis, "v_axis": v_axis
@@ -961,7 +961,7 @@ mod tests {
             [0.0, 1.0, 0.0],
         ))
         .unwrap();
-        other["locations"][0]["reference_type"] = serde_json::json!(12);
+        other["locations"][0]["reference_type"] = cadmpeg_core::json!(12);
         let other: DesignHoleConstruction = json::from_value(other).unwrap();
         assert_eq!(entry_points(&other), None);
     }
@@ -972,7 +972,7 @@ mod tests {
         let value = json::to_value(&located).unwrap();
         assert_eq!(
             value["locations"][0]["plane"]["origin"],
-            serde_json::json!([0.0, 0.0, 2.0])
+            cadmpeg_core::json!([0.0, 0.0, 2.0])
         );
         let decoded: DesignHoleConstruction = json::from_value(value).unwrap();
         assert_eq!(decoded, located);
@@ -1011,7 +1011,7 @@ mod tests {
         let value = json::to_value(&located).unwrap();
         assert_eq!(
             value["locations"],
-            serde_json::json!([{
+            cadmpeg_core::json!([{
                 "record_index": 0, "position": A, "position_offset": 0, "reference_type": 17
             }])
         );
@@ -1029,7 +1029,7 @@ mod tests {
             construction: &'a DesignHoleConstruction,
         }
 
-        let construction = serde_json::json!({
+        let construction = cadmpeg_core::json!({
             "point_record_index": 1, "point_record_byte_offset": 2,
             "position": [0.0, 1.0, 2.0], "position_offset": 3,
             "direction": [0.0, 0.0, 1.0], "direction_offset": 4,
@@ -1045,7 +1045,7 @@ mod tests {
         };
         assert_native_limit(
             &row,
-            serde_json::json!({"id": row.id, "construction": construction}),
+            cadmpeg_core::json!({"id": row.id, "construction": construction}),
         );
     }
 
@@ -1057,7 +1057,7 @@ mod tests {
             selection: &'a DesignHoleFaceSelection,
         }
 
-        let selection = serde_json::json!({
+        let selection = cadmpeg_core::json!({
             "record_index": 1, "byte_offset": 2, "class_tag": "451",
             "asset_id": "11111111-1111-1111-1111-111111111111",
             "asset_id_offset": 3,
@@ -1075,7 +1075,7 @@ mod tests {
         };
         assert_native_limit(
             &row,
-            serde_json::json!({"id": row.id, "selection": selection}),
+            cadmpeg_core::json!({"id": row.id, "selection": selection}),
         );
     }
 }

@@ -52,4 +52,6 @@ pub(crate) mod terminal_page {
     pub(crate) const USED: usize = 4;
     /// Offset of `body` (`bytes[128]`). Spec §3.
     pub(crate) const BODY: usize = 8;
+    /// Offset of `record_start` (`u16`, little-endian). Spec §3.
+    pub(crate) const RECORD_START: usize = 6;
 }
