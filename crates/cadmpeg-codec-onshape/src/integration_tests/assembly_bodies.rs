@@ -108,7 +108,7 @@ fn an_unbound_part_leaves_the_body_on_the_studio_definition() {
         .as_array_mut()
         .unwrap()
     {
-        instance["configuration"] = serde_json::json!("variant");
+        instance["configuration"] = cadmpeg_core::json!("variant");
     }
     let model = decode(&bundle(definition));
     assert_eq!(errors(&model), Vec::<String>::new());

@@ -2,6 +2,7 @@
 //! The depth bounds of §2.5: an expression tree reads to 64 levels, and the
 //! nesting design types read to the document's 128 levels of JSON.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 
@@ -27,7 +28,7 @@ fn read_expression(text: &str) -> Result<Neutral<ParameterRef>, CodecError> {
 }
 
 fn wire(text: String) -> String {
-    cadmpeg_core::serde_erase::json::to_string(&NeutralWire::<ParameterRef> {
+    json::to_string(&NeutralWire::<ParameterRef> {
         text,
         refs: Vec::new(),
         measures: Vec::new(),
@@ -90,10 +91,7 @@ fn a_long_chain_is_two_levels_deep() {
             let text = chained(operand, mark, 10_000);
             let tree = read_expression(&text).unwrap();
             assert_eq!(tree.0.depth(), 2);
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_string(&tree).unwrap(),
-                text
-            );
+            assert_eq!(json::to_string(&tree).unwrap(), text);
             let copy = tree.clone();
             assert_eq!(copy, tree);
         }
@@ -119,10 +117,7 @@ fn a_mixed_expression_reads_to_the_bound_on_a_small_stack() {
         let at = mixed(calls);
         let tree = read_expression(&at).unwrap();
         assert_eq!(tree.0.depth(), 6 * calls + 1);
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&tree).unwrap(),
-            at
-        );
+        assert_eq!(json::to_string(&tree).unwrap(), at);
         let copy = tree.clone();
         assert_eq!(copy, tree);
         drop(copy);
@@ -200,13 +195,12 @@ fn mixed_trees_read_back_to_the_bound_on_a_small_stack() {
             let mut tree = choices.pick(&leaves);
             while tree.depth() <= MAX_EXPRESSION_DEPTH {
                 deepest = deepest.max(tree.depth());
-                let text =
-                    cadmpeg_core::serde_erase::json::to_string(&Neutral(tree.clone())).unwrap();
+                let text = json::to_string(&Neutral(tree.clone())).unwrap();
                 let back = read_expression(&text).unwrap();
                 assert_eq!(back.0, tree, "{text}");
                 tree = wrapped(&mut choices, &leaves, tree);
             }
-            let text = cadmpeg_core::serde_erase::json::to_string(&Neutral(tree)).unwrap();
+            let text = json::to_string(&Neutral(tree)).unwrap();
             refused_past_the_expression_bound(&text);
         }
         assert!(
@@ -228,10 +222,7 @@ where
         .unwrap();
     let at = nested(past - 1);
     let value = read::from_str::<T>(&at, &limits).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
-        at
-    );
+    assert_eq!(json::to_string(&value).unwrap(), at);
     assert_eq!(value.clone(), value);
     let refusal = read::from_str::<T>(&nested(past), &limits);
     assert!(
@@ -250,7 +241,7 @@ fn modified(depth: usize) -> String {
             from: Box::new(name),
         };
     }
-    cadmpeg_core::serde_erase::json::to_string(&name).unwrap()
+    json::to_string(&name).unwrap()
 }
 
 fn limited(depth: usize) -> String {
@@ -264,7 +255,7 @@ fn limited(depth: usize) -> String {
             ..picked(2)
         };
     }
-    cadmpeg_core::serde_erase::json::to_string(&pick).unwrap()
+    json::to_string(&pick).unwrap()
 }
 
 fn built(depth: usize) -> String {
@@ -290,7 +281,7 @@ fn built(depth: usize) -> String {
             ..empty()
         };
     }
-    cadmpeg_core::serde_erase::json::to_string(&construction).unwrap()
+    json::to_string(&construction).unwrap()
 }
 
 #[test]

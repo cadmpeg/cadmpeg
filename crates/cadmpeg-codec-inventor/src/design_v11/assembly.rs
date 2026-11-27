@@ -117,6 +117,7 @@ pub(crate) fn scope(
 mod tests {
     use super::*;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::ids::ProductDefinitionId;
     use cadmpeg_ir::products::{JointConnector, JointOperand};
     use cadmpeg_ir::products::{JointId, Storage};
@@ -219,8 +220,8 @@ mod tests {
             ));
         ir.model.product_definitions.push(embedded);
         ir.geometry.bodies.push(
-            cadmpeg_core::serde_erase::json::from_value(
-                serde_json::json!({"id": "inventor:brep:body#embedded", "kind": "solid"}),
+            json::from_value(
+                cadmpeg_core::json!({"id": "inventor:brep:body#embedded", "kind": "solid"}),
             )
             .expect("body"),
         );

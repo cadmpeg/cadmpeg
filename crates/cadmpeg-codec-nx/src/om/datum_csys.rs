@@ -131,17 +131,15 @@ pub(crate) fn datum_csys_references(record: OperationPayload<'_>) -> Option<Datu
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::serde_erase::json;
+
     #[test]
     fn construction_slots_reject_out_of_lane_wire_indices() {
         for value in 0..=u8::MAX {
-            let decoded =
-                cadmpeg_core::serde_erase::json::from_value::<super::DatumCsysSlot>(value.into());
+            let decoded = json::from_value::<super::DatumCsysSlot>(value.into());
             assert_eq!(decoded.is_ok(), value < 8);
             if let Ok(slot) = decoded {
-                assert_eq!(
-                    cadmpeg_core::serde_erase::json::to_value(slot).unwrap(),
-                    serde_json::json!(value)
-                );
+                assert_eq!(json::to_value(slot).unwrap(), cadmpeg_core::json!(value));
             }
         }
     }

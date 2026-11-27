@@ -54,6 +54,7 @@ impl From<XmtTarget> for u32 {
 #[cfg(test)]
 mod tests {
     use super::{NonNullXmt, XmtTarget};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn optional_targets_preserve_zero_and_reserve_only_the_null_token() {
@@ -70,10 +71,7 @@ mod tests {
             let json = value.to_string();
             let reference: NonNullXmt = serde_json::from_str(&json).unwrap();
             assert_eq!(u32::from(reference), value);
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_string(&reference).unwrap(),
-                json
-            );
+            assert_eq!(json::to_string(&reference).unwrap(), json);
         }
         for json in ["0", "1"] {
             assert!(serde_json::from_str::<NonNullXmt>(json)

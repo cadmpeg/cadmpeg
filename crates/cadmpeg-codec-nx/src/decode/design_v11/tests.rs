@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::parameters::DesignConfiguration as LegacyConfiguration;
 use cadmpeg_ir::features::selections::DistinctMembers;
@@ -182,8 +183,8 @@ fn a_part_with_no_history_states_no_design_records() {
     ir.model.configurations = vec![configuration(0, "Default", true)];
     let minted = project_ir(&mut ir);
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&ir.design).unwrap(),
-        cadmpeg_core::serde_erase::json::to_value(&CadIr::empty().design).unwrap()
+        json::to_value(&ir.design).unwrap(),
+        json::to_value(&CadIr::empty().design).unwrap()
     );
     assert!(minted);
     assert_eq!(
@@ -278,6 +279,35 @@ fn arrangements_are_positional_and_the_active_one_is_in_force() {
         ["nx:arrangements:arrangement#1"]
     );
     assert_eq!(design_findings(&ir), Vec::<String>::new());
+}
+
+/// Each arrangement restates the configuration it is minted from, except
+/// its position among the part's configurations, which no design record
+/// orders; a configuration with no name states no arrangement and nothing
+/// restates it.
+#[test]
+fn each_arrangement_restates_its_configuration() {
+    let mut ir = CadIr::empty();
+    ir.model.configurations = vec![
+        configuration(0, "Default", true),
+        configuration(1, " ", false),
+    ];
+    ir.model.features = vec![feature("a", 0, sketch())];
+    project_ir(&mut ir);
+    let restating = ir
+        .model
+        .restated()
+        .get("nx:arrangements:configuration#0")
+        .expect("restated");
+    let by = Restater::Record("nx:arrangements:arrangement#0".to_owned());
+    assert_eq!(
+        restating.cut_by(|restater| restater == &by),
+        Some(BTreeSet::from(["ordinal"]))
+    );
+    assert_eq!(
+        ir.model.restated().get("nx:arrangements:configuration#1"),
+        None
+    );
 }
 
 #[test]
@@ -397,10 +427,7 @@ fn a_wave_face_link_is_a_linked_stored_copy() {
     };
     assert_eq!(bodies, &[body("1").id]);
     assert!(tessellations.is_empty());
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(link).unwrap(),
-        serde_json::json!({})
-    );
+    assert_eq!(json::to_value(link).unwrap(), cadmpeg_core::json!({}));
     assert_eq!(design_findings(&ir), Vec::<String>::new());
 }
 

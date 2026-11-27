@@ -9,6 +9,7 @@ use crate::geometry::{
 };
 use crate::ids::{ProceduralCurveId, ProceduralSurfaceId};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 
 fn curves(count: usize) -> (Topology, Vec<(CurveId, ProceduralCurve)>) {
     let mut geometry = Topology::default();
@@ -162,19 +163,15 @@ fn procedural_round_trip_and_snapshot_keep_thousands_of_owner_rows() {
     let (surface_model, rows) = surfaces(4096);
     geometry.surfaces = surface_model.surfaces;
     geometry.add_procedural_surfaces(rows).unwrap().unwrap();
-    let encoded = cadmpeg_core::serde_erase::json::to_value(&geometry).unwrap();
-    let reconstructed: Topology =
-        cadmpeg_core::serde_erase::json::from_value(encoded.clone()).unwrap();
+    let encoded = json::to_value(&geometry).unwrap();
+    let reconstructed: Topology = json::from_value(encoded.clone()).unwrap();
     assert_eq!(reconstructed, geometry);
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let snapshot = cadmpeg_core::serde_erase::json::to_value(
-        geometry
-            .geometry_snapshot(&crate::document::Model::default(), "brep")
-            .unwrap(),
-    )
-    .unwrap();
+    let snapshot =
+        json::to_value(geometry.geometry_snapshot(&crate::document::Model::default(), "brep"))
+            .unwrap();
     assert_eq!(snapshot["procedural_curves"], encoded["procedural_curves"]);
     assert_eq!(
         snapshot["procedural_surfaces"],

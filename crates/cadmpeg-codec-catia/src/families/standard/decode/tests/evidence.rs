@@ -286,7 +286,7 @@ fn targeted_surface_evidence_retains_revolution_construction() {
         )
         .expect("valid vertex bindings"),
         edge_parameter_incidences: BTreeMap::new(),
-        vertex_tolerances: BTreeMap::new(),
+        vertex_residuals: BTreeMap::new(),
         profiles: BTreeMap::from([(
             11,
             B5Profile::Line {

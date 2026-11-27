@@ -63,7 +63,7 @@ fn held(decoded: &DecodeResult) -> CadIr {
 /// The bytes, losses and notes `ir` writes with `fidelity`.
 fn report(ir: &CadIr, fidelity: &SourceFidelity) -> (Vec<u8>, Vec<LossNote>, Vec<String>) {
     let plan = SldprtCodec
-        .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, Some(fidelity)))
         .expect("plan");
     let mut bytes = Vec::new();
     let report = plan.write_to(&mut bytes).expect("write");
@@ -73,10 +73,7 @@ fn report(ir: &CadIr, fidelity: &SourceFidelity) -> (Vec<u8>, Vec<LossNote>, Vec
 /// The bytes `ir` writes with the decode's sidecar, or why it refuses.
 fn written(ir: &CadIr, decoded: &DecodeResult) -> Result<Vec<u8>, String> {
     let plan = SldprtCodec
-        .plan(
-            EncodeInput::new(ir, Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(ir, Some(decoded.source_fidelity())))
         .map_err(|error| error.to_string())?;
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes)
@@ -288,8 +285,8 @@ fn a_saved_part_synthesizes_as_its_decode_does() {
     let synthesized = |ir: &CadIr| {
         let plan = SldprtCodec
             .plan(
-                EncodeInput::new(ir, Some(decoded.source_fidelity())),
-                TargetRequest::Explicit("sldprt:unknown"),
+                EncodeInput::new(ir, Some(decoded.source_fidelity()))
+                    .with_target(TargetRequest::Explicit("sldprt:unknown")),
             )
             .expect("plan");
         let mut bytes = Vec::new();

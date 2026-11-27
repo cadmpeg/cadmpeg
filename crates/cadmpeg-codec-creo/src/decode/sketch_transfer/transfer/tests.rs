@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{admit_constraint_row, available_parameter_ids, emitted_entity_views};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::ParameterId;
@@ -158,7 +159,7 @@ fn native_equation_row_uses_definition_source_base() {
     let (scan, row_start) = equation_scan();
     crate::decode::with_service_context(|ctx| {
         let records = crate::decode::records::sketch_records(ctx, &scan).expect("records");
-        let record = cadmpeg_core::serde_erase::json::to_value(&records[0]).expect("native record");
+        let record = json::to_value(&records[0]).expect("native record");
         assert_eq!(record["equations"].as_array().expect("equations").len(), 1);
         assert_eq!(record["equations"][0]["offset"], 1000 + row_start);
     });

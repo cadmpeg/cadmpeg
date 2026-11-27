@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `DisplayJT` expansion and element-framing tests.
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Write;
 
 use flate2::write::ZlibEncoder;
@@ -71,15 +72,14 @@ fn compressed_jt_fixture() -> (Vec<u8>, super::super::DisplayJtSegment) {
     let compressed = encoder.finish().unwrap();
     let mut data = vec![0; 33];
     data.extend_from_slice(&compressed);
-    let compression: super::super::DisplayJtCompression =
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-            "flag": 2,
-            "compressed_data_byte_len": compressed.len() + 1,
-            "algorithm": 2,
-            "compressed_byte_len": compressed.len(),
-            "inflated_sha256": cadmpeg_ir::hash::sha256_hex(&expanded)
-        }))
-        .unwrap();
+    let compression: super::super::DisplayJtCompression = json::from_value(cadmpeg_core::json!({
+        "flag": 2,
+        "compressed_data_byte_len": compressed.len() + 1,
+        "algorithm": 2,
+        "compressed_byte_len": compressed.len(),
+        "inflated_sha256": cadmpeg_ir::hash::sha256_hex(&expanded)
+    }))
+    .unwrap();
     let segment = super::super::DisplayJtSegment {
         id: "nx:jt:segment#0".into(),
         document: "nx:jt:document#0".into(),

@@ -194,26 +194,22 @@ impl<'de> Deserialize<'de> for RelationScalars {
 #[cfg(test)]
 mod tests {
     use super::RelationScalars;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn selected_scalars_are_members_on_the_flat_wire() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "scalar_refs": ["display", "driver"],
             "parameter_scalar_ref": "driver", "display_scalar_ref": "display"
         });
-        let scalars: RelationScalars =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        let scalars: RelationScalars = json::from_value(wire.clone()).unwrap();
         assert_eq!(scalars.parameter(), Some("driver"));
         assert_eq!(scalars.display(), Some("display"));
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(scalars).unwrap(),
-            wire
-        );
+        assert_eq!(json::to_value(scalars).unwrap(), wire);
         for field in ["parameter_scalar_ref", "display_scalar_ref"] {
             let mut invalid = wire.clone();
-            invalid[field] = serde_json::json!("missing");
-            let error = cadmpeg_core::serde_erase::json::from_value::<RelationScalars>(invalid)
-                .unwrap_err();
+            invalid[field] = cadmpeg_core::json!("missing");
+            let error = json::from_value::<RelationScalars>(invalid).unwrap_err();
             assert!(error.to_string().contains(field));
         }
     }
@@ -221,36 +217,30 @@ mod tests {
     #[test]
     fn relation_scalars_wire_refuses_a_null_selected_scalar() {
         for key in ["parameter_scalar_ref", "display_scalar_ref"] {
-            let mut wire = serde_json::json!({"scalar_refs": ["display", "driver"]});
+            let mut wire = cadmpeg_core::json!({"scalar_refs": ["display", "driver"]});
             wire[key] = serde_json::Value::Null;
             assert!(
-                cadmpeg_core::serde_erase::json::from_value::<RelationScalars>(wire.clone())
-                    .is_err(),
+                json::from_value::<RelationScalars>(wire.clone()).is_err(),
                 "{wire}"
             );
         }
         assert!(
-            cadmpeg_core::serde_erase::json::from_value::<RelationScalars>(
-                serde_json::json!({"scalar_refs": []})
-            )
-            .is_err()
+            json::from_value::<RelationScalars>(cadmpeg_core::json!({"scalar_refs": []})).is_err()
         );
-        let absent: RelationScalars = cadmpeg_core::serde_erase::json::from_value(
-            serde_json::json!({"scalar_refs": ["member"]}),
-        )
-        .unwrap();
+        let absent: RelationScalars =
+            json::from_value(cadmpeg_core::json!({"scalar_refs": ["member"]})).unwrap();
         assert!(absent.parameter().is_none());
     }
 
     #[test]
     fn relation_membership_refuses_empty_blank_duplicate_and_conflicting_roles() {
         for wire in [
-            serde_json::json!({"scalar_refs": []}),
-            serde_json::json!({"scalar_refs": [" "]}),
-            serde_json::json!({"scalar_refs": ["s", "s"]}),
-            serde_json::json!({"scalar_refs": ["s"], "parameter_scalar_ref": "s", "display_scalar_ref": "s"}),
+            cadmpeg_core::json!({"scalar_refs": []}),
+            cadmpeg_core::json!({"scalar_refs": [" "]}),
+            cadmpeg_core::json!({"scalar_refs": ["s", "s"]}),
+            cadmpeg_core::json!({"scalar_refs": ["s"], "parameter_scalar_ref": "s", "display_scalar_ref": "s"}),
         ] {
-            assert!(cadmpeg_core::serde_erase::json::from_value::<RelationScalars>(wire).is_err());
+            assert!(json::from_value::<RelationScalars>(wire).is_err());
         }
         assert!(RelationScalars::from_scalars(std::iter::empty()).is_err());
     }

@@ -50,6 +50,7 @@ use super::{
 mod arcs;
 mod construction;
 mod faces;
+mod fallback;
 mod history;
 mod holes;
 mod reversed;
@@ -297,6 +298,72 @@ fn the_extrude_replaces_the_base_feature() {
         "{:#?}",
         report.losses
     );
+}
+
+/// The decode of a written design holds native feature scopes, which hold
+/// no byte form without the source file: the rewrite takes the design from
+/// its neutral records and names that reason (cadir-v11.md §3.4, W2).
+#[test]
+fn a_decoded_design_is_rewritten_from_its_neutral_records() {
+    let (_, mut decoded) = write(&sketch_and_extrude(blind(), false));
+    assert!(!crate::test_support::native_test::f3d_native(&decoded)
+        .design_parameter_scopes
+        .is_empty());
+    decoded.source = None;
+    let (report, rewritten) = write(&decoded);
+    let omitted = loss(&report, "export/native.records-omitted").join("\n");
+    assert!(
+        omitted.contains(
+            "of the Design stream, which the generator writes from the design's neutral records"
+        ),
+        "{omitted}"
+    );
+    assert!(
+        !omitted.contains("cannot write them consistently"),
+        "{omitted}"
+    );
+    assert!(!kinds(&rewritten).is_empty(), "{:#?}", report.losses);
+}
+
+/// The regenerated Design stream names the result body and its faces, so
+/// the decoded names on them, which name records of the dropped Design
+/// stream, are dropped alone (cadir-v11.md §3.4, W1 and W2).
+#[test]
+fn a_rewritten_design_replaces_the_decoded_names_of_the_entities_it_names() {
+    let (_, mut decoded) = write(&sketch_and_extrude(blind(), false));
+    let native = crate::test_support::native_test::f3d_native(&decoded);
+    let tag = native
+        .persistent_subentity_tags
+        .first()
+        .expect("a decoded face name")
+        .id
+        .clone();
+    let link = native
+        .persistent_design_links
+        .first()
+        .expect("a decoded body name")
+        .id
+        .clone();
+    decoded.source = None;
+    let (report, rewritten) = write(&decoded);
+    let omitted = loss(&report, "export/native.records-omitted");
+    assert!(
+        omitted
+            .iter()
+            .all(|message| !message.contains("cannot write the document with them")),
+        "{omitted:#?}"
+    );
+    for id in [&tag, &link] {
+        assert!(
+            omitted.iter().any(|message| message
+                .contains("on an entity that the regenerated Design stream names")
+                && message.contains(id.as_str())),
+            "{id}: {omitted:#?}"
+        );
+    }
+    let rewritten = crate::test_support::native_test::f3d_native(&rewritten);
+    assert!(!rewritten.persistent_subentity_tags.is_empty());
+    assert!(!rewritten.persistent_design_links.is_empty());
 }
 
 #[test]
@@ -991,13 +1058,13 @@ fn the_walk_starts_at_the_last_line_and_runs_counterclockwise() {
 
 #[test]
 fn a_failure_in_the_extrude_records_keeps_the_sketches_and_the_base_feature() {
-    super::super::FAIL_NEXT_ITEM.with(|fail| fail.set(true));
+    let _failing = super::fail_records([EXTRUDE]);
     let (report, decoded) = write(&sketch_and_extrude(blind(), false));
     assert_eq!(kinds(&decoded), ["sketch", "base"], "{:#?}", report.losses);
     let missing = loss(&report, EVALUATION_MISSING).join("\n");
     assert!(
         missing.contains(&format!(
-            "{EXTRUDE} (the Base Feature holds it: the writer cannot write its records (not implemented yet: a test failure of the item records)"
+            "{EXTRUDE} (the Base Feature holds it: the writer cannot write its records (not implemented yet: a test failure of the records of {EXTRUDE})"
         )),
         "{missing}"
     );

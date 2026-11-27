@@ -173,8 +173,8 @@ impl<'a> Builder<'a> {
             .zip([(u0, v0), (u1, v0), (u1, v1), (u0, v1)])
         {
             let Some(point) = finite_or_refusal(model_surface_point(
-                EvaluationAdmission::Standard,
-                self.ir,
+                EvaluationAdmission::Write(self.context),
+                &self.model_index,
                 &surface.geometry,
                 u,
                 v,
@@ -200,8 +200,12 @@ impl<'a> Builder<'a> {
             (IsolineDirection::ConstantV, v1),
             (IsolineDirection::ConstantU, u0),
         ] {
-            let Some(side) =
-                nurbs_surface_isoline(EvaluationAdmission::Standard, nurbs, direction, at)?
+            let Some(side) = nurbs_surface_isoline(
+                EvaluationAdmission::Write(self.context),
+                nurbs,
+                direction,
+                at,
+            )?
             else {
                 return Ok(Err("a side of the parameter rectangle does not evaluate"));
             };

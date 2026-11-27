@@ -47,6 +47,7 @@ mod tests {
     mod deltas_source;
 
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::CadIr;
     use cadmpeg_registry::validate_native;
     use cadmpeg_registry::InputCatalog;
@@ -77,10 +78,8 @@ mod tests {
         )
         .expect_err("validation must admit the loaded input length");
         assert_eq!(error.exit_code(), 2);
-        let report = cadmpeg_core::serde_erase::json::to_value(
-            error.refusal().expect("typed resource refusal").report(),
-        )
-        .expect("serialize resource evidence");
+        let report = json::to_value(error.refusal().expect("typed resource refusal").report())
+            .expect("serialize resource evidence");
         assert_eq!(report["stage"], "check");
         assert_eq!(report["resource"]["dimension"], "input_bytes");
         assert_eq!(report["resource"]["operation"], "admit loaded input length");

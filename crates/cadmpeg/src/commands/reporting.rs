@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Human-readable and JSON command-report rendering.
 
+use cadmpeg_core::serde_erase::json;
+use std::collections::BTreeSet;
 use std::io::{self, Write};
 use std::path::Path;
 
 use anyhow::Result;
+use cadmpeg_core::decode::{ArenaClass, ContentScope};
 use cadmpeg_ir::report::{check::ValidationReport, decode::DecodeReport, export::ExportReport};
 use cadmpeg_ir::SourceFidelity;
 use serde::ser::SerializeStruct;
@@ -48,6 +51,22 @@ fn render_attribute(value: Option<&str>) -> String {
     value.map_or_else(|| "<absent>".to_owned(), ToOwned::to_owned)
 }
 
+/// The classes a scope holds, as `diff` prints them.
+pub(super) fn render_scope(scope: ContentScope) -> String {
+    render_classes(&scope.classes().collect())
+}
+
+fn render_classes(classes: &BTreeSet<ArenaClass>) -> String {
+    if classes.is_empty() {
+        return "no class".to_owned();
+    }
+    classes
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 pub(super) enum FidelitySummary {
     None,
     OnlyLeft,
@@ -59,18 +78,28 @@ pub(super) enum FidelitySummary {
 pub(super) struct FidelityDiff {
     annotations_changed: bool,
     retained_records_changed: bool,
+    /// Classes the right-hand sidecar leaves unrepresented and the left does not.
+    unrepresented_added: BTreeSet<ArenaClass>,
+    /// Classes the left-hand sidecar leaves unrepresented and the right does not.
+    unrepresented_removed: BTreeSet<ArenaClass>,
 }
 
 impl FidelityDiff {
     fn between(left: &SourceFidelity, right: &SourceFidelity) -> Self {
+        let (before, after) = (left.unrepresented(), right.unrepresented());
         Self {
             annotations_changed: left.annotations != right.annotations,
             retained_records_changed: left.retained_records() != right.retained_records(),
+            unrepresented_added: after.difference(&before).copied().collect(),
+            unrepresented_removed: before.difference(&after).copied().collect(),
         }
     }
 
     fn is_empty(&self) -> bool {
-        !self.annotations_changed && !self.retained_records_changed
+        !self.annotations_changed
+            && !self.retained_records_changed
+            && self.unrepresented_added.is_empty()
+            && self.unrepresented_removed.is_empty()
     }
 }
 
@@ -144,6 +173,18 @@ pub(super) fn print_fidelity_summary(summary: &FidelitySummary) {
     }
     if diff.retained_records_changed {
         println!("    retained records changed");
+    }
+    if !diff.unrepresented_added.is_empty() {
+        println!(
+            "    unrepresented added: {}",
+            render_classes(&diff.unrepresented_added)
+        );
+    }
+    if !diff.unrepresented_removed.is_empty() {
+        println!(
+            "    unrepresented removed: {}",
+            render_classes(&diff.unrepresented_removed)
+        );
     }
 }
 
@@ -228,7 +269,7 @@ pub(super) fn print_export_emission(
     emission: &ExportEmission,
 ) -> io::Result<()> {
     match &emission.artifact {
-        EmittedArtifact::File { path, sidecar } => {
+        EmittedArtifact::File { written, sidecar } => {
             match sidecar {
                 SidecarPersistOutcome::Wrote(sidecar) => {
                     writeln!(writer, "wrote decode sidecar {}", sidecar.display())?;
@@ -238,12 +279,15 @@ pub(super) fn print_export_emission(
                 }
                 SidecarPersistOutcome::Absent => {}
             }
-            writeln!(
-                writer,
-                "wrote {} ({} entities)",
-                path.display(),
-                emission.report.census.total()
-            )?;
+            for file in written {
+                writeln!(
+                    writer,
+                    "wrote {} ({} entities, sha256 {})",
+                    file.path.display(),
+                    file.entities,
+                    file.sha256
+                )?;
+            }
         }
         EmittedArtifact::StdoutWithoutSidecar => {
             writeln!(
@@ -253,6 +297,13 @@ pub(super) fn print_export_emission(
         }
         EmittedArtifact::Stdout => {}
     }
+    if let Some(cause) = emission.report.synthesis_cause() {
+        writeln!(
+            writer,
+            "note: {} file synthesized from the document; {cause}",
+            emission.report.format()
+        )?;
+    }
     if !emission.report.losses.is_empty() {
         writeln!(writer, "{} export losses:", emission.report.format())?;
         for loss in &emission.report.losses {
@@ -261,7 +312,7 @@ pub(super) fn print_export_emission(
                 "  [{}/{}] {}",
                 loss.severity,
                 loss.code.category(),
-                loss.message
+                loss.message,
             )?;
         }
     }
@@ -395,9 +446,8 @@ pub(crate) fn write_report_text(
     let mut bytes = if value["command"].as_str() == Some("check")
         && value["check_report"]["findings"].is_array()
     {
-        value["input_path"] =
-            cadmpeg_core::serde_erase::json::to_value(std::fs::canonicalize(input)?)?;
-        cadmpeg_core::serde_erase::json::to_vec_pretty(&value)?
+        value["input_path"] = json::to_value(std::fs::canonicalize(input)?)?;
+        json::to_vec_pretty(&value)?
     } else {
         text.as_bytes().to_vec()
     };
@@ -490,49 +540,218 @@ pub(crate) fn print_check_report(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
+    use cadmpeg_core::decode::ArenaClass;
+
     use super::{FidelityDiff, FidelitySummary};
+    use cadmpeg_core::serde_erase::json;
+
+    /// A writer that stores one definition per file and refuses the output
+    /// of the root definition.
+    struct RootRefused;
+
+    impl cadmpeg_ir::codec::write::EncoderBackend for RootRefused {
+        const FORMAT: cadmpeg_ir::codec::FormatId = cadmpeg_ir::codec::FormatId::new("cadir");
+        const NAME: &'static str = "CADIR";
+        const REQUEST: cadmpeg_core::decode::DecodeDepth = cadmpeg_core::decode::DecodeDepth::Full;
+        const REUSES_SOURCE: bool = false;
+        const DEFINITION_PER_FILE: bool = true;
+        type Target = cadmpeg_ir::codec::write::target::DialectFree;
+        const TARGET: Self::Target = cadmpeg_ir::codec::write::target::DialectFree;
+
+        fn plan_resolved(
+            &self,
+            _: &cadmpeg_core::decode::DecodeContext<'_>,
+            input: cadmpeg_ir::codec::write::EncodeInput<'_>,
+            (): (),
+        ) -> Result<cadmpeg_ir::codec::write::ExportBody, cadmpeg_core::CodecError> {
+            let root = input
+                .ir
+                .model
+                .product_definitions
+                .iter()
+                .find(|definition| definition.is_root());
+            if root.is_some_and(|root| root.id.as_str().ends_with("#root")) {
+                return Err(cadmpeg_core::CodecError::malformed("the root is refused"));
+            }
+            Ok(cadmpeg_ir::codec::write::ExportBody::synthesized(
+                b"part".to_vec(),
+                input.ir,
+                cadmpeg_ir::codec::write::ArenaCoverage::Complete,
+                cadmpeg_ir::codec::write::NativeDispositions::written(),
+            ))
+        }
+    }
+
+    /// A root definition that places a part stored in a file of its own.
+    fn assembly() -> cadmpeg_ir::CadIr {
+        use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
+        use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
+        let id = |key: &str| {
+            ProductDefinitionId::try_from(format!("test:model:definition#{key}")).unwrap()
+        };
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        let mut root = ProductDefinition::root(id("root"), ExternalDocument::default());
+        let occurrence = OccurrenceId::try_from("test:model:occurrence#part".to_owned()).unwrap();
+        root.occurrences.push(occurrence.clone());
+        let part = ProductDefinition::new(
+            id("part"),
+            Storage::File {
+                document: ExternalDocument::path("part.source"),
+                source: json::from_value(cadmpeg_core::json!({
+                    "identity": {"kind": "unclassified", "format": "step"},
+                    "attributes": {},
+                }))
+                .unwrap(),
+            },
+        );
+        ir.model.product_definitions = vec![root, part];
+        ir.model
+            .occurrences
+            .push(Occurrence::new(occurrence, id("part"), None));
+        ir
+    }
+
+    #[test]
+    fn an_output_that_is_not_written_is_not_reported_as_written() {
+        use cadmpeg_ir::codec::write::{EncodeInput, Encoder, OutputNames, Outputs};
+        use cadmpeg_ir::hash::digest::Sha256Digest;
+        use sha2::Digest;
+
+        let ir = assembly();
+        let dir = tempfile::tempdir().unwrap();
+        let name = |name: &str| cadmpeg_core::text::NonBlankString::new(name).unwrap();
+        let definitions = &ir.model.product_definitions;
+        let names = OutputNames::from([
+            (definitions[0].id.clone(), name("assembly.out")),
+            (definitions[1].id.clone(), name("part.out")),
+        ]);
+        let plan = RootRefused
+            .plan(EncodeInput::new(&ir, None).with_outputs(Outputs::Named(&names)))
+            .unwrap();
+        let censuses = plan.censuses().to_vec();
+        assert_eq!(censuses.len(), 1);
+        let destination = dir.path().join("assembly.out");
+        let emission = crate::application::transcoder::emit_export_plan(
+            plan,
+            cadmpeg_registry::Format::Cadir,
+            &crate::application::transcoder::ResolvedDestination::File(destination.clone()),
+            &crate::application::document::LoadOrigin::Neutral,
+        )
+        .unwrap();
+        assert!(!destination.exists());
+        assert!(emission
+            .report
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "output.unwritten"));
+        let mut printed = Vec::new();
+        super::print_export_emission(&mut printed, &emission).unwrap();
+        let printed = String::from_utf8(printed).unwrap();
+        let part = dir.path().join("part.out");
+        let digest = Sha256Digest::from_bytes(sha2::Sha256::digest(b"part").into());
+        let wrote: Vec<&str> = printed
+            .lines()
+            .filter(|line| line.starts_with("wrote "))
+            .collect();
+        assert_eq!(
+            wrote,
+            [format!(
+                "wrote {} ({} entities, sha256 {digest})",
+                part.display(),
+                censuses[0].total()
+            )],
+            "{printed}"
+        );
+    }
+
+    #[test]
+    fn a_fidelity_diff_names_the_classes_that_became_or_ceased_to_be_unrepresented() {
+        use cadmpeg_ir::hash::digest::Sha256Digest;
+        use cadmpeg_ir::{RetainedBytes, RetainedSourceRecord, SourceFidelity, StreamName};
+
+        let retained = |classes: &[ArenaClass]| {
+            let mut fidelity = SourceFidelity::new(Sha256Digest::digest(b""));
+            fidelity
+                .insert_retained_record(
+                    cadmpeg_ir::ids::UnknownId::mint("test:source:part#1").unwrap(),
+                    RetainedSourceRecord::from_bytes(
+                        StreamName::try_from("part".to_owned()).unwrap(),
+                        0,
+                        RetainedBytes::Inline { data: vec![1] },
+                    )
+                    .unwrap()
+                    .with_untyped(classes.iter().copied()),
+                )
+                .unwrap();
+            fidelity
+        };
+        let left = retained(&[ArenaClass::Model]);
+        let right = retained(&[ArenaClass::Design]);
+        let diff = FidelityDiff::between(&left, &right);
+        assert!(!diff.is_empty());
+        assert_eq!(
+            json::to_value(&diff).unwrap(),
+            cadmpeg_core::json!({
+                "annotations_changed": false,
+                "retained_records_changed": true,
+                "unrepresented_added": ["design"],
+                "unrepresented_removed": ["model"]
+            })
+        );
+        assert!(FidelityDiff::between(&left, &left).is_empty());
+    }
 
     #[test]
     fn fidelity_summary_serializes_the_diff_shape_without_value_glue() {
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::None).unwrap(),
+            json::to_value(FidelitySummary::None).unwrap(),
             serde_json::Value::Null
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::OnlyLeft).unwrap(),
-            serde_json::json!({ "present": "left_only" })
+            json::to_value(FidelitySummary::OnlyLeft).unwrap(),
+            cadmpeg_core::json!({ "present": "left_only" })
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::OnlyRight).unwrap(),
-            serde_json::json!({ "present": "right_only" })
+            json::to_value(FidelitySummary::OnlyRight).unwrap(),
+            cadmpeg_core::json!({ "present": "right_only" })
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::Both(FidelityDiff {
+            json::to_value(FidelitySummary::Both(FidelityDiff {
                 annotations_changed: false,
                 retained_records_changed: false,
+                unrepresented_added: BTreeSet::new(),
+                unrepresented_removed: BTreeSet::new(),
             }))
             .unwrap(),
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "present": "both",
                 "different": false,
                 "diff": {
                     "annotations_changed": false,
-                    "retained_records_changed": false
+                    "retained_records_changed": false,
+                    "unrepresented_added": [],
+                    "unrepresented_removed": []
                 }
             })
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(FidelitySummary::Both(FidelityDiff {
+            json::to_value(FidelitySummary::Both(FidelityDiff {
                 annotations_changed: true,
                 retained_records_changed: false,
+                unrepresented_added: BTreeSet::new(),
+                unrepresented_removed: BTreeSet::new(),
             }))
             .unwrap(),
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "present": "both",
                 "different": true,
                 "diff": {
                     "annotations_changed": true,
-                    "retained_records_changed": false
+                    "retained_records_changed": false,
+                    "unrepresented_added": [],
+                    "unrepresented_removed": []
                 }
             })
         );

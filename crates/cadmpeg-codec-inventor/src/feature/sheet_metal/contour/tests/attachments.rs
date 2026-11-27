@@ -3,6 +3,7 @@ use super::*;
 use crate::feature::PmDcFeatureReferenceFamily as Family;
 use crate::pmdc::{PmDcListMetadata, PmDcU32List};
 use crate::test_support::sheet_metal::{list, property};
+use cadmpeg_core::serde_erase::json;
 
 fn edge_item(sources: &[u32]) -> Kind {
     Kind::EdgeItem {
@@ -131,9 +132,9 @@ fn attachment_edges_keep_wrapper_item_and_selector_order() {
             },
         ]
     );
-    let wire = cadmpeg_core::serde_erase::json::to_value(&attachment).expect("native wire");
+    let wire = json::to_value(&attachment).expect("native wire");
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<AttachmentEdges>(wire).expect("native read"),
+        json::from_value::<AttachmentEdges>(wire).expect("native read"),
         attachment
     );
     assert_eq!(
@@ -241,7 +242,7 @@ fn edge_attached_loss_names_the_decoded_edge_count() {
     refusals.insert("plate".to_owned(), ContourRefusal::EdgeAttached(4));
     let losses = refusals.losses(&[native("attached", "plate")]);
     assert_eq!(losses.len(), 1);
-    let text = cadmpeg_core::serde_erase::json::to_string(&losses).expect("loss");
+    let text = json::to_string(&losses).expect("loss");
     assert!(text.contains("contour-flange check is edge-attached"));
     assert!(text.contains("decoded attachment selects 4 input edge(s)"));
 }
@@ -312,10 +313,8 @@ fn native_contour_retains_unique_item_matched_brep_revisions() {
             if invalid.is_none() {
                 assert_eq!(retained, Some(&expected));
                 let wire =
-                    cadmpeg_core::serde_erase::json::to_value(&inventory.sheet_metal_flanges[0])
-                        .expect("native contour");
-                let decoded: Flange =
-                    cadmpeg_core::serde_erase::json::from_value(wire).expect("native contour read");
+                    json::to_value(&inventory.sheet_metal_flanges[0]).expect("native contour");
+                let decoded: Flange = json::from_value(wire).expect("native contour read");
                 assert_eq!(decoded.attachment_edges.as_ref(), Some(&expected));
             } else {
                 assert_eq!(retained, None);

@@ -112,7 +112,19 @@ The `asmheader` row participates in RecordTable indexing; the first following en
 
 ### 2.3 Version/product gates
 
-Other pure ACIS and SpaceClaim SAB envelopes use separate version-gated record layouts and string interning. The byte layouts in §§5–6 apply to ASM streams and the ACIS 217/218 Inventor carrier envelope. Other ACIS save-format bands are not admitted by this grammar.
+SpaceClaim SAB envelopes use separate version-gated record layouts. The byte layouts in §§5–6 apply to ASM streams, the ACIS 217/218 Inventor carrier envelope, and the interned ACIS binary streams of §2.4.
+
+### 2.4 Interned ACIS binary streams
+
+An interned ACIS binary stream has the 31-byte ACIS prefix and the string region of §1. A header extension follows the three doubles: the token `0x0A` and one string. The first identifier token after the header extension defines name id 1; this identifies the interned form.
+
+Each `0x0D` and `0x0E` payload is the identifier text, the byte `%`, and a little-endian `u32` name id. The 1-byte length counts all three parts. Name ids start at 1 and increase by one in stream order. A token with non-empty text defines the next name id. A token with empty text repeats the text of the name id that it holds. Record names and payload identifiers share one name table. The `End-of-ACIS-data` identifier holds its text only.
+
+RecordTable index 0 is the first record after the header extension. The stream stores no `asmheader` record. The stream ends with the `End-of-ACIS-data` identifier, which no `0x11` follows.
+
+A record whose fields 1 and 2 are integers and whose field 3 is a reference has the extended entity prefix of §7.6: the attribute reference, the entity-id integer, the extension integer, and the pattern reference. The shared entity prefix of §§5–6 is this prefix without the extension integer. An attribute record stores the attribute reference, one integer, and its chain references; its field 2 is a reference. A `body` record stores one integer between the pattern reference and the first lump. The fields of §5.2 follow these integers. A `vertex` record stores no endpoint-index integer, and a `coedge` record stores no reserved integer (§7.4).
+
+In `body`, `lump`, `shell`, `face`, `loop`, and `edge` records, a tail follows the fields of §5.2. A tail starts with a boolean; when it is `TRUE`, two positions follow. A `face` tail continues with a second boolean; when it is `TRUE`, four doubles follow. A `loop` tail continues with an enumeration value; when it is nonzero, a reference and a boolean follow.
 
 ---
 
@@ -281,10 +293,10 @@ The `{+35,+44,+53}` triad is next/prev/partner. `+72` is the owner loop. **Partn
 +34 chunk[3] start_vertex   +43 chunk[4] t_start (f64)
 +52 chunk[5] end_vertex     +61 chunk[6] t_end (f64)
 +70 chunk[7] owner_coedge   +79 chunk[8] curve ref
-+89 chunk[9] sense byte     +90 0x07 'tangent'|'unknown' continuity text
++89 chunk[9] sense byte     +90 0x07 continuity token text
 ```
 
-`+52` is end_vertex and `+79` is curve, not the other way round. `owner_coedge` is a nullable back-reference selecting one use of the edge; it is retained independently of the radial-ring topology, validated against the selected coedge's edge, and written in both retained and source-less output. `t_start`/`t_end` are stored parameters on the edge's own parameterization: the referenced curve itself when the sense byte is forward (`0x0b`), its reverse `E(t) = C(−t)` when reversed (`0x0a`). A full-circle edge has identical start/end vertex with `t_start = -π`, `t_end = +π`; the shared vertex lies at the `t_start` angle from the major axis, so a full period's phase is significant, not a free normalization. The continuity text is descriptive metadata, **not** a curve-type discriminator.
+`+52` is end_vertex and `+79` is curve, not the other way round. `owner_coedge` is a nullable back-reference selecting one use of the edge; it is retained independently of the radial-ring topology, validated against the selected coedge's edge, and written in both retained and source-less output. `t_start`/`t_end` are stored parameters on the edge's own parameterization: the referenced curve itself when the sense byte is forward (`0x0b`), its reverse `E(t) = C(−t)` when reversed (`0x0a`). A full-circle edge has identical start/end vertex with `t_start = -π`, `t_end = +π`; the shared vertex lies at the `t_start` angle from the major axis, so a full period's phase is significant, not a free normalization. The continuity text is descriptive metadata, **not** a curve-type discriminator. It is a string item stored with the 8-bit length tag `0x07`, such as `tangent`, `tangent_not_g2`, or `unknown`. The 98-byte record holds a seven-character token, and a token of another length moves the record end by the difference.
 
 When the curve reference is null, the edge has no attributed 3D carrier. Its serialized endpoint doubles remain finite. No canonical carrier-domain ordering applies to those endpoints.
 

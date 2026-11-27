@@ -117,7 +117,7 @@
       ]
     },
     "Annotations": {
-      "description": "Document-wide provenance and exactness tables keyed by globally unique\nentity id.\n\nAn entity absent from `exactness` is byte-exact.",
+      "description": "Document-wide provenance and exactness tables keyed by annotation key.\n\nThe key of a top-level entity is its globally unique entity id. The key\nof a record inside the delta of an evaluation or a process state is the\nid of that evaluation or process state, one space, and the record's id.\nValidation reports a key whose qualifier names no evaluation or process\nstate with a delta, or whose record that delta does not hold, as it\nreports a key that names no entity.\n\nAn entity absent from `exactness` is byte-exact.",
       "type": "object",
       "properties": {
         "provenance": {
@@ -456,7 +456,7 @@
     },
     "Identity": {
       "type": "string",
-      "pattern": "^(?:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:){2}[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])"
+      "pattern": "^[a-z0-9]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])"
     },
     "Inexactness": {
       "description": "Exactness of an entity that is not byte-exact.",
@@ -640,7 +640,7 @@
           "const": "feature_history_retained"
         },
         {
-          "description": "The part is an assembly; component geometry lives in external referenced\nfiles, not inline.",
+          "description": "Content of an assembly that lies in another file or layer and did not\ntransfer. On read: a component, member, placement, link, or layer that\na referenced file holds and the decode did not read or resolve (an\nexternal component file, a missing, undecoded, or cyclic archive\nmember, an unsolved placement or joint occurrence, an unresolved\ncomponent link, an uncomposed layer). On write: an output of an encode\nset that is not written, a link to another output that is not written,\nor a record that no output holds whole because it needs a record of\nanother output.",
           "type": "string",
           "const": "assembly_components_external"
         },
@@ -968,7 +968,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "^(?:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:){2}[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])": {
+            "^[a-z0-9]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])": {
               "$ref": "#/$defs/Sha256Digest"
             }
           }
@@ -1004,7 +1004,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "^(?:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:){2}[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])": {
+            "^[a-z0-9]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])": {
               "$ref": "#/$defs/RetainedSourceRecord"
             }
           }

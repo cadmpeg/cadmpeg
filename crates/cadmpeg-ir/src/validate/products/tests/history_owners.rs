@@ -5,6 +5,7 @@ use crate::features::evaluation::FeatureEvaluation;
 use crate::features::selections::DistinctMembers;
 use crate::features::{Feature, FeatureContent, FeatureDefinition, FeatureOperation};
 use crate::report::check::Finding;
+use cadmpeg_core::serde_erase::json;
 
 fn model() -> CadIr {
     let mut ir = CadIr::empty();
@@ -19,7 +20,7 @@ fn model() -> CadIr {
         native_ref: None,
     });
     ir.model.product_definitions.push(
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "test:model:product#owner", "kind": "part", "bodies": ["test:model:body#result"], "bom_properties": {}, "storage": {"kind": "embedded"}, "occurrences": [], "instance_bodies": [], "representations": []
         }))
         .unwrap(),
@@ -66,9 +67,9 @@ fn findings(ir: &CadIr) -> Vec<Finding> {
 fn product_history_owner_accepts_owned_outputs_and_absent_links() {
     let mut ir = model();
     assert!(findings(&ir).is_empty());
-    let json = cadmpeg_core::serde_erase::json::to_value(&ir.model.features[0]).unwrap();
+    let json = json::to_value(&ir.model.features[0]).unwrap();
     assert_eq!(json["product_definition"], "test:model:product#owner");
-    let read: Feature = cadmpeg_core::serde_erase::json::from_value(json).unwrap();
+    let read: Feature = json::from_value(json).unwrap();
     assert_eq!(
         read.product_definition,
         ir.model.features[0].product_definition

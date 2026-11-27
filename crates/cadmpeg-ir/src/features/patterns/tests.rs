@@ -8,7 +8,8 @@ use crate::features::selections::FaceSelection;
 use crate::math::{Point3, Vector3};
 use crate::scalar::{Angle, Length, PositiveAngle, PositiveLength, PositiveReal};
 use crate::units::UnitVector3;
-use serde_json::json;
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn partial_curve_driven_preserves_independent_values_through_wire_and_units() {
@@ -30,11 +31,8 @@ fn partial_curve_driven_preserves_independent_values_through_wire_and_units() {
     })
     .unwrap();
     assert_eq!(pattern.occurrence_count(), Some(4));
-    let wire = cadmpeg_core::serde_erase::json::to_value(&pattern).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<PatternKind>(wire).unwrap(),
-        pattern
-    );
+    let wire = json::to_value(&pattern).unwrap();
+    assert_eq!(json::from_value::<PatternKind>(wire).unwrap(), pattern);
     let scaled = pattern
         .try_map_lengths_owned(&mut |field| {
             if let PatternLengthField::PositiveLength(length) = field {
@@ -50,11 +48,11 @@ fn partial_curve_driven_preserves_independent_values_through_wire_and_units() {
     assert_eq!(scaled.distance.map(PositiveLength::get), Some(240.0));
     assert_eq!(scaled.start_parameter, parameters.start_parameter);
     assert_eq!(scaled.reversed, parameters.reversed);
-    assert!(cadmpeg_core::serde_erase::json::from_value::<PatternKind>(
+    assert!(json::from_value::<PatternKind>(
         json!({"kind":"curve_driven_partial", "parameters":{"count":0}})
     )
     .is_err());
-    assert!(cadmpeg_core::serde_erase::json::from_value::<PatternKind>(
+    assert!(json::from_value::<PatternKind>(
         json!({"kind":"curve_driven_partial", "parameters":{"count":null}})
     )
     .is_err());
@@ -64,7 +62,7 @@ fn partial_curve_driven_preserves_independent_values_through_wire_and_units() {
     .unwrap();
     assert_eq!(empty.occurrence_count(), None);
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(empty).unwrap(),
+        json::to_value(empty).unwrap(),
         json!({"kind":"curve_driven_partial", "parameters":{}})
     );
 }
@@ -73,10 +71,7 @@ fn partial_curve_driven_preserves_independent_values_through_wire_and_units() {
 #[test]
 fn partial_curve_driven_schema_agrees_with_reader_on_optional_fields_and_count() {
     use crate::features::patterns::curve_driven::CurveDrivenPatternParameters;
-    let schema = cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(
-        CurveDrivenPatternParameters
-    ))
-    .unwrap();
+    let schema = json::to_value(schemars::schema_for!(CurveDrivenPatternParameters)).unwrap();
     let properties = schema["properties"].as_object().unwrap();
     assert!(schema.get("required").is_none());
     for name in [
@@ -96,22 +91,14 @@ fn partial_curve_driven_schema_agrees_with_reader_on_optional_fields_and_count()
         );
         let mut fields = serde_json::Map::new();
         fields.insert(name.into(), serde_json::Value::Null);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<CurveDrivenPatternParameters>(
-                fields.into()
-            )
-            .is_err()
-        );
+        assert!(json::from_value::<CurveDrivenPatternParameters>(fields.into()).is_err());
     }
     assert_eq!(properties["count"]["minimum"], json!(1));
     for (count, accepted) in [(0, false), (1, true)] {
         let value = json!({"kind":"curve_driven_partial", "parameters":{"count":count}});
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<PatternKind>(value).is_ok(),
-            accepted
-        );
+        assert_eq!(json::from_value::<PatternKind>(value).is_ok(), accepted);
     }
-    assert!(cadmpeg_core::serde_erase::json::from_value::<PatternKind>(
+    assert!(json::from_value::<PatternKind>(
         json!({"kind":"curve_driven_partial", "parameters":{}})
     )
     .is_ok());
@@ -355,7 +342,7 @@ fn pattern_wire_rejects_invalid_counts_locations_and_composition() {
         json!({"kind":"composite","stages":[]}),
         json!({"kind":"composite","stages":[{"pattern":{"kind":"linear","spacing":1.0,"count":1, "omitted_instances": [], "symmetric": false},"combination":"cartesian_product"}]}),
     ] {
-        assert!(cadmpeg_core::serde_erase::json::from_value::<PatternKind>(wire).is_err());
+        assert!(json::from_value::<PatternKind>(wire).is_err());
     }
 }
 
@@ -379,12 +366,8 @@ fn admitted_pattern_wire_preserves_tags_and_optional_fields() {
         json!({"kind":"scale","center":{"kind":"native","value":""},"final_factor":2.0,"count":2}),
         json!({"kind":"composite","stages":[{"pattern":{"kind":"unresolved"}}]}),
     ] {
-        let pattern: PatternKind =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&pattern).unwrap(),
-            wire
-        );
+        let pattern: PatternKind = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(&pattern).unwrap(), wire);
     }
 }
 
@@ -413,7 +396,7 @@ fn composite_pattern_counts_use_primary_instance_counts() {
 
 #[test]
 fn pattern_wire_error_identifies_the_rejected_field() {
-    let error = cadmpeg_core::serde_erase::json::from_value::<PatternKind>(json!({
+    let error = json::from_value::<PatternKind>(json!({
         "kind":"linear","spacing":1.0,"count":0, "omitted_instances": [], "symmetric": false
     }))
     .unwrap_err();
@@ -431,8 +414,8 @@ fn pattern_wire_refuses_a_degenerate_direction_point_or_scale_factor() {
         json!({"kind":"mirror","plane_origin":{"x":0.0,"y":0.0,"z":0.0},"plane_normal":{"x":0.0,"y":0.0,"z":0.0}}),
         json!({"kind":"scale","center":{"kind":"first_seed_centroid"},"final_factor":-1.0,"count":2}),
     ] {
-        assert!(cadmpeg_core::serde_erase::json::from_value::<PatternKind>(wire.clone()).is_err());
-        assert!(cadmpeg_core::serde_erase::json::from_value::<PatternTransform>(wire).is_err());
+        assert!(json::from_value::<PatternKind>(wire.clone()).is_err());
+        assert!(json::from_value::<PatternTransform>(wire).is_err());
     }
     // JSON states no infinity, so a non-finite coordinate is refused on the
     // constructor route, which calls the same `FinitePoint3::new` the derived
@@ -450,18 +433,10 @@ fn admitted_pattern_wire_round_trips_every_carried_field() {
         json!({"kind":"mirror","plane_origin":{"x":1.0,"y":2.0,"z":3.0},"plane_normal":{"x":0.0,"y":0.0,"z":1.0}}),
         json!({"kind":"scale","center":{"kind":"point","value":{"x":1.0,"y":2.0,"z":3.0}},"final_factor":2.0,"count":2}),
     ] {
-        let pattern: PatternKind =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&pattern).unwrap(),
-            wire
-        );
-        let transform: PatternTransform =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&transform).unwrap(),
-            wire
-        );
+        let pattern: PatternKind = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(&pattern).unwrap(), wire);
+        let transform: PatternTransform = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(&transform).unwrap(), wire);
     }
 }
 
@@ -473,7 +448,7 @@ fn circular_angle_patterns_admit_only_a_unit_axis_on_the_wire() {
         angles: vec![Angle::ZERO, Angle::QUARTER_TURN],
     })
     .unwrap();
-    let wire = cadmpeg_core::serde_erase::json::to_value(&pattern).unwrap();
+    let wire = json::to_value(&pattern).unwrap();
     for refused in [
         json!({"x": 0.0, "y": 0.0, "z": 2.0}),
         json!({"x": 0.0, "y": 0.0, "z": 0.0}),
@@ -481,19 +456,15 @@ fn circular_angle_patterns_admit_only_a_unit_axis_on_the_wire() {
     ] {
         let mut refused_wire = wire.clone();
         refused_wire["axis_dir"] = refused;
-        let error = cadmpeg_core::serde_erase::json::from_value::<PatternKind>(refused_wire)
+        let error = json::from_value::<PatternKind>(refused_wire)
             .unwrap_err()
             .to_string();
         assert!(error.contains("direction must have unit length"), "{error}");
     }
     let mut near_unit = wire.clone();
     near_unit["axis_dir"] = json!({"x": 0.0, "y": 0.0, "z": 1.0 + 5.0e-10});
-    let decoded =
-        cadmpeg_core::serde_erase::json::from_value::<PatternKind>(near_unit.clone()).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(decoded).unwrap(),
-        near_unit
-    );
+    let decoded = json::from_value::<PatternKind>(near_unit.clone()).unwrap();
+    assert_eq!(json::to_value(decoded).unwrap(), near_unit);
 }
 
 mod omissions;

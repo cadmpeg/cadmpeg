@@ -43,7 +43,7 @@ use crate::records::parameters::{
     DesignParameterDiscriminator, DesignParameterDraft, DesignParameterSource,
 };
 use crate::writer::generate::presentation::GeneratedDesignRegistry;
-use crate::writer::generate::records::encode_document_parameters;
+use crate::writer::generate::records::{encode_document_parameters, ParameterRecords};
 use crate::writer::generate::reduce::named_loss;
 
 /// The parameter collection the native path's parameter tails name.
@@ -524,10 +524,11 @@ pub(in crate::writer::generate) fn plan(
 /// otherwise the root scope's parameters, and a loss naming each neutral
 /// parameter that no scope parameter restates. It never refuses.
 pub(in crate::writer::generate) fn native_or_neutral(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     native: &F3dNative,
 ) -> Result<ParameterSource, CodecError> {
-    if target.model.parameters == native_projection(native)? {
+    if target.model.parameters == native_projection(ctx, native)? {
         return Ok(ParameterSource::Native);
     }
     let mut plan = super::root_scope(target).map_or_else(
@@ -557,17 +558,12 @@ pub(in crate::writer::generate) fn native_or_neutral(
 
 /// The native records' parameters as the decoder projects them.
 fn native_projection(
+    decode_ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     native: &F3dNative,
 ) -> Result<Vec<cadmpeg_ir::features::parameters::DesignParameter>, CodecError> {
-    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &decode_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
     Ok(
         crate::design::feature_project::project_parameter_design_with_edge_identities(
-            &decode_ctx,
+            decode_ctx,
             &crate::design::feature_project::ProjectInputs {
                 native: &native.design_parameters,
                 source_parameters: &native.design_parameters,
@@ -605,7 +601,7 @@ pub(in crate::writer::generate) fn encode(
     source: &ParameterSource,
     native: &F3dNative,
     registry: &mut GeneratedDesignRegistry,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<ParameterRecords, CodecError> {
     match source {
         ParameterSource::Native => {
             encode_document_parameters(&native.design_parameters, NATIVE_PARAMETER_COLLECTION)
@@ -635,9 +631,9 @@ impl ParameterPlan {
         registry: &mut GeneratedDesignRegistry,
         indices: &[u32],
         collection: Option<u32>,
-    ) -> Result<Vec<u8>, CodecError> {
+    ) -> Result<ParameterRecords, CodecError> {
         if self.written.is_empty() {
-            return Ok(Vec::new());
+            return Ok(ParameterRecords::default());
         }
         let class_tag = registry.register(super::types::PARAMETER, indices)?;
         let collection = match collection {
@@ -679,7 +675,7 @@ impl ParameterPlan {
                 parameter.record(class_tag.clone(), record_index, ordinal, discriminator)?;
             out.primaries.push((record_index, out.bytes.len()));
             out.bytes
-                .extend(encode_document_parameters(&[record], collection)?);
+                .extend(encode_document_parameters(&[record], collection)?.bytes);
         }
         Ok(())
     }

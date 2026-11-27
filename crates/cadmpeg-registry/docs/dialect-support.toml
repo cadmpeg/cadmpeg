@@ -50,7 +50,7 @@
 #
 #   PRESERVATION reproduces a dialect only when the source already is one --
 #   verbatim byte replay or a patch of the retained baseline, asked for with
-#   `TargetRequest::Inherit`. It is input-conditioned, so it is never a
+#   `TargetRequest::Inherit` or `TargetRequest::Unnamed`. It is input-conditioned, so it is never a
 #   catalog row: a `targets()` that listed it would advertise an output
 #   arbitrary input cannot reach. `preserved` is that cell.
 #
@@ -659,15 +659,14 @@ read = "detected"
 write = "preserved"
 reason = """
 admitted for decode as a separate legacy profile and never synthesized; no
-schema 2 fixture exists, so the row cannot claim a score. It is written on
-the preservation path: `Inherit` repacks the retained entry set and
-patches `Document.xml` inside it, reproducing whatever schema the source
-declared (`writer.rs:41-48`, `retained_baseline` at `writer.rs:141-155`).
-Proven by `writer.rs:944`
-`inherit_preserves_a_schema_two_source_outside_the_catalog`, which also
-asserts the id is absent from `targets()`. The path is `Patched`, not
-verbatim replay: the output is entry-for-entry payload-identical, not
-byte-identical"""
+schema 2 fixture exists, so the row cannot claim a score. It is a replay row:
+the writer patches a retained `Document.xml` that declares schema 2 and
+repacks the retained entry set (`writer::target::retained_baseline`), under
+`Inherit` or an explicit `fcstd:schema-2`. The writer tests
+`inherit_preserves_a_schema_two_source_outside_the_catalog` and
+`an_explicit_replay_row_writes_a_source_of_that_schema` write it and read it
+back as schema 2; the first also asserts the id is absent from `targets()`.
+The path is `Patched`: the output is entry-for-entry payload-identical"""
 
 [[support]]
 dialect = "fcstd:schema-3"
@@ -675,12 +674,12 @@ read = "detected"
 write = "preserved"
 reason = """
 admitted for decode as a separate legacy profile and never synthesized; no
-schema 3 fixture exists, so the row cannot claim a score. It is written on
-the same preservation branch as `fcstd:schema-2`: `retained_baseline`
-(`writer.rs:141-155`) is version-generic, rebuilding the write options
-from the retained `DocumentFacts` and gating on `written_dialect(options)
-== source_dialect`. No test covers schema 3 specifically; schema 2 and
-schema 4 cover the branch"""
+schema 3 fixture exists, so the row cannot claim a score. It is a replay row
+on the same path as `fcstd:schema-2`: the writer patches a retained
+`Document.xml` and writes the schema it declares, under `Inherit` or an
+explicit `fcstd:schema-3`. The writer test
+`a_schema_three_source_is_written_as_schema_three` writes a schema-3 source
+both ways and reads it back as schema 3"""
 
 [[support]]
 dialect = "fcstd:schema-4"
@@ -1265,8 +1264,27 @@ reason = """
 `solidedge:unknown` means no Solid Edge compound identity matched. Detection
 returns Confidence::No and the forced codec path returns WrongFormat"""
 
-[format.onshape]
+[format.ironcad]
 level = 0
+scored = ["ironcad:cfb"]
+
+[[support]]
+dialect = "ironcad:cfb"
+read = "detected"
+write = "none"
+reason = "Content detection, compound stream listing, frame inflation, and kernel record enumeration; body decoding is pending."
+
+[[support]]
+dialect = "ironcad:unknown"
+read = "refused"
+write = "none"
+refusal = "no-framing-grammar"
+reason = """
+`ironcad:unknown` means no IronCAD scene identity matched. Detection returns
+Confidence::No and the forced codec path returns WrongFormat"""
+
+[format.onshape]
+level = 4
 scored = ["onshape:bundle-1"]
 
 [[support]]

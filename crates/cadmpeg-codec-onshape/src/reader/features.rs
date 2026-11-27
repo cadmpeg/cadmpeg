@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::document::Model;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::BTreeSet;
 
 use super::Report;
@@ -134,6 +136,14 @@ pub(super) fn queries<'a>(feature: &'a Value, key: &str) -> Mapping<&'a [Value]>
     } else {
         Ok(list)
     }
+}
+
+/// A feature from a `FeatureScript` namespace rather than a built-in feature.
+pub(super) fn is_custom(feature: &Value) -> bool {
+    feature
+        .get("namespace")
+        .and_then(Value::as_str)
+        .is_some_and(|s| !s.is_empty())
 }
 
 fn present_scope(feature: &Value, key: &str) -> Mapping<bool> {
@@ -286,7 +296,7 @@ pub(super) fn sketch_entities_in_order(
                 .find(|e| e.id().as_str() == entity_id)
                 .ok_or("the selected sketch entity has no solved geometry")?;
             if entity_type == "VERTEX" {
-                let wire = cadmpeg_core::serde_erase::json::to_value(entity)
+                let wire = json::to_value(entity)
                     .map_err(|_| "the selected sketch entity is unreadable")?;
                 if wire.pointer("/geometry/kind").and_then(Value::as_str) != Some("point") {
                     return Err(
@@ -328,8 +338,7 @@ fn sketch_axis(feature: &Value, model: &Model) -> Mapping<Value> {
         .iter()
         .find(|e| Some(e.id().as_str()) == entity_id.as_str())
         .ok_or("the axis line is missing")?;
-    let entity = cadmpeg_core::serde_erase::json::to_value(entity)
-        .map_err(|_| "the axis line is unreadable")?;
+    let entity = json::to_value(entity).map_err(|_| "the axis line is unreadable")?;
     if entity.pointer("/geometry/kind").and_then(Value::as_str) != Some("line")
         || entity.get("construction").and_then(Value::as_bool) != Some(true)
     {
@@ -340,8 +349,7 @@ fn sketch_axis(feature: &Value, model: &Model) -> Mapping<Value> {
         .iter()
         .find(|s| s.id.as_str() == sketch_id)
         .ok_or("the axis sketch has no resolved frame")?;
-    let sketch = cadmpeg_core::serde_erase::json::to_value(sketch)
-        .map_err(|_| "the axis sketch is unreadable")?;
+    let sketch = json::to_value(sketch).map_err(|_| "the axis sketch is unreadable")?;
     let frame = sketch
         .pointer("/placement/frame")
         .ok_or("the axis frame is missing")?;
@@ -546,7 +554,7 @@ pub(super) fn dependencies(
                 matches!(key, "profiles" | "path")
                     || key == "booleanScope" && value(source, "operationType") != Some("NEW")
             }
-            Some("fillet" | "chamfer") => key == "entities",
+            Some("fillet" | "chamfer" | "shell") => key == "entities",
             Some("hole") => key == "scope" || key == hole_profile,
             _ => false,
         };
@@ -608,6 +616,7 @@ pub(super) fn dependencies(
                 | (Some("sketch"), "sketchPlane")
                 | (Some("extrude"), "endBoundEntityFace") => Some(topology::OperandKind::Face),
                 (Some("fillet" | "chamfer"), "entities") => Some(topology::OperandKind::Edge),
+                (Some("shell"), "entities") => Some(topology::OperandKind::Face),
                 (Some("revolve"), "axis")
                     if query.get("queryType").and_then(Value::as_str) != Some("SKETCH_ENTITY") =>
                 {
@@ -689,6 +698,13 @@ pub(super) fn map(
     report: &mut Report,
     unresolved: &BTreeSet<String>,
 ) -> Mapping<Value> {
+    if is_custom(feature) {
+        let name = text(feature, "name").or_else(|_| text(feature, "featureId"))?;
+        return Err(format!(
+            "custom FeatureScript feature {name} is not supported yet: a namespaced \
+             feature's stored parameters do not say which operation it performs"
+        ));
+    }
     if feature.get("featureType").and_then(Value::as_str) == Some("sweep") {
         super::sweep::validate_record(feature)?;
     } else {
@@ -718,13 +734,6 @@ pub(super) fn map(
         "depthToTip",
     ] {
         enabled(feature, key)?;
-    }
-    if feature
-        .get("namespace")
-        .and_then(Value::as_str)
-        .is_some_and(|s| !s.is_empty())
-    {
-        return Err("custom FeatureScript features are not supported yet".into());
     }
     for key in [
         "hasSecondDirection",
@@ -828,6 +837,11 @@ pub(super) fn map(
                     json!({"kind": "to_face", "face": face})
                 }
                 Some("UP_TO_NEXT") => {
+                    if scoped.is_some() {
+                        return Err("UP_TO_NEXT with a booleanScope selection is not proved: \
+                             no stored data shows how the scope limits the next face"
+                            .into());
+                    }
                     let state = scoped.map_or_else(|| inputs.load(ordinal, feature), Ok)?;
                     let face = state.next_face(feature, &profile, model)?;
                     state.require_planes(&face)?;
@@ -973,8 +987,95 @@ pub(super) fn map(
             Ok(definition(kind, operation))
         }
         "hole" => hole(feature, ordinal, inputs, model, report, unresolved),
+        "shell" => {
+            let state = scoped.map_or_else(|| inputs.load(ordinal, feature), Ok)?;
+            shell(feature, ordinal, &state, model, unresolved)
+        }
         other => Err(format!("{other} features are not supported yet")),
     }
+}
+
+/// Refusal prefix for a shell control outside the stored and specified forms.
+pub(super) const SHELL_REFUSAL: &str = "shell: ";
+
+fn shell_refusal(reason: &str) -> String {
+    format!("{SHELL_REFUSAL}{reason}")
+}
+
+/// Shell parameters named by the Onshape `shell` feature specification.
+const SHELL_PARAMETERS: [&str; 5] = [
+    "isHollow",
+    "entities",
+    "parts",
+    "thickness",
+    "oppositeDirection",
+];
+
+/// Whether every parameter key of a shell record is a specified key.
+pub(super) fn shell_record_valid(feature: &Value) -> bool {
+    rows(feature, "parameters").is_ok_and(|rows| {
+        rows.iter().all(|row| {
+            row.get("parameterId")
+                .and_then(Value::as_str)
+                .is_some_and(|key| SHELL_PARAMETERS.contains(&key))
+        })
+    })
+}
+
+/// Maps a face-removal shell. A stored `oppositeDirection` of `false` is the
+/// inward wall; the opposite sense and the hollow form carry no stored case.
+fn shell(
+    feature: &Value,
+    ordinal: usize,
+    state: &topology::State,
+    model: &mut Model,
+    unresolved: &BTreeSet<String>,
+) -> Mapping<Value> {
+    if !shell_record_valid(feature) {
+        return Err(shell_refusal(
+            "a parameter is outside the shell specification",
+        ));
+    }
+    if enabled(feature, "isHollow")? {
+        return Err(shell_refusal("hollow shells are not supported yet"));
+    }
+    // Any `parts` row refuses, a repeated one too (`parameter` reports a repeat as an error).
+    if rows(feature, "parameters")?
+        .iter()
+        .any(|p| p.get("parameterId").and_then(Value::as_str) == Some("parts"))
+    {
+        return Err(shell_refusal(
+            "a hollow part selection on a face-removal shell is not supported yet",
+        ));
+    }
+    if enabled(feature, "oppositeDirection")? {
+        return Err(shell_refusal(
+            "outward walls are not supported yet (ONSHAPE-030)",
+        ));
+    }
+    let faces = state.selection(feature, "entities", "faces")?;
+    if faces
+        .pointer("/value/faces")
+        .and_then(Value::as_array)
+        .is_none_or(Vec::is_empty)
+    {
+        return Err(shell_refusal("no faces to remove are selected"));
+    }
+    let thickness = length(feature, "thickness", model, unresolved)?;
+    owned_variable(
+        feature,
+        ordinal,
+        "thickness",
+        "Thickness",
+        super::expression::Dimension::Length,
+        model,
+        unresolved,
+    )?;
+    push(&mut model.feature_input_topologies, state.row.clone())?;
+    Ok(definition(
+        "shell",
+        json!({"removed_faces": faces, "thickness": thickness, "outward": false}),
+    ))
 }
 
 fn hole(

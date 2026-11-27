@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use std::fmt::Debug;
 
 use serde::de::DeserializeOwned;
@@ -14,22 +15,19 @@ fn assert_base64_round_trip_and_rejection<T>(value: &T, path: &[&str])
 where
     T: Serialize + DeserializeOwned + PartialEq + Debug,
 {
-    let mut json = cadmpeg_core::serde_erase::json::to_value(value).unwrap();
+    let mut json = json::to_value(value).unwrap();
     let mut at = &json;
     for step in path {
         at = &at[*step];
     }
-    assert_eq!(*at, serde_json::json!("AQID"));
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<T>(json.clone()).unwrap(),
-        *value
-    );
+    assert_eq!(*at, cadmpeg_core::json!("AQID"));
+    assert_eq!(json::from_value::<T>(json.clone()).unwrap(), *value);
     let mut at = &mut json;
     for step in path {
         at = &mut at[*step];
     }
     *at = serde_json::Value::String("%%%".into());
-    assert!(cadmpeg_core::serde_erase::json::from_value::<T>(json).is_err());
+    assert!(json::from_value::<T>(json).is_err());
 }
 
 #[test]
@@ -71,10 +69,7 @@ fn native_base64_stream_refuses_retained_limit_and_preserves_json_bytes() {
         "{{\"id\":\"test:native:base64#1\",\"payload\":\"{}\"}}",
         STANDARD.encode(bytes)
     );
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&record).unwrap(),
-        expected
-    );
+    assert_eq!(json::to_string(&record).unwrap(), expected);
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -99,8 +94,5 @@ fn native_base64_stream_refuses_retained_limit_and_preserves_json_bytes() {
         [Ok::<_, crate::native::NativeConvertError>(&record)],
     )
     .unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&stored[0]).unwrap(),
-        expected
-    );
+    assert_eq!(json::to_string(&stored[0]).unwrap(), expected);
 }

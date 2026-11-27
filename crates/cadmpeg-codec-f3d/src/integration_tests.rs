@@ -13,6 +13,7 @@ mod design_parameters;
 mod design_v11;
 mod document_identity;
 mod emboss_operands;
+mod encode_sets;
 mod external_placement;
 mod f30_placements;
 mod fillet_projection;
@@ -52,6 +53,7 @@ mod tracking_path_headers;
 mod treatment_losses;
 mod work_planes;
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
 use cadmpeg_core::container::ContainerRole;
@@ -65,7 +67,7 @@ use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+use crate::test_support::native_test::{add_empty_f3d_native, f3d_native};
 use crate::test_support::smbh_curves_test::synthetic_geometry_with_helix_curve_smbh;
 use crate::test_support::smbh_geometry_test::{
     synthetic_geometry_smbh, synthetic_geometry_with_history_smbh,
@@ -221,7 +223,7 @@ fn design_pipeline_correlates_protein_properties_history_sketches_and_configurat
     assert_valid(&protein);
 
     let name = "FusionAssetName[Active]/DesignConfigurationTable.integration.dsgcfg";
-    let payload = cadmpeg_core::serde_erase::json::to_vec(&table_document(
+    let payload = json::to_vec(&table_document(
         "1",
         &[("P", property_target("Part Number"))],
         &[("wide", "Wide", vec![("P", string_cell("W-1"))])],
@@ -270,10 +272,10 @@ fn preserved_source_pipeline_applies_semantic_geometry_edits_without_losing_arch
 fn source_less_writer_pipeline_emits_a_fresh_valid_archive() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.source = None;
-    drop(f3d_native_mut(&mut ir));
+    add_empty_f3d_native(&mut ir);
     let mut bytes = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None))
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("source-less F3D encode");
     assert_eq!(
@@ -498,8 +500,8 @@ fn plan(
     request: TargetRequest<'_>,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
     F3dCodec.plan(
-        EncodeInput::new(result.ir(), fidelity.then(|| result.source_fidelity())),
-        request,
+        EncodeInput::new(result.ir(), fidelity.then(|| result.source_fidelity()))
+            .with_target(request),
     )
 }
 
@@ -516,15 +518,15 @@ fn named_target(plan: &cadmpeg_ir::codec::write::ExportPlan) -> String {
 /// The flagship case: `convert in.f3d -o out.f3d` on an archive that is not the
 /// catalog row keeps the archive it was handed, and says so.
 ///
-/// The command line builds `Inherit` for a same-format conversion, and the
-/// resolved dialect is then the source's by construction, so the replay law
-/// admits preservation. Before resolution the report named no dialect at all,
+/// The command line names no target for a same-format conversion, so the
+/// request inherits, the resolved dialect is the source's by construction,
+/// and the replay law admits preservation. Before resolution the report named no dialect at all,
 /// so the bytes went out with the claim unstated.
 #[test]
 fn inherit_replays_an_off_catalog_dialect_and_names_it() {
     let source = f3d_with_smbh_and_manifest_version(&synthetic_geometry_smbh(), "3-3-0-0");
     let result = decode(source.clone());
-    let plan = plan(&result, true, TargetRequest::Inherit).expect("preservation is available");
+    let plan = plan(&result, true, TargetRequest::Unnamed).expect("preservation is available");
 
     assert!(matches!(
         plan.report().write_path(),
@@ -537,9 +539,9 @@ fn inherit_replays_an_off_catalog_dialect_and_names_it() {
 }
 
 /// A dialect this codec reads but cannot generate is written as the catalog
-/// default under `Inherit` once its retained image is gone. The report names
-/// the default as the target and charges the displacement of the source's
-/// dialect.
+/// default under a request that names no target once its retained image is
+/// gone. The report names the default as the target and charges the
+/// displacement of the source's dialect.
 #[test]
 fn inherit_writes_an_off_catalog_source_dialect_with_no_retained_image_as_the_default() {
     let result = decode(f3d_with_smbh_and_manifest_version(
@@ -649,10 +651,7 @@ fn the_patch_path_names_the_preserved_dialect() {
     );
 
     let plan = F3dCodec
-        .plan(
-            EncodeInput::new(&edited, Some(result.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(&edited, Some(result.source_fidelity())))
         .expect("an edited archive still preserves its dialect");
     assert!(matches!(
         plan.report().write_path(),
@@ -711,7 +710,7 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
         ("replay", &replayed, true, replay_matches),
         ("synthesize", &synthesized, false, synthesize_matches),
     ] {
-        let plan = plan(result, fidelity, TargetRequest::Inherit)
+        let plan = plan(result, fidelity, TargetRequest::Unnamed)
             .unwrap_or_else(|error| panic!("{label} must plan, got {error}"));
         let path = plan.report().write_path();
         assert!(path_matches(path), "{label}: took the {path} path");

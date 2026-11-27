@@ -14,6 +14,7 @@
 //! that describes it, and four sources already span every target resolution
 //! the writer has.
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
@@ -84,10 +85,8 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
     let value = match StepCodec::default()
         .inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default())
     {
-        Ok(summary) => {
-            cadmpeg_core::serde_erase::json::to_value(&summary).expect("serialize inspect summary")
-        }
-        Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
+        Ok(summary) => json::to_value(&summary).expect("serialize inspect summary"),
+        Err(error) => cadmpeg_core::json!({ "inspect_error": error.to_string() }),
     };
     snapshot_text(&value)
 }
@@ -100,13 +99,13 @@ fn decode_snapshot(bytes: &[u8]) -> String {
         .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
         Ok(result) => {
-            serde_json::json!({
-                "ir": cadmpeg_core::serde_erase::json::to_value(result.ir()).expect("serialize ir"),
-                "report": cadmpeg_core::serde_erase::json::to_value(result.report()).expect("serialize report"),
-                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
+            cadmpeg_core::json!({
+                "ir": json::to_value(result.ir()).expect("serialize ir"),
+                "report": json::to_value(result.report()).expect("serialize report"),
+                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.ir(), result.source_fidelity()),
             })
         }
-        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+        Err(error) => cadmpeg_core::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)
 }
@@ -132,10 +131,10 @@ fn encode_snapshot(bytes: &[u8]) -> String {
     {
         Ok(result) => result,
         Err(error) => {
-            return snapshot_text(&serde_json::json!({ "decode_error": error.to_string() }))
+            return snapshot_text(&cadmpeg_core::json!({ "decode_error": error.to_string() }))
         }
     };
-    let value = serde_json::json!({
+    let value = cadmpeg_core::json!({
         "inherit": encode_arm(&decoded, TargetRequest::Inherit),
         "explicit_default": encode_arm(
             &decoded,
@@ -156,8 +155,7 @@ fn encode_arm(
 ) -> serde_json::Value {
     let outcome = Encoder::plan(
         &StepCodec::default(),
-        EncodeInput::new(decoded.ir(), None),
-        request,
+        EncodeInput::new(decoded.ir(), None).with_target(request),
     )
     .and_then(|plan| {
         let mut produced = Vec::new();
@@ -165,11 +163,11 @@ fn encode_arm(
             .map(|report| (report, produced))
     });
     match outcome {
-        Ok((report, produced)) => serde_json::json!({
+        Ok((report, produced)) => cadmpeg_core::json!({
             "report": report,
             "output": String::from_utf8_lossy(&produced),
         }),
-        Err(error) => serde_json::json!({ "encode_error": error.to_string() }),
+        Err(error) => cadmpeg_core::json!({ "encode_error": error.to_string() }),
     }
 }
 

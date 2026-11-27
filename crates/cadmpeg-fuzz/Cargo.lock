@@ -70,7 +70,6 @@ dependencies = [
  "cadmpeg-derive",
  "cadmpeg-ir",
  "serde",
- "serde-value",
 ]
 
 [[package]]
@@ -81,7 +80,6 @@ dependencies = [
  "cadmpeg-ir",
  "memchr",
  "serde",
- "serde-value",
  "serde_json",
 ]
 
@@ -117,7 +115,6 @@ dependencies = [
  "memchr",
  "roxmltree",
  "serde",
- "serde-value",
  "serde_json",
  "sha2",
  "tempfile",
@@ -163,6 +160,18 @@ dependencies = [
  "encoding_rs",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "cadmpeg-codec-ironcad"
+version = "0.6.12"
+dependencies = [
+ "cadmpeg-asm",
+ "cadmpeg-codec-sldprt",
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "cadmpeg-parasolid",
 ]
 
 [[package]]
@@ -227,6 +236,7 @@ dependencies = [
  "cadmpeg-parasolid",
  "crc32fast",
  "flate2",
+ "memchr",
  "rmp",
  "roxmltree",
  "serde",
@@ -291,6 +301,7 @@ dependencies = [
  "ruzstd",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
 ]
 
@@ -310,6 +321,7 @@ dependencies = [
  "cadmpeg-codec-freecad",
  "cadmpeg-codec-iges",
  "cadmpeg-codec-inventor",
+ "cadmpeg-codec-ironcad",
  "cadmpeg-codec-nx",
  "cadmpeg-codec-pvz",
  "cadmpeg-codec-rhino",
@@ -321,6 +333,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-parasolid",
  "cadmpeg-protein",
  "crc32fast",
  "flate2",
@@ -644,15 +657,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
-name = "ordered-float"
-version = "2.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68f19d67e5a2795c94e73e0bb1cc1a7edeb2e28efd39e2e1c9b7a40c1108b11c"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
 name = "proc-macro2"
 version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -753,16 +757,6 @@ checksum = "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba"
 dependencies = [
  "serde_core",
  "serde_derive",
-]
-
-[[package]]
-name = "serde-value"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3a1a3341211875ef120e117ea7fd5228530ae7e7036a779fdc9117be6b3282c"
-dependencies = [
- "ordered-float",
- "serde",
 ]
 
 [[package]]

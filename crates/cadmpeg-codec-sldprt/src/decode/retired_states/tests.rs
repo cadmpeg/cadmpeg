@@ -1,21 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::annotations::Annotations;
+use cadmpeg_core::json;
+use cadmpeg_ir::annotations::{AnnotationKey, AnnotationTarget, Annotations, StreamHandle};
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding};
+use cadmpeg_ir::design::evaluation::{
+    Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
+};
+use cadmpeg_ir::design::ids::EvaluationId;
+use cadmpeg_ir::design::refs::Evaluated;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::document::Topology;
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::features::parameters::{
     ConfigurationEvaluation, ConfigurationFeatureState, DesignConfiguration,
 };
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{ConfigurationId, FeatureDefinition, FeatureId, FeatureOperation};
-use cadmpeg_ir::ids::{BodyId, UnknownId};
+use cadmpeg_ir::ids::{BodyId, PointId, ProductDefinitionId, UnknownId};
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::unknown::UnknownRecord;
-use serde_json::json;
+use cadmpeg_ir::AnnotationBuilder;
+use cadmpeg_ir::Exactness;
 
 use crate::loss::SldprtLossCode;
 
@@ -23,7 +33,7 @@ const FACE: &str = "sldprt:brep:face#37@block@1";
 const KEPT_FACE: &str = "sldprt:brep:face#38@block@2";
 
 fn face_binding(id: &str, face: &str, appearance: &str) -> AppearanceBinding {
-    cadmpeg_core::serde_erase::json::from_value(json!({
+    json::from_value(json!({
         "id": id,
         "target": {"entity": {"kind": "face", "value": face}},
         "appearance": appearance,
@@ -33,7 +43,7 @@ fn face_binding(id: &str, face: &str, appearance: &str) -> AppearanceBinding {
 }
 
 fn appearance(id: &str) -> Appearance {
-    cadmpeg_core::serde_erase::json::from_value(json!({
+    json::from_value(json!({
         "id": id,
         "schema": "entity-53",
         "base_color": {"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0},
@@ -167,4 +177,65 @@ fn the_outputs_on_a_retired_body_go_with_a_loss_counting_them() {
     assert_eq!(loss.code, SldprtLossCode::ConfigStateOutputsUnstated.kind());
     assert!(loss.message.contains(configuration.as_str()), "{loss:#?}");
     assert!(loss.message.contains("2 feature output(s)"), "{loss:#?}");
+}
+
+/// A record that moves into the delta of a configuration's evaluation keeps
+/// its annotations under its key in that evaluation (§3.2), and its
+/// top-level annotations go with it.
+#[test]
+fn a_retired_record_keeps_its_annotations_under_its_evaluation() {
+    let configuration = ConfigurationId::mint("sldprt:model:configuration#7:0").unwrap();
+    let evaluation = EvaluationId::mint("sldprt:design:evaluation#configuration:7:0").unwrap();
+    let id = PointId::mint("sldprt:brep:point#4@block@1").unwrap();
+    let point = Point::new(
+        id.clone(),
+        FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+        None,
+    );
+    let mut ir = CadIr::empty();
+    ir.geometry.points.push(point.clone());
+    let mut records = Topology::default();
+    records.points.push(point);
+    ir.design.evaluations.push(Evaluation {
+        id: evaluation.clone(),
+        scope: ProductDefinitionId::mint("sldprt:model:definition#part").unwrap(),
+        configuration: Some(configuration.clone()),
+        of: Evaluated::Tool(FeatureId::mint("sldprt:history:feature#boss").unwrap()),
+        status: EvaluationStatus::Current,
+        content: Some(StateContent {
+            base: StateBase::Empty,
+            delta: StateDelta {
+                records,
+                ..StateDelta::default()
+            },
+        }),
+        native_ref: None,
+    });
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("Config-0-Partition"));
+    let mut builder = AnnotationBuilder::new();
+    builder.note(&id, &stream, 40, Some("point"));
+    builder.exactness(&id, Exactness::Inferred);
+    let mut annotations = builder.build();
+
+    let retired = BTreeMap::from([(id.as_str().to_owned(), configuration)]);
+    super::retire(
+        &mut ir,
+        &mut annotations,
+        &mut [],
+        &retired,
+        &mut Vec::new(),
+    );
+
+    let key = AnnotationKey::in_delta(&evaluation, &id);
+    assert_eq!(
+        key.target(),
+        AnnotationTarget::Delta {
+            qualifier: evaluation.as_str(),
+            record: id.as_str(),
+        }
+    );
+    assert_eq!(annotations.provenance[&key].offset, 40);
+    assert_eq!(annotations.exactness()[&key].entity(), Exactness::Inferred);
+    assert!(!annotations.provenance.contains_key(id.as_str()));
+    assert!(!annotations.exactness().contains_key(id.as_str()));
 }

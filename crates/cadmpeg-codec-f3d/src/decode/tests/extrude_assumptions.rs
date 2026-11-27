@@ -24,6 +24,7 @@ use crate::records::topology::extrude_selection::DesignOperandRole;
 use crate::records::topology::sketch_profile::{
     DesignSketchProfileOperand, DesignSketchProfileOperandDraft,
 };
+use cadmpeg_core::serde_erase::json;
 
 const STREAM: &str = "f3d:Design/BulkStream.dat";
 const SCOPE_ID: &str = "f3d:Design/BulkStream.dat:scope#12";
@@ -236,29 +237,29 @@ fn definition(
     start: serde_json::Value,
     extent: serde_json::Value,
 ) -> cadmpeg_ir::features::FeatureDefinition {
-    let mut value = serde_json::json!({"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "native", "value": profile}},
+    let mut value = cadmpeg_core::json!({"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "native", "value": profile}},
         "direction": {"kind": "profile_normal"},
         "op": "new_body",
         "solid": true}}});
     value["value"]["value"]["start"] = start;
     value["value"]["value"]["extent"] = extent;
-    cadmpeg_core::serde_erase::json::from_value(value).unwrap()
+    json::from_value(value).unwrap()
 }
 
 fn blind(length: f64) -> serde_json::Value {
-    serde_json::json!({"termination": {"kind": "blind", "length": length}})
+    cadmpeg_core::json!({"termination": {"kind": "blind", "length": length}})
 }
 
 fn one_sided() -> serde_json::Value {
-    serde_json::json!({"kind": "one_sided", "side": blind(2.0)})
+    cadmpeg_core::json!({"kind": "one_sided", "side": blind(2.0)})
 }
 
 fn two_sided() -> serde_json::Value {
-    serde_json::json!({"kind": "two_sided", "first": blind(2.0), "second": blind(3.0)})
+    cadmpeg_core::json!({"kind": "two_sided", "first": blind(2.0), "second": blind(3.0)})
 }
 
 fn profile_plane() -> serde_json::Value {
-    serde_json::json!({"kind": "profile_plane"})
+    cadmpeg_core::json!({"kind": "profile_plane"})
 }
 
 fn notes(
@@ -360,7 +361,7 @@ fn native_scope_profile_reports_its_unresolved_sketch_placement() {
 #[test]
 fn distance_and_through_all_reports_its_auxiliary_selection() {
     let code = F3dLossCode::FeatureExtrudeAuxiliarySelectionNative;
-    let extent = serde_json::json!({
+    let extent = cadmpeg_core::json!({
         "kind": "two_sided",
         "first": blind(2.0),
         "second": {"termination": {"kind": "through_all"}}
@@ -486,13 +487,13 @@ fn selected_face_start_read_as_offset_plane_reports_the_absent_start_group() {
         DesignExtrudeExtent::OneSidedToFace,
         DesignExtrudeStart::FromFace,
     ));
-    let offset_plane = serde_json::json!({"kind": "offset_profile_plane", "offset": 5.0});
+    let offset_plane = cadmpeg_core::json!({"kind": "offset_profile_plane", "offset": 5.0});
     assert_eq!(
         notes(&native, definition(SCOPE_ID, offset_plane.clone(), one_sided()), code),
         [format!("Extrude {FEATURE_ID} reads its selected-face start without a start group as the offset profile plane (DR-322).")]
     );
 
-    let from_face = serde_json::json!({
+    let from_face = cadmpeg_core::json!({
         "kind": "from_face",
         "face": {"kind": "native", "value": format!("{STREAM}:operand-group#13")}
     });
@@ -518,10 +519,10 @@ fn group_free_extrude_start_reports_the_unresolved_face() {
         DesignExtrudeExtent::OneSidedDistance,
         DesignExtrudeStart::FromFace,
     ));
-    let start = |face| serde_json::json!({"kind": "from_face", "face": face, "offset": -5.0});
+    let start = |face| cadmpeg_core::json!({"kind": "from_face", "face": face, "offset": -5.0});
     let unresolved = definition(
         SCOPE_ID,
-        start(serde_json::json!({"kind": "unresolved"})),
+        start(cadmpeg_core::json!({"kind": "unresolved"})),
         one_sided(),
     );
     assert_eq!(notes(&native, unresolved.clone(), code).len(), 1);
@@ -529,7 +530,7 @@ fn group_free_extrude_start_reports_the_unresolved_face() {
 
     let native_face = definition(
         SCOPE_ID,
-        start(serde_json::json!({
+        start(cadmpeg_core::json!({
             "kind": "native",
             "value": format!("{STREAM}:operand-group#13")
         })),
@@ -546,7 +547,7 @@ fn symmetric_distance_without_a_measurement_word_reports_its_reading() {
         definition(
             SCOPE_ID,
             profile_plane(),
-            serde_json::json!({"kind": "symmetric", "side": blind(2.0)}),
+            cadmpeg_core::json!({"kind": "symmetric", "side": blind(2.0)}),
         )
     };
     let indexed = native_with(scope(

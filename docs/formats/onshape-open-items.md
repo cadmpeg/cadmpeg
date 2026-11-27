@@ -14,15 +14,11 @@ Note: Unresolved quantities retain their feature as Native with `history.not-sup
 
 ## ONSHAPE-003 — Exact next-face coverage
 
-Question: Which stored source operands identify the resolved `UP_TO_NEXT` target for curved profiles and multiple candidate faces?
+Question: Which stored data establish the `UP_TO_NEXT` target for a `booleanScope` selection, and for non-planar or nearly parallel faces?
 
-Known: One stored planar target with a closed convex line boundary establishes exact first intersection and complete coverage for a closed convex line profile.
+Known: Planar faces of live bodies with closed line boundaries establish exact first intersection and complete coverage for a closed convex line profile. Each body stores `type` and `consumedByComposite`.
 
-Need: Stored target-identity and boundary encodings for curved carriers and competing faces.
-
-Conflict: Finite boundary samples can miss a narrow recess or an uncovered interior.
-
-Note: Unresolved `UP_TO_NEXT` forms retain their feature as Native with `history.not-supported`.
+Need: A stored statement of how a `booleanScope` selection limits the next face. Stored exact intersection data for a non-planar face, a loop that is not one closed chain of line edges, and a plane that is nearly parallel to the travel direction.
 
 ## ONSHAPE-004 — Thin sides of mixed curve groups
 
@@ -144,3 +140,23 @@ response. Enabled or unclassified parameters beyond the plain mate set charge
 not charged. A switch set to `false` silences the limit or offset parameters
 whose names carry its own qualifying words, and a switch with more qualifying
 words than a parameter silences that parameter. Source responses remain assets.
+
+## ONSHAPE-012 — Derived insert placement and configuration
+
+Question: How do a stored `placement`, `location`, mate connector value, `configuration`, `partIdentity`, `includeMateConnectors`, `includeProperties` or `preserveActiveSheetMetal` of an `importDerived` feature move, select or add to the inserted bodies?
+
+Known: The feature specification stores `placement` as `AT_ORIGIN` or `AT_MATE_CONNECTOR`, a `location` query list, the mate connector values `mateConnectorIndex`, `mateConnectorId` and `mateConnectorIndexInFeature`, and a `configuration` array and `partIdentity` in the `partStudio` record, and the Boolean controls `includeMateConnectors`, `includeProperties` and `preserveActiveSheetMetal`. Every one of them has a default, and the default places the bodies at their source placement.
+
+Need: `importDerived` features that store a non-default value of one of these fields, with the rollback states before and after each feature and the referenced studio.
+
+## ONSHAPE-030 — Shell wall sense with opposite direction
+
+Question: Does a stored `oppositeDirection` of `true` on a `shell` feature grow the wall outward from the original boundary, and which side of an opening face carries the wall?
+
+Known: A `false` value places the wall inside the original boundary. The Onshape `shell` specification names the control "Opposite direction" and lists no other direction control.
+
+Need: A stored shell with `oppositeDirection` set to `true`, its input body and its final STEP body.
+
+Conflict: None.
+
+Note: The decoder retains a shell with `oppositeDirection` set to `true`, the hollow form or an unlisted parameter as Native with `shell.not-supported` or `history.not-supported`.

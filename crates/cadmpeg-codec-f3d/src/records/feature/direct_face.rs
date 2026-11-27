@@ -14,7 +14,7 @@ cadmpeg_core::named_optional_field!(deserialize_opposite_angle, Angle, "opposite
 cadmpeg_core::named_optional_field!(deserialize_two_sided, DesignDraftTwoSided, "two_sided");
 
 /// Exact fixed-form construction data of a direct-face feature scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(rename_all = "snake_case", tag = "operation")]
 pub(crate) enum DesignDirectFaceOperation {
     /// Signed normal offset applied to selected faces.
@@ -201,7 +201,7 @@ pub(crate) struct DesignMovePrefix {
     pub(crate) leading: Option<DesignMoveLeading>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub(crate) enum DesignMoveReference {
     Null,
@@ -484,42 +484,33 @@ mod tests {
     use super::{
         DesignShellOperation, DesignShellOutsideWall, DesignShellPrefixFlag, DesignShellWallSlots,
     };
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn draft_parting_optional_keys_distinguish_absence_value_and_null() {
-        let mut wire = serde_json::json!({"flipped":false,"tangent_chain":false});
-        let absent: super::DesignDraftFlags =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        let mut wire = cadmpeg_core::json!({"flipped":false,"tangent_chain":false});
+        let absent: super::DesignDraftFlags = json::from_value(wire.clone()).unwrap();
         assert!(absent.parting.is_none());
-        wire["parting"] = serde_json::json!({
+        wire["parting"] = cadmpeg_core::json!({
             "form":2,"mode":3,"prefix_scalars":[1.5,0.5],"boundary_flag":false,
             "pull":{"value":93,"offset":75},"tool":{"value":92,"offset":86},"faces":{"value":91,"offset":101}
         });
-        let present: super::DesignDraftFlags =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(present).unwrap(),
-            wire
-        );
+        let present: super::DesignDraftFlags = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(present).unwrap(), wire);
         assert!(present.parting.unwrap().fixed_edges.is_none());
-        wire["parting"]["fixed_edges"] = serde_json::json!({"value":94,"offset":75});
-        let with_fixed: super::DesignDraftFlags =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        wire["parting"]["fixed_edges"] = cadmpeg_core::json!({"value":94,"offset":75});
+        let with_fixed: super::DesignDraftFlags = json::from_value(wire.clone()).unwrap();
         assert_eq!(with_fixed.parting.unwrap().fixed_edges.unwrap().value, 94);
         wire["parting"]["fixed_edges"] = serde_json::Value::Null;
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<super::DesignDraftFlags>(wire.clone())
-                .unwrap_err()
-                .to_string()
-                .contains("fixed_edges")
-        );
+        assert!(json::from_value::<super::DesignDraftFlags>(wire.clone())
+            .unwrap_err()
+            .to_string()
+            .contains("fixed_edges"));
         wire["parting"] = serde_json::Value::Null;
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<super::DesignDraftFlags>(wire)
-                .unwrap_err()
-                .to_string()
-                .contains("parting")
-        );
+        assert!(json::from_value::<super::DesignDraftFlags>(wire)
+            .unwrap_err()
+            .to_string()
+            .contains("parting"));
     }
 
     fn operation(outside: Option<DesignShellOutsideWall>) -> DesignShellOperation {
@@ -559,23 +550,23 @@ mod tests {
             ..without.clone()
         };
         for value in [both, one, without, flagged] {
-            let wire = cadmpeg_core::serde_erase::json::to_value(&value).unwrap();
+            let wire = json::to_value(&value).unwrap();
             assert_eq!(
-                cadmpeg_core::serde_erase::json::from_value::<DesignShellOperation>(wire).unwrap(),
+                json::from_value::<DesignShellOperation>(wire).unwrap(),
                 value
             );
         }
-        let mut wire = cadmpeg_core::serde_erase::json::to_value(operation(None)).unwrap();
+        let mut wire = json::to_value(operation(None)).unwrap();
         assert!(wire["wall_slots"].get("outside").is_none());
         wire["wall_slots"]["outside"] = serde_json::Value::Null;
-        let error = cadmpeg_core::serde_erase::json::from_value::<DesignShellOperation>(wire)
+        let error = json::from_value::<DesignShellOperation>(wire)
             .unwrap_err()
             .to_string();
         assert!(error.contains("outside"), "{error}");
 
-        let mut wire = cadmpeg_core::serde_erase::json::to_value(operation(None)).unwrap();
+        let mut wire = json::to_value(operation(None)).unwrap();
         wire["wall_slots"] = serde_json::Value::Null;
-        let error = cadmpeg_core::serde_erase::json::from_value::<DesignShellOperation>(wire)
+        let error = json::from_value::<DesignShellOperation>(wire)
             .unwrap_err()
             .to_string();
         assert!(error.contains("wall_slots"), "{error}");

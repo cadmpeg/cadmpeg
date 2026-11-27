@@ -2,6 +2,7 @@
 //! End-to-end contracts over synthesized IGES card streams.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use super::{IgesCodec, IgesVersion};
@@ -906,8 +907,8 @@ fn repeated_decode_is_canonical() {
         second.ir().to_canonical_json().unwrap()
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(first.report()).unwrap(),
-        cadmpeg_core::serde_erase::json::to_vec(second.report()).unwrap()
+        json::to_vec(first.report()).unwrap(),
+        json::to_vec(second.report()).unwrap()
     );
     assert_eq!(first.source_fidelity(), second.source_fidelity());
 }
@@ -1014,8 +1015,8 @@ fn writer_replay_of_degraded_decode_output_writes_the_empty_file() {
     let ir = cadmpeg_ir::document::CadIr::from_json(text).expect("fuzzer JSON parses");
     let plan = Encoder::plan(
         &IgesCodec,
-        EncodeInput::new(&ir, None),
-        TargetRequest::Explicit(version.descriptor().id.as_str()),
+        EncodeInput::new(&ir, None)
+            .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
     )
     .expect("parsed document plans");
     let mut encoded = Vec::new();
@@ -1039,8 +1040,8 @@ fn writer_replay_of_degraded_decode_output_writes_the_empty_file() {
         );
     let replay = Encoder::plan(
         &IgesCodec,
-        EncodeInput::new(&decoded_ir, Some(&source_fidelity)),
-        TargetRequest::Explicit(version.descriptor().id.as_str()),
+        EncodeInput::new(&decoded_ir, Some(&source_fidelity))
+            .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
     );
     let replay = replay.expect("degraded decode output plans");
     let losses = &replay.report().losses;

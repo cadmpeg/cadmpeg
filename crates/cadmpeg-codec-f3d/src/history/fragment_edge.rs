@@ -205,11 +205,12 @@ mod tests {
     use super::*;
     use crate::history_records::{AsmHistoricalCoedge, AsmHistoricalRelation};
     use crate::records::dimensions::DesignRecipeReference;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::ids::FaceId;
 
     #[test]
     fn fragment_singleton_deletion_proves_the_edge_without_narrowing_the_lane_intersection() {
-        let structure = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        let structure = json::from_value(cadmpeg_core::json!({
             "root": 2,
             "sides": [
                 {"field_count": 3, "header_value": 1, "scalars": [0, 2],
@@ -239,7 +240,7 @@ mod tests {
 
     #[test]
     fn fragment_pair_remains_ambiguous_with_candidate_boundaries_and_deletion() {
-        let structure = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        let structure = json::from_value(cadmpeg_core::json!({
             "root": 2,
             "sides": [
                 {"field_count": 3, "header_value": 2, "scalars": [1, 0],
@@ -266,7 +267,7 @@ mod tests {
     #[test]
     fn recipe_reference_disjoint_names_require_one_deleted_common_edge() {
         let mut operand: crate::records::topology::edge_identity::DesignEdgeOperand =
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id":"f3d:Design/BulkStream.dat:edge-operand#7", "scope_record_index":42,
                 "scope_reference_ordinal":0, "record_index":7, "byte_offset":0, "class_tag":"297",
                 "paired_byte_offset":16, "paired_class_tag":"259", "recipe_record_index":10,
@@ -306,7 +307,7 @@ mod tests {
         operand.recipe_reference_contexts = crate::records::dimensions::reference_lanes(&operand.recipe_references)
             .into_iter().enumerate().map(|(ordinal, lane)| {
                 let faces = super::super::recipe_index::reference_lane_faces(lane).faces;
-                cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                json::from_value(cadmpeg_core::json!({
                     "reference_ordinal":ordinal, "result_faces":[], "result_shared_edge_slots":[],
                     "preceding_face_boundary_ids":faces.iter().map(|f| format!("boundary-{}", super::super::body_closures::stable_ref(f.as_str()).unwrap())).collect::<Vec<_>>(),
                     "preceding_faces":faces, "shared_edge_slots":[], "changed_shared_edge_slots":[],
@@ -314,7 +315,7 @@ mod tests {
             }).collect();
         let boundaries: Vec<crate::records::topology::historical_context::AsmFaceBoundary> =
             [(10, vec![31]), (20, vec![32]), (40, vec![31,32])].into_iter().map(|(face, edges)| {
-                cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                json::from_value(cadmpeg_core::json!({
                     "id":format!("boundary-{face}"), "parent":"state-1", "face_slot":face,
                     "loops":[{"loop_slot":face,"coedge_slots":edges.iter().map(|e| e*10+face).collect::<Vec<_>>(),"edge_slots":edges}],
                 })).unwrap()

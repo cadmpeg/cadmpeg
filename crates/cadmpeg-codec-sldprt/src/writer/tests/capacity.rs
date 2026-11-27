@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::io::Cursor;
 
 use cadmpeg_ir::appearance::Appearance;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::ids::AppearanceId;
 use cadmpeg_ir::topology::Color;
@@ -68,9 +68,7 @@ fn an_overlong_material_name_is_cut_before_a_surrogate_pair() {
     ir.geometry.bodies[0].name = Some(format!("{stem}\u{1f600}"));
     ir.geometry.bodies[0].color = Some(steel());
     let body = ir.geometry.bodies[0].id.as_str().to_owned();
-    let plan = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .unwrap();
+    let plan = SldprtCodec.plan(EncodeInput::new(&ir, None)).unwrap();
     let cut = plan
         .report()
         .losses

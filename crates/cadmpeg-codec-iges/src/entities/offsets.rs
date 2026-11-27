@@ -387,9 +387,10 @@ pub(super) fn project(
             .find(|curve| curve.id == source_id)
             .and_then(|curve| curve.geometry.solved())
         else {
-            super::push_geometry_loss(
+            super::push_geometry_loss_needing(
                 &mut losses,
                 entry,
+                Some(source_sequence),
                 format_args!("offset source curve is missing"),
             );
             continue;
@@ -459,7 +460,12 @@ pub(super) fn project(
                 Ok(transform) => transform,
                 Err(error) => {
                     let message = error.non_resource()?;
-                    super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
+                    super::push_geometry_loss_needing(
+                        &mut losses,
+                        entry,
+                        message.needs(),
+                        format_args!("{message}"),
+                    );
                     continue;
                 }
             };
@@ -835,9 +841,10 @@ pub(super) fn project(
                     .iter()
                     .find(|curve| curve.id == function_id)
                 else {
-                    super::push_geometry_loss(
+                    super::push_geometry_loss_needing(
                         &mut losses,
                         entry,
+                        Some(function_sequence),
                         format_args!("offset function curve is missing"),
                     );
                     continue;

@@ -75,7 +75,8 @@ its result.
 | OpenUSD layers                                    | L2    |
 | STEP Part 21                                      | L8    |
 | Solid Edge `.par`, `.psm`, and `.asm`             | L2    |
-| Onshape bundle                                    | L0    |
+| IronCAD `.ics`                                    | L0    |
+| Onshape bundle                                    | L4    |
 
 <!-- /generated: ladder-table -->
 
@@ -111,7 +112,7 @@ Structural detection requires directory evidence. The codec enumerates the compl
 - **ACIS part carriers: L3.** The 32-bit ACIS header and solved SAB partition transfer through the same direct and embedded kernel decoder at every save format. Connected B-rep validation and direct-carrier parity pass for majors 217 and 218, the verified bands. A carrier outside them decodes with the nearer verified band's grammar, reports the `acis:` kernel layer as `Admission::Unverified`, and charges `source.kernel-dialect-unverified`; a carrier that reads no geometry is retained verbatim and produces blocking `geometry_not_transferred`.
 - **Assemblies: partial extra.** A `UFRxDoc` occurrence transfers when its external file reference, `AmDc` occurrence identity, and active finite affine `AmGraphics` placement form one exact join. Placement translations convert from centimetres to millimetres. Suppressed occurrences transfer with hidden visibility and may use an identity placement when graphics are absent. External prototypes remain unresolved, no persisted path is opened, and local prototypes and nested parent links remain untransferred.
 - **Materials: partial extra.** Shared Protein schema decoding produces typed native assets and neutral appearance definitions. One exact `PmApp` default-style-to-rendering-style-to-asset join binds the selected appearance to transferred part bodies. One exact `PmGraphics` face-to-style-collection-to-primary-color join creates a direct face appearance that overrides the body default. Other style and texture families remain native.
-- **Design intent: partial extra.** Closed scalar parameter graphs and closed planar point, line, circle, ellipse, and constraint graphs transfer with native cross-links. Extrude, hole, constant-radius edge fillet, and equal-distance edge chamfer operations transfer only when every required typed property, dimension, native selection, placement, and result-body reference resolves. Each transferred result has a native intermediate-body identity. Browser work planes, including the origin planes, transfer as datum planes at their history positions. Solid splits by a work plane or a surface transfer as body splits that keep both sides. The version-19 selected-face form transfers as a face split by a work plane and retains its result-body identity. The bounded version-19 surface-tool form transfers as a body trim with its kept side retained natively. Suppression and dependency state remain unresolved, so this extra does not advance the score to L4.
+- **Design intent: partial extra.** Closed scalar parameter graphs and closed planar point, line, circle, ellipse, and constraint graphs transfer with native cross-links. Extrude, hole, constant-radius edge fillet, and equal-distance and joined unequal two-distance edge chamfer operations transfer only when every required typed property, dimension, native selection, placement, and result-body reference resolves. Each transferred result has a native intermediate-body identity. Browser work planes, including the origin planes, transfer as datum planes at their history positions. Solid splits by a work plane or a surface transfer as body splits that keep both sides. The version-19 selected-face form transfers as a face split by a work plane and retains its result-body identity. The bounded version-19 surface-tool form transfers as a body trim with its kept side retained natively. Suppression and dependency state remain unresolved, so this extra does not advance the score to L4.
 - **Write:** None. The codec has no encoder, replay path, or patch path.
 
 See [`formats/inventor.md`](formats/inventor.md), [`formats/inventor-open-items.md`](formats/inventor-open-items.md), and [`formats/protein.md`](formats/protein.md).
@@ -172,7 +173,7 @@ See [`formats/asm.md`](formats/asm.md) and [`formats/asm-open-items.md`](formats
 The cumulative gate stops at L5; L9 write assertions pass individually and show as extras. Schema 4 / file 1 is the one synthesis target. Schema 2 and schema 3 are preservation-only input dialects. Each schema's own read and write disposition is the row above.
 
 - **Read profile:** Partial for the primary envelope relative to the cumulative L5 gate. Text and binary exact shapes, connected topology, sketches, constraints, core design operations, product links, TechDraw, semantic annotations, Mesh, Points, embedded assets, and inert extension data are implemented. See the generated coverage profile for the current cumulative result.
-- **Native write:** Partial for the declared write envelope; individual write assertions pass as extras above L5. The synthesis catalog is `fcstd:schema-4`, the one band an explicit write target may name. A retained-document write repacks the ZIP container deterministically with `Document.xml` first and the retained side entries in their physical order, preserves every unedited XML record and named side entry, and writes checked leaf property edits and side-entry replacements into `Document.xml` with XML escaping. It writes the band and the document facts that the retained `Document.xml` declares, so a preserving write reproduces schemas 2 and 3 as well. Recursive typed application graphs can be generated without a source archive. Writing uses the FCStd native document graph on `CadIr` (`ir.native["fcstd"]`); `Encoder::plan` ignores `SourceFidelity` and returns `NotConsumed`. An edit the patch cannot hold stays as the source stores it, and `export:edit.dropped` names its record: an edit of a nested value without a typed serializer, of a property, object, or extension declaration, or of a value whose written form does not read back as its record states it. Where the patched `Document.xml` does not read back, the write holds the stored `Document.xml`, and `export:edit.dropped` names each record whose edit it does not hold. An archive entry record that does not read, a repeated entry name, and a ZIP member without an entry record are left out, and `export:native.records-omitted` names each left-out member once; a physical ledger span that does not read orders no member, and the same code names it. A property whose side entry the archive does not hold is written with an empty `file` attribute in the patched and in the stored `Document.xml`, and `export:native.records-omitted` names the property. Its object is marked `Touched` in schemas 3 and 4. A schema-2 declaration has no recompute mark: an object with an input edit or an emptied `file` attribute is written beside its stored shape, and `export:evaluation.stale` names it. Cross-band transcoding is refused: the writer regenerates no `Document.xml`, so an explicit `fcstd:schema-4` target on a schema-2 or schema-3 source is refused by name. A source whose retained `Document.xml` does not read as a FreeCAD document is refused with the source's own dialect and the catalog.
+- **Native write:** Partial for the declared write envelope; individual write assertions pass as extras above L5. The synthesis catalog is `fcstd:schema-4`. An explicit write target may also name `fcstd:schema-2`, `fcstd:schema-3`, or `fcstd:unknown`, which the writer reaches by patching a retained `Document.xml` that declares them. A retained-document write repacks the ZIP container deterministically with `Document.xml` first and the retained side entries in their physical order, preserves every unedited XML record and named side entry, and writes checked leaf property edits and side-entry replacements into `Document.xml` with XML escaping. It writes the band and the document facts that the retained `Document.xml` declares, so a preserving write reproduces schemas 2 and 3 as well. `FcstdDocumentBuilder` builds a schema-4 document from typed objects, properties, and side entries: it assembles an archive and decodes it, so the document holds the retained entries the writer patches. Writing uses the FCStd native document graph on `CadIr` (`ir.native["fcstd"]`); `Encoder::plan` reads two things from `SourceFidelity` and returns `NotConsumed`: the uncarried codec digest, and the untyped retained records, which the patched file holds and `export:source.carried` and `export:source.unchecked` name. Where the sidecar records no digest, `export:edit.unverified` states that edits since decode are not known. Where the sidecar holds a digest that the document does not compute for a reason other than a resource limit, `export:edit.dropped` names the document. An edit the patch cannot hold stays as the source stores it, and `export:edit.dropped` names its record: an edit of a nested value without a typed serializer, of a property, object, or extension declaration, or of a value whose written form does not read back as its record states it. Where the patched `Document.xml` does not read back, the write holds the stored `Document.xml`, and `export:edit.dropped` names each record whose edit it does not hold. An archive entry record that does not read, a repeated entry name, and a ZIP member without an entry record are left out, and `export:native.records-omitted` names each left-out member on one line: by its entry record, else by the properties that name it, else by its ledger span; a physical ledger span that does not read orders no member, and the same code names it. A property whose side entry the archive does not hold is written with an empty `file` attribute in the patched and in the stored `Document.xml`, and `export:native.records-omitted` names the property. Its object is marked `Touched` in schemas 3 and 4. Where the patch cannot write such a property from its record, it writes the stored record with the empty `file` attribute. A property it cannot write either way is left out of `Document.xml`, its container's count is lowered, its object is marked `Touched` in schemas 3 and 4, and `export:native.records-omitted` names the property. Where the patch cannot remove that property's element, the property is written as stored, and `export:native.records-omitted` names the ledger span of the entry. A schema-2 declaration has no recompute mark: an object with an input edit, an emptied `file` attribute, or a left-out property is written beside its stored shape, and `export:evaluation.stale` names it. The writer regenerates no `Document.xml`: a request for another band writes the band the retained `Document.xml` declares, and `target.request-displaced` names both. On a document whose source is of another format, or that records no source, a request that names no target charges no loss and writes the band the retained `Document.xml` declares. `Inherit` resolves to `fcstd:schema-4` and charges `target.source-dialect-displaced`; where the retained `Document.xml` declares another band, the same code names both. A document that holds no retained `Document.xml` that reads as a FreeCAD document is refused with `UnsupportedTarget`, because the writer holds no source bytes of its format and has no synthesis path.
 - **Round trip:** Every manifested public fixture writes deterministically, decodes to the same semantic fingerprint, accepts a typed property edit, and retains every named entry by identity and digest. Optional FreeCAD 1.1.1 acceptance is environment-driven interop via [`tools/validate_fcstd_interop.py`](../tools/validate_fcstd_interop.py) and is not recorded in the checked-in profile.
 
 See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md), [`formats/freecad_fcstd-open-items.md`](formats/freecad_fcstd-open-items.md), and [`formats/freecad_fcstd-coverage.md`](formats/freecad_fcstd-coverage.md).
@@ -745,11 +746,43 @@ See [`formats/solidedge.md`](formats/solidedge.md) and
 
 <!-- /generated: dialects solidedge -->
 
+## IronCAD `.ics`
+
+Detected by compound-file content: the scene root class and the `Brep Data`,
+`Shape Data`, and `Document Data` streams. The reader lists streams, inflates
+the framed `Brep Data` stream, and walks its record tree. Each Parasolid record
+contributes a Parasolid dialect layer with its schema token, and each ACIS
+record contributes an ACIS layer from its binary header. The ACIS or
+Parasolid record that follows a part's child node decodes into B-rep topology
+and geometry in the part frame; feature records are retained. Each part is
+placed by the matrix of its `Public Access` part record and carries its
+properties and mass density. When the assembly records and the assembly
+nodes of the record tree agree in count, each assembly node becomes an
+assembly definition, placed by the matrix of its assembly record, that holds
+its parts and member assemblies; otherwise every part is placed in the scene.
+The scene units come from `Document Data`. Feature history is pending, and
+each non-empty scene stream other than `Brep Data`, `Public Access`, and
+`Document Data` produces a loss. The headline is L0. The codec is read-only.
+
+See [`formats/ironcad.md`](formats/ironcad.md) and
+[`formats/ironcad-open-items.md`](formats/ironcad-open-items.md).
+
+<!-- generated: dialects ironcad -->
+
+**Ladder: L0.**
+
+| Dialect           | Read     | Write |
+| ----------------- | -------- | ----- |
+| `ironcad:cfb`     | detected | none  |
+| `ironcad:unknown` | refused  | none  |
+
+<!-- /generated: dialects ironcad -->
+
 ## Onshape bundle
 
 <!-- generated: dialects onshape -->
 
-**Ladder: L0.**
+**Ladder: L4.**
 
 | Dialect            | Read     | Write |
 | ------------------ | -------- | ----- |
@@ -759,11 +792,15 @@ See [`formats/solidedge.md`](formats/solidedge.md) and
 <!-- /generated: dialects onshape -->
 
 The decoder reads the Part Studios and the root assembly of an offline
-version 1 bundle. It composes final STEP geometry and maps supported
-sketches, variables, extrusions, revolves, fillets, chamfers and holes.
-Historical picks use rollback topology. An assembly maps to product
-definitions, occurrences with placements and suppression, grounded joints,
-and mate joints with evaluated connector frames. Mate limits and offsets stay
-in the native feature responses. Original members remain embedded assets. Synthetic tests
-pin the reader projection and resource bounds. Real-file evaluation is
-pending.
+version 1 bundle, with captured Derived studios. It composes final STEP
+geometry and maps sketches on default planes, offset planes and model faces,
+variables, extrusions (including up to next), revolves, sweeps, fillets,
+chamfers, holes, shells and subtractions after a Derived insert. Historical
+picks use rollback topology. An assembly maps to product definitions,
+occurrences with placements and suppression, grounded joints, and mate joints
+with evaluated connector frames. Mate limits and offsets stay in the native
+feature responses. Original members remain embedded assets. Typed features
+with operation semantics, sketch geometry, ordering and dependencies set L4. A
+recorded evaluation backs it. Body and face colours and the full sketch
+constraint and feature-family set are not yet established, so L5 and L6 are
+not claimed. Synthetic tests pin the reader projection and resource bounds.

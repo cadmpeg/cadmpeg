@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 
 use super::{fidelity, id, record, report};
@@ -121,21 +122,21 @@ fn the_sidecar_states_unrepresented_and_each_records_untyped_classes() {
         .unwrap();
     let sidecar =
         DecodeSidecar::bind_sha256(Sha256Digest::digest(b"cad-ir"), report(), fidelity.clone());
-    let wire = cadmpeg_core::serde_erase::json::to_value(&sidecar).unwrap();
+    let wire = json::to_value(&sidecar).unwrap();
     assert_eq!(
         wire["fidelity"]["unrepresented"],
-        serde_json::json!(["model", "design"])
+        cadmpeg_core::json!(["model", "design"])
     );
     let records = &wire["fidelity"]["retained_records"];
     assert_eq!(
         records["synthetic:source:record#given-up"]["untyped"],
-        serde_json::json!(["model", "design"])
+        cadmpeg_core::json!(["model", "design"])
     );
     assert_eq!(
         records["synthetic:source:record#image"]["untyped"],
-        serde_json::json!([])
+        cadmpeg_core::json!([])
     );
-    let restored: DecodeSidecar = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+    let restored: DecodeSidecar = json::from_value(wire).unwrap();
     assert_eq!(restored.fidelity, fidelity);
 }
 
@@ -148,14 +149,14 @@ fn a_sidecar_whose_unrepresented_differs_from_its_marks_is_refused() {
             record(b"part").with_untyped([ArenaClass::Design]),
         )
         .unwrap();
-    let wire = cadmpeg_core::serde_erase::json::to_value(&fidelity).unwrap();
+    let wire = json::to_value(&fidelity).unwrap();
     for stated in [
-        serde_json::json!([]),
-        serde_json::json!(["model", "design"]),
+        cadmpeg_core::json!([]),
+        cadmpeg_core::json!(["model", "design"]),
     ] {
         let mut tampered = wire.clone();
         tampered["unrepresented"] = stated.clone();
-        let error = cadmpeg_core::serde_erase::json::from_value::<SourceFidelity>(tampered)
+        let error = json::from_value::<SourceFidelity>(tampered)
             .expect_err("unrepresented restates the records' marks")
             .to_string();
         assert!(error.contains("untyped classes"), "{stated}: {error}");
@@ -168,12 +169,12 @@ fn every_untyped_and_unrepresented_set_is_written_and_required() {
     fidelity
         .insert_retained_record(id("image"), record(b"source image"))
         .unwrap();
-    let wire = cadmpeg_core::serde_erase::json::to_value(&fidelity).unwrap();
-    assert_eq!(wire["unrepresented"], serde_json::json!([]));
+    let wire = json::to_value(&fidelity).unwrap();
+    assert_eq!(wire["unrepresented"], cadmpeg_core::json!([]));
 
     let mut without_set = wire.clone();
     without_set.as_object_mut().unwrap().remove("unrepresented");
-    let error = cadmpeg_core::serde_erase::json::from_value::<SourceFidelity>(without_set)
+    let error = json::from_value::<SourceFidelity>(without_set)
         .expect_err("an empty set is written, not omitted")
         .to_string();
     assert!(error.contains("unrepresented"), "{error}");
@@ -183,7 +184,7 @@ fn every_untyped_and_unrepresented_set_is_written_and_required() {
         .as_object_mut()
         .unwrap()
         .remove("untyped");
-    let error = cadmpeg_core::serde_erase::json::from_value::<SourceFidelity>(without_marks)
+    let error = json::from_value::<SourceFidelity>(without_marks)
         .expect_err("a record's empty mark is written, not omitted")
         .to_string();
     assert!(error.contains("untyped"), "{error}");
@@ -198,25 +199,25 @@ fn a_class_set_has_one_spelling() {
             record(b"part").with_untyped([ArenaClass::Model, ArenaClass::Design]),
         )
         .unwrap();
-    let wire = cadmpeg_core::serde_erase::json::to_value(&fidelity).unwrap();
+    let wire = json::to_value(&fidelity).unwrap();
     assert_eq!(
         wire["unrepresented"],
-        serde_json::json!(["model", "design"])
+        cadmpeg_core::json!(["model", "design"])
     );
     for (stated, refusal) in [
-        (serde_json::json!(["design", "model"]), "out of order"),
-        (serde_json::json!(["model", "model", "design"]), "twice"),
-        (serde_json::json!(["model", "geometry"]), "geometry"),
+        (cadmpeg_core::json!(["design", "model"]), "out of order"),
+        (cadmpeg_core::json!(["model", "model", "design"]), "twice"),
+        (cadmpeg_core::json!(["model", "geometry"]), "geometry"),
     ] {
         let mut set = wire.clone();
         set["unrepresented"] = stated.clone();
-        let error = cadmpeg_core::serde_erase::json::from_value::<SourceFidelity>(set)
+        let error = json::from_value::<SourceFidelity>(set)
             .expect_err("unrepresented is written once, in class order")
             .to_string();
         assert!(error.contains(refusal), "{stated}: {error}");
         let mut marks = wire.clone();
         marks["retained_records"]["synthetic:source:record#part"]["untyped"] = stated.clone();
-        let error = cadmpeg_core::serde_erase::json::from_value::<SourceFidelity>(marks)
+        let error = json::from_value::<SourceFidelity>(marks)
             .expect_err("untyped is written once, in class order")
             .to_string();
         assert!(error.contains(refusal), "{stated}: {error}");
@@ -226,10 +227,10 @@ fn a_class_set_has_one_spelling() {
 #[test]
 fn a_record_read_back_keeps_its_marks() {
     let marked = record(b"part").with_untyped([ArenaClass::Model]);
-    let wire = cadmpeg_core::serde_erase::json::to_value(&marked).unwrap();
-    assert_eq!(wire["untyped"], serde_json::json!(["model"]));
+    let wire = json::to_value(&marked).unwrap();
+    assert_eq!(wire["untyped"], cadmpeg_core::json!(["model"]));
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<crate::source_fidelity::RetainedSourceRecord>(wire).unwrap(),
+        json::from_value::<crate::source_fidelity::RetainedSourceRecord>(wire).unwrap(),
         marked
     );
 }

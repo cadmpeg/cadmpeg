@@ -2,6 +2,7 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -35,7 +36,7 @@ fn decoded_object_names(payload: &[u8], parent: &str) -> Vec<crate::records::Fea
 fn named_invalid(ir: &cadmpeg_ir::CadIr, fidelity: &cadmpeg_ir::SourceFidelity, finding: &str) {
     let report = crate::test_support::plan_fixture_with_native_envelope(
         cadmpeg_ir::codec::write::EncodeInput::new(ir, Some(fidelity)),
-        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
     )
     .unwrap()
     .write_to(&mut Vec::new())
@@ -1501,7 +1502,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         SketchInputKind::LineOrCircle
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&SketchInputKind::LineOrCircle).unwrap(),
+        json::to_string(&SketchInputKind::LineOrCircle).unwrap(),
         r#""line_or_circle""#
     );
 
@@ -1725,6 +1726,8 @@ fn semantic_writer_rewrites_feature_input_name_values() {
         lane,
         &native.feature_histories,
         std::slice::from_ref(&rename),
+        cadmpeg_core::decode::ResourceLimits::service(),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
 
@@ -1750,8 +1753,14 @@ fn semantic_writer_refuses_a_feature_input_name_value_that_disagrees_with_its_pa
     let mut lane = native.feature_input_lanes[0].clone();
     lane.names[1].value = "Depth".into();
 
-    let error =
-        crate::writer::resolved_feature_payload(&lane, &native.feature_histories, &[]).unwrap_err();
+    let error = crate::writer::resolved_feature_payload(
+        &lane,
+        &native.feature_histories,
+        &[],
+        cadmpeg_core::decode::ResourceLimits::service(),
+        cadmpeg_ir::units::Tolerances::default().linear,
+    )
+    .unwrap_err();
 
     assert!(
         error

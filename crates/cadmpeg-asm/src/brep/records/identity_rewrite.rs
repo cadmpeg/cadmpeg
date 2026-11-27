@@ -82,11 +82,12 @@ impl RewriteIdentities for FaceSidedness {
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 
     fn record() -> super::super::EdgeContinuity {
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"id":"f3d:asm:edge-continuity#1","record_index":1,"edge":"f3d:brep:entity#1","sense":"forward","continuity":"tangent"})).unwrap()
+        json::from_value(cadmpeg_core::json!({"id":"f3d:asm:edge-continuity#1","record_index":1,"edge":"f3d:brep:entity#1","sense":"forward","continuity":"tangent"})).unwrap()
     }
 
     #[test]
@@ -102,8 +103,8 @@ mod tests {
         });
         let value = record().rewrite_identities(&ctx, &mut map).unwrap();
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(value).unwrap(),
-            serde_json::json!({"id":"f3d:brep/source/asm:edge-continuity#1","record_index":1,"edge":"f3d:brep/source/brep:entity#1","sense":"forward","continuity":"tangent"})
+            json::to_value(value).unwrap(),
+            cadmpeg_core::json!({"id":"f3d:brep/source/asm:edge-continuity#1","record_index":1,"edge":"f3d:brep/source/brep:entity#1","sense":"forward","continuity":"tangent"})
         );
         drop(map);
         ctx.finish_session().unwrap();

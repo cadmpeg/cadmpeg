@@ -530,6 +530,7 @@ impl<'de> Deserialize<'de> for FeatureDatumPlaneHeader {
 #[cfg(test)]
 mod tests {
     use super::FeatureDatumPlaneHeader;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn composed_datum_plane_header_resolves_its_blocks() {
@@ -580,7 +581,7 @@ mod tests {
 
     #[test]
     fn datum_plane_columns_stream_once_with_native_retained_limit() {
-        let expected = serde_json::json!({
+        let expected = cadmpeg_core::json!({
             "id": "nx:feature-history:datum-plane-header#1",
             "operation_label": "operation", "control": 1,
             "declared_count": 2, "branch_tag": 27,
@@ -591,8 +592,7 @@ mod tests {
             "descriptor_source_offsets": [20], "object_source_offsets": [22],
             "source_offset": 10
         });
-        let record: FeatureDatumPlaneHeader =
-            cadmpeg_core::serde_erase::json::from_value(expected.clone()).unwrap();
+        let record: FeatureDatumPlaneHeader = json::from_value(expected.clone()).unwrap();
         cadmpeg_test_support::native_serialization::assert_native_limit(&record, expected);
     }
 
@@ -606,10 +606,7 @@ mod tests {
             r#"{"id":"header","operation_label":"operation","control":1,"declared_count":3,"branch_tag":40,"descriptor_indices":[3],"raw_descriptor_indices":["03"],"object_indices":[4],"raw_object_indices":["f004"],"descriptor_source_offsets":[20],"object_source_offsets":[25],"source_offset":10}"#,
         ] {
             let header: FeatureDatumPlaneHeader = serde_json::from_str(json).unwrap();
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_string(&header).unwrap(),
-                json
-            );
+            assert_eq!(json::to_string(&header).unwrap(), json);
         }
     }
 
@@ -629,35 +626,25 @@ mod tests {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
             wire[column].as_array_mut().unwrap().clear();
             assert!(
-                cadmpeg_core::serde_erase::json::from_value::<FeatureDatumPlaneHeader>(wire)
-                    .is_err(),
+                json::from_value::<FeatureDatumPlaneHeader>(wire).is_err(),
                 "{column}"
             );
         }
         for selector in [0x18, 0x29, 0x33, 0xff] {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
             wire["branch_tag"] = selector.into();
-            let header: FeatureDatumPlaneHeader =
-                cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(header).unwrap(),
-                wire
-            );
+            let header: FeatureDatumPlaneHeader = json::from_value(wire.clone()).unwrap();
+            assert_eq!(json::to_value(header).unwrap(), wire);
         }
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["branch_tag"] = 0.into();
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<FeatureDatumPlaneHeader>(wire).is_err()
-        );
+        assert!(json::from_value::<FeatureDatumPlaneHeader>(wire).is_err());
     }
     #[test]
     fn branch_tokens_preserve_distinct_descriptor_and_object_grammars() {
         let json = r#"{"id":"header","operation_label":"operation","control":1,"declared_count":2,"branch_tag":27,"descriptor_indices":[4096],"raw_descriptor_indices":["9000"],"object_indices":[256],"raw_object_indices":["f10100"],"descriptor_data_blocks":["descriptor"],"object_data_blocks":["object"],"descriptor_source_offsets":[20],"object_source_offsets":[23],"source_offset":10}"#;
         let header: FeatureDatumPlaneHeader = serde_json::from_str(json).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&header).unwrap(),
-            json
-        );
+        assert_eq!(json::to_string(&header).unwrap(), json);
         assert_eq!(
             header
                 .resolved_data_blocks(super::DatumPlaneBlockLane::Descriptor)
@@ -683,10 +670,9 @@ mod tests {
             ("raw_object_indices", vec![240, 1]),
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-            wire[column][0] = serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(raw));
-            let error =
-                cadmpeg_core::serde_erase::json::from_value::<FeatureDatumPlaneHeader>(wire)
-                    .unwrap_err();
+            wire[column][0] =
+                cadmpeg_core::json!(cadmpeg_ir::native::bytes::NativeBytes::from(raw));
+            let error = json::from_value::<FeatureDatumPlaneHeader>(wire).unwrap_err();
             let field = if column == "raw_descriptor_indices" {
                 "descriptor_indices"
             } else {
@@ -703,20 +689,14 @@ mod tests {
             r#"{"id":"header","operation_label":"operation","control":255,"declared_count":2,"branch_tag":41,"object_indices":[0,256],"raw_object_indices":["f000","f10100"],"object_source_offsets":[110,123],"source_offset":100}"#,
         ] {
             let header: FeatureDatumPlaneHeader = serde_json::from_str(json).unwrap();
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_string(&header).unwrap(),
-                json
-            );
+            assert_eq!(json::to_string(&header).unwrap(), json);
             let original: serde_json::Value = serde_json::from_str(json).unwrap();
             for column in ["descriptor_source_offsets", "object_source_offsets"] {
                 if let Some(offsets) = original[column].as_array() {
                     for slot in 0..offsets.len() {
                         let mut wire = original.clone();
                         wire[column][slot] = (offsets[slot].as_u64().unwrap() + 1).into();
-                        let error = cadmpeg_core::serde_erase::json::from_value::<
-                            FeatureDatumPlaneHeader,
-                        >(wire)
-                        .unwrap_err();
+                        let error = json::from_value::<FeatureDatumPlaneHeader>(wire).unwrap_err();
                         assert!(error.to_string().contains(column));
                     }
                 }
@@ -724,20 +704,15 @@ mod tests {
             for origin in [101, u64::MAX - 10, u64::MAX] {
                 let mut wire = original.clone();
                 wire["source_offset"] = origin.into();
-                assert!(
-                    cadmpeg_core::serde_erase::json::from_value::<FeatureDatumPlaneHeader>(wire)
-                        .is_err()
-                );
+                assert!(json::from_value::<FeatureDatumPlaneHeader>(wire).is_err());
             }
         }
         for count in [0, 1] {
-            let wire = serde_json::json!({
+            let wire = cadmpeg_core::json!({
                 "id": "header", "operation_label": "operation", "control": 0,
                 "declared_count": count, "branch_tag": 255, "source_offset": 0
             });
-            let error =
-                cadmpeg_core::serde_erase::json::from_value::<FeatureDatumPlaneHeader>(wire)
-                    .unwrap_err();
+            let error = json::from_value::<FeatureDatumPlaneHeader>(wire).unwrap_err();
             assert!(error.to_string().contains("declared_count"));
         }
     }

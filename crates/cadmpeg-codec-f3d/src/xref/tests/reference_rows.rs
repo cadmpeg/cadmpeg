@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
+use serde_json::Value;
 
 fn row(kind: &str, target: &str) -> Value {
     json!({
@@ -13,7 +15,7 @@ fn row(kind: &str, target: &str) -> Value {
 }
 
 fn table(rows: Vec<Value>) -> Vec<u8> {
-    cadmpeg_core::serde_erase::json::to_vec(&json!({
+    json::to_vec(&json!({
         "name": "RedirectionsStream", "schema-version": 0,
         "designs": [{"file-version": 1, "targetFileName": "root.f3d",
                      "displayName": "root", "lineageUrn": "urn:l", "versionUrn": "urn:v"}],

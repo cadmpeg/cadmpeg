@@ -22,10 +22,45 @@ pub struct ExportReport {
     /// Entity counts and the semantic basis on which they were measured.
     pub census: EntityCensus,
     write_path: WritePath,
+    /// Why a writer with a patch or replay path synthesized a file of a
+    /// same-format source (§3.4, Paths).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_synthesis_cause"
+    )]
+    pub(crate) synthesis_cause: Option<SynthesisCause>,
     /// Omitted, normalized, or reduced content.
     pub losses: Vec<LossNote>,
     /// Informational details about the export path.
     pub notes: Vec<String>,
+}
+
+cadmpeg_core::named_optional_field!(
+    deserialize_synthesis_cause,
+    SynthesisCause,
+    "synthesis_cause"
+);
+
+/// Why a writer with a patch or replay path synthesized a file of a
+/// same-format source (§3.4, Paths).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SynthesisCause {
+    /// The writer declined the patch and replay paths for the file.
+    PatchDeclined {
+        /// Why the source could not carry the document.
+        reason: String,
+    },
+}
+
+impl fmt::Display for SynthesisCause {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::PatchDeclined { reason } => write!(f, "patch declined: {reason}"),
+        }
+    }
 }
 
 /// What an export report describes: the canonical CADIR document, or one
@@ -45,11 +80,12 @@ enum ExportIdentity {
 
 #[cfg(all(test, feature = "schema"))]
 mod schema_tests {
+    use cadmpeg_core::serde_erase::json;
+
     #[test]
     fn the_native_export_payload_schema_requires_its_target() {
-        let schema =
-            cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(super::ExportIdentity))
-                .expect("export identity schema serializes");
+        let schema = json::to_value(schemars::schema_for!(super::ExportIdentity))
+            .expect("export identity schema serializes");
         let native = schema["oneOf"]
             .as_array()
             .expect("export identity schema is a tagged union")
@@ -224,6 +260,22 @@ impl ExportReport {
         &self.write_path
     }
 
+    /// Why the writer synthesized a file of a same-format source, for a
+    /// writer with a patch or replay path.
+    #[must_use]
+    pub const fn synthesis_cause(&self) -> Option<&SynthesisCause> {
+        self.synthesis_cause.as_ref()
+    }
+
+    /// The native dialect written, or `None` for neutral CADIR.
+    #[must_use]
+    pub const fn target(&self) -> Option<&DialectId> {
+        match &self.identity {
+            ExportIdentity::Cadir {} => None,
+            ExportIdentity::Native { target } => Some(target),
+        }
+    }
+
     /// Returns the native format namespace, or `"cadir"` for neutral CADIR.
     #[must_use]
     pub fn format(&self) -> &str {
@@ -246,6 +298,7 @@ impl ExportReport {
             identity: ExportIdentity::Cadir {},
             census,
             write_path,
+            synthesis_cause: None,
             losses,
             notes,
         }
@@ -265,6 +318,7 @@ impl ExportReport {
             identity: ExportIdentity::Native { target },
             census,
             write_path,
+            synthesis_cause: None,
             losses,
             notes,
         }

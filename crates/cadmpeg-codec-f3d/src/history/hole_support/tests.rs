@@ -5,8 +5,10 @@ use crate::history_records::{
     AsmHistoricalPlane, AsmHistoricalTopology, AsmHistoricalTopologyDelta, AsmHistoricalTransition,
 };
 use crate::records::feature::hole::DesignHoleConstruction;
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::math::{Point3, Vector3};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 const TOP: i64 = 10;
 const BOTTOM: i64 = 20;
@@ -28,7 +30,7 @@ fn sketch_carrier(entries_cm: &[[f64; 3]], direction: [f64; 3]) -> DesignHoleCon
             })
         })
         .collect();
-    cadmpeg_core::serde_erase::json::from_value(json!({
+    json::from_value(json!({
         "point_record_index": 1, "point_record_byte_offset": 2,
         "position": [0.0, 0.0, 0.0], "position_offset": 3,
         "direction": direction, "direction_offset": 4,
@@ -136,7 +138,7 @@ impl Drill {
                 ..AsmHistoricalTopologyDelta::default()
             },
             record_revisions: Vec::new(),
-            rows: cadmpeg_core::serde_erase::json::from_value(json!({
+            rows: json::from_value(json!({
                 "surface_cylinders": {"set": cylinders},
                 "face_surfaces": {"set": bindings},
                 "face_loops": {"set": face_loops},
@@ -293,7 +295,7 @@ fn support_refuses_an_inserted_cylinder_off_every_entry_axis() {
 fn support_ignores_a_cylinder_row_of_a_face_that_is_not_inserted() {
     let mut transition = Drill::on(TOP, &[TOP_MM]).transition();
     transition.rows.surface_cylinders.set.push(
-        cadmpeg_core::serde_erase::json::from_value(json!({
+        json::from_value(json!({
             "surface": 9999,
             "origin": {"x": 30.0, "y": 15.0, "z": 20.0},
             "axis": {"x": 0.0, "y": 0.0, "z": 1.0},
@@ -550,7 +552,7 @@ fn radial_bore(origin: [f64; 3], axis: [f64; 3], meets_drum: bool) -> AsmHistori
             ..AsmHistoricalTopologyDelta::default()
         },
         record_revisions: Vec::new(),
-        rows: cadmpeg_core::serde_erase::json::from_value(json!({
+        rows: json::from_value(json!({
             "surface_cylinders": {"set": [{
                 "surface": 1100,
                 "origin": {"x": origin[0], "y": origin[1], "z": origin[2]},

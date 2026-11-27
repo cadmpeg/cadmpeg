@@ -252,7 +252,7 @@ fn source_less_writer_writes_the_part_and_names_its_saved_properties() {
     });
     let plan = crate::test_support::plan_fixture_with_native_envelope(
         cadmpeg_ir::codec::write::EncodeInput::new(&ir, None),
-        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
     )
     .unwrap();
     crate::test_support::UnwrittenLosses::of(&plan.report().losses).assert_charged(
@@ -276,9 +276,9 @@ fn a_carrier_without_retained_bytes_writes_the_part_and_names_every_property() {
         .provenance
         .iter()
         .find(|(id, provenance)| {
-            id.starts_with("sldprt:file:block#") && provenance.stream() == MEMBER
+            id.as_str().starts_with("sldprt:file:block#") && provenance.stream() == MEMBER
         })
-        .map(|(id, _)| id.clone())
+        .map(|(id, _)| id.to_string())
         .unwrap();
     crate::test_support::make_retained_record_unavailable(
         decoded.source_fidelity_mut(),

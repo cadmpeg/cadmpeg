@@ -2,6 +2,7 @@
 
 use super::{Family, PmDcFeature};
 use crate::pmdc::{PmDcListMetadata, PmDcReference, PmDcReferenceList};
+use cadmpeg_core::serde_erase::json;
 
 fn feature(references: &[u32], version: u8) -> PmDcFeature {
     let references = references
@@ -11,7 +12,7 @@ fn feature(references: &[u32], version: u8) -> PmDcFeature {
         .collect::<Vec<_>>();
     let metadata = (!references.is_empty())
         .then(|| PmDcListMetadata::U32([u32::try_from(references.len()).expect("slot count"), 0]));
-    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "inventor:pmdc:feature#synthetic-0",
         "segment_token": "synthetic", "record_ordinal": 0,
         "type_id": "914d8790d011f8d10008cabc0663dc09",
@@ -98,10 +99,9 @@ fn slot_validation_preserves_null_and_untyped_slots() {
 
 #[test]
 fn slot_validation_requires_a_type_two_property_list() {
-    let mut wire =
-        cadmpeg_core::serde_erase::json::to_value(feature(&[], 19)).expect("feature wire");
-    wire["properties"]["marker"] = serde_json::json!(8);
-    let source = cadmpeg_core::serde_erase::json::from_value(wire).expect("type eight list");
+    let mut wire = json::to_value(feature(&[], 19)).expect("feature wire");
+    wire["properties"]["marker"] = cadmpeg_core::json!(8);
+    let source = json::from_value(wire).expect("type eight list");
     for family in [Family::SolidLoft, Family::SurfaceLoft, Family::Sweep] {
         assert!(!family.valid_slots(&source, |_| None));
     }
