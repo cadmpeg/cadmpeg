@@ -92,7 +92,7 @@ pub(super) fn measure_history_states_parallel(
         .map(|((pos, idx), reqs)| (pos, idx, reqs))
         .collect();
     let chunk_size = work_items.len().div_ceil(workers);
-    let measured_chunks = std::thread::scope(|scope| {
+    let measured_chunks = crate::scoped::scope(|scope| {
         let mut iter = work_items.into_iter();
         let mut chunks_vec = Vec::new();
         loop {
@@ -552,7 +552,7 @@ pub(super) fn project_input_topologies_parallel(
     cadmpeg_ir::features::evaluation::FeatureInputTopology,
 )> {
     let chunk_size = jobs.len().div_ceil(workers);
-    std::thread::scope(|scope| {
+    crate::scoped::scope(|scope| {
         let mut iter = jobs.into_iter();
         let mut chunks = Vec::new();
         loop {

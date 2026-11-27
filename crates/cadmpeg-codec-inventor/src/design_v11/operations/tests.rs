@@ -197,6 +197,58 @@ fn chamfer_keeps_size_and_flip() {
 }
 
 #[test]
+fn unequal_two_distance_chamfer_with_a_support_state_names_its_reference_face() {
+    use cadmpeg_ir::features::evaluation::FeatureInputTopology;
+    use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalEdgeId, HistoricalFaceId};
+    let state =
+        FeatureInputTopologyId::mint("inventor:design:feature-input#synthetic").expect("id");
+    let edge = HistoricalEdgeId::mint("inventor:input-edge#synthetic-7").expect("id");
+    let face = HistoricalFaceId::mint("inventor:input-face#synthetic-9").expect("id");
+    let input = FeatureInputTopology {
+        id: state.clone(),
+        input_of: FeatureId::mint("inventor:design:feature#synthetic").expect("id"),
+        bodies: DistinctMembers::default(),
+        faces: std::iter::once(face).collect(),
+        edges: std::iter::once(edge.clone()).collect(),
+        vertices: DistinctMembers::default(),
+        face_owners: Vec::new(),
+        face_geometry: Vec::new(),
+        body_writers: Vec::new(),
+        edge_geometry: Vec::new(),
+        native_ref: None,
+    };
+    let selection = old::selections::EdgeSelection::historical(
+        state,
+        vec![edge],
+        "inventor:pmdc:selection#synthetic".into(),
+    )
+    .expect("selection");
+    let operation = legacy(
+        "chamfer",
+        json!({"groups":[{"edges":json::to_value(&selection).expect("edges"),"spec":{"kind":"two_distances","first":2.0,"second":4.0}}],"flip_direction":true}),
+    );
+    let expected_reference =
+        selections::support_face(&selection, std::slice::from_ref(&input)).expect("support face");
+    let FeatureOperation::Chamfer(value) =
+        typed(&operation, selections::SketchData::default(), &[input]).expect("typed")
+    else {
+        panic!("chamfer");
+    };
+    assert_eq!(
+        value.sets[0].size,
+        Some(dressup_ops::ChamferSize::Distances {
+            first: Dimension::Literal(positive(2.0)),
+            second: Dimension::Literal(positive(4.0)),
+        })
+    );
+    // The first distance lies on the support face, which the reference names;
+    // with a named reference no side swap is stated.
+    assert_eq!(value.sets[0].reference, Some(expected_reference));
+    assert_eq!(value.sets[0].flip, None);
+    assert!(typed(&operation, selections::SketchData::default(), &[]).is_err());
+}
+
+#[test]
 fn shell_keeps_empty_removed_faces_and_unknown_side() {
     let FeatureOperation::Shell(value) = project_value(
         "shell",
@@ -1161,6 +1213,40 @@ fn split_face_path_keeps_native_projection_controls() {
         losses[0].code,
         InventorLossCode::FeatureDesignOperationNative.kind()
     );
+}
+
+#[test]
+fn an_extrude_to_a_native_face_projects_a_geometry_limit_and_validates() {
+    let mut operation = extrude();
+    let LegacyOperation::Extrude { extent, .. } = &mut operation else {
+        panic!("extrude");
+    };
+    *extent = cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+        side: cadmpeg_ir::features::extents::ExtrudeSide {
+            termination: cadmpeg_ir::features::extents::LinearTermination::ToFace {
+                face: cadmpeg_ir::features::selections::FaceSelection::Native(
+                    "inventor:pmdc:selection#synthetic".into(),
+                ),
+                offset: None,
+            },
+            draft: None,
+        },
+    };
+    let FeatureOperation::Extrude(value) =
+        typed(&operation, selections::SketchData::default(), &[]).expect("extrude")
+    else {
+        panic!("extrude");
+    };
+    let Some(Span::Between { end, .. }) = value.span else {
+        panic!("span");
+    };
+    assert!(matches!(*end, Limit::ToGeometry { offset: None, .. }));
+    let mut ir = part(operation);
+    project_part(&mut ir);
+    assert!(validate(&ir).expect("v11 validation").is_empty());
+    let neutral =
+        cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).expect("neutral validation");
+    assert_eq!(neutral.error_count(), 0, "{:?}", neutral.findings);
 }
 
 mod review;

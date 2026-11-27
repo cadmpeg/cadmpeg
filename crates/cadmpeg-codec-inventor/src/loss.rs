@@ -142,7 +142,7 @@ pub(crate) enum InventorLossCode {
     FeatureSurfaceExtrusionPolarityAssumed,
     /// A through-all surface extrusion reads its neutral extent as bounded by the selected solid body.
     FeatureSurfaceExtrusionSolidBoundAssumed,
-    /// A planar extrusion target retains its unresolved body-face identity.
+    /// An extrusion target face retains its stored surface record without a resolved body-face identity.
     FeatureExtrusionTargetFaceNative,
     /// Rectangular patterns retain construction operands outside the fixed-spacing feature form.
     FeatureRectangularPatternOperandsNative,
