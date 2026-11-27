@@ -14,6 +14,16 @@ fn component_insert_binds_the_occurrence_a_joint_moved() {
         include_bytes!("../../../../corpus/f3d/component_insert_moved_by_joint.f3z").to_vec(),
     );
     let ir = result.ir();
+    // The native records the decoder keeps for the moved carrier validate.
+    let findings = crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native(ctx, ir).unwrap()
+    });
+    assert!(
+        findings
+            .iter()
+            .all(|finding| finding.severity != cadmpeg_ir::report::Severity::Error),
+        "{findings:#?}"
+    );
     // The plate and three screws; the insert adds no unresolved occurrence of its own.
     assert_eq!(ir.model.occurrences.len(), 4);
     assert!(ir.model.occurrences.iter().all(|occurrence| occurrence

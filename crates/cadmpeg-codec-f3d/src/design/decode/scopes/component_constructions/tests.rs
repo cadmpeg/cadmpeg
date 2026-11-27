@@ -1319,6 +1319,7 @@ fn localized_insert_scopes_join_an_attributed_placement_carrier() {
         (272, 0, false, 37, false),
         (276, 4, false, 41, false),
         (400, 0, true, 37, false),
+        (400, 0, true, 37, true),
         (404, 4, true, 41, false),
         (404, 4, true, 41, true),
     ] {
@@ -1430,6 +1431,7 @@ fn localized_insert_scopes_join_an_attributed_placement_carrier() {
                 .ok()
                 .as_deref()
         );
+        let carrier_matrix = construction.carrier_transform_offset();
         assert_eq!(
             construction
                 .placement
@@ -1440,21 +1442,29 @@ fn localized_insert_scopes_join_an_attributed_placement_carrier() {
         scope.source_kind = None;
         assert!(tested_component_insert_construction(&bytes, &records, &scope).is_none());
         scope.source_kind = Some(localized.to_owned());
-        if with_matrix {
-            let at = start + 50 + delta + 8 * 3;
+        if frame == 400 {
+            // The occurrence moves after its insertion: the carrier's own matrix
+            // changes and the scope keeps the insertion matrix.
+            let at = usize::try_from(carrier_matrix.expect("carrier matrix")).unwrap() + 8 * 3;
             bytes[at..at + 8].copy_from_slice(&3.5_f64.to_le_bytes());
             let moved = tested_component_insert_construction(&bytes, &records, &scope);
-            if frame == 400 {
-                // The relation names the carrier and the scope both ways: the
-                // occurrence moved after its insertion and the carrier keeps the
-                // current matrix.
+            if leading {
+                // The carrier stores the insertion matrix ahead of the current
+                // one, and the relation names the carrier and the scope both
+                // ways: the carrier's matrix is the current pose.
                 let moved = moved.expect("400-byte insert with a moved carrier");
                 assert!(moved.carrier_moved());
                 assert_eq!(moved.carrier_record_index, 10);
                 assert_eq!(moved.carrier_transform_offset(), None);
             } else {
+                // Without the insertion matrix in the carrier a different matrix
+                // is no evidence of a move.
                 assert!(moved.is_none());
             }
+        } else if with_matrix {
+            let at = start + 50 + delta + 8 * 3;
+            bytes[at..at + 8].copy_from_slice(&3.5_f64.to_le_bytes());
+            assert!(tested_component_insert_construction(&bytes, &records, &scope).is_none());
         }
     }
 }
