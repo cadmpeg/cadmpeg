@@ -8,6 +8,7 @@ use crate::design::decode::sketch::{
 };
 use crate::records::sketch_relations::{SketchPatternDefinition, SketchPatternDirection};
 use crate::test_support::push_reference_u64;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn skipped_relations_charge_a_loss_for_a_known_class_and_keep_their_sibling() {
@@ -19,8 +20,10 @@ fn skipped_relations_charge_a_loss_for_a_known_class_and_keep_their_sibling() {
     // admitted.
     let mut padded = relation_record(&[(300, 0)], &[], 201, 1, &[300]);
     padded.push(1);
+    let padded_len = padded.len();
     let mut records = Vec::new();
     let mut losses = Vec::new();
+    let mut given_up = Vec::new();
     for (index, mut payload) in [
         (
             7u32,
@@ -41,21 +44,27 @@ fn skipped_relations_charge_a_loss_for_a_known_class_and_keep_their_sibling() {
             "BulkStream.dat",
             &header,
             &payload,
-            RELATION_TYPE_GUID,
-            1,
+            (RELATION_TYPE_GUID, 1),
             &mut losses,
+            &mut given_up,
         )
         .unwrap();
     }
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].record_index, 8);
-    assert_eq!(losses.len(), 2);
-    for loss in &losses {
-        assert_eq!(
-            loss.code,
-            crate::loss::F3dLossCode::SketchRelationUndecoded.kind()
-        );
-    }
+    let code = crate::loss::F3dLossCode::SketchRelationUndecoded.kind();
+    assert_eq!(
+        crate::test_support::loss_codes(&losses),
+        [code.clone(), code]
+    );
+    // §3.3: each given-up relation hands over its frame.
+    assert_eq!(
+        given_up
+            .iter()
+            .map(|frame| frame.span().1.len())
+            .collect::<Vec<_>>(),
+        [20, padded_len]
+    );
 }
 
 #[test]
@@ -72,18 +81,20 @@ fn unknown_relation_class_is_skipped_without_a_loss() {
     };
     let mut records = Vec::new();
     let mut losses = Vec::new();
+    let mut given_up = Vec::new();
     decode_sketch_relation_with_losses(
         &mut records,
         "BulkStream.dat",
         &header,
         &payload,
-        "00000000-0000-0000-0000-000000000000",
-        1,
+        ("00000000-0000-0000-0000-000000000000", 1),
         &mut losses,
+        &mut given_up,
     )
     .unwrap();
     assert!(records.is_empty());
     assert!(losses.is_empty());
+    assert!(given_up.is_empty());
 }
 
 #[test]
@@ -800,7 +811,7 @@ fn fixture_relation_frames_retain_source_bytes_and_rectangular_flags() {
             "{}",
             case.label
         );
-        let json = serde_json::to_string(&relation).unwrap();
+        let json = json::to_string(&relation).unwrap();
         let restored: crate::records::sketch_relations::SketchRelation =
             serde_json::from_str(&json).unwrap();
         assert_eq!(restored, relation, "{}", case.label);

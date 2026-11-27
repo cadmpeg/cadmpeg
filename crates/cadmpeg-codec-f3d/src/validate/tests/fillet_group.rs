@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 fn native() -> crate::native::F3dNative {
     use crate::records::{
         feature::scope::{DesignFeatureKind, DesignParameterScope},
@@ -246,7 +248,7 @@ fn fillet_multiple_variable_runs_assign_and_validate_each_group() {
 fn fixed_fillet_unassigned_group_laws_retain_native_validation() {
     use crate::records::feature::scope::DesignScopePayloadMut;
     let mut native = native();
-    let fixed = serde_json::from_value(serde_json::json!({"groups": [{
+    let fixed = json::from_value(cadmpeg_core::json!({"groups": [{
         "radii": [0.2], "radius_offsets": [2020], "radius_record_indexes": [202]
     }]}))
     .unwrap();

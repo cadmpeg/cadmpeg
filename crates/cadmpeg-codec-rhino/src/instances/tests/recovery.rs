@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::chunks::ArchiveVersion;
@@ -197,7 +198,7 @@ fn duplicate_definitions_retain_every_record_and_locate_every_ambiguity() {
                 .losses
                 .iter()
                 .any(|loss| loss.code == RhinoLossCode::IntegrityFailure.kind()));
-            let _: CadIr = CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
+            let _: CadIr = CadIr::from_json(&json::to_string(decoded.ir()).unwrap()).unwrap();
             if !container_only {
                 for (index, record) in records.iter().enumerate() {
                     let retained: Vec<_> = decoded
@@ -271,7 +272,7 @@ fn bounded_definition_members_do_not_become_ordinary_geometry_after_metadata_fai
         for loss in degraded {
             assert_eq!(loss.provenance.as_ref().unwrap().offset, offset);
         }
-        let reread = CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
+        let reread = CadIr::from_json(&json::to_string(decoded.ir()).unwrap()).unwrap();
         for ir in [decoded.ir(), &reread] {
             assert_eq!(ir.geometry.points.len(), 1, "{metadata:?}");
             assert_eq!(ir.geometry.points[0].position().get().x, 9.0);
@@ -367,7 +368,7 @@ fn nil_definition_identity_is_not_admitted_and_keeps_source_membership() {
                 .losses
                 .iter()
                 .any(|loss| { loss.code == RhinoLossCode::IntegrityFailure.kind() }));
-            let reread = CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
+            let reread = CadIr::from_json(&json::to_string(decoded.ir()).unwrap()).unwrap();
             for ir in [decoded.ir(), &reread] {
                 assert_eq!(ir.geometry.points.len(), usize::from(!container_only));
                 if !container_only {

@@ -8,6 +8,7 @@ use crate::history::{
 };
 use crate::history_records::AsmDeltaState;
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn discard_projection_caches_retains_compact_mirror_plane_topology() {
@@ -92,7 +93,7 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let operand: crate::records::topology::face::DesignFaceOperand =
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "f3d:Design/BulkStream.dat:design-face-operand#40",
             "scope_record_index": 42,
             "scope_reference_ordinal": 5,

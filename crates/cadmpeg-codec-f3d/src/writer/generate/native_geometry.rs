@@ -5022,7 +5022,7 @@ mod native_interval_curve_tests {
             ));
             let mut output = vec![0x93, 0x2a];
             let result = crate::F3dCodec
-                .plan(EncodeInput::new(&target, None), TargetRequest::Inherit)
+                .plan(EncodeInput::new(&target, None), TargetRequest::Unnamed)
                 .and_then(|plan| plan.write_to(&mut output));
             if representable {
                 result.expect("ordinary circle interval writes");
@@ -6221,8 +6221,12 @@ mod pcurve_chart_tests {
                 .expect("line pcurve is an admitted spring input");
             });
             let mut output = vec![0x93, 0x2a];
-            let generated = crate::writer::generate::write_new(&target, &mut output)
-                .expect("a spring whose construction cannot be written still writes");
+            let generated = crate::writer::generate::write_new(
+                &target,
+                cadmpeg_ir::codec::write::MissingStateForm::GeometryTrue,
+                &mut output,
+            )
+            .expect("a spring whose construction cannot be written still writes");
             crate::F3dCodec
                 .decode(&mut Cursor::new(&output[2..]), &DecodeOptions::default())
                 .expect("the written file decodes");

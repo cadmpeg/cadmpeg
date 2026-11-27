@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared synthetic `FCStd` archive fixtures for crate tests.
 
+use cadmpeg_core::serde_erase::json;
+
 pub(crate) mod test_archive;
 
 pub(crate) fn assert_retained_refusal_at<T>(
@@ -26,7 +28,7 @@ pub(crate) fn assert_retained_refusal_at<T>(
 pub(crate) fn validate_native(
     ir: &cadmpeg_ir::document::CadIr,
 ) -> Vec<cadmpeg_ir::report::check::Finding> {
-    let bytes = serde_json::to_vec(ir).expect("test document serializes");
+    let bytes = json::to_vec(ir).expect("test document serializes");
     with_service_context(&bytes, |ctx| {
         crate::validate_native(ctx, ir).expect("validate the native records")
     })

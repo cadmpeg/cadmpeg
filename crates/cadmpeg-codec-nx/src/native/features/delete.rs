@@ -323,6 +323,7 @@ use super::construction_records::unique_offset_data_block_id;
 #[cfg(test)]
 mod tests {
     use super::{DeleteReferenceFieldWire, FeatureDeleteReferenceField};
+    use cadmpeg_core::serde_erase::json;
     use std::collections::BTreeMap;
 
     fn delete_construction_fixture() -> (
@@ -398,14 +399,13 @@ mod tests {
                     .collect::<Vec<_>>(),
                 [32, 33, 6, 34, 35, 36]
             );
-            let json = serde_json::to_value(&payload).unwrap();
+            let json = json::to_value(&payload).unwrap();
             assert_eq!(
                 json["sha256"],
-                serde_json::to_value(cadmpeg_ir::hash::digest::Sha256Digest::digest(b"AABAAA"))
-                    .unwrap()
+                json::to_value(cadmpeg_ir::hash::digest::Sha256Digest::digest(b"AABAAA")).unwrap()
             );
             assert_eq!(
-                serde_json::from_value::<super::FeatureDeleteConstructionPayload>(json).unwrap(),
+                json::from_value::<super::FeatureDeleteConstructionPayload>(json).unwrap(),
                 payload
             );
         });
@@ -415,10 +415,10 @@ mod tests {
     fn delete_reference_borrowed_wire_matches_owned_bytes_and_retained_limit() {
         let json = r#"{"id":"nx:feature:delete-reference#0","operation_label":"operation","control":255,"object_indices":[32,null,520,521,null],"raw_object_indices":["f020","ff","f10208","f10209","ff"],"data_blocks":["block-32",null,"block-520",null,null],"source_offset":100,"object_index_source_offsets":[107,109,110,113,116]}"#;
         let record: FeatureDeleteReferenceField = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+        assert_eq!(json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&DeleteReferenceFieldWire::from(record.clone())).unwrap()
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&DeleteReferenceFieldWire::from(record.clone())).unwrap()
         );
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
@@ -431,21 +431,21 @@ mod tests {
     {
         let json = r#"{"id":"delete","operation_label":"operation","control":255,"object_indices":[32,null,520,521,null],"raw_object_indices":["f020","ff","f10208","f10209","ff"],"data_blocks":["block-32",null,"block-520",null,null],"source_offset":100,"object_index_source_offsets":[107,109,110,113,116]}"#;
         let field: FeatureDeleteReferenceField = serde_json::from_str(json)?;
-        assert_eq!(serde_json::to_string(&field)?, json);
+        assert_eq!(json::to_string(&field)?, json);
         for (key, value) in [
             (
                 "object_index_source_offsets",
-                serde_json::json!([107, 109, 110, 114, 116]),
+                cadmpeg_core::json!([107, 109, 110, 114, 116]),
             ),
-            ("source_offset", serde_json::json!(u64::MAX)),
+            ("source_offset", cadmpeg_core::json!(u64::MAX)),
             (
                 "raw_object_indices",
-                serde_json::json!(["20", "ff", "f10208", "f10209", "ff"]),
+                cadmpeg_core::json!(["20", "ff", "f10208", "f10209", "ff"]),
             ),
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(json)?;
             wire[key] = value;
-            let error = serde_json::from_value::<FeatureDeleteReferenceField>(wire)
+            let error = json::from_value::<FeatureDeleteReferenceField>(wire)
                 .err()
                 .ok_or("malformed DELETE field was accepted")?
                 .to_string();
@@ -464,9 +464,9 @@ mod tests {
     {
         let json = r#"{"id":"delete","operation_label":"operation","control":255,"object_indices":[32,null,520,521,null],"raw_object_indices":["f020","ff","f10208","f10209","ff"],"data_blocks":["block-32",null,"block-520",null,null],"source_offset":100,"object_index_source_offsets":[107,109,110,113,116]}"#;
         let mut wire: serde_json::Value = serde_json::from_str(json)?;
-        wire["raw_object_indices"] = serde_json::json!(["20", "ff", "f10208", "f10209", "ff"]);
+        wire["raw_object_indices"] = cadmpeg_core::json!(["20", "ff", "f10208", "f10209", "ff"]);
 
-        let error = serde_json::from_value::<FeatureDeleteReferenceField>(wire)
+        let error = json::from_value::<FeatureDeleteReferenceField>(wire)
             .err()
             .ok_or("malformed DELETE field was accepted")?
             .to_string();

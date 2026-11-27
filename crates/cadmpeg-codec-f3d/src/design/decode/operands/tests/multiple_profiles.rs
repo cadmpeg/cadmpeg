@@ -2,6 +2,7 @@
 
 use crate::design::decode::operands::sketch_profiles::bind_sketch_profiles;
 use crate::test_support::multiple_profiles::fixture;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn multiple_sketch_profiles_remain_native_with_one_loss() {
@@ -94,10 +95,10 @@ fn compact_profile_flags_are_retained_and_report_the_assumption() {
                 let profile = scope.extrude_profile().unwrap();
                 assert_eq!(profile.entity_id.as_str(), "0_172");
                 assert_eq!(profile.compact_tail_flags, Some(flags));
-                let native = serde_json::to_value(profile).unwrap();
-                assert_eq!(native["compact_tail_flags"], serde_json::json!(flags));
+                let native = json::to_value(profile).unwrap();
+                assert_eq!(native["compact_tail_flags"], cadmpeg_core::json!(flags));
                 let decoded: crate::records::topology::sketch_profile::DesignSketchProfileOperand =
-                    serde_json::from_value(native).unwrap();
+                    json::from_value(native).unwrap();
                 assert_eq!(decoded.compact_tail_flags, Some(flags));
             });
         }

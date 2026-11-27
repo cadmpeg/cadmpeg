@@ -23,7 +23,7 @@ fn record(
 ) -> crate::SourceRecord<'static> {
     crate::annotations::note(
         notes,
-        id,
+        cadmpeg_ir::ids::Identity::new(id).expect("identity grammar"),
         &cadmpeg_ir::StreamName::try_from(stream.to_owned()).unwrap(),
         0,
         "xml",

@@ -22,15 +22,18 @@ pub fn package<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<(), CodecE
 /// element grammar, string pool, definitions, occurrences, properties, and
 /// the XML form.
 pub fn structure(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<(), CodecError> {
-    crate::pvs::read(ctx, member).map(|_| ())
+    crate::pvs::read(ctx, "structure.pvs", member).map(|_| ())
 }
 
 /// Exercise the geometry-member decoder: header, directory, preamble, GZIP
 /// streams, TLV framing, appearances, surface and edge tessellation, and the
 /// exact-stream accessor.
 pub fn geometry(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<(), CodecError> {
-    crate::ol::decode(ctx, member)?;
-    crate::ol::exact_stream(ctx, member).map(|_| ())
+    crate::ol::decode(ctx, "geometry.ol", member)?;
+    for exact in crate::ol::stored_exact_streams(ctx, member)? {
+        crate::gzip::expand(ctx, exact.stored)?;
+    }
+    Ok(())
 }
 
 /// Exercise the structure and geometry member signature readers.

@@ -27,7 +27,8 @@ fn history_from_nameless_block_keeps_annotation_owner() {
     .unwrap();
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
     let mut losses = Vec::new();
-    let histories = super::histories(&ctx, &scan, &mut annotations, &mut losses).unwrap();
+    let histories =
+        super::histories(&ctx, &scan, &mut annotations, &mut losses, &mut Vec::new()).unwrap();
 
     assert_eq!(histories.len(), 1);
     assert!(!histories[0].features.is_empty());

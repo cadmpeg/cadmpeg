@@ -9,6 +9,7 @@
 use cadmpeg_core::CodecError;
 
 use super::super::frames::{Bind, DesignRecords};
+use super::super::{Culprit, RecordFailure};
 use super::component::{Assets, MATERIAL, MATERIAL_LIBRARY};
 use super::fixed::DATA_MODEL_OBJECT;
 use super::{
@@ -50,19 +51,25 @@ pub(super) fn geometry_guid(ctx: &Context<'_>, record: u32) -> String {
     ctx.values.lower_guid(&format!("act-geometry-{record}"))
 }
 
-pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), CodecError> {
+/// A failure in the records of one result body names the item that makes
+/// it.
+pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), RecordFailure> {
     let indices = &ctx.roster.bodies;
     let design = indices.iter().map(|body| body.design).collect::<Vec<_>>();
     let parameter = indices
         .iter()
         .map(|body| body.parameter)
         .collect::<Vec<_>>();
+    // A design with no result body writes no snapshot companion and names
+    // no B-rep stream (f3d.md §3.1, "Records of a design whose timeline
+    // holds no body").
+    let streams = !indices.is_empty();
     owner(
         ctx,
         out,
         DESIGN_OWNER,
         &design,
-        DESIGN_COMPANION,
+        streams.then_some(DESIGN_COMPANION),
         BODY_MAP,
         Some(ALTERNATE_OWNERS),
     )?;
@@ -71,20 +78,32 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Co
         out,
         PARAMETER_OWNER,
         &parameter,
-        PARAMETER_COMPANION,
+        streams.then_some(PARAMETER_COMPANION),
         SNAPSHOT_MAP,
         None,
     )?;
-    out.record(&ctx.class_of(BODIES_ROOT)?, BODIES_ROOT)
-        .zeros(4)
-        .lp_ascii("BodiesRoot")?
-        .zeros(2)
-        .lp_ascii("BodiesRoot")?
-        .u32(count(design.len() + parameter.len())?);
-    for record in design.iter().chain(&parameter) {
-        out.reference(*record);
+    let rolled = ctx
+        .roster
+        .rolled
+        .iter()
+        .filter_map(|item| item.place.rolled())
+        .collect::<Vec<_>>();
+    if streams || !rolled.is_empty() {
+        out.record(&ctx.class_of(BODIES_ROOT)?, BODIES_ROOT)
+            .zeros(4)
+            .lp_ascii("BodiesRoot")?
+            .zeros(2)
+            .lp_ascii("BodiesRoot")?
+            .u32(count(design.len() + parameter.len() + rolled.len())?);
+        for record in design
+            .iter()
+            .chain(&parameter)
+            .chain(rolled.iter().map(|body| &body.reference))
+        {
+            out.reference(*record);
+        }
+        out.byte(0);
     }
-    out.byte(0);
 
     let entities = ctx
         .bodies
@@ -96,26 +115,32 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Co
         })
         .ok_or_else(|| CodecError::NotImplemented("Base Feature entity count".into()))?;
     let first_design = entities + 1;
-    companion(
-        ctx,
-        out,
-        PARAMETER_COMPANION,
-        PARAMETER_OWNER,
-        0,
-        entities,
-        first_design,
-    )?;
-    companion(
-        ctx,
-        out,
-        DESIGN_COMPANION,
-        DESIGN_OWNER,
-        first_design,
-        entities,
-        first_design + entities,
-    )?;
+    if streams {
+        companion(
+            ctx,
+            out,
+            PARAMETER_COMPANION,
+            PARAMETER_OWNER,
+            0,
+            entities,
+            first_design,
+        )?;
+        companion(
+            ctx,
+            out,
+            DESIGN_COMPANION,
+            DESIGN_OWNER,
+            first_design,
+            entities,
+            first_design + entities,
+        )?;
+    }
 
-    let [history, snapshot] = stream_basenames(ctx);
+    let [history, snapshot] = if streams {
+        stream_basenames(ctx)
+    } else {
+        [String::new(), String::new()]
+    };
     out.record(&ctx.class_of(SNAPSHOT_MAP)?, SNAPSHOT_MAP)
         .zeros(10)
         .reference(SNAPSHOT_MAP_COMPANION);
@@ -127,40 +152,132 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Co
 
     let assets = Assets::new(ctx);
     for (position, (body, records)) in ctx.bodies.iter().zip(indices).enumerate() {
-        let ordinal = count(position + 1)?;
-        let scene = ctx
-            .values
-            .boxes
-            .get(position)
-            .copied()
-            .flatten()
-            .map_or(UNIT_BOX, |measured| measured.scene());
-        reference(ctx, out, body, records, ordinal, &assets, Side::Design)?;
-        reference(ctx, out, body, records, ordinal, &assets, Side::Parameter)?;
-        scene_records(ctx, out, records.design_scene, &scene)?;
-        scene_records(ctx, out, records.parameter_scene, &EMPTY_BOX)?;
-        let object = ctx.class(DATA_MODEL_OBJECT)?;
-        out.record(&ctx.class_of(records.node)?, records.node)
-            .zeros(10)
-            .lp_utf16(&body.node_guid)?
-            .byte(0)
-            .byte(1)
-            .reference(records.design)
-            .reference(ctx.item_scope())
-            .header(&object, records.node)
-            .zeros(8)
-            .reference(CONTEXT);
+        let item = ctx.built(position);
+        let mut written = || {
+            #[cfg(test)]
+            if let Some(error) = item.and_then(|item| {
+                super::super::requested_record_failure(&format_args!("body of {}", item.feature()))
+            }) {
+                return Err(error);
+            }
+            let ordinal = count(position + 1)?;
+            let scene = ctx
+                .values
+                .boxes
+                .get(position)
+                .copied()
+                .flatten()
+                .map_or(UNIT_BOX, |measured| measured.scene());
+            for side in [Side::Design, Side::Parameter] {
+                reference(
+                    ctx,
+                    out,
+                    &Reference::of(ctx, body, records, ordinal, side),
+                    &assets,
+                )?;
+            }
+            scene_records(ctx, out, records.design_scene, &scene)?;
+            scene_records(ctx, out, records.parameter_scene, &EMPTY_BOX)?;
+            node(
+                ctx,
+                out,
+                records.node,
+                &body.node_guid,
+                false,
+                records.design,
+                ctx.item_scope(position),
+            )
+        };
+        written().map_err(|error| RecordFailure {
+            error,
+            culprit: item.map(|item| Culprit::Item {
+                feature: item.feature().clone(),
+                rolled: false,
+            }),
+        })?;
+    }
+    for (position, item) in (ctx.bodies.len()..).zip(&ctx.roster.rolled) {
+        let Some(body) = item.place.rolled() else {
+            continue;
+        };
+        let mut written = || {
+            #[cfg(test)]
+            if let Some(error) = super::super::requested_record_failure(&format_args!(
+                "rolled body of {}",
+                item.feature()
+            )) {
+                return Err(error);
+            }
+            let guid = super::swept::rolled_node_guid(ctx, body.node);
+            let rolled = Reference {
+                record: body.reference,
+                property: None,
+                owner: DESIGN_OWNER,
+                scene: body.scene[0],
+                guid: &guid,
+                mass_guid: geometry_guid(ctx, body.reference),
+                accuracy: 0.0,
+                sheet: false,
+                ordinal: count(position + 1)?,
+                design: true,
+            };
+            reference(ctx, out, &rolled, &assets)?;
+            scene_records(ctx, out, body.scene, &EMPTY_BOX)?;
+            node(
+                ctx,
+                out,
+                body.node,
+                &guid,
+                true,
+                body.reference,
+                item.scope(),
+            )
+        };
+        written().map_err(|error| RecordFailure {
+            error,
+            culprit: Some(Culprit::Item {
+                feature: item.feature().clone(),
+                rolled: true,
+            }),
+        })?;
     }
     Ok(())
 }
 
-/// A `Body` owner of the `records` body-reference records.
+/// The browser-node member `record` of the body-reference record `body`,
+/// which the item `scope` makes: its GUID, its hidden flag, the body and the
+/// scope.
+fn node(
+    ctx: &Context<'_>,
+    out: &mut DesignRecords,
+    record: u32,
+    guid: &str,
+    hidden: bool,
+    body: u32,
+    scope: u32,
+) -> Result<(), CodecError> {
+    let object = ctx.class(DATA_MODEL_OBJECT)?;
+    out.record(&ctx.class_of(record)?, record)
+        .zeros(10)
+        .lp_utf16(guid)?
+        .byte(u8::from(hidden))
+        .byte(1)
+        .reference(body)
+        .reference(scope)
+        .header(&object, record)
+        .zeros(8)
+        .reference(CONTEXT);
+    Ok(())
+}
+
+/// A `Body` owner of the `records` body-reference records, with its snapshot
+/// companion where the design writes B-rep streams.
 fn owner(
     ctx: &Context<'_>,
     out: &mut DesignRecords,
     index: u32,
     records: &[u32],
-    companion: u32,
+    companion: Option<u32>,
     map: u32,
     alternates: Option<u32>,
 ) -> Result<(), CodecError> {
@@ -173,7 +290,12 @@ fn owner(
     for record in records {
         out.reference(*record);
     }
-    out.byte(1).reference(companion).reference(map).byte(1);
+    out.byte(1);
+    match companion {
+        Some(companion) => out.reference(companion),
+        None => out.byte(0),
+    };
+    out.reference(map).byte(1);
     match alternates {
         Some(list) => out.reference(list),
         None => out.byte(0),
@@ -226,55 +348,105 @@ enum Side {
     Parameter,
 }
 
+/// The values of one body-reference record.
+struct Reference<'g> {
+    record: u32,
+    /// The body-presentation property and the other body-reference record
+    /// of the body; `None` in the presentation-owner form.
+    property: Option<(&'static str, u32)>,
+    owner: u32,
+    /// The record's Scene node.
+    scene: u32,
+    guid: &'g str,
+    mass_guid: String,
+    accuracy: f64,
+    sheet: bool,
+    ordinal: u32,
+    /// Whether it is a design body-reference record.
+    design: bool,
+}
+
+impl<'g> Reference<'g> {
+    /// The `side` body-reference record of the result body `body`.
+    fn of(
+        ctx: &Context<'_>,
+        body: &'g RosterBody<'_>,
+        records: &BodyIndices,
+        ordinal: u32,
+        side: Side,
+    ) -> Self {
+        match side {
+            Side::Design => Self {
+                record: records.design,
+                // A geometry item's result body has the presentation-owner
+                // form: no property block (f3d.md §3.1, "Result body").
+                property: ctx
+                    .roster
+                    .items
+                    .is_empty()
+                    .then_some((DESIGN_PROPERTY, records.parameter)),
+                owner: DESIGN_OWNER,
+                scene: records.design_scene[0],
+                guid: &body.node_guid,
+                mass_guid: geometry_guid(ctx, records.design),
+                accuracy: 0.0,
+                sheet: body.sheet,
+                ordinal,
+                design: true,
+            },
+            Side::Parameter => Self {
+                record: records.parameter,
+                property: Some((PARAMETER_PROPERTY, records.design)),
+                owner: PARAMETER_OWNER,
+                scene: records.parameter_scene[0],
+                guid: &body.parameter_guid,
+                mass_guid: ctx
+                    .values
+                    .lower_guid(&format!("mass-block-{}", records.parameter)),
+                accuracy: -1.0,
+                sheet: body.sheet,
+                ordinal,
+                design: false,
+            },
+        }
+    }
+}
+
 /// A body-reference record in the form with no appearance entry, mass
 /// properties of zero, and the appearance `PrismOpaque`.
 fn reference(
     ctx: &Context<'_>,
     out: &mut DesignRecords,
-    body: &RosterBody<'_>,
-    records: &BodyIndices,
-    ordinal: u32,
+    form: &Reference<'_>,
     assets: &Assets,
-    side: Side,
 ) -> Result<(), CodecError> {
-    let (record, property, other, owner, node, guid, mass_guid, accuracy) = match side {
-        Side::Design => (
-            records.design,
-            DESIGN_PROPERTY,
-            records.parameter,
-            DESIGN_OWNER,
-            records.design_scene[0],
-            &body.node_guid,
-            geometry_guid(ctx, records.design),
-            0.0,
-        ),
-        Side::Parameter => (
-            records.parameter,
-            PARAMETER_PROPERTY,
-            records.design,
-            PARAMETER_OWNER,
-            records.parameter_scene[0],
-            &body.parameter_guid,
-            ctx.values
-                .lower_guid(&format!("mass-block-{}", records.parameter)),
-            -1.0,
-        ),
-    };
+    let Reference {
+        record,
+        property,
+        owner,
+        scene: node,
+        guid,
+        accuracy,
+        ordinal,
+        ..
+    } = *form;
+    let mass_guid = &form.mass_guid;
     out.record(&ctx.class_of(record)?, record);
-    // A geometry item's result body has the presentation-owner form: no
-    // property block (f3d.md §3.1, "Result body").
-    if side == Side::Design && ctx.roster.item.is_some() {
-        out.zeros(10);
-    } else {
-        out.zeros(9)
-            .byte(1)
-            .u32(1)
-            .lp_ascii(property)?
-            .lp_ascii("PassiveRefMetaType")?
-            .reference(other);
+    match property {
+        None => {
+            out.zeros(10);
+        }
+        Some((property, other)) => {
+            out.zeros(9)
+                .byte(1)
+                .u32(1)
+                .lp_ascii(property)?
+                .lp_ascii("PassiveRefMetaType")?
+                .reference(other);
+        }
     }
     out.lp_utf16(&format!("0_{record}"))?
-        .u32(if body.sheet { 4 } else { 2 })
+        .u32(if form.sheet { 4 } else { 2 })
         .f64(0.0)
         .f64(accuracy)
         .f64(0.0)
@@ -284,7 +456,7 @@ fn reference(
     for _ in 0..6 {
         out.f64(0.0);
     }
-    out.lp_utf16(&mass_guid)?
+    out.lp_utf16(mass_guid)?
         .f64(0.0)
         .f64(accuracy)
         .u32(ordinal)
@@ -292,7 +464,7 @@ fn reference(
         .u32(0)
         .u32(PRESENTATION_WORD)
         .byte(1)
-        .byte(u8::from(side == Side::Design));
+        .byte(u8::from(form.design));
     for _ in 0..4 {
         out.f64(-1.0);
     }

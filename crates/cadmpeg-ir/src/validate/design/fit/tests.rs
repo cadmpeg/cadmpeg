@@ -2,7 +2,9 @@
 //! A nested construction's kind fits its relation, a measuring origin is a
 //! point, and a `Fold` reference picks straight edges.
 
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
+use serde_json::Value;
 
 use super::super::fixture::{design_findings, document};
 use crate::document::CadIr;
@@ -41,7 +43,7 @@ fn datum(element: &str, inputs: &[Value]) -> CadIr {
         construction
     };
     ir.design.features[0].definition.operation =
-        serde_json::from_value(json!({"kind": "datum", "value": {
+        json::from_value(json!({"kind": "datum", "value": {
             "element": {"kind": element, "value": value},
             "native_options": {},
             "source_settings": {}

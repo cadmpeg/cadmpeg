@@ -18,7 +18,6 @@ use super::construction::FrameValue;
 use super::dimension::Dimension;
 use super::ids::{ContainerId, PublicationId};
 use super::names::{CodecName, NameKind, NativeName, TopoName};
-use super::read::{self, Ceiling};
 use super::refs::{ConfigurationRef, EntityRef, Position};
 use crate::document::Topology;
 use crate::features::geometry::FinitePoint3;
@@ -72,7 +71,7 @@ pub trait Keyed {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(
     try_from = "Vec<T>",
-    bound(deserialize = "T: Deserialize<'de> + Keyed, O: MemberOrder")
+    bound(deserialize = "T: ::serde::de::DeserializeOwned + Keyed, O: MemberOrder")
 )]
 pub struct Members<T, O> {
     items: Vec<T>,
@@ -142,7 +141,13 @@ impl<T: Keyed, O: MemberOrder> TryFrom<Vec<T>> for Members<T, O> {
     /// Reads a list of members that are distinct by identity. An `Unordered`
     /// list states its members in identity-key order, its one spelling.
     fn try_from(items: Vec<T>) -> Result<Self, Self::Error> {
-        if O::SORTED && items.windows(2).any(|pair| pair[0].key() > pair[1].key()) {
+        if O::SORTED
+            && items.windows(2).any(|pair| pair[0].key() > pair[1].key())
+            && !cadmpeg_core::read_session::repair(
+                cadmpeg_core::read_session::Repair::Spelling,
+                &|| "an unordered member list states its members out of identity-key order".into(),
+            )
+        {
             return Err("an unordered member list states its members out of identity-key order");
         }
         Self::new(items)
@@ -252,7 +257,7 @@ pub enum Picks<O: MemberOrder> {
 /// native name adds its witness. `resolved` is never part of it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields, try_from = "PickedWire")]
+#[serde(deny_unknown_fields, from = "PickedWire")]
 pub struct Picked {
     /// What the pick picks.
     pub target: PickTarget,
@@ -331,9 +336,7 @@ impl Ord for WitnessKey<'_> {
     }
 }
 
-/// The reading form of [`Picked`]. Each pick nested in its domain has
-/// passed the pick ceiling; the conversion admits this one level above the
-/// deepest of them.
+/// The reading form of [`Picked`].
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -359,11 +362,8 @@ struct PickedWire {
     resolved: Option<Vec<EntityRef>>,
 }
 
-impl TryFrom<PickedWire> for Picked {
-    type Error = String;
-
-    /// Admits a pick nested no deeper than the pick ceiling.
-    fn try_from(wire: PickedWire) -> Result<Self, Self::Error> {
+impl From<PickedWire> for Picked {
+    fn from(wire: PickedWire) -> Self {
         let PickedWire {
             target,
             context,
@@ -372,35 +372,14 @@ impl TryFrom<PickedWire> for Picked {
             witness,
             resolved,
         } = wire;
-        let pick = Self {
+        Self {
             target,
             context,
             native,
             domain,
             witness,
             resolved,
-        };
-        read::within(Ceiling::Pick, pick.depth())?;
-        Ok(pick)
-    }
-}
-
-impl Picked {
-    /// The levels of this pick and the picks nested in its domain.
-    fn depth(&self) -> u64 {
-        let below = match &self.domain {
-            Some(PickDomain::Limits { start, end }) => {
-                let depth = |pick: &Option<Box<Self>>| pick.as_ref().map_or(0, |pick| pick.depth());
-                depth(start).max(depth(end))
-            }
-            Some(
-                PickDomain::EdgeInterval { .. }
-                | PickDomain::Fragment(_)
-                | PickDomain::Containing(_),
-            )
-            | None => 0,
-        };
-        below + 1
+        }
     }
 }
 

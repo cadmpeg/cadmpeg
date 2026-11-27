@@ -523,10 +523,18 @@ fn project_one(
         .native_ref
         .as_ref()
         .and_then(|id| observations.get(id));
-    let evidence = serde_json::json!({ "scopes": scopes, "groups": groups, "owners": owners, "parameters": parameters, "readouts": readouts, "operation": operation, "values": values });
     feature.source_properties.insert(
         cadmpeg_core::nonblank_literal!("sweep:source"),
-        serde_json::to_string(&evidence).map_err(CodecError::malformed)?,
+        cadmpeg_core::serde_erase::to_json_string(&SweepEvidence {
+            groups: &groups,
+            operation: &operation,
+            owners: &owners,
+            parameters: &parameters,
+            readouts: &readouts,
+            scopes: &scopes,
+            values: &values,
+        })
+        .map_err(CodecError::malformed)?,
     );
     feature
         .evaluation
@@ -546,6 +554,17 @@ fn project_one(
             allow_multi_profile_faces: None,
         }));
     Ok(losses)
+}
+
+#[derive(serde::Serialize)]
+struct SweepEvidence<'a, A, B, C, D, E, F, G> {
+    groups: &'a A,
+    operation: &'a B,
+    owners: &'a C,
+    parameters: &'a D,
+    readouts: &'a E,
+    scopes: &'a F,
+    values: &'a G,
 }
 
 #[cfg(test)]

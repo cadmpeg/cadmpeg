@@ -1394,6 +1394,24 @@ pub(crate) fn typed_single_face_ownership(
     surface_attr: u16,
     body_type: u8,
 ) {
+    typed_single_face_ownership_with_resolution(
+        bytes,
+        [body_attr, shell_attr, region_attr, face_attr, surface_attr],
+        body_type,
+        1.0e-8,
+    );
+}
+
+/// [`typed_single_face_ownership`] whose BODY stores `res_linear`
+/// `linear_resolution`. `attrs` are the body, shell, region, face, and
+/// surface attributes.
+pub(crate) fn typed_single_face_ownership_with_resolution(
+    bytes: &mut Vec<u8>,
+    attrs: [u16; 5],
+    body_type: u8,
+    linear_resolution: f64,
+) {
+    let [body_attr, shell_attr, region_attr, face_attr, surface_attr] = attrs;
     bind_fixture_vertex_owners(bytes, body_attr);
     typed_prefix(
         bytes,
@@ -1405,7 +1423,7 @@ pub(crate) fn typed_single_face_ownership(
         typed_ref(bytes, value);
     }
     bef64(bytes, 1000.0);
-    bef64(bytes, 1.0e-8);
+    bef64(bytes, linear_resolution);
     for value in [1, 1, 1] {
         typed_ref(bytes, value);
     }
@@ -1471,6 +1489,11 @@ pub(crate) fn typed_single_face_ownership(
 /// One triangular planar face: a plane carrier, a bridge, a loop, three coedges
 /// forming a closed ring, three edge-uses, three vertex-uses, and three points.
 pub(crate) fn triangle_body() -> Vec<u8> {
+    triangle_body_with_resolution(1.0e-8)
+}
+
+/// [`triangle_body`] whose BODY stores `res_linear` `linear_resolution`.
+pub(crate) fn triangle_body_with_resolution(linear_resolution: f64) -> Vec<u8> {
     let mut b = Vec::new();
     b.extend(plane_carrier(
         100,
@@ -1492,7 +1515,12 @@ pub(crate) fn triangle_body() -> Vec<u8> {
     b.extend(world_point(60, [0.0, 0.0, 0.0]));
     b.extend(world_point(61, [1.0, 0.0, 0.0]));
     b.extend(world_point(62, [0.0, 1.0, 0.0]));
-    typed_single_face_ownership(&mut b, 900, 901, 902, 10, 100, 1);
+    typed_single_face_ownership_with_resolution(
+        &mut b,
+        [900, 901, 902, 10, 100],
+        1,
+        linear_resolution,
+    );
     b
 }
 
@@ -1642,6 +1670,24 @@ pub(crate) fn owned_triangle_with_kind(base: u16, owner: u16, x: f64, body_type:
     b
 }
 
+/// [`owned_triangle`] whose BODY stores `res_linear` `linear_resolution`.
+pub(crate) fn owned_triangle_with_resolution(
+    base: u16,
+    owner: u16,
+    x: f64,
+    linear_resolution: f64,
+) -> Vec<u8> {
+    let mut b = plane_carrier(base + 100, [x, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
+    b.extend(owned_triangle_stored(
+        base,
+        owner,
+        [[x, 0.0, 0.0], [x + 1.0, 0.0, 0.0], [x, 1.0, 0.0]],
+        base + 100,
+        (1, linear_resolution),
+    ));
+    b
+}
+
 /// One triangular face on the surface carrier `surface`, in a typed body of
 /// its own. The carrier is the caller's.
 pub(crate) fn owned_triangle_on(
@@ -1650,6 +1696,17 @@ pub(crate) fn owned_triangle_on(
     points: [[f64; 3]; 3],
     surface: u16,
     body_type: u8,
+) -> Vec<u8> {
+    owned_triangle_stored(base, owner, points, surface, (body_type, 1.0e-8))
+}
+
+/// [`owned_triangle_on`] whose BODY stores `(body_type, res_linear)`.
+fn owned_triangle_stored(
+    base: u16,
+    owner: u16,
+    points: [[f64; 3]; 3],
+    surface: u16,
+    (body_type, linear_resolution): (u8, f64),
 ) -> Vec<u8> {
     let mut b = bridge_owned(base + 10, base + 20, surface, owner);
     b.extend(loop_head(base + 20, base + 30, base + 10));
@@ -1689,14 +1746,11 @@ pub(crate) fn owned_triangle_on(
     b.extend(world_point(base + 60, points[0]));
     b.extend(world_point(base + 61, points[1]));
     b.extend(world_point(base + 62, points[2]));
-    typed_single_face_ownership(
+    typed_single_face_ownership_with_resolution(
         &mut b,
-        owner,
-        base + 70,
-        base + 80,
-        base + 10,
-        surface,
+        [owner, base + 70, base + 80, base + 10, surface],
         body_type,
+        linear_resolution,
     );
     b
 }

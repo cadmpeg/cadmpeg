@@ -972,6 +972,7 @@ impl CodecBackend for FcstdCodec {
             )?;
             let mut entry_records = container::entry_records(ctx, &scan, &graph.properties)?;
             let shape_payloads = brep::parse_payloads(ctx, &graph.properties, &entry_records)?;
+            let mut element_maps_given_up = Vec::new();
             let (string_tables, mut element_maps) = element_map::parse(
                 ctx,
                 document_xml,
@@ -979,6 +980,7 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &entry_records,
                 &mut scan.losses,
+                &mut element_maps_given_up,
             )?;
             namespace.set_arena(ctx, "objects", &graph.objects)?;
             namespace.set_arena(ctx, "extensions", &graph.extensions)?;
@@ -1176,6 +1178,7 @@ impl CodecBackend for FcstdCodec {
                     product::document_definition_id()?,
                     &graph.objects,
                     &graph.properties,
+                    &product_nodes,
                     &mut transfer_losses,
                 );
             }
@@ -1198,6 +1201,15 @@ impl CodecBackend for FcstdCodec {
                     .iter()
                     .filter(|occurrence| stated.contains(&occurrence.topology_id)),
             );
+            for part in element_maps_given_up {
+                scan.losses
+                    .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
+            }
+            if let Some(part) = gui_graph.given_up.take() {
+                gui_graph
+                    .losses
+                    .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
+            }
             gui_losses = std::mem::take(&mut gui_graph.losses);
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.entity_count()),
@@ -1348,11 +1360,13 @@ impl CodecBackend for FcstdCodec {
 
 impl EncoderBackend for FcstdCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    const NAME: &'static str = "FCStd";
     /// Writes the feature tree and patches retained sources, so it plans from
     /// the design records.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = Catalog;
-    const TARGET: Catalog = Catalog::new(dialect::TARGETS, None);
+    const TARGET: Catalog =
+        Catalog::new(dialect::TARGETS, None).with_replay_rows(dialect::REPLAY_ROWS);
 
     fn plan_resolved(
         &self,

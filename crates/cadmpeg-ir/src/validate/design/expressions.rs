@@ -130,7 +130,12 @@ pub(super) fn check_expressions(
         };
         let mut walked = Collect::new(ctx);
         rule.walk(&mut walked)?;
-        for (_, expression) in walked.expressions {
+        for (place, expression) in walked.expressions {
+            let expected = place_kind(place);
+            let site = Site {
+                kind: expected.as_ref(),
+                ..site
+            };
             check_expression(index, site, expression, findings);
         }
     }
@@ -277,24 +282,37 @@ fn check_typed_tree<R>(
         ),
         Ok(found) => {
             let root_kind = match (site.kind, site.variables) {
-                (Some(kind), _) => kind_type(kind, found),
-                (None, ExpressionSite::Law) => match found {
-                    Type::Number(_) | Type::Unknown => Ok(()),
-                    Type::Boolean | Type::Text => {
-                        Err(format!("a law's value is a number, not {found:?}"))
-                    }
-                },
-                (None, ExpressionSite::Parameter | ExpressionSite::BendAllowance) => Ok(()),
+                (_, ExpressionSite::Law) if matches!(found, Type::Boolean | Type::Text) => {
+                    Err((false, format!("a law's value is a number, not {found:?}")))
+                }
+                (Some(kind), ExpressionSite::Law | ExpressionSite::BendAllowance) => {
+                    kind_type(kind, found).map_err(|reason| (true, reason))
+                }
+                (Some(kind), ExpressionSite::Parameter) => {
+                    kind_type(kind, found).map_err(|reason| (false, reason))
+                }
+                (None, _) => Ok(()),
             };
-            if let Err(reason) = root_kind {
-                super::error(
+            match root_kind {
+                Ok(()) => {}
+                Err((true, reason)) => {
+                    super::error(
+                        findings,
+                        site.entity,
+                        crate::rule!(
+                            "design.expression-root-does-not-place-quantity",
+                            "expression's root does not have the quantity its place takes: {reason}"
+                        ),
+                    );
+                }
+                Err((false, reason)) => super::error(
                     findings,
                     site.entity,
                     crate::rule!(
                         "design.expression-root-does-not-parameter-kind",
                         "expression's root does not have the parameter's kind: {reason}"
                     ),
-                );
+                ),
             }
         }
     }
@@ -530,6 +548,7 @@ fn check_feature_expressions(
     feature.definition.operation.walk(&mut walked)?;
     let entity = feature.id.as_str();
     for (place, expression) in walked.expressions {
+        let expected = place_kind(place);
         let base = Site {
             entity,
             kind: None,
@@ -539,11 +558,13 @@ fn check_feature_expressions(
             parameter_value: false,
         };
         let site = match place {
-            ExpressionPlace::Law => Site {
+            ExpressionPlace::Law(_) => Site {
+                kind: expected.as_ref(),
                 variables: ExpressionSite::Law,
                 ..base
             },
-            ExpressionPlace::BendAllowance => Site {
+            ExpressionPlace::BendAllowance(_) => Site {
+                kind: expected.as_ref(),
                 variables: ExpressionSite::BendAllowance,
                 ..base
             },
@@ -561,6 +582,17 @@ fn check_feature_expressions(
         check_expression(index, site, expression, findings);
     }
     Ok(())
+}
+
+/// The kind of the value an expression's place takes: a law's quantity, and
+/// the quantity a bend equation's `yields` states (part 10).
+fn place_kind(place: ExpressionPlace<'_>) -> Option<ValueKind> {
+    match place {
+        ExpressionPlace::Law(quantity) | ExpressionPlace::BendAllowance(quantity) => {
+            quantity.map(ValueKind::Quantity)
+        }
+        ExpressionPlace::Seed(_) => None,
+    }
 }
 
 /// A process parameter with no kind holds a `Number` and has a `Source`
@@ -743,7 +775,7 @@ fn check_external_kinds(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) 
                 findings,
                 parameter.id.as_str(),
                 crate::rule!(
-                    "design.parameter-external-reference-another-kind",
+                    "design.external-reference-parameters-one-kind",
                     "parameter is the External reference {} of {} as {} is, with another kind",
                     name.as_str(),
                     definition.as_str(),
