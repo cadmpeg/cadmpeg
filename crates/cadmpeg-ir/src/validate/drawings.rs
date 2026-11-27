@@ -16,11 +16,22 @@ use crate::report::{
 };
 use crate::validate::cycles::cycles;
 
+#[cfg(test)]
 pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &mut Vec<Finding>) {
+    let doc_records = std::cell::OnceCell::new();
+    check_drawings_with(ir, all_ids, &doc_records, findings);
+}
+
+pub(super) fn check_drawings_with<'ir>(
+    ir: &'ir CadIr,
+    all_ids: &dyn IdentitySet,
+    doc_records: &std::cell::OnceCell<DesignRecords<'ir>>,
+    findings: &mut Vec<Finding>,
+) {
     if ir.model.drawings.is_empty() {
         return;
     }
-    let records = DesignRecords::of(ir);
+    let records = doc_records.get_or_init(|| DesignRecords::of(ir));
     let named = ReferenceRecords::of(&ir.model);
     let cyclic = on_cycles(&ir.model.drawings);
     let mut orders = std::collections::BTreeSet::new();
@@ -46,7 +57,7 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
         if refs_valid {
             'groups: for targets in drawing.relationships.values() {
                 for target in targets {
-                    if !target.resolves(&records, &named, |id| all_ids.contains(id)) {
+                    if !target.resolves(records, &named, |id| all_ids.contains(id)) {
                         refs_valid = false;
                         break 'groups;
                     }
