@@ -309,7 +309,7 @@ fn relation(wire: &Value, points: &mut Points<'_>) -> Result<SketchRelation<Plan
             let id = points.curve(curve)?;
             let value = Dimension::Parameter(parameter(wire)?);
             if points.is_line(&id) {
-                let locus = |kind: &str| serde_json::json!({"kind": kind, "value": id.as_str()});
+                let locus = |kind: &str| cadmpeg_core::json!({"kind": kind, "value": id.as_str()});
                 SketchRelation::Distance {
                     a: points.operand(&locus("start"))?,
                     b: points.operand(&locus("end"))?,

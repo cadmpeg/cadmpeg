@@ -524,7 +524,7 @@ fn offset_plane(model: &v10::Feature) -> Result<Datum, &'static str> {
         .ok_or("the plane offset is missing")?;
     let normal = support.normal.as_raw();
     let origin = support.origin.get();
-    let offset: FinitePoint3 = json::from_value(serde_json::json!({
+    let offset: FinitePoint3 = json::from_value(cadmpeg_core::json!({
         "x": origin.x + distance * normal.x,
         "y": origin.y + distance * normal.y,
         "z": origin.z + distance * normal.z,

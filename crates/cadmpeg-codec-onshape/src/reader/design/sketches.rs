@@ -29,10 +29,7 @@ pub(super) struct Outcome {
 
 /// Project every sketch of `ir` whose frame and curves the design states,
 /// with its constraints.
-pub(in crate::reader) fn project(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-) -> Result<Outcome, CodecError> {
+pub(super) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<Outcome, CodecError> {
     let mut outcome = Outcome::default();
     for feature in &ir.model.features {
         let FeatureOperation::Sketch { sketch } = feature.evaluation.definition().operation()

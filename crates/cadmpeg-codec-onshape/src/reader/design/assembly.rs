@@ -257,7 +257,7 @@ fn frame_value(frame: &Transform) -> Result<FrameValue, CodecError> {
         .ok_or_else(|| CodecError::malformed("the mate frame axis is degenerate"))
     };
     Ok(FrameValue {
-        origin: cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        origin: cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
             "x": rows[0][3], "y": rows[1][3], "z": rows[2][3]
         }))
         .map_err(|_| CodecError::malformed("the mate frame origin is not finite"))?,
