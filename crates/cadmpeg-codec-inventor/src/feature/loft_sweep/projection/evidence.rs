@@ -709,30 +709,30 @@ pub(in crate::feature::loft_sweep) fn legacy_loft(
 const LEGACY_GROUP_LEN: usize = 5;
 
 /// The curve names of a legacy loft side tail, split by section. The tail
-/// holds the group count `n` of at least 2, then `n` groups
-/// `curve, section, 258, 0, 0`. The groups of the first section come before
-/// the groups of the last section, and each section has at least one group.
+/// holds the group count `n`, then `n` groups `curve, section, 258, 0, 0`. The
+/// count is 2, with one group for each section, or 3, with two groups of the
+/// first section followed by one group of the last section.
 fn legacy_side_groups(tail: &[i64], sections: [u32; 2]) -> Option<(Vec<i64>, Vec<i64>)> {
     let (&count, groups) = tail.split_first()?;
-    let count = usize::try_from(count).ok().filter(|count| *count >= 2)?;
+    let count = usize::try_from(count)
+        .ok()
+        .filter(|count| (2..=3).contains(count))?;
     if groups.len() != count.checked_mul(LEGACY_GROUP_LEN)? {
         return None;
     }
-    let mut first = Vec::new();
-    let mut last = Vec::new();
+    let (first_section, last_section) = (i64::from(sections[0]), i64::from(sections[1]));
+    let mut curves = Vec::new();
+    let mut section_of = Vec::new();
     for group in groups.chunks_exact(LEGACY_GROUP_LEN) {
         let [curve, section, 258, 0, 0] = *group else {
             return None;
         };
-        if section == i64::from(sections[0]) && last.is_empty() {
-            first.push(curve);
-        } else if section == i64::from(sections[1]) {
-            last.push(curve);
-        } else {
-            return None;
-        }
+        curves.push(curve);
+        section_of.push(section);
     }
-    (!first.is_empty() && !last.is_empty()).then_some((first, last))
+    let (last, first) = (curves.pop()?, curves);
+    let first_ok = section_of[..count - 1].iter().all(|s| *s == first_section);
+    (first_ok && section_of[count - 1] == last_section).then_some((first, vec![last]))
 }
 
 /// The section groups and member index of a loft side-face tag.
