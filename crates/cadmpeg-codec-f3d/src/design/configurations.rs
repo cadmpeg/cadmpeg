@@ -461,19 +461,18 @@ pub(crate) fn attach(
 /// the source leaves one of them silent. A table lists only the features it
 /// toggles, so a suppressed feature with no row keeps that state in the active
 /// row. The active row supplies the state of a feature whose records do not
-/// decide it (f3d.md §1.2): a Sketch, whose state identities do not decide its
-/// suppression, a feature with no state, and a feature of `unstored`, whose
-/// scope tail stores no feature item state and no Thread companion
-/// suppression flag, so that feature projection infers its state. A row with
-/// a suppression column that names no feature could name the feature that
-/// gained a row, so that row records the assumption in a property.
+/// decide it (f3d.md §1.2): a feature with no state, and a feature of
+/// `unstored`, whose scope tail stores no feature item state and no Thread
+/// companion suppression flag, so that feature projection infers its state.
+/// A stored state is kept, so a row that contradicts it reaches the
+/// disagreement finding. A row with a suppression column that names no
+/// feature could name the feature that gained a row, so that row records the
+/// assumption in a property.
 pub(crate) fn reconcile_active_configurations(
     features: &mut [cadmpeg_ir::features::Feature],
     configurations: &mut [cadmpeg_ir::features::parameters::DesignConfiguration],
     unstored: &BTreeSet<cadmpeg_ir::features::FeatureId>,
 ) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-
     for configuration in configurations.iter_mut().filter(|row| row.active) {
         let unresolved_column = configuration
             .properties
@@ -482,13 +481,7 @@ pub(crate) fn reconcile_active_configurations(
         for feature in features.iter_mut() {
             match configuration.feature_states.get(&feature.id) {
                 Some(state) => {
-                    let undecided = feature.suppressed.is_none()
-                        || unstored.contains(&feature.id)
-                        || matches!(
-                            feature.evaluation.definition(),
-                            FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
-                        );
-                    if undecided {
+                    if feature.suppressed.is_none() || unstored.contains(&feature.id) {
                         feature.suppressed = Some(state.evaluation.is_suppressed());
                     }
                 }

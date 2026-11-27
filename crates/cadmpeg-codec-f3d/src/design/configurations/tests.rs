@@ -19,7 +19,7 @@ use crate::test_support::configuration_table::{
 use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::parameters::ConfigurationEvaluation;
-use cadmpeg_ir::features::Feature;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -430,14 +430,16 @@ fn the_active_configuration_and_the_feature_states_fill_each_others_gaps() {
     assert!(configurations[1].feature_states.is_empty());
     // A row supplies a state the feature does not have.
     assert_eq!(features[1].suppressed, Some(true));
-    // A stored non-Sketch state is not overwritten, so the checker still sees the conflict.
+    // A stored state is not overwritten, so the checker still sees the conflict.
     assert_eq!(features[2].suppressed, Some(false));
 }
 
 /// Features whose cell in active row `off` suppresses scope 314, computes
-/// scope 315 and suppresses scope 316: the Base Feature of 314 and the
-/// Extrude of 315 store no suppression and carry the states feature
-/// projection infers for them, 316 stores its state, and the suppressed
+/// scope 315, suppresses scopes 316 and 318 and computes Sketch scope 319:
+/// the Base Feature of 314 and the Extrude of 315 store no suppression and
+/// carry the states feature projection infers for them, 316 stores its state
+/// in its tail, the Thread of 318 in its companion suppression flag, and the
+/// Sketch of 319 stores a suppressed state in its tail. The suppressed
 /// feature of scope 317 has no column.
 #[test]
 fn the_active_row_decides_a_feature_whose_scope_stores_no_suppression() {
@@ -462,13 +464,45 @@ fn the_active_row_decides_a_feature_whose_scope_stores_no_suppression() {
     let stored = neutral_feature(&stored_scope, "f3d:test:feature#b");
     let mut unlisted = neutral_feature(&scope(317), "f3d:test:feature#c");
     unlisted.suppressed = Some(true);
-    natives
-        .scopes
-        .extend([scope(315), stored_scope, scope(317)]);
+    let mut thread_scope = DesignParameterScope::empty(
+        &format!("{STREAM}:design-parameter-scope#318"),
+        DesignFeatureKind::Thread,
+        318,
+    );
+    thread_scope.companion_suppressed = Some(crate::records::identity::Located {
+        value: false,
+        offset: thread_scope.feature_ordinal_offset() + 62,
+    });
+    let thread = neutral_feature(&thread_scope, "f3d:test:feature#d");
+    let mut sketch_scope = DesignParameterScope::empty(
+        &format!("{STREAM}:design-parameter-scope#319"),
+        DesignFeatureKind::Sketch,
+        319,
+    );
+    sketch_scope.tail_flags = Some(DesignScopeTailFlags {
+        suppression: [false, true],
+        ..stored_scope.tail_flags.unwrap()
+    });
+    let mut sketch = neutral_feature(&sketch_scope, "f3d:test:feature#e");
+    sketch.suppressed = Some(true);
+    sketch
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+        }));
+    natives.scopes.extend([
+        scope(315),
+        stored_scope,
+        scope(317),
+        thread_scope,
+        sketch_scope,
+    ]);
     natives.neutral_features.extend([
         inferred_suppressed.clone(),
         stored.clone(),
         unlisted.clone(),
+        thread.clone(),
+        sketch.clone(),
     ]);
     let mut document = table(&table_document(
         "1",
@@ -476,6 +510,8 @@ fn the_active_row_decides_a_feature_whose_scope_stores_no_suppression() {
             ("F", object_target("314", "DcFeature")),
             ("G", object_target("315", "DcFeature")),
             ("H", object_target("316", "DcFeature")),
+            ("I", object_target("318", "DcFeature")),
+            ("J", object_target("319", "DcFeature")),
         ],
         &[(
             "off",
@@ -484,6 +520,8 @@ fn the_active_row_decides_a_feature_whose_scope_stores_no_suppression() {
                 ("F", bool_cell(false)),
                 ("G", bool_cell(true)),
                 ("H", bool_cell(false)),
+                ("I", bool_cell(false)),
+                ("J", bool_cell(true)),
             ],
         )],
         &["off"],
@@ -502,6 +540,8 @@ fn the_active_row_decides_a_feature_whose_scope_stores_no_suppression() {
     assert_eq!(state(&inferred_active), Some(true));
     assert_eq!(state(&inferred_suppressed.id), Some(false));
     assert_eq!(state(&stored.id), Some(false));
+    assert_eq!(state(&thread.id), Some(false));
+    assert_eq!(state(&sketch.id), Some(true));
     assert_eq!(state(&unlisted.id), Some(true));
     assert_eq!(configurations.len(), 1);
     assert!(configurations[0].feature_states[&unlisted.id]

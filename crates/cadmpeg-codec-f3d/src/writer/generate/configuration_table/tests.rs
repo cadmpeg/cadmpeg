@@ -335,7 +335,9 @@ enum Change {
 }
 
 /// The current state of the feature of [`active_row_suppression`]: a
-/// suppression of `None`, a Sketch, or a feature that is not suppressed.
+/// suppression of `None`, a Sketch that is not suppressed, or another feature
+/// that is not suppressed. A stored state decides a Sketch as it decides
+/// every feature.
 #[derive(Debug, Clone, Copy)]
 enum State {
     Undecided,
@@ -351,7 +353,7 @@ fn a_feature_the_written_active_row_suppresses_is_charged() {
             assert_eq!(losses.len(), 1, "{state:?} {change:?}: {losses:#?}");
             let (code, message) = &losses[0];
             assert_eq!(code, "export/value.unwritable");
-            let decided = matches!(state, State::Decided);
+            let decided = !matches!(state, State::Undecided);
             let row = if decided {
                 "the active row states"
             } else {
@@ -365,7 +367,7 @@ fn a_feature_the_written_active_row_suppresses_is_charged() {
                 "{state:?} {change:?}: {losses:#?}"
             );
             assert_eq!(
-                message.contains("the active row of the written configuration table states"),
+                message.contains("states these features otherwise than the document"),
                 decided,
                 "{state:?} {change:?}: {message}"
             );

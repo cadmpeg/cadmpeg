@@ -161,7 +161,7 @@ impl Written<'_> {
             .collect::<BTreeMap<_, _>>();
         losses.extend(value_unwritable(
             "F3D",
-            "writes these features in the state the document states, which the active row of the written configuration table states otherwise: the Design stream stores the state of its active row",
+            "writes an active row of the configuration table that states these features otherwise than the document: the Design stream stores the state of its active row, so a feature whose scope stores no suppression reads back in the row's state",
             features.iter().filter_map(|feature| {
                 let row = &active_states.get(&feature.id)?.evaluation;
                 let current = feature.configuration_state().evaluation;
