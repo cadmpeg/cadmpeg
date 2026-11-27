@@ -724,7 +724,11 @@ fn binary(op: Operator, mut left: Value, mut right: Value, scope: &mut dyn Scope
     }
     if value.0 == [Text] && op == Operator::Add {
         if let (Some(left), Some(right)) = (left.text_fact(), right.text_fact()) {
-            if left.len().saturating_add(right.len()) <= MAX_TRACKED_TEXT {
+            if left
+                .len()
+                .checked_add(right.len())
+                .is_some_and(|length| length <= MAX_TRACKED_TEXT)
+            {
                 return Value::text(format!("{left}{right}"));
             }
         }

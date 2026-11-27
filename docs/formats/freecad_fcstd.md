@@ -631,8 +631,8 @@ time (`5 mA`) has the `Native` kind named by its unit as written, its number as 
 value, and the source's text as its expression. A formula is a neutral expression where it
 translates. An expression names a cell by its alias or its address, unqualified within its sheet
 and as `Sheet.name` elsewhere. A reference to an object property that is no parameter stays the
-source's text in the expression, and the parameter emits `parameter.dependency-dropped`. A formula
-that `FreeCAD`'s expression grammar does not read is a text cell whose value is its content. A
+source's text in the expression, and the parameter emits `parameter.dependency-dropped`. A cell
+whose formula is rejected by `FreeCAD`'s expression grammar retains its content as text. A
 value cell whose number is not finite has no value and emits `parameter.value-non-finite`. A
 formula cell stores no value. Its result kind follows `FreeCAD`'s expression rules. A
 reference to a cell uses the runtime type and any value determined by its content. A
@@ -647,7 +647,7 @@ conditional evaluates the branch selected by the condition's Python truth value.
   successful string `%` formatting give text. `address()` requires an integer row and
   column and takes an optional integer reference type from 1 through 4. Multiplying a
   string by an integer or Boolean repeats it. When the multiplier can be an `int` or a
-  `float`, the decoder states text and emits `parameter.integer-assumed`.
+  `float`, the parameter carries a text kind and `parameter.integer-assumed`.
 - Equality and ordering use the operands' Python comparison methods. The arithmetic
   operand guard refuses `None`, tuples and sets. String formatting uses its own
   right-operand rules. Plain Python division and numeric remainder raise on zero
@@ -685,8 +685,8 @@ conditional evaluates the branch selected by the condition's Python truth value.
   outside the arithmetic operand guard. Base64 JSON accepts a final group of two or three
   digits without padding.
 
-The decoder states a formula's result kind when its operand types and values establish a
-supported result. An unread or unproved result, a formula that raises, and a formula result
+The operand types and values establish the kind of a supported formula result. An
+unresolved kind, a formula that raises, and a formula result
 outside the four CADIR quantity dimensions use a dimensionless kind and emit
 `parameter.quantity-assumed`. A stored value cell with an extra dimension uses a
 `Native` kind. A display unit whose quantity is the cell's and whose words each have a symbol is

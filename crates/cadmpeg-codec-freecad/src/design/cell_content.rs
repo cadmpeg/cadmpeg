@@ -578,6 +578,8 @@ const ENERGY: [i8; 4] = [2, 1, 0, -2];
 const MICRO: f64 = 1e-6;
 /// The SI prefix nano.
 const NANO: f64 = 1e-9;
+/// The SI prefix pico.
+const PICO: f64 = 1e-12;
 /// Kilograms per avoirdupois pound.
 const POUND: f64 = 0.453_592_37;
 /// Pascals per pound-force per square inch.
@@ -687,17 +689,17 @@ fn native_unit_word(word: &str) -> Option<Unit> {
 
     let (exponents, scale) = match word {
         "A" => (CURRENT, 1.0),
-        "nA" => (CURRENT, 1e-9),
-        "uA" | "µA" | "μA" => (CURRENT, 1e-6),
+        "nA" => (CURRENT, NANO),
+        "uA" | "µA" | "μA" => (CURRENT, MICRO),
         "mA" => (CURRENT, 1e-3),
         "kA" => (CURRENT, 1e3),
         "MA" => (CURRENT, 1e6),
         "K" => (TEMPERATURE, 1.0),
         "mK" => (TEMPERATURE, 1e-3),
-        "uK" | "µK" | "μK" => (TEMPERATURE, 1e-6),
+        "uK" | "µK" | "μK" => (TEMPERATURE, MICRO),
         "mol" => (AMOUNT, 1.0),
-        "nmol" => (AMOUNT, 1e-9),
-        "umol" | "µmol" | "μmol" => (AMOUNT, 1e-6),
+        "nmol" => (AMOUNT, NANO),
+        "umol" | "µmol" | "μmol" => (AMOUNT, MICRO),
         "mmol" => (AMOUNT, 1e-3),
         "cd" => (INTENSITY, 1.0),
         "V" => (POTENTIAL, 1e6),
@@ -705,9 +707,9 @@ fn native_unit_word(word: &str) -> Option<Unit> {
         "mV" => (POTENTIAL, 1e3),
         "MS" => (CONDUCTANCE, 1.0),
         "kS" => (CONDUCTANCE, 1e-3),
-        "S" => (CONDUCTANCE, 1e-6),
-        "mS" => (CONDUCTANCE, 1e-9),
-        "uS" | "µS" | "μS" => (CONDUCTANCE, 1e-12),
+        "S" => (CONDUCTANCE, MICRO),
+        "mS" => (CONDUCTANCE, NANO),
+        "uS" | "µS" | "μS" => (CONDUCTANCE, PICO),
         "Ohm" => (RESISTANCE, 1e6),
         "kOhm" => (RESISTANCE, 1e9),
         "MOhm" => (RESISTANCE, 1e12),
@@ -716,9 +718,9 @@ fn native_unit_word(word: &str) -> Option<Unit> {
         "mT" => (FLUX_DENSITY, 1e-3),
         "G" => (FLUX_DENSITY, 1e-4),
         "Wb" => (FLUX, 1e6),
-        "F" => (CAPACITANCE, 1e-6),
-        "mF" => (CAPACITANCE, 1e-9),
-        "uF" | "µF" | "μF" => (CAPACITANCE, 1e-12),
+        "F" => (CAPACITANCE, MICRO),
+        "mF" => (CAPACITANCE, NANO),
+        "uF" | "µF" | "μF" => (CAPACITANCE, PICO),
         "nF" => (CAPACITANCE, 1e-15),
         "pF" => (CAPACITANCE, 1e-18),
         "H" => (INDUCTANCE, 1e6),
