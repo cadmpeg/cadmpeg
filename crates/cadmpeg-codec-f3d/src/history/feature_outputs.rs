@@ -584,6 +584,26 @@ pub(crate) fn bind_feature_outputs(
             continue;
         }
         let Some((state_id, previous_state_id)) = feature_states[idx] else {
+            let unbound = feature
+                .native_ref
+                .as_deref()
+                .and_then(|id| scopes.iter().find(|scope| scope.id == id))
+                .and_then(crate::records::feature::scope::DesignParameterScope::history_state_id)
+                .filter(|&state_id| {
+                    histories.iter().any(|history| {
+                        history
+                            .states()
+                            .iter()
+                            .any(|state| state.state_id == state_id)
+                    })
+                })
+                .filter(|_| feature.evaluation.outputs().is_empty());
+            if let Some(state_id) = unbound {
+                losses.push(crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.note(format!(
+                    "{} has state {state_id} in the body history and no stored or derivable previous state.",
+                    feature.id
+                )));
+            }
             continue;
         };
         let bound_history = feature_sources[idx];
