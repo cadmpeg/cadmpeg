@@ -2934,8 +2934,8 @@ impl<'a> DecodeContext<'a> {
             .iter()
             .map(|record| record.id().clone())
             .collect::<Vec<_>>();
-        source_fidelity
-            .retain_unknown_records(crate::container::FILE_OWNER, self.opaque_records)?;
+        // The records are the file's own bytes, so their owner is the root.
+        source_fidelity.retain_unknown_records("", self.opaque_records)?;
         for id in untyped {
             source_fidelity.mark_untyped(id.as_str(), [cadmpeg_core::decode::ArenaClass::Model])?;
         }

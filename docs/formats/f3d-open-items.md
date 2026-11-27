@@ -30,6 +30,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** The writer registers the record under a type GUID it generates, the version-8 UUID `deterministic_guid("type", "DesignConfigurationRoot")` that `ROOT_TYPE` in `writer/generate/configuration_root.rs` holds, with the base type, type version and add-in of the serializer trigger records, and charges `export:record.residual-unavailable` naming the configuration whose row the record names, or the configuration table document whose stated row it names.
 
+### DR-1069. Members of a configuration table, column, or test-row entry that a save adds
+
+**Question.** When a save adds the first table to a `DesignConfigurationTable` document whose payload is the empty object `{}`, which table id, `tableName`, `tableType`, document and table asset `id` and `revisionId`, `cachedRevIds` and `testRowData` does the document store? When a save adds a column to a table, which `testRowData` entry does it add, in which member order, and in which unit does a `ParameterDoubleValue` entry store `Value`? When the added column is the first `configuredProperty-1.0.0` column of its table, which `id` does its `object` store? When a save names another row active, which members of each `testRowData` entry change, and in which member order does the entry store them?
+
+**Known.** A table document holds an `asset` of type `configuration-1.0.0` with a `tableVersion` component, a `tables` array, `cachedRevIds` and `testRowData` (`f3d.md` §1.2). Each table holds an `asset` of type `configurationTable-1.1.0` whose attribute `pim:configuration:tableId` equals the `id` of its `tableDefinition` component, a `rows` array, and a `tableView` whose `columnOrder` and `rowOrder` list the column and row ids. A document that holds no table is stored as `{}`. A `DesignConfigurationRoot` record names a row by table id and row id. Each `testRowData` string is a JSON object with the members `DataType` and `ColumnUniqueID` and the value members of its data type. Its parameter and feature values are the values of the active row. A row cell of a parameter column stores its value in database units. A `configuredProperty-1.0.0` object stores `id`, `propertyKey`, `propertySet` and `type` `Property`.
+
+**Need.** A save of a design with no configuration, then the same design saved after the first configuration is added. Compare the table document of the two saves: the table id, the `tableName` and `tableType` of the `tableDefinition`, the asset ids and revision ids, `cachedRevIds`, and `testRowData`. Then add a length parameter column and a Part Number column to a table that has no property column, and save again. Compare the `testRowData` strings of the two new columns, byte for byte, and the `id` of the new `configuredProperty-1.0.0` object with the ids that the document and its Design stream store. Then make another row active, save again, and compare the `testRowData` strings of the last two saves byte for byte.
+
+**Note.** The writer creates the table with the `tableName` and `tableType` `Configurations`, a table id and asset ids it generates as version-8 UUIDs from the entry name, `tableVersion` `1`, empty `cachedRevIds` and `testRowData`, and charges `export:record.residual-unavailable` naming the table document. When the writer adds a column, it adds one `testRowData` entry with the value of the active row, members in key order and a `ParameterDoubleValue` `Value` in database units, and charges `export:record.residual-unavailable` naming the table document. A property column that the writer adds takes the `object` `id` of the first property column of its table; in a table with no property column, it takes a version-8 UUID that the writer generates from the entry name, and the writer charges `export:record.residual-unavailable` naming the property. The writer updates `testRowData` when the active row changes, a column takes another value in that row, or a parameter of the column takes another expression or value in the Design stream. The writer uses the active row to update the known members of each affected entry. It adds a missing entry when it adds the column, rewrites the Design parameter, or changes an entry for a table that already has an active row. It writes entry members in key order and charges `export:record.residual-unavailable` naming the table document. A stored entry whose column has no value in the active row keeps its members. The writer charges `export:value.unwritable` naming each column whose entry remains different from the active row or cannot be written.
+
 ### DR-1014. Order of a body-override appearance and the body's material assignment
 
 **Question.** When a body has a material assignment that names one appearance and a body-override record that names a different appearance, which appearance does Fusion show on the body?
@@ -1434,18 +1444,6 @@ The first closing reference run identifies a direct contained child by its local
 
 **Need.** Controlled exports that vary evaluation time, operation order, and the relevant Boolean state must separate the scalar unit, ordinal allocation rule, flag meaning, and flag-width selector. A neutral Form writer also needs an explicit tracking-member-to-cage identity join.
 
-### DR-324. Cage order of a Form bound through body records
-
-**Question.** In which order does a Form scope that several Form body records name hold its cages?
-
-**Known.** `f3d.md` §1.1.1 "**Form body-record cage join.**" binds each cage to its owning Form scope through one Form body record. The scope's reference table holds a result-owner record and a Form selection group, and its selection members are tracking records. The decoder orders the cages by ascending body-record index and reports `feature.form-cage-order-assumed` for each such Form with two or more cages.
-
-**Need.** Controlled saves of one Form session that creates two bodies in one order and then changes the first body, to compare the body order of the session with the body-record index order.
-
-**Conflict.** None.
-
-**Note.** None.
-
 ### DR-645. Legacy sole-scope serializer membership and order
 
 **Question.** Which native relations establish complete cage membership and order in the sole-scope legacy Form envelope?
@@ -2277,6 +2275,16 @@ The same two-edge ambiguity can remain after the candidate-boundary, deletion, a
 **Conflict.** None.
 
 **Note.** The decoder reports this selection with `design.flagged-base-feature-body-selected`. The `Base Feature` of such a design has no history partition, so its output state chain stays unbound and the decoder reports `feature.output-state-chain-unbound`.
+
+### DR-1080. Two-sided distance Extrude with distances of opposite sign, with a draft or a wall thickness
+
+**Question.** Where does a two-sided distance Extrude with distances of opposite sign put its solid when a side has a draft, and when it has a wall thickness?
+
+**Known.** `f3d.md` §3.1 states that the two distances place the solid's ends at `AlongDistance` and at the negated `AgainstDistance` on the profile normal, with the solid between them. A controlled save confirms this for solid Extrudes with every sign pair (+20/−5, −20/+5, −20/−5 and +20/+5 mm give final bodies spanning 5…20, −20…−5, −20…5 and −5…20 mm), and two Extrudes of another design agree. The decoder reads distances of opposite sign as a one-sided Extrude from an offset profile plane at the nearer end. In the same save, an Extrude of −20/+5 mm with a 5° draft on side one spans −20…0 mm: the solid reaches the profile plane. Wall-thickness Extrudes of open chains of +20/−5 and −20/+5 mm span 5…20 and −20…−5 mm, but a wall-thickness Extrude of a closed profile of 50/−2 mm in another design records a body centre 25 mm above its profile plane. Recorded body centres are bounding-box centres in the controlled save, so that body spans 0…50 mm, not 2…50 mm; its parameter roles and extent form equal those of the open-chain Extrudes. The decoder keeps both forms native.
+
+**Need.** Saves of drafted Extrudes with distances of opposite sign, with the draft on either side and with several drafts, and wall-thickness Extrudes with distances of opposite sign of a closed profile and of an open chain, with each wall location.
+
+**Conflict.** None.
 
 ### DR-646. Entry order of a multi-body suffix result-body frame
 

@@ -69,7 +69,7 @@ pub(crate) const LITERAL: &str = "f3d:literal";
 /// Where the owner record that an owned native parameter names lists it: the
 /// owner's stream and parameter scope record, and its local ordinal there.
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub(super) struct OwnerPlace {
+pub(crate) struct OwnerPlace {
     pub(super) list: (String, u32),
     pub(super) ordinal: u32,
 }
@@ -125,7 +125,7 @@ pub(super) fn owner_places(
 /// a feature takes the local ordinal of its owner record as its position,
 /// where the owner records of all the feature's parameters belong to one
 /// parameter scope and state distinct local ordinals.
-pub(super) fn project(
+pub(crate) fn project(
     legacy: &[LegacyParameter],
     places: &HashMap<String, OwnerPlace>,
     scopes: &BTreeMap<String, ProductDefinitionId>,
@@ -330,7 +330,7 @@ fn record(
 }
 
 /// The kind and canonical cache of a value the decoder read.
-pub(super) fn cache(value: &LegacyValue) -> (ValueKind, Option<ParameterValue>) {
+pub(crate) fn cache(value: &LegacyValue) -> (ValueKind, Option<ParameterValue>) {
     match value {
         LegacyValue::Length(length) => (
             ValueKind::Quantity(Quantity::LENGTH),

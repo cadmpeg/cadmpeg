@@ -317,7 +317,7 @@
             "namespace": "sldprt"
           }
         },
-        "message": "No body record was available; one body/region/shell hierarchy was derived.",
+        "message": "No body record names a region; one body/region/shell hierarchy was derived.",
         "severity": "warning"
       },
       {

@@ -851,6 +851,75 @@ fn a_view_presentation_keeps_no_object_of_a_given_up_point() {
     );
 }
 
+/// A drawing whose `object` is `object` and whose `assets` are `assets`.
+fn drawing(object: &str, assets: &[&str]) -> Value {
+    json!({
+        "id": "test:model:drawing#1", "object": object, "kind": "page",
+        "runtime_type": "Page", "order": 0, "relationships": {}, "curves": [],
+        "parameters": {}, "views": [], "assets": assets
+    })
+}
+
+/// The drawings the read keeps, by id, with their `object` and `assets`.
+fn drawings(read: &CadirRead) -> Vec<(String, String, Vec<String>)> {
+    read.document
+        .model
+        .drawings
+        .iter()
+        .map(|drawing| {
+            (
+                drawing.id.to_string(),
+                drawing.object.to_string(),
+                drawing.assets.iter().map(ToString::to_string).collect(),
+            )
+        })
+        .collect()
+}
+
+/// A drawing whose required `object` names a record the read gives up
+/// cannot be stated without it, so the read drops the drawing (§3.3).
+#[test]
+fn a_drawing_whose_object_is_given_up_is_dropped() {
+    let (_, mut value) = wire();
+    let point = points(&mut value)[0]["id"].as_str().unwrap().to_owned();
+    value["model"]["drawings"] = json!([drawing(&point, &[])]);
+    let kept = read(value.to_string().as_bytes());
+    assert_eq!(drawings(&kept).len(), 1, "{:?}", kept.report);
+    points(&mut value)[0]["position"] = json!("not a point");
+    let read = read(value.to_string().as_bytes());
+    assert!(drawings(&read).is_empty(), "{:?}", read.report);
+}
+
+/// A drawing whose `assets` name a record the read gives up keeps no link
+/// to it (§3.3).
+#[test]
+fn a_drawing_keeps_no_asset_that_is_given_up() {
+    let (_, mut value) = wire();
+    let point = points(&mut value)[0]["id"].as_str().unwrap().to_owned();
+    let object = points(&mut value)[1]["id"].as_str().unwrap().to_owned();
+    value["model"]["drawings"] = json!([drawing(&object, &[&point])]);
+    let kept = read(value.to_string().as_bytes());
+    assert_eq!(
+        drawings(&kept),
+        [(
+            "test:model:drawing#1".to_owned(),
+            object.clone(),
+            vec![point.clone()]
+        )],
+        "{:?}",
+        kept.report
+    );
+    points(&mut value)[0]["position"] = json!("not a point");
+    let read = read(value.to_string().as_bytes());
+    assert!(
+        drawings(&read)
+            .iter()
+            .all(|(_, object, assets)| *object != point && !assets.contains(&point)),
+        "{:?}",
+        read.report
+    );
+}
+
 /// A view presentation whose `object` names a native record that the read
 /// gives up for an id stated twice with different values keeps no link to
 /// it (§3.3).
