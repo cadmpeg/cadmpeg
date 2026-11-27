@@ -1124,21 +1124,27 @@ fn decode_accepts_rounded_transformed_circular_arc_frame() {
 }
 
 #[test]
-fn decode_rejects_transform_roundoff_beyond_its_declared_precision() {
+fn decode_gives_up_transform_roundoff_beyond_its_declared_precision_as_undecoded() {
+    // IGES states no receiver tolerance for orthonormality, so the decoder's
+    // interval admission is its own bound: a pinned decode accepts the file.
+    let mut pinned = DecodeOptions::default();
+    pinned.strictness.pinned = true;
     let result = IgesCodec
         .decode(
             &mut Cursor::new(transformed_circular_arc_file(
                 b"124,1.0000051,0,0,0,0,1,0,0,0,0,1,0;",
                 b"100,0,0,0,1,0,0,1;",
             )),
-            &DecodeOptions::default(),
+            &pinned,
         )
         .unwrap();
 
     assert!(result.ir().geometry.curves.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.message
-            .contains("not orthonormal within its declared numeric precision")
+        loss.code == cadmpeg_ir::unknown::part::Cause::Undecoded.kind()
+            && loss
+                .message
+                .contains("not orthonormal within its declared numeric precision")
     }));
 }
 

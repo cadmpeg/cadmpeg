@@ -489,10 +489,17 @@ pub(super) fn project(
         let points: Vec<_> = positions.iter().map(|position| position.get()).collect();
         let resolution = global.minimum_resolution_mm();
         if entry.form == 63 && !points_coincident(points[0], points[points.len() - 1], resolution) {
+            // The Global coincidence rule tests the closure against a
+            // positive field 19; a zero resolution states no tolerance.
+            let cause = if resolution > 0.0 {
+                Cause::Unreadable
+            } else {
+                Cause::Undecoded
+            };
             push_copious_loss(
                 &mut losses,
                 entry,
-                Cause::Undecoded,
+                cause,
                 format_args!("simple closed path endpoints disagree beyond the minimum resolution"),
             );
             continue;

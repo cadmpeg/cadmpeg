@@ -383,7 +383,8 @@ fn two_declared_ranges_claiming_one_card_quarantine_both_records() {
                     .message
                     .contains(ParameterDefect::OwnershipConflict.describe())));
     }
-    // Both declared ranges start at one card, so one part holds it.
+    // Both declared ranges start at one card, so one part holds it, and its
+    // one give-up states the defect of each record.
     assert_eq!(
         quarantined(&result, 1, ParameterDefect::OwnershipConflict).len(),
         80
@@ -393,13 +394,13 @@ fn two_declared_ranges_claiming_one_card_quarantine_both_records() {
             result.report(),
             IgesLossCode::ParameterDataQuarantined
         ),
-        2
+        1
     );
     assert_eq!(
         code_count(result.report(), IgesLossCode::CardFramingRecovered),
         1
     );
-    assert_eq!(result.report().losses.len(), 3);
+    assert_eq!(result.report().losses.len(), 2);
     assert_gives_up(result.report(), &[("parameter-data", 1)]);
 }
 

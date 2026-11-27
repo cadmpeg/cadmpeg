@@ -440,16 +440,21 @@ impl<'a> PhysicalParse<'a> {
             )?;
             losses.push(give_up(part, record.defect_message())?);
         }
-        let mut parameter_parts = BTreeSet::new();
+        // Records whose declared ranges conflict can start at one card. The
+        // first gives up the part that starts there, which keeps the cards
+        // of each, and its give-up states the defect of each.
+        let mut claimants = BTreeMap::<u64, Vec<String>>::new();
         for record in &self.quarantined_parameters {
-            let why = record.loss_note()?;
-            // Records whose declared ranges conflict can start at one card.
-            // The first gives up the part that starts there, and that part
-            // keeps the cards of each.
-            if !parameter_parts.insert(record.source_offset()) {
-                losses.push(why);
+            claimants
+                .entry(record.source_offset())
+                .or_default()
+                .push(record.loss_note()?.message);
+        }
+        for record in &self.quarantined_parameters {
+            let Some(defects) = claimants.remove(&record.source_offset()) else {
                 continue;
-            }
+            };
+            let why = record.loss_note()?;
             // A record that owns no card is a part of no bytes at the offset
             // of its Directory Entry.
             let part = image.part(
@@ -458,7 +463,10 @@ impl<'a> PhysicalParse<'a> {
                 record.source_offset(),
                 record.source_length().unwrap_or(0),
             )?;
-            losses.push(give_up(part, format!("{}: {}", why.code, why.message))?);
+            losses.push(give_up(
+                part,
+                format!("{}: {}", why.code, defects.join("; ")),
+            )?);
         }
         let mut entries = BTreeMap::new();
         for record in &self.parameters {
@@ -636,6 +644,24 @@ fn decode_with_occurrence_limits(
         &mut ir,
         &mut source_fidelity,
     )?;
+    // An explicit B-rep input that no shell decodes is dropped with the
+    // given-up entity that reads it, so the give-up is its one loss.
+    loop {
+        let dropped = projection
+            .supports
+            .iter()
+            .filter(|&(input, readers)| {
+                !projection.decoded.contains(input)
+                    && !given_up.contains(input)
+                    && readers.iter().any(|reader| given_up.contains(reader))
+            })
+            .map(|(input, _)| *input)
+            .collect::<Vec<_>>();
+        if dropped.is_empty() {
+            break;
+        }
+        given_up.extend(dropped);
+    }
     let record_losses = parse.record_losses(&image, |part, error| {
         entities::give_up_part(ctx, part, Cause::Unreadable, error)?.commit(
             ctx,
@@ -669,7 +695,12 @@ fn decode_with_occurrence_limits(
     losses.extend(attribute_losses);
     if invalid_resolution
         && !losses.iter().any(|loss| {
-            loss.code.local_code() == IgesLossCode::GlobalSemanticContextSubstituted.code()
+            [
+                IgesLossCode::GlobalSemanticContextSubstituted,
+                IgesLossCode::GlobalSemanticContextInvalid,
+            ]
+            .iter()
+            .any(|code| loss.code.local_code() == code.code())
         })
     {
         let message =

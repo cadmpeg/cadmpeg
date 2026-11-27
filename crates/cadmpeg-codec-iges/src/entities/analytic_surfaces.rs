@@ -333,12 +333,20 @@ pub(super) fn project(
                 continue;
             }
         };
-        let location_index = pointer(record, 1);
-        let Some(location) = location_index.and_then(|sequence| point(ir, sequence)) else {
+        let Some(location_index) = pointer(record, 1) else {
+            push_entity_loss(
+                &mut losses,
+                entry,
+                Cause::Unreadable,
+                format_args!("analytic surface location pointer is invalid"),
+            );
+            continue;
+        };
+        let Some(location) = point(ir, location_index) else {
             push_entity_loss_needing(
                 &mut losses,
                 entry,
-                location_index,
+                Some(location_index),
                 Cause::Undecoded,
                 format_args!("analytic surface location point is missing"),
             );

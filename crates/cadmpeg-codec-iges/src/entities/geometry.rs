@@ -817,9 +817,13 @@ impl TransformFailure {
     }
 
     /// The cause of the give-up of an entity that this failure keeps from
-    /// its placement. A Type 124 coordinate-system form 10, 11, or 12, the depth cap, and
-    /// a placement that the decoder cannot compute in finite numbers are
-    /// forms the decoder does not decode; the others break the format.
+    /// its placement. A Type 124 coordinate-system form 10, 11, or 12, the
+    /// depth cap, a placement that the decoder cannot compute in finite
+    /// numbers, and a linear part outside the CADIR orthonormality admission
+    /// intervals are forms the decoder does not decode: IGES states no
+    /// receiver tolerance for orthonormality. The others break the format. A
+    /// determinant whose interval misses the form's sign after the columns
+    /// pass gives the matrix the handedness of the other form.
     pub(crate) fn cause(&self) -> Cause {
         match self {
             Self::WrongTypeForm {
@@ -830,6 +834,7 @@ impl TransformFailure {
             Self::Depth
             | Self::FirstAxis(_)
             | Self::SecondAxis(_)
+            | Self::NotOrthonormal(_)
             | Self::NonFiniteScaled(_)
             | Self::NonFiniteComposed(_) => Cause::Undecoded,
             Self::Literal(_)
@@ -838,7 +843,6 @@ impl TransformFailure {
             | Self::MissingParameters(_)
             | Self::NonNumericCoefficient { .. }
             | Self::NonFiniteCoefficient(_)
-            | Self::NotOrthonormal(_)
             | Self::WrongDeterminant { .. } => Cause::Unreadable,
         }
     }
@@ -1073,6 +1077,9 @@ pub(crate) struct Projection {
     pub(crate) boundary_vertex_derivations: Vec<BoundaryVertexDerivation>,
     /// The Directory sequence each projected record was decoded from.
     pub(crate) sequences: SourceSequences,
+    /// For each parsed explicit B-rep input entity, the entities that read
+    /// it. An input that a given-up entity reads is dropped with it.
+    pub(crate) supports: BTreeMap<u32, BTreeSet<u32>>,
 }
 
 fn positive_sequence(value: i64) -> Option<u32> {
@@ -2776,8 +2783,17 @@ pub(crate) fn project_geometry(
     boundary_vertex_derivations.extend(trimming_vertex_derivations);
     trimming_projection.merge_into(&mut decoded, &mut losses);
 
-    super::brep::project(ir, directory, parameters, global, ctx, &mut sequences)?
-        .merge_into(&mut decoded, &mut losses);
+    let mut supports = BTreeMap::new();
+    super::brep::project(
+        ir,
+        directory,
+        parameters,
+        global,
+        ctx,
+        &mut sequences,
+        &mut supports,
+    )?
+    .merge_into(&mut decoded, &mut losses);
 
     super::csg::project(ir, directory, parameters, global, ctx)?
         .merge_into(&mut decoded, &mut losses);
@@ -2839,6 +2855,7 @@ pub(crate) fn project_geometry(
         losses,
         boundary_vertex_derivations,
         sequences,
+        supports,
     })
 }
 

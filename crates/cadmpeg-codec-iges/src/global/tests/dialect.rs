@@ -7,8 +7,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::code_count;
 use super::{
-    point_file_with_field, point_file_with_version_flag, report_code_count, resolve_global_fields,
-    strict_options, valid_global_fields,
+    pinned_refusal, point_file_with_field, point_file_with_version_flag, report_code_count,
+    resolve_global_fields, strict_options, valid_global_fields,
 };
 use crate::loss::IgesLossCode;
 use crate::test_support::test_curves_and_surfaces::point_file_with_global;
@@ -214,7 +214,7 @@ fn a_verified_v4_version_with_no_maximum_line_width_names_the_line_weight_loss()
 }
 
 #[test]
-fn a_malformed_version_flag_clamps_to_the_default_and_charges_the_dialect_loss() {
+fn a_malformed_version_flag_clamps_to_the_default_and_is_refused_when_pinned() {
     let bytes = point_file_with_field(22, "1Hx");
 
     let result = IgesCodec
@@ -226,12 +226,31 @@ fn a_malformed_version_flag_clamps_to_the_default_and_charges_the_dialect_loss()
     assert_eq!(declared["version_flag"], "3");
     assert_eq!(result.ir().geometry.points.len(), 1);
     assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
-    assert_eq!(dialect_losses(result.report()), 1);
+    assert_eq!(
+        report_code_count(result.report(), IgesLossCode::SourceVersionFlagInvalid),
+        1
+    );
+    assert_eq!(dialect_losses(result.report()), 0);
     assert!(result.report().losses[0].message.contains("field 23"));
 
+    assert_eq!(
+        pinned_refusal(bytes),
+        IgesLossCode::SourceVersionFlagInvalid.kind().to_string()
+    );
+}
+
+#[test]
+fn a_version_flag_below_one_is_refused_when_pinned_and_one_above_eleven_is_not() {
+    for flag in ["0", "-1"] {
+        assert_eq!(
+            pinned_refusal(point_file_with_version_flag(flag)),
+            IgesLossCode::SourceVersionFlagInvalid.kind().to_string(),
+            "{flag}"
+        );
+    }
     let strict = IgesCodec
         .decode(
-            &mut Cursor::new(bytes),
+            &mut Cursor::new(point_file_with_version_flag("12")),
             &strict_options(cadmpeg_core::decode::DecodeDepth::Full),
         )
         .unwrap();
@@ -392,9 +411,9 @@ fn the_5_0_required_global_fields_report_absence_without_later_defaults() {
         (5, IgesLossCode::GlobalMetadataFieldUnusable),
         (6, IgesLossCode::GlobalMetadataFieldUnusable),
         (7, IgesLossCode::GlobalMetadataFieldUnusable),
-        (8, IgesLossCode::GlobalSemanticContextSubstituted),
+        (8, IgesLossCode::GlobalSemanticContextInvalid),
         (17, IgesLossCode::GlobalMetadataFieldUnusable),
-        (18, IgesLossCode::GlobalSemanticContextSubstituted),
+        (18, IgesLossCode::GlobalSemanticContextInvalid),
     ] {
         let mut fields = valid_global_fields();
         fields[index].clear();
@@ -442,10 +461,7 @@ fn the_5_0_double_precision_fields_are_conditional_on_parameter_syntax() {
         0
     );
     assert_eq!(
-        report_code_count(
-            result.report(),
-            IgesLossCode::GlobalSemanticContextSubstituted
-        ),
+        report_code_count(result.report(), IgesLossCode::GlobalSemanticContextInvalid),
         0
     );
     assert_eq!(dialect_losses(result.report()), 0);
@@ -469,10 +485,7 @@ fn the_5_0_double_precision_fields_are_conditional_on_parameter_syntax() {
         1
     );
     assert_eq!(
-        report_code_count(
-            result.report(),
-            IgesLossCode::GlobalSemanticContextSubstituted
-        ),
+        report_code_count(result.report(), IgesLossCode::GlobalSemanticContextInvalid),
         1
     );
     assert_eq!(dialect_losses(result.report()), 0);
@@ -563,7 +576,7 @@ fn the_4_0_missing_numeric_context_uses_reported_recovery_fallbacks() {
         1
     );
     assert_eq!(
-        code_count(&losses, IgesLossCode::GlobalSemanticContextSubstituted),
+        code_count(&losses, IgesLossCode::GlobalSemanticContextInvalid),
         3
     );
 }

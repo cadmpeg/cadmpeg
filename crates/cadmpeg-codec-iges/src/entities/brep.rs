@@ -539,6 +539,9 @@ fn resolve_pcurve_uses<'a>(
     )
 }
 
+/// Projects the explicit B-rep entities. Records in `supports`, for each
+/// parsed vertex list, edge list, loop, and face, the entities that read it
+/// as their input.
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -546,6 +549,7 @@ pub(super) fn project(
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
+    supports: &mut BTreeMap<u32, BTreeSet<u32>>,
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
@@ -678,6 +682,11 @@ pub(super) fn project(
                 edges.clear();
                 break;
             };
+            for list in [edge.start_list, edge.end_list] {
+                if vertex_lists.contains_key(&list) {
+                    supports.entry(list).or_default().insert(entry.sequence);
+                }
+            }
             if vertex_lists
                 .get(&edge.start_list)
                 .is_none_or(|list| edge.start_index >= list.len())
@@ -749,6 +758,11 @@ pub(super) fn project(
                 uses.clear();
                 break;
             };
+            if (use_type == 0 && edge_lists.contains_key(&list))
+                || (use_type == 1 && vertex_lists.contains_key(&list))
+            {
+                supports.entry(list).or_default().insert(entry.sequence);
+            }
             let Some(item_index) = list_index(record, index + 2) else {
                 uses.clear();
                 break;
@@ -839,13 +853,23 @@ pub(super) fn project(
             index += 5 + pcurve_count * 2;
         }
         if uses.len() != count {
-            super::push_geometry_loss_needing(
-                &mut losses,
-                entry,
-                needs,
-                Cause::Unreadable,
-                format_args!("loop edge-use tuple is invalid"),
-            );
+            match needs {
+                Some(sequence) => super::push_geometry_loss_needing(
+                    &mut losses,
+                    entry,
+                    Some(sequence),
+                    Cause::Unreadable,
+                    format_args!(
+                        "loop edge use names D{sequence}, which the projection does not hold"
+                    ),
+                ),
+                None => super::push_geometry_loss(
+                    &mut losses,
+                    entry,
+                    Cause::Unreadable,
+                    format_args!("loop edge-use tuple is invalid"),
+                ),
+            }
             continue;
         }
         loops.insert(entry.sequence, uses);
@@ -939,6 +963,11 @@ pub(super) fn project(
         } else {
             FaceLoopPointers::Unclassified { first, rest }
         };
+        for sequence in face_loops.iter() {
+            if loops.contains_key(&sequence) {
+                supports.entry(sequence).or_default().insert(entry.sequence);
+            }
+        }
         if let Some(missing) = face_loops
             .iter()
             .find(|sequence| !loops.contains_key(sequence))
@@ -1013,6 +1042,7 @@ pub(super) fn project(
                 face_uses.clear();
                 break;
             }
+            supports.entry(face).or_default().insert(entry.sequence);
             face_uses.push((face, sense));
         }
         if face_uses.len() != count {

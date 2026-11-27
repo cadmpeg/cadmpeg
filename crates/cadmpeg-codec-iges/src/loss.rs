@@ -111,8 +111,12 @@ loss_codes! {
     CompositeCarrierDegraded => "curve.composite-carrier-degraded",
     /// A Global metadata field is absent or malformed and was not transferred.
     GlobalMetadataFieldUnusable => "global.metadata-field-unusable",
-    /// A Global comparison context came from this codec's specification.
+    /// A Global comparison context came from this codec's specification for
+    /// a field that the declared version lets the file omit or supply as zero.
     GlobalSemanticContextSubstituted => "global.semantic-context-substituted",
+    /// A Global comparison field is malformed, or absent where the declared
+    /// version requires it; the context came from this codec's specification.
+    GlobalSemanticContextInvalid => "global.semantic-context-invalid",
     /// A Global real used a recoverable noncanonical numeric spelling.
     GlobalNumericSyntaxRecovered => "global.numeric-syntax-recovered",
     /// The Global fields 13, 14, and 15 produced no millimetre length factor.
@@ -121,6 +125,9 @@ loss_codes! {
     GlobalNoncanonicalFraming => "global.noncanonical-framing",
     /// The declared Global specification version is outside the verified set.
     SourceDialectUnverified => "source.dialect-unverified",
+    /// The Global version flag is not an integer, or is below `1`; the
+    /// decoder recovered an effective version.
+    SourceVersionFlagInvalid => "source.version-flag-invalid",
     /// Preserved source image required for a byte-exact write was unavailable.
     PreservedSourceUnavailable => "source.preserved-image-unavailable",
     /// Procedural definitions were reduced to writable solved carriers.
@@ -224,11 +231,13 @@ impl IgesLossCode {
             | Self::CompositeCarrierDegraded
             | Self::GlobalMetadataFieldUnusable
             | Self::GlobalSemanticContextSubstituted
+            | Self::GlobalSemanticContextInvalid
             | Self::GlobalNumericSyntaxRecovered
             | Self::DirectoryMetadataUnreadable
             | Self::DirectoryMetadataNoncanonical
             | Self::GlobalNoncanonicalFraming
             | Self::SourceDialectUnverified
+            | Self::SourceVersionFlagInvalid
             | Self::WriterMinimumResolutionAdjusted
             | Self::WriterGlobalFieldNotRestated
             | Self::WriterSupportGeometryNotRepresented
@@ -296,6 +305,7 @@ impl IgesLossCode {
             Self::SplineClaimRecovered
             | Self::RuledDevelopabilityRecovered
             | Self::GlobalSemanticContextSubstituted
+            | Self::GlobalSemanticContextInvalid
             | Self::GlobalNumericSyntaxRecovered
             | Self::DirectoryMetadataUnreadable
             | Self::DirectoryMetadataNoncanonical
@@ -305,7 +315,9 @@ impl IgesLossCode {
             | Self::ParameterDataQuarantined
             | Self::ParameterLiteralUnusable
             | Self::CardFramingRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
-            Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
+            Self::SourceDialectUnverified | Self::SourceVersionFlagInvalid => {
+                LossTaxonomy::SourceDialectUnverified
+            }
             Self::PreservedSourceUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::ProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
@@ -328,6 +340,8 @@ impl IgesLossCode {
         match self {
             Self::PointerUnresolved
             | Self::DirectoryMetadataNoncanonical
+            | Self::GlobalSemanticContextInvalid
+            | Self::SourceVersionFlagInvalid
             | Self::GlobalNumericSyntaxRecovered
             | Self::GlobalLengthUnitUnresolved
             | Self::GlobalNoncanonicalFraming
@@ -410,10 +424,12 @@ mod tests {
                 "curve.composite-carrier-degraded",
                 "global.metadata-field-unusable",
                 "global.semantic-context-substituted",
+                "global.semantic-context-invalid",
                 "global.numeric-syntax-recovered",
                 "global.length-unit-unresolved",
                 "global.noncanonical-framing",
                 "source.dialect-unverified",
+                "source.version-flag-invalid",
                 "source.preserved-image-unavailable",
                 "geometry.procedural-reduced",
                 "geometry.edge-pcurve-agreement-sampled",
@@ -488,9 +504,11 @@ mod tests {
                 "graph.pointer-unresolved",
                 "parameter.count-overdeclared",
                 "card.framing-recovered",
+                "global.semantic-context-invalid",
                 "global.numeric-syntax-recovered",
                 "global.length-unit-unresolved",
                 "global.noncanonical-framing",
+                "source.version-flag-invalid",
             ]
         );
         for code in IgesLossCode::ALL {

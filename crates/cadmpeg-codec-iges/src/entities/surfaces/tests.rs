@@ -1249,6 +1249,30 @@ fn type122_projection_keeps_rational_directrix_weights() {
 }
 
 #[test]
+fn a_directrix_pointer_to_no_directory_entry_is_unreadable() {
+    // The Directory section is read in full and holds no D9, so the pointer
+    // breaks the format.
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 122,
+        form: 0,
+        label: "TABULATE".into(),
+        status: "00000000",
+        parameters: "122,9,0,0,2;".into(),
+    }]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(
+        result.report().losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::Cause::Unreadable.kind()
+                && loss.message.contains("directrix entity is missing")
+        }),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
 fn decode_projects_an_exact_placed_hyperbola_revolution() {
     let result = IgesCodec
         .decode(

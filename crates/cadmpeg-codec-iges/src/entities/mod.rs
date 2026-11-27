@@ -208,7 +208,8 @@ fn projected_record(entry: &DirectoryEntry) -> Option<Identity> {
 /// projected record, it pushes the marker that [`give_up_entities`] settles:
 /// the entity's records, named by `record`, are dropped with `needs` where
 /// the decode gives `needs` up, and otherwise the entity is given up on its
-/// own for `cause`. `record` is the id of [`projected_record`], or of the
+/// own for `cause`, or for [`Cause::Unreadable`] where `needs` has no
+/// Directory Entry. `record` is the id of [`projected_record`], or of the
 /// record that the pass mints for the entity in its place. The marker's
 /// severity is that of `cause`. Where `needs` is `None`, it pushes the
 /// entity's own give-up for `cause`.
@@ -373,7 +374,8 @@ fn entity_tag(loss: &LossNote) -> Option<u32> {
 /// place of the pair. The part is the entity's Directory Entry pair. The
 /// native entity record and the `cards` arena keep its bytes, so the part
 /// keeps their digest. Returns the Directory sequences of the given-up
-/// entities and of the quarantined records.
+/// entities, of the entities dropped with them, and of the quarantined
+/// records.
 pub(crate) fn give_up_entities(
     losses: &mut Vec<LossNote>,
     directory: &[DirectoryEntry],
@@ -386,8 +388,8 @@ pub(crate) fn give_up_entities(
     for entry in directory {
         entries.insert(entry.sequence, entry);
     }
-    settle_needs(losses, &entries, ids)?;
-    let mut given_up = ids.quarantined.keys().copied().collect::<BTreeSet<_>>();
+    let mut given_up = settle_needs(losses, &entries, ids)?;
+    given_up.extend(ids.quarantined.keys().copied());
     let mut whys = BTreeSet::new();
     for at in 0..losses.len() {
         let Some(sequence) = given_up_entity(&losses[at]) else {
@@ -438,18 +440,21 @@ pub(crate) fn give_up_entities(
 /// note of the entity's projected record, which names the needed entity as
 /// the decode's give-ups name it: the stub of its part, or its projected
 /// record where it is dropped. The marker's `why` goes. An entity without a
-/// projected record keeps only its `why`, and an entity that needs it names
-/// what it is dropped with. Otherwise the entity is given up on its own,
-/// once, for its marker's cause: none of the entities it needs is given up,
-/// or it needs itself through a cycle of such entities, of which the walk
-/// gives up one. A marker that settles nothing goes with its `why`. Each
-/// [`give_up_record`] marker is settled the same way, as a record that no
-/// entity needs.
+/// projected record keeps no loss, and an entity that needs it names what it
+/// is dropped with. Otherwise the entity is given up on its own, once: none
+/// of the entities it needs is given up, or it needs itself through a cycle
+/// of such entities, of which the walk gives up one. The cause is
+/// [`Cause::Unreadable`] where a sequence that the entity needs has no
+/// Directory Entry in `entries` and no quarantined record, because the
+/// Directory section is read in full; otherwise it is the marker's cause. A
+/// marker that settles nothing goes with its `why`. Each [`give_up_record`]
+/// marker is settled the same way, as a record that no entity needs.
+/// Returns the Directory sequences of the dropped entities.
 fn settle_needs(
     losses: &mut Vec<LossNote>,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     ids: &GivenUpIds<'_>,
-) -> Result<(), CodecError> {
+) -> Result<BTreeSet<u32>, CodecError> {
     let charged = losses
         .iter()
         .filter_map(given_up_entity)
@@ -477,8 +482,17 @@ fn settle_needs(
         }
     }
     if markers.is_empty() && records.is_empty() {
-        return Ok(());
+        return Ok(BTreeSet::new());
     }
+    let absent =
+        |sequence: u32| !entries.contains_key(&sequence) && ids.quarantined(sequence).is_none();
+    let cause = |marker: &LossNote, needed: &[u32]| {
+        if needed.iter().any(|sequence| absent(*sequence)) {
+            Cause::Unreadable
+        } else {
+            marker_cause(marker)
+        }
+    };
     // `Some(needed)`: dropped with `needed`; `None`: given up on its own.
     let mut settled = BTreeMap::<u32, Option<u32>>::new();
     let mut gone = needed_by
@@ -557,6 +571,7 @@ fn settle_needs(
             Some(Some(with)) if with == needed => {
                 let Some(head) = heads.get(&entity) else {
                     removed.insert(at);
+                    removed.extend(why);
                     continue;
                 };
                 let mut note = dropped_with(head.clone(), given_up_id(with)?);
@@ -574,7 +589,8 @@ fn settle_needs(
                 let why = why.and_then(|before| losses.get(before)).ok_or_else(|| {
                     CodecError::malformed(format_args!("IGES give-up of D{entity} has no cause"))
                 })?;
-                GivenUpRecord::caused_by(entity_record(entity), marker_cause(&losses[at]), why)
+                let needed = needs.get(&entity).map_or(&[][..], Vec::as_slice);
+                GivenUpRecord::caused_by(entity_record(entity), cause(&losses[at], needed), why)
                     .loss()
             }
         };
@@ -591,7 +607,7 @@ fn settle_needs(
             note.provenance = provenance;
             note
         } else {
-            let cause = marker_cause(&losses[at]);
+            let cause = cause(&losses[at], &[needed]);
             let why = why.and_then(|before| losses.get(before)).ok_or_else(|| {
                 CodecError::malformed(format_args!("IGES give-up of {record} has no cause"))
             })?;
@@ -602,7 +618,10 @@ fn settle_needs(
         removed.extend(why);
     }
     remove_at(losses, &removed);
-    Ok(())
+    Ok(settled
+        .into_iter()
+        .filter_map(|(entity, with)| with.map(|_| entity))
+        .collect())
 }
 
 /// Settles as dropped each entity that needs an entity of `gone`, and

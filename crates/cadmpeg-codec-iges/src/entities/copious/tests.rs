@@ -323,11 +323,49 @@ fn decode_closes_form_63_with_the_global_minimum_resolution() {
                 .expect("validate the neutral model");
             assert!(validation.is_ok(), "{:#?}", validation.findings);
         } else {
-            assert!(result.report().losses.iter().any(|loss| loss
-                .message
-                .contains("endpoints disagree beyond the minimum resolution")));
+            // The file's positive field 19 states the coincidence rule the
+            // closure breaks.
+            assert!(result.report().losses.iter().any(|loss| {
+                loss.code == cadmpeg_ir::unknown::part::Cause::Unreadable.kind()
+                    && loss
+                        .message
+                        .contains("endpoints disagree beyond the minimum resolution")
+            }));
         }
     }
+}
+
+#[test]
+fn a_form_63_gap_under_a_zero_minimum_resolution_is_undecoded() {
+    // Field 19 is zero, so the file states no coincidence tolerance for the
+    // closure to break.
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.0,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global(
+                &[OwnedTestEntity {
+                    entity_type: 106,
+                    form: 63,
+                    label: "PATH".into(),
+                    status: "00000000",
+                    parameters: "106,1,4,0,0,0,1,0,0,1,0.001,0;".into(),
+                }],
+                global,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result.ir().geometry.curves.is_empty());
+    assert!(
+        result.report().losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::Cause::Undecoded.kind()
+                && loss
+                    .message
+                    .contains("endpoints disagree beyond the minimum resolution")
+        }),
+        "{:#?}",
+        result.report().losses
+    );
 }
 
 #[test]

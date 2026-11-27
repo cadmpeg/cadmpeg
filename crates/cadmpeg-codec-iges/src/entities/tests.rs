@@ -140,7 +140,7 @@ fn an_entity_that_needs_a_given_up_entity_is_dropped_with_it_and_others_keep_the
 
     let image = super::CardImage::new(&[], crate::representation::Representation::FixedAscii);
     let ids = super::GivenUpIds::new(&image, &[], &[]).unwrap();
-    let mut entries = (1..=19).step_by(2).map(curve_entry).collect::<Vec<_>>();
+    let mut entries = (1..=21).step_by(2).map(curve_entry).collect::<Vec<_>>();
     // D15 is a loop, which the projection names by no record of its own.
     entries[7].entity_type = 508;
     let entry = |sequence: u32| &entries[usize::try_from(sequence / 2).unwrap()];
@@ -171,6 +171,8 @@ fn an_entity_that_needs_a_given_up_entity_is_dropped_with_it_and_others_keep_the
     // D15 needs D1, and D19 needs D15.
     needing(&mut losses, 15, 1, Cause::Undecoded);
     needing(&mut losses, 19, 15, Cause::Undecoded);
+    // D21 needs D23, which has no Directory Entry: the pointer is dangling.
+    needing(&mut losses, 21, 23, Cause::Undecoded);
     let by_sequence = entries
         .iter()
         .map(|entry| (entry.sequence, entry))
@@ -178,7 +180,8 @@ fn an_entity_that_needs_a_given_up_entity_is_dropped_with_it_and_others_keep_the
 
     super::settle_needs(&mut losses, &by_sequence, &ids).unwrap();
 
-    // An entity given up on its own keeps the cause of its marker.
+    // An entity given up on its own keeps the cause of its marker, except
+    // that a dangling pointer is unreadable whatever the marker says.
     let charged = losses
         .iter()
         .filter(|loss| gives_up(&loss.code))
@@ -191,17 +194,18 @@ fn an_entity_that_needs_a_given_up_entity_is_dropped_with_it_and_others_keep_the
             (7, Cause::Unreadable.kind()),
             (9, Cause::Undecoded.kind()),
             (13, Cause::Unreadable.kind()),
+            (21, Cause::Unreadable.kind()),
         ]
     );
-    // Each give-up keeps the `why` that `give_up_entities` folds into it,
-    // and D15, which has no projected record to drop, keeps its `why` alone;
-    // the `why` of another dropped entity or of a settled marker goes.
+    // Each give-up keeps the `why` that `give_up_entities` folds into it.
+    // The `why` of a dropped entity goes, also of D15, which has no projected
+    // record to drop: the give-up of D1 is the one entry for the lost fact.
     let whys = losses
         .iter()
         .filter(|loss| loss.code == crate::loss::IgesLossCode::GeometryNotProjected.kind())
         .map(|loss| super::entity_tag(loss).unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(whys, [1, 7, 9, 13, 15]);
+    assert_eq!(whys, [1, 7, 9, 13, 21]);
     let part = |sequence| ids.entity(entry(sequence)).unwrap();
     let curve = |sequence: u32| crate::ids::curve(&crate::ids::Stem::directory(sequence));
     let notes = losses
