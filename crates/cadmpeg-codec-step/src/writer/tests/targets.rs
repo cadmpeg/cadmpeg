@@ -52,7 +52,7 @@ fn source_declaring(identifier: &str) -> cadmpeg_ir::codec::DecodeResult {
 }
 
 fn inherit(encoder: &StepCodec, ir: &CadIr) -> Result<ExportPlan, EncodeError> {
-    encoder.plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+    encoder.plan(EncodeInput::new(ir, None))
 }
 
 fn written_text(plan: ExportPlan) -> String {
@@ -94,7 +94,7 @@ fn planning_reports_unrepresentable_content_under_strict_write_options() {
     };
 
     let plan = encoder
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None))
         .expect("planning returns the representable subset and its losses");
     assert!(
         plan.report().losses.iter().any(|loss| loss.code.to_string()
@@ -304,8 +304,8 @@ fn an_explicit_target_writes_a_source_the_catalog_cannot_inherit() {
     let decoded = source_declaring("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF");
     let plan = StepCodec::default()
         .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit("step:ap242-e3"),
+            EncodeInput::new(decoded.ir(), None)
+                .with_target(TargetRequest::Explicit("step:ap242-e3")),
         )
         .expect("an explicit catalog row writes");
 
@@ -323,8 +323,8 @@ fn an_explicit_target_overrides_the_source_schema() {
     let decoded = source_declaring(StepSchema::Ap203Edition1.file_schema());
     let plan = StepCodec::default()
         .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit("step:ap242-e2"),
+            EncodeInput::new(decoded.ir(), None)
+                .with_target(TargetRequest::Explicit("step:ap242-e2")),
         )
         .expect("an explicit catalog row writes");
 
@@ -350,10 +350,7 @@ fn a_cross_format_conversion_writes_the_catalog_default() {
         std::collections::BTreeMap::new(),
     ));
     let plan = encoder
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(default.id.as_str()),
-        )
+        .plan(EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(default.id.as_str())))
         .expect("the catalog default writes");
 
     assert_eq!(target_of(&plan), Some("step:ap214".to_owned()));
@@ -398,8 +395,7 @@ fn a_dialect_changing_explicit_write_charges_displacement_by_name() {
     let decoded = source_declaring(StepSchema::Ap203Edition1.file_schema());
     let plan = StepCodec::default()
         .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit("step:ap214"),
+            EncodeInput::new(decoded.ir(), None).with_target(TargetRequest::Explicit("step:ap214")),
         )
         .expect("AP214 is a catalog row");
     assert_eq!(
@@ -432,8 +428,8 @@ fn an_explicit_write_at_the_source_dialect_is_not_degraded() {
     let decoded = source_declaring(StepSchema::Ap203Edition1.file_schema());
     let plan = StepCodec::default()
         .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit("step:ap203-e1"),
+            EncodeInput::new(decoded.ir(), None)
+                .with_target(TargetRequest::Explicit("step:ap203-e1")),
         )
         .expect("AP203 edition 1 is a catalog row");
     assert_eq!(
@@ -503,8 +499,8 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
     for schema in StepSchema::ALL {
         let plan = StepCodec::default()
             .plan(
-                EncodeInput::new(&cube, None),
-                TargetRequest::Explicit(schema.descriptor().id.as_str()),
+                EncodeInput::new(&cube, None)
+                    .with_target(TargetRequest::Explicit(schema.descriptor().id.as_str())),
             )
             .unwrap_or_else(|error| panic!("{schema:?} is a catalog row, got {error}"));
         let claimed = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(

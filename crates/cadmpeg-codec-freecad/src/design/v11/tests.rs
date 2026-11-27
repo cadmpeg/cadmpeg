@@ -71,10 +71,8 @@ const GROUP: &str = "fcstd:design:container#document:group";
 /// The CADIR write of `ir` read back, and each record id an `arena.omitted`
 /// loss of the write names.
 fn cadir_round_trip(ir: &CadIr) -> (CadIr, BTreeSet<String>) {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, CadirEncoder, EncodeInput, Encoder};
-    let plan = CadirEncoder
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
-        .unwrap();
+    use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
+    let plan = CadirEncoder.plan(EncodeInput::new(ir, None)).unwrap();
     let omitted = plan
         .report()
         .losses
@@ -187,7 +185,7 @@ fn a_partdesign_body_is_an_ordered_body_container_at_its_tip() {
 /// CADIR write charges it on the omitted model features.
 #[test]
 fn the_body_container_restates_the_body_feature_without_its_name() {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, CadirEncoder, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
 
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(DESIGN_HISTORY), &DecodeOptions::default())
@@ -212,7 +210,7 @@ fn the_body_container_restates_the_body_feature_without_its_name() {
     assert!(!cut.contains("outputs"), "{cut:?}");
 
     let plan = CadirEncoder
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, None))
         .expect("the CADIR writer drops what it cannot write");
     let charged = plan
         .report()

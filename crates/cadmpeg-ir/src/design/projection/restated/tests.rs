@@ -7,13 +7,14 @@ use cadmpeg_core::text::NonBlankString;
 
 use super::same_id_cuts;
 use crate::design::construction::{Construction, FrameValue};
+use crate::design::dimension::Dimension;
 use crate::design::evaluation::EvaluationStatus;
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use crate::design::ops::sketch::{
-    DefiningRole, EntityDefinition, EntityRole, Planar, PlanarCurve, Sketch, SketchEntity,
-    SketchPlane, SketchSolve,
+    DefiningRole, EntityDefinition, EntityForm, EntityRole, Planar, PlanarCurve, Sketch,
+    SketchConstraint, SketchEntity, SketchPlane, SketchRelation, SketchSolve,
 };
-use crate::design::options::NativeOptions;
+use crate::design::options::{NativeOption, NativeOptions};
 use crate::design::parameter::{
     DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue,
 };
@@ -26,8 +27,10 @@ use crate::ids::ProductDefinitionId;
 use crate::math::{Point2, Point3, Vector3};
 use crate::scalar::{FiniteReal, Length};
 use crate::sketches::{
-    Sketch as ModelSketch, SketchEntity as ModelEntity, SketchEntityId, SketchGeometry,
-    SketchGeometryDefinition, SketchId, SketchPlacement, SketchProfiles,
+    Sketch as ModelSketch, SketchConstraint as ModelConstraint, SketchConstraintDefinition,
+    SketchConstraintDefinitionInput, SketchConstraintId, SketchEntity as ModelEntity,
+    SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchPlacement,
+    SketchProfiles,
 };
 use crate::units::UnitVector3;
 use crate::CadIr;
@@ -55,6 +58,12 @@ fn cuts(ir: &CadIr) -> BTreeMap<String, BTreeSet<String>> {
                 .parameters
                 .iter()
                 .map(|parameter| parameter.id.as_str()),
+        )
+        .chain(
+            ir.model
+                .sketch_constraints
+                .iter()
+                .map(|constraint| constraint.id.as_str()),
         )
         .collect::<HashSet<_>>();
     same_id_cuts(ir, &written)
@@ -256,6 +265,136 @@ fn a_projected_sketch_on_another_frame_names_its_placement() {
     assert_eq!(cuts(&ir)[SKETCH], fields(["placement"]));
 }
 
+/// The model entity `key` of `ir`, and the design entity of its identity.
+fn entity_pair<'ir>(
+    ir: &'ir mut CadIr,
+    key: &str,
+) -> (&'ir mut ModelEntity, &'ir mut SketchEntity<Planar>) {
+    let model = ir
+        .model
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id().as_str() == key)
+        .unwrap();
+    let design = ir
+        .design
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id.as_str() == key)
+        .unwrap();
+    (model, design)
+}
+
+/// A design entity that states no construction flag states `false`: it
+/// carries a record flag of `false` and names a record flag of `true`. A
+/// stated flag other than the record's names it.
+#[test]
+fn an_unstated_construction_flag_is_false() {
+    let cut = |model: bool, design: Option<bool>| {
+        let mut ir = sketch_fixture();
+        let (model_point, design_point) = entity_pair(&mut ir, START);
+        model_point.construction = model;
+        design_point.construction = design;
+        cuts(&ir)[START].clone()
+    };
+    assert_eq!(cut(false, None), fields([]));
+    assert_eq!(cut(false, Some(true)), fields(["construction"]));
+    assert_eq!(cut(true, None), fields(["construction"]));
+}
+
+/// A design entity carries a record curve of a native kind where its native
+/// form names that kind, alone or in the namespace of a codec, and names it
+/// where the form names another kind.
+#[test]
+fn a_native_form_carries_the_native_kind_in_a_codec_namespace() {
+    let cut = |stated: &str| {
+        let mut ir = sketch_fixture();
+        let (model_point, design_point) = entity_pair(&mut ir, START);
+        model_point.geometry = geometry(SketchGeometryDefinition::Native {
+            native_kind: NonBlankString::new("conic".to_owned()).unwrap(),
+        });
+        design_point.definition = EntityDefinition::Defined {
+            form: Box::new(EntityForm::Native(
+                NonBlankString::new(stated.to_owned()).unwrap(),
+            )),
+            solved: None,
+        };
+        cuts(&ir)[START].clone()
+    };
+    assert_eq!(cut("conic"), fields([]));
+    assert_eq!(cut("test:conic"), fields([]));
+    assert_eq!(cut("test:spline"), fields(["geometry"]));
+}
+
+const CONSTRAINT: &str = "test:design:constraint#length";
+
+/// A reference length on the fixture's line, active and of orientation 3,
+/// and the design constraint that binds the line's length to a parameter of
+/// `definition`, with the activity flag `active` and an orientation option
+/// of `orientation`.
+fn constraint_fixture(definition: ParameterDefinition, active: bool, orientation: i64) -> CadIr {
+    let mut ir = sketch_fixture();
+    ir.model.sketch_constraints.push(ModelConstraint {
+        id: SketchConstraintId::mint(CONSTRAINT).unwrap(),
+        sketch: sketch_id(),
+        definition: SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Coincident {
+                entities: vec![entity_id(START), entity_id(END)],
+            },
+        )
+        .unwrap(),
+        name: None,
+        driving: Some(false),
+        active: Some(true),
+        virtual_space: None,
+        visible: None,
+        orientation: Some(3),
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: None,
+    });
+    let mut parameter = design_parameter("length", "length");
+    parameter.definition = definition;
+    ir.design.parameters.push(parameter);
+    ir.design
+        .sketch_constraints
+        .push(SketchConstraint::<Planar> {
+            id: SketchConstraintId::mint(CONSTRAINT).unwrap(),
+            sketch: sketch_id(),
+            relation: SketchRelation::Length {
+                of: vec![entity_id(LINE)],
+                value: Dimension::Parameter(parameter_id("length")),
+            },
+            name: None,
+            active: Some(Dimension::Literal(active)),
+            native_options: NativeOptions::from([(
+                crate::codec_name!("test:orientation"),
+                NativeOption::Integer(Dimension::Literal(orientation)),
+            )]),
+            source_settings: NativeOptions::new(),
+            native_ref: None,
+        });
+    ir
+}
+
+/// A design constraint states a reference by the `Driven` parameter it
+/// binds, its activity as a literal, and its orientation as a
+/// `<codec>:orientation` option; it names each that differs. The record's
+/// definition stays named, since no typed comparison maps it to the
+/// relation.
+#[test]
+fn a_projected_constraint_carries_its_driving_active_and_orientation_flags() {
+    assert_eq!(
+        cuts(&constraint_fixture(ParameterDefinition::Driven, true, 3))[CONSTRAINT],
+        fields(["definition"])
+    );
+    assert_eq!(
+        cuts(&constraint_fixture(ParameterDefinition::Unset, false, 4))[CONSTRAINT],
+        fields(["active", "definition", "driving", "orientation"])
+    );
+}
+
 const SCOPE: &str = "test:design:product-definition#root";
 const COMPONENT: &str = "test:design:product-definition#component";
 
@@ -309,41 +448,34 @@ fn parameter_ir(models: Vec<ModelParameter>, designs: Vec<DesignParameter>) -> C
     ir
 }
 
-/// The design parameter arena holds the order of the numbers the ids carry:
-/// a parameter whose ordinal follows them keeps its ordinal, one whose
-/// ordinal reverses them names it.
+/// Only a spreadsheet orders design parameters: two parameters of one owner
+/// that no sheet lists name their ordinals, whichever order their ids take,
+/// and a parameter with no other of its owner keeps its ordinal.
 #[test]
-fn a_parameter_ordinal_follows_the_numbers_of_the_ids() {
+fn a_parameter_ordinal_is_carried_only_where_the_design_orders_it() {
     let designs = || {
         vec![
-            design_parameter("sketch:10", "sketch:10"),
             design_parameter("sketch:7", "sketch:7"),
+            design_parameter("sketch:10", "sketch:10"),
         ]
     };
-    let ordered = cuts(&parameter_ir(
+    let pair = cuts(&parameter_ir(
         vec![
             model_parameter("sketch:7", 0),
             model_parameter("sketch:10", 1),
         ],
         designs(),
     ));
-    assert_eq!(ordered[parameter_id("sketch:7").as_str()], fields([]));
-    assert_eq!(ordered[parameter_id("sketch:10").as_str()], fields([]));
-    let reversed = cuts(&parameter_ir(
-        vec![
-            model_parameter("sketch:7", 1),
-            model_parameter("sketch:10", 0),
-        ],
+    assert_eq!(pair[parameter_id("sketch:7").as_str()], fields(["ordinal"]));
+    assert_eq!(
+        pair[parameter_id("sketch:10").as_str()],
+        fields(["ordinal"])
+    );
+    let lone = cuts(&parameter_ir(
+        vec![model_parameter("sketch:7", 3)],
         designs(),
     ));
-    assert_eq!(
-        reversed[parameter_id("sketch:7").as_str()],
-        fields(["ordinal"])
-    );
-    assert_eq!(
-        reversed[parameter_id("sketch:10").as_str()],
-        fields(["ordinal"])
-    );
+    assert_eq!(lone[parameter_id("sketch:7").as_str()], fields([]));
 }
 
 /// A design parameter named by the stored name the model keeps in
@@ -407,8 +539,8 @@ fn a_parameter_definition_is_carried_by_its_owner_feature_component() {
 }
 
 /// A spreadsheet cell's position is its position among the cells of its
-/// design sheet: cells the sheet lists in their stored order keep their
-/// ordinals, where the numbers of their ids order them otherwise.
+/// design sheet: cells the sheet lists in the order of their ordinals keep
+/// them, and cells no sheet lists name them.
 #[test]
 fn a_cell_parameter_ordinal_follows_the_cells_of_its_sheet() {
     use crate::spreadsheets::{CellAddress, SpreadsheetCell, SpreadsheetId};

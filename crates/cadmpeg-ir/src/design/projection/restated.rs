@@ -506,10 +506,11 @@ fn stated_under_own_id(restated: &Restatements, id: &str) -> bool {
 /// where `written` holds the identity of the record, so a design record of
 /// its identity is written, and no projection stated what that design
 /// record leaves out: the write compares the two records (§3.2). A feature,
-/// a parameter, a sketch and a sketch entity are compared field by field; a record of another kind
-/// leaves out each field whose value the design record does not hold under
-/// the field's name. A record the comparison cannot read is left out of the
-/// result, so the write charges it whole.
+/// a parameter, a sketch, a sketch entity and a sketch constraint are
+/// compared field by field; a record of another kind leaves out each field
+/// whose value the design record does not hold under the field's name. A
+/// record the comparison cannot read is left out of the result, so the
+/// write charges it whole.
 pub(crate) fn same_id_cuts<'ir>(
     ir: &'ir CadIr,
     written: &HashSet<&'ir str>,
@@ -550,6 +551,7 @@ pub(crate) fn same_id_cuts<'ir>(
     {
         insert(id, cut);
     }
+    cuts.extend(sketches::constraint_cuts(ir, &compared));
     let models = model_values(ir, &compared);
     let wanted = models.iter().map(|(id, _)| *id).collect::<HashSet<_>>();
     let designs = design_values(ir, &wanted);
@@ -611,13 +613,14 @@ fn record_values<'ir, T: ArenaRecord + Serialize>(
 }
 
 /// Adds the records of a model arena the CADIR wire omits to `$into`,
-/// except the features, parameters, sketches and sketch entities, which are
-/// compared field by field.
+/// except the features, parameters, sketches, sketch entities and sketch
+/// constraints, which are compared field by field.
 macro_rules! compared_model_arena {
     (features, $ir:ident, $compared:ident, $into:ident) => {};
     (parameters, $ir:ident, $compared:ident, $into:ident) => {};
     (sketches, $ir:ident, $compared:ident, $into:ident) => {};
     (sketch_entities, $ir:ident, $compared:ident, $into:ident) => {};
+    (sketch_constraints, $ir:ident, $compared:ident, $into:ident) => {};
     ($field:ident, $ir:ident, $compared:ident, $into:ident) => {
         record_values(&$ir.model.$field, $compared, &mut $into);
     };
@@ -627,7 +630,7 @@ macro_rules! declare_model_values {
     ($($field:ident: $ty:ty, $class:ident, $home:ident;)*) => {
         /// The identity and wire form of each record of the arenas the CADIR
         /// wire omits that `compared` accepts, except the features,
-        /// parameters, sketches and sketch entities.
+        /// parameters, sketches, sketch entities and sketch constraints.
         fn model_values<'ir>(
             ir: &'ir CadIr,
             compared: &dyn Fn(&str) -> bool,

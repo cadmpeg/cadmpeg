@@ -262,10 +262,10 @@ fn bound_constraint(is_driving: &str) -> CadIr {
 /// The fields a CADIR write of `ir` names for the model parameter `id`:
 /// none where it carries the parameter whole.
 fn parameter_charge(ir: &CadIr, id: &str) -> Vec<String> {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, CadirEncoder, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
 
     let plan = CadirEncoder
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, None))
         .expect("the CADIR writer drops what it cannot write");
     let Some(loss) = plan.report().losses.iter().find(|loss| {
         loss.code.local_code() == "arena.omitted"

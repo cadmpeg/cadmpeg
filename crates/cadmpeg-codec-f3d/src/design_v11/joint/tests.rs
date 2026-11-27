@@ -1201,7 +1201,6 @@ fn a_group_member_off_the_group_placement_is_cut_in_its_operands() {
 /// joint, so the write charges only the joint no feature restates.
 #[test]
 fn a_cadir_write_carries_the_joints_their_features_restate() {
-    use cadmpeg_ir::codec::write::target::TargetRequest;
     use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
 
     let group = [
@@ -1284,7 +1283,7 @@ fn a_cadir_write_carries_the_joints_their_features_restate() {
     .expect("restate");
 
     let plan = CadirEncoder
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&ir, None))
         .expect("plan");
     let joints = plan
         .report()
