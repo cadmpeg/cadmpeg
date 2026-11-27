@@ -486,6 +486,16 @@ impl RhinoLossCode {
         }
     }
 
+    /// The strict floor `rhino_3dm.md` §21 states: the repair of a redundant
+    /// count or index that disagrees with the data it describes, with the
+    /// data kept, pins Warning.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::RedundantFieldRepaired => Some(Severity::Warning),
+            _ => None,
+        }
+    }
+
     /// Namespaced [`LossKind`] for this local code.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
@@ -499,6 +509,7 @@ impl RhinoLossCode {
             self.code(),
             self.shared_taxonomy(),
         )
+        .with_strict_floor(self.strict_floor())
         .into()
     }
 
@@ -658,12 +669,20 @@ mod tests {
         );
     }
 
-    /// `rhino_3dm.md` §21 states no strict floor for a Rhino code: a given-up
-    /// record refuses a pinned decode through `record.unreadable`.
+    /// `rhino_3dm.md` §21 states strict floor Warning for the repair of a
+    /// redundant field and for no other Rhino code: a given-up record
+    /// refuses a pinned decode only through `record.unreadable`.
     #[test]
-    fn no_rhino_code_pins_a_strict_floor() {
+    fn only_the_redundant_field_repair_pins_a_strict_floor() {
         for code in RhinoLossCode::ALL {
-            assert_eq!(code.kind().strict_floor(), None, "{}", code.code());
+            let expected = (*code == RhinoLossCode::RedundantFieldRepaired)
+                .then_some(cadmpeg_ir::report::Severity::Warning);
+            assert_eq!(code.kind().strict_floor(), expected, "{}", code.code());
         }
+        assert!(cadmpeg_ir::report::strictness::Strictness {
+            pinned: true,
+            ..Default::default()
+        }
+        .refuses(&RhinoLossCode::RedundantFieldRepaired.note("x"), false));
     }
 }

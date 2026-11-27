@@ -828,7 +828,8 @@ severity reaches that floor. These codes carry strict floor Warning:
 `iges/global.numeric-syntax-recovered`,
 `iges/global.length-unit-unresolved`,
 `iges/global.noncanonical-framing`, `iges/parameter.literal-unusable`,
-`iges/parameter.count-overdeclared`, and `iges/card.framing-recovered`. Every
+`iges/parameter.count-overdeclared`, `iges/card.framing-recovered`, and
+`iges/geometry.spline-claim-recovered`. Every
 other IGES loss is recorded in the decode report in both modes. A quarantined record
 and a repeated Compressed ASCII Data record charge `record.unreadable` (CADIR
 §3.3), which has strict floor Error. An entity of a projected type and form

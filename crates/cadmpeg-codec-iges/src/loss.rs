@@ -333,7 +333,8 @@ impl IgesLossCode {
             | Self::GlobalNoncanonicalFraming
             | Self::ParameterLiteralUnusable
             | Self::ParameterCountOverdeclared
-            | Self::CardFramingRecovered => Some(Severity::Warning),
+            | Self::CardFramingRecovered
+            | Self::SplineClaimRecovered => Some(Severity::Warning),
             _ => None,
         }
     }
@@ -485,6 +486,7 @@ mod tests {
             [
                 "directory.metadata-noncanonical",
                 "parameter.literal-unusable",
+                "geometry.spline-claim-recovered",
                 "graph.pointer-unresolved",
                 "parameter.count-overdeclared",
                 "card.framing-recovered",

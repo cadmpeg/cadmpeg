@@ -7142,7 +7142,12 @@ object record remains opaque and no partial typed topology is committed.
 
 ## 21. Strict floors
 
-No Rhino loss code carries a strict floor. The decoder gives up a framed
+`rhino/container.redundant-field-repaired` carries strict floor Warning (CADIR
+§3.2). It records a redundant count, size, or positional index that disagrees
+with the data it describes: the decoder keeps the data by the rule the
+sections above state for each such field, so the output holds what the stored
+form does not state as the format requires. No other Rhino loss code carries a
+strict floor. The decoder gives up a framed
 record as a part (CADIR §3.3) when its framing does not decode, its payload
 does not parse, its version or form has no typed reading, its unit system does
 not bind, or a count is above its bound. The part kind identifies the record:
