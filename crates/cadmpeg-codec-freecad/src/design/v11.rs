@@ -548,8 +548,7 @@ impl<'a> Source<'a> {
 
     /// The `Placement` that object `object` stores, as a construction: `None`
     /// where it stores none or the identity, which no binding of it is
-    /// stated for (§2.4). The product layer refuses an unreadable
-    /// `Placement` before this projection runs.
+    /// stated for (§2.4), and where the product layer reports it unreadable.
     fn placement(&self, object: &str) -> Option<Box<Construction<kinds::Frame>>> {
         let frame = crate::placement::placement_matrix_unreported(self.placements.get(object)?)?;
         if frame.transform() == Transform::identity() {

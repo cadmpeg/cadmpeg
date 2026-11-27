@@ -80,6 +80,9 @@ pub(crate) enum FreecadLossCode {
     /// A link that follows its linked object's own placement places an
     /// object the scope holds no own occurrence of.
     FeatureLinkPlacementUnresolved,
+    /// An object stores `LinkPlacement` and `Placement` with different values
+    /// and no readable `LinkTransform`; the decoder applies `Placement`.
+    AssemblyLinkTransformAssumed,
     /// A design parameter stores an empty expression; its stored value stands
     /// as its definition.
     ParameterExpressionEmpty,
@@ -169,6 +172,7 @@ impl FreecadLossCode {
         Self::FeatureRemovalWithoutBase,
         Self::FeaturePrimitivePlacementUnresolved,
         Self::FeatureLinkPlacementUnresolved,
+        Self::AssemblyLinkTransformAssumed,
         Self::ParameterExpressionEmpty,
         Self::SketchNativeGeometry,
         Self::SketchNurbsNative,
@@ -230,6 +234,7 @@ impl FreecadLossCode {
             Self::FeatureCyclicHistory => "feature.cyclic-history",
             Self::FeaturePrimitivePlacementUnresolved => "feature.primitive-placement-unresolved",
             Self::FeatureLinkPlacementUnresolved => "feature.link-placement-unresolved",
+            Self::AssemblyLinkTransformAssumed => "assembly.link-transform-assumed",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::FeatureRevolutionNotTransferred => "feature.revolution-not-transferred",
             Self::ParameterExpressionEmpty => "parameter.expression-empty",
@@ -308,6 +313,7 @@ impl FreecadLossCode {
             | Self::SketchProfileMatchingBounded
             | Self::ParameterExpressionEmpty
             | Self::FeatureLinkPlacementUnresolved
+            | Self::AssemblyLinkTransformAssumed
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved
             | Self::PersistenceCountNoncanonical
@@ -385,6 +391,7 @@ impl FreecadLossCode {
             | Self::FileVersionNoncanonical
             | Self::FileVersionUnverified => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::ElementMapVersionUnresolved => LossTaxonomy::RecordNotTyped,
+            Self::AssemblyLinkTransformAssumed => LossTaxonomy::DecodeDiagnostic,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceGuiSchemaUnverified => LossTaxonomy::SourceDialectUnverified,
         }
@@ -446,6 +453,7 @@ mod tests {
                 "feature.removal-without-base",
                 "feature.primitive-placement-unresolved",
                 "feature.link-placement-unresolved",
+                "assembly.link-transform-assumed",
                 "parameter.expression-empty",
                 "sketch.native-geometry",
                 "sketch.nurbs-native",

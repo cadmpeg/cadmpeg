@@ -235,17 +235,7 @@ fn application_mesh_links_select_prototype_placement_once() {
                 .unwrap(),
             1
         );
-        // A mesh object owns no `Shape` body, so it has no own occurrence,
-        // and a link that follows its placement states no `Place.placement`
-        // (§6.7). The same holds where the linked object is a link, is in a
-        // document that was not read, is listed only through a Body or a
-        // copy-on-change group, or stores no placement.
-        let expected: &[&str] = if prototype_transform {
-            &["fcstd/feature.link-placement-unresolved"]
-        } else {
-            &[]
-        };
-        assert_eq!(loss_codes(&result), expected);
+        assert_eq!(loss_codes(&result), Vec::<String>::new());
     }
 }
 
@@ -378,10 +368,7 @@ fn application_mesh_link_scale_transforms_prototype_translation_and_vertices() {
         1,
         [[6.0, 0.0, 0.0], [2.0, 0.0, 0.0], [6.0, 9.0, 0.0]],
     );
-    assert_eq!(
-        loss_codes(&result),
-        ["fcstd/feature.link-placement-unresolved"]
-    );
+    assert_eq!(loss_codes(&result), Vec::<String>::new());
 }
 
 #[test]
@@ -448,4 +435,60 @@ fn application_mesh_nested_link_fanout_has_a_shared_work_bound() {
         0,
         [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 3.0, 0.0]],
     );
+}
+
+#[test]
+fn a_link_to_a_mesh_places_after_the_mesh_occurrence() {
+    let mut link = linked("Mesh", true);
+    link.push(placement("LinkPlacement", [10.0, 20.0, 30.0], false));
+    let result = decode(
+        &[
+            (
+                "Mesh",
+                "Mesh::Feature",
+                mesh_properties([100.0, 200.0, 300.0], true),
+            ),
+            ("Link", "App::Link", link),
+        ],
+        &[],
+    );
+    let ir = result.ir();
+    // The mesh is in its object's frame (§6.7): the object's own appearance is
+    // an occurrence at its `Placement`.
+    let own = ir
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.id.as_str().ends_with("#Mesh:container"))
+        .unwrap_or_else(|| panic!("{:?}", ir.model.occurrences));
+    let rows = own.transform.expect("the mesh's Placement").affine_rows();
+    assert_eq!([rows[0][3], rows[1][3], rows[2][3]], [100.0, 200.0, 300.0]);
+    let place = ir
+        .design
+        .features
+        .iter()
+        .find_map(|feature| match &feature.definition.operation {
+            cadmpeg_ir::design::feature::FeatureOperation::Place(place)
+                if feature.native_ref.as_deref() == Some("fcstd:native:object#Link") =>
+            {
+                Some(place)
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("{:?}", ir.design.features));
+    assert_eq!(
+        place.base,
+        Some(cadmpeg_ir::design::ops::assembly::PlacementBase::OwnOccurrence)
+    );
+    let origin = place
+        .placement
+        .as_ref()
+        .expect("the link's LinkPlacement")
+        .resolved
+        .as_ref()
+        .expect("a resolved frame")
+        .origin
+        .get();
+    assert_eq!([origin.x, origin.y, origin.z], [10.0, 20.0, 30.0]);
+    assert_eq!(loss_codes(&result), Vec::<String>::new());
 }

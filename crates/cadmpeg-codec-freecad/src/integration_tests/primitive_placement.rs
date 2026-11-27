@@ -856,18 +856,31 @@ fn primitive_placement_ambiguous_support_names_remain_native_with_loss() {
 }
 
 #[test]
-fn primitive_placement_refuses_multiple_part_parents() {
+fn primitive_placement_with_multiple_part_parents_keeps_the_first_container() {
     let document = box_document("0", PLACEMENT).replace("PartDesign::Body", "App::Part")
         .replace("<Objects Count=\"2\">", "<Objects Count=\"3\"><Object type=\"App::Part\" name=\"OtherBody\"/>")
         .replace("<ObjectData Count=\"2\">", "<ObjectData Count=\"3\">")
         .replace("</ObjectData>", &format!(r#"<Object name="OtherBody"><Properties Count="2"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Box"/></LinkList></Property>{PLACEMENT}</Properties></Object></ObjectData>"#));
-    let error = FcstdCodec
+    let decoded = FcstdCodec
         .decode(
             &mut Cursor::new(archive(&document)),
             &DecodeOptions::default(),
         )
-        .unwrap_err();
-    assert!(error.to_string().contains("multiple parent containers"));
+        .unwrap();
+    let given_up = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(given_up.len(), 1, "{given_up:?}");
+    assert!(given_up[0].starts_with("record fcstd:native:property#Body:Group given up"));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|l| l.code.local_code() == "feature.primitive-placement-unresolved"));
 }
 
 #[test]

@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product containers and link occurrences recovered from the application graph.
 
+use crate::loss::FreecadLossCode;
 use crate::native::frame::FiniteFrame;
 use crate::native::joint::JointRecord;
 use crate::placement::{placement_components, placement_matrix};
 use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::ids::Identity;
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::tessellation::Tessellation;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::num::{NonZeroU64, NonZeroUsize};
 
@@ -29,11 +34,85 @@ use cadmpeg_ir::units::FiniteVector;
 /// Elements one restored link array may contain. A larger count is malformed.
 const MAX_LINK_ARRAY_ELEMENTS: usize = 1_000_000;
 
+/// The product records of a document, and the product objects among them
+/// whose placement, scale, or element placements are stored in a form the
+/// decoder cannot read.
+pub(crate) struct ProductNodes {
+    pub(crate) records: Vec<ProductNodeRecord>,
+    pub(crate) unplaced: HashSet<String>,
+}
+
+/// A property value of one object.
+enum Stored<'a, T> {
+    Absent,
+    Read(T),
+    /// The property is stored in a form the decoder cannot read.
+    Unreadable(&'a PropertyRecord, CodecError),
+}
+
+impl<T> Stored<'_, T> {
+    fn read(self) -> Option<T> {
+        match self {
+            Self::Read(value) => Some(value),
+            Self::Absent | Self::Unreadable(..) => None,
+        }
+    }
+
+    /// The value read, with an unreadable property reported to `losses`.
+    fn reported(self, losses: &mut Vec<LossNote>) -> Result<Option<T>, CodecError> {
+        match self {
+            Self::Absent => Ok(None),
+            Self::Read(value) => Ok(Some(value)),
+            Self::Unreadable(property, error) => {
+                give_up(losses, property, error, None)?;
+                Ok(None)
+            }
+        }
+    }
+}
+
+/// Reads property `name` of an object whose properties are `owned`.
+fn stored<'a, T>(
+    owned: &[&'a PropertyRecord],
+    name: &str,
+    read: impl FnOnce(&'a PropertyRecord) -> Result<T, CodecError>,
+) -> Stored<'a, T> {
+    let Some(property) = owned.iter().copied().find(|property| property.name == name) else {
+        return Stored::Absent;
+    };
+    match read(property) {
+        Ok(value) => Stored::Read(value),
+        Err(error) => Stored::Unreadable(property, error),
+    }
+}
+
+/// Reports property `property`, given up for `error`, and the record
+/// `dropped` that the decoder builds only from it (§3.3).
+pub(crate) fn give_up(
+    losses: &mut Vec<LossNote>,
+    property: &PropertyRecord,
+    error: CodecError,
+    dropped: Option<&str>,
+) -> Result<(), CodecError> {
+    if matches!(error, CodecError::ResourceLimit(_)) {
+        return Err(error);
+    }
+    let record = Identity::try_from(property.id.as_str()).map_err(CodecError::malformed)?;
+    let mut given_up =
+        GivenUpRecord::new(record, format_args!("object {}: {error}", property.owner));
+    if let Some(dropped) = dropped {
+        given_up = given_up.dropping([Identity::try_from(dropped).map_err(CodecError::malformed)?]);
+    }
+    losses.push(given_up.loss());
+    Ok(())
+}
+
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
-) -> Result<Vec<ProductNodeRecord>, CodecError> {
+    losses: &mut Vec<LossNote>,
+) -> Result<ProductNodes, CodecError> {
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         if !by_owner.contains_key(property.owner.as_str()) {
@@ -44,6 +123,7 @@ pub(crate) fn transfer(
         }
     }
     let mut output = Vec::new();
+    let mut unplaced = HashSet::new();
     for object in objects {
         let Some(kind) = product_kind(&object.type_name) else {
             continue;
@@ -68,74 +148,168 @@ pub(crate) fn transfer(
             // absence cannot be replaced with an empty group or local prototype.
             continue;
         }
-        let group = sole_named_property("product", &owned, "Group")?;
-        let members = group
-            .map(|property| link_list(property, "App::PropertyLinkList", "Group"))
-            .transpose()?
-            .map(linked_object_names)
-            .unwrap_or_default();
-        let linked = sole_named_property("product", &owned, "LinkedObject")?;
-        let prototype_link = linked
-            .map(|property| single_link(property, "App::PropertyXLink", "XLink", "LinkedObject"))
-            .transpose()?
-            .flatten();
-        let placement = selected_placement(&owned)?;
-        let local_transform = placement.map(placement_matrix).transpose()?.flatten();
-        let link_transform = bool_property(&owned, "LinkTransform")?;
-        let element_count =
-            integer_property(&owned, "ElementCount", "App::PropertyIntegerConstraint")?
-                .map(u64::try_from)
-                .transpose()
-                .map_err(|_| malformed("negative ElementCount"))?;
-        let claim_child = bool_property(&owned, "LinkClaimChild")?;
-        let copy_on_change = copy_on_change_property(&owned)?;
-        let copy_on_change_source = linked_target(
-            &owned,
-            "LinkCopyOnChangeSource",
-            "App::PropertyXLink",
-            "XLink",
-        )?;
+        let id = crate::native::native_id("product", object.name());
+        let occurrence = kind == ProductKind::Occurrence;
+        // A node built without one of these fields places the wrong objects.
+        let mut membership = Vec::new();
+        let members = sole(
+            stored(&owned, "Group", |property| {
+                link_list(property, "App::PropertyLinkList", "Group").map(linked_object_names)
+            }),
+            &mut membership,
+        )
+        .unwrap_or_default();
+        let element_objects = sole(
+            stored(&owned, "ElementList", |property| {
+                let names = linked_object_names(link_list(
+                    property,
+                    "App::PropertyLinkList",
+                    "ElementList",
+                )?);
+                if names.len() > MAX_LINK_ARRAY_ELEMENTS {
+                    return Err(malformed(format!(
+                        "ElementList lists {} objects, more than {MAX_LINK_ARRAY_ELEMENTS}",
+                        names.len()
+                    )));
+                }
+                Ok(names)
+            }),
+            &mut membership,
+        )
+        .unwrap_or_default();
+        let mut linked_target = |name: &str, expected_type: &str, root: &str| {
+            if !occurrence {
+                return None;
+            }
+            sole(
+                stored(&owned, name, |property| {
+                    Ok(single_link(property, expected_type, root, name)?.cloned())
+                }),
+                &mut membership,
+            )
+            .flatten()
+        };
+        let prototype_link = linked_target("LinkedObject", "App::PropertyXLink", "XLink");
+        let copy_on_change_source =
+            linked_target("LinkCopyOnChangeSource", "App::PropertyXLink", "XLink");
         let copy_on_change_group =
-            linked_target(&owned, "LinkCopyOnChangeGroup", "App::PropertyLink", "Link")?;
-        let copy_on_change_touched = bool_property(&owned, "LinkCopyOnChangeTouched")?;
-        let scale = scale_property(&owned, kind == ProductKind::Occurrence)?;
-        let element_visibility = bool_list(&owned, "VisibilityList")?;
-        let element_objects = sole_named_property("product", &owned, "ElementList")?
-            .map(|property| link_list(property, "App::PropertyLinkList", "ElementList"))
-            .transpose()?
-            .map(linked_object_names)
-            .unwrap_or_default();
-        let placement_property = placement.map(|property| property.id.clone());
+            linked_target("LinkCopyOnChangeGroup", "App::PropertyLink", "Link");
+        if !membership.is_empty() {
+            let mut dropped = Some(id.as_str());
+            for (property, error) in membership {
+                give_up(losses, property, error, dropped.take())?;
+            }
+            continue;
+        }
+        let (local_transform, placement_property) = match object_placement(&owned, losses)? {
+            Placed::Unstated => (None, None),
+            Placed::At(property, frame) => (Some(frame), Some(property.id.clone())),
+            Placed::Unknown => {
+                unplaced.insert(object.id().to_owned());
+                (None, None)
+            }
+        };
         let node = match kind {
-            ProductKind::Occurrence => ProductNode::Occurrence(Box::new(LinkOccurrence {
-                members,
-                prototype: prototype_link
-                    .and_then(|link| link.object())
-                    .map(ToOwned::to_owned),
-                external_document: prototype_link.and_then(|link| link.document()).cloned(),
-                local_transform,
-                placement_property,
-                array: crate::native::LinkArray::new(
-                    element_count,
-                    parse_placement_list(&owned, entries)?,
-                    parse_vector_list(&owned, entries)?,
-                    element_visibility,
-                    element_objects,
-                ),
-                link_transform,
-                linked_subelements: prototype_link
-                    .map(|link| nonempty_subelements(link.subelements()))
-                    .unwrap_or_default(),
-                claim_child,
-                copy_on_change: crate::native::CopyOnChange::from_admitted(
-                    copy_on_change,
+            ProductKind::Occurrence => {
+                let mut placeable = true;
+                let scale = placement_value(scale_property(&owned, true), &mut placeable, losses)?
+                    .flatten();
+                let element_transforms = placement_value(
+                    stored(&owned, "PlacementList", |property| {
+                        parse_placement_list(property, entries)
+                    }),
+                    &mut placeable,
+                    losses,
+                )?
+                .unwrap_or_default();
+                let element_scales = placement_value(
+                    stored(&owned, "ScaleList", |property| {
+                        parse_vector_list(property, entries)
+                    }),
+                    &mut placeable,
+                    losses,
+                )?
+                .unwrap_or_default();
+                if !placeable {
+                    unplaced.insert(object.id().to_owned());
+                }
+                let element_count =
+                    stored(&owned, "ElementCount", element_count).reported(losses)?;
+                let element_visibility = stored(&owned, "VisibilityList", |property| {
+                    bool_list(property, "VisibilityList")
+                })
+                .reported(losses)?
+                .unwrap_or_default();
+                stored(&owned, "ShowElement", |property| {
+                    bool_value(property, "ShowElement")
+                })
+                .reported(losses)?;
+                let claim_child = stored(&owned, "LinkClaimChild", |property| {
+                    bool_value(property, "LinkClaimChild")
+                })
+                .reported(losses)?;
+                let copy_on_change_policy =
+                    stored(&owned, "LinkCopyOnChange", copy_on_change_value).reported(losses)?;
+                let copy_on_change_touched =
+                    stored(&owned, "LinkCopyOnChangeTouched", |property| {
+                        bool_value(property, "LinkCopyOnChangeTouched")
+                    })
+                    .reported(losses)?;
+                let copy_on_change = match crate::native::CopyOnChange::from_admitted(
+                    copy_on_change_policy,
                     copy_on_change_source,
                     copy_on_change_group,
                     copy_on_change_touched,
-                )
-                .map_err(malformed)?,
-                scale,
-            })),
+                ) {
+                    Ok(copy_on_change) => copy_on_change,
+                    Err(error) => {
+                        let payload = [
+                            "LinkCopyOnChangeSource",
+                            "LinkCopyOnChangeGroup",
+                            "LinkCopyOnChangeTouched",
+                        ]
+                        .into_iter()
+                        .find_map(|name| {
+                            owned.iter().copied().find(|property| property.name == name)
+                        });
+                        if let Some(property) = payload {
+                            give_up(losses, property, malformed(error), None)?;
+                        }
+                        None
+                    }
+                };
+                ProductNode::Occurrence(Box::new(LinkOccurrence {
+                    members,
+                    prototype: prototype_link
+                        .as_ref()
+                        .and_then(|link| link.object())
+                        .map(ToOwned::to_owned),
+                    external_document: prototype_link
+                        .as_ref()
+                        .and_then(|link| link.document())
+                        .cloned(),
+                    local_transform,
+                    placement_property,
+                    array: crate::native::LinkArray::new(
+                        element_count,
+                        element_transforms,
+                        element_scales,
+                        element_visibility,
+                        element_objects,
+                    ),
+                    link_transform: stored(&owned, "LinkTransform", |property| {
+                        bool_value(property, "LinkTransform")
+                    })
+                    .read(),
+                    linked_subelements: prototype_link
+                        .as_ref()
+                        .map(|link| nonempty_subelements(link.subelements()))
+                        .unwrap_or_default(),
+                    claim_child,
+                    copy_on_change,
+                    scale,
+                }))
+            }
             ProductKind::Group => ProductNode::Group(ContainerNode {
                 members,
                 local_transform,
@@ -156,12 +330,124 @@ pub(crate) fn transfer(
             },
         };
         output.push(ProductNodeRecord {
-            id: crate::native::native_id("product", object.name()),
+            id,
             object: object.id().to_owned(),
             node,
         });
     }
-    Ok(output)
+    Ok(ProductNodes {
+        records: output,
+        unplaced,
+    })
+}
+
+/// The value of `value`, a placement value of a link, with an unreadable
+/// property reported to `losses` and the link marked not `placeable`.
+fn placement_value<T>(
+    value: Stored<'_, T>,
+    placeable: &mut bool,
+    losses: &mut Vec<LossNote>,
+) -> Result<Option<T>, CodecError> {
+    if matches!(value, Stored::Unreadable(..)) {
+        *placeable = false;
+    }
+    value.reported(losses)
+}
+
+/// The value of `value`, with an unreadable property kept in `unreadable`.
+fn sole<'a, T>(
+    value: Stored<'a, T>,
+    unreadable: &mut Vec<(&'a PropertyRecord, CodecError)>,
+) -> Option<T> {
+    match value {
+        Stored::Absent => None,
+        Stored::Read(value) => Some(value),
+        Stored::Unreadable(property, error) => {
+            unreadable.push((property, error));
+            None
+        }
+    }
+}
+
+/// The placement of an object whose properties are `owned`.
+enum Placed<'a> {
+    Unstated,
+    At(&'a PropertyRecord, FiniteFrame),
+    /// The object stores a placement in a form the decoder cannot read.
+    Unknown,
+}
+
+/// The placement an object whose properties are `owned` stores, with each
+/// unreadable placement property and each assumed `LinkTransform` reported to
+/// `losses`. `Placement` and `LinkPlacement` hold one value in `FreeCAD`, so
+/// either stands for the other. `LinkTransform` selects between two stored
+/// values; `FreeCAD` defaults it to false, which selects `Placement`.
+fn object_placement<'a>(
+    owned: &[&'a PropertyRecord],
+    losses: &mut Vec<LossNote>,
+) -> Result<Placed<'a>, CodecError> {
+    let frame = |property: &PropertyRecord| {
+        placement_matrix(property)?
+            .ok_or_else(|| malformed(format!("{} stores no placement", property.id)))
+    };
+    let link_placement = stored(owned, "LinkPlacement", frame);
+    let placement = stored(owned, "Placement", frame);
+    let link_transform = stored(owned, "LinkTransform", |property| {
+        bool_value(property, "LinkTransform")
+    });
+    let (link_transform, link_transform_property) = match link_transform {
+        Stored::Absent => (None, None),
+        Stored::Read(value) => (Some(value), None),
+        Stored::Unreadable(property, error) => {
+            give_up(losses, property, error, None)?;
+            (None, Some(property))
+        }
+    };
+    let mut readable = Vec::new();
+    let mut unknown = false;
+    for value in [link_placement, placement] {
+        readable.push(match value {
+            Stored::Absent => None,
+            Stored::Read(frame) => Some(frame),
+            Stored::Unreadable(property, error) => {
+                give_up(losses, property, error, None)?;
+                unknown = true;
+                None
+            }
+        });
+    }
+    let link_placement = readable[0];
+    let placement = readable[1];
+    let property = |name: &str| owned.iter().copied().find(|property| property.name == name);
+    let at = |name: &str, frame: FiniteFrame| {
+        property(name).map_or(Placed::Unstated, |property| Placed::At(property, frame))
+    };
+    Ok(match (link_placement, placement) {
+        (Some(link_placement), Some(placement)) => match link_transform {
+            Some(true) => at("LinkPlacement", link_placement),
+            Some(false) => at("Placement", placement),
+            None => {
+                if link_placement != placement {
+                    let owner = property("Placement").map_or("", |property| &property.owner);
+                    let stated = if link_transform_property.is_some() {
+                        "an unreadable"
+                    } else {
+                        "no"
+                    };
+                    losses.push(FreecadLossCode::AssemblyLinkTransformAssumed.note(format!(
+                        "object {owner} stores LinkPlacement and Placement with different \
+                         values and {stated} LinkTransform; the decoder applies Placement, \
+                         which FreeCAD selects at its default LinkTransform of false"
+                    )));
+                }
+                at("Placement", placement)
+            }
+        },
+        (Some(link_placement), None) => at("LinkPlacement", link_placement),
+        (None, Some(placement)) => at("Placement", placement),
+        (None, None) if unknown => Placed::Unknown,
+        (None, None) => Placed::Unstated,
+    })
 }
 
 fn linked_object_names(links: &[Option<crate::native::LinkTarget>]) -> Vec<String> {
@@ -197,25 +483,50 @@ fn product_record_index(
 
 /// The neutral product records of a document, and the container occurrence
 /// each occurrence sits in, which placement composition walks.
+#[derive(Default)]
 pub(crate) struct Products {
     pub(crate) definitions: Vec<ProductDefinition>,
     pub(crate) occurrences: Vec<Occurrence>,
     pub(crate) parents: HashMap<OccurrenceId, OccurrenceId>,
 }
 
+/// The records [`transfer_neutral`] projects.
+pub(crate) struct Sources<'a> {
+    pub(crate) nodes: &'a ProductNodes,
+    pub(crate) joints: &'a [JointRecord],
+    pub(crate) objects: &'a [ObjectRecord],
+    pub(crate) properties: &'a [PropertyRecord],
+    pub(crate) payloads: &'a [ShapePayloadRecord],
+    pub(crate) bodies: &'a [Body],
+    pub(crate) tessellations: &'a [Tessellation],
+}
+
 /// Project the lossless native product records into reusable definitions and
 /// the occurrences each places. The document is the root definition: it
 /// places the objects no container holds. The link state of an `App::Link`
-/// stays in its native record.
+/// stays in its native record. An occurrence whose placement depends on a
+/// value the decoder cannot read states no transform.
+///
+/// # Errors
+///
+/// A product structure the decoder cannot project: duplicate product records,
+/// a nested link cycle, or a link array above its element limit. A resource
+/// refusal.
 pub(crate) fn transfer_neutral(
     ctx: &DecodeContext<'_>,
-    records: &[ProductNodeRecord],
-    joints: &[JointRecord],
-    objects: &[ObjectRecord],
-    properties: &[PropertyRecord],
-    payloads: &[ShapePayloadRecord],
-    bodies: &[Body],
+    sources: &Sources<'_>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Products, CodecError> {
+    let Sources {
+        nodes,
+        joints,
+        objects,
+        properties,
+        payloads,
+        bodies,
+        tessellations,
+    } = *sources;
+    let records = nodes.records.as_slice();
     let record_by_object = product_record_index(records)?;
     let object_by_id = objects
         .iter()
@@ -311,19 +622,39 @@ pub(crate) fn transfer_neutral(
     component_objects.dedup();
 
     let mut properties_by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
+    let mut owners = Vec::new();
     for property in properties {
         if !properties_by_owner.contains_key(property.owner.as_str()) {
             properties_by_owner.insert(property.owner.as_str(), Vec::new());
+            owners.push(property.owner.as_str());
         }
         if let Some(owned) = properties_by_owner.get_mut(property.owner.as_str()) {
             owned.push(property);
         }
     }
     let mut placements_by_object = HashMap::new();
-    for (&owner, owned) in &properties_by_owner {
-        if let Some(property) = selected_placement(owned)? {
-            if let Some(placement) = placement_matrix(property)? {
-                placements_by_object.insert(owner, placement.transform());
+    let mut unplaced = nodes
+        .unplaced
+        .iter()
+        .map(String::as_str)
+        .collect::<HashSet<_>>();
+    for owner in owners {
+        if let Some(record) = record_by_object.get(owner) {
+            if let Some(frame) = record.local_transform() {
+                placements_by_object.insert(owner, frame.transform());
+            }
+            continue;
+        }
+        let owned = properties_by_owner
+            .get(owner)
+            .map_or(&[][..], Vec::as_slice);
+        match object_placement(owned, losses)? {
+            Placed::Unstated => {}
+            Placed::At(_, frame) => {
+                placements_by_object.insert(owner, frame.transform());
+            }
+            Placed::Unknown => {
+                unplaced.insert(owner);
             }
         }
     }
@@ -365,6 +696,7 @@ pub(crate) fn transfer_neutral(
                 .all(|body| body.transform.unwrap_or_default() == location)
         {
             placements_by_object.insert(owner, location);
+            unplaced.remove(owner);
         }
     }
     // A PartDesign body and a copy-on-change group show their children only through themselves.
@@ -428,9 +760,29 @@ pub(crate) fn transfer_neutral(
                     parent_by_object.insert(member, record.object.as_str());
                 }
                 Some(previous) if *previous != record.object.as_str() => {
-                    return Err(CodecError::malformed(format_args!(
-                        "product member {member} has multiple parent containers"
-                    )));
+                    // `FreeCAD` holds an object in one container; the first
+                    // container that lists it keeps it.
+                    let list = if record.members().iter().any(|listed| listed == member) {
+                        "Group"
+                    } else {
+                        "ElementList"
+                    };
+                    if let Some(property) = properties_by_owner
+                        .get(record.object.as_str())
+                        .and_then(|owned| {
+                            owned.iter().copied().find(|property| property.name == list)
+                        })
+                    {
+                        give_up(
+                            losses,
+                            property,
+                            malformed(format!(
+                                "it lists {member}, which container {previous} holds; \
+                                 {member} is placed in {previous}"
+                            )),
+                            None,
+                        )?;
+                    }
                 }
                 Some(_) => {}
             }
@@ -449,73 +801,133 @@ pub(crate) fn transfer_neutral(
         let owned = properties_by_owner
             .get(record.object.as_str())
             .map_or(&[][..], Vec::as_slice);
-        let cardinality = restored_cardinality(record, owned)?;
+        let cardinality = restored_cardinality(record, owned);
         let count = occurrence_count(record, cardinality)?.get();
         let is_array = matches!(cardinality, LinkArrayCardinality::Elements(_));
-        let expanded = bool_property(owned, "ShowElement")? != Some(false);
+        let expanded = show_element(record, owned);
         let container = parent_by_object.get(record.object.as_str()).copied();
+        let follows = record.link_transform() == Some(true);
+        let record_unplaced = unplaced.contains(record.object.as_str());
         let mut record_prototype_transform = None;
         for index in 0..count {
             let element = count > 1;
             let element_object = (is_array && expanded)
                 .then(|| record.element_objects().get(index))
                 .flatten();
-            let element_transform = if expanded {
-                element_object.and_then(|object| placements_by_object.get(object.as_str()).copied())
-            } else if is_array {
-                record
-                    .element_transforms()
-                    .get(index)
-                    .map(|frame| frame.transform())
-            } else {
-                None
+            // `None` where the element's placement is stored in a form the
+            // decoder cannot read.
+            let element_transform = match element_object {
+                Some(object) if unplaced.contains(object.as_str()) => None,
+                Some(object) => Some(
+                    placements_by_object
+                        .get(object.as_str())
+                        .copied()
+                        .unwrap_or_default(),
+                ),
+                None if !expanded && is_array => Some(
+                    record
+                        .element_transforms()
+                        .get(index)
+                        .map(|frame| frame.transform())
+                        .unwrap_or_default(),
+                ),
+                None => Some(Transform::identity()),
             };
-            let scale_transform = link_scale_transform(record.scale().unwrap_or([1.0; 3]))?;
-            let local_transform = record
-                .local_transform()
-                .map(crate::native::frame::FiniteFrame::transform)
-                .unwrap_or_default()
-                .compose(scale_transform)
-                .and_then(|transform| transform.compose(element_transform.unwrap_or_default()))
-                .map_err(|error| malformed(error.to_string()))?;
-            let prototype_transform = match record_prototype_transform {
-                Some(transform) => transform,
-                None => *record_prototype_transform.insert(linked_prototype_transform(
-                    ctx,
-                    record,
-                    &record_by_object,
-                    &placements_by_object,
-                    &mut Vec::new(),
-                )?),
+            let element_scale = match element_object {
+                Some(object) => {
+                    let element_properties = properties_by_owner
+                        .get(object.as_str())
+                        .map_or(&[][..], Vec::as_slice);
+                    let restore_uniform = record_by_object
+                        .get(object.as_str())
+                        .is_some_and(|record| matches!(record.node, ProductNode::Occurrence(_)));
+                    match scale_property(element_properties, restore_uniform) {
+                        Stored::Absent => Some([1.0; 3]),
+                        Stored::Read(scale) => Some(scale.map_or([1.0; 3], FiniteVector::get)),
+                        Stored::Unreadable(property, error) => {
+                            // `transfer` reports the scale of a link element.
+                            if !restore_uniform {
+                                give_up(losses, property, error, None)?;
+                            }
+                            None
+                        }
+                    }
+                }
+                None if !expanded && is_array => Some(
+                    record
+                        .element_scales()
+                        .get(index)
+                        .copied()
+                        .map_or([1.0; 3], FiniteVector::get),
+                ),
+                None => Some([1.0; 3]),
             };
-            let element_scale = if expanded {
-                let element_properties = element_object
-                    .and_then(|object| properties_by_owner.get(object.as_str()))
-                    .map_or(&[][..], Vec::as_slice);
-                let restore_uniform = element_object
-                    .and_then(|object| record_by_object.get(object.as_str()))
-                    .is_some_and(|record| matches!(record.node, ProductNode::Occurrence(_)));
-                scale_property(element_properties, restore_uniform)?
-                    .map(cadmpeg_ir::units::FiniteVector::get)
-            } else if is_array {
-                record
-                    .element_scales()
-                    .get(index)
-                    .copied()
-                    .map(cadmpeg_ir::units::FiniteVector::get)
+            let prototype_transform = if follows {
+                match record_prototype_transform {
+                    Some(transform) => transform,
+                    None => *record_prototype_transform.insert(linked_prototype_transform(
+                        ctx,
+                        record,
+                        &record_by_object,
+                        &Placements {
+                            placed: &placements_by_object,
+                            unplaced: &unplaced,
+                        },
+                        &mut Vec::new(),
+                        losses,
+                    )?),
+                }
             } else {
-                None
-            }
-            .unwrap_or([1.0; 3]);
-            let local_transform = local_transform
-                .compose(link_scale_transform(element_scale)?)
-                .map_err(|error| malformed(error.to_string()))?;
+                Some(Transform::identity())
+            };
             let occurrence_id = if element {
                 crate::native::model_id("occurrence", &record.object, index.to_string())
             } else {
                 crate::native::model_id("occurrence", &record.object, "instance")
             };
             let id = OccurrenceId::mint(occurrence_id).map_err(CodecError::malformed)?;
+            let transform = match (
+                record_unplaced,
+                element_transform,
+                element_scale,
+                prototype_transform,
+            ) {
+                (
+                    false,
+                    Some(element_transform),
+                    Some(element_scale),
+                    Some(prototype_transform),
+                ) => {
+                    let scale = link_scale_transform(record.scale().unwrap_or([1.0; 3]))?;
+                    let element_scale = link_scale_transform(element_scale)?;
+                    // A link that follows its object's placement is placed at
+                    // its own placement composed after the object's.
+                    let composed = record
+                        .local_transform()
+                        .map(FiniteFrame::transform)
+                        .unwrap_or_default()
+                        .compose(scale)
+                        .and_then(|transform| transform.compose(element_transform))
+                        .and_then(|transform| transform.compose(element_scale))
+                        .and_then(|transform| transform.compose(prototype_transform));
+                    match composed {
+                        Ok(transform) => Some(transform),
+                        Err(error) => {
+                            let record =
+                                Identity::try_from(id.as_str()).map_err(CodecError::malformed)?;
+                            losses.push(
+                                GivenUpRecord::new(
+                                    record,
+                                    format_args!("its placement does not compose: {error}"),
+                                )
+                                .loss(),
+                            );
+                            None
+                        }
+                    }
+                }
+                _ => None,
+            };
             let prototype = if let Some(document) = record.external_document() {
                 let document = external_document_reference(document.as_str(), document.attribute());
                 let document = match record.prototype() {
@@ -541,16 +953,7 @@ pub(crate) fn transfer_neutral(
                 );
                 unresolved
             };
-            // A link that follows its object's placement is placed at its
-            // own placement composed after the object's.
-            let transform = if record.link_transform() == Some(true) {
-                local_transform
-                    .compose(prototype_transform)
-                    .map_err(|error| malformed(error.to_string()))?
-            } else {
-                local_transform
-            };
-            let mut occurrence = Occurrence::new(id, prototype, Some(transform));
+            let mut occurrence = Occurrence::new(id, prototype, transform);
             occurrence.name = Some(record.object.clone());
             occurrence.native_ref = Some(record.object.clone());
             occurrences.push(occurrence);
@@ -619,16 +1022,31 @@ pub(crate) fn transfer_neutral(
         });
     }
 
-    // Definition bodies are in their object's frame, so a link prototype with bodies
-    // needs its own occurrence unless it is shown only through a listing object.
+    // Definition bodies, instance bodies, and an object's mesh are in their
+    // object's frame, so a link prototype with geometry needs its own occurrence
+    // unless it is shown only through a listing object.
+    let tessellation_ids = tessellations
+        .iter()
+        .map(|tessellation| tessellation.id.as_str())
+        .collect::<HashSet<_>>();
+    let mesh_owners = properties
+        .iter()
+        .filter(|property| {
+            property.type_name == "Mesh::PropertyMeshKernel"
+                && tessellation_ids.contains(format!("{}:mesh", property.id).as_str())
+        })
+        .map(|property| property.owner.as_str())
+        .collect::<HashSet<_>>();
     for prototype in link_prototypes {
-        let has_bodies = definitions.iter().any(|definition| {
-            definition.native_ref.as_deref() == Some(prototype) && !definition.bodies.is_empty()
-        });
-        if has_bodies
+        let has_geometry = mesh_owners.contains(prototype)
+            || definitions.iter().any(|definition| {
+                definition.native_ref.as_deref() == Some(prototype)
+                    && !(definition.bodies.is_empty() && definition.instance_bodies.is_empty())
+            });
+        if has_geometry
             && !occurrence_objects.contains(prototype)
             && !listed_objects.contains(prototype)
-            && placements_by_object.contains_key(prototype)
+            && (placements_by_object.contains_key(prototype) || unplaced.contains(prototype))
         {
             placed_objects.insert(prototype);
         }
@@ -638,16 +1056,18 @@ pub(crate) fn transfer_neutral(
         .iter()
         .filter(|object| placed_objects.contains(**object))
     {
-        let record = record_by_object.get(*object).copied();
-        let local_transform = record
-            .and_then(ProductNodeRecord::local_transform)
-            .map(crate::native::frame::FiniteFrame::transform)
-            .or_else(|| placements_by_object.get(*object).copied())
-            .unwrap_or_default();
+        let local_transform = (!unplaced.contains(*object)).then(|| {
+            record_by_object
+                .get(*object)
+                .and_then(|record| record.local_transform())
+                .map(FiniteFrame::transform)
+                .or_else(|| placements_by_object.get(*object).copied())
+                .unwrap_or_default()
+        });
         let mut occurrence = Occurrence::new(
             container_occurrence_id(object)?,
             definition_id(object)?,
-            Some(local_transform),
+            local_transform,
         );
         occurrence.name = Some((*object).to_owned());
         occurrence.native_ref = Some((*object).to_owned());
@@ -808,19 +1228,30 @@ pub(crate) fn localize_definition_bodies(
     }
 }
 
+/// The placements of the objects of a document, and the objects whose
+/// placement is stored in a form the decoder cannot read.
+struct Placements<'a> {
+    placed: &'a HashMap<&'a str, Transform>,
+    unplaced: &'a HashSet<&'a str>,
+}
+
+/// The placement link `record` composes after its own: its linked object's,
+/// after the one that object follows in turn. `None` where one of them is
+/// stored in a form the decoder cannot read or does not compose.
 fn linked_prototype_transform(
     ctx: &DecodeContext<'_>,
     record: &ProductNodeRecord,
     records: &HashMap<&str, &ProductNodeRecord>,
-    placements: &HashMap<&str, Transform>,
+    placements: &Placements<'_>,
     stack: &mut Vec<String>,
-) -> Result<Transform, CodecError> {
+    losses: &mut Vec<LossNote>,
+) -> Result<Option<Transform>, CodecError> {
     let _depth = ctx.enter_nested("resolve FCStd nested link transform")?;
     if record.link_transform() != Some(true) || record.external_document().is_some() {
-        return Ok(Transform::identity());
+        return Ok(Some(Transform::identity()));
     }
     let Some(prototype) = record.prototype() else {
-        return Ok(Transform::identity());
+        return Ok(Some(Transform::identity()));
     };
     if stack.iter().any(|object| object == &record.object) {
         return Err(CodecError::malformed(format_args!(
@@ -828,21 +1259,40 @@ fn linked_prototype_transform(
             record.object
         )));
     }
+    if placements.unplaced.contains(prototype) {
+        return Ok(None);
+    }
 
     stack.push(record.object.clone());
     let target_record = records.get(prototype).copied();
     let placement = target_record
         .and_then(ProductNodeRecord::local_transform)
-        .map(crate::native::frame::FiniteFrame::transform)
-        .or_else(|| placements.get(prototype).copied())
+        .map(FiniteFrame::transform)
+        .or_else(|| placements.placed.get(prototype).copied())
         .unwrap_or_default();
-    let nested = target_record.map_or(Ok(Transform::identity()), |target| {
-        linked_prototype_transform(ctx, target, records, placements, stack)
+    let nested = target_record.map_or(Ok(Some(Transform::identity())), |target| {
+        linked_prototype_transform(ctx, target, records, placements, stack, losses)
     });
     stack.pop();
-    placement
-        .compose(nested?)
-        .map_err(|error| malformed(error.to_string()))
+    let Some(nested) = nested? else {
+        return Ok(None);
+    };
+    match placement.compose(nested) {
+        Ok(transform) => Ok(Some(transform)),
+        Err(error) => {
+            let link = Identity::try_from(record.object.as_str()).map_err(CodecError::malformed)?;
+            losses.push(
+                GivenUpRecord::new(
+                    link,
+                    format_args!(
+                        "the placement of its linked object {prototype} does not compose: {error}"
+                    ),
+                )
+                .loss(),
+            );
+            Ok(None)
+        }
+    }
 }
 
 fn link_scale_transform([x, y, z]: [f64; 3]) -> Result<Transform, CodecError> {
@@ -878,19 +1328,33 @@ fn listed_link_element_objects<'a>(
     listed_elements
 }
 
+/// Whether link `record` shows its array elements as objects: its stored
+/// `ShowElement`, `FreeCAD`'s default of true where it stores none, and,
+/// where it stores one the decoder cannot read, whether it lists element
+/// objects, which `FreeCAD` keeps only while it shows them.
+fn show_element(record: &ProductNodeRecord, properties: &[&PropertyRecord]) -> bool {
+    match stored(properties, "ShowElement", |property| {
+        bool_value(property, "ShowElement")
+    }) {
+        Stored::Absent => true,
+        Stored::Read(value) => value,
+        Stored::Unreadable(..) => !record.element_objects().is_empty(),
+    }
+}
+
 fn restored_cardinality(
     record: &ProductNodeRecord,
     properties: &[&PropertyRecord],
-) -> Result<LinkArrayCardinality, CodecError> {
-    if bool_property(properties, "ShowElement")? == Some(false) {
-        return Ok(record
+) -> LinkArrayCardinality {
+    if !show_element(record, properties) {
+        return record
             .element_cardinality()
-            .unwrap_or(LinkArrayCardinality::Scalar));
+            .unwrap_or(LinkArrayCardinality::Scalar);
     }
-    Ok(NonZeroU64::new(cadmpeg_core::decode::u64_from_index(
+    NonZeroU64::new(cadmpeg_core::decode::u64_from_index(
         record.element_objects().len(),
     ))
-    .map_or(LinkArrayCardinality::Scalar, LinkArrayCardinality::Elements))
+    .map_or(LinkArrayCardinality::Scalar, LinkArrayCardinality::Elements)
 }
 
 fn occurrence_count(
@@ -941,7 +1405,7 @@ pub(crate) fn link_occurrence_count(
         let owned = properties_by_owner
             .get(record.object.as_str())
             .map_or(&[][..], Vec::as_slice);
-        let cardinality = restored_cardinality(record, owned)?;
+        let cardinality = restored_cardinality(record, owned);
         let count =
             cadmpeg_core::decode::u64_from_index(occurrence_count(record, cardinality)?.get());
         total = total
@@ -974,12 +1438,9 @@ pub(crate) fn multiply(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> [[f64; 4]; 
 }
 
 fn parse_placement_list(
-    properties: &[&PropertyRecord],
+    property: &PropertyRecord,
     entries: &BTreeMap<String, View<'_>>,
 ) -> Result<Vec<FiniteFrame>, CodecError> {
-    let Some(property) = sole_named_property("product", properties, "PlacementList")? else {
-        return Ok(Vec::new());
-    };
     let Some(view) = side_bytes(
         property,
         "App::PropertyPlacementList",
@@ -1002,12 +1463,9 @@ fn parse_placement_list(
 }
 
 fn parse_vector_list(
-    properties: &[&PropertyRecord],
+    property: &PropertyRecord,
     entries: &BTreeMap<String, View<'_>>,
 ) -> Result<Vec<cadmpeg_ir::units::FiniteVector<3>>, CodecError> {
-    let Some(property) = sole_named_property("product", properties, "ScaleList")? else {
-        return Ok(Vec::new());
-    };
     let Some(view) = side_bytes(property, "App::PropertyVectorList", "VectorList", entries)? else {
         return Ok(Vec::new());
     };
@@ -1128,32 +1586,6 @@ fn single_value<'a>(
         )));
     }
     Ok(&property.values()[0])
-}
-
-fn selected_placement<'a>(
-    properties: &[&'a PropertyRecord],
-) -> Result<Option<&'a PropertyRecord>, CodecError> {
-    let link_placement = sole_named_property("product", properties, "LinkPlacement")?;
-    let placement = sole_named_property("product", properties, "Placement")?;
-    for property in [link_placement, placement].into_iter().flatten() {
-        placement_matrix(property)?;
-    }
-    match (link_placement, placement) {
-        (Some(link_placement), Some(placement)) => {
-            let use_link_placement =
-                bool_property(properties, "LinkTransform")?.ok_or_else(|| {
-                    malformed("LinkPlacement and Placement require a valid LinkTransform policy")
-                })?;
-            Ok(Some(if use_link_placement {
-                link_placement
-            } else {
-                placement
-            }))
-        }
-        (Some(link_placement), None) => Ok(Some(link_placement)),
-        (None, Some(placement)) => Ok(Some(placement)),
-        (None, None) => Ok(None),
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -1288,10 +1720,7 @@ fn metadata_string(
     Ok(value.attribute("value").map(str::to_owned))
 }
 
-fn bool_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<bool>, CodecError> {
-    let Some(property) = sole_named_property("product", properties, name)? else {
-        return Ok(None);
-    };
+fn bool_value(property: &PropertyRecord, name: &str) -> Result<bool, CodecError> {
     let value = single_value(property, "App::PropertyBool", name, "Bool")?;
     let Some(value) = value.attributes.get("value") else {
         return Err(CodecError::malformed(format_args!(
@@ -1299,45 +1728,45 @@ fn bool_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<bo
             property.id
         )));
     };
-    let Some(value) = parse_bool(value) else {
-        return Err(CodecError::malformed(format_args!(
+    parse_bool(value).ok_or_else(|| {
+        CodecError::malformed(format_args!(
             "product property {} has an invalid Bool value",
             property.id
-        )));
-    };
-    Ok(Some(value))
+        ))
+    })
 }
 
-fn integer_property(
-    properties: &[&PropertyRecord],
-    name: &str,
-    type_name: &str,
-) -> Result<Option<i64>, CodecError> {
-    let Some(property) = sole_named_property("product", properties, name)? else {
-        return Ok(None);
-    };
-    let value = single_value(property, type_name, name, "Integer")?;
+/// The `ElementCount` of a link array.
+fn element_count(property: &PropertyRecord) -> Result<u64, CodecError> {
+    let value = single_value(
+        property,
+        "App::PropertyIntegerConstraint",
+        "ElementCount",
+        "Integer",
+    )?;
     let Some(value) = value.attributes.get("value") else {
         return Err(CodecError::malformed(format_args!(
             "product property {} has no Integer value",
             property.id
         )));
     };
-    match value.parse() {
-        Ok(value) => Ok(Some(value)),
-        Err(_) => Err(CodecError::malformed(format_args!(
+    let Ok(value) = value.parse::<i64>() else {
+        return Err(CodecError::malformed(format_args!(
             "product property {} has an invalid Integer value",
             property.id
-        ))),
+        )));
+    };
+    let count = u64::try_from(value).map_err(|_| malformed("negative ElementCount"))?;
+    if usize::try_from(count).map_or(true, |count| count > MAX_LINK_ARRAY_ELEMENTS) {
+        return Err(CodecError::malformed(format_args!(
+            "{} link-array element count {count} exceeds {MAX_LINK_ARRAY_ELEMENTS}",
+            property.id
+        )));
     }
+    Ok(count)
 }
 
-fn copy_on_change_property(
-    properties: &[&PropertyRecord],
-) -> Result<Option<NativeCopyOnChangePolicy>, CodecError> {
-    let Some(property) = sole_named_property("product", properties, "LinkCopyOnChange")? else {
-        return Ok(None);
-    };
+fn copy_on_change_value(property: &PropertyRecord) -> Result<NativeCopyOnChangePolicy, CodecError> {
     let value = single_value(
         property,
         "App::PropertyEnumeration",
@@ -1350,55 +1779,48 @@ fn copy_on_change_property(
             property.id
         )));
     };
-    NativeCopyOnChangePolicy::from_raw(raw.to_owned())
-        .map(Some)
-        .map_err(|_| {
-            CodecError::malformed(format_args!(
-                "product property {} has an invalid enumeration Integer value",
-                property.id
-            ))
-        })
+    NativeCopyOnChangePolicy::from_raw(raw.to_owned()).map_err(|_| {
+        CodecError::malformed(format_args!(
+            "product property {} has an invalid enumeration Integer value",
+            property.id
+        ))
+    })
 }
 
-fn linked_target(
-    properties: &[&PropertyRecord],
-    name: &str,
-    expected_type: &str,
-    root: &str,
-) -> Result<Option<crate::native::LinkTarget>, CodecError> {
-    let Some(property) = sole_named_property("product", properties, name)? else {
-        return Ok(None);
-    };
-    Ok(single_link(property, expected_type, root, name)?.cloned())
-}
-
-fn scale_property(
-    properties: &[&PropertyRecord],
+/// The scale of an object whose properties are `owned`: its `ScaleVector`,
+/// or its uniform `Scale` where it stores no `ScaleVector` or, with
+/// `restore_uniform`, a uniform one.
+fn scale_property<'a>(
+    owned: &[&'a PropertyRecord],
     restore_uniform: bool,
-) -> Result<Option<FiniteVector<3>>, CodecError> {
-    let vector = sole_named_property("product", properties, "ScaleVector")?
-        .map(vector_property)
-        .transpose()?;
+) -> Stored<'a, Option<FiniteVector<3>>> {
+    let vector = match stored(owned, "ScaleVector", vector_property) {
+        Stored::Absent => None,
+        Stored::Read(vector) => Some(vector),
+        Stored::Unreadable(property, error) => return Stored::Unreadable(property, error),
+    };
     let restore_uniform = restore_uniform
         && vector.is_some_and(|vector| {
             let [x, y, z] = vector.get();
             x == y && y == z
         });
     if vector.is_some() && !restore_uniform {
-        return Ok(vector);
+        return Stored::Read(vector);
     }
-    let Some(property) = sole_named_property("product", properties, "Scale")? else {
-        return Ok(restore_uniform.then_some([FiniteReal::ONE; 3].into()));
-    };
-    let value = single_value(property, "App::PropertyFloat", "Scale", "Float")?;
-    let Some(value) = value.attributes.get("value") else {
-        return Err(CodecError::malformed(format_args!(
-            "product property {} has no Float value",
-            property.id
-        )));
-    };
-    let value = parse_finite(value, property, "Scale")?;
-    Ok(Some([value; 3].into()))
+    match stored(owned, "Scale", |property| {
+        let value = single_value(property, "App::PropertyFloat", "Scale", "Float")?;
+        let Some(value) = value.attributes.get("value") else {
+            return Err(CodecError::malformed(format_args!(
+                "product property {} has no Float value",
+                property.id
+            )));
+        };
+        parse_finite(value, property, "Scale")
+    }) {
+        Stored::Absent => Stored::Read(restore_uniform.then_some([FiniteReal::ONE; 3].into())),
+        Stored::Read(value) => Stored::Read(Some([value; 3].into())),
+        Stored::Unreadable(property, error) => Stored::Unreadable(property, error),
+    }
 }
 
 fn vector_property(property: &PropertyRecord) -> Result<FiniteVector<3>, CodecError> {
@@ -1439,10 +1861,7 @@ fn parse_finite(
     Ok(value)
 }
 
-fn bool_list(properties: &[&PropertyRecord], name: &str) -> Result<Vec<bool>, CodecError> {
-    let Some(property) = sole_named_property("product", properties, name)? else {
-        return Ok(Vec::new());
-    };
+fn bool_list(property: &PropertyRecord, name: &str) -> Result<Vec<bool>, CodecError> {
     let value = single_value(property, "App::PropertyBoolList", name, "BoolList")?;
     let Some(encoded) = value.attributes.get("value") else {
         return Err(CodecError::malformed(format_args!(

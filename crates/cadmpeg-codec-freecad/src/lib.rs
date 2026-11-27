@@ -261,7 +261,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             ));
         }
     }
-    match attachment::transfer(&objects, &properties) {
+    match attachment::transfer(&objects, &properties, &mut Vec::new()) {
         Ok(expected) if attachments != expected => findings.push(finding(
             Check::NativeLinks,
             "FCStd attachment graph does not match the application property graph",
@@ -992,8 +992,14 @@ impl CodecBackend for FcstdCodec {
                 &brep::carrier_census(ctx, &shape_payloads)?,
             )?;
             namespace.set_arena(ctx, "string_tables", string_tables.as_slice())?;
-            let product_nodes = product::transfer(&graph.objects, &graph.properties, &scan.data)?;
-            namespace.set_arena(ctx, "product_nodes", &product_nodes)?;
+            let product_layer = product::transfer(
+                &graph.objects,
+                &graph.properties,
+                &scan.data,
+                &mut transfer_losses,
+            )?;
+            let product_nodes = &product_layer.records;
+            namespace.set_arena(ctx, "product_nodes", product_nodes)?;
             let joint_records = joint::transfer(ctx, &graph.objects, &graph.properties)?;
             namespace.set_arena(ctx, "joints", &joint_records)?;
             let drawings = drawing::transfer(ctx, &graph.objects, &graph.properties)?;
@@ -1030,7 +1036,8 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &entry_records,
             )?;
-            let attachments = attachment::transfer(&graph.objects, &graph.properties)?;
+            let attachments =
+                attachment::transfer(&graph.objects, &graph.properties, &mut transfer_losses)?;
             namespace.set_arena(ctx, "attachments", &attachments)?;
             let mut curve_transfer =
                 brep::transfer_text_curves(ctx, &shape_payloads, &graph.properties)?;
@@ -1106,7 +1113,7 @@ impl CodecBackend for FcstdCodec {
                 "admit FCStd entities",
             )?;
             let link_occurrences =
-                product::link_occurrence_count(&product_nodes, &graph.objects, &graph.properties)?;
+                product::link_occurrence_count(product_nodes, &graph.objects, &graph.properties)?;
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.entity_count())
                     .checked_add(link_occurrences)
@@ -1114,15 +1121,36 @@ impl CodecBackend for FcstdCodec {
                 &mut admitted_entities,
                 "admit FCStd link occurrences",
             )?;
-            let products = product::transfer_neutral(
+            let products = match product::transfer_neutral(
                 ctx,
-                &product_nodes,
-                &joint_records,
-                &graph.objects,
-                &graph.properties,
-                &shape_payloads,
-                &ir.geometry.bodies,
-            )?;
+                &product::Sources {
+                    nodes: &product_layer,
+                    joints: &joint_records,
+                    objects: &graph.objects,
+                    properties: &graph.properties,
+                    payloads: &shape_payloads,
+                    bodies: &ir.geometry.bodies,
+                    tessellations: &ir.model.tessellations,
+                },
+                &mut transfer_losses,
+            ) {
+                Ok(products) => products,
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                // The bodies keep their own placements; the document root
+                // definition places nothing.
+                Err(error) => {
+                    let root = product::document_definition_id()?;
+                    transfer_losses.push(
+                        cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                            cadmpeg_ir::ids::Identity::try_from(root.as_str())
+                                .map_err(CodecError::malformed)?,
+                            format_args!("the product structure does not project: {error}"),
+                        )
+                        .loss(),
+                    );
+                    product::Products::default()
+                }
+            };
             product::localize_definition_bodies(
                 &products.definitions,
                 &products.occurrences,
@@ -1135,7 +1163,7 @@ impl CodecBackend for FcstdCodec {
                 &mut ir,
                 &products.parents,
                 &graph.properties,
-                &product_nodes,
+                product_nodes,
                 &mut transfer_losses,
                 &mut admitted_entities,
             )?;
@@ -1178,7 +1206,7 @@ impl CodecBackend for FcstdCodec {
                     product::document_definition_id()?,
                     &graph.objects,
                     &graph.properties,
-                    &product_nodes,
+                    product_nodes,
                     &mut transfer_losses,
                 );
             }

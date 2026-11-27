@@ -92,12 +92,7 @@ pub(crate) fn resolve(
 fn read_frame(
     properties: &[&PropertyRecord],
 ) -> Result<Option<cadmpeg_ir::transform::Transform>, CodecError> {
-    sole_named_property("primitive", properties, "Placement")?
-        .map(crate::placement::placement_matrix)
-        .transpose()
-        .map(|value| {
-            value
-                .flatten()
-                .map(crate::native::frame::FiniteFrame::transform)
-        })
+    Ok(sole_named_property("primitive", properties, "Placement")?
+        .and_then(crate::placement::placement_matrix_unreported)
+        .map(crate::native::frame::FiniteFrame::transform))
 }
