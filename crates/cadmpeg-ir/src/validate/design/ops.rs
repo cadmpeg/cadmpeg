@@ -23,6 +23,7 @@ mod surface;
 mod swept;
 #[cfg(test)]
 mod tests;
+mod wire_walk;
 
 use crate::report::check::Ruled;
 use std::collections::BTreeSet;
@@ -38,18 +39,18 @@ use crate::report::Severity;
 
 /// Where an operation is stated.
 #[derive(Clone, Copy)]
-pub(super) struct Site<'a> {
+pub(super) struct Site<'s, 'a> {
     /// The record findings name: the feature, or the configuration or
     /// arrangement whose override states the definition.
-    entity: &'a str,
+    entity: &'s str,
     /// The feature whose definition holds the operation.
-    feature: &'a str,
+    feature: &'s str,
     /// The scope the feature belongs to, where its containers reach one.
     scope: Option<&'a str>,
     /// Whether the definition that holds the operation states `assembly`.
     assembly: bool,
     /// The design records, which give a bound dimension its cached values.
-    index: Option<&'a DesignRecords<'a>>,
+    index: Option<&'s DesignRecords<'a>>,
     /// The definition that holds the operation.
     definition: Option<&'a FeatureDefinition>,
 }
@@ -57,12 +58,9 @@ pub(super) struct Site<'a> {
 /// Check the sketches and every stated operation of `index` against the
 /// rules of §6.1 to §6.7.
 pub(super) fn check_operations(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
-    let wire = cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {
-        serde::Serialize::serialize(&index.ir.design, adapter)
-    })
-    .unwrap_or(Value::Null);
-    sketches::check_sketches(index, &wire, findings);
-    options::check_native_keys(&wire, findings);
+    let wire = wire_walk::walk_design(&index.ir.design);
+    sketches::check_sketches(index, &wire.sketch_regions, findings);
+    options::check_native_keys(&wire.native_keys, findings);
     for (site, definition) in definitions(index) {
         check_operation(index, site, &definition.operation, findings);
         if let Some(context) = &definition.assembly {
@@ -146,7 +144,7 @@ pub(super) fn builds_tool_body(operation: &FeatureOperation) -> Option<bool> {
 /// Every feature definition the design states, with where it is stated:
 /// each feature's own, and each definition override of a configuration or
 /// an arrangement.
-fn definitions<'a>(index: &'a DesignRecords<'a>) -> Vec<(Site<'a>, &'a FeatureDefinition)> {
+fn definitions<'s, 'a>(index: &'s DesignRecords<'a>) -> Vec<(Site<'s, 'a>, &'a FeatureDefinition)> {
     let design = &index.ir.design;
     let site = |entity: &'a str, feature: &'a str, definition: &'a FeatureDefinition| Site {
         entity,
@@ -156,7 +154,7 @@ fn definitions<'a>(index: &'a DesignRecords<'a>) -> Vec<(Site<'a>, &'a FeatureDe
         index: Some(index),
         definition: Some(definition),
     };
-    let mut out: Vec<(Site<'a>, &'a FeatureDefinition)> = design
+    let mut out: Vec<(Site<'s, 'a>, &'a FeatureDefinition)> = design
         .features
         .iter()
         .map(|feature| {
@@ -192,7 +190,7 @@ fn definitions<'a>(index: &'a DesignRecords<'a>) -> Vec<(Site<'a>, &'a FeatureDe
 
 fn check_operation(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     operation: &FeatureOperation,
     findings: &mut Vec<Finding>,
 ) {

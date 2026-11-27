@@ -569,6 +569,54 @@ fn later_fixed_identity_occurrence_reports_loss_and_stays_out_of_neutral_structu
         .all(|o| !o.id.as_str().ends_with("000000000404")));
 }
 
+/// The occurrence frame whose identity ordinal no matrix states is given up
+/// as a part over its own bytes, under a stub, and the pinned decode refuses.
+#[test]
+fn an_unproven_occurrence_frame_is_given_up_as_a_design_record() {
+    let (bulk, meta) =
+        crate::test_support::empty_attribute_occurrences::later_identity_local_component_design();
+    let bytes = f3d_with_breps_and_design(
+        &[(
+            "BREP.module.smbh",
+            &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+        )],
+        &bulk,
+        &meta,
+    );
+    let result = super::decode(bytes.clone());
+    let head =
+        "part design-record stream=\"FusionAssetName[Active]/Design1/BulkStream.dat\" offset=";
+    let charges = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.message.contains("ordinal 2")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(charges.len(), 1, "{charges:#?}");
+    assert!(
+        charges[0].message.starts_with(head),
+        "{}",
+        charges[0].message
+    );
+    let charge =
+        crate::test_support::charged_part(result.ir(), std::slice::from_ref(charges[0]), head, "");
+    let stub = result
+        .ir()
+        .native_unknowns("f3d")
+        .unwrap()
+        .into_iter()
+        .find(|stub| charge.message.contains(&format!("record={}:", stub.id)))
+        .expect("the charge names a stub");
+    assert!(result
+        .source_fidelity()
+        .retained_record(stub.id.as_str())
+        .is_some_and(|retained| retained.end_offset() > retained.offset()));
+    crate::test_support::assert_pinned_refusal(bytes, head);
+}
+
 #[test]
 fn history_only_hidden_uncontained_body_with_a_bound_cluster_stays_in_model() {
     use crate::test_support::component_body_test::{

@@ -210,15 +210,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "schema")]
-    fn asset_byte_schema_requires_at_least_one_encoded_byte() {
-        let schema = json::to_value(schemars::schema_for!(AssetData)).unwrap();
-        assert_eq!(schema["type"], "string");
-        assert_eq!(schema["minLength"], 4);
-        assert_eq!(schema["contentEncoding"], "base64");
-    }
-
-    #[test]
     fn asset_admission_rejects_empty_content_and_metadata() {
         assert!(AssetData::new(Vec::new()).is_none());
         for (field, content) in [

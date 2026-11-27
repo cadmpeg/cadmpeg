@@ -57,7 +57,8 @@ fn decode(bytes: Vec<u8>) -> DecodeResult {
 }
 
 fn decode_read_back(bytes: &[u8]) -> DecodeResult {
-    crate::decode::decode_for_read_back(bytes).unwrap()
+    crate::decode::decode_for_read_back(bytes, cadmpeg_core::decode::ResourceLimits::desktop())
+        .unwrap()
 }
 
 fn messages(report: &ExportReport, code: SldprtLossCode) -> Vec<&str> {
@@ -421,8 +422,8 @@ fn a_declined_history_write_charges_each_native_arena_by_id() {
     let mut output = Vec::new();
     let report = SldprtCodec
         .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Explicit("sldprt:unknown"),
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity()))
+                .with_target(TargetRequest::Explicit("sldprt:unknown")),
         )
         .unwrap()
         .write_to(&mut output)
@@ -454,7 +455,7 @@ fn a_declined_history_write_charges_each_native_arena_by_id() {
         let message = naming[0];
         assert!(
             message.contains(&format!("of `sldprt` arena `{arena}`"))
-                && message.contains("because the patch of the document")
+                && message.contains("because the patch declined the document")
                 && ids.iter().all(|id| names(message, id)),
             "{message}"
         );
@@ -1007,8 +1008,9 @@ fn a_datum_axis_origin_edit_the_records_do_not_state_is_named() {
         unwritten[0]
     );
     let record = |ir: &CadIr| {
-        crate::native::SldprtNative::load(
+        crate::native::SldprtNative::load_under(
             ir.native.namespace("sldprt").unwrap(),
+            cadmpeg_core::decode::ResourceLimits::default(),
             ir.tolerances.linear,
         )
         .unwrap()
@@ -1302,6 +1304,7 @@ fn an_unedited_lane_is_written_as_stored() {
         Some(&lane),
         &native.feature_histories,
         &[],
+        cadmpeg_core::decode::ResourceLimits::service(),
         cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
@@ -1312,6 +1315,7 @@ fn an_unedited_lane_is_written_as_stored() {
         Some(&decoded_lane),
         &native.feature_histories,
         &[],
+        cadmpeg_core::decode::ResourceLimits::service(),
         cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap_err();

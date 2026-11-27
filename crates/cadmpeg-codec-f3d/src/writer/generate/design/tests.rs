@@ -7,7 +7,7 @@ use std::io::Cursor;
 use std::num::NonZeroI8;
 
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, MissingStateForm};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, MissingStateForm};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::design::container::{Container, Folder, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
@@ -206,10 +206,7 @@ fn write_bytes(ir: &CadIr) -> (ExportReport, CadIr, Vec<u8>) {
 fn write_bytes_as(ir: &CadIr, missing_states: MissingStateForm) -> (ExportReport, CadIr, Vec<u8>) {
     let mut bytes = Vec::new();
     let report = F3dCodec
-        .plan(
-            EncodeInput::new(ir, None).with_missing_states(missing_states),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(ir, None).with_missing_states(missing_states))
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the writer writes the design scope");
     let decoded = F3dCodec

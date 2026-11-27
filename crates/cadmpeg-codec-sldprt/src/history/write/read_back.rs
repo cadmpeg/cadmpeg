@@ -7,6 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use cadmpeg_core::decode::ResourceLimits;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Decoded;
 use cadmpeg_ir::document::CadIr;
@@ -183,7 +184,7 @@ pub(crate) fn write_until_read_back(
     input: &CadIr,
     digests: &CodecDigests,
     write: &mut Writer<'_>,
-    round_trip: &dyn Fn(&Decoded) -> Option<Vec<u8>>,
+    round_trip: &RoundTrip<'_>,
 ) -> Result<(WrittenPass, ReadBack), CodecError> {
     let mut judge = Judge::new(input, digests, round_trip);
     let mut withheld = Vec::<(FeatureId, String)>::new();
@@ -204,6 +205,7 @@ pub(crate) fn write_until_read_back(
                     read_back = judge.read(&written);
                     (pass, withheld) = (written, next);
                 }
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
                     read_back.unkept.extend(new.into_iter().map(|(_, reason)| {
                         format!("{reason}; writing it with its stored definition record fails ({error}), so the written record states the edit")
@@ -233,11 +235,12 @@ pub(crate) fn write_until_read_back(
         let trial = if suspects.is_empty() {
             None
         } else {
-            write(&all).ok().map(|written| {
-                let read = judge.read(&written);
-                (written, read)
-            })
+            unrefused(write(&all))?
         };
+        let trial = trial.map(|written| {
+            let read = judge.read(&written);
+            (written, read)
+        });
         // A trial with an edit that does not read back is judged again once
         // that edit is withheld too, so it shows nothing about the rest.
         let Some((mut trial, trial_read_back)) = trial.filter(|(_, read)| read.withhold.is_empty())
@@ -262,7 +265,7 @@ pub(crate) fn write_until_read_back(
                     suspect.clone(),
                     held_back(std::slice::from_ref(suspect), &removed),
                 ));
-                let Ok(written) = write(&one) else {
+                let Some(written) = unrefused(write(&one))? else {
                     continue;
                 };
                 let read = judge.read(&written);
@@ -310,22 +313,32 @@ fn held_back(features: &[FeatureId], changes: &[String]) -> String {
     }
 }
 
+/// `result` with a failure dropped, unless it is a resource limit of the
+/// caller's.
+fn unrefused<T>(result: Result<T, CodecError>) -> Result<Option<T>, CodecError> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(_) => Ok(None),
+    }
+}
+
+/// Writes the decoded source document with no edit: `None` where the write
+/// fails or gives the source part byte for byte.
+pub(crate) type RoundTrip<'a> = dyn Fn(&Decoded) -> Option<Vec<u8>> + 'a;
+
 /// The caller's document as the read-back compares it, kept across the
 /// passes of one write.
 struct Judge<'a> {
     input: &'a CadIr,
     /// The codec digests the decode of `input` recorded.
     digests: &'a CodecDigests,
-    round_trip: &'a dyn Fn(&Decoded) -> Option<Vec<u8>>,
+    round_trip: &'a RoundTrip<'a>,
     stated: Option<Document>,
 }
 
 impl<'a> Judge<'a> {
-    fn new(
-        input: &'a CadIr,
-        digests: &'a CodecDigests,
-        round_trip: &'a dyn Fn(&Decoded) -> Option<Vec<u8>>,
-    ) -> Self {
+    fn new(input: &'a CadIr, digests: &'a CodecDigests, round_trip: &'a RoundTrip<'a>) -> Self {
         Self {
             input,
             digests,
@@ -335,7 +348,8 @@ impl<'a> Judge<'a> {
     }
 
     /// Judges one pass. A claim that asks to withhold its feature needs no
-    /// decode: that part is written again.
+    /// decode: that part is written again. A decode of the pass that runs
+    /// out of a ceiling of the caller's limits makes the pass unreadable.
     fn read(&mut self, (bytes, output): &WrittenPass) -> ReadBack {
         let claims = &output.claims;
         let Some(source) = output.source.as_deref() else {
@@ -402,7 +416,7 @@ impl<'a> Judge<'a> {
             &mut |stated| {
                 source
                     .unedited
-                    .get_or_init(|| baseline_of(round_trip, &source.decoded, stated))
+                    .get_or_init(|| baseline_of(source.limits, round_trip, &source.decoded, stated))
                     .clone()
             },
         );
@@ -702,16 +716,18 @@ fn settled_by_solid(
 }
 
 /// The differences between `source`, the decoded source document whose
-/// records are `stated`, and its write with no edit, decoded again.
+/// records are `stated`, and its write with no edit, decoded again under
+/// `limits`.
 fn baseline_of(
-    round_trip: &dyn Fn(&Decoded) -> Option<Vec<u8>>,
+    limits: ResourceLimits,
+    round_trip: &RoundTrip<'_>,
     source: &Decoded,
     stated: &Document,
 ) -> Vec<Difference> {
     let Some(bytes) = round_trip(source) else {
         return Vec::new();
     };
-    let Ok(decoded) = crate::decode::decode_for_read_back(&bytes) else {
+    let Ok(decoded) = crate::decode::decode_for_read_back(&bytes, limits) else {
         return Vec::new();
     };
     let Some(read) = Document::of(decoded.ir()) else {

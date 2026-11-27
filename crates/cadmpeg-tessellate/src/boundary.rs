@@ -81,6 +81,8 @@ pub(crate) struct EdgeCache {
 pub(crate) struct Sampler<'t, 'ir> {
     pub(crate) index: &'t ModelIndex<'ir>,
     pub(crate) work: &'t WorkBudget,
+    /// The admission each evaluation of a boundary runs under.
+    pub(crate) admission: EvaluationAdmission<'ir, 'ir>,
     pub(crate) chord: f64,
     pub(crate) angle: f64,
 }
@@ -115,11 +117,9 @@ pub(crate) fn natural_domain(geometry: &SolvedCurveGeometry) -> Option<([f64; 2]
 
 impl Sampler<'_, '_> {
     pub(crate) fn curve_point(&self, curve: &CurveId, t: f64) -> Result<Option<Point3>, Refusal> {
-        finite_or_refusal(
-            EvaluationAdmission::Standard.within_work_slice(self.work, |admission| {
-                model_curve_point_by_id(admission, self.index, curve, t)
-            }),
-        )
+        finite_or_refusal(self.admission.within_work_slice(self.work, |admission| {
+            model_curve_point_by_id(admission, self.index, curve, t)
+        }))
         .map(|point| point.map(cadmpeg_ir::features::geometry::FinitePoint3::get))
         .map_err(resource)
     }
@@ -782,9 +782,11 @@ fn pcurve_trace(
         let fraction = if span == 0.0 { 0.0 } else { (t - first) / span };
         let s = range[0] + (range[1] - range[0]) * fraction;
         let uv = finite_or_refusal(
-            EvaluationAdmission::Standard.within_work_slice(sampler.work, |admission| {
-                pcurve_uv(admission, &pcurve.geometry, s)
-            }),
+            sampler
+                .admission
+                .within_work_slice(sampler.work, |admission| {
+                    pcurve_uv(admission, &pcurve.geometry, s)
+                }),
         )
         .map_err(resource)?;
         let Some(uv) = uv else {

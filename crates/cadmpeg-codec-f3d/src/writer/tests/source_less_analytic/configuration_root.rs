@@ -4,7 +4,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_test_support::EditableDecodeResult;
@@ -89,7 +88,7 @@ pub(super) fn write_and_decode(
 ) {
     let mut bytes = Vec::new();
     let report = F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, None))
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("source-less write");
     let decoded = F3dCodec
@@ -176,7 +175,7 @@ fn the_generated_type_is_charged_again_on_a_rewrite() {
     set_active_row(&mut ir, "large");
     let mut first_bytes = Vec::new();
     let first = F3dCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&ir, None))
         .and_then(|plan| plan.write_to(&mut first_bytes))
         .unwrap();
     assert_eq!(generated_type_losses(&first), 1, "{:#?}", first.losses);
@@ -633,12 +632,15 @@ fn a_document_read_from_cadir_writes_the_root_record_its_tables_state() {
     );
 }
 
+/// A design with features and parameter scopes.
+const DESIGN: &[u8] =
+    include_bytes!("../../../../tests/golden/fixtures/design_sketch_constraints.f3d");
+
 /// A design with features and a table document whose one column is a
 /// property, so that no column names a feature.
 fn designed() -> Vec<u8> {
     use crate::test_support::configuration_table::{property_target, string_cell};
-    use std::io::Write;
-    let document = table_document(
+    designed_with(&table_document(
         "1",
         &[("P", property_target("Part Number"))],
         &[
@@ -646,10 +648,13 @@ fn designed() -> Vec<u8> {
             ("b", "B", vec![("P", string_cell("B-1"))]),
         ],
         &["a", "b"],
-    );
-    let source =
-        include_bytes!("../../../../tests/golden/fixtures/design_sketch_constraints.f3d").to_vec();
-    let mut zip = zip::ZipWriter::new_append(Cursor::new(source)).unwrap();
+    ))
+}
+
+/// [`DESIGN`] with table document `document`.
+fn designed_with(document: &impl serde::Serialize) -> Vec<u8> {
+    use std::io::Write;
+    let mut zip = zip::ZipWriter::new_append(Cursor::new(DESIGN.to_vec())).unwrap();
     zip.start_file(
         ENTRY,
         crate::zip_write::file_options(zip::CompressionMethod::Stored),
@@ -697,17 +702,13 @@ fn a_suppression_no_column_holds_declines_the_patch_and_is_charged() {
     assert!(!decoded.ir().model.configurations.is_empty());
     let mut ir = decoded.ir().clone();
     let (configuration, _) = contradicted(&mut ir);
-    let report = crate::test_support::assert_written_with_loss(
-        &ir,
-        Some(decoded.source_fidelity()),
-        "f3d/writer.patch-declined",
-        DECLINED,
-    );
+    let report =
+        crate::test_support::assert_patch_declined(&ir, Some(decoded.source_fidelity()), DECLINED);
     assert!(
-        report.losses.iter().any(|loss| {
-            loss.code.to_string() != "f3d/writer.patch-declined"
-                && loss.message.contains(&configuration)
-        }),
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(&configuration)),
         "{:#?}",
         report.losses
     );
@@ -746,10 +747,81 @@ fn a_definition_no_column_holds_writes_and_is_charged() {
         id.as_str(),
     );
     assert!(
-        report.losses.iter().any(|loss| {
-            loss.code.to_string() == "f3d/writer.patch-declined" && loss.message.contains(DECLINED)
-        }),
-        "{:#?}",
-        report.losses
+        matches!(
+            report.synthesis_cause(),
+            Some(cadmpeg_ir::report::export::SynthesisCause::PatchDeclined { reason })
+                if reason.contains(DECLINED)
+        ),
+        "{:?}",
+        report.write_path()
     );
+}
+
+/// A column that names a feature through its parameter scope, in a document
+/// whose parameter scopes the source-less Design stream has no form for: the
+/// generator writes the design from its neutral records and charges each
+/// configuration with the native Design stream (cadir-v11.md §3.4, W2). No
+/// table is written, so no feature state is written or read back otherwise.
+#[test]
+fn a_feature_column_beside_parameter_scopes_is_charged_with_its_configuration() {
+    use crate::test_support::configuration_table::{bool_cell, object_target};
+    let plain = F3dCodec
+        .decode(&mut Cursor::new(DESIGN), &DecodeOptions::default())
+        .expect("design decode");
+    let (scope, feature) = f3d_native(plain.ir())
+        .design_parameter_scopes
+        .iter()
+        .find_map(|scope| {
+            let id = crate::ids::neutral_feature_id(scope);
+            plain
+                .ir()
+                .model
+                .features
+                .iter()
+                .any(|feature| feature.id == id)
+                .then_some((scope.record_index, id))
+        })
+        .expect("a parameter scope of a feature");
+    let ir = source_less(designed_with(&table_document(
+        "1",
+        &[("F", object_target(&scope.to_string(), "DcFeature"))],
+        &[
+            ("a", "A", vec![("F", bool_cell(false))]),
+            ("b", "B", vec![("F", bool_cell(true))]),
+        ],
+        &["a", "b"],
+    )));
+    let suppressed = ir
+        .model
+        .configurations
+        .iter()
+        .find(|configuration| configuration.id == crate::ids::neutral_configuration_id(ENTRY, "a"))
+        .and_then(|configuration| configuration.feature_states.get(&feature))
+        .expect("the cell of row a suppresses the feature");
+    assert_eq!(
+        suppressed.evaluation,
+        cadmpeg_ir::features::parameters::ConfigurationEvaluation::Suppressed {}
+    );
+    let (report, round_trip) = write_and_decode(&ir);
+    assert_eq!(ir.model.configurations.len(), 2);
+    for configuration in &ir.model.configurations {
+        let id = configuration.id.as_str();
+        assert!(
+            report.losses.iter().any(|loss| {
+                loss.code.to_string() == "f3d/writer.configuration-omitted"
+                    && loss.message.contains(id)
+            }),
+            "{id}: {:#?}",
+            report.losses
+        );
+        assert!(
+            report.losses.iter().all(|loss| {
+                loss.code.to_string() != "export/edit.dropped" || !loss.message.contains(id)
+            }),
+            "{id}: {:#?}",
+            report.losses
+        );
+    }
+    assert!(f3d_native(round_trip.ir()).design_configurations.is_empty());
+    assert!(round_trip.ir().model.configurations.is_empty());
 }

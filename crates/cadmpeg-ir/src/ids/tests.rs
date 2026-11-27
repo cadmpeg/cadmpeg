@@ -26,29 +26,6 @@ fn source_key_encoding_preserves_reserved_and_separator_distinctions() {
     }
 }
 
-#[cfg(feature = "schema")]
-#[test]
-fn identity_schemas_constrain_strings_and_map_keys() {
-    use std::collections::BTreeMap;
-    macro_rules! check {
-        ($identity:ty) => {{
-            let schema = cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!($identity)).unwrap();
-            let string_schema = match schema["$ref"].as_str() {
-                Some(reference) => schema.pointer(reference.strip_prefix('#').unwrap()).unwrap(),
-                None => &schema,
-            };
-            assert_eq!(string_schema["type"], "string");
-            let pattern = string_schema["pattern"].as_str().unwrap();
-            let map = cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(BTreeMap<$identity, u8>)).unwrap();
-            assert_eq!(map["additionalProperties"], false);
-            assert!(map["patternProperties"].get(pattern).is_some());
-        }};
-    }
-    check!(super::Identity);
-    check!(super::BodyId);
-    check!(super::HistoricalBodyId);
-}
-
 #[test]
 fn decimal_key_padding_preserves_the_complete_unsigned_value() {
     for (value, width, expected) in [

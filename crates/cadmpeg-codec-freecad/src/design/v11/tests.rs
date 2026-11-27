@@ -12,6 +12,7 @@ use cadmpeg_ir::design::feature::{FeatureOperation, FuzzyTolerance, OperationFam
 use cadmpeg_ir::design::ops::assembly::{Place, PlacementBase};
 use cadmpeg_ir::design::ops::body::ScaleFactors;
 use cadmpeg_ir::design::parameter::ParameterOwner;
+use cadmpeg_ir::design::projection::restated::Restater;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 
@@ -70,10 +71,8 @@ const GROUP: &str = "fcstd:design:container#document:group";
 /// The CADIR write of `ir` read back, and each record id an `arena.omitted`
 /// loss of the write names.
 fn cadir_round_trip(ir: &CadIr) -> (CadIr, BTreeSet<String>) {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, CadirEncoder, EncodeInput, Encoder};
-    let plan = CadirEncoder
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
-        .unwrap();
+    use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
+    let plan = CadirEncoder.plan(EncodeInput::new(ir, None)).unwrap();
     let omitted = plan
         .report()
         .losses
@@ -177,6 +176,56 @@ fn a_partdesign_body_is_an_ordered_body_container_at_its_tip() {
         FeatureOperation::Unresolved {
             family: OperationFamily::Sketch
         }
+    );
+}
+
+/// The Body container restates the Body's model feature with its children as
+/// members, its `Tip` as the rollback and its bodies as the current state.
+/// A container has no name, so the Body's name is stated in part, and a
+/// CADIR write charges it on the omitted model features.
+#[test]
+fn the_body_container_restates_the_body_feature_without_its_name() {
+    use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
+
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(DESIGN_HISTORY), &DecodeOptions::default())
+        .unwrap();
+    let ir = decoded.ir();
+    let container = Restater::Record("fcstd:design:container#Body".to_owned());
+    let restated = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let restating = ir.model.restated().get(feature.id.as_str())?;
+            let cut = restating.cut_by(|by| by == &container)?;
+            Some((feature.id.as_str(), cut))
+        })
+        .collect::<Vec<_>>();
+    let [(body, cut)] = restated.as_slice() else {
+        panic!("one Body feature: {restated:?}");
+    };
+    assert!(cut.contains("name"), "{cut:?}");
+    assert!(!cut.contains("definition"), "{cut:?}");
+    assert!(!cut.contains("outputs"), "{cut:?}");
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(ir, None))
+        .expect("the CADIR writer drops what it cannot write");
+    let charged = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "arena.omitted")
+        .find_map(|loss| {
+            let (_, part) = loss.message.split_once(" stated in part: ")?;
+            let (_, fields) = part.split_once(&format!("{body} ("))?;
+            fields.split_once(')').map(|(fields, _)| fields.to_owned())
+        })
+        .expect("the write charges the Body as stated in part");
+    assert!(
+        charged.split(", ").any(|field| field == "name"),
+        "{charged}"
     );
 }
 

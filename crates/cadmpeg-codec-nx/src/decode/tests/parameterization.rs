@@ -557,7 +557,14 @@ fn decode_lifts_pcurve_only_fin_carrier_to_its_surface() {
         .position()
         .get();
     assert!(point.distance(vertex_point) < 1.0e-9);
-    let mut approximator = cadmpeg_ir::codec::write::approximation::Approximator::new(result.ir());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let context = cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        cadmpeg_core::decode::DecodeDepth::Full,
+    );
+    let mut approximator =
+        cadmpeg_ir::codec::write::approximation::Approximator::new(result.ir(), &context);
     assert!(matches!(
         approximator.curve(carrier.id.as_str()),
         Some(SolvedCurveGeometry::Nurbs(_))

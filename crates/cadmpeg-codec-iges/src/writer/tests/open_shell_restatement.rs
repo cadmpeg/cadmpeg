@@ -24,8 +24,8 @@ use crate::{IgesCodec, IgesVersion};
 fn written(ir: &CadIr, version: IgesVersion) -> (Vec<LossNote>, Vec<u8>) {
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(ir, None),
-            TargetRequest::Explicit(version.descriptor().id.as_str()),
+            EncodeInput::new(ir, None)
+                .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
         )
         .expect("the document is written");
     let losses = plan.report().losses.clone();

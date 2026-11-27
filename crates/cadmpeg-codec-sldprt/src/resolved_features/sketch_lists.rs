@@ -136,7 +136,7 @@ enum RecordPlace {
 
 /// Every `sgSketch` record list of one stream.
 #[derive(Debug, Clone, Default)]
-pub(super) struct SketchRecordLists {
+pub(crate) struct SketchRecordLists {
     lists: Vec<SketchRecordList>,
     /// Record offset to list index and place.
     records: BTreeMap<usize, (usize, RecordPlace)>,
@@ -146,7 +146,7 @@ impl SketchRecordLists {
     /// Find the `sgSketch` record lists of `payload`. A curve record after
     /// the first curve list belongs to the nearest sketch whose point records
     /// precede it.
-    pub(super) fn new(payload: &[u8]) -> Self {
+    pub(crate) fn new(payload: &[u8]) -> Self {
         let heads = record_heads(payload);
         let mut lists: Vec<SketchRecordList> = Vec::new();
         let mut later_curves = Vec::new();
@@ -201,7 +201,7 @@ impl SketchRecordLists {
     }
 
     /// Whether a curve record starts at `offset`.
-    fn is_curve(&self, payload: &[u8], offset: usize) -> bool {
+    pub(crate) fn is_curve(&self, payload: &[u8], offset: usize) -> bool {
         matches!(
             self.records.get(&offset),
             Some((_, RecordPlace::FirstCurveList | RecordPlace::LaterCurveList))
@@ -556,7 +556,7 @@ pub(super) struct ListedEntity {
 /// Why the curve record of a marker gives it no entity, so that the marker
 /// keeps what another reading gives it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ChordConflict {
+pub(crate) enum ChordConflict {
     /// A point record the record indexes writes no planar coordinates, or an
     /// index lies past the point records.
     PointUnread,
@@ -782,7 +782,7 @@ fn read_listed_entity(
 /// for an arc record and the form conflict for a record whose form
 /// [`curve_form`] does not read. `None` when the offset starts no listed
 /// curve record or the record states a line.
-pub(super) fn unchecked_record_conflict(
+pub(crate) fn unchecked_record_conflict(
     payload: &[u8],
     lists: &SketchRecordLists,
     offset: usize,
