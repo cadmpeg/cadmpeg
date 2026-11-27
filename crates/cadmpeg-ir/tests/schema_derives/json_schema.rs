@@ -2,9 +2,9 @@
 //! Checks over the committed JSON Schema files. `tests/committed_schema.rs`
 //! compares them with the derived schemas.
 
-use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 
+use cadmpeg_core::serde_erase::json;
 use serde_json::{Map, Value};
 
 /// Whether `node` can admit `null`: false only where a keyword of the node,
@@ -187,10 +187,13 @@ fn wire_names<'a>(node: &'a Value, names: &mut BTreeSet<&'a str>) {
     }
 }
 
-/// §2.5: field and variant names are snake_case.
+/// §2.5: field and variant names are `snake_case`.
 #[test]
 fn every_wire_name_is_snake_case() {
-    for committed in [crate::CADIR_JSON_SCHEMA, crate::DECODE_SIDECAR_JSON_SCHEMA] {
+    for committed in [
+        cadmpeg_ir::CADIR_JSON_SCHEMA,
+        cadmpeg_ir::DECODE_SIDECAR_JSON_SCHEMA,
+    ] {
         let schema: Value = serde_json::from_str(committed).unwrap();
         let mut names = BTreeSet::new();
         wire_names(&schema, &mut names);
@@ -212,7 +215,10 @@ fn every_wire_name_is_snake_case() {
 /// admits `null` anywhere else.
 #[test]
 fn null_is_admitted_only_as_an_element_or_a_map_value() {
-    for committed in [crate::CADIR_JSON_SCHEMA, crate::DECODE_SIDECAR_JSON_SCHEMA] {
+    for committed in [
+        cadmpeg_ir::CADIR_JSON_SCHEMA,
+        cadmpeg_ir::DECODE_SIDECAR_JSON_SCHEMA,
+    ] {
         let schema: Value = serde_json::from_str(committed).unwrap();
         let found = null_values(&schema);
         assert!(
@@ -284,16 +290,16 @@ fn the_null_walk_finds_an_option_outside_an_element() {
 #[test]
 fn a_null_optional_member_fails_the_schema_and_the_reader() {
     let mut document =
-        json::to_value(crate::examples::unit_cube().expect("the example builds")).unwrap();
+        json::to_value(cadmpeg_ir::examples::unit_cube().expect("the example builds")).unwrap();
     let vertex = &mut document["geometry"]["vertices"][0];
     vertex["tolerance"] = Value::Null;
-    let refusal = json::from_value::<crate::CadIr>(document).unwrap_err();
+    let refusal = json::from_value::<cadmpeg_ir::CadIr>(document).unwrap_err();
     assert!(
         refusal.to_string().contains("it does not state null"),
         "{refusal}"
     );
 
-    let schema: Value = serde_json::from_str(crate::CADIR_JSON_SCHEMA).unwrap();
+    let schema: Value = serde_json::from_str(cadmpeg_ir::CADIR_JSON_SCHEMA).unwrap();
     let defs = schema["$defs"].as_object().unwrap();
     let resolve = |node: &Value| -> Value {
         node["$ref"]
@@ -317,10 +323,10 @@ fn a_null_optional_member_fails_the_schema_and_the_reader() {
 /// carrier's `procedural` arm, which admits no other member, states it.
 #[test]
 fn a_procedural_carrier_cache_is_a_member_of_its_schema() {
-    use crate::geometry::{
+    use cadmpeg_ir::geometry::{
         CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     };
-    use crate::ids::{ProceduralCurveId, ProceduralSurfaceId};
+    use cadmpeg_ir::ids::{ProceduralCurveId, ProceduralSurfaceId};
 
     let surface = SurfaceGeometry::Procedural {
         construction: ProceduralSurfaceId::mint("test:model:construction#surface").unwrap(),
@@ -330,7 +336,7 @@ fn a_procedural_carrier_cache_is_a_member_of_its_schema() {
         construction: ProceduralCurveId::mint("test:model:construction#curve").unwrap(),
         cache: Some(SolvedCurveGeometry::Unknown { record: None }),
     };
-    let schema = json::to_value(crate::cadir_json_schema()).unwrap();
+    let schema = json::to_value(cadmpeg_ir::cadir_json_schema()).unwrap();
     let defs = schema["$defs"].as_object().unwrap();
     for (name, written) in [
         ("SurfaceGeometry", json::to_value(surface).unwrap()),
@@ -366,8 +372,8 @@ fn a_procedural_carrier_cache_is_a_member_of_its_schema() {
 fn a_null_pair_key_is_written_read_and_admitted() {
     use std::collections::BTreeMap;
 
-    use crate::design::ops::assembly::AssemblyContext;
-    use crate::design::selection::{Anchor, Picks, Selection};
+    use cadmpeg_ir::design::ops::assembly::AssemblyContext;
+    use cadmpeg_ir::design::selection::{Anchor, Picks, Selection};
 
     let context = AssemblyContext {
         participants: BTreeMap::from([(
@@ -384,7 +390,7 @@ fn a_null_pair_key_is_written_read_and_admitted() {
     let read: AssemblyContext = json::from_value(written).unwrap();
     assert_eq!(read, context);
 
-    let schema: Value = serde_json::from_str(crate::CADIR_JSON_SCHEMA).unwrap();
+    let schema: Value = serde_json::from_str(cadmpeg_ir::CADIR_JSON_SCHEMA).unwrap();
     let defs = schema["$defs"].as_object().unwrap();
     let participants = &defs["AssemblyContext"]["properties"]["participants"];
     assert!(admits_null(

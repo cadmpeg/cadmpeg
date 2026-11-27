@@ -51,5 +51,10 @@ name = "emit_cube"
 name = "committed_schema"
 required-features = ["schema"]
 
+[[test]]
+name = "schema_derives"
+path = "tests/schema_derives/main.rs"
+required-features = ["schema"]
+
 [lints]
 workspace = true
