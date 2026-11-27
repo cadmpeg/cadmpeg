@@ -383,10 +383,10 @@ fn a_rigid_group_is_charged_evaluation_missing_as_no_joint_written() {
     );
 }
 
-/// A joint that a written rigid group restates is charged with the group
-/// alone; a joint no design feature restates is charged as omitted.
-#[test]
-fn a_joint_its_written_group_restates_is_charged_once() {
+/// The `writer.joint-omitted` messages of writing a rigid group that restates
+/// joint `grouped` without `cut`, beside a joint `alone` that no feature
+/// restates.
+fn grouped_joint_losses(cut: &[&'static str]) -> Vec<String> {
     use cadmpeg_ir::design::projection::restated::Restater;
     use cadmpeg_ir::products::{
         AssemblyJoint, JointConnector, JointId, JointOperand, PairedJointKind,
@@ -439,11 +439,21 @@ fn a_joint_its_written_group_restates_is_charged_once() {
     ir.model.restated_mut().record(
         "test:model:joint#grouped",
         Restater::Record(GROUP.to_owned()),
-        [],
+        cut.iter().copied(),
     );
     let (report, _) = write(&ir);
-    let omitted = loss(&report, &F3dLossCode::WriterJointOmitted.kind().to_string());
-    assert_eq!(omitted.len(), 1, "{:#?}", report.losses);
+    loss(&report, &F3dLossCode::WriterJointOmitted.kind().to_string())
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// A joint that a written rigid group restates is charged with the group
+/// alone; a joint no design feature restates is charged as omitted.
+#[test]
+fn a_joint_its_written_group_restates_is_charged_once() {
+    let omitted = grouped_joint_losses(&[]);
+    assert_eq!(omitted.len(), 1, "{omitted:#?}");
     assert!(
         omitted[0].contains("test:model:joint#alone"),
         "{}",
@@ -453,6 +463,19 @@ fn a_joint_its_written_group_restates_is_charged_once() {
         !omitted[0].contains("test:model:joint#grouped"),
         "{}",
         omitted[0]
+    );
+}
+
+/// A joint that a written rigid group restates without some of its fields is
+/// charged with those fields.
+#[test]
+fn a_joint_its_written_group_restates_in_part_is_charged_with_its_cut() {
+    let losses = grouped_joint_losses(&["operands"]);
+    assert_eq!(losses.len(), 2, "{losses:#?}");
+    assert!(
+        losses.iter().any(|message| message
+            .ends_with("stated in part by the design features that restate them: test:model:joint#grouped (operands)")),
+        "{losses:#?}"
     );
 }
 

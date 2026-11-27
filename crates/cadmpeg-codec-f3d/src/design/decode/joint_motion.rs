@@ -6,10 +6,13 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::{bounded_len, u64_from_index, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::products::AssemblyJoint;
 use cadmpeg_ir::report::loss::LossNote;
 
 use crate::container::ContainerScan;
-use crate::design::assembly::{compact_placement_as_built_scope, rigid_as_built_scope};
+use crate::design::assembly::{
+    compact_placement_as_built_scope, rigid_as_built_scope, scope_joint_motions,
+};
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::layout::assembly_motion_parent_entry as parent_entry;
 use crate::layout::assembly_motion_parent_run as parents;
@@ -52,6 +55,14 @@ pub(crate) const JOINT_TYPE_GUID: &str = "7F5A0426-1D2A-4DC4-9F06-58631F69D2F5";
 const MOTION_TYPE_GUID: &str = "8C188F11-5D1B-4E1C-8E87-AF7214CA3C83";
 const OCCURRENCE_TYPE_GUID: &str = "CE2913AA-CFE0-4F04-9102-24424ED3BCFA";
 
+/// A record of freedom entries that binds no joint record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UnboundMotion {
+    /// The native scope of its stream.
+    pub(crate) stream: String,
+    pub(crate) record_index: u32,
+}
+
 #[derive(Default)]
 struct AsBuiltJoints<'a> {
     types: HashMap<u64, (&'a str, u32)>,
@@ -59,15 +70,15 @@ struct AsBuiltJoints<'a> {
 }
 
 /// Decode the motion of every joint whose motion record carries freedom
-/// entries, in every Design `BulkStream`.
+/// entries, in every Design `BulkStream`, and the records of freedom entries
+/// that bind no joint record.
 pub(crate) fn decode_joint_motions(
     scan: &ContainerScan<'_>,
     scopes: &[DesignParameterScope],
     types: &[SegmentType],
-) -> Result<(Vec<DesignJointMotion>, Vec<LossNote>), CodecError> {
+) -> Result<(Vec<DesignJointMotion>, Vec<UnboundMotion>), CodecError> {
     let mut out = Vec::new();
     let mut unbound = Vec::new();
-    let mut unmoved = Vec::new();
     for entry in scan
         .entries
         .iter()
@@ -105,28 +116,63 @@ pub(crate) fn decode_joint_motions(
             joints,
         };
         let (motions, skipped) = decode_stream(bytes, &entry.name, &assemble_scopes, &as_built);
-        if !skipped.is_empty() {
-            let named = unmoved.len();
-            unmoved.extend(scopes_without_motion(scopes, &stream, &motions));
-            if unmoved.len() > named {
-                unbound.extend(skipped.into_iter().map(|index| format!("{stream}#{index}")));
-            }
-        }
+        unbound.extend(skipped.into_iter().map(|record_index| UnboundMotion {
+            stream: stream.clone(),
+            record_index,
+        }));
         out.extend(motions);
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
-    let losses = if unmoved.is_empty() {
-        Vec::new()
-    } else {
-        vec![F3dLossCode::AssemblyJointMotionAssumedRigid.note(format!(
+    Ok((out, unbound))
+}
+
+/// The loss of the joint scopes that bind no motion record and take the
+/// motion of their joint kind, in the streams where records of freedom
+/// entries bind no joint record. A scope is named where a joint of `joints`
+/// projects it.
+pub(crate) fn assumed_motion_loss(
+    scopes: &[DesignParameterScope],
+    motions: &[DesignJointMotion],
+    unbound: &[UnboundMotion],
+    joints: &[AssemblyJoint],
+) -> Option<LossNote> {
+    let projected: HashSet<&str> = joints
+        .iter()
+        .filter_map(|joint| joint.native_ref.as_deref())
+        .collect();
+    let mut streams: Vec<&str> = Vec::new();
+    for record in unbound {
+        if !streams.contains(&record.stream.as_str()) {
+            streams.push(&record.stream);
+        }
+    }
+    let mut unmoved = Vec::new();
+    let mut records = Vec::new();
+    for stream in streams {
+        let named = unmoved.len();
+        unmoved.extend(
+            scopes_without_motion(scopes, stream, motions)
+                .into_iter()
+                .filter(|scope| projected.contains(scope)),
+        );
+        if unmoved.len() > named {
+            records.extend(
+                unbound
+                    .iter()
+                    .filter(|record| record.stream == stream)
+                    .map(|record| format!("{stream}#{}", record.record_index)),
+            );
+        }
+    }
+    (!unmoved.is_empty()).then(|| {
+        F3dLossCode::AssemblyJointMotionAssumedRigid.note(format!(
             "{} joint scope(s) bind no motion record and take the motion of their joint kind, rigid for a fixed joint, where {} record(s) of freedom entries of their stream bind no joint record: {}; {}",
             unmoved.len(),
-            unbound.len(),
+            records.len(),
             unmoved.join(", "),
-            unbound.join(", ")
-        ))]
-    };
-    Ok((out, losses))
+            records.join(", ")
+        ))
+    })
 }
 
 /// The scopes of `stream` that hold a joint alignment and no rigid-group
@@ -142,9 +188,7 @@ fn scopes_without_motion<'s>(
             crate::ids::native_stream(&scope.id) == Some(stream)
                 && scope.assembly_alignment().is_some()
                 && !rigid_as_built_scope(scope)
-                && !motions.iter().any(|motion| {
-                    motion.joint_record_index.checked_add(1) == Some(scope.record_index)
-                })
+                && scope_joint_motions(scope, stream, motions).is_empty()
         })
         .map(|scope| scope.id.as_str())
         .collect()

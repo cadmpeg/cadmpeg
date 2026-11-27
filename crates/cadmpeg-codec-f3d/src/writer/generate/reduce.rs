@@ -647,25 +647,29 @@ impl<'a> Reduction<'a> {
                 .map(|feature| feature.id.to_string())
                 .collect()
         };
-        let restated = |id: &str| {
-            self.ir
-                .model
-                .restated()
-                .get(id)
-                .is_some_and(|restating_of| {
-                    restating_of.restaters().any(|(by, _)| {
-                    matches!(by, Restater::Record(feature) if restating.contains(feature))
-                })
-                })
-        };
-        let omitted = self
+        let mut omitted = Vec::new();
+        let mut cut = Vec::new();
+        for id in self
             .ir
             .model
             .assembly_joints
             .iter()
             .map(|row| row.id.to_string())
-            .filter(|id| !restated(id))
-            .collect::<Vec<_>>();
+        {
+            let fields = self.ir.model.restated().get(&id).and_then(|restating_of| {
+                restating_of.cut_by(
+                    |by| matches!(by, Restater::Record(feature) if restating.contains(feature)),
+                )
+            });
+            match fields {
+                None => omitted.push(id),
+                Some(fields) if !fields.is_empty() => {
+                    let fields = fields.into_iter().collect::<Vec<_>>().join(", ");
+                    cut.push(format!("{id} ({fields})"));
+                }
+                Some(_) => {}
+            }
+        }
         self.ir.to_mut().model.assembly_joints.clear();
         self.losses.extend(named_loss(
             F3dLossCode::WriterJointOmitted,
@@ -673,6 +677,14 @@ impl<'a> Reduction<'a> {
             "the source-less F3D Design stream holds no joint record",
             omitted,
         ));
+        if !cut.is_empty() {
+            cut.sort_unstable();
+            self.losses.push(F3dLossCode::WriterJointOmitted.note(format!(
+                "{} assembly joint record(s) are stated in part by the design features that restate them: {}",
+                cut.len(),
+                cut.join(", ")
+            )));
+        }
     }
 
     fn drop_unwritten_arenas(&mut self) {

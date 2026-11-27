@@ -308,23 +308,19 @@ pub(super) fn check_joint(
             joints: Some(joints),
             ..
         } => {
-            // A `Native` pick names a joint the source states in no feature
-            // (§3.3).
-            let picked: Option<Vec<Option<&str>>> = picks::named(joints).map(|picks| {
+            let targets: Option<Vec<&str>> = picks::named(joints).map(|picks| {
                 picks
                     .iter()
                     .filter_map(|pick| match &pick.target {
-                        PickTarget::Feature(feature) => Some(Some(feature.as_str())),
-                        PickTarget::Native { .. } => Some(None),
+                        PickTarget::Feature(feature) => Some(feature.as_str()),
                         _ => None,
                     })
                     .collect()
             });
             let fits = picks::count(joints).is_none_or(|count| count == 2)
-                && picked.as_ref().is_none_or(|picked| {
-                    picked.len() == 2 && !picked.contains(&Some(site.feature))
-                });
-            let targets = picked.map(|picked| picked.into_iter().flatten().collect::<Vec<_>>());
+                && targets
+                    .as_ref()
+                    .is_none_or(|targets| targets.len() == 2 && !targets.contains(&site.feature));
             if !fits {
                 error(
                     findings,

@@ -9,6 +9,7 @@
 //! about the joint's y axis turns its frames so that y becomes z; the design
 //! joint states the frames as stored and names the y axis.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::nonblank_literal;
@@ -57,7 +58,6 @@ const MM_PER_CM: f64 = 10.0;
 
 /// The wire fields of an assembly joint a design feature leaves out.
 const OPERANDS: &str = "operands";
-const COUPLED_JOINTS: &str = "operands.coupled_joints";
 const CONNECTORS: &str = "operands.connectors";
 const SUPPRESSED: &str = "suppressed";
 const DRIVING_PARAMETER: &str = "driving_parameter";
@@ -137,14 +137,27 @@ impl<'a> Places<'a> {
         ))
     }
 
-    /// The occurrence that `occurrence` and the residual native keys `path`
-    /// name, with the keys that name no single child.
-    fn descend(&self, occurrence: &OccurrenceId, path: &[String]) -> (OccurrenceId, Vec<String>) {
+    /// The occurrence an `Occurrence` operand names: its occurrence, moved
+    /// down by the native occurrence keys below it (its `occurrence_path`,
+    /// then its `subelements`), with the keys that name no single child.
+    /// `None` for another container.
+    fn reach(&self, operand: &products::JointOperand) -> Option<(OccurrenceId, Vec<String>)> {
+        let OperandContainer::Occurrence {
+            occurrence,
+            occurrence_path,
+        } = &operand.container
+        else {
+            return None;
+        };
         let mut occurrence = occurrence.clone();
-        let mut path = path.to_vec();
+        let mut keys = occurrence_path
+            .iter()
+            .chain(&operand.subelements)
+            .cloned()
+            .collect();
         self.keys
-            .descend(self.occurrences, &self.parents, &mut occurrence, &mut path);
-        (occurrence, path)
+            .descend(self.occurrences, &self.parents, &mut occurrence, &mut keys);
+        Some((occurrence, keys))
     }
 }
 
@@ -231,9 +244,10 @@ pub(super) struct Restated {
 /// every joint of its scope.
 ///
 /// A feature keeps its component. Where the connector paths do not start at
-/// the component, a joint's picks reach their occurrences through the scope's
-/// definition; a rigid group's member paths start at the scope's definition,
-/// and the group leaves out the legacy feature's `product_definition`.
+/// a component other than the scope's definition, a joint's picks reach
+/// their occurrences through the scope's definition; a rigid group's member
+/// paths start at the scope's definition, and the group leaves out the
+/// legacy feature's `product_definition`.
 pub(super) fn project(
     features: &mut [Feature],
     owner: &ProductDefinitionId,
@@ -272,11 +286,14 @@ pub(super) fn project(
         let source = inputs.source(joint);
         let component = feature.component.clone();
         let (site, cleared) = match &component {
-            Some(component) if site(component, false).roots(joint) => {
-                (site(component, false), false)
+            Some(component) if component != owner && !site(component, false).roots(joint) => {
+                if source.group {
+                    (site(owner, false), true)
+                } else {
+                    (site(owner, true), false)
+                }
             }
-            Some(_) if source.group => (site(owner, false), true),
-            Some(_) => (site(owner, true), false),
+            Some(component) => (site(component, false), false),
             None => (site(owner, false), false),
         };
         let operation = match site.operation(joint) {
@@ -303,7 +320,7 @@ pub(super) fn project(
             )
         );
         if rigid && source.ambiguous {
-            assumed.push(feature.id.to_string());
+            assumed.push(format!("{} (assembly joint {})", feature.id, joint.id));
         }
         match &operation {
             FeatureOperation::RigidGroup(_) => {
@@ -375,8 +392,7 @@ fn scalar_cut(joint: &AssemblyJoint, feature: &Feature) -> Vec<&'static str> {
 }
 
 /// The fields of `joint` that the design joint `operation` of `feature`
-/// leaves out: the coupled joints where a pick names a joint no feature
-/// states, and the connectors where a connector states no frame.
+/// leaves out: the connectors where a connector states no frame.
 fn joint_cut(
     joint: &AssemblyJoint,
     feature: &Feature,
@@ -386,21 +402,6 @@ fn joint_cut(
     let FeatureOperation::Joint(design) = operation else {
         return cut;
     };
-    if let JointKind::Coupling {
-        joints: Some(joints),
-        ..
-    } = &design.kind
-    {
-        if let Picks::Named(picks) = &joints.picks {
-            if picks
-                .as_slice()
-                .iter()
-                .any(|pick| matches!(pick.target, PickTarget::Native { .. }))
-            {
-                cut.push(COUPLED_JOINTS);
-            }
-        }
-    }
     let framed = |connector: &JointConnector| match connector {
         JointConnector::Frame(construction) => {
             construction.resolved.is_some() || !construction.after.is_empty()
@@ -474,10 +475,18 @@ impl<'a> Site<'_, 'a> {
         Ok(connectors)
     }
 
-    /// The context of a pick in `occurrence`: the path from `owner`, through
-    /// `owner` where the feature's definition is another.
-    fn context(&self, occurrence: &OccurrenceId) -> Option<PickContext> {
-        let path = self.inputs.places.path(occurrence, self.owner)?;
+    /// The context of a pick in `occurrence`, or below it in the occurrences
+    /// the native keys `below` name and the document does not hold: the path
+    /// from `owner`, through `owner` where the feature's definition is
+    /// another.
+    fn context(&self, occurrence: &OccurrenceId, below: &[String]) -> Option<PickContext> {
+        let mut path = self.inputs.places.path(occurrence, self.owner)?;
+        for key in below {
+            path.0.push(PathStep {
+                occurrence: StepRef::Native(native_name([key.as_str()])?),
+                configuration: None,
+            });
+        }
         Some(if self.in_context {
             PickContext::InContext {
                 assembly: DefinitionRef {
@@ -496,30 +505,26 @@ impl<'a> Site<'_, 'a> {
     /// the connectors `joint` places name.
     fn roots(&self, joint: &AssemblyJoint) -> bool {
         self.placed(joint).map_or(true, |connectors| {
-            connectors
-                .iter()
-                .all(|connector| match &connector.operand.container {
-                    OperandContainer::Occurrence {
-                        occurrence,
-                        occurrence_path,
-                    } => {
-                        let (occurrence, _) =
-                            self.inputs.places.descend(occurrence, occurrence_path);
+            connectors.iter().all(|connector| {
+                self.inputs
+                    .places
+                    .reach(&connector.operand)
+                    .is_none_or(|(occurrence, _)| {
                         self.inputs.places.path(&occurrence, self.owner).is_some()
-                    }
-                    OperandContainer::Root {} | OperandContainer::External { .. } => true,
-                })
+                    })
+            })
         })
     }
 
     /// The design operation of `joint`.
-    fn operation(&self, joint: &AssemblyJoint) -> Result<FeatureOperation, &'static str> {
+    fn operation(&self, joint: &AssemblyJoint) -> Result<FeatureOperation, Cow<'static, str>> {
         let source = self.inputs.source(joint);
         let (kind, connectors) = pair(joint)?;
         if source.group {
             return self
                 .rigid_group(joint)
-                .map(|group| FeatureOperation::RigidGroup(Box::new(group)));
+                .map(|group| FeatureOperation::RigidGroup(Box::new(group)))
+                .map_err(Cow::Borrowed);
         }
         let (kind, unturn, mut native_options, source_settings) = match kind {
             PairedJointKind::Gears {
@@ -541,7 +546,7 @@ impl<'a> Site<'_, 'a> {
                                 .map(Dimension::Literal),
                             radii: [radius(distance), radius(distance2)],
                         },
-                        joints: self.coupled(coupled_joints)?,
+                        joints: Some(self.coupled(coupled_joints)?),
                     },
                     false,
                     NativeOptions::new(),
@@ -578,7 +583,7 @@ impl<'a> Site<'_, 'a> {
                     source_settings,
                 )
             }
-            _ => return Err("its kind has no Fusion design form"),
+            _ => return Err("its kind has no Fusion design form".into()),
         };
         if source.as_built {
             insert_text(&mut native_options, "joint_mode", "As-built".to_owned());
@@ -606,116 +611,111 @@ impl<'a> Site<'_, 'a> {
         Ok(FeatureOperation::Joint(Box::new(joint)))
     }
 
-    /// The picks of the two joints a coupling acts on: a joint that binds a
-    /// feature of the scope by its `Feature`, another by its native name
-    /// (§3.3). `None` where the coupling acts on the connectors directly.
-    fn coupled(&self, joints: &[JointId]) -> Result<Option<OrderedSelection>, &'static str> {
-        let pair = match joints {
-            [] => return Ok(None),
-            [first, second] if first != second => [first, second],
-            _ => return Err("its coupling names other than two distinct joints"),
-        };
-        let pick = |joint: &JointId| {
-            let feature = self
-                .inputs
-                .features
-                .get(joint)
-                .filter(|feature| self.ids.contains(feature.as_str()));
-            let (target, native) = match feature {
-                Some(feature) => (PickTarget::Feature((*feature).clone()), None),
-                None => (
-                    PickTarget::Native { within: None },
-                    Some(native_name([joint.as_str()])?),
-                ),
-            };
-            Some(Picked {
-                target,
-                context: None,
-                native,
-                domain: None,
-                witness: None,
-                resolved: None,
+    /// The `Feature` picks of the joints a coupling acts on (§6.7
+    /// Couplings): the design feature of the scope each joint binds. A joint
+    /// that binds none is named by its scope record.
+    fn coupled(&self, joints: &[JointId]) -> Result<OrderedSelection, Cow<'static, str>> {
+        let picks = joints
+            .iter()
+            .map(|joint| {
+                let feature = self
+                    .inputs
+                    .features
+                    .get(joint)
+                    .filter(|feature| self.ids.contains(feature.as_str()))
+                    .ok_or_else(|| {
+                        let named = self
+                            .inputs
+                            .joints
+                            .get(joint)
+                            .and_then(|joint| joint.native_ref.as_deref())
+                            .unwrap_or(joint.as_str());
+                        format!("its coupled joint {named} has no design feature")
+                    })?;
+                Ok::<_, String>(Picked {
+                    target: PickTarget::Feature((*feature).clone()),
+                    context: None,
+                    native: None,
+                    domain: None,
+                    witness: None,
+                    resolved: None,
+                })
             })
-        };
-        let picks = pair
-            .into_iter()
-            .map(pick)
-            .collect::<Option<Vec<_>>>()
-            .ok_or("its coupled joint names no pick")?;
-        Ok(Some(Selection {
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Selection {
             at: Anchor::Current,
-            picks: Picks::Named(
-                Members::new(picks).map_err(|_| "its coupled joints bind one feature")?,
-            ),
+            picks: Picks::Named(Members::new(picks)?),
             native: None,
-        }))
+        })
     }
 
     /// A connector on `connector`'s operand at `frame`: a joint origin's
-    /// frame datum, a frame on a whole occurrence moved by `frame`, or the
-    /// native operand at `frame`. The frame is in the coordinates of the
-    /// document at the end of the operand's path, so a frame on an element
-    /// below the occurrence the path resolves to states no resolved value.
+    /// frame datum, a frame on an occurrence moved by `frame`, or the native
+    /// operand at `frame`. The frame is in the coordinates of the document at
+    /// the end of the operand's path; an occurrence path that goes below the
+    /// occurrences the document holds ends in their native keys. An external
+    /// document's placement is not one occurrence's, so its frame states no
+    /// resolved value.
     fn connector(
         &self,
         connector: &products::JointConnector,
         frame: Transform,
     ) -> Option<JointConnector> {
         let operand = &connector.operand;
+        let pick = |target, context, native| Picked {
+            target,
+            context,
+            native,
+            domain: None,
+            witness: None,
+            resolved: None,
+        };
         let (pick, after, resolved) = match &operand.container {
             OperandContainer::Root {}
                 if operand.subelements.is_empty() && self.ids.contains(&operand.object) =>
             {
                 (
-                    Picked {
-                        target: PickTarget::Datum {
+                    pick(
+                        PickTarget::Datum {
                             feature: FeatureId::mint(operand.object.clone()).ok()?,
                             part: None,
                         },
-                        context: None,
-                        native: None,
-                        domain: None,
-                        witness: None,
-                        resolved: None,
-                    },
+                        None,
+                        None,
+                    ),
                     Vec::new(),
                     true,
                 )
             }
-            OperandContainer::Occurrence {
-                occurrence,
-                occurrence_path,
-            } => {
-                let (occurrence, keys) = self.inputs.places.descend(occurrence, occurrence_path);
-                let whole = keys.is_empty() && operand.subelements.is_empty();
+            OperandContainer::Occurrence { .. } => {
+                let (occurrence, below) = self.inputs.places.reach(operand)?;
                 (
-                    Picked {
-                        target: if whole {
-                            PickTarget::Component
-                        } else {
-                            PickTarget::Native { within: None }
-                        },
-                        context: Some(self.context(&occurrence)?),
-                        native: Some(native_name(operand_parts(&keys, operand))?),
-                        domain: None,
-                        witness: None,
-                        resolved: None,
-                    },
+                    pick(
+                        PickTarget::Component,
+                        Some(self.context(&occurrence, &below)?),
+                        Some(native_name([operand.object.as_str()])?),
+                    ),
                     vec![PostStep::Fixed(frame)],
-                    whole,
+                    true,
                 )
             }
-            OperandContainer::Root {} | OperandContainer::External { .. } => (
-                Picked {
-                    target: PickTarget::Native { within: None },
-                    context: None,
-                    native: Some(native_name(operand_parts(&[], operand))?),
-                    domain: None,
-                    witness: None,
-                    resolved: None,
-                },
+            OperandContainer::Root {} => (
+                pick(
+                    PickTarget::Native { within: None },
+                    None,
+                    Some(native_name(operand_parts(operand))?),
+                ),
                 Vec::new(),
                 true,
+            ),
+            OperandContainer::External { .. } => (
+                pick(
+                    PickTarget::Native { within: None },
+                    None,
+                    Some(native_name(operand_parts(operand))?),
+                ),
+                vec![PostStep::Fixed(frame)],
+                false,
             ),
         };
         Some(JointConnector::Frame(Construction {
@@ -737,24 +737,23 @@ impl<'a> Site<'_, 'a> {
         let mut native_options = NativeOptions::new();
         for (ordinal, connector) in connectors.into_iter().enumerate() {
             let operand = &connector.operand;
-            let (member, keys) = match &operand.container {
-                OperandContainer::Occurrence {
-                    occurrence,
-                    occurrence_path,
-                } => {
-                    let (occurrence, keys) =
-                        self.inputs.places.descend(occurrence, occurrence_path);
-                    let member = (keys.is_empty() && operand.subelements.is_empty())
+            let (member, listing) = match self.inputs.places.reach(operand) {
+                Some((occurrence, below)) => (
+                    below
+                        .is_empty()
                         .then(|| self.inputs.places.path(&occurrence, self.owner))
-                        .flatten();
-                    (member, keys)
-                }
-                OperandContainer::Root {} | OperandContainer::External { .. } => (None, Vec::new()),
+                        .flatten(),
+                    std::iter::once(&operand.object)
+                        .chain(&below)
+                        .map(String::as_str)
+                        .collect::<Vec<_>>()
+                        .join("/"),
+                ),
+                None => (None, operand_parts(operand).collect::<Vec<_>>().join("/")),
             };
             let named = match &member {
                 Some(path) => steps(path),
                 None => {
-                    let listing = operand_parts(&keys, operand).collect::<Vec<_>>().join("/");
                     insert_text(
                         &mut native_options,
                         &format!("unresolved_member.{ordinal}"),
@@ -1124,14 +1123,9 @@ fn input(pick: Picked) -> Option<ConstructionInput> {
     })
 }
 
-/// The parts of an operand's native name: the occurrence keys `keys` that
-/// name no occurrence, its object, and its subelements.
-fn operand_parts<'s>(
-    keys: &'s [String],
-    operand: &'s products::JointOperand,
-) -> impl Iterator<Item = &'s str> {
-    keys.iter()
-        .chain(std::iter::once(&operand.object))
+/// The parts of an operand's native name: its object and its subelements.
+fn operand_parts(operand: &products::JointOperand) -> impl Iterator<Item = &str> {
+    std::iter::once(&operand.object)
         .chain(&operand.subelements)
         .map(String::as_str)
 }

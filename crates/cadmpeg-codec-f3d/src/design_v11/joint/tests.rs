@@ -8,6 +8,9 @@ use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::FeatureContent;
 use cadmpeg_ir::products::{ExternalDocument, JointOperand, Storage};
 
+use crate::records::feature::assembly_features::{
+    DesignComponentOccurrence, DesignComponentOccurrenceDraft, DesignComponentOccurrencePlacement,
+};
 use crate::records::feature::joint_motion::{DesignJointLimitLanes, DesignJointRest};
 use crate::records::identity::Located;
 
@@ -25,7 +28,42 @@ fn definition(name: &str) -> ProductDefinitionId {
     ProductDefinitionId::mint(format!("f3d:model:product-definition#{name}")).unwrap()
 }
 
-/// A root that places `a` and `b`, and a part of `a` that places `c`.
+/// The occurrence key of the carrier of `c`.
+const CARRIED: &str = "e1ac1a2e-15ee-4bb1-b9ab-1f1b3ec6ad54";
+
+/// The record that carries `c` under the occurrence key [`CARRIED`].
+fn carrier() -> DesignComponentOccurrence {
+    DesignComponentOccurrence::try_new(DesignComponentOccurrenceDraft {
+        id: format!("{STREAM}:design-component-occurrence#40"),
+        class_tag: crate::records::references::DesignClassTag::try_from("339".to_owned()).unwrap(),
+        record_index: 40,
+        byte_offset: 40,
+        component_record_index: 159,
+        component_guid: "2ad641b3-9ea3-4e5f-a4da-926c3faeccae"
+            .to_owned()
+            .try_into()
+            .unwrap(),
+        occurrence_guid: crate::records::mesh::DesignRelaxedGuidText::try_from(CARRIED.to_owned())
+            .unwrap()
+            .into(),
+        placement: DesignComponentOccurrencePlacement::Explicit {
+            ordinal: std::num::NonZeroU32::new(1).unwrap(),
+            transform: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+            .try_into()
+            .unwrap(),
+        },
+        owner_entity: 6,
+    })
+    .unwrap()
+}
+
+/// A root that places `a` and `b`, and a part of `a` that places `c`, which
+/// [`carrier`] carries.
 struct Model {
     definitions: Vec<ProductDefinition>,
     occurrences: Vec<Occurrence>,
@@ -50,7 +88,11 @@ impl Model {
             occurrences: vec![
                 Occurrence::new(occurrence("a"), definition("part-a"), None),
                 Occurrence::new(occurrence("b"), definition("part-b"), None),
-                Occurrence::new(occurrence("c"), definition("part-c"), None),
+                {
+                    let mut c = Occurrence::new(occurrence("c"), definition("part-c"), None);
+                    c.native_ref = Some(carrier().id);
+                    c
+                },
             ],
         }
     }
@@ -205,6 +247,17 @@ fn restate_with(
     joints: &[AssemblyJoint],
     sources: &[(u32, Source<'_>)],
 ) -> (Vec<LossNote>, Restatements) {
+    restate_keyed(features, legacy, joints, sources, &[])
+}
+
+/// [`restate_with`], where `carriers` key the occurrences.
+fn restate_keyed(
+    features: &mut [Feature],
+    legacy: &[LegacyFeature],
+    joints: &[AssemblyJoint],
+    sources: &[(u32, Source<'_>)],
+    carriers: &[DesignComponentOccurrence],
+) -> (Vec<LossNote>, Restatements) {
     let model = Model::new();
     let scopes = sources
         .iter()
@@ -221,7 +274,7 @@ fn restate_with(
         Places::new(
             &model.definitions,
             &model.occurrences,
-            OperandKeys::new(&[], &[], &[]),
+            OperandKeys::new(carriers, &[], &[]),
         ),
     );
     let mut losses = Vec::new();
@@ -799,10 +852,11 @@ fn a_group_of_an_operand_component_roots_at_the_scope_and_cuts_the_definition() 
 }
 
 /// The keys of an operand that name no occurrence below the one its path
-/// resolves to name an element of that occurrence's document: the connector
-/// picks it by its native name, at the stored frame, with no resolved value.
+/// resolves to name occurrences the document does not hold: the connector
+/// picks the component through their native steps (§5.8), at the stored
+/// frame in that component's coordinates.
 #[test]
-fn an_operand_with_unresolved_keys_states_a_native_pick_at_the_stored_frame() {
+fn an_operand_below_the_held_occurrences_picks_its_component_through_native_steps() {
     let deep = joint(
         "deep",
         86,
@@ -829,16 +883,21 @@ fn an_operand_with_unresolved_keys_states_a_native_pick_at_the_stored_frame() {
     assert!(losses.is_empty(), "{losses:?}");
     let construction = construction(&the_joint(&features[0]).connectors[1]);
     let pick = only_pick(construction);
-    assert_eq!(pick.target, PickTarget::Native { within: None });
-    assert_eq!(pick.context, Some(PickContext::Occurrence(path(&["b"]))));
+    assert_eq!(pick.target, PickTarget::Component);
+    let mut below = path(&["b"]);
+    below.0.push(PathStep {
+        occurrence: StepRef::Native(native_name(["deeper-key"]).unwrap()),
+        configuration: None,
+    });
+    assert_eq!(pick.context, Some(PickContext::Occurrence(below)));
     assert_eq!(
         pick.native.as_ref().map(|name| &name.value),
         Some(&NativeNameValue::Text(
-            NonBlankString::new("b-origin/deeper-key").unwrap()
+            NonBlankString::new("b-origin").unwrap()
         ))
     );
     assert_eq!(fixed_rows(construction), STORED);
-    assert_eq!(construction.resolved, None);
+    assert_eq!(construction.resolved, frame_value(&frame(STORED)));
     assert_eq!(
         restated,
         [(joint_id("deep"), feature_id("deep"), vec![NATIVE_REF])]
@@ -993,11 +1052,11 @@ fn a_motion_link_couples_the_features_of_its_two_revolute_joints() {
     );
 }
 
-/// A coupled joint that binds no feature of the scope is picked by its
-/// native name (§3.3): the coupling still names its two joints, and the
-/// link's restatement leaves out the coupled joints.
+/// A coupling picks the design features of its joints (§6.7 Couplings): a
+/// coupled joint that binds no design feature leaves the coupling
+/// unresolved, and the loss names the joint by its scope record.
 #[test]
-fn a_coupled_joint_of_no_scope_feature_is_a_native_pick() {
+fn a_coupling_of_a_joint_with_no_design_feature_stays_unresolved() {
     let hinge = |name: &str, ordinal: u32| {
         joint(
             name,
@@ -1009,78 +1068,32 @@ fn a_coupled_joint_of_no_scope_feature_is_a_native_pick() {
             [connector(on("a"), STORED), connector(on("b"), STORED)],
         )
     };
-    let link = |name: &str, coupled: Vec<JointId>| {
-        joint(
-            name,
-            94,
-            PairedJointKind::Gears {
-                distance: None,
-                distance2: None,
-                ratio: None,
-                coupled_joints: coupled,
-            },
-            [connector(on("a"), STORED), connector(on("b"), STORED)],
-        )
-    };
     let first = hinge("first", 90);
     let second = hinge("second", 92);
-    let coupled = link("link", vec![first.id.clone(), second.id.clone()]);
-    let direct = link("direct", Vec::new());
-    let twice = link("twice", vec![second.id.clone(), second.id.clone()]);
-    let mut features = [
-        unresolved("second"),
-        unresolved("link"),
-        unresolved("direct"),
-        unresolved("twice"),
-    ];
-    let (losses, restated) = restate_with(
+    let link = joint(
+        "link",
+        94,
+        PairedJointKind::Gears {
+            distance: None,
+            distance2: None,
+            ratio: None,
+            coupled_joints: vec![first.id.clone(), second.id.clone()],
+        },
+        [connector(on("a"), STORED), connector(on("b"), STORED)],
+    );
+    let mut features = [unresolved("second"), unresolved("link")];
+    let losses = restate(
         &mut features,
         &[
             legacy("first", &first),
             legacy("second", &second),
-            legacy("link", &coupled),
-            legacy("direct", &direct),
-            legacy("twice", &twice),
+            legacy("link", &link),
         ],
-        &[first, second, coupled, direct, twice],
+        &[first, second, link],
         &[],
     );
-    let JointKind::Coupling { joints, .. } = &the_joint(&features[1]).kind else {
-        panic!("a coupling")
-    };
-    let Picks::Named(members) = &joints.as_ref().unwrap().picks else {
-        panic!("named picks")
-    };
-    let [native, feature] = members.as_slice() else {
-        panic!("two picks")
-    };
-    assert_eq!(native.target, PickTarget::Native { within: None });
     assert_eq!(
-        native.native.as_ref().map(|name| &name.value),
-        Some(&NativeNameValue::Text(
-            NonBlankString::new(joint_id("first")).unwrap()
-        ))
-    );
-    assert_eq!(
-        feature.target,
-        PickTarget::Feature(FeatureId::mint(feature_id("second")).unwrap())
-    );
-    let cut = |joint: &str| {
-        restated
-            .iter()
-            .find(|(legacy, _, _)| *legacy == joint_id(joint))
-            .map(|(_, _, cut)| cut.clone())
-    };
-    assert_eq!(cut("link"), Some(vec![NATIVE_REF, COUPLED_JOINTS]));
-
-    let JointKind::Coupling { joints, .. } = &the_joint(&features[2]).kind else {
-        panic!("a coupling")
-    };
-    assert_eq!(joints, &None);
-    assert_eq!(cut("direct"), Some(vec![NATIVE_REF]));
-
-    assert_eq!(
-        features[3].definition.operation,
+        features[1].definition.operation,
         FeatureOperation::Unresolved {
             family: OperationFamily::Joint
         }
@@ -1088,8 +1101,16 @@ fn a_coupled_joint_of_no_scope_feature_is_a_native_pick() {
     let [loss] = losses.as_slice() else {
         panic!("one loss: {losses:?}")
     };
+    assert_eq!(
+        loss.code,
+        F3dLossCode::AssemblyDesignJointUnprojected.kind()
+    );
     assert!(
-        loss.message.contains(&feature_id("twice")),
+        loss.message.contains(&format!(
+            "{} (its coupled joint {} has no design feature)",
+            feature_id("link"),
+            scope(90)
+        )),
         "{}",
         loss.message
     );
@@ -1130,7 +1151,11 @@ fn a_joint_of_two_motion_records_is_rigid_with_a_loss() {
         F3dLossCode::AssemblyJointMotionAssumedRigid.kind()
     );
     assert!(
-        loss.message.contains(&feature_id("doubled")),
+        loss.message.contains(&format!(
+            "{} (assembly joint {})",
+            feature_id("doubled"),
+            joint_id("doubled")
+        )),
         "{}",
         loss.message
     );
@@ -1199,6 +1224,129 @@ fn a_group_member_off_the_group_placement_is_cut_in_its_operands() {
 /// A CADIR write carries each joint a joint feature restates: the group
 /// feature restates every joint of its scope and the hinge feature its
 /// joint, so the write charges only the joint no feature restates.
+/// An external document's placement is not one occurrence's: its frame is
+/// the operand's offset, with no resolved value in the owner's coordinates.
+#[test]
+fn an_external_operand_frame_is_an_offset_with_no_resolved_value() {
+    let document = ExternalDocument {
+        path: NonBlankString::new("inserted"),
+        ..ExternalDocument::default()
+    };
+    let inserted = joint(
+        "inserted",
+        88,
+        fixed(),
+        [
+            connector(on("a"), STORED),
+            connector(
+                JointOperand::external(document, "inserted-key", vec!["origin".to_owned()]),
+                TURNED,
+            ),
+        ],
+    );
+    let mut features = [unresolved("inserted")];
+    let losses = restate(
+        &mut features,
+        &[legacy("inserted", &inserted)],
+        &[inserted],
+        &[(88, Source::default())],
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    let construction = construction(&the_joint(&features[0]).connectors[1]);
+    let pick = only_pick(construction);
+    assert_eq!(pick.target, PickTarget::Native { within: None });
+    assert_eq!(pick.context, None);
+    assert_eq!(
+        pick.native.as_ref().map(|name| &name.value),
+        Some(&NativeNameValue::Text(
+            NonBlankString::new("inserted-key/origin").unwrap()
+        ))
+    );
+    assert_eq!(fixed_rows(construction), TURNED);
+    assert_eq!(construction.resolved, None);
+}
+
+/// A group whose component is the scope's definition keeps it, though a
+/// member names no occurrence of it: its member paths start there.
+#[test]
+fn a_root_group_keeps_the_scope_definition_as_its_component() {
+    let first = joint(
+        "root-set",
+        89,
+        fixed(),
+        [connector(on("a"), STORED), connector(on("z"), STORED)],
+    );
+    let second = joint(
+        "root-set:2",
+        89,
+        fixed(),
+        [connector(on("a"), STORED), connector(on("b"), STORED)],
+    );
+    let mut feature = unresolved("root-set");
+    feature.component = Some(definition("root"));
+    feature.native_ref = first.native_ref.clone();
+    let mut features = [feature];
+    let (losses, restated) = restate_with(
+        &mut features,
+        &[legacy("root-set", &first)],
+        &[first, second],
+        &[(
+            89,
+            Source {
+                group: true,
+                ..Source::default()
+            },
+        )],
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(features[0].component, Some(definition("root")));
+    let FeatureOperation::RigidGroup(group) = &features[0].definition.operation else {
+        panic!("a rigid group")
+    };
+    assert_eq!(group.members, [path(&["a"]), path(&["b"])].into());
+    assert!(
+        restated
+            .iter()
+            .all(|(legacy, _, _)| *legacy != feature_id("root-set")),
+        "{restated:?}"
+    );
+}
+
+/// The occurrence keys an operand stores below its occurrence name the
+/// occurrences they carry: the pick reaches the carried occurrence.
+#[test]
+fn an_operand_key_that_names_a_child_occurrence_reaches_it() {
+    let carried = joint(
+        "carried",
+        84,
+        fixed(),
+        [
+            connector(on("b"), STORED),
+            connector(
+                JointOperand::occurrence(occurrence("a"), "c-origin", vec![CARRIED.to_owned()]),
+                STORED,
+            ),
+        ],
+    );
+    let mut features = [unresolved("carried")];
+    let (losses, _) = restate_keyed(
+        &mut features,
+        &[legacy("carried", &carried)],
+        &[carried],
+        &[(84, Source::default())],
+        &[carrier()],
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    let construction = construction(&the_joint(&features[0]).connectors[1]);
+    let pick = only_pick(construction);
+    assert_eq!(pick.target, PickTarget::Component);
+    assert_eq!(
+        pick.context,
+        Some(PickContext::Occurrence(path(&["a", "c"])))
+    );
+    assert_eq!(construction.resolved, frame_value(&frame(STORED)));
+}
+
 #[test]
 fn a_cadir_write_carries_the_joints_their_features_restate() {
     use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};

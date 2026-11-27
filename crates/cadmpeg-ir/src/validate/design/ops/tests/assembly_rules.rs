@@ -339,18 +339,18 @@ fn coupling_joints_pick_joint_features() {
 }
 
 #[test]
-fn a_coupling_counts_a_native_joint_pick_toward_its_two() {
+fn a_coupling_native_joint_pick_counts_toward_no_two() {
     let coupling = |picks| {
         with(joint(JointKind::Coupling {
             coupling: Coupling::Screw { pitch: None },
             joints: Some(named(picks)),
         }))
     };
-    let native = || pick(PickTarget::Native { within: None });
-    let message = "Coupling.joints picks other than two other Joint features";
-    assert_no_finding_containing(
-        &coupling(vec![pick(PickTarget::Feature(feature("fillet"))), native()]),
-        message,
+    assert_finding(
+        &coupling(vec![
+            pick(PickTarget::Feature(feature("fillet"))),
+            pick(PickTarget::Native { within: None }),
+        ]),
+        "Coupling.joints picks other than two other Joint features",
     );
-    assert_finding(&coupling(vec![native()]), message);
 }

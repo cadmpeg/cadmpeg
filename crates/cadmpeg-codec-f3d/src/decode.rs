@@ -4077,6 +4077,14 @@ impl<'a> F3dDecodeSession<'a> {
         );
         self.ir.model.assembly_joints = joints.joints;
         self.report.losses.extend(joints.losses);
+        self.report
+            .losses
+            .extend(crate::design::decode::joint_motion::assumed_motion_loss(
+                &prereqs.design_parameter_scopes,
+                &prereqs.design_joint_motions,
+                &prereqs.design_unbound_motions,
+                &self.ir.model.assembly_joints,
+            ));
         let joint_placed = crate::design::assembly::joint_placed_identity_occurrences(
             &self.ir.model.occurrences,
             self.ir
