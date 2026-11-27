@@ -168,13 +168,10 @@ const ROW_CONTINUES: u8 = 0xe3;
 const TABLE_ENDS: u8 = 0xf4;
 
 fn unique_field(payload: &[u8]) -> Option<usize> {
-    let mut matches = payload
-        .windows(MEMBERS_FIELD.len())
-        .enumerate()
-        .filter(|(_, window)| *window == MEMBERS_FIELD)
-        .map(|(offset, _)| offset);
-    let first = matches.next()?;
-    matches.next().is_none().then_some(first)
+    let first = cadmpeg_core::bytes::find(payload, MEMBERS_FIELD)?;
+    cadmpeg_core::bytes::find_from(payload, MEMBERS_FIELD, first + 1)
+        .is_none()
+        .then_some(first)
 }
 
 fn expect(view: &mut View<'_>, bytes: &[u8]) -> Option<()> {
