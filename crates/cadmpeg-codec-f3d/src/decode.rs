@@ -5496,14 +5496,12 @@ pub(crate) fn apply_carrier_classification(
             );
         } else {
             // One rule for every path: the design is empty when its Design
-            // stream was read, no BREP entry can hold a body (or the model-body
-            // maps are explicitly empty), no mesh container went untransferred,
-            // the xref table parsed, and no Design record states geometry.
-            let bodies_resolved =
-                carriers.model_body_maps_explicitly_empty || carriers.brep_entries == 0;
+            // stream was read, the model-body maps are explicitly empty, no
+            // mesh container went untransferred, the xref table parsed, and no
+            // Design record states geometry.
             let empty = carriers.design_decoded
                 && !carriers.xref_unparsed
-                && bodies_resolved
+                && carriers.model_body_maps_explicitly_empty
                 && carriers.design_records == 0
                 && carriers.sketch_entities == 0
                 && carriers.reference_images == 0

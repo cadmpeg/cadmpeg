@@ -578,11 +578,12 @@ fn bodyless_finalization_retains_the_body_history_tails() {
     });
 }
 
-/// Carriers of a decoded Design that stores no BREP, mesh, body, sketch,
-/// reference image, or Design record.
+/// Carriers of a decoded Design whose model-body maps are explicitly empty and
+/// that stores no BREP, mesh, body, sketch, reference image, or Design record.
 fn blank_design_carriers() -> crate::decode::DesignCarriers {
     crate::decode::DesignCarriers {
         paramesh_entries: 0,
+        model_body_maps_explicitly_empty: true,
         ..mesh_only_carriers()
     }
 }
@@ -632,6 +633,23 @@ fn an_undecoded_design_is_not_claimed_empty() {
     assert!(!report.transfer.geometry_transferred());
     assert!(has_code(&report, F3dLossCode::GeometryNotTransferred));
     assert!(!has_code(&report, F3dLossCode::EmptyDesign));
+}
+
+#[test]
+fn a_design_without_explicit_empty_maps_is_not_claimed_empty() {
+    for brep_entries in [0, 1] {
+        let report = classify(
+            &crate::decode::DesignCarriers {
+                brep_entries,
+                model_body_maps_explicitly_empty: false,
+                ..blank_design_carriers()
+            },
+            false,
+        );
+        assert!(!report.transfer.geometry_transferred());
+        assert!(!has_code(&report, F3dLossCode::EmptyDesign));
+        assert!(!has_code(&report, F3dLossCode::DesignRecordsUntransferred));
+    }
 }
 
 #[test]
