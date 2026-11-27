@@ -81,11 +81,19 @@ pub(in crate::decode) fn give_up_unread_section_rows(
             continue;
         }
         let kept = decoded_offsets(definition);
-        let body_end = definition.offset.saturating_add(definition.body.len());
+        let body_end = definition
+            .offset
+            .checked_add(definition.body.len())
+            .ok_or_else(|| {
+                CodecError::malformed("feature definition ends past the address range")
+            })?;
         for rows in tables {
             let start = rows.rows_end.unwrap_or(rows.offset);
+            let after = start.checked_add(1).ok_or_else(|| {
+                CodecError::malformed("feature table row ends past the address range")
+            })?;
             let end = kept
-                .range(start.saturating_add(1)..)
+                .range(after..)
                 .next()
                 .copied()
                 .unwrap_or(body_end)
