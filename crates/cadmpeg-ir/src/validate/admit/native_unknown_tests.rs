@@ -1,7 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{admit_with_annotations, admit_with_native_unknowns, RHINO_DRAFT_CHECKS};
+use super::{admit_with_annotations, admit_with_native_unknowns, RHINO_DRAFT};
 use crate::unknown::{NativeUnknownRecord, UnknownRecord};
+use cadmpeg_core::serde_erase::json;
+
+/// The native-link rules and the arena order rule.
+const NATIVE_LINKS_AND_ORDER: &super::Admission =
+    &super::Admission::new(NATIVE_LINKS_AND_ORDER_RULES, false);
+
+const NATIVE_LINKS_AND_ORDER_RULES: &[crate::report::check::RuleName] = &[
+    crate::rule_name!("annotations_native.helix-axis-native-ref-does-not"),
+    crate::rule_name!("annotations_native.native-record-link-does-not-resolve"),
+    crate::rule_name!("annotations_native.native-record-link-must-identity-string"),
+    crate::rule_name!("annotations_native.native-record-links-must-array-identities"),
+    crate::rule_name!("annotations_native.native-ref-does-not-resolve"),
+    crate::rule_name!("annotations_native.operand-native-ref-does-not-resolve"),
+    crate::rule_name!("annotations_native.pmi-native-ref-does-not-resolve"),
+    crate::rule_name!("identity_order.arena-not-strictly-sorted-id"),
+];
 
 #[test]
 fn native_unknown_admission_matches_product_projection_without_mutation() {
@@ -46,13 +62,13 @@ fn native_unknown_admission_matches_product_projection_without_mutation() {
         builder.derived(new_id, path).unwrap();
     }
     let annotations = builder.build();
-    let before = serde_json::to_value(&ir).unwrap();
+    let before = json::to_value(&ir).unwrap();
     let actual = admit_with_native_unknowns(
         &ctx,
         &ir,
         ("rhino", &raw),
         Some(&annotations),
-        RHINO_DRAFT_CHECKS,
+        RHINO_DRAFT,
         Vec::new(),
     )
     .unwrap()
@@ -66,19 +82,13 @@ fn native_unknown_admission_matches_product_projection_without_mutation() {
                 .map(|record| NativeUnknownRecord::try_from(record).unwrap()),
         )
         .unwrap();
-    let expected = admit_with_annotations(
-        &ctx,
-        &projected,
-        &annotations,
-        RHINO_DRAFT_CHECKS,
-        Vec::new(),
-    )
-    .unwrap();
+    let expected =
+        admit_with_annotations(&ctx, &projected, &annotations, RHINO_DRAFT, Vec::new()).unwrap();
     assert_eq!(
-        serde_json::to_value(&actual).unwrap(),
-        serde_json::to_value(&expected).unwrap()
+        json::to_value(&actual).unwrap(),
+        json::to_value(&expected).unwrap()
     );
-    assert_eq!(serde_json::to_value(&ir).unwrap(), before);
+    assert_eq!(json::to_value(&ir).unwrap(), before);
     assert_eq!(raw[0].data().unwrap().as_ptr(), pointer);
     assert_eq!(
         actual
@@ -104,16 +114,10 @@ fn native_unknown_admission_keeps_unresolved_outgoing_link_findings() {
         Vec::new(),
         vec!["test:model:missing#0".into()],
     )];
-    let actual = admit_with_native_unknowns(
-        &ctx,
-        &ir,
-        ("rhino", &raw),
-        None,
-        RHINO_DRAFT_CHECKS,
-        Vec::new(),
-    )
-    .unwrap()
-    .unwrap();
+    let actual =
+        admit_with_native_unknowns(&ctx, &ir, ("rhino", &raw), None, RHINO_DRAFT, Vec::new())
+            .unwrap()
+            .unwrap();
     let links = actual
         .findings
         .iter()
@@ -142,14 +146,9 @@ fn native_unknown_admission_preserves_outer_depth_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(CodecError::ResourceLimit(limit)) = admit_with_native_unknowns(
-        &ctx,
-        &ir,
-        ("rhino", &raw),
-        None,
-        RHINO_DRAFT_CHECKS,
-        Vec::new(),
-    ) else {
+    let Err(CodecError::ResourceLimit(limit)) =
+        admit_with_native_unknowns(&ctx, &ir, ("rhino", &raw), None, RHINO_DRAFT, Vec::new())
+    else {
         panic!("resource refusal remains outside semantic result");
     };
     assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
@@ -177,16 +176,10 @@ fn native_unknown_admission_preserves_product_link_grammar_failures() {
             vec![link.into()],
         )];
         let expected = NativeUnknownRecord::try_from(&raw[0]).unwrap_err();
-        let error = admit_with_native_unknowns(
-            &ctx,
-            &ir,
-            ("rhino", &raw),
-            None,
-            RHINO_DRAFT_CHECKS,
-            Vec::new(),
-        )
-        .unwrap()
-        .unwrap_err();
+        let error =
+            admit_with_native_unknowns(&ctx, &ir, ("rhino", &raw), None, RHINO_DRAFT, Vec::new())
+                .unwrap()
+                .unwrap_err();
         assert_eq!(error.to_string(), expected.to_string());
         ctx.finish_session().unwrap();
         assert!(ir.native.0.is_empty());
@@ -227,7 +220,7 @@ fn native_unknown_annotation_collision_preserves_first_native_arena() {
             &ir,
             ("rhino", &raw),
             Some(&annotations),
-            RHINO_DRAFT_CHECKS,
+            RHINO_DRAFT,
             Vec::new(),
         )
         .unwrap()
@@ -241,17 +234,12 @@ fn native_unknown_annotation_collision_preserves_first_native_arena() {
                     .map(|record| NativeUnknownRecord::try_from(record).unwrap()),
             )
             .unwrap();
-        let expected = admit_with_annotations(
-            &ctx,
-            &projected,
-            &annotations,
-            RHINO_DRAFT_CHECKS,
-            Vec::new(),
-        )
-        .unwrap();
+        let expected =
+            admit_with_annotations(&ctx, &projected, &annotations, RHINO_DRAFT, Vec::new())
+                .unwrap();
         assert_eq!(
-            serde_json::to_value(actual).unwrap(),
-            serde_json::to_value(expected).unwrap(),
+            json::to_value(actual).unwrap(),
+            json::to_value(expected).unwrap(),
             "{native_format}"
         );
     }
@@ -279,10 +267,7 @@ fn native_unknown_admission_preserves_sorted_source_finding_order() {
         &ir,
         ("rhino", &raw),
         None,
-        &[
-            crate::report::check::Check::NativeLinks,
-            crate::report::check::Check::ArenaOrder,
-        ],
+        NATIVE_LINKS_AND_ORDER,
         Vec::new(),
     )
     .unwrap()
@@ -296,19 +281,10 @@ fn native_unknown_admission_preserves_sorted_source_finding_order() {
                 .map(|record| NativeUnknownRecord::try_from(record).unwrap()),
         )
         .unwrap();
-    let expected = super::admit(
-        &ctx,
-        &projected,
-        &[
-            crate::report::check::Check::NativeLinks,
-            crate::report::check::Check::ArenaOrder,
-        ],
-        Vec::new(),
-    )
-    .unwrap();
+    let expected = super::admit(&ctx, &projected, NATIVE_LINKS_AND_ORDER, Vec::new()).unwrap();
     assert_eq!(
-        serde_json::to_value(&actual).unwrap(),
-        serde_json::to_value(expected).unwrap()
+        json::to_value(&actual).unwrap(),
+        json::to_value(expected).unwrap()
     );
     assert_eq!(
         actual.findings[2].entity.as_deref(),
@@ -329,16 +305,10 @@ fn native_unknown_admission_preserves_duplicate_source_product_failure() {
             Vec::new(),
         )
     });
-    let actual = admit_with_native_unknowns(
-        &ctx,
-        &ir,
-        ("rhino", &raw),
-        None,
-        RHINO_DRAFT_CHECKS,
-        Vec::new(),
-    )
-    .unwrap()
-    .unwrap_err();
+    let actual =
+        admit_with_native_unknowns(&ctx, &ir, ("rhino", &raw), None, RHINO_DRAFT, Vec::new())
+            .unwrap()
+            .unwrap_err();
     let mut projected = ir.clone();
     let expected = projected
         .set_native_unknowns_from(

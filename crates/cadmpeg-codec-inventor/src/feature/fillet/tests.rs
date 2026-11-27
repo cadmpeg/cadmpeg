@@ -391,14 +391,35 @@ fn fillet_operands_keep_an_edge_set_with_listed_items() {
 }
 
 #[test]
-fn fillet_operands_refuse_a_partly_empty_set_and_a_fillet_without_listed_edges() {
-    // One empty and one listed item in the same set.
+fn fillet_operands_keep_the_listed_items_of_a_partly_empty_set() {
+    // One empty and one listed item in the same set: the empty item selects no edge.
     let (source, properties) = two_set_fixture(&[vec![9], vec![]]);
-    assert_eq!(
-        read_two(&source, &properties).err(),
-        Some(NativeReason::EmptyItems)
-    );
+    let read = read_two(&source, &properties).expect("partly empty set");
+    assert_eq!(read.len(), 2);
     assert_eq!(empty_sets(&source, property_at(&properties)), 0);
+    assert_eq!(
+        listed_set_forms(&source, property_at(&properties)),
+        vec![false, true]
+    );
+    let collection = property_at(&properties)(reference(10)).expect("second edge collection");
+    assert_eq!(
+        crate::feature::edge_selection::historical::listed_sources(
+            collection,
+            property_at(&properties)
+        ),
+        Some(vec![(11, 9)])
+    );
+    assert_eq!(
+        crate::feature::edge_selection::historical::selection_sources(
+            collection,
+            property_at(&properties)
+        ),
+        None
+    );
+}
+
+#[test]
+fn fillet_operands_refuse_a_fillet_without_listed_edges() {
     // Every set is empty.
     let (source, mut properties) = two_set_fixture(&[vec![]]);
     change(&mut properties[6], |kind| {
@@ -414,6 +435,7 @@ fn fillet_operands_refuse_a_partly_empty_set_and_a_fillet_without_listed_edges()
         Some(NativeReason::EmptyItems)
     );
     assert_eq!(empty_sets(&source, property_at(&properties)), 2);
+    assert!(listed_set_forms(&source, property_at(&properties)).is_empty());
 }
 
 #[test]
@@ -567,6 +589,7 @@ pub(crate) fn project_inventory_fixture(
             entities: &[],
             profile_bodies: &[],
             result_model: None,
+            result_states: None,
         },
     )
     .expect("native feature projection")

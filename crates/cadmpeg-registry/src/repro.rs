@@ -116,6 +116,7 @@ pub fn check(bundle: &Bundle) -> Vec<Finding> {
         let mut findings = report.findings;
         if let Some(reason) = &bundle.incomplete_reason {
             findings.push(Finding {
+                rule: cadmpeg_ir::rule_name!("registry/repro.cut-incomplete"),
                 check: Check::FragmentSkipped,
                 severity: Severity::Info,
                 entity: None,
@@ -127,6 +128,7 @@ pub fn check(bundle: &Bundle) -> Vec<Finding> {
     })();
     result.unwrap_or_else(|error| {
         vec![Finding {
+            rule: cadmpeg_ir::rule_name!("registry/repro.fragment-validation-stopped"),
             check: Check::MeasurementIncomplete,
             severity: Severity::Blocking,
             entity: None,
@@ -217,7 +219,7 @@ pub fn shrink(
                 .collect();
             let mut candidate_value = value.clone();
             retain(&mut candidate_value, &all, &keep);
-            let Ok(document) = serde_json::from_value(candidate_value) else {
+            let Ok(document) = cadmpeg_ir::CadIr::from_projection(candidate_value) else {
                 continue;
             };
             let mut candidate = best.clone();

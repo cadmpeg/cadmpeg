@@ -18,6 +18,7 @@ use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::codec::Decoded;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::digest::Sha256Digest;
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Annotations, SourceFidelity};
 use std::collections::BTreeSet;
@@ -89,6 +90,7 @@ fn decode_over_routes(
             ir,
             report,
             (annotations, unknowns, untyped),
+            Vec::new(),
         );
     }
 
@@ -110,6 +112,7 @@ fn decode_over_routes(
                     report: out.report,
                     annotations: out.annotations,
                     unknowns: out.unknowns,
+                    given_up: out.given_up,
                     untyped: BTreeSet::new(),
                     admitted_model_entities: out.admitted_model_entities,
                     standard_face_population: route.standard_face_population,
@@ -123,15 +126,17 @@ fn decode_over_routes(
             let next = applicable
                 .get(index + 1)
                 .map_or("the metadata fallback", |next| next.name);
-            let note = format!(
+            fell_through.push(CatiaLossCode::SourceRouteFellThrough.note(format!(
                 "{} refused {refused} CATIA record(s) and then transferred no model; \
              the decode continued to {next}",
                 route.name
-            );
-            fell_through.push(note);
+            )));
         }
     }
 
+    // The fallback keeps the payload whole as a retained record, so a route
+    // that fell through gives up only the records it refused, each charged
+    // where the route refused it.
     let (ir, annotations, unknowns, untyped) = build_metadata_fallback(ctx, &scan)?;
     let report = build_container_report(&scan);
     finish_decode(
@@ -143,6 +148,7 @@ fn decode_over_routes(
             report,
             annotations,
             unknowns,
+            given_up: Vec::new(),
             untyped,
             admitted_model_entities: 0,
             standard_face_population: false,
@@ -208,12 +214,14 @@ struct FinishDecodeInputs<'input0, 'input1, 'input2, 'input3> {
     report: DecodeBody,
     annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
+    /// Parts the route gave up.
+    given_up: Vec<GivenUpPart>,
     /// Classes every retained unknown holds undecoded; empty when a route
     /// decoded their bytes.
     untyped: BTreeSet<ArenaClass>,
     admitted_model_entities: u64,
     standard_face_population: bool,
-    fell_through: &'input2 [String],
+    fell_through: &'input2 [cadmpeg_ir::report::loss::LossNote],
     refusal: &'input3 mut crate::nurbs::LaneRefusals,
 }
 
@@ -228,6 +236,7 @@ fn finish_decode(
         mut report,
         mut annotations,
         unknowns,
+        given_up,
         untyped,
         mut admitted_model_entities,
         standard_face_population,
@@ -241,12 +250,7 @@ fn finish_decode(
     // `CodecError`: a refusal note is subordinate to a hard failure by design.
     // The fall-through statements say which route refused and where the decode
     // went next.
-    for statement in fell_through {
-        let message = (statement).to_owned();
-        report
-            .losses
-            .push(CatiaLossCode::SourceRouteFellThrough.note(message));
-    }
+    report.losses.extend(fell_through.iter().cloned());
     for note in refusal.take_notes() {
         report.losses.push(note);
     }
@@ -3704,6 +3708,9 @@ fn finish_decode(
             &mut report.losses,
             |ir, losses| crate::design_v11::project(ctx, ir, losses),
         )?;
+        let mut restated = cadmpeg_ir::AnnotationBuilder::resume(std::mem::take(&mut annotations));
+        crate::design_v11::restate_exactness(&ir, &mut restated)?;
+        annotations = restated.build();
     }
     native.store_owned(ctx, ir.native.namespace_mut(cadmpeg_ir::codec_id!("catia")))?;
     decode_result(
@@ -3713,6 +3720,7 @@ fn finish_decode(
         ir,
         report,
         (annotations, unknowns, untyped),
+        given_up,
     )
 }
 
@@ -3783,20 +3791,20 @@ fn decode_result(
     mut ir: CadIr,
     mut body: DecodeBody,
     retained: (Annotations, Vec<UnknownRecord>, BTreeSet<ArenaClass>),
+    given_up: Vec<GivenUpPart>,
 ) -> Result<Decoded, CodecError> {
     let (annotations, unknowns, untyped) = retained;
-    // A scoped root lists no body: no member the design states produces one
-    // (interim, errata A1).
-    if ir.design.scopes.is_empty() {
-        ir.state_root_definition(
-            ctx,
-            cadmpeg_ir::ids::ProductDefinitionId::compose(
-                &cadmpeg_ir::identity_namespace!("catia", "model", "product-definition"),
-                cadmpeg_ir::identity_key!("root"),
-            ),
-            cadmpeg_ir::products::ExternalDocument::default(),
-        )?;
-    }
+    ir.state_root_definition(
+        ctx,
+        cadmpeg_ir::ids::ProductDefinitionId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "model", "product-definition"),
+            cadmpeg_ir::identity_key!("root"),
+        ),
+        cadmpeg_ir::products::ExternalDocument::default(),
+    )?;
+    body.losses
+        .extend(crate::design_v11::state_unproduced(&mut ir));
+    crate::assemble::state_loopless_faces(&mut ir, &mut body.losses);
     ir.source = Some(crate::assemble::source_meta(scan, matched)?);
     body.notes = crate::container::notes(scan);
     if let Some(loss) = crate::dialect::dialect_loss(matched) {
@@ -3813,6 +3821,10 @@ fn decode_result(
         for id in &ids {
             source_fidelity.mark_untyped(id.as_str(), untyped.iter().copied())?;
         }
+    }
+    for part in given_up {
+        body.losses
+            .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
     }
     Ok(Decoded {
         ir,

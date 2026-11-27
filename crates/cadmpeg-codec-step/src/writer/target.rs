@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP target resolution and export reporting.
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
-    EncodeInput, ExportBody, WritePath,
+    EncodeInput, ExportBody, NativeDispositions, WritePath,
 };
 
 use crate::export::write_step_outcome;
@@ -12,36 +13,35 @@ use crate::loss::StepLossCode;
 use crate::options::StepSchema;
 use crate::StepCodec;
 
-/// Why this writer cannot reproduce a source schema outside
-/// [`StepSchema::TARGETS`].
+/// Resolve the request against the source and synthesize the selected
+/// schema in the encode's session `context`.
 ///
-/// STEP has no retained-image path, and every schema this writer emits stamps
-/// object-identifier arcs, so an edition-unspecified or unrecognized
-/// declaration cannot be written back.
-const OFF_CATALOG_SOURCE_REASON: &str =
-    "the semantic writer cannot synthesize it, and writing another schema would change what the \
-     file declares; name a target to choose one";
-
-/// Resolve the request against the source and synthesize the selected schema.
+/// STEP has no retained-image path, so a source schema outside the catalog
+/// is written as the catalog default (§3.4, Refusals, `Inherit`).
 pub(crate) fn plan(
     codec: &StepCodec,
+    context: &DecodeContext<'_>,
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    let Some(index) = resolved.index() else {
-        return Err(resolved.unavailable(OFF_CATALOG_SOURCE_REASON));
-    };
-    let schema = StepSchema::from_target_index(index).ok_or_else(|| {
-        resolved.unavailable("the resolved target index is outside the STEP schema catalog")
-    })?;
+    let schema = resolved
+        .synthesized_row()
+        .and_then(|(index, _)| StepSchema::from_target_index(index));
+    debug_assert!(
+        schema.is_some(),
+        "the STEP catalog declares a default and is projected from StepSchema::ALL"
+    );
+    let schema = schema.unwrap_or(StepSchema::DEFAULT);
     let mut bytes = Vec::new();
-    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
+    let recovered =
+        cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir, context)?;
     let outcome = write_step_outcome(
         &recovered.document,
         &mut bytes,
         schema,
         &codec.options,
         recovered.recovered_edges,
+        context,
     )?;
     let mut losses = outcome.losses;
     if !recovered.sampled_agreements.is_empty() {
@@ -56,19 +56,21 @@ pub(crate) fn plan(
             recovered.sampled_fits.len(), recovered.residual_limit
         )));
     }
-    if let Some(message) = resolved.displacement_message() {
-        losses.push(StepLossCode::SourceDialectDisplaced.note(message));
-    }
     Ok(ExportBody {
         bytes,
+        synthesis_cause: None,
         census: outcome.census,
         write_path: WritePath::Synthesized {
             // STEP has no retained image: a provided fidelity is never replayed.
             consumption: Consumption::NotConsumed,
         },
         coverage: ArenaCoverage::Declared(coverage(schema)),
+        // STEP holds no native record of any format.
+        native: NativeDispositions::dropped("which the STEP writer does not write"),
         losses,
         notes: outcome.notes,
+        written_row: None,
+        annotations: None,
     })
 }
 

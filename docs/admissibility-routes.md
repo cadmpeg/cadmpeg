@@ -23,8 +23,8 @@ This table does not describe every entity-level admission rule.
 | eDrawings | `package::Package::open` admits the archive through `ArchiveSnapshot`. An unreadable central directory recovers the members from their local headers and reports `edrawings/container.directory-recovered`. An archive without an `eModel` member is refused as `WrongFormat`, and a wrapper that does not read is refused. A stream version outside `19.10`, `18.00`, and `19.00` is read on the residual path as `edrawings:unknown` with `edrawings/source.dialect-unverified`. A zlib stream that does not open reports `edrawings/stream.malformed`, and the package metadata survives. A record rule of the model stream that fails reports `edrawings/model.malformed` and the package carries no model data. A shell, instance, or body that does not build reports a loss and keeps the rest of the model. Resource failures propagate. |
 | SAT/ASM | `sat::parse_header` recovers malformed newline-framed product metadata, unused record-count declarations, and optional tolerances. Counted binary product strings advance by byte length independently of text encoding. Decode retains exact noncanonical header bytes and reports defaults for unresolved tolerances. Unit scale, record-stream framing, and reference width remain required interpretation fields. |
 
-Successful decode is not a valid IR. Decoder and export gates use documented
-subsets of [`Check`](../crates/cadmpeg-ir/src/report.rs); final document
+Successful decode is not a valid IR. Decoder gates use lists of named rules
+([`Admission`](../crates/cadmpeg-ir/src/validate/admit.rs)); final document
 validation remains `validate_neutral` (+ fidelity + native at the application
 boundary). Accept/reject fixtures are in
 [admissibility-fixtures.md](admissibility-fixtures.md).
@@ -36,32 +36,31 @@ they do not retain another source copy or infer the allowance from metadata.
 
 ## Shared core
 
-`DRAFT_CORE_CHECKS` =
-
-- `Identity`
-- `ReferentialIntegrity`
-- `NativeLinks`
-- `LoopClosure`
-- `CoedgePairing`
-- `ShellTopology`
-- `WireTopology`
-- `CarrierReachability`
-- `ParameterDomain`
-- `Bounds`
-- `GeometricConsistency`
+Every validation finding names its rule (`Finding.rule`, `[<codec>/]<area>.<detail>`).
+`DRAFT_CORE` lists, by name, the rules on model-class records that a decoder
+may test a candidate reading against (§3.3 of the CADIR specification): the
+rules of the `Identity`, `ReferentialIntegrity`, `NativeLinks`,
+`CoedgePairing`, `ShellTopology`, `WireTopology`, `CarrierReachability`,
+`ParameterDomain`, and `GeometricConsistency` checks outside the design and
+process layers, as the validator stated them when the routes became rule
+lists. A finding whose rule a route does not list refuses no candidate, so a
+rule added to the validator later changes no admission until a route lists it
+in `validate/admit.rs`. A finding of the design or process layer refuses no
+candidate either, also where it reports a listed rule inside a stored state. `python3 scripts/name-validation-rules.py --admission`
+prints the rules of those checks as the validator states them now.
 
 API: `cadmpeg_ir::validate::admit::{admit, admit_with_annotations,
-admit_with_additional_native_identities, filter_checks}` and the route
+admit_with_additional_native_identities, Admission}` and the route
 constants below.
 
 ## Per-route subsets
 
 | route                                            | constant / policy                           | notes                                                                                                                                   |
 | ------------------------------------------------ | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| F3D history body                                 | `DRAFT_CORE_CHECKS`                         | one nest and its origin feature in a scratch document; a nest that fails is dropped with `feature.history-body-undecoded`              |
-| Rhino draft                                      | `RHINO_DRAFT_CHECKS` = core + `Annotations` | `ArenaOrder` excluded (pre-finalize)                                                                                                    |
-| Rhino instance                                   | `RHINO_INSTANCE_CHECKS` = core              | `ArenaOrder` excluded; no mid-expansion finalize                                                                                        |
-| CATIA admission                                  | `CATIA_ADMISSION_CHECKS` = core             | finalize first; pending native identities via admit helper                                                                              |
+| F3D history body                                 | `DRAFT_CORE`                                | one nest and its origin feature in a scratch document; a nest that fails is dropped with `feature.history-body-undecoded`              |
+| Rhino draft                                      | `RHINO_DRAFT` = core + annotation rules     | arena order excluded (pre-finalize)                                                                                                     |
+| Rhino instance                                   | `RHINO_INSTANCE` = core                     | arena order excluded; no mid-expansion finalize                                                                                         |
+| CATIA admission                                  | `CATIA_ADMISSION` = core                    | finalize first; pending native identities via admit helper                                                                              |
 | IGES projection check                            | full `validate_neutral`                     | refuses nothing: each Error finding is one `iges/projection.invalid` loss, and the decode returns the document                         |
 | SLDPRT written document                          | full `validate_neutral`                     | refuses nothing: each Error finding is a `record.invalid` loss, and the part is written                                                 |
 
@@ -94,13 +93,13 @@ is uneven:
 ## Native passthrough arenas
 
 A semantic writer refuses a native arena it cannot preserve, so an arena the
-writer does not regenerate is admitted by name. The IGES semantic writer admits
-`quarantined_directory_records` and `quarantined_parameter_records` as
-passthrough arenas. It regenerates neither, because a record that failed typing
-has no fields to write, and a non-empty one charges
-`iges/writer.passthrough-omitted` naming the arena and its record count.
-Byte-exact replay is a separate path and is unaffected: it copies the retained
-source image, which holds every quarantined card.
+writer does not regenerate is admitted by name. An IGES record that failed
+typing is a given-up part (CADIR §3.3): its `unknowns` stub and its retained
+bytes hold it. The export wrapper charges no record of an `unknowns` arena,
+because the decode already charged the part. The semantic writer declares the
+Directory and Parameter cards of the record dropped, as cards of no typed
+entity. Byte-exact replay is a separate path: it copies the retained source
+image, which holds every quarantined card.
 
 ## Application composition
 

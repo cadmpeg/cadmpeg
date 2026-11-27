@@ -5,6 +5,7 @@
 //! PMI, drawing, or presentation record, or a neutral record by its arena;
 //! and the `native_ref` of each record.
 
+use crate::report::check::Ruled;
 use std::collections::BTreeSet;
 
 use crate::appearance::AppearanceTarget;
@@ -49,7 +50,10 @@ pub(super) fn check_appearance_attributes(
                     error(
                         findings,
                         owner,
-                        format_args!("a definition target states a path"),
+                        crate::rule!(
+                            "appearance_attributes.definition-target-states-path",
+                            "a definition target states a path"
+                        ),
                     );
                 }
             }
@@ -58,12 +62,13 @@ pub(super) fn check_appearance_attributes(
                     error(
                         findings,
                         owner,
-                        format_args!(
+                        crate::rule!(
+                            "appearance_attributes.record-target-names-records-another-target",
                             "record target names `{arena}`, whose records another target arm names"
                         ),
                     );
                 }
-                record(ir, findings, owner, arena, id);
+                record(ir, findings, owner, arena, id.as_str());
             }
             _ => {}
         }
@@ -79,7 +84,8 @@ pub(super) fn check_appearance_attributes(
             error(
                 findings,
                 owner,
-                format_args!(
+                crate::rule!(
+                    "appearance_attributes.states-no-precedence-target-placed-definition",
                     "{}",
                     if orders {
                         "states no precedence on a target a placed definition can state a nearer target under"
@@ -89,14 +95,18 @@ pub(super) fn check_appearance_attributes(
                 ),
             );
         }
-        if let Some(other) = stated.insert(&binding.target, &binding.appearance) {
+        let earlier = match binding.target.entity {
+            AppearanceTarget::Unresolved => None,
+            _ => stated.insert(&binding.target, &binding.appearance),
+        };
+        if let Some(other) = earlier {
             if other != &binding.appearance {
                 super::record_finding(
                     findings,
                     Check::Design,
                     Severity::Warning,
                     Some(owner),
-                    format_args!(
+                    crate::rule!("appearance_attributes.another-binding-names-same-target-path", 
                         "another binding names the same target, path, and state with a different appearance"
                     ),
                 );
@@ -107,14 +117,22 @@ pub(super) fn check_appearance_attributes(
             .as_deref()
             .is_some_and(|id| id.trim().is_empty())
         {
-            error(findings, owner, format_args!("source_entity_id is blank"));
+            error(
+                findings,
+                owner,
+                crate::rule!(
+                    "appearance_attributes.source-entity-id-blank",
+                    "source_entity_id is blank"
+                ),
+            );
         }
         if matches!(binding.target.entity, AppearanceTarget::Unresolved) {
             if binding.source_entity_id.is_none() && binding.native_ref.is_none() {
                 error(
                     findings,
                     owner,
-                    format_args!(
+                    crate::rule!(
+                        "appearance_attributes.unresolved-target-states-neither-source-entity",
                         "an unresolved target states neither source_entity_id nor native_ref"
                     ),
                 );
@@ -123,7 +141,10 @@ pub(super) fn check_appearance_attributes(
                 error(
                     findings,
                     owner,
-                    format_args!("an unresolved target states a path or a state"),
+                    crate::rule!(
+                        "appearance_attributes.unresolved-target-states-path-state",
+                        "an unresolved target states a path or a state"
+                    ),
                 );
             }
         }
@@ -131,7 +152,7 @@ pub(super) fn check_appearance_attributes(
     for attribute in &ir.model.attributes {
         let owner = attribute.id.as_str();
         if let AttributeTarget::Record { arena, id } = &attribute.target.entity {
-            record(ir, findings, owner, arena, id);
+            record(ir, findings, owner, arena, id.as_str());
         } else if let Some((kind, id)) =
             unresolved_target(&attribute.target.entity, ids, &records, &model)
         {
@@ -226,7 +247,7 @@ fn unresolved_target<'t>(
         AttributeTarget::Tessellation(id) => (
             "tessellation",
             id.as_str(),
-            ids.tessellations(id, StandardIndex).is_some(),
+            ids.tessellations(id.as_str(), StandardIndex).is_some(),
         ),
         AttributeTarget::Feature(id) => ("feature", id.as_str(), records.holds_feature(id)),
         AttributeTarget::Sketch(id) => ("sketch", id.as_str(), records.holds_sketch(id)),
@@ -312,12 +333,12 @@ fn record(
         None => error(
             findings,
             owner,
-            format_args!("record target names `{arena}`, which is no arena of the model, the design, or the topology"),
+            crate::rule!("appearance_attributes.record-target-names-no-arena-model", "record target names `{arena}`, which is no arena of the model, the design, or the topology"),
         ),
         Some(false) => error(
             findings,
             owner,
-            format_args!("record target `{id}` is no record of arena `{arena}`"),
+            crate::rule!("appearance_attributes.record-target-no-record-arena", "record target `{id}` is no record of arena `{arena}`"),
         ),
         Some(true) => {}
     }
@@ -336,7 +357,10 @@ fn check_native_refs(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Findin
             error(
                 findings,
                 owner,
-                format_args!("native_ref `{target}` does not resolve"),
+                crate::rule!(
+                    "appearance_attributes.native-ref-does-not-resolve",
+                    "native_ref `{target}` does not resolve"
+                ),
             );
         }
     };
@@ -355,11 +379,14 @@ fn missing(findings: &mut Vec<Finding>, owner: &str, kind: &str, id: &str) {
     error(
         findings,
         owner,
-        format_args!("references missing {kind} `{id}`"),
+        crate::rule!(
+            "appearance_attributes.references-missing",
+            "references missing {kind} `{id}`"
+        ),
     );
 }
 
-fn error(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments<'_>) {
+fn error(findings: &mut Vec<Finding>, entity: &str, message: Ruled<'_>) {
     super::record_finding(
         findings,
         Check::Design,

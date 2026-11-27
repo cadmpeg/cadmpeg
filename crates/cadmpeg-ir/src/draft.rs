@@ -8,7 +8,7 @@ use std::hash::{Hash, Hasher};
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
 
-use crate::annotations::Annotations;
+use crate::annotations::{AnnotationKey, Annotations};
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::document::{CadIr, Model, Topology};
@@ -244,7 +244,7 @@ pub struct ModelDraft<A = ()> {
 /// Exactness annotations that must accompany a draft commit.
 #[derive(Debug, Default)]
 pub struct DraftAccounting {
-    exactness: BTreeMap<String, Exactness>,
+    exactness: BTreeMap<AnnotationKey, Exactness>,
 }
 
 impl Default for ModelDraft {
@@ -433,12 +433,12 @@ impl<A> ModelDraft<A> {
 
 impl ModelDraft<DraftAccounting> {
     /// Record staged exactness.
-    pub fn exactness(&mut self, identity: impl std::fmt::Display, exactness: Exactness) {
-        let identity = identity.to_string();
+    pub fn exactness(&mut self, key: impl Into<AnnotationKey>, exactness: Exactness) {
+        let key = key.into();
         if exactness == Exactness::ByteExact {
-            self.accounting.exactness.remove(&identity);
+            self.accounting.exactness.remove(&key);
         } else {
-            self.accounting.exactness.insert(identity, exactness);
+            self.accounting.exactness.insert(key, exactness);
         }
     }
 
@@ -446,7 +446,7 @@ impl ModelDraft<DraftAccounting> {
     pub fn retain_exactness(&mut self, mut keep: impl FnMut(&str) -> bool) {
         self.accounting
             .exactness
-            .retain(|identity, _| keep(identity));
+            .retain(|key, _| keep(key.as_str()));
     }
 
     /// Commit decoded entities and transfer their owned exactness entries.
@@ -721,13 +721,13 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         } else {
             None
         };
-        for (identity, exactness) in accounting.exactness {
+        for (key, exactness) in accounting.exactness {
             if let Some(Ok(owners)) = &annotation_owners {
-                annotations_admitted &= identity_index_contains(&staged, owners, &identity);
+                annotations_admitted &= identity_index_contains(&staged, owners, key.as_str());
             } else if annotation_owners.is_some() {
                 annotations_admitted = false;
             }
-            transaction.exactness(&identity, exactness);
+            transaction.exactness(key, exactness);
         }
         match self.state.commit_draft(
             ModelDraft {
@@ -798,7 +798,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         &mut self,
         mut candidate: CadIr,
         changes: crate::annotations::SparseAnnotationTransaction<'ann>,
-        allowed: &[crate::report::check::Check],
+        allowed: &crate::validate::admit::Admission,
         accept: impl FnOnce(
             Result<&crate::report::check::ValidationReport, &crate::native::NativeConvertError>,
             crate::annotations::SparseAnnotationTransaction<'ann>,
@@ -811,8 +811,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
             .unknown_namespace
             .ok_or_else(|| CodecError::malformed("candidate admission needs a source namespace"))?;
         let annotations = changes.base();
-        let reuse =
-            allowed == crate::validate::admit::RHINO_DRAFT_CHECKS && candidate.native.0.is_empty();
+        let reuse = allowed == crate::validate::admit::RHINO_DRAFT && candidate.native.0.is_empty();
         let (mut state, unused) = match self.state.admission.take() {
             Some(state) if reuse && state.annotations_admitted => (Some(state), None),
             other => (None, other),
@@ -910,7 +909,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
     pub fn admit_appended(
         &mut self,
         annotations: &Annotations,
-        allowed: &[crate::report::check::Check],
+        allowed: &crate::validate::admit::Admission,
     ) -> Result<
         Result<crate::report::check::ValidationReport, crate::native::NativeConvertError>,
         CodecError,
@@ -924,10 +923,11 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
             .state
             .unknown_namespace
             .ok_or_else(|| CodecError::malformed("candidate admission needs a source namespace"))?;
-        let reuse = allowed == crate::RHINO_DRAFT_CHECKS || allowed == crate::RHINO_INSTANCE_CHECKS;
-        let mut state = self.state.admission.take().filter(|state| {
-            reuse && (allowed != crate::RHINO_DRAFT_CHECKS || state.annotations_admitted)
-        });
+        let reuse = allowed == crate::RHINO_DRAFT || allowed == crate::RHINO_INSTANCE;
+        let mut state =
+            self.state.admission.take().filter(|state| {
+                reuse && (allowed != crate::RHINO_DRAFT || state.annotations_admitted)
+            });
         let local = if let Some(admitted) = &mut state {
             let mut suffix = annotations.sparse_transaction();
             macro_rules! select_annotations {
@@ -935,7 +935,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
                     for entity in self.state.base.borrow().$home.$field.get(admitted.lengths[<$ty as EntitySchema>::KIND.index()]..).ok_or_else(|| CodecError::malformed("admitted prefix was removed"))? { suffix.select(entity.identity()); }
                 )*};
             }
-            if allowed.contains(&crate::report::check::Check::Annotations) {
+            if allowed.annotations() {
                 crate::document::arena_registry!(select_annotations);
             }
             let starts = admitted.lengths;
@@ -962,9 +962,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
                 ctx,
                 self.state.base.borrow(),
                 (format, &self.state.unknowns),
-                allowed
-                    .contains(&crate::report::check::Check::Annotations)
-                    .then_some(annotations),
+                allowed.annotations().then_some(annotations),
                 allowed,
                 Vec::new(),
             )?,
@@ -985,7 +983,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
                 }
             }
             if let Some(admitted) = &mut state {
-                admitted.annotations_admitted = allowed == crate::RHINO_DRAFT_CHECKS
+                admitted.annotations_admitted = allowed == crate::RHINO_DRAFT
                     || admitted.annotation_owners_resolve(annotations);
             }
             self.state.admission = state;

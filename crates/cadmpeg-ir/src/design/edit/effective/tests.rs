@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The display resolvers on small assemblies.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 
@@ -468,7 +469,7 @@ fn color(r: f64) -> Color {
 }
 
 fn appearance(key: u32, base: Option<Color>) -> Appearance {
-    let mut record: Appearance = serde_json::from_value(serde_json::json!({
+    let mut record: Appearance = json::from_value(cadmpeg_core::json!({
         "id": format!("test:effective:appearance#{key}"),
         "properties": {},
         "textures": [],

@@ -56,6 +56,44 @@ fn every_arc_of_a_prim_is_one_reference_list() {
 }
 
 #[test]
+fn a_definition_no_occurrence_places_is_a_prototype_with_no_reference() {
+    let source = decode(&format!(
+        "#usda 1.0\ndef Mesh \"A\"\n{{\n        {MESH}\n}}\n"
+    ));
+    let mut ir = source.ir().clone();
+    let mut spare = cadmpeg_ir::products::ProductDefinition::new(
+        cadmpeg_ir::ids::ProductDefinitionId::try_from("test:model:definition#spare".to_owned())
+            .unwrap(),
+        cadmpeg_ir::products::Storage::Embedded,
+    );
+    spare.source_name = Some("Spare".into());
+    let mut mesh = ir.model.tessellations[0].clone();
+    mesh.id = cadmpeg_ir::tessellation::TessellationId::try_from(
+        "test:model:tessellation#spare".to_owned(),
+    )
+    .unwrap();
+    mesh.of = cadmpeg_ir::tessellation::Meshed::definition(spare.id.clone());
+    ir.model.tessellations.push(mesh);
+    ir.model.product_definitions.push(spare);
+    let (text, report) = encode(&ir);
+    let prototypes = text
+        .split("class \"Prototypes\"")
+        .nth(1)
+        .unwrap_or_else(|| panic!("a Prototypes prim: {text}"));
+    assert!(prototypes.contains("\"Spare\""), "{text}");
+    assert!(!text.contains("references = </Prototypes/"), "{text}");
+    // The layer holds the definition, so nothing is placed for it.
+    assert!(
+        report
+            .losses
+            .iter()
+            .all(|loss| loss.code.local_code() != "definition.placed"),
+        "{:?}",
+        report.losses
+    );
+}
+
+#[test]
 fn a_shared_definition_is_one_prototype_with_references() {
     let source = decode(&format!(
         "#usda 1.0\nclass \"Proto\"\n{{\n    def Mesh \"Part\"\n    {{\n        {MESH}\n    }}\n}}\ndef Xform \"Asm\"\n{{\n    def \"I1\" (\n        instanceable = true\n        references = </Proto>\n    )\n    {{\n    }}\n    def \"I2\" (\n        instanceable = true\n        references = </Proto>\n    )\n    {{\n    }}\n}}\n"
@@ -286,5 +324,84 @@ fn an_extent_keeps_the_zero_bound_it_holds() {
     assert_eq!(
         high.map(f32::to_bits),
         [0.0_f32, -0.0, 1.0].map(f32::to_bits)
+    );
+}
+
+#[test]
+fn a_cage_body_is_left_out_with_its_cage() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let cage = cadmpeg_test_support::cages::push_cage_body(&mut ir, "usd");
+    let (text, report) = encode(&ir);
+    cadmpeg_test_support::cages::assert_cage_body_dropped(&report, &cage, "bodies", 1);
+    assert_eq!(decode(&text).ir().geometry.bodies.len(), 1, "{text}");
+}
+
+fn written_empty(report: &cadmpeg_ir::report::export::ExportReport) -> bool {
+    report
+        .losses
+        .iter()
+        .any(|loss| loss.code.to_string() == "export/output.empty")
+}
+
+/// A document that states nothing USD holds is written as the layer metadata
+/// alone, with `export:output.empty`.
+#[test]
+fn a_document_that_states_nothing_is_written_empty() {
+    let (text, report) = encode(&cadmpeg_ir::CadIr::empty());
+    assert!(text.starts_with("#usda 1.0\n("), "{text}");
+    assert!(!text.contains("def "), "{text}");
+    assert!(written_empty(&report), "{:#?}", report.losses);
+}
+
+#[test]
+fn a_document_with_a_body_is_not_empty() {
+    let (text, report) = encode(&cadmpeg_ir::examples::unit_cube().unwrap());
+    assert!(text.contains("def "), "{text}");
+    assert!(!written_empty(&report), "{:#?}", report.losses);
+}
+
+#[test]
+fn native_records_are_charged_by_id_and_given_up_stubs_are_not() {
+    let mut ir = decode(&format!(
+        "#usda 1.0\ndef Mesh \"Arm\"\n{{\n    {MESH}\n}}\n"
+    ))
+    .into_parts()
+    .0;
+    let record = |id: &str| {
+        cadmpeg_ir::NativeRecord::new(
+            cadmpeg_ir::ids::Identity::new(id).expect("valid identity"),
+            serde_json::Map::default(),
+        )
+        .expect("valid native identity")
+    };
+    let arenas = ir
+        .native
+        .namespace_mut(cadmpeg_ir::codec_id!("sat"))
+        .arenas_mut();
+    arenas.insert(
+        cadmpeg_core::nonblank_literal!("entities"),
+        vec![record("sat:test:entity#1"), record("sat:test:entity#0")],
+    );
+    arenas.insert(
+        cadmpeg_core::nonblank_literal!("unknowns"),
+        vec![record("sat:test:unknown#0")],
+    );
+    ir.finalize();
+
+    let (_, report) = encode(&ir);
+    let omitted: Vec<&str> = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "export/native.records-omitted")
+        .map(|loss| loss.message.as_str())
+        .collect();
+    assert_eq!(
+        omitted,
+        [
+            "the USD write omits 2 native record(s) of `sat` arena `entities` which the USD \
+             writer does not write: sat:test:entity#0, sat:test:entity#1"
+        ],
+        "{:?}",
+        report.losses
     );
 }

@@ -3,6 +3,7 @@
 //! The curve records of an `sgSketch` list that the list reading takes no
 //! geometry from (`docs/formats/sldprt.md`, "Sketch objects").
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
@@ -230,8 +231,8 @@ fn projection(
         references: Vec::new(),
         sketch_entities: markers,
     }];
-    let wire = serde_json::to_value(&lanes).expect("lane serializes");
-    let restored: Vec<FeatureInputLane> = serde_json::from_value(wire).expect("lane re-admits");
+    let wire = json::to_value(&lanes).expect("lane serializes");
+    let restored: Vec<FeatureInputLane> = json::from_value(wire).expect("lane re-admits");
     assert_eq!(restored, lanes);
     let mut sketches = Vec::new();
     let mut entities = Vec::new();

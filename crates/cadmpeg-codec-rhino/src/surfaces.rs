@@ -13,6 +13,7 @@ use cadmpeg_ir::geometry::{
     },
     SolvedSurfaceGeometry, SurfaceGeometry,
 };
+use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
 use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
@@ -211,6 +212,21 @@ impl DecodedProceduralSurface {
             }
         })
     }
+}
+
+/// The parameters of `point` on the plane through `origin` with `normal` and
+/// `u_axis`: its offsets along `u_axis` and along `normal × u_axis`. The
+/// decoder states extrusion cap pcurves and the writer projects planar trims
+/// with this one computation, so the writer's projection reproduces a decoded
+/// cap pcurve exactly.
+pub(crate) fn plane_parameters(
+    point: Point3,
+    origin: Point3,
+    normal: Vector3,
+    u_axis: Vector3,
+) -> [f64; 2] {
+    let delta = point.vector_from(origin);
+    [delta.dot(u_axis), delta.dot(normal.cross(u_axis))]
 }
 
 pub(crate) fn decode(
@@ -602,7 +618,7 @@ fn revolution_nurbs(
                 * cadmpeg_core::convert::f64_from_index(span + 1)
                     .ok_or_else(|| error(offset, "geometry index exceeds exact float range"))?;
         let middle = (a0 + a1) * 0.5;
-        let middle_weight = ((a1 - a0) * 0.5).cos();
+        let middle_weight = ((a1 - a0) * 0.5).portable_cos();
         if span == 0 {
             angular.push((a0, 1.0));
         }
@@ -819,8 +835,8 @@ fn extrusion_rows<T: Copy>(start: &[T], end: &[T]) -> Vec<Vec<T>> {
 }
 
 fn rodrigues(value: Vector3, axis: Vector3, angle: f64) -> Vector3 {
-    let cosine = angle.cos();
-    let sine = angle.sin();
+    let cosine = angle.portable_cos();
+    let sine = angle.portable_sin();
     let cross = axis.cross(value);
     value.scale(cosine) + cross.scale(sine) + axis.scale(axis.dot(value) * (1.0 - cosine))
 }

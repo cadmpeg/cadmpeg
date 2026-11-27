@@ -56,6 +56,13 @@ class LossCodes(harness.FixtureCase):
                           "crates/cadmpeg-codec-f3d/src/design/components.rs": source})
         self.assertEqual(harness.statuses(harness.run_check(check, self.repo.context())), ["PASS"])
 
+    def test_child_of_a_tests_module_directory_counts(self) -> None:
+        self.repo.commit({LOSS: AFTER,
+                          "crates/cadmpeg-codec-f3d/src/design/components_tests/joints.rs":
+                          "fn revised() -> F3dLossCode {\n"
+                          "    F3dLossCode::ComponentDefinitionRevised\n}\n"})
+        self.assertEqual(harness.statuses(harness.run_check(check, self.repo.context())), ["PASS"])
+
     def test_mention_outside_test_code_warns(self) -> None:
         source = ("// F3dLossCode::ComponentDefinitionRevised is emitted below.\n"
                   "pub fn bind() -> F3dLossCode { F3dLossCode::ComponentDefinitionRevised }\n\n"

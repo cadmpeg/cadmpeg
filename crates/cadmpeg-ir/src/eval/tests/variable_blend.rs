@@ -218,7 +218,7 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
     assert_eq!(
         model_surface_point(
             crate::eval::admission::EvaluationAdmission::Standard,
-            &ir,
+            &crate::index::ModelIndex::new_model_only(&ir),
             &ir.geometry.surfaces[2].geometry,
             0.25,
             0.5
@@ -980,7 +980,7 @@ fn both_routes_reach_no_coordinate(ir: &CadIr, surface: &SurfaceId, u: f64, v: f
         ),
         model_surface_point(
             crate::eval::admission::EvaluationAdmission::Standard,
-            ir,
+            &crate::index::ModelIndex::new_model_only(ir),
             geometry,
             u,
             v,
@@ -1245,7 +1245,7 @@ fn a_ruled_variable_blend_whose_support_partial_overflows_keeps_its_point() {
     assert_eq!(
         model_surface_point(
             crate::eval::admission::EvaluationAdmission::Standard,
-            &ir,
+            &crate::index::ModelIndex::new_model_only(&ir),
             &ir.geometry.surfaces[2].geometry,
             0.5,
             0.5

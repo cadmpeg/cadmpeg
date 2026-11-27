@@ -307,6 +307,11 @@ impl<'a> Walker<'a> {
         self.mark
     }
 
+    /// Offset just past the record the last [`Self::next`] call returned.
+    pub(super) fn end(&self) -> usize {
+        self.view.read_len()
+    }
+
     fn fail<T>(&self, reason: &'static str) -> Result<T, WalkError> {
         Err(WalkError {
             offset: self.mark,

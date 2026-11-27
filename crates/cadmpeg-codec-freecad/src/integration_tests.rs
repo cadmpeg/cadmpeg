@@ -30,7 +30,8 @@ use crate::test_support::test_archive::{
     archive, archive_entries, assert_valid_document, rewrite_schema_version, streaming_archive,
     streaming_archive_with_options, CORE_OPERATIONS,
 };
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use std::io::Cursor;
 use zip::write::SimpleFileOptions;
@@ -72,7 +73,7 @@ use crate::topology_transfer::tests::{
     transfers_connected_text_brep_topology,
     transfers_triangulation_only_face_and_indexed_edge_polygon,
 };
-use crate::writer::tests::patching::writer_rejects_unserialized_declaration_and_stale_payload_edits;
+use crate::writer::tests::patching::writes_around_declaration_edits_and_unreadable_entries;
 use crate::writer::tests::targets::write_target_and_source_requirements_are_explicit;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
@@ -223,7 +224,7 @@ fn typed_graph_pipeline_builds_mutates_writes_and_reloads_side_entries() {
 
     let mut bytes = Vec::new();
     FcstdCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None))
         .and_then(|plan| plan.write_to(&mut bytes))
         .unwrap();
     let round_trip = decode(bytes);
@@ -286,7 +287,7 @@ fn compatibility_and_refusal_pipeline_keeps_states_atomic() {
     schema_two_uses_the_feature_envelope_and_common_property_grammar();
     legacy_schema_dispatch_rejects_wrong_envelopes_and_unmatched_objectdata();
     write_target_and_source_requirements_are_explicit();
-    writer_rejects_unserialized_declaration_and_stale_payload_edits();
+    writes_around_declaration_edits_and_unreadable_entries();
 
     let result = FcstdCodec
         .decode(
@@ -569,8 +570,7 @@ fn an_undeclared_schema_version_alone_recovers_the_schema_four_content() {
     let drifted = decode(rewrite_schema_version(CORE_OPERATIONS, "5"));
 
     let model = |result: &cadmpeg_ir::codec::DecodeResult| {
-        serde_json::to_string(&(&result.ir().geometry, &result.ir().model))
-            .expect("serialize model")
+        json::to_string(&(&result.ir().geometry, &result.ir().model)).expect("serialize model")
     };
     assert_eq!(model(&drifted), model(&baseline));
     assert!(!drifted.ir().geometry.bodies.is_empty());

@@ -3,14 +3,493 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "unordered",
+          "value": {
+            "id": "fcstd:design:container#document:group",
+            "kind": "group",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Compound"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#CurveCarriers"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Degenerate"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#FreeformSurface"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#MultiShell"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Revolved"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Seam"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Sheet"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Solid"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Swept"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Void"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Wire"
+              }
+            ]
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#Compound:Shape:Compound.Shape.brp:17%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Compound",
+          "name": "Compound",
+          "native_ref": "fcstd:native:object#Compound"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#CurveCarriers:Shape:CurveCarriers.Shape.brp:14%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#CurveCarriers",
+          "name": "CurveCarriers",
+          "native_ref": "fcstd:native:object#CurveCarriers"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#Degenerate:Shape:Degenerate.Shape.brp:11%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Degenerate",
+          "name": "Degenerate",
+          "native_ref": "fcstd:native:object#Degenerate"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#FreeformSurface:Shape:FreeformSurface.Shape.brp:10%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#FreeformSurface",
+          "name": "FreeformSurface",
+          "native_ref": "fcstd:native:object#FreeformSurface"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#MultiShell:Shape:MultiShell.Shape.brp:67%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#MultiShell",
+          "name": "MultiShell",
+          "native_ref": "fcstd:native:object#MultiShell"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#Revolved:Shape:Revolved.Shape.brp:24%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Revolved",
+          "name": "Revolved",
+          "native_ref": "fcstd:native:object#Revolved"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#Seam:Shape:Seam.Shape.brp:13%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Seam",
+          "name": "Seam",
+          "native_ref": "fcstd:native:object#Seam"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#Sheet:Shape:Sheet.Shape.brp:10%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Sheet",
+          "name": "Sheet",
+          "native_ref": "fcstd:native:object#Sheet"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#Solid:Shape:Solid.Shape.brp:34%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Solid",
+          "name": "Solid",
+          "native_ref": "fcstd:native:object#Solid"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#Swept:Shape:Swept.Shape.brp:13%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Swept",
+          "name": "Swept",
+          "native_ref": "fcstd:native:object#Swept"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#Void:Shape:Void.Shape.brp:68%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Void",
+          "name": "Void",
+          "native_ref": "fcstd:native:object#Void"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#Wire:Shape:Wire.Shape.brp:6%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Wire",
+          "name": "Wire",
+          "native_ref": "fcstd:native:object#Wire"
+        }
+      ],
       "names": [],
       "parameters": [],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Compound"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Compound:Shape:Compound.Shape.brp:17%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Compound",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#CurveCarriers"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#CurveCarriers:Shape:CurveCarriers.Shape.brp:14%40location1"
+              ],
+              "native_ref": "fcstd:native:object#CurveCarriers",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Degenerate"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Degenerate:Shape:Degenerate.Shape.brp:11%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Degenerate",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#FreeformSurface"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#FreeformSurface:Shape:FreeformSurface.Shape.brp:10%40location1"
+              ],
+              "native_ref": "fcstd:native:object#FreeformSurface",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#MultiShell"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#MultiShell:Shape:MultiShell.Shape.brp:67%40location1"
+              ],
+              "native_ref": "fcstd:native:object#MultiShell",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Revolved"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Revolved:Shape:Revolved.Shape.brp:24%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Revolved",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Seam"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Seam:Shape:Seam.Shape.brp:13%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Seam",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Sheet"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Sheet:Shape:Sheet.Shape.brp:10%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Sheet",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Solid"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Solid:Shape:Solid.Shape.brp:34%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Solid",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Swept"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Swept:Shape:Swept.Shape.brp:13%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Swept",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Void"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Void:Shape:Void.Shape.brp:68%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Void",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#Wire"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Wire:Shape:Wire.Shape.brp:6%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Wire",
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "fcstd:model:product_definition#document:root",
+          "occurrences": {},
+          "roots": [
+            "fcstd:design:container#document:group"
+          ],
+          "unproduced": []
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],

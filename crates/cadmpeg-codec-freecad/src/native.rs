@@ -7,6 +7,7 @@ pub(crate) mod joint;
 pub(crate) mod object_identity;
 
 use crate::attachment::MapModeIndex;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::units::FiniteVector;
 use frame::FiniteFrame;
 
@@ -48,10 +49,24 @@ pub(crate) fn id_key(id: &str) -> &str {
     id.split_once('#').map_or(id, |(_, key)| key)
 }
 
+/// The key of the shape payload, among those `is_payload` accepts, whose
+/// records include the model record `id`: [`model_id`] keys each record of a
+/// payload by the payload's key, then `:` and the record's own segments.
+pub(crate) fn payload_of(id: &str, is_payload: impl Fn(&str) -> bool) -> Option<&str> {
+    let mut key = id_key(id);
+    loop {
+        if is_payload(key) {
+            return Some(key);
+        }
+        key = key.rsplit_once(':')?.0;
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
     use super::{model_id, native_child_id, native_id};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn entries_check_names_identities_references_and_cache_the_digest() {
@@ -81,19 +96,19 @@ mod tests {
             vec![1, 2, 3],
         )
         .expect("entry");
-        let wire = serde_json::to_value(&record).expect("wire");
+        let wire = json::to_value(&record).expect("wire");
         assert_eq!(
             wire["sha256"],
             "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81"
         );
         for (key, value) in [
-            ("id", serde_json::json!("invalid")),
-            ("name", serde_json::json!("../x")),
-            ("referenced_by", serde_json::json!(["invalid"])),
+            ("id", cadmpeg_core::json!("invalid")),
+            ("name", cadmpeg_core::json!("../x")),
+            ("referenced_by", cadmpeg_core::json!(["invalid"])),
         ] {
             let mut invalid = wire.clone();
             invalid[key] = value;
-            assert!(serde_json::from_value::<super::EntryRecord>(invalid).is_err());
+            assert!(json::from_value::<super::EntryRecord>(invalid).is_err());
         }
         let mut record = record;
         assert!(record.add_reference("invalid").is_err());
@@ -143,25 +158,25 @@ mod tests {
     #[test]
     fn link_targets_reject_absence_on_every_admission_route() {
         assert!(super::LinkTarget::try_new(None, None, vec![]).is_err());
-        let wire = serde_json::json!({"document":null,"document_attribute":null,"object":"","subelements":[]});
-        assert!(serde_json::from_value::<super::LinkTarget>(wire).is_err());
+        let wire = cadmpeg_core::json!({"document":null,"document_attribute":null,"object":"","subelements":[]});
+        assert!(json::from_value::<super::LinkTarget>(wire).is_err());
         let target = super::LinkTarget::try_new(None, None, vec!["Face1".into()]).unwrap();
         assert_eq!(
-            serde_json::to_value(&target).unwrap(),
-            serde_json::json!({"document":null,"document_attribute":null,"object":"","subelements":["Face1"]})
+            json::to_value(&target).unwrap(),
+            cadmpeg_core::json!({"document":null,"document_attribute":null,"object":"","subelements":["Face1"]})
         );
     }
 
     #[test]
     fn design_census_neutral_is_derived_and_checked_on_the_wire() {
         for (semantic_kind, neutral) in [("native", false), ("pattern", true)] {
-            let wire = serde_json::json!({"id":"census", "object":"object", "type_name":"type", "feature":"feature", "semantic_kind":semantic_kind, "neutral":neutral, "post_processed":false});
-            let record = serde_json::from_value::<super::DesignCensusRecord>(wire.clone()).unwrap();
+            let wire = cadmpeg_core::json!({"id":"census", "object":"object", "type_name":"type", "feature":"feature", "semantic_kind":semantic_kind, "neutral":neutral, "post_processed":false});
+            let record = json::from_value::<super::DesignCensusRecord>(wire.clone()).unwrap();
             assert_eq!(record.neutral(), neutral);
-            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+            assert_eq!(json::to_value(record).unwrap(), wire);
             let mut invalid = wire;
-            invalid["neutral"] = serde_json::json!(!neutral);
-            assert!(serde_json::from_value::<super::DesignCensusRecord>(invalid)
+            invalid["neutral"] = cadmpeg_core::json!(!neutral);
+            assert!(json::from_value::<super::DesignCensusRecord>(invalid)
                 .unwrap_err()
                 .to_string()
                 .contains("neutral"));
@@ -170,7 +185,7 @@ mod tests {
 
     #[test]
     fn string_table_admission_requires_distinct_backward_references() {
-        let entry = |id, components| serde_json::json!({"string_id":id,"flags":0,"components":components,"payload":"value","raw":"raw"});
+        let entry = |id, components| cadmpeg_core::json!({"string_id":id,"flags":0,"components":components,"payload":"value","raw":"raw"});
         for (entries, valid) in [
             (vec![entry(1, vec![]), entry(2, vec![1])], true),
             (vec![entry(1, vec![]), entry(1, vec![])], false),
@@ -178,7 +193,7 @@ mod tests {
             (vec![entry(1, vec![2]), entry(2, vec![])], false),
             (vec![entry(1, vec![9])], false),
         ] {
-            let wire = serde_json::json!({
+            let wire = cadmpeg_core::json!({
                 "id": native_id("string-table", "0"),
                 "index": 0,
                 "owner_property": null,
@@ -188,17 +203,17 @@ mod tests {
                 "source_entry": null,
                 "entries": entries
             });
-            let result = serde_json::from_value::<super::StringTableRecord>(wire.clone());
+            let result = json::from_value::<super::StringTableRecord>(wire.clone());
             assert_eq!(result.is_ok(), valid);
             if let Ok(record) = result {
-                assert_eq!(serde_json::to_value(record).unwrap(), wire);
+                assert_eq!(json::to_value(record).unwrap(), wire);
             }
         }
     }
 
     #[test]
     fn string_table_admission_derives_and_checks_identity_from_index() {
-        let mut wire = serde_json::json!({
+        let mut wire = cadmpeg_core::json!({
             "id": native_id("string-table", "0"),
             "index": 0,
             "owner_property": null,
@@ -208,13 +223,13 @@ mod tests {
             "source_entry": null,
             "entries": []
         });
-        let table = serde_json::from_value::<super::StringTableRecord>(wire.clone()).unwrap();
+        let table = json::from_value::<super::StringTableRecord>(wire.clone()).unwrap();
         assert_eq!(table.index, 0);
         assert_eq!(table.id(), native_id("string-table", "0"));
-        assert_eq!(serde_json::to_value(&table).unwrap(), wire);
+        assert_eq!(json::to_value(&table).unwrap(), wire);
 
-        wire["id"] = serde_json::json!("fcstd:native:string-table#not-the-index");
-        let error = serde_json::from_value::<super::StringTableRecord>(wire.clone()).unwrap_err();
+        wire["id"] = cadmpeg_core::json!("fcstd:native:string-table#not-the-index");
+        let error = json::from_value::<super::StringTableRecord>(wire.clone()).unwrap_err();
         assert!(error.to_string().contains("string table id"));
 
         let mut ir = cadmpeg_ir::CadIr::empty();
@@ -226,8 +241,7 @@ mod tests {
                 &[wire],
             )
             .unwrap();
-        let roundtrip: cadmpeg_ir::CadIr =
-            serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();
+        let roundtrip: cadmpeg_ir::CadIr = json::from_value(json::to_value(&ir).unwrap()).unwrap();
         let findings = crate::test_support::validate_native(&roundtrip);
         assert!(findings.iter().any(|finding| {
             finding.message.contains("string table id")
@@ -284,10 +298,10 @@ mod tests {
             )
             .unwrap();
         assert_eq!(rewritten, namespace);
-        let wire = serde_json::to_value(&tables).unwrap();
+        let wire = json::to_value(&tables).unwrap();
         assert!(wire.is_array());
         assert_eq!(
-            serde_json::from_value::<super::StringTables>(wire).unwrap(),
+            json::from_value::<super::StringTables>(wire).unwrap(),
             tables
         );
     }
@@ -310,8 +324,8 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             assert!(super::StringTables::try_from(records.clone()).is_err());
-            let wire = serde_json::to_value(&records).unwrap();
-            assert!(serde_json::from_value::<super::StringTables>(wire).is_err());
+            let wire = json::to_value(&records).unwrap();
+            assert!(json::from_value::<super::StringTables>(wire).is_err());
             let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
             namespace
                 .set_arena(
@@ -331,14 +345,14 @@ mod tests {
     #[test]
     fn ledger_spans_reject_empty_and_reversed_wire_intervals() {
         for (start, end, valid) in [(0, 1, true), (1, 1, false), (2, 1, false)] {
-            let physical = serde_json::json!({"id":"span", "start":start, "end":end, "role":"end-record", "entry":null});
-            let logical = serde_json::json!({"id":"span", "entry":"Document.xml", "start":start, "end":end, "classification":"structural", "owner":null});
+            let physical = cadmpeg_core::json!({"id":"span", "start":start, "end":end, "role":"end-record", "entry":null});
+            let logical = cadmpeg_core::json!({"id":"span", "entry":"Document.xml", "start":start, "end":end, "classification":"structural", "owner":null});
             assert_eq!(
-                serde_json::from_value::<super::ArchiveSpan>(physical).is_ok(),
+                json::from_value::<super::ArchiveSpan>(physical).is_ok(),
                 valid
             );
             assert_eq!(
-                serde_json::from_value::<super::LogicalSpan>(logical).is_ok(),
+                json::from_value::<super::LogicalSpan>(logical).is_ok(),
                 valid
             );
         }
@@ -346,19 +360,17 @@ mod tests {
 
     #[test]
     fn gui_state_order_is_derived_from_collection_position() {
-        let state = serde_json::json!({"id":"camera", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[], "raw_xml":"<A/>", "byte_start":0, "byte_end":4});
-        let mut wire = serde_json::json!({"id":"gui", "schema_version":null, "attributes":{}, "states":[state.clone(),state]});
-        assert!(
-            serde_json::from_value::<super::GuiDocumentRecord>(wire.clone())
-                .unwrap_err()
-                .to_string()
-                .contains("order")
-        );
-        wire["states"][1]["order"] = serde_json::json!(1);
-        let mut record = serde_json::from_value::<super::GuiDocumentRecord>(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+        let state = cadmpeg_core::json!({"id":"camera", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[], "raw_xml":"<A/>", "byte_start":0, "byte_end":4});
+        let mut wire = cadmpeg_core::json!({"id":"gui", "schema_version":null, "attributes":{}, "states":[state.clone(),state]});
+        assert!(json::from_value::<super::GuiDocumentRecord>(wire.clone())
+            .unwrap_err()
+            .to_string()
+            .contains("order"));
+        wire["states"][1]["order"] = cadmpeg_core::json!(1);
+        let mut record = json::from_value::<super::GuiDocumentRecord>(wire.clone()).unwrap();
+        assert_eq!(json::to_value(&record).unwrap(), wire);
         record.states.remove(0);
-        let moved = serde_json::to_value(record).unwrap();
+        let moved = json::to_value(record).unwrap();
         assert_eq!(moved["states"][0]["order"], 0);
     }
 
@@ -404,7 +416,7 @@ mod tests {
                 "local_transform",
                 "scale",
             ] {
-                let mut wire: super::ProductNodeRecordWire = serde_json::from_value(serde_json::json!({
+                let mut wire: super::ProductNodeRecordWire = json::from_value(cadmpeg_core::json!({
                     "id":"link", "object":"object", "kind":"occurrence", "members":[],
                     "element_transforms":[], "element_scales":[], "linked_subelements":[], "element_visibility":[], "element_objects":[]
                 })).unwrap();
@@ -423,38 +435,37 @@ mod tests {
 
     #[test]
     fn file_version_preserves_spelling_and_unverified_declarations() {
-        let wire = serde_json::json!({"id":"document", "file_version":"+001", "program_version":null, "root_name":"Document", "object_count":0, "domains":[], "document_kind":"empty"});
-        let record = serde_json::from_value::<super::DocumentFacts>(wire.clone()).unwrap();
+        let wire = cadmpeg_core::json!({"id":"document", "file_version":"+001", "program_version":null, "root_name":"Document", "object_count":0, "domains":[], "document_kind":"empty"});
+        let record = json::from_value::<super::DocumentFacts>(wire.clone()).unwrap();
         assert_eq!(record.file_version.value(), Some(1));
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        assert_eq!(json::to_value(record).unwrap(), wire);
         for spelling in ["-1", "", "abc", "184467440737095516160"] {
             let mut invalid = wire.clone();
-            invalid["file_version"] = serde_json::json!(spelling);
-            let record = serde_json::from_value::<super::DocumentFacts>(invalid.clone()).unwrap();
+            invalid["file_version"] = cadmpeg_core::json!(spelling);
+            let record = json::from_value::<super::DocumentFacts>(invalid.clone()).unwrap();
             assert_eq!(record.file_version.value(), None);
-            assert_eq!(serde_json::to_value(record).unwrap(), invalid);
+            assert_eq!(json::to_value(record).unwrap(), invalid);
         }
     }
 
     #[test]
     fn gui_provider_object_rejects_empty_wire_identity() {
-        let mut wire = serde_json::json!({"id":"provider", "object":"", "name":"A", "expanded":null, "order":0, "raw_xml":"<ViewProvider/>"});
-        assert!(serde_json::from_value::<super::GuiViewProviderRecord>(wire.clone()).is_err());
-        for object in [serde_json::Value::Null, serde_json::json!("object")] {
+        let mut wire = cadmpeg_core::json!({"id":"provider", "object":"", "name":"A", "expanded":null, "order":0, "raw_xml":"<ViewProvider/>"});
+        assert!(json::from_value::<super::GuiViewProviderRecord>(wire.clone()).is_err());
+        for object in [serde_json::Value::Null, cadmpeg_core::json!("object")] {
             wire["object"] = object;
-            let record =
-                serde_json::from_value::<super::GuiViewProviderRecord>(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+            let record = json::from_value::<super::GuiViewProviderRecord>(wire.clone()).unwrap();
+            assert_eq!(json::to_value(record).unwrap(), wire);
         }
     }
 
     #[test]
     fn retained_xml_records_reject_invalid_wire_spans() {
         let bases = [
-            serde_json::json!({"id":"state", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[]}),
-            serde_json::json!({"id":"property", "owner":"provider", "name":"Color", "type_name":"App::PropertyColor", "order":0, "values":[], "side_entries":[]}),
-            serde_json::json!({"id":"fcstd:native:object#A", "name":"A", "type_name":"App::Feature", "attributes":{}, "dependencies":[], "order":0}),
-            serde_json::json!({"id":"property", "owner":"object", "name":"Label", "type_name":"App::PropertyString", "family":"scalar", "transient":false, "order":0, "values":[], "links":[], "side_entries":[]}),
+            cadmpeg_core::json!({"id":"state", "kind":"Camera", "order":0, "attributes":{}, "values":[], "side_entries":[]}),
+            cadmpeg_core::json!({"id":"property", "owner":"provider", "name":"Color", "type_name":"App::PropertyColor", "order":0, "values":[], "side_entries":[]}),
+            cadmpeg_core::json!({"id":"fcstd:native:object#A", "name":"A", "type_name":"App::Feature", "attributes":{}, "dependencies":[], "order":0}),
+            cadmpeg_core::json!({"id":"property", "owner":"object", "name":"Label", "type_name":"App::PropertyString", "family":"scalar", "transient":false, "order":0, "values":[], "links":[], "side_entries":[]}),
         ];
         for (kind, base) in bases.into_iter().enumerate() {
             for (start, end, valid) in [
@@ -464,14 +475,14 @@ mod tests {
                 (10, 15, false),
             ] {
                 let mut wire = base.clone();
-                wire["raw_xml"] = serde_json::json!("<A/>");
-                wire["byte_start"] = serde_json::json!(start);
-                wire["byte_end"] = serde_json::json!(end);
+                wire["raw_xml"] = cadmpeg_core::json!("<A/>");
+                wire["byte_start"] = cadmpeg_core::json!(start);
+                wire["byte_end"] = cadmpeg_core::json!(end);
                 let admitted = match kind {
-                    0 => serde_json::from_value::<super::GuiStateRecord>(wire).map(|_| ()),
-                    1 => serde_json::from_value::<super::GuiPropertyRecord>(wire).map(|_| ()),
-                    2 => serde_json::from_value::<super::ObjectRecord>(wire).map(|_| ()),
-                    _ => serde_json::from_value::<super::PropertyRecord>(wire).map(|_| ()),
+                    0 => json::from_value::<super::GuiStateRecord>(wire).map(|_| ()),
+                    1 => json::from_value::<super::GuiPropertyRecord>(wire).map(|_| ()),
+                    2 => json::from_value::<super::ObjectRecord>(wire).map(|_| ()),
+                    _ => json::from_value::<super::PropertyRecord>(wire).map(|_| ()),
                 };
                 assert_eq!(
                     admitted.is_ok(),
@@ -484,25 +495,25 @@ mod tests {
 
     #[test]
     fn document_kind_wire_must_match_domains_and_count() {
-        let mut wire = serde_json::json!({"id":"document",
+        let mut wire = cadmpeg_core::json!({"id":"document",
             "file_version":"1", "program_version":null, "root_name":"Document",
             "object_count":1, "domains":["Part"], "document_kind":"empty"});
-        assert!(serde_json::from_value::<super::DocumentFacts>(wire.clone()).is_err());
-        wire["document_kind"] = serde_json::json!("part");
-        let facts = serde_json::from_value::<super::DocumentFacts>(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(facts).unwrap(), wire);
+        assert!(json::from_value::<super::DocumentFacts>(wire.clone()).is_err());
+        wire["document_kind"] = cadmpeg_core::json!("part");
+        let facts = json::from_value::<super::DocumentFacts>(wire.clone()).unwrap();
+        assert_eq!(json::to_value(facts).unwrap(), wire);
     }
 
     #[test]
     fn link_array_wire_rejects_negative_count_and_retains_independent_lists() {
-        let base = serde_json::json!({
+        let base = cadmpeg_core::json!({
             "id": "link", "object": "object", "kind": "occurrence",
             "members": [], "element_transforms": [], "element_scales": [],
             "linked_subelements": [], "element_visibility": [], "element_objects": []
         });
         let mut negative = base.clone();
-        negative["element_count"] = serde_json::json!(-1);
-        assert!(serde_json::from_value::<super::ProductNodeRecord>(negative).is_err());
+        negative["element_count"] = cadmpeg_core::json!(-1);
+        assert!(json::from_value::<super::ProductNodeRecord>(negative).is_err());
         for field in [
             "element_transforms",
             "element_scales",
@@ -510,26 +521,26 @@ mod tests {
             "element_objects",
         ] {
             let mut wire = base.clone();
-            wire["element_count"] = serde_json::json!(2);
+            wire["element_count"] = cadmpeg_core::json!(2);
             wire[field] = match field {
-                "element_transforms" => serde_json::json!([[
+                "element_transforms" => cadmpeg_core::json!([[
                     [1.0, 0.0, 0.0, 0.0],
                     [0.0, 1.0, 0.0, 0.0],
                     [0.0, 0.0, 1.0, 0.0],
                     [0.0, 0.0, 0.0, 1.0]
                 ]]),
-                "element_scales" => serde_json::json!([[1.0, 1.0, 1.0]]),
-                "element_visibility" => serde_json::json!([true]),
-                _ => serde_json::json!(["object"]),
+                "element_scales" => cadmpeg_core::json!([[1.0, 1.0, 1.0]]),
+                "element_visibility" => cadmpeg_core::json!([true]),
+                _ => cadmpeg_core::json!(["object"]),
             };
-            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_ok());
-            wire["element_count"] = serde_json::json!(1);
-            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire).is_ok());
+            assert!(json::from_value::<super::ProductNodeRecord>(wire.clone()).is_ok());
+            wire["element_count"] = cadmpeg_core::json!(1);
+            assert!(json::from_value::<super::ProductNodeRecord>(wire).is_ok());
         }
 
         let mut object_only = base;
-        object_only["element_objects"] = serde_json::json!(["object"]);
-        let record = serde_json::from_value::<super::ProductNodeRecord>(object_only)
+        object_only["element_objects"] = cadmpeg_core::json!(["object"]);
+        let record = json::from_value::<super::ProductNodeRecord>(object_only)
             .expect("an absent-count object carrier is retained before restoration");
         assert_eq!(
             record.element_cardinality(),
@@ -542,40 +553,39 @@ mod tests {
         for (field, value) in [
             (
                 "copy_on_change_source",
-                serde_json::json!({"document":null,"document_attribute":null,"object":"source","subelements":[]}),
+                cadmpeg_core::json!({"document":null,"document_attribute":null,"object":"source","subelements":[]}),
             ),
             (
                 "copy_on_change_group",
-                serde_json::json!({"document":null,"document_attribute":null,"object":"group","subelements":[]}),
+                cadmpeg_core::json!({"document":null,"document_attribute":null,"object":"group","subelements":[]}),
             ),
-            ("copy_on_change_touched", serde_json::json!(false)),
+            ("copy_on_change_touched", cadmpeg_core::json!(false)),
         ] {
-            let mut wire = serde_json::json!({
+            let mut wire = cadmpeg_core::json!({
                 "id": "link", "object": "object", "kind": "occurrence",
                 "members": [], "element_transforms": [], "element_scales": [],
                 "linked_subelements": [], "element_visibility": [], "element_objects": []
             });
             wire[field] = value;
-            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
-            wire["copy_on_change"] = serde_json::json!("2");
-            let admitted =
-                serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(admitted).unwrap()[field], wire[field]);
+            assert!(json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
+            wire["copy_on_change"] = cadmpeg_core::json!("2");
+            let admitted = json::from_value::<super::ProductNodeRecord>(wire.clone()).unwrap();
+            assert_eq!(json::to_value(admitted).unwrap()[field], wire[field]);
         }
 
         for raw in ["Owned", "abc", ""] {
-            let mut wire = serde_json::json!({
+            let mut wire = cadmpeg_core::json!({
                 "id": "link", "object": "object", "kind": "occurrence",
                 "members": [], "element_transforms": [], "element_scales": [],
                 "linked_subelements": [], "element_visibility": [], "element_objects": [],
                 "copy_on_change": raw,
             });
-            assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
-            wire["copy_on_change"] = serde_json::json!("+00099");
-            let admitted = serde_json::from_value::<super::ProductNodeRecord>(wire.clone())
+            assert!(json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
+            wire["copy_on_change"] = cadmpeg_core::json!("+00099");
+            let admitted = json::from_value::<super::ProductNodeRecord>(wire.clone())
                 .expect("numeric future policies retain their spelling");
             assert_eq!(
-                serde_json::to_value(admitted).unwrap()["copy_on_change"],
+                json::to_value(admitted).unwrap()["copy_on_change"],
                 "+00099"
             );
         }
@@ -584,13 +594,13 @@ mod tests {
     #[test]
     fn object_wire_rejects_nonpositive_partial_load_capability() {
         for value in [0, -1] {
-            let wire = serde_json::json!({
+            let wire = cadmpeg_core::json!({
                 "id": "fcstd:native:object#A", "name": "A", "type_name": "App::Feature",
                 "persistent_id": null, "view_type": null, "attributes": {},
                 "dependencies": [], "dependency_allow_partial": value, "order": 0,
                 "raw_xml": null, "byte_start": null, "byte_end": null
             });
-            let error = serde_json::from_value::<super::ObjectRecord>(wire).unwrap_err();
+            let error = json::from_value::<super::ObjectRecord>(wire).unwrap_err();
             assert!(error.to_string().contains("dependency_allow_partial"));
         }
     }
@@ -623,7 +633,7 @@ mod tests {
 
     /// A link target wire object naming one object and its subelements.
     fn link(object: &str, subelements: &[&str]) -> serde_json::Value {
-        serde_json::json!({
+        cadmpeg_core::json!({
             "document": null,
             "document_attribute": null,
             "object": object,
@@ -633,7 +643,7 @@ mod tests {
 
     #[test]
     fn an_attachment_writes_its_supports_frames_and_effective_frame() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "attachment",
             "object": "object",
             "supports": [null, link("Pad", &["Face1"])],
@@ -642,51 +652,51 @@ mod tests {
             "offset": identity(),
             "effective_frame": identity()
         });
-        let record = serde_json::from_value::<super::AttachmentRecord>(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+        let record = json::from_value::<super::AttachmentRecord>(wire.clone()).unwrap();
+        assert_eq!(json::to_value(&record).unwrap(), wire);
 
         let mut bare = wire;
-        bare["supports"] = serde_json::json!([]);
+        bare["supports"] = cadmpeg_core::json!([]);
         bare["map_mode"] = serde_json::Value::Null;
         bare["placement"] = serde_json::Value::Null;
         bare["offset"] = serde_json::Value::Null;
-        let record = serde_json::from_value::<super::AttachmentRecord>(bare.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), bare);
+        let record = json::from_value::<super::AttachmentRecord>(bare.clone()).unwrap();
+        assert_eq!(json::to_value(record).unwrap(), bare);
     }
 
     #[test]
     fn archive_and_logical_spans_write_their_role_and_owner() {
         for (role, entry) in [
-            ("compressed-payload", serde_json::json!("Document.xml")),
+            ("compressed-payload", cadmpeg_core::json!("Document.xml")),
             ("end-record", serde_json::Value::Null),
         ] {
-            let wire = serde_json::json!({
+            let wire = cadmpeg_core::json!({
                 "id": "span", "start": 0, "end": 4, "role": role, "entry": entry
             });
-            let record = serde_json::from_value::<super::ArchiveSpan>(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+            let record = json::from_value::<super::ArchiveSpan>(wire.clone()).unwrap();
+            assert_eq!(json::to_value(record).unwrap(), wire);
         }
 
         for (classification, owner) in [
             ("structural", serde_json::Value::Null),
-            ("typed", serde_json::json!("fcstd:native:object#A")),
+            ("typed", cadmpeg_core::json!("fcstd:native:object#A")),
             (
                 "named_opaque",
-                serde_json::json!("fcstd:native:property#A:Shape"),
+                cadmpeg_core::json!("fcstd:native:property#A:Shape"),
             ),
         ] {
-            let wire = serde_json::json!({
+            let wire = cadmpeg_core::json!({
                 "id": "span", "entry": "Document.xml", "start": 0, "end": 4,
                 "classification": classification, "owner": owner
             });
-            let record = serde_json::from_value::<super::LogicalSpan>(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+            let record = json::from_value::<super::LogicalSpan>(wire.clone()).unwrap();
+            assert_eq!(json::to_value(record).unwrap(), wire);
         }
     }
 
     #[test]
     fn a_drawing_record_writes_page_views_and_a_non_page_without_them() {
-        let base = serde_json::json!({
+        let base = cadmpeg_core::json!({
             "id": "drawing", "object": "object",
             "kind": "TechDraw::DrawPage",
             "views": ["fcstd:native:object#View"],
@@ -696,20 +706,20 @@ mod tests {
             "parameters": {"Scale": "1.0"},
             "side_entries": ["template.svg"]
         });
-        let record = serde_json::from_value::<super::DrawingRecord>(base.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), base);
+        let record = json::from_value::<super::DrawingRecord>(base.clone()).unwrap();
+        assert_eq!(json::to_value(record).unwrap(), base);
 
         let mut other = base;
-        other["kind"] = serde_json::json!("TechDraw::DrawViewPart");
-        other["views"] = serde_json::json!([]);
+        other["kind"] = cadmpeg_core::json!("TechDraw::DrawViewPart");
+        other["views"] = cadmpeg_core::json!([]);
         other["template"] = serde_json::Value::Null;
-        let record = serde_json::from_value::<super::DrawingRecord>(other.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), other);
+        let record = json::from_value::<super::DrawingRecord>(other.clone()).unwrap();
+        assert_eq!(json::to_value(record).unwrap(), other);
     }
 
     #[test]
     fn an_object_record_writes_its_retained_xml_and_its_absence() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "fcstd:native:object#A", "name": "A", "type_name": "App::Feature",
             "persistent_id": 7, "view_type": "Gui::ViewProviderFeature",
             "attributes": {"Touched": "1"},
@@ -717,8 +727,8 @@ mod tests {
             "dependency_allow_partial": 2, "order": 0,
             "raw_xml": "<A/>", "byte_start": 10, "byte_end": 14
         });
-        let record = serde_json::from_value::<super::ObjectRecord>(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        let record = json::from_value::<super::ObjectRecord>(wire.clone()).unwrap();
+        assert_eq!(json::to_value(record).unwrap(), wire);
 
         let mut bare = wire;
         bare["persistent_id"] = serde_json::Value::Null;
@@ -727,13 +737,13 @@ mod tests {
         bare["raw_xml"] = serde_json::Value::Null;
         bare["byte_start"] = serde_json::Value::Null;
         bare["byte_end"] = serde_json::Value::Null;
-        let record = serde_json::from_value::<super::ObjectRecord>(bare.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), bare);
+        let record = json::from_value::<super::ObjectRecord>(bare.clone()).unwrap();
+        assert_eq!(json::to_value(record).unwrap(), bare);
     }
 
     #[test]
     fn a_property_record_writes_its_payload_and_a_transient_declaration_without_one() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "property", "owner": "object", "name": "Label",
             "type_name": "App::PropertyString", "family": "string", "status": 1,
             "transient": false,
@@ -746,22 +756,22 @@ mod tests {
             "side_entries": ["Body.brp"],
             "raw_xml": "<A/>", "byte_start": 10, "byte_end": 14
         });
-        let record = serde_json::from_value::<super::PropertyRecord>(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        let record = json::from_value::<super::PropertyRecord>(wire.clone()).unwrap();
+        assert_eq!(json::to_value(record).unwrap(), wire);
 
         let mut transient = wire;
-        transient["transient"] = serde_json::json!(true);
+        transient["transient"] = cadmpeg_core::json!(true);
         transient["dynamic"] = serde_json::Value::Null;
-        transient["values"] = serde_json::json!([]);
-        transient["links"] = serde_json::json!([]);
-        transient["side_entries"] = serde_json::json!([]);
-        let record = serde_json::from_value::<super::PropertyRecord>(transient.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), transient);
+        transient["values"] = cadmpeg_core::json!([]);
+        transient["links"] = cadmpeg_core::json!([]);
+        transient["side_entries"] = cadmpeg_core::json!([]);
+        let record = json::from_value::<super::PropertyRecord>(transient.clone()).unwrap();
+        assert_eq!(json::to_value(record).unwrap(), transient);
     }
 
     #[test]
     fn an_entry_record_writes_its_bytes_beside_their_length_and_digest() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "fcstd:native:entry#Document.xml",
             "name": "Document.xml",
             "role": "document",
@@ -770,23 +780,23 @@ mod tests {
             "referenced_by": ["fcstd:native:property#A:Shape"],
             "data": "010203"
         });
-        let record = serde_json::from_value::<super::EntryRecord>(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+        let record = json::from_value::<super::EntryRecord>(wire.clone()).unwrap();
+        assert_eq!(json::to_value(&record).unwrap(), wire);
 
-        let json = serde_json::to_string(&record).unwrap();
+        let json = json::to_string(&record).unwrap();
         assert_eq!(
             serde_json::from_str::<super::EntryRecord>(&json).unwrap(),
             record
         );
 
         let mut empty = wire;
-        empty["byte_len"] = serde_json::json!(0);
+        empty["byte_len"] = cadmpeg_core::json!(0);
         empty["sha256"] =
-            serde_json::json!("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
-        empty["referenced_by"] = serde_json::json!([]);
-        empty["data"] = serde_json::json!("");
-        let record = serde_json::from_value::<super::EntryRecord>(empty.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), empty);
+            cadmpeg_core::json!("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        empty["referenced_by"] = cadmpeg_core::json!([]);
+        empty["data"] = cadmpeg_core::json!("");
+        let record = json::from_value::<super::EntryRecord>(empty.clone()).unwrap();
+        assert_eq!(json::to_value(record).unwrap(), empty);
     }
 
     #[test]
@@ -798,27 +808,27 @@ mod tests {
             Vec::new(),
             vec![0xab],
         );
-        let wire = serde_json::to_value(record).unwrap();
+        let wire = json::to_value(record).unwrap();
         for data in [
-            serde_json::json!("a"),
-            serde_json::json!("ag"),
-            serde_json::json!("AB"),
-            serde_json::json!([171]),
+            cadmpeg_core::json!("a"),
+            cadmpeg_core::json!("ag"),
+            cadmpeg_core::json!("AB"),
+            cadmpeg_core::json!([171]),
         ] {
             let mut invalid = wire.clone();
             invalid["data"] = data;
-            let json = serde_json::to_string(&invalid).unwrap();
+            let json = json::to_string(&invalid).unwrap();
             assert!(serde_json::from_str::<super::EntryRecord>(&json).is_err());
-            assert!(serde_json::from_value::<super::EntryRecord>(invalid).is_err());
+            assert!(json::from_value::<super::EntryRecord>(invalid).is_err());
         }
         for field in ["byte_len", "sha256"] {
             let mut invalid = wire.clone();
             invalid[field] = if field == "byte_len" {
-                serde_json::json!(0)
+                cadmpeg_core::json!(0)
             } else {
-                serde_json::json!(cadmpeg_ir::hash::sha256_hex(&[]))
+                cadmpeg_core::json!(cadmpeg_ir::hash::sha256_hex(&[]))
             };
-            assert!(serde_json::from_value::<super::EntryRecord>(invalid)
+            assert!(json::from_value::<super::EntryRecord>(invalid)
                 .unwrap_err()
                 .to_string()
                 .contains("entry byte_len/sha256 disagrees with data"));
@@ -855,7 +865,7 @@ mod tests {
 
     #[test]
     fn a_product_node_writes_occurrence_fields_and_a_container_without_them() {
-        let occurrence = serde_json::json!({
+        let occurrence = cadmpeg_core::json!({
             "id": "link", "object": "object", "kind": "occurrence",
             "members": ["fcstd:native:object#Child"],
             "prototype": "fcstd:native:object#Proto",
@@ -877,11 +887,10 @@ mod tests {
             "element_visibility": [true],
             "element_objects": ["fcstd:native:object#Element"]
         });
-        let record =
-            serde_json::from_value::<super::ProductNodeRecord>(occurrence.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), occurrence);
+        let record = json::from_value::<super::ProductNodeRecord>(occurrence.clone()).unwrap();
+        assert_eq!(json::to_value(record).unwrap(), occurrence);
 
-        let container = serde_json::json!({
+        let container = cadmpeg_core::json!({
             "id": "group", "object": "object", "kind": "group",
             "members": ["fcstd:native:object#Child"],
             "prototype": null,
@@ -903,8 +912,8 @@ mod tests {
             "element_visibility": [],
             "element_objects": []
         });
-        let record = serde_json::from_value::<super::ProductNodeRecord>(container.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), container);
+        let record = json::from_value::<super::ProductNodeRecord>(container.clone()).unwrap();
+        assert_eq!(json::to_value(record).unwrap(), container);
     }
 }
 
@@ -3375,7 +3384,7 @@ impl TryFrom<EntryRecordWire> for EntryRecord {
         let record = Self {
             id,
             name,
-            role: serde_json::from_value(serde_json::Value::String(wire.role))
+            role: json::from_value(serde_json::Value::String(wire.role))
                 .map_err(|error| format!("entry role: {error}"))?,
             referenced_by,
             data: wire.data,

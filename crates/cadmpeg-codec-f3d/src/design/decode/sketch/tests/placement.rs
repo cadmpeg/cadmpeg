@@ -940,6 +940,7 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
         &meta,
         "Design/BulkStream.dat",
         &mut Vec::new(),
+        &mut Vec::new(),
     )
     .expect("primary NURBS frame with a nested subtype header");
     let [curve] = curves.as_slice() else {

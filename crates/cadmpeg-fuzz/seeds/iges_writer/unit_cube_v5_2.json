@@ -1053,7 +1053,22 @@
   },
   "model": {
     "assets": [],
-    "product_definitions": [],
+    "product_definitions": [
+      {
+        "id": "test:model:product-definition#document",
+        "bom_properties": {},
+        "storage": {
+          "kind": "file",
+          "document": {}
+        },
+        "bodies": [
+          "synthetic:cube:body#0"
+        ],
+        "occurrences": [],
+        "instance_bodies": [],
+        "representations": []
+      }
+    ],
     "occurrences": [],
     "drawings": [],
     "semantic_annotations": [],

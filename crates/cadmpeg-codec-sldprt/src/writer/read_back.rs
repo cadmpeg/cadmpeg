@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 
+use cadmpeg_core::decode::ResourceLimits;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId};
 use cadmpeg_ir::report::loss::LossNote;
@@ -57,7 +58,13 @@ impl SourceDefinitions {
     /// The notes for the features `ir` keeps: that `native` holds them as
     /// Keywords records alone, the values and the bodies their records read
     /// back without, and the selections their records hold by a source token.
-    pub(super) fn notes(&self, ir: &CadIr, native: Option<&SldprtNative>) -> Vec<LossNote> {
+    /// The records are read back under `limits`.
+    pub(super) fn notes(
+        &self,
+        ir: &CadIr,
+        native: Option<&SldprtNative>,
+        limits: ResourceLimits,
+    ) -> Vec<LossNote> {
         let kept = ir
             .model
             .features
@@ -79,19 +86,20 @@ impl SourceDefinitions {
             ids.len(),
             ids.join(", ")
         ))];
-        let projected = match crate::history::write::project_features_with_native_inputs(native) {
-            Ok(projected) => projected,
-            Err(error) => {
-                notes.push(SldprtLossCode::WriterFeatureFieldsOmitted.note(format!(
-                    "the SLDPRT history writer cannot read its written history records back \
+        let projected =
+            match crate::history::write::project_features_with_native_inputs(native, limits) {
+                Ok(projected) => projected,
+                Err(error) => {
+                    notes.push(SldprtLossCode::WriterFeatureFieldsOmitted.note(format!(
+                        "the SLDPRT history writer cannot read its written history records back \
                          ({error}); it does not compare the values of these {} feature(s) with \
                          their records: {}",
-                    ids.len(),
-                    ids.join(", ")
-                )));
-                return notes;
-            }
-        };
+                        ids.len(),
+                        ids.join(", ")
+                    )));
+                    return notes;
+                }
+            };
         let projected = projected
             .iter()
             .map(|feature| (&feature.id, feature))
@@ -173,7 +181,7 @@ impl SourceDefinitions {
 }
 
 fn value(definition: &FeatureDefinition) -> Value {
-    serde_json::to_value(definition).unwrap_or(Value::Null)
+    cadmpeg_core::serde_erase::to_json_value(definition).unwrap_or(Value::Null)
 }
 
 struct Comparison<'a> {
@@ -355,7 +363,7 @@ fn summary(value: &Value) -> String {
 mod tests {
     use std::collections::HashMap;
 
-    use serde_json::json;
+    use cadmpeg_core::json;
 
     use super::Comparison;
 

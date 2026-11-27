@@ -6,6 +6,7 @@ use crate::records::feature::scope::DesignScopePayload;
 use crate::records::feature::silhouette_split::{DesignSilhouetteDirection, DesignSilhouetteSplit};
 use crate::records::identity::ReferenceRun;
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::selections::BodySelection;
 use cadmpeg_ir::features::surfaces::SilhouetteSplitMode;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
@@ -55,11 +56,11 @@ fn silhouette_split_projects_the_saved_mode_direction_and_body_group() {
     };
     assert_eq!(native, &group.id);
     assert!((direction.get().x - 2.5).abs() < EPS_DIRECTION);
-    let wire = serde_json::to_value(&projected).unwrap();
+    let wire = json::to_value(&projected).unwrap();
     assert_eq!(wire["value"]["kind"], "silhouette_split");
     assert_eq!(wire["value"]["value"]["mode"], "shelled_body");
     assert_eq!(
-        serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
+        json::from_value::<FeatureDefinition>(wire).unwrap(),
         projected
     );
     let projected = crate::design::feature_project::silhouette_split::project(

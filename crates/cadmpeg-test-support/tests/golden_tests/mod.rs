@@ -23,6 +23,7 @@
 //! `cadmpeg-codec-freecad`, which decodes the charter fixtures and runs this
 //! same walk over the live document.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -32,6 +33,8 @@ use cadmpeg_test_support::spelling::SpellingSweep;
 use cadmpeg_test_support::unknown_keys::accepting_shapes;
 use serde_json::Value;
 
+mod annotation_paths;
+mod give_up_charges;
 mod schema_sweep;
 
 #[test]
@@ -277,7 +280,7 @@ fn hand_written_documents() -> Vec<(&'static str, Value)> {
                 "test:model:semantic-annotation#0"
                     .try_into()
                     .expect("valid identity"),
-                "zz:object".to_string(),
+                "zz:test:object#0".try_into().expect("valid identity"),
                 SemanticAnnotationKind::Text,
                 "zz:runtime".to_string(),
                 0,
@@ -291,7 +294,7 @@ fn hand_written_documents() -> Vec<(&'static str, Value)> {
         ("semantic annotation", annotations),
     ]
     .into_iter()
-    .map(|(name, ir)| (name, serde_json::to_value(&ir).expect("a CadIr serializes")))
+    .map(|(name, ir)| (name, json::to_value(&ir).expect("a CadIr serializes")))
     .collect()
 }
 
@@ -324,21 +327,23 @@ fn states_native_elision(ir: &Value) -> bool {
 
 #[test]
 fn the_elision_predicate_reads_the_key_and_not_its_text() {
-    let elided = |marker: Value| serde_json::json!({ "native": { NATIVE_ELISION_KEY: marker } });
-    assert!(states_native_elision(&elided(serde_json::json!(
+    let elided = |marker: Value| cadmpeg_core::json!({ "native": { NATIVE_ELISION_KEY: marker } });
+    assert!(states_native_elision(&elided(cadmpeg_core::json!(
         NATIVE_ELISION_MARKER
     ))));
-    assert!(states_native_elision(&elided(serde_json::json!(
+    assert!(states_native_elision(&elided(cadmpeg_core::json!(
         "any other sentence a regeneration writes"
     ))));
 
-    assert!(!states_native_elision(&serde_json::json!({})));
-    assert!(!states_native_elision(&serde_json::json!({ "native": {} })));
-    assert!(!states_native_elision(&serde_json::json!({
+    assert!(!states_native_elision(&cadmpeg_core::json!({})));
+    assert!(!states_native_elision(
+        &cadmpeg_core::json!({ "native": {} })
+    ));
+    assert!(!states_native_elision(&cadmpeg_core::json!({
         "native": { "fcstd": { "objects": [] } }
     })));
     // A namespace of that name is an object, not the block's sentence.
-    assert!(!states_native_elision(&elided(serde_json::json!({
+    assert!(!states_native_elision(&elided(cadmpeg_core::json!({
         "objects": []
     }))));
 }

@@ -31,13 +31,10 @@ lzma-rs.workspace = true
 sha2.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tempfile.workspace = true
-serde-value.workspace = true
 memchr.workspace = true
 
 [dev-dependencies]
 cadmpeg-asm = { workspace = true, features = ["test-support"] }
-cadmpeg-ir = { workspace = true, features = ["examples"] }
 
 # Test-only golden harness and round-trip helpers.
 cadmpeg-test-support = { workspace = true }

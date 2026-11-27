@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind, Storage};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::StreamName;
@@ -87,13 +88,37 @@ fn synthetic_scan(
     }
 }
 
-fn assert_structure_loss(projection: &super::AssemblyProjection, message: &str) {
-    assert_eq!(projection.losses().len(), 1);
+/// The structure loss `message`, and one part for each component tree
+/// stream of `streams` that gives the stream up.
+fn assert_structure_given_up(
+    projection: &super::AssemblyProjection,
+    message: &str,
+    streams: &[&str],
+) {
+    let [loss] = projection.losses() else {
+        panic!("one structure loss: {:?}", projection.losses());
+    };
     assert_eq!(
-        projection.losses()[0].code,
+        loss.code,
         SldprtLossCode::AssemblyStructureNotTransferred.kind()
     );
-    assert_eq!(projection.losses()[0].message, message);
+    assert_eq!(loss.message, message);
+    assert_eq!(projection.given_up().len(), streams.len());
+    for (part, stream) in projection.given_up().iter().zip(streams) {
+        let given_up = part.loss();
+        assert_eq!(
+            given_up.code,
+            cadmpeg_ir::unknown::part::record_unreadable_kind()
+        );
+        assert!(given_up.message.starts_with(&format!(
+            "part component-tree {stream:?} stream={stream:?} offset=0 "
+        )));
+        assert!(given_up
+            .message
+            .contains(&format!(" record={}: ", part.id())));
+        assert!(given_up.message.contains(message));
+        assert!(!given_up.message.contains("sldprt:file:"));
+    }
 }
 
 fn occurrence<'p>(
@@ -141,6 +166,13 @@ fn codes(projection: &super::AssemblyProjection) -> Vec<String> {
     projection
         .losses()
         .iter()
+        .cloned()
+        .chain(
+            projection
+                .given_up()
+                .iter()
+                .map(cadmpeg_ir::unknown::part::GivenUpPart::loss),
+        )
         .map(|loss| loss.code.local_code().to_string())
         .collect()
 }
@@ -270,10 +302,15 @@ fn a_tree_without_one_active_configuration_transfers_nothing() {
     assert!(projection.occurrences().is_empty());
     assert_eq!(
         codes(&projection),
-        [SldprtLossCode::AssemblyStructureNotTransferred
-            .kind()
-            .local_code()
-            .to_string()]
+        [
+            SldprtLossCode::AssemblyStructureNotTransferred
+                .kind()
+                .local_code()
+                .to_string(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind()
+                .local_code()
+                .to_string(),
+        ]
     );
 }
 
@@ -325,7 +362,8 @@ fn an_assembly_without_its_own_parasolid_model_retires_the_part_model_losses() {
     let mut decoded = decoded_without_a_model();
     project(&ctx(), &tree())
         .expect("project")
-        .apply(&mut decoded);
+        .apply(&ctx(), &mut decoded)
+        .expect("apply");
     assert_eq!(remaining_part_losses(&decoded), 0);
     assert_eq!(decoded.ir.model.occurrences.len(), 4);
 }
@@ -335,19 +373,20 @@ fn an_assembly_with_its_own_parasolid_stream_keeps_the_part_model_losses() {
     let mut decoded = decoded_without_a_model();
     let mut projection = project(&ctx(), &tree()).expect("project");
     projection.carries_parasolid = true;
-    projection.apply(&mut decoded);
+    projection.apply(&ctx(), &mut decoded).expect("apply");
     assert_eq!(remaining_part_losses(&decoded), 3);
 }
 
 fn body(id: &str) -> cadmpeg_ir::topology::Body {
-    serde_json::from_value(serde_json::json!({ "id": id, "kind": "solid" })).expect("a body")
+    json::from_value(cadmpeg_core::json!({ "id": id, "kind": "solid" })).expect("a body")
 }
 
 #[test]
 fn a_virtual_component_held_in_the_document_owns_the_bodies_of_its_section() {
     let sections =
         std::collections::BTreeMap::from([("box-sldprt".to_string(), Some("block@7".to_string()))]);
-    let projection = super::native_project(&ctx(), &tree(), &sections)
+    let text = tree();
+    let projection = super::native_project(&ctx(), &text, &[super::test_tree(&text)], &sections)
         .expect("native project")
         .into_projection();
     let definition = cadmpeg_ir::ids::ProductDefinitionId::mint("sldprt:assembly:model#13")
@@ -368,7 +407,7 @@ fn a_virtual_component_held_in_the_document_owns_the_bodies_of_its_section() {
         body("sldprt:brep:body#3@block@7"),
         body("sldprt:brep:body#3@block@70"),
     ];
-    projection.apply(&mut decoded);
+    projection.apply(&ctx(), &mut decoded).expect("apply");
     let owner = decoded
         .ir
         .model
@@ -387,7 +426,8 @@ fn a_virtual_component_held_in_the_document_owns_the_bodies_of_its_section() {
 #[test]
 fn virtual_component_sections_that_share_a_name_leave_it_unresolved() {
     let sections = std::collections::BTreeMap::from([("box-sldprt".to_string(), None)]);
-    let projection = super::native_project(&ctx(), &tree(), &sections)
+    let text = tree();
+    let projection = super::native_project(&ctx(), &text, &[super::test_tree(&text)], &sections)
         .expect("native project")
         .into_projection();
     assert_eq!(
@@ -594,11 +634,12 @@ fn a_placed_virtual_document_with_an_unread_partition_chooses_no_active_partitio
 fn a_virtual_component_section_without_a_body_is_reported() {
     let sections =
         std::collections::BTreeMap::from([("box-sldprt".to_string(), Some("block@7".to_string()))]);
-    let projection = super::native_project(&ctx(), &tree(), &sections)
+    let text = tree();
+    let projection = super::native_project(&ctx(), &text, &[super::test_tree(&text)], &sections)
         .expect("native project")
         .into_projection();
     let mut decoded = decoded_without_a_model();
-    projection.apply(&mut decoded);
+    projection.apply(&ctx(), &mut decoded).expect("apply");
     assert!(decoded.body.losses.iter().any(|loss| loss.code
         == SldprtLossCode::AssemblyVirtualComponentsNotTransferred.kind()
         && loss.message.contains("give no decoded body")));
@@ -610,8 +651,14 @@ fn affine(rows: [[f64; 4]; 3]) -> Transform {
 
 #[test]
 fn the_component_tree_records_native_structure_and_projects_it() {
-    let native = super::native_project(&ctx(), &tree(), &std::collections::BTreeMap::new())
-        .expect("native project");
+    let text = tree();
+    let native = super::native_project(
+        &ctx(),
+        &text,
+        &[super::test_tree(&text)],
+        &std::collections::BTreeMap::new(),
+    )
+    .expect("native project");
     let root_definition = cadmpeg_ir::ids::ProductDefinitionId::mint("sldprt:assembly:model#2")
         .expect("the root definition identity");
     let sub_definition = cadmpeg_ir::ids::ProductDefinitionId::mint("sldprt:assembly:model#5")
@@ -841,11 +888,13 @@ fn the_component_tree_records_native_structure_and_projects_it() {
 
 #[test]
 fn the_component_tree_structure_losses_state_the_exact_message() {
+    let stream = super::TREE_SECTION;
     let projection = project(&ctx(), "<notSolidWorks/>").expect("project");
-    assert_structure_loss(
+    assert_structure_given_up(
         &projection,
         "The `swXmlContents/COMPINSTANCETREE` section root is `notSolidWorks`. No occurrence \
          is transferred.",
+        &[stream],
     );
 
     let text = tree().replace(
@@ -853,9 +902,10 @@ fn the_component_tree_structure_losses_state_the_exact_message() {
         r#"swMostRecentConfiguration="NO""#,
     );
     let projection = project(&ctx(), &text).expect("project");
-    assert_structure_loss(
+    assert_structure_given_up(
         &projection,
         "The component tree names 0 active configurations. No occurrence is transferred.",
+        &[stream],
     );
 
     let text = tree().replace(
@@ -863,10 +913,11 @@ fn the_component_tree_structure_losses_state_the_exact_message() {
         r#"swMostRecentConfiguration="YES" swModelRef="99""#,
     );
     let projection = project(&ctx(), &text).expect("project");
-    assert_structure_loss(
+    assert_structure_given_up(
         &projection,
         "The active configuration names model `99`, which the component tree does not define. \
          No occurrence is transferred.",
+        &[stream],
     );
 }
 
@@ -876,13 +927,15 @@ fn a_document_without_a_component_tree_states_the_exact_structure_loss() {
         vec![named_block(super::TREE_SECTION, vec![0xff])],
         Vec::new(),
     );
+    let stream = super::TREE_SECTION;
     let projection = super::read(&ctx(), &scan)
         .expect("read")
         .expect("an assembly document");
-    assert_structure_loss(
+    assert_structure_given_up(
         &projection,
         "The assembly document has no readable `swXmlContents/COMPINSTANCETREE` section. No \
          occurrence, placement, or component reference is transferred.",
+        &[stream],
     );
 }
 
@@ -954,12 +1007,24 @@ fn an_invalid_or_repeated_reference_is_omitted_and_reported() {
     .concat();
     let projection = project(&ctx(), &tree_with(&references, "")).expect("project");
     assert_eq!(projection.occurrences().len(), 1);
+    for id in [
+        "sldprt:assembly:occurrence#5",
+        "sldprt:assembly:occurrence#6",
+    ] {
+        assert_eq!(charges(&projection, id).len(), 1, "{id}");
+    }
     let unresolved = projection
         .losses()
         .iter()
-        .find(|loss| loss.code == SldprtLossCode::AssemblyPlacementUnresolved.kind())
-        .expect("the unresolved loss");
-    assert!(unresolved.message.starts_with("5 component instance(s)"));
+        .filter(|loss| loss.code == SldprtLossCode::AssemblyPlacementUnresolved.kind())
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert!(unresolved
+        .iter()
+        .any(|message| message.starts_with("2 component instance(s) have no valid identity")));
+    assert!(unresolved
+        .iter()
+        .any(|message| message.starts_with("1 component instance(s) repeat")));
 }
 
 #[test]
@@ -1028,10 +1093,11 @@ fn a_bill_of_materials_exclusion_and_visibility_are_reported() {
 #[test]
 fn a_tree_that_is_not_xml_states_the_exact_structure_loss() {
     let projection = project(&ctx(), "<swSolidWorks>").expect("project");
-    assert_structure_loss(
+    assert_structure_given_up(
         &projection,
         "The `swXmlContents/COMPINSTANCETREE` section is not well-formed XML. No occurrence is \
          transferred.",
+        &[super::TREE_SECTION],
     );
 }
 
@@ -1111,10 +1177,11 @@ fn a_document_with_different_trees_states_the_exact_structure_loss() {
     let projection = super::read(&ctx(), &scan)
         .expect("read")
         .expect("an assembly document");
-    assert_structure_loss(
+    assert_structure_given_up(
         &projection,
         "The document holds different `swXmlContents/COMPINSTANCETREE` sections. No occurrence \
          is transferred.",
+        &[super::TREE_SECTION, "swXmlContents/COMPINSTANCETREE__ZLB"],
     );
 }
 
@@ -1123,9 +1190,10 @@ fn a_repeated_model_identity_states_the_exact_structure_loss() {
     let models = r#"<swModel id="8" swFileRef="9"/>"#;
     let projection =
         project(&ctx(), &tree_with(&reference("4", "8", IDENTITY), models)).expect("project");
-    assert_structure_loss(
+    assert_structure_given_up(
         &projection,
         "The component tree repeats the `swModel` id `8`. No occurrence is transferred.",
+        &[super::TREE_SECTION],
     );
 }
 
@@ -1157,4 +1225,110 @@ fn a_mirrored_placement_is_omitted_and_reported_as_mirrored() {
         && loss
             .message
             .contains("1 component instance(s) have a mirrored placement")));
+}
+
+/// The `record.unreadable` losses of the projection that name `id` given up.
+fn charges<'p>(projection: &'p super::AssemblyProjection, id: &str) -> Vec<&'p str> {
+    let head = format!("record {id} ");
+    projection
+        .losses()
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.message.starts_with(&head))
+        .map(|loss| loss.message.as_str())
+        .collect()
+}
+
+fn placed(projection: &super::AssemblyProjection, id: &str) -> bool {
+    projection
+        .occurrences()
+        .iter()
+        .any(|occurrence| occurrence.id.as_str() == id)
+}
+
+#[test]
+fn an_instance_without_a_valid_placement_is_given_up_by_its_occurrence_id() {
+    let references = [
+        reference("4", "8", IDENTITY),
+        reference("5", "8", "1 0 0"),
+        reference("6", "99", IDENTITY),
+        r#"<swReference id="9" swName="Pin" swTransform="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>"#
+            .to_owned(),
+    ]
+    .concat();
+    let projection = project(&ctx(), &tree_with(&references, "")).expect("project");
+    assert!(placed(&projection, "sldprt:assembly:occurrence#4"));
+    assert!(charges(&projection, "sldprt:assembly:occurrence#4").is_empty());
+    for id in [
+        "sldprt:assembly:occurrence#5",
+        "sldprt:assembly:occurrence#6",
+        "sldprt:assembly:occurrence#9",
+    ] {
+        assert!(!placed(&projection, id), "{id} is placed");
+        assert_eq!(charges(&projection, id).len(), 1, "{id}");
+    }
+}
+
+#[test]
+fn a_given_up_occurrence_id_is_not_placed_by_a_later_instance() {
+    let references = [reference("4", "8", "1 0 0"), reference("4", "8", IDENTITY)].concat();
+    let projection = project(&ctx(), &tree_with(&references, "")).expect("project");
+    assert!(!placed(&projection, "sldprt:assembly:occurrence#4"));
+    assert_eq!(
+        charges(&projection, "sldprt:assembly:occurrence#4").len(),
+        1
+    );
+}
+
+#[test]
+fn an_omitted_sub_assembly_instance_keeps_the_instances_its_model_places() {
+    let models = format!(
+        r#"<swModel id="5" swFileRef="6">{}</swModel>"#,
+        reference("7", "8", IDENTITY)
+    );
+    let projection =
+        project(&ctx(), &tree_with(&reference("4", "5", "1 0 0"), &models)).expect("project");
+    assert!(!placed(&projection, "sldprt:assembly:occurrence#4"));
+    assert_eq!(
+        charges(&projection, "sldprt:assembly:occurrence#4").len(),
+        1
+    );
+    assert!(placed(&projection, "sldprt:assembly:occurrence#7"));
+    assert_eq!(
+        owned(&projection, "sldprt:assembly:model#5"),
+        ["sldprt:assembly:occurrence#7"]
+    );
+}
+
+#[test]
+fn an_instance_that_closes_a_cycle_is_given_up_by_its_occurrence_id() {
+    let models = format!(
+        r#"<swModel id="5" swFileRef="6">{}</swModel>"#,
+        reference("7", "5", IDENTITY)
+    );
+    let projection =
+        project(&ctx(), &tree_with(&reference("4", "5", IDENTITY), &models)).expect("project");
+    assert!(placed(&projection, "sldprt:assembly:occurrence#4"));
+    assert!(!placed(&projection, "sldprt:assembly:occurrence#7"));
+    assert_eq!(
+        charges(&projection, "sldprt:assembly:occurrence#7").len(),
+        1
+    );
+}
+
+#[test]
+fn an_instance_without_an_identity_or_with_a_repeated_one_charges_no_record() {
+    let references = [
+        reference("4", "8", IDENTITY),
+        reference("4", "8", IDENTITY),
+        reference("a b", "8", IDENTITY),
+        r#"<swReference swName="Pin" swModelRef="8"/>"#.to_owned(),
+    ]
+    .concat();
+    let projection = project(&ctx(), &tree_with(&references, "")).expect("project");
+    assert_eq!(projection.occurrences().len(), 1);
+    assert!(projection
+        .losses()
+        .iter()
+        .all(|loss| loss.code != cadmpeg_ir::unknown::part::record_unreadable_kind()));
 }

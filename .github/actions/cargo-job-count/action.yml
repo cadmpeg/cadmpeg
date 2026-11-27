@@ -2,7 +2,10 @@
 name: Match cargo's job count to the runner
 description: >
   Export CARGO_BUILD_JOBS as the runner's core count, overriding the `jobs`
-  cap in .cargo/config.toml.
+  cap in .cargo/config.toml. Use it after Swatinem/rust-cache: that action
+  hashes every CARGO_* variable into its cache key, and macos-latest is a
+  3-core or a 5-core runner, so a count exported before the restore splits
+  the cache by runner size and a cold 3-core build outruns the job timeout.
 
 runs:
   using: composite
@@ -20,5 +23,22 @@ runs:
         # `nproc` on Linux and on the Windows runner's Git Bash; macOS has
         # neither GNU coreutils nor `nproc`.
         cores="$(nproc 2>/dev/null || sysctl -n hw.logicalcpu)"
-        echo "runner reports ${cores} cores"
+        ram_gib=""
+        if [ -r /proc/meminfo ]; then
+          ram_kib="$(awk '/^MemTotal:/ {print $2; exit}' /proc/meminfo)"
+          if [ -n "$ram_kib" ]; then
+            ram_gib="$((ram_kib / 1048576))"
+          fi
+        elif command -v sysctl >/dev/null 2>&1; then
+          ram_bytes="$(sysctl -n hw.memsize 2>/dev/null || true)"
+          if [ -n "$ram_bytes" ]; then
+            ram_gib="$((ram_bytes / 1073741824))"
+          fi
+        fi
+        if [ -n "$ram_gib" ]; then
+          echo "runner reports ${cores} cores, ${ram_gib} GiB RAM"
+          echo "CI_RUNNER_RAM_GIB=${ram_gib}" >> "$GITHUB_ENV"
+        else
+          echo "runner reports ${cores} cores"
+        fi
         echo "CARGO_BUILD_JOBS=${cores}" >> "$GITHUB_ENV"

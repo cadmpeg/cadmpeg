@@ -25,7 +25,7 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
     let cyclic = on_cycles(&ir.model.drawings);
     let mut orders = std::collections::BTreeSet::new();
     for drawing in &ir.model.drawings {
-        let mut refs_valid = all_ids.contains(&drawing.object)
+        let mut refs_valid = all_ids.contains(drawing.object.as_str())
             && drawing
                 .native_ref
                 .as_deref()
@@ -37,7 +37,7 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
         }
         if refs_valid {
             for id in &drawing.assets {
-                if !all_ids.contains(id) {
+                if !all_ids.contains(id.as_str()) {
                     refs_valid = false;
                     break;
                 }
@@ -59,7 +59,7 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 Some(drawing.id.as_str()),
-                format_args!(
+                crate::rule!("drawings.drawing-views-base-view-name-record", 
                     "drawing views or base view name a record of another kind, repeat, or form a cycle"
                 ),
             );
@@ -80,7 +80,10 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 Some(drawing.id.as_str()),
-                format_args!("invalid drawing reference, order, or numeric state"),
+                crate::rule!(
+                    "drawings.invalid-drawing-reference-order-numeric-state",
+                    "invalid drawing reference, order, or numeric state"
+                ),
             );
         }
     }
@@ -139,12 +142,13 @@ fn on_cycles(drawings: &[Drawing]) -> BTreeSet<&str> {
 mod tests {
     use super::check_drawings;
     use crate::document::CadIr;
+    use cadmpeg_core::serde_erase::json;
 
     fn fixture() -> CadIr {
         let mut ir = CadIr::empty();
         for id in ["test:model:drawing#first", "test:model:drawing#second"] {
             ir.model.drawings.push(
-                serde_json::from_value(serde_json::json!({
+                json::from_value(cadmpeg_core::json!({
                     "id": id, "object": "test:source:unknown#record", "kind": "page",
                     "runtime_type": "Test", "order": 7, "native_ref": "test:source:unknown#record",
                     "relationships": {}, "views": [], "curves": [], "parameters": {}, "assets": []
@@ -162,8 +166,8 @@ mod tests {
         let ids = crate::index::identities::BorrowedIdentities::build(|add| {
             add("test:source:unknown#record", ());
         });
-        let sheet = serde_json::json!({"width_mm": 20.0, "height_mm": 30.0, "fields": [{"name": "Title", "value": "A"}, {"name": "Title", "value": "B"}]});
-        ir.model.drawings[0].sheet = Some(serde_json::from_value(sheet).unwrap());
+        let sheet = cadmpeg_core::json!({"width_mm": 20.0, "height_mm": 30.0, "fields": [{"name": "Title", "value": "A"}, {"name": "Title", "value": "B"}]});
+        ir.model.drawings[0].sheet = Some(json::from_value(sheet).unwrap());
         let mut findings = Vec::new();
         check_drawings(&ir, &ids, &mut findings);
         assert_eq!(findings.len(), 1);
@@ -171,7 +175,7 @@ mod tests {
         findings.clear();
         check_drawings(&ir, &ids, &mut findings);
         assert!(findings.is_empty());
-        ir.model.drawings[0].curves.push(serde_json::from_value(serde_json::json!({"geometry": {"kind": "arc", "center": [0, 0], "radius": 1, "start": [1, 0], "middle": [1, 0], "end": [0, 1]}, "visibility": "visible", "source": "cosmetic"})).unwrap());
+        ir.model.drawings[0].curves.push(json::from_value(cadmpeg_core::json!({"geometry": {"kind": "arc", "center": [0, 0], "radius": 1, "start": [1, 0], "middle": [1, 0], "end": [0, 1]}, "visibility": "visible", "source": "cosmetic"})).unwrap());
         check_drawings(&ir, &ids, &mut findings);
         assert_eq!(findings.len(), 1);
     }
@@ -184,7 +188,7 @@ mod tests {
         let ids = crate::index::identities::BorrowedIdentities::build(|add| {
             add("test:source:unknown#record", ());
         });
-        let template = serde_json::from_value::<TemplateGeometry>(serde_json::json!({
+        let template = json::from_value::<TemplateGeometry>(cadmpeg_core::json!({
             "curves": [{"kind":"line", "start":[10,287], "end":[200,287]},
                        {"kind":"circle", "center":[50,247], "radius":10},
                        {"kind":"arc", "center":[20,267], "radius":10, "start":[20,277], "middle":[30,267], "end":[20,257]}],
@@ -318,8 +322,8 @@ mod tests {
             check_drawings(&ir, &ids, &mut findings);
             findings.len()
         };
-        let native = serde_json::from_value(
-            serde_json::json!({"codec": "fcstd", "value": {"kind": "text", "value": "View.Edge1"}}),
+        let native = json::from_value(
+            cadmpeg_core::json!({"codec": "fcstd", "value": {"kind": "text", "value": "View.Edge1"}}),
         )
         .unwrap();
         assert_eq!(with(ReferenceSelection::unresolved(native)), 0);
@@ -334,7 +338,7 @@ mod tests {
         for (order, (name, kind)) in kinds.iter().enumerate() {
             ir.model.drawings.push(crate::drawings::Drawing::new(
                 drawing_id(name),
-                "test:source:unknown#record".to_owned(),
+                crate::ids::Identity::new("test:source:unknown#record").unwrap(),
                 kind.clone(),
                 "Test".to_owned(),
                 u32::try_from(order).unwrap(),
@@ -436,7 +440,7 @@ mod tests {
         ]);
         ir.model.drawings[1]
             .curves
-            .push(serde_json::from_value(serde_json::json!({"geometry": {"kind": "line", "start": [0, 0], "end": [1, 0]}, "visibility": "visible", "source": "cosmetic"})).unwrap());
+            .push(json::from_value(cadmpeg_core::json!({"geometry": {"kind": "line", "start": [0, 0], "end": [1, 0]}, "visibility": "visible", "source": "cosmetic"})).unwrap());
         let with_target = |ir: &CadIr, target: ReferenceTarget| {
             let mut ir = ir.clone();
             ir.model.drawings[0].relationships.insert(
@@ -483,7 +487,7 @@ mod tests {
             .semantic_annotations
             .push(crate::semantic_annotations::SemanticAnnotation::new(
                 annotation.clone(),
-                "test:source:unknown#record".to_owned(),
+                crate::ids::Identity::new("test:source:unknown#record").unwrap(),
                 crate::semantic_annotations::SemanticAnnotationKind::Text,
                 "Test".to_owned(),
                 0,

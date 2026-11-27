@@ -1,50 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The committed JSON Schema files are the schemas that the `JsonSchema`
-//! derives generate. `UPDATE_GOLDEN=1` rewrites them from the derives.
+//! Checks over the committed JSON Schema files. `tests/committed_schema.rs`
+//! compares them with the derived schemas.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
-use std::path::Path;
 
 use serde_json::{Map, Value};
-
-#[test]
-fn committed_json_schemas_equal_the_derived_schemas() {
-    let update = std::env::var_os("UPDATE_GOLDEN").is_some();
-    for (file, committed, derived) in [
-        (
-            "cadir.schema.json",
-            crate::CADIR_JSON_SCHEMA,
-            crate::cadir_json_schema(),
-        ),
-        (
-            "decode-sidecar.schema.json",
-            crate::DECODE_SIDECAR_JSON_SCHEMA,
-            crate::decode_sidecar_json_schema(),
-        ),
-    ] {
-        let derived = serde_json::to_string_pretty(&derived).unwrap() + "\n";
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("schema")
-            .join(file);
-        if update {
-            std::fs::write(&path, &derived).unwrap();
-            continue;
-        }
-        let line = committed
-            .lines()
-            .zip(derived.lines())
-            .position(|(committed, derived)| committed != derived)
-            .unwrap_or_else(|| committed.lines().count().min(derived.lines().count()))
-            + 1;
-        assert!(
-            committed == derived,
-            "{} differs from the derived schema at line {line}. Run \
-             `UPDATE_GOLDEN=1 cargo test -p cadmpeg-ir --features schema --lib -- \
-             committed_json_schemas` and commit the file.",
-            path.display()
-        );
-    }
-}
 
 /// Whether `node` can admit `null`: false only where a keyword of the node,
 /// or of the definition it references, refuses it. `not` refuses `null`
@@ -195,6 +156,56 @@ impl<'a> NullWalk<'a> {
     }
 }
 
+/// Each member name and each string a schema node fixes (`const`, `enum`) in
+/// `node` and the schemas below it.
+fn wire_names<'a>(node: &'a Value, names: &mut BTreeSet<&'a str>) {
+    match node {
+        Value::Object(node) => {
+            for (keyword, value) in node {
+                match (keyword.as_str(), value) {
+                    ("properties" | "$defs" | "patternProperties", Value::Object(members)) => {
+                        for (name, member) in members {
+                            if keyword == "properties" {
+                                names.insert(name);
+                            }
+                            wire_names(member, names);
+                        }
+                    }
+                    ("const", Value::String(name)) => {
+                        names.insert(name);
+                    }
+                    ("enum", Value::Array(values)) => {
+                        names.extend(values.iter().filter_map(Value::as_str));
+                    }
+                    ("description" | "title" | "pattern" | "$ref" | "$schema", _) => {}
+                    (_, value) => wire_names(value, names),
+                }
+            }
+        }
+        Value::Array(values) => values.iter().for_each(|value| wire_names(value, names)),
+        _ => {}
+    }
+}
+
+/// §2.5: field and variant names are snake_case.
+#[test]
+fn every_wire_name_is_snake_case() {
+    for committed in [crate::CADIR_JSON_SCHEMA, crate::DECODE_SIDECAR_JSON_SCHEMA] {
+        let schema: Value = serde_json::from_str(committed).unwrap();
+        let mut names = BTreeSet::new();
+        wire_names(&schema, &mut names);
+        let other: Vec<&str> = names
+            .into_iter()
+            .filter(|name| {
+                !name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+            })
+            .collect();
+        assert!(other.is_empty(), "{other:?}");
+    }
+}
+
 /// §2.5: an `Option` field is omitted for `None` and is never written
 /// `null`, and no newtype variant wraps an `Option`; only a list element, an
 /// array element, or a map value writes `null`. So neither committed schema
@@ -219,7 +230,7 @@ fn null_is_admitted_only_as_an_element_or_a_map_value() {
 /// objects they hold. A member with no value, `{"not": {}}`, admits no `null`.
 #[test]
 fn the_null_walk_finds_an_option_outside_an_element() {
-    let schema = serde_json::json!({
+    let schema = cadmpeg_core::json!({
         "type": "object",
         "properties": {
             "section": {"$ref": "#/$defs/Section"},
@@ -273,10 +284,10 @@ fn the_null_walk_finds_an_option_outside_an_element() {
 #[test]
 fn a_null_optional_member_fails_the_schema_and_the_reader() {
     let mut document =
-        serde_json::to_value(crate::examples::unit_cube().expect("the example builds")).unwrap();
+        json::to_value(crate::examples::unit_cube().expect("the example builds")).unwrap();
     let vertex = &mut document["geometry"]["vertices"][0];
     vertex["tolerance"] = Value::Null;
-    let refusal = serde_json::from_value::<crate::CadIr>(document).unwrap_err();
+    let refusal = json::from_value::<crate::CadIr>(document).unwrap_err();
     assert!(
         refusal.to_string().contains("it does not state null"),
         "{refusal}"
@@ -319,11 +330,11 @@ fn a_procedural_carrier_cache_is_a_member_of_its_schema() {
         construction: ProceduralCurveId::mint("test:model:construction#curve").unwrap(),
         cache: Some(SolvedCurveGeometry::Unknown { record: None }),
     };
-    let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
+    let schema = json::to_value(crate::cadir_json_schema()).unwrap();
     let defs = schema["$defs"].as_object().unwrap();
     for (name, written) in [
-        ("SurfaceGeometry", serde_json::to_value(surface).unwrap()),
-        ("CurveGeometry", serde_json::to_value(curve).unwrap()),
+        ("SurfaceGeometry", json::to_value(surface).unwrap()),
+        ("CurveGeometry", json::to_value(curve).unwrap()),
     ] {
         assert_eq!(written["kind"], "procedural");
         let arm = defs[name]["oneOf"]
@@ -368,9 +379,9 @@ fn a_null_pair_key_is_written_read_and_admitted() {
             },
         )]),
     };
-    let written = serde_json::to_value(&context).unwrap();
+    let written = json::to_value(&context).unwrap();
     assert_eq!(written["participants"][0][0], Value::Null, "{written}");
-    let read: AssemblyContext = serde_json::from_value(written).unwrap();
+    let read: AssemblyContext = json::from_value(written).unwrap();
     assert_eq!(read, context);
 
     let schema: Value = serde_json::from_str(crate::CADIR_JSON_SCHEMA).unwrap();

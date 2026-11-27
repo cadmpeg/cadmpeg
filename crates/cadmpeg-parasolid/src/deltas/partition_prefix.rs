@@ -70,10 +70,11 @@ impl PartitionPrefixState {
 #[cfg(test)]
 mod tests {
     use super::PartitionPrefixState;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn wire_checks_the_current_pointer_without_a_consecutive_allocation_rule() {
-        let value = serde_json::json!({
+        let value = cadmpeg_core::json!({
             "partition": {"xmt": 2, "current_pmark": 9, "highest_id": u32::MAX},
             "current_pmark": {
                 "xmt": 9, "preceding": 12, "first_following": 1,
@@ -82,13 +83,13 @@ mod tests {
                 "delta_key": 0, "delta_is_forward": false, "identifier": 0x1234_5678,
             },
         });
-        let prefix: PartitionPrefixState = serde_json::from_value(value.clone()).unwrap();
-        assert_eq!(serde_json::to_value(prefix).unwrap(), value);
+        let prefix: PartitionPrefixState = json::from_value(value.clone()).unwrap();
+        assert_eq!(json::to_value(prefix).unwrap(), value);
         let mut duplicate = value.clone();
         duplicate["partition"]["xmt"] = 9.into();
-        assert!(serde_json::from_value::<PartitionPrefixState>(duplicate).is_err());
+        assert!(json::from_value::<PartitionPrefixState>(duplicate).is_err());
         let mut wrong_pointer = value;
         wrong_pointer["partition"]["current_pmark"] = 8.into();
-        assert!(serde_json::from_value::<PartitionPrefixState>(wrong_pointer).is_err());
+        assert!(json::from_value::<PartitionPrefixState>(wrong_pointer).is_err());
     }
 }

@@ -3,9 +3,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{
-    DecodeDepth, DecodeMode, ResourceDimension, ResourceFailure, ResourceLimit,
-};
+use cadmpeg_core::decode::{DecodeDepth, ResourceDimension, ResourceFailure, ResourceLimit};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_test_support::EditableDecodeResult;
@@ -85,7 +83,7 @@ fn a_design_intent_failure_keeps_geometry_and_reports_one_error_loss() {
 #[test]
 fn strict_mode_refuses_a_contained_design_intent_failure() {
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
     inject_failure(malformed_design);
 
     let failure = F3dCodec
@@ -99,6 +97,10 @@ fn strict_mode_refuses_a_contained_design_intent_failure() {
         rejection.loss().code,
         F3dLossCode::DesignIntentUndecoded.kind()
     );
+    assert!(rejection
+        .loss()
+        .message
+        .contains("injected design-intent failure"));
 }
 
 fn moved_first_point(result: &EditableDecodeResult) -> cadmpeg_ir::document::CadIr {
@@ -130,12 +132,9 @@ fn a_source_whose_design_intent_was_contained_regenerates_instead_of_patching() 
     let contained = decode(design_archive());
     let edited = moved_first_point(&contained);
     inject_failure(malformed_design);
-    crate::test_support::assert_written_with_loss(
+    crate::test_support::assert_patch_declined(
         &edited,
         Some(contained.source_fidelity()),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
         "design intent was not decoded",
     );
 }
@@ -525,7 +524,7 @@ fn an_unread_primary_header_is_a_loss_at_geometry_and_design_depth() {
             depth,
             ..DecodeOptions::default()
         };
-        options.policy.mode = DecodeMode::Strict;
+        options.strictness.pinned = true;
         let failure = F3dCodec
             .decode(&mut Cursor::new(&bytes), &options)
             .expect_err("strict decode refuses the unread header");
@@ -534,7 +533,14 @@ fn an_unread_primary_header_is_a_loss_at_geometry_and_design_depth() {
         };
         assert_eq!(
             rejection.loss().code,
-            F3dLossCode::PrimaryRecordUndecoded.kind()
+            cadmpeg_ir::unknown::part::record_unreadable_kind()
+        );
+        assert!(
+            rejection.loss().message.starts_with(
+                "part design-record stream=\"FusionAssetName[Active]/FusionDesignSegmentType2/BulkStream.dat\" offset="
+            ),
+            "{}",
+            rejection.loss().message
         );
     }
 }

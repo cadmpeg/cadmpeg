@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Admit vertex tolerances and cache-first spring support relations.
-
-mod vertex_tolerance;
+//! Admit cache-first spring support relations.
 
 use crate::loss::F3dLossCode;
 use cadmpeg_core::decode::DecodeContext;
@@ -18,9 +16,7 @@ pub(super) fn admit(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
-    annotations: &mut [cadmpeg_asm::brep::annotations::AnnotationRecord],
 ) -> Result<(), CodecError> {
-    vertex_tolerance::admit(ctx, ir, losses, annotations)?;
     for curve in &ir.geometry.procedural_curves {
         let context = match curve.definition() {
             ProceduralCurveDefinition::Intersection { context, .. } => context,

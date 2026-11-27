@@ -3,7 +3,8 @@
 //! instead of refusing the write.
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::Codec;
 
 use crate::SldprtCodec;
@@ -18,7 +19,7 @@ fn foreign_cube() -> cadmpeg_ir::CadIr {
 
 fn plan_losses(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     SldprtCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None))
         .unwrap()
         .report()
         .losses
@@ -116,30 +117,6 @@ fn a_source_tag_that_is_no_xml_name_does_not_refuse_the_write() {
 }
 
 #[test]
-fn a_feature_the_history_writer_cannot_write_is_dropped_with_the_features_that_need_it() {
-    let mut ir = written_cube();
-    let mut unresolved = sketch_feature("other:model:feature#unresolved", 0);
-    unresolved.suppressed = None;
-    let mut dependent = sketch_feature("other:model:feature#dependent", 1);
-    dependent.dependencies.insert(unresolved.id.clone());
-    let kept = sketch_feature("other:model:feature#kept", 2);
-    ir.model.features.extend([unresolved, dependent, kept]);
-    let losses = plan_losses(&ir);
-    let note = loss(&losses, "writer.features-omitted").unwrap();
-    assert!(
-        note.message.contains("other:model:feature#unresolved")
-            && note.message.contains("other:model:feature#dependent"),
-        "{}",
-        note.message
-    );
-    assert!(
-        !note.message.contains("other:model:feature#kept"),
-        "{}",
-        note.message
-    );
-}
-
-#[test]
 fn face_names_and_a_body_name_without_material_are_written_unnamed_and_named() {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     ir.geometry.bodies[0].name = Some("Bracket".into());
@@ -212,10 +189,10 @@ fn semantic_writer_names_an_edge_range_its_vertices_do_not_fix() {
     }
     let edge = decoded.ir().geometry.edges[0].id.as_str().to_owned();
     let report = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .unwrap()
         .report()
         .clone();
@@ -240,7 +217,7 @@ fn a_document_with_no_face_writes_an_empty_partition_and_names_it() {
     assert!(bodies.message.contains(ir.geometry.bodies[0].id.as_str()));
     let mut bytes = Vec::new();
     SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None))
         .unwrap()
         .write_to(&mut bytes)
         .unwrap();
@@ -337,9 +314,7 @@ fn an_error_of_a_design_rule_writes_the_part_with_a_loss() {
         "{:#?}",
         report.findings
     );
-    let plan = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .unwrap();
+    let plan = SldprtCodec.plan(EncodeInput::new(&ir, None)).unwrap();
     let losses = plan.report().losses.clone();
     let invalid = losses
         .iter()
@@ -408,10 +383,10 @@ fn pmi_added_to_a_native_part_is_named_on_the_patched_path() {
         source_settings: cadmpeg_ir::design::options::NativeOptions::new(),
     });
     let plan = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .unwrap();
     assert!(
         matches!(
@@ -486,6 +461,7 @@ fn validation_errors_outside_the_geometry_and_history_arenas_and_without_a_recor
     ] {
         validation.findings.push(Finding {
             check: Check::ReferentialIntegrity,
+            rule: cadmpeg_ir::rule_name!("sldprt/test.fixture-reference"),
             severity: Severity::Error,
             message: message.into(),
             entity: entity.map(str::to_owned),
@@ -505,7 +481,7 @@ fn validation_errors_outside_the_geometry_and_history_arenas_and_without_a_recor
     let rules = &losses[1].message;
     assert!(
         rules.starts_with("2 finding(s)")
-            && rules.contains("document finding")
+            && rules.contains("sldprt/test.fixture-reference (document finding)")
             && rules.contains("other:model:face#absent"),
         "{rules}"
     );
@@ -535,12 +511,9 @@ fn a_retained_partition_keeps_a_body_on_a_torus_the_compact_records_cannot_hold(
         )
     ));
     let (ir, _, mut fidelity) = decoded.into_parts();
-    fidelity.content_digest = cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]);
+    fidelity.content_digest = None;
     let plan = SldprtCodec
-        .plan(
-            EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(&ir, Some(&fidelity)))
         .unwrap();
     assert!(
         loss(&plan.report().losses, "writer.bodies-omitted").is_none(),
@@ -564,8 +537,8 @@ fn a_faceless_part_keeps_its_swift_annotations() {
             .map(|annotation| {
                 (
                     annotation.id.clone(),
-                    serde_json::to_value(&annotation.definition).unwrap(),
-                    serde_json::to_value(&annotation.targets).unwrap(),
+                    json::to_value(&annotation.definition).unwrap(),
+                    json::to_value(&annotation.targets).unwrap(),
                 )
             })
             .collect::<Vec<_>>()
@@ -573,12 +546,9 @@ fn a_faceless_part_keeps_its_swift_annotations() {
     let expected = annotations(decoded.ir());
     assert_eq!(expected.len(), 1);
     let (ir, _, mut fidelity) = decoded.into_parts();
-    fidelity.content_digest = cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]);
+    fidelity.content_digest = None;
     let plan = SldprtCodec
-        .plan(
-            EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(&ir, Some(&fidelity)))
         .unwrap();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();

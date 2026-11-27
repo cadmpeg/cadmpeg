@@ -11,6 +11,7 @@ use crate::design::expr::{
 };
 use crate::design::units::UnitSymbol;
 use crate::scalar::NonNegativeReal;
+use cadmpeg_core::serde_erase::json;
 
 /// "Every example of a neutral tree in this document, read with its operand
 /// letters as references and `u` as a unit symbol, parses and prints to
@@ -364,7 +365,6 @@ fn every_printed_expression_reads_back() {
                 assert!(holds_a_call_with_no_argument(&node), "{node:?}: {error}");
                 refused += 1;
             }
-            Err(error) => panic!("{node:?}: {error}"),
         }
     }
     assert!(
@@ -385,7 +385,7 @@ fn a_call_with_no_argument_is_refused_by_the_printer() {
         expr::print(&call),
         Err(expr::ExprError::Malformed(error)) if error.contains("no argument")
     ));
-    assert!(serde_json::to_string(&Neutral(call)).is_err());
+    assert!(json::to_string(&Neutral(call)).is_err());
     assert!(read("sign()").is_err());
 }
 

@@ -3336,6 +3336,38 @@ Offsets are relative to the first byte after the cross-document reference. The s
 | 50 | 1 | `zero_flag` | `u8` | little | spec | one zero byte |
 | 51 | 11 | `scope_reference` | `bytes[11]` | little | spec | a same-segment reference to the owning scope |
 
+## `combine_legacy_external_body_reference`
+
+Spec §3.1 · layout: byte offsets · size: 60 B
+
+Offsets are relative to the first byte after the u32 one that follows the occurrence reference.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `body_marker` | `u8` | little | spec | Its cross-document body reference is a legacy target reference (§1.4): `u8 1` · value `1` |
+| 1 | 8 | `browser_node_entity` | `u64` | little | spec | the u64 entity ID of a body-visibility browser node in the referenced design |
+| 9 | 1 | `occurrence_marker` | `u8` | little | spec | in the referenced design, `u8 1` · value `1` |
+| 10 | 8 | `source_occurrence_identity` | `u64` | little | spec | a u64 source occurrence identity, `u8 0` |
+| 18 | 1 | `cross_document_flag` | `u8` | little | spec | a u64 source occurrence identity, `u8 0` · value `0` |
+| 19 | 40 | `type_guid` | `bytes[40]` | little | spec | the LP-ASCII 36 type GUID `D26351F0-5940-4D23-AA20-2C35475A6D9E` |
+| 59 | 1 | `closing_zero` | `u8` | little | spec | `D26351F0-5940-4D23-AA20-2C35475A6D9E`, and `u8 0` · value `0` |
+
+## `combine_legacy_external_selector_tail`
+
+Spec §3.1 · layout: byte offsets · size: 41 B
+
+Offsets are relative to the first byte after the legacy cross-document body reference. The separator after the reference to `N+2` is two or three bytes long.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `constant_nine` | `u32` | little | spec | The legacy selector tail is u32 `9` · value `9` |
+| 4 | 2 | `constant_two` | `u16` | little | spec | The legacy selector tail is u32 `9`, u16 `2` · value `2` |
+| 6 | 8 | `selection_payload_stamp` | `u64` | little | spec | a u64 selection-payload stamp |
+| 14 | 4 | `evaluation_epoch` | `u32` | little | spec | a u32 evaluation epoch |
+| 18 | 8 | `evaluation_scalar` | `f64` | little | spec | a finite nonnegative f64 evaluation scalar |
+| 26 | 4 | `repeated_epoch` | `u32` | little | spec | a u32 equal to the epoch |
+| 30 | 11 | `nested_two_reference` | `bytes[11]` | little | spec | a u32 equal to the epoch, a same-segment reference to `N+2` |
+
 ## `indexed_companion_record_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 58 B
@@ -12072,6 +12104,9 @@ Spec §1.2 · layout: byte offsets · size: 57 B
 
 Offsets are relative to the record's indexed header. The LP-UTF16 table id begins at the end of the prefix.
 
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/configuration_root.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 11 | 4 | `zero_u32` | `u32` | little | spec | Its indexed header is followed by a zero u32, the LP-ASCII key `DesignConfigurationRoot` · value `0` |
@@ -12083,6 +12118,10 @@ Offsets are relative to the record's indexed header. The LP-UTF16 table id begin
 Unstated regions:
 
 - `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/records/configuration.rs` — The reader admits a table id and a row id of 1 to 256 UTF-16 code units after the prefix; the writer fits both ids to the same width.
 
 ## `snapshot_body_map_plain_prefix`
 
@@ -15808,6 +15847,87 @@ Record 195 for one result body (`N = 1`); the basename holds a 36-character UUID
 | 63 | 1 | `separator` | `u8` | little | spec | `base_feature_snapshot_body_map` · value `0` |
 | 64 | 4 | `basename_length` | `u32` | little | spec | `base_feature_snapshot_body_map` · value `45` |
 | 68 | 90 | `basename` | `bytes[90]` | little | spec | `base_feature_snapshot_body_map` |
+
+## `body_less_design_body_owner`
+
+Spec §Records of a design whose timeline holds no body · layout: byte offsets · size: 71 B
+
+The design `Body` owner of a design whose timeline holds no body.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `body_less_design_body_owner` |
+| 11 | 10 | `zero` | `bytes[10]` | little | spec | `body_less_design_body_owner` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 1 | `flag` | `u8` | little | spec | `body_less_design_body_owner` · value `0` |
+| 22 | 4 | `set_count` | `u32` | little | spec | `body_less_design_body_owner` · value `0` |
+| 26 | 4 | `run_count` | `u32` | little | spec | `body_less_design_body_owner` · value `0` |
+| 30 | 1 | `marker_a` | `u8` | little | spec | `body_less_design_body_owner` · value `1` |
+| 31 | 1 | `companion_slot` | `u8` | little | spec | `body_less_design_body_owner` · value `0` |
+| 32 | 11 | `body_map` | `bytes[11]` | little | spec | `body_less_design_body_owner` |
+| 43 | 1 | `marker_b` | `u8` | little | spec | `body_less_design_body_owner` · value `1` |
+| 44 | 11 | `alternate_owner_list` | `bytes[11]` | little | spec | `body_less_design_body_owner` |
+| 55 | 1 | `separator` | `u8` | little | spec | `body_less_design_body_owner` · value `0` |
+| 56 | 4 | `run_count_repeat` | `u32` | little | spec | `body_less_design_body_owner` · value `0` |
+| 60 | 11 | `aggregate` | `bytes[11]` | little | spec | `body_less_design_body_owner` |
+
+## `body_less_parameter_body_owner`
+
+Spec §Records of a design whose timeline holds no body · layout: byte offsets · size: 61 B
+
+The parameter `Body` owner of a design whose timeline holds no body.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `body_less_parameter_body_owner` |
+| 11 | 10 | `zero` | `bytes[10]` | little | spec | `body_less_parameter_body_owner` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 1 | `flag` | `u8` | little | spec | `body_less_parameter_body_owner` · value `0` |
+| 22 | 4 | `set_count` | `u32` | little | spec | `body_less_parameter_body_owner` · value `0` |
+| 26 | 4 | `run_count` | `u32` | little | spec | `body_less_parameter_body_owner` · value `0` |
+| 30 | 1 | `marker_a` | `u8` | little | spec | `body_less_parameter_body_owner` · value `1` |
+| 31 | 1 | `companion_slot` | `u8` | little | spec | `body_less_parameter_body_owner` · value `0` |
+| 32 | 11 | `snapshot_body_map` | `bytes[11]` | little | spec | `body_less_parameter_body_owner` |
+| 43 | 1 | `marker_b` | `u8` | little | spec | `body_less_parameter_body_owner` · value `1` |
+| 44 | 1 | `null_slot` | `u8` | little | spec | `body_less_parameter_body_owner` · value `0` |
+| 45 | 1 | `separator` | `u8` | little | spec | `body_less_parameter_body_owner` · value `0` |
+| 46 | 4 | `run_count_repeat` | `u32` | little | spec | `body_less_parameter_body_owner` · value `0` |
+| 50 | 11 | `aggregate` | `bytes[11]` | little | spec | `body_less_parameter_body_owner` |
+
+## `body_less_body_map`
+
+Spec §Records of a design whose timeline holds no body · layout: byte offsets · size: 41 B
+
+The body map of a design whose timeline holds no body: no pair and an empty basename.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/body.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `body_less_body_map` |
+| 11 | 10 | `zero` | `bytes[10]` | little | spec | `body_less_body_map` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 4 | `body_count` | `u32` | little | spec | `body_less_body_map` · value `0` |
+| 25 | 11 | `body_owner` | `bytes[11]` | little | spec | `body_less_body_map` |
+| 36 | 1 | `separator` | `u8` | little | spec | `body_less_body_map` · value `0` |
+| 37 | 4 | `basename_length` | `u32` | little | spec | `body_less_body_map` · value `0` |
+
+## `body_less_snapshot_body_map`
+
+Spec §Records of a design whose timeline holds no body · layout: byte offsets · size: 52 B
+
+The snapshot body map of a design whose timeline holds no body: no pair and an empty basename.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/body.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `body_less_snapshot_body_map` |
+| 11 | 10 | `zero` | `bytes[10]` | little | spec | `body_less_snapshot_body_map` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 11 | `companion` | `bytes[11]` | little | spec | `body_less_snapshot_body_map` |
+| 32 | 4 | `body_count` | `u32` | little | spec | `body_less_snapshot_body_map` · value `0` |
+| 36 | 11 | `body_owner` | `bytes[11]` | little | spec | `body_less_snapshot_body_map` |
+| 47 | 1 | `separator` | `u8` | little | spec | `body_less_snapshot_body_map` · value `0` |
+| 48 | 4 | `basename_length` | `u32` | little | spec | `body_less_snapshot_body_map` · value `0` |
 
 ## `base_feature_scene_node`
 

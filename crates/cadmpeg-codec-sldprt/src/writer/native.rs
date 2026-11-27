@@ -16,7 +16,7 @@ mod detailing;
 pub(super) mod extrude;
 pub(super) mod from_ir;
 pub(super) mod sketch;
-mod streams;
+pub(crate) mod streams;
 pub(super) mod tree;
 
 #[cfg(test)]
@@ -151,6 +151,8 @@ pub(super) struct Facts<'a> {
     pub(super) features: &'a [Feature],
     /// One stored body per body of the configuration's partition.
     pub(super) bodies: &'a [Body],
+    /// The `res_linear` (metres) the partition's BODY nodes store.
+    pub(super) linear_resolution: f64,
 }
 
 /// A user feature the tree writes.

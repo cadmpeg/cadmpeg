@@ -1,4 +1,5 @@
 use super::{Construction, ConstructionKind};
+use cadmpeg_core::serde_erase::json;
 use serde::{Deserialize, Serialize};
 use std::cell::Cell;
 use std::rc::Rc;
@@ -42,10 +43,10 @@ fn construction_serialization_borrows_its_resolved_value() {
         mode: None,
         resolved_in: std::collections::BTreeMap::new(),
     };
-    let wire = serde_json::to_value(&construction).expect("serialize resolved construction");
+    let wire = json::to_value(&construction).expect("serialize resolved construction");
     assert_eq!(clones.get(), 0);
     assert_eq!(
         wire,
-        serde_json::json!({"inputs":[],"after":[],"resolved":7,"resolved_in":{}})
+        cadmpeg_core::json!({"inputs":[],"after":[],"resolved":7,"resolved_in":{}})
     );
 }

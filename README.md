@@ -55,7 +55,7 @@ cadmpeg convert part.f3d -o part.step
 decode report (f3d): depth=geometry, geometry_transferred=true
 ...
 check: OK (0 error(s), 0 warning(s))
-wrote part.step (... entities)
+wrote part.step (... entities, sha256 ...)
 ```
 
 Measure one face, or every cylindrical face of a part:
@@ -93,7 +93,8 @@ Each format carries one support level from the ladder; `cadmpeg inspect <file>` 
 - **SolidWorks eDrawings `.eprt` and `.easm`** — L2 ([profile](docs/format-support.md#solidworks-edrawings-eprt-and-easm))
 - **OpenUSD layers** — L2 ([profile](docs/format-support.md#openusd-layers))
 - **STEP Part 21** — L8 ([profile](docs/format-support.md#step-part-21))
-- **Solid Edge `.par`, `.psm`, and `.asm`** — L0 ([profile](docs/format-support.md#solid-edge-par-psm-and-asm))
+- **Solid Edge `.par`, `.psm`, and `.asm`** — L2 ([profile](docs/format-support.md#solid-edge-par-psm-and-asm))
+- **IronCAD `.ics`** — L0 ([profile](docs/format-support.md#ironcad-ics))
 - **Onshape bundle** — L0 ([profile](docs/format-support.md#onshape-bundle))
 
 <!-- /generated: capability-lines -->
@@ -106,7 +107,8 @@ Each format carries one support level from the ladder; `cadmpeg inspect <file>` 
 input file ──▶ container decoder ──▶ format decoder ──▶ IR ──▶ validator ──▶ exporter ──▶ output + reports
 ```
 
-- [CAD IR version 8](docs/cad-ir.md)
+- [CADIR version 11](docs/cad-ir.md) and its [specification](docs/cadir-v11.md)
+- [Upgrading from CADIR 10](docs/upgrading-to-cadir-11.md)
 - [Architecture](docs/architecture.md)
 - [Format support](docs/format-support.md)
 - [Roadmap](docs/roadmap.md)
