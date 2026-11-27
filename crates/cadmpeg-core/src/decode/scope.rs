@@ -287,10 +287,11 @@ mod tests {
 
     #[test]
     fn scope_is_three_required_wire_booleans() {
-        let full = serde_json::to_value(ContentScope::full()).expect("scope serializes");
+        let full =
+            crate::serde_erase::json::to_value(ContentScope::full()).expect("scope serializes");
         assert_eq!(
             full,
-            serde_json::json!({"model": true, "design": true, "process": true})
+            crate::json!({"model": true, "design": true, "process": true})
         );
         assert!(serde_json::from_str::<ContentScope>(r#"{"model":true,"design":true}"#).is_err());
         assert!(serde_json::from_str::<ContentScope>(
@@ -364,10 +365,10 @@ mod tests {
     #[test]
     fn class_sets_have_a_sorted_array_wire_shape() {
         let classes = ArenaClasses::from([ArenaClass::Process, ArenaClass::Model]);
-        let wire = serde_json::to_value(&classes).expect("class set serializes");
-        assert_eq!(wire, serde_json::json!(["model", "process"]));
+        let wire = crate::serde_erase::json::to_value(&classes).expect("class set serializes");
+        assert_eq!(wire, crate::json!(["model", "process"]));
         assert_eq!(
-            serde_json::from_value::<ArenaClasses>(wire).expect("class set parses"),
+            crate::serde_erase::json::from_value::<ArenaClasses>(wire).expect("class set parses"),
             classes
         );
     }

@@ -236,6 +236,7 @@ pub(in crate::native) fn feature_surface_construction_branches(
 #[cfg(test)]
 mod tests {
     use super::FeatureSurfaceConstructionBranch;
+    use cadmpeg_core::serde_erase::json;
 
     const BRANCH_PAYLOAD: &[u8] = b"\xa0\x5a\x14\x13\x01\x02\x40\x01\x04\xf1\x1b\xf4\xf1\x1b\xf5\xf1\x1b\xf6\x01\x04\x00\x00\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x1b\xf7\x00\x81\x58\x01\x02\x40\x01\x05\xf1\x1b\xf8\xf1\x1b\xf9\xf1\x1b\xfa\xf1\x1b\xfb\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x1b\xfc\x00\x81\x1c\x00\x00\x00\x01\x03\x00\x00\x00\xff\xff\x01";
 
@@ -292,7 +293,7 @@ mod tests {
                 .replace("\"source_offset\":116", "\"source_offset\":119"),
         ] {
             let branch: FeatureSurfaceConstructionBranch = serde_json::from_str(&wire).unwrap();
-            assert_eq!(serde_json::to_string(&branch).unwrap(), wire);
+            assert_eq!(json::to_string(&branch).unwrap(), wire);
         }
     }
 

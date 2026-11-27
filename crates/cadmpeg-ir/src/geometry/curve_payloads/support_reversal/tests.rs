@@ -15,6 +15,7 @@ use crate::geometry::surface_curves::{
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::{Point2, Vector3};
 use crate::scalar::{FiniteReal, PositiveI64};
+use cadmpeg_core::serde_erase::json;
 
 fn line_side(origin: Point2, direction: Point2) -> IntcurveSupportSide {
     IntcurveSupportSide {
@@ -154,10 +155,9 @@ fn context_families_reverse_about_zero_and_back() {
                     }) if interval == [FiniteReal::new(-4.0), FiniteReal::new(-1.0)]
                 ));
                 assert_eq!(payload.direction(), &0);
-                let restored: ProceduralCurveDefinition = serde_json::from_value(
-                    serde_json::to_value(&reversed).expect("serialize spring"),
-                )
-                .expect("deserialize spring");
+                let restored: ProceduralCurveDefinition =
+                    json::from_value(json::to_value(&reversed).expect("serialize spring"))
+                        .expect("deserialize spring");
                 assert_eq!(restored, reversed);
             }
             ProceduralCurveDefinition::SurfaceOffset(payload) => {

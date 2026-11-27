@@ -6,6 +6,7 @@ use crate::report::{
     },
     Severity,
 };
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn owned_namespaced_loss_kind_keeps_taxonomy_and_rejects_reserved_namespace() {
@@ -37,7 +38,7 @@ fn loss_code_serializes_as_namespaced_object() {
         "topology graph not transferred",
     )
     .with_severity(Severity::Blocking);
-    let value: serde_json::Value = serde_json::to_value(&note).expect("required invariant");
+    let value: serde_json::Value = json::to_value(&note).expect("required invariant");
     assert_eq!(value["code"]["kind"], "shared");
     assert_eq!(value["code"]["value"]["kind"], "topology_not_transferred");
     assert!(value["code"]["value"].get("namespace").is_none());
@@ -52,17 +53,17 @@ fn loss_code_serializes_as_namespaced_object() {
 #[test]
 fn a_shared_loss_kind_carries_no_code_and_no_strict_floor() {
     let shared = LossKind::shared(LossTaxonomy::TopologyNotTransferred);
-    let wire = serde_json::to_value(&shared).expect("serializes");
+    let wire = json::to_value(&shared).expect("serializes");
     assert_eq!(
         wire,
-        serde_json::json!({"kind": "shared", "value": {"kind": "topology_not_transferred"}})
+        cadmpeg_core::json!({"kind": "shared", "value": {"kind": "topology_not_transferred"}})
     );
     assert_eq!(
-        serde_json::from_value::<LossKind>(wire).expect("round trip"),
+        json::from_value::<LossKind>(wire).expect("round trip"),
         shared
     );
 
-    let error = serde_json::from_value::<LossKind>(serde_json::json!({"kind": "shared", "value": {
+    let error = json::from_value::<LossKind>(cadmpeg_core::json!({"kind": "shared", "value": {
         "kind": "topology_not_transferred",
         "code": "geometry_not_transferred"
     }}))
@@ -70,7 +71,7 @@ fn a_shared_loss_kind_carries_no_code_and_no_strict_floor() {
     .to_string();
     assert!(error.contains("code"), "{error}");
 
-    let error = serde_json::from_value::<LossKind>(serde_json::json!({"kind": "shared", "value": {
+    let error = json::from_value::<LossKind>(cadmpeg_core::json!({"kind": "shared", "value": {
         "kind": "topology_not_transferred",
         "strict_floor": "error"
     }}))
@@ -88,28 +89,27 @@ fn a_shared_loss_kind_carries_no_code_and_no_strict_floor() {
         "brep.trim-pcurve-dropped",
         LossTaxonomy::TopologyNotTransferred,
     );
-    let wire = serde_json::to_value(&namespaced).expect("serializes");
+    let wire = json::to_value(&namespaced).expect("serializes");
     assert_eq!(
         wire,
-        serde_json::json!({"kind": "namespaced", "value": {
+        cadmpeg_core::json!({"kind": "namespaced", "value": {
             "namespace": "rhino",
             "code": "brep.trim-pcurve-dropped",
             "kind": "topology_not_transferred"
         }})
     );
     assert_eq!(
-        serde_json::from_value::<LossKind>(wire).expect("round trip"),
+        json::from_value::<LossKind>(wire).expect("round trip"),
         namespaced
     );
 
-    let error =
-        serde_json::from_value::<LossKind>(serde_json::json!({"kind": "namespaced", "value": {
-            "namespace": "shared",
-            "code": "topology_not_transferred",
-            "kind": "topology_not_transferred"
-        }}))
-        .unwrap_err()
-        .to_string();
+    let error = json::from_value::<LossKind>(cadmpeg_core::json!({"kind": "namespaced", "value": {
+        "namespace": "shared",
+        "code": "topology_not_transferred",
+        "kind": "topology_not_transferred"
+    }}))
+    .unwrap_err()
+    .to_string();
     assert!(error.contains("shared"), "{error}");
 }
 
@@ -161,7 +161,7 @@ fn loss_taxonomy_static_names_match_the_serde_wire_names() {
         LossTaxonomy::ProcessRecordOmitted,
     ] {
         assert_eq!(
-            serde_json::to_value(taxonomy).unwrap(),
+            json::to_value(taxonomy).unwrap(),
             serde_json::Value::String(taxonomy.as_str().to_owned())
         );
     }
@@ -206,11 +206,11 @@ fn process_losses_belong_to_the_process_category() {
     assert_eq!(kind.category(), LossCategory::Process);
     assert_eq!(LossCategory::Process.to_string(), "process");
     assert_eq!(
-        serde_json::to_value(LossCategory::Process).unwrap(),
+        json::to_value(LossCategory::Process).unwrap(),
         serde_json::Value::String("process".to_owned())
     );
     assert_eq!(
-        serde_json::from_value::<LossCategory>(serde_json::json!("process")).unwrap(),
+        json::from_value::<LossCategory>(cadmpeg_core::json!("process")).unwrap(),
         LossCategory::Process
     );
 }
@@ -282,7 +282,7 @@ fn namespaced_local_code_pins_strict_floor_independently_of_taxonomy() {
     )
     .with_strict_floor(None)
     .into();
-    let roundtrip: LossKind = serde_json::from_value(serde_json::to_value(&kind).unwrap()).unwrap();
+    let roundtrip: LossKind = json::from_value(json::to_value(&kind).unwrap()).unwrap();
     assert_eq!(roundtrip.namespace(), "sldprt");
     assert_eq!(roundtrip.local_code(), "geometry.pcurve-ambiguous");
     assert_eq!(roundtrip.taxonomy(), LossTaxonomy::PcurveOmitted);
@@ -294,12 +294,12 @@ fn namespaced_loss_rejects_reserved_namespace() {
     assert_eq!(LossNamespace::new("shared"), Err(LossNamespaceError));
     let namespace = String::from("shared");
     assert_eq!(LossNamespace::new(&namespace), Err(LossNamespaceError));
-    assert!(serde_json::from_value::<LossKind>(
-        serde_json::json!({"kind": "namespaced", "value": {
+    assert!(
+        json::from_value::<LossKind>(cadmpeg_core::json!({"kind": "namespaced", "value": {
             "namespace": "shared", "code": "wrong", "kind": "pcurve_omitted"
-        }})
-    )
-    .is_err());
+        }}))
+        .is_err()
+    );
 }
 
 #[test]

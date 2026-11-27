@@ -12,6 +12,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::annotations::AnnotationBuilder;
+use cadmpeg_ir::design::projection::fields::{FeatureField, ModelFeatureField};
+use cadmpeg_ir::design::projection::Restatement;
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition};
@@ -49,6 +52,44 @@ pub(crate) fn project(
         unproduced: BTreeSet::default(),
     });
     Ok(())
+}
+
+/// Restate onto the projected parameters the exactness of the model
+/// parameters they are built from. A kind the signature does not declare is
+/// the default `REAL`, and is inferred.
+///
+/// # Errors
+///
+/// A resource refusal while the overrides are stated.
+pub(crate) fn restate_exactness(
+    ir: &CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> Result<(), CodecError> {
+    for id in parameters::defaulted_kinds(ir) {
+        annotations.field_exactness(id, "kind", cadmpeg_ir::Exactness::Inferred)?;
+    }
+    cadmpeg_ir::design::projection::restate_exactness(
+        ir,
+        annotations,
+        Restatement {
+            feature: feature_inputs,
+            parameter: parameters::inputs,
+        },
+    )
+}
+
+/// The projection states no design feature.
+#[deny(clippy::wildcard_enum_match_arm)]
+fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
+    match field {
+        FeatureField::Name
+        | FeatureField::Suppressed
+        | FeatureField::Definition
+        | FeatureField::Placement
+        | FeatureField::Component
+        | FeatureField::DrivenBy
+        | FeatureField::NativeRef => &[],
+    }
 }
 
 /// List as unproduced each body of a definition the scope spans that no

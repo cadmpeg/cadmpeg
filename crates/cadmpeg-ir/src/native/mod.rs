@@ -381,6 +381,15 @@ impl NativeRecord {
         ctx: &DecodeContext<'_>,
         record: &T,
     ) -> Result<Self, NativeConvertError> {
+        Self::canonical_erased(ctx, &|adapter| record.serialize(adapter))
+    }
+
+    fn canonical_erased(
+        ctx: &DecodeContext<'_>,
+        write: &dyn Fn(
+            cadmpeg_core::serde_erase::SerAdapter<'_>,
+        ) -> Result<(), cadmpeg_core::serde_erase::SerError>,
+    ) -> Result<Self, NativeConvertError> {
         use std::cell::RefCell;
         thread_local! {
             static CANON_SCRATCH: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -396,13 +405,11 @@ impl NativeRecord {
                 Err(_) => &mut fallback,
             };
             let mut min_remaining = MAX_NATIVE_NESTING_DEPTH + 1;
-            let serialized = record
-                .serialize(canon::CanonText::for_record_tracking(
-                    ctx,
-                    out,
-                    &mut min_remaining,
-                ))
-                .map_err(|error| error.into_native(ctx))?;
+            let serialized = cadmpeg_core::serde_erase::serialize_with(
+                canon::CanonText::for_record_tracking(ctx, out, &mut min_remaining),
+                write,
+            )
+            .map_err(|error| error.into_native(ctx))?;
             let canon::Written::Object(members) = serialized else {
                 return Err(NativeConvertError::NonObject);
             };
@@ -597,41 +604,27 @@ impl NativeRecord {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<T, NativeConvertError> {
-        check_depth(ctx, self.depth)?;
-        // The writer bounded each field's nesting, so the parser's recursion
-        // limit is lifted.
-        let mut deserializer = serde_json::Deserializer::from_str(&self.json);
-        deserializer.disable_recursion_limit();
-        let value = T::deserialize(&mut deserializer)
-            .and_then(|value| deserializer.end().map(|()| value))
-            .map_err(|source| NativeConvertError::ReadRecord {
-                id: self.id.clone(),
-                source: without_position(source),
-            })?;
-        privacy::observe::<T>(self.id(), &self.json);
-        Ok(value)
+        self.to_typed_fast(ctx, |_| None)
     }
 
     /// Try a caller-provided fast parser on the canonical JSON text, falling
-    /// back to [`Self::to_typed`] when it returns `None`.
+    /// back to `serde_json` when it returns `None`. The writer bounded each
+    /// field's nesting, so the parser's recursion limit is lifted.
     fn to_typed_fast<T: DeserializeOwned>(
         &self,
         ctx: &DecodeContext<'_>,
         fast: impl FnOnce(&str) -> Option<T>,
     ) -> Result<T, NativeConvertError> {
         check_depth(ctx, self.depth)?;
-        if let Some(value) = fast(&self.json) {
-            privacy::observe::<T>(self.id(), &self.json);
-            return Ok(value);
-        }
-        let mut deserializer = serde_json::Deserializer::from_str(&self.json);
-        deserializer.disable_recursion_limit();
-        let value = T::deserialize(&mut deserializer)
-            .and_then(|value| deserializer.end().map(|()| value))
-            .map_err(|source| NativeConvertError::ReadRecord {
-                id: self.id.clone(),
-                source: without_position(source),
-            })?;
+        let value = match fast(&self.json) {
+            Some(value) => value,
+            None => cadmpeg_core::serde_erase::from_json_str(&self.json).map_err(|source| {
+                NativeConvertError::ReadRecord {
+                    id: self.id.clone(),
+                    source,
+                }
+            })?,
+        };
         privacy::observe::<T>(self.id(), &self.json);
         Ok(value)
     }
@@ -652,19 +645,6 @@ impl NativeRecord {
 struct DigestUnknown<'a> {
     id: &'a str,
     links: &'a [Value],
-}
-
-/// The refusal without the text position a parse appends to its message.
-fn without_position(error: serde_json::Error) -> serde_json::Error {
-    if error.line() == 0 {
-        return error;
-    }
-    let suffix = format!(" at line {} column {}", error.line(), error.column());
-    let message = error.to_string();
-    match message.strip_suffix(&suffix) {
-        Some(message) => <serde_json::Error as serde::de::Error>::custom(message),
-        None => error,
-    }
 }
 
 /// Enter and release `depth` nesting frames on `ctx` without heap allocation

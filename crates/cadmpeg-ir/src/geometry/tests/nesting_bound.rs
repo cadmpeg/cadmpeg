@@ -11,6 +11,7 @@ use crate::geometry::{
 };
 use crate::math::{Point3, Vector3};
 use crate::transform::{Transform, Transform2};
+use cadmpeg_core::serde_erase::json;
 
 /// A chain of `placements` placements over a plane leaf, or the constructor's
 /// refusal at the placement that would pass the bound.
@@ -105,8 +106,7 @@ fn a_pcurve_nesting_chain_one_past_the_bound_is_refused() {
 /// own nesting bound. `CadIr::read` gives such a record up (§3.3).
 #[test]
 fn from_json_reads_a_chain_at_the_document_bound_and_refuses_one_more() {
-    let text =
-        |placements| serde_json::to_string(&placed_plane(placements).expect("admitted nesting"));
+    let text = |placements| json::to_string(&placed_plane(placements).expect("admitted nesting"));
     let deepest = (0..MAX_GEOMETRY_NESTING)
         .take_while(|placements| {
             text_depth(&text(*placements).expect("serialized")) <= MAX_DOCUMENT_DEPTH
@@ -132,15 +132,14 @@ fn deserialization_refuses_a_surface_placement_past_the_bound() {
     // `serde_json::value::de` has no recursion guard, so it is the deepest
     // route a document can take into the carrier. The constructor the wire
     // routes through is what refuses the extra placement.
-    let admitted =
-        serde_json::to_value(placed_plane(MAX_GEOMETRY_NESTING).expect("admitted nesting"))
-            .expect("serialized");
-    let past_the_bound = serde_json::json!({
+    let admitted = json::to_value(placed_plane(MAX_GEOMETRY_NESTING).expect("admitted nesting"))
+        .expect("serialized");
+    let past_the_bound = cadmpeg_core::json!({
         "kind": "transformed",
         "basis": admitted,
-        "transform": serde_json::to_value(Transform::identity()).expect("serialized"),
+        "transform": json::to_value(Transform::identity()).expect("serialized"),
     });
-    let error = serde_json::from_value::<SolvedSurfaceGeometry>(past_the_bound)
+    let error = json::from_value::<SolvedSurfaceGeometry>(past_the_bound)
         .expect_err("one placement past the bound");
     assert_eq!(
         error.to_string(),

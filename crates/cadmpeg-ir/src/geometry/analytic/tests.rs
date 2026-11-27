@@ -9,6 +9,7 @@ use crate::{
     },
     math::{Point3, Vector3},
 };
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn analytic_circle_numeric_admission_is_shared_by_constructor_and_serde() {
@@ -21,18 +22,18 @@ fn analytic_circle_numeric_admission_is_shared_by_constructor_and_serde() {
     assert!(CircleCurve::try_new(Point3::new(f64::NAN, 0.0, 0.0), axis, reference, 1.0).is_err());
     assert!(CircleCurve::try_new(center, Vector3::new(0.0, 0.0, 2.0), reference, 1.0).is_err());
     assert!(CircleCurve::try_new(center, axis, axis, 1.0).is_err());
-    let wire = serde_json::json!({"kind": "solved", "value": {
+    let wire = cadmpeg_core::json!({"kind": "solved", "value": {
         "kind": "circle",
         "center": {"x": 0.0, "y": 0.0, "z": 0.0},
         "axis": {"x": 0.0, "y": 0.0, "z": 1.0},
         "ref_direction": {"x": 1.0, "y": 0.0, "z": 0.0},
         "radius": 1.0
     }});
-    let curve: CurveGeometry = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(curve).unwrap(), wire);
+    let curve: CurveGeometry = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(curve).unwrap(), wire);
     let mut invalid = wire.clone();
-    invalid["value"]["radius"] = serde_json::json!(-1.0);
-    let error = serde_json::from_value::<CurveGeometry>(invalid)
+    invalid["value"]["radius"] = cadmpeg_core::json!(-1.0);
+    let error = json::from_value::<CurveGeometry>(invalid)
         .unwrap_err()
         .to_string();
     assert!(
@@ -40,8 +41,8 @@ fn analytic_circle_numeric_admission_is_shared_by_constructor_and_serde() {
         "{error}"
     );
     let mut invalid = wire;
-    invalid["value"]["ref_direction"] = serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0});
-    let error = serde_json::from_value::<CurveGeometry>(invalid)
+    invalid["value"]["ref_direction"] = cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 1.0});
+    let error = json::from_value::<CurveGeometry>(invalid)
         .unwrap_err()
         .to_string();
     assert!(
@@ -60,11 +61,8 @@ fn analytic_surface_admission_preserves_signed_and_zero_radius_contracts() {
         let sphere = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
             SphereSurface::try_new(center, axis, reference, radius).unwrap(),
         ));
-        let wire = serde_json::to_value(&sphere).unwrap();
-        assert_eq!(
-            serde_json::from_value::<SurfaceGeometry>(wire).unwrap(),
-            sphere
-        );
+        let wire = json::to_value(&sphere).unwrap();
+        assert_eq!(json::from_value::<SurfaceGeometry>(wire).unwrap(), sphere);
     }
     assert!(SphereSurface::try_new(center, axis, reference, 0.0).is_err());
     assert!(TorusSurface::try_new(center, axis, reference, tiny, -tiny).is_ok());
@@ -121,18 +119,18 @@ fn analytic_surfaces_rebuild_from_their_checked_getters() {
 
     for (rebuilt, original) in [
         (
-            serde_json::to_value(PlaneSurface::new(plane.origin(), *plane.frame())).unwrap(),
-            serde_json::to_value(plane).unwrap(),
+            json::to_value(PlaneSurface::new(plane.origin(), *plane.frame())).unwrap(),
+            json::to_value(plane).unwrap(),
         ),
         (
-            serde_json::to_value(TorusSurface::new(
+            json::to_value(TorusSurface::new(
                 torus.center(),
                 *torus.frame(),
                 torus.major_radius(),
                 torus.minor_radius(),
             ))
             .unwrap(),
-            serde_json::to_value(torus).unwrap(),
+            json::to_value(torus).unwrap(),
         ),
     ] {
         assert_eq!(rebuilt, original);
@@ -169,9 +167,9 @@ fn surface_radius_admission_refuses_both_signed_zeros_and_keeps_a_negative_cone_
     }
     let cone = ConeSurface::try_new(center, axis, reference, -0.0, 1.0, 0.0).unwrap();
     assert_eq!(cone.radius().get().to_bits(), (-0.0_f64).to_bits());
-    let wire = serde_json::to_value(cone).unwrap();
+    let wire = json::to_value(cone).unwrap();
     assert_eq!(
-        serde_json::from_value::<ConeSurface>(wire)
+        json::from_value::<ConeSurface>(wire)
             .unwrap()
             .radius()
             .get()
@@ -197,9 +195,9 @@ fn cone_half_angle_admission_is_finiteness_alone() {
     ] {
         let cone = ConeSurface::try_new(center, axis, reference, 1.0, 1.0, half_angle).unwrap();
         assert_eq!(cone.half_angle().get().to_bits(), half_angle.to_bits());
-        let wire = serde_json::to_value(cone).unwrap();
+        let wire = json::to_value(cone).unwrap();
         assert_eq!(
-            serde_json::from_value::<ConeSurface>(wire)
+            json::from_value::<ConeSurface>(wire)
                 .unwrap()
                 .half_angle()
                 .get()
@@ -313,22 +311,22 @@ fn analytic_curves_rebuild_from_their_checked_getters() {
 
     for (rebuilt, original) in [
         (
-            serde_json::to_value(CircleCurve::new(
+            json::to_value(CircleCurve::new(
                 circle.center(),
                 *circle.frame(),
                 circle.radius(),
             ))
             .unwrap(),
-            serde_json::to_value(circle).unwrap(),
+            json::to_value(circle).unwrap(),
         ),
         (
-            serde_json::to_value(EllipseCurve::new(
+            json::to_value(EllipseCurve::new(
                 ellipse.center(),
                 *ellipse.frame(),
                 ellipse.radii(),
             ))
             .unwrap(),
-            serde_json::to_value(ellipse).unwrap(),
+            json::to_value(ellipse).unwrap(),
         ),
     ] {
         assert_eq!(rebuilt, original);
@@ -346,7 +344,7 @@ fn ellipse_curve_serialization_keeps_its_wire_fields() {
     )
     .unwrap();
     assert_eq!(
-        serde_json::to_string(&ellipse).unwrap(),
+        json::to_string(&ellipse).unwrap(),
         r#"{"center":{"x":1.0,"y":2.0,"z":3.0},"axis":{"x":0.0,"y":0.0,"z":1.0},"major_direction":{"x":1.0,"y":0.0,"z":0.0},"major_radius":4.0,"minor_radius":2.0}"#
     );
 }

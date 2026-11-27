@@ -1032,9 +1032,9 @@ fn active_view_recovery_preserves_earlier_losses_and_exact_source() {
         assert_eq!(views.len(), 1);
         assert_eq!(
             views[0].field("list_kind"),
-            Some(serde_json::json!("active"))
+            Some(cadmpeg_core::json!("active"))
         );
-        assert_eq!(views[0].field("list_index"), Some(serde_json::json!(1)));
+        assert_eq!(views[0].field("list_index"), Some(cadmpeg_core::json!(1)));
         for (code, tag, offset) in [
             (
                 crate::loss::RhinoLossCode::IntegrityFailure,

@@ -5,6 +5,7 @@ use crate::feature::tests::{
     raw_parameter, reference, reference_list, test_feature, test_property,
 };
 use crate::record_identity::{Located, RecordTypeId};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::scalar::{Angle, FiniteReal};
 
 struct Fixture {
@@ -237,19 +238,19 @@ fn validator_refuses_each_construction_value_outside_the_positional_form() {
     let f = Fixture::new();
     let definition = positional_definition();
     assert!(matches_definition(&definition));
-    let base = serde_json::to_value(&definition).expect("definition");
+    let base = json::to_value(&definition).expect("definition");
     for (field, value) in [
-        ("closed", serde_json::json!(true)),
-        ("solid", serde_json::json!(false)),
-        ("ruled", serde_json::json!(true)),
-        ("linearize", serde_json::json!(true)),
-        ("op", serde_json::json!("join")),
-        ("max_degree", serde_json::json!(3)),
-        ("allow_multi_profile_faces", serde_json::json!(true)),
+        ("closed", cadmpeg_core::json!(true)),
+        ("solid", cadmpeg_core::json!(false)),
+        ("ruled", cadmpeg_core::json!(true)),
+        ("linearize", cadmpeg_core::json!(true)),
+        ("op", cadmpeg_core::json!("join")),
+        ("max_degree", cadmpeg_core::json!(3)),
+        ("allow_multi_profile_faces", cadmpeg_core::json!(true)),
     ] {
         let mut changed = base.clone();
         changed["value"]["value"][field] = value;
-        let changed = serde_json::from_value(changed).expect("changed loft");
+        let changed = json::from_value(changed).expect("changed loft");
         assert!(!matches_definition(&changed));
     }
     assert!(validates(

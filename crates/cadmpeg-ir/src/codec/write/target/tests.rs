@@ -20,7 +20,7 @@ fn catalog_write_ir(source: Option<(&str, Option<&'static str>)>) -> CadIr {
             )),
             BTreeMap::new(),
         ),
-        None => serde_json::from_value(serde_json::json!({
+        None => cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": format},
             "attributes": {},
         }))
@@ -80,6 +80,42 @@ fn an_explicit_replay_row_is_written_as_the_default_and_flagged() {
     .is_err());
 }
 
+/// A catalog that declares no default resolves an explicit replay row to its
+/// newest row. A file the writer states as the requested row charges nothing;
+/// a file of any other row charges `target.request-displaced`.
+#[test]
+fn an_explicit_replay_row_of_a_catalog_with_no_default_takes_the_newest_row() {
+    const REPLAY: &[DialectId] = &[cadmpeg_core::dialect_id!("test:archive")];
+    let catalog = Catalog::new(CATALOG_WRITE_TARGETS, None).with_replay_rows(REPLAY);
+    let ir = catalog_write_ir(None);
+    let archive = || {
+        Some(WrittenRow {
+            target: cadmpeg_core::dialect_id!("test:archive"),
+            reason: "the stored envelope decides the row".into(),
+        })
+    };
+    for token in ["test:archive", "archive"] {
+        let resolved = resolve_write_request(&ir, TargetRequest::Explicit(token), catalog)
+            .expect("a replay row resolves without a catalog default");
+        assert_eq!(resolved.target_id().as_str(), "test:new");
+        assert_eq!(
+            charged(&resolved, false, archive()),
+            ("test:archive".into(), vec![])
+        );
+        let (target, losses) = charged(&resolved, false, None);
+        assert_eq!(target, "test:new");
+        let [(code, message)] = losses.as_slice() else {
+            panic!("a file of another row is displaced: {losses:?}")
+        };
+        assert_eq!(code, REQUEST_DISPLACED);
+        assert!(
+            message.contains(token) && message.contains("test:new"),
+            "{message}"
+        );
+    }
+    assert!(resolve_write_request(&ir, TargetRequest::Explicit("test:missing"), catalog).is_err());
+}
+
 #[test]
 fn write_request_refuses_an_unknown_explicit_target_with_the_catalog() {
     let ir = catalog_write_ir(None);
@@ -93,8 +129,8 @@ fn write_request_refuses_an_unknown_explicit_target_with_the_catalog() {
         panic!("expected an unsupported target");
     };
     assert_eq!(
-        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"],
-        serde_json::json!({"kind": "unknown_explicit", "requested": "test:missing"})
+        cadmpeg_core::serde_erase::json::to_value(&refusal).expect("serialize refusal")["refusal"],
+        cadmpeg_core::json!({"kind": "unknown_explicit", "requested": "test:missing"})
     );
     assert_eq!(
         refusal
@@ -185,13 +221,22 @@ fn write_request_inherit_with_no_default_takes_the_newest_row() {
     ] {
         let resolved = resolve_write_request(&ir, TargetRequest::Inherit, catalog)
             .expect("a catalog without a default still resolves");
-        assert_eq!(charged(&resolved, true, None), ("test:new".into(), vec![]));
+        let (target, losses) = charged(&resolved, true, None);
+        assert_eq!(target, "test:new");
+        assert_eq!(
+            losses
+                .iter()
+                .map(|(code, _)| code.as_str())
+                .collect::<Vec<_>>(),
+            [SOURCE_DIALECT_DISPLACED]
+        );
     }
 }
 
-/// An `Inherit` request names no row, so a written row other than the one
-/// resolution chose charges only `target.source-dialect-displaced` for a
-/// source that records no dialect, and nothing for a source of another format.
+/// An `Inherit` request names no row, so it charges only
+/// `target.source-dialect-displaced`: for a source that records no dialect,
+/// a source of another format, and no source, each naming the written row,
+/// and the resolved row where the writer states another.
 #[test]
 fn an_inherit_write_of_another_row_charges_only_the_source_code() {
     let row = Some(WrittenRow {
@@ -217,7 +262,62 @@ fn an_inherit_write_of_another_row_charges_only_the_source_code() {
     let foreign = catalog_write_ir(Some(("other", Some("other:only"))));
     let resolved =
         resolve_write_request(&foreign, TargetRequest::Inherit, CATALOG_WRITE_CATALOG).unwrap();
-    assert_eq!(charged(&resolved, true, row), ("test:old".into(), vec![]));
+    assert_eq!(
+        charged(&resolved, true, row.clone()),
+        (
+            "test:old".into(),
+            vec![(
+                SOURCE_DIALECT_DISPLACED.to_owned(),
+                "the document's source is other, which records no test dialect; Inherit \
+                 resolved to test:new, and the file is written as test:old; the stored \
+                 envelope decides the row"
+                    .to_owned()
+            )]
+        )
+    );
+
+    let sourceless = catalog_write_ir(None);
+    let resolved =
+        resolve_write_request(&sourceless, TargetRequest::Inherit, CATALOG_WRITE_CATALOG).unwrap();
+    assert_eq!(
+        charged(&resolved, true, row),
+        (
+            "test:old".into(),
+            vec![(
+                SOURCE_DIALECT_DISPLACED.to_owned(),
+                "the document records no source; Inherit resolved to test:new, and the file \
+                 is written as test:old; the stored envelope decides the row"
+                    .to_owned()
+            )]
+        )
+    );
+    assert_eq!(
+        charged(&resolved, true, None),
+        (
+            "test:new".into(),
+            vec![(
+                SOURCE_DIALECT_DISPLACED.to_owned(),
+                "the document records no source; the file is written as test:new".to_owned()
+            )]
+        ),
+        "an Inherit write with no source resolves to the catalog default and charges it"
+    );
+
+    let resolved =
+        resolve_write_request(&foreign, TargetRequest::Inherit, CATALOG_WRITE_CATALOG).unwrap();
+    assert_eq!(
+        charged(&resolved, true, None),
+        (
+            "test:new".into(),
+            vec![(
+                SOURCE_DIALECT_DISPLACED.to_owned(),
+                "the document's source is other, which records no test dialect; the file is \
+                 written as test:new"
+                    .to_owned()
+            )]
+        ),
+        "an Inherit write from another format resolves to the catalog default and charges it"
+    );
 }
 
 /// §3.2 pins a strict floor only where it states one with the code, and it
@@ -403,4 +503,89 @@ fn catalog_write_explicit_difference_returns_the_displaced_dialect() {
             )]
         )
     );
+}
+
+/// A request that names no target takes the catalog default without a loss
+/// where the source is of another format or absent, and inherits where it is
+/// of this format: a recorded catalog dialect writes as itself, a row the
+/// writer states in its place is charged, and a source that records no
+/// dialect is charged.
+#[test]
+fn an_unnamed_request_inherits_only_from_a_source_of_this_format() {
+    for ir in [
+        catalog_write_ir(None),
+        catalog_write_ir(Some(("other", Some("other:only")))),
+    ] {
+        let resolved = resolve_write_request(&ir, TargetRequest::Unnamed, CATALOG_WRITE_CATALOG)
+            .expect("an unnamed request resolves");
+        assert_eq!(charged(&resolved, true, None), ("test:new".into(), vec![]));
+    }
+
+    let recorded = catalog_write_ir(Some(("test", Some("test:old"))));
+    let resolved =
+        resolve_write_request(&recorded, TargetRequest::Unnamed, CATALOG_WRITE_CATALOG).unwrap();
+    assert_eq!(charged(&resolved, false, None), ("test:old".into(), vec![]));
+
+    let unrecorded = catalog_write_ir(Some(("test", None)));
+    let resolved =
+        resolve_write_request(&unrecorded, TargetRequest::Unnamed, CATALOG_WRITE_CATALOG).unwrap();
+    assert_eq!(
+        charged(&resolved, true, None),
+        (
+            "test:new".into(),
+            vec![(
+                SOURCE_DIALECT_DISPLACED.to_owned(),
+                "the test source records no dialect; the file is written as test:new".to_owned()
+            )]
+        )
+    );
+
+    let recorded = catalog_write_ir(Some(("test", Some("test:old"))));
+    let resolved =
+        resolve_write_request(&recorded, TargetRequest::Unnamed, CATALOG_WRITE_CATALOG).unwrap();
+    assert_eq!(
+        charged(
+            &resolved,
+            false,
+            Some(stated_row(cadmpeg_core::dialect_id!("test:new")))
+        ),
+        (
+            "test:new".into(),
+            vec![(
+                SOURCE_DIALECT_DISPLACED.to_owned(),
+                "source dialect test:old was displaced by target dialect test:new; the source \
+                 dialect identity is not preserved; the stored envelope decides the row"
+                    .to_owned()
+            )]
+        )
+    );
+}
+
+/// A request that names no target, on a document whose source is of another
+/// format or absent, charges nothing whatever row the writer states: no source
+/// dialect exists to lose.
+#[test]
+fn an_unnamed_request_without_a_same_format_source_charges_no_stated_row() {
+    for ir in [
+        catalog_write_ir(None),
+        catalog_write_ir(Some(("other", Some("other:only")))),
+    ] {
+        let resolved =
+            resolve_write_request(&ir, TargetRequest::Unnamed, CATALOG_WRITE_CATALOG).unwrap();
+        assert_eq!(
+            charged(
+                &resolved,
+                true,
+                Some(stated_row(cadmpeg_core::dialect_id!("test:old")))
+            ),
+            ("test:old".into(), vec![])
+        );
+    }
+}
+
+fn stated_row(target: DialectId) -> WrittenRow {
+    WrittenRow {
+        target,
+        reason: "the stored envelope decides the row".into(),
+    }
 }

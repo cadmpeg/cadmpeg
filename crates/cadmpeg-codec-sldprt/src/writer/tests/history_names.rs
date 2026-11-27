@@ -476,7 +476,7 @@ fn a_refused_history_keeps_the_stored_blocks_of_its_member_for_every_history_of_
     let output = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap()
         .write_to(&mut bytes)

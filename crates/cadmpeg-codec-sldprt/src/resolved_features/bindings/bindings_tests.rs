@@ -157,6 +157,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         &cadmpeg_core::decode::test_support::service_decode_context(),
         std::slice::from_ref(&history),
         std::slice::from_mut(&mut lane),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
 

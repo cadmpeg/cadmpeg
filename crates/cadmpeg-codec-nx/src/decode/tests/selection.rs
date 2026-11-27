@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::features::patterns::PatternKind;
@@ -561,8 +562,8 @@ fn decode_preserves_primary_bspline_surface_with_unselected_deltas() {
         )
         .unwrap();
     assert_eq!(
-        serde_json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
-        serde_json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
+        json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
+        json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
@@ -586,8 +587,8 @@ fn decode_preserves_primary_bspline_curve_with_unselected_deltas() {
         )
         .unwrap();
     assert_eq!(
-        serde_json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
-        serde_json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
+        json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
+        json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())

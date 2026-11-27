@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Cross-workspace golden admissions against the embedded support registry.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -69,7 +70,7 @@ fn compiled_read_admissions_match_registry_policy() {
         }
         let bytes = std::fs::read(&path)
             .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()));
-        let value: serde_json::Value = serde_json::from_slice(&bytes)
+        let value: serde_json::Value = json::from_slice(&bytes)
             .unwrap_or_else(|error| panic!("cannot parse {}: {error}", path.display()));
         let count =
             validate_snapshot(&value, &path, &registry).unwrap_or_else(|error| panic!("{error}"));
@@ -149,7 +150,7 @@ fn collect_layer_sets_at(
             }
 
             if object.contains_key("dialect") && object.contains_key("admission") {
-                serde_json::from_value::<DialectMatch>(value.clone()).map_err(|error| {
+                json::from_value::<DialectMatch>(value.clone()).map_err(|error| {
                     AdmissionViolation::new(
                         snapshot,
                         pointer,
@@ -163,7 +164,7 @@ fn collect_layer_sets_at(
 
             if let Some(dialects) = object.get("dialects") {
                 let layers =
-                    serde_json::from_value::<DialectLayers>(dialects.clone()).map_err(|error| {
+                    json::from_value::<DialectLayers>(dialects.clone()).map_err(|error| {
                         AdmissionViolation::new(
                             snapshot,
                             pointer_child(pointer, "dialects"),
@@ -239,7 +240,7 @@ fn check_matching_view_identities(
                     format!("successful {owner} is missing its typed identity"),
                 )
             })?;
-            serde_json::from_value::<FormatIdentity<DialectLayers>>(identity.clone()).map_err(
+            json::from_value::<FormatIdentity<DialectLayers>>(identity.clone()).map_err(
                 |error| {
                     AdmissionViolation::new(
                         snapshot,
@@ -333,21 +334,20 @@ fn check_identity_pair(
             format!("matching identity is missing; expected the layer set at {second_pointer}"),
         )),
         (Some(first), Some(second)) => {
-            let first: DialectLayers = serde_json::from_value(first.clone()).map_err(|error| {
+            let first: DialectLayers = json::from_value(first.clone()).map_err(|error| {
                 AdmissionViolation::new(
                     snapshot,
                     first_pointer,
                     format!("invalid dialect layer set: {error}"),
                 )
             })?;
-            let second: DialectLayers =
-                serde_json::from_value(second.clone()).map_err(|error| {
-                    AdmissionViolation::new(
-                        snapshot,
-                        second_pointer,
-                        format!("invalid dialect layer set: {error}"),
-                    )
-                })?;
+            let second: DialectLayers = json::from_value(second.clone()).map_err(|error| {
+                AdmissionViolation::new(
+                    snapshot,
+                    second_pointer,
+                    format!("invalid dialect layer set: {error}"),
+                )
+            })?;
             if first != second {
                 return Err(AdmissionViolation::new(
                     snapshot,
@@ -569,7 +569,7 @@ fn check_kernel_loss_counts(
             if is_view {
                 if let Some(dialects) = identity.and_then(|identity| identity.get("dialects")) {
                     let layers: DialectLayers =
-                        serde_json::from_value(dialects.clone()).map_err(|error| {
+                        json::from_value(dialects.clone()).map_err(|error| {
                             AdmissionViolation::new(
                                 snapshot,
                                 pointer_child(&pointer_child(pointer, "identity"), "dialects"),
@@ -603,14 +603,13 @@ fn check_kernel_loss_counts(
                     for (index, loss) in losses.iter().enumerate() {
                         let loss_pointer =
                             pointer_child(&pointer_child(pointer, "losses"), &index.to_string());
-                        let loss: LossNote =
-                            serde_json::from_value(loss.clone()).map_err(|error| {
-                                AdmissionViolation::new(
-                                    snapshot,
-                                    &loss_pointer,
-                                    format!("invalid typed loss note: {error}"),
-                                )
-                            })?;
+                        let loss: LossNote = json::from_value(loss.clone()).map_err(|error| {
+                            AdmissionViolation::new(
+                                snapshot,
+                                &loss_pointer,
+                                format!("invalid typed loss note: {error}"),
+                            )
+                        })?;
                         if loss.code.local_code() != "source.kernel-dialect-unverified" {
                             continue;
                         }

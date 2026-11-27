@@ -12,6 +12,7 @@ use crate::records::feature::fixed_parameters::{
 use crate::records::feature::scope::{DesignParameterScope, DesignScopePayload};
 use crate::records::sketch_placement::DesignSketchPlacement;
 use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
@@ -343,7 +344,7 @@ fn fixed_distance_and_through_all_project_on_opposite_sides() {
         second.termination,
         LinearTermination::ThroughAll {}
     ));
-    let wire = serde_json::to_string(&DesignExtrudeExtent::TwoSidedDistanceThroughAll).unwrap();
+    let wire = json::to_string(&DesignExtrudeExtent::TwoSidedDistanceThroughAll).unwrap();
     assert_eq!(wire, "\"two_sided_distance_through_all\"");
     assert_eq!(
         serde_json::from_str::<DesignExtrudeExtent>(&wire).unwrap(),

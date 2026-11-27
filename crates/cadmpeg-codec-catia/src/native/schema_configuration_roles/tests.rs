@@ -2,6 +2,7 @@
 use super::bind;
 use crate::native::CatiaNative;
 use crate::test_support::test_formula::standard_catpart_with_schema_field_roles;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn schema_field_roles_keep_source_declarations_offsets_and_target_class() {
@@ -148,8 +149,7 @@ fn schema_field_roles_preserve_ambiguous_names_without_selecting_one() {
             .collect::<Vec<_>>(),
         ["_FirstRole", "_SecondRole"]
     );
-    let wire =
-        serde_json::to_value(&native.schema_configuration_row_chains[0]).expect("serialize roles");
+    let wire = json::to_value(&native.schema_configuration_row_chains[0]).expect("serialize roles");
     assert!(wire["links"][0]["field_roles"][0].get("name").is_none());
 }
 
@@ -336,16 +336,12 @@ fn field_role_name_has_one_absence_spelling() {
         "body",
     ));
     let role = &native.schema_configuration_row_chains[0].links()[0].field_roles[0];
-    let mut value = serde_json::to_value(role).unwrap();
-    assert!(
-        serde_json::from_value::<super::CatiaSchemaConfigurationFieldRole>(value.clone()).is_ok()
-    );
+    let mut value = json::to_value(role).unwrap();
+    assert!(json::from_value::<super::CatiaSchemaConfigurationFieldRole>(value.clone()).is_ok());
     value.as_object_mut().unwrap().remove("name");
-    let absent: super::CatiaSchemaConfigurationFieldRole =
-        serde_json::from_value(value.clone()).unwrap();
+    let absent: super::CatiaSchemaConfigurationFieldRole = json::from_value(value.clone()).unwrap();
     assert!(absent.name.is_none());
     value["name"] = serde_json::Value::Null;
-    let error =
-        serde_json::from_value::<super::CatiaSchemaConfigurationFieldRole>(value).unwrap_err();
+    let error = json::from_value::<super::CatiaSchemaConfigurationFieldRole>(value).unwrap_err();
     assert!(error.to_string().contains("name"));
 }

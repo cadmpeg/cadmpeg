@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Thin walls carry their Boolean scope, side and thickness controls into the design.
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
+use serde_json::Value;
 
 use super::projection::stored_thin;
 use crate::reader::id;
@@ -42,7 +44,7 @@ fn thin_after_producer(
     });
     members(&bytes, |members| {
         let path = "partstudios/studio/features.json";
-        let mut features: Value = serde_json::from_slice(&members[path]).unwrap();
+        let mut features: Value = json::from_slice(&members[path]).unwrap();
         let native = features["features"][0]["featureId"].clone();
         let producer = json!({"featureType":"extrude","featureId":"stored-producer","parameters":[
             {"parameterId":"bodyType","value":"SOLID"},{"parameterId":"operationType","value":"NEW"},
@@ -53,7 +55,7 @@ fn thin_after_producer(
             .as_array_mut()
             .unwrap()
             .insert(1, producer);
-        members.insert(path.into(), serde_json::to_vec(&features).unwrap());
+        members.insert(path.into(), json::to_vec(&features).unwrap());
         members.insert(
             "partstudios/studio/bodydetails/index.json".into(),
             b"[0,1,2]".to_vec(),

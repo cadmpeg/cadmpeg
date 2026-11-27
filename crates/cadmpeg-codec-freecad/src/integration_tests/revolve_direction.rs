@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Angular sense and stored end faces of CC0 recipe revolutions.
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 use std::path::Path;
 
@@ -100,7 +101,7 @@ fn revolve_recipe_sides_agree_with_stored_solid_end_faces() {
             },
         )
         .expect("stored shape measurement");
-        let report = serde_json::to_value(measured).expect("measurement JSON");
+        let report = json::to_value(measured).expect("measurement JSON");
         let (start, end) = if symmetric {
             (-first / 2.0, first / 2.0)
         } else {

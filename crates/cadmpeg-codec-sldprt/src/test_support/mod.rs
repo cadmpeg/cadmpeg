@@ -8,29 +8,90 @@ use std::io::Write;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::EncodeError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-use cadmpeg_ir::{report::export::WritePath, CadIr, SourceFidelity};
+use cadmpeg_ir::report::export::{SynthesisFidelity, WritePath};
+use cadmpeg_ir::{CadIr, SourceFidelity};
 
 use crate::SldprtCodec;
 
-/// Plans an inherited write through the sealed encoder and writes its bytes.
+/// One write in a session, which keeps the written part as the write read
+/// it back.
+struct SessionWrite<'s, 'f> {
+    session: &'s crate::SldprtWriteSession<'f>,
+    read_back: std::cell::Cell<Option<std::sync::Arc<cadmpeg_ir::codec::DecodeResult>>>,
+}
+
+impl cadmpeg_ir::codec::write::EncoderBackend for SessionWrite<'_, '_> {
+    const FORMAT: cadmpeg_ir::codec::FormatId =
+        <SldprtCodec as cadmpeg_ir::codec::write::EncoderBackend>::FORMAT;
+    const NAME: &'static str = <SldprtCodec as cadmpeg_ir::codec::write::EncoderBackend>::NAME;
+    const REQUEST: cadmpeg_core::decode::DecodeDepth =
+        <SldprtCodec as cadmpeg_ir::codec::write::EncoderBackend>::REQUEST;
+    type Target = cadmpeg_ir::codec::write::target::Catalog;
+    const TARGET: cadmpeg_ir::codec::write::target::Catalog =
+        <SldprtCodec as cadmpeg_ir::codec::write::EncoderBackend>::TARGET;
+
+    fn plan_resolved(
+        &self,
+        input: EncodeInput<'_>,
+        target: cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
+    ) -> Result<cadmpeg_ir::codec::write::ExportBody, CodecError> {
+        let (body, read_back) = crate::writer::target::plan(input, &target, self.session)?;
+        self.read_back.set(read_back);
+        Ok(body)
+    }
+
+    fn restore(
+        &self,
+        input: EncodeInput<'_>,
+        target: &cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
+        notes: &mut Vec<String>,
+        losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    ) -> Result<Option<CadIr>, CodecError> {
+        crate::writer::saved::restore(input, target, notes, losses)
+    }
+}
+
+/// Plans the write of `input` in `session` as `SldprtCodec` plans a
+/// write that names no target, and returns the plan and the written part as the write
+/// read it back, when it did.
+pub(crate) fn plan_in_session(
+    session: &crate::SldprtWriteSession<'_>,
+    input: EncodeInput<'_>,
+) -> Result<
+    (
+        cadmpeg_ir::codec::write::ExportPlan,
+        Option<std::sync::Arc<cadmpeg_ir::codec::DecodeResult>>,
+    ),
+    EncodeError,
+> {
+    let write = SessionWrite {
+        session,
+        read_back: std::cell::Cell::new(None),
+    };
+    let plan = write.plan(input, TargetRequest::Unnamed)?;
+    Ok((plan, write.read_back.into_inner()))
+}
+
+/// Plans a write that names no target, which inherits the dialect of a
+/// same-format source, through the sealed encoder and writes its bytes.
 pub(crate) fn plan_inherited_write(
     ir: &CadIr,
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
 ) -> Result<WritePath, cadmpeg_ir::codec::write::EncodeError> {
-    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
+    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Unnamed)?;
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
-/// Plans an inherited write whose patch path declines the edited document:
+/// Plans a write that names no target and whose patch path declines the
+/// edited document:
 /// the writer synthesizes it without its `SolidWorks` history (§3.4, Paths).
-/// Checks that the output decodes, and returns the
-/// `export:native.records-omitted` message, which states why the patch
-/// declined.
+/// Checks that the output decodes, and returns the degraded reason of the
+/// synthesized path, which states why the patch declined.
 pub(crate) fn plan_inherited_write_declined(ir: &CadIr, fidelity: &SourceFidelity) -> String {
     let mut output = Vec::new();
     let report = SldprtCodec
-        .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Unnamed)
         .unwrap()
         .write_to(&mut output)
         .unwrap();
@@ -45,7 +106,7 @@ pub(crate) fn plan_fixture_write_with_native_envelope_declined(
     let mut output = Vec::new();
     let report = plan_fixture_with_native_envelope(
         EncodeInput::new(ir, Some(fidelity)),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .unwrap()
     .write_to(&mut output)
@@ -54,22 +115,14 @@ pub(crate) fn plan_fixture_write_with_native_envelope_declined(
 }
 
 fn declined(report: &cadmpeg_ir::report::export::ExportReport, output: Vec<u8>) -> String {
-    assert!(
-        matches!(report.write_path(), WritePath::Synthesized { .. }),
-        "{:?}",
-        report.write_path()
-    );
+    let WritePath::Synthesized {
+        fidelity: SynthesisFidelity::Degraded { reason },
+    } = report.write_path()
+    else {
+        panic!("{:?}", report.write_path());
+    };
     decode_bytes(output);
-    report
-        .losses
-        .iter()
-        .find(|loss| {
-            loss.code.local_code() == "native.records-omitted"
-                && loss.message.contains("because the patch of the document")
-        })
-        .unwrap_or_else(|| panic!("{:?}", report.losses))
-        .message
-        .clone()
+    reason.clone()
 }
 
 /// The messages of a write's unwritten-attribute losses, by code.
@@ -127,7 +180,7 @@ pub(crate) fn write_with_unwritten_attributes(
     ir: &CadIr,
     fidelity: &SourceFidelity,
 ) -> Result<(Vec<u8>, UnwrittenLosses), cadmpeg_ir::codec::write::EncodeError> {
-    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
+    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Unnamed)?;
     let losses = UnwrittenLosses::of(&plan.report().losses);
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes)?;
@@ -235,7 +288,7 @@ pub(crate) fn plan_fixture_write_with_native_envelope(
 ) -> Result<WritePath, EncodeError> {
     let plan = plan_fixture_with_native_envelope(
         EncodeInput::new(ir, Some(fidelity)),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )?;
     Ok(plan.write_to(writer)?.write_path().clone())
 }
@@ -248,24 +301,26 @@ fn decode_bytes(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
         .unwrap()
 }
 
-/// Writes through the public encoder with an authored native envelope, and
-/// checks that no stale-solid loss calls an edit written. Returns the report
-/// and the written part read back.
+/// Writes through the sealed encoder with an authored native envelope, and
+/// checks that no stale-solid loss calls an edit written. Returns the report,
+/// the written part read back, and the source fidelity the envelope wraps.
 fn write_without_stale_solid(
     ir: &CadIr,
     fidelity: &SourceFidelity,
 ) -> (
     cadmpeg_ir::report::export::ExportReport,
-    cadmpeg_ir::codec::DecodeResult,
+    std::sync::Arc<cadmpeg_ir::codec::DecodeResult>,
+    SourceFidelity,
 ) {
-    let mut output = Vec::new();
-    let report = plan_fixture_with_native_envelope(
-        EncodeInput::new(ir, Some(fidelity)),
-        TargetRequest::Inherit,
+    let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))
+        .expect("the authored envelope context");
+    let (plan, read_back) = plan_in_session(
+        &crate::SldprtWriteSession::new(Some(&fidelity)),
+        EncodeInput::new(&ir, Some(&fidelity)),
     )
-    .unwrap()
-    .write_to(&mut output)
     .unwrap();
+    let mut output = Vec::new();
+    let report = plan.write_to(&mut output).unwrap();
     assert_eq!(
         loss_messages(
             &report,
@@ -273,7 +328,12 @@ fn write_without_stale_solid(
         ),
         Vec::<String>::new()
     );
-    (report, decode_bytes(output))
+    let written = read_back.unwrap_or_else(|| {
+        std::sync::Arc::new(
+            crate::decode::decode_for_read_back(&output).expect("the written part decodes"),
+        )
+    });
+    (report, written, fidelity)
 }
 
 /// Whether `kind` is `export:edit.dropped`, of any entity kind.
@@ -300,8 +360,8 @@ fn loss_messages(
 pub(crate) fn write_unwritten_feature_edits(
     ir: &CadIr,
     fidelity: &SourceFidelity,
-) -> (Vec<String>, cadmpeg_ir::codec::DecodeResult) {
-    let (report, written) = write_without_stale_solid(ir, fidelity);
+) -> (Vec<String>, std::sync::Arc<cadmpeg_ir::codec::DecodeResult>) {
+    let (report, written, _) = write_without_stale_solid(ir, fidelity);
     (
         report
             .losses
@@ -313,13 +373,16 @@ pub(crate) fn write_unwritten_feature_edits(
     )
 }
 
-/// Writes through the public encoder with an authored native envelope and
-/// returns the messages of the feature edits the output keeps as stored. The
-/// write carries no other edit than a rename, so the output reads back as the
-/// source document under the edited names, and no stale-solid loss calls the
-/// edit written.
-pub(crate) fn unwritten_feature_edits(ir: &CadIr, fidelity: &SourceFidelity) -> Vec<String> {
-    let (report, written) = write_without_stale_solid(ir, fidelity);
+/// Writes through the sealed encoder with an authored native envelope and
+/// returns the messages of the feature edits the output keeps as stored, and
+/// the written part read back. The write carries no other edit than a
+/// rename, so the output reads back as the source document under the edited
+/// names, and no stale-solid loss calls the edit written.
+pub(crate) fn unwritten_feature_edits(
+    ir: &CadIr,
+    fidelity: &SourceFidelity,
+) -> (Vec<String>, std::sync::Arc<cadmpeg_ir::codec::DecodeResult>) {
+    let (report, written, written_from) = write_without_stale_solid(ir, fidelity);
     let unwritten = report
         .losses
         .iter()
@@ -332,14 +395,18 @@ pub(crate) fn unwritten_feature_edits(ir: &CadIr, fidelity: &SourceFidelity) -> 
         .map(|loss| loss.message.as_str())
         .collect::<Vec<_>>();
     // The write reads the source image the authored envelope wraps.
-    let (_, written_from) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))
-        .expect("the authored envelope context");
-    let source = written_from
+    let image = written_from
         .retained_record(crate::SOURCE_IMAGE_ID)
         .and_then(|record| record.data())
-        .unwrap()
-        .to_vec();
-    let source = decode_bytes(source);
+        .unwrap();
+    let decoded;
+    let source = match nist::decoded(image) {
+        Some(specimen) => specimen,
+        None => {
+            decoded = decode_bytes(image.to_vec());
+            &decoded
+        }
+    };
     let renames = source
         .ir()
         .model
@@ -362,13 +429,13 @@ pub(crate) fn unwritten_feature_edits(ir: &CadIr, fidelity: &SourceFidelity) -> 
         readback::unnamed(
             readback::beyond(
                 readback::diff(&expected, written.ir()),
-                &readback::baseline(&source)
+                &readback::baseline(source)
             ),
             &messages
         ),
         Vec::new()
     );
-    unwritten
+    (unwritten, written)
 }
 
 /// Write an edit that shapes the solid through the public encoder, and check
@@ -383,7 +450,7 @@ pub(crate) fn write_history_over_stale_solid(
     let report = SldprtCodec
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )?
         .write_to(writer)?;
     assert!(

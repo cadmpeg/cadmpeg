@@ -1133,14 +1133,49 @@ An open literal or comment provides no continuation boundary.
 CADIR decision: the first statement of a repeated instance name, in file
 order across all DATA sections, is the instance, and every reference by the
 name resolves to it (CADIR §2.2). Each later statement of the name is read
-and not stated: its exact source is retained, and it is charged one
-`step/parse.record-omitted` loss that names the instance name and gives the
-copy's byte span. Where the first statement is unreadable, it is given up as
-its own part with the records that need it (CADIR §3.3), and no later
-statement of the name stands in its place: each later readable statement is
-charged as above. A later unreadable statement is given up as its own part,
-and the first statement stands. The repetition gives up neither the file nor
-the DATA section.
+and not stated. It is charged one `step/parse.record-omitted` loss that names
+the instance name and gives the copy's byte span. A copy that states the same
+entity names and parameters as a first statement that stands drops nothing,
+and its exact source is retained. Each other copy is given up as a
+`data_record` part over its exact source (CADIR §3.3).
+Where the first statement is unreadable, it is given up as its own part, and
+the records that need it drop with it. No later statement of the name stands
+in its place: each later readable statement is given up as its own part. A
+later unreadable statement is given up as its own part, and the first
+statement stands. The repetition gives up neither the file nor the DATA
+section.
+
+CADIR decision: a DATA statement with a reference that names no instance and
+no REFERENCE binding is given up as a `data_record` part over its exact
+source. An ANCHOR or DATA item whose expansion exceeds its bound is given up
+as an `anchor_record` or `data_record` part. An item that exceeds its bound
+only because it names an omitted anchor drops with the part of that anchor.
+An anchor or record that needs a given-up statement drops with that part, and
+its exact source is retained as an omitted statement. The part names each
+dropped statement by the id of its omitted statement
+(`step:file:omitted#<offset>`). A record that names a given-up statement only as an entry
+of an unordered aggregate loses that entry. A DATA instance that the reader
+cannot decode is given up as a `data_record` part over its statement. The
+part keeps the digest only where the document keeps the exact source of the
+instance as an opaque record. A record that the reader drops only because it
+needs a given-up or dropped instance drops with that instance. An instance
+that is a value of no record, such as a `VECTOR` or a placement, keeps its
+exact source as an opaque record, and the give-up names no record for it.
+When the reader gives up a topology root, the base shell of each shell of the
+root and each face of that base shell drop with the root. The give-up names
+each by the id that the root mints for it: the shell id
+(`step:data:shell#N`, or `step:data:shell#N-root-R` where the document has
+more than one distinct root) and the face id with its shell and root scope.
+An oriented shell mints no record of its own. A shell that another root
+builds, and a face that another root holds, stay in the document. A carrier
+that keeps the face instance as its source object stays in the document. A
+`STYLED_ITEM` binding whose target drops with the root drops with that
+target. When the reader gives up an
+`EDGE_BASED_WIREFRAME_MODEL` or a `SHELL_BASED_WIREFRAME_MODEL` because none
+of its members commits, each member drops with the model. The give-up names
+each member by the shell id that the model mints for it. A connected edge
+set or a shell that a model or root omits is given up only where no other
+model or root builds it.
 
 Length values convert to millimetres. Plane-angle values convert to radians.
 `PLANE_ANGLE_MEASURE_WITH_UNIT` requires a `PLANE_ANGLE_UNIT`, and all
@@ -1442,7 +1477,9 @@ branch adjustment. A local parameter maps to `u1 + s` or `u1 - s`, and to
 `v1 + t` or `v1 - t`, according to the stored senses. On a cyclic basis axis,
 the forward branch increases the second endpoint by one period when it is
 below the first; the reversed branch increases the first endpoint by one
-period when it is below the second. A
+period when it is below the second. A trimmed or offset surface whose
+construction is not valid, such as a trim with a zero parameter range, stays
+in the document as one unknown carrier that keeps its source record. A
 `SURFACE_REPLICA` retains the complete parent relation,
 including a rectangular or curve-bounded surface; its transformation changes
 model-space location and dimensions while preserving the parent parameter
@@ -1605,7 +1642,9 @@ one distinct root exists, source edge and vertex identities remain shared
 within that root. When multiple distinct roots exist, every root scopes its
 shell, edge, and vertex identities by root instance; a root with multiple shell
 owners also scopes carriers by shell. Solid roots are `Solid` bodies and
-surface roots are `Sheet` bodies. This preserves independent roots without
+surface roots are `Sheet` bodies. A nonempty `REPRESENTATION_ITEM.name` of a
+root is the name of its body; the body of alias roots takes the first nonempty
+name in instance order. This preserves independent roots without
 claiming one global CADIR identity.
 
 Sheet and wire representations commit each independently resolvable shell or
@@ -2712,6 +2751,10 @@ projection-end shape aspect, and positive projected length to a zone.
 `PROJECTED_ZONE_DEFINITION_WITH_OFFSET` adds a signed offset. A zone can have
 more than one projected definition. Zone references supply ownership;
 aggregate order does not. All length values use their explicit measure units.
+CADIR decision: a zone whose defining tolerance is a given-up tolerance is a
+value of that tolerance and has no charge of its own. A zone whose defining
+tolerance is not a transferred geometric tolerance is given up as a
+`data_record` part over its statement (CADIR §3.3).
 CADIR decision: the reader recognizes only the exact characteristic leaf
 names above. An unrecognized direct entity name ending in `_TOLERANCE`,
 including the abstract `GEOMETRIC_TOLERANCE` name, is not a kind and remains a

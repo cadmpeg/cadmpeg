@@ -16,6 +16,7 @@ use super::super::sketch::{
     CurveGeometry, Entity, OriginPlane, PlannedSketch, RelationKind, Support,
 };
 use super::super::types;
+use super::super::{Culprit, Part, RecordFailure};
 use super::{count, Context, AGGREGATE};
 use crate::writer::generate::presentation::TypeRow;
 use cadmpeg_ir::math::portable::Portable;
@@ -238,14 +239,14 @@ pub(super) fn write(
     ctx: &Context<'_>,
     sketches: &[PlannedSketch<'_>],
     out: &mut DesignRecords,
-) -> Result<(), CodecError> {
+) -> Result<(), RecordFailure> {
     let roster = &ctx.roster.sketches;
     let Some(root) = roster.root else {
         return Ok(());
     };
     #[cfg(test)]
     if let Some(error) = super::super::requested_sketch_failure() {
-        return Err(error);
+        return Err(error.into());
     }
     let classes = Classes::of(ctx)?;
     let mut identity = FIRST_IDENTITY;
@@ -260,7 +261,9 @@ pub(super) fn write(
             ordinal,
             rolled_back: position >= ctx.marker,
         };
-        identity = item.write(out, identity)?;
+        identity = item
+            .write(out, identity)
+            .map_err(|failure| failure.or_named(|| Culprit::Sketch(planned.feature.clone())))?;
     }
     let containers = roster
         .items
@@ -414,7 +417,11 @@ struct Item<'a> {
 impl Item<'_> {
     /// The item's records, with point and curve identities from `identity`.
     /// Returns the next free identity.
-    fn write(&self, out: &mut DesignRecords, mut identity: u64) -> Result<u64, CodecError> {
+    fn write(&self, out: &mut DesignRecords, mut identity: u64) -> Result<u64, RecordFailure> {
+        #[cfg(test)]
+        if let Some(error) = super::super::requested_record_failure(self.planned.feature) {
+            return Err(error.into());
+        }
         self.container(out)?;
         self.frame(out)?;
         let mut next = || {
@@ -461,7 +468,8 @@ impl Item<'_> {
         self.scope(out)?;
         self.placement_path(out)?;
         self.placement(out)?;
-        self.dimensions(out, ordinals)?;
+        self.dimensions(out, ordinals)
+            .map_err(|failure| failure.or_named(|| Culprit::Part(Part::Dimensions)))?;
         Ok(identity)
     }
 

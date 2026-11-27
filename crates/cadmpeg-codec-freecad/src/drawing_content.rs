@@ -128,14 +128,14 @@ pub(super) fn transfer(
         }
         if let Some(height) = scalar(
             properties,
-            &annotation.object,
+            annotation.object.as_str(),
             "TextSize",
             "App::PropertyLength",
         )?
         .and_then(PositiveLength::new)
         {
             annotation.text_style.height = Some(height);
-            if let Some(font) = property(properties, &annotation.object, "Font")?
+            if let Some(font) = property(properties, annotation.object.as_str(), "Font")?
                 .filter(|property| property.type_name == "App::PropertyFont")
             {
                 annotation.text_style.font_family = font_family(font);

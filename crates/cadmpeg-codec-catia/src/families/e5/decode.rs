@@ -328,6 +328,21 @@ refusal,
         let mut losses = Vec::new();
         if !topology_transferred {
             losses.push((CatiaLossCode::TopologyE5GraphUnclosed).note("E5 carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.".to_string()));
+            let face_records = topology
+                .iter()
+                .flat_map(|topology| topology.faces.iter().map(|face| face.record_id))
+                .collect::<std::collections::BTreeSet<_>>();
+            let code = CatiaLossCode::TopologyE5GraphUnclosed.kind();
+            losses.extend(face_records.into_iter().map(|record_id| {
+                cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                    cadmpeg_ir::ids::Identity::compose(
+                        &cadmpeg_ir::identity_namespace!("catia", "e5", "face"),
+                        record_id,
+                    ),
+                    format_args!("{code}: the reference graph of the face did not close"),
+                )
+                .loss()
+            }));
         }
         insert_unresolved_carrier_loss(&ir, &mut losses);
         if let Err(error) = link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations) {
@@ -345,6 +360,7 @@ refusal,
             },
             annotations,
             unknowns,
+            given_up: Vec::new(),
             admitted_model_entities: admission.admitted(),
         }))
     })()
@@ -1026,10 +1042,14 @@ fn attach_e5_free_vertices(
         .map_err(cadmpeg_core::CodecError::malformed)?;
     let shell_id = ShellId::mint("catia:e5:shell#unbound-points".to_owned())
         .map_err(cadmpeg_core::CodecError::malformed)?;
-    for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
+    for key in [
+        cadmpeg_ir::annotations::AnnotationKey::from(&body_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&region_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&shell_id),
+    ] {
         annotate(
             annotations,
-            id,
+            &key,
             "e5_0d_03",
             0,
             "unbound_point_owner",

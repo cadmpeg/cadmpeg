@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::CadIr;
+
 const CHORD_BOUND_TOLERANCE: f64 = 1e-10;
 use crate::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
 use crate::geometry::revision_forms::RevisionSurfaceParameterization;
