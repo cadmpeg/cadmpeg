@@ -27,18 +27,31 @@ The hole keeps its thread specification without pitch.
 Each Part Studio states its v11 design layer. The scope is the studio's
 root definition, and one ordered timeline holds a design feature for each
 model feature, in `features.json` order, with the stored rollback bar. A
-design feature has the id of its model feature. Sketches, solid extrudes of a
-whole sketch (blind, through all, symmetric, up to next), thin extrudes,
-revolves, and offset datum planes take their typed operation. Every other
-feature takes its operation family; where the model row decodes more than the
-family, `onshape/history.design-operation-unresolved` names the feature. A
-derived Part Studio is a native design operation, and
+design feature has the id of its model feature, and a suppressed feature
+keeps its definition beside its suppressed state. Sketches, extrudes of a
+whole sketch, its regions, or its entities (blind, through all, symmetric,
+up to next, up to a face), thin extrudes, revolves, sweeps, fillets,
+chamfers, shells, holes, derived Booleans, and offset datum planes take their
+typed operation. A selected face or edge is a Native pick named by its
+deterministic id, and an edge pick carries the edge's stored sample as its
+witness. Tangent propagation is one Explicit term on the selected edges with
+G1 propagation. A chamfer with two setbacks reads the first on the face whose
+loop runs along the edge and charges `onshape/history.chamfer-side-assumed`
+(ONSHAPE-013). A feature whose model row the design cannot state takes its
+operation family, and `onshape/history.design-operation-unresolved` names
+the feature. A derived Part Studio is a native design operation, and
 `onshape/history.design-operation-native` names its captured design, which
 stays in the model row. A sketch whose frame or curves the
-design cannot state falls back to its family alone. Variables and feature and
-sketch dimensions are design parameters with neutral expressions; an
-extrude's depth and a revolve's angle bind them. Sketch constraints are
-design relations, on point entities for the curve ends and centres they name.
+design cannot state falls back to its family alone. Each body that one
+feature before the rollback bar makes takes a generated name by that
+feature. Variables and feature and sketch dimensions are design parameters.
+An expression the reader evaluates is a neutral expression with the units
+and terms of the stored text, and a parameter whose literals state one unit
+declares it. Any other expression is its stored source text, with
+`onshape/parameter.expression-text`. Each operation binds the parameters of
+the values it states. Sketch constraints are design relations, on point
+entities for the curve ends and centres they name, and a curve end takes
+the point id Onshape stores as its native name.
 A thin extrude keeps a Native model operation, and
 `onshape/extrude.thin-model-not-supported` names the gap; a thin design
 feature that the projection refuses keeps its family and reports

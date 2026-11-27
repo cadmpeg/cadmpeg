@@ -392,6 +392,9 @@ and `matedCS`, a connector frame. A direct part path gives the frame in the
 part coordinates. `matedCS` stores
 three-component `origin`, `xAxis`, `yAxis`, and `zAxis` arrays. The origin uses
 metres. The axes are the columns of the connector rotation matrix.
+The evaluated `matedCS` frames include the effect of the mate's
+`flipPrimaryAxis`, `flipSecondaryAxis`, and `secondaryAxisAlignment`
+settings, so the solved connector frames carry those settings.
 
 | `mateType` | Joint family |
 | --- | --- |

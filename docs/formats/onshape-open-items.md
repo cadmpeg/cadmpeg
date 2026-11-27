@@ -149,6 +149,18 @@ Known: The feature specification stores `placement` as `AT_ORIGIN` or `AT_MATE_C
 
 Need: `importDerived` features that store a non-default value of one of these fields, with the rollback states before and after each feature and the referenced studio.
 
+## ONSHAPE-013 — Chamfer setback sides
+
+Question: On which face of each selected edge does a `chamfer` feature measure `width1` of a `TWO_OFFSETS` chamfer and `width` of a `DISTANCE_ANGLE` chamfer, and how does `oppositeDirection` change that face?
+
+Known: A `chamfer` feature stores `chamferType` (`EQUAL_OFFSETS`, `TWO_OFFSETS`, or `DISTANCE_ANGLE`), the setbacks `width`, `width1`, and `width2`, the angle `angle`, the Boolean `oppositeDirection`, and the edge selection `entities`. An `EQUAL_OFFSETS` chamfer has one setback on both faces. The feature record names no reference face.
+
+Need: Build a block and chamfer one edge with `TWO_OFFSETS`, `width1` twice `width2`. Save it with `oppositeDirection` false and then true. Repeat with `DISTANCE_ANGLE`. Compare the chamfer face's edges in the final body with the two faces of the selected edge in the rollback state before the chamfer, and with the edge's direction there.
+
+Conflict: The two faces give mirrored chamfer faces.
+
+Note: The decoder reads the first setback on the face whose loop runs along the edge in the edge's own direction, swapped when `oppositeDirection` is true, and charges `history.chamfer-side-assumed`.
+
 ## ONSHAPE-030 — Shell wall sense with opposite direction
 
 Question: Does a stored `oppositeDirection` of `true` on a `shell` feature grow the wall outward from the original boundary, and which side of an opening face carries the wall?
