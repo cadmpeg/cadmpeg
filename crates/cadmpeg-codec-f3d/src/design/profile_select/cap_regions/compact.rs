@@ -1088,16 +1088,17 @@ fn plane_material(
 
 /// The regions of an Intersect that its transition kept, when the transition
 /// removed at least one other region. An Intersect keeps the body inside the
-/// profile. Among the planes parallel to the sketch that the transition
-/// changed within the extent of the Intersect, a region is removed when the
-/// material of a plane held its interior before the transition and not after
-/// it, and kept when the material of a plane holds it on both sides. The
-/// material of a plane is every face on it, changed or not. A region that no
-/// such plane holds is not selected. `None` when a plane within the extent
-/// has a changed face with no proven cap, when a region is both removed and
-/// kept, when a kept region encloses an island, when the removed regions
-/// disagree with the changed planes, or when a curve the selection names
-/// bounds no kept region or a kept region has no named boundary curve.
+/// profile. Among the planes parallel to the sketch within the extent of the
+/// Intersect, a region is removed when the material of a plane held its
+/// interior before the transition and not after it, and kept when the
+/// material of a plane holds it on both sides. The material of a plane is
+/// every face on it, changed or not. A plane that no changed face lies on
+/// counts too, when every face on it has a proven cap. A region that no such
+/// plane holds is not selected. `None` when a plane within the extent has a
+/// changed face with no proven cap, when a region is both removed and kept,
+/// when a kept region encloses an island, when the removed regions disagree
+/// with the changed planes, or when a curve the selection names bounds no
+/// kept region or a kept region has no named boundary curve.
 pub(in crate::design::profile_select) fn intersect_candidate(
     sketch: &cadmpeg_ir::sketches::Sketch,
     resolution: super::super::ScopedExtrudeProfileResolution<'_>,
@@ -1150,6 +1151,40 @@ pub(in crate::design::profile_select) fn intersect_candidate(
         };
         plane.before = held_before;
         plane.after = held_after;
+    }
+    // A plane that no face of the transition changed still shows material
+    // that the transition retained.
+    let mut offsets: Vec<f64> = Vec::new();
+    for topology in [before, after] {
+        let index = HistoricalTopologyIndex::new(topology);
+        for face in &topology.faces {
+            let ParallelPlane::At(point) = parallel_plane_indexed(&index, *face, frame.normal)
+            else {
+                continue;
+            };
+            let offset = frame.height(point);
+            if within(offset)
+                && !planes
+                    .iter()
+                    .map(|plane| plane.offset)
+                    .chain(offsets.iter().copied())
+                    .any(|known| (known - offset).abs() <= tolerance)
+            {
+                offsets.push(offset);
+            }
+        }
+    }
+    for offset in offsets {
+        if let (Some(held_before), Some(held_after)) = (
+            plane_material(&frame, before, offset, tolerance),
+            plane_material(&frame, after, offset, tolerance),
+        ) {
+            planes.push(PlaneSides {
+                offset,
+                before: held_before,
+                after: held_after,
+            });
+        }
     }
     let work = ProfileGeometryWork::new();
     let Some(regions) = atomic_sketch_regions(

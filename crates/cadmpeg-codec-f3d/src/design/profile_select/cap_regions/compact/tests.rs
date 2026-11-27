@@ -944,3 +944,30 @@ fn an_intersect_reads_the_material_of_the_faces_it_left_unchanged() {
     assert!(curves.iter().any(|curve| curve.ends_with("#right")));
     assert!(!curves.iter().any(|curve| curve.ends_with("#left")));
 }
+
+/// A plane that no face of the transition changed shows material that the
+/// transition retained, when it lies within the extent of the Intersect.
+#[test]
+fn an_intersect_reads_the_retained_material_of_an_unchanged_plane() {
+    let mut lines = rectangle("outer", 0.0, 2.0).to_vec();
+    lines.push(("middle", (1.0, 0.0), (1.0, 1.0)));
+    let named = ["middle", "right", "bottom", "top"];
+    let run = |height: f64| {
+        let before = [strip(1, 0.0, 0.0, 1.0), strip(2, height, 1.0, 2.0)];
+        let after = [strip(2, height, 1.0, 2.0)];
+        run_intersect(
+            &lines,
+            &before,
+            &after,
+            BooleanOp::Intersect,
+            &named,
+            two_down(),
+        )
+        .0
+    };
+    let curves = selected_curves(run(-1.0));
+    assert!(curves.iter().any(|curve| curve.ends_with("#right")));
+    assert!(!curves.iter().any(|curve| curve.ends_with("#left")));
+    // The same face beyond the extent is no evidence.
+    assert!(run(-5.0).is_none());
+}
