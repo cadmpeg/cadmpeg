@@ -42,7 +42,9 @@ wrapper. The wrapper is the 16-byte magic
 `23 1d d5 71 da 81 48 a2 a8 58 98 b2 1b 89 ef 99`, followed by the
 uncompressed byte count as u32 LE, the complete zlib-member byte count as u32
 LE, that zlib member, and an 8-byte trailer. The zlib member expands to exactly
-the declared uncompressed byte count. Decoders retain the wrapper bytes and
+the declared uncompressed byte count. A wrapper whose uncompressed byte count
+or zlib-member byte count is zero holds an empty stream, as does such a frame
+of the chained-section form. Decoders retain the wrapper bytes and
 apply semantic parsers to the inflated bytes.
 
 Native block payloads that carry wrapped Parasolid streams use a chained-section
