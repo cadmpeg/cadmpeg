@@ -32,8 +32,9 @@ pub(super) fn parameters<'a>(
     ctx: &DecodeContext<'_>,
     index: &Index<'a>,
     node: XmlNode<'a>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<ManufacturingParameter>, CodecError> {
-    let mut parameters = super::parameters(ctx, index, node)?;
+    let mut parameters = super::parameters(ctx, index, node, losses)?;
     let local = index.local(node);
     let documented = local
         .iter()

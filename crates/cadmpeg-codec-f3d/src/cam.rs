@@ -2,7 +2,7 @@
 //! Manufacture workspace definitions from Iron.Document XML.
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -127,10 +127,17 @@ fn source(
     })
 }
 
+/// The element forms the format states (`object`, `tool`, `toolpath`).
 fn record(node: XmlNode<'_>) -> bool {
+    matches!(node.tag_name().name(), "object" | "tool" | "toolpath")
+}
+
+/// Element forms that other CAM documents name records with. The format
+/// does not state them, so a record in one of them stays in the native XML.
+fn unrecognised_form(node: XmlNode<'_>) -> bool {
     matches!(
         node.tag_name().name(),
-        "object" | "section" | "tool" | "toolpath" | "operation" | "setup" | "job"
+        "section" | "operation" | "setup" | "job"
     )
 }
 
@@ -140,7 +147,6 @@ struct Index<'a> {
     /// Local descendant elements of each record, in document order.
     locals: HashMap<usize, Vec<XmlNode<'a>>>,
     setup: Vec<bool>,
-    under_container: Vec<bool>,
     setup_ancestor: Vec<Option<XmlNode<'a>>>,
 }
 
@@ -164,7 +170,6 @@ impl<'a> Index<'a> {
         let count = document.descendants().count();
         let mut owner = ctx.alloc_filled(count, None::<usize>, "index CAM owners")?;
         let mut locals: HashMap<usize, Vec<XmlNode<'a>>> = HashMap::new();
-        let mut job_owner = HashSet::new();
         for node in document.descendants() {
             let Some(parent) = node.parent() else {
                 continue;
@@ -177,34 +182,15 @@ impl<'a> Index<'a> {
             owner[id(node)] = near;
             if let (Some(near), true) = (near, node.is_element()) {
                 locals.entry(near).or_default().push(node);
-                if node.has_tag_name("Parameter")
-                    && node
-                        .attribute("name")
-                        .is_some_and(|name| name.starts_with("job_"))
-                {
-                    job_owner.insert(near);
-                }
             }
         }
         let mut setup = ctx.alloc_filled(count, false, "index CAM setups")?;
-        for node in document.descendants() {
-            setup[id(node)] = node.has_tag_name("setup")
-                || node.has_tag_name("job")
-                || (node.has_tag_name("object") && node.attribute("strategy") == Some("setup"))
-                || (node.has_tag_name("section")
-                    && (matches!(node.attribute("type"), Some("setup" | "job"))
-                        || job_owner.contains(&id(node))));
-        }
-        let mut container = ctx.alloc_filled(count, false, "index CAM containers")?;
-        let mut under_container = ctx.alloc_filled(count, false, "index CAM operations")?;
         let mut setup_ancestor = ctx.alloc_filled(count, None, "index CAM setup ancestors")?;
         for node in document.descendants() {
             let own = id(node);
-            container[own] = node.has_tag_name("operation")
-                || (!setup[own] && (node.has_tag_name("section") || object_operation(node)));
+            setup[own] = node.has_tag_name("object") && node.attribute("strategy") == Some("setup");
             if let Some(parent) = node.parent() {
                 let up = id(parent);
-                under_container[own] = under_container[up] || container[up];
                 setup_ancestor[own] = if setup[up] {
                     Some(parent)
                 } else {
@@ -215,7 +201,6 @@ impl<'a> Index<'a> {
         Ok(Self {
             locals,
             setup,
-            under_container,
             setup_ancestor,
         })
     }
@@ -225,14 +210,7 @@ impl<'a> Index<'a> {
     }
 
     fn is_operation(&self, node: XmlNode<'a>) -> bool {
-        let own = id(node);
-        node.has_tag_name("operation")
-            || (object_operation(node) && !self.setup[own])
-            || (node.has_tag_name("section")
-                && !self.setup[own]
-                && (node.attribute("strategy").is_some()
-                    || node.children().any(|child| child.has_tag_name("toolpath"))))
-            || (node.has_tag_name("toolpath") && !self.under_container[own])
+        object_operation(node) && !self.setup[id(node)]
     }
 
     fn setup_of(&self, node: XmlNode<'a>) -> Option<XmlNode<'a>> {
@@ -260,27 +238,25 @@ impl<'a> Index<'a> {
     }
 }
 
-/// The unit an `expression` literal names: a number followed by a unit
-/// suffix (`2mm`, `1000mmpm`, `10000rpm`). The parameter's `value` is the
-/// number in that unit. An expression of any other form names no unit.
-fn expression_unit(expression: &str) -> Option<&'static str> {
+/// The numeric literal and unit suffix of an `expression` of the form
+/// `2mm`, `1000mmpm`, `10000rpm`.
+fn literal_suffix(expression: &str) -> Option<&str> {
     let expression = expression.trim();
     let split = expression.find(|c: char| c.is_ascii_alphabetic())?;
     expression[..split].replace(',', ".").parse::<f64>().ok()?;
-    Some(match &expression[split..] {
-        "mm" => "mm",
-        "cm" => "cm",
-        "m" => "m",
-        "in" => "in",
-        "deg" => "deg",
-        "rad" => "rad",
-        "rpm" => "rpm",
-        "mmpm" => "mm/min",
-        "cmpm" => "cm/min",
-        "mpm" => "m/min",
-        "inpm" => "in/min",
-        _ => return None,
-    })
+    Some(&expression[split..])
+}
+
+/// The unit an `expression` literal names. Only the suffixes the format
+/// states name a unit: `mm`, `mmpm`, and `rpm`. The parameter's `value` is
+/// the number in that unit.
+fn expression_unit(expression: &str) -> Option<&'static str> {
+    match literal_suffix(expression)? {
+        "mm" => Some("mm"),
+        "mmpm" => Some("mm/min"),
+        "rpm" => Some("rpm"),
+        _ => None,
+    }
 }
 
 fn parameter_value(node: XmlNode<'_>) -> &str {
@@ -300,7 +276,19 @@ fn parameters<'a>(
     ctx: &DecodeContext<'_>,
     index: &Index<'a>,
     node: XmlNode<'a>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<ManufacturingParameter>, CodecError> {
+    let unread = index.local(node).iter().any(|child| {
+        child.has_tag_name("Parameter")
+            && child.attribute("expression").is_some_and(|text| {
+                literal_suffix(text).is_some() && expression_unit(text).is_none()
+            })
+    });
+    if unread {
+        losses.push(F3dLossCode::CamParameterUnitUnread.note(
+            "a CAM parameter states a unit suffix the format does not state; its value has no unit and no process binding",
+        ));
+    }
     index
         .local(node)
         .iter()
@@ -438,16 +426,10 @@ fn identity(member: &str, node: XmlNode<'_>, kind: &str) -> String {
     format!("f3d:cam:{kind}#{digest}:{}", node.range().start)
 }
 
+/// The strategy names the format states; every other name is `Other`.
 fn family(strategy: &str) -> ManufacturingStrategy {
-    match strategy.to_ascii_lowercase().as_str() {
-        "face" | "face2d" | "2dface" => ManufacturingStrategy::Face,
-        "adaptive2d" | "2dadaptive" => ManufacturingStrategy::Adaptive2d,
-        "pocket2d" | "2dpocket" => ManufacturingStrategy::Pocket2d,
-        "contour2d" | "2dcontour" => ManufacturingStrategy::Contour2d,
-        "drill" | "drilling" => ManufacturingStrategy::Drilling,
-        "adaptive" | "adaptive3d" | "3dadaptive" => ManufacturingStrategy::Adaptive3d,
-        "parallel" => ManufacturingStrategy::Parallel,
-        "scallop" => ManufacturingStrategy::Scallop,
+    match strategy {
+        "face" => ManufacturingStrategy::Face,
         _ => ManufacturingStrategy::Other,
     }
 }
@@ -508,8 +490,13 @@ fn parse(
         u64_from_index(document.descendants().count()),
         "admit CAM XML elements",
     )?;
+    if document.descendants().any(unrecognised_form) {
+        losses.push(F3dLossCode::CamRecordFormUnread.note(
+            "CAM records in section, operation, setup, or job elements are not forms the format states; they stay in the native XML",
+        ));
+    }
     if document.descendants().any(|node| record(node)) {
-        losses.push(F3dLossCode::CamStructureAssumed.note("CAM section nesting, strategy and tool attributes, and named parameter metadata use the source-definition reading; native XML retains all source fields"));
+        losses.push(F3dLossCode::CamStructureAssumed.note("CAM object nesting, strategy and tool attributes, and named parameter metadata use the source-definition reading; native XML retains all source fields"));
     }
     let index = Index::new(ctx, &document)?;
     let mut setups = BTreeMap::new();
@@ -520,10 +507,9 @@ fn parse(
         .filter_map(|node| node.attribute("id").map(|id| (id, node)))
         .collect();
     let mut tools = BTreeMap::new();
-    let mut tool_nodes = BTreeMap::new();
     let mut tool_numbers = BTreeMap::<String, Vec<(usize, ToolId)>>::new();
     for node in document.descendants().filter(|node| index.is_setup(*node)) {
-        let parameters = parameters(ctx, &index, node)?;
+        let parameters = parameters(ctx, &index, node, losses)?;
         let id = SetupId::mint(identity(member, node, "cam_setup"))
             .map_err(|error| CodecError::malformed(format_args!("CAM setup identity: {error}")))?;
         if parameters.iter().any(|parameter| parameter.name.is_empty()) {
@@ -547,10 +533,9 @@ fn parse(
         .descendants()
         .filter(|node| node.has_tag_name("tool"))
     {
-        let parameters = tools::parameters(ctx, &index, node)?;
+        let parameters = tools::parameters(ctx, &index, node, losses)?;
         let id = ToolId::mint(identity(member, node, "cam_tool"))
             .map_err(|error| CodecError::malformed(format_args!("CAM tool identity: {error}")))?;
-        tool_nodes.insert(node.range().start, id.clone());
         if parameters.iter().any(|parameter| parameter.name.is_empty()) {
             losses.push(
                 F3dLossCode::CamToolUnreadable
@@ -568,7 +553,7 @@ fn parse(
         let holder = node
             .children()
             .filter(|child| child.has_tag_name("holder"))
-            .map(|child| self::parameters(ctx, &index, child))
+            .map(|child| self::parameters(ctx, &index, child, losses))
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .flatten()
@@ -644,16 +629,12 @@ fn parse(
                 id
             }
         };
-        let mut parameters = parameters(ctx, &index, node)?;
-        let path = if node.has_tag_name("toolpath") {
-            Some(node)
-        } else {
-            node.children().find(|child| {
-                child.has_tag_name("toolpath") || child.has_tag_name("toolpathToolView")
-            })
-        };
-        if let Some(path) = path.filter(|path| *path != node) {
-            parameters.extend(self::parameters(ctx, &index, path)?);
+        let mut parameters = parameters(ctx, &index, node, losses)?;
+        let path = node
+            .children()
+            .find(|child| child.has_tag_name("toolpath") || child.has_tag_name("toolpathToolView"));
+        if let Some(path) = path {
+            parameters.extend(self::parameters(ctx, &index, path, losses)?);
         }
         if parameters.iter().any(|parameter| parameter.name.is_empty()) {
             losses.push(
@@ -662,19 +643,12 @@ fn parse(
                 ),
             );
         }
-        let strategy = node
-            .attribute("strategy")
-            .or_else(|| path.and_then(|path| path.attribute("strategy")))
-            .or_else(|| value(&parameters, "strategy"))
-            .or_else(|| value(&parameters, "operation-strategy"))
-            .or_else(|| value(&parameters, "operation_strategy"))
-            .or_else(|| path.and_then(|path| path.attribute("type")))
-            .or_else(|| node.attribute("type"))
-            .unwrap_or("");
-        if strategy.is_empty() {
-            losses.push(F3dLossCode::CamOperationUnreadable.note("CAM operation strategy is absent; the operation retains its parameters and source XML"));
+        let strategy = owned(ctx, node.attribute("strategy").unwrap_or(""))?;
+        if family(&strategy) == ManufacturingStrategy::Other {
+            losses.push(F3dLossCode::CamRecordFormUnread.note(format!(
+                "CAM operation strategy {strategy:?} is not one the format states; the operation keeps its strategy name and source XML"
+            )));
         }
-        let strategy = owned(ctx, strategy)?;
         let valid = path
             .and_then(|path| path.attribute("valid"))
             .or_else(|| node.attribute("valid"));
@@ -690,26 +664,8 @@ fn parse(
                 None
             }
         };
-        let tool_key = node
-            .attribute("tool")
-            .filter(|key| !key.is_empty())
-            .or_else(|| node.attribute("toolId").filter(|key| !key.is_empty()))
-            .or_else(|| {
-                path.and_then(|path| path.attribute("tool"))
-                    .filter(|key| !key.is_empty())
-            })
-            .or_else(|| value(&parameters, "tool_id").filter(|key| !key.is_empty()));
-        let mut tool = if let Some(key) = tool_key {
-            tools.get(key).cloned()
-        } else {
-            node.children()
-                .find(|child| child.has_tag_name("tool"))
-                .or_else(|| {
-                    path.and_then(|path| path.children().find(|child| child.has_tag_name("tool")))
-                })
-                .and_then(|tool| tool_nodes.get(&tool.range().start))
-                .cloned()
-        };
+        let tool_key = node.attribute("toolId").filter(|key| !key.is_empty());
+        let mut tool = tool_key.and_then(|key| tools.get(key).cloned());
         if tool_key.is_none() && tool.is_none() {
             if let Some(number) = value(&parameters, "tool_number") {
                 let candidates = tool_numbers.get(number).map_or(&[][..], Vec::as_slice);
@@ -735,7 +691,7 @@ fn parse(
             );
         }
         let mut geometry = selections(ctx, &index, node, losses)?;
-        if let Some(path) = path.filter(|path| *path != node) {
+        if let Some(path) = path {
             geometry.extend(selections(ctx, &index, path, losses)?);
         }
         let order = orders.entry(setup.clone()).or_default();

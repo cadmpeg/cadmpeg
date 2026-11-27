@@ -34,6 +34,8 @@ pub(crate) enum F3dLossCode {
     CamToolUnreadable,
     CamSelectionUnresolved,
     CamStockOffsetModeUnread,
+    CamRecordFormUnread,
+    CamParameterUnitUnread,
     /// A counted display override candidate fails its local grammar.
     SceneOverrideRefused,
     DraftPartingControlsPartial,
@@ -1457,6 +1459,8 @@ impl F3dLossCode {
         Self::CamToolUnreadable,
         Self::CamSelectionUnresolved,
         Self::CamStockOffsetModeUnread,
+        Self::CamRecordFormUnread,
+        Self::CamParameterUnitUnread,
         Self::SceneOverrideRefused,
         Self::DraftPartingControlsPartial,
         Self::DraftNeutralAnchorAssumed,
@@ -2316,6 +2320,8 @@ impl F3dLossCode {
             Self::CamToolUnreadable => "cam.tool-unreadable",
             Self::CamSelectionUnresolved => "cam.selection-unresolved",
             Self::CamStockOffsetModeUnread => "cam.stock-offset-mode-unread",
+            Self::CamRecordFormUnread => "cam.record-form-unread",
+            Self::CamParameterUnitUnread => "cam.parameter-unit-unread",
             Self::SceneOverrideRefused => "scene.override-refused",
             Self::DraftPartingControlsPartial => "feature.draft-parting-controls-partial",
             Self::DraftNeutralAnchorAssumed => "feature.draft-neutral-anchor-assumed",
@@ -3569,6 +3575,8 @@ impl F3dLossCode {
             Self::CamToolUnreadable => Severity::Warning,
             Self::CamSelectionUnresolved => Severity::Warning,
             Self::CamStockOffsetModeUnread => Severity::Warning,
+            Self::CamRecordFormUnread => Severity::Warning,
+            Self::CamParameterUnitUnread => Severity::Warning,
             Self::SceneOverrideRefused => Severity::Warning,
             Self::BendStationaryRoleAssumed
             | Self::BendAngleUnresolved
@@ -4426,6 +4434,8 @@ impl F3dLossCode {
             Self::CamToolUnreadable => LossTaxonomy::ProcessRecordOmitted,
             Self::CamSelectionUnresolved => LossTaxonomy::SourceAssociationOmitted,
             Self::CamStockOffsetModeUnread => LossTaxonomy::ProcessRecordOmitted,
+            Self::CamRecordFormUnread => LossTaxonomy::ProcessRecordOmitted,
+            Self::CamParameterUnitUnread => LossTaxonomy::ProcessRecordOmitted,
             Self::SceneOverrideRefused => LossTaxonomy::RecordNotTyped,
             Self::BendStationaryRoleAssumed
             | Self::BendAngleUnresolved
@@ -5403,6 +5413,8 @@ mod tests {
                 "cam.tool-unreadable",
                 "cam.selection-unresolved",
                 "cam.stock-offset-mode-unread",
+                "cam.record-form-unread",
+                "cam.parameter-unit-unread",
                 "scene.override-refused",
                 "feature.draft-parting-controls-partial",
                 "feature.draft-neutral-anchor-assumed",

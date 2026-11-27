@@ -310,14 +310,44 @@ fn cam_oversized_document_is_a_loss_and_decoding_continues() {
 }
 
 #[test]
-fn cam_empty_tool_attribute_falls_through_to_tool_id() {
-    let (target, _) = parse_text(
-        r#"<document><tool id="t"/><object id="job" strategy="setup"/><object parent="job" strategy="face" tool="" toolId="t"/></document>"#,
+fn cam_empty_tool_id_is_no_reference() {
+    let (target, losses) = parse_text(
+        r#"<document><tool id="t"/><object id="job" strategy="setup"/><object parent="job" strategy="face" toolId=""/></document>"#,
     );
-    assert_eq!(
-        target.operations[0].tool.as_ref(),
-        Some(&target.tools[0].id)
+    assert_eq!(target.operations[0].tool, None);
+    assert!(!has_loss(&losses, F3dLossCode::CamToolUnreadable));
+}
+
+#[test]
+fn cam_unstated_record_forms_stay_native_with_a_loss() {
+    let (target, losses) = parse_text(
+        r#"<document><section type="setup" name="S"><section strategy="face"><toolpath valid="true"/></section></section><setup/><job/><operation strategy="face"/></document>"#,
     );
+    assert!(target.setups.is_empty());
+    assert!(target.operations.is_empty());
+    assert!(has_loss(&losses, F3dLossCode::CamRecordFormUnread));
+}
+
+#[test]
+fn cam_unstated_strategy_name_stays_native_with_a_loss() {
+    let (target, losses) = parse_text(
+        r#"<document><object id="job" strategy="setup"/><object parent="job" strategy="adaptive2d"/><object parent="job" strategy="face"/></document>"#,
+    );
+    assert_eq!(target.operations[0].strategy, "adaptive2d");
+    assert_eq!(target.operations[0].family, ManufacturingStrategy::Other);
+    assert_eq!(target.operations[1].family, ManufacturingStrategy::Face);
+    assert!(has_loss(&losses, F3dLossCode::CamRecordFormUnread));
+}
+
+#[test]
+fn cam_unstated_unit_suffix_names_no_unit_and_is_a_loss() {
+    let (target, losses) = parse_text(
+        r#"<document><object id="job" strategy="setup"><Parameters><Parameter name="job_stockOffsetTop" value="1" expression="1in"/><Parameter name="job_stockOffsetSides" value="2" expression="2mm"/></Parameters></object></document>"#,
+    );
+    let parameters = &target.setups[0].parameters;
+    assert_eq!(parameters[0].unit, None);
+    assert_eq!(parameters[1].unit.as_deref(), Some("mm"));
+    assert!(has_loss(&losses, F3dLossCode::CamParameterUnitUnread));
 }
 
 #[test]

@@ -110,36 +110,29 @@ fn unstated_stock_modes_keep_their_source_name() {
     );
 }
 
-fn operation_with(parameters: &str) -> (CadIr, Value) {
-    let (ir, _) = decode(&format!(
+fn operation_with(parameters: &str) -> (CadIr, Value, Vec<LossNote>) {
+    let (ir, losses) = decode(&format!(
         r#"<document><object id="job" strategy="setup"/><object id="op" parent="job" strategy="face"><Parameters>{parameters}</Parameters></object></document>"#
     ));
     let operation = json(&ir.process.operations[0]);
-    (ir, operation)
+    (ir, operation, losses)
 }
 
 #[test]
-fn technology_binds_parameters_and_honours_their_units() {
-    let (ir, operation) = operation_with(
-        r#"<Parameter name="tool_feedCutting" value="1200" expression="1200mmpm"/><Parameter name="tool_feedPlunge" value="40" expression="40inpm"/><Parameter name="tool_feedRamp" value="30" expression="30cmpm"/><Parameter name="tool_spindleSpeed" value="9000" expression="9000rpm"/><Parameter name="stepover" value="0.5" expression="0.5in"/><Parameter name="tolerance" value="0.1" expression="0.1mm"/>"#,
+fn technology_binds_parameters_of_the_stated_units() {
+    let (ir, operation, losses) = operation_with(
+        r#"<Parameter name="tool_feedCutting" value="1200" expression="1200mmpm"/><Parameter name="tool_spindleSpeed" value="9000" expression="9000rpm"/><Parameter name="stepover" value="4.5" expression="4.5mm"/>"#,
     );
     let technology = &operation["technology"];
-    let feed = |name| parameter(&ir, "operation", name);
-    let (cutting, value) = feed("tool_feedCutting");
+    let (cutting, value) = parameter(&ir, "operation", "tool_feedCutting");
     assert!((value - 1200.0 / 60.0).abs() < 1e-9);
-    let (plunge, value) = feed("tool_feedPlunge");
-    assert!((value - 40.0 * 25.4 / 60.0).abs() < 1e-9);
-    let (ramp, value) = feed("tool_feedRamp");
-    assert!((value - 30.0 * 10.0 / 60.0).abs() < 1e-9);
     let feeds = technology["feeds"].as_array().unwrap();
-    assert_eq!(feeds.len(), 3);
-    for (role, id) in [("cutting", cutting), ("plunge", plunge), ("ramp", ramp)] {
-        let rate = feeds.iter().find(|feed| feed[0]["kind"] == role).unwrap();
-        assert_eq!(
-            rate[1],
-            serde_json::json!({"kind":"per_time","value":bound(&id)})
-        );
-    }
+    assert_eq!(feeds.len(), 1);
+    assert_eq!(feeds[0][0]["kind"], "cutting");
+    assert_eq!(
+        feeds[0][1],
+        serde_json::json!({"kind":"per_time","value":bound(&cutting)})
+    );
     let (speed, value) = parameter(&ir, "operation", "tool_spindleSpeed");
     assert!((value - 9000.0 * std::f64::consts::TAU / 60.0).abs() < 1e-9);
     assert_eq!(
@@ -147,18 +140,21 @@ fn technology_binds_parameters_and_honours_their_units() {
         serde_json::json!({"kind":"rotation","value":bound(&speed)})
     );
     let (stepover, value) = parameter(&ir, "operation", "stepover");
-    assert!((value - 12.7).abs() < 1e-9);
+    assert!((value - 4.5).abs() < 1e-9);
     assert_eq!(technology["stepover"], bound(&stepover));
-    assert_eq!(
-        technology["tolerance"],
-        bound(&parameter(&ir, "operation", "tolerance").0)
-    );
+    assert!(!has_loss(&losses, F3dLossCode::CamParameterUnitUnread));
 }
 
 #[test]
-fn technology_omits_a_number_without_a_stated_unit() {
-    let (_, operation) = operation_with(r#"<Parameter name="stepover" value="4.5"/>"#);
-    assert!(operation["technology"].get("stepover").is_none());
+fn technology_leaves_unstated_unit_suffixes_unbound() {
+    let (_, operation, losses) = operation_with(
+        r#"<Parameter name="tool_feedPlunge" value="40" expression="40inpm"/><Parameter name="tool_feedRamp" value="30" expression="30cmpm"/><Parameter name="stepover" value="0.5" expression="0.5in"/><Parameter name="tolerance" value="0.1"/>"#,
+    );
+    let technology = &operation["technology"];
+    assert_eq!(technology["feeds"].as_array().unwrap().len(), 0);
+    assert!(technology.get("stepover").is_none());
+    assert!(technology.get("tolerance").is_none());
+    assert!(has_loss(&losses, F3dLossCode::CamParameterUnitUnread));
 }
 
 #[test]

@@ -158,7 +158,6 @@ pub(crate) fn scope(
 /// A process dimension or process value of a source parameter.
 type Dim = (i32, i32, i32);
 const LENGTH: Dim = (1, 0, 0);
-const ANGLE: Dim = (0, 1, 0);
 const FEED: Dim = (1, 0, -1);
 const SPEED: Dim = (0, 1, -1);
 
@@ -167,15 +166,7 @@ const SPEED: Dim = (0, 1, -1);
 fn unit_scale(unit: &str) -> Option<(f64, Dim)> {
     Some(match unit {
         "mm" => (1.0, LENGTH),
-        "cm" => (10.0, LENGTH),
-        "m" => (1000.0, LENGTH),
-        "in" | "inch" | "inches" => (25.4, LENGTH),
-        "deg" => (std::f64::consts::PI / 180.0, ANGLE),
-        "rad" => (1.0, ANGLE),
         "mm/min" => (1.0 / 60.0, FEED),
-        "cm/min" => (10.0 / 60.0, FEED),
-        "m/min" => (1000.0 / 60.0, FEED),
-        "in/min" => (25.4 / 60.0, FEED),
         "rpm" => (std::f64::consts::TAU / 60.0, SPEED),
         _ => return None,
     })

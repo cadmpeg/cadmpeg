@@ -219,8 +219,9 @@ F3Z members have separate CAM identity namespaces and source member paths.
 Parameters keep their source expressions as Fusion CAM expression tokens.
 Unclassified numbers keep their source numeric value. Native parameter records
 keep the exact evaluated text and XML spelling. Face strategies map to plane
-milling. A parameter's unit is the suffix of its expression literal. Feeds
-convert from their per-minute unit to millimetres per second; spindle speeds
+milling. A parameter's unit is the `mm`, `mmpm`, or `rpm` suffix of its
+expression literal; any other suffix is unread (`cam.parameter-unit-unread`).
+Feeds convert from millimetres per minute to millimetres per second; spindle speeds
 convert from revolutions per minute to radians per second. A number with no
 stated unit is neither bound to a feed nor to a length field.
 
@@ -229,5 +230,6 @@ records, produce `cam.document-unreadable`; resource refusals propagate.
 Named losses record assumed section ownership, synthesized setups, repeated tool
 bindings, and tool-number bindings. Native geometry selections produce
 `cam.selection-unresolved`. A stock offset mode other than `simple` produces
-`cam.stock-offset-mode-unread`. Computed motions, NC code, machine definitions,
+`cam.stock-offset-mode-unread`. Record forms and strategy names the format
+does not state stay native and produce `cam.record-form-unread`. Computed motions, NC code, machine definitions,
 slice data, and simulation results remain in the retained archive.

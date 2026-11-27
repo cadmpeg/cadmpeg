@@ -4435,12 +4435,10 @@ chain identifies its setup. `displayName` holds the record name.
 `Parameters/Parameter` elements hold named values. The `value` attribute
 holds the evaluated value text. `expression` holds the source expression;
 its spelling can differ from the evaluated value text. An `expression` that
-is a numeric literal followed by a unit suffix (`2mm`, `1000mmpm`,
-`10000rpm`) states the unit of `value`, which is the number in that unit.
-The suffixes are the length units `mm`, `cm`, `m`, and `in`; the angle units
-`deg` and `rad`; `rpm`; and, for a feed, a length unit followed by `pm`
-(`mmpm`). An `expression` of any other form states no unit, and `value` is
-then a number with no stated unit.
+is a numeric literal followed by `mm`, `mmpm`, or `rpm` (`2mm`, `1000mmpm`,
+`10000rpm`) states the unit of `value`, which is the number in millimeters,
+millimeters per minute, or revolutions per minute. An `expression` of any
+other form states no unit, and `value` is then a number with no stated unit.
 
 Setup parameters use the `job_` prefix. Stock parameters use `job_stock`;
 WCS orientation and origin parameters use `wcs_orientation_` and
