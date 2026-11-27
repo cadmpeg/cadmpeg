@@ -158,7 +158,7 @@ pub(crate) fn project(
             surfaces: &ir.geometry.surfaces,
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )?;
     losses.extend(typed.loss);
     losses.extend(typed.assumed);
     losses.extend(typed.state_construction);

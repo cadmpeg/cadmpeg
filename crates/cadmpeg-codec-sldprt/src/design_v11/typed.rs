@@ -99,7 +99,7 @@ pub(super) fn project(
     timeline: &mut Timeline,
     entries: &Entries<'_>,
     scope: &Scope<'_>,
-) -> Typed {
+) -> Result<Typed, cadmpeg_core::decode::ResourceLimit> {
     let supports = supports(&model.features, histories, lanes, timeline);
     let mut sketches = sketch::project(
         &mut timeline.features,
@@ -112,7 +112,7 @@ pub(super) fn project(
             outside_profile: scope.outside_profile,
             surfaces: scope.surfaces,
         },
-    );
+    )?;
     let stated = sketches
         .records
         .iter()
@@ -196,7 +196,7 @@ pub(super) fn project(
     let sketch_notes = sketch_notes(&sketches);
     let measured = std::mem::take(&mut sketches.measured);
     let references = std::mem::take(&mut sketches.references);
-    Typed {
+    Ok(Typed {
         measured,
         references,
         bound: bound
@@ -219,7 +219,7 @@ pub(super) fn project(
         revolve_sense_assumed,
         sketch_notes,
         datums,
-    }
+    })
 }
 
 /// One note naming the sketches outside the timeline, one naming the

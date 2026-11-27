@@ -870,7 +870,8 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
             surfaces: &ir.geometry.surfaces,
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let sketches = typed.sketches;
     let [sketch] = sketches.records.as_slice() else {
@@ -1033,7 +1034,8 @@ fn a_point_at_the_center_of_a_circle_holds_the_center_role() {
             surfaces: &ir.geometry.surfaces,
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     let center = typed
         .sketches
         .entities
@@ -1075,7 +1077,8 @@ fn typed_timeline<'a>(
             surfaces: &ir.geometry.surfaces,
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     (timeline, entries, typed)
 }
 
@@ -1559,7 +1562,8 @@ fn members_follow_the_features_they_depend_on() {
             surfaces: &ir.geometry.surfaces,
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let boss = &timeline.features[member_position(&timeline, "Boss")];
     assert!(

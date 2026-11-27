@@ -211,7 +211,8 @@ fn typed_with_lanes(
             surfaces: &ir.geometry.surfaces,
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     (timeline, typed)
 }
 

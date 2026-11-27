@@ -337,7 +337,8 @@ fn a_sketch_states_its_entities_and_binds_its_dimensions_to_parameters_of_its_sc
         &mut features,
         &mut out,
         &mut losses,
-    );
+    )
+    .expect("the session admits the evaluation");
 
     let sketch = SketchId::mint(SKETCH).unwrap();
     assert_eq!(
@@ -446,7 +447,8 @@ fn a_sketch_of_an_unordered_member_anchors_its_plane_in_the_current_state() {
         &mut features,
         &mut out,
         &mut Vec::new(),
-    );
+    )
+    .expect("the session admits the evaluation");
     let SketchPlane::Placed(plane) = &out.records[0].plane else {
         panic!("a placed plane");
     };
@@ -502,7 +504,8 @@ fn a_native_dimension_binds_its_parameter_and_a_reference_dimension_binds_a_driv
         &mut features,
         &mut out,
         &mut losses,
-    );
+    )
+    .expect("the session admits the evaluation");
     let relation = |key: &str| {
         &out.constraints
             .iter()
@@ -579,7 +582,8 @@ fn a_relation_on_a_line_end_names_a_point_minted_there() {
         &mut features,
         &mut out,
         &mut Vec::new(),
-    );
+    )
+    .expect("the session admits the evaluation");
     let end = format!("{}:end", entity("line"));
     let point = out
         .entities
@@ -682,7 +686,8 @@ fn a_spatial_sketch_is_the_operation_of_its_feature_and_construction_joins_its_g
         &mut features,
         &mut out,
         &mut losses,
-    );
+    )
+    .expect("the session admits the evaluation");
     let [sketch] = out.spatial.as_slice() else {
         panic!("one spatial sketch: {:#?}", out.spatial);
     };
@@ -717,7 +722,8 @@ fn a_relation_on_the_start_of_a_circle_states_the_circle_and_is_charged() {
         &mut features,
         &mut out,
         &mut losses,
-    );
+    )
+    .expect("the session admits the evaluation");
     assert!(
         out.constraints
             .iter()
@@ -792,7 +798,8 @@ fn a_line_with_stored_end_points_and_an_arc_with_a_stored_center_name_those_poin
         &mut features,
         &mut out,
         &mut losses,
-    );
+    )
+    .expect("the session admits the evaluation");
     let id = |key: &str| cadmpeg_ir::sketches::SketchEntityId::mint(entity(key)).unwrap();
     let roles = |key: &str| {
         out.entities
@@ -858,7 +865,8 @@ fn two_points_at_a_center_that_no_point_record_names_leave_it_to_a_minted_point(
         &mut features,
         &mut out,
         &mut Vec::new(),
-    );
+    )
+    .expect("the session admits the evaluation");
     let center = format!("{}:center", entity("arc"));
     assert!(
         out.entities

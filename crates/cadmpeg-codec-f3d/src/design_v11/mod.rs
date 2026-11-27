@@ -300,7 +300,7 @@ pub(crate) fn project(
             &mut projected.features,
             &mut sketches,
             losses,
-        );
+        )?;
         ctx.charge_entities(1, "project F3D v11 design scope")?;
         ir.design.scopes.push(DesignScope {
             active_configuration: scoped_configurations.active.get(&definition).cloned(),

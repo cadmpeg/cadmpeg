@@ -389,7 +389,7 @@ pub(super) fn project(
     features: &mut [Feature],
     out: &mut Sketches,
     losses: &mut Vec<LossNote>,
-) {
+) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
     let model = scope.model;
     let mut restated = out
         .records
@@ -441,9 +441,10 @@ pub(super) fn project(
         } else {
             Anchor::Input
         };
-        restate(&feature.id, record, scope, anchor, out, losses);
+        restate(&feature.id, record, scope, anchor, out, losses)?;
         feature.definition.operation = FeatureOperation::Sketch(record.id.clone());
     }
+    Ok(())
 }
 
 /// Restate the spatial sketch `record` as the sketch of `owner`. A dimension
@@ -495,7 +496,7 @@ fn restate(
     anchor: Anchor,
     out: &mut Sketches,
     losses: &mut Vec<LossNote>,
-) {
+) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
     let model = scope.model;
     let entities = model
         .sketch_entities
@@ -507,7 +508,7 @@ fn restate(
         &entities,
         |curve, _, point| scope.incidence.names(curve, point),
         |a, b| (a[0] - b[0]).hypot(a[1] - b[1]) <= scope.linear,
-    );
+    )?;
     for entity in &entities {
         let definition = match planar_curve(&entity.geometry) {
             Some(form) => EntityDefinition::Free(form),
@@ -550,7 +551,7 @@ fn restate(
             .map(|constraint| constraint.definition.kind()),
         &entities,
         &stored,
-    );
+    )?;
     out.entities.extend(loci.entities(&record.id));
     let points = Points {
         entities: &entities,
@@ -614,6 +615,7 @@ fn restate(
         source_settings: NativeOptions::new(),
         native_ref: record.native_ref.clone(),
     });
+    Ok(())
 }
 
 /// The relation that states `constraint` of the sketch of `owner`, and

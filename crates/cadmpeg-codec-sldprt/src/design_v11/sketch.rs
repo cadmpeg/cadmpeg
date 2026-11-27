@@ -41,6 +41,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
+use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::construction::{
     kinds, Construction, ConstructionInput, FrameValue, InputReference, InputRole, Relation,
@@ -258,7 +259,10 @@ pub(super) struct Context<'a> {
 
 /// Type each `Unresolved` sketch feature of `features` whose sketch the
 /// decoder typed.
-pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Sketches {
+pub(super) fn project(
+    features: &mut [Feature],
+    context: &Context<'_>,
+) -> Result<Sketches, ResourceLimit> {
     let mut out = Sketches::default();
     let mut preceding = HashSet::new();
     for feature in features.iter_mut() {
@@ -289,22 +293,29 @@ pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Sketch
                 .supports
                 .get(&feature.id)
                 .filter(|(datum, _)| preceding.contains(datum));
-            match sketch(feature, context, support, &mut out) {
-                Ok(id) => feature.definition.operation = FeatureOperation::Sketch(id),
+            match sketch(feature, context.model, support) {
+                Ok((record, holder)) => {
+                    restate(&feature.id, record, context, holder, &mut out)?;
+                    feature.definition.operation = FeatureOperation::Sketch(record.id.clone());
+                }
                 Err(reason) => out.unprojected.push((feature.id.clone(), reason)),
             }
         }
         preceding.insert(feature.id.clone());
     }
-    out.outside = outside(features, context, &mut out);
-    out
+    out.outside = outside(features, context, &mut out)?;
+    Ok(out)
 }
 
 /// The owners of the sketches of `context` that no feature of `features`
 /// restates, each sketch restated as its owner's operation. The owner is the
 /// v10 feature whose operation names the sketch, where no feature of
 /// `features` has its id, else a feature minted for the sketch.
-fn outside(features: &[Feature], context: &Context<'_>, out: &mut Sketches) -> Vec<Feature> {
+fn outside(
+    features: &[Feature],
+    context: &Context<'_>,
+    out: &mut Sketches,
+) -> Result<Vec<Feature>, ResourceLimit> {
     let restated = out
         .records
         .iter()
@@ -338,7 +349,7 @@ fn outside(features: &[Feature], context: &Context<'_>, out: &mut Sketches) -> V
         } else {
             Holder::Unordered
         };
-        restate(&id, record, context, holder, out);
+        restate(&id, record, context, holder, out)?;
         owners.push(Feature {
             name: source
                 .and_then(|feature| feature.name.clone())
@@ -403,7 +414,7 @@ fn outside(features: &[Feature], context: &Context<'_>, out: &mut Sketches) -> V
             id,
         });
     }
-    owners
+    Ok(owners)
 }
 
 /// Restate the spatial sketch `record` as the sketch of `owner`. Its
@@ -461,13 +472,13 @@ fn minted_owner(namespace: &cadmpeg_ir::ids::IdentityNamespace, sketch: &str) ->
     )
 }
 
-fn sketch(
+/// The sketch record of the sketch feature `feature` of `model`, and its
+/// holder, the feature that `support` places.
+fn sketch<'a>(
     feature: &Feature,
-    context: &Context<'_>,
-    support: Option<&(FeatureId, PrincipalEntity)>,
-    out: &mut Sketches,
-) -> Result<SketchId, &'static str> {
-    let model = context.model;
+    model: &'a cadmpeg_ir::document::Model,
+    support: Option<&'a (FeatureId, PrincipalEntity)>,
+) -> Result<(&'a cadmpeg_ir::sketches::Sketch, Holder<'a>), &'static str> {
     let source = source(model, &feature.id).ok_or("the sketch feature has no decoded record")?;
     let (id, block) = match source.evaluation.definition() {
         FeatureDefinition::Operation(LegacyOperation::Sketch { sketch }) => (
@@ -491,8 +502,7 @@ fn sketch(
     } else {
         Holder::Ordered(support)
     };
-    restate(&feature.id, record, context, holder, out);
-    Ok(record.id.clone())
+    Ok((record, holder))
 }
 
 /// The v10 feature `id` of `model`.
@@ -536,7 +546,7 @@ fn restate(
     context: &Context<'_>,
     holder: Holder<'_>,
     out: &mut Sketches,
-) {
+) -> Result<(), ResourceLimit> {
     let model = context.model;
     let entities = model
         .sketch_entities
@@ -561,7 +571,7 @@ fn restate(
         .filter(|(_, reading)| reading.is_none())
         .map(|(entity, _)| *entity)
         .collect::<Vec<_>>();
-    let points_of = StoredPoints::new(context.ctx, &stored, names_point, coincident);
+    let points_of = StoredPoints::new(context.ctx, &stored, names_point, coincident)?;
     for ((entity, form), reading) in entities
         .iter()
         .zip(forms.iter().cloned())
@@ -607,7 +617,7 @@ fn restate(
             .map(|constraint| constraint.definition.kind()),
         &stored,
         &points_of,
-    );
+    )?;
     sketch_entities.extend(points.entities(&record.id));
     let mut constraints = Vec::new();
     let mut driven = Vec::new();
@@ -706,6 +716,7 @@ fn restate(
             }),
     );
     out.constraints.extend(constraints);
+    Ok(())
 }
 
 type SketchId = cadmpeg_ir::sketches::SketchId;

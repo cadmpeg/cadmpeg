@@ -65,7 +65,8 @@ pub(super) fn project(
             surfaces: &ir.geometry.surfaces,
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let FeatureOperation::Extrude(extrude) =
         &timeline_feature(&timeline, "Boss").definition.operation

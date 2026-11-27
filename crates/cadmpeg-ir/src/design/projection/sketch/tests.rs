@@ -224,8 +224,10 @@ fn a_relation_on_a_line_end_names_a_point_minted_there_with_its_role() {
         {"kind": "end", "value": "test:model:sketch-entity#l"},
         {"kind": "entity", "value": "test:model:sketch-entity#p"}]}));
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let stored = StoredPoints::new(&ctx, &[&line, &point], |_, _, _| false, |a, b| a == b);
-    let points = LocusPoints::new(&ctx, [&on], &[&line, &point], &stored);
+    let stored = StoredPoints::new(&ctx, &[&line, &point], |_, _, _| false, |a, b| a == b)
+        .expect("the session admits the evaluation");
+    let points = LocusPoints::new(&ctx, [&on], &[&line, &point], &stored)
+        .expect("the session admits the evaluation");
     let end = SketchLocus::End(line.id().clone());
     let minted = SketchEntityId::mint("test:model:sketch-entity#l:end").unwrap();
     assert_eq!(points.operand(&end), Some(Operand::Entity(minted.clone())));
@@ -260,13 +262,15 @@ fn a_relation_on_the_end_of_an_unbounded_curve_is_unplaced() {
         "entity": "test:model:sketch-entity#c"}));
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let none = StoredPoints::default();
-    let points = LocusPoints::new(&ctx, [&on], &[&circle], &none);
+    let points = LocusPoints::new(&ctx, [&on], &[&circle], &none)
+        .expect("the session admits the evaluation");
     assert!(points.unplaced(&on));
     assert!(points.entities(&sketch).is_empty());
     let center = kind(json!({"kind": "coincident_loci", "loci": [
         {"kind": "center", "value": "test:model:sketch-entity#c"},
         {"kind": "entity", "value": "test:model:sketch-entity#c"}]}));
-    let centers = LocusPoints::new(&ctx, [&center], &[&circle], &none);
+    let centers = LocusPoints::new(&ctx, [&center], &[&circle], &none)
+        .expect("the session admits the evaluation");
     assert_eq!(
         centers.position(&SketchLocus::Center(circle.id().clone())),
         Some([0.0, 0.0])
@@ -302,7 +306,8 @@ fn a_relation_on_a_stored_end_or_center_names_the_stored_point_with_its_roles() 
         json!({"kind": "point", "position": {"u": 2.0, "v": 0.0}}),
     );
     let entities = [&line, &arc, &origin, &shared];
-    let stored = StoredPoints::new(&ctx, &entities, |_, _, _| true, |a, b| a == b);
+    let stored = StoredPoints::new(&ctx, &entities, |_, _, _| true, |a, b| a == b)
+        .expect("the session admits the evaluation");
     let relations = [
         kind(json!({"kind": "coincident_loci", "loci": [
             {"kind": "start", "value": "test:model:sketch-entity#l"},
@@ -311,7 +316,8 @@ fn a_relation_on_a_stored_end_or_center_names_the_stored_point_with_its_roles() 
             {"kind": "end", "value": "test:model:sketch-entity#l"},
             {"kind": "start", "value": "test:model:sketch-entity#a"}]})),
     ];
-    let points = LocusPoints::new(&ctx, &relations, &entities, &stored);
+    let points = LocusPoints::new(&ctx, &relations, &entities, &stored)
+        .expect("the session admits the evaluation");
     let operand = |locus| points.operand(&locus);
     assert_eq!(
         operand(SketchLocus::Start(line.id().clone())),
@@ -364,7 +370,8 @@ fn two_stored_points_at_one_end_leave_the_end_to_a_minted_point() {
         json!({"kind": "point", "position": {"u": 2.0, "v": 0.0}}),
     );
     let entities = [&line, &first, &second];
-    let stored = StoredPoints::new(&ctx, &entities, |_, _, _| true, |a, b| a == b);
+    let stored = StoredPoints::new(&ctx, &entities, |_, _, _| true, |a, b| a == b)
+        .expect("the session admits the evaluation");
     assert!(stored.at(&SketchLocus::End(line.id().clone())).is_none());
     assert!(stored.roles(first.id()).is_empty());
 }
@@ -392,7 +399,8 @@ fn a_relation_on_a_nurbs_end_names_a_point_at_the_end_of_its_knot_domain() {
     let on = kind(json!({"kind": "coincident_loci", "loci": [
         {"kind": "start", "value": "test:model:sketch-entity#n"},
         {"kind": "end", "value": "test:model:sketch-entity#n"}]}));
-    let points = LocusPoints::new(&ctx, [&on], &[&nurbs], &StoredPoints::default());
+    let points = LocusPoints::new(&ctx, [&on], &[&nurbs], &StoredPoints::default())
+        .expect("the session admits the evaluation");
     assert!(!points.unplaced(&on));
     let close = |locus, [u, v]: [f64; 2]| {
         let [pu, pv] = points.position(&locus).expect("a position");

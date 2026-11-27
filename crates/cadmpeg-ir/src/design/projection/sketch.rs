@@ -3,7 +3,7 @@
 //! CADIR v11 specification) states as they are: its curves, its frame, and
 //! the relations and dimensions of the decoded vocabulary.
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::text::NonBlankString;
 
 use crate::design::construction::{FrameValue, ScalarDimension};
@@ -666,7 +666,8 @@ pub struct StoredPoints {
 impl StoredPoints {
     /// The stored points of the curves of `entities`. `names` says whether
     /// the source names a point entity as a point of a curve, and `same`
-    /// whether two positions are one.
+    /// whether two positions are one. The decode session's resource refusal
+    /// ends the search.
     pub fn new(
         ctx: &DecodeContext<'_>,
         entities: &[&crate::sketches::SketchEntity],
@@ -676,7 +677,7 @@ impl StoredPoints {
             &crate::sketches::SketchEntity,
         ) -> bool,
         same: impl Fn([f64; 2], [f64; 2]) -> bool,
-    ) -> Self {
+    ) -> Result<Self, ResourceLimit> {
         let points = entities
             .iter()
             .filter_map(|entity| match entity.geometry.definition() {
@@ -699,7 +700,7 @@ impl StoredPoints {
                 SketchLocus::End(curve.id().clone()),
                 SketchLocus::Center(curve.id().clone()),
             ] {
-                let Some(position) = locus_position(ctx, &curve.geometry, &locus) else {
+                let Some(position) = locus_position(ctx, &curve.geometry, &locus)? else {
                     continue;
                 };
                 let mut hits = points.iter().filter(|(point, stored)| {
@@ -710,7 +711,7 @@ impl StoredPoints {
                 }
             }
         }
-        Self { at }
+        Ok(Self { at })
     }
 
     /// The point entity at the point of a curve that `locus` names.
@@ -781,12 +782,13 @@ struct LocusPoint {
 impl LocusPoints {
     /// The points of the loci that `kinds`, the relations of a sketch whose
     /// entities are `entities` and whose stored points are `stored`, name.
+    /// The decode session's resource refusal ends the search.
     pub fn new<'k>(
         ctx: &DecodeContext<'_>,
         kinds: impl IntoIterator<Item = &'k Kind>,
         entities: &[&crate::sketches::SketchEntity],
         stored: &StoredPoints,
-    ) -> Self {
+    ) -> Result<Self, ResourceLimit> {
         let mut out = Self::default();
         let position = |id: &SketchEntityId| {
             entities
@@ -809,14 +811,14 @@ impl LocusPoints {
                     position,
                     minted: false,
                 }),
-                None => Self::unstored(ctx, locus, entities),
+                None => Self::unstored(ctx, locus, entities)?,
             };
             match point {
                 Some(point) => out.points.push(point),
                 None => out.unplaced.push(locus.clone()),
             }
         }
-        out
+        Ok(out)
     }
 
     /// The point `locus` names where the sketch stores none there: the
@@ -827,21 +829,23 @@ impl LocusPoints {
         ctx: &DecodeContext<'_>,
         locus: &SketchLocus,
         entities: &[&crate::sketches::SketchEntity],
-    ) -> Option<LocusPoint> {
+    ) -> Result<Option<LocusPoint>, ResourceLimit> {
         let curve = locus_entity(locus);
-        let geometry = &entities
-            .iter()
-            .find(|entity| entity.id() == curve)?
-            .geometry;
+        let Some(curve_entity) = entities.iter().find(|entity| entity.id() == curve) else {
+            return Ok(None);
+        };
+        let geometry = &curve_entity.geometry;
         if let SketchGeometryDefinition::Point { position } = geometry.definition() {
-            return Some(LocusPoint {
+            return Ok(Some(LocusPoint {
                 locus: locus.clone(),
                 entity: curve.clone(),
                 position: *position,
                 minted: false,
-            });
+            }));
         }
-        let position = locus_position(ctx, geometry, locus)?;
+        let Some(position) = locus_position(ctx, geometry, locus)? else {
+            return Ok(None);
+        };
         let entity = SketchEntityId::mint(format!(
             "{}:{}",
             curve.as_str(),
@@ -852,13 +856,13 @@ impl LocusPoints {
             }
         ))
         .ok()
-        .filter(|id| entities.iter().all(|entity| entity.id() != id))?;
-        Some(LocusPoint {
+        .filter(|id| entities.iter().all(|entity| entity.id() != id));
+        Ok(entity.map(|entity| LocusPoint {
             locus: locus.clone(),
             entity,
             position,
             minted: true,
-        })
+        }))
     }
 
     /// The point entity that `locus` names.
@@ -923,7 +927,41 @@ fn locus_position(
     ctx: &DecodeContext<'_>,
     geometry: &SketchGeometry,
     locus: &SketchLocus,
-) -> Option<FinitePoint2> {
+) -> Result<Option<FinitePoint2>, ResourceLimit> {
+    let SketchGeometryDefinition::Nurbs { curve } = geometry.definition() else {
+        return Ok(closed_form_position(geometry, locus));
+    };
+    let poles = curve.pole_rows();
+    let knots = curve.knots().as_slice();
+    let Some(parameter) =
+        crate::eval::nurbs_pcurve_parameter_domain(curve.degree(), knots, poles.count())
+            .and_then(|domain| locus_end(locus, domain.endpoints()))
+    else {
+        return Ok(None);
+    };
+    crate::eval::finite_or_refusal(crate::eval::nurbs_pcurve_uv(
+        ctx,
+        curve.degree(),
+        knots,
+        &poles.raw_points(),
+        poles.weights().as_deref(),
+        parameter,
+    ))
+}
+
+/// The parameter of the end of a curve that `locus` names, of the curve
+/// whose parameter range is `[start, end]`.
+fn locus_end(locus: &SketchLocus, [start, end]: [f64; 2]) -> Option<f64> {
+    match locus {
+        SketchLocus::Start(_) => Some(start),
+        SketchLocus::End(_) => Some(end),
+        _ => None,
+    }
+}
+
+/// The position of the point `locus` names on the curve `geometry`, a curve
+/// whose points have a closed form.
+fn closed_form_position(geometry: &SketchGeometry, locus: &SketchLocus) -> Option<FinitePoint2> {
     let at = |origin: &FinitePoint2, [x, y]: [f64; 2]| {
         FinitePoint2::new(crate::math::Point2 {
             u: origin.u + x,
@@ -934,11 +972,7 @@ fn locus_position(
         let (sin, cos) = angle.portable_sin_cos();
         [x * cos - y * sin, x * sin + y * cos]
     };
-    let end = |[start, end]: [f64; 2]| match locus {
-        SketchLocus::Start(_) => Some(start),
-        SketchLocus::End(_) => Some(end),
-        _ => None,
-    };
+    let end = |range: [f64; 2]| locus_end(locus, range);
     match (geometry.definition(), locus) {
         (SketchGeometryDefinition::Line { start, .. }, SketchLocus::Start(_)) => Some(*start),
         (SketchGeometryDefinition::Line { end, .. }, SketchLocus::End(_)) => Some(*end),
@@ -1014,21 +1048,6 @@ fn locus_position(
                 vertex,
                 rotated(axis_angle.get(), [y * y / (4.0 * focal_length.get()), y]),
             )
-        }
-        (SketchGeometryDefinition::Nurbs { curve }, _) => {
-            let poles = curve.pole_rows();
-            let knots = curve.knots().as_slice();
-            let domain =
-                crate::eval::nurbs_pcurve_parameter_domain(curve.degree(), knots, poles.count())?;
-            crate::eval::nurbs_pcurve_uv(
-                ctx,
-                curve.degree(),
-                knots,
-                &poles.raw_points(),
-                poles.weights().as_deref(),
-                end(domain.endpoints())?,
-            )
-            .ok()
         }
         _ => None,
     }
