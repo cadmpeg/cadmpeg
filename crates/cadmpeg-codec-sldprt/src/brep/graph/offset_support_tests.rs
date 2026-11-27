@@ -204,6 +204,8 @@ fn bounded_offset_faces_require_every_boundary_edge() {
         unresolved_fins: Vec::new(),
         withheld_forward_links: 0,
         unlinked_loops: HashSet::new(),
+        lost_loops: Vec::new(),
+        chain_cut: false,
     };
     let exact = HashSet::from([8]);
     assert!(face_has_exact_boundary(&face, &tables, &exact));
@@ -258,6 +260,8 @@ fn offset_support_alias_keeps_a_resolved_sweep_with_chart_boundaries() {
         unresolved_fins: Vec::new(),
         withheld_forward_links: 0,
         unlinked_loops: HashSet::new(),
+        lost_loops: Vec::new(),
+        chain_cut: false,
     };
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert!(!face_has_exact_boundary(&face, &tables, &HashSet::new()));

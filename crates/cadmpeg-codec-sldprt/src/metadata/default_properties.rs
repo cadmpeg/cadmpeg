@@ -10,6 +10,7 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::{AttributeId, IdentityKey};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::Exactness;
 use std::mem::size_of;
 
@@ -65,6 +66,7 @@ pub(super) fn append(
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<(), CodecError> {
     let mut owners = scan.sections().filter(|section| is_owner(*section));
     let Some(owner) = owners.next() else {
@@ -78,20 +80,23 @@ pub(super) fn append(
         );
         return Ok(());
     }
-    let parsed = match owner {
+    let parsed = ctx.run_part(|| match owner {
         Section::Block(_) => xml::table(ctx, owner.payload()),
         Section::Compound(_) => oleps::table(ctx, owner.payload()),
-    };
+    })?;
     let table = match parsed {
         Ok(table) => table,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(error) => {
-            losses.push(SldprtLossCode::MetadataDefaultCarrierUnsupported.note(format!(
-                "Default-property carrier {} retains unsupported or malformed property data: {error}",
-                owner.source_stream().as_str()
-            )));
+        Err(error @ CodecError::NotImplemented(_)) => {
+            losses.push(
+                SldprtLossCode::MetadataDefaultCarrierUnsupported.note(format!(
+                    "Default-property carrier {} retains property data in a form the decoder does \
+                 not read: {error}",
+                    owner.source_stream().as_str()
+                )),
+            );
             return Ok(());
         }
+        Err(error) => return super::give_up_carrier(ctx, owner, error, given_up),
     };
     project(ctx, owner, table, out, annotations, losses)
 }

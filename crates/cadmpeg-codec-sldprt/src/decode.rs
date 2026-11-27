@@ -289,6 +289,7 @@ fn decode_scan(
             container::PARASOLID_STREAMS_PART
                 | container::COMPOUND_STREAM_PART
                 | container::NATIVE_BLOCK_PART
+                | container::WRAPPED_MEMBER_PART
         )
     });
     let classification = crate::dialect::classify_layers(&scan)?;
@@ -1356,6 +1357,7 @@ pub(crate) fn append_design_losses(
         | BodySelection::GeneratedSet { .. } => false,
         BodySelection::Generated { bodies, .. } => bodies.is_empty(),
         BodySelection::Local { bodies, .. } => bodies.is_empty(),
+        BodySelection::Occurrence { bodies, .. } => bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => true,
     };
     let profile_data = crate::resolved_features::profile_data::FeatureProfileData::new(&ir.model);
@@ -3089,7 +3091,8 @@ fn partitions_given_up(parts: &[GivenUpPart]) -> BTreeSet<usize> {
         .filter_map(|part| match part.kind() {
             container::PARASOLID_STREAMS_PART
             | container::COMPOUND_STREAM_PART
-            | container::NATIVE_BLOCK_PART => part.name(),
+            | container::NATIVE_BLOCK_PART
+            | container::WRAPPED_MEMBER_PART => part.name(),
             PARASOLID_SITE_PART => part.stream().map(cadmpeg_ir::StreamName::as_str),
             _ => None,
         })
@@ -3356,10 +3359,6 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.unresolved_topology_vertices += source.stats.unresolved_topology_vertices;
     target.stats.withheld_fin_partners += source.stats.withheld_fin_partners;
     target.stats.withheld_fin_links += source.stats.withheld_fin_links;
-    target.stats.withheld_faces += source.stats.withheld_faces;
-    target.stats.withheld_vertex_loop_faces += source.stats.withheld_vertex_loop_faces;
-    target.stats.withheld_ambiguous_fin_faces += source.stats.withheld_ambiguous_fin_faces;
-    target.stats.withheld_ring_edges += source.stats.withheld_ring_edges;
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
     Ok(())
@@ -3694,6 +3693,10 @@ fn push_display_meshes(
                 Exactness::ByteExact,
             )?;
             display_links.push(id.clone());
+            let tessellation_id =
+                cadmpeg_ir::tessellation::TessellationId::mint(id).map_err(|error| {
+                    CodecError::malformed(format_args!("invalid display tessellation: {error}"))
+                })?;
             if let Some(resolved_definition) = resolved.by_face.get(&table_index) {
                 let definition = &resolved_definition.definition;
                 let source_entity_id =
@@ -3712,7 +3715,7 @@ fn push_display_meshes(
                             .then(display.ordinal())
                             .colon(table_index),
                     ),
-                    target: AppearanceTarget::Tessellation(id.clone()).into(),
+                    target: AppearanceTarget::Tessellation(tessellation_id.clone()).into(),
                     appearance,
                     precedence: None,
                     source_entity_id: Some(source_entity_id),
@@ -3724,16 +3727,11 @@ fn push_display_meshes(
             }
             let mesh = display_face.mesh;
             mesh_count += 1;
-            ir.model.tessellations.push(
-                mesh.into_tessellation(
-                    cadmpeg_ir::tessellation::TessellationId::mint(id).map_err(|error| {
-                        CodecError::malformed(format_args!("invalid display tessellation: {error}"))
-                    })?,
-                )
-                .map_err(|error| {
+            ir.model
+                .tessellations
+                .push(mesh.into_tessellation(tessellation_id).map_err(|error| {
                     CodecError::malformed(format_args!("invalid display tessellation: {error}"))
-                })?,
-            );
+                })?);
         }
         let display_id = UnknownId::compose(
             &cadmpeg_ir::identity_namespace!("sldprt", "displaylist", "record"),
@@ -4099,7 +4097,15 @@ fn build_geometry_ir(
         sketch_lanes,
     );
     stamp_feature_baseline(ctx, &mut ir)?;
-    let mut attributes = crate::metadata::attributes(ctx, scan, &mut annotations, &mut pmi_losses)?;
+    let mut carriers_given_up = Vec::new();
+    let mut attributes = crate::metadata::attributes(
+        ctx,
+        scan,
+        &mut annotations,
+        &mut pmi_losses,
+        &mut carriers_given_up,
+    )?;
+    retention.give_up(carriers_given_up);
     let custom_properties = crate::history::project::custom_property_attributes(&histories)?;
     attributes.extend(custom_properties);
     ir.model.attributes = attributes;
@@ -5141,7 +5147,7 @@ fn append_topology_record_losses(
     }
     if stats.withheld_fin_partners > 0 {
         losses.push(SldprtLossCode::TopologyFinPartnerUnresolved.note(format!(
-            "{} edge(s) were withheld because an unwalked boundary-dummy canonical FIN lacks reciprocal partner corroboration of both ring-order endpoints or a mutual twin FIN contradicts the ring-order endpoint; no dummy enters a public face loop.",
+            "{} edge(s) with no edge record were withheld because an unwalked boundary-dummy canonical FIN lacks reciprocal partner corroboration of both ring-order endpoints or a mutual twin FIN contradicts the ring-order endpoint; no dummy enters a public face loop.",
             stats.withheld_fin_partners,
         )));
     }
@@ -5149,30 +5155,6 @@ fn append_topology_record_losses(
         losses.push(SldprtLossCode::TopologyFinLinkUnresolved.note(format!(
             "{} ring(s) were withheld because a FIN forward link names no reciprocal same-loop backward link; the ring is not walked on doubt.",
             stats.withheld_fin_links,
-        )));
-    }
-    if stats.withheld_faces > 0 {
-        losses.push(SldprtLossCode::TopologyFaceWithheld.note(format!(
-            "{} face(s) were withheld with their surface because no loop of the face decodes.",
-            stats.withheld_faces,
-        )));
-    }
-    if stats.withheld_vertex_loop_faces > 0 {
-        losses.push(SldprtLossCode::TopologyVertexLoopWithheld.note(format!(
-            "{} face(s) were withheld with their surface because a vertex loop of the face names no resolved vertex.",
-            stats.withheld_vertex_loop_faces,
-        )));
-    }
-    if stats.withheld_ambiguous_fin_faces > 0 {
-        losses.push(SldprtLossCode::TopologyAmbiguousFinFaceWithheld.note(format!(
-            "{} face(s) were withheld with their surface because a loop of the face holds an ambiguous FIN.",
-            stats.withheld_ambiguous_fin_faces,
-        )));
-    }
-    if stats.withheld_ring_edges > 0 {
-        losses.push(SldprtLossCode::TopologyRingEdgeWithheld.note(format!(
-            "{} vertexless ring edge(s) fail reciprocal closed-carrier single-loop admission.",
-            stats.withheld_ring_edges,
         )));
     }
 }
@@ -5447,8 +5429,15 @@ fn build_metadata_ir(
         &mut sketch_streams_given_up,
     )?;
     retention.give_up(sketch_streams_given_up);
-    let mut model_attributes =
-        crate::metadata::attributes(ctx, scan, &mut annotations, &mut pmi_losses)?;
+    let mut carriers_given_up = Vec::new();
+    let mut model_attributes = crate::metadata::attributes(
+        ctx,
+        scan,
+        &mut annotations,
+        &mut pmi_losses,
+        &mut carriers_given_up,
+    )?;
+    retention.give_up(carriers_given_up);
     let custom_properties = crate::history::project::custom_property_attributes(&histories)?;
     model_attributes.extend(custom_properties);
     ir.model.attributes = model_attributes;

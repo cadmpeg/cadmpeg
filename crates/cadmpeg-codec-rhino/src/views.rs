@@ -506,8 +506,7 @@ fn view_record_id(kind: ViewListKind, index: usize) -> String {
     format!("rhino:document:view#{}-{index:04}", kind.as_str())
 }
 
-/// Gives up the view list `record`, whose opaque record in the source
-/// fidelity keeps its bytes, for the codec loss with `message`.
+/// Gives up the view list `record` for the codec loss with `message`.
 fn give_up_list(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
@@ -527,8 +526,8 @@ fn give_up_list(
     Ok((loss, part))
 }
 
-/// Gives up the view record `view` of a view list, whose opaque record in the
-/// source fidelity keeps its bytes, for the codec loss with `message`.
+/// Gives up the view record `view` of a view list for the codec loss with
+/// `message`.
 fn give_up_view(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
