@@ -282,6 +282,7 @@ byte. The function names are:
 | `JMThinwallAssocFunctionNew` | thin wall |
 | `JMBaseTabFunction` | sheet-metal base tab |
 | `JMFlangeFunction` | sheet-metal flange |
+| `JMMultiFlangeFunction` | sheet-metal flange |
 
 A `CLSID_JMGroup` feature is a mirror copy or a pattern.
 
@@ -632,11 +633,18 @@ record. The indices are:
 | 10 | deviational tolerance |
 | 11 | bend deduction |
 | 12 | bend allowance |
-| 13 | bend method: `0` neutral factor, `1` bend deduction |
+| 13 | bend method: `0` neutral factor, `1` bend deduction, `2` bend allowance |
 
 The referenced object of a variable also stores the variable name as
 UTF-16 text. The neutral factor is the K-factor: the distance of the neutral
 surface from the inside of a bend, as a fraction of the thickness.
+
+The bend method selects the variable that sets the flat length of a bend:
+method `0` the neutral factor, method `1` the bend deduction and method `2`
+the bend allowance. The three variables keep their values under every
+method. The bend method and the three values do not depend on a flange angle
+or the material thickness. The referenced object of the bend method stores the
+UTF-16 text `0=Neutral Factor; 1=Bend Deduction; 2=Bend Allowance`.
 
 ### 10.2 Base tab
 
@@ -647,6 +655,35 @@ side `Double Value Object` 128 bytes after the end of its function name.
 The base tab is a flat sheet of the material thickness over the region of
 its profile. Side `2` puts the material along the profile normal `A`
 (§5.1) and side `1` against it.
+
+### 10.3 Flange variables
+
+A `CLSID_JMPart` feature with function `JMMultiFlangeFunction` stores the
+identifiers of its own variable objects as `u32` values after the end of its
+function name (§4.2):
+
+| Bytes after the name | Variable |
+| ---: | --- |
+| 296 | bend radius |
+| 324 | neutral factor |
+| 832 | bend method |
+| 860 | bend deduction |
+| 888 | bend allowance |
+
+Each is a `Double Value Object` that holds the value of the flange. The
+bend-method object stores the same UTF-16 text as the document bend-method
+object (§10.1).
+
+A flange variable follows the document variable of the same name when an
+`Assoc subsystem Standard Relation implementation` object relates them. The
+relation object stores the identifier of the flange variable as the `u32` at
+object offset 99 and the identifier of the document variable as the `u32` at
+object offset 127. A followed flange variable holds the value of the document
+variable. A flange with its own bend method has no relation object for its
+bend-method variable and none for the variable of that method (neutral factor,
+bend deduction or bend allowance); the relation objects of its other variables
+remain. Its variable of the selected method holds the value of the flange, and
+the document variable keeps its own value.
 
 ## 11. Kernel stream map
 

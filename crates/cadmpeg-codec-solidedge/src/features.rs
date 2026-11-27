@@ -266,7 +266,9 @@ fn function_family(function: &str) -> Option<OperationFamily> {
         "JMRoundFunction" => OperationFamily::Fillet,
         "JMChamferFunction" => OperationFamily::Chamfer,
         "JMThinwallAssocFunctionNew" => OperationFamily::Shell,
-        "JMBaseTabFunction" | "JMFlangeFunction" => OperationFamily::SheetMetal,
+        "JMBaseTabFunction" | "JMFlangeFunction" | "JMMultiFlangeFunction" => {
+            OperationFamily::SheetMetal
+        }
         _ => return None,
     })
 }

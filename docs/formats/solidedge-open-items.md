@@ -104,13 +104,13 @@
 
 **Need.** Lofts between two and three sections, and a copy of each with one section moved.
 
-### DR-1031. Bend deduction and other bend methods
+### DR-1031. Flat length of a bend by method
 
-**Question.** How does a bend take its flat length under bend method `1` (§10.1), and which other values can the bend method take?
+**Question.** How does a bend take its flat length from the neutral factor, the bend deduction or the bend allowance (§10.1)?
 
-**Known.** Bend method `1` is bend deduction. A document with bend method `1` keeps its neutral factor, bend deduction and bend allowance values unchanged. The bend deduction and bend allowance values do not change with the material thickness.
+**Known.** The bend method selects the variable and a flange can hold its own method and values (§10.3). The method and the three values do not depend on the flange angle.
 
-**Need.** Flanges at two angles under bend method `1`, and documents set to each other bend method the software offers.
+**Need.** The flat pattern of the same flanges under each bend method, at two flange angles.
 
 ### DR-1055. Bend relief length and shape
 
