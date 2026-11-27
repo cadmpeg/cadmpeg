@@ -79,16 +79,9 @@ fn the_configurations_of_a_part_with_no_feature_are_those_of_its_scope() {
     );
     assert_no_design_findings(&ir);
 
-    let (omitted, read) = round_trip(&ir);
-    for configuration in &ir.design.configurations {
-        assert!(
-            !omitted
-                .iter()
-                .any(|message| message.contains(configuration.id.as_str())),
-            "{omitted:#?}"
-        );
-    }
+    let read = round_trip(&ir);
     assert_eq!(read.design.configurations, ir.design.configurations);
+    assert_eq!(read.design.scopes, ir.design.scopes);
 }
 
 #[test]
@@ -192,7 +185,7 @@ fn a_dimension_another_configuration_stores_apart_is_an_override_of_it() {
     assert!((cached.get() - 100.0).abs() < 1e-9);
     assert_no_design_findings(&ir);
 
-    let (_, read) = round_trip(&ir);
+    let read = round_trip(&ir);
     assert_eq!(read.design.configurations, ir.design.configurations);
 }
 

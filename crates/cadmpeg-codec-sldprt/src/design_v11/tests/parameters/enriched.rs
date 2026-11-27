@@ -66,31 +66,28 @@ fn a_dimension_only_a_pmi_record_states_is_a_parameter_of_its_feature() {
         panic!("a length value: {parameter:#?}");
     };
     assert!((value.get() - 25.0).abs() < 1e-9, "{parameter:#?}");
-    if let ParameterDefinition::Expression(expression) = &parameter.definition {
-        let Expression::Neutral(Neutral(Node::Number { value, unit })) = expression else {
-            panic!("a one-literal expression: {expression:#?}");
-        };
-        let [factor] = unit.0.as_slice() else {
-            panic!("a literal with one unit: {unit:#?}");
-        };
-        let (quantity, scale) = crate::design_v11::parameters::canonical(factor.symbol).unwrap();
-        assert_eq!(quantity, Quantity::LENGTH);
-        assert!((value.get() * scale - 25.0).abs() < 1e-9, "{expression:#?}");
-    }
+    let ParameterDefinition::Expression(expression) = &parameter.definition else {
+        panic!("an expression: {parameter:#?}");
+    };
+    let Expression::Neutral(Neutral(Node::Number { value, unit })) = expression else {
+        panic!("a one-literal expression: {expression:#?}");
+    };
+    let [factor] = unit.0.as_slice() else {
+        panic!("a literal with one unit: {unit:#?}");
+    };
+    let (quantity, scale) = crate::design_v11::parameters::canonical(factor.symbol).unwrap();
+    assert_eq!(quantity, Quantity::LENGTH);
+    assert!((value.get() * scale - 25.0).abs() < 1e-9, "{expression:#?}");
     assert_no_design_findings(&ir);
 
-    let (omitted, read) = round_trip(&ir);
-    assert!(
-        !omitted
+    let read = round_trip(&ir);
+    assert_eq!(
+        read.design
+            .parameters
             .iter()
-            .any(|message| message.contains(legacy.id.as_str())),
-        "{omitted:#?}"
+            .find(|written| written.id == legacy.id),
+        Some(parameter)
     );
-    assert!(read
-        .design
-        .parameters
-        .iter()
-        .any(|written| written.id == legacy.id));
 }
 
 /// A dimension that only a `ResolvedFeatures` scalar states keeps the
