@@ -251,7 +251,7 @@ pub(crate) enum InventorLossCode {
     FeatureStateUnresolved,
     /// Derived components retain external source construction only natively.
     FeatureDerivedSourceNative,
-    /// Derived result-body operands retain unresolved current-model body joins.
+    /// Derived result-body operands absent from the current model stay native: no state introduces the key, the state does not decode, or the state views passed their work cap.
     FeatureDerivedResultNative,
     /// Stored-body Base results absent from the current model retain a history state that does not decode or passed its work cap.
     FeatureBaseResultStateNative,
