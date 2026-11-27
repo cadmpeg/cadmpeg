@@ -595,8 +595,9 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     assert_eq!(native.design_record_headers[1].class_tag.as_str(), "351");
 }
 
-#[test]
-fn generated_source_less_writes_sketch_points_curves_and_constraints() {
+/// The unit cube with sketch `0_277`: point `100` with companion `101`,
+/// curves `600` to `602`, and relation `33` between the point and the line.
+pub(super) fn sketch_graph_cube() -> cadmpeg_ir::document::CadIr {
     use crate::records::{
         entity_header::{DesignEntityHeader, SegmentType},
         sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity, SketchPoint},
@@ -904,7 +905,17 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             })
             .unwrap(),
         ];
+    drop(native);
+    source_less
+}
 
+#[test]
+fn generated_source_less_writes_sketch_points_curves_and_constraints() {
+    use crate::records::sketch_relations::{SketchRelationMember, SketchRelationReturnMember};
+    use cadmpeg_ir::math::Point2;
+
+    let mut source_less = sketch_graph_cube();
+    let native = f3d_native(&source_less);
     let expected_geometries = native
         .sketch_curve_identities
         .iter()
