@@ -4,7 +4,7 @@
 mod edge_alignment;
 mod extrusion;
 mod roster;
-mod ruled;
+pub(in crate::families::freeform) mod ruled;
 mod sheet_carrier;
 mod sheet_group;
 mod stations;

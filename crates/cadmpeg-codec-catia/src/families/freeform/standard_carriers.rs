@@ -42,7 +42,11 @@ const ZERO_EXTENT_TOLERANCE_MM: f64 = 1.0e-5;
 const NONZERO_EXTENT_MIN_MM: f64 = 1.0e-3;
 const DIRECTRIX_FIT_TOLERANCE_MM: f64 = 0.0005;
 const TERMINAL_SPAN_DOMAIN_TOLERANCE: f64 = 1.0e-6;
-const MAX_ALIAS_DEPTH: usize = 3;
+const IDENTITY_AFFINE_SCALE_TOLERANCE: f64 = 1.0e-12;
+const MIN_REVOLUTION_SPAN_RAD: f64 = 1.0e-9;
+const REVOLUTION_FULL_TURN_TOLERANCE_RAD: f64 = 1.0e-6;
+const MIN_RULED_V_SPAN: f64 = 1.0e-6;
+const MAX_ALIAS_DEPTH: usize = 8;
 const MAX_BSPLINE_PCURVE_KNOTS: usize = 4096;
 
 /// Recover missing plane normals for standard `00 33 32` plane faces whose
@@ -60,7 +64,7 @@ pub(in crate::families) fn recover_missing_plane_normals(
     brep: &[u8],
     surface_records: &[StandardSurfaceRecord],
     normals: &mut HashMap<u32, FiniteVector<3>>,
-) {
+) -> HashMap<u32, PlaneSurface> {
     let journal = AllocationJournal::with_sources(data, sources, records);
     let face_carriers = unique_5f_carriers(data, sources, records, &journal);
     let b2_planes: HashMap<_, _> = b2_plane_carriers_from_records(data, records)
@@ -93,35 +97,46 @@ pub(in crate::families) fn recover_missing_plane_normals(
         0.5 * (all_bounds_min[2] + all_bounds_max[2]),
     ];
 
+    let mut journal_planes = HashMap::new();
     for (index, record) in surface_records.iter().enumerate() {
         let StandardSurfaceRecord::Analytic(prefix) = record else {
             continue;
         };
-        if prefix.kind != AnalyticSurfaceKind::Plane || normals.contains_key(&prefix.target) {
+        if prefix.kind != AnalyticSurfaceKind::Plane {
             continue;
         }
-        let Some(bounds) = parsed_bounds[index] else {
-            continue;
-        };
-        let center = Point3::new(
-            bounds.sphere_center[0].get(),
-            bounds.sphere_center[1].get(),
-            bounds.sphere_center[2].get(),
-        );
+        let bounds = parsed_bounds[index];
         if let Some(Some((_, carrier))) = face_carriers.get(&u64::from(prefix.target)) {
             if let Some(plane) =
                 resolve_b2_plane(data, sources, &journal, carrier, &b2_planes, &b2_offsets, 0)
             {
                 let axis = *plane.frame().axis().as_raw();
-                let offset = center.vector_from(plane.origin().get()).dot(axis).abs();
-                if offset <= PLANE_BOUNDS_TOLERANCE_MM {
-                    if let Some(vector) = FiniteVector::new([axis.x, axis.y, axis.z]) {
-                        normals.insert(prefix.target, vector);
-                        continue;
+                let bounds_ok = bounds.is_none_or(|b| {
+                    let center = Point3::new(
+                        b.sphere_center[0].get(),
+                        b.sphere_center[1].get(),
+                        b.sphere_center[2].get(),
+                    );
+                    center.vector_from(plane.origin().get()).dot(axis).abs()
+                        <= PLANE_BOUNDS_TOLERANCE_MM
+                });
+                if bounds_ok {
+                    journal_planes.insert(prefix.target, plane);
+                    if !normals.contains_key(&prefix.target) {
+                        if let Some(vector) = FiniteVector::new([axis.x, axis.y, axis.z]) {
+                            normals.insert(prefix.target, vector);
+                            continue;
+                        }
                     }
                 }
             }
         }
+        if normals.contains_key(&prefix.target) {
+            continue;
+        }
+        let Some(bounds) = bounds else {
+            continue;
+        };
         let extents = bounds
             .aabb_half_extents
             .map(cadmpeg_ir::scalar::NonNegativeLength::get);
@@ -147,6 +162,7 @@ pub(in crate::families) fn recover_missing_plane_normals(
             }
         }
     }
+    journal_planes
 }
 
 /// Bind unresolved standard freeform faces directly from their `b2 03 5f`
@@ -179,15 +195,21 @@ pub(in crate::families) fn bind_journal_standard_surfaces(
     let b2_cylinders: HashMap<_, _> = b2_cylinders_from_records(data, records)
         .map(|cylinder| (cylinder.pos, cylinder))
         .collect();
-    let b2_cones: HashMap<_, _> = b2_cones_from_records(data, records)
+    let mut b2_cones: HashMap<_, _> = b2_cones_from_records(data, records)
         .map(|cone| (cone.pos, cone))
         .collect();
+    for (cone, _) in crate::families::b2::records::owned_cone_charts(data, records) {
+        b2_cones.entry(cone.pos).or_insert(cone);
+    }
     let b2_spheres: HashMap<_, _> = b2_spheres_from_records(data, records)
         .map(|sphere| (sphere.pos, sphere))
         .collect();
-    let b2_tori: HashMap<_, _> = b2_tori_from_records(data, records)
+    let mut b2_tori: HashMap<_, _> = b2_tori_from_records(data, records)
         .map(|torus| (torus.pos, torus))
         .collect();
+    for (torus, _) in crate::families::b2::records::owned_torus_charts(data, records) {
+        b2_tori.entry(torus.pos).or_insert(torus);
+    }
     let b2_nurbs_curves: HashMap<_, _> = b2_nurbs_curves_from_records(data, records, refusal)
         .into_iter()
         .map(|curve| (curve.pos, curve.geometry))
@@ -260,20 +282,69 @@ struct CarrierResolver<'a> {
 }
 
 impl<'a> CarrierResolver<'a> {
+    #[inline(never)]
     fn resolve_surface(
         &self,
         _origin_index: usize,
-        carrier: &'a ConsolidatedRecord,
+        mut carrier: &'a ConsolidatedRecord,
         refusal: &mut crate::nurbs::LaneRefusals,
-        depth: usize,
+        mut depth: usize,
     ) -> Option<SolvedSurfaceGeometry> {
-        if depth > MAX_ALIAS_DEPTH {
-            return None;
-        }
-        let carrier_index = self
+        let mut carrier_index = self
             .journal
             .index(carrier.source_index(), carrier.source_range().start)?;
+        loop {
+            if depth > MAX_ALIAS_DEPTH {
+                return None;
+            }
+            match (carrier.family(), carrier.class()) {
+                (ConsolidatedFamily::B, 0x2e) => {
+                    let payload = carrier.payload_bytes(self.data, self.sources)?;
+                    let mut at = usize::from(payload.first() == Some(&0x81));
+                    let inner_ref = allocation_reference(&payload, &mut at)?;
+                    carrier = resolve_ref(self.journal, carrier_index, inner_ref)?;
+                    carrier_index = self
+                        .journal
+                        .index(carrier.source_index(), carrier.source_range().start)?;
+                    depth += 1;
+                    continue;
+                }
+                (ConsolidatedFamily::B, 0x37 | 0x3b) => {
+                    let payload = carrier.payload_bytes(self.data, self.sources)?;
+                    if payload.first() != Some(&0x85) {
+                        return None;
+                    }
+                    let mut at = 1;
+                    let inner_ref = allocation_reference(&payload, &mut at)?;
+                    carrier = resolve_ref(self.journal, carrier_index, inner_ref)?;
+                    carrier_index = self
+                        .journal
+                        .index(carrier.source_index(), carrier.source_range().start)?;
+                    depth += 1;
+                    continue;
+                }
+                (ConsolidatedFamily::B, 0x38) => {
+                    let payload = carrier.payload_bytes(self.data, self.sources)?;
+                    if payload.first() != Some(&0x81) {
+                        return None;
+                    }
+                    let mut at = 1;
+                    let inner_ref = allocation_reference(&payload, &mut at)?;
+                    carrier = resolve_ref(self.journal, carrier_index, inner_ref)?;
+                    carrier_index = self
+                        .journal
+                        .index(carrier.source_index(), carrier.source_range().start)?;
+                    depth += 1;
+                    continue;
+                }
+                _ => break,
+            }
+        }
         match (carrier.family(), carrier.class()) {
+            (ConsolidatedFamily::A, 0x32) => {
+                decode_rolling_ball_surface(self.data, self.sources, carrier)
+                    .map(SolvedSurfaceGeometry::Nurbs)
+            }
             (ConsolidatedFamily::A, 0x34) => self
                 .a5_by_pos
                 .get(&carrier.byte_offset())
@@ -293,6 +364,10 @@ impl<'a> CarrierResolver<'a> {
                     decode_u32_nurbs_surface(self.data, self.sources, carrier, refusal)
                         .map(SolvedSurfaceGeometry::Nurbs)
                 }),
+            (ConsolidatedFamily::A, 0x39) => {
+                decode_ruled_guide_surface(self.data, self.sources, carrier)
+                    .map(SolvedSurfaceGeometry::Nurbs)
+            }
             (ConsolidatedFamily::B, 0x27) => {
                 decode_b2_plane_in_sources(self.data, self.sources, carrier, self.b2_planes)
                     .map(SolvedSurfaceGeometry::Plane)
@@ -303,6 +378,10 @@ impl<'a> CarrierResolver<'a> {
                 .and_then(|cylinder| match cylinder.surface_geometry() {
                     SurfaceGeometry::Solved(solved) => Some(solved),
                     SurfaceGeometry::Procedural { .. } => None,
+                })
+                .or_else(|| {
+                    let payload = carrier.payload_bytes(self.data, self.sources)?;
+                    decode_axis_mask_cylinder(&payload).map(SolvedSurfaceGeometry::Cylinder)
                 }),
             (ConsolidatedFamily::B, 0x29) => {
                 self.b2_cones.get(&carrier.byte_offset()).and_then(|cone| {
@@ -331,23 +410,36 @@ impl<'a> CarrierResolver<'a> {
             (ConsolidatedFamily::B, 0x2c) => self
                 .decode_extrusion(carrier_index, carrier, refusal, depth + 1)
                 .map(SolvedSurfaceGeometry::Nurbs),
-            (ConsolidatedFamily::B, 0x2e) => {
-                let payload = carrier.payload_bytes(self.data, self.sources)?;
-                let mut at = 0;
-                if payload.first() == Some(&0x81) {
-                    at = 1;
-                }
-                let inner_ref = allocation_reference(&payload, &mut at)?;
-                let inner = resolve_ref(self.journal, carrier_index, inner_ref)?;
-                self.resolve_surface(carrier_index, inner, refusal, depth + 1)
-            }
+            (ConsolidatedFamily::B, 0x2d) => self
+                .decode_revolution(carrier_index, carrier, refusal, depth + 1)
+                .map(SolvedSurfaceGeometry::Nurbs),
             (ConsolidatedFamily::B, 0x30 | 0x31) => {
+                let payload = carrier.payload_bytes(self.data, self.sources)?;
+                if payload.first() == Some(&0x82) {
+                    let mut at = 1;
+                    if let Some(target_ref) = allocation_reference(&payload, &mut at) {
+                        if let Some(target) = resolve_ref(self.journal, carrier_index, target_ref) {
+                            if let Some(solved) =
+                                self.resolve_surface(carrier_index, target, refusal, depth + 1)
+                            {
+                                return Some(solved);
+                            }
+                        }
+                    }
+                }
                 self.decode_offset(carrier_index, carrier, refusal, depth + 1)
+            }
+            (ConsolidatedFamily::B, 0x39) => {
+                let payload = carrier.payload_bytes(self.data, self.sources)?;
+                decode_bitmask_plane(&payload)
+                    .or_else(|| decode_uncompressed_axis_mask_plane(&payload))
+                    .map(SolvedSurfaceGeometry::Plane)
             }
             _ => None,
         }
     }
 
+    #[inline(never)]
     fn decode_offset(
         &self,
         carrier_index: usize,
@@ -367,18 +459,7 @@ impl<'a> CarrierResolver<'a> {
                     parsed.v_range.endpoints(),
                 )
             } else {
-                let mut view = View::over_retained(payload.get(at..)?);
-                let distance = view.f64_le()?;
-                let u0 = view.f64_le()?;
-                let v0 = view.f64_le()?;
-                let u1 = view.f64_le()?;
-                let v1 = view.f64_le()?;
-                if !distance.is_finite() || !view.is_empty() {
-                    return None;
-                }
-                let u_bounds = IncreasingParameterInterval::new([u0, u1])?.endpoints();
-                let v_bounds = IncreasingParameterInterval::new([v0, v1])?.endpoints();
-                (distance, u_bounds, v_bounds)
+                parse_offset_tail(&payload, at)?
             };
         let base_geom = self.resolve_surface(carrier_index, base_record, refusal, depth)?;
         match base_geom {
@@ -394,6 +475,7 @@ impl<'a> CarrierResolver<'a> {
         }
     }
 
+    #[inline(never)]
     fn decode_extrusion(
         &self,
         carrier_index: usize,
@@ -420,10 +502,13 @@ impl<'a> CarrierResolver<'a> {
             return None;
         }
         let tail = view.take(view.remaining())?;
-        let tail_valid = match tail.len() {
-            2 => tail.iter().all(|byte| *byte % 4 == 1),
-            8 => true,
-            _ => false,
+        let tail_valid = if tail.len() == 8 {
+            true
+        } else {
+            let mut tail_at = 0;
+            crate::wire::bytes::compact_int(tail, &mut tail_at).is_some()
+                && crate::wire::bytes::compact_int(tail, &mut tail_at).is_some()
+                && tail_at == tail.len()
         };
         if !tail_valid {
             return None;
@@ -438,6 +523,100 @@ impl<'a> CarrierResolver<'a> {
         extrude_nurbs_curve(&curve_3d, direction, u_bounds)
     }
 
+    #[inline(never)]
+    fn decode_revolution(
+        &self,
+        carrier_index: usize,
+        carrier: &'a ConsolidatedRecord,
+        refusal: &mut crate::nurbs::LaneRefusals,
+        depth: usize,
+    ) -> Option<NurbsSurface> {
+        let payload = carrier.payload_bytes(self.data, self.sources)?;
+        let mut at = 0;
+        let profile_ref = allocation_reference(&payload, &mut at)?;
+        let mut view = View::over_retained(payload.get(at..)?);
+        let origin = Point3::new(view.f64_le()?, view.f64_le()?, view.f64_le()?);
+        if !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite() {
+            return None;
+        }
+        let dir_x = ExactUnitVector3::new([view.f64_le()?, view.f64_le()?, view.f64_le()?])?;
+        let dir_y = ExactUnitVector3::new([view.f64_le()?, view.f64_le()?, view.f64_le()?])?;
+        let axis = ExactUnitVector3::new([view.f64_le()?, view.f64_le()?, view.f64_le()?])?;
+        crate::checked::UnitFrame3::right_handed(dir_x, dir_y, axis)?;
+        let ang_lo = view.f64_le()?;
+        let ang_hi = view.f64_le()?;
+        let prof_lo = view.f64_le()?;
+        let prof_hi = view.f64_le()?;
+        let ang_bounds = IncreasingParameterInterval::new([ang_lo, ang_hi])?.endpoints();
+        let prof_bounds = IncreasingParameterInterval::new([prof_lo, prof_hi])?.endpoints();
+        // Compact form uses [0x05, 0x05] + 4 f64 + 0x01 + f64 (43 bytes);
+        // uncompressed form uses [1u32, 1u32] + 4 f64 + u32 + f64 (52 bytes).
+        let (angular_scale, mean_angle) = if view.remaining() == 43 {
+            if view.take(2)? != [0x05, 0x05] {
+                return None;
+            }
+            let scale = view.f64_le()?;
+            let s1 = view.f64_le()?;
+            let s2 = view.f64_le()?;
+            let off = view.f64_le()?;
+            if s1.to_bits() != 1.0_f64.to_bits()
+                || s2.to_bits() != 1.0_f64.to_bits()
+                || off.to_bits() != 0.0_f64.to_bits()
+                || view.u8()? != 0x01
+            {
+                return None;
+            }
+            (scale, view.f64_le()?)
+        } else if view.remaining() == 52 {
+            let c0 = view.u32_le()?;
+            let c1 = view.u32_le()?;
+            if c0 != 1 || c1 != 1 {
+                return None;
+            }
+            let scale = view.f64_le()?;
+            let s1 = view.f64_le()?;
+            let s2 = view.f64_le()?;
+            let off = view.f64_le()?;
+            let flag = view.u32_le()?;
+            if s1.to_bits() != 1.0_f64.to_bits()
+                || s2.to_bits() != 1.0_f64.to_bits()
+                || off.to_bits() != 0.0_f64.to_bits()
+                || flag > 1
+            {
+                return None;
+            }
+            (scale, view.f64_le()?)
+        } else {
+            return None;
+        };
+        if !angular_scale.is_finite() || angular_scale <= 0.0 || !mean_angle.is_finite() {
+            return None;
+        }
+        let angle_lo = ang_bounds[0] / angular_scale;
+        let angle_hi = ang_bounds[1] / angular_scale;
+        let angle_span = angle_hi - angle_lo;
+        if !angle_span.is_finite()
+            || angle_span <= MIN_REVOLUTION_SPAN_RAD
+            || angle_span > std::f64::consts::TAU + REVOLUTION_FULL_TURN_TOLERANCE_RAD
+        {
+            return None;
+        }
+        let profile_record = resolve_ref(self.journal, carrier_index, profile_ref)?;
+        let profile_index = self.journal.index(
+            profile_record.source_index(),
+            profile_record.source_range().start,
+        )?;
+        let profile = self.decode_3d_curve(
+            profile_index,
+            profile_record,
+            Some(prof_bounds),
+            refusal,
+            depth,
+        )?;
+        revolve_nurbs_curve(&profile, origin, UnitVector3::from(axis), [0.0, angle_span])
+    }
+
+    #[inline(never)]
     fn decode_3d_curve(
         &self,
         curve_index: usize,
@@ -459,12 +638,23 @@ impl<'a> CarrierResolver<'a> {
                         let mut dview = View::over_retained(dpl.get(dat..)?);
                         let range = match dview.u8()? {
                             0x0f => {
-                                let lo = dview.f64_le()?;
-                                let hi = dview.f64_le()?;
-                                if !dview.is_empty() {
-                                    return None;
+                                if dview.remaining() == 9 {
+                                    if dview.u8()? != 0x85 {
+                                        return None;
+                                    }
+                                    let hi = dview.f64_le()?;
+                                    Some(IncreasingParameterInterval::new([0.0, hi])?.endpoints())
+                                } else {
+                                    if dview.remaining() == 17 && dview.u8()? != 0x84 {
+                                        return None;
+                                    }
+                                    let lo = dview.f64_le()?;
+                                    let hi = dview.f64_le()?;
+                                    if !dview.is_empty() {
+                                        return None;
+                                    }
+                                    Some(IncreasingParameterInterval::new([lo, hi])?.endpoints())
                                 }
-                                Some(IncreasingParameterInterval::new([lo, hi])?.endpoints())
                             }
                             _ => None,
                         };
@@ -534,11 +724,13 @@ impl<'a> CarrierResolver<'a> {
                 .b2_nurbs_curves
                 .get(&record.byte_offset())
                 .cloned()
-                .or_else(|| decode_compact_nurbs_curve(self.data, self.sources, record, refusal)),
+                .or_else(|| decode_compact_nurbs_curve(self.data, self.sources, record, refusal))
+                .or_else(|| decode_u32_nurbs_curve(self.data, self.sources, record, refusal)),
             (ConsolidatedFamily::A | ConsolidatedFamily::B, 0x21) => {
-                let (support_ref, pcurve_nurbs, range) = decode_u32_bspline_pcurve_payload(
-                    &record.payload_bytes(self.data, self.sources)?,
-                )?;
+                let payload = record.payload_bytes(self.data, self.sources)?;
+                let (support_ref, pcurve_nurbs, range) =
+                    decode_u32_bspline_pcurve_payload(&payload)
+                        .or_else(|| decode_compact_bspline_pcurve_payload(&payload))?;
                 let support_record = resolve_ref(self.journal, curve_index, support_ref)?;
                 let support_geom =
                     self.resolve_surface(curve_index, support_record, refusal, depth + 1)?;
@@ -678,6 +870,99 @@ pub(in crate::families) fn extrude_nurbs_curve(
     .ok()
 }
 
+/// Revolve a 3D `NurbsCurve` around `(origin, axis)` over `[a0, a1]` (radians)
+/// to produce an exact rational tensor-product `NurbsSurface` of degree
+/// `(curve.degree(), 2)`.
+pub(in crate::families) fn revolve_nurbs_curve(
+    curve: &NurbsCurve,
+    origin: Point3,
+    axis: UnitVector3,
+    [a0, a1]: [f64; 2],
+) -> Option<NurbsSurface> {
+    let span = a1 - a0;
+    if !a0.is_finite()
+        || !a1.is_finite()
+        || !span.is_finite()
+        || span <= MIN_REVOLUTION_SPAN_RAD
+        || span > std::f64::consts::TAU + REVOLUTION_FULL_TURN_TOLERANCE_RAD
+    {
+        return None;
+    }
+    let segments = if span <= std::f64::consts::FRAC_PI_2 {
+        1usize
+    } else if span <= std::f64::consts::PI {
+        2usize
+    } else if span <= 1.5 * std::f64::consts::PI {
+        3usize
+    } else {
+        4usize
+    };
+    let seg_count_f = match segments {
+        1 => 1.0,
+        2 => 2.0,
+        3 => 3.0,
+        _ => 4.0,
+    };
+    let seg_angle = span / seg_count_f;
+    let half = 0.5 * seg_angle;
+    let cos_half = half.cos();
+    if !cos_half.is_finite() || cos_half <= 0.1 {
+        return None;
+    }
+    let inv_cos = 1.0 / cos_half;
+
+    let mut v_knots = Vec::with_capacity(2 * segments + 4);
+    v_knots.extend_from_slice(&[a0, a0, a0]);
+    for seg in 1..segments {
+        let seg_f = match seg {
+            1 => 1.0,
+            2 => 2.0,
+            _ => 3.0,
+        };
+        let knot = a0 + seg_f * seg_angle;
+        v_knots.push(knot);
+        v_knots.push(knot);
+    }
+    v_knots.extend_from_slice(&[a1, a1, a1]);
+
+    let axis_vec = *axis.as_raw();
+    let cols = 2 * segments + 1;
+    let mut rows = Vec::with_capacity(curve.control_points().len());
+    for (idx, pole) in curve.control_points().iter().enumerate() {
+        let p = pole.get();
+        let base_w = curve.weights().map_or(1.0, |weights| weights[idx].get());
+        let rel = p.vector_from(origin);
+        let axial = axis_vec.scale(rel.dot(axis_vec));
+        let radial = rel - axial;
+        let perp = axis_vec.cross(radial);
+        let mut row = Vec::with_capacity(cols);
+        for col in 0..cols {
+            let half_steps = cadmpeg_core::convert::f64_from_index(col)?;
+            let theta = a0 + half_steps * half;
+            let (s, c) = theta.sin_cos();
+            let rotated = radial.scale(c) + perp.scale(s);
+            let is_mid = col % 2 == 1;
+            let disp = if is_mid {
+                axial + rotated.scale(inv_cos)
+            } else {
+                axial + rotated
+            };
+            let pt = Point3::new(origin.x + disp.x, origin.y + disp.y, origin.z + disp.z);
+            let w_val = if is_mid { base_w * cos_half } else { base_w };
+            let weight = cadmpeg_ir::scalar::NonZeroReal::new(w_val)?;
+            row.push(cadmpeg_ir::geometry::nurbs::WeightedPole3 { point: pt, weight });
+        }
+        rows.push(row);
+    }
+    NurbsSurface::new(
+        NurbsSurfaceAxis::new(curve.degree(), curve.knots().clone(), false),
+        NurbsSurfaceAxis::new(2, v_knots, false),
+        NurbsPoleGrid::Rational { rows },
+        false,
+    )
+    .ok()
+}
+
 /// Decode a `u32le`-header class-`0x21` 2D B-spline pcurve (`A_21` or `B_21`).
 pub(super) fn decode_u32_bspline_pcurve_in_sources(
     data: &[u8],
@@ -779,6 +1064,134 @@ fn decode_u32_bspline_pcurve_payload(
     Some((support_ref, nurbs, range))
 }
 
+/// Decode a compact-header class-`0x21` 2D B-spline pcurve (`A_21` or `B_21`)
+/// storing `<support_ref> <0x1a|0x3a> <span_count> <chord_len:f64> <degree> <nknots> <marker> <knots> <2D poles> [tail]`.
+fn decode_compact_bspline_pcurve_payload(
+    payload: &[u8],
+) -> Option<(AllocationReference, PcurveNurbs, [f64; 2])> {
+    let mut at = 0;
+    let support_ref = allocation_reference(payload, &mut at)?;
+    let form = *payload.get(at)?;
+    if !matches!(form, 0x1a | 0x3a) {
+        return None;
+    }
+    at += 1;
+    let span_count = usize::try_from(crate::wire::bytes::compact_int(payload, &mut at)?).ok()?;
+    let chord_len = crate::wire::bytes::f64_le(payload, at)?.get();
+    if !chord_len.is_finite() || chord_len < 0.0 {
+        return None;
+    }
+    at = at.checked_add(8)?;
+    let degree = crate::wire::bytes::compact_int(payload, &mut at)?;
+    let nknots = usize::try_from(crate::wire::bytes::compact_int(payload, &mut at)?).ok()?;
+    if !matches!(degree, 1 | 3 | 5) || nknots < 2 || nknots > MAX_BSPLINE_PCURVE_KNOTS {
+        return None;
+    }
+    let marker = *payload.get(at)?;
+    at += 1;
+    let implicit_mults = match form {
+        0x1a => {
+            if span_count != nknots - 1 || marker != 0x0c {
+                return None;
+            }
+            true
+        }
+        0x3a => {
+            if span_count == 0 || span_count >= nknots {
+                return None;
+            }
+            match marker {
+                0x0c => true,
+                0x08 => {
+                    let _extra = *payload.get(at)?;
+                    at += 1;
+                    true
+                }
+                0x04 => false,
+                0x00 => {
+                    let _extra = *payload.get(at)?;
+                    at += 1;
+                    false
+                }
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    let expect_trailing_byte = form == 0x3a;
+    let deg_usize = usize::try_from(degree).ok()?;
+    let knot_bytes = nknots.checked_mul(8)?;
+    if at.checked_add(knot_bytes)? > payload.len() {
+        return None;
+    }
+    let mut distinct = Vec::with_capacity(nknots);
+    for _ in 0..nknots {
+        distinct.push(crate::wire::bytes::f64_le(payload, at)?.get());
+        at += 8;
+    }
+    if !cadmpeg_ir::geometry::nurbs::knots_strictly_increasing(&distinct) {
+        return None;
+    }
+    let multiplicities: Vec<usize> = if implicit_mults {
+        let interior_mult = match degree {
+            _ if nknots == 2 => 1usize,
+            5 => 3usize,
+            1..=3 => 1usize,
+            _ => return None,
+        };
+        (0..nknots)
+            .map(|index| {
+                if index == 0 || index + 1 == nknots {
+                    deg_usize + 1
+                } else {
+                    interior_mult
+                }
+            })
+            .collect()
+    } else {
+        let mut mults = Vec::with_capacity(nknots);
+        for _ in 0..nknots {
+            let mult = usize::try_from(crate::wire::bytes::compact_int(payload, &mut at)?).ok()?;
+            if mult == 0 || mult > deg_usize + 1 {
+                return None;
+            }
+            mults.push(mult);
+        }
+        mults
+    };
+    let total_knots = multiplicities
+        .iter()
+        .try_fold(0usize, |acc, &m| acc.checked_add(m))?;
+    let pole_count = total_knots.checked_sub(deg_usize.checked_add(1)?)?;
+    if pole_count <= deg_usize {
+        return None;
+    }
+    let expected_end = at.checked_add(pole_count.checked_mul(16)?)?;
+    if expect_trailing_byte {
+        if expected_end.checked_add(1)? != payload.len()
+            || payload.get(expected_end).is_none_or(|b| b % 4 != 1)
+        {
+            return None;
+        }
+    } else if expected_end != payload.len() {
+        return None;
+    }
+    let mut poles = Vec::with_capacity(pole_count);
+    for _ in 0..pole_count {
+        let u = crate::wire::bytes::f64_le(payload, at)?.get();
+        let v = crate::wire::bytes::f64_le(payload, at + 8)?.get();
+        poles.push(Point2::new(u, v));
+        at += 16;
+    }
+    let mut knots = Vec::with_capacity(total_knots);
+    for (&knot, &mult) in distinct.iter().zip(&multiplicities) {
+        knots.extend(std::iter::repeat_n(knot, mult));
+    }
+    let range = [*distinct.first()?, *distinct.last()?];
+    let nurbs = PcurveNurbs::from_lanes(degree, knots, poles, None, false).ok()?;
+    Some((support_ref, nurbs, range))
+}
+
 /// Decode a `u32le`-header class-`0x20` quintic UV jet pcurve (`A_20` or `B_20`).
 pub(super) fn decode_u32_jet_pcurve_in_sources(
     data: &[u8],
@@ -820,9 +1233,10 @@ fn decode_u32_jet_pcurve_payload(
     if !cadmpeg_ir::geometry::nurbs::knots_strictly_increasing(&raw_knots) {
         return None;
     }
-    if view.u8()? != 0x01 || usize::try_from(view.u32_le()?).ok()? != nknots {
+    if view.u8()? != 0x01 || usize::from(view.u16_le()?) != nknots {
         return None;
     }
+    let _lane_flag = view.u16_le()?;
     let mut lanes = [
         Vec::with_capacity(nknots),
         Vec::with_capacity(nknots),
@@ -966,61 +1380,93 @@ pub(in crate::families) fn offset_analytic_surface(
     }
 }
 
+#[inline(never)]
 fn resolve_b2_plane<'a>(
     data: &'a [u8],
     sources: &[Vec<SourceExtent>],
     journal: &AllocationJournal<'a>,
-    carrier: &'a ConsolidatedRecord,
+    mut carrier: &'a ConsolidatedRecord,
     b2_planes: &HashMap<usize, crate::families::b2::records::B2PlaneCarrier>,
     b2_offsets: &HashMap<usize, crate::families::b2::records::B2OffsetSupport>,
-    depth: usize,
+    mut depth: usize,
 ) -> Option<PlaneSurface> {
-    if depth > MAX_ALIAS_DEPTH {
-        return None;
+    loop {
+        if depth > MAX_ALIAS_DEPTH {
+            return None;
+        }
+        match (carrier.family(), carrier.class()) {
+            (ConsolidatedFamily::B, 0x2e) => {
+                let carrier_index =
+                    journal.index(carrier.source_index(), carrier.source_range().start)?;
+                let payload = carrier.payload_bytes(data, sources)?;
+                let mut at = usize::from(payload.first() == Some(&0x81));
+                let inner_ref = allocation_reference(&payload, &mut at)?;
+                carrier = resolve_ref(journal, carrier_index, inner_ref)?;
+                depth += 1;
+                continue;
+            }
+            (ConsolidatedFamily::B, 0x37 | 0x3b) => {
+                let carrier_index =
+                    journal.index(carrier.source_index(), carrier.source_range().start)?;
+                let payload = carrier.payload_bytes(data, sources)?;
+                if payload.first() != Some(&0x85) {
+                    return None;
+                }
+                let mut at = 1;
+                let inner_ref = allocation_reference(&payload, &mut at)?;
+                carrier = resolve_ref(journal, carrier_index, inner_ref)?;
+                depth += 1;
+                continue;
+            }
+            (ConsolidatedFamily::B, 0x38) => {
+                let carrier_index =
+                    journal.index(carrier.source_index(), carrier.source_range().start)?;
+                let payload = carrier.payload_bytes(data, sources)?;
+                if payload.first() != Some(&0x81) {
+                    return None;
+                }
+                let mut at = 1;
+                let inner_ref = allocation_reference(&payload, &mut at)?;
+                carrier = resolve_ref(journal, carrier_index, inner_ref)?;
+                depth += 1;
+                continue;
+            }
+            _ => break,
+        }
     }
     match (carrier.family(), carrier.class()) {
         (ConsolidatedFamily::B, 0x27) => {
             decode_b2_plane_in_sources(data, sources, carrier, b2_planes)
         }
-        (ConsolidatedFamily::B, 0x2e) => {
-            let carrier_index =
-                journal.index(carrier.source_index(), carrier.source_range().start)?;
-            let payload = carrier.payload_bytes(data, sources)?;
-            let mut at = usize::from(payload.first() == Some(&0x81));
-            let inner_ref = allocation_reference(&payload, &mut at)?;
-            let inner = resolve_ref(journal, carrier_index, inner_ref)?;
-            resolve_b2_plane(
-                data,
-                sources,
-                journal,
-                inner,
-                b2_planes,
-                b2_offsets,
-                depth + 1,
-            )
-        }
         (ConsolidatedFamily::B, 0x30 | 0x31) => {
             let carrier_index =
                 journal.index(carrier.source_index(), carrier.source_range().start)?;
             let payload = carrier.payload_bytes(data, sources)?;
+            if payload.first() == Some(&0x82) {
+                let mut at = 1;
+                if let Some(target_ref) = allocation_reference(&payload, &mut at) {
+                    if let Some(target) = resolve_ref(journal, carrier_index, target_ref) {
+                        if let Some(plane) = resolve_b2_plane(
+                            data,
+                            sources,
+                            journal,
+                            target,
+                            b2_planes,
+                            b2_offsets,
+                            depth + 1,
+                        ) {
+                            return Some(plane);
+                        }
+                    }
+                }
+            }
             let mut at = 0;
             let base_ref = allocation_reference(&payload, &mut at)?;
             let base = resolve_ref(journal, carrier_index, base_ref)?;
             let distance = if let Some(parsed) = b2_offsets.get(&carrier.byte_offset()) {
                 parsed.distance.get()
             } else {
-                let mut view = View::over_retained(payload.get(at..)?);
-                let d = view.f64_le()?;
-                let u0 = view.f64_le()?;
-                let v0 = view.f64_le()?;
-                let u1 = view.f64_le()?;
-                let v1 = view.f64_le()?;
-                if !d.is_finite() || !view.is_empty() {
-                    return None;
-                }
-                IncreasingParameterInterval::new([u0, u1])?;
-                IncreasingParameterInterval::new([v0, v1])?;
-                d
+                parse_offset_tail(&payload, at)?.0
             };
             let plane = resolve_b2_plane(
                 data,
@@ -1034,6 +1480,10 @@ fn resolve_b2_plane<'a>(
             let axis = *plane.frame().axis().as_raw();
             let origin = FinitePoint3::new(plane.origin().get().translated(axis, distance))?;
             Some(PlaneSurface::new(origin, *plane.frame()))
+        }
+        (ConsolidatedFamily::B, 0x39) => {
+            let payload = carrier.payload_bytes(data, sources)?;
+            decode_bitmask_plane(&payload).or_else(|| decode_uncompressed_axis_mask_plane(&payload))
         }
         _ => None,
     }
@@ -1173,6 +1623,269 @@ fn decode_compact_nurbs_curve(
     )
 }
 
+/// Decode an uncompressed `u32le`-header class-`0x16` 3D NURBS curve (`A_16` or `B_16`).
+fn decode_u32_nurbs_curve(
+    data: &[u8],
+    sources: &[Vec<SourceExtent>],
+    record: &ConsolidatedRecord,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Option<NurbsCurve> {
+    if record.class() != 0x16 {
+        return None;
+    }
+    let payload = record.payload_bytes(data, sources)?;
+    let mut view = View::over_retained(&payload);
+    let (degree, knots, pole_count) = read_u32_nurbs_axis(&mut view)?;
+    let mode = [view.u8()?, view.u8()?];
+    let rational = match mode {
+        [0x00, 0x00] => false,
+        [0x01, 0x00] => true,
+        _ => return None,
+    };
+    let pole_bytes = pole_count.checked_mul(24)?;
+    let weight_bytes = if rational {
+        pole_count.checked_mul(8)?
+    } else {
+        0
+    };
+    if pole_bytes.checked_add(weight_bytes)?.checked_add(39)? > view.remaining() {
+        return None;
+    }
+    let mut control_points = Vec::with_capacity(pole_count);
+    for _ in 0..pole_count {
+        let x = view.f64_le()?;
+        let y = view.f64_le()?;
+        let z = view.f64_le()?;
+        if !x.is_finite() || !y.is_finite() || !z.is_finite() {
+            return None;
+        }
+        control_points.push(Point3::new(x, y, z));
+    }
+    let weights = if rational {
+        let mut raw = Vec::with_capacity(pole_count);
+        for _ in 0..pole_count {
+            let w = view.f64_le()?;
+            if !w.is_finite() || w <= 0.0 {
+                return None;
+            }
+            raw.push(w);
+        }
+        Some(raw)
+    } else {
+        None
+    };
+    let start_span = view.u16_le()?;
+    let end_span = view.u16_le()?;
+    if start_span != 1 || end_span == 0 {
+        return None;
+    }
+    let dom0 = view.f64_le()?;
+    let dom1 = view.f64_le()?;
+    let scale = view.f64_le()?;
+    let offset = view.f64_le()?;
+    if !dom0.is_finite()
+        || !dom1.is_finite()
+        || scale.to_bits() != 1.0_f64.to_bits()
+        || offset.to_bits() != 0.0_f64.to_bits()
+    {
+        return None;
+    }
+    let tail = view.take(view.remaining())?;
+    if tail.len() < 3 || tail.get(tail.len() - 2..) != Some(&[0xfe, 0xff]) {
+        return None;
+    }
+    crate::nurbs::note_refusal(
+        NurbsCurve::from_lanes(degree, knots, control_points, weights, false),
+        refusal,
+        format_args!(
+            "u32le 0x16 NURBS curve record at byte {}",
+            record.byte_offset()
+        ),
+    )
+}
+
+/// Decode a consolidated `a5 03 32` rolling-ball fillet surface (compact or
+/// `u32le` header) and fit it as a bounded polynomial NURBS patch.
+#[inline(never)]
+fn decode_rolling_ball_surface(
+    data: &[u8],
+    sources: &[Vec<SourceExtent>],
+    record: &ConsolidatedRecord,
+) -> Option<NurbsSurface> {
+    if record.family() != ConsolidatedFamily::A || record.class() != 0x32 {
+        return None;
+    }
+    let definition = crate::families::a5a8::records::a5_freeform_curves_from_records(
+        data,
+        std::slice::from_ref(record),
+    )
+    .into_iter()
+    .next()
+    .and_then(|jet| jet.definition())
+    .or_else(|| {
+        let payload = record.payload_bytes(data, sources)?;
+        decode_u32_rolling_ball_definition(&payload)
+    })?;
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::RollingBallJet(
+        ref jet,
+    ) = definition
+    else {
+        return None;
+    };
+    let u_bounds = [
+        jet.stations().first()?.knot.get(),
+        jet.stations().last()?.knot.get(),
+    ];
+    if !u_bounds[0].is_finite() || !u_bounds[1].is_finite() || u_bounds[0] >= u_bounds[1] {
+        return None;
+    }
+    super::owned_patch::surface_fit::rolling(&definition, [u_bounds, [0.0, 1.0]]).or_else(|| {
+        super::rolling_ball_patch::fit_rectangular_patch(&definition, u_bounds)
+            .map(|fit| fit.surface)
+    })
+}
+
+fn decode_u32_rolling_ball_definition(
+    payload: &[u8],
+) -> Option<cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition> {
+    let mut view = View::over_retained(payload);
+    let count = usize::try_from(view.u32_le()?).ok()?;
+    let degree = view.u32_le()?;
+    let count_repeat = usize::try_from(view.u32_le()?).ok()?;
+    if count < 2 || count != count_repeat || degree != 5 || count > MAX_BSPLINE_PCURVE_KNOTS {
+        return None;
+    }
+    match view.u8()? {
+        0x04 => {}
+        0x00 => {
+            let _flag = view.u32_le()?;
+        }
+        _ => return None,
+    }
+    let mut knots = Vec::with_capacity(count);
+    let mut prev: Option<f64> = None;
+    for _ in 0..count {
+        let knot = cadmpeg_ir::scalar::FiniteReal::new(view.f64_le()?)?;
+        if prev.is_some_and(|p| knot.get() <= p) {
+            return None;
+        }
+        prev = Some(knot.get());
+        knots.push(knot);
+    }
+    if view.u8()? != 0x01 {
+        return None;
+    }
+    let block_bytes = count.checked_mul(80)?;
+    if block_bytes.checked_mul(3)? > view.remaining() {
+        return None;
+    }
+    let mut read_block = || -> Option<Vec<[cadmpeg_ir::scalar::FiniteReal; 10]>> {
+        let mut rows = Vec::with_capacity(count);
+        for _ in 0..count {
+            let mut row = [cadmpeg_ir::scalar::FiniteReal::ZERO; 10];
+            for slot in &mut row {
+                *slot = cadmpeg_ir::scalar::FiniteReal::new(view.f64_le()?)?;
+            }
+            rows.push(row);
+        }
+        Some(rows)
+    };
+    let positions = read_block()?;
+    let first_derivs = read_block()?;
+    let second_derivs = read_block()?;
+    let mut stations = Vec::with_capacity(count);
+    for i in 0..count {
+        let site = crate::families::a5a8::records::rolling_ball_site(positions[i], true)?;
+        stations.push(cadmpeg_ir::geometry::blends::RollingBallJetStation {
+            knot: knots[i],
+            multiplicity: 6,
+            site: crate::families::a5a8::records::rolling_ball_jet_site(
+                &site,
+                first_derivs[i],
+                second_derivs[i],
+            ),
+        });
+    }
+    cadmpeg_ir::geometry::blends::RollingBallJetStations::from_parts(5, stations)
+        .ok()
+        .map(cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::RollingBallJet)
+}
+
+/// Decode a consolidated `a5 03 39` ruled guide-curve surface (typically a
+/// chamfer carrier) into a degree-`(5, 1)` polynomial NURBS surface.
+#[inline(never)]
+fn decode_ruled_guide_surface(
+    data: &[u8],
+    sources: &[Vec<SourceExtent>],
+    record: &ConsolidatedRecord,
+) -> Option<NurbsSurface> {
+    if record.family() != ConsolidatedFamily::A || record.class() != 0x39 {
+        return None;
+    }
+    let guide = crate::families::a5a8::records::a5_ruled_guides_from_records(
+        data,
+        std::slice::from_ref(record),
+    )
+    .into_iter()
+    .next()?;
+    let knots = guide.knots();
+    let u_bounds = [*knots.first()?, *knots.last()?];
+    if let Some(payload) = record.payload_bytes(data, sources) {
+        if let Some(tail_start) = payload.len().checked_sub(48) {
+            if let Some(tail) = crate::wire::bytes::read_f64_array::<4>(&payload, tail_start) {
+                let [u0, u1, v0, v1] = tail.map(cadmpeg_ir::scalar::FiniteReal::get);
+                if v0 < v1
+                    && (v1 - v0) > MIN_RULED_V_SPAN
+                    && u0 <= u_bounds[1]
+                    && u1 >= u_bounds[0]
+                    && u0 < u1
+                {
+                    if let Some(ruled) = super::owned_patch::ruled::Ruled::new(&guide, [v0, v1]) {
+                        if let Some(surface) = ruled.fit([[u0, u1], [v0, v1]]) {
+                            return Some(surface);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let points: Vec<[f64; 6]> = guide
+        .sites
+        .iter()
+        .map(|s| {
+            let [x, y, z] = s.point.get();
+            let [rx, ry, rz] = s.reference_point.get();
+            [x, y, z, rx, ry, rz]
+        })
+        .collect();
+    let first: Vec<[f64; 6]> = guide
+        .sites
+        .iter()
+        .map(|s| s.first_derivative.get())
+        .collect();
+    let second: Vec<[f64; 6]> = guide
+        .sites
+        .iter()
+        .map(|s| s.second_derivative.get())
+        .collect();
+    let (bspline_knots, poles) =
+        crate::nurbs::quintic_jet_bspline(guide.degree, &knots, &points, &first, &second)?;
+    let rows: Vec<Vec<Point3>> = poles
+        .into_iter()
+        .map(|p| {
+            let v = p.get();
+            vec![Point3::new(v[0], v[1], v[2]), Point3::new(v[3], v[4], v[5])]
+        })
+        .collect();
+    NurbsSurface::new(
+        NurbsSurfaceAxis::new(guide.degree, bspline_knots, false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsPoleGrid::Polynomial { rows },
+        false,
+    )
+    .ok()
+}
+
 /// Decode an uncompressed `b2 03 27` plane carrier storing a 24-byte `f64le`
 /// origin, a 1-byte axis bitmask (`0xc0 | zero_mask` unbounded, or `0x40 |
 /// zero_mask` followed by 4 trailing `f64le` UV bounds), and only the non-zero
@@ -1224,6 +1937,118 @@ fn decode_uncompressed_axis_mask_plane(bytes: &[u8]) -> Option<PlaneSurface> {
     Some(PlaneSurface::new(
         origin,
         OrthonormalFrame3::completing(u, v)?,
+    ))
+}
+
+/// Parse the scalar tail of a `B_30` or `B_31` offset carrier after its leading
+/// `base_ref`:
+/// - `B_31` compact form: `<distance:f64> <u0:f64> <v0:f64> <u1:f64> <v1:f64>` (40 bytes)
+/// - `B_30` two-ref form: `<aux_ref:allocation_reference> <distance:f64> <0x01|0x15> <u0:f64> <u1:f64> <v0:f64> <v1:f64>`
+fn parse_offset_tail(payload: &[u8], at: usize) -> Option<(f64, [f64; 2], [f64; 2])> {
+    let tail = payload.get(at..)?;
+    if tail.len() == 40 {
+        let mut view = View::over_retained(tail);
+        let distance = view.f64_le()?;
+        let u0 = view.f64_le()?;
+        let v0 = view.f64_le()?;
+        let u1 = view.f64_le()?;
+        let v1 = view.f64_le()?;
+        if !distance.is_finite() || !view.is_empty() {
+            return None;
+        }
+        let u_bounds = IncreasingParameterInterval::new([u0, u1])?.endpoints();
+        let v_bounds = IncreasingParameterInterval::new([v0, v1])?.endpoints();
+        return Some((distance, u_bounds, v_bounds));
+    }
+    let mut aux_at = at;
+    let _aux_ref = allocation_reference(payload, &mut aux_at)?;
+    let mut view = View::over_retained(payload.get(aux_at..)?);
+    if view.remaining() != 41 {
+        return None;
+    }
+    let distance = view.f64_le()?;
+    let tag = view.u8()?;
+    if !matches!(tag, 0x01 | 0x15) || !distance.is_finite() {
+        return None;
+    }
+    let u0 = view.f64_le()?;
+    let u1 = view.f64_le()?;
+    let v0 = view.f64_le()?;
+    let v1 = view.f64_le()?;
+    if !view.is_empty() {
+        return None;
+    }
+    let u_bounds = IncreasingParameterInterval::new([u0, u1])?.endpoints();
+    let v_bounds = IncreasingParameterInterval::new([v0, v1])?.endpoints();
+    Some((distance, u_bounds, v_bounds))
+}
+
+/// Decode a consolidated `b2 03 28` cylinder carrier storing a 24-byte `f64le`
+/// origin, a 6-bit zero-component axis mask for `(ref_x, ref_y)`, the non-zero
+/// `f64le` frame components, `radius`, `u_range`, `v_range`, and either `0x07`
+/// (standard) or `0x03 <range_origin:f64le>`.
+fn decode_axis_mask_cylinder(
+    bytes: &[u8],
+) -> Option<cadmpeg_ir::geometry::analytic::CylinderSurface> {
+    if bytes.len() < 66 {
+        return None;
+    }
+    let mask = bytes[24];
+    if (mask & 0xc0) != 0 {
+        return None;
+    }
+    let zero_mask = mask & 0x3f;
+    let stored_components = 6usize.checked_sub(usize::try_from(zero_mask.count_ones()).ok()?)?;
+    let body_end = 25usize
+        .checked_add(stored_components.checked_mul(8)?)?
+        .checked_add(40)?;
+    let tail_len = bytes.len().checked_sub(body_end)?;
+    if !matches!(tail_len, 1 | 9) {
+        return None;
+    }
+    let mut view = View::over_retained(bytes);
+    let origin = FinitePoint3::new(Point3::new(view.f64_le()?, view.f64_le()?, view.f64_le()?))?;
+    let _mask = view.u8()?;
+    let mut components = [0.0_f64; 6];
+    for (bit, slot) in components.iter_mut().enumerate() {
+        if (zero_mask & (1u8 << bit)) == 0 {
+            let value = view.f64_le()?;
+            if !value.is_finite() {
+                return None;
+            }
+            *slot = value;
+        }
+    }
+    let radius_raw = view.f64_le()?;
+    let u0 = view.f64_le()?;
+    let u1 = view.f64_le()?;
+    let v0 = view.f64_le()?;
+    let v1 = view.f64_le()?;
+    let tail_tag = view.u8()?;
+    match (tail_len, tail_tag) {
+        (1, 0x07) => {}
+        (9, 0x03) => {
+            if !view.f64_le()?.is_finite() {
+                return None;
+            }
+        }
+        _ => return None,
+    }
+    if !view.is_empty() {
+        return None;
+    }
+    let radius = cadmpeg_ir::scalar::PositiveLength::new(radius_raw)?;
+    IncreasingParameterInterval::new([u0, u1])?;
+    IncreasingParameterInterval::new([v0, v1])?;
+    if !crate::families::b2::records::circle_range_is_within_full_turn(radius_raw, [u0, u1]) {
+        return None;
+    }
+    let u = UnitVector3::new(Vector3::new(components[0], components[1], components[2]))?;
+    let v = UnitVector3::new(Vector3::new(components[3], components[4], components[5]))?;
+    Some(cadmpeg_ir::geometry::analytic::CylinderSurface::new(
+        origin,
+        OrthonormalFrame3::completing(u, v)?,
+        radius,
     ))
 }
 
@@ -1304,7 +2129,11 @@ pub(super) fn decode_u32_nurbs_surface(
         }
         *slot = value;
     }
-    if parameters[4..] != [1.0, 0.0, 1.0, 0.0] {
+    if (parameters[4] - 1.0).abs() > IDENTITY_AFFINE_SCALE_TOLERANCE
+        || parameters[5] != 0.0
+        || (parameters[6] - 1.0).abs() > IDENTITY_AFFINE_SCALE_TOLERANCE
+        || parameters[7] != 0.0
+    {
         return None;
     }
     let grid = if let Some(weights) = raw_weights {
@@ -1943,5 +2772,114 @@ mod tests {
         assert!((range[0] - 0.0).abs() < TOL);
         assert!((range[1] - 10.0).abs() < TOL);
         assert!(refusal.take_notes().is_empty());
+    }
+
+    #[test]
+    fn revolve_nurbs_curve_produces_exact_rational_quarter_and_full_turns() {
+        use cadmpeg_ir::eval::{self, admission::EvaluationAdmission};
+        const TOL: f64 = 1.0e-9;
+        let line = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(5.0, 0.0, 0.0), Point3::new(5.0, 0.0, 10.0)],
+            None,
+            false,
+        )
+        .expect("line profile");
+        let quarter = super::revolve_nurbs_curve(
+            &line,
+            Point3::new(0.0, 0.0, 0.0),
+            UnitVector3::Z_AXIS,
+            [0.0, std::f64::consts::FRAC_PI_2],
+        )
+        .expect("quarter revolution");
+        assert_eq!(quarter.v_degree(), 2);
+        assert_eq!(quarter.v_count(), 3);
+        let mid = eval::decode::nurbs_surface_point(
+            EvaluationAdmission::Standard,
+            &quarter,
+            0.5,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("midpoint")
+        .get();
+        let expected_xy = 5.0 * std::f64::consts::FRAC_1_SQRT_2;
+        assert!((mid.x - expected_xy).abs() < TOL);
+        assert!((mid.y - expected_xy).abs() < TOL);
+        assert!((mid.z - 5.0).abs() < TOL);
+    }
+
+    #[test]
+    fn decode_axis_mask_cylinder_and_offset_tails() {
+        const TOL: f64 = 1.0e-12;
+        // Axis-mask cylinder: mask 0x2e (stored bits 0, 4 => u=(1,0,0), v=(0,1,0), axis=+Z)
+        let mut cyl = Vec::new();
+        for v in [10.0_f64, 20.0, 30.0] {
+            cyl.extend_from_slice(&v.to_le_bytes());
+        }
+        cyl.push(0x2e);
+        for v in [
+            1.0_f64,
+            1.0,
+            5.0,
+            0.0,
+            std::f64::consts::TAU * 5.0,
+            -2.0,
+            2.0,
+        ] {
+            cyl.extend_from_slice(&v.to_le_bytes());
+        }
+        cyl.push(0x07);
+        let decoded = super::decode_axis_mask_cylinder(&cyl).expect("axis-mask cylinder");
+        assert!((decoded.radius().get() - 5.0).abs() < TOL);
+        assert!((decoded.frame().axis().as_raw().z - 1.0).abs() < TOL);
+
+        // Two-ref B_30 offset tail: aux_ref=0x05, dist=-2.5, tag=0x15, u=[0,10], v=[-5,5]
+        let mut off = vec![0x09, 0x05];
+        off.extend_from_slice(&(-2.5_f64).to_le_bytes());
+        off.push(0x15);
+        for v in [0.0_f64, 10.0, -5.0, 5.0] {
+            off.extend_from_slice(&v.to_le_bytes());
+        }
+        let (dist, u, v) = super::parse_offset_tail(&off, 1).expect("two-ref offset tail");
+        assert!((dist + 2.5).abs() < TOL);
+        assert!((u[0] - 0.0).abs() < TOL && (u[1] - 10.0).abs() < TOL);
+        assert!((v[0] + 5.0).abs() < TOL && (v[1] - 5.0).abs() < TOL);
+    }
+
+    #[test]
+    fn decode_compact_bspline_pcurve_handles_1a_and_3a_explicit_multiplicities() {
+        // 0x1a form: 1 span, degree 1, 2 knots, 2 poles
+        let mut p1a = vec![0x05, 0x1a, 0x05];
+        p1a.extend_from_slice(&1.0_f64.to_le_bytes());
+        p1a.extend_from_slice(&[0x05, 0x09, 0x0c]);
+        for v in [0.0_f64, 1.0, 0.0, 0.0, 1.0, 2.0] {
+            p1a.extend_from_slice(&v.to_le_bytes());
+        }
+        let (sref, nurbs, range) =
+            super::decode_compact_bspline_pcurve_payload(&p1a).expect("0x1a pcurve");
+        assert_eq!(sref.value, 1);
+        assert_eq!(nurbs.degree(), 1);
+        assert_eq!(nurbs.control_points().len(), 2);
+        assert!((range[1] - 1.0).abs() < 1.0e-12);
+
+        // 0x3a form with explicit multiplicities (0x04): 3 knots, mults [2, 1, 2] -> 3 poles
+        let mut p3a = vec![0x05, 0x3a, 0x05];
+        p3a.extend_from_slice(&2.0_f64.to_le_bytes());
+        p3a.extend_from_slice(&[0x05, 0x0d, 0x04]);
+        for k in [0.0_f64, 1.0, 2.0] {
+            p3a.extend_from_slice(&k.to_le_bytes());
+        }
+        // Explicit compact-int multiplicities: 2 (0x09), 1 (0x05), 2 (0x09)
+        p3a.extend_from_slice(&[0x09, 0x05, 0x09]);
+        for v in [0.0_f64, 0.0, 1.0, 1.0, 2.0, 0.0] {
+            p3a.extend_from_slice(&v.to_le_bytes());
+        }
+        p3a.push(0x01); // trailing flag
+        let (_, nurbs3a, range3a) =
+            super::decode_compact_bspline_pcurve_payload(&p3a).expect("0x3a explicit pcurve");
+        assert_eq!(nurbs3a.degree(), 1);
+        assert_eq!(nurbs3a.control_points().len(), 3);
+        assert!((range3a[1] - 2.0).abs() < 1.0e-12);
     }
 }

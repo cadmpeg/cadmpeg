@@ -97,6 +97,25 @@ fn owned_surface_keeps_full_domain_identity_parameters_without_a_loss() {
         .expect("full-domain surface");
     assert_eq!(surfaces.len(), 1);
     assert!(refusal.take_notes().is_empty());
+
+    // A 1-ULP IEEE-754 rounding residual on unit affine scales (0.9999999999999999)
+    // is still an identity parameter map.
+    use crate::layout::surface_terminal_span_tail as layout;
+    let mut near_id = a5_surface_tail();
+    let near_one = 1.0_f64 - f64::EPSILON * 0.5;
+    let values = [0.0_f64, 1.0, 0.0, 1.0, near_one, 0.0, near_one, 0.0]
+        .into_iter()
+        .flat_map(f64::to_le_bytes)
+        .collect::<Vec<_>>();
+    near_id[layout::PARAMETERS..layout::FLAGS].copy_from_slice(&values);
+    let near_bytes = a5_surface_stream_with_tail(&near_id);
+    let near_records = crate::wire::records::consolidated_records(&near_bytes);
+    let mut near_refusal = crate::nurbs::LaneRefusals::new();
+    let near_surfaces =
+        super::super::a5_owned_surfaces_from_records(&near_bytes, &near_records, &mut near_refusal)
+            .expect("near-identity surface");
+    assert_eq!(near_surfaces.len(), 1);
+    assert!(near_refusal.take_notes().is_empty());
 }
 
 #[test]

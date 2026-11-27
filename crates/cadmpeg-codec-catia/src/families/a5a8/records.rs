@@ -1437,7 +1437,10 @@ fn a5_rolling_ball_tail(
     (at == data.len()).then_some((v_end, extended_v_end))
 }
 
-fn rolling_ball_site(values: [FiniteReal; 10], owned: bool) -> Option<RollingBallSite> {
+pub(in crate::families) fn rolling_ball_site(
+    values: [FiniteReal; 10],
+    owned: bool,
+) -> Option<RollingBallSite> {
     let limit1 = FinitePoint3::from_coordinates(values[0], values[1], values[2]);
     let limit2 = FinitePoint3::from_coordinates(values[3], values[4], values[5]);
     let center = FinitePoint3::from_coordinates(values[6], values[7], values[8]);
@@ -1960,12 +1963,18 @@ fn a5_surface(
     let v_scale = 1.0_f64
         .max(v_distinct[v_distinct.len() - 1].abs())
         .max(v_distinct[v_distinct.len() - 2].abs());
+    const TERMINAL_SPAN_DOMAIN_TOLERANCE: f64 = 1.0e-6;
+    const IDENTITY_AFFINE_SCALE_TOLERANCE: f64 = 1.0e-12;
     let matches_terminal_span = parameters[0] == 0.0
         && (parameters[1] - u_last_span).abs() <= TERMINAL_SPAN_DOMAIN_TOLERANCE * u_scale
         && parameters[2] == 0.0
         && (parameters[3] - v_last_span).abs() <= TERMINAL_SPAN_DOMAIN_TOLERANCE * v_scale;
-    let identity_chart = (parameters[..4] == full_limits || matches_terminal_span)
-        && parameters[4..] == [1.0, 0.0, 1.0, 0.0];
+    let identity_affine = (parameters[4] - 1.0).abs() <= IDENTITY_AFFINE_SCALE_TOLERANCE
+        && parameters[5] == 0.0
+        && (parameters[6] - 1.0).abs() <= IDENTITY_AFFINE_SCALE_TOLERANCE
+        && parameters[7] == 0.0;
+    let identity_chart =
+        (parameters[..4] == full_limits || matches_terminal_span) && identity_affine;
     if !tail.fixed_suffix && !identity_chart {
         return Ok(None);
     }

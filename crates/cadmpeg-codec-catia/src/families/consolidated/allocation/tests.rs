@@ -165,3 +165,22 @@ fn allocation_with_sources_bridges_skipped_width4_flag13_frames() {
     assert_eq!(bridged.absolute_address(1), Some(259));
     assert_eq!(bridged.resolve_weighted_distance(1, 258), Some(&records[0]));
 }
+
+#[test]
+fn allocation_signed_negative_header_deltas_track_backward_addresses() {
+    // Tokens: +10 (0x29), -1 (0x03), +5 (0x15), -3 (0x0b)
+    // Addresses: 10, 9, 14, 11
+    let mut data = Vec::new();
+    for (class, tok) in [(0x27u8, 0x29u8), (0x18, 0x03), (0x24, 0x15), (0x5d, 0x0b)] {
+        data.extend_from_slice(&[0xb2, 0x03, class, 0x01, tok, 0x00]);
+    }
+    let records = consolidated_records_in_range_sources(&data, [std::iter::once(0..data.len())]);
+    assert_eq!(records.len(), 4);
+    let journal = AllocationJournal::new(&records);
+    assert_eq!(journal.address(0), Some(10));
+    assert_eq!(journal.address(1), Some(9));
+    assert_eq!(journal.address(2), Some(14));
+    assert_eq!(journal.address(3), Some(11));
+    assert_eq!(journal.resolve_weighted_distance(3, 1), Some(&records[0]));
+    assert_eq!(journal.resolve_address(1, 14), Some(&records[2]));
+}

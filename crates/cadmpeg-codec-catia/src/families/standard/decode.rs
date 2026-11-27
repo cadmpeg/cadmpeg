@@ -2209,7 +2209,7 @@ fn try_decode_standard_population(
     }
     let refined_analytic_surfaces = refine_consolidated_analytic_surfaces(&scan.data, &consolidated_records, &mut curved_surfaces);
     let mut plane_normals = standard_plane_normals_from_face_frames(&records, &face_frame_vectors);
-    crate::families::freeform::standard_carriers::recover_missing_plane_normals(
+    let journal_planes = crate::families::freeform::standard_carriers::recover_missing_plane_normals(
         &scan.data,
         &sources,
         &consolidated_records,
@@ -2344,6 +2344,13 @@ fn try_decode_standard_population(
             planes
                 .get(&prefix.target)
                 .and_then(crate::families::standard::records::decode_plane)
+                .or_else(|| {
+                    journal_planes
+                        .get(&prefix.target)
+                        .cloned()
+                        .map(SolvedSurfaceGeometry::Plane)
+                        .map(SurfaceGeometry::Solved)
+                })
         } else {
             curved_surfaces[i].clone()
         };

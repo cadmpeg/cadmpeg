@@ -5,7 +5,6 @@ use std::collections::{HashMap, HashSet};
 
 use crate::wire::records::{
     parse_consolidated_allocation_record, records_are_contiguous, ConsolidatedRecord, SourceExtent,
-    WidthCodedToken,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -78,7 +77,7 @@ impl<'a> AllocationJournal<'a> {
                     None
                 };
                 if let Some(delta) = bridged_increment {
-                    address = address.and_then(|value| value.checked_add(delta));
+                    address = address.and_then(|value| apply_signed_delta(value, delta));
                 } else {
                     scope = index;
                     address = Some(0);
@@ -87,12 +86,10 @@ impl<'a> AllocationJournal<'a> {
                     }
                 }
             }
-            let increment = WidthCodedToken::new(record.width(), record.header_token())
-                .ok()
-                .and_then(WidthCodedToken::compact_operand);
+            let delta = signed_token_delta(record.width(), record.header_token());
             address = address
-                .zip(increment)
-                .and_then(|(value, increment)| value.checked_add(u64::from(increment.value())));
+                .zip(delta)
+                .and_then(|(value, delta)| apply_signed_delta(value, delta));
             let Some(value) = address else {
                 locations.push(AllocationLocation {
                     scope,
@@ -198,15 +195,15 @@ impl<'a> AllocationJournal<'a> {
     }
 }
 
-/// Walk a logical byte gap inside one record source and return the sum of its
-/// allocation increments when every byte of the gap is closed by valid
+/// Walk a logical byte gap inside one record source and return the signed sum
+/// of its allocation deltas when every byte of the gap is closed by valid
 /// consolidated allocation frames.
 fn bridge_allocation_gap(
     data: &[u8],
     extents: &[SourceExtent],
     start: usize,
     end: usize,
-) -> Option<u64> {
+) -> Option<i64> {
     if start >= end {
         return None;
     }
@@ -243,13 +240,11 @@ fn bridge_allocation_gap(
         None => return None,
     };
     let mut pos = 0usize;
-    let mut total = 0_u64;
+    let mut total = 0_i64;
     while pos < bytes.len() {
         let rec = parse_consolidated_allocation_record(bytes, pos, bytes.len())?;
-        let inc = WidthCodedToken::new(rec.width(), rec.header_token())
-            .ok()?
-            .compact_operand()?;
-        total = total.checked_add(u64::from(inc.value()))?;
+        let delta = signed_token_delta(rec.width(), rec.header_token())?;
+        total = total.checked_add(delta)?;
         let next = rec.range()?.end;
         if next <= pos {
             return None;
@@ -257,6 +252,44 @@ fn bridge_allocation_gap(
         pos = next;
     }
     Some(total)
+}
+
+fn signed_token_delta(
+    width: crate::wire::records::ConsolidatedFrameWidth,
+    header_token: u32,
+) -> Option<i64> {
+    let raw = header_token.to_le_bytes();
+    let bytes = raw.get(..usize::from(u8::from(width)))?;
+    if bytes.len() == 4 && bytes[0] == 0x0e {
+        let value = crate::wire::bytes::u32_le_24(bytes, 1)?;
+        return Some(-(i64::from(value) + 1));
+    }
+    let mut at = 0;
+    let reference = crate::wire::bytes::allocation_reference(bytes, &mut at)?;
+    if at != bytes.len() {
+        return None;
+    }
+    match reference.encoding {
+        crate::wire::bytes::AllocationReferenceEncoding::BackwardDistance
+        | crate::wire::bytes::AllocationReferenceEncoding::WidthCoded => {
+            Some(i64::from(reference.value))
+        }
+        crate::wire::bytes::AllocationReferenceEncoding::OwnedChild
+        | crate::wire::bytes::AllocationReferenceEncoding::TaggedU8
+        | crate::wire::bytes::AllocationReferenceEncoding::TaggedU16
+        | crate::wire::bytes::AllocationReferenceEncoding::TaggedU24 => {
+            Some(-(i64::from(reference.value) + 1))
+        }
+        crate::wire::bytes::AllocationReferenceEncoding::Selector2 => None,
+    }
+}
+
+fn apply_signed_delta(address: u64, delta: i64) -> Option<u64> {
+    if delta >= 0 {
+        address.checked_add(u64::try_from(delta).ok()?)
+    } else {
+        address.checked_sub(delta.unsigned_abs())
+    }
 }
 
 #[cfg(test)]

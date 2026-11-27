@@ -129,7 +129,7 @@ pub(in crate::families::freeform) fn offset(
     )
 }
 
-pub(super) fn rolling(
+pub(in crate::families::freeform) fn rolling(
     definition: &cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition,
     [u, v]: [[f64; 2]; 2],
 ) -> Option<NurbsSurface> {
