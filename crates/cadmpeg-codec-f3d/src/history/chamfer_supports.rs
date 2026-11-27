@@ -2,13 +2,11 @@
 //!
 //! Coedge sense and face sense exist on the live brep inside
 //! [`super::topology_rows::historical_topology`], then the replayed historical rows drop them.
-//! This map keeps that sense, keyed by the history stream and the edge and face
-//! slots, until feature-input projection reads it. A sense field on the coedge
-//! row would change every transition snapshot.
+//! [`ChamferSenses`] keeps that sense, keyed by the history stream and the edge
+//! and face slots, until feature-input projection reads it. A sense field on the
+//! coedge row would change every transition snapshot.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use cadmpeg_ir::features::edge_treatments::ChamferSpec;
 use cadmpeg_ir::features::evaluation::EdgeSupport;
@@ -24,7 +22,7 @@ use crate::history_records::{AsmHistoricalCylinder, AsmHistoricalTopology};
 const OUTWARD_AGREEMENT: f64 = 0.9;
 
 #[derive(Clone, Copy)]
-struct FaceSense {
+pub(crate) struct FaceSense {
     /// The coedge runs with the edge, so the face lies on the left.
     with_edge: bool,
     /// The face normal agrees with the stored surface normal.
@@ -37,42 +35,50 @@ enum SupportKind {
     Cylinder,
 }
 
-type SenseKey = (Arc<str>, i64, i64);
+/// Coedge and face senses keyed by `(edge, face)` for one decoded history stream.
+pub(crate) type StreamChamferSenses = HashMap<(i64, i64), FaceSense>;
 
-thread_local! {
-    static CURRENT: RefCell<Arc<str>> = RefCell::new(Arc::from(""));
-    static SENSES: RefCell<HashMap<SenseKey, FaceSense>> = RefCell::new(HashMap::new());
+/// Coedge and face senses collected during ASM history decode, keyed by history ID.
+#[derive(Default)]
+pub(crate) struct ChamferSenses {
+    by_history: HashMap<String, StreamChamferSenses>,
 }
 
-/// Drop every recorded sense. The next design decode starts empty.
-pub(super) fn clear() {
-    CURRENT.with(|current| *current.borrow_mut() = Arc::from(""));
-    SENSES.with(|senses| senses.borrow_mut().clear());
-}
-
-/// Remember `history` for the senses [`note`] records, and forget it on drop.
-#[must_use]
-pub(super) struct HistoryScope;
-
-impl HistoryScope {
-    pub(super) fn enter(history: &str) -> Self {
-        CURRENT.with(|current| *current.borrow_mut() = Arc::from(history));
-        Self
+impl ChamferSenses {
+    pub(crate) fn record_history(&mut self, history_id: String, senses: StreamChamferSenses) {
+        if !senses.is_empty() {
+            self.by_history.insert(history_id, senses);
+        }
     }
-}
 
-impl Drop for HistoryScope {
-    fn drop(&mut self) {
-        CURRENT.with(|current| *current.borrow_mut() = Arc::from(""));
+    fn stream(&self, history_id: &str) -> Option<&StreamChamferSenses> {
+        self.by_history.get(history_id)
+    }
+
+    #[cfg(test)]
+    pub(super) fn note_test(
+        &mut self,
+        history_id: &str,
+        edge: i64,
+        face: i64,
+        with_edge: bool,
+        face_forward: bool,
+    ) {
+        self.by_history
+            .entry(history_id.to_owned())
+            .or_default()
+            .insert(
+                (edge, face),
+                FaceSense {
+                    with_edge,
+                    face_forward,
+                },
+            );
     }
 }
 
 /// Record coedge and face sense from the brep snapshot being diffed.
-pub(super) fn note(brep: &cadmpeg_asm::brep::AsmBrep) {
-    let history = CURRENT.with(|current| Arc::clone(&current.borrow()));
-    if history.is_empty() {
-        return;
-    }
+pub(super) fn note(brep: &cadmpeg_asm::brep::AsmBrep, senses: &mut StreamChamferSenses) {
     let mut face_of_loop = HashMap::new();
     for face in &brep.faces {
         let Some(slot) = super::body_closures::stable_ref(face.id.as_str()) else {
@@ -83,38 +89,27 @@ pub(super) fn note(brep: &cadmpeg_asm::brep::AsmBrep) {
             face_of_loop.insert(loop_.as_str(), (slot, face_forward));
         }
     }
-    SENSES.with(|senses| {
-        let mut senses = senses.borrow_mut();
-        for coedge in &brep.coedges {
-            let Some(edge) = super::body_closures::stable_ref(coedge.edge.as_str()) else {
-                continue;
-            };
-            let Some(&(face, face_forward)) = face_of_loop.get(coedge.owner_loop.as_str()) else {
-                continue;
-            };
-            senses.insert(
-                (Arc::clone(&history), edge, face),
-                FaceSense {
-                    with_edge: coedge.sense == Sense::Forward,
-                    face_forward,
-                },
-            );
-        }
-    });
-}
-
-fn lookup(history: &str, edge: i64, face: i64) -> Option<FaceSense> {
-    SENSES.with(|senses| {
-        senses
-            .borrow()
-            .get(&(Arc::from(history), edge, face))
-            .copied()
-    })
+    for coedge in &brep.coedges {
+        let Some(edge) = super::body_closures::stable_ref(coedge.edge.as_str()) else {
+            continue;
+        };
+        let Some(&(face, face_forward)) = face_of_loop.get(coedge.owner_loop.as_str()) else {
+            continue;
+        };
+        senses.insert(
+            (edge, face),
+            FaceSense {
+                with_edge: coedge.sense == Sense::Forward,
+                face_forward,
+            },
+        );
+    }
 }
 
 /// Fill support faces on edges selected by an unequal two-distance chamfer.
 pub(super) fn attach(
     feature: &cadmpeg_ir::features::Feature,
+    chamfer_senses: &ChamferSenses,
     history_id: &str,
     topology: &AsmHistoricalTopology,
     prefix: &cadmpeg_ir::ids::IdentityKey,
@@ -124,6 +119,7 @@ pub(super) fn attach(
     if slots.is_empty() {
         return;
     }
+    let senses = chamfer_senses.stream(history_id);
     for sample in geometry {
         let Some(slot) = trailing_slot(sample.edge.as_str()) else {
             continue;
@@ -131,7 +127,7 @@ pub(super) fn attach(
         if !slots.contains(&slot) {
             continue;
         }
-        if let Some(supports) = supports_for(history_id, topology, slot, prefix) {
+        if let Some(supports) = supports_for(senses, topology, slot, prefix) {
             sample.supports = supports;
         }
     }
@@ -174,11 +170,12 @@ fn trailing_slot(id: &str) -> Option<i64> {
 }
 
 fn supports_for(
-    history_id: &str,
+    senses: Option<&StreamChamferSenses>,
     topology: &AsmHistoricalTopology,
     edge: i64,
     prefix: &cadmpeg_ir::ids::IdentityKey,
 ) -> Option<Vec<EdgeSupport>> {
+    let senses = senses?;
     let faces = faces_of(topology, edge);
     if faces.len() != 2 {
         return None;
@@ -190,7 +187,7 @@ fn supports_for(
     let tangent = sample.tangent?.unit()?;
     let mut built = Vec::new();
     for face in faces {
-        let sense = lookup(history_id, edge, face)?;
+        let sense = senses.get(&(edge, face)).copied()?;
         let (kind, normal) = outward(topology, face, edge, tangent, sample.interior, sense)?;
         built.push((
             kind,

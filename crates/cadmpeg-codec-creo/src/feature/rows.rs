@@ -531,10 +531,7 @@ pub(crate) fn round_replay_scalars(rows: &[FeatureRow]) -> Vec<FeatureRoundRepla
         .iter()
         .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
     {
-        for (record_start, bytes) in row.body.windows(CR_FLAGS_ANCHOR.len()).enumerate() {
-            if bytes != CR_FLAGS_ANCHOR {
-                continue;
-            }
+        for record_start in cadmpeg_core::bytes::find_iter(&row.body, CR_FLAGS_ANCHOR) {
             let Some(record_end) = find_in(
                 &row.body,
                 MISC_CHOICE_ANCHOR,
@@ -543,11 +540,13 @@ pub(crate) fn round_replay_scalars(rows: &[FeatureRow]) -> Vec<FeatureRoundRepla
             ) else {
                 continue;
             };
-            let Some(separator) = row.body[record_start + CR_FLAGS_ANCHOR.len()..record_end]
-                .windows(2)
-                .position(|bytes| bytes == [0x01, 0xf6])
-                .map(|offset| record_start + CR_FLAGS_ANCHOR.len() + offset + 2)
-            else {
+            let Some(separator) = find_in(
+                &row.body,
+                &[0x01, 0xf6],
+                record_start + CR_FLAGS_ANCHOR.len(),
+                record_end,
+            )
+            .map(|offset| offset + 2) else {
                 continue;
             };
             let Some(scalar_offset) = round_replay_short_scalar(&row.body, separator, record_end)
@@ -637,12 +636,12 @@ pub(crate) fn choices(rows: &[FeatureRow]) -> Result<Vec<FeatureChoice>, CodecEr
             let end = hits.get(index + 1).map_or_else(
                 || {
                     let post_choice = b"assoc_type\0";
-                    row.body[value..]
-                        .windows(post_choice.len() + 2)
-                        .position(|window| {
-                            window[0] == psb::token::NAMED_RECORD && window[2..] == post_choice[..]
+                    cadmpeg_core::bytes::find_iter(&row.body[value..], post_choice)
+                        .find(|&relative| {
+                            relative >= 2
+                                && row.body[value + relative - 2] == psb::token::NAMED_RECORD
                         })
-                        .map_or(row.body.len(), |relative| value + relative)
+                        .map_or(row.body.len(), |relative| value + relative - 2)
                 },
                 |hit| hit.0,
             );
@@ -1369,13 +1368,8 @@ fn positional_surface_merge_affected_ids(
 ) -> Option<Result<FeatureSurfaceMergeAffectedIds, CodecError>> {
     const ANCHOR: &[u8] = &[0xf7, 0x80, 0x96];
     const QUILT_SEPARATOR: &[u8] = &[0xf0, 0xf7, 0x80, 0x99];
-    let mut anchors = row
-        .body
-        .windows(ANCHOR.len())
-        .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == ANCHOR).then_some(offset));
-    let anchor = anchors.next()?;
-    anchors.next().is_none().then_some(())?;
+    let anchor = cadmpeg_core::bytes::find(&row.body, ANCHOR)
+        .filter(|&first| cadmpeg_core::bytes::find_from(&row.body, ANCHOR, first + 1).is_none())?;
     let (_, cursor) = match explicit_replay_array(&row.body, anchor + ANCHOR.len())? {
         Ok(decoded) => decoded,
         Err(error) => return Some(Err(error)),
