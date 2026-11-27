@@ -332,7 +332,7 @@ fn source_only_properties_repack_without_inventing_values_or_attachments() {
             .unwrap();
         let mut written = Vec::new();
         FcstdCodec
-            .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut written))
             .unwrap();
         let roundtrip = FcstdCodec

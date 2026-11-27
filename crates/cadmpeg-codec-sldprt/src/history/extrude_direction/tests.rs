@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::document::Topology;
 use cadmpeg_ir::math::Point3;
-use serde_json::json;
 
 fn model(start: f64, normal: f64) -> CadIr {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("synthetic cube");
-    let history = cadmpeg_core::serde_erase::json::from_value(json!({
+    let history = json::from_value(json!({
         "id":"history", "features":[{
             "id":"native", "parent":"history", "ordinal":0,
             "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
@@ -17,7 +18,7 @@ fn model(start: f64, normal: f64) -> CadIr {
     }))
     .expect("synthetic history");
     ir.model.features = crate::history::project::project_features(&[history]).expect("feature");
-    let sketch: Sketch = cadmpeg_core::serde_erase::json::from_value(json!({
+    let sketch: Sketch = json::from_value(json!({
         "id":"synthetic:travel:sketch#0", "placement":{"kind":"resolved","frame":{
             "origin":{"x":0.0,"y":0.0,"z":start},
             "normal":{"x":0.0,"y":0.0,"z":normal},
@@ -34,7 +35,7 @@ fn model(start: f64, normal: f64) -> CadIr {
         .enumerate()
     {
         ir.model.sketch_entities.push(
-            cadmpeg_core::serde_erase::json::from_value(json!({
+            json::from_value(json!({
                 "id":format!("synthetic:travel:entity#{i}"),"sketch":sketch.id,
                 "construction":false,"endpoint_refs":[],
                 "geometry":{"kind":"line","start":{"u":a.0,"v":a.1*normal},
@@ -166,6 +167,21 @@ fn opposite_caps_contradict_reversed_travel() {
     }
 }
 
+/// An extrusion whose suppression the source does not state is in force
+/// (§5.10), so the solid can contradict its travel; a suppressed one is not.
+#[test]
+fn travel_of_an_extrusion_not_stated_suppressed_is_tested() {
+    for (suppressed, contradicted) in [(None, true), (Some(false), true), (Some(true), false)] {
+        let mut ir = model(10.0, 1.0);
+        ir.model.features[0].suppressed = suppressed;
+        assert_eq!(
+            contradicted_features(&ir).contains(&ir.model.features[0].id),
+            contradicted,
+            "{suppressed:?}"
+        );
+    }
+}
+
 #[test]
 fn absent_caps_and_carrier_failures_preserve_travel() {
     for missing in [0.0, 10.0] {
@@ -272,21 +288,12 @@ fn placed_body_caps_are_compared_in_model_space() {
 }
 
 #[test]
-fn suppressed_and_unresolved_suppression_preserve_travel() {
-    for suppressed in [None, Some(true)] {
-        let mut ir = model(10.0, 1.0);
-        ir.model.features[0].suppressed = suppressed;
-        assert!(contradicted_features(&ir).is_empty());
-    }
-}
-
-#[test]
 fn active_state_retention_preserves_inactive_configuration_travel() {
     let mut ir = model(10.0, 1.0);
     let feature = &ir.model.features[0];
     for active in [true, false] {
         let mut configuration: cadmpeg_ir::features::parameters::DesignConfiguration =
-            cadmpeg_core::serde_erase::json::from_value(json!({
+            json::from_value(json!({
                 "id":format!("synthetic:travel:configuration#{active}"),"active":active,
                 "ordinal":0,"feature_states":{},"parameter_overrides":{},"parameter_values":{},
                 "properties":{}

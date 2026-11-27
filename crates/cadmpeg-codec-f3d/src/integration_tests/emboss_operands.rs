@@ -7,6 +7,7 @@ use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayload};
 use crate::records::identity::ReferenceRun;
 use crate::test_support::{indexed_header, push_marked_reference};
+use cadmpeg_core::serde_erase::json;
 
 fn scope(stream: &str) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
@@ -14,7 +15,7 @@ fn scope(stream: &str) -> DesignParameterScope {
         DesignFeatureKind::Emboss,
         40,
     );
-    let construction = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    let construction = json::from_value(cadmpeg_core::json!({
         "control_words": [7, 9], "native_pair": [17, 23],
         "depth_owner": {"value": 60, "offset": 29},
         "auxiliary_group": {"value": 72, "offset": 40},

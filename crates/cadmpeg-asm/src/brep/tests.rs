@@ -24,7 +24,6 @@ use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{EdgeId, FaceId, LoopId, RegionId, ShellId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Loop, Shell};
-use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 
 const FORMAT: IdFormat = crate::asm_format!("f3d");
@@ -1400,17 +1399,17 @@ fn append_preserves_body_ordinals_within_each_source_brep() {
 #[test]
 fn a_restated_join_map_names_no_wire_key() {
     let brep = AsmBrep::default();
-    let value = serde_value::to_value(&brep).expect("AsmBrep serializes");
-    AsmBrep::deserialize(value.clone()).expect("the key records alone read");
+    let value = cadmpeg_core::serde_erase::to_json_value(&brep).expect("AsmBrep serializes");
+    cadmpeg_core::serde_erase::from_json_value::<AsmBrep>(&value)
+        .expect("the key records alone read");
     for restated in ["face_keys", "body_keys"] {
-        let serde_value::Value::Map(mut fields) = value.clone() else {
+        let serde_json::Value::Object(mut fields) = value.clone() else {
             panic!("AsmBrep serializes as a map");
         };
-        fields.insert(
-            serde_value::Value::String(restated.to_string()),
-            serde_value::Value::Map(std::collections::BTreeMap::new()),
-        );
-        let Err(error) = AsmBrep::deserialize(serde_value::Value::Map(fields)) else {
+        fields.insert(restated.to_string(), cadmpeg_core::json!({}));
+        let Err(error) = cadmpeg_core::serde_erase::from_json_value::<AsmBrep>(
+            &serde_json::Value::Object(fields),
+        ) else {
             panic!("a restated join map is an unknown field");
         };
         let error = error.to_string();

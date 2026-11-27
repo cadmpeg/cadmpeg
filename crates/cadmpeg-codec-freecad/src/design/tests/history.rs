@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design history transfer unit tests.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::edit;
 
 use crate::test_support::test_archive::{archive, assert_valid_document};
@@ -637,12 +638,12 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         .expect("A1:B1")]
     );
     assert_valid_document(result.ir());
-    let mut corrupted = cadmpeg_core::serde_erase::json::to_value(sheet).expect("serialize sheet");
+    let mut corrupted = json::to_value(sheet).expect("serialize sheet");
     corrupted["merged_ranges"]
         .as_array_mut()
         .expect("merged ranges")
-        .push(serde_json::json!({"start": "A1", "end": "A2"}));
-    let error = cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::Spreadsheet>(corrupted)
+        .push(cadmpeg_core::json!({"start": "A1", "end": "A2"}));
+    let error = json::from_value::<cadmpeg_ir::Spreadsheet>(corrupted)
         .expect_err("overlapping merge ranges");
     assert!(error.to_string().contains("merged ranges overlap"));
 }

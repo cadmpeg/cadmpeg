@@ -327,7 +327,7 @@ pub(crate) fn inspect(
                     path,
                     report_path,
                     "inspect",
-                    Payload::Refused(serde_json::json!({ "summary": null }), refusal),
+                    Payload::Refused(cadmpeg_core::json!({ "summary": null }), refusal),
                     json,
                 );
             }
@@ -381,17 +381,11 @@ pub(crate) fn dump(
         let plan = encoder
             .plan(
                 cadmpeg_ir::codec::write::EncodeInput::new(&loaded.ir, loaded.fidelity()),
-                TargetRequest::Inherit,
+                TargetRequest::Unnamed,
             )
             .map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Plan))?;
-        let emission = emit_export_plan(
-            plan,
-            Format::Cadir,
-            &destination,
-            &loaded.origin,
-            &loaded.ir,
-        )
-        .map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Export))?;
+        let emission = emit_export_plan(plan, Format::Cadir, &destination, &loaded.origin)
+            .map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Export))?;
         print_export_emission(&mut io::stderr(), &emission)?;
         if let Some(report) = loaded.decode_report() {
             print_decode_report(&mut io::stderr(), report)?;
@@ -613,6 +607,13 @@ pub(crate) fn diff(
         println!("diff {} vs {}", a.path.display(), b.path.display());
         if let Some((before, after)) = &result.tolerance_change {
             println!("  tolerances: {before:?} → {after:?}");
+        }
+        if let Some((before, after)) = result.scope_change {
+            println!(
+                "  scope: {} → {}",
+                reporting::render_scope(before),
+                reporting::render_scope(after)
+            );
         }
         print_source_diff(&result.source)?;
         for arena in &result.per_arena {

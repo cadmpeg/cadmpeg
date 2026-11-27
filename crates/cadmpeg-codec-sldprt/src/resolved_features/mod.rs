@@ -144,6 +144,8 @@ mod sketch_write;
 
 pub(crate) mod terminations;
 
+pub(crate) mod walked_patterns;
+
 pub(crate) mod sweeps;
 
 mod grid;

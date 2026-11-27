@@ -10,8 +10,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::{LazyLock, Mutex, PoisonError};
 
+use cadmpeg_core::serde_erase::from_json_value;
 use cadmpeg_ir::CadIr;
-use serde::Deserialize;
 use serde_json::{Map, Value};
 
 /// The key inserted into every swept shape.
@@ -78,13 +78,13 @@ pub struct SweptShapes {
 ///
 /// Returns the serde error when `ir` does not read back as a `CadIr`.
 pub fn accepting_shapes(ir: &Value) -> Result<SweptShapes, serde_json::Error> {
-    CadIr::deserialize(ir)?;
+    from_json_value::<CadIr>(ir)?;
     let empty = cadmpeg_ir::hash::finite_json::to_json_value(&CadIr::empty())?;
     let mut probed = PROBED.lock().unwrap_or_else(PoisonError::into_inner);
     sweep(
         ir,
         &empty,
-        |document| CadIr::deserialize(document).is_ok(),
+        |document| from_json_value::<CadIr>(document).is_ok(),
         &mut probed,
     )
 }

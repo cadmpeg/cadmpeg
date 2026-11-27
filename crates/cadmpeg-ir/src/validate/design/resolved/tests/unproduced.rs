@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
-use serde_json::json;
+use cadmpeg_core::json;
 
 use crate::design::evaluation::StateBase;
 use crate::design::names::{NameEntry, TopoName};
@@ -31,7 +32,7 @@ fn names_on_an_unproduced_extent_are_native() {
     let body = body(&ir);
     ir.design.scopes[0].current[0].bodies.clear();
     ir.design.scopes[0].unproduced.insert(body);
-    let native: NameEntry = cadmpeg_core::serde_erase::json::from_value(json!({
+    let native: NameEntry = json::from_value(json!({
         "native": { "codec": "test", "value": {"kind": "text", "value": "face"} }
     }))
     .unwrap();

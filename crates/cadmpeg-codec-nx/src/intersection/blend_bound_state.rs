@@ -103,6 +103,7 @@ impl TryFrom<StateWire> for BlendBoundState {
 #[cfg(test)]
 mod tests {
     use super::BlendBoundState;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn bridge_wire_preserves_both_boundaries_and_rejects_invalid_controls() {
@@ -111,22 +112,18 @@ mod tests {
                 r#"{{"xmt":2,"header_references":[1,0,3,4,5],"sense":false,"boundary_index":{boundary},"blend_surface_xmt":6}}"#
             );
             let state: BlendBoundState = serde_json::from_str(&json).unwrap();
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_string(&state).unwrap(),
-                json
-            );
+            assert_eq!(json::to_string(&state).unwrap(), json);
             for (field, invalid) in [
-                ("xmt", serde_json::json!(0)),
-                ("xmt", serde_json::json!(1)),
-                ("header_references", serde_json::json!([0, 0, 3, 4, 5])),
-                ("boundary_index", serde_json::json!(2)),
-                ("blend_surface_xmt", serde_json::json!(0)),
-                ("blend_surface_xmt", serde_json::json!(1)),
+                ("xmt", cadmpeg_core::json!(0)),
+                ("xmt", cadmpeg_core::json!(1)),
+                ("header_references", cadmpeg_core::json!([0, 0, 3, 4, 5])),
+                ("boundary_index", cadmpeg_core::json!(2)),
+                ("blend_surface_xmt", cadmpeg_core::json!(0)),
+                ("blend_surface_xmt", cadmpeg_core::json!(1)),
             ] {
-                let mut wire = cadmpeg_core::serde_erase::json::to_value(state).unwrap();
+                let mut wire = json::to_value(state).unwrap();
                 wire[field] = invalid;
-                let error = cadmpeg_core::serde_erase::json::from_value::<BlendBoundState>(wire)
-                    .unwrap_err();
+                let error = json::from_value::<BlendBoundState>(wire).unwrap_err();
                 assert!(error.to_string().contains(field), "{error}");
             }
         }

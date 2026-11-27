@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::design::construction::FrameValue;
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::names::{NameKind, TopoName};
@@ -10,7 +12,7 @@ use cadmpeg_ir::design::selection::{PickTarget, Picks};
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
 use cadmpeg_ir::units::UnitVector3;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::*;
 
@@ -19,7 +21,7 @@ fn legacy(kind: &str, value: Value) -> LegacyOperation {
         ("kind".to_owned(), Value::String(kind.to_owned())),
         ("value".to_owned(), value),
     ]);
-    cadmpeg_core::serde_erase::json::from_value(Value::Object(fields)).expect("synthetic operation")
+    json::from_value(Value::Object(fields)).expect("synthetic operation")
 }
 
 fn feature(key: u32) -> FeatureId {
@@ -91,9 +93,8 @@ fn with_stated<T>(run: impl FnOnce(&Stated<'_>) -> T) -> T {
 
 fn project(operation: &LegacyOperation) -> Option<FeatureOperation> {
     let projected = with_stated(|stated| typed(operation, &feature(50), stated))?;
-    let wire = cadmpeg_core::serde_erase::json::to_value(&projected).expect("v11 wire");
-    let read: FeatureOperation =
-        cadmpeg_core::serde_erase::json::from_value(wire).expect("v11 read");
+    let wire = json::to_value(&projected).expect("v11 wire");
+    let read: FeatureOperation = json::from_value(wire).expect("v11 read");
     assert_eq!(projected, read);
     Some(projected)
 }
@@ -365,7 +366,7 @@ fn a_round_picks_the_edges_a_preceding_feature_generates_by_name() {
     let operation = legacy(
         "fillet",
         json!({"groups": [{
-            "edges": cadmpeg_core::serde_erase::json::to_value(&edges).expect("edges"),
+            "edges": json::to_value(&edges).expect("edges"),
             "radius": {"kind": "constant", "radius": 2.0},
         }]}),
     );

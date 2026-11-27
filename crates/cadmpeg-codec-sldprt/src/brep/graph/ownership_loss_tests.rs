@@ -4,7 +4,7 @@ use crate::test_support::parasolid::sequence::{face_fields, topology_sequence_wi
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 #[test]
-fn current_ownership_omissions_report_bodies_shells_and_faces() {
+fn a_given_up_face_is_not_counted_again_by_the_ownership_note() {
     let mut fields = face_fields();
     fields[5] = F::P(1);
     let (payload, _) = topology_sequence_with_face(Some((&[0xff], &fields)));
@@ -17,13 +17,23 @@ fn current_ownership_omissions_report_bodies_shells_and_faces() {
         &cadmpeg_ir::stream_name!("ownership"),
     )
     .unwrap();
+    let mut out = out;
     assert!(out.faces.is_empty());
     assert_eq!(out.losses.len(), 1);
     assert_eq!(
         out.losses[0].code.local_code(),
         "topology.ownership-withheld"
     );
-    assert_eq!(out.losses[0].message, "3 current typed ownership node(s) are withheld: 1 body node(s), 1 shell node(s), and 1 face node(s).");
+    assert_eq!(out.losses[0].message, "2 current typed ownership node(s) are withheld: 1 body node(s), 1 shell node(s), and 0 face node(s).");
+    let losses = out.take_losses().unwrap();
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+            .filter(|loss| loss.message.starts_with("record sldprt:brep:face#5 "))
+            .count(),
+        1
+    );
 }
 
 #[test]
@@ -74,7 +84,7 @@ fn complete_current_ownership_has_no_omission_loss() {
 }
 
 #[test]
-fn current_ownership_face_omission_reports_when_full_hierarchy_fails() {
+fn a_typed_face_that_names_no_loop_is_given_up_beside_a_kept_face() {
     use crate::test_support::parasolid::sequence::{node_with_program, sequence_of};
     use F::{C, I, P, R, V};
     let (mut payload, _) = topology_sequence_with_face(None);
@@ -132,7 +142,7 @@ fn current_ownership_face_omission_reports_when_full_hierarchy_fails() {
     let header = crate::parasolid::stream_header(&payload).unwrap().unwrap();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let out = super::decode_bodies(
+    let mut out = super::decode_bodies(
         &ctx,
         &[(&payload, &header)],
         &cadmpeg_ir::stream_name!("ownership"),
@@ -140,10 +150,21 @@ fn current_ownership_face_omission_reports_when_full_hierarchy_fails() {
     .unwrap();
     assert_eq!(out.faces.len(), 1);
     assert_eq!(out.faces[0].id, super::id_face(5));
-    assert_eq!(out.losses.len(), 1);
-    assert_eq!(
-        out.losses[0].code.local_code(),
-        "topology.ownership-withheld"
+    assert!(out
+        .losses
+        .iter()
+        .all(|loss| loss.code.local_code() != "topology.ownership-withheld"));
+    let losses = out.take_losses().unwrap();
+    let charges = losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    let [charge] = charges[..] else {
+        panic!("one charge gives up the loopless face: {charges:?}");
+    };
+    assert!(
+        charge.starts_with("record sldprt:brep:face#32 "),
+        "{charge}"
     );
-    assert_eq!(out.losses[0].message, "1 current typed ownership node(s) are withheld: 0 body node(s), 0 shell node(s), and 1 face node(s).");
 }

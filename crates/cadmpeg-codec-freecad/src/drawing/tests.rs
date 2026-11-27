@@ -3,6 +3,7 @@
 
 #![allow(clippy::doc_markdown)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::wire;
 
 use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
@@ -112,21 +113,21 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
         .model
         .drawings
         .iter()
-        .find(|drawing| drawing.object.ends_with("#Page"))
+        .find(|drawing| drawing.object.as_str().ends_with("#Page"))
         .expect("neutral page");
     let neutral_template = result
         .ir()
         .model
         .drawings
         .iter()
-        .find(|drawing| drawing.object.ends_with("#Template"))
+        .find(|drawing| drawing.object.as_str().ends_with("#Template"))
         .expect("neutral template");
     let neutral_view = result
         .ir()
         .model
         .drawings
         .iter()
-        .find(|drawing| drawing.object.ends_with("#View"))
+        .find(|drawing| drawing.object.as_str().ends_with("#View"))
         .expect("neutral view");
     assert_eq!(neutral_page.kind, cadmpeg_ir::drawings::DrawingKind::Page);
     assert_eq!(
@@ -196,7 +197,7 @@ fn preserves_null_and_non_drawing_page_links_in_typed_relationships() {
     assert_eq!(pages.len(), 2);
     let null_page = pages
         .iter()
-        .find(|drawing| drawing.object.ends_with("#PageNull"))
+        .find(|drawing| drawing.object.as_str().ends_with("#PageNull"))
         .expect("null page");
     assert!(null_page.template.is_none());
     assert!(matches!(
@@ -209,7 +210,7 @@ fn preserves_null_and_non_drawing_page_links_in_typed_relationships() {
     );
     let model_page = pages
         .iter()
-        .find(|drawing| drawing.object.ends_with("#PageModel"))
+        .find(|drawing| drawing.object.as_str().ends_with("#PageModel"))
         .expect("model page");
     assert!(model_page.template.is_none());
     assert_eq!(
@@ -268,21 +269,21 @@ fn keeps_non_page_template_links_out_of_neutral_page_field() {
         .model
         .drawings
         .iter()
-        .find(|drawing| drawing.object.ends_with("#Template"))
+        .find(|drawing| drawing.object.as_str().ends_with("#Template"))
         .expect("neutral template");
     let neutral_page = result
         .ir()
         .model
         .drawings
         .iter()
-        .find(|drawing| drawing.object.ends_with("#Page"))
+        .find(|drawing| drawing.object.as_str().ends_with("#Page"))
         .expect("neutral page");
     let neutral_view = result
         .ir()
         .model
         .drawings
         .iter()
-        .find(|drawing| drawing.object.ends_with("#View"))
+        .find(|drawing| drawing.object.as_str().ends_with("#View"))
         .expect("neutral view");
     assert_eq!(
         neutral_page
@@ -362,7 +363,7 @@ fn local_links_name_drawing_records_and_annotations_and_typed_fields_hold_their_
         model
             .drawings
             .iter()
-            .find(|drawing| drawing.object.ends_with(&format!("#{name}")))
+            .find(|drawing| drawing.object.as_str().ends_with(&format!("#{name}")))
             .unwrap_or_else(|| panic!("{name}"))
     };
     let id = |name: &str| drawing(name).id.clone();
@@ -386,7 +387,7 @@ fn local_links_name_drawing_records_and_annotations_and_typed_fields_hold_their_
     let label = model
         .semantic_annotations
         .iter()
-        .find(|annotation| annotation.object.ends_with("#Label"))
+        .find(|annotation| annotation.object.as_str().ends_with("#Label"))
         .expect("label");
     assert_eq!(
         drawing("Front").relationships["Source"],
@@ -418,7 +419,7 @@ fn local_links_name_drawing_records_and_annotations_and_typed_fields_hold_their_
     let semantic_dimension = model
         .semantic_annotations
         .iter()
-        .find(|annotation| annotation.object.ends_with("#Dimension"))
+        .find(|annotation| annotation.object.as_str().ends_with("#Dimension"))
         .expect("semantic dimension");
     assert_eq!(&semantic_dimension.references["References2D"], references);
     assert!(model
@@ -792,12 +793,12 @@ fn decodes_python_page_kind_with_views_and_template() {
 
 #[test]
 fn drawing_wire_rejects_non_page_views() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "view", "object": "view", "kind": "TechDraw::DrawView",
         "views": ["a"], "template": null, "sources": [],
         "relationships": {}, "parameters": {}, "side_entries": []
     });
-    let error = cadmpeg_core::serde_erase::json::from_value::<crate::native::DrawingRecord>(wire)
+    let error = json::from_value::<crate::native::DrawingRecord>(wire)
         .expect_err("non-page payload must reject page views");
     assert!(error
         .to_string()

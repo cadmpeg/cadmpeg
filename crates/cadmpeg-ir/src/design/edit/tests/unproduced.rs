@@ -2,6 +2,7 @@
 //! Configuration exchange keeps a scope's unproduced bodies.
 
 use super::*;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn switching_configurations_preserves_unproduced_bodies_and_their_records() {
@@ -14,7 +15,7 @@ fn switching_configurations_preserves_unproduced_bodies_and_their_records() {
         .geometry
         .regions
         .push(Region::new(id("region", 9), id("body", 9), Vec::new()));
-    let native: NameEntry = cadmpeg_core::serde_erase::json::from_value(json!({
+    let native: NameEntry = json::from_value(json!({
         "native": {"codec": "test", "value": {"kind": "text", "value": "unproduced"}}
     }))
     .unwrap();

@@ -55,7 +55,7 @@ fn semantic_writer_keeps_stored_partial_or_controlled_axes_and_names_the_edit() 
                     draft.into_operation().unwrap(),
                 ));
         }
-        let unwritten =
+        let (unwritten, _) =
             crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
         assert!(
             unwritten.iter().any(|message| message

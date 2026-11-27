@@ -37,7 +37,6 @@ const EPS_CURVES_STORED_OFFSET_PLANE_U_AXIS: f64 = 1.0e-9;
 
 pub(super) const REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY: &str =
     crate::records::REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY;
-pub(super) const CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE: &str = "constructed-mid-plane";
 
 #[derive(Clone, Copy, Debug)]
 struct CircularArcWitness<'a> {
@@ -101,7 +100,7 @@ fn feature_u_axis_source(feature: &cadmpeg_ir::features::Feature) -> SketchPlane
         .source_properties
         .get(REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY)
         .map(String::as_str)
-        == Some(CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE)
+        == Some(crate::records::CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE)
     {
         SketchPlaneUAxisSource::ConstructedMidPlane
     } else {

@@ -597,6 +597,7 @@ mod tests {
     };
     use crate::legacy;
     use crate::legacy::{NumericPayload, ObjectPayload, ObjectRecord, Persistence, StringPayload};
+    use cadmpeg_core::serde_erase::json;
 
     fn fixture_offset(id: &str) -> usize {
         match id {
@@ -752,11 +753,11 @@ mod tests {
                     integer(instance, "attributes", 0, 13),
                     integer(value, "type", 50, 14),
                 ],
-                unresolved_count: 0,
+                unresolved: Vec::new(),
             },
             real_values: crate::legacy::TypedValues {
                 rows: vec![real(value, VALUE_REAL, 2.5, 15)],
-                unresolved_count: 0,
+                unresolved: Vec::new(),
             },
             string_values: vec![
                 string(item, "name", "d0", 16),
@@ -771,8 +772,7 @@ mod tests {
         let table = parse(&complete_table()).expect("complete family table");
         assert_eq!(table.items[0].item_id, 17);
         assert_eq!(table.instances[0].name, "SMALL");
-        let wire =
-            cadmpeg_core::serde_erase::json::to_value(&table).expect("serialized family table");
+        let wire = json::to_value(&table).expect("serialized family table");
         assert_eq!(wire["instances"][0]["values"][0]["ordinal"], 0);
         assert_eq!(table.instances[0].values[0].value.type_code(), 50);
         assert!(matches!(

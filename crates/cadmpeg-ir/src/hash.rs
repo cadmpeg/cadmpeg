@@ -138,6 +138,19 @@ pub(crate) fn measured_canonical_json(
     Ok((bytes, measured))
 }
 
+/// The refusal of the canonical JSON of `value`, where its walk is refused.
+/// The walk notes no bound for a later measured walk.
+pub(crate) fn canonical_refusal<T: Serialize + ?Sized>(value: &T) -> Option<CanonicalJsonError> {
+    let refusal = finite_json::write_canonical_json(
+        finite_json::admission::CanonicalAdmission::unlimited(),
+        &mut std::io::sink(),
+        value,
+    )
+    .err();
+    crate::bounds::take_expression_past();
+    refusal
+}
+
 fn canonical_json_digest<T: Serialize + ?Sized>(
     ctx: &DecodeContext<'_>,
     value: &T,
@@ -248,21 +261,19 @@ pub fn document_local_sha256_without_carried(
 ) -> Result<String, CodecError> {
     let unknowns = reduced_unknowns(ctx, ir, format, source_image_id)?;
     let omitted_arenas = edited_omitted_arenas(ctx, ir)?;
-    let document = (|| {
-        Ok::<_, CodecError>(NormalizedDocument {
-            ir_version: ir.ir_version(),
-            fragment: ir.fragment,
-            source: source.cloned(),
-            units: CanonicalUnitsWire::default(),
-            tolerances: &ir.tolerances,
-            geometry: ir.geometry.sorted(),
-            model: ir.model.sorted()?,
-            design: ir.design.sorted(),
-            process: ir.process.sorted(),
-            native: normalized_native(ctx, &ir.native, format, &unknowns, carried),
-            omitted_arenas,
-        })
-    })()?;
+    let document = NormalizedDocument {
+        ir_version: ir.ir_version(),
+        fragment: ir.fragment,
+        source: source.cloned(),
+        units: CanonicalUnitsWire::default(),
+        tolerances: &ir.tolerances,
+        geometry: ir.geometry.sorted(),
+        model: ir.model.sorted(),
+        design: ir.design.sorted(),
+        process: ir.process.sorted(),
+        native: normalized_native(ctx, &ir.native, format, &unknowns, carried),
+        omitted_arenas,
+    };
     match canonical_json_sha256(ctx, &document) {
         Ok(digest) => Ok(digest),
         Err(error) => {
@@ -390,7 +401,7 @@ impl Serialize for DigestNativeArena<'_, '_> {
 
         const PARALLEL_THRESHOLD: usize = 512;
         const CHUNK_RECORDS: usize = 512;
-        let workers = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+        let workers = cadmpeg_core::parallelism();
         if self.records.len() < PARALLEL_THRESHOLD || workers <= 1 {
             let mut seq = serializer.serialize_seq(Some(self.records.len()))?;
             for &record in &self.records {
@@ -827,6 +838,7 @@ mod tests {
     use crate::ids::UnknownId;
     use crate::native::{Native, NativeRecord};
     use crate::unknown::UnknownRecord;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_core::CodecError;
 
     /// The document digest counts the arenas the wire omits where they differ
@@ -918,16 +930,13 @@ mod tests {
         ] {
             let hex = super::LowerHex(bytes);
             assert_eq!(hex.to_string(), expected);
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(&hex).unwrap(),
-                serde_json::json!(expected)
-            );
+            assert_eq!(json::to_value(&hex).unwrap(), cadmpeg_core::json!(expected));
         }
     }
 
     #[test]
     fn a_nested_non_finite_float_has_no_digest() {
-        let nested = serde_json::json!({ "outer": [{ "inner": 1.0 }] });
+        let nested = cadmpeg_core::json!({ "outer": [{ "inner": 1.0 }] });
         assert!(canonical_json_sha256(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             &nested
@@ -955,7 +964,7 @@ mod tests {
 
     /// Record covering JSON shapes whose rendering could drift.
     fn pinned_record() -> NativeRecord {
-        let serde_json::Value::Object(fields) = serde_json::json!({
+        let serde_json::Value::Object(fields) = cadmpeg_core::json!({
             "zeta": null,
             "alpha": [-1, 0, 1.5, 2.0, 1e10, 1e-7],
             "beta": {
@@ -1014,10 +1023,7 @@ mod tests {
   "gamma": 9007199254740993,
   "zeta": null
 }"#;
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string_pretty(&pinned_record()).unwrap(),
-            expected
-        );
+        assert_eq!(json::to_string_pretty(&pinned_record()).unwrap(), expected);
     }
 
     /// Same record indented inside namespace and arena, as hashing sees it.
@@ -1054,10 +1060,7 @@ mod tests {
     ]
   }
 }"#;
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string_pretty(&pinned_native()).unwrap(),
-            expected
-        );
+        assert_eq!(json::to_string_pretty(&pinned_native()).unwrap(), expected);
     }
 
     /// Digest over the arena above; formatting drift under
@@ -1137,7 +1140,7 @@ mod tests {
         .unwrap();
 
         let mut readable_fields = serde_json::Map::new();
-        readable_fields.insert("links".into(), serde_json::json!([]));
+        readable_fields.insert("links".into(), cadmpeg_core::json!([]));
         let readable_ir = pinned_document_with_unknown(readable_fields);
         let readable = document_local_sha256(
             &cadmpeg_core::decode::test_support::service_decode_context(),
@@ -1150,7 +1153,7 @@ mod tests {
         assert_ne!(readable, absent);
 
         let mut unreadable_fields = serde_json::Map::new();
-        unreadable_fields.insert("links".into(), serde_json::json!(7));
+        unreadable_fields.insert("links".into(), cadmpeg_core::json!(7));
         let unreadable = pinned_document_with_unknown(unreadable_fields);
         assert!(document_local_sha256(
             &cadmpeg_core::decode::test_support::service_decode_context(),
@@ -1171,7 +1174,7 @@ mod tests {
 
         // Source retention fields belong to the sidecar. They cannot be
         // silently reduced out of a reserved product unknown record.
-        let serde_json::Value::Object(source_fields) = serde_json::json!({
+        let serde_json::Value::Object(source_fields) = cadmpeg_core::json!({
             "links": [], "offset": 4096, "byte_len": 12,
             "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
             "data": "AQID"
@@ -1617,7 +1620,7 @@ mod tests {
         for _ in 0..140 {
             deep = serde_json::Value::Array(vec![deep]);
         }
-        let serde_json::Value::Object(fields) = serde_json::json!({
+        let serde_json::Value::Object(fields) = cadmpeg_core::json!({
             "deep": deep,
             "zero": -0.0,
             "spelled": "-0.0",
@@ -1727,7 +1730,7 @@ mod tests {
     #[test]
     fn pretty_format_compact_json_matches_canonical_pretty_printer() {
         let samples = [
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "id": "test:scope:kind#0",
                 "empty_obj": {},
                 "empty_arr": [],
@@ -1737,13 +1740,13 @@ mod tests {
                 "escaped": "a\"b\\c\n\t\"{}",
                 "nested": { "k": [1, true, null, { "x": -0.0 }] }
             }),
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "id": "test:scope:kind#1",
                 "payload": [[-0.0], [[[]]], {"a": {"b": {}}}]
             }),
         ];
         for sample in &samples {
-            let compact = cadmpeg_core::serde_erase::json::to_string(sample).unwrap();
+            let compact = json::to_string(sample).unwrap();
             let mut formatted = String::new();
             let max_depth = super::pretty_format_compact_json(&compact, 0, &mut formatted);
             assert!(max_depth >= 2);

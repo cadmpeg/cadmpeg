@@ -77,6 +77,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for BranchItems<T> {
 #[cfg(test)]
 mod tests {
     use super::BranchItems;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn branch_count_includes_one_implicit_slot_and_fits_a_byte() {
@@ -89,7 +90,7 @@ mod tests {
         }
         for len in [0, 255] {
             assert!(BranchItems::new(vec![0; len]).is_err());
-            let json = cadmpeg_core::serde_erase::json::to_string(&vec![0; len]).unwrap();
+            let json = json::to_string(&vec![0; len]).unwrap();
             assert!(serde_json::from_str::<BranchItems<u8>>(&json).is_err());
         }
     }

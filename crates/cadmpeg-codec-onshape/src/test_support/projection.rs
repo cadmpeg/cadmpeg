@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::fixture;
+use cadmpeg_core::serde_erase::json;
 use serde_json::Value;
 use std::io::{Cursor, Read, Write};
 
@@ -20,9 +21,9 @@ pub(crate) fn changed_fixture(fixture: &[u8], mut edit: impl FnMut(&mut Value)) 
         let mut bytes = Vec::new();
         member.read_to_end(&mut bytes).unwrap();
         if name.ends_with("features.json") {
-            let mut response = cadmpeg_core::serde_erase::json::from_slice(&bytes).unwrap();
+            let mut response = json::from_slice(&bytes).unwrap();
             edit(&mut response);
-            bytes = cadmpeg_core::serde_erase::json::to_vec(&response).unwrap();
+            bytes = json::to_vec(&response).unwrap();
         }
         output
             .start_file(name.as_str(), zip::write::SimpleFileOptions::default())

@@ -172,6 +172,7 @@ impl RadiusRange {
 #[cfg(test)]
 mod tests {
     use super::{RadiusRange, Selection, SurfaceKind};
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::scalar::NonNegativeLength;
 
     #[test]
@@ -179,7 +180,7 @@ mod tests {
         for kind in SurfaceKind::ALL {
             assert_eq!(SurfaceKind::parse(kind.as_str()), Some(kind));
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(kind).unwrap(),
+                json::to_value(kind).unwrap(),
                 serde_json::Value::from(kind.as_str())
             );
         }

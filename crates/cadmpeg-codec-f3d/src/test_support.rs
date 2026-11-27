@@ -37,6 +37,17 @@ pub(crate) mod sketch_text;
 pub(crate) mod split_face;
 pub(crate) mod verification;
 
+/// The report codes of one record given up under `code`: its own loss, then
+/// `record.unreadable`.
+pub(crate) fn given_up_codes(
+    code: crate::loss::F3dLossCode,
+) -> [cadmpeg_ir::report::loss::LossKind; 2] {
+    [
+        code.kind(),
+        cadmpeg_ir::unknown::part::record_unreadable_kind(),
+    ]
+}
+
 /// A face of `shell` with no loop, on a surface id the fixture need not hold.
 pub(crate) fn bare_face(id: &str, shell: &str) -> cadmpeg_ir::topology::Face {
     cadmpeg_ir::topology::Face {
@@ -69,17 +80,19 @@ pub(crate) fn with_decode_policy<T>(
     f(&ctx)
 }
 
-/// Plans an inherited write through the sealed encoder and writes its bytes.
+/// Plans a write that names no target, which inherits the dialect of a
+/// same-format source, through the sealed encoder and writes its bytes.
 pub(crate) fn plan_inherited_write(
     ir: &CadIr,
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
 ) -> Result<WritePath, cadmpeg_ir::codec::write::EncodeError> {
-    let plan = F3dCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
+    let plan = F3dCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Unnamed)?;
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
-/// Write `ir` under an inherited target, with `fidelity` or source-less, and
+/// Write `ir` under a request that names no target, with `fidelity` or
+/// source-less, and
 /// assert that the file is written, decodes again, and charges a loss whose
 /// code is `code` (`namespace/code`) and whose message holds `fragment`.
 pub(crate) fn assert_written_with_loss(
@@ -91,7 +104,7 @@ pub(crate) fn assert_written_with_loss(
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     let mut bytes = Vec::new();
     let report = F3dCodec
-        .plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, fidelity), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the writer writes what it can encode");
     let decoded = F3dCodec

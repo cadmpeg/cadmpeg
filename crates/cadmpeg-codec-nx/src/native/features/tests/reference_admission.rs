@@ -33,6 +33,7 @@ use crate::native::features::draft::FeatureDraftConstructionReference;
 use crate::native::features::feature_operation_labels;
 use crate::native::features::surface_allocation::feature_surface_construction_payloads;
 use crate::native::features::FeatureExtrudeProfileReference;
+use cadmpeg_core::serde_erase::json;
 
 /// A container whose feature-history links exceed what the stable sort sorts
 /// without scratch, so a scoped limit of zero refuses at the link sort.
@@ -465,7 +466,7 @@ fn draft_payload_route_admits_fixture() {
 fn draft_graph_references() -> Vec<FeatureDraftConstructionReference> {
     (0..4).map(|ordinal| {
         let index = if ordinal == 0 { 1 } else { 2 };
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": format!("nx:feature-history:draft-construction-reference#0-0000000000-{ordinal:010}"),
             "operation_label": "nx:feature-history:operation-label#0-0000000000",
             "ordinal": ordinal,

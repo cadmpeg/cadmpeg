@@ -13,6 +13,9 @@ use crate::IronCadCodec;
 const BOX: &str = "Box_50x40x25.ics";
 const CYLINDER: &str = "Cylinder_50x50.ics";
 const SCENE: &str = "Ironcad_2025_simple_test_parts.ics";
+const ACIS_BLOCK: &str = "Block_ACIS_100x50x20.ics";
+/// Agreement of a decoded corner with the modelled block dimensions.
+const EPS_POINT_MM: f64 = 1.0e-9;
 
 fn detect(bytes: &[u8]) -> Confidence {
     let arena = DecodeArena::new();
@@ -106,7 +109,9 @@ fn single_part_scenes_hold_two_parasolid_records() {
 #[test]
 fn mixed_kernel_scene_holds_parasolid_and_acis_records() {
     let result = decode(SCENE);
-    assert_eq!(count(&result, IronCadLossCode::BodiesPending), 12);
+    assert_eq!(count(&result, IronCadLossCode::BodiesPending), 10);
+    assert_eq!(count(&result, IronCadLossCode::FeatureShapeRetained), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert_eq!(count(&result, IronCadLossCode::KernelPrologueUnreadable), 0);
     assert_eq!(count(&result, IronCadLossCode::KernelUnrecognized), 0);
     let formats = layer_formats(&result);
@@ -163,4 +168,32 @@ fn container_depth_reads_no_records() {
         .decode(&mut Cursor::new(corpus(SCENE)), &options)
         .unwrap();
     assert_eq!(count(&result, IronCadLossCode::BodiesPending), 0);
+}
+
+#[test]
+fn acis_block_decodes_one_closed_box_in_the_part_frame() {
+    let result = decode(ACIS_BLOCK);
+    assert_eq!(count(&result, IronCadLossCode::BodyUnreadable), 0);
+    assert_eq!(count(&result, IronCadLossCode::FeatureShapeRetained), 1);
+    assert_eq!(count(&result, IronCadLossCode::BodyExtensionsRetained), 1);
+    let geometry = &result.ir().geometry;
+    assert_eq!(geometry.bodies.len(), 1);
+    assert_eq!(geometry.faces.len(), 6);
+    assert_eq!(geometry.edges.len(), 12);
+    let mut low = [f64::INFINITY; 3];
+    let mut high = [f64::NEG_INFINITY; 3];
+    for point in &geometry.points {
+        let position = point.position().get();
+        for (axis, value) in [position.x, position.y, position.z].into_iter().enumerate() {
+            low[axis] = low[axis].min(value);
+            high[axis] = high[axis].max(value);
+        }
+    }
+    for (value, expected) in low
+        .iter()
+        .chain(&high)
+        .zip([-50.0, -25.0, 0.0, 50.0, 25.0, 20.0])
+    {
+        assert!((value - expected).abs() <= EPS_POINT_MM, "{low:?} {high:?}");
+    }
 }

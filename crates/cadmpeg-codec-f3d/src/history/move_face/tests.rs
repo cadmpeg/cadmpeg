@@ -7,6 +7,7 @@ use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCylinder, AsmHistoricalPlane, AsmHistoricalTopology,
 };
 use crate::records::topology::face::DesignFaceOperand;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::direct_edit::FaceMotion;
 use cadmpeg_ir::features::geometry::FeatureDirection3;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -451,7 +452,7 @@ fn a_plane_row_that_moves_against_its_normal_follows_an_offset() {
 }
 
 fn member(record_index: u32, kind: &str, slots: &[i64]) -> DesignFaceOperand {
-    let mut operand: DesignFaceOperand = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    let mut operand: DesignFaceOperand = json::from_value(cadmpeg_core::json!({
         "id": format!("f3d:test:face-operand#{record_index}"), "scope_record_index": 5,
         "scope_reference_ordinal": 1, "group_record_index": 6, "group_member_ordinal": 0,
         "record_index": record_index, "byte_offset": 0, "class_tag": "282",

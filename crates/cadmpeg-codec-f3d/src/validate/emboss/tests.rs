@@ -16,6 +16,7 @@ use crate::records::topology::construction::{
 use crate::records::topology::extrude_selection::{
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionGroupWire, DesignOperandRole,
 };
+use cadmpeg_core::serde_erase::json;
 
 const STREAM: &str = "f3d:Design1/BulkStream.dat";
 
@@ -99,7 +100,7 @@ fn parameter(owner: u32, kind: &str, value: f64, unit: &str) -> DesignParameter 
 }
 
 fn owner(index: u32, value: f64) -> DesignParameterOwner {
-    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("{STREAM}:design-parameter-owner#{index}"),
         "byte_offset": 2000,
         "frame_length": 104,
@@ -458,9 +459,8 @@ fn emboss_counted_validator_refuses_inconsistent_offsets_counts_and_order() {
         (false, 5),
     ] {
         let scope = counted_scope(one_word, pair_count, 13);
-        let source = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
-        let decoded: DesignParameterScope =
-            cadmpeg_core::serde_erase::json::from_value(source.clone()).unwrap();
+        let source = json::to_value(&scope).unwrap();
+        let decoded: DesignParameterScope = json::from_value(source.clone()).unwrap();
         assert_eq!(decoded, scope);
         for field in [
             "depth_owner",
@@ -472,42 +472,32 @@ fn emboss_counted_validator_refuses_inconsistent_offsets_counts_and_order() {
             "profile_group",
         ] {
             let mut changed = source.clone();
-            changed["emboss_construction"][field]["offset"] = serde_json::json!(1);
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(changed)
-                    .is_err()
-            );
+            changed["emboss_construction"][field]["offset"] = cadmpeg_core::json!(1);
+            assert!(json::from_value::<DesignParameterScope>(changed).is_err());
         }
         for field in ["native_pair", "additional_native_pairs"] {
             let mut changed = source.clone();
             changed["emboss_construction"][field] = serde_json::Value::Null;
-            let error =
-                cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(changed)
-                    .unwrap_err()
-                    .to_string();
+            let error = json::from_value::<DesignParameterScope>(changed)
+                .unwrap_err()
+                .to_string();
             assert!(error.contains(field));
         }
         let mut changed = source.clone();
         changed["emboss_construction"]["additional_native_pairs"] = serde_json::Value::Array(
             (0..=pair_count)
-                .map(|_| serde_json::json!([31, 37]))
+                .map(|_| cadmpeg_core::json!([31, 37]))
                 .collect(),
         );
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(changed).is_err()
-        );
+        assert!(json::from_value::<DesignParameterScope>(changed).is_err());
         let mut changed = source.clone();
         changed["reference_members"]
             .as_array_mut()
             .unwrap()
             .swap(0, 1);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(changed).is_err()
-        );
+        assert!(json::from_value::<DesignParameterScope>(changed).is_err());
         let mut changed = source;
         changed["reference_members"][12] = changed["reference_members"][0].clone();
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(changed).is_err()
-        );
+        assert!(json::from_value::<DesignParameterScope>(changed).is_err());
     }
 }

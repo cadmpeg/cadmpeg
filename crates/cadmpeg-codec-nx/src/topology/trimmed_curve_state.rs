@@ -90,25 +90,21 @@ impl TryFrom<StateWire> for TrimmedCurveState {
 #[cfg(test)]
 mod tests {
     use super::TrimmedCurveState;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn trim_wire_preserves_endpoint_order_and_signed_zero() {
         let json =
             r#"{"basis_xmt":9,"points":[[-0.0,1.0,2.0],[3.0,4.0,5.0]],"parameters":[7.0,-2.0]}"#;
         let state: TrimmedCurveState = serde_json::from_str(json).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&state).unwrap(),
-            json
-        );
+        assert_eq!(json::to_string(&state).unwrap(), json);
         for basis in [0, 1] {
-            let mut wire = cadmpeg_core::serde_erase::json::to_value(state).unwrap();
+            let mut wire = json::to_value(state).unwrap();
             wire["basis_xmt"] = basis.into();
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<TrimmedCurveState>(wire)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("basis_xmt")
-            );
+            assert!(json::from_value::<TrimmedCurveState>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains("basis_xmt"));
         }
     }
 

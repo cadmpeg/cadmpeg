@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::design::ops::{
     body as body_ops, dressup as dressup_ops,
     shared::{Limit, LinearLayout, PatternLayout, Spacing, Span},
@@ -12,7 +14,7 @@ use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{FeatureContent, FeatureId};
 use cadmpeg_ir::scalar::{Length, PositiveLength};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::*;
 
@@ -29,15 +31,14 @@ fn legacy(kind: &str, value: Value) -> LegacyOperation {
         ("kind".to_owned(), Value::String(kind.to_owned())),
         ("value".to_owned(), value),
     ]);
-    cadmpeg_core::serde_erase::json::from_value(Value::Object(fields)).expect("synthetic operation")
+    json::from_value(Value::Object(fields)).expect("synthetic operation")
 }
 
 fn project_value(kind: &str, value: Value) -> FeatureOperation {
     let operation = typed(&legacy(kind, value), selections::SketchData::default(), &[])
         .expect("typed projection");
-    let wire = cadmpeg_core::serde_erase::json::to_value(&operation).expect("v11 wire");
-    let decoded: FeatureOperation =
-        cadmpeg_core::serde_erase::json::from_value(wire).expect("admitted v11 operation");
+    let wire = json::to_value(&operation).expect("v11 wire");
+    let decoded: FeatureOperation = json::from_value(wire).expect("admitted v11 operation");
     assert_eq!(operation, decoded);
     operation
 }
@@ -804,23 +805,51 @@ fn next_material_exit_stays_native_when_v11_has_a_first_face_limit() {
 }
 
 #[test]
-fn unsupported_body_move_order_and_symmetric_indices_stay_native() {
-    let move_body = legacy(
+fn body_move_applies_rotation_before_translation() {
+    let FeatureOperation::TransformBodies(value) = project_value(
         "move_body",
         json!({"bodies":native_selection(),"translation":[1.0,0.0,0.0],"rotation":{"origin":[0.0,0.0,0.0],"direction":[0.0,0.0,1.0],"angle":0.5},"copies":0}),
-    );
+    ) else {
+        panic!("move");
+    };
+    assert!(matches!(
+        value.transformation.steps.as_slice(),
+        [
+            body_ops::TransformStep::Rotate { .. },
+            body_ops::TransformStep::Components { .. }
+        ]
+    ));
+}
+
+#[test]
+fn body_move_without_translation_keeps_one_rotation() {
+    let FeatureOperation::TransformBodies(value) = project_value(
+        "move_body",
+        json!({"bodies":native_selection(),"translation":[0.0,0.0,0.0],"rotation":{"origin":[0.0,0.0,0.0],"direction":[0.0,0.0,1.0],"angle":0.5},"copies":0}),
+    ) else {
+        panic!("move");
+    };
+    assert!(matches!(
+        value.transformation.steps.as_slice(),
+        [
+            body_ops::TransformStep::Components { .. },
+            body_ops::TransformStep::Rotate { .. }
+        ]
+    ));
+}
+
+#[test]
+fn unsupported_symmetric_indices_stay_native() {
     let symmetric = legacy(
         "pattern",
         json!({"seeds":[{"kind":"feature","value":"inventor:design:feature#seed"}],"pattern":{"kind":"linear","direction":[1.0,0.0,0.0],"spacing":3.0,"count":3,"omitted_instances":[],"symmetric":true}}),
     );
-    for operation in [move_body, symmetric] {
-        let mut ir = part(operation);
-        assert_eq!(project_part(&mut ir).len(), 1);
-        assert!(matches!(
-            ir.design.features[0].definition.operation,
-            FeatureOperation::Native { .. }
-        ));
-    }
+    let mut ir = part(symmetric);
+    assert_eq!(project_part(&mut ir).len(), 1);
+    assert!(matches!(
+        ir.design.features[0].definition.operation,
+        FeatureOperation::Native { .. }
+    ));
 }
 
 #[test]

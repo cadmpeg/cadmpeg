@@ -4,6 +4,7 @@
 
 use crate::geometry::lofts::{LoftMemberForm, LoftPathCurve, LoftProfileMember, LoftSubdata};
 use crate::ids::CurveId;
+use cadmpeg_core::serde_erase::json;
 
 fn member() -> LoftProfileMember {
     LoftProfileMember {
@@ -24,19 +25,21 @@ fn member() -> LoftProfileMember {
 #[test]
 fn a_loft_profile_member_nests_its_curve_and_refuses_unknown_keys() {
     let value = member();
-    let wire = cadmpeg_core::serde_erase::json::to_value(&value).expect("serializes");
+    let wire = json::to_value(&value).expect("serializes");
     assert_eq!(wire["profile"]["curve"], "test:model:curve#loft");
-    assert_eq!(wire["profile"]["endpoints"], serde_json::json!([0.0, 1.0]));
+    assert_eq!(
+        wire["profile"]["endpoints"],
+        cadmpeg_core::json!([0.0, 1.0])
+    );
     assert!(wire.get("curve").is_none());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<LoftProfileMember>(wire.clone())
-            .expect("round trip"),
+        json::from_value::<LoftProfileMember>(wire.clone()).expect("round trip"),
         value
     );
 
     let mut beside = wire.clone();
-    beside["zz_bogus"] = serde_json::json!(1);
-    let error = cadmpeg_core::serde_erase::json::from_value::<LoftProfileMember>(beside)
+    beside["zz_bogus"] = cadmpeg_core::json!(1);
+    let error = json::from_value::<LoftProfileMember>(beside)
         .unwrap_err()
         .to_string();
     assert_eq!(
@@ -45,8 +48,8 @@ fn a_loft_profile_member_nests_its_curve_and_refuses_unknown_keys() {
     );
 
     let mut inside = wire;
-    inside["profile"]["zz_bogus"] = serde_json::json!(1);
-    let error = cadmpeg_core::serde_erase::json::from_value::<LoftProfileMember>(inside)
+    inside["profile"]["zz_bogus"] = cadmpeg_core::json!(1);
+    let error = json::from_value::<LoftProfileMember>(inside)
         .unwrap_err()
         .to_string();
     assert_eq!(
@@ -62,7 +65,7 @@ fn a_loft_profile_member_nests_its_curve_and_refuses_unknown_keys() {
 fn classic_loft_profile_data_states_only_its_own_fields() {
     use crate::geometry::lofts::ClassicLoftProfileData;
 
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "surface": "test:model:surface#loft",
         "first_flag": true,
         "asm_extension": 3,
@@ -72,26 +75,26 @@ fn classic_loft_profile_data_states_only_its_own_fields() {
         }
     });
     let data: ClassicLoftProfileData =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).expect("classic loft data reads");
+        json::from_value(wire.clone()).expect("classic loft data reads");
     assert!(data.pcurve.is_none());
     assert!(data.direction.is_none());
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&data).expect("serializes"),
-        wire
-    );
+    assert_eq!(json::to_value(&data).expect("serializes"), wire);
 
     // The classic form declares exactly these six keys, in this order
     // (`ClassicLoftProfileData` in `crates/cadmpeg-ir/src/geometry.rs`), and
     // `deny_unknown_fields` names them all in the refusal.
     let declared = "`surface`, `pcurve`, `first_flag`, `asm_extension`, `subdata`, `direction`";
     for (key, value) in [
-        ("support_bounds", serde_json::json!([null, null, null, 2.0])),
-        ("secondary_pcurve", serde_json::json!(null)),
-        ("zz_bogus", serde_json::json!(true)),
+        (
+            "support_bounds",
+            cadmpeg_core::json!([null, null, null, 2.0]),
+        ),
+        ("secondary_pcurve", cadmpeg_core::json!(null)),
+        ("zz_bogus", cadmpeg_core::json!(true)),
     ] {
         let mut orphan = wire.clone();
         orphan[key] = value;
-        let error = cadmpeg_core::serde_erase::json::from_value::<ClassicLoftProfileData>(orphan)
+        let error = json::from_value::<ClassicLoftProfileData>(orphan)
             .expect_err("the classic form states no such field")
             .to_string();
         assert_eq!(
@@ -108,7 +111,7 @@ fn classic_loft_profile_data_states_only_its_own_fields() {
             .expect("an object")
             .remove(required)
             .expect("the field is present");
-        let error = cadmpeg_core::serde_erase::json::from_value::<ClassicLoftProfileData>(missing)
+        let error = json::from_value::<ClassicLoftProfileData>(missing)
             .expect_err("the classic form requires the field")
             .to_string();
         assert_eq!(error, format!("missing field `{required}`"), "{required}");
