@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Brep Data` kernel record tree.
 
+use std::ops::Range;
+
 use cadmpeg_core::decode::{u64_from_index, ParseError, View};
 use cadmpeg_core::CodecError;
 
@@ -47,7 +49,8 @@ impl Kernel {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct KernelRecord<'a> {
     pub(crate) kernel: Kernel,
-    /// The item before the record in its node is a node that holds records.
+    /// The item before the record in its node is a node that holds records,
+    /// and no pair holds the record in its child node.
     pub(crate) follows_node: bool,
     /// Header words at `words` and `reserved` equal `1, 1, 1, 0`.
     pub(crate) canonical_header: bool,
@@ -77,28 +80,32 @@ pub(crate) struct Assembly {
 
 /// One node below the scene root, in the order the nodes open.
 struct Node {
+    start: usize,
     parent: Option<usize>,
     holds_pair: bool,
 }
 
 /// One open node of the walk.
 struct Level {
+    start: usize,
     end: usize,
     /// The node below the scene root that the level reads, in opening order.
     node: Option<usize>,
     /// The node holds a record at any depth.
     holds_record: bool,
-    /// The last closed item of the node is a node that holds records.
-    after_node: bool,
+    /// The start of the last closed item of the node, when that item is a
+    /// node that holds records.
+    after_node: Option<usize>,
 }
 
 impl Level {
-    const fn new(end: usize, node: Option<usize>) -> Self {
+    const fn new(start: usize, end: usize, node: Option<usize>) -> Self {
         Self {
+            start,
             end,
             node,
             holds_record: false,
-            after_node: false,
+            after_node: None,
         }
     }
 }
@@ -108,10 +115,11 @@ impl Level {
 /// the scene root.
 pub(crate) fn read(payload: View<'_>) -> Result<Tree<'_>, TreeError> {
     let mut cursor = payload;
-    let mut levels = vec![Level::new(payload.end(), None)];
+    let mut levels = vec![Level::new(payload.start(), payload.end(), None)];
     let mut records = Vec::new();
     let mut nodes: Vec<Node> = Vec::new();
     let mut closed_nodes = Vec::new();
+    let mut child_nodes = Vec::new();
     loop {
         while levels
             .last()
@@ -123,7 +131,7 @@ pub(crate) fn read(payload: View<'_>) -> Result<Tree<'_>, TreeError> {
             closed_nodes.extend(closed.node);
             if let Some(parent) = levels.last_mut() {
                 parent.holds_record |= closed.holds_record;
-                parent.after_node = closed.holds_record;
+                parent.after_node = closed.holds_record.then_some(closed.start);
             }
         }
         let Some(end) = levels.last().map(|level| level.end) else {
@@ -144,15 +152,16 @@ pub(crate) fn read(payload: View<'_>) -> Result<Tree<'_>, TreeError> {
                 .ok_or_else(|| malformed("kernel record escapes the payload"))?;
             let mut record = kernel_record(whole)?;
             if let Some(level) = levels.last_mut() {
-                record.follows_node = level.after_node;
-                if record.follows_node {
+                if let Some(child) = level.after_node {
+                    record.follows_node = true;
+                    child_nodes.push(child..at);
                     if let Some(node) = level.node {
                         nodes[node].holds_pair = true;
                         record.assembly = Some(node);
                     }
                 }
                 level.holds_record = true;
-                level.after_node = false;
+                level.after_node = None;
             }
             records.push(record);
         } else {
@@ -166,20 +175,52 @@ pub(crate) fn read(payload: View<'_>) -> Result<Tree<'_>, TreeError> {
             let node_end = usize::try_from(node_end)
                 .map_err(|_| malformed("tree node end does not fit memory"))?;
             let parent = levels.last_mut().and_then(|level| {
-                level.after_node = false;
+                level.after_node = None;
                 level.node
             });
             let node = (levels.len() > 1).then(|| {
                 nodes.push(Node {
+                    start: at,
                     parent,
                     holds_pair: false,
                 });
                 nodes.len() - 1
             });
-            levels.push(Level::new(node_end, node));
+            levels.push(Level::new(at, node_end, node));
         }
     }
+    within_parts(&mut records, &mut nodes, child_nodes);
     Ok(assemble(records, &nodes, &closed_nodes))
+}
+
+/// Reads each pair and each node that the child node of a pair holds as part
+/// of that part's feature tree.
+fn within_parts(
+    records: &mut [KernelRecord<'_>],
+    nodes: &mut [Node],
+    mut child_nodes: Vec<Range<usize>>,
+) {
+    child_nodes.sort_by_key(|span| span.start);
+    let mut outer: Vec<Range<usize>> = Vec::new();
+    for span in child_nodes {
+        if outer.last().is_none_or(|last| span.start >= last.end) {
+            outer.push(span);
+        }
+    }
+    let inside = |at: usize| {
+        let index = outer.partition_point(|span| span.start <= at);
+        index > 0 && at < outer[index - 1].end
+    };
+    for record in records
+        .iter_mut()
+        .filter(|record| inside(record.bytes.start()))
+    {
+        record.follows_node = false;
+        record.assembly = None;
+    }
+    for node in nodes.iter_mut().filter(|node| inside(node.start)) {
+        node.holds_pair = false;
+    }
 }
 
 /// Numbers the nodes that hold pairs in the order they end, and refers each

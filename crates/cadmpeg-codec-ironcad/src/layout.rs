@@ -44,10 +44,36 @@ pub(crate) mod kernel_record_header {
     pub(crate) const RESERVED: usize = 24;
 }
 
+/// Byte offsets for the `scene_object_header` record.
+///
+/// Spec §5. Record length 20 B.
+pub(crate) mod scene_object_header {
+    /// Offset of `version` (`u32`, little-endian). Spec §5.
+    pub(crate) const VERSION: usize = 0;
+    /// Offset of `class` (`u32`, little-endian). Spec §5.
+    pub(crate) const CLASS: usize = 4;
+    /// Offset of `class_tail` (`u8[12]`). Spec §5.
+    pub(crate) const CLASS_TAIL: usize = 8;
+}
+
+/// Byte offsets for the `scene_record_matrix_short` record.
+///
+/// Spec §5. Record length 161 B.
+pub(crate) mod scene_record_matrix_short {
+    /// Offset of `flag` (`u8`). Spec §5.
+    pub(crate) const FLAG: usize = 32;
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §5.
+    pub(crate) const MATRIX: usize = 33;
+}
+
 /// Byte offsets for the `scene_record_matrix` record.
 ///
 /// Spec §5. Record length 169 B.
 pub(crate) mod scene_record_matrix {
+    /// Offset of `flag` (`u8`). Spec §5.
+    pub(crate) const FLAG: usize = 40;
+    /// Stated value of `flag` (`u8`). Spec §5.
+    pub(crate) const FLAG_VALUE: u8 = 1;
     /// Offset of `matrix` (`f64[16]`, little-endian). Spec §5.
     pub(crate) const MATRIX: usize = 41;
 }

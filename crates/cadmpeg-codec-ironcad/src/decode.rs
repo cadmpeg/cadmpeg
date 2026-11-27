@@ -526,7 +526,7 @@ fn property_losses(records: &[SceneRecord], losses: &mut Vec<LossNote>) {
         if let Some(name) = &record.unread_property {
             losses.push(IronCadLossCode::PropertyUnread.note(format!(
                 "record `{}`: property `{name}` stores a value type that is not read; it and \
-                 the properties after it are not transferred",
+                 each later property of such a type are not transferred",
                 record.name
             )));
         }
@@ -566,6 +566,17 @@ fn scene_records(
     }
 }
 
+/// Charges each record whose matrix a search found.
+fn matrix_losses(scene: &[SceneRecord], losses: &mut Vec<LossNote>) {
+    for record in scene.iter().filter(|record| record.matrix_searched) {
+        losses.push(IronCadLossCode::PlacementMatrixSearched.note(format!(
+            "record `{}`: the matrix lies at no fixed offset after the `ModelGUID` text; the \
+             first rigid matrix after a flag byte `1` is read as the record matrix",
+            record.name
+        )));
+    }
+}
+
 /// Places each part result by the matrix of its part record, and each
 /// assembly of the `Brep Data` tree by the matrix of its assembly record.
 ///
@@ -596,10 +607,12 @@ fn place(
         return Ok(Vec::new());
     }
     losses.push(IronCadLossCode::PlacementBoundByOrder.note(
-        "each `Public Access` part record is bound to the `Brep Data` part result record of \
-         the same rank, and its matrix places the part frame in its assembly as a row-vector \
+        "each `Public Access` part record, a part record after its feature records or a \
+         version 2 part copy record, is bound to the `Brep Data` part result record of the \
+         same rank, and its matrix places the part frame in its assembly as a row-vector \
          rotation and a translation in metres",
     ));
+    matrix_losses(scene, losses);
     let nested = assembly_records.len() == tree_assemblies.len();
     if nested && !assembly_records.is_empty() {
         losses.push(IronCadLossCode::AssemblyBoundByOrder.note(format!(
@@ -735,6 +748,7 @@ fn part_properties(part: &SceneRecord, definition: &mut ProductDefinition) {
         };
         let value = match value {
             PropertyValue::Real(value) => value.to_string(),
+            PropertyValue::Integer(value) => value.to_string(),
             PropertyValue::Text(text) => text.clone(),
         };
         definition.bom_properties.insert(key, value);

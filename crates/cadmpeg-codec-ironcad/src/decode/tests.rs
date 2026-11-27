@@ -264,9 +264,15 @@ fn a_history_partition_is_charged_and_retained() {
 
 /// A part or assembly record translated by `z` millimetres.
 fn scene_record(name: &str, has_features: bool, z: f64) -> crate::placement::SceneRecord {
+    use crate::placement::Role;
     crate::placement::SceneRecord {
         name: name.to_owned(),
-        has_features,
+        role: if has_features {
+            Role::Part
+        } else {
+            Role::Assembly
+        },
+        matrix_searched: false,
         transform: cadmpeg_ir::transform::Transform::affine([
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
