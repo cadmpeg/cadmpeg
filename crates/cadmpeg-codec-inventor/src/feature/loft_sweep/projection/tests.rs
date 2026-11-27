@@ -214,16 +214,16 @@ mod surface {
 
     #[test]
     fn a_wrapper_named_by_an_earlier_feature_keeps_the_loft_native_with_the_operation_note() {
-        let (source, _, _) = loft();
-        let earlier = test_feature(10, 14, &[(3, 5)]);
-        let later = test_feature(30, 14, &[(3, 5)]);
-        let features = [source.clone(), earlier.clone(), later.clone()];
         fn key(feature: &PmDcFeature) -> (&str, u32) {
             (
                 feature.identity.segment_token.as_str(),
                 feature.identity.record_ordinal,
             )
         }
+        let (source, _, _) = loft();
+        let earlier = test_feature(10, 14, &[(3, 5)]);
+        let later = test_feature(30, 14, &[(3, 5)]);
+        let features = [source.clone(), earlier.clone(), later.clone()];
         let positions: std::collections::HashMap<_, u64> = features
             .iter()
             .map(|feature| (key(feature), u64::from(feature.identity.record_ordinal)))
