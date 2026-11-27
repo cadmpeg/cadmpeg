@@ -514,6 +514,7 @@ fn body_selection_is_resolved(selection: &cadmpeg_ir::features::selections::Body
         | BodySelection::GeneratedSet { .. } => true,
         BodySelection::Generated { bodies, .. } => !bodies.is_empty(),
         BodySelection::Local { bodies, .. } => !bodies.is_empty(),
+        BodySelection::Occurrence { bodies, .. } => !bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => false,
     }
 }
@@ -1788,6 +1789,7 @@ fn design_projection_gaps(
         | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
         | BodySelection::GeneratedSet { .. }
+        | BodySelection::Occurrence { .. }
         | BodySelection::Local { .. } => 0,
     };
     for feature in &ir.model.features {
@@ -4680,6 +4682,7 @@ fn decode_scanned_document<'a>(
                             asm_body_key_offset: visibility.asm_body_key_offset,
                             asm_body_key: body_selector,
                             entity_suffix: visibility.entity_suffix,
+                            browser_node_entity: visibility.browser_node_entity,
                             visible: visibility.visible,
                         },
                     )
