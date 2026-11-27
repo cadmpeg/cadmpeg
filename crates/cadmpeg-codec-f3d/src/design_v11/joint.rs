@@ -25,6 +25,7 @@ use cadmpeg_ir::design::ops::shared::{
     JointOffset,
 };
 use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
+use cadmpeg_ir::design::projection::restated::Restater;
 use cadmpeg_ir::design::selection::{
     Anchor, Members, OccurrencePath, OrderedSelection, PathStep, PickContext, PickTarget, Picked,
     Picks, Selection, StepRef,
@@ -180,18 +181,20 @@ impl<'a> Inputs<'a> {
 /// Restate each joint feature of `features`, a scope's features, from the
 /// assembly joint its legacy feature binds. `owner` is the scope's
 /// definition. A feature that does not restate keeps its operation, and a
-/// loss names it.
+/// loss names it. Returns each assembly joint a restated feature states,
+/// with the feature's id: a rigid group states every joint of its scope.
 pub(super) fn project(
     features: &mut [Feature],
     owner: &ProductDefinitionId,
     inputs: &Inputs<'_>,
     losses: &mut Vec<LossNote>,
-) {
+) -> Vec<(String, String)> {
     let ids = features
         .iter()
         .map(|feature| feature.id.as_str().to_owned())
         .collect::<BTreeSet<_>>();
     let mut unprojected = Vec::new();
+    let mut restated = Vec::new();
     for feature in features.iter_mut() {
         if !matches!(
             feature.definition.operation,
@@ -215,7 +218,23 @@ pub(super) fn project(
             .ok_or("its assembly joint is absent")
             .and_then(|joint| site.operation(joint));
         match projected {
-            Ok(operation) => feature.definition.operation = operation,
+            Ok(operation) => {
+                let stated = match (&operation, inputs.joints.get(joint)) {
+                    (FeatureOperation::RigidGroup(_), Some(joint)) => joint
+                        .native_ref
+                        .as_deref()
+                        .and_then(|scope| inputs.scoped.get(scope))
+                        .map(|group| group.iter().map(|member| &member.id).collect())
+                        .unwrap_or_default(),
+                    _ => vec![*joint],
+                };
+                restated.extend(
+                    stated
+                        .into_iter()
+                        .map(|id| (id.as_str().to_owned(), feature.id.as_str().to_owned())),
+                );
+                feature.definition.operation = operation;
+            }
             Err(reason) => unprojected.push(format!("{} ({reason})", feature.id)),
         }
     }
@@ -225,6 +244,17 @@ pub(super) fn project(
             unprojected.len(),
             unprojected.join(", ")
         )));
+    }
+    restated
+}
+
+/// State in `model` that each feature of `restated`, as [`project`] returns
+/// it, restates the assembly joint paired with it, whole.
+pub(super) fn record(model: &mut cadmpeg_ir::document::Model, restated: Vec<(String, String)>) {
+    for (joint, feature) in restated {
+        model
+            .restated_mut()
+            .record(&joint, Restater::Record(feature), []);
     }
 }
 

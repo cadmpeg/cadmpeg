@@ -201,6 +201,7 @@ pub(crate) fn project(
     let joints = joint_records
         .as_ref()
         .map(|records| records.inputs(&ir.model, &scope_records));
+    let mut restated = Vec::new();
     for (prefix, (definition, mut projected)) in scopes {
         let Span {
             definitions: spanned,
@@ -215,7 +216,12 @@ pub(crate) fn project(
             }
         }
         if let Some(joints) = &joints {
-            joint::project(&mut projected.features, &definition, joints, losses);
+            restated.extend(joint::project(
+                &mut projected.features,
+                &definition,
+                joints,
+                losses,
+            ));
         }
         let Some(Container::Ordered {
             id,
@@ -254,6 +260,7 @@ pub(crate) fn project(
         ir.design.containers.extend(projected.containers);
         ir.design.features.extend(projected.features);
     }
+    joint::record(&mut ir.model, restated);
     ctx.charge_entities(
         u64::try_from(scoped_parameters.len() + scoped_configurations.records.len())
             .map_err(|_| CodecError::malformed("F3D v11 design record count exceeds u64"))?,

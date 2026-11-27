@@ -751,3 +751,117 @@ fn a_motion_link_couples_the_features_of_its_two_hinges() {
         ]
     );
 }
+
+/// A CADIR write carries each joint a joint feature restates: the group
+/// feature restates every joint of its scope and the hinge feature its
+/// joint, so the write charges only the joint no feature restates.
+#[test]
+fn a_cadir_write_carries_the_joints_their_features_restate() {
+    use cadmpeg_ir::codec::write::target::TargetRequest;
+    use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
+
+    let group = [
+        joint(
+            "group",
+            80,
+            fixed(),
+            [connector(on("a"), STORED), connector(on("b"), STORED)],
+        ),
+        joint(
+            "group:2",
+            80,
+            fixed(),
+            [connector(on("a"), STORED), connector(on("c"), TURNED)],
+        ),
+    ];
+    let hinge = joint(
+        "hinge",
+        84,
+        PairedJointKind::Revolute {
+            angle: Some(finite(0.0)),
+            angular_limits: None,
+        },
+        [connector(on("a"), TURNED), connector(on("b"), TURNED)],
+    );
+    let alone = joint(
+        "alone",
+        88,
+        fixed(),
+        [connector(on("a"), STORED), connector(on("b"), STORED)],
+    );
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let model = Model::new();
+    ir.model.product_definitions = model.definitions;
+    ir.model.occurrences = model.occurrences;
+    ir.model.features = vec![legacy("group", &group[0]), legacy("hinge", &hinge)];
+    ir.model.assembly_joints = group.into_iter().chain([hinge, alone]).collect();
+    let mut features = [unresolved("group"), unresolved("hinge")];
+    let motions = [motion(84, &[1], None)];
+    let scopes = [scope(80), scope(84)];
+    let restated = {
+        let inputs = Inputs::new(
+            &ir.model.features,
+            &ir.model.assembly_joints,
+            HashMap::from([
+                (
+                    scopes[0].as_str(),
+                    Source {
+                        group: true,
+                        ..Source::default()
+                    },
+                ),
+                (
+                    scopes[1].as_str(),
+                    Source {
+                        motion: Some(&motions[0]),
+                        ..Source::default()
+                    },
+                ),
+            ]),
+            Places::new(
+                &ir.model.product_definitions,
+                &ir.model.occurrences,
+                OperandKeys::new(&[], &[], &[]),
+            ),
+        );
+        let mut losses = Vec::new();
+        let restated = project(&mut features, &definition("root"), &inputs, &mut losses);
+        assert!(losses.is_empty(), "{losses:?}");
+        restated
+    };
+    record(&mut ir.model, restated);
+    ir.design.features.extend(features);
+    cadmpeg_ir::design::projection::restated::restate_features(&mut ir);
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
+        .expect("plan");
+    let joints = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.message.contains("joint#"))
+        .map(|loss| loss.message.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        joints,
+        [
+            "the cadir write does not represent model arena `assembly_joints`: \
+          1 record(s) omitted: f3d:model:joint#alone"
+        ]
+    );
+    let mut written = Vec::new();
+    plan.write_to(&mut written).expect("write");
+    let read = cadmpeg_ir::CadIr::from_json(std::str::from_utf8(&written).unwrap()).unwrap();
+    let operations = read
+        .design
+        .features
+        .iter()
+        .map(|feature| match &feature.definition.operation {
+            FeatureOperation::RigidGroup(_) => "rigid group",
+            FeatureOperation::Joint(_) => "joint",
+            _ => "other",
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(operations, ["rigid group", "joint"]);
+}
