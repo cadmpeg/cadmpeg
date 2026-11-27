@@ -130,7 +130,7 @@ pub(crate) fn read(payload: View<'_>) -> Result<Tree<'_>, TreeError> {
             break;
         };
         let at = cursor.position();
-        if View::u32_le_at(cursor.unread(), record::MARKER) == Some(record::MARKER_VALUE) {
+        if View::u32_le_at(cursor.unread(), record::MARKER).is_some_and(|marker| marker != 0) {
             let length = cursor.req_u32_le()?;
             let length = cursor.counted(u64::from(length), 1).ok_or_else(|| {
                 malformed(format!("kernel record length {length} exceeds the payload"))

@@ -16,7 +16,7 @@ kernel records; only the record header has fixed offsets (§3).
 name = "frame_header"
 kind = "byte"
 section = "2"
-anchor = "A framed stream holds a 20-byte little-endian header and one zlib stream."
+anchor = "A framed stream holds a 20-byte little-endian header and one or more zlib"
 size = 20
 parsed_by = "crates/cadmpeg-codec-ironcad/src/frame.rs"
 
@@ -87,8 +87,7 @@ name = "marker"
 offset = 4
 type = "u32"
 source = "spec"
-anchor = "| 4 | 4 | `marker` | `0x0009b401`. |"
-value = 0x0009b401
+anchor = "| 4 | 4 | `marker` | Low byte `0x01`; the upper 24 bits vary between records. |"
 
 [[record.field]]
 name = "kernel"
@@ -109,7 +108,7 @@ name = "reserved"
 offset = 24
 type = "u32"
 source = "spec"
-anchor = "| 24 | 4 | `reserved` | `0`. |"
+anchor = "| 24 | 4 | `reserved` | `0`, `1`, or `2`. |"
 
 [[token]]
 tag = "0x80000001"

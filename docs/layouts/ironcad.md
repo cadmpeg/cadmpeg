@@ -53,10 +53,10 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `length` | `u32` | little | spec | \| 0 \| 4 \| `length` \| |
-| 4 | 4 | `marker` | `u32` | little | spec | \| 4 \| 4 \| `marker` \| `0x0009b401`. \| · value `635905` |
+| 4 | 4 | `marker` | `u32` | little | spec | \| 4 \| 4 \| `marker` \| Low byte `0x01`; the upper 24 bits vary between records. \| |
 | 8 | 4 | `kernel` | `u32` | little | spec | \| 8 \| 4 \| `kernel` \| |
 | 12 | 12 | `words` | `u32[3]` | little | spec | \| 12 \| 12 \| `words` \| |
-| 24 | 4 | `reserved` | `u32` | little | spec | \| 24 \| 4 \| `reserved` \| `0`. \| |
+| 24 | 4 | `reserved` | `u32` | little | spec | \| 24 \| 4 \| `reserved` \| `0`, `1`, or `2`. \| |
 
 ## `scene_record_matrix`
 

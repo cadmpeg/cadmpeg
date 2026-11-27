@@ -18,21 +18,13 @@ The two ACIS streams of a one-block pair hold the same closed body. The body of 
 
 **Need.** Save a scene whose kernel transmit has a description longer than 255 bytes, or a scene from another IronCAD release, and compare the leading bytes.
 
-### DR-1065. Payload larger than one block
-
-**Question.** How does a compressed stream frame store a payload longer than `block_size`?
-
-**Known.** A frame header holds `magic`, `block_size` (`0x40000`), `payload_length`, and `compressed_length`, and one zlib stream inflates to exactly `block_size` bytes (`ironcad.md` §2). `payload_length` takes values less than `block_size`.
-
-**Need.** Save a scene whose `Brep Data` payload exceeds 256 KiB, for example a part with many fillets, and read the frame sequence of that stream.
-
 ### DR-1066. Kernel record header words
 
-**Question.** What do the record `marker` and the three `words` of a kernel record header encode?
+**Question.** What do the record `marker`, the three `words`, and the `reserved` word of a kernel record header encode?
 
-**Known.** The marker is `0x0009b401`, the three words are each `1`, and the reserved word is `0` in every ACIS and Parasolid record (`ironcad.md` §3).
+**Known.** The low byte of the marker is `0x01` (`ironcad.md` §3). The marker takes the values `0x00077c01`, `0x00086801`, `0x00087801`, `0x00088001`, `0x00088801`, `0x0008e801`, `0x00094c01`, and `0x0009b401`; one payload can hold records with different values. In the Parasolid records, a higher marker comes with an equal or later modeller version in the transmit description: `0x00077c01` with modeller version 2601178, `0x00086801` with 3101244, `0x00087801`, `0x00088001`, and `0x00088801` with 3400200, and `0x0008e801`, `0x00094c01`, and `0x0009b401` with 3401176. ACIS records store `0x0009b401`. The three words are each `1`. The reserved word is `0`, `1`, or `2`. The decoder charges `ironcad.record.header-unrecognized` for a record whose words differ from `1, 1, 1, 0`.
 
-**Need.** Save the same part from another IronCAD release, and save a part with several bodies, then compare the record headers.
+**Need.** Save the same part from two IronCAD releases and compare the markers. Save a part with several bodies, and a part whose reserved word is nonzero, then compare the record headers with the scene browser.
 
 ### DR-1067. Binding of scene records to the record tree
 

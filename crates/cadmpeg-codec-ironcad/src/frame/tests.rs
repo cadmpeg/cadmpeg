@@ -55,3 +55,37 @@ fn another_magic_is_rejected() {
     stream[0] ^= 1;
     assert!(read(&stream).is_err());
 }
+
+/// Bytes `0, 1, ..., 250, 0, 1, ...` of `length`.
+fn pattern(length: usize) -> Vec<u8> {
+    (0..length)
+        .map(|index| u8::try_from(index % 251).unwrap())
+        .collect()
+}
+
+#[test]
+fn a_payload_longer_than_one_block_spans_consecutive_blocks() {
+    let block = usize::try_from(BLOCK_SIZE).unwrap();
+    for length in [block, block + 1, 2 * block + 7] {
+        let payload = pattern(length);
+        assert_eq!(read(&framed(&payload)).unwrap(), payload);
+    }
+}
+
+#[test]
+fn a_frame_with_fewer_blocks_than_its_payload_needs_is_rejected() {
+    let payload = pattern(usize::try_from(BLOCK_SIZE).unwrap() + 1);
+    let stream = framed_with(
+        &payload,
+        BLOCK_SIZE,
+        u64::try_from(payload.len()).unwrap() + u64::from(BLOCK_SIZE),
+    );
+    assert!(read(&stream).is_err());
+}
+
+#[test]
+fn bytes_after_the_last_block_are_rejected() {
+    let mut stream = framed(b"abc");
+    stream.extend_from_slice(&[0; 4]);
+    assert!(read(&stream).is_err());
+}
