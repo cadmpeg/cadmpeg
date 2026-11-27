@@ -536,8 +536,10 @@ pub(crate) enum Feature<'a> {
     Part(&'a str),
     /// A `CLSID_JMPart` with this function name and state word.
     PartState(&'a str, u32),
-    /// A `CLSID_JMGroup`.
+    /// A `CLSID_JMGroup` whose object ends before its suppressed state.
     Group,
+    /// A `CLSID_JMGroup` with this `u32` suppressed state.
+    GroupState(u32),
     /// A `CLSID_JMFeatureGroup` that lists these member object identifiers.
     Folder(&'a [u32]),
     /// A `CLSID_JMFeatureGroup` whose pairs carry the marker 2.
@@ -556,6 +558,33 @@ pub(crate) fn feature_document(features: &[Feature<'_>]) -> Vec<u8> {
 /// As [`feature_document`], with the navigator's last-feature identifier
 /// `last` when given.
 pub(crate) fn feature_document_last(features: &[Feature<'_>], last: Option<u32>) -> Vec<u8> {
+    feature_document_named(features, last, &[])
+}
+
+/// A `PartsLiteData` stream of `names`, each a name record of the object
+/// identifier and its name (§4.3). The records follow a leading word and an
+/// unrelated record, as the stream stores other data around them.
+pub(crate) fn names_stream(names: &[(u32, &str)]) -> Vec<u8> {
+    let mut bytes = vec![7, 0, 0, 0, 0xAA, 0xBB, 0xCC];
+    for (id, name) in names {
+        let units: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+        bytes.extend_from_slice(&u32::try_from(units.len()).unwrap().to_le_bytes());
+        for unit in units {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        bytes.extend_from_slice(&id.to_le_bytes());
+        bytes.extend_from_slice(&[0x1A, 0, 0, 0, 0, 0, 0, 0]);
+    }
+    bytes
+}
+
+/// As [`feature_document_last`], with a `PartsLiteData` stream of `names`
+/// when it is not empty.
+pub(crate) fn feature_document_named(
+    features: &[Feature<'_>],
+    last: Option<u32>,
+    names: &[(u32, &str)],
+) -> Vec<u8> {
     let mut classes = vec![
         "ReferencePlaneObject",
         "CLSID_JMPart",
@@ -580,7 +609,8 @@ pub(crate) fn feature_document_last(features: &[Feature<'_>], last: Option<u32>)
         let (form, body) = match feature {
             Feature::Part(function) => (1, part_body(function)),
             Feature::PartState(function, state) => (1, part_body_state(function, *state)),
-            Feature::Group => (2, vec![0; 8]),
+            Feature::Group => (2, vec![0; 4]),
+            Feature::GroupState(state) => (2, [1_u32.to_le_bytes(), state.to_le_bytes()].concat()),
             Feature::Folder(members) => (5, folder_body(members, 1)),
             Feature::FolderBadMarker(members) => (5, folder_body(members, 2)),
             Feature::Other(class) => {
@@ -613,11 +643,15 @@ pub(crate) fn feature_document_last(features: &[Feature<'_>], last: Option<u32>)
     });
     objects.sort_by_key(|object| object.id);
     let (cluster, map) = cluster_and_map(&objects);
-    document(&[
+    let mut streams = vec![
         ("PSMcluster0", cluster),
         ("PSMspacemap/0x00000000", map),
         ("PSMtypetable", type_table(&classes, &[])),
-    ])
+    ];
+    if !names.is_empty() {
+        streams.push(("PartsLiteData", names_stream(names)));
+    }
+    document(&streams)
 }
 
 pub(crate) fn with_partitions(streams: &[Vec<u8>]) -> Vec<u8> {

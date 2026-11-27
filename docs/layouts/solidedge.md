@@ -146,6 +146,22 @@ Unstated regions:
 
 - `0..8` (8 B): The object frame (§3.1).
 
+## `group_feature_object`
+
+Spec §4.3 · layout: byte offsets · size: 16 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/features.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 12 | 4 | `suppressed` | `u32` | little | spec | The `u32` at object offset 12 of a `CLSID_JMGroup` object is its suppressed state. |
+
+Unstated regions:
+
+- `0..8` (8 B): The object frame (§3.1).
+- `8..12` (4 B): §4.3 states no field before the suppressed state.
+
 ## `folder_object`
 
 Spec §4.3 · layout: byte offsets · size: 12 B

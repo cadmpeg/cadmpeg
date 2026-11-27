@@ -20,7 +20,7 @@ use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::report::loss::LossNote;
 
-use crate::layout::{folder_object, part_feature_object};
+use crate::layout::{folder_object, group_feature_object, part_feature_object};
 use crate::loss::SolidEdgeLossCode;
 use crate::psm::{Cluster, Object, SpaceMap, TypeTable, SPACE_MAP_STREAM, TYPE_TABLE_STREAM};
 
@@ -81,6 +81,10 @@ pub(crate) struct Listed {
 
 /// The state-word bit of a part function that states it suppressed (§4.3).
 const SUPPRESSED_BIT: u32 = 0x10;
+/// The stream that names the feature-tree items (§4.3).
+const NAMES_STREAM: &str = "PartsLiteData";
+/// The most name code units a name record can state, with its zero.
+const NAME_UNITS_MAX: usize = 256;
 
 /// The navigator's last-feature identifier and its listed object identifiers.
 struct Entries {
@@ -257,10 +261,17 @@ fn listed(cluster: &Cluster<'_>, types: &TypeTable, entries: &[u32]) -> Option<V
             FOLDER_CLASS => Kind::Folder(folder_members(&object)),
             other => Kind::Other(other.to_owned()),
         };
-        let suppressed = (class == PART_CLASS)
-            .then(|| View::u32_le_at(object.bytes, part_feature_object::STATE))
-            .flatten()
-            .map(|state| state & SUPPRESSED_BIT != 0);
+        let suppressed = match class {
+            PART_CLASS => View::u32_le_at(object.bytes, part_feature_object::STATE)
+                .map(|state| state & SUPPRESSED_BIT != 0),
+            GROUP_CLASS => View::u32_le_at(object.bytes, group_feature_object::SUPPRESSED)
+                .and_then(|state| match state {
+                    0 => Some(false),
+                    1 => Some(true),
+                    _ => None,
+                }),
+            _ => None,
+        };
         features.push(Listed {
             object: id,
             kind,
@@ -369,7 +380,7 @@ struct Timeline {
 
 /// The index run of a folder's members among the timeline features: every
 /// member is a timeline feature and the indices are consecutive ascending.
-fn folder_run(members: &[u32], index: &BTreeMap<u32, u32>) -> Option<Folder> {
+fn folder_run(members: &[u32], index: &BTreeMap<u32, u32>, name: Option<String>) -> Option<Folder> {
     let mut first = None;
     let mut previous: Option<u32> = None;
     for member in members {
@@ -384,7 +395,7 @@ fn folder_run(members: &[u32], index: &BTreeMap<u32, u32>) -> Option<Folder> {
         previous = Some(at);
     }
     Some(Folder {
-        name: None,
+        name,
         first: first?,
         last: previous?,
     })
@@ -393,7 +404,11 @@ fn folder_run(members: &[u32], index: &BTreeMap<u32, u32>) -> Option<Folder> {
 /// The features of `listed` in order, the folders over them, and a loss for
 /// each kind no family covers, each folder that does not state a run of
 /// features and each feature with no readable suppression state.
-fn timeline(listed: &[Listed], losses: &mut Vec<LossNote>) -> Option<Timeline> {
+fn timeline(
+    listed: &[Listed],
+    names: &BTreeMap<u32, String>,
+    losses: &mut Vec<LossNote>,
+) -> Option<Timeline> {
     let mut features = Vec::new();
     let mut index = BTreeMap::new();
     let mut unread_state = 0_usize;
@@ -437,15 +452,16 @@ fn timeline(listed: &[Listed], losses: &mut Vec<LossNote>) -> Option<Timeline> {
         });
     }
     let mut folders = Vec::new();
-    let mut any_folder = false;
+    let mut unnamed_folder = false;
     for entry in listed {
         let Kind::Folder(members) = &entry.kind else {
             continue;
         };
-        any_folder = true;
+        let name = names.get(&entry.object).cloned();
+        unnamed_folder |= name.is_none();
         match members
             .as_deref()
-            .and_then(|members| folder_run(members, &index))
+            .and_then(|members| folder_run(members, &index, name))
         {
             Some(folder) if folders.iter().any(|stated| crosses(stated, &folder)) => {
                 losses.push(SolidEdgeLossCode::FeatureFolderUnread.note(format!(
@@ -461,8 +477,11 @@ fn timeline(listed: &[Listed], losses: &mut Vec<LossNote>) -> Option<Timeline> {
             ))),
         }
     }
-    if any_folder {
-        losses.push(SolidEdgeLossCode::FeatureFolderNameUnread.note("folder names are not read"));
+    if unnamed_folder {
+        losses.push(
+            SolidEdgeLossCode::FeatureFolderNameUnread
+                .note("the name of a feature-tree folder is not stated by the document"),
+        );
     }
     if unread_state > 0 {
         losses.push(SolidEdgeLossCode::FeatureSuppressionUnread.note(format!(
@@ -470,6 +489,70 @@ fn timeline(listed: &[Listed], losses: &mut Vec<LossNote>) -> Option<Timeline> {
         )));
     }
     Some(Timeline { features, folders })
+}
+
+/// The names of the feature-tree items that the `PartsLiteData` stream states
+/// for the objects `wanted` (§4.3). A record is a `u32` count `n`, `n` UTF-16LE
+/// code units ending with a zero unit, and the `u32` identifier of the item's
+/// object. An object that two records name differently has no name.
+fn item_names(bytes: &[u8], wanted: &BTreeSet<u32>) -> BTreeMap<u32, String> {
+    let mut names = BTreeMap::new();
+    let mut conflicts = BTreeSet::new();
+    for at in 0..bytes.len() {
+        let Some(units) = View::u32_le_at(bytes, at)
+            .and_then(|count| usize::try_from(count).ok())
+            .filter(|units| (2..=NAME_UNITS_MAX).contains(units))
+        else {
+            continue;
+        };
+        let Some(name_at) = at.checked_add(4) else {
+            continue;
+        };
+        let Some(text) = units
+            .checked_mul(2)
+            .and_then(|length| name_at.checked_add(length))
+            .and_then(|end| bytes.get(name_at..end))
+        else {
+            continue;
+        };
+        let Some(id) = name_at
+            .checked_add(text.len())
+            .and_then(|end| View::u32_le_at(bytes, end))
+            .filter(|id| wanted.contains(id))
+        else {
+            continue;
+        };
+        let Some(code_units) = (0..units)
+            .map(|unit| View::u16_le_at(text, unit * 2))
+            .collect::<Option<Vec<u16>>>()
+        else {
+            continue;
+        };
+        let Some((0, name)) = code_units.split_last().map(|(last, rest)| (*last, rest)) else {
+            continue;
+        };
+        if name.contains(&0) {
+            continue;
+        }
+        let Ok(name) = String::from_utf16(name) else {
+            continue;
+        };
+        if name.chars().any(char::is_control) {
+            continue;
+        }
+        match names.get(&id) {
+            Some(known) if *known != name => {
+                conflicts.insert(id);
+            }
+            _ => {
+                names.insert(id, name);
+            }
+        }
+    }
+    for id in conflicts {
+        names.remove(&id);
+    }
+    names
 }
 
 /// Whether two folder runs share a feature and neither holds the other.
@@ -570,7 +653,22 @@ pub(crate) fn project<'a>(
         }
     };
     let mut notes = Vec::new();
-    let Some(Timeline { features, folders }) = timeline(&listed, &mut notes) else {
+    let wanted: BTreeSet<u32> = listed
+        .iter()
+        .filter(|entry| matches!(entry.kind, Kind::Folder(_)))
+        .map(|entry| entry.object)
+        .collect();
+    let mut names = BTreeMap::new();
+    if !wanted.is_empty() {
+        if let Some(entry) = snapshot.stream(NAMES_STREAM) {
+            match snapshot.open(ctx, entry) {
+                Ok(stream) => names = item_names(stream.window(), &wanted),
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(_) => {}
+            }
+        }
+    }
+    let Some(Timeline { features, folders }) = timeline(&listed, &names, &mut notes) else {
         losses.push(
             SolidEdgeLossCode::FeatureStorageUnread.note(
                 "a listed feature has no readable kind; the feature order is not transferred",

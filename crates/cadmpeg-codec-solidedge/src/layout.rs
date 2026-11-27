@@ -132,6 +132,14 @@ pub(crate) mod part_feature_object {
     pub(crate) const STATE: usize = 8;
 }
 
+/// Byte offsets for the `group_feature_object` record.
+///
+/// Spec §4.3. Record length 16 B.
+pub(crate) mod group_feature_object {
+    /// Offset of `suppressed` (`u32`, little-endian). Spec §4.3.
+    pub(crate) const SUPPRESSED: usize = 12;
+}
+
 /// Byte offsets for the `folder_object` record.
 ///
 /// Spec §4.3. Record length 12 B.

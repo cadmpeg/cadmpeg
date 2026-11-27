@@ -1390,6 +1390,66 @@ fn full_decode_states_suppression_from_the_part_state_word() {
 }
 
 #[test]
+fn full_decode_states_group_suppression_from_the_group_state_word() {
+    use test_support::Feature;
+
+    let result = decode(test_support::feature_document(&[
+        Feature::GroupState(1),
+        Feature::GroupState(0),
+        Feature::PartState("JMHoleFunction", 0x10),
+    ]));
+    let (_, suppressed) = timeline_of(&result);
+    assert_eq!(suppressed, vec![Some(true), Some(false), Some(true)]);
+    assert!(!loss_codes(&result)
+        .iter()
+        .any(|code| code == "feature.suppression-unread"));
+}
+
+#[test]
+fn full_decode_names_a_folder_from_the_names_stream() {
+    use cadmpeg_ir::design::container::Container;
+    use test_support::Feature;
+
+    // The folder is object 11.
+    let features = [
+        Feature::Part("JMProtrusionFunction"),
+        Feature::Folder(&[12, 13]),
+        Feature::Part("JMCutoutFunction"),
+        Feature::Part("JMHoleFunction"),
+    ];
+    let result = decode(test_support::feature_document_named(
+        &features,
+        None,
+        &[(10, "Protrusion 1"), (11, "Housing"), (12, "Cut 1")],
+    ));
+    let (Container::Ordered { folders, .. }, _) = timeline_of(&result) else {
+        panic!("the timeline is an ordered container");
+    };
+    assert_eq!(folders.len(), 1);
+    assert_eq!(folders[0].name.as_deref(), Some("Housing"));
+    assert!(!loss_codes(&result)
+        .iter()
+        .any(|code| code == "feature.folder-name-unread"));
+    // A names stream with no record of the folder leaves it unnamed.
+    let result = decode(test_support::feature_document_named(
+        &features,
+        None,
+        &[(10, "Protrusion 1")],
+    ));
+    let (Container::Ordered { folders, .. }, _) = timeline_of(&result) else {
+        panic!("the timeline is an ordered container");
+    };
+    assert_eq!(folders[0].name, None);
+    assert_eq!(
+        loss_codes(&result)
+            .iter()
+            .filter(|code| *code == "feature.folder-name-unread")
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn full_decode_reports_one_suppression_note_for_unreadable_states() {
     use test_support::Feature;
 

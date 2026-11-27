@@ -55,11 +55,3 @@
 **Known.** A `CLSID_JMGroup` object has a different layout from a `CLSID_JMPart` object after its frame. A `CLSID_JMPart` object stores its function name at the position in §4.2.
 
 **Need.** Mirror and pattern documents that differ in one parameter, and extrude documents that differ only in depth or direction.
-
-### DR-1019. Group feature suppression and folder names
-
-**Question.** Which field stores the suppressed state of a `CLSID_JMGroup` feature, and where is the name of a feature-tree folder stored?
-
-**Known.** A `CLSID_JMPart` feature stores its suppressed state in bit `0x10` of its state word (§4.3). The `u32` at object offset 8 of a `CLSID_JMGroup` object is `1` in documents without suppressed features. A `CLSID_JMFeatureGroup` object lists the folder members (§4.3).
-
-**Need.** A document with one suppressed mirror copy or pattern and its resave without suppression; a document with one renamed folder and its resave with the default name.

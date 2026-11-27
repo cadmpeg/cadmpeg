@@ -290,6 +290,10 @@ A `CLSID_JMGroup` feature is a mirror copy or a pattern.
 The `u32` at object offset 8 of a `CLSID_JMPart` object is its state word.
 Bit `0x10` set states that the feature is suppressed.
 
+The `u32` at object offset 12 of a `CLSID_JMGroup` object is its suppressed
+state. The value `1` states that the feature is suppressed and the value `0`
+states that it is not.
+
 The last-feature identifier of the navigator (§4.1) is the rollback
 position. The features up to and including that feature are built. The
 listed features after it are rolled back. When the identifier is the last
@@ -304,6 +308,12 @@ at object offset 8 is the member count `c`. `c` pairs follow it, each the
 `u32` value `1` and a member object identifier, in feature-tree order. The
 navigator lists the folder entry immediately before its first member, and
 lists each member as an entry of its own.
+
+The stream `PartsLiteData` stores the name of each feature-tree item. A name
+record is a `u32` count `n`, then `n` UTF-16LE code units whose last unit is
+zero, then the `u32` identifier of the object that the name belongs to. The
+name of a folder is the name of the record that carries the identifier of its
+`CLSID_JMFeatureGroup` object. A folder that has not been renamed stores its default name.
 
 ## 5. Kernel stream map
 

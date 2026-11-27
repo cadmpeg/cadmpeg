@@ -353,6 +353,31 @@ source = "spec"
 anchor = "The `u32` at object offset 8 of a `CLSID_JMPart` object is its state word."
 
 [[record]]
+name = "group_feature_object"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/features.rs"
+section = "4.3"
+anchor = "The `u32` at object offset 12 of a `CLSID_JMGroup` object is its suppressed\nstate."
+size = 16
+
+[[record.gap]]
+offset = 0
+size = 8
+note = "The object frame (§3.1)."
+
+[[record.gap]]
+offset = 8
+size = 4
+note = "§4.3 states no field before the suppressed state."
+
+[[record.field]]
+name = "suppressed"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "The `u32` at object offset 12 of a `CLSID_JMGroup` object is its suppressed\nstate."
+
+[[record]]
 name = "folder_object"
 kind = "byte"
 parsed_by = "crates/cadmpeg-codec-solidedge/src/features.rs"

@@ -4,10 +4,11 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::design::feature::OperationFamily;
 
-use super::{function_family, has_feature_objects, navigator, Kind, Listed, Navigator};
+use super::{function_family, has_feature_objects, item_names, navigator, Kind, Listed, Navigator};
 use crate::psm::{Cluster, SpaceMap, TypeTable};
 use crate::test_support::{
-    cluster_and_map, feature_document, navigator_body, part_body, type_table, Feature, Object,
+    cluster_and_map, feature_document, names_stream, navigator_body, part_body, type_table,
+    Feature, Object,
 };
 
 fn listed_of(features: &[Feature<'_>]) -> Vec<Listed> {
@@ -316,6 +317,73 @@ fn group_states_no_suppression() {
 }
 
 #[test]
+fn group_suppressed_state_is_the_u32_at_object_offset_12() {
+    let states = [(0, Some(false)), (1, Some(true)), (2, None), (0x10, None)];
+    for (state, suppressed) in states {
+        let listed = listed_of(&[Feature::GroupState(state)]);
+        assert_eq!(listed[0].suppressed, suppressed, "{state:#x}");
+    }
+}
+
+fn wanted(ids: &[u32]) -> std::collections::BTreeSet<u32> {
+    ids.iter().copied().collect()
+}
+
+#[test]
+fn item_names_reads_the_records_of_the_wanted_objects() {
+    let stream = names_stream(&[(11, "Housing"), (12, "Hole 1"), (13, "Group 1")]);
+    let names = item_names(&stream, &wanted(&[11, 13]));
+    assert_eq!(names.len(), 2);
+    assert_eq!(names[&11], "Housing");
+    assert_eq!(names[&13], "Group 1");
+}
+
+#[test]
+fn item_names_reads_non_ascii_names() {
+    let stream = names_stream(&[(11, "Gruppe \u{e4}\u{3b1}")]);
+    assert_eq!(
+        item_names(&stream, &wanted(&[11]))[&11],
+        "Gruppe \u{e4}\u{3b1}"
+    );
+}
+
+#[test]
+fn item_names_drops_an_object_that_two_records_name_differently() {
+    let stream = names_stream(&[(11, "First"), (11, "Second"), (12, "Same"), (12, "Same")]);
+    let names = item_names(&stream, &wanted(&[11, 12]));
+    assert_eq!(names.get(&11), None);
+    assert_eq!(names[&12], "Same");
+}
+
+#[test]
+fn item_names_ignores_a_name_without_its_zero_unit() {
+    // The count claims three units; the last is not zero.
+    let mut stream = 3_u32.to_le_bytes().to_vec();
+    for unit in [0x41_u16, 0x42, 0x43] {
+        stream.extend_from_slice(&unit.to_le_bytes());
+    }
+    stream.extend_from_slice(&11_u32.to_le_bytes());
+    assert!(item_names(&stream, &wanted(&[11])).is_empty());
+}
+
+#[test]
+fn item_names_ignores_a_name_with_a_control_unit_or_an_unwanted_identifier() {
+    let mut stream = 3_u32.to_le_bytes().to_vec();
+    for unit in [0x41_u16, 0x09, 0] {
+        stream.extend_from_slice(&unit.to_le_bytes());
+    }
+    stream.extend_from_slice(&11_u32.to_le_bytes());
+    stream.extend_from_slice(&names_stream(&[(12, "Other")]));
+    assert!(item_names(&stream, &wanted(&[11])).is_empty());
+}
+
+#[test]
+fn item_names_of_a_truncated_stream_is_empty() {
+    let stream = names_stream(&[(11, "Housing")]);
+    assert!(item_names(&stream[..stream.len() - 12], &wanted(&[11])).is_empty());
+}
+
+#[test]
 fn navigator_reads_the_last_feature_identifier() {
     let (cluster, map, types) = streams(&crate::test_support::feature_document_last(
         &[Feature::Group, Feature::Group],
@@ -452,7 +520,8 @@ fn the_timeline_states_the_readable_features_around_an_unreadable_one() {
         },
     ];
     let mut losses = Vec::new();
-    let timeline = super::timeline(&listed, &mut losses).unwrap();
+    let timeline =
+        super::timeline(&listed, &std::collections::BTreeMap::new(), &mut losses).unwrap();
     assert_eq!(timeline.features.len(), 2);
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.local_code(), "feature.storage-unread");
@@ -478,7 +547,8 @@ fn a_folder_crossing_an_earlier_folder_is_not_stated() {
         part(12, "JMRoundFunction"),
     ];
     let mut losses = Vec::new();
-    let timeline = super::timeline(&listed, &mut losses).unwrap();
+    let timeline =
+        super::timeline(&listed, &std::collections::BTreeMap::new(), &mut losses).unwrap();
     assert_eq!(timeline.features.len(), 3);
     assert_eq!(
         timeline
