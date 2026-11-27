@@ -395,6 +395,8 @@ pub(super) fn unwrap_standard_uv(surface: &SurfaceGeometry, value: &mut Point2, 
     }
 }
 
+pub(super) const STANDARD_SURFACE_POINT_TOLERANCE: f64 = 1e-3;
+
 pub(super) fn point_on_surface(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     point: Point3,
@@ -408,8 +410,15 @@ pub(super) fn point_on_surface_if_supported(
     point: Point3,
     surface: &SurfaceGeometry,
 ) -> Result<Option<bool>, cadmpeg_core::decode::ResourceLimit> {
-    const TOLERANCE: f64 = 1e-3;
+    point_on_surface_within_tolerance(ctx, point, surface, STANDARD_SURFACE_POINT_TOLERANCE)
+}
 
+pub(super) fn point_on_surface_within_tolerance(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    point: Point3,
+    surface: &SurfaceGeometry,
+    tolerance: f64,
+) -> Result<Option<bool>, cadmpeg_core::decode::ResourceLimit> {
     let residual = match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
@@ -457,7 +466,7 @@ pub(super) fn point_on_surface_if_supported(
         )
         | SurfaceGeometry::Procedural { .. } => return Ok(None),
     };
-    Ok(Some(residual <= TOLERANCE))
+    Ok(Some(residual <= tolerance))
 }
 
 pub(super) fn standard_spline_line(

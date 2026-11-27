@@ -18,10 +18,12 @@ type NativeEndpointEvidenceOutput = Result<Option<Vec<Option<[usize; 2]>>>, &'st
 mod counted_owner;
 mod edge_geometry;
 mod surface_membership;
+#[cfg(test)]
+use edge_geometry::point_on_surface_if_supported;
 use edge_geometry::{
     attach_standard_circles, attach_standard_lines, canonical_unoriented_axis,
     circle_endpoint_range_choices, circular_range_choices_have_simple_selection, point_on_surface,
-    point_on_surface_if_supported, standard_circle_axis_from_carrier, standard_pcurve_geometry,
+    standard_circle_axis_from_carrier, standard_pcurve_geometry,
 };
 
 use crate::families::standard::fbb::EdgeTableForm;
@@ -98,6 +100,7 @@ const LINE_SEGMENT_GEOMETRY_TOLERANCE: f64 = 2e-3;
 const ANALYTIC_CURVE_ENDPOINT_TOLERANCE: f64 = 2e-3;
 const SUPPORT_AGREEMENT_TOLERANCE: f64 = EPS_STANDARD_DECODE_COARSE_GEOMETRY;
 const STANDARD_FACE_BOUNDS_TOLERANCE: f64 = 2e-3;
+const RELAXED_STANDARD_SURFACE_POINT_TOLERANCE: f64 = 1.5e-2;
 const NURBS_SURFACE_MEMBERSHIP_TOLERANCE: f64 = 2e-3;
 const NURBS_SHARED_BOUNDARY_TOLERANCE: f64 = EPS_STANDARD_DECODE_GEOMETRY;
 const NURBS_SURFACE_SEEDS_PER_SPAN: usize = 3;
@@ -2341,16 +2344,47 @@ fn try_decode_standard_population(
             continue;
         }
         let decoded = if prefix.kind == AnalyticSurfaceKind::Plane {
-            planes
+            let approx_plane = planes
                 .get(&prefix.target)
-                .and_then(crate::families::standard::records::decode_plane)
-                .or_else(|| {
-                    journal_planes
-                        .get(&prefix.target)
-                        .copied()
-                        .map(SolvedSurfaceGeometry::Plane)
-                        .map(SurfaceGeometry::Solved)
-                })
+                .and_then(crate::families::standard::records::decode_plane);
+            if let Some(jp) = journal_planes.get(&prefix.target) {
+                let aligned = if let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    ref approx,
+                ))) = approx_plane
+                {
+                    let jp_axis = *jp.frame().axis().as_raw();
+                    let approx_axis = *approx.frame().axis().as_raw();
+                    if jp_axis.dot(approx_axis) < 0.0 {
+                        let u = *jp.frame().reference().as_raw();
+                        let v = jp_axis.cross(u);
+                        let neg_v = cadmpeg_ir::units::UnitVector3::new(Vector3::new(
+                            -v.x, -v.y, -v.z,
+                        ));
+                        neg_v
+                            .and_then(|nv| {
+                                cadmpeg_ir::units::OrthonormalFrame3::completing(
+                                    *jp.frame().reference(),
+                                    nv,
+                                )
+                            })
+                            .map_or(*jp, |frame| {
+                                cadmpeg_ir::geometry::analytic::PlaneSurface::new(
+                                    jp.origin(),
+                                    frame,
+                                )
+                            })
+                    } else {
+                        *jp
+                    }
+                } else {
+                    *jp
+                };
+                Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    aligned,
+                )))
+            } else {
+                approx_plane
+            }
         } else {
             curved_surfaces[i].clone()
         };
@@ -4880,14 +4914,15 @@ fn attach_standard_topology_inner(
             surface_indices.insert(id, index);
         }
         let face_bounds = (face_bounds.len() == face_count).then_some(face_bounds);
-        let point_faces =
-            standard_face_point_membership(ctx, ir, bindings, &surface_indices, face_bounds)
-                .map_err(StandardTopologyError::Codec)?;
-        let point_on_face = |face: usize, point: usize| {
-            point_faces
-                .get(point)
-                .is_some_and(|faces| faces.binary_search(&face).is_ok())
-        };
+        let mut point_faces = standard_face_point_membership_within_tolerance(
+            ctx,
+            ir,
+            bindings,
+            &surface_indices,
+            face_bounds,
+            edge_geometry::STANDARD_SURFACE_POINT_TOLERANCE,
+        )
+        .map_err(StandardTopologyError::Codec)?;
         let mut face_points = ctx
             .alloc_filled(bindings.len(), Vec::new(), "catia_face_point_membership")
             .map_err(StandardTopologyError::Codec)?;
@@ -4948,7 +4983,7 @@ fn attach_standard_topology_inner(
                 crate::families::standard::records::StandardCurveGeometry::Circle {
                     center,
                     radius,
-                } => standard_circle_endpoint_candidates(
+                } => standard_circle_endpoint_candidates_within_tolerance(
                     ctx,
                     &ir.geometry.points,
                     center.get(),
@@ -4967,6 +5002,7 @@ fn attach_standard_topology_inner(
                                 .and_then(|bounds| bounds[support.faces[1]]),
                         ),
                     ]),
+                    edge_geometry::STANDARD_SURFACE_POINT_TOLERANCE,
                 )
                 .map_err(StandardTopologyError::Codec)?,
                 crate::families::standard::records::StandardCurveGeometry::Line
@@ -4977,7 +5013,11 @@ fn attach_standard_topology_inner(
                         face_points[faces[0]]
                             .iter()
                             .copied()
-                            .filter(|point| point_on_face(faces[1], *point))
+                            .filter(|point| {
+                                point_faces
+                                    .get(*point)
+                                    .is_some_and(|f| f.binary_search(&faces[1]).is_ok())
+                            })
                             .collect()
                     });
                     incidence_candidates[&faces].clone()
@@ -4985,6 +5025,143 @@ fn attach_standard_topology_inner(
             };
             endpoint_candidates.push(candidates);
         }
+        let mut relaxed_surface_edges = ctx
+            .alloc_filled(supports.len(), false, "catia_relaxed_surface_edges")
+            .map_err(StandardTopologyError::Codec)?;
+        if let Some(bounds_table) = face_bounds {
+            let mut newly_admitted_memberships = Vec::<(usize, usize)>::new();
+            for (edge, support) in supports.iter().enumerate() {
+                if endpoint_candidates[edge].len() >= 2 {
+                    continue;
+                }
+                let Some(b0) = bounds_table[support.faces[0]] else {
+                    continue;
+                };
+                let Some(b1) = bounds_table[support.faces[1]] else {
+                    continue;
+                };
+                let Some(surface0) = face_surface(ir, bindings, &surface_indices, support.faces[0])
+                else {
+                    continue;
+                };
+                let Some(surface1) = face_surface(ir, bindings, &surface_indices, support.faces[1])
+                else {
+                    continue;
+                };
+                let relaxed = match &support.geometry {
+                    crate::families::standard::records::StandardCurveGeometry::Circle {
+                        center,
+                        radius,
+                    } => standard_circle_endpoint_candidates_within_tolerance(
+                        ctx,
+                        &ir.geometry.points,
+                        center.get(),
+                        radius.get(),
+                        Some([
+                            (&surface0.geometry, Some(b0)),
+                            (&surface1.geometry, Some(b1)),
+                        ]),
+                        RELAXED_STANDARD_SURFACE_POINT_TOLERANCE,
+                    )
+                    .map_err(StandardTopologyError::Codec)?,
+                    crate::families::standard::records::StandardCurveGeometry::Line
+                    | crate::families::standard::records::StandardCurveGeometry::Bspline => {
+                        let mut pts = Vec::new();
+                        for (pi, point) in ir.geometry.points.iter().enumerate() {
+                            let pos = point.position().get();
+                            if point_on_standard_face_within_tolerance(
+                                ctx,
+                                pos,
+                                &surface0.geometry,
+                                Some(b0),
+                                RELAXED_STANDARD_SURFACE_POINT_TOLERANCE,
+                            )
+                            .map_err(CodecError::from)
+                            .map_err(StandardTopologyError::Codec)?
+                                && point_on_standard_face_within_tolerance(
+                                    ctx,
+                                    pos,
+                                    &surface1.geometry,
+                                    Some(b1),
+                                    RELAXED_STANDARD_SURFACE_POINT_TOLERANCE,
+                                )
+                                .map_err(CodecError::from)
+                                .map_err(StandardTopologyError::Codec)?
+                            {
+                                pts.push(pi);
+                            }
+                        }
+                        pts
+                    }
+                };
+                if relaxed.len() >= 2 {
+                    for &pi in &relaxed {
+                        for &face in &support.faces {
+                            if let Some(faces) = point_faces.get_mut(pi) {
+                                if let Err(pos) = faces.binary_search(&face) {
+                                    faces.insert(pos, face);
+                                    newly_admitted_memberships.push((face, pi));
+                                }
+                            }
+                        }
+                    }
+                    endpoint_candidates[edge] = relaxed;
+                    relaxed_surface_edges[edge] = true;
+                }
+            }
+            if !newly_admitted_memberships.is_empty() {
+                for (face, pi) in newly_admitted_memberships {
+                    let Some(pos) = ir
+                        .geometry
+                        .points
+                        .get(pi)
+                        .map(|point| point.position().get())
+                    else {
+                        continue;
+                    };
+                    for (edge, support) in supports.iter().enumerate() {
+                        if !support.faces.contains(&face) || endpoint_candidates[edge].contains(&pi)
+                        {
+                            continue;
+                        }
+                        let other_face = if support.faces[0] == face {
+                            support.faces[1]
+                        } else {
+                            support.faces[0]
+                        };
+                        let on_other = point_faces
+                            .get(pi)
+                            .is_some_and(|faces| faces.binary_search(&other_face).is_ok());
+                        if !on_other {
+                            continue;
+                        }
+                        let on_curve = match &support.geometry {
+                            crate::families::standard::records::StandardCurveGeometry::Circle {
+                                center,
+                                radius,
+                            } => {
+                                (pos.distance_squared(center.get()).sqrt() - radius.get()).abs()
+                                    <= RELAXED_STANDARD_SURFACE_POINT_TOLERANCE
+                            }
+                            crate::families::standard::records::StandardCurveGeometry::Line
+                            | crate::families::standard::records::StandardCurveGeometry::Bspline => {
+                                true
+                            }
+                        };
+                        if on_curve {
+                            endpoint_candidates[edge].push(pi);
+                            endpoint_candidates[edge].sort_unstable();
+                            relaxed_surface_edges[edge] = true;
+                        }
+                    }
+                }
+            }
+        }
+        let point_on_face = |face: usize, point: usize| {
+            point_faces
+                .get(point)
+                .is_some_and(|faces| faces.binary_search(&face).is_ok())
+        };
         let edge_classes = standard_curve_edge_classes(&supports);
         let edge_geometry = standard_curve_geometry_gauge_keys(&supports);
         let topology_graph = crate::families::b5::graph::parse(ctx, source, refusal)
@@ -5097,13 +5274,13 @@ fn attach_standard_topology_inner(
         if let Some(pairs) = &native_endpoint_evidence {
             include_native_endpoint_pairs(&mut endpoint_candidates, pairs);
         }
-        let mut endpoint_options = resolve_standard_endpoint_pairs(
+        let mut endpoint_options = resolve_standard_endpoint_pairs_within_tolerance(
             ctx,
             ir,
             bindings,
             &surface_indices,
             &supports,
-            &endpoint_candidates,
+            (&endpoint_candidates, &relaxed_surface_edges),
             refusal,
         )
         .map_err(StandardTopologyError::Codec)?;
@@ -5341,11 +5518,16 @@ fn attach_standard_topology_inner(
                                 all_points = false;
                                 break;
                             };
-                            if !point_on_standard_face(
+                            if !point_on_standard_face_within_tolerance(
                                 ctx,
                                 point.position().get(),
                                 &surface.geometry,
                                 face_bounds.as_ref().and_then(|bounds| bounds[faces[1]]),
+                                if relaxed_surface_edges[edge] {
+                                    RELAXED_STANDARD_SURFACE_POINT_TOLERANCE
+                                } else {
+                                    edge_geometry::STANDARD_SURFACE_POINT_TOLERANCE
+                                },
                             )
                             .map_err(CodecError::from)
                             .map_err(StandardTopologyError::Codec)?
@@ -5381,6 +5563,11 @@ fn attach_standard_topology_inner(
             .is_some_and(|domains| domains.iter().any(|domain| !domain.is_empty()));
         let endpoint_pair_on_incident_faces =
             |edge: usize, pair: [usize; 2]| -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+                let tolerance = if relaxed_surface_edges[edge] {
+                    RELAXED_STANDARD_SURFACE_POINT_TOLERANCE
+                } else {
+                    edge_geometry::STANDARD_SURFACE_POINT_TOLERANCE
+                };
                 for point in pair {
                     let Some(position) = ir
                         .geometry
@@ -5396,16 +5583,20 @@ fn attach_standard_topology_inner(
                             return Ok(false);
                         };
                         let bounds = face_bounds.as_ref().and_then(|bounds| bounds[face]);
-                        if !point_on_standard_face(ctx, position, &surface.geometry, bounds)?
-                            || !standard_nurbs_line_pair_on_face(
-                                ctx,
-                                &surface.geometry,
-                                &supports[edge],
-                                &pair,
-                                &ir.geometry.points,
-                                bounds,
-                            )?
-                        {
+                        if !point_on_standard_face_within_tolerance(
+                            ctx,
+                            position,
+                            &surface.geometry,
+                            bounds,
+                            tolerance,
+                        )? || !standard_nurbs_line_pair_on_face(
+                            ctx,
+                            &surface.geometry,
+                            &supports[edge],
+                            &pair,
+                            &ir.geometry.points,
+                            bounds,
+                        )? {
                             return Ok(false);
                         }
                     }
@@ -5448,16 +5639,20 @@ fn attach_standard_topology_inner(
                         else {
                             return false;
                         };
-                        match standard_endpoint_pair_supports_topology(
+                        match standard_endpoint_pair_supports_topology_within_tolerance(
                             ctx,
                             &surface.geometry,
                             support,
-                            start,
-                            end,
+                            (start, end),
                             crate::families::standard::records::standard_face_witness(
                                 brep,
                                 bindings[face].2,
                             ),
+                            if relaxed_surface_edges[edge] {
+                                RELAXED_STANDARD_SURFACE_POINT_TOLERANCE
+                            } else {
+                                edge_geometry::STANDARD_SURFACE_POINT_TOLERANCE
+                            },
                             refusal,
                         ) {
                             Ok(true) => {}
@@ -7150,6 +7345,7 @@ fn fallback_pair_relation_allowance(candidates: &[Vec<usize>]) -> usize {
         .max(MAX_FALLBACK_PAIR_RELATIONS)
 }
 
+#[cfg(test)]
 fn resolve_standard_endpoint_pairs(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -7157,6 +7353,26 @@ fn resolve_standard_endpoint_pairs(
     surface_indices: &HashMap<SurfaceId, usize>,
     supports: &[crate::families::standard::records::StandardCurveSupport],
     candidates: &[Vec<usize>],
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError> {
+    resolve_standard_endpoint_pairs_within_tolerance(
+        ctx,
+        ir,
+        bindings,
+        surface_indices,
+        supports,
+        (candidates, &[]),
+        refusal,
+    )
+}
+
+fn resolve_standard_endpoint_pairs_within_tolerance(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    (candidates, relaxed_surface_edges): (&[Vec<usize>], &[bool]),
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError> {
     let mut resolved = Vec::new();
@@ -7270,6 +7486,14 @@ fn resolve_standard_endpoint_pairs(
         if relation_count.is_none_or(|count| count > MAX_PAIR_RELATIONS_PER_EDGE) {
             continue;
         }
+        let midpoint_tolerance = if edges
+            .iter()
+            .any(|&edge| relaxed_surface_edges.get(edge).copied().unwrap_or(false))
+        {
+            RELAXED_STANDARD_SURFACE_POINT_TOLERANCE
+        } else {
+            edge_geometry::STANDARD_SURFACE_POINT_TOLERANCE
+        };
         let mut pairs = Vec::new();
         for (left, &start) in points.iter().enumerate() {
             for &end_index in &points[left + 1..] {
@@ -7319,8 +7543,20 @@ fn resolve_standard_endpoint_pairs(
                 if segment_norm != 0.0
                     && follows_direction
                     && follows_same_cone_generator
-                    && point_on_surface(ctx, midpoint, &surface0.geometry)?
-                    && point_on_surface(ctx, midpoint, &surface1.geometry)?
+                    && edge_geometry::point_on_surface_within_tolerance(
+                        ctx,
+                        midpoint,
+                        &surface0.geometry,
+                        midpoint_tolerance,
+                    )?
+                    .unwrap_or(false)
+                    && edge_geometry::point_on_surface_within_tolerance(
+                        ctx,
+                        midpoint,
+                        &surface1.geometry,
+                        midpoint_tolerance,
+                    )?
+                    .unwrap_or(false)
                 {
                     pairs.push([points[left], end_index]);
                 }
@@ -7447,6 +7683,7 @@ fn standard_curve_geometry_gauge_keys(
     keys
 }
 
+#[cfg(test)]
 fn standard_circle_endpoint_candidates(
     ctx: &DecodeContext<'_>,
     points: &[Point],
@@ -7459,14 +7696,43 @@ fn standard_circle_endpoint_candidates(
         ); 2],
     >,
 ) -> Result<Vec<usize>, CodecError> {
+    standard_circle_endpoint_candidates_within_tolerance(
+        ctx,
+        points,
+        center,
+        radius,
+        faces,
+        edge_geometry::STANDARD_SURFACE_POINT_TOLERANCE,
+    )
+}
+
+fn standard_circle_endpoint_candidates_within_tolerance(
+    ctx: &DecodeContext<'_>,
+    points: &[Point],
+    center: Point3,
+    radius: f64,
+    faces: Option<
+        [(
+            &SurfaceGeometry,
+            Option<crate::families::standard::records::StandardFaceBounds>,
+        ); 2],
+    >,
+    tolerance: f64,
+) -> Result<Vec<usize>, CodecError> {
     let mut candidates = Vec::new();
     for (index, point) in points.iter().enumerate() {
         let on_circle =
-            (point.position().get().distance_squared(center).sqrt() - radius).abs() <= 1e-3;
+            (point.position().get().distance_squared(center).sqrt() - radius).abs() <= tolerance;
         let mut incident = true;
         if let Some(faces) = faces {
             for (surface, bounds) in faces {
-                if !point_on_standard_face(ctx, point.position().get(), surface, bounds)? {
+                if !point_on_standard_face_within_tolerance(
+                    ctx,
+                    point.position().get(),
+                    surface,
+                    bounds,
+                    tolerance,
+                )? {
                     incident = false;
                     break;
                 }
@@ -7923,12 +8189,31 @@ fn face_surface<'a>(
 ///
 /// Face geometry and standard face bounds are immutable while a topology
 /// candidate is searched. The cache changes only lookup cost.
+#[cfg(test)]
 fn standard_face_point_membership(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
     face_bounds: Option<&[Option<crate::families::standard::records::StandardFaceBounds>]>,
+) -> Result<Vec<Vec<usize>>, cadmpeg_core::CodecError> {
+    standard_face_point_membership_within_tolerance(
+        ctx,
+        ir,
+        bindings,
+        surface_indices,
+        face_bounds,
+        edge_geometry::STANDARD_SURFACE_POINT_TOLERANCE,
+    )
+}
+
+fn standard_face_point_membership_within_tolerance(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    face_bounds: Option<&[Option<crate::families::standard::records::StandardFaceBounds>]>,
+    surface_tolerance: f64,
 ) -> Result<Vec<Vec<usize>>, cadmpeg_core::CodecError> {
     let mut point_faces = ctx.alloc_filled(
         ir.geometry.points.len(),
@@ -7943,7 +8228,13 @@ fn standard_face_point_membership(
             .and_then(|bounds| bounds.get(face).copied())
             .flatten();
         for (faces, candidate) in point_faces.iter_mut().zip(&ir.geometry.points) {
-            if point_on_standard_face(ctx, candidate.position().get(), &surface.geometry, bounds)? {
+            if point_on_standard_face_within_tolerance(
+                ctx,
+                candidate.position().get(),
+                &surface.geometry,
+                bounds,
+                surface_tolerance,
+            )? {
                 faces.push(face);
             }
         }
@@ -7957,13 +8248,32 @@ fn point_on_standard_face(
     surface: &SurfaceGeometry,
     bounds: Option<crate::families::standard::records::StandardFaceBounds>,
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+    point_on_standard_face_within_tolerance(
+        ctx,
+        point,
+        surface,
+        bounds,
+        edge_geometry::STANDARD_SURFACE_POINT_TOLERANCE,
+    )
+}
+
+fn point_on_standard_face_within_tolerance(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    point: Point3,
+    surface: &SurfaceGeometry,
+    bounds: Option<crate::families::standard::records::StandardFaceBounds>,
+    tolerance: f64,
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     if bounds.is_some_and(|bounds| !point_inside_standard_face_bounds(point, bounds)) {
         return Ok(false);
     }
     if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) = surface {
         return Ok(!point_outside_nurbs_control_bounds(point, nurbs));
     }
-    Ok(point_on_surface_if_supported(ctx, point, surface)? != Some(false))
+    Ok(
+        edge_geometry::point_on_surface_within_tolerance(ctx, point, surface, tolerance)?
+            != Some(false),
+    )
 }
 
 fn point_inside_standard_face_bounds(
@@ -8860,6 +9170,7 @@ fn bind_standard_a5_owner_surfaces(
 /// UV-midpoint p-curve test cannot derive that section from its endpoints, but
 /// the serialized circle carrier and face membership still make the pair
 /// admissible for topology solving.
+#[cfg(test)]
 fn standard_endpoint_pair_supports_topology(
     ctx: &DecodeContext<'_>,
     surface: &SurfaceGeometry,
@@ -8869,12 +9180,38 @@ fn standard_endpoint_pair_supports_topology(
     witness: Option<FinitePoint3>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    standard_endpoint_pair_supports_topology_within_tolerance(
+        ctx,
+        surface,
+        support,
+        (start, end),
+        witness,
+        edge_geometry::STANDARD_SURFACE_POINT_TOLERANCE,
+        refusal,
+    )
+}
+
+fn standard_endpoint_pair_supports_topology_within_tolerance(
+    ctx: &DecodeContext<'_>,
+    surface: &SurfaceGeometry,
+    support: &crate::families::standard::records::StandardCurveSupport,
+    (start, end): (Point3, Point3),
+    witness: Option<FinitePoint3>,
+    surface_tolerance: f64,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<bool, cadmpeg_core::CodecError> {
     let endpoint_is_supported = |point| -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
         Ok(match surface {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
                 !point_outside_nurbs_control_bounds(point, nurbs)
             }
-            _ => point_on_surface(ctx, point, surface)?,
+            _ => edge_geometry::point_on_surface_within_tolerance(
+                ctx,
+                point,
+                surface,
+                surface_tolerance,
+            )?
+            .unwrap_or(false),
         })
     };
     if !endpoint_is_supported(start)? || !endpoint_is_supported(end)? {
@@ -9510,6 +9847,55 @@ mod circle_axis_tests {
         .expect("witness evaluation accepts the fixture")
         .expect("witness distance for a point on the surface");
         assert!(residual <= super::NURBS_SURFACE_MEMBERSHIP_TOLERANCE);
+    }
+
+    #[test]
+    fn relaxed_surface_point_tolerance_respects_serialized_face_bounds() {
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin(), z(), x())
+                .expect("valid PlaneSurface fixture"),
+        ));
+        let bounds = crate::families::standard::records::StandardFaceBounds {
+            aabb_center: [
+                cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite"),
+                cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite"),
+                cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite"),
+            ],
+            aabb_half_extents: [
+                cadmpeg_ir::scalar::NonNegativeLength::new(10.0).expect("non-negative"),
+                cadmpeg_ir::scalar::NonNegativeLength::new(10.0).expect("non-negative"),
+                cadmpeg_ir::scalar::NonNegativeLength::new(1.0).expect("non-negative"),
+            ],
+            sphere_center: [
+                cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite"),
+                cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite"),
+                cadmpeg_ir::scalar::FiniteReal::new(0.0).expect("finite"),
+            ],
+            sphere_radius: cadmpeg_ir::scalar::NonNegativeLength::new(15.0).expect("non-negative"),
+        };
+        let slightly_off_plane = Point3::new(2.0, 3.0, 0.009);
+        assert!(
+            !super::point_on_standard_face(&ctx, slightly_off_plane, &plane, Some(bounds))
+                .expect("strict plane check")
+        );
+        assert!(super::point_on_standard_face_within_tolerance(
+            &ctx,
+            slightly_off_plane,
+            &plane,
+            Some(bounds),
+            super::RELAXED_STANDARD_SURFACE_POINT_TOLERANCE,
+        )
+        .expect("relaxed plane check inside bounds"));
+        let outside_bounds = Point3::new(25.0, 3.0, 0.009);
+        assert!(!super::point_on_standard_face_within_tolerance(
+            &ctx,
+            outside_bounds,
+            &plane,
+            Some(bounds),
+            super::RELAXED_STANDARD_SURFACE_POINT_TOLERANCE,
+        )
+        .expect("relaxed plane check rejects points outside bounds"));
     }
 }
 
