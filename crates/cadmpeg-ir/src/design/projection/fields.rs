@@ -11,7 +11,7 @@ use crate::design::units::ValueKind;
 use crate::features::parameters::DesignParameter as ModelParameter;
 use crate::features::serialization::FeatureWriteWire;
 use crate::ids::ProductDefinitionId;
-use crate::sketches::Sketch as ModelSketch;
+use crate::sketches::{Sketch as ModelSketch, SketchConstraint as ModelSketchConstraint};
 
 /// A field of a record, named by its wire key.
 pub trait Field: Copy + Ord + 'static {
@@ -333,6 +333,52 @@ field_keys!(ModelSketchEntityField {
     endpoint_refs => EndpointRefs,
     geometry => Geometry,
 });
+
+/// A field of a model sketch constraint.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ModelSketchConstraintField {
+    /// `sketch`
+    Sketch,
+    /// `definition`
+    Definition,
+    /// `name`
+    Name,
+    /// `driving`
+    Driving,
+    /// `active`
+    Active,
+    /// `virtual_space`
+    VirtualSpace,
+    /// `visible`
+    Visible,
+    /// `orientation`
+    Orientation,
+    /// `label_distance`
+    LabelDistance,
+    /// `label_position`
+    LabelPosition,
+    /// `metadata`
+    Metadata,
+    /// `native_ref`
+    NativeRef,
+}
+
+model_fields! {
+    ModelSketchConstraintField of ModelSketchConstraint {
+        sketch => Sketch,
+        definition => Definition,
+        name => Name,
+        driving => Driving,
+        active => Active,
+        virtual_space => VirtualSpace,
+        visible => Visible,
+        orientation => Orientation,
+        label_distance => LabelDistance,
+        label_position => LabelPosition,
+        metadata => Metadata,
+        native_ref => NativeRef,
+    }
+}
 
 #[cfg(test)]
 mod tests;

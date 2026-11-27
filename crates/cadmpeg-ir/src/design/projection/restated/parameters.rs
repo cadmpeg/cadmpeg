@@ -65,7 +65,7 @@ pub(super) fn parameter_cuts<'ir>(
                 .map(move |(at, cell)| (cell.parameter.as_str(), (sheet.id.as_str(), at)))
         })
         .collect::<HashMap<_, _>>();
-    let misplaced = misplaced(pairs.iter().map(|(model, _)| *model), &cells);
+    let misplaced = misplaced(&ir.model.parameters, &cells);
     pairs
         .into_iter()
         .map(|(model, design)| {
@@ -89,13 +89,13 @@ pub(super) fn parameter_cuts<'ir>(
 }
 
 /// The parameters of `models` whose position by `ordinal` among the
-/// parameters of their definition and owner differs from their position in
-/// the design: a spreadsheet cell's position among the cells of its sheet,
-/// which `cells` holds by parameter, and otherwise the numbered order of
-/// their identities. The design parameter arena holds no order but its
-/// identities', and an identity carries the source position as a number.
+/// parameters of their definition and owner the design does not hold. Only
+/// a spreadsheet orders design parameters (§2.2): `cells` holds the sheet
+/// and the position among its cells of each cell parameter. A group of one
+/// parameter holds its position; a larger group holds it where each member
+/// is a cell, and its order by `ordinal` is its order by cell.
 fn misplaced<'ir>(
-    models: impl Iterator<Item = &'ir ModelParameter>,
+    models: &'ir [ModelParameter],
     cells: &HashMap<&str, (&str, usize)>,
 ) -> HashSet<&'ir str> {
     let mut groups = BTreeMap::<_, Vec<&ModelParameter>>::new();
@@ -110,20 +110,26 @@ fn misplaced<'ir>(
         groups.entry(key).or_default().push(model);
     }
     let mut misplaced = HashSet::new();
-    for members in groups.into_values() {
-        let position = |model: &'ir ModelParameter| {
-            let id = model.id.as_str();
-            (cells.get(id).copied(), numbered(id), id)
-        };
-        let mut in_design = members.iter().copied().map(position).collect::<Vec<_>>();
-        in_design.sort_unstable();
-        let mut by_ordinal = members
+    for members in groups.into_values().filter(|members| members.len() > 1) {
+        let Some(placed) = members
             .iter()
-            .copied()
-            .map(|model| (model.ordinal, position(model)))
+            .map(|model| Some((*model, *cells.get(model.id.as_str())?)))
+            .collect::<Option<Vec<_>>>()
+        else {
+            misplaced.extend(members.iter().map(|model| model.id.as_str()));
+            continue;
+        };
+        let mut in_design = placed
+            .iter()
+            .map(|(model, at)| (*at, model.id.as_str()))
+            .collect::<Vec<_>>();
+        in_design.sort_unstable();
+        let mut by_ordinal = placed
+            .iter()
+            .map(|(model, at)| (model.ordinal, *at, model.id.as_str()))
             .collect::<Vec<_>>();
         by_ordinal.sort_unstable();
-        for ((_, (_, _, at_ordinal)), (_, _, at_design)) in by_ordinal.iter().zip(&in_design) {
+        for ((_, _, at_ordinal), (_, at_design)) in by_ordinal.iter().zip(&in_design) {
             if at_ordinal != at_design {
                 misplaced.insert(*at_ordinal);
             }
@@ -132,41 +138,9 @@ fn misplaced<'ir>(
     misplaced
 }
 
-/// A run of an identity in numbered order: digits, by their number and
-/// then by their length, before other characters, by code point.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Run<'a> {
-    /// A run of digits: the count of its digits after leading zeros, those
-    /// digits, and the count of all its digits.
-    Number(usize, &'a str, usize),
-    /// A run of other characters.
-    Text(&'a str),
-}
-
-/// The runs of `id`, which order identities by the numbers they carry.
-fn numbered(id: &str) -> Vec<Run<'_>> {
-    let mut runs = Vec::new();
-    let mut rest = id;
-    while let Some(first) = rest.chars().next() {
-        let digits = first.is_ascii_digit();
-        let end = rest
-            .find(|unit: char| unit.is_ascii_digit() != digits)
-            .unwrap_or(rest.len());
-        let (run, after) = rest.split_at(end);
-        runs.push(if digits {
-            let value = run.trim_start_matches('0');
-            Run::Number(value.len(), value, run.len())
-        } else {
-            Run::Text(run)
-        });
-        rest = after;
-    }
-    runs
-}
-
 /// The fields `design` leaves out of `model`. `component`: the definition
 /// the design states for the feature that owns `design`. `misplaced`: the
-/// design parameter arena does not hold `model`'s position.
+/// design does not hold `model`'s position.
 pub(super) fn parameter_cut(
     model: &ModelParameter,
     design: &DesignParameter,

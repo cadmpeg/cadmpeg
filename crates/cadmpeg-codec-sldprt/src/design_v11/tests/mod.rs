@@ -373,13 +373,13 @@ fn a_configuration_is_restated_without_what_its_record_does_not_state() {
     let active = Restater::Record(id("default").as_str().to_owned());
     assert_eq!(
         default.cut_by(|restater| restater == &active),
-        Some(BTreeSet::new())
+        Some(BTreeSet::from(["ordinal"]))
     );
     let short = ir.model.restated().get(id("short").as_str()).unwrap();
     let by = Restater::Record(id("short").as_str().to_owned());
     assert_eq!(
         short.cut_by(|restater| restater == &by).map(Vec::from_iter),
-        Some(vec!["feature_states", "properties"])
+        Some(vec!["feature_states", "ordinal", "properties"])
     );
 
     let other = FeatureId::mint("sldprt:model:feature#other").unwrap();
@@ -410,7 +410,8 @@ fn a_configuration_is_restated_without_what_its_record_does_not_state() {
         short.cut_by(|restater| restater == &by).map(Vec::from_iter),
         Some(vec![
             "feature_states.definition",
-            "feature_states.dependencies"
+            "feature_states.dependencies",
+            "ordinal"
         ])
     );
 }
