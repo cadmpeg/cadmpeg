@@ -24,7 +24,7 @@ fn a_file_spans_its_unplaced_embedded_definitions_by_file_key() {
         ));
     }
     assert_eq!(
-        DesignRecords::new(&ir).spanned_definitions("test:design:definition#part"),
+        *DesignRecords::new(&ir).spanned_definitions("test:design:definition#part"),
         BTreeSet::from([
             "test:design:definition#part",
             "test:design:definition#unplaced",
@@ -58,7 +58,7 @@ fn spanning_stops_at_another_scope_and_its_placed_definitions() {
         None,
     ));
     assert_eq!(
-        DesignRecords::new(&ir).spanned_definitions("test:design:definition#part"),
+        *DesignRecords::new(&ir).spanned_definitions("test:design:definition#part"),
         BTreeSet::from(["test:design:definition#part"])
     );
 }
@@ -92,7 +92,7 @@ fn a_single_definition_scope_stops_at_file_and_external_children() {
             ));
         }
         assert_eq!(
-            DesignRecords::new(&ir).spanned_definitions("test:design:definition#part"),
+            *DesignRecords::new(&ir).spanned_definitions("test:design:definition#part"),
             BTreeSet::from(["test:design:definition#part"])
         );
     }
@@ -127,7 +127,7 @@ fn a_multi_definition_scope_spans_file_children_and_their_embedded_children() {
         ));
     }
     assert_eq!(
-        DesignRecords::new(&ir).spanned_definitions("test:design:definition#part"),
+        *DesignRecords::new(&ir).spanned_definitions("test:design:definition#part"),
         BTreeSet::from([
             "test:design:definition#part",
             "test:design:definition#child",

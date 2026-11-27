@@ -26,11 +26,7 @@ static INPUT: Anchor = Anchor::Input;
 
 /// Checks every feature whose definition, in the configuration of a stored
 /// input state, joins.
-pub(super) fn check<'a>(
-    index: &DesignIndex<'a>,
-    states: &'a States<'a>,
-    findings: &mut Vec<Finding>,
-) {
+pub(super) fn check<'a>(index: &DesignIndex<'a>, states: &States<'a>, findings: &mut Vec<Finding>) {
     let records = &index.records;
     let ir = records.ir;
     let kinds: BTreeMap<&str, &BodyKind> = ir

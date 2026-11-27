@@ -12,7 +12,8 @@ fn decode_stream(
     stream: &str,
     scopes: &HashMap<u32, bool>,
 ) -> Vec<super::DesignJointMotion> {
-    super::decode_stream(bytes, stream, scopes, &AsBuiltJoints::default()).0
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(bytes);
+    super::decode_stream(bytes, stream, &records, scopes, &AsBuiltJoints::default()).0
 }
 
 fn header(out: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
@@ -113,8 +114,9 @@ fn as_built_motion_binds_the_registered_joint_after_occurrence_parents() {
         joints: [10].into(),
     };
     let scopes = HashMap::from([(11, true)]);
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
     let read = |as_built: &AsBuiltJoints<'_>| {
-        super::decode_stream(&bytes, "Design/BulkStream.dat", &scopes, as_built).0
+        super::decode_stream(&bytes, "Design/BulkStream.dat", &records, &scopes, as_built).0
     };
     let [motion]: [_; 1] = read(&as_built).try_into().unwrap();
     assert_eq!(motion.joint_record_index, 10);
@@ -490,10 +492,12 @@ fn only_an_aligned_scope_of_the_stream_without_a_motion_takes_its_kinds_motion()
 fn a_record_of_freedom_entries_that_binds_no_joint_or_scope_is_unbound() {
     let mut bytes = Vec::new();
     motion(&mut bytes, *b"395", 21, 11, &[2]);
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
     let unbound = |scopes: &HashMap<u32, bool>| {
         super::decode_stream(
             &bytes,
             "Design/BulkStream.dat",
+            &records,
             scopes,
             &AsBuiltJoints::default(),
         )

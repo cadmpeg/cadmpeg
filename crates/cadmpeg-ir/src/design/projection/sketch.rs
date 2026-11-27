@@ -5,7 +5,7 @@
 
 use crate::design::ops::sketch::PlanarCurve;
 use crate::math::portable::Portable;
-use crate::sketches::{SketchGeometry, SketchGeometryDefinition as Geometry};
+use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
 use crate::units::UnitVector2;
 
 /// The v11 curve of `geometry`, or `None` for a geometry the planar curve
@@ -13,12 +13,12 @@ use crate::units::UnitVector2;
 #[must_use]
 pub fn planar_curve(geometry: &SketchGeometry) -> Option<PlanarCurve> {
     Some(match geometry.definition() {
-        Geometry::Point { position } => PlanarCurve::Point(*position),
-        Geometry::Line { start, end } => PlanarCurve::Line {
+        SketchGeometryDefinition::Point { position } => PlanarCurve::Point(*position),
+        SketchGeometryDefinition::Line { start, end } => PlanarCurve::Line {
             start: *start,
             end: *end,
         },
-        Geometry::ReferenceLine { origin, direction } => {
+        SketchGeometryDefinition::ReferenceLine { origin, direction } => {
             let [u, v] = [direction.get().u, direction.get().v];
             let length = u.portable_hypot(v);
             PlanarCurve::InfiniteLine {
@@ -26,11 +26,11 @@ pub fn planar_curve(geometry: &SketchGeometry) -> Option<PlanarCurve> {
                 direction: UnitVector2::new([u / length, v / length])?,
             }
         }
-        Geometry::Circle { center, radius } => PlanarCurve::Circle {
+        SketchGeometryDefinition::Circle { center, radius } => PlanarCurve::Circle {
             center: *center,
             radius: *radius,
         },
-        Geometry::Arc {
+        SketchGeometryDefinition::Arc {
             center,
             radius,
             start_angle,
@@ -41,7 +41,7 @@ pub fn planar_curve(geometry: &SketchGeometry) -> Option<PlanarCurve> {
             start: *start_angle,
             end: *end_angle,
         },
-        Geometry::Ellipse {
+        SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
             radii,
@@ -55,11 +55,11 @@ pub fn planar_curve(geometry: &SketchGeometry) -> Option<PlanarCurve> {
                 range: *bounds,
             }
         }
-        Geometry::Nurbs { curve } => PlanarCurve::Nurbs(curve.clone()),
-        Geometry::Hyperbola { .. }
-        | Geometry::Parabola { .. }
-        | Geometry::Text { .. }
-        | Geometry::ExternalReference { .. }
-        | Geometry::Native { .. } => return None,
+        SketchGeometryDefinition::Nurbs { curve } => PlanarCurve::Nurbs(curve.clone()),
+        SketchGeometryDefinition::Hyperbola { .. }
+        | SketchGeometryDefinition::Parabola { .. }
+        | SketchGeometryDefinition::Text { .. }
+        | SketchGeometryDefinition::ExternalReference { .. }
+        | SketchGeometryDefinition::Native { .. } => return None,
     })
 }

@@ -76,12 +76,15 @@ pub(crate) fn qualify(
     brep: AsmBrep,
     namespace: &str,
 ) -> Result<AsmBrep, CodecError> {
-    let prefix = format!("{ID_FORMAT}:");
-    let mut map = IdentityMap::new(|source: &str| {
-        let suffix = source.strip_prefix(prefix.as_str()).unwrap_or(source);
-        Ok(format!("{ID_FORMAT}:brep/{namespace}/{suffix}"))
-    });
+    let mut map = IdentityMap::new(|source: &str| Ok(qualified_id(namespace, source)));
     let rewritten = brep.rewrite_identities(ctx, &mut map);
     map.finish()?;
     rewritten
+}
+
+/// The identity that [`qualify`] gives `source` under `namespace`.
+fn qualified_id(namespace: &str, source: &str) -> String {
+    let prefix = format!("{ID_FORMAT}:");
+    let suffix = source.strip_prefix(prefix.as_str()).unwrap_or(source);
+    format!("{ID_FORMAT}:brep/{namespace}/{suffix}")
 }

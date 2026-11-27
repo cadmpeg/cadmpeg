@@ -46,8 +46,36 @@ pub(super) fn project(
                 "Extrusion target retains its stored planar face geometry; its body-face identity remains unresolved.",
             ));
         }
+        for _ in 0..native_selected_face_targets(feature.evaluation.definition()) {
+            losses.push(crate::loss::InventorLossCode::FeatureExtrusionTargetFaceNative.note(
+                "Extrusion target retains its parametric surface record as a native face selection; the stored parameters do not identify the body face.",
+            ));
+        }
     }
     projected
+}
+
+pub(super) fn native_selected_face_targets(
+    definition: &cadmpeg_ir::features::FeatureDefinition,
+) -> usize {
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let FeatureDefinition::Operation(FeatureOperation::Extrude { extent, .. }) = definition else {
+        return 0;
+    };
+    let is_native = |side: &cadmpeg_ir::features::extents::ExtrudeSide| {
+        usize::from(matches!(
+            side.termination,
+            LinearTermination::ToFace {
+                face: FaceSelection::Native(_),
+                ..
+            }
+        ))
+    };
+    match extent {
+        ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => is_native(side),
+        ExtrudeExtent::TwoSided { first, second } => is_native(first) + is_native(second),
+    }
 }
 
 pub(super) fn project_surface(
@@ -652,6 +680,19 @@ pub(super) fn matches(
     source.properties.references().get(23) == source.properties.references().get(1)
 }
 
+/// The zero-control fixed fields shared by a plane and a parametric face
+/// surface: three null references, the version-dependent extension, state 1.
+pub(super) fn zero_surface_controls(
+    version: u8,
+    references: [crate::pmdc::PmDcReference; 3],
+    extension: Option<u32>,
+    state: u8,
+) -> bool {
+    references == [crate::pmdc::PmDcReference::from_packed(0); 3]
+        && extension == (version >= super::SURFACE_EXTENSION_FIRST_MAJOR).then_some(0)
+        && state == 1
+}
+
 pub(super) fn plane_surface_controls(
     version: u8,
     references: [crate::pmdc::PmDcReference; 3],
@@ -660,9 +701,7 @@ pub(super) fn plane_surface_controls(
     form: u32,
     value: u32,
 ) -> bool {
-    references == [crate::pmdc::PmDcReference::from_packed(0); 3]
-        && extension == (version >= super::SURFACE_EXTENSION_FIRST_MAJOR).then_some(0)
-        && state == 1
+    zero_surface_controls(version, references, extension, state)
         && form == super::PLANE_SURFACE_FORM
         && value == 0
 }

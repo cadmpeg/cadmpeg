@@ -13,7 +13,8 @@
 //! root definition's bodies, and a body that no definition lists, are placed
 //! once at the identity.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use crate::{fast_map_with_capacity, FastMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::design::selection::{OccurrencePath, StepRef};
 use cadmpeg_ir::products::{Occurrence, ProductDefinition, Storage};
@@ -31,17 +32,20 @@ const MAX_COMPARE_INSTANCES: usize = 1 << 20;
 /// transform, or the instances exceed [`MAX_COMPARE_INSTANCES`].
 pub(super) fn world_instances(ir: &CadIr) -> Option<BTreeMap<&str, Vec<Transform>>> {
     let model = &ir.model;
-    let definitions: HashMap<&str, &ProductDefinition> = model
+    let mut definitions: FastMap<&str, &ProductDefinition> =
+        fast_map_with_capacity(model.product_definitions.len());
+    for definition in model
         .product_definitions
         .iter()
         .filter(|definition| !matches!(definition.storage, Storage::External(_)))
-        .map(|definition| (definition.id.as_str(), definition))
-        .collect();
-    let occurrences: HashMap<&str, &Occurrence> = model
-        .occurrences
-        .iter()
-        .map(|occurrence| (occurrence.id.as_str(), occurrence))
-        .collect();
+    {
+        definitions.insert(definition.id.as_str(), definition);
+    }
+    let mut occurrences: FastMap<&str, &Occurrence> =
+        fast_map_with_capacity(model.occurrences.len());
+    for occurrence in &model.occurrences {
+        occurrences.insert(occurrence.id.as_str(), occurrence);
+    }
     let bodies: BTreeSet<&str> = ir
         .geometry
         .bodies
@@ -121,7 +125,7 @@ pub(super) fn world_instances(ir: &CadIr) -> Option<BTreeMap<&str, Vec<Transform
 /// The occurrences `definition` owns, in its order.
 fn owned<'ir>(
     definition: &'ir ProductDefinition,
-    occurrences: &HashMap<&str, &'ir Occurrence>,
+    occurrences: &FastMap<&str, &'ir Occurrence>,
 ) -> Vec<&'ir Occurrence> {
     definition
         .occurrences
@@ -175,7 +179,7 @@ fn suppressed(path: &[&Occurrence]) -> bool {
 fn shown_bodies<'ir>(
     root: &'ir ProductDefinition,
     path: &[&'ir Occurrence],
-    definitions: &HashMap<&str, &'ir ProductDefinition>,
+    definitions: &FastMap<&str, &'ir ProductDefinition>,
 ) -> Option<&'ir Vec<cadmpeg_ir::ids::BodyId>> {
     let owners = std::iter::once(Some(root)).chain(
         path[..path.len() - 1]

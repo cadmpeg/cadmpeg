@@ -3150,6 +3150,7 @@ fn model_brep_candidates<'s>(
 fn try_decode_text_model(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<Option<(BrepFacts, Brep)>, CodecError> {
     let mut parts: Vec<(BrepFacts, Brep)> = Vec::new();
     for name in container::text_brep_names(scan) {
@@ -3173,11 +3174,12 @@ fn try_decode_text_model(
                 )));
             }
         };
-        let decoded = brep::decode_text(ctx, stream, bytes, name, crate::ids::ID_FORMAT)?;
+        let mut decoded = brep::decode_text(ctx, stream, bytes, name, crate::ids::ID_FORMAT)?;
         if decoded.asm.surfaces.is_empty()
             && decoded.asm.points.is_empty()
             && decoded.asm.faces.is_empty()
         {
+            given_up.extend(decoded.give_up_withheld(ctx, scan, name, None)?);
             continue;
         }
         // Facts for the report and source attributes. The header carries the
@@ -3205,8 +3207,9 @@ fn try_decode_text_model(
     let qualify = parts.len() > 1;
     let mut merged: Option<(BrepFacts, Brep)> = None;
     for (facts, mut part) in parts {
-        if qualify {
-            let namespace = facts.name.rsplit('/').next().unwrap_or(&facts.name);
+        let namespace = qualify.then(|| facts.name.rsplit('/').next().unwrap_or(&facts.name));
+        given_up.extend(part.give_up_withheld(ctx, scan, &facts.name, namespace)?);
+        if let Some(namespace) = namespace {
             part.qualify_ids(ctx, crate::ids::ID_FORMAT, namespace)?;
         }
         match &mut merged {
@@ -3305,7 +3308,8 @@ fn store_bodyless_design(
 
 /// Bind the stored design's sketches and features to their product
 /// definitions, then project the configuration tables from the features as
-/// these passes leave them.
+/// these passes leave them, and with the output bodies the body history
+/// bound.
 pub(crate) fn attach_design(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
@@ -3313,9 +3317,10 @@ pub(crate) fn attach_design(
     ir: &mut CadIr,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
+    let producers = crate::design::configurations::body_producers(&ir.model.features);
     crate::design::decode::sketch_owners::attach(ctx, scan, native, &mut ir.model, losses)?;
     crate::design::owners::attach(scan, native, ir, losses)?;
-    crate::design::configurations::attach(native, &mut ir.model, losses)
+    crate::design::configurations::attach(native, &mut ir.model, &producers, losses)
 }
 
 /// Phase-2 outcome as product projection and finalization see it.
@@ -3459,6 +3464,9 @@ impl<'a> F3dDecodeSession<'a> {
             stats: _,
             annotation_records,
             unbounded_faces: _,
+            // Each BREP entry gave its withheld records up before the graphs
+            // merged.
+            withheld: _,
         } = asm_remainder;
         let (subds, subd_losses) = crate::tsm::decode(ctx, scan, &mut given_up)?;
         // No v11 form states a `cage` yet (its forms are unresolved), so each
@@ -3690,6 +3698,7 @@ impl<'a> F3dDecodeSession<'a> {
             .push(F3dLossCode::DesignIntentUndecoded.note(format!(
                 "Design intent was dropped because its decoding failed, so the dimension-companion and configuration reports were not produced: {failure}"
             )));
+        self.give_up_design_sources(&failure)?;
         self.native
             .design_intent_failures
             .push(design_intent::DesignIntentFailure {
@@ -3698,6 +3707,48 @@ impl<'a> F3dDecodeSession<'a> {
             });
         self.note_undecoded_design()?;
         Ok(DesignState::Absent)
+    }
+
+    /// Gives up the sources phase 2 reads after it failed with `failure`:
+    /// each Design stream and Design configuration entry as an archive
+    /// entry, and the history partition of each history BREP that stores
+    /// one, from where the history decode starts, each holding Design
+    /// content.
+    fn give_up_design_sources(&mut self, failure: &str) -> Result<(), CodecError> {
+        let error = || CodecError::malformed(format!("design intent was not decoded: {failure}"));
+        let scan = self.scan;
+        for entry in &scan.entries {
+            if scan.is_design_stream(entry, ContainerRole::Bulkstream)
+                || scan.is_design_asset_entry(entry, ContainerRole::DesignConfig)
+            {
+                self.given_up.extend(scan.give_up_entry_holding(
+                    self.ctx,
+                    &entry.name,
+                    &[ArenaClass::Design],
+                    error(),
+                )?);
+            }
+        }
+        for brep in container::history_breps(scan) {
+            let bytes = scan.entry_bytes(&brep.name)?;
+            let empty = brep
+                .kernel
+                .as_ref()
+                .and_then(crate::container::KernelFraming::solved_record_limit)
+                .is_some_and(|limit| bytes.get(limit..) == Some(EMPTY_HISTORY_TAIL.as_slice()));
+            let Some(start) = crate::history::partition_start(bytes).filter(|_| !empty) else {
+                continue;
+            };
+            self.given_up.push(scan.give_up_entry_span(
+                self.ctx,
+                &brep.name,
+                design_intent::HISTORY_PART,
+                start..bytes.len(),
+                [ArenaClass::Design],
+                error(),
+            )?);
+        }
+        Ok(())
     }
 
     fn note_undecoded_design(&mut self) -> Result<(), CodecError> {
@@ -3882,7 +3933,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.report,
                     materials.untyped_distance_properties,
                 );
-                self.report.notes.extend(materials.notes);
+                self.given_up.extend(materials.given_up);
                 self.ir.model.appearances = materials.appearances;
                 self.ir.model.appearance_bindings = materials.bindings;
                 let face_losses =
@@ -3935,7 +3986,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.report,
                     decoded_materials.untyped_distance_properties,
                 );
-                self.report.notes.extend(decoded_materials.notes);
+                self.given_up.extend(decoded_materials.given_up);
                 self.ir.model.appearances = decoded_materials.appearances;
                 self.ir.model.appearance_bindings = decoded_materials.bindings;
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
@@ -4286,7 +4337,7 @@ impl<'a> F3dDecodeSession<'a> {
         self.note_uninterpreted_design();
         let mut f3d_namespace =
             std::mem::take(self.ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")));
-        let (store_res, annotations_res) = std::thread::scope(|scope| {
+        let (store_res, annotations_res) = crate::scoped::scope(|scope| {
             let ir = &self.ir;
             let native = &self.native;
             let unknowns = &self.unknowns;
@@ -4474,17 +4525,24 @@ fn decode_scanned_document<'a>(
             container_losses(scan, &ModelBrepOutcome::NotAttempted),
         )?;
         let mut given_up = Vec::new();
-        match crate::xref::decode(ctx, scan) {
+        let mut unread = Vec::new();
+        match crate::xref::decode(ctx, scan, &mut unread) {
             Ok(Some(table)) => {
                 apply_assembly_classification(ctx, &mut report, scan, &table, false)?;
             }
             Ok(None) => {}
-            Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
+            Err(crate::xref::XrefFailure {
+                error: error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_)),
+                ..
+            }) => {
                 return Err(error);
             }
-            Err(error) => {
-                report_xref_parse_loss(ctx, scan, &mut report, &mut given_up, &error)?;
+            Err(failure) => {
+                report_xref_parse_loss(ctx, scan, &mut report, &mut given_up, &failure)?;
             }
+        }
+        for failure in &unread {
+            given_up.extend(failure.give_up(ctx, scan)?);
         }
         return decode_result(
             ctx,
@@ -4576,7 +4634,29 @@ fn decode_scanned_document<'a>(
                     .get(blob_name)
                     .map_or(0, std::collections::HashSet::len),
             )?;
-            if part.sketch_region_bodies_omitted != 0 && part.asm.bodies.is_empty() {
+            let no_bodies = part.sketch_region_bodies_omitted != 0 && part.asm.bodies.is_empty();
+            let holds_geometry = !part.asm.surfaces.is_empty()
+                || !part.asm.points.is_empty()
+                || !part.asm.faces.is_empty();
+            if let Some(keys) = selected_body_keys
+                .get(blob_name)
+                .filter(|_| !no_bodies && holds_geometry)
+            {
+                part.retain_body_keys(ctx, keys)?;
+            }
+            // The give-up follows the body selection, so that each shell it
+            // marks is a shell the document keeps.
+            brep_given_up.extend(
+                part.give_up_withheld(
+                    ctx,
+                    scan,
+                    &candidate.name,
+                    qualify_ids
+                        .then(|| brep_identity_namespace(&candidate.name))
+                        .flatten(),
+                )?,
+            );
+            if no_bodies {
                 if !matches!(brep_outcome, ModelBrepOutcome::Failed { .. }) {
                     brep_outcome = ModelBrepOutcome::NoPhysicalModel;
                 }
@@ -4588,15 +4668,6 @@ fn decode_scanned_document<'a>(
                 brep_outcome = ModelBrepOutcome::Empty {
                     stream: candidate.name.clone(),
                 };
-            }
-            if part.asm.surfaces.is_empty()
-                && part.asm.points.is_empty()
-                && part.asm.faces.is_empty()
-            {
-                continue;
-            }
-            if let Some(keys) = selected_body_keys.get(blob_name) {
-                part.retain_body_keys(ctx, keys)?;
             }
             if part.asm.surfaces.is_empty()
                 && part.asm.points.is_empty()
@@ -4682,7 +4753,7 @@ fn decode_scanned_document<'a>(
 
     // No binary stream decoded: the model may be carried only in the text
     // encoding.
-    if let Some((text_facts, text_brep)) = try_decode_text_model(ctx, scan)? {
+    if let Some((text_facts, text_brep)) = try_decode_text_model(ctx, scan, &mut brep_given_up)? {
         return finish_model_decode(
             ctx,
             scan,
@@ -5312,35 +5383,23 @@ fn annotate_docstruct(
     Ok(())
 }
 
-/// Reports the external-reference table the decoder dropped. The
-/// `RedirectionsStream.dat` entry that holds it is given up when the scan
-/// opened it; with no such entry the table itself is the given-up record.
+/// Reports the external-reference table the decoder dropped and gives up
+/// the stored bytes whose decoding failed: the archive entry, or the
+/// reference extension of `Manifest.dat`.
 fn report_xref_parse_loss(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     report: &mut DecodeBody,
     given_up: &mut Vec<GivenUpPart>,
-    error: &CodecError,
+    failure: &crate::xref::XrefFailure,
 ) -> Result<(), CodecError> {
-    let note = F3dLossCode::XrefTableUndecoded
-        .note(format!("external-reference table was not decoded: {error}"));
-    match scan.give_up_entry(
-        ctx,
-        crate::xref::REDIRECTIONS_ENTRY,
-        CodecError::malformed(format_args!("F3D external-reference table: {error}")),
-    )? {
-        Some(part) => {
-            report.losses.push(note);
-            given_up.push(part);
-        }
-        None => report.losses.extend(record_given_up(
-            cadmpeg_ir::ids::Identity::compose(
-                &cadmpeg_ir::identity_namespace!("f3d", "archive", "entry"),
-                cadmpeg_ir::ids::IdentityKey::encode_key_text(crate::xref::REDIRECTIONS_ENTRY),
-            ),
-            note,
-        )),
-    }
+    report
+        .losses
+        .push(F3dLossCode::XrefTableUndecoded.note(format!(
+            "external-reference table was not decoded: {}",
+            failure.error
+        )));
+    given_up.extend(failure.give_up(ctx, scan)?);
     Ok(())
 }
 
@@ -6157,6 +6216,9 @@ fn source_has_design_records(scan: &ContainerScan<'_>) -> Result<bool, CodecErro
     }) || source_has_history_records(scan)?)
 }
 
+/// The bare EOF delta-state identifier: an empty history partition.
+const EMPTY_HISTORY_TAIL: &[u8; 13] = b"\x0d\x0bdelta_state";
+
 /// A bare EOF delta-state identifier is an empty partition boundary, not a
 /// historical record. Every other declared history tail remains conservative.
 fn source_has_history_records(scan: &ContainerScan<'_>) -> Result<bool, CodecError> {
@@ -6169,7 +6231,7 @@ fn source_has_history_records(scan: &ContainerScan<'_>) -> Result<bool, CodecErr
             return Ok(true);
         };
         let bytes = scan.entry_bytes(&brep.name)?;
-        if bytes.get(limit..) != Some(b"\x0d\x0bdelta_state".as_slice()) {
+        if bytes.get(limit..) != Some(EMPTY_HISTORY_TAIL.as_slice()) {
             return Ok(true);
         }
     }
@@ -6398,17 +6460,6 @@ fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::loss::LossNote> {
             format_args!(
                 "ASM face record {} states no loop on a {}, which no face covers whole: face {} is stated partial",
                 face.record_index, face.surface_kind, face.face.as_str()
-            ),
-        );
-    }
-    if s.missing_face_surfaces() > 0 {
-        push_loss_vec(
-            &mut losses,
-            F3dLossCode::FaceSurfaceReferenceDangling,
-            format_args!(
-                "{} face(s) were omitted because their required surface reference was null or dangling. Reference conditions: {}.",
-                s.missing_face_surfaces(),
-                KindCounts(&s.missing_face_surface_kinds)
             ),
         );
     }
@@ -6978,8 +7029,12 @@ pub(crate) fn apply_body_presentation_names(
         else {
             continue;
         };
-        let presentations =
-            crate::design::decode::presentation::body_presentations(bytes, &metadata)?;
+        let presentations = crate::design::decode::presentation::scan_body_presentations(
+            scan,
+            &entry.name,
+            bytes,
+            &metadata,
+        )?;
         for presentation in presentations {
             let Some(name) = presentation.name.as_deref() else {
                 continue;

@@ -1264,6 +1264,11 @@ pub(crate) enum F3dLossCode {
     /// its closing matrix without a component-path proof; the reference frame
     /// of that matrix is assumed.
     LocalOccurrenceMarkedPreludeAssumed,
+    /// An object-prelude carrier without a source marker takes its placement
+    /// from its closing matrix in a Design stream whose component-path
+    /// carriers all name an expanded occurrence and none names this carrier;
+    /// the reference frame of that matrix is assumed.
+    LocalOccurrenceObjectPreludeAssumed,
     /// A nested occurrence that only some placements of its definition hold
     /// is owned by the definition, so every placement shows it.
     PlacementChildrenDiffer,
@@ -1312,8 +1317,6 @@ pub(crate) enum F3dLossCode {
     NurbsSurfaceCarrier,
     /// Procedural curve records were decoded into NURBS carriers from cache.
     NurbsCurveCarrier,
-    /// Faces were omitted because their required surface reference was dangling.
-    FaceSurfaceReferenceDangling,
     /// Faces rest on spline or procedural surfaces whose shape was not decoded.
     SurfaceShapeNotDecoded,
     /// Faces use zero-payload `mesh_surface` sentinels; exact surfaces are absent.
@@ -2212,6 +2215,7 @@ impl F3dLossCode {
         Self::LocalOccurrencePathPoseDisagrees,
         Self::LocalOccurrencePathPoseInferred,
         Self::LocalOccurrenceMarkedPreludeAssumed,
+        Self::LocalOccurrenceObjectPreludeAssumed,
         Self::PlacementChildrenDiffer,
         Self::InstanceReferenceShared,
         Self::XrefContainedPose,
@@ -2232,7 +2236,6 @@ impl F3dLossCode {
         Self::NurbsSurfaceCarrier,
         Self::SketchRegionBodyOmitted,
         Self::NurbsCurveCarrier,
-        Self::FaceSurfaceReferenceDangling,
         Self::SurfaceShapeNotDecoded,
         Self::MeshSurfaceSentinel,
         Self::ProceduralCurveUndecoded,
@@ -3452,6 +3455,9 @@ impl F3dLossCode {
             Self::LocalOccurrenceMarkedPreludeAssumed => {
                 "assembly.local-occurrence-marked-prelude-assumed"
             }
+            Self::LocalOccurrenceObjectPreludeAssumed => {
+                "assembly.local-occurrence-object-prelude-assumed"
+            }
             Self::PlacementChildrenDiffer => "assembly.placement-children-differ",
             Self::InstanceReferenceShared => "assembly.instance-reference-shared",
             Self::XrefContainedPose => "xref.contained-pose",
@@ -3472,7 +3478,6 @@ impl F3dLossCode {
             Self::NurbsSurfaceCarrier => "geometry.nurbs-surface-carrier",
             Self::SketchRegionBodyOmitted => "geometry.sketch-region-body-omitted",
             Self::NurbsCurveCarrier => "geometry.nurbs-curve-carrier",
-            Self::FaceSurfaceReferenceDangling => "geometry.face-surface-dangling",
             Self::SurfaceShapeNotDecoded => "geometry.surface-shape-not-decoded",
             Self::MeshSurfaceSentinel => "geometry.mesh-surface-sentinel",
             Self::ProceduralCurveUndecoded => "geometry.procedural-curve-undecoded",
@@ -4344,6 +4349,7 @@ impl F3dLossCode {
             | Self::LocalOccurrencePathPoseDisagrees
             | Self::LocalOccurrencePathPoseInferred
             | Self::LocalOccurrenceMarkedPreludeAssumed
+            | Self::LocalOccurrenceObjectPreludeAssumed
             | Self::PlacementChildrenDiffer
             | Self::InstanceReferenceShared
             | Self::XrefContainedPoseDisagrees
@@ -4354,7 +4360,6 @@ impl F3dLossCode {
             | Self::JointPlacedOccurrenceUnsolved
             | Self::MeshVertexPrecisionReduced
             | Self::MeshBodyIdentityAssumed
-            | Self::FaceSurfaceReferenceDangling
             | Self::SurfaceShapeNotDecoded
             | Self::ProceduralCurveUndecoded
             | Self::ProceduralSupportChartUnresolved
@@ -4538,6 +4543,7 @@ impl F3dLossCode {
             | Self::LocalOccurrencePathPoseDisagrees
             | Self::LocalOccurrencePathPoseInferred
             | Self::LocalOccurrenceMarkedPreludeAssumed
+            | Self::LocalOccurrenceObjectPreludeAssumed
             | Self::PlacementChildrenDiffer
             | Self::InstanceReferenceShared
             | Self::XrefContainedPose
@@ -5167,7 +5173,6 @@ impl F3dLossCode {
             | Self::SketchGeometryGroupMemberUnlisted
             | Self::SketchGeometryGroupMemberUnbacklinked
             | Self::DesignBodyBindingUnresolved
-            | Self::FaceSurfaceReferenceDangling
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
             Self::SketchNameComposedFromFeatureOrdinal
             | Self::ReferenceImageNativeRetained
@@ -6123,6 +6128,7 @@ mod tests {
                 "assembly.local-occurrence-path-pose-disagrees",
                 "assembly.local-occurrence-path-pose-inferred",
                 "assembly.local-occurrence-marked-prelude-assumed",
+                "assembly.local-occurrence-object-prelude-assumed",
                 "assembly.placement-children-differ",
                 "assembly.instance-reference-shared",
                 "xref.contained-pose",
@@ -6143,7 +6149,6 @@ mod tests {
                 "geometry.nurbs-surface-carrier",
                 "geometry.sketch-region-body-omitted",
                 "geometry.nurbs-curve-carrier",
-                "geometry.face-surface-dangling",
                 "geometry.surface-shape-not-decoded",
                 "geometry.mesh-surface-sentinel",
                 "geometry.procedural-curve-undecoded",

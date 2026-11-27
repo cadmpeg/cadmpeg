@@ -46,6 +46,7 @@ fn saved_spline_definition() -> crate::feature::definitions::FeatureDefinition {
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::test_support::with_points(
             crate::feature::definitions::FeatureVariableTable {
+                rows_end: 0,
                 declared_count: 0,
                 entity_ref: None,
                 rows: Vec::new(),
