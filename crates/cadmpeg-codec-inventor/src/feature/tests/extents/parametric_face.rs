@@ -4,13 +4,22 @@
 use super::*;
 
 fn parametric_surface(ordinal: u32, form: u32) -> PmDcFeatureProperty {
+    parametric_surface_at(ordinal, form, 19, None)
+}
+
+fn parametric_surface_at(
+    ordinal: u32,
+    form: u32,
+    version: u8,
+    extension: Option<u32>,
+) -> PmDcFeatureProperty {
     Located::new(
         PmDcFeaturePropertyPayload {
-            save_version_major: 19,
+            save_version_major: version,
             header: test_header(),
             kind: PmDcFeaturePropertyKind::ParametricSurface {
                 references: [reference(0); 3],
-                extension: None,
+                extension,
                 state: 1,
                 surface_form: form,
                 value: 1,
@@ -104,6 +113,85 @@ fn parametric_face_controls_keep_other_forms_native() {
 }
 
 #[test]
+fn the_extension_control_depends_on_the_segment_major_version() {
+    const WITH_EXTENSION: u8 = 22;
+    const NONZERO_EXTENSION: u32 = 7;
+    for (version, extension, projects) in [
+        (WITH_EXTENSION, Some(0), true),
+        (WITH_EXTENSION + 3, Some(0), true),
+        (WITH_EXTENSION, None, false),
+        (WITH_EXTENSION, Some(NONZERO_EXTENSION), false),
+        (WITH_EXTENSION + 3, None, false),
+        (WITH_EXTENSION + 3, Some(NONZERO_EXTENSION), false),
+        (WITH_EXTENSION - 1, Some(0), false),
+        (WITH_EXTENSION - 1, None, true),
+    ] {
+        let feature = extent_extrusion(
+            7,
+            false,
+            &[(13, 20), (18, 21)],
+            vec![
+                test_property(20, PmDcFeaturePropertyKind::TerminationFlag { value: 1 }),
+                parametric_surface_at(21, 73, version, extension),
+            ],
+        );
+        assert_eq!(
+            feature.is_some(),
+            projects,
+            "version {version}, extension {extension:?}"
+        );
+    }
+}
+
+#[test]
+fn a_target_face_projection_pushes_one_note_per_feature() {
+    for (extra, wording) in [
+        (
+            vec![
+                test_property(20, PmDcFeaturePropertyKind::TerminationFlag { value: 1 }),
+                parametric_surface(21, 73),
+            ],
+            "Extrusion target retains its parametric surface record as a native face selection; the stored parameters do not identify the body face.",
+        ),
+        (
+            vec![
+                test_property(20, PmDcFeaturePropertyKind::TerminationFlag { value: 1 }),
+                plane_surface(21),
+            ],
+            "Extrusion target retains its stored planar face geometry; its body-face identity remains unresolved.",
+        ),
+    ] {
+        configured_extent_extrusion(
+            7,
+            false,
+            &[(13, 20), (18, 21)],
+            extra,
+            |_| {},
+            |source, label, index, projected| {
+                assert!(projected.is_some());
+                let arena = DecodeArena::new();
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+                        .expect("projection context");
+                let mut losses = Vec::new();
+                assert!(
+                    crate::feature::extrusion::project(&ctx, source, label, index, &mut losses)
+                        .is_some()
+                );
+                let notes = losses
+                    .iter()
+                    .filter(|note| {
+                        note.code.local_code() == "feature.extrusion-target-face-native"
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(notes.len(), 1);
+                assert_eq!(notes[0].message, wording);
+            },
+        );
+    }
+}
+
+#[test]
 fn a_parametric_face_start_stays_native() {
     let feature = extent_extrusion(
         6,
@@ -160,8 +248,7 @@ fn parses_parametric_surfaces_by_form_and_parameter_length() {
                 assert!(parse(&build(length), |_, source| {
                     crate::feature::parse_surface(source, version)
                 })
-                .expect("surface form")
-                .is_none());
+                .is_err());
             }
         }
     }

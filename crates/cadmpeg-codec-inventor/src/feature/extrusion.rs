@@ -680,6 +680,19 @@ pub(super) fn matches(
     source.properties.references().get(23) == source.properties.references().get(1)
 }
 
+/// The zero-control fixed fields shared by a plane and a parametric face
+/// surface: three null references, the version-dependent extension, state 1.
+pub(super) fn zero_surface_controls(
+    version: u8,
+    references: [crate::pmdc::PmDcReference; 3],
+    extension: Option<u32>,
+    state: u8,
+) -> bool {
+    references == [crate::pmdc::PmDcReference::from_packed(0); 3]
+        && extension == (version >= super::SURFACE_EXTENSION_FIRST_MAJOR).then_some(0)
+        && state == 1
+}
+
 pub(super) fn plane_surface_controls(
     version: u8,
     references: [crate::pmdc::PmDcReference; 3],
@@ -688,9 +701,7 @@ pub(super) fn plane_surface_controls(
     form: u32,
     value: u32,
 ) -> bool {
-    references == [crate::pmdc::PmDcReference::from_packed(0); 3]
-        && extension == (version >= super::SURFACE_EXTENSION_FIRST_MAJOR).then_some(0)
-        && state == 1
+    zero_surface_controls(version, references, extension, state)
         && form == super::PLANE_SURFACE_FORM
         && value == 0
 }

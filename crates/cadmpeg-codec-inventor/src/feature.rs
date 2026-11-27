@@ -1606,7 +1606,10 @@ fn parse_surface(
     if let Some(parameter_bytes) = parameter_bytes {
         let value = cursor.u32("surface value")?;
         if cursor.remaining() != parameter_bytes {
-            return Ok(None);
+            return Err(CodecError::malformed(format_args!(
+                "Inventor PmDc form {form} surface has {} class-parameter bytes, expected {parameter_bytes}",
+                cursor.remaining()
+            )));
         }
         return Ok(Some(property(
             version,
@@ -4266,10 +4269,12 @@ fn extent_target_parametric_face(
     else {
         return None;
     };
-    if surface_references != [crate::pmdc::PmDcReference::from_packed(0); 3]
-        || extension != (surface.save_version_major >= SURFACE_EXTENSION_FIRST_MAJOR).then_some(0)
-        || state != 1
-        || value != 1
+    if !extrusion::zero_surface_controls(
+        surface.save_version_major,
+        surface_references,
+        extension,
+        state,
+    ) || value != 1
     {
         return None;
     }
