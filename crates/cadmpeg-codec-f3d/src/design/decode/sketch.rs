@@ -4231,7 +4231,13 @@ pub(crate) fn decode_sketch_geometry_groups(
 ) -> Result<Vec<SketchGeometryGroup>, CodecError> {
     decode_sketch_streams_with_frames(scan, |bytes, meta, stream, frames| {
         decode_sketch_geometry_groups_with_frames(
-            bytes, meta, stream, frames, points, curves, losses, given_up,
+            bytes,
+            meta,
+            stream,
+            frames,
+            (points, curves),
+            losses,
+            given_up,
         )
     })
 }
@@ -4248,18 +4254,22 @@ fn decode_sketch_geometry_groups_from_stream(
 ) -> Result<Vec<SketchGeometryGroup>, CodecError> {
     let frames = design_primary_frames(bytes, meta)?;
     decode_sketch_geometry_groups_with_frames(
-        bytes, meta, stream, &frames, points, curves, losses, given_up,
+        bytes,
+        meta,
+        stream,
+        &frames,
+        (points, curves),
+        losses,
+        given_up,
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn decode_sketch_geometry_groups_with_frames(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
     frames: &[super::meta::DesignPrimaryFrame<'_>],
-    points: &[SketchPoint],
-    curves: &[SketchCurveIdentity],
+    (points, curves): (&[SketchPoint], &[SketchCurveIdentity]),
     losses: &mut Vec<LossNote>,
     given_up: &mut Vec<GivenUpFrame>,
 ) -> Result<Vec<SketchGeometryGroup>, CodecError> {

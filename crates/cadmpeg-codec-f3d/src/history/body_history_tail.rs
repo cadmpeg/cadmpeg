@@ -120,8 +120,7 @@ pub(crate) fn collect(
             history,
             histories,
             states,
-            current,
-            head.state_id,
+            (current, head.state_id),
             slot,
             &work,
             &mut touch_cache,
@@ -165,21 +164,18 @@ fn changed_after(
         history,
         histories,
         &states,
-        previous,
-        current,
+        (previous, current),
         body,
         work,
         &mut touch_cache,
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn changed_after_with_cache(
     history: &AsmHistory,
     histories: &[AsmHistory],
     states: &HashMap<i64, &crate::history_records::AsmDeltaState>,
-    previous: i64,
-    current: i64,
+    (previous, current): (i64, i64),
     body: i64,
     work: &WorkBudget,
     touch_cache: &mut HashMap<
