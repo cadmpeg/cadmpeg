@@ -138,7 +138,7 @@ fn same_record(item: &PresentationItem, entity: &AppearanceTarget) -> bool {
         (PresentationItem::Curve { curve }, AppearanceTarget::Curve(id)) => curve == id,
         (PresentationItem::Surface { surface }, AppearanceTarget::Surface(id)) => surface == id,
         (PresentationItem::Tessellation { tessellation }, AppearanceTarget::Tessellation(id)) => {
-            tessellation.as_str() == id
+            tessellation == id
         }
         _ => false,
     }

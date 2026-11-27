@@ -514,6 +514,7 @@ fn body_selection_is_resolved(selection: &cadmpeg_ir::features::selections::Body
         | BodySelection::GeneratedSet { .. } => true,
         BodySelection::Generated { bodies, .. } => !bodies.is_empty(),
         BodySelection::Local { bodies, .. } => !bodies.is_empty(),
+        BodySelection::Occurrence { bodies, .. } => !bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => false,
     }
 }
@@ -1788,6 +1789,7 @@ fn design_projection_gaps(
         | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
         | BodySelection::GeneratedSet { .. }
+        | BodySelection::Occurrence { .. }
         | BodySelection::Local { .. } => 0,
     };
     for feature in &ir.model.features {
@@ -3297,9 +3299,23 @@ fn store_bodyless_design(
 ) -> Result<(), CodecError> {
     let consumers = std::mem::take(&mut design.history_body_consumers);
     design.store(native);
+    attach_design(ctx, scan, native, ir, losses)?;
+    crate::history::body_history_tail::append(&mut ir.model, &consumers.tails, losses)
+}
+
+/// Bind the stored design's sketches and features to their product
+/// definitions, then project the configuration tables from the features as
+/// these passes leave them.
+pub(crate) fn attach_design(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    native: &F3dNative,
+    ir: &mut CadIr,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
     crate::design::decode::sketch_owners::attach(ctx, scan, native, &mut ir.model, losses)?;
     crate::design::owners::attach(scan, native, ir, losses)?;
-    crate::history::body_history_tail::append(&mut ir.model, &consumers.tails, losses)
+    crate::design::configurations::attach(native, &mut ir.model, losses)
 }
 
 /// Phase-2 outcome as product projection and finalization see it.
@@ -4096,12 +4112,6 @@ impl<'a> F3dDecodeSession<'a> {
                             &self.ir,
                         ),
                     );
-                    report_unresolved_configuration_rules(
-                        &mut self.report,
-                        &design.design_configurations,
-                        design.configuration_roots_unbound,
-                        &self.ir,
-                    );
                 }
                 if let Ok(Some(table)) = prereqs.store(&mut self.native) {
                     self.native.derived_references = table.derived_references;
@@ -4110,20 +4120,21 @@ impl<'a> F3dDecodeSession<'a> {
                 }
                 if let DesignState::Projected(mut design) = design {
                     let consumers = std::mem::take(&mut design.history_body_consumers);
+                    let roots_unbound = design.configuration_roots_unbound;
                     design.store(&mut self.native);
-                    crate::design::decode::sketch_owners::attach(
+                    attach_design(
                         ctx,
-                        scan,
-                        &self.native,
-                        &mut self.ir.model,
-                        &mut self.report.losses,
-                    )?;
-                    crate::design::owners::attach(
                         scan,
                         &self.native,
                         &mut self.ir,
                         &mut self.report.losses,
                     )?;
+                    report_unresolved_configuration_rules(
+                        &mut self.report,
+                        &self.native.design_configurations,
+                        roots_unbound,
+                        &self.ir,
+                    );
                     crate::history::history_bodies::fill_consumed(
                         ctx,
                         scan,
@@ -4148,12 +4159,7 @@ impl<'a> F3dDecodeSession<'a> {
                 let xref = prereqs.store(&mut self.native);
                 let projected = match design {
                     DesignState::Projected(design) => {
-                        report_unresolved_configuration_rules(
-                            &mut self.report,
-                            &design.design_configurations,
-                            design.configuration_roots_unbound,
-                            &self.ir,
-                        );
+                        let roots_unbound = design.configuration_roots_unbound;
                         store_bodyless_design(
                             ctx,
                             scan,
@@ -4162,6 +4168,12 @@ impl<'a> F3dDecodeSession<'a> {
                             &mut self.ir,
                             &mut self.report.losses,
                         )?;
+                        report_unresolved_configuration_rules(
+                            &mut self.report,
+                            &self.native.design_configurations,
+                            roots_unbound,
+                            &self.ir,
+                        );
                         true
                     }
                     DesignState::Absent => false,
@@ -4631,6 +4643,7 @@ fn decode_scanned_document<'a>(
                             asm_body_key_offset: visibility.asm_body_key_offset,
                             asm_body_key: body_selector,
                             entity_suffix: visibility.entity_suffix,
+                            browser_node_entity: visibility.browser_node_entity,
                             visible: visibility.visible,
                         },
                     )
