@@ -588,6 +588,9 @@ pub(super) fn validate_face_operands<'a>(
                     && operand.historical_support_contexts == expected.historical_support_contexts
                     && operand.first_reference_support_contexts
                         == expected.first_reference_support_contexts
+                    && operand.tangent_boundary_edge_slots == expected.tangent_boundary_edge_slots
+                    && operand.undetermined_continuity_edge_slots
+                        == expected.undetermined_continuity_edge_slots
             }))
             && recipe.is_some_and(|recipe| {
                 design_stream(&recipe.id) == native_stream
