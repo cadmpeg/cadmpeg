@@ -14,7 +14,6 @@ use super::{
 };
 use crate::codec::write::test_support::CATALOG_WRITE_TARGETS;
 use crate::codec::FormatId;
-use crate::design::projection::restated::Restater;
 use crate::examples::{directed_subd_sum, unit_cube};
 use crate::report::check::{Check, Finding, ValidationReport};
 use crate::report::export::FidelityResolution;
@@ -27,8 +26,8 @@ use crate::CadIr;
 use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::CodecError;
 
-mod carried_errors;
 mod dropped_records;
+mod restated_records;
 
 #[test]
 fn cadir_encoder_streams_the_canonical_json_shape() {
@@ -755,133 +754,6 @@ fn model_sheet(key: &str) -> crate::spreadsheets::Spreadsheet {
     .unwrap()
 }
 
-/// A CADIR write compares a record of an arena the wire omits with the
-/// written `design` record of its id where no restatement is stated, and
-/// names each field the design record does not hold; a write that omits the
-/// design record too charges the record whole.
-#[test]
-fn a_cadir_write_compares_a_record_with_the_written_design_record_of_its_id() {
-    let mut ir = CadIr::empty();
-    ir.model.spreadsheets.push(v10_sheet());
-    let cadir = super::coverage::cadir_dispositions();
-    assert_eq!(cadir.omitted(&ir), ["spreadsheets"]);
-    ir.design.spreadsheets.push(design_sheet("v10"));
-    assert_eq!(
-        sheet_charges(&ir, cadir),
-        [
-            "the cadir write does not represent model arena `spreadsheets`: \
-          1 record(s) stated in part: test:design:spreadsheet#v10 (feature)"
-        ]
-    );
-    assert_eq!(
-        sheet_charges(&ir, uniform_dispositions(ArenaDisposition::Omitted)),
-        [
-            "the cadir write does not represent model arena `spreadsheets`: \
-          1 record(s) omitted: test:design:spreadsheet#v10"
-        ]
-    );
-}
-
-/// The `arena.omitted` losses of `ir` a write with `dispositions` charges on
-/// the model arena `spreadsheets`.
-fn sheet_charges(ir: &CadIr, dispositions: ArenaDispositions) -> Vec<String> {
-    coverage_losses(ir, ArenaCoverage::Declared(dispositions))
-        .into_iter()
-        .filter(|loss| loss.message.contains("model arena `spreadsheets`"))
-        .map(|loss| loss.message)
-        .collect()
-}
-
-/// A CADIR write carries a record of an arena the wire omits that a written
-/// `design` record restates under another id, and still charges a record no
-/// written record restates; a write that omits the restater charges both.
-#[test]
-fn a_cadir_write_carries_a_record_a_written_design_record_restates_under_another_id() {
-    let mut ir = CadIr::empty();
-    ir.model.spreadsheets.push(v10_sheet());
-    ir.model.spreadsheets.push(model_sheet("unrestated"));
-    ir.design.spreadsheets.push(design_sheet("v11"));
-    ir.model.restated_mut().record(
-        "test:design:spreadsheet#v10",
-        Restater::Record("test:design:spreadsheet#v11".to_owned()),
-        [],
-    );
-    let cadir = super::coverage::cadir_dispositions();
-    assert_eq!(
-        sheet_charges(&ir, cadir),
-        [
-            "the cadir write does not represent model arena `spreadsheets`: \
-          1 record(s) omitted: test:design:spreadsheet#unrestated"
-        ]
-    );
-    let mut no_design = cadir;
-    no_design.design.spreadsheets = ArenaDisposition::Omitted;
-    assert_eq!(
-        sheet_charges(&ir, no_design),
-        [
-            "the cadir write does not represent model arena `spreadsheets`: \
-          2 record(s) omitted: test:design:spreadsheet#unrestated, test:design:spreadsheet#v10"
-        ]
-    );
-}
-
-/// A CADIR write charges a record a written `design` record restates under
-/// its id without some fields once, naming the record and the fields.
-#[test]
-fn a_cadir_write_charges_a_record_restated_in_part_once_naming_its_fields() {
-    let mut ir = CadIr::empty();
-    ir.model.spreadsheets.push(v10_sheet());
-    ir.model.spreadsheets.push(model_sheet("unrestated"));
-    ir.design.spreadsheets.push(design_sheet("v10"));
-    let by = || Restater::Record("test:design:spreadsheet#v10".to_owned());
-    ir.model
-        .restated_mut()
-        .record("test:design:spreadsheet#v10", by(), ["row_heights"]);
-    ir.model
-        .restated_mut()
-        .record("test:design:spreadsheet#v10", by(), ["merged_ranges"]);
-    let cadir = super::coverage::cadir_dispositions();
-    assert_eq!(
-        sheet_charges(&ir, cadir),
-        [
-            "the cadir write does not represent model arena `spreadsheets`: \
-          1 record(s) omitted: test:design:spreadsheet#unrestated; \
-          1 record(s) stated in part: test:design:spreadsheet#v10 (merged_ranges, row_heights)"
-        ]
-    );
-    ir.model.spreadsheets.pop();
-    assert_eq!(
-        sheet_charges(&ir, cadir),
-        [
-            "the cadir write does not represent model arena `spreadsheets`: \
-          1 record(s) stated in part: test:design:spreadsheet#v10 (merged_ranges, row_heights)"
-        ]
-    );
-    assert_eq!(cadir.omitted(&ir), ["spreadsheets"]);
-}
-
-/// The name table restates a record only for a write of every `design`
-/// arena, the one write that writes the table.
-#[test]
-fn a_record_the_name_table_restates_is_carried_only_by_a_write_of_the_whole_design() {
-    let mut ir = CadIr::empty();
-    ir.model.spreadsheets.push(v10_sheet());
-    ir.model
-        .restated_mut()
-        .record("test:design:spreadsheet#v10", Restater::Names, []);
-    let cadir = super::coverage::cadir_dispositions();
-    assert!(sheet_charges(&ir, cadir).is_empty());
-    let mut reported = cadir;
-    reported.design.parameters = ArenaDisposition::Reported;
-    assert_eq!(
-        sheet_charges(&ir, reported),
-        [
-            "the cadir write does not represent model arena `spreadsheets`: \
-          1 record(s) omitted: test:design:spreadsheet#v10"
-        ]
-    );
-}
-
 /// `omitted` names the arenas the `arena.omitted` losses name: an omitted
 /// design arena that a v10 record restates is not among them.
 #[test]
@@ -1221,6 +1093,113 @@ fn validation_report(findings: Vec<Finding>) -> ValidationReport {
         entity_counts: std::collections::BTreeMap::new(),
         findings,
         losses: Vec::new(),
+    }
+}
+
+#[test]
+fn carried_errors_exclude_warnings_and_include_unlocated_errors() {
+    let ir = CadIr::empty();
+    let plan = CoverageEncoder(ArenaCoverage::Declared(uniform_dispositions(
+        ArenaDisposition::Dropped,
+    )))
+    .plan(EncodeInput::new(&ir, None))
+    .unwrap();
+    let mut report = validation_report(vec![finding(None, "warning", Severity::Warning)]);
+    assert!(plan.carried_errors(&ir, &report).is_empty());
+    report
+        .findings
+        .push(finding(None, "error", Severity::Error));
+    report.findings.push(finding(
+        Some("test:face#missing"),
+        "missing",
+        Severity::Blocking,
+    ));
+    assert_eq!(
+        plan.carried_errors(&ir, &report),
+        vec![&report.findings[1], &report.findings[2]]
+    );
+}
+
+#[test]
+fn carried_errors_follow_model_coverage_and_related_locations() {
+    let ir = unit_cube().expect("valid cube");
+    let face = ir.geometry.faces[0].identity();
+    let edge = ir.geometry.edges[0].identity();
+    let report = validation_report(vec![
+        finding(Some(face), "invalid face", Severity::Error),
+        finding(
+            Some(face),
+            &format!("invalid reference `{edge}`."),
+            Severity::Error,
+        ),
+    ]);
+    let mut report = report;
+    report.findings[1].related.push(edge.to_owned());
+    for (disposition, carries_face) in [
+        (ArenaDisposition::Written, true),
+        (ArenaDisposition::Reported, true),
+        (ArenaDisposition::Dropped, false),
+        (ArenaDisposition::Omitted, false),
+        (ArenaDisposition::Ignored, false),
+    ] {
+        let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
+        dispositions.faces = disposition;
+        let plan = CoverageEncoder(ArenaCoverage::Declared(dispositions))
+            .plan(EncodeInput::new(&ir, None))
+            .unwrap();
+        let expected = if carries_face {
+            vec![&report.findings[0], &report.findings[1]]
+        } else {
+            vec![&report.findings[1]]
+        };
+        assert_eq!(plan.carried_errors(&ir, &report), expected);
+    }
+}
+
+#[test]
+fn carried_errors_follow_native_format_and_complete_coverage() {
+    let mut ir = CadIr::empty();
+    let f3d_id = "f3d:test:asm-history#0";
+    let nx_id = "nx:test:record#0";
+    let record = |id: &str| {
+        vec![crate::NativeRecord::new(
+            crate::ids::Identity::new(id).expect("valid native identity"),
+            serde_json::Map::default(),
+        )
+        .expect("valid native record")]
+    };
+    ir.native
+        .namespace_mut(crate::codec_id!("f3d"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("asm_histories"),
+            record(f3d_id),
+        );
+    ir.native
+        .namespace_mut(crate::codec_id!("nx"))
+        .arenas_mut()
+        .insert(cadmpeg_core::nonblank_literal!("records"), record(nx_id));
+    ir.finalize();
+    let report = validation_report(vec![
+        finding(Some(f3d_id), "invalid native record", Severity::Error),
+        finding(Some(nx_id), "invalid native record", Severity::Error),
+    ]);
+    let declared = ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Written));
+    let f3d = F3dCoverageEncoder(declared)
+        .plan(EncodeInput::new(&ir, None))
+        .unwrap();
+    assert_eq!(f3d.carried_errors(&ir, &report), vec![&report.findings[0]]);
+    let cadir = CoverageEncoder(declared)
+        .plan(EncodeInput::new(&ir, None))
+        .unwrap();
+    let complete = CoverageEncoder(ArenaCoverage::Complete)
+        .plan(EncodeInput::new(&ir, None))
+        .unwrap();
+    for plan in [cadir, complete] {
+        assert_eq!(
+            plan.carried_errors(&ir, &report),
+            report.findings.iter().collect::<Vec<_>>()
+        );
     }
 }
 
