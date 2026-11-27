@@ -802,7 +802,7 @@ pub(crate) mod tests {
                     .expect("gradient JSON object");
             assert_eq!(semantic["type"], "linear");
             assert_eq!(semantic["type_value"], 1);
-            assert_eq!(semantic["start"], serde_json::json!([2.0, 4.0, 6.0]));
+            assert_eq!(semantic["start"], cadmpeg_core::json!([2.0, 4.0, 6.0]));
         });
     }
 

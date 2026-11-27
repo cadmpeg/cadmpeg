@@ -66,6 +66,7 @@ fn check_repeated_owners(placements: usize) {
         ..Default::default()
     };
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    ir.model.product_definitions.clear();
     ir.geometry.bodies[0].transform = Some(
         Transform::affine([
             [1.0, 0.0, 0.0, 3.0],

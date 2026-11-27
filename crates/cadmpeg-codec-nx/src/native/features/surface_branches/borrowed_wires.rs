@@ -70,15 +70,15 @@ impl Serialize for FeatureSurfaceConstructionBranch {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_test_support::native_serialization::assert_native_limit;
 
     #[test]
     fn surface_branch_borrowed_bytes_and_limit() {
         let json = r#"{"id":"nx:feature:surface#0","operation_label":"operation","ordinal":254,"family":80,"header_code":255,"mode":22,"declared_count":3,"witnessed":false,"members":[{"ordinal":0,"object_index":0,"raw_object_index":"f000","data_block":"zero","source_offset":103},{"ordinal":1,"object_index":256,"raw_object_index":"f10100","source_offset":105}],"terminal":{"ordinal":2,"object_index":1,"raw_object_index":"f001","source_offset":116},"suffix":"00ff","source_offset":100}"#;
         let branch: FeatureSurfaceConstructionBranch = serde_json::from_str(json).unwrap();
-        let borrowed = serde_json::to_vec(&branch).unwrap();
-        let owned =
-            serde_json::to_vec(&super::super::SurfaceBranchWire::from(branch.clone())).unwrap();
+        let borrowed = json::to_vec(&branch).unwrap();
+        let owned = json::to_vec(&super::super::SurfaceBranchWire::from(branch.clone())).unwrap();
         assert_eq!(borrowed, owned);
         assert_eq!(borrowed, json.as_bytes());
         assert_native_limit(

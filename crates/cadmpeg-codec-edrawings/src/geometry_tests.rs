@@ -5,8 +5,11 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
+use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::products::{owner, sole_placement, Occurrence, ProductDefinitionKind};
+use cadmpeg_ir::products::{
+    owner, sole_placement, Occurrence, ProductDefinition, ProductDefinitionKind,
+};
 use cadmpeg_ir::report::loss::{LossKind, LossNote};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::topology::BodyKind;
@@ -415,6 +418,155 @@ fn bad_shells_are_left_out_and_charged() {
 }
 
 #[test]
+fn a_pinned_decode_refuses_a_shell_that_does_not_decode() {
+    let mut items = box_shells([CUBE_EDGE; 3]);
+    items.push(Item::Shell {
+        points: vec![[0.0; 3]; 3],
+        strips: vec![vec![0, 1, 7]],
+    });
+    let package = part_package(&model_of(items, None).stream());
+    let admitted = decode(&package);
+    assert!(codes(&admitted).contains(&EdrawingsLossCode::ModelShellInvalid.kind()));
+    let [given_up] = charges(&admitted)
+        .try_into()
+        .unwrap_or_else(|charges: Vec<String>| panic!("one record.unreadable: {charges:?}"));
+    assert!(
+        given_up.starts_with("part model-object stream=\"eModel\" offset="),
+        "{given_up}"
+    );
+    assert!(
+        given_up.contains("edrawings/model.shell-invalid: strip index lies outside the shell"),
+        "{given_up}"
+    );
+    assert!(given_up.contains("; dropped=[]"), "{given_up}");
+    assert_eq!(admitted.ir().geometry.faces.len(), 6);
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = EdrawingsCodec
+        .decode(&mut Cursor::new(package), &options)
+        .expect_err("a pinned decode refuses a given-up shell");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert_eq!(rejection.loss().message, given_up);
+}
+
+/// The messages of the `record.unreadable` charges of `result`.
+fn charges(result: &DecodeResult) -> Vec<String> {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.clone())
+        .collect()
+}
+
+#[test]
+fn a_shell_that_does_not_decode_drops_its_body_and_occurrence() {
+    let mut spec = assembly();
+    spec.bodies[1] = BodySpec {
+        colour: None,
+        subs: vec![vec![Item::Shell {
+            points: vec![[0.0; 3]; 3],
+            strips: vec![vec![0, 1, 7]],
+        }]],
+    };
+    let result = decode(&assembly_package(&spec.stream()));
+    let [given_up] = charges(&result)
+        .try_into()
+        .unwrap_or_else(|charges: Vec<String>| panic!("one record.unreadable: {charges:?}"));
+    assert!(given_up.starts_with("part model-object "), "{given_up}");
+    let dropped = given_up
+        .split_once("; dropped=[")
+        .and_then(|(_, tail)| tail.split_once(']'))
+        .map(|(list, _)| list.split(", ").collect::<Vec<_>>())
+        .expect("the charge lists its dropped records");
+    let [body, occurrence] = dropped.as_slice() else {
+        panic!("a body and an occurrence: {dropped:?}");
+    };
+    assert!(body.starts_with("edrawings:model:body#"), "{body}");
+    assert!(
+        occurrence.starts_with("edrawings:model:occurrence#"),
+        "{occurrence}"
+    );
+    let ir = result.ir();
+    assert!(ir.geometry.bodies.iter().all(|b| b.id.to_string() != *body));
+    assert!(ir
+        .model
+        .occurrences
+        .iter()
+        .all(|o| o.id.to_string() != *occurrence));
+    assert_eq!(ir.model.occurrences.len(), 4);
+}
+
+#[test]
+fn objects_outside_a_body_and_repeated_ids_give_up_their_own_records() {
+    let mut s = Stream::new();
+    s.shell_placeholder().slot();
+    s.shell(0, &[[0.0; 3]; 3], &[vec![0, 1, 2]]);
+    s.shell(0, &[[0.0; 3]; 3], &[vec![0, 1, 2]]);
+    s.raw(b"z");
+    let result = decode(&part_package(s.bytes()));
+    let given_up = charges(&result);
+    let offsets: Vec<u64> = given_up
+        .iter()
+        .map(|message| {
+            let tail = message
+                .strip_prefix("part model-object stream=\"eModel\" offset=")
+                .unwrap_or_else(|| panic!("an object part: {message}"));
+            tail.split_once(' ').unwrap().0.parse().unwrap()
+        })
+        .collect();
+    let [kept, later] = offsets.as_slice() else {
+        panic!("two object parts: {given_up:?}");
+    };
+    assert!(kept < later, "{given_up:?}");
+    assert!(given_up
+        .iter()
+        .any(|message| message.contains("outside every library body")));
+    assert!(given_up
+        .iter()
+        .any(|message| message.contains("an earlier object has the id 0")));
+}
+
+#[test]
+fn a_pinned_decode_refuses_a_body_past_the_coordinate_bound() {
+    let far = 1.0e9_f32;
+    let items = vec![Item::Shell {
+        points: vec![[far, 0.0, 0.0], [0.0; 3], [0.0, far, 0.0]],
+        strips: vec![vec![0, 1, 2]],
+    }];
+    let package = part_package(&model_of(items, None).stream());
+    let admitted = decode(&package);
+    assert!(codes(&admitted).contains(&EdrawingsLossCode::GeometryBodyFailed.kind()));
+    assert!(admitted.ir().geometry.bodies.is_empty());
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = EdrawingsCodec
+        .decode(&mut Cursor::new(package), &options)
+        .expect_err("a pinned decode refuses a body dropped at the coordinate bound");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(rejection
+        .loss()
+        .message
+        .split_whitespace()
+        .any(|token| token.starts_with("edrawings:model:body#")));
+}
+
+#[test]
 fn an_instance_without_a_library_body_is_charged() {
     let mut s = Stream::new();
     s.open("includes")
@@ -428,8 +580,20 @@ fn an_instance_without_a_library_body_is_charged() {
         codes(&result),
         [
             EdrawingsLossCode::ModelObjectInvalid.kind(),
-            EdrawingsLossCode::ModelNoGeometry.kind()
+            EdrawingsLossCode::ModelNoGeometry.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
         ]
+    );
+    let [given_up] = charges(&result)
+        .try_into()
+        .unwrap_or_else(|charges: Vec<String>| panic!("one record.unreadable: {charges:?}"));
+    assert!(
+        given_up.starts_with("part tree-node stream=\"eModel\" offset="),
+        "{given_up}"
+    );
+    assert!(
+        given_up.contains("edrawings/model.object-invalid: the instance names no library body"),
+        "{given_up}"
     );
 }
 
@@ -448,7 +612,13 @@ fn broken_streams_are_blocking_losses_with_offsets() {
     let mut cut = cube_part().stream();
     cut.truncate(cut.len() / 2);
     let result = decode(&part_package(&cut));
-    assert_eq!(codes(&result), [EdrawingsLossCode::ModelMalformed.kind()]);
+    assert_eq!(
+        codes(&result),
+        [
+            EdrawingsLossCode::ModelMalformed.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
+        ]
+    );
 }
 
 #[test]
@@ -515,9 +685,11 @@ fn a_solidworks_assembly_decodes_under_its_own_dialect() {
         .collect();
     assert!(messages[1].starts_with("1 face group colours in 1 bodies"));
     assert!(messages[2].starts_with("1 part colour overrides and 0 display state"));
-    assert_eq!(ir.geometry.bodies.len(), 3);
+    // Three library bodies; two of them are also listed by a second body set,
+    // whose definition holds a copy of each.
+    assert_eq!(ir.geometry.bodies.len(), 5);
     assert!(ir.geometry.bodies.iter().all(|b| b.kind == BodyKind::Solid));
-    assert_eq!(ir.geometry.faces.len(), 18);
+    assert_eq!(ir.geometry.faces.len(), 30);
     assert_valid(ir);
 }
 
@@ -539,7 +711,7 @@ fn body_colours_come_from_the_body_materials() {
 }
 
 #[test]
-fn a_definition_holds_the_bodies_of_one_body_set_and_sets_are_shared() {
+fn a_definition_holds_its_own_copy_of_a_body_another_definition_lists() {
     let result = decode_solidworks(&solidworks_assembly());
     let ir = result.ir();
     let parts: Vec<_> = ir
@@ -552,21 +724,60 @@ fn a_definition_holds_the_bodies_of_one_body_set_and_sets_are_shared() {
         parts.iter().map(|d| d.bodies.len()).collect::<Vec<_>>(),
         [1, 1, 2, 1]
     );
-    let body = |name: &str| {
+    let listed: Vec<_> = ir
+        .model
+        .product_definitions
+        .iter()
+        .flat_map(|d| &d.bodies)
+        .collect();
+    assert_eq!(listed.len(), ir.geometry.bodies.len());
+    assert!(listed
+        .iter()
+        .enumerate()
+        .all(|(index, body)| !listed[..index].contains(body)));
+    let body = |id: &BodyId| ir.geometry.bodies.iter().find(|b| &b.id == id).unwrap();
+    let faces = |id: &BodyId| {
         ir.geometry
+            .faces
+            .iter()
+            .filter(|face| {
+                ir.geometry
+                    .shells
+                    .iter()
+                    .find(|shell| shell.id == face.shell)
+                    .and_then(|shell| ir.geometry.regions.iter().find(|r| r.id == shell.region))
+                    .is_some_and(|region| &region.body == id)
+            })
+            .count()
+    };
+    let names = |definition: &ProductDefinition| {
+        definition
             .bodies
             .iter()
-            .find(|b| b.name.as_deref() == Some(name))
-            .unwrap()
-            .id
-            .clone()
+            .map(|id| body(id).name.clone())
+            .collect::<Vec<_>>()
     };
+    let single = parts.first().unwrap();
     let pair = parts.get(2).unwrap();
-    assert_eq!(pair.bodies, [body("body0"), body("body2")]);
+    let cube = parts.get(3).unwrap();
+    assert_eq!(names(single), [Some("body0".to_owned())]);
+    assert_eq!(
+        names(pair),
+        [Some("body0".to_owned()), Some("body2".to_owned())]
+    );
+    assert_eq!(names(cube), [Some("body2".to_owned())]);
+    for (copy, original) in [
+        (&pair.bodies[0], &single.bodies[0]),
+        (&cube.bodies[0], &pair.bodies[1]),
+    ] {
+        assert_ne!(copy, original);
+        assert_eq!(body(copy).color, body(original).color);
+        assert_eq!(body(copy).kind, body(original).kind);
+        assert_eq!(faces(copy), 6);
+        assert_eq!(faces(copy), faces(original));
+    }
     assert!(pair.source_name.is_none());
     assert_eq!(pair.label.as_deref(), Some("Pair-1"));
-    let single = parts.first().unwrap();
-    assert_eq!(single.bodies, [body("body0")]);
     assert_eq!(single.source_name.as_deref(), Some("body0"));
 
     let prototype = |name: &str| occurrence_named(ir, name).prototype.clone();

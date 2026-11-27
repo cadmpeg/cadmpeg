@@ -15,11 +15,21 @@ pub(crate) struct AdmittedTables {
     pub(crate) unassigned: usize,
 }
 
-/// One table with its rows in `rowOrder` order.
+/// One table with its typed columns and its rows in `rowOrder` order.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ConfigurationTable {
     pub(crate) id: String,
+    /// The position of the table in the document's `tables` array.
+    pub(crate) position: usize,
+    /// The columns whose target the table types, in `columnData` order.
+    pub(crate) columns: Vec<ConfigurationColumn>,
     pub(crate) rows: Vec<ConfigurationRow>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ConfigurationColumn {
+    pub(crate) id: String,
+    pub(crate) target: ColumnTarget,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -58,12 +68,35 @@ pub(crate) enum ConfiguredValue {
     Feature { record_index: u32, computed: bool },
 }
 
+/// The object a column configures: a document property by key, or the
+/// Design record of a parameter, a parameter owner, or a parameter scope by
+/// indexed-record index.
 #[derive(Debug, Clone, PartialEq)]
-enum ColumnTarget {
+pub(crate) enum ColumnTarget {
     Property(String),
     Parameter(u32),
     OwnedParameter(u32),
     Feature(u32),
+}
+
+/// The data of a cell: a property value, whether a feature is computed, or
+/// a parameter expression and its evaluated value in database units.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum CellData {
+    Text(String),
+    Computed(bool),
+    Expression {
+        expression: String,
+        value: FiniteReal,
+    },
+}
+
+/// The GUIDs of a written row asset: the asset id and revision id, and the
+/// `configRevisionId` of its row data.
+pub(crate) struct RowGuids {
+    pub(crate) asset: String,
+    pub(crate) revision: String,
+    pub(crate) configuration_revision: String,
 }
 
 impl AdmittedTables {
@@ -77,9 +110,9 @@ impl AdmittedTables {
                 "asset" => versioned,
                 "tables" if versioned => match value {
                     Value::Array(tables) => {
-                        for value in tables {
+                        for (position, value) in tables.iter().enumerate() {
                             let mut unassigned = 0;
-                            match table(value, &mut unassigned) {
+                            match table(value, position, &mut unassigned) {
                                 Some(table) => {
                                     admitted.tables.push(table);
                                     admitted.unassigned += unassigned;
@@ -171,7 +204,7 @@ fn is_versioned_document(value: &Value) -> bool {
         == Some(1)
 }
 
-fn table(value: &Value, unassigned: &mut usize) -> Option<ConfigurationTable> {
+fn table(value: &Value, position: usize, unassigned: &mut usize) -> Option<ConfigurationTable> {
     let members = value.as_object()?;
     let table_asset = asset(members.get("asset")?, "configurationTable-1.1.0")?;
     let id = attribute(table_asset, "pim:configuration:tableId")?;
@@ -185,6 +218,7 @@ fn table(value: &Value, unassigned: &mut usize) -> Option<ConfigurationTable> {
     )?
     .as_object()?;
     let mut targets = HashMap::new();
+    let mut typed_columns = Vec::new();
     for (column_id, column) in columns {
         let column = typed_component(column, "columnData-1.1.0")?;
         if string(column, "id")? != column_id {
@@ -192,6 +226,10 @@ fn table(value: &Value, unassigned: &mut usize) -> Option<ConfigurationTable> {
         }
         match column_target(column) {
             Some(target) => {
+                typed_columns.push(ConfigurationColumn {
+                    id: column_id.clone(),
+                    target: target.clone(),
+                });
                 targets.insert(column_id.as_str(), target);
             }
             None => *unassigned += 1,
@@ -224,8 +262,276 @@ fn table(value: &Value, unassigned: &mut usize) -> Option<ConfigurationTable> {
         .count();
     Some(ConfigurationTable {
         id: id.to_owned(),
+        position,
+        columns: typed_columns,
         rows: ordered,
     })
+}
+
+/// Rewrite the id of the table at `position` of the `tables` array from
+/// `table.0` to `table.1`, and the id of its row `row.0` to `row.1`, at
+/// every position [`AdmittedTables::admit`] reads them: the table's
+/// attribute and definition, and the row's attribute, definition, and
+/// `rowOrder` entry.
+pub(crate) fn rename_ids(
+    payload: &mut Map<String, Value>,
+    position: usize,
+    table: (&str, &str),
+    row: (&str, &str),
+) {
+    let Some(members) = table_mut(payload, position) else {
+        return;
+    };
+    if let Some(asset) = members.get_mut("asset") {
+        rename_asset(asset, "pim:configuration:tableId", "tableDefinition", table);
+    }
+    for value in members
+        .get_mut("rows")
+        .and_then(Value::as_array_mut)
+        .into_iter()
+        .flatten()
+    {
+        if let Some(asset) = value.get_mut("asset") {
+            rename_asset(asset, "pim:configuration:rowId", "rowDefinition", row);
+        }
+    }
+    let order = members
+        .get_mut("tableView")
+        .and_then(|view| view.get_mut("asset"))
+        .and_then(|asset| component_mut(asset, "viewData"))
+        .and_then(|view| view.get_mut("rowOrder"))
+        .and_then(|order| order.get_mut("value"))
+        .and_then(Value::as_array_mut);
+    for id in order.into_iter().flatten() {
+        if id.as_str() == Some(row.0) {
+            *id = Value::from(row.1);
+        }
+    }
+}
+
+/// Rewrite the name of the row `row` of the table at `position` of the
+/// `tables` array to `name`, at the position [`AdmittedTables::admit`] reads
+/// it: the row's attribute.
+pub(crate) fn set_row_name(
+    payload: &mut Map<String, Value>,
+    position: usize,
+    row: &str,
+    name: &str,
+) {
+    let rows = table_mut(payload, position)
+        .and_then(|members| members.get_mut("rows"))
+        .and_then(Value::as_array_mut);
+    for attributes in rows
+        .into_iter()
+        .flatten()
+        .filter_map(|value| {
+            value
+                .get_mut("asset")?
+                .get_mut("attributes")?
+                .as_object_mut()
+        })
+        .filter(|attributes| {
+            attributes
+                .get("pim:configuration:rowId")
+                .and_then(Value::as_str)
+                == Some(row)
+        })
+    {
+        attributes.insert("pim:configuration:rowName".to_owned(), Value::from(name));
+    }
+}
+
+/// Write `data` into the cell of column `column` of the row `row` of the
+/// table at `position` of the `tables` array, or remove the cell when `data`
+/// is `None`.
+pub(crate) fn set_cell(
+    payload: &mut Map<String, Value>,
+    position: usize,
+    row: &str,
+    column: &str,
+    data: Option<&CellData>,
+) {
+    let cells = row_mut(payload, position, row)
+        .and_then(|asset| component_mut(asset, "rowData"))
+        .and_then(|data| data.get_mut("rowCells"))
+        .and_then(|cells| cells.get_mut("value"))
+        .and_then(Value::as_object_mut);
+    let Some(cells) = cells else {
+        return;
+    };
+    match data {
+        Some(data) => {
+            let cell = typed_value(
+                &format!("{COMPONENT_PREFIX}rowCell-1.0.0"),
+                cadmpeg_core::json!({
+                    "columnId": typed_value("String", Value::from(column)),
+                    "data": cell_data(data),
+                }),
+            );
+            cells.insert(column.to_owned(), cell);
+        }
+        None => {
+            cells.remove(column);
+        }
+    }
+}
+
+/// Append `row`, a row of [`new_row`], to the `rows` array of the table at
+/// `position` of the `tables` array.
+pub(crate) fn push_row(payload: &mut Map<String, Value>, position: usize, row: Value) {
+    if let Some(rows) = table_mut(payload, position)
+        .and_then(|members| members.get_mut("rows"))
+        .and_then(Value::as_array_mut)
+    {
+        rows.push(row);
+    }
+}
+
+/// Remove the row `row` from the `rows` array of the table at `position` of
+/// the `tables` array.
+pub(crate) fn remove_row(payload: &mut Map<String, Value>, position: usize, row: &str) {
+    if let Some(rows) = table_mut(payload, position)
+        .and_then(|members| members.get_mut("rows"))
+        .and_then(Value::as_array_mut)
+    {
+        rows.retain(|value| row_id(value) != Some(row));
+    }
+}
+
+/// Write `order` as the `rowOrder` of the table at `position` of the
+/// `tables` array.
+pub(crate) fn set_row_order(payload: &mut Map<String, Value>, position: usize, order: &[&str]) {
+    if let Some(stated) = table_mut(payload, position)
+        .and_then(|members| members.get_mut("tableView"))
+        .and_then(|view| view.get_mut("asset"))
+        .and_then(|asset| component_mut(asset, "viewData"))
+        .and_then(|view| view.get_mut("rowOrder"))
+        .and_then(|order| order.get_mut("value"))
+    {
+        *stated = Value::from(order);
+    }
+}
+
+/// A row of id `id` and name `name` with no cells and `default` false, in
+/// the form [`AdmittedTables::admit`] reads (f3d.md §1.2).
+pub(crate) fn new_row(id: &str, name: &str, guids: RowGuids) -> Value {
+    use cadmpeg_core::json;
+
+    let component = |name: &str, kind: &str, properties: Value| json!({"name": name, "type": format!("{COMPONENT_PREFIX}{kind}"), "properties": properties});
+    json!({"asset": {
+        "id": guids.asset,
+        "revisionId": guids.revision,
+        "type": format!("{ASSET_PREFIX}row-1.0.0"),
+        "attributes": {"pim:configuration:rowId": id, "pim:configuration:rowName": name},
+        "components": [
+            component("rowData", "rowData-1.0.0", json!({
+                "configRevisionId": typed_value("String", Value::from(guids.configuration_revision)),
+                "default": typed_value("Bool", Value::from(false)),
+                "rowCells": typed_value(&format!("map<{COMPONENT_PREFIX}rowCell-1.0.0>"), json!({})),
+            })),
+            component("rowDefinition", "rowDefinition-1.0.0", json!({
+                "id": typed_value("String", Value::from(id)),
+            })),
+        ],
+    }})
+}
+
+fn typed_value(kind: &str, value: Value) -> Value {
+    Value::Object(Map::from_iter([
+        ("type".to_owned(), Value::from(kind)),
+        ("value".to_owned(), value),
+    ]))
+}
+
+/// The `data` value of a cell, the form [`cell_value`] reads.
+fn cell_data(data: &CellData) -> Value {
+    use cadmpeg_core::json;
+
+    let component =
+        |kind: &str, members: Value| typed_value(&format!("{COMPONENT_PREFIX}{kind}"), members);
+    match data {
+        CellData::Text(text) => component(
+            "variant.string-1.0.0",
+            json!({"value": typed_value("String", Value::from(text.as_str()))}),
+        ),
+        CellData::Computed(computed) => component(
+            "variant.bool-1.0.0",
+            json!({"value": typed_value("Bool", Value::from(*computed))}),
+        ),
+        CellData::Expression { expression, value } => component(
+            "variant.expression-1.0.0",
+            json!({
+                "expression": typed_value("String", Value::from(expression.as_str())),
+                "value": component(
+                    "variant.float64-1.0.0",
+                    json!({"value": typed_value("Float64", Value::from(value.get()))}),
+                ),
+            }),
+        ),
+    }
+}
+
+/// The asset of the row `row` of the table at `position` of the `tables`
+/// array.
+fn row_mut<'a>(
+    payload: &'a mut Map<String, Value>,
+    position: usize,
+    row: &str,
+) -> Option<&'a mut Value> {
+    table_mut(payload, position)?
+        .get_mut("rows")?
+        .as_array_mut()?
+        .iter_mut()
+        .find(|value| row_id(value) == Some(row))?
+        .get_mut("asset")
+}
+
+/// The id attribute of a value of a `rows` array.
+fn row_id(value: &Value) -> Option<&str> {
+    value
+        .get("asset")?
+        .get("attributes")?
+        .get("pim:configuration:rowId")?
+        .as_str()
+}
+
+/// The members of the table at `position` of the `tables` array.
+fn table_mut(payload: &mut Map<String, Value>, position: usize) -> Option<&mut Map<String, Value>> {
+    payload
+        .get_mut("tables")?
+        .as_array_mut()?
+        .get_mut(position)?
+        .as_object_mut()
+}
+
+/// Rewrite the id `id.0` of `asset` to `id.1` in its attribute `attribute`
+/// and in the `id` of its component `definition`.
+fn rename_asset(asset: &mut Value, attribute: &str, definition: &str, id: (&str, &str)) {
+    let Some(stated) = asset
+        .get_mut("attributes")
+        .and_then(|attributes| attributes.get_mut(attribute))
+        .filter(|stated| stated.as_str() == Some(id.0))
+    else {
+        return;
+    };
+    *stated = Value::from(id.1);
+    if let Some(stated) = component_mut(asset, definition)
+        .and_then(|definition| definition.get_mut("id"))
+        .and_then(|typed| typed.get_mut("value"))
+        .filter(|stated| stated.as_str() == Some(id.0))
+    {
+        *stated = Value::from(id.1);
+    }
+}
+
+/// The properties of the first component of `asset` named `name`.
+fn component_mut<'a>(asset: &'a mut Value, name: &str) -> Option<&'a mut Value> {
+    asset
+        .get_mut("components")?
+        .as_array_mut()?
+        .iter_mut()
+        .find(|component| component.get("name").and_then(Value::as_str) == Some(name))?
+        .get_mut("properties")
 }
 
 fn column_target(column: &Map<String, Value>) -> Option<ColumnTarget> {

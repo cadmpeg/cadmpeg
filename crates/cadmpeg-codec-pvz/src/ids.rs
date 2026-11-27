@@ -23,6 +23,12 @@ pub(crate) fn member_scope(member: &str) -> IdentityKey {
     member_key(member)
 }
 
+/// The source stream of package member `member`, whose offsets are offsets
+/// in the member's expanded bytes.
+pub(crate) fn member_stream_name(member: &str) -> cadmpeg_ir::StreamName {
+    cadmpeg_ir::stream_name!("pvz:").with_suffix(member)
+}
+
 /// The document definition that places each of several root definitions.
 pub(crate) fn document() -> ProductDefinitionId {
     ProductDefinitionId::compose(

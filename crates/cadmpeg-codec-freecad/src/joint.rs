@@ -617,6 +617,7 @@ pub(crate) mod tests {
     use super::joint_kind;
     use crate::test_support::test_archive::{archive, assert_valid_document};
     use crate::FcstdCodec;
+    use cadmpeg_core::serde_erase::json;
 
     fn diagnostic_property(
         name: &str,
@@ -850,7 +851,7 @@ pub(crate) mod tests {
                 cadmpeg_ir::products::JointOperands::Pair { kind: PairedJointKind::Native { name, .. }, .. } if name == family
             ));
             assert_valid_document(result.ir());
-            let wire = serde_json::to_string(result.ir()).unwrap();
+            let wire = json::to_string(result.ir()).unwrap();
             let restored = cadmpeg_ir::CadIr::from_json(&wire).unwrap();
             assert_valid_document(&restored);
         }
@@ -952,13 +953,13 @@ pub(crate) mod tests {
         assert!((range.maximum().get() - 45_f64.to_radians()).abs() < EPS_JOINT_SCALAR);
         assert!(crate::test_support::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
-        let mut wire = serde_json::to_value(&result.ir().model.assembly_joints[0])
-            .expect("assembly joint wire");
-        wire["operands"]["value"]["connectors"][0]["operand"]["external_document"] = serde_json::json!({
+        let mut wire =
+            json::to_value(&result.ir().model.assembly_joints[0]).expect("assembly joint wire");
+        wire["operands"]["value"]["connectors"][0]["operand"]["external_document"] = cadmpeg_core::json!({
             "kind": "unresolved",
             "path": "external.FCStd"
         });
-        assert!(serde_json::from_value::<cadmpeg_ir::AssemblyJoint>(wire).is_err());
+        assert!(json::from_value::<cadmpeg_ir::AssemblyJoint>(wire).is_err());
     }
 
     #[test]
@@ -1225,7 +1226,7 @@ pub(crate) mod tests {
             );
             assert_eq!(result.ir().model.assembly_joints[0].suppressed, expected);
             let restored = cadmpeg_ir::CadIr::from_json(
-                &serde_json::to_string(result.ir()).expect("CADIR serialization"),
+                &json::to_string(result.ir()).expect("CADIR serialization"),
             )
             .expect("complete CADIR admission");
             let restored_joints = restored

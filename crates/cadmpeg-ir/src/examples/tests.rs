@@ -4,6 +4,7 @@
 use super::{directed_subd_sum, unit_cube};
 use crate::document::CadIr;
 use crate::validate::validate_neutral;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn directed_subd_sum_fixture_round_trips_and_validates() {
@@ -42,8 +43,8 @@ fn directed_subd_sum_fixture_carries_the_literal_axes_and_frame() {
             panic!("the directed SubD example curve is a line");
         };
         assert_eq!(
-            serde_json::to_string(line).unwrap(),
-            serde_json::to_string(&LineCurve::try_new(origin, direction).unwrap()).unwrap()
+            json::to_string(line).unwrap(),
+            json::to_string(&LineCurve::try_new(origin, direction).unwrap()).unwrap()
         );
     }
     let id = v2_id!(SurfaceId, "surface", crate::identity_key!("sum-cache"));
@@ -61,8 +62,8 @@ fn directed_subd_sum_fixture_carries_the_literal_axes_and_frame() {
         panic!("the directed SubD example cache is a plane");
     };
     assert_eq!(
-        serde_json::to_string(plane).unwrap(),
-        serde_json::to_string(
+        json::to_string(plane).unwrap(),
+        json::to_string(
             &PlaneSurface::try_new(
                 origin,
                 Vector3::new(0.0, 0.0, 1.0),
@@ -77,8 +78,8 @@ fn directed_subd_sum_fixture_carries_the_literal_axes_and_frame() {
 #[cfg(feature = "schema")]
 #[test]
 fn directed_subd_sum_fixture_matches_schema_shape() {
-    let schema = serde_json::to_value(schemars::schema_for!(crate::document::Topology))
-        .expect("serialize schema");
+    let schema =
+        json::to_value(schemars::schema_for!(crate::document::Topology)).expect("serialize schema");
     let schema_text = schema.to_string();
     assert!(schema_text.contains("procedural_surfaces"));
     assert!(schema_text.contains("sharpness"));
@@ -99,12 +100,16 @@ fn unit_cube_has_expected_census() {
     assert_eq!(ir.geometry.points.len(), 8);
     assert_eq!(ir.geometry.surfaces.len(), 6);
     assert_eq!(ir.geometry.curves.len(), 12);
+    let [root] = ir.model.product_definitions.as_slice() else {
+        panic!("one root definition: {:?}", ir.model.product_definitions);
+    };
+    assert!(root.is_root());
+    assert_eq!(root.bodies, [ir.geometry.bodies[0].id.clone()]);
 }
 
 #[test]
 fn unit_cube_validates_clean() {
-    let mut ir = unit_cube().expect("valid unit cube fixture");
-    crate::examples::add_document_root(&mut ir);
+    let ir = unit_cube().expect("valid unit cube fixture");
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(
         report.is_ok(),

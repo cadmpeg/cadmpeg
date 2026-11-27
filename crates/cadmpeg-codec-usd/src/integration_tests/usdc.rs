@@ -17,7 +17,7 @@ fn model(bytes: &[u8], name: &str) -> serde_json::Value {
     let result = UsdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap_or_else(|error| panic!("{name}: {error}"));
-    serde_json::json!({ "geometry": &result.ir().geometry, "model": &result.ir().model })
+    cadmpeg_core::json!({ "geometry": &result.ir().geometry, "model": &result.ir().model })
 }
 
 /// The text fixture a binary fixture `<stem>_<major>_<minor>_<patch>` was
@@ -118,6 +118,66 @@ fn a_written_package_reads_back() {
     assert_eq!(model(&bytes, "package"), model(written.as_bytes(), "layer"));
 }
 
+/// A legacy `sdf` layer is outside the synthesis catalog, so `Inherit` writes
+/// it as the catalog default `usda-1.0` (§3.4, Refusals). The report names
+/// that row, `usd/target.source-dialect-displaced` names both dialects, and
+/// the written layer reads back as `usda-1.0`.
+#[test]
+fn inherit_writes_an_off_catalog_source_as_the_default() {
+    use cadmpeg_ir::codec::write::target::{
+        target_loss_kind, TargetRequest, SOURCE_DIALECT_DISPLACED,
+    };
+    let (_, text) = inputs("usda")
+        .into_iter()
+        .find(|(name, _)| name == "sdf_legacy")
+        .expect("fixture");
+    let dialect = |result: &cadmpeg_ir::codec::DecodeResult| {
+        result
+            .ir()
+            .source
+            .as_ref()
+            .and_then(|source| source.dialect())
+            .map(|dialect| dialect.dialect().to_string())
+    };
+    let decoded = crate::test_support::decode_bytes(&text);
+    let source = dialect(&decoded).expect("the source records a dialect");
+    let plan = cadmpeg_ir::codec::write::Encoder::plan(
+        &UsdCodec,
+        cadmpeg_ir::codec::write::EncodeInput::new(decoded.ir(), None),
+        TargetRequest::Inherit,
+    )
+    .expect("the source is written as the catalog default");
+    assert_eq!(
+        cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
+        Some("usd:usda-1.0".to_owned())
+    );
+    let loss = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code
+                == target_loss_kind(cadmpeg_ir::loss_namespace!("usd"), SOURCE_DIALECT_DISPLACED)
+        })
+        .expect("the source dialect displacement is charged");
+    assert!(
+        loss.message.contains(&source) && loss.message.contains("usd:usda-1.0"),
+        "{}",
+        loss.message
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    assert_eq!(
+        dialect(&crate::test_support::decode_bytes(&bytes)).as_deref(),
+        Some("usd:usda-1.0")
+    );
+}
+
 /// A model written as a USDC layer reads back as the same model as when it
 /// is written as a USDA layer.
 #[test]
@@ -140,13 +200,43 @@ fn a_written_crate_layer_reads_as_its_text_layer() {
     }
 }
 
+/// A field whose value has no USDC form is left out of its spec and named,
+/// and the layer reads back with the rest of the spec.
+#[test]
+fn a_field_with_no_crate_form_is_left_out_and_named() {
+    use crate::text::syntax::{AttributeField, PropertySpec};
+    let text = "#usda 1.0\ndef Xform \"A\"\n{\n    float a = AnimationBlock\n    double b.spline = {\n        1: 0,\n    }\n    float c = 2\n}\n";
+    let (bytes, left_out) = crate::test_support::with_context(text.as_bytes(), |ctx| {
+        let layer = crate::text::grammar::parse_layer(ctx, text.as_bytes()).expect("parse");
+        crate::usdc::write::write(&layer).expect("write")
+    });
+    assert_eq!(left_out, ["/A.a default", "/A.b spline"]);
+    let (read, unread) = crate::test_support::with_root(&bytes, |ctx, root| {
+        crate::usdc::read(ctx, root).expect("read")
+    });
+    assert!(unread.is_empty(), "{unread:?}");
+    let fields: Vec<(&str, bool)> = read.prims[0]
+        .body
+        .properties
+        .iter()
+        .map(|property| match property {
+            PropertySpec::Attribute(attribute) => (
+                attribute.name.as_str(),
+                matches!(attribute.field, AttributeField::Default(_)),
+            ),
+            other @ PropertySpec::Relationship(_) => panic!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(fields, [("a", false), ("b", false), ("c", true)]);
+}
+
 /// A value representation that sets an unused bit is refused.
 #[test]
 fn a_representation_with_an_unused_bit_is_refused() {
     let text = "#usda 1.0\ndef Xform \"A\"\n{\n    double value.timeSamples = {\n        0: 1.5,\n    }\n}\n";
     let mut bytes = crate::test_support::with_context(text.as_bytes(), |ctx| {
         let layer = crate::text::grammar::parse_layer(ctx, text.as_bytes()).expect("parse");
-        crate::usdc::write::write(&layer).expect("write")
+        crate::usdc::write::write(&layer).expect("write").0
     });
     // The sample is a `double` representation in the value bytes, which
     // precede the compressed structural sections; its payload is the offset

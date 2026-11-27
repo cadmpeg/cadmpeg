@@ -17,6 +17,7 @@ use crate::records::topology::entity_selection::{
 };
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use crate::records::topology::fillet::HistoricalBinding;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::direct_edit::{DraftAnchor, DraftSecondSide};
 use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
@@ -64,7 +65,7 @@ fn group(
     member: u32,
     role: DesignOperandRole,
 ) -> DesignConstructionOperandGroup {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("{STREAM}:design-construction-operand-group#{record_index}"),
         "scope_record_index": 100,
         "scope_reference_ordinal": 0,
@@ -815,7 +816,7 @@ fn missing_draft_definition_preserves_unique_owned_angle_and_omits_ambiguous_ang
         *operation = None;
     }
     let owner = |stream: &str, value: f64| -> DesignParameterOwner {
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": format!("{stream}:design-parameter-owner#111"), "byte_offset":0, "frame_length":104,"variant":0,"class_tag":"277",
             "record_index":111,"scope_record_index":100,"local_ordinal":0,"evaluated_value":value,
             "evaluated_value_offset":40,"parameter_record_index":112,"owned_ordinal":0,"companion_record_index":113

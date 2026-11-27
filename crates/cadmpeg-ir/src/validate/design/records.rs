@@ -7,15 +7,15 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 
-use crate::design::configuration::{Arrangement, DesignConfiguration};
+use crate::design::configuration::{Arrangement, DesignConfiguration, FeatureStateOverride};
 use crate::design::container::{Container, Rollback};
 use crate::design::evaluation::Evaluation;
-use crate::design::feature::{Feature, FeatureDefinition};
+use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation};
 use crate::design::parameter::DesignParameter;
 use crate::design::refs::{Evaluated, Member, Position};
 use crate::design::scope::DesignScope;
 use crate::document::CadIr;
-use crate::features::ConfigurationId;
+use crate::features::{ConfigurationId, FeatureId};
 use crate::products::{Occurrence, ProductDefinition, Storage};
 
 /// A member of a container, by identity.
@@ -119,6 +119,17 @@ pub(in crate::validate) struct DesignRecords<'a> {
     occurrence_owners: HashMap<&'a str, &'a str>,
 }
 
+/// How a feature names an occurrence (§6.7).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(in crate::validate) enum Namer {
+    /// A `Combine`'s `new_component`.
+    Combine,
+    /// A `Place` or a `PlaceSet`.
+    Placement,
+    /// A component pattern or mirror.
+    Creator,
+}
+
 /// A container's members: in order for an ordered container.
 pub(in crate::validate) fn members(container: &Container) -> Vec<&Member> {
     match container {
@@ -212,6 +223,51 @@ impl<'a> DesignRecords<'a> {
     /// The first product definition that lists `occurrence`.
     pub(in crate::validate) fn occurrence_owner(&self, occurrence: &str) -> Option<&'a str> {
         self.occurrence_owners.get(occurrence).copied()
+    }
+
+    /// The features that name each occurrence, in feature order, each with
+    /// how it names it and whether it is a `Place` (§6.7).
+    pub(in crate::validate) fn occurrence_namers(
+        &self,
+    ) -> BTreeMap<&'a str, Vec<(&'a str, Namer, bool)>> {
+        let mut named: BTreeMap<&str, Vec<(&str, Namer, bool)>> = BTreeMap::new();
+        for feature in &self.ir.design.features {
+            let id = feature.id.as_str();
+            let found: Vec<(&str, Namer, bool)> = match &feature.definition.operation {
+                FeatureOperation::Combine(combine) => combine
+                    .new_component
+                    .iter()
+                    .map(|new| (new.occurrence.as_str(), Namer::Combine, false))
+                    .collect(),
+                FeatureOperation::Place(place) => {
+                    vec![(place.occurrence.as_str(), Namer::Placement, true)]
+                }
+                FeatureOperation::PlaceSet(set) => set
+                    .occurrences
+                    .iter()
+                    .map(|occurrence| (occurrence.as_str(), Namer::Placement, false))
+                    .collect(),
+                FeatureOperation::ComponentPattern(pattern) => pattern
+                    .instances
+                    .iter()
+                    .flat_map(|instance| &instance.occurrences)
+                    .map(|occurrence| (occurrence.as_str(), Namer::Creator, false))
+                    .collect(),
+                FeatureOperation::MirrorComponents(mirror) => mirror
+                    .results
+                    .iter()
+                    .map(|result| (result.occurrence.as_str(), Namer::Creator, false))
+                    .collect(),
+                _ => Vec::new(),
+            };
+            for (occurrence, namer, place) in found {
+                named
+                    .entry(occurrence)
+                    .or_default()
+                    .push((id, namer, place));
+            }
+        }
+        named
     }
 
     /// Whether the member's record exists.
@@ -328,31 +384,48 @@ impl<'a> DesignRecords<'a> {
         self.scope_configurations.contains_key(scope)
     }
 
-    /// The definition of `feature` that applies in `configuration` (§5.10,
-    /// §5.11): the nearest definition override on the configuration's chain,
-    /// else the feature's own.
+    /// The overrides of `feature` that apply in `configuration` under
+    /// `arrangement`, nearest first: the arrangement's, then those of the
+    /// configuration and its parents (§5.1, §5.10, §5.11).
+    pub(in crate::validate) fn feature_overrides(
+        &self,
+        feature: &FeatureId,
+        configuration: Option<&str>,
+        arrangement: Option<&'a Arrangement>,
+    ) -> Vec<&'a FeatureStateOverride> {
+        arrangement
+            .map(|arrangement| &arrangement.overrides)
+            .into_iter()
+            .chain(
+                self.configuration_chain(configuration)
+                    .into_iter()
+                    .map(|configuration| &configuration.overrides),
+            )
+            .filter_map(|overrides| overrides.features.get(feature))
+            .collect()
+    }
+
+    /// The definition of `feature` that applies in `configuration` under
+    /// `arrangement`: the nearest definition override, else the feature's
+    /// own.
     pub(in crate::validate) fn definition_in(
         &self,
         feature: &'a Feature,
         configuration: Option<&str>,
+        arrangement: Option<&'a Arrangement>,
     ) -> &'a FeatureDefinition {
-        self.configuration_chain(configuration)
+        self.feature_overrides(&feature.id, configuration, arrangement)
             .into_iter()
-            .find_map(|configuration| {
-                configuration
-                    .overrides
-                    .features
-                    .get(&feature.id)?
-                    .definition
-                    .as_ref()
-            })
+            .find_map(|stated| stated.definition.as_ref())
             .unwrap_or(&feature.definition)
     }
 
     /// Every feature definition the design states, with the record that
-    /// states it: each feature's own, and each definition override of a
-    /// configuration or an arrangement.
-    pub(in crate::validate) fn feature_definitions(&self) -> Vec<(&'a str, &'a FeatureDefinition)> {
+    /// states it and the feature it defines: each feature's own, and each
+    /// definition override of a configuration or an arrangement.
+    pub(in crate::validate) fn feature_definitions(
+        &self,
+    ) -> Vec<(&'a str, &'a str, &'a FeatureDefinition)> {
         let design = &self.ir.design;
         let overrides = design
             .configurations
@@ -367,12 +440,20 @@ impl<'a> DesignRecords<'a> {
         design
             .features
             .iter()
-            .map(|feature| (feature.id.as_str(), &feature.definition))
+            .map(|feature| {
+                (
+                    feature.id.as_str(),
+                    feature.id.as_str(),
+                    &feature.definition,
+                )
+            })
             .chain(overrides.flat_map(|(holder, overrides)| {
                 overrides
                     .features
-                    .values()
-                    .filter_map(move |state| Some((holder, state.definition.as_ref()?)))
+                    .iter()
+                    .filter_map(move |(feature, state)| {
+                        Some((holder, feature.as_str(), state.definition.as_ref()?))
+                    })
             }))
             .collect()
     }

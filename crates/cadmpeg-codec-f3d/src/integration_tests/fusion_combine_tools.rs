@@ -60,8 +60,10 @@ fn a_join_combine_selects_its_target_and_tools_in_the_state_before_it() {
         assert_eq!(target["kind"], "resolved", "{tools} tools: {target}");
         assert_eq!(
             target["value"]["bodies"],
-            serde_json::json!([bodies[0]["id"]])
+            cadmpeg_core::json!([bodies[0]["id"]])
         );
+        // Each tool box stores its own native member, so several tools keep
+        // one native member per generated body.
         let selected = &operands["tools"];
         if tools == 1 {
             assert_eq!(selected["kind"], "generated", "{tools} tools: {selected}");
@@ -71,7 +73,7 @@ fn a_join_combine_selects_its_target_and_tools_in_the_state_before_it() {
             );
         } else {
             assert_eq!(
-                selected["kind"], "historical_set",
+                selected["kind"], "generated_set",
                 "{tools} tools: {selected}"
             );
             assert_eq!(
@@ -79,13 +81,13 @@ fn a_join_combine_selects_its_target_and_tools_in_the_state_before_it() {
                 Some(tools),
                 "{tools} tools: {selected}"
             );
-            assert!(
-                codes
-                    .iter()
-                    .any(|code| code == "feature.combine-body-producer-unresolved"),
-                "{tools} tools: {codes:?}"
-            );
         }
+        assert!(
+            !codes
+                .iter()
+                .any(|code| code == "feature.combine-body-producer-unresolved"),
+            "{tools} tools: {codes:?}"
+        );
         assert!(
             !codes
                 .iter()

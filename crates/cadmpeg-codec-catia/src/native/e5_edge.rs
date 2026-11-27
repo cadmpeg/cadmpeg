@@ -48,6 +48,7 @@ pub(super) fn derive(
 mod tests {
     use super::derive;
     use crate::test_support::test_e5::append_e5_record;
+    use cadmpeg_core::serde_erase::json;
 
     fn frame(terminal: &[u8], id: u32) -> Vec<u8> {
         let mut payload = vec![0x85, 0x8d, 0x8a, 0x90, 0x8e, 0x8f];
@@ -80,7 +81,7 @@ mod tests {
             assert_eq!(record.record_id, 7);
             assert_eq!(record.object_references, [13, 10, 16, 14, 15]);
         }
-        let wire = serde_json::to_value(&records).expect("stored edge records");
+        let wire = json::to_value(&records).expect("stored edge records");
         for (row, (raw, value, encoding)) in wire.as_array().expect("record array").iter().zip([
             (1, 0, "backward_distance"),
             (2, 0, "selector2"),
@@ -92,13 +93,13 @@ mod tests {
         ]) {
             assert_eq!(
                 row["allocation_terminal"],
-                serde_json::json!({
+                cadmpeg_core::json!({
                     "raw_byte": raw, "value": value, "encoding": encoding
                 })
             );
         }
         assert_eq!(
-            serde_json::from_value::<Vec<super::CatiaE5EdgeRecord>>(wire)
+            json::from_value::<Vec<super::CatiaE5EdgeRecord>>(wire)
                 .expect("load exact terminal forms"),
             records
         );
@@ -128,15 +129,15 @@ mod tests {
         let records =
             crate::test_support::with_service_context(|ctx| derive(ctx, &frame(&[0x21], 7)))
                 .expect("source records");
-        let wire = serde_json::to_value(&records).expect("stored records");
+        let wire = json::to_value(&records).expect("stored records");
         for bad in [
-            serde_json::json!({"raw_byte":33,"value":10,"encoding":"backward_distance"}),
-            serde_json::json!({"raw_byte":33,"value":8,"encoding":"selector2"}),
-            serde_json::json!({"raw_byte":38,"value":9,"encoding":"selector2"}),
+            cadmpeg_core::json!({"raw_byte":33,"value":10,"encoding":"backward_distance"}),
+            cadmpeg_core::json!({"raw_byte":33,"value":8,"encoding":"selector2"}),
+            cadmpeg_core::json!({"raw_byte":38,"value":9,"encoding":"selector2"}),
         ] {
             let mut malformed = wire.clone();
             malformed[0]["allocation_terminal"] = bad;
-            assert!(serde_json::from_value::<Vec<super::CatiaE5EdgeRecord>>(malformed).is_err());
+            assert!(json::from_value::<Vec<super::CatiaE5EdgeRecord>>(malformed).is_err());
         }
     }
 
