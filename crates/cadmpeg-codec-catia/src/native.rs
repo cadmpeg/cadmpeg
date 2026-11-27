@@ -68,6 +68,9 @@ use e5_curve_support::CatiaE5CurveSupportRecord;
 use e5_edge::CatiaE5EdgeRecord;
 use e5_nurbs_limits::CatiaE5NurbsLimitRecord;
 
+pub(crate) mod feature_tree;
+use feature_tree::CatiaFeatureContainer;
+
 pub(crate) mod entity_record;
 use entity_record::{
     CatiaEntityObjectProduction, CatiaEntityRecord, CatiaEntityRecordBody, CatiaEntityRecordWire,
@@ -7592,6 +7595,10 @@ define_catia_arenas! {
         /// External CATIA document references in source order.
         pub(crate) stored;
     },
+    feature_containers: CatiaFeatureContainer {
+        /// Part roots, bodies, and geometrical sets with their stored feature trees.
+        pub(crate) stored;
+    },
     finjpl_segments: CatiaFinjplSegment {
         /// Complete bounded outer FINJPL segments.
         pub(crate) stored;
@@ -8673,6 +8680,8 @@ impl CatiaNative {
                     &entity_table::parse_definition_schema_selectors(entity.definition_prefix()),
                     catalog,
                 )?;
+                entity.compact_class =
+                    feature_tree::compact_class(ctx, entity.definition_prefix(), catalog)?;
                 let value_fields = entity.value_fields();
                 let value_packets = entity.value_packets(&value_fields);
                 entity.value_schema_selections =
@@ -8786,6 +8795,8 @@ impl CatiaNative {
         });
         resolve_alias_surface_tags(&mut alias_rows);
         let design_objects = design_objects(ctx, &object_graphs, &entity_records)?;
+        let feature_containers =
+            feature_tree::derive(ctx, bytes, &object_graphs, &entity_records, &catalogs)?;
         let part_graph = {
             let mut graphs = object_graphs.iter().filter(|graph| {
                 graph
@@ -8970,6 +8981,7 @@ impl CatiaNative {
             e5_nurbs_limit_programs,
             entity_records,
             external_references,
+            feature_containers,
             finjpl_segments,
             legacy_entity_runs,
             object_graphs,

@@ -1771,6 +1771,83 @@ A `TolWiDRF` declaration has four scalars. Scalar `1` is the number of leading f
 
 A `TTRSBloc` field references the `CATMmrTTRS` roots of a tolerance or datum. Each root is a source shape aspect. Open item DI-28 records its face and edge relation.
 
+#### 7.3.2 Compact record form and feature-tree membership
+
+A nested `7C05` record is in the compact record form when its complete definition prefix has one of these shapes:
+
+| Form | Prefix | Length | Class field | Second field | Entry the field selects |
+|---|---|---|---|---|---|
+| Tag | `00 <flags> <class-tag> <second-tag>` | 4 | `class-tag` at offset 2 | `second-tag` at offset 3 | zero-based catalog ordinal `tag − 34` |
+| Wide | `00 <flags> 32 <class:u32le> 32 <second:u32le>` | 12 | `class` at offset 3 | `second` at offset 8 | one-based catalog ordinal `class` or `second` |
+
+| Field | Values |
+|---|---|
+| `flags` (offset 1) | a combination of bits `04` and `08` |
+| class tag | `34` through `33 + n`, for a catalog of `n` entries; another value selects no class |
+| wide class ordinal | `1` through `n`; another value selects no class |
+
+The class field names the record's class. The second field selects one entry of the same catalog:
+
+| Class | Entry the second field selects |
+|---|---|
+| `HybridBody` | `HybridBody` |
+| `MechanicalTool` | `MechanicalTool` |
+| `GSMTool` | `Open_body` |
+| `MechanicalPart` | the part's name |
+
+Preserve the class tag or wide ordinal, its prefix offset, the selected zero-based ordinal, and the selected entry and name. The two `32` selectors of the wide form are also definition selectors under the walk above, which resolves each stored ordinal as a zero-based entry. The compact class reading is a separate reading of the same bytes.
+
+The paired `7C0A` payload of a part root, body, or geometrical set in the compact form is a run of tagged segments:
+
+```text
+payload := segment* FE+
+segment := <field-tag> value
+value   := list | <entity>
+list    := <count> 81 (<entity> <persistent-id>){count}
+```
+
+A field tag names a catalog entry under the class-tag rule. Every count, entity, and persistent identity is one integer token:
+
+| Token | Bytes | Value |
+|---|---|---|
+| escaped | `80 <value:u32le>` | `value`; the token ends before the payload's final byte |
+| compact atom | `81..D0` | `byte − 81` |
+| paged atom | `D1..E4 <low>` | `(byte − D1)·256 + low` |
+
+| Condition | Reading |
+|---|---|
+| all `count` pairs are present, and the list ends at the final `FE` run or at a field-tag byte | `list` |
+| any other value | one `<entity>` token |
+| a byte outside the field tags where a segment starts | the walk stops; the remaining bytes are unsegmented |
+| the final `FE` run | the walk is complete |
+
+Preserve each segment's tag, payload offset, selected entry and name, and value, and the payload offset where an incomplete walk stops. An entity token selects the same graph's unique paired entity and object record, and the compact class of that record is preserved with it. An identity that selects no paired record keeps its value and position. A persistent identity is preserved as stored.
+
+| Class | Record |
+|---|---|
+| `MechanicalPart` | the part root |
+| `MechanicalTool` | a body |
+| `HybridBody` | the main body where the root's `MainTool` selects it |
+| `GSMTool` | a geometrical set |
+
+Each container's `_FtrList` segment lists its members in stored order. A member that is a container is a set nested in the set that lists it. A member list states containment and order.
+
+| Stored `_FtrList` | Member list |
+|---|---|
+| one segment whose value is a list | the list's entities, in stored order |
+| no segment, in a complete walk | empty |
+| no segment before the walk stops, a single-token value, or a repeated segment | unread |
+
+The part root's other segments are its remaining fields:
+
+| Root field | Value | Selects |
+|---|---|---|
+| `CurrentFeature` | entity | the in-work object: a member of a body or set, or a body |
+| `MainTool` | entity | the main body |
+| `_ReferencePlanes` | list | the principal planes |
+
+The root's other fields, such as `PartAlgoConfigs`, have the same segment form.
+
 ### 7.4 `7C0B` visualization value blocks
 
 ```text

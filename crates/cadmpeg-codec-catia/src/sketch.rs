@@ -463,6 +463,7 @@ mod tests {
             lead: 0,
             body: CatiaEntityRecordBody::empty_nested(),
             definition_schema_selections: Vec::new(),
+            compact_class: None,
             entity_id,
             value_schema_selections: Vec::new(),
             range_interval: None,

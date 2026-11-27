@@ -31,6 +31,7 @@ fn entity(payload: &[u8], id: u32) -> CatiaEntityRecord {
             record_suffix: Vec::new(),
         },
         definition_schema_selections: Vec::new(),
+        compact_class: None,
         entity_id: id,
         value_schema_selections: Vec::new(),
         object_production: None,
