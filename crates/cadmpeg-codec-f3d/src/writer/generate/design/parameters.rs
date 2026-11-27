@@ -297,6 +297,8 @@ pub(in crate::writer::generate) fn plan(
             (Some(form), _) => candidates.push((parameter, form)),
         }
     }
+    in_owner_order(&mut candidates);
+    in_owner_order(&mut driven_candidates);
     // The driven parameters are named after the others, so that their names
     // change none of those.
     let names = Names::new(
@@ -988,6 +990,32 @@ fn references(definition: &ParameterDefinition) -> Vec<&ParameterRef> {
         | ParameterDefinition::Unset => {}
     }
     out
+}
+
+/// Orders `candidates` by the first place of their owner in arena order, then
+/// by their stated positions, then by id.
+fn in_owner_order(candidates: &mut [(&DesignParameter, Form)]) {
+    let mut first = HashMap::new();
+    for (place, (parameter, _)) in candidates.iter().enumerate() {
+        first.entry(owner_key(parameter)).or_insert(place);
+    }
+    candidates.sort_by_cached_key(|(parameter, _)| {
+        (
+            first[&owner_key(parameter)],
+            parameter.position.is_none(),
+            parameter.position,
+            parameter.id.clone(),
+        )
+    });
+}
+
+/// The id of `parameter`'s owner.
+fn owner_key(parameter: &DesignParameter) -> Option<&str> {
+    parameter.owner.as_ref().map(|owner| match owner {
+        ParameterOwner::Feature(id) => id.as_str(),
+        ParameterOwner::Container(id) => id.as_str(),
+        ParameterOwner::Attribute(id) => id.as_str(),
+    })
 }
 
 /// The candidates in the stable topological order of their references, ties

@@ -41,8 +41,9 @@ pub(super) struct Configurations {
     pub(super) active: BTreeMap<ProductDefinitionId, ConfigurationId>,
 }
 
-/// A document in `hosted`, or one `scopes` does not key, has no scope of its
-/// own. `features` holds the ids of the scopes' features and `parameters`
+/// Each row takes its place in the one table that holds rows. A document in
+/// `hosted`, or one `scopes` does not key, has no scope of its own.
+/// `features` holds the ids of the scopes' features and `parameters`
 /// their parameters. Each class of row or cell the design omits charges one
 /// loss to `losses`.
 pub(super) fn project(
@@ -107,7 +108,7 @@ pub(super) fn project(
             id: row.id.clone(),
             scope: scope.clone(),
             name: row.name.clone().unwrap_or_default(),
-            position: None,
+            position: Some(row.ordinal),
             parent: None,
             comment: None,
             overrides,
