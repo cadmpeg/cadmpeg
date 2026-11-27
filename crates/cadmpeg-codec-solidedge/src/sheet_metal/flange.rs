@@ -21,11 +21,13 @@ use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use cadmpeg_ir::design::selection::OrderedSelection;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::{Angle, PositiveLength};
+use cadmpeg_ir::scalar::{Angle, NonNegativeLength, PositiveLength};
 
 use super::{option_key, positive};
 use crate::edge::edge_selection_from_end;
-use crate::extents::{dimension_value, double_slot, is, named, slot, DIMENSION_CLASS, PART_CLASS};
+use crate::extents::{
+    dimension_value, double_slot, is, named, slot, DIMENSION_CLASS, MM_PER_M, PART_CLASS,
+};
 use crate::features::{feature_id, function_span, Kind, Listed};
 use crate::layout::standard_relation;
 use crate::loss::SolidEdgeLossCode;
@@ -56,11 +58,13 @@ const PARTIAL_SHIFT: usize = 24;
 /// The distance the slots from [`PARTIAL_WIDTH_AFTER_NAME`] on move where the
 /// flange has an offset and a width: two `CLSID_JDim` slots.
 const OFFSET_SHIFT: usize = 44;
+const WIDTH_AFTER_NAME: usize = 512;
 
 /// The extent kinds.
 const EXTENT_FULL: f64 = 134.0;
 const EXTENT_CENTRED: f64 = 135.0;
 const EXTENT_OFFSET: f64 = 138.0;
+const EXTENT_FROM_ENDS: f64 = 140.0;
 /// The side value that turns the flange towards the base face normal.
 const SIDE_TOWARDS_NORMAL: f64 = 2.0;
 /// The side value that turns the flange against the base face normal.
@@ -127,6 +131,12 @@ fn jdim(
 
 fn positive_length(metres: f64, what: &str) -> Result<Dimension<PositiveLength>, String> {
     positive(metres).ok_or_else(|| format!("the {what} {metres} is not positive"))
+}
+
+fn setback(metres: f64, what: &str) -> Result<Dimension<NonNegativeLength>, String> {
+    NonNegativeLength::new(metres * MM_PER_M)
+        .map(Dimension::Literal)
+        .ok_or_else(|| format!("the {what} {metres} is negative"))
 }
 
 /// The angle the flange turns through from the plane of the face that bounds
@@ -330,7 +340,7 @@ fn flange(
     );
     let shift = match extent {
         Some(kind) if is(kind, EXTENT_CENTRED) => Some(PARTIAL_SHIFT),
-        Some(kind) if is(kind, EXTENT_OFFSET) => Some(OFFSET_SHIFT),
+        Some(kind) if is(kind, EXTENT_OFFSET) || is(kind, EXTENT_FROM_ENDS) => Some(OFFSET_SHIFT),
         Some(kind) if is(kind, EXTENT_FULL) => Some(0),
         _ => None,
     };
@@ -353,11 +363,30 @@ fn flange(
             );
             None
         }
+        Some(kind) if is(kind, EXTENT_FROM_ENDS) => {
+            let first = take(
+                losses,
+                object,
+                slots
+                    .jdim(PARTIAL_WIDTH_AFTER_NAME, "start setback")
+                    .and_then(|metres| setback(metres, "start setback")),
+            );
+            let second = take(
+                losses,
+                object,
+                slots
+                    .jdim(WIDTH_AFTER_NAME, "end setback")
+                    .and_then(|metres| setback(metres, "end setback")),
+            );
+            first
+                .zip(second)
+                .map(|(first, second)| FlangeWidth::FromEnds { first, second })
+        }
         Some(kind) => {
             unread(
                 losses,
                 object,
-                &format!("the extent kind {kind} is not 134, 135 or 138"),
+                &format!("the extent kind {kind} is not 134, 135, 138 or 140"),
             );
             None
         }
