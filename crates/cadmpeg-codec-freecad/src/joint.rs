@@ -226,7 +226,7 @@ pub(crate) fn transfer_neutral(
         let distance = scalar("Distance");
         let distance2 = scalar("Distance2");
         let angle = scalar("Angle")
-            .map(FiniteReal::get)
+            .map(|value| value.get().abs())
             .or_else(|| match &record.body {
                 JointBody::Pair { kind, .. } if kind.as_str().eq_ignore_ascii_case("angle") => {
                     distance.map(|value| value.get().abs())

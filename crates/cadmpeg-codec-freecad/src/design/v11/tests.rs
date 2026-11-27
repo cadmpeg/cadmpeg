@@ -1434,7 +1434,7 @@ fn an_assembly_joint_is_a_joint_feature_of_its_joint_group() {
 }
 
 const JOINT_VALUES: &str = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="11">
+<Objects Count="12">
  <Object type="Assembly::AssemblyObject" name="Assembly" id="1"/>
  <Object type="Part::Feature" name="BracketShape" id="2"/>
  <Object type="Part::Feature" name="PinShape" id="3"/>
@@ -1446,9 +1446,10 @@ const JOINT_VALUES: &str = r#"<Document SchemaVersion="4" FileVersion="1">
  <Object type="App::FeaturePython" name="Slide" id="9"/>
  <Object type="App::FeaturePython" name="Held" id="10"/>
  <Object type="App::FeaturePython" name="Loose" id="11"/>
+ <Object type="App::FeaturePython" name="Still" id="12"/>
 </Objects>
-<ObjectData Count="11">
- <Object name="Assembly"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="8"><Link value="Bracket"/><Link value="Pin"/><Link value="Turn"/><Link value="OldTurn"/><Link value="Gap"/><Link value="Slide"/><Link value="Held"/><Link value="Loose"/></LinkList></Property></Properties></Object>
+<ObjectData Count="12">
+ <Object name="Assembly"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="9"><Link value="Bracket"/><Link value="Pin"/><Link value="Turn"/><Link value="OldTurn"/><Link value="Gap"/><Link value="Slide"/><Link value="Held"/><Link value="Loose"/><Link value="Still"/></LinkList></Property></Properties></Object>
  <Object name="BracketShape"><Properties Count="0"/></Object>
  <Object name="PinShape"><Properties Count="0"/></Object>
  <Object name="Bracket"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="BracketShape"/></Property></Properties></Object>
@@ -1494,6 +1495,12 @@ const JOINT_VALUES: &str = r#"<Document SchemaVersion="4" FileVersion="1">
  <Object name="Loose"><Properties Count="2">
   <Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="4"><Enum value="Fixed"/><Enum value="Angle"/><Enum value="Distance"/><Enum value="Slider"/></CustomEnumList></Property>
   <Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Bracket"/></Property>
+ </Properties></Object>
+ <Object name="Still"><Properties Count="4">
+  <Property name="JointType" type="App::PropertyEnumeration"><Integer value="1" CustomEnum="true"/><CustomEnumList count="4"><Enum value="Fixed"/><Enum value="Angle"/><Enum value="Distance"/><Enum value="Slider"/></CustomEnumList></Property>
+  <Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Bracket" sub="Face1"/></Property>
+  <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Pin" sub="Face2"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="-360"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
 
@@ -1548,19 +1555,25 @@ fn joint_values_follow_what_the_joint_type_uses() {
     assert!((degrees(angle) - 40.0).abs() < 1e-9);
     assert!(old.source_settings.is_empty(), "{:?}", old.source_settings);
 
-    // A signed distance has no typed field and stays native.
+    // FreeCAD solves a Distance joint between faces of no shape in its
+    // default case: the planes of the two frames, offset along the first z
+    // axis by the signed distance.
     let (_, gap) = joint_feature(ir, "Gap");
-    assert_eq!(
-        gap.kind,
-        JointKind::Distance {
-            distance: None,
-            limits: None
-        }
-    );
-    assert!(matches!(
-        option(&gap.native_options, "Distance"),
-        Some(NativeOption::Length(Dimension::Literal(length))) if length.get() == -2.0
-    ));
+    let JointKind::Motion {
+        motion: JointMotion::Planar { axis: FrameAxis::Z },
+        offset,
+        ..
+    } = &gap.kind
+    else {
+        panic!("{:?}", gap.kind);
+    };
+    assert!(matches!(offset.z, Some(Dimension::Literal(z)) if z.get() == -2.0));
+    assert_eq!(option(&gap.native_options, "Distance"), None);
+
+    // An Angle joint at a full turn holds the axes parallel.
+    let (_, still) = joint_feature(ir, "Still");
+    assert_eq!(still.kind, JointKind::Parallel);
+    assert!(option(&still.source_settings, "Angle").is_some());
 
     // A limit whose flag is off, and a limit the joint type does not use, is
     // a source setting.

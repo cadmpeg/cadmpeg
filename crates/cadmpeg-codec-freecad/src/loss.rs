@@ -83,6 +83,14 @@ pub(crate) enum FreecadLossCode {
     /// An assembly joint names no object for a connector or a blank joint
     /// type, or grounds an object that the scope holds no occurrence of.
     FeatureJointUnresolved,
+    /// An assembly `Distance` joint names an element whose shape is in
+    /// another document or is not decoded, so the form `FreeCAD` solves the
+    /// joint in is unknown; the joint keeps the distance as a native option.
+    FeatureJointDistanceUnresolved,
+    /// An assembly `Distance` joint states a distance that `FreeCAD`'s solver
+    /// cannot satisfy for its element pair, a negative separation of an axis;
+    /// the joint keeps the distance as a native option.
+    FeatureJointDistanceUnsatisfiable,
     /// A design parameter stores an empty expression; its stored value stands
     /// as its definition.
     ParameterExpressionEmpty,
@@ -182,6 +190,8 @@ impl FreecadLossCode {
         Self::FeaturePrimitivePlacementUnresolved,
         Self::FeatureLinkPlacementUnresolved,
         Self::FeatureJointUnresolved,
+        Self::FeatureJointDistanceUnresolved,
+        Self::FeatureJointDistanceUnsatisfiable,
         Self::ParameterExpressionEmpty,
         Self::ParameterQuantityAssumed,
         Self::ParameterValueNonFinite,
@@ -247,6 +257,8 @@ impl FreecadLossCode {
             Self::FeaturePrimitivePlacementUnresolved => "feature.primitive-placement-unresolved",
             Self::FeatureLinkPlacementUnresolved => "feature.link-placement-unresolved",
             Self::FeatureJointUnresolved => "feature.joint-unresolved",
+            Self::FeatureJointDistanceUnresolved => "feature.joint-distance-unresolved",
+            Self::FeatureJointDistanceUnsatisfiable => "feature.joint-distance-unsatisfiable",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::FeatureRevolutionNotTransferred => "feature.revolution-not-transferred",
             Self::ParameterExpressionEmpty => "parameter.expression-empty",
@@ -332,6 +344,8 @@ impl FreecadLossCode {
             | Self::ParameterDependencyDropped
             | Self::FeatureLinkPlacementUnresolved
             | Self::FeatureJointUnresolved
+            | Self::FeatureJointDistanceUnresolved
+            | Self::FeatureJointDistanceUnsatisfiable
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved
             | Self::PersistenceCountNoncanonical
@@ -383,7 +397,9 @@ impl FreecadLossCode {
             | Self::FeatureRemovalWithoutBase
             | Self::FeaturePrimitivePlacementUnresolved
             | Self::FeatureLinkPlacementUnresolved
-            | Self::FeatureJointUnresolved => LossTaxonomy::FeatureHistoryRetained,
+            | Self::FeatureJointUnresolved
+            | Self::FeatureJointDistanceUnresolved
+            | Self::FeatureJointDistanceUnsatisfiable => LossTaxonomy::FeatureHistoryRetained,
             Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchNativeGeometry
@@ -475,6 +491,8 @@ mod tests {
                 "feature.primitive-placement-unresolved",
                 "feature.link-placement-unresolved",
                 "feature.joint-unresolved",
+                "feature.joint-distance-unresolved",
+                "feature.joint-distance-unsatisfiable",
                 "parameter.expression-empty",
                 "parameter.quantity-assumed",
                 "parameter.value-non-finite",

@@ -10,6 +10,7 @@ mod authored_gui;
 mod authored_history;
 mod authored_operations;
 mod design_v11;
+mod distance_joints;
 mod geometry_topology;
 mod gui_expand;
 mod measured_geometry;

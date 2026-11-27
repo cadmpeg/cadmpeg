@@ -53,6 +53,13 @@ mod joints;
 mod parameters;
 pub(crate) mod states;
 
+/// The joint records of a document, and the decoded topology their element
+/// names select.
+pub(crate) struct Assembly<'a> {
+    pub(crate) joints: &'a [JointRecord],
+    pub(crate) topology: &'a [crate::topology_transfer::TopologyOccurrence],
+}
+
 /// Project the decoded design of `ir` into its v11 design layer, a scope of
 /// the root definition `definition`. A record the projection cannot state in
 /// full is stated as far as it is read, with a loss in `losses` (§3.3). The
@@ -64,7 +71,7 @@ pub(crate) fn project(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     links: &[ProductNodeRecord],
-    joints: &[JointRecord],
+    assembly: &Assembly<'_>,
     losses: &mut Vec<LossNote>,
 ) {
     let source = Source::of(objects, properties);
@@ -84,7 +91,7 @@ pub(crate) fn project(
     let places = places(ir, &definition, objects, links, losses);
     grouped.extend(places.iter().map(|place| Member::Feature(place.id.clone())));
     features.extend(places);
-    let joints = joints::project(ir, &definition, joints, objects, properties, losses);
+    let joints = joints::project(ir, &definition, assembly, objects, properties, losses);
     grouped.extend(joints.loose);
     features.extend(joints.features);
     let mut containers = Vec::new();

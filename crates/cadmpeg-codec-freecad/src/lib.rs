@@ -1179,7 +1179,10 @@ impl CodecBackend for FcstdCodec {
                     &graph.objects,
                     &graph.properties,
                     &product_nodes,
-                    &joint_records,
+                    &design::v11::Assembly {
+                        joints: &joint_records,
+                        topology: &topology_occurrences,
+                    },
                     &mut transfer_losses,
                 );
             }

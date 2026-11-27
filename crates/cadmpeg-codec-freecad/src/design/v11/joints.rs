@@ -36,8 +36,10 @@ use cadmpeg_ir::transform::Transform;
 
 use crate::loss::FreecadLossCode;
 use crate::native::frame::FiniteFrame;
-use crate::native::joint::{JointBody, JointParameter, JointParameters, JointRecord};
+use crate::native::joint::{JointBody, JointParameter, JointParameters};
 use crate::native::{LinkTarget, ObjectRecord, PropertyRecord};
+
+mod distance;
 
 /// The joint records of a document as design records.
 pub(super) struct Joints {
@@ -51,18 +53,19 @@ pub(super) struct Joints {
     pub(super) grounded: BTreeMap<OccurrenceId, OccurrenceDesign>,
 }
 
-/// The design records of joint records `records` in the scope of definition
-/// `root`. A joint whose operand the scope cannot name is stated by no record,
-/// with a loss in `losses`.
+/// The design records of the joint records of `assembly` in the scope of
+/// definition `root`. A joint whose operand the scope cannot name is stated by
+/// no record, with a loss in `losses`.
 pub(super) fn project(
     ir: &CadIr,
     root: &ProductDefinitionId,
-    records: &[JointRecord],
+    assembly: &super::Assembly<'_>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     losses: &mut Vec<LossNote>,
 ) -> Joints {
     let products = Products::of(ir, objects, properties);
+    let mut shapes = None;
     let mut joints = Joints {
         features: Vec::new(),
         groups: Vec::new(),
@@ -70,7 +73,7 @@ pub(super) fn project(
         grounded: BTreeMap::new(),
     };
     let mut grouped = BTreeMap::<&str, BTreeSet<Member>>::new();
-    for record in records {
+    for record in assembly.joints {
         let definition = products.definition(record.object()).unwrap_or(root);
         match &record.body {
             JointBody::Grounded { reference, .. } => {
@@ -133,6 +136,17 @@ pub(super) fn project(
                 });
                 let float_distance = owned("Distance")
                     .is_some_and(|property| property.type_name == "App::PropertyFloat");
+                let classified = kind.as_str().eq_ignore_ascii_case("distance").then(|| {
+                    let shapes = shapes.get_or_insert_with(|| {
+                        distance::Shapes::of(ir, objects, properties, assembly.topology)
+                    });
+                    let [Some(first), Some(second)] = [first, second]
+                        .map(|connector| connector.reference.as_ref().map(|r| shapes.side(r)))
+                    else {
+                        return Err(distance::Unresolved);
+                    };
+                    distance::classify([&first, &second])
+                });
                 let [Some(first), Some(second)] = connectors else {
                     losses.push(FreecadLossCode::FeatureJointUnresolved.note(format!(
                         "joint {} names no object for a connector; the joint stays in its \
@@ -141,12 +155,13 @@ pub(super) fn project(
                     )));
                     continue;
                 };
-                let Some(joint) = joint(
+                let Some((joint, charge)) = joint(
                     kind.as_str(),
                     record.parameters(),
                     [first, second],
                     native_options,
                     float_distance,
+                    classified,
                 ) else {
                     losses.push(FreecadLossCode::FeatureJointUnresolved.note(format!(
                         "joint {} stores a blank joint type; the joint stays in its native \
@@ -160,8 +175,29 @@ pub(super) fn project(
                     record.object(),
                     "constraint",
                 )) else {
+                    losses.push(FreecadLossCode::FeatureJointUnresolved.note(format!(
+                        "joint {} has an object name that mints no feature id; the joint \
+                         stays in its native record",
+                        record.object()
+                    )));
                     continue;
                 };
+                match charge {
+                    Some(code @ FreecadLossCode::FeatureJointDistanceUnresolved) => {
+                        losses.push(code.note(format!(
+                            "distance joint {} names an element whose shape is in another \
+                             document or is not decoded; its distance stays the native option \
+                             fcstd:Distance",
+                            record.object()
+                        )));
+                    }
+                    Some(code) => losses.push(code.note(format!(
+                        "distance joint {} states a distance that the solver cannot satisfy \
+                         for its elements; it stays the native option fcstd:Distance",
+                        record.object()
+                    ))),
+                    None => {}
+                }
                 let member = Member::Feature(id.clone());
                 match products.group_of(record.object()) {
                     Some(group) => {
@@ -215,18 +251,22 @@ pub(super) fn project(
 /// The joint of family `label` with parameters `parameters` between
 /// connectors `connectors`, whose detached connectors keep `native_options`.
 /// `float_distance` states that the joint stores `Distance` as a float, the
-/// form in which an Angle joint stores its angle there in degrees. Each
-/// parameter the joint does not hold is a source setting under its own name,
-/// and a native option of a family the decoder does not read. `None` where
-/// the family is blank.
+/// form in which an Angle joint stores its angle there in degrees.
+/// `classified` is the form of a `Distance` joint and whether `FreeCAD` swaps
+/// its connectors. Each parameter the joint does not hold is a source setting
+/// under its own name, and a native option of a family the decoder does not
+/// read. The code is the loss a `Distance` joint charges. `None` where the
+/// family is blank.
 fn joint(
     label: &str,
     parameters: &JointParameters,
-    connectors: [JointConnector; 2],
+    mut connectors: [JointConnector; 2],
     mut native_options: NativeOptions,
     float_distance: bool,
-) -> Option<Joint> {
+    classified: Option<Result<(bool, distance::Form), distance::Unresolved>>,
+) -> Option<(Joint, Option<FreecadLossCode>)> {
     let family = label.to_ascii_lowercase();
+    let mut charge = None;
     let old_angle = family == "angle" && float_distance;
     let mut read = Read {
         parameters,
@@ -271,27 +311,62 @@ fn joint(
             read.translation().into_iter().collect(),
         ),
         "ball" => motion(JointMotion::Ball, Vec::new()),
-        "distance" => JointKind::Distance {
-            distance: read.length("Distance").filter(|distance| {
-                let Dimension::Literal(length) = distance else {
-                    return true;
-                };
-                let unsigned = length.get() >= 0.0;
-                if !unsigned {
-                    native_options.extend(
-                        key("Distance").map(|key| (key, NativeOption::Length(distance.clone()))),
-                    );
+        "distance" => {
+            let stored = read.scalar("Distance");
+            let restated = classified
+                .unwrap_or(Err(distance::Unresolved))
+                .map_err(|_| FreecadLossCode::FeatureJointDistanceUnresolved)
+                .and_then(|(swap, form)| {
+                    if swap {
+                        connectors.swap(0, 1);
+                    }
+                    distance::restatement(form, stored.unwrap_or(0.0))
+                        .ok_or(FreecadLossCode::FeatureJointDistanceUnsatisfiable)
+                });
+            match restated {
+                Ok(restatement) => {
+                    let [first, second] = connectors;
+                    let [first_shape, second_shape] = restatement.shapes;
+                    connectors = [
+                        distance::connector(first, first_shape),
+                        distance::connector(second, second_shape),
+                    ];
+                    if restatement.parallel {
+                        native_options.extend(
+                            key("parallelAxes")
+                                .map(|key| (key, NativeOption::Bool(Dimension::Literal(true)))),
+                        );
+                    }
+                    restatement.kind
                 }
-                unsigned
-            }),
-            limits: None,
-        },
+                Err(code) => {
+                    charge = Some(code);
+                    native_options.extend(key("Distance").zip(stored.and_then(Length::new)).map(
+                        |(key, length)| (key, NativeOption::Length(Dimension::Literal(length))),
+                    ));
+                    JointKind::Distance {
+                        distance: None,
+                        limits: None,
+                    }
+                }
+            }
+        }
         "parallel" => JointKind::Parallel,
         "perpendicular" => JointKind::Perpendicular,
-        "angle" => JointKind::Angle {
-            angle: read.magnitude(if old_angle { "Distance" } else { "Angle" }),
-            limits: None,
-        },
+        "angle" => {
+            let name = if old_angle { "Distance" } else { "Angle" };
+            match parameters.scalar_value(name) {
+                Some(angle)
+                    if (angle.get().to_radians().abs() % std::f64::consts::TAU) < CONFUSION =>
+                {
+                    JointKind::Parallel
+                }
+                _ => JointKind::Angle {
+                    angle: read.magnitude(name),
+                    limits: None,
+                },
+            }
+        }
         "rackpinion" => coupling(Coupling::RackPinion {
             ratio: None,
             pitch_radius: read.length("Distance"),
@@ -316,14 +391,22 @@ fn joint(
     } else {
         rest
     };
-    Some(Joint {
-        connectors,
-        kind,
-        alignment: None,
-        native_options,
-        source_settings,
-    })
+    Some((
+        Joint {
+            connectors,
+            kind,
+            alignment: None,
+            native_options,
+            source_settings,
+        },
+        charge,
+    ))
 }
+
+/// `Precision::Confusion()`, the tolerance of `FreeCAD`'s joint cases: an
+/// Angle joint within it of a multiple of a full turn is a parallel joint, and
+/// a point-to-point distance below it is a coincidence.
+const CONFUSION: f64 = 1e-7;
 
 /// The option key `fcstd:<name>`.
 fn key(name: &str) -> Option<CodecName> {
