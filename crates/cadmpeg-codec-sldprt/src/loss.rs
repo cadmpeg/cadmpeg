@@ -328,8 +328,10 @@ pub(crate) enum SldprtLossCode {
     TessellationReusedTagAmbiguous,
     /// `DisplayLists` meshes transferred without B-rep geometry ownership.
     TessellationDisplayWithoutGeometry,
-    /// No body record was available; a body hierarchy was derived.
+    /// No body record links up with the faces; a body hierarchy was derived.
     TopologyBodyHierarchyDerived,
+    /// A face keeps the loops before a missing loop or a loop another face owns.
+    TopologyLoopChainCut,
     /// Current typed ownership nodes are absent from the decoded topology.
     TopologyOwnershipWithheld,
     /// Referenced FIN records have conflicting complete frames.
@@ -761,6 +763,7 @@ impl SldprtLossCode {
         Self::TessellationReusedTagAmbiguous,
         Self::TessellationDisplayWithoutGeometry,
         Self::TopologyBodyHierarchyDerived,
+        Self::TopologyLoopChainCut,
         Self::TopologyOwnershipWithheld,
         Self::TopologyFinRecordAmbiguous,
         Self::TopologyFinPartnerUnresolved,
@@ -996,6 +999,7 @@ impl SldprtLossCode {
             Self::TessellationDisplayWithoutGeometry => "tessellation.display-without-geometry",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
             Self::TopologyOwnershipWithheld => "topology.ownership-withheld",
+            Self::TopologyLoopChainCut => "topology.loop-chain-cut",
             Self::TopologyFinRecordAmbiguous => "topology.fin-record-ambiguous",
             Self::TopologyFinPartnerUnresolved => "topology.fin-partner-unresolved",
             Self::TopologyLoopRecordAmbiguous => "topology.loop-record-ambiguous",
@@ -1303,6 +1307,7 @@ impl SldprtLossCode {
             | Self::TessellationDisplayWithoutGeometry
             | Self::TopologyBodyHierarchyDerived
             | Self::TopologyOwnershipWithheld
+            | Self::TopologyLoopChainCut
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
             | Self::TopologyLoopRecordAmbiguous
@@ -1479,6 +1484,7 @@ impl SldprtLossCode {
             | Self::DesignDatumConfigurationDropped => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyOwnershipWithheld
+            | Self::TopologyLoopChainCut
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
             | Self::TopologyLoopRecordAmbiguous
@@ -1918,6 +1924,7 @@ mod tests {
                 "tessellation.reused-tag-ambiguous",
                 "tessellation.display-without-geometry",
                 "topology.body-hierarchy-derived",
+                "topology.loop-chain-cut",
                 "topology.ownership-withheld",
                 "topology.fin-record-ambiguous",
                 "topology.fin-partner-unresolved",

@@ -70,10 +70,19 @@ field, or the end of the payload. It includes the magic, every frame, and the
 section's zero padding. Each frame inflates to exactly `uncompressed_size`;
 the declared member extent is the complete zlib member. Concatenating the
 inflated frames of one section in payload order produces one complete
-Parasolid stream. The concatenation occurs before stream-header parsing and
+Parasolid stream. A frame whose uncompressed byte count or zlib-member byte
+count is zero adds no bytes to the concatenation, and the next frame starts
+after its declared member. The concatenation occurs before stream-header parsing and
 record scanning, so records may cross frame boundaries. Every section is
 extracted independently, including partition and deltas sections. A section
 with one frame is the degenerate chained form.
+
+A frame whose member does not inflate to `uncompressed_size`, a frame whose
+member runs past the section, or bytes after the frames that are neither a
+frame nor zero padding cut the section at that frame. The frames before the
+cut concatenate to the section's stream, which then ends early; the bytes from
+the cut to the section end are given up. A section cut at its first frame holds
+no stream and is given up whole.
 
 ### 1.1 Outer header and block frame
 
@@ -368,18 +377,18 @@ The part kind names the part in its give-up loss. The loss is
 `record.undecoded` when the bytes obey the format and the decoder has no
 reading for them. A part that a resource limit stops is `record.undecoded`.
 
-| Part kind | Unit | Framing | Loss |
-| --- | --- | --- | --- |
-| `compound-stream` | One compound-document stream | Its directory entry: stream size and the sector chain from its first sector (§1) | `record.unreadable` |
-| `native-block` | One native block | The block frame: header, preamble of `pre_sz` bytes, DEFLATE member of `comp_sz` bytes (§1.1) | `record.unreadable` |
-| `parasolid-streams` | The Parasolid streams of one block or compound stream | Direct `PS 00 00` streams, wrapped streams, and chained sections in the section payload (§1, §3.1.1) | `record.unreadable` |
-| `parasolid-site` | The partition and deltas streams of one site | The streams of one block or one compound stream (§3.2) | `record.unreadable` when the streams do not decode; `record.undecoded` when their entity records build no geometry |
-| `feature-input-parasolid-stream` | One Parasolid stream in a `ResolvedFeatures` section | Its stream header and its extent in the section (§3.1, §3.3) | `record.unreadable` |
-| `imported-body-stream` | One Parasolid stream in a `Config-N-FeatureBodies` section | Its stream header and its extent in the section (§3.3) | `record.unreadable` |
-| `history-member` | One Keywords history member that the decoder reads no record from | The block or compound stream that holds the member (§1) | See below |
-| `component-tree` | One component tree section that gives no occurrence | The section's stream (§11.1) | See below |
-| `wrapped-member` | One ZLB-wrapped zlib member whose inflated size is not its declared size | The wrapper: its magic, its declared sizes, and its member; for a chained section, the section from its chain length to its end (§3.1.1) | `record.unreadable` |
-| `property-carrier` | One default-property or configuration-property carrier whose content is malformed | The block or compound stream that holds the carrier (§1) | `record.unreadable` |
+| Part kind | Unit | Framing |
+| --- | --- | --- |
+| `compound-stream` | One compound-document stream | Its directory entry: stream size and the sector chain from its first sector (§1) |
+| `native-block` | One native block | The block frame: header, preamble of `pre_sz` bytes, DEFLATE member of `comp_sz` bytes (§1.1) |
+| `parasolid-streams` | The Parasolid streams of one block or compound stream | Direct `PS 00 00` streams, wrapped streams, and chained sections in the section payload (§1, §3.1.1) |
+| `parasolid-site` | The partition and deltas streams of one site | The streams of one block or one compound stream (§3.2) |
+| `feature-input-parasolid-stream` | One Parasolid stream in a `ResolvedFeatures` section | Its stream header and its extent in the section (§3.1, §3.3) |
+| `imported-body-stream` | One Parasolid stream in a `Config-N-FeatureBodies` section | Its stream header and its extent in the section (§3.3) |
+| `history-member` | One Keywords history member that the decoder reads no record from | The block or compound stream that holds the member (§1) |
+| `component-tree` | One component tree section that gives no occurrence | The section's stream (§11.1) |
+| `wrapped-member` | One ZLB wrapper or chained section whose frames do not read: a zlib member whose inflated size is not its declared size or whose declared size passes the frame ceiling, or a frame that runs past its section | The wrapper: its magic, its declared sizes, and its member; for a chained section, the section from its chain length to its end (§3.1.1) |
+| `property-carrier` | One default-property or configuration-property carrier whose content is malformed | The block or compound stream that holds the carrier (§1) |
 
 A compound stream's bytes are the sectors its chain reaches through the
 sectors its size requires. Two streams whose chains reach one sector are
@@ -394,9 +403,11 @@ payload, when its bytes are not text, and when its XML is not well formed. It
 is `record.undecoded` when the XML parser stops at one of its bounds, and when
 the root element is not `Keywords`.
 
-A Parasolid site whose streams frame entity records that build no geometry is
-given up as a `parasolid-site` part. A component tree gives no occurrence
-when its XML does not parse, when it repeats a model or file id, when it
+A Parasolid site whose streams frame entity records that build no face,
+surface, point or body is given up as an undecoded `parasolid-site` part. A site
+that states a body whose faces are all lost keeps that body. A component tree
+gives no occurrence when its XML does not parse, when it repeats a model or
+file id, when it
 names no active configuration or more than one, when its active model has no
 valid identity or no definition, and when the document holds two different
 trees. Each tree section is then given up as a `component-tree` part. The
@@ -414,8 +425,7 @@ no component tree section. The
 section that the decoder reads is also kept whole, so the part keeps only
 the length and digest of its bytes.
 
-The decoder gives up a wrapped member only when its declared size is within
-the frame ceiling. A property carrier that stores its properties in a form
+A property carrier that stores its properties in a form
 that the decoder does not read is kept with the loss
 `metadata.default-carrier-unsupported` or
 `metadata.configuration-property-carrier-unsupported`.
@@ -1952,7 +1962,7 @@ An identity-representation object writes u16 `0`, then a `moFR_c` object written
 | --- | --- |
 | `moSimpleSurfIdRep_c`, `moFromSktEntSurfIdRep_c`, `moFilletSurfIdRep_c`, `moThinOffsetSurfIdRep_c`, `moSimpleEdgeIdRep_c` | a little-endian u32 |
 | `moEndFaceSurfIdRep_c`, `moThinClosingSurfIdRep_c`, `moUnBendSurfIdRep_c`, `moBendEndSurfIdRep_c`, `moWzdHoleSurfIdRep_c`, `moSegmLeftTrimEdgeIdRep_c`, `moSegmRightTrimEdgeIdRep_c` | two little-endian u32 |
-| `moFromSktEnt3IntSurfIdRep_c`, `moEndFace3IntSurfIdRep_c` | three little-endian u32 |
+| `moFromSktEnt3IntSurfIdRep_c`, `moEndFace3IntSurfIdRep_c`, `moSideFace3IntSurfIdRep_c` | three little-endian u32 |
 | `moSurfaceIdRep_c`, `moIndirectSurfIdRep_c` | none |
 | `moLPatternSurfIdRep_c`, `moCirPatternSurfIdRep_c`, `moCirPatternSurfIdRep2_c` | an object pointer to the hop it repeats, then little-endian u32 instance number and u32 `0` |
 | `moMirPatternSurfIdRep_c` | an object pointer to the hop it mirrors |
@@ -2700,8 +2710,11 @@ record fields determine the framing. Complete analytic carriers, bounded-curve r
 
 The loss `geometry.carrier-approximated` counts intersection chart curves, fitted surface-parameter curves, fitted blend surfaces, inverse NURBS boundary caches, and charts with absent tolerance per decoded stream and kind, and reports the largest fit tolerance or sampled distance in millimetres for each kind, with an unavailable size for charts with absent tolerance. A rolling-ball blend face (§7.4) whose kept cache is approximate adds one `geometry.carrier-approximated` note that names the face, the cache's largest miss, and whether that miss is at a face vertex or at a point sampled along the face's edges. A rolling-ball blend face (§7.4) whose cache does not solve is the loss `geometry.blend-cache-unsolved`, one per face, naming what each of the two fits did.
 
-A vertex loop decodes to a vertex boundary on its vertex-use. The topology walk withholds a framed FACE record with no decoded loop, and gives it up as a record with the loss `record.undecoded` (§1.5). It gives up with the same loss a vertex loop whose vertex-use does not resolve and a loop whose FIN is ambiguous; their FACE keeps its other loops in the partial form.
-The loss `topology.ownership-withheld` counts current typed ownership nodes with no decoded node of the same kind and identity. The face count covers every valid typed ownership face. When hierarchy selection from the full typed face set resolves, the body and shell counts cover the nodes in that hierarchy set. One loss note gives the count for each kind.
+A vertex loop decodes to a vertex boundary on its vertex-use. A framed FACE record with no decoded loop gives up with `record.undecoded` (§1.5). A vertex loop whose vertex-use does not resolve and a loop whose FIN is ambiguous each give up with the same code. Their FACE keeps its other loops in the partial form.
+The loss `topology.ownership-withheld` counts current typed ownership nodes with no decoded node of the same kind and identity. The face count covers every valid typed ownership face. When hierarchy selection from the full typed face set resolves, the body, region and shell counts cover the nodes in that hierarchy set; the region count leaves out a void REGION that owns no face in a BODY with a solid REGION or a REGION that owns a face. One loss note gives the count for each kind.
+A FACE whose loop chain names a loop record that is missing, or one that another FACE owns, keeps the loops before it in the partial form and carries the loss `topology.loop-chain-cut` when the cut has no separate loop give-up.
+A SHELL that lists a FACE the decode does not state states its members in the partial form. A SHELL with none of its faces stated is kept in that form with no face, so no SHELL, REGION or BODY is dropped for a child it lost: the REGION lists the SHELL, and the BODY keeps the kind it stores. A SHELL whose stated faces fall into pieces that share no edge, as where a lost face joined them, is stated as one shell per piece. A REGION with more than one shell, where one SHELL holds no stated face or is stated as several pieces, leaves its shells unclassified, since no stored field says which bounds the outside. This holds for a REGION that the decode states and that gains such a SHELL from the typed ownership nodes.
+Where the BODY, REGION and SHELL nodes do not link up with the faces, the decode derives one body and one region, with one shell per piece of faces that share edges (`topology.body-hierarchy-derived`). A derived region of more than one shell leaves its shells unclassified, since no node says which bounds the outside. The derived body takes the kind that the BODY nodes linked to a REGION state when they agree, and is classified from its faces otherwise. A BODY node is linked to a REGION when that REGION names it in its body field. Where merged streams or sites derive bodies whose kinds come from different sources, one note names each source. A BODY node linked to no REGION, such as one that owns only vertices, says nothing of the faces' body. Once a face is given up, or a typed FACE node is not stated, each derived shell states its members in the partial form, since no node says which shell held that face.
 
 ### 4.1 XT ownership nodes
 
@@ -3195,14 +3208,23 @@ A face belongs to a body only when this closure is complete:
 FACE.refs[3] → SHELL.refs[6] → REGION.refs[1] → BODY
 ```
 
-The BODY region-chain head is the first REGION attribute or a null-like
-predecessor sentinel. In the sentinel form, exactly one REGION has
-`previous_region` equal to the stored head. Follow `next_region` and require
-the following REGION's `previous_region` to equal the current REGION. The
+The BODY region-chain head is the attribute of its first REGION, whose
+`previous_region` is null-like; a null-like head names no REGION. Follow
+`next_region` and require the following REGION's `previous_region` to equal
+the current REGION. The
 chain ends at a null-like value and may not repeat an attribute. A SHELL's
 region and body links must agree with the REGION closure. A shell with a
 non-null-like body reference must name that same BODY; a null-like shell body
 reference is valid for a void-region shell.
+
+The first REGION of a solid BODY is the infinite void. Each FACE names its
+solid shell in the back-side links and its void shell in the front-side
+links. Reciprocal face chains pair the shells on the two sides of each
+boundary. In a complete tree of these boundaries rooted at the infinite
+void, the shell toward the root encloses the other shells of its solid
+region. The REGION shell chain records membership. When the reciprocal
+chains leave the enclosing boundary unresolved, the decode states the
+region's shells unclassified.
 
 The BODY `body_type` byte is the body kind: `1` solid, `2` wire, `3` sheet,
 and `6` general. The kind is not inferred from an ATTRIBUTE list, a chain

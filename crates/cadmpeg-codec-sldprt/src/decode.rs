@@ -2832,9 +2832,17 @@ fn untaken_local_bodies_losses(
         .collect()
 }
 
-/// Gives up the Parasolid site `part` whose entity records frame and build
-/// no geometry. The records frame, so the give-up is undecoded. A site that
-/// holds no entity record gives up nothing.
+/// A site states content when it holds a face, a surface, a point, or a body
+/// whose faces were lost.
+fn states_content(decoded: &Brep) -> bool {
+    !decoded.faces.is_empty()
+        || !decoded.surfaces.is_empty()
+        || !decoded.points.is_empty()
+        || !decoded.bodies.is_empty()
+}
+
+/// Gives up the Parasolid site `part` whose entity records frame and state
+/// no content. A site that holds no entity record gives up nothing.
 fn give_up_unbuilt_site(
     ctx: &DecodeContext<'_>,
     part: Part<'_>,
@@ -2847,7 +2855,7 @@ fn give_up_unbuilt_site(
             part,
             Cause::Undecoded,
             CodecError::malformed(format_args!(
-                "{records} Parasolid entity record(s) frame and build no geometry"
+                "{records} Parasolid entity record(s) frame and state no content"
             )),
         )?);
     }
@@ -2926,12 +2934,10 @@ fn try_decode_brep(
         && sites[&decoded_sites[selected_site].0].iter().any(|index| {
             contains_ascii_case_insensitive(&streams[*index].header.description, "deltas")
         });
-    let selected_has_geometry = !decoded_sites[selected_site].2.faces.is_empty()
-        || !decoded_sites[selected_site].2.surfaces.is_empty()
-        || !decoded_sites[selected_site].2.points.is_empty();
-    let any_site_has_geometry = decoded_sites.iter().any(|(_, _, decoded)| {
-        !decoded.faces.is_empty() || !decoded.surfaces.is_empty() || !decoded.points.is_empty()
-    });
+    let selected_has_geometry = states_content(&decoded_sites[selected_site].2);
+    let any_site_has_geometry = decoded_sites
+        .iter()
+        .any(|(_, _, decoded)| states_content(decoded));
     // Imported bodies stand in for an empty partition/deltas model (spec §3.3).
     let takes_local_bodies =
         selected_is_empty_model && (resolved_active_site.is_some() || !any_site_has_geometry);
@@ -3345,6 +3351,10 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.withheld_fin_partners += source.stats.withheld_fin_partners;
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
+    let (into, from) = (&mut target.stats.derived_kind, source.stats.derived_kind);
+    into.agreed |= from.agreed;
+    into.disagree |= from.disagree;
+    into.absent |= from.absent;
     Ok(())
 }
 
@@ -5274,14 +5284,55 @@ pub(crate) fn brep_losses(
         )));
     }
     if s.synthetic_body_grouping {
-        losses.push(
-            SldprtLossCode::TopologyBodyHierarchyDerived.note(
-                "No body record was available; one body/region/shell hierarchy was derived."
-                    .to_string(),
-            ),
-        );
+        losses
+            .push(SldprtLossCode::TopologyBodyHierarchyDerived.note(derived_note(s.derived_kind)));
     }
     Ok(losses)
+}
+
+/// The note of the derived body hierarchies, naming where their bodies take
+/// their kind.
+fn derived_note(kind: crate::brep::graph::DerivedKind) -> String {
+    let crate::brep::graph::DerivedKind {
+        agreed,
+        disagree,
+        absent,
+    } = kind;
+    match (agreed, disagree, absent) {
+        (true, false, false) => {
+            return "The body records do not link up with the faces; one body/region/shell hierarchy was derived, with the kind they state.".to_owned();
+        }
+        (false, true, false) => {
+            return "The body records do not link up with the faces and state more than one kind; one body/region/shell hierarchy was derived, classified from its faces.".to_owned();
+        }
+        (false, false, _) => {
+            return "No body record names a region; one body/region/shell hierarchy was derived."
+                .to_owned();
+        }
+        _ => {}
+    }
+    let sources: Vec<&str> = [
+        (
+            agreed,
+            "with the kind the body records state where they agree",
+        ),
+        (
+            disagree,
+            "classified from their faces where the body records state more than one kind",
+        ),
+        (
+            absent,
+            "classified from their faces where no body record names a region",
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(present, text)| present.then_some(text))
+    .collect();
+    let (last, rest) = sources.split_last().unwrap_or((&"", &[]));
+    format!(
+        "The body records do not link up with the faces; body/region/shell hierarchies were derived, {}, and {last}.",
+        rest.join(", ")
+    )
 }
 
 /// The source metadata of a decode that projects no Parasolid geometry: the

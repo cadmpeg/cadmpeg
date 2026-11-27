@@ -34,6 +34,7 @@ mod feature_degradation;
 mod feature_snapshots;
 mod geometry_report;
 mod lane_indexes;
+mod lost_faces;
 mod merges;
 mod metadata_fallback;
 mod nurbs_surfaces;

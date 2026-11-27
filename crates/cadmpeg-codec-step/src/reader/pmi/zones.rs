@@ -134,28 +134,28 @@ pub(super) fn attach(
                 exchange,
                 id,
                 zone_projections,
-                Untransferred::GiveUp(Cause::Unreadable, "has no defining tolerance set".into()),
+                Untransferred::GiveUp(Cause::Unreadable, "names no defining tolerance".into()),
             );
             continue;
         };
         let owners = references(owners, ctx).collect::<Result<Vec<_>, _>>()?;
         if owners.len() != 1 {
-            let cause = if owners.is_empty() {
-                Cause::Unreadable
+            let (cause, why) = if owners.is_empty() {
+                (Cause::Unreadable, "names no defining tolerance".into())
             } else {
-                Cause::Undecoded
+                (
+                    Cause::Undecoded,
+                    format!(
+                        "has {} defining tolerances; shared zone ownership is not transferred",
+                        owners.len()
+                    ),
+                )
             };
             settle_zone(
                 exchange,
                 id,
                 zone_projections,
-                Untransferred::GiveUp(
-                    cause,
-                    format!(
-                        "has {} defining tolerances; shared zone ownership is not transferred",
-                        owners.len()
-                    ),
-                ),
+                Untransferred::GiveUp(cause, why),
             );
             continue;
         }

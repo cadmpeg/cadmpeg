@@ -3136,10 +3136,9 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         .iter()
         .map(|record| record.id().clone())
         .collect::<Vec<_>>();
-    source_fidelity.retain_unknown_records(
-        crate::container::FILE_OWNER,
-        opaque_records.into_iter().chain(typed_source_records),
-    )?;
+    // The records are the file's own bytes, so their owner is the root.
+    source_fidelity
+        .retain_unknown_records("", opaque_records.into_iter().chain(typed_source_records))?;
     for id in untyped {
         source_fidelity.mark_untyped(id.as_str(), [cadmpeg_core::decode::ArenaClass::Model])?;
     }
@@ -4189,7 +4188,7 @@ mod tests {
             cadmpeg_core::decode::u64_from_index(record.len())
         );
         assert_eq!(malformed.data(), Some(record.as_slice()));
-        assert_eq!(malformed.stream(), "rhino");
+        assert_eq!(malformed.stream(), "");
         assert!(malformed_id
             .as_str()
             .starts_with("rhino:legacy:record#00200004-"));

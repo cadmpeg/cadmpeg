@@ -31,6 +31,7 @@ mod fusion_surface_loft;
 mod fusion_surface_revolve;
 mod fusion_tessellate;
 mod fusion_timeline_state;
+mod fusion_two_sided_extrude;
 mod history_deltas;
 mod history_scale;
 mod inconsistent_records;

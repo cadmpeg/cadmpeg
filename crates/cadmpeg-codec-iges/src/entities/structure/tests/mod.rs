@@ -17,7 +17,13 @@ use crate::loss::IgesLossCode;
 use crate::test_support::test_drawing_and_trimming::associativity_definition_file;
 use crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_file;
 use crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_file_with_global;
+use crate::test_support::test_drawing_and_trimming::legacy_mixed_single_parent_file;
 use crate::test_support::test_drawing_and_trimming::legacy_perforated_plane_file;
+use crate::test_support::test_drawing_and_trimming::legacy_two_hole_single_parent_file;
+use crate::test_support::test_drawing_and_trimming::test_legacy_plane_children::{
+    legacy_dangling_child_single_parent_file, legacy_dangling_only_child_single_parent_file,
+    legacy_independent_hole_single_parent_file, legacy_unlinked_child_single_parent_file,
+};
 use crate::test_support::test_owned::owned_test_file;
 use crate::test_support::test_owned::owned_test_file_with_global;
 use crate::test_support::test_owned::OwnedTestEntity;
@@ -42,6 +48,7 @@ use crate::test_support::test_solids_and_structure::structure_target_rules_file;
 use crate::test_support::test_solids_and_structure::text_score_property_forms_file;
 use crate::test_support::test_solids_and_structure::variable_schema_property_forms_file;
 use crate::IgesCodec;
+use cadmpeg_ir::topology::LoopBoundaryRole;
 mod bounded_planes;
 mod definitions;
 mod dialect;
@@ -1568,39 +1575,72 @@ fn decode_projects_legacy_single_parent_plane_holes_in_v4_and_v5_profiles() {
 }
 
 /// A legacy hole whose plane is not coplanar with its parent: the parent
-/// face is kept with its outer loop in partial form, and the hole's face is
-/// given up naming the parent face it marks (CADIR §3.3, §5.6).
+/// face keeps its outer loop and the hole's slot is given up, marking the
+/// face partial (CADIR §3.3, §5.6).
 #[test]
 fn a_legacy_hole_that_fails_marks_its_parent_face_partial() {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
     let file = String::from_utf8(legacy_perforated_plane_file(global))
         .unwrap()
         .replacen("108,0,0,1,0,7,", "108,0,1,0,0,7,", 1);
+    let (roles, message) = legacy_face_with_a_lost_hole(file.into_bytes(), 1);
+    assert_eq!(roles, [LoopBoundaryRole::Outer]);
+    assert!(message.contains("not coplanar"), "{message}");
+}
+
+/// A legacy single-parent relation whose only child pointer names no entry
+/// keeps its outer loop and gives up the dangling slot, marking the
+/// relation face partial (CADIR §3.3, §5.6).
+#[test]
+fn a_legacy_relation_whose_only_child_pointer_dangles_marks_its_parent_face_partial() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let (roles, message) =
+        legacy_face_with_a_lost_hole(legacy_dangling_only_child_single_parent_file(global), 1);
+    assert_eq!(roles, [LoopBoundaryRole::Outer]);
+    assert!(
+        message.contains("child pointer 99 names no Directory entry"),
+        "{message}"
+    );
+}
+
+#[test]
+fn a_legacy_zero_slot_beside_a_generic_child_gives_up_only_that_slot() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let file = String::from_utf8(legacy_mixed_single_parent_file(global))
+        .unwrap()
+        .replacen("402,1,2,1,3,11;", "402,1,2,1,0,11;", 1);
+    let (roles, message) = legacy_face_with_a_lost_hole(file.into_bytes(), 1);
+    assert_eq!(roles, [LoopBoundaryRole::Outer]);
+    assert!(
+        message.contains("child pointer 0 names no Directory entry"),
+        "{message}"
+    );
+}
+
+/// Decodes `file`, a legacy single-parent relation at DE 9 one of whose
+/// children bounds no hole, and returns the roles of the relation face's
+/// loops and the message of the one charge that names the loop at
+/// `lost_slot`.
+fn legacy_face_with_a_lost_hole(
+    file: Vec<u8>,
+    lost_slot: usize,
+) -> (Vec<LoopBoundaryRole>, String) {
     let result = IgesCodec
-        .decode(
-            &mut Cursor::new(file.into_bytes()),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
-    let parent = crate::ids::face(&crate::ids::Stem::word_directory(
-        crate::ids::Word::BoundedPlane,
-        1_u32,
-    ));
-    let hole = crate::ids::face(&crate::ids::Stem::word_directory(
-        crate::ids::Word::LegacySingleParent,
-        9_u32,
-    ));
+    let stem = crate::ids::Stem::word_directory(crate::ids::Word::LegacySingleParent, 9_u32);
+    let relation = crate::ids::face(&stem);
+    let lost = crate::ids::r#loop(&stem.slot(lost_slot));
     let [face] = result.ir().geometry.faces.as_slice() else {
         panic!("one face: {:#?}", result.report().losses);
     };
-    assert_eq!(face.id, parent);
+    assert_eq!(face.id, relation);
     assert!(face.loops.is_partial(), "{:?}", face.loops);
     let roles = face
         .loops
         .stated()
         .map(|loop_id| face.loop_role(loop_id))
         .collect::<Vec<_>>();
-    assert_eq!(roles, [cadmpeg_ir::topology::LoopBoundaryRole::Outer]);
     let charges = result
         .report()
         .losses
@@ -1608,22 +1648,107 @@ fn a_legacy_hole_that_fails_marks_its_parent_face_partial() {
         .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
         .filter(|loss| {
             loss.message
-                .starts_with(&format!("record {} ", hole.as_str()))
+                .ends_with(&format!("; marked=[{}]", relation.as_str()))
         })
         .collect::<Vec<_>>();
     let [charge] = charges.as_slice() else {
-        panic!("one charge names the hole: {:#?}", result.report().losses);
+        panic!(
+            "one charge names the lost hole: {:#?}",
+            result.report().losses
+        );
     };
     assert!(
         charge
             .message
-            .ends_with(&format!("; marked=[{}]", parent.as_str())),
+            .starts_with(&format!("record {} ", lost.as_str())),
         "{}",
         charge.message
     );
     assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model")
         .is_ok());
+    (roles, charge.message.clone())
+}
+
+/// A legacy single-parent relation whose children are a Type 108 hole and a
+/// point states the hole: the point bounds no hole of it, so the face states
+/// its holes in partial form and the point's slot is given up naming the
+/// face it marks (CADIR §3.3, §5.6).
+#[test]
+fn a_legacy_hole_beside_a_child_that_is_no_plane_keeps_the_hole() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let (roles, message) = legacy_face_with_a_lost_hole(legacy_mixed_single_parent_file(global), 2);
+    assert_eq!(roles, [LoopBoundaryRole::Outer, LoopBoundaryRole::Inner]);
+    assert!(message.contains("not a Type 108 plane"), "{message}");
+}
+
+/// A legacy single-parent relation with two holes, one of which is not on
+/// the parent's plane, keeps the other hole (CADIR §3.3, §5.6).
+#[test]
+fn a_legacy_hole_that_fails_beside_another_hole_keeps_the_other() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let (roles, message) =
+        legacy_face_with_a_lost_hole(legacy_two_hole_single_parent_file(global), 2);
+    assert_eq!(roles, [LoopBoundaryRole::Outer, LoopBoundaryRole::Inner]);
+    assert!(message.contains("Directory sequence 11"), "{message}");
+}
+
+/// A legacy single-parent relation one of whose child pointers names no
+/// entry keeps the hole of its other child, and gives up the slot of that
+/// pointer (CADIR §3.3, §5.6).
+#[test]
+fn a_legacy_child_pointer_that_names_no_entry_gives_up_only_its_slot() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let (roles, message) =
+        legacy_face_with_a_lost_hole(legacy_dangling_child_single_parent_file(global), 2);
+    assert_eq!(roles, [LoopBoundaryRole::Outer, LoopBoundaryRole::Inner]);
+    assert!(
+        message.contains("child pointer 99 names no Directory entry"),
+        "{message}"
+    );
+}
+
+/// A legacy single-parent relation one of whose Type 108 children carries
+/// no association back pointer to it keeps the hole of its other child, and
+/// gives up the slot of that child only (CADIR §3.3, §5.6).
+#[test]
+fn a_legacy_child_without_its_back_pointer_gives_up_only_its_slot() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let (roles, message) =
+        legacy_face_with_a_lost_hole(legacy_unlinked_child_single_parent_file(global), 2);
+    assert_eq!(roles, [LoopBoundaryRole::Outer, LoopBoundaryRole::Inner]);
+    assert!(message.contains("Directory sequence 11"), "{message}");
+    assert!(
+        message.contains("carries no association back pointer"),
+        "{message}"
+    );
+}
+
+/// A negative bounded plane that a legacy single-parent relation names, and
+/// whose hole the relation's face does not state, is charged naming that
+/// relation.
+#[test]
+fn a_legacy_hole_the_face_does_not_state_names_its_relation() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let file = legacy_independent_hole_single_parent_file(global);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let notes = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.message.contains("negative bounded plane"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one negative-plane note: {:#?}", result.report().losses);
+    };
+    assert!(
+        note.message
+            .contains("child of the Type 402 Form 9 relation at Directory sequence 9"),
+        "{}",
+        note.message
+    );
 }
 
 mod flow;
