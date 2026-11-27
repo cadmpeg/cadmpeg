@@ -915,7 +915,6 @@ pub(crate) enum F3dLossCode {
     /// Offset Surface support groups with different ordinals are read as one
     /// support-face selection.
     FeatureSurfaceOffsetGroupOrdinalsAssumed,
-    FeatureFormCageOrderAssumed,
     FeatureFormSourceUnavailable,
     FeatureFormDefinitionUnavailable,
     FeatureFormMembershipUnresolved,
@@ -2001,7 +2000,6 @@ impl F3dLossCode {
         Self::SurfaceDeleteFaceWidePrologueAssumed,
         Self::FeatureFaceSelectionActiveSubstituted,
         Self::FeatureSurfaceOffsetGroupOrdinalsAssumed,
-        Self::FeatureFormCageOrderAssumed,
         Self::FeatureFormSourceUnavailable,
         Self::FeatureFormDefinitionUnavailable,
         Self::FeatureFormMembershipUnresolved,
@@ -3107,7 +3105,6 @@ impl F3dLossCode {
             Self::FeatureSurfaceOffsetGroupOrdinalsAssumed => {
                 "feature.surface-offset-group-ordinals-assumed"
             }
-            Self::FeatureFormCageOrderAssumed => "feature.form-cage-order-assumed",
             Self::FeatureFormSourceUnavailable => "feature.form-source-unavailable",
             Self::FeatureFormDefinitionUnavailable => "feature.form-definition-unavailable",
             Self::FeatureFormMembershipUnresolved => "feature.form-membership-unresolved",
@@ -4159,7 +4156,6 @@ impl F3dLossCode {
             | Self::SurfaceDeleteFaceWidePrologueAssumed
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureSurfaceOffsetGroupOrdinalsAssumed
-            | Self::FeatureFormCageOrderAssumed
             | Self::FeatureFormSourceUnavailable
             | Self::FeatureFormDefinitionUnavailable
             | Self::FeatureFormMembershipUnresolved
@@ -4943,7 +4939,6 @@ impl F3dLossCode {
             | Self::SurfaceDeleteFaceWidePrologueAssumed
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureSurfaceOffsetGroupOrdinalsAssumed
-            | Self::FeatureFormCageOrderAssumed
             | Self::FeatureFormSourceUnavailable
             | Self::FeatureFormDefinitionUnavailable
             | Self::FeatureFormMembershipUnresolved
@@ -5932,7 +5927,6 @@ mod tests {
                 "feature.surface-delete-face-wide-prologue-assumed",
                 "feature.face-selection-active-substituted",
                 "feature.surface-offset-group-ordinals-assumed",
-                "feature.form-cage-order-assumed",
                 "feature.form-source-unavailable",
                 "feature.form-definition-unavailable",
                 "feature.form-membership-unresolved",
