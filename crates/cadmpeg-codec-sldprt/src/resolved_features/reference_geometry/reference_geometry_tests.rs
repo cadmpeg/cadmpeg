@@ -478,6 +478,169 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
 }
 
 #[test]
+fn line_axis_data_frame_is_anchored_after_class_name() {
+    let mut payload = vec![0; 16];
+    let class = declare(&mut payload, "moLineAxisData_c");
+    payload.extend(line_axis_frame(-1.0));
+    for value in [0.0_f64, 0.35, 0.055] {
+        payload.extend(value.to_le_bytes());
+    }
+    let axes = enriched_axes(payload, &[(class, "moLineAxisData_c")], &[(0, "Axis1")]);
+    assert_eq!(
+        axes[0].get("Origin").map(String::as_str),
+        Some("0mm,350mm,0mm")
+    );
+    assert_eq!(axes[0].get("Direction").map(String::as_str), Some("0,0,-1"));
+}
+
+fn axis_feature(id: &str, name: &str, source: u32) -> Feature {
+    Feature {
+        id: id.into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: FeatureSource::from_value(source),
+        ordinal: 0,
+        name: name.into(),
+        kind: String::new(),
+        input_class: Some("moRefAxis_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    }
+}
+
+/// The axis properties that `enrich_history_reference_axes` writes for the
+/// axes named at `names` (offset, name) of a lane whose classes are `classes`
+/// (offset, class name).
+fn enriched_axes(
+    payload: Vec<u8>,
+    classes: &[(usize, &str)],
+    names: &[(usize, &str)],
+) -> Vec<BTreeMap<String, String>> {
+    let mut histories = vec![FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: names
+            .iter()
+            .zip(2080..)
+            .map(|(&(_, name), source)| axis_feature(name, name, source))
+            .collect(),
+    }];
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload.into(),
+        classes: classes
+            .iter()
+            .map(|&(offset, name)| FeatureInputClass {
+                id: format!("class {offset}"),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: cadmpeg_core::decode::u64_from_index(offset),
+                name: name.to_owned(),
+            })
+            .collect(),
+        names: names
+            .iter()
+            .zip(2080..)
+            .map(|(&(offset, name), source)| FeatureInputName {
+                id: format!("name {offset}"),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: cadmpeg_core::decode::u64_from_index(offset),
+                object_id: ObjectId::from_value(source),
+                value: name.into(),
+            })
+            .collect(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    super::enrich_history_reference_axes(&mut histories, &[lane]);
+    histories[0]
+        .features
+        .iter()
+        .map(|feature| {
+            feature
+                .properties
+                .iter()
+                .map(|(key, value)| (key.to_string(), value.clone()))
+                .collect()
+        })
+        .collect()
+}
+
+/// Appends a class declaration for `class_name` to `payload` and returns its offset.
+fn declare(payload: &mut Vec<u8>, class_name: &str) -> usize {
+    let offset = payload.len();
+    payload.extend(CLASS_MARKER);
+    payload.extend(u16::try_from(class_name.len()).unwrap().to_le_bytes());
+    payload.extend(class_name.as_bytes());
+    offset
+}
+
+fn line_axis_frame(direction_z: f64) -> Vec<u8> {
+    [
+        0.0_f64,
+        0.35,
+        0.055,
+        0.0,
+        0.35,
+        0.045,
+        -0.0,
+        0.01,
+        0.0,
+        0.0,
+        direction_z,
+    ]
+    .iter()
+    .flat_map(|value| value.to_le_bytes())
+    .collect()
+}
+
+#[test]
+fn a_line_axis_whose_own_frame_does_not_read_keeps_the_interval_scan() {
+    let mut payload = vec![0; 16];
+    let class = declare(&mut payload, "moLineAxisData_c");
+    payload.extend(line_axis_frame(1.0));
+    payload.extend([0xff; 8]);
+    payload.extend(line_axis_frame(-1.0));
+    let axes = enriched_axes(payload, &[(class, "moLineAxisData_c")], &[(0, "Axis1")]);
+    assert_eq!(
+        axes[0].get("Origin").map(String::as_str),
+        Some("0mm,350mm,0mm")
+    );
+    assert_eq!(axes[0].get("Direction").map(String::as_str), Some("0,0,-1"));
+}
+
+#[test]
+fn an_axis_data_frame_is_read_within_its_axis_interval() {
+    let mut payload = vec![0; 16];
+    let class = declare(&mut payload, "moTwoPtsAxisData_c");
+    let next = payload.len() + 40;
+    payload.extend(line_axis_frame(-1.0));
+    let axes = enriched_axes(
+        payload,
+        &[(class, "moTwoPtsAxisData_c")],
+        &[(0, "Axis1"), (next, "Axis2")],
+    );
+    assert_eq!(axes[0].get("Origin"), None);
+}
+
+#[test]
 fn intersecting_reference_axis_pair_completes_legacy_triad() {
     let frames = [
         Some((Point3::new(0.0, 85.0, 0.0), Vector3::new(1.0, 0.0, 0.0))),
