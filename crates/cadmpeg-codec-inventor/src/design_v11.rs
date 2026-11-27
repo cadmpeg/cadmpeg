@@ -20,6 +20,7 @@ use cadmpeg_ir::CadIr;
 
 pub(crate) mod assembly;
 mod datums;
+pub(crate) mod evaluations;
 mod operations;
 mod parameters;
 pub(crate) mod sheet_metal;
@@ -207,6 +208,12 @@ pub(crate) fn validate_operations(
         units,
         &mut Vec::new(),
     )?;
+    // The evaluations come from the decoded history states, which this
+    // check does not rebuild; the state check resolves each one.
+    expected
+        .design
+        .evaluations
+        .clone_from(&ir.design.evaluations);
     if ir.design == expected.design {
         return Ok(Vec::new());
     }
@@ -372,13 +379,7 @@ fn place_current_bodies(ir: &mut CadIr) -> Result<(), CodecError> {
         else {
             continue;
         };
-        let timeline = match &at {
-            Position::Start(id) => ir.design.containers.iter().find(|c| c.id() == id),
-            Position::After(member) => ir.design.containers.iter().find(
-                |c| matches!(c, Container::Ordered { members, .. } if members.contains(member)),
-            ),
-        };
-        let produces = match timeline {
+        let produces = match timeline_of(ir, &at) {
             Some(timeline) => timeline_produces(ir, timeline)?,
             None => false,
         };
@@ -391,6 +392,18 @@ fn place_current_bodies(ir: &mut CadIr) -> Result<(), CodecError> {
         }
     }
     Ok(())
+}
+
+/// The ordered container that holds the position `at`.
+fn timeline_of<'ir>(ir: &'ir CadIr, at: &Position) -> Option<&'ir Container> {
+    match at {
+        Position::Start(id) => ir.design.containers.iter().find(|c| c.id() == id),
+        Position::After(member) => {
+            ir.design.containers.iter().find(
+                |c| matches!(c, Container::Ordered { members, .. } if members.contains(member)),
+            )
+        }
+    }
 }
 
 fn is_block_definition(feature: &LegacyFeature) -> bool {

@@ -76,11 +76,22 @@ pub(crate) struct Outcome {
     pub(crate) unlinked: usize,
 }
 
+/// A decoded history state that holds a nest.
+#[derive(Debug)]
+pub(crate) struct HistoryState {
+    /// State identifier of the `delta_state` header.
+    pub(crate) identifier: i64,
+    /// Every record of the state, in the slot ids of the current geometry.
+    pub(crate) geometry: Topology,
+}
+
 /// Nests of a part and their links.
 #[derive(Debug, Default)]
 pub(crate) struct Built {
     /// Nests, sorted by identity.
     pub(crate) bodies: Vec<HistoryBody>,
+    /// The states that hold a nest, by oldest-first ordinal.
+    pub(crate) states: BTreeMap<u32, HistoryState>,
     /// Identity of the nest of each feature record, by record index.
     pub(crate) links: HashMap<usize, HistoryBodyId>,
     /// Counts.
@@ -196,6 +207,7 @@ pub(crate) fn build(
         by_ordinal.entry(want.ordinal).or_default().push(index);
     }
     let mut extracted = BTreeMap::<usize, Extract>::new();
+    let mut decoded = BTreeMap::<u32, HistoryState>::new();
     let mut failure = None;
     let mut bounded = HashSet::<usize>::new();
     let mut visited = 0_usize;
@@ -254,6 +266,18 @@ pub(crate) fn build(
                 Err(_) => {}
             }
         }
+        if indices
+            .iter()
+            .any(|index| matches!(extracted.get(index), Some(Extract::Nest(_))))
+        {
+            decoded.insert(
+                ordinal,
+                HistoryState {
+                    identifier: state_id,
+                    geometry: scratch.geometry,
+                },
+            );
+        }
     });
     if let Some(error) = failure {
         return Err(error);
@@ -293,6 +317,13 @@ pub(crate) fn build(
         }
     }
     built.bodies.sort_by(|left, right| left.id.cmp(&right.id));
+    decoded.retain(|ordinal, _| {
+        built
+            .bodies
+            .iter()
+            .any(|body| body.state.ordinal == *ordinal)
+    });
+    built.states = decoded;
     Ok(built)
 }
 

@@ -670,6 +670,7 @@ fn decode_container<'a>(
     let mut given_up_carrier = None;
     let mut carrier_given_up = false;
     let mut history_chain = None;
+    let mut decoded_states = std::collections::BTreeMap::new();
     let mut empty_kernel_stream = false;
     let kernel_brep = match &container.rse.active_carrier {
         ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
@@ -910,6 +911,7 @@ fn decode_container<'a>(
                     ));
                 }
                 ir.model.history_bodies = history.bodies.bodies;
+                decoded_states = history.bodies.states;
             }
             losses.extend(crate::feature::body_selection::native_losses(
                 &ir.model, &joined,
@@ -1886,7 +1888,8 @@ fn decode_container<'a>(
                 &design_inventory.parameters,
                 &design_inventory.units,
                 losses,
-            )
+            )?;
+            crate::design_v11::evaluations::project(ctx, ir, &decoded_states, losses)
         })?;
     }
     let mut body = DecodeBody {

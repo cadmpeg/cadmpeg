@@ -341,6 +341,9 @@ pub(crate) enum InventorLossCode {
     /// The Base or Split feature of a decoded history body is not a projected
     /// feature, so the body has no origin to name.
     FeatureHistoryBodyUnlinked,
+    /// The history state of a history body has no evaluation in the part's
+    /// timeline.
+    FeatureHistoryStateUnplaced,
     /// Drawing records retain unresolved semantics natively.
     DrawingNativeOnly,
     /// A drawing record is outside its typed prefix form.
@@ -511,6 +514,7 @@ impl InventorLossCode {
         Self::FeatureHistoryBodyNotClosed,
         Self::FeatureHistoryBodyBounded,
         Self::FeatureHistoryBodyUnlinked,
+        Self::FeatureHistoryStateUnplaced,
         Self::DrawingNativeOnly,
         Self::DrawingRecordMalformed,
         Self::PmiTargetUnresolved,
@@ -709,6 +713,7 @@ impl InventorLossCode {
             Self::FeatureHistoryBodyNotClosed => "feature.history-body-not-closed",
             Self::FeatureHistoryBodyBounded => "feature.history-body-bounded",
             Self::FeatureHistoryBodyUnlinked => "feature.history-body-unlinked",
+            Self::FeatureHistoryStateUnplaced => "feature.history-state-unplaced",
             Self::DrawingNativeOnly => "drawing.native-only",
             Self::DrawingRecordMalformed => "drawing.record-malformed",
             Self::PmiTargetUnresolved => "pmi.target-unresolved",
@@ -865,6 +870,7 @@ impl InventorLossCode {
             | Self::FeatureHistoryBodyNotClosed
             | Self::FeatureHistoryBodyBounded
             | Self::FeatureHistoryBodyUnlinked
+            | Self::FeatureHistoryStateUnplaced
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
             | Self::ParameterExpressionBounded
