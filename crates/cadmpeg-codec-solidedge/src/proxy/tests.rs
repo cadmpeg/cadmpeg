@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::{edge_line, EdgeLine};
+use super::{edge_line, vertex_point, EdgeLine};
 
 /// Agreement of a computed millimetre value with the hand-computed one.
 const EPS_MM: f64 = 1e-9;
@@ -41,9 +41,30 @@ fn a_straight_edge_reads_in_millimetres() {
 }
 
 #[test]
-fn a_proxy_of_another_size_is_not_an_edge() {
+fn a_proxy_of_another_size_reads_by_its_geometry_record() {
+    // The geometry record, not the object length, selects the reader (§7.6).
     let bytes = proxy(560, [0.0; 3], [1.0, 0.0, 0.0], 0.010);
-    assert_eq!(edge_line(&bytes), None);
+    let line = edge_line(&bytes).unwrap();
+    assert!((line.length - 10.0).abs() <= EPS_MM);
+}
+
+#[test]
+fn a_proxy_without_a_geometry_class_identifier_is_not_an_edge() {
+    assert_eq!(edge_line(&[0_u8; 559]), None);
+}
+
+#[test]
+fn a_vertex_proxy_reads_its_point_in_millimetres() {
+    let mut bytes = vec![0_u8; 40];
+    bytes[6..16].copy_from_slice(&[0xce, 0x11, 0x9a, 0x5e, 0x08, 0x00, 0x36, 0x9b, 0x41, 0x02]);
+    for (index, value) in [0.001_f64, 0.002, 0.003].iter().enumerate() {
+        let at = 16 + index * 8;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    let point = vertex_point(&bytes).unwrap();
+    assert!((point.x - 1.0).abs() <= EPS_MM);
+    assert!((point.y - 2.0).abs() <= EPS_MM);
+    assert!((point.z - 3.0).abs() <= EPS_MM);
 }
 
 #[test]
