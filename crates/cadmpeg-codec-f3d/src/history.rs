@@ -63,6 +63,7 @@ pub(crate) mod combine_history_tools;
 mod combine_selection;
 pub(crate) mod compact_lineage;
 mod delete_face;
+mod edge_continuity;
 pub(crate) mod edge_flange;
 pub(crate) mod edge_recipe_scope;
 mod edge_samples;

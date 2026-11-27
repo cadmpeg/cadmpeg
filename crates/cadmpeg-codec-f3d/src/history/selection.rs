@@ -2502,13 +2502,19 @@ pub(super) fn complete_compact_edge_treatment_deletions(
 
 /// Resolve a class-297 edge-treatment member whose persistent local identity
 /// names the member's embedded bounded-face recipe. The rule selects every
-/// deleted treatment edge on the recipe's exact preceding support face.
+/// coedge edge of every loop of the preceding face that the recipe's first
+/// reference names, in the treatment transition edge set. When the first
+/// reference names no unique preceding face, the rule selects the transition
+/// edges on the recipe's exact preceding support face. A Chamfer member drops
+/// each edge whose two adjacent faces meet with tangent continuity, and keeps
+/// each edge whose continuity is undetermined with a loss.
 pub(crate) fn bind_edge_identity_bounded_face_rules(
     operands: &mut [DesignEdgeIdentityOperand],
     face_operands: &[crate::records::topology::face::DesignFaceOperand],
-) {
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use crate::records::recipes::ConstructionRecipeKind;
 
+    let mut losses = Vec::new();
     for operand in operands {
         operand.resolved_edge_slots.clear();
         if operand.resolved_edge_slot.is_some() {
@@ -2528,33 +2534,6 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
         if matches.next().is_some() {
             continue;
         }
-        let [support] = face.historical_support_contexts.as_slice() else {
-            continue;
-        };
-        let mut unique_faces = HashSet::new();
-        for face in &support.preceding_face_slots {
-            unique_faces.insert(*face);
-        }
-        if support.preceding_face_slots.is_empty()
-            || support.changed_preceding_face_slots != support.preceding_face_slots
-            || support.preceding_face_boundaries.len() != support.preceding_face_slots.len()
-            || unique_faces.len() != support.preceding_face_slots.len()
-            || support.preceding_face_boundaries.iter().any(|boundary| {
-                support
-                    .preceding_face_boundaries
-                    .iter()
-                    .filter(|candidate| candidate.face_slot == boundary.face_slot)
-                    .count()
-                    != 1
-                    || !support.preceding_face_slots.contains(&boundary.face_slot)
-                    || boundary
-                        .loops
-                        .iter()
-                        .any(|loop_| loop_.boundary.coedges().next().is_none())
-            })
-        {
-            continue;
-        }
         let mut transition = HashSet::new();
         for edge in &operand.transition_edge_candidates {
             transition.insert(*edge);
@@ -2562,23 +2541,125 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
         if transition.is_empty() {
             continue;
         }
+        let boundaries =
+            match named_preceding_face_boundaries(&face.first_reference_support_contexts) {
+                NamedFace::Unique(boundaries) => boundaries,
+                NamedFace::Invalid => continue,
+                NamedFace::NotUnique => {
+                    let Some(boundaries) =
+                        support_face_boundaries(&face.historical_support_contexts)
+                    else {
+                        continue;
+                    };
+                    boundaries
+                }
+            };
         let mut seen = HashSet::new();
         let mut resolved = Vec::new();
-        for edge in support
-            .preceding_face_boundaries
+        for edge in boundaries
             .iter()
             .flat_map(|boundary| &boundary.loops)
             .flat_map(|loop_| loop_.boundary.coedges().map(|row| row.edge_slot))
         {
-            if transition.contains(&edge) && seen.insert(edge) {
+            if transition.contains(&edge)
+                && !face.tangent_boundary_edge_slots.contains(&edge)
+                && seen.insert(edge)
+            {
                 resolved.push(edge);
             }
+        }
+        let undetermined = resolved
+            .iter()
+            .filter(|edge| face.undetermined_continuity_edge_slots.contains(edge))
+            .count();
+        if undetermined != 0 {
+            losses.push(
+                crate::loss::F3dLossCode::HistoricalEdgeContinuityAssumedSharp.note(format!(
+                    "Chamfer face member {} keeps {undetermined} loop edge(s) of its face with the assumption that the edge is sharp, because the preceding topology does not give the continuity of the two faces at the edge.",
+                    operand.id
+                )),
+            );
         }
         operand.resolved_edge_slots = resolved;
         if !operand.resolved_edge_slots.is_empty() {
             operand.resolution_identity_id = Some(face.id.clone());
         }
     }
+    losses
+}
+
+/// The preceding face that the first recipe reference of a bounded-face
+/// edge-treatment member names.
+enum NamedFace<'a> {
+    /// The reference names one preceding face, and these are its boundaries.
+    Unique(&'a [crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext]),
+    /// The reference names one preceding face without a complete boundary.
+    Invalid,
+    /// The reference names zero or several preceding faces.
+    NotUnique,
+}
+
+fn named_preceding_face_boundaries(
+    contexts: &[crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
+) -> NamedFace<'_> {
+    let mut faces = contexts
+        .iter()
+        .flat_map(|context| &context.preceding_face_slots)
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter();
+    let (Some(face_slot), None) = (faces.next(), faces.next()) else {
+        return NamedFace::NotUnique;
+    };
+    let Some(boundary) = contexts
+        .iter()
+        .flat_map(|context| &context.preceding_face_boundaries)
+        .find(|boundary| boundary.face_slot == face_slot)
+    else {
+        return NamedFace::Invalid;
+    };
+    if boundary.loops.is_empty()
+        || boundary
+            .loops
+            .iter()
+            .any(|loop_| loop_.boundary.coedges().next().is_none())
+    {
+        return NamedFace::Invalid;
+    }
+    NamedFace::Unique(std::slice::from_ref(boundary))
+}
+
+fn support_face_boundaries(
+    contexts: &[crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
+) -> Option<&[crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext]> {
+    let [support] = contexts else {
+        return None;
+    };
+    let mut unique_faces = HashSet::new();
+    for face in &support.preceding_face_slots {
+        unique_faces.insert(*face);
+    }
+    if support.preceding_face_slots.is_empty()
+        || support.changed_preceding_face_slots != support.preceding_face_slots
+        || support.preceding_face_boundaries.len() != support.preceding_face_slots.len()
+        || unique_faces.len() != support.preceding_face_slots.len()
+        || support.preceding_face_boundaries.iter().any(|boundary| {
+            support
+                .preceding_face_boundaries
+                .iter()
+                .filter(|candidate| candidate.face_slot == boundary.face_slot)
+                .count()
+                != 1
+                || !support.preceding_face_slots.contains(&boundary.face_slot)
+                || boundary
+                    .loops
+                    .iter()
+                    .any(|loop_| loop_.boundary.coedges().next().is_none())
+        })
+    {
+        return None;
+    }
+    Some(&support.preceding_face_boundaries)
 }
 
 pub(super) fn historical_identity_edge(
