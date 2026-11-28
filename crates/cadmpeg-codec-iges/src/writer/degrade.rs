@@ -60,7 +60,7 @@ pub(super) fn naming(id: &str) -> impl FnOnce(CodecError) -> Unwritten + '_ {
 pub(super) fn ends_the_write(error: &CodecError) -> bool {
     matches!(
         error,
-        CodecError::ResourceLimit(_) | CodecError::Io(_) | CodecError::UnsupportedTarget(_)
+        CodecError::ResourceLimit(_) | CodecError::UnsupportedTarget(_)
     )
 }
 

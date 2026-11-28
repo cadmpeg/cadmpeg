@@ -1008,7 +1008,7 @@ fn a_datum_axis_origin_edit_the_records_do_not_state_is_named() {
         unwritten[0]
     );
     let record = |ir: &CadIr| {
-        crate::native::SldprtNative::load_under(
+        crate::test_support::native::load_under(
             ir.native.namespace("sldprt").unwrap(),
             cadmpeg_core::decode::ResourceLimits::default(),
             ir.tolerances.linear,
@@ -1304,7 +1304,7 @@ fn an_unedited_lane_is_written_as_stored() {
         Some(&lane),
         &native.feature_histories,
         &[],
-        cadmpeg_core::decode::ResourceLimits::service(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
@@ -1315,7 +1315,7 @@ fn an_unedited_lane_is_written_as_stored() {
         Some(&decoded_lane),
         &native.feature_histories,
         &[],
-        cadmpeg_core::decode::ResourceLimits::service(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap_err();

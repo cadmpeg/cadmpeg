@@ -1190,6 +1190,7 @@ pub(crate) fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
 }
 
 /// One selected Parasolid partition stream and its source site.
+#[derive(Clone, Copy)]
 pub(crate) struct ActiveParasolidSite<'a> {
     pub(crate) section: Section<'a>,
     /// Offset of the stream in its section's semantic payload.
