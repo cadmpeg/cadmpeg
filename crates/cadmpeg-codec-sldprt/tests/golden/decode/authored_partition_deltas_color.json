@@ -15,6 +15,7 @@
             "occurrences": {},
             "parameters": {}
           },
+          "position": 0,
           "scope": "sldprt:model:product-definition#root"
         }
       ],

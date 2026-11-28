@@ -1030,6 +1030,7 @@
             "kind": "feature",
             "value": "f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat6:Sketch1:1100"
           },
+          "position": 0,
           "name": "d1",
           "kind": {
             "kind": "quantity",
@@ -1074,6 +1075,7 @@
             "kind": "feature",
             "value": "f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat6:Sketch1:1100"
           },
+          "position": 1,
           "name": "d2",
           "kind": {
             "kind": "quantity",
