@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Legacy-entity tests over synthetic CATPart streams.
 
-#![allow(clippy::doc_markdown, clippy::unwrap_used)]
+#![allow(clippy::doc_markdown)]
 
 use crate::legacy_entity::parse_runs;
 use crate::legacy_entity::parse_runs_with_directory_offset;

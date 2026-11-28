@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! carrier records tests.
 
-#![allow(clippy::doc_markdown, clippy::unwrap_used)]
+#![allow(clippy::doc_markdown)]
 
 const NEAR_ZERO_ARC_SPAN: f64 = 1e-10;
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#![allow(clippy::indexing_slicing)]
 use super::*;
 use cadmpeg_core::serde_erase::json;
 use std::f64::consts::{FRAC_PI_2, PI, TAU};

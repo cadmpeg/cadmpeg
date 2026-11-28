@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Record-decoder tests for the `consolidated` family over synthetic byte fixtures.
 
-#![allow(clippy::doc_markdown, clippy::unwrap_used)]
+#![allow(clippy::doc_markdown)]
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::wire;
 
