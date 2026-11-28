@@ -16,6 +16,7 @@ const NAMESPACE: LossNamespace<'static> = match LossNamespace::new("alibre") {
     Err(_) => panic!("reserved codec namespace"),
 };
 
+cadmpeg_ir::loss_codes! {
 /// A stable, machine-readable identifier for one Alibre transfer loss.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum AlibreLossCode {
@@ -114,60 +115,9 @@ pub(crate) enum AlibreLossCode {
     /// A component states document tolerances that differ from those of the assembly, which keeps its own.
     AssemblyMemberToleranceUnmerged,
 }
+}
 
 impl AlibreLossCode {
-    /// Every code, in declaration order.
-    #[cfg(test)]
-    const ALL: &'static [AlibreLossCode] = &[
-        Self::ContainerNoncanonical,
-        Self::GeometryFramedWithoutCarriers,
-        Self::GeometryProceduralSurfaceUntyped,
-        Self::GeometryPcurveUndecoded,
-        Self::HeaderScaleUnverified,
-        Self::HeaderToleranceUnresolved,
-        Self::VertexToleranceUnresolved,
-        Self::EdgeToleranceUnresolved,
-        Self::TopologyShellUnprojected,
-        Self::TopologyFaceOwnerUnprojected,
-        Self::TopologyFaceBoundaryUnstated,
-        Self::SourceRecordNameUnresolved,
-        Self::SourceRecordExtensionsUnprojected,
-        Self::SourceDialectUnverified,
-        Self::SourceStreamsUndecoded,
-        Self::HistoryOperationUnmapped,
-        Self::HistoryConstraintUnmapped,
-        Self::HistorySketchGeometryUnmapped,
-        Self::HistoryDimensionAnnotationUnmapped,
-        Self::HistoryEdgeSelectionUnresolved,
-        Self::HistoryFaceSelectionUnresolved,
-        Self::HistoryLoftSettingsUnmapped,
-        Self::HistoryDirectionFlagAssumed,
-        Self::HistoryStateUnread,
-        Self::HistoryStateIndexMismatch,
-        Self::HistoryHolePositionUnresolved,
-        Self::HistoryStreamUnread,
-        Self::HistoryPresentationUnmapped,
-        Self::HistoryParameterEquationUnmapped,
-        Self::HistorySheetMetalSettingsUnmapped,
-        Self::AssemblyMemberUnavailable,
-        Self::AssemblyMemberUndecoded,
-        Self::AssemblyMemberCycle,
-        Self::AssemblyExpansionTruncated,
-        Self::AssemblyMemberDesignUnmerged,
-        Self::AssemblyPlacementUnreadable,
-        Self::AssemblyInclusionUnmapped,
-        Self::AssemblyNestedStateUnread,
-        Self::AssemblyEntitiesUnread,
-        Self::AssemblyConfigurationUnmapped,
-        Self::AssemblyMemberDialectUnverified,
-        Self::AssemblyMemberDocumentMismatch,
-        Self::AssemblyRecordUnreadable,
-        Self::AssemblyMemberGuidUnmapped,
-        Self::AssemblyUnitUnverified,
-        Self::AssemblyDatumsUnread,
-        Self::AssemblyMemberToleranceUnmerged,
-    ];
-
     /// The stable string identifier. This is the gating contract.
     const fn code(self) -> &'static str {
         match self {
