@@ -425,9 +425,11 @@ fn decoded_text_brep_facts_keep_text_dialects_and_exclude_binary_routes() {
             Some(crate::container::TextBrepFraming::Parsed(stream))
                 if stream.terminator == expected_terminator
         ));
-        let (facts, brep) = crate::decode::try_decode_text_model(&ctx, &scan)
+        let mut given_up = Vec::new();
+        let (facts, brep) = crate::decode::try_decode_text_model(&ctx, &scan, &mut given_up)
             .unwrap()
             .expect("text sphere supplies model geometry");
+        assert!(given_up.is_empty());
         assert_eq!(brep.asm.faces.len(), 1);
         let framing = facts.kernel.as_ref().unwrap();
         let crate::container::KernelFraming::Text { header, .. } = framing else {

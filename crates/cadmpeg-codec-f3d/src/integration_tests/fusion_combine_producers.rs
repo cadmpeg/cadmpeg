@@ -71,8 +71,8 @@ fn a_join_target_that_a_later_fillet_updates_is_generated_by_its_extrude() {
     let operands = &combine(&ir)["definition"]["value"]["value"]["operands"];
     let target = generated_features(&operands["target"]);
     let tools = generated_features(&operands["tools"]);
-    assert_eq!(target, [feature_id(&ir, "Extrude 1")], "{operands}");
-    assert_eq!(tools, [feature_id(&ir, "Extrude 2")], "{operands}");
+    assert_eq!(target, [feature_id(&ir, "Extrude1")], "{operands}");
+    assert_eq!(tools, [feature_id(&ir, "Extrude2")], "{operands}");
     assert_eq!(producer_unresolved(&losses), 0);
 }
 
@@ -91,7 +91,7 @@ fn a_join_target_that_no_later_feature_updates_selects_its_model_body() {
     );
     assert_eq!(
         generated_features(&operands["tools"]),
-        [feature_id(&ir, "Extrude 2")]
+        [feature_id(&ir, "Extrude2")]
     );
     assert_eq!(producer_unresolved(&losses), 0);
 }

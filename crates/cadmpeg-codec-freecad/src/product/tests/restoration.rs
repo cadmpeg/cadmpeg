@@ -576,3 +576,65 @@ fn link_restore_migrates_uniform_scale_vector_from_scalar_scale() {
         }
     }
 }
+
+#[test]
+fn a_repeated_product_carrier_keeps_the_element_freecad_restores_last() {
+    let [prototype, placement] = [
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="Part::Feature" name="First" id="1"/>
+ <Object type="Part::Feature" name="Second" id="2"/>
+ <Object type="App::Link" name="Occurrence" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="First"><Properties Count="0"/></Object>
+ <Object name="Second"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="2">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="First"/></Property>
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Second"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Feature" name="Prototype" id="1"/>
+ <Object type="App::Link" name="Occurrence" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="4">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+  <Property name="LinkTransform" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="20" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#,
+    ];
+    let repeated = crate::loss::FreecadLossCode::PersistencePropertyRepeated
+        .note("")
+        .code;
+    let result = decode_document(prototype);
+    assert_eq!(
+        product_node(&result, "Occurrence")
+            .expect("link record")
+            .prototype(),
+        Some("fcstd:native:object#Second")
+    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == repeated));
+    assert_valid_document(result.ir());
+    let result = decode_document(placement);
+    let rows = occurrence(&result, "#Occurrence:instance")
+        .transform
+        .expect("the link's placement")
+        .affine_rows();
+    assert_eq!([rows[0][3], rows[1][3], rows[2][3]], [20.0, 0.0, 0.0]);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == repeated));
+    assert_valid_document(result.ir());
+}

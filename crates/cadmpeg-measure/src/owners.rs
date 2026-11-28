@@ -6,44 +6,25 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_ir::geometry::pcurve::Pcurve;
 use cadmpeg_ir::geometry::{Curve, ProceduralSurface, Surface};
 use cadmpeg_ir::ids::{BodyId, ShellId};
+use cadmpeg_ir::index::{FastBuildHasher, ModelIndex, StandardIndex};
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::topology::{
-    Body, ChildLists, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
-};
+use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Region, Sense, Shell, Vertex};
 use cadmpeg_ir::CadIr;
 
 /// Lookups of one document's topology and carriers.
 pub(crate) struct Owners<'ir> {
     pub(crate) ir: &'ir CadIr,
-    bodies: HashMap<&'ir str, &'ir Body>,
-    regions: HashMap<&'ir str, &'ir Region>,
-    shells: HashMap<&'ir str, &'ir Shell>,
-    faces: HashMap<&'ir str, &'ir Face>,
-    loops: HashMap<&'ir str, &'ir Loop>,
-    coedges: HashMap<&'ir str, &'ir Coedge>,
-    edges: HashMap<&'ir str, &'ir Edge>,
-    vertices: HashMap<&'ir str, &'ir Vertex>,
-    points: HashMap<&'ir str, &'ir Point>,
-    surfaces: HashMap<&'ir str, &'ir Surface>,
-    curves: HashMap<&'ir str, &'ir Curve>,
-    pcurves: HashMap<&'ir str, &'ir Pcurve>,
-    procedural_surfaces: HashMap<&'ir str, &'ir ProceduralSurface>,
-    /// Faces of each shell and regions of each body, in arena order.
-    children: ChildLists<'ir>,
+    pub(crate) index: ModelIndex<'ir>,
     /// Coedges of each edge, in coedge arena order.
-    edge_coedges: HashMap<&'ir str, Vec<&'ir Coedge>>,
+    edge_coedges: HashMap<&'ir str, Vec<&'ir Coedge>, FastBuildHasher>,
     /// Edges of each body, sorted.
     body_edges: BTreeMap<&'ir str, BTreeSet<&'ir str>>,
     /// The first body in ID order that owns each edge.
-    edge_owner: HashMap<&'ir str, &'ir str>,
+    edge_owner: HashMap<&'ir str, &'ir str, FastBuildHasher>,
     /// Vertices of each body, sorted.
     body_vertices: BTreeMap<&'ir str, BTreeSet<&'ir str>>,
     /// Faces of each body, sorted.
     body_faces: BTreeMap<&'ir str, BTreeSet<&'ir str>>,
-}
-
-fn by_id<'ir, T>(items: &'ir [T], id: impl Fn(&'ir T) -> &'ir str) -> HashMap<&'ir str, &'ir T> {
-    items.iter().map(|item| (id(item), item)).collect()
 }
 
 impl<'ir> Owners<'ir> {
@@ -51,23 +32,10 @@ impl<'ir> Owners<'ir> {
         let geometry = &ir.geometry;
         let mut owners = Self {
             ir,
-            bodies: by_id(&geometry.bodies, |item| item.id.as_str()),
-            regions: by_id(&geometry.regions, |item| item.id.as_str()),
-            shells: by_id(&geometry.shells, |item| item.id.as_str()),
-            faces: by_id(&geometry.faces, |item| item.id.as_str()),
-            loops: by_id(&geometry.loops, |item| item.id.as_str()),
-            coedges: by_id(&geometry.coedges, |item| item.id.as_str()),
-            edges: by_id(&geometry.edges, |item| item.id.as_str()),
-            vertices: by_id(&geometry.vertices, |item| item.id.as_str()),
-            points: by_id(&geometry.points, |item| item.id.as_str()),
-            surfaces: by_id(&geometry.surfaces, |item| item.id.as_str()),
-            curves: by_id(&geometry.curves, |item| item.id.as_str()),
-            pcurves: by_id(&geometry.pcurves, |item| item.id.as_str()),
-            procedural_surfaces: by_id(&geometry.procedural_surfaces, |item| item.id.as_str()),
-            children: geometry.child_lists(),
-            edge_coedges: HashMap::new(),
+            index: ModelIndex::new_model_only(ir),
+            edge_coedges: HashMap::with_hasher(FastBuildHasher::default()),
             body_edges: BTreeMap::new(),
-            edge_owner: HashMap::new(),
+            edge_owner: HashMap::with_hasher(FastBuildHasher::default()),
             body_vertices: BTreeMap::new(),
             body_faces: BTreeMap::new(),
         };
@@ -132,56 +100,56 @@ impl<'ir> Owners<'ir> {
     }
 
     pub(crate) fn body(&self, id: &str) -> Option<&'ir Body> {
-        self.bodies.get(id).copied()
+        self.index.bodies(id, StandardIndex)
     }
 
     pub(crate) fn region(&self, id: &str) -> Option<&'ir Region> {
-        self.regions.get(id).copied()
+        self.index.regions(id, StandardIndex)
     }
 
     pub(crate) fn shell(&self, id: &str) -> Option<&'ir Shell> {
-        self.shells.get(id).copied()
+        self.index.shells(id, StandardIndex)
     }
 
     pub(crate) fn face(&self, id: &str) -> Option<&'ir Face> {
-        self.faces.get(id).copied()
+        self.index.faces(id, StandardIndex)
     }
 
     pub(crate) fn loop_(&self, id: &str) -> Option<&'ir Loop> {
-        self.loops.get(id).copied()
+        self.index.loops(id, StandardIndex)
     }
 
     pub(crate) fn coedge(&self, id: &str) -> Option<&'ir Coedge> {
-        self.coedges.get(id).copied()
+        self.index.coedges(id, StandardIndex)
     }
 
     pub(crate) fn edge(&self, id: &str) -> Option<&'ir Edge> {
-        self.edges.get(id).copied()
+        self.index.edges(id, StandardIndex)
     }
 
     pub(crate) fn vertex(&self, id: &str) -> Option<&'ir Vertex> {
-        self.vertices.get(id).copied()
+        self.index.vertices(id, StandardIndex)
     }
 
     pub(crate) fn surface(&self, id: &str) -> Option<&'ir Surface> {
-        self.surfaces.get(id).copied()
+        self.index.surfaces(id, StandardIndex)
     }
 
     pub(crate) fn curve(&self, id: &str) -> Option<&'ir Curve> {
-        self.curves.get(id).copied()
+        self.index.curves(id, StandardIndex)
     }
 
     pub(crate) fn pcurve(&self, id: &str) -> Option<&'ir Pcurve> {
-        self.pcurves.get(id).copied()
+        self.index.pcurves(id, StandardIndex)
     }
 
     pub(crate) fn procedural_surface(&self, id: &str) -> Option<&'ir ProceduralSurface> {
-        self.procedural_surfaces.get(id).copied()
+        self.index.procedural_surfaces(id, StandardIndex)
     }
 
     /// Every face whose shell is `shell`, in arena order.
     pub(crate) fn stated_shell_faces(&self, shell: &ShellId) -> &[&'ir Face] {
-        self.children.stated_shell_faces(shell)
+        self.index.child_lists().stated_shell_faces(shell)
     }
 
     /// The shells of each region of `body`, the exterior first, where the
@@ -189,18 +157,19 @@ impl<'ir> Owners<'ir> {
     /// a partial face, where no volume or closure is stated (§5.6, Unstated
     /// children).
     pub(crate) fn complete_body_shells(&self, body: &BodyId) -> Option<Vec<&'ir [ShellId]>> {
-        self.children
+        let children = self.index.child_lists();
+        children
             .complete_body_regions(body)?
             .iter()
-            .map(|region| self.children.complete_shells(region))
+            .map(|region| children.complete_shells(region))
             .collect()
     }
 
     /// The body-local position of a vertex.
     pub(crate) fn vertex_position(&self, id: &str) -> Option<Point3> {
         let vertex = self.vertex(id)?;
-        self.points
-            .get(vertex.point.as_str())
+        self.index
+            .points(vertex.point.as_str(), StandardIndex)
             .map(|point| point.position().get())
     }
 

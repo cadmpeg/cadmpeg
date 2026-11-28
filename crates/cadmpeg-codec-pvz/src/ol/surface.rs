@@ -172,7 +172,7 @@ fn read_vertices(
     let layout = at(head, vertex_block::LAYOUT)?.req_u8()?;
     let count = at(head, vertex_block::VERTEX_COUNT)?.req_u32_le()?;
     if layout & !(LAYOUT_NORMAL | LAYOUT_TEXTURE) != 0 {
-        return Err(CodecError::malformed(format_args!(
+        return Err(CodecError::NotImplemented(format!(
             "vertex block at offset {} has undefined layout {layout:#04x}",
             payload.start()
         )));

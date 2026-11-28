@@ -86,10 +86,11 @@ pub(crate) fn validate_native(
                     .collect::<Vec<_>>();
                 matching.len() == 1
                     && matching[0].discriminator == table.counts[index]
-                    && matching[0].payload_len
-                        == cadmpeg_core::decode::u64_from_index(table.payloads[index].len())
-                    && matching[0].payload_sha256
-                        == cadmpeg_ir::hash::sha256_hex(&table.payloads[index])
+                    && table.payloads[index].as_ref().is_none_or(|payload| {
+                        matching[0].payload_len
+                            == cadmpeg_core::decode::u64_from_index(payload.len())
+                            && matching[0].payload_sha256 == cadmpeg_ir::hash::sha256_hex(payload)
+                    })
             });
         if !valid {
             findings.push(finding(

@@ -291,7 +291,7 @@ pub(crate) enum DesignEdgeFlangeWidthParameterSource {
 }
 
 /// Height extent law carried by a sheet-metal `EdgeFlange` scope.
-#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub(crate) enum DesignEdgeFlangeHeightExtent {
     /// The flange height is a direct distance from the selected sheet datum.
@@ -695,7 +695,7 @@ impl From<DesignEdgeFlangeOperation> for DesignEdgeFlangeOperationSerde {
 }
 
 /// Parameter-owner layout carried by a sheet-metal `Hem` scope.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum DesignHemParameterOwners {
     /// Flat and open forms own a gap and a length.

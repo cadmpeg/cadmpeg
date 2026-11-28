@@ -5148,7 +5148,7 @@ pub struct ContainerInputs<'a, 'record> {
     /// Container records and records needed by their chains.
     pub records: &'record [Record],
     /// Source bytes for retained records.
-    pub bytes: &'a [u8],
+    pub shell_bytes: Option<&'a [u8]>,
     /// Records indexed by stable slot.
     pub by_index: &'a HashMap<i64, &'record Record>,
     /// Admitted topology slots.
@@ -5157,8 +5157,6 @@ pub struct ContainerInputs<'a, 'record> {
     pub wire: &'a WireShellTopology,
     /// Source stream name.
     pub stream: &'a str,
-    /// Transform length scale.
-    pub header_scale: f64,
     /// Identity format.
     pub format: IdFormat,
 }
@@ -5171,12 +5169,11 @@ pub fn emit_containers(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let ContainerInputs {
         records,
-        bytes,
+        shell_bytes,
         by_index,
         reach,
         wire,
         stream,
-        header_scale,
         format,
     } = inputs;
     let Reachable {
@@ -5197,7 +5194,9 @@ pub fn emit_containers(
             cadmpeg_core::CodecError::malformed("ASM record index exceeds the i64 range")
         })?;
         let Some(owner) = r.ref_at(7) else {
-            retain_record(ctx, out, r, bytes, format)?;
+            if let Some(bytes) = shell_bytes {
+                retain_record(ctx, out, r, bytes, format)?;
+            }
             continue;
         };
         let faces = shell_faces(r, by_index, &subshell_shells, kept_faces, format);
@@ -5214,7 +5213,9 @@ pub fn emit_containers(
             .map(|vertex| VertexId::from(id(format, *vertex)))
             .collect::<Vec<_>>();
         if faces.is_empty() && wire_edges.is_empty() && free_vertices.is_empty() {
-            retain_record(ctx, out, r, bytes, format)?;
+            if let Some(bytes) = shell_bytes {
+                retain_record(ctx, out, r, bytes, format)?;
+            }
             continue;
         }
         let shell = Shell::with_members(
@@ -5298,8 +5299,7 @@ pub fn emit_containers(
                 out.bodies.push(Body {
                     id: body_id,
                     kind: cadmpeg_ir::topology::BodyKind::Solid,
-                    transform: transform_record
-                        .and_then(|transform| decode_transform(transform, header_scale)),
+                    transform: transform_record.and_then(|transform| decode_transform(transform)),
                     name: attribute_name(r)?,
                     color: attribute_color(r),
                     visible: None,
@@ -5443,20 +5443,7 @@ fn retain_record(
     bytes: &[u8],
     format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let end = r.offset.checked_add(r.len).ok_or_else(|| {
-        cadmpeg_core::CodecError::malformed(format_args!(
-            "record {} at byte {} declares a length of {} bytes, which leaves the address space",
-            r.index, r.offset, r.len
-        ))
-    })?;
-    let retained = bytes.get(r.offset..end).ok_or_else(|| {
-        cadmpeg_core::CodecError::malformed(format_args!(
-            "record {} declares bytes {}..{end}, but the stream holds {} bytes",
-            r.index,
-            r.offset,
-            bytes.len()
-        ))
-    })?;
+    let retained = r.bytes_in(bytes)?;
     ctx.retain_bytes(
         cadmpeg_core::decode::u64_from_index(retained.len()),
         "retain ASM unknown record",

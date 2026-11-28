@@ -1937,17 +1937,53 @@ enum PlanarHole {
     Polygon {
         boundary: TrimPolygon,
         triangles: Vec<[Point2; 3]>,
+        bounds: Option<(Point2, Point2)>,
+        triangle_boxes: Vec<(Point2, Point2)>,
     },
     Circle(CircularHole),
 }
 
 impl PlanarHole {
     fn polygon(boundary: Vec<Point2>, tolerance: f64, work: &WorkBudget) -> Option<Self> {
-        let triangles = triangulate_polygon(&boundary, tolerance, work)?;
-        Some(Self::Polygon {
-            boundary: TrimPolygon::new(boundary),
+        let triangles = triangulate_polygon_checked(&boundary, tolerance, work, true)?;
+        Some(Self::from_triangulated(
+            TrimPolygon::new(boundary),
             triangles,
-        })
+        ))
+    }
+
+    fn polygon_presumed_simple(
+        boundary: Vec<Point2>,
+        tolerance: f64,
+        work: &WorkBudget,
+    ) -> Option<Self> {
+        let triangles = triangulate_polygon_checked(&boundary, tolerance, work, false)?;
+        Some(Self::from_triangulated(
+            TrimPolygon::new_simple_at(boundary, tolerance),
+            triangles,
+        ))
+    }
+
+    fn from_triangulated(boundary: TrimPolygon, triangles: Vec<[Point2; 3]>) -> Self {
+        let mut triangle_boxes = Vec::with_capacity(triangles.len());
+        let mut overall: Option<(Point2, Point2)> = None;
+        for &tri in &triangles {
+            let tri_box = triangle_bounds_2d(tri);
+            triangle_boxes.push(tri_box);
+            overall = Some(match overall {
+                None => tri_box,
+                Some((min, max)) => (
+                    Point2::new(min.u.min(tri_box.0.u), min.v.min(tri_box.0.v)),
+                    Point2::new(max.u.max(tri_box.1.u), max.v.max(tri_box.1.v)),
+                ),
+            });
+        }
+        Self::Polygon {
+            boundary,
+            triangles,
+            bounds: overall,
+            triangle_boxes,
+        }
     }
 }
 
@@ -1963,6 +1999,8 @@ enum HoleConstraint<'a> {
     Polygon {
         boundary: &'a TrimPolygon,
         triangles: &'a [[Point2; 3]],
+        bounds: Option<(Point2, Point2)>,
+        triangle_boxes: &'a [(Point2, Point2)],
     },
     Circle {
         exclusion: CircularHole,
@@ -2101,9 +2139,13 @@ impl PlanarTrim {
                 PlanarHole::Polygon {
                     boundary,
                     triangles,
+                    bounds,
+                    triangle_boxes,
                 } => HoleConstraint::Polygon {
                     boundary,
                     triangles,
+                    bounds: *bounds,
+                    triangle_boxes,
                 },
                 PlanarHole::Circle(hole) => {
                     let Some((exclusion, boundary)) =
@@ -2190,9 +2232,36 @@ impl HoleConstraint<'_> {
 
     fn crosses_triangle(&self, triangle: [Point2; 3], tolerance: f64) -> bool {
         match self {
-            Self::Polygon { triangles, .. } => triangles.iter().any(|hole_triangle| {
-                triangles_have_positive_overlap(triangle, *hole_triangle, tolerance)
-            }),
+            Self::Polygon {
+                triangles,
+                bounds,
+                triangle_boxes,
+                ..
+            } => {
+                if tolerance.is_finite()
+                    && tolerance >= 0.0
+                    && triangle.iter().all(Point2::is_finite)
+                {
+                    let tri_box = triangle_bounds_2d(triangle);
+                    if bounds.is_some_and(|hole_box| boxes_strictly_separated_2d(tri_box, hole_box))
+                    {
+                        return false;
+                    }
+                    return triangles.iter().zip(triangle_boxes.iter()).any(
+                        |(&hole_triangle, &hole_box)| {
+                            !boxes_strictly_separated_2d(tri_box, hole_box)
+                                && triangles_have_positive_overlap(
+                                    triangle,
+                                    hole_triangle,
+                                    tolerance,
+                                )
+                        },
+                    );
+                }
+                triangles.iter().any(|hole_triangle| {
+                    triangles_have_positive_overlap(triangle, *hole_triangle, tolerance)
+                })
+            }
             Self::Circle {
                 exclusion,
                 boundary,
@@ -2604,7 +2673,8 @@ fn planar_trim(
     } else {
         // Every polygon participates in a containment pair when more than
         // one is present. Establish simplicity once before testing pairs.
-        if polygons.len() > 1
+        let presumed_simple = polygons.len() > 1;
+        if presumed_simple
             && !polygons.iter().all(|polygon| {
                 charge_product(work, polygon.len(), polygon.len())
                     && is_simple_polygon(polygon, sampling_tolerance)
@@ -2685,12 +2755,21 @@ fn planar_trim(
         for polygon in polygon_holes {
             let mut boundary = Vec::new();
             boundary.extend_from_slice(polygon);
-            let hole = PlanarHole::polygon(boundary, sampling_tolerance, work)?;
+            let hole = if presumed_simple {
+                PlanarHole::polygon_presumed_simple(boundary, sampling_tolerance, work)?
+            } else {
+                PlanarHole::polygon(boundary, sampling_tolerance, work)?
+            };
             holes.push(hole);
         }
         let mut outer = Vec::new();
         outer.extend_from_slice(outer_polygon);
-        (PlanarOuter::Polygon(TrimPolygon::new(outer)), holes)
+        let outer_trim = if presumed_simple {
+            TrimPolygon::new_simple_at(outer, sampling_tolerance)
+        } else {
+            TrimPolygon::new(outer)
+        };
+        (PlanarOuter::Polygon(outer_trim), holes)
     };
     Some(PlanarTrim {
         frame,
@@ -3141,16 +3220,61 @@ fn simple_polygon_area_twice(
     if area.get().abs() <= tolerance * tolerance {
         return None;
     }
-    for left in 0..polygon.len() {
-        for right in left + 1..polygon.len() {
-            if right == left + 1 || (left == 0 && right + 1 == polygon.len()) {
+    let len = polygon.len();
+    if len >= 12 && tolerance.is_finite() && tolerance >= 0.0 {
+        let mut edges = Vec::with_capacity(len);
+        for index in 0..len {
+            let start = polygon[index];
+            let end = polygon[(index + 1) % len];
+            edges.push((
+                index,
+                start.u.min(end.u),
+                start.u.max(end.u),
+                start.v.min(end.v),
+                start.v.max(end.v),
+            ));
+        }
+        edges.sort_by(|left, right| left.1.total_cmp(&right.1));
+        for (i, &(left_idx, _, left_max_u, left_min_v, left_max_v)) in edges.iter().enumerate() {
+            let u_limit = left_max_u + tolerance;
+            for &(right_idx, right_min_u, _, right_min_v, right_max_v) in &edges[i + 1..] {
+                if right_min_u > u_limit {
+                    break;
+                }
+                if right_min_v > left_max_v + tolerance || left_min_v > right_max_v + tolerance {
+                    continue;
+                }
+                let (lo, hi) = if left_idx < right_idx {
+                    (left_idx, right_idx)
+                } else {
+                    (right_idx, left_idx)
+                };
+                if hi == lo + 1 || (lo == 0 && hi + 1 == len) {
+                    continue;
+                }
+                if segments_intersect(
+                    polygon[lo],
+                    polygon[(lo + 1) % len],
+                    polygon[hi],
+                    polygon[(hi + 1) % len],
+                    tolerance,
+                ) {
+                    return None;
+                }
+            }
+        }
+        return Some(area);
+    }
+    for left in 0..len {
+        for right in left + 1..len {
+            if right == left + 1 || (left == 0 && right + 1 == len) {
                 continue;
             }
             if segments_intersect(
                 polygon[left],
-                polygon[(left + 1) % polygon.len()],
+                polygon[(left + 1) % len],
                 polygon[right],
-                polygon[(right + 1) % polygon.len()],
+                polygon[(right + 1) % len],
                 tolerance,
             ) {
                 return None;
@@ -3160,18 +3284,36 @@ fn simple_polygon_area_twice(
     Some(area)
 }
 
+#[cfg(test)]
 fn triangulate_polygon(
     polygon: &[Point2],
     tolerance: f64,
     work: &WorkBudget,
 ) -> Option<Vec<[Point2; 3]>> {
+    triangulate_polygon_checked(polygon, tolerance, work, true)
+}
+
+fn triangulate_polygon_checked(
+    polygon: &[Point2],
+    tolerance: f64,
+    work: &WorkBudget,
+    check_simple: bool,
+) -> Option<Vec<[Point2; 3]>> {
     if !charge_product(work, polygon.len(), polygon.len()) {
         return None;
     }
     // The area admits only a polygon of finite vertices.
-    let orientation = simple_polygon_area_twice(polygon, tolerance)?
-        .get()
-        .signum();
+    let area = if check_simple {
+        simple_polygon_area_twice(polygon, tolerance)?
+    } else {
+        let area = cadmpeg_ir::math::planar::polygon_area_twice(polygon)?;
+        if area.get().abs() <= tolerance * tolerance {
+            return None;
+        }
+        area
+    };
+    let orientation = area.get().signum();
+    let finite_tol = tolerance.is_finite() && tolerance >= 0.0;
     let mut remaining = Vec::new();
     remaining.extend(0..polygon.len());
     let mut triangles = Vec::new();
@@ -3194,6 +3336,10 @@ fn triangulate_polygon(
             if !charge_product(work, 2, remaining.len()) {
                 return None;
             }
+            let diag_min_u = previous.u.min(next.u);
+            let diag_max_u = previous.u.max(next.u);
+            let diag_min_v = previous.v.min(next.v);
+            let diag_max_v = previous.v.max(next.v);
             for edge_position in 0..remaining.len() {
                 let edge_next_position = (edge_position + 1) % remaining.len();
                 if edge_position == previous_position
@@ -3205,13 +3351,17 @@ fn triangulate_polygon(
                 {
                     continue;
                 }
-                if segments_intersect(
-                    previous,
-                    next,
-                    polygon[remaining[edge_position]],
-                    polygon[remaining[edge_next_position]],
-                    tolerance,
-                ) {
+                let edge_start = polygon[remaining[edge_position]];
+                let edge_end = polygon[remaining[edge_next_position]];
+                if finite_tol
+                    && (edge_start.u.min(edge_end.u) > diag_max_u + tolerance
+                        || diag_min_u > edge_start.u.max(edge_end.u) + tolerance
+                        || edge_start.v.min(edge_end.v) > diag_max_v + tolerance
+                        || diag_min_v > edge_start.v.max(edge_end.v) + tolerance)
+                {
+                    continue;
+                }
+                if segments_intersect(previous, next, edge_start, edge_end, tolerance) {
                     continue 'ears;
                 }
             }
@@ -3372,6 +3522,14 @@ impl TrimPolygon {
         }
     }
 
+    fn new_simple_at(points: Vec<Point2>, tolerance: f64) -> Self {
+        Self {
+            bands: EdgeBands::new(&points),
+            points,
+            simple_at: std::cell::Cell::new(Some((tolerance.to_bits(), true))),
+        }
+    }
+
     fn is_simple(&self, tolerance: f64) -> bool {
         let key = tolerance.to_bits();
         if let Some((tested, simple)) = self.simple_at.get() {
@@ -3403,7 +3561,7 @@ impl TrimPolygon {
 
     /// [`polygon_strictly_contains`] over this polygon.
     fn strictly_contains(&self, point: Point2, tolerance: f64) -> bool {
-        !self.boundary_within(point, tolerance) && self.crossings_odd(point)
+        self.crossings_odd(point) && !self.boundary_within(point, tolerance)
     }
 
     fn crossings_odd(&self, point: Point2) -> bool {
@@ -3707,8 +3865,39 @@ fn polygon_contains_triangle(boundary: &[Point2], triangle: [Point2; 3], toleran
 
 /// [`polygon_contains`] without the boundary band.
 fn polygon_strictly_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
-    !polygon_boundary_within(polygon, point, tolerance)
-        && crossings_odd(polygon, 0..polygon.len(), point)
+    crossings_odd(polygon, 0..polygon.len(), point)
+        && !polygon_boundary_within(polygon, point, tolerance)
+}
+
+fn triangle_bounds_2d([a, b, c]: [Point2; 3]) -> (Point2, Point2) {
+    (
+        Point2::new(a.u.min(b.u).min(c.u), a.v.min(b.v).min(c.v)),
+        Point2::new(a.u.max(b.u).max(c.u), a.v.max(b.v).max(c.v)),
+    )
+}
+
+fn boxes_strictly_separated_2d(
+    (first_min, first_max): (Point2, Point2),
+    (second_min, second_max): (Point2, Point2),
+) -> bool {
+    let scale = [
+        first_min.u.abs(),
+        first_min.v.abs(),
+        first_max.u.abs(),
+        first_max.v.abs(),
+        second_min.u.abs(),
+        second_min.v.abs(),
+        second_max.u.abs(),
+        second_max.v.abs(),
+        1.0,
+    ]
+    .into_iter()
+    .fold(0.0_f64, f64::max);
+    let clearance = SEGMENT_BOX_MARGIN * scale;
+    second_min.u - first_max.u > clearance
+        || first_min.u - second_max.u > clearance
+        || second_min.v - first_max.v > clearance
+        || first_min.v - second_max.v > clearance
 }
 
 /// Convexity of an already simple polygon.

@@ -262,15 +262,23 @@ pub(crate) fn write_semantic_with_records_cached(
     let policy = *ctx.policy();
     let limits = policy.limits;
     if matches!(cached_native, CachedNative::Unloaded) {
-        let loaded = ir
-            .native
-            .namespace("sldprt")
-            .map(|namespace| {
-                SldprtNative::load_under(namespace, limits, ir.tolerances.linear)
-                    .map_err(CodecError::from)
-            })
-            .transpose()?;
-        *cached_native = CachedNative::Loaded(loaded);
+        if let Some(baseline) = source_baseline.as_deref().filter(|baseline| {
+            baseline.limits == limits
+                && ir.tolerances.linear == baseline.decoded.ir.tolerances.linear
+                && ir.native.namespace("sldprt") == baseline.decoded.ir.native.namespace("sldprt")
+        }) {
+            *cached_native = CachedNative::Loaded(baseline.native.clone());
+        } else {
+            let loaded = ir
+                .native
+                .namespace("sldprt")
+                .map(|namespace| {
+                    SldprtNative::load_under(namespace, limits, ir.tolerances.linear)
+                        .map_err(CodecError::from)
+                })
+                .transpose()?;
+            *cached_native = CachedNative::Loaded(loaded);
+        }
     }
     let input_native = match &*cached_native {
         CachedNative::Loaded(loaded) => loaded.as_ref(),

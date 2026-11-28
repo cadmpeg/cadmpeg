@@ -12,11 +12,14 @@ use cadmpeg_ir::design::feature::{FeatureOperation, FuzzyTolerance, OperationFam
 use cadmpeg_ir::design::ops::assembly::{Place, PlacementBase};
 use cadmpeg_ir::design::ops::body::ScaleFactors;
 use cadmpeg_ir::design::parameter::ParameterOwner;
+use cadmpeg_ir::design::projection::restated::Restater;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 
 use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
+
+mod joints;
 
 const DESIGN_HISTORY: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -175,6 +178,56 @@ fn a_partdesign_body_is_an_ordered_body_container_at_its_tip() {
         FeatureOperation::Unresolved {
             family: OperationFamily::Sketch
         }
+    );
+}
+
+/// The Body container restates the Body's model feature with its children as
+/// members, its `Tip` as the rollback and its bodies as the current state.
+/// A container has no name, so the Body's name is stated in part, and a
+/// CADIR write charges it on the omitted model features.
+#[test]
+fn the_body_container_restates_the_body_feature_without_its_name() {
+    use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
+
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(DESIGN_HISTORY), &DecodeOptions::default())
+        .unwrap();
+    let ir = decoded.ir();
+    let container = Restater::Record("fcstd:design:container#Body".to_owned());
+    let restated = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let restating = ir.model.restated().get(feature.id.as_str())?;
+            let cut = restating.cut_by(|by| by == &container)?;
+            Some((feature.id.as_str(), cut))
+        })
+        .collect::<Vec<_>>();
+    let [(body, cut)] = restated.as_slice() else {
+        panic!("one Body feature: {restated:?}");
+    };
+    assert!(cut.contains("name"), "{cut:?}");
+    assert!(!cut.contains("definition"), "{cut:?}");
+    assert!(!cut.contains("outputs"), "{cut:?}");
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(ir, None))
+        .expect("the CADIR writer drops what it cannot write");
+    let charged = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "arena.omitted")
+        .find_map(|loss| {
+            let (_, part) = loss.message.split_once(" stated in part: ")?;
+            let (_, fields) = part.split_once(&format!("{body} ("))?;
+            fields.split_once(')').map(|(fields, _)| fields.to_owned())
+        })
+        .expect("the write charges the Body as stated in part");
+    assert!(
+        charged.split(", ").any(|field| field == "name"),
+        "{charged}"
     );
 }
 
@@ -713,9 +766,10 @@ fn objects_outside_a_body_are_group_members_with_their_parameters() {
     };
     assert_eq!(
         operation("fcstd:design:feature#Sheet"),
-        FeatureOperation::Unresolved {
-            family: OperationFamily::Spreadsheet
-        }
+        FeatureOperation::Spreadsheet(
+            cadmpeg_ir::spreadsheets::SpreadsheetId::mint("fcstd:design:spreadsheet#Sheet")
+                .unwrap()
+        )
     );
     let length = ir
         .design
@@ -738,6 +792,61 @@ fn objects_outside_a_body_are_group_members_with_their_parameters() {
         assert!(!omitted.contains(id), "{id}: {omitted:?}");
     }
     assert_eq!(written.design.features, ir.design.features);
+    assert_eq!(written.design.parameters, ir.design.parameters);
+}
+
+#[test]
+fn a_spreadsheet_is_a_feature_naming_its_sheet_record() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Spreadsheet::Sheet" name="Sheet" id="1"/></Objects>
+<ObjectData Count="1">
+ <Object name="Sheet"><Properties Count="2">
+  <Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="3">
+   <Cell address="A1" alias="w" content="12mm"/>
+   <Cell address="A2" content="=w * 2"/>
+   <Cell address="C1" content="'Title" rowSpan="1" colSpan="2"/>
+  </Cells></Property>
+  <Property name="columnWidths" type="Spreadsheet::PropertyColumnWidths"><ColumnInfo Count="1"><Column name="C" width="140"/></ColumnInfo></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let ir = decode(&archive(document), DecodeDepth::Design);
+    let [sheet] = ir.design.spreadsheets.as_slice() else {
+        panic!("{:?}", ir.design.spreadsheets);
+    };
+    assert_eq!(sheet.id.as_str(), "fcstd:design:spreadsheet#Sheet");
+    let cells = sheet
+        .cells()
+        .iter()
+        .map(|cell| (cell.address.a1(), cell.parameter.as_str().to_owned()))
+        .collect::<Vec<_>>();
+    let cell = |address: &str| format!("fcstd:design:parameter#Sheet:cell:{address}");
+    assert_eq!(
+        cells,
+        ["A1", "A2", "C1"].map(|address| (address.to_owned(), cell(address)))
+    );
+    assert_eq!(sheet.column_widths().len(), 1);
+    assert_eq!(sheet.column_widths()[0].pixels, 140);
+    assert_eq!(sheet.merged_ranges().len(), 1);
+    let feature = ir
+        .design
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "fcstd:design:feature#Sheet")
+        .unwrap();
+    assert_eq!(
+        feature.definition.operation,
+        FeatureOperation::Spreadsheet(sheet.id.clone())
+    );
+    let (written, omitted) = cadir_round_trip(&ir);
+    for id in [
+        "fcstd:design:spreadsheet#Sheet".to_owned(),
+        cell("A1"),
+        cell("A2"),
+        cell("C1"),
+    ] {
+        assert!(!omitted.contains(&id), "{id}: {omitted:?}");
+    }
+    assert_eq!(written.design.spreadsheets, ir.design.spreadsheets);
     assert_eq!(written.design.parameters, ir.design.parameters);
 }
 
@@ -923,6 +1032,53 @@ fn a_link_that_follows_an_object_with_no_own_occurrence_is_a_loss() {
             .losses
             .iter()
             .any(|loss| loss.code == unresolved.code && loss.message.contains("Instance")),
+        "{:?}",
+        decoded.report().losses
+    );
+}
+
+#[test]
+fn a_joint_with_a_connector_that_names_no_object_is_a_loss() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="Assembly::AssemblyObject" name="Assembly" id="1"/>
+ <Object type="Part::Feature" name="BracketShape" id="2"/>
+ <Object type="App::Link" name="Bracket" id="3"/>
+ <Object type="App::FeaturePython" name="Broken" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Assembly"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="Bracket"/><Link value="Broken"/></LinkList></Property></Properties></Object>
+ <Object name="BracketShape"><Properties Count="0"/></Object>
+ <Object name="Bracket"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="BracketShape"/></Property></Properties></Object>
+ <Object name="Broken"><Properties Count="3">
+  <Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Enum value="Fixed"/></CustomEnumList></Property>
+  <Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Bracket"/></Property>
+  <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name=""/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let ir = decoded.ir();
+    assert_valid_document(ir);
+    assert!(
+        ir.design
+            .features
+            .iter()
+            .all(|feature| feature.name.as_deref() != Some("Broken")),
+        "{:?}",
+        ir.design.features
+    );
+    let unresolved = crate::loss::FreecadLossCode::FeatureJointUnresolved.note("");
+    assert!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == unresolved.code && loss.message.contains("Broken")),
         "{:?}",
         decoded.report().losses
     );
