@@ -31,6 +31,7 @@ use crate::layout::local_component_occurrence_typed_compact_prefix as compact_pr
 use crate::layout::local_component_occurrence_typed_identity_tail as typed_identity_tail;
 use crate::layout::local_component_occurrence_typed_matrix_tail as typed_matrix_tail;
 use crate::layout::local_component_occurrence_typed_prefix as typed_prefix;
+use crate::layout::local_component_occurrence_unmarked_prefix as unmarked_prefix;
 use crate::layout::root_instance_empty_path_frame as empty_root_frame;
 use crate::layout::root_instance_empty_path_prefix as empty_root_instance;
 use crate::layout::root_instance_empty_path_separated_frame as separated_root_frame;
@@ -509,7 +510,7 @@ fn admit_occurrence_envelopes(
 ) -> usize {
     let before = occurrences.len();
     occurrences.retain(|occurrence| {
-        let admitted = if occurrence.owner_type_guid.is_some() {
+        let admitted = if occurrence.owner_type_guid.is_some() || occurrence.lacks_attribute_run() {
             typed_primary
         } else {
             primary
@@ -696,7 +697,7 @@ pub(crate) fn superseded_occurrences_loss(
     count: usize,
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
     (count != 0).then(|| crate::loss::F3dLossCode::LocalOccurrenceEnvelopeSuperseded.note(format!(
-        "{count} local component-occurrence frame(s) were not decoded because their offset and entity were not selected by the primary record index or, for typed references, the occurrence-placement type row."
+        "{count} local component-occurrence frame(s) were not decoded because their offset and entity were not selected by the primary record index or, for typed references and frames without an attribute run, the occurrence-placement type row."
     )))
 }
 
@@ -754,7 +755,7 @@ fn parse_attributed_component_occurrence_frame(
     }
     let mut reference_end = attributed_prefix::COMPONENT_REFERENCE;
     let component = component_reference(frame, &mut reference_end)?;
-    let (discriminator_at, marker_at, count_at, mut at) = if component.1.is_some() {
+    let (discriminator_at, marker_at, count_at, run_at) = if component.1.is_some() {
         (
             typed_attributed_prefix::PATH_DISCRIMINATOR,
             typed_attributed_prefix::ATTRIBUTES_MARKER,
@@ -774,11 +775,23 @@ fn parse_attributed_component_occurrence_frame(
     } else {
         attributed_prefix::ATTRIBUTES_MARKER_VALUE
     };
-    if reference_end != discriminator_at || frame.get(marker_at) != Some(&marker_value) {
+    // An untyped frame with a one-byte ordinal prefix can store the path
+    // terminator in place of the attribute run.
+    let unmarked = ordinal_prefix_bytes == 1
+        && component.1.is_none()
+        && frame.get(unmarked_prefix::PATH_TERMINATOR)
+            == Some(&unmarked_prefix::PATH_TERMINATOR_VALUE);
+    if reference_end != discriminator_at
+        || (!unmarked && frame.get(marker_at) != Some(&marker_value))
+    {
         return None;
     }
     let component_record_index = component.0;
-    let count = View::u32_le_at(frame, count_at)?;
+    let (count, mut at) = if unmarked {
+        (0, unmarked_prefix::ORDINAL_PREFIX)
+    } else {
+        (View::u32_le_at(frame, count_at)?, run_at)
+    };
     if count > MAX_OCCURRENCE_ATTRIBUTES {
         return None;
     }
@@ -822,8 +835,9 @@ fn parse_attributed_component_occurrence_frame(
         };
         at = after_value;
     }
-    let (property_names, persistent_key) = if let Some((names, key, end)) =
-        occurrence_property_prelude(ctx, frame, at, record_index, component)
+    let (property_names, persistent_key) = if let Some((names, key, end)) = (!unmarked)
+        .then(|| occurrence_property_prelude(ctx, frame, at, record_index, component))
+        .flatten()
     {
         at = end;
         (names, Some(key))
@@ -1728,6 +1742,7 @@ mod tests {
     mod current_pose;
     mod leading_flag;
     mod original;
+    mod unmarked;
 
     use super::{attributed_component_occurrence, root_instance_component};
     use crate::test_support::indexed_header;

@@ -8724,6 +8724,32 @@ Unstated regions:
 
 - `33..35` (2 B): Two zero trailing bytes of the local component reference.
 
+## `local_component_occurrence_unmarked_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 121 B
+
+Offsets are relative to the indexed header. The path terminator replaces the attribute run, and the one-byte ordinal prefix follows it.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An untyped attributed local component occurrence can omit |
+| 11 | 8 | `empty_instance_name` | `bytes[8]` | little | spec | An untyped attributed local component occurrence can omit |
+| 19 | 1 | `path_marker` | `u8` | little | spec | An untyped attributed local component occurrence can omit · value `1` |
+| 20 | 4 | `path_count` | `u32` | little | spec | An untyped attributed local component occurrence can omit · value `1` |
+| 24 | 9 | `component_reference` | `bytes[9]` | little | spec | An untyped attributed local component occurrence can omit |
+| 35 | 4 | `path_discriminator` | `u32` | little | spec | An untyped attributed local component occurrence can omit |
+| 39 | 1 | `path_terminator` | `u8` | little | spec | An untyped attributed local component occurrence can omit · value `0` |
+| 40 | 1 | `ordinal_prefix` | `u8` | little | spec | An untyped attributed local component occurrence can omit · value `0` |
+| 41 | 4 | `occurrence_ordinal` | `u32` | little | spec | An untyped attributed local component occurrence can omit |
+| 45 | 76 | `carrier_guid` | `bytes[76]` | little | spec | An untyped attributed local component occurrence can omit |
+
+Unstated regions:
+
+- `33..35` (2 B): Two zero trailing bytes of the local component reference.
+
 ## `sketch_point_legacy_tail`
 
 Spec §3.1 · layout: byte offsets · size: 93 B
