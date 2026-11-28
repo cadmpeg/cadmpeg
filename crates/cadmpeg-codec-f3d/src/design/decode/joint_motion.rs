@@ -45,6 +45,10 @@ const LIMIT_VALUES_AFTER_SELF_REFERENCE: usize = 23;
 /// minimum.
 const REST_FLAG_AFTER_SELF_REFERENCE: usize = 13;
 const REST_VALUE_AFTER_SELF_REFERENCE: usize = 39;
+/// A joint record's freedom lane stores its u32 code after the rest value.
+const LANE_CODE_AFTER_SELF_REFERENCE: usize = 47;
+/// The largest freedom code a lane stores.
+const MAXIMUM_LANE_CODE: u32 = 8;
 
 pub(crate) const JOINT_TYPE_GUID: &str = "7F5A0426-1D2A-4DC4-9F06-58631F69D2F5";
 const MOTION_TYPE_GUID: &str = "8C188F11-5D1B-4E1C-8E87-AF7214CA3C83";
@@ -207,10 +211,100 @@ fn decode_stream(
             motion_byte_offset: u64_from_index(motion_start),
             freedoms,
             entry_words: if usual { Vec::new() } else { words },
+            lane_limits: Vec::new(),
             limits: joint_limits(bytes, joint_start, record_end(joint_start), joint_index),
         });
     }
+    // A joint record with no motion record states its freedoms in lanes.
+    let covered: HashSet<u32> = out.iter().map(|motion| motion.joint_record_index).collect();
+    let mut joints: Vec<u32> = assemble_scopes
+        .iter()
+        .filter(|&(_, &assemble)| assemble)
+        .filter_map(|(&scope, _)| scope.checked_sub(1))
+        .filter(|joint| !covered.contains(joint) && !as_built.joints.contains(joint))
+        .collect();
+    joints.sort_unstable();
+    for joint_index in joints {
+        let Some(&joint_start) = records.offsets(joint_index).first() else {
+            continue;
+        };
+        let joint_end = record_end(joint_start);
+        let Some(lanes) = joint_lanes(bytes, joint_start, joint_end, joint_index) else {
+            continue;
+        };
+        if lanes.is_empty() {
+            continue;
+        }
+        out.push(DesignJointMotion {
+            id: crate::ids::native_scoped_id(entry_name, "design-joint-motion", joint_start),
+            joint_record_index: joint_index,
+            joint_byte_offset: u64_from_index(joint_start),
+            motion_record_index: joint_index,
+            motion_byte_offset: u64_from_index(joint_start),
+            lane_limits: lanes.iter().map(|lane| lane.limited).collect(),
+            freedoms: lanes.into_iter().map(|lane| lane.code).collect(),
+            entry_words: Vec::new(),
+            limits: joint_limits(bytes, joint_start, joint_end, joint_index),
+        });
+    }
     out
+}
+
+/// One freedom lane of a joint record that stores its freedoms itself.
+struct JointLane {
+    code: Located<u32>,
+    /// Whether any of the lane's limit or rest flags is set.
+    limited: bool,
+}
+
+/// The freedom lanes of a joint record, in record order: each lane is u32 `1`,
+/// the marked self-reference, the three limit and rest flags eleven bytes
+/// after it, the maximum, minimum and rest values twenty-three bytes after
+/// it, and the u32 freedom code forty-seven bytes after it. `None` when a
+/// self-reference does not open a complete lane.
+fn joint_lanes(
+    bytes: &[u8],
+    joint_start: usize,
+    joint_end: usize,
+    joint_index: u32,
+) -> Option<Vec<JointLane>> {
+    let bytes = bytes.get(..joint_end)?;
+    let window = bytes.get(joint_start + 11..)?;
+    let mut needle = [0u8; 5];
+    needle[0] = 1;
+    needle[1..].copy_from_slice(&joint_index.to_le_bytes());
+    let mut lanes = Vec::new();
+    for at in memchr::memmem::find_iter(window, &needle)
+        .filter(|&at| marked_record_reference(window, at) == Some(joint_index))
+    {
+        let marker = joint_start + 11 + at;
+        if View::u32_le_at(bytes, marker.checked_sub(4)?)? != 1 {
+            return None;
+        }
+        let flags = bytes.get(
+            marker + LIMIT_FLAGS_AFTER_SELF_REFERENCE..marker + REST_FLAG_AFTER_SELF_REFERENCE + 1,
+        )?;
+        if flags.iter().any(|flag| *flag > 1) {
+            return None;
+        }
+        let values = crate::bytes::f64s_at::<3>(bytes, marker + LIMIT_VALUES_AFTER_SELF_REFERENCE)?;
+        if values.iter().any(|value| !value.is_finite()) {
+            return None;
+        }
+        let code_at = marker + LANE_CODE_AFTER_SELF_REFERENCE;
+        let code = View::u32_le_at(bytes, code_at)?;
+        if code > MAXIMUM_LANE_CODE {
+            return None;
+        }
+        lanes.push(JointLane {
+            code: Located {
+                value: code,
+                offset: u64_from_index(code_at),
+            },
+            limited: flags.iter().any(|flag| *flag != 0),
+        });
+    }
+    Some(lanes)
 }
 
 /// A record holding freedom entries: its header offset, end, and index.

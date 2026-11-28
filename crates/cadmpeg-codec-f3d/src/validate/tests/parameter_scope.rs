@@ -557,6 +557,7 @@ fn validation_accepts_malformed_rest_with_retained_limits() {
                 offset: 150,
             }],
             entry_words: Vec::new(),
+            lane_limits: Vec::new(),
             limits: Some(DesignJointLimitLanes {
                 flags_offset: 42,
                 first_flag: 1,

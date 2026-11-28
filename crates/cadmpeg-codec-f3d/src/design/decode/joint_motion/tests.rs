@@ -398,6 +398,7 @@ fn malformed_rest_lanes_keep_limits() {
                     offset: 0,
                 }],
                 entry_words: Vec::new(),
+                lane_limits: Vec::new(),
                 limits: Some(lanes.clone()),
             };
             let projection = crate::design::assembly::project_assembly_joints(

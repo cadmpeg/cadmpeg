@@ -285,6 +285,7 @@ fn assert_compact_slider(
             offset: 4092,
         }],
         entry_words: Vec::new(),
+        lane_limits: Vec::new(),
         limits: Some(DesignJointLimitLanes {
             flags_offset: 2931,
             first_flag: 0,

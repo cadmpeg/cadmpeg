@@ -2638,6 +2638,7 @@ notes = "CC0 Part Design. Sketch1 on XY holds four squares, each extruded as a n
 
 [[file]]
 filename = "f3d/joint_revolute_limits.f3d"
+filename = "f3d/joint_record_freedom_lanes.f3d"
 format = "f3d"
 dialect = "f3d:manifest-3-2-0-0"
 author = "tommrazek"
@@ -2647,3 +2648,7 @@ acquisition_date = "2026-11-26"
 license = "CC0-1.0"
 sha256 = "b8b10e17fca95332e87f077077961f97782ae17d0f65300d7218503bc277eb7a"
 notes = "CC0 Part Design with two components, each with one extruded body, joined by a revolute joint with angle limits -30 to 60 degrees; the second component stands turned by 40 degrees. Its Assemble scope stores two associated tail references (the scope and its second connector's construction) and a closing self-reference."
+acquisition_date = "2026-11-28"
+license = "CC0-1.0"
+sha256 = "db694f0f4489d8494e91ffd38701c775031868b964e7114596d744ef7c615f27"
+notes = "CC0 Hybrid Design. Ten box components (Component2..Component11 under Component1); Component4 is the 50 mm base. Nine joints in timeline order: Rigid, Revolute (about z), Slider (along z), Cylindrical (z), Pin-Slot (rotate z, slide x), Planar (normal z, slide x), Ball, Revolute with limits -30..60 degrees and rest 15 degrees, Slider with limits -5..20 mm and rest 8 mm. No joint has a motion record with freedom entries; each joint record stores one freedom lane per degree of freedom."
