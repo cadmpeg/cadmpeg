@@ -17,6 +17,7 @@ use super::policy::{
     DecodePolicy, DECOMPRESSED_TOTAL_BASE, DECOMPRESSED_TOTAL_PER_INPUT_BYTE, RETAINED_BASE,
     RETAINED_PER_INPUT_BYTE,
 };
+use super::tree::XmlNote;
 
 #[derive(Debug)]
 pub(super) struct DecodeBudget {
@@ -28,6 +29,8 @@ pub(super) struct DecodeBudget {
     entities: Cell<u64>,
     recursion_depth: Cell<u64>,
     fuse: Cell<Option<ResourceLimit>>,
+    /// What XML parses left unread, one note per operation and cause.
+    xml_notes: RefCell<Vec<XmlNote>>,
     pub(super) trace: RefCell<Option<Vec<super::transaction::Event>>>,
 }
 
@@ -47,6 +50,7 @@ impl DecodeBudget {
             entities: self.entities.get(),
             depth: self.recursion_depth.get(),
             fuse: self.fuse.get(),
+            xml_notes: self.xml_notes.borrow().clone(),
         }
     }
 
@@ -57,6 +61,36 @@ impl DecodeBudget {
         self.entities.set(state.entities);
         self.recursion_depth.set(state.depth);
         self.fuse.set(state.fuse);
+        self.xml_notes.borrow_mut().clone_from(&state.xml_notes);
+    }
+
+    /// Records what an XML parse left unread.
+    pub(super) fn note_xml(&self, note: XmlNote) {
+        self.record(super::transaction::Event::Xml(note));
+        self.merge_xml(note);
+    }
+
+    /// Adds `note` to the note of its operation and cause.
+    pub(super) fn merge_xml(&self, note: XmlNote) {
+        let mut notes = self.xml_notes.borrow_mut();
+        let held = notes
+            .iter_mut()
+            .find(|held| held.operation == note.operation && held.unread == note.unread);
+        let Some(held) = held else {
+            notes.push(note);
+            return;
+        };
+        if let (Some(documents), Some(references)) = (
+            held.documents.checked_add(note.documents),
+            held.references.checked_add(note.references),
+        ) {
+            held.documents = documents;
+            held.references = references;
+        }
+    }
+
+    pub(super) fn take_xml_notes(&self) -> Vec<XmlNote> {
+        std::mem::take(&mut self.xml_notes.borrow_mut())
     }
 
     pub(super) fn replay_charge(
@@ -104,6 +138,7 @@ impl DecodeBudget {
             entities: Cell::new(0),
             recursion_depth: Cell::new(0),
             fuse: Cell::new(None),
+            xml_notes: RefCell::new(Vec::new()),
             trace: RefCell::new(None),
         }
     }

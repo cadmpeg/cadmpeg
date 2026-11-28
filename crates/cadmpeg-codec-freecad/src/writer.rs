@@ -822,6 +822,7 @@ fn read_back(
     resolve: bool,
 ) -> Result<Option<Graph>, CodecError> {
     let graph = parse_retained(ctx, xml, DOCUMENT_XML).and_then(|admitted| {
+        let admitted = cadmpeg_core::decode::tree::XmlDocument::original(admitted);
         let mut graph = crate::persistence::parse_document(&admitted, resolution.vocabulary())?;
         if !resolve {
             return Ok(graph);

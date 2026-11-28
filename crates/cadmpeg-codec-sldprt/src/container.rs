@@ -1572,10 +1572,10 @@ fn scan_solidworks_envelopes<'a>(
         };
         let root = document.root_element();
         if is_features_manifest_name(section) && root.tag_name().name() == "swSolidWorks" {
-            scan.configuration_bindings.record_features(&document);
+            scan.configuration_bindings.record_features(document.tree());
         }
         if root.tag_name().name().contains("Keywords") {
-            scan.configuration_bindings.record_keywords(&document);
+            scan.configuration_bindings.record_keywords(document.tree());
             for configuration in document
                 .descendants()
                 .filter(|node| node.is_element() && node.tag_name().name() == "Configuration")
