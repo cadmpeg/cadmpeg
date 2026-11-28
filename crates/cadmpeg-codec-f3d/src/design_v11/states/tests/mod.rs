@@ -44,6 +44,7 @@ use super::{
 };
 
 mod gaps_and_stops;
+mod native_carry;
 
 fn point(name: &str, x: f64) -> Point {
     Point::new(

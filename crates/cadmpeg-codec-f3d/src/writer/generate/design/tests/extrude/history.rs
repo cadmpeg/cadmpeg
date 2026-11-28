@@ -1519,3 +1519,83 @@ fn a_history_failure_drops_the_items_first_and_keeps_the_sketch_dimensions() {
         }
     }
 }
+
+#[test]
+fn a_history_true_write_reports_an_evaluations_unwritten_name() {
+    use cadmpeg_ir::design::names::{NameEntry, NativeName, NativeNameValue};
+    use cadmpeg_ir::design::refs::EntityRef;
+
+    let (mut ir, _) = with_a_second_extrude(Boolean::NewBody);
+    let mut cube = cube_evaluation(&ir);
+    let id = cube.id.clone();
+    let delta = &mut cube.content.as_mut().expect("stored state").delta;
+    let face = delta.records.faces[0].id.clone();
+    delta.names.insert(
+        EntityRef::Face(face.clone()),
+        Some(NameEntry {
+            name: None,
+            native: Some(NativeName {
+                codec: cadmpeg_ir::codec_id!("f3d"),
+                value: NativeNameValue::Integers(vec![9876]),
+            }),
+        }),
+    );
+    ir.design.evaluations.push(cube);
+    let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    assert!(!decoded.design.evaluations.is_empty());
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code == F3dLossCode::WriterDesignRecordOmitted.kind()
+                && loss.message.contains(id.as_str())
+                && loss.message.contains(face.as_str())
+        }),
+        "{:#?}",
+        report.losses
+    );
+}
+#[test]
+fn a_history_true_write_keeps_a_name_carried_by_its_cap_group() {
+    use cadmpeg_ir::design::names::{GenerationRole, NameEntry, NameKind, TopoName};
+    use cadmpeg_ir::design::refs::EntityRef;
+
+    let (mut ir, _) = with_a_second_extrude(Boolean::NewBody);
+    let mut cube = cube_evaluation(&ir);
+    let id = cube.id.clone();
+    let delta = &mut cube.content.as_mut().expect("stored state").delta;
+    let face = delta
+        .records
+        .faces
+        .iter()
+        .find(|face| face.id.as_str().ends_with("#bottom"))
+        .expect("start cap")
+        .id
+        .clone();
+    delta.names.insert(
+        EntityRef::Face(face.clone()),
+        Some(NameEntry {
+            name: Some(TopoName::Generated {
+                kind: NameKind::Face,
+                feature: FeatureId::mint(EXTRUDE).expect("identity grammar"),
+                role: Some(GenerationRole::Start),
+                generator: None,
+                index: None,
+            }),
+            native: None,
+        }),
+    );
+    ir.design.evaluations.push(cube);
+    let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    assert!(!decoded.design.evaluations.is_empty());
+    assert!(
+        !report.losses.iter().any(|loss| {
+            loss.message.contains(id.as_str()) && loss.message.contains(face.as_str())
+        }),
+        "{:#?}",
+        report.losses
+    );
+    let native = f3d_native(&decoded);
+    assert!(native
+        .persistent_subentity_tags
+        .iter()
+        .any(|tag| { tag.token.as_str() == "1" && tag.design_references == [301] }));
+}

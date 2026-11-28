@@ -25,6 +25,8 @@ use crate::records::entity_header::{
 use crate::records::feature::scope::DesignScopeTailFlags;
 use crate::records::identity::{Located, ReferenceRun};
 
+mod history_states;
+
 const STREAM: &str = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat";
 const GROUND: &str = "21E03EC1-0E53-406D-A852-6D088D4D1E95";
 
@@ -1832,12 +1834,10 @@ fn ordered(name: &str, features: &[&str]) -> Container {
 #[test]
 fn a_scope_whose_states_the_walk_does_not_reach_charges_a_loss() {
     let definition = ProductDefinitionId::mint("test:design:definition#scope").unwrap();
-    let at = Position::After(Member::Feature(
-        FeatureId::mint("test:design:feature#a").unwrap(),
-    ));
+    let ir = cadmpeg_ir::CadIr::empty();
     let codes = |prefix: &str, bodiless: bool, containers: &[Container]| {
         let mut losses = Vec::new();
-        super::unread_scope(&definition, prefix, &at, bodiless, containers, &mut losses);
+        super::unread_scope(&ir, &definition, prefix, bodiless, containers, &mut losses);
         losses
     };
     let [hosted] = codes("Hosted/", false, &[ordered("0", &["a"])])

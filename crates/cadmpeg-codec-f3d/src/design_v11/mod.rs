@@ -236,6 +236,7 @@ pub(crate) fn project(
         .filter_map(|feature| Some((&feature.id, feature.product_definition.as_ref()?)))
         .collect::<HashMap<_, _>>();
     let mut root = None;
+    let mut unwalked = Vec::new();
     for (prefix, (definition, mut projected)) in scopes {
         let Span {
             definitions: spanned,
@@ -259,17 +260,8 @@ pub(crate) fn project(
             continue;
         };
         let at = rollback_position(id, members, rollback.as_ref());
-        if stored_histories {
-            unread_scope(
-                &definition,
-                &prefix,
-                &at,
-                bodies.is_empty(),
-                &projected.containers,
-                losses,
-            );
-        }
-        if prefix.is_empty() && !bodies.is_empty() {
+        let bodiless = bodies.is_empty();
+        if prefix.is_empty() && !bodiless {
             root = Some(states::Scope {
                 definition: definition.clone(),
                 at: at.clone(),
@@ -278,7 +270,7 @@ pub(crate) fn project(
                 items: std::mem::take(&mut projected.items),
             });
         }
-        let current = (!bodies.is_empty())
+        let current = (!bodiless)
             .then(|| CurrentState {
                 at,
                 bodies: bodies.into_iter().collect(),
@@ -291,7 +283,7 @@ pub(crate) fn project(
         ctx.charge_entities(1, "project F3D v11 design scope")?;
         ir.design.scopes.push(DesignScope {
             active_configuration: scoped_configurations.active.get(&definition).cloned(),
-            definition,
+            definition: definition.clone(),
             roots: projected
                 .containers
                 .iter()
@@ -302,8 +294,17 @@ pub(crate) fn project(
             current,
             unproduced: BTreeSet::default(),
         });
+        let first_container = ir.design.containers.len();
         ir.design.containers.extend(projected.containers);
         ir.design.features.extend(projected.features);
+        if stored_histories {
+            unwalked.push((
+                definition,
+                prefix,
+                bodiless,
+                first_container..ir.design.containers.len(),
+            ));
+        }
     }
     ctx.charge_entities(
         u64::try_from(scoped_parameters.len() + scoped_configurations.records.len())
@@ -316,6 +317,16 @@ pub(crate) fn project(
         .extend(scoped_configurations.records);
     sheet_metal::project(ctx, ir, &definitions, losses)?;
     thread::project(ctx, ir, losses)?;
+    for (definition, prefix, bodiless, range) in unwalked {
+        unread_scope(
+            ir,
+            &definition,
+            &prefix,
+            bodiless,
+            &ir.design.containers[range],
+            losses,
+        );
+    }
     match (root, sources) {
         (Some(root), Some(sources)) => {
             return states::project(ctx, ir, sources, &root, &tails, losses);
@@ -331,57 +342,73 @@ pub(crate) fn project(
     Ok(Vec::new())
 }
 
-/// Pushes to `losses` the states of the scope `definition` that the walk of
-/// stored states does not reach: those of a document other than the root,
-/// those of a root with no current body, and those after the items of each
-/// timeline after its first. `containers` are its timelines, and `at` is the
-/// position of its current state.
+/// Reports built state-changing features outside the stored-state walk.
 fn unread_scope(
+    ir: &CadIr,
     definition: &ProductDefinitionId,
     prefix: &str,
-    at: &Position,
     bodiless: bool,
     containers: &[Container],
     losses: &mut Vec<LossNote>,
 ) {
-    fn features(container: &Container) -> BTreeSet<&str> {
-        match container {
-            Container::Ordered { members, .. } => members
-                .iter()
-                .filter_map(|member| match member {
-                    Member::Feature(feature) => Some(feature.as_str()),
-                    Member::Container(_) => None,
-                })
-                .collect(),
-            Container::Unordered { .. } => BTreeSet::new(),
-        }
-    }
-    let built = !matches!(at, Position::Start(_))
-        && containers
-            .first()
-            .is_some_and(|first| !features(first).is_empty());
-    let reason = if !prefix.is_empty() {
+    let first_reason = if !prefix.is_empty() {
         Some("its timeline lies in a document other than the root")
     } else if bodiless {
         Some("it has no current body")
     } else {
         None
     };
-    if let Some(reason) = reason.filter(|_| built) {
-        losses.push(F3dLossCode::HistoryStatesUnread.note(format!(
-            "scope {definition}: the states after its timeline items are not stated: {reason}."
-        )));
+    let configuration = states::configuration(ir, definition);
+    let mut later = BTreeSet::new();
+    for (index, container) in containers.iter().enumerate() {
+        if index == 0 && first_reason.is_none() {
+            continue;
+        }
+        let Container::Ordered {
+            members, rollback, ..
+        } = container
+        else {
+            continue;
+        };
+        let built = built_prefix(members, rollback.as_ref()).unwrap_or(members);
+        let mut features = built.iter().filter_map(|member| {
+            let Member::Feature(feature) = member else {
+                return None;
+            };
+            let stateless = configuration.is_ok_and(|configuration| {
+                states::eligibility(ir, feature, configuration)
+                    .is_ok_and(|(stateless, _)| stateless)
+            });
+            (!stateless).then_some(feature.as_str())
+        });
+        if index == 0 {
+            if let Some(reason) = first_reason.filter(|_| features.next().is_some()) {
+                losses.push(F3dLossCode::HistoryStatesUnread.note(format!(
+                    "scope {definition}: the states after its timeline items are not stated: {reason}."
+                )));
+            }
+        } else {
+            later.extend(features);
+        }
     }
-    let later = containers
-        .iter()
-        .skip(1)
-        .flat_map(features)
-        .collect::<BTreeSet<_>>();
     if !later.is_empty() {
         losses.push(F3dLossCode::HistoryStateUnread.note(format!(
             "scope {definition}: the states after features {} are not stated: they lie in a timeline after the first of the scope.",
             later.into_iter().collect::<Vec<_>>().join(", ")
         )));
+    }
+}
+
+fn built_prefix<'a>(members: &'a [Member], rollback: Option<&Rollback>) -> Option<&'a [Member]> {
+    match rollback? {
+        Rollback::End => Some(members),
+        Rollback::Before(marker) => {
+            let built = members
+                .iter()
+                .position(|member| member == marker)
+                .unwrap_or(members.len());
+            Some(&members[..built])
+        }
     }
 }
 
@@ -393,17 +420,11 @@ fn rollback_position(
     members: &[Member],
     rollback: Option<&Rollback>,
 ) -> Position {
-    let built = match rollback {
-        None => return Position::After(Member::Container(id.clone())),
-        Some(Rollback::End) => members.len(),
-        Some(Rollback::Before(marker)) => members
-            .iter()
-            .position(|member| member == marker)
-            .unwrap_or(members.len()),
+    let Some(built) = built_prefix(members, rollback) else {
+        return Position::After(Member::Container(id.clone()));
     };
-    members
-        .get(..built)
-        .and_then(<[_]>::last)
+    built
+        .last()
         .cloned()
         .map_or_else(|| Position::Start(id.clone()), Position::After)
 }

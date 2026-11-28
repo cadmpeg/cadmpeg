@@ -205,7 +205,7 @@ enum Kind {
 
 /// What the operation of a timeline item changes in a state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Role {
+pub(super) enum Role {
     /// The geometry, or what it changes is not known.
     Geometry,
     /// Nothing: a joint origin, a grounding, a rigid group, a motion link, a
@@ -260,6 +260,45 @@ fn role(operation: &FeatureOperation) -> Role {
         },
         _ => Role::Geometry,
     }
+}
+
+pub(super) fn configuration<'a>(
+    ir: &'a CadIr,
+    definition: &ProductDefinitionId,
+) -> Result<Option<&'a ConfigurationId>, &'static str> {
+    if !ir
+        .design
+        .configurations
+        .iter()
+        .any(|row| &row.scope == definition)
+    {
+        return Ok(None);
+    }
+    ir.design
+        .scopes
+        .iter()
+        .find(|scope| &scope.definition == definition)
+        .and_then(|scope| scope.active_configuration.as_ref())
+        .map(Some)
+        .ok_or("the scope has configurations and no active one")
+}
+
+pub(super) fn eligibility(
+    ir: &CadIr,
+    feature: &FeatureId,
+    configuration: Option<&ConfigurationId>,
+) -> Result<(bool, Role), CodecError> {
+    let reading = |error| {
+        CodecError::malformed(format_args!(
+            "F3D feature {feature} has no stateless reading: {error}"
+        ))
+    };
+    let stateless = ir.is_stateless(feature, configuration).map_err(reading)?;
+    let definition = ir
+        .feature_definition_in(feature, configuration)
+        .map_err(reading)?;
+    let role = role(&definition.operation);
+    Ok((stateless || role == Role::Inert, role))
 }
 
 /// A built timeline item of a feature of the root document.
@@ -365,9 +404,9 @@ fn meets(earlier: &[Entry<'_>], history: usize, previous: Option<i64>) -> bool {
 /// first from each head. An item with no scope tail that is the one such
 /// item between two items of a history whose stored states do not meet, or
 /// between the last item of a history and a head above its state, takes
-/// that gap. An item whose state id several histories store takes the one
-/// of them that the walk stands at that state in and whose state before it
-/// is not below the state of the earlier item of that history. The walk
+/// that gap. An item whose state id several histories store takes a unique
+/// compatible history. A later cursor at the item's state takes precedence
+/// over a forward gap. The walk
 /// goes on past a gap that no single such item takes, and ends where the
 /// state before a later item of a history is below the state of an earlier
 /// one, or is none. Returns each item so bound, by index, with why.
@@ -395,33 +434,48 @@ fn resolve(
                 stored,
                 previous,
             } if !entry.stateless => {
-                let mut standing = stored.iter().copied().filter(|history| {
-                    at[*history] == Some(*state)
-                        && meets(
-                            &entries[..index],
-                            *history,
-                            before(&histories[*history].states, *state, *previous),
-                        )
-                });
-                match (standing.next(), standing.next()) {
-                    (Some(history), None) => Some((history, *state, *previous, stored.len())),
+                let mut exact = Vec::new();
+                let mut forward = Vec::new();
+                for &history in stored {
+                    let Some(upper) = at[history].filter(|upper| upper >= state) else {
+                        continue;
+                    };
+                    let previous = before(&histories[history].states, *state, *previous);
+                    if meets(&entries[..index], history, previous) {
+                        let candidates = if upper == *state {
+                            &mut exact
+                        } else {
+                            &mut forward
+                        };
+                        candidates.push((history, upper, previous));
+                    }
+                }
+                match (exact.as_slice(), forward.as_slice()) {
+                    ([(history, upper, previous)], _) | ([], [(history, upper, previous)]) => {
+                        Some((*history, *state, *upper, *previous, stored.len()))
+                    }
                     _ => None,
                 }
             }
             _ => None,
         };
-        if let Some((history, state, previous, count)) = shared {
+        if let Some((history, state, upper, previous, count)) = shared {
+            let stream = histories[history].blob.stream;
+            let evidence = if upper == state {
+                format!("the items after it leave {stream} at that state")
+            } else {
+                format!("{stream} is the only compatible history and the walk reaches state {upper} across a forward gap")
+            };
             out.push((
                 index,
                 format!(
-                    "{count} ASM histories store its state id {state}, its parameter scope binds none of them, and the items after it leave {} at that state",
-                    histories[history].blob.stream
+                    "{count} ASM histories store its state id {state}, its parameter scope binds none of them, and {evidence}"
                 ),
             ));
             entries[index].kind = Kind::Bound {
                 history,
                 state,
-                previous: before(&histories[history].states, state, previous),
+                previous,
             };
         }
         let Kind::Bound {
@@ -1090,26 +1144,9 @@ impl<'r> Reader<'r, '_> {
     ) -> Result<Result<(), String>, CodecError> {
         let scope = self.scope;
         let ir = self.ir;
-        let configuration = if ir
-            .design
-            .configurations
-            .iter()
-            .any(|configuration| configuration.scope == scope.definition)
-        {
-            let active = ir
-                .design
-                .scopes
-                .iter()
-                .find(|design| design.definition == scope.definition)
-                .and_then(|design| design.active_configuration.clone());
-            let Some(active) = active else {
-                return Ok(Err(
-                    "the scope has configurations and no active one".to_owned()
-                ));
-            };
-            Some(active)
-        } else {
-            None
+        let configuration = match configuration(ir, &scope.definition) {
+            Ok(configuration) => configuration,
+            Err(reason) => return Ok(Err(reason.to_owned())),
         };
         let (end, built) = match &scope.at {
             Position::Start(_) => return Ok(Ok(())),
@@ -1144,9 +1181,9 @@ impl<'r> Reader<'r, '_> {
         let mut entries = Vec::new();
         let mut others = Vec::new();
         for (position, member) in built.iter().enumerate() {
-            match self.entry(member, position, &histories, configuration.as_ref())? {
+            match self.entry(member, position, &histories, configuration)? {
                 Some(entry) => entries.push(entry),
-                None if self.stateless(member, configuration.as_ref()) => {}
+                None if self.stateless(member, configuration) => {}
                 None => others.push(position),
             }
         }
@@ -1208,7 +1245,7 @@ impl<'r> Reader<'r, '_> {
             current: &current,
         };
         let mut marks = Marks::new();
-        let stop = self.emit(&chain, configuration.as_ref(), &mut marks, out, carried)?;
+        let stop = self.emit(&chain, configuration, &mut marks, out, carried)?;
         if let Some(stop) = stop {
             self.losses.extend(stopped(&scope.definition, &stop));
         }
@@ -1249,22 +1286,7 @@ impl<'r> Reader<'r, '_> {
         let Some((stream, record)) = self.scope.items.get(feature) else {
             return Ok(None);
         };
-        let reading = |error| {
-            CodecError::malformed(format_args!(
-                "F3D feature {feature} has no stateless reading: {error}"
-            ))
-        };
-        let stateless = self
-            .ir
-            .is_stateless(feature, configuration)
-            .map_err(reading)?;
-        let role = role(
-            &self
-                .ir
-                .feature_definition_in(feature, configuration)
-                .map_err(reading)?
-                .operation,
-        );
+        let (stateless, role) = eligibility(self.ir, feature, configuration)?;
         let tail = self.tails.get(&(stream.as_str(), *record)).copied();
         let kind = match tail.map(|tail| (tail, tail.state)) {
             _ if !document_prefix(stream).is_empty() => {
@@ -1285,7 +1307,7 @@ impl<'r> Reader<'r, '_> {
             stream: stream.as_str(),
             record: *record,
             position,
-            stateless: stateless || role == Role::Inert,
+            stateless,
             moves: role.moves(&kind),
             current: false,
             kind,
@@ -1793,6 +1815,7 @@ impl<'r> Reader<'r, '_> {
             .map(cadmpeg_ir::native::NativeRecord::id)
             .collect::<HashSet<_>>();
         let mut document = None::<BTreeSet<&str>>;
+        let mut additions = Vec::new();
         for id in referenced {
             let unknown = held[id.as_str()];
             if let Some(retained) = self.fidelity.retained_record(&id) {
@@ -1827,8 +1850,9 @@ impl<'r> Reader<'r, '_> {
                     )));
                 }
             }
-            carried.push(unknown.clone());
+            additions.push(unknown);
         }
+        carried.extend(additions.into_iter().cloned());
         Ok(Ok(()))
     }
 

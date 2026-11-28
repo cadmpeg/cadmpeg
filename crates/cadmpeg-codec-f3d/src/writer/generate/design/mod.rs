@@ -55,6 +55,7 @@ use cadmpeg_ir::codec::write::{
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::ids::{ContainerId, EvaluationId};
+use cadmpeg_ir::design::names::TopoName;
 use cadmpeg_ir::design::parameter::ParameterOwner;
 use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
@@ -768,7 +769,7 @@ pub(super) fn plan<'a>(
         base_feature = base_feature.without_bodies();
     }
     let restated = if base_feature.has_item() {
-        restated(target, scope, item.items())
+        restated(target, scope, item.items(), &sketches, &mut losses)
     } else {
         BTreeSet::new()
     };
@@ -1208,7 +1209,7 @@ impl NeutralDesign<'_> {
         Ok(members)
     }
 
-    /// Whether the insertion history restates an evaluation of the scope.
+    /// Whether the insertion history writes evaluation geometry and reports its omitted values.
     pub(super) fn restates_evaluations(&self) -> bool {
         self.restates
     }
@@ -1408,57 +1409,115 @@ fn states(target: &CadIr, restated: &BTreeSet<&EvaluationId>) -> Vec<LossNote> {
     losses
 }
 
-/// The evaluations of `scope` that the insertion history of `items`
-/// restates. The state after each written item holds the current result
-/// bodies of the items up to it (f3d.md §3.1, "History states"). An
-/// evaluation of that state restates it when it holds those bodies and each
-/// of its records is a current record.
+/// The states whose geometry the insertion history writes. Report the
+/// other values it cannot write before marking their evaluations covered.
 fn restated<'a>(
     target: &'a CadIr,
     scope: &DesignScope,
     items: &[Item<'_>],
+    sketches: &SketchPlan<'_>,
+    losses: &mut Vec<LossNote>,
 ) -> BTreeSet<&'a EvaluationId> {
     let mut bodies = BTreeSet::new();
     let mut written = BTreeMap::new();
     for item in items {
         bodies.extend(item.body());
-        written.insert(item.feature(), bodies.clone());
+        written.insert(item.feature(), (item, bodies.clone()));
     }
-    target
-        .design
-        .evaluations
-        .iter()
-        .filter(|evaluation| {
-            evaluation.scope == scope.definition
-                && evaluation.configuration.is_none()
-                && evaluation.status == EvaluationStatus::Current
-        })
-        .filter(|evaluation| {
-            let Evaluated::State(Position::After(Member::Feature(feature))) = &evaluation.of else {
-                return false;
+    let mut restated = BTreeSet::new();
+    for evaluation in &target.design.evaluations {
+        if evaluation.scope != scope.definition
+            || evaluation.configuration.is_some()
+            || evaluation.status != EvaluationStatus::Current
+        {
+            continue;
+        }
+        let Evaluated::State(Position::After(Member::Feature(feature))) = &evaluation.of else {
+            continue;
+        };
+        let Some((_, bodies)) = written.get(feature) else {
+            continue;
+        };
+        let Ok(state) =
+            target.resolved_evaluation_state(&evaluation.id, &ResourceLimits::default())
+        else {
+            continue;
+        };
+        if !state.poses().is_empty()
+            || !state
+                .records()
+                .bodies
+                .iter()
+                .map(|body| &body.id)
+                .eq(bodies.iter().copied())
+            || !super::reduce::geometry_records_outside(state.records(), &target.geometry)
+                .is_empty()
+        {
+            continue;
+        }
+
+        let id = &evaluation.id;
+        let unwritten_names = state.names().iter().filter(|(entity, entry)| {
+            if entry
+                .native
+                .as_ref()
+                .is_some_and(|name| name.codec.as_str() == "f3d")
+            {
+                return true;
+            }
+            let Some(name @ TopoName::Generated { feature, .. }) = &entry.name else {
+                return true;
             };
-            let Some(bodies) = written.get(feature) else {
-                return false;
-            };
-            target
-                .resolved_evaluation_state(&evaluation.id, &ResourceLimits::default())
-                .is_ok_and(|state| {
-                    state.poses().is_empty()
-                        && state
-                            .records()
-                            .bodies
-                            .iter()
-                            .map(|body| &body.id)
-                            .eq(bodies.iter().copied())
-                        && super::reduce::geometry_records_outside(
-                            state.records(),
-                            &target.geometry,
-                        )
-                        .is_empty()
-                })
-        })
-        .map(|evaluation| &evaluation.id)
-        .collect()
+            !written
+                .get(feature)
+                .is_some_and(|(item, _)| item.writes_name(entity, name, sketches))
+        });
+        losses.extend(named_loss(
+            F3dLossCode::WriterDesignRecordOmitted,
+            "evaluation name",
+            "the insertion history cannot stamp their names",
+            unwritten_names.map(|(entity, _)| format!("{} in evaluation {id}", entity.id())),
+        ));
+        let definitions = &target.model.product_definitions;
+        let different_owners = state.owners().iter().filter(|(body, owner)| {
+            let current = definitions
+                .iter()
+                .find(|definition| definition.bodies.contains(body))
+                .map_or(&scope.definition, |definition| &definition.id);
+            *owner != current
+        });
+        losses.extend(named_loss(
+            F3dLossCode::WriterDesignRecordOmitted,
+            "evaluation body owner",
+            "the insertion history uses the current body owners",
+            different_owners
+                .map(|(body, owner)| format!("{body} owned by {owner} in evaluation {id}")),
+        ));
+        let different_members = state.members().iter().filter(|(occurrence, owner)| {
+            let current = cadmpeg_ir::products::owner(definitions, occurrence)
+                .map_or(&scope.definition, |definition| &definition.id);
+            *owner != current
+        });
+        losses.extend(named_loss(
+            F3dLossCode::WriterDesignRecordOmitted,
+            "evaluation occurrence membership",
+            "the insertion history has no occurrence membership changes",
+            different_members.map(|(occurrence, owner)| {
+                format!("{occurrence} owned by {owner} in evaluation {id}")
+            }),
+        ));
+        losses.extend(named_loss(
+            F3dLossCode::WriterDesignRecordOmitted,
+            "evaluation instance-body assignment",
+            "the generated Design holds no occurrence state",
+            state
+                .instance_bodies()
+                .keys()
+                .map(|path| format!("{path:?} in evaluation {id}")),
+        ));
+        restated.insert(id);
+    }
+    restated
 }
 
 fn position(at: &Position) -> String {

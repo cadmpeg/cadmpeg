@@ -1027,7 +1027,7 @@ option `2`, and side extents `[1, 0]`.
 
 **Need.** A design with two components, each with a Sketch and a new-body `Extrude`, and a `Move` of the body of the second component whose parameter scope stores no body-map entity suffix, saved once. For the `Move` item, its current identity compared with the `delta_state` chain of each history, and the history whose state changes the moved body.
 
-**Note.** The decoder selects the unique history whose later items leave it at the item's current identity and whose state before the item is at or above the state of the nearest earlier item bound to that history, when there is one. It charges `history.state-inferred`. Without a unique compatible history, the decoder takes the item to commit no state and charges `history.state-unread` for its missing evaluation before the current position.
+**Note.** A compatible history reaches the item's current identity or a higher identity in the walk. Its state before the item is at or above the state of the nearest earlier item bound to that history, when there is one. The decoder prefers a unique compatible history at the item's current identity. Without an exact match, it takes a unique compatible history across a forward gap. Either assignment charges `history.state-inferred`. Without a unique compatible history, the decoder takes the item to commit no state and charges `history.state-unread` for its missing evaluation before the current position.
 
 ### DR-1071. History states that no timeline item stores
 

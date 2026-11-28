@@ -549,3 +549,48 @@ fn a_stopped_chain_names_every_dropped_feature_in_order() {
         loss.message
     );
 }
+
+#[test]
+fn a_shared_state_uses_the_only_compatible_history_across_a_forward_gap() {
+    let design = design(&["a", "u", "c"], "c", Vec::new());
+    let stored = [
+        Stored {
+            name: "BREP.x",
+            states: &[1, 2, 3],
+        },
+        Stored {
+            name: "BREP.y",
+            states: &[1, 3, 4, 5],
+        },
+    ];
+    let (entries, inferred) = walk(
+        &design,
+        vec![
+            bound(0, 2, Some(1)),
+            Kind::Ambiguous {
+                state: 3,
+                stored: vec![0, 1],
+                previous: Some(1),
+            },
+            bound(1, 5, Some(4)),
+        ],
+        &stored,
+    );
+    assert_eq!(inferred.len(), 1, "{inferred:?}");
+    assert_eq!(entries[1].kind, bound(1, 3, Some(1)));
+    let Plan { planned, stop, .. } = plan_of(&entries, &stored);
+    assert_eq!(stop, None);
+    assert_eq!(
+        planned,
+        [
+            Planned {
+                entry: 1,
+                targets: vec![Some(2), Some(3)],
+            },
+            Planned {
+                entry: 0,
+                targets: vec![Some(2), Some(1)],
+            },
+        ]
+    );
+}
