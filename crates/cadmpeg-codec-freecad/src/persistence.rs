@@ -125,10 +125,13 @@ pub(crate) fn drop_unreadable(
 
 /// Required property payload references must resolve. Missing naming sidecars
 /// stay in exact value XML, but cannot enter the admitted reference graph.
+/// An entry in `given_up` is absent because the decode gave it up; that
+/// give-up states the loss, so the reference to it adds no note.
 pub(crate) fn resolve_side_entries(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     properties: &mut [PropertyRecord],
     entries: &std::collections::BTreeMap<String, cadmpeg_core::decode::View<'_>>,
+    given_up: &std::collections::BTreeSet<String>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     for property in properties {
@@ -138,28 +141,9 @@ pub(crate) fn resolve_side_entries(
             }
         }
         let required_files = payload_side_files(ctx, property)?;
-        let crate::native::PropertyBody::Persisted {
-            values,
-            side_entries,
-            ..
-        } = &mut property.body
-        else {
+        let crate::native::PropertyBody::Persisted { side_entries, .. } = &mut property.body else {
             continue;
         };
-        let mut naming_files = HashSet::new();
-        for value in values {
-            for (key, name) in &value.attributes {
-                if !matches!(key.as_str(), "file" | "File") || name.is_empty() {
-                    continue;
-                }
-                if matches!(
-                    value.tag.as_str(),
-                    "StringHasher" | "StringHasher2" | "ElementMap" | "ElementMap2"
-                ) {
-                    naming_files.insert(name.as_str());
-                }
-            }
-        }
         for name in side_entries
             .iter()
             .filter(|name| !entries.contains_key(*name))
@@ -170,14 +154,16 @@ pub(crate) fn resolve_side_entries(
                     property.id
                 )));
             }
-            let code = if naming_files.contains(name.as_str()) {
-                crate::loss::FreecadLossCode::ElementMapMetadataUnresolved
-            } else {
-                crate::loss::FreecadLossCode::PersistenceSideEntryUnresolved
-            };
-            losses.push(code.note(
-                format!("property {} references unavailable optional side entry {name}; reference remains in source XML", property.id)
-            ));
+            if given_up.contains(name) {
+                continue;
+            }
+            losses.push(
+                crate::loss::FreecadLossCode::PersistenceSideEntryUnresolved.note(format!(
+                    "property {} references optional side entry {name}, which the archive \
+                     directory does not list; reference remains in source XML",
+                    property.id
+                )),
+            );
         }
         side_entries.retain(|name| entries.contains_key(name));
     }
@@ -580,7 +566,7 @@ fn parse_properties(
         }
     }
     check_count(container, "Count", property_nodes.len(), losses);
-    if container.attribute("TransientCount").is_some() || !transient_property_nodes.is_empty() {
+    if container.attribute("TransientCount").is_some() {
         check_count(
             container,
             "TransientCount",

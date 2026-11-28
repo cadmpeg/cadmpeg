@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Records a decode reads and leaves out of the document are charged
-//! `record.unreadable` by the part or record they would have been.
+//! Records a decode reads and leaves out of the document are given up by
+//! the part or record they would have been: `record.unreadable` for a value
+//! the carrier type forbids, `record.undecoded` for a record the decode does
+//! not place.
 
 use std::io::Cursor;
 
@@ -8,7 +10,7 @@ use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{record_unreadable_kind, Part};
+use cadmpeg_ir::unknown::part::{record_undecoded_kind, record_unreadable_kind, Part};
 
 use super::decode;
 use crate::test_support::test_container::{
@@ -26,11 +28,22 @@ const FBB_ROW: [u8; 8] = [0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2];
 const FIRST_FBB_ROW: usize = 40;
 
 fn unreadable(result: &EditableDecodeResult) -> Vec<&LossNote> {
+    charged(result, &record_unreadable_kind())
+}
+
+fn undecoded(result: &EditableDecodeResult) -> Vec<&LossNote> {
+    charged(result, &record_undecoded_kind())
+}
+
+fn charged<'r>(
+    result: &'r EditableDecodeResult,
+    code: &cadmpeg_ir::report::loss::LossKind,
+) -> Vec<&'r LossNote> {
     result
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == record_unreadable_kind())
+        .filter(|loss| &loss.code == code)
         .collect()
 }
 
@@ -207,7 +220,7 @@ fn a_refused_zero_entity_carrier_charges_the_faces_of_the_closed_topology() {
     );
 
     let result = decode(bytes);
-    let charges = unreadable(&result);
+    let charges = undecoded(&result);
     assert!(
         charges.iter().any(|loss| loss
             .message
@@ -227,7 +240,7 @@ fn an_e5_face_record_outside_a_parsed_graph_is_given_up() {
     // A face record that states no loop.
     append_e5_record(&mut face, 0x00, 41, &[0x81]);
     let result = decode(e5_catpart_appending(&face));
-    let charges = unreadable(&result);
+    let charges = undecoded(&result);
     assert_eq!(charges.len(), 1, "{charges:?}");
     assert!(
         charges[0]
@@ -253,7 +266,7 @@ fn an_fbb_face_row_outside_the_selected_run_is_given_up() {
     let lone_row = main.len();
     main.extend_from_slice(&FBB_ROW);
     let result = decode(standard_catpart_from_streams(&main, &surf_stream()));
-    let charges = unreadable(&result);
+    let charges = undecoded(&result);
     let lone = fbb_row_part(lone_row);
     assert_eq!(
         charges
@@ -281,7 +294,7 @@ fn fbb_face_rows_without_matching_face_bindings_are_each_given_up() {
     let third_row = FIRST_FBB_ROW + 16;
     main.splice(third_row..third_row, FBB_ROW);
     let result = decode(standard_catpart_from_streams(&main, &surf_stream()));
-    let charges = unreadable(&result);
+    let charges = undecoded(&result);
     assert!(result.ir().geometry.faces.is_empty());
     for row in [FIRST_FBB_ROW, FIRST_FBB_ROW + 8, third_row] {
         let part = fbb_row_part(row);

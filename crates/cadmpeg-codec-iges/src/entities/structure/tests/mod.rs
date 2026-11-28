@@ -8,6 +8,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::unknown::part::Cause;
 
 use super::flow_join_target_valid;
 use super::functional_level_identifier_valid;
@@ -1583,7 +1584,7 @@ fn a_legacy_hole_that_fails_marks_its_parent_face_partial() {
     let file = String::from_utf8(legacy_perforated_plane_file(global))
         .unwrap()
         .replacen("108,0,0,1,0,7,", "108,0,1,0,0,7,", 1);
-    let (roles, message) = legacy_face_with_a_lost_hole(file.into_bytes(), 1);
+    let (roles, message) = legacy_face_with_a_lost_hole(file.into_bytes(), 1, Cause::Undecoded);
     assert_eq!(roles, [LoopBoundaryRole::Outer]);
     assert!(message.contains("not coplanar"), "{message}");
 }
@@ -1594,8 +1595,11 @@ fn a_legacy_hole_that_fails_marks_its_parent_face_partial() {
 #[test]
 fn a_legacy_relation_whose_only_child_pointer_dangles_marks_its_parent_face_partial() {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
-    let (roles, message) =
-        legacy_face_with_a_lost_hole(legacy_dangling_only_child_single_parent_file(global), 1);
+    let (roles, message) = legacy_face_with_a_lost_hole(
+        legacy_dangling_only_child_single_parent_file(global),
+        1,
+        Cause::Unreadable,
+    );
     assert_eq!(roles, [LoopBoundaryRole::Outer]);
     assert!(
         message.contains("child pointer 99 names no Directory entry"),
@@ -1609,7 +1613,7 @@ fn a_legacy_zero_slot_beside_a_generic_child_gives_up_only_that_slot() {
     let file = String::from_utf8(legacy_mixed_single_parent_file(global))
         .unwrap()
         .replacen("402,1,2,1,3,11;", "402,1,2,1,0,11;", 1);
-    let (roles, message) = legacy_face_with_a_lost_hole(file.into_bytes(), 1);
+    let (roles, message) = legacy_face_with_a_lost_hole(file.into_bytes(), 1, Cause::Unreadable);
     assert_eq!(roles, [LoopBoundaryRole::Outer]);
     assert!(
         message.contains("child pointer 0 names no Directory entry"),
@@ -1624,6 +1628,7 @@ fn a_legacy_zero_slot_beside_a_generic_child_gives_up_only_that_slot() {
 fn legacy_face_with_a_lost_hole(
     file: Vec<u8>,
     lost_slot: usize,
+    cause: Cause,
 ) -> (Vec<LoopBoundaryRole>, String) {
     let result = IgesCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
@@ -1645,7 +1650,7 @@ fn legacy_face_with_a_lost_hole(
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == cause.kind())
         .filter(|loss| {
             loss.message
                 .ends_with(&format!("; marked=[{}]", relation.as_str()))
@@ -1677,7 +1682,8 @@ fn legacy_face_with_a_lost_hole(
 #[test]
 fn a_legacy_hole_beside_a_child_that_is_no_plane_keeps_the_hole() {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
-    let (roles, message) = legacy_face_with_a_lost_hole(legacy_mixed_single_parent_file(global), 2);
+    let (roles, message) =
+        legacy_face_with_a_lost_hole(legacy_mixed_single_parent_file(global), 2, Cause::Undecoded);
     assert_eq!(roles, [LoopBoundaryRole::Outer, LoopBoundaryRole::Inner]);
     assert!(message.contains("not a Type 108 plane"), "{message}");
 }
@@ -1687,8 +1693,11 @@ fn a_legacy_hole_beside_a_child_that_is_no_plane_keeps_the_hole() {
 #[test]
 fn a_legacy_hole_that_fails_beside_another_hole_keeps_the_other() {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
-    let (roles, message) =
-        legacy_face_with_a_lost_hole(legacy_two_hole_single_parent_file(global), 2);
+    let (roles, message) = legacy_face_with_a_lost_hole(
+        legacy_two_hole_single_parent_file(global),
+        2,
+        Cause::Undecoded,
+    );
     assert_eq!(roles, [LoopBoundaryRole::Outer, LoopBoundaryRole::Inner]);
     assert!(message.contains("Directory sequence 11"), "{message}");
 }
@@ -1699,8 +1708,11 @@ fn a_legacy_hole_that_fails_beside_another_hole_keeps_the_other() {
 #[test]
 fn a_legacy_child_pointer_that_names_no_entry_gives_up_only_its_slot() {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
-    let (roles, message) =
-        legacy_face_with_a_lost_hole(legacy_dangling_child_single_parent_file(global), 2);
+    let (roles, message) = legacy_face_with_a_lost_hole(
+        legacy_dangling_child_single_parent_file(global),
+        2,
+        Cause::Unreadable,
+    );
     assert_eq!(roles, [LoopBoundaryRole::Outer, LoopBoundaryRole::Inner]);
     assert!(
         message.contains("child pointer 99 names no Directory entry"),
@@ -1714,8 +1726,11 @@ fn a_legacy_child_pointer_that_names_no_entry_gives_up_only_its_slot() {
 #[test]
 fn a_legacy_child_without_its_back_pointer_gives_up_only_its_slot() {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
-    let (roles, message) =
-        legacy_face_with_a_lost_hole(legacy_unlinked_child_single_parent_file(global), 2);
+    let (roles, message) = legacy_face_with_a_lost_hole(
+        legacy_unlinked_child_single_parent_file(global),
+        2,
+        Cause::Undecoded,
+    );
     assert_eq!(roles, [LoopBoundaryRole::Outer, LoopBoundaryRole::Inner]);
     assert!(message.contains("Directory sequence 11"), "{message}");
     assert!(

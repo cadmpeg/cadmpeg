@@ -144,13 +144,21 @@ fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
             )
             .unwrap()
             .is_empty());
+            // §4: a payload that breaks the ZIP or DEFLATE grammar is
+            // unreadable; a payload the decoder has no reading for is
+            // undecoded.
+            let cause = match defect {
+                Defect::Crc | Defect::InvalidDeflate => "decode/record.unreadable",
+                Defect::Encryption | Defect::UnsupportedCompression => "decode/record.undecoded",
+            };
             let losses: Vec<_> = decoded
                 .report()
                 .losses
                 .iter()
-                .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
+                .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
                 .collect();
-            assert_eq!(losses.len(), 1);
+            assert_eq!(losses.len(), 1, "{losses:?}");
+            assert_eq!(losses[0].code.to_string(), cause);
             assert!(losses[0]
                 .message
                 .starts_with(&format!("part archive-entry {name:?} stream=\"\" offset=")));
@@ -325,8 +333,10 @@ fn an_unreadable_asset_beside_a_stored_frame_root_links_to_the_source_root_defin
 }
 
 /// A binary B-rep member whose payload does not open is given up alone: the
-/// other member's body decodes as it does from the intact archive, a loss
-/// names the member, and a strict decode refuses that loss.
+/// other member's body decodes as it does from the intact archive, and one
+/// give-up names the member. A pinned decode refuses the give-up of a payload
+/// that breaks the ZIP or DEFLATE grammar and accepts the give-up of a
+/// payload that the decoder has no reading for.
 #[test]
 fn a_brep_payload_that_does_not_open_is_given_up_alone() {
     use std::io::Write as _;
@@ -343,15 +353,15 @@ fn a_brep_payload_that_does_not_open_is_given_up_alone() {
     let intact = super::decode(original.clone());
     assert_eq!(intact.ir().geometry.bodies.len(), 2);
     let mut damaged = [
-        Defect::Crc,
-        Defect::Encryption,
-        Defect::UnsupportedCompression,
-        Defect::InvalidDeflate,
+        (Defect::Crc, "decode/record.unreadable"),
+        (Defect::Encryption, "decode/record.undecoded"),
+        (Defect::UnsupportedCompression, "decode/record.undecoded"),
+        (Defect::InvalidDeflate, "decode/record.unreadable"),
     ]
-    .map(|defect| {
+    .map(|(defect, cause)| {
         let mut changed = original.clone();
         damage_entry(&mut changed, name, defect);
-        changed
+        (changed, cause)
     })
     .to_vec();
     // An archive cut inside its last member keeps no central directory, and
@@ -361,8 +371,8 @@ fn a_brep_payload_that_does_not_open_is_given_up_alone() {
     let (ctx, root) = DecodeContext::from_root_bytes(&original, &arena, &policy).unwrap();
     let archive = cadmpeg_container::ArchiveSnapshot::new(&ctx, root).unwrap();
     let payload = usize::try_from(archive.entry(name).unwrap().data_start.unwrap()).unwrap();
-    damaged.push(original[..=payload].to_vec());
-    for changed in damaged {
+    damaged.push((original[..=payload].to_vec(), "decode/record.unreadable"));
+    for (changed, cause) in damaged {
         let decoded = super::decode(changed.clone());
         let [body] = decoded.ir().geometry.bodies.as_slice() else {
             panic!("one body: {:?}", decoded.ir().geometry.bodies);
@@ -372,11 +382,12 @@ fn a_brep_payload_that_does_not_open_is_given_up_alone() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
+            .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
             .collect::<Vec<_>>();
         let [loss] = losses.as_slice() else {
-            panic!("one record.unreadable loss: {losses:?}");
+            panic!("one give-up: {losses:?}");
         };
+        assert_eq!(loss.code.to_string(), cause);
         assert!(loss
             .message
             .starts_with(&format!("part archive-entry {name:?} stream=\"\" offset=")));
@@ -387,7 +398,10 @@ fn a_brep_payload_that_does_not_open_is_given_up_alone() {
             },
             ..DecodeOptions::default()
         };
-        assert!(F3dCodec.decode(&mut Cursor::new(changed), &strict).is_err());
+        assert_eq!(
+            F3dCodec.decode(&mut Cursor::new(changed), &strict).is_err(),
+            cause == "decode/record.unreadable"
+        );
     }
 }
 
@@ -403,7 +417,8 @@ fn optional_asset_past_the_per_expansion_allowance_is_given_up_alone() {
         panic!("one given-up part");
     };
     let loss = given_up.loss();
-    assert_eq!(loss.code.to_string(), "decode/record.unreadable");
+    // §4: a decoder bound refuses the entry, so the give-up is undecoded.
+    assert_eq!(loss.code.to_string(), "decode/record.undecoded");
     assert!(loss.message.starts_with(
         "part archive-entry \"FusionAssetName[Active]/Previews/thumbnail.png\" stream=\"\" offset="
     ));

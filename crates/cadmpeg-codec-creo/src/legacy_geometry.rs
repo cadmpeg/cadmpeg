@@ -768,7 +768,7 @@ fn integer_field(records: &IntegerFieldIndex<'_>, parent: usize, name: &str) -> 
     let record = integer_record(records, parent, name)?;
     match &record.payload {
         NumericPayload::Scalar { value } => Some(*value),
-        NumericPayload::Array(_) => None,
+        NumericPayload::Array(_) | NumericPayload::Empty { .. } => None,
     }
 }
 
@@ -803,7 +803,7 @@ fn real_scalar(records: &RealFieldIndex<'_>, parent: usize, name: &str) -> Optio
     let record = real_record(records, parent, name)?;
     match &record.payload {
         NumericPayload::Scalar { value } => Some(value.value()),
-        NumericPayload::Array(_) => None,
+        NumericPayload::Array(_) | NumericPayload::Empty { .. } => None,
     }
 }
 

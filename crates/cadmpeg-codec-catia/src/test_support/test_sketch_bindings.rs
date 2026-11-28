@@ -79,3 +79,56 @@ pub(crate) fn positive_sketch_bindings_source() -> Vec<u8> {
         "2DPoint",
     )
 }
+
+/// The point pair of [`placed_sketch_catpart`].
+pub(crate) fn placed_sketch_pair() -> Vec<u8> {
+    let mut pair = vec![0x91, 0x85, 0xe8, 0xe4, 0x07, 0x37, 0x83, 0x81, 0xe6];
+    pair.extend_from_slice(&5.75_f64.to_le_bytes());
+    pair.push(0xe6);
+    pair.extend_from_slice(&12.64_f64.to_le_bytes());
+    pair.extend_from_slice(&[0xfe, 0xfe]);
+    pair
+}
+
+/// A part whose one sketch record holds a placement frame and a point pair.
+pub(crate) fn placed_sketch_catpart() -> Vec<u8> {
+    let frame = [
+        0x82, 0x86, 0xe8, 0xe0, 0x07, 0x37, 0x8a, 0x81, 0xe8, 0xe7, 0xe8, 0xe8, 0xe8, 0xe7, 0xe8,
+        0xe8, 0xe8, 0xfe,
+    ];
+    let pair = placed_sketch_pair();
+    let records = [
+        object_graph_record(
+            &[0x04, 0x01, 0x82, 0x84],
+            &[0x3b, 0x82, 0x81, 0x85, 0x81, 0x83, 0xfe],
+        ),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+        object_graph_record(&[0x12, 0x83, 0x86], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+        object_graph_record(&[0x12, 0x81, 0x85], &[0xfe]),
+    ];
+    let mut stream = Vec::new();
+    for (id, value) in [
+        (1, &[0xfe][..]),
+        (2, &[0xfe][..]),
+        (3, pair.as_slice()),
+        (4, &[0xfe][..]),
+        (5, frame.as_slice()),
+        (6, &[0xfe][..]),
+    ] {
+        stream.extend(entity_table_record_with_value(id, value));
+    }
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&records));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+        "Length",
+        "2DPoint",
+    ]));
+    super::test_container::outer_container_catpart(&stream).0
+}

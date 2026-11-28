@@ -261,7 +261,7 @@ fn decode_rejects_a_nonzero_v4_composite_entity_use_flag() {
         .iter()
         .any(|curve| curve.id.as_str() == "iges:model:curve#D5"));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::GeometryNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
             && loss
                 .message
                 .contains("Type 102 Entity Use Flag must be 00 in IGES 4.0")
@@ -304,7 +304,7 @@ fn decode_rejects_a_v5_logical_connector_without_entity_use_flag_04() {
         .unwrap();
 
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::GeometryNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
             && loss.message.contains(
                 "Type 102 logical connectors made of exactly two Type 132 Connect Points require Entity Use Flag 04",
             )
@@ -378,7 +378,7 @@ fn decode_rejects_a_single_v4_composite_constituent() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind())
+            .filter(|loss| crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected))
             .count(),
         1
     );
@@ -733,7 +733,7 @@ fn decode_skips_a_composite_child_count_over_its_projection_limit() {
 
     assert!(decoded.ir().geometry.curves.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::GeometryNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
             && loss.message.contains("child count is outside")
             && loss.message.contains("..=100000")
     }));

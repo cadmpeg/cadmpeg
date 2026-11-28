@@ -13,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{edit_dropped, record_residual_unavailable, value_unwritable};
+use cadmpeg_ir::design::configuration::PartNumber;
 use cadmpeg_ir::features::parameters::{DesignConfiguration as Configuration, ParameterValue};
 use cadmpeg_ir::features::{ConfigurationId, ParameterId};
 use cadmpeg_ir::report::loss::LossNote;
@@ -44,7 +45,7 @@ use crate::writer::primitives::{
 };
 
 /// The configuration documents the write holds, and what they read back as.
-pub(super) struct Written<'a> {
+pub(super) struct Written<'a, 'f> {
     /// The documents in source order.
     pub(super) documents: Cow<'a, [DesignConfiguration]>,
     /// The projection of `documents`.
@@ -55,9 +56,10 @@ pub(super) struct Written<'a> {
     pub(super) generated: BTreeMap<String, String>,
     /// The configuration of each written row, keyed by the configuration id
     /// the row reads back as.
-    expected: BTreeMap<String, &'a Configuration>,
+    expected: BTreeMap<String, &'f Configuration>,
     /// The ids of the columns the write adds to the table of the rows.
     added: BTreeSet<String>,
+    bindings: BTreeMap<String, ParameterId>,
     /// The configuration of the row the stored root record names active.
     stored_active: Option<Configuration>,
     test_rows: Option<(usize, BTreeMap<String, TestRowTarget>)>,
@@ -72,12 +74,22 @@ const NEW_TABLE_TYPE: &str = "Configurations";
 /// `configurations`, where they differ from `decoded`, the configurations
 /// that `documents` project. Return the written documents, and the losses
 /// of the configurations that no table holds a row for.
-pub(super) fn regenerate<'a>(
+pub(super) fn regenerate<'a, 'f>(
     documents: &'a [DesignConfiguration],
     decoded: &Projection,
-    configurations: &'a [Configuration],
+    configurations: &'f [Configuration],
     targets: &ConfigurationTargets<'_>,
-) -> Result<(Written<'a>, Vec<LossNote>), CodecError> {
+) -> Result<(Written<'a, 'f>, Vec<LossNote>), CodecError> {
+    regenerate_with_bindings(documents, decoded, configurations, targets, None)
+}
+
+fn regenerate_with_bindings<'a, 'f>(
+    documents: &'a [DesignConfiguration],
+    decoded: &Projection,
+    configurations: &'f [Configuration],
+    targets: &ConfigurationTargets<'_>,
+    destinations: Option<&DestinationParameters<'_>>,
+) -> Result<(Written<'a, 'f>, Vec<LossNote>), CodecError> {
     let mut payloads = vec![None; documents.len()];
     let mut losses = Vec::new();
     let bases = bases(targets.neutral_features, targets.neutral_parameters);
@@ -103,14 +115,30 @@ pub(super) fn regenerate<'a>(
                 .as_ref()
                 .map(|(index, payload, table)| (*index, payload, table))
         });
-    let (expected, added) = match host {
+    let (expected, added, bindings) = match host {
         Some((index, source, table)) => {
-            let (expected, added, written) = Rows {
+            let WrittenRows {
+                expected,
+                added,
+                bindings,
+                losses: written,
+            } = Rows {
                 entry: documents[index].entry_name(),
                 source,
                 payload: &mut payloads[index],
                 table,
                 columns: table.columns.clone(),
+                bindings: table
+                    .columns
+                    .iter()
+                    .filter_map(|column| {
+                        Some((
+                            column.id.clone(),
+                            column_parameter(&column.target, targets)?,
+                        ))
+                    })
+                    .collect(),
+                destinations,
                 added: BTreeSet::new(),
                 targets,
                 bases: &bases,
@@ -118,7 +146,7 @@ pub(super) fn regenerate<'a>(
             }
             .write(&decoded.configurations, configurations);
             losses.extend(written);
-            (expected, added)
+            (expected, added, bindings)
         }
         None => {
             losses.extend(edit_dropped(
@@ -127,7 +155,7 @@ pub(super) fn regenerate<'a>(
                 "writes no row for these configurations: the configuration table documents hold no table for their rows, or more than one",
                 configurations.iter().map(|configuration| configuration.id.to_string()),
             ));
-            (BTreeMap::new(), BTreeSet::new())
+            (BTreeMap::new(), BTreeSet::new(), BTreeMap::new())
         }
     };
     rules(
@@ -155,6 +183,7 @@ pub(super) fn regenerate<'a>(
             generated,
             expected,
             added,
+            bindings,
             stored_active,
             test_rows: None,
         },
@@ -162,12 +191,13 @@ pub(super) fn regenerate<'a>(
     ))
 }
 
-impl Written<'_> {
+impl Written<'_, '_> {
     #[cfg(test)]
     pub(super) fn compare_in_memory(
         &self,
         active: Option<&str>,
         targets: &ConfigurationTargets<'_>,
+        producers: &BTreeSet<cadmpeg_ir::features::FeatureId>,
     ) -> Result<Vec<LossNote>, CodecError> {
         let mut read = self.projection.clone();
         for row in &mut read.configurations {
@@ -177,10 +207,24 @@ impl Written<'_> {
                 .is_some_and(|expected| Some(expected.id.as_str()) == active);
         }
         let mut features = targets.neutral_features.to_vec();
-        let read = crate::writer::primitives::reconciled(read, &mut features)?;
+        let undecided = crate::design::configurations::undecided_suppression(
+            &features,
+            targets.scopes,
+            producers,
+        );
+        crate::design::configurations::reconcile_active_configurations(
+            &mut features,
+            &mut read.configurations,
+            &undecided,
+        )?;
         let bases = bases(targets.neutral_features, targets.neutral_parameters);
         let generated = self.generated.keys().map(String::as_str).collect();
-        let mut losses = compare(&self.expected, &read.configurations, &bases, &generated);
+        let expected = self
+            .expected
+            .iter()
+            .map(|(id, row)| (id.as_str(), *row))
+            .collect();
+        let mut losses = compare(&expected, &read.configurations, &bases, &generated);
         losses.extend(Self::compare_projected_features(
             self.stored_active.as_ref(),
             &read,
@@ -311,6 +355,8 @@ pub(super) struct Stated {
     /// One `<stored> active in place of <document>` per scope whose stored
     /// active row the rows keep ([`ActiveRows::Stored`]).
     kept: Vec<String>,
+    pub(super) part_numbers: BTreeMap<ConfigurationId, PartNumber>,
+    expressions: BTreeMap<(ConfigurationId, ParameterId), cadmpeg_ir::design::expr::Expression>,
 }
 
 /// The target of the configuration tables of `target`: the v10 rows that
@@ -369,24 +415,14 @@ pub(super) fn stated_rows(
                     .filter(|row| row.active)
                     .map(|row| &row.id)
                     .collect::<BTreeSet<_>>();
-                let original = active.iter().collect::<BTreeSet<_>>();
-                if kept.is_empty() && legacy != original {
-                    let show = |ids: &BTreeSet<&ConfigurationId>| {
-                        if ids.is_empty() {
-                            "no configuration".to_owned()
-                        } else {
-                            ids.iter()
-                                .map(ToString::to_string)
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        }
-                    };
-                    kept.push(format!(
-                        "{} active in place of {}",
-                        show(&original),
-                        show(&legacy)
-                    ));
+                if legacy.is_empty() && !active.is_empty() {
+                    kept.insert(None);
                 }
+                kept.extend(
+                    legacy
+                        .difference(&active.iter().collect())
+                        .map(|id| Some((*id).clone())),
+                );
             }
         }
         ActiveRows::Design => {
@@ -490,7 +526,22 @@ pub(super) fn stated_rows(
         rows: restated,
         pinned,
         rewritten,
-        kept,
+        kept: kept
+            .into_iter()
+            .map(|requested| {
+                let current = active.iter().map(ToString::to_string).collect::<Vec<_>>();
+                let current = if current.is_empty() {
+                    "no configuration".to_owned()
+                } else {
+                    current.join(", ")
+                };
+                let requested =
+                    requested.map_or("no configuration".to_owned(), |id| id.to_string());
+                format!("{current} active in place of {requested}")
+            })
+            .collect(),
+        part_numbers: stated.part_numbers,
+        expressions: stated.expressions,
     }
 }
 
@@ -560,7 +611,104 @@ fn rewritten(targets: &ConfigurationTargets<'_>, tolerances: &Tolerances) -> BTr
 }
 
 /// Allocated record index and stored name, keyed by the authored parameter.
-pub(super) type DestinationParameters<'a> = BTreeMap<ParameterId, (u32, &'a str)>;
+pub(super) type DestinationParameters<'a> = BTreeMap<ParameterId, DestinationParameter<'a>>;
+
+pub(super) struct DestinationParameter<'a> {
+    pub(super) index: u32,
+    pub(super) name: &'a str,
+    pub(super) expression: &'a str,
+    pub(super) evaluated: f64,
+}
+
+impl Stated {
+    pub(super) fn place_expressions(
+        &mut self,
+        target: &CadIr,
+        parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
+        destinations: &DestinationParameters<'_>,
+        losses: &mut Vec<LossNote>,
+    ) {
+        use cadmpeg_ir::design::expr::ExpressionToken;
+
+        let mut source = std::collections::HashMap::<&str, Option<&ParameterId>>::new();
+        let mut names = |name, id| {
+            source
+                .entry(name)
+                .and_modify(|previous| {
+                    if *previous != Some(id) {
+                        *previous = None;
+                    }
+                })
+                .or_insert(Some(id));
+        };
+        for parameter in &target.design.parameters {
+            if let Some(name) = &parameter.name {
+                names(name.as_str(), &parameter.id);
+            }
+        }
+        for parameter in parameters {
+            names(parameter.name.as_str(), &parameter.id);
+        }
+        let vocabulary = source
+            .into_iter()
+            .filter_map(|(name, id)| Some((name, id?)))
+            .collect();
+        let names = destinations
+            .iter()
+            .map(|(id, destination)| (id, destination.name))
+            .collect();
+        let name = |id: &ParameterId| destinations.get(id).map(|destination| destination.name);
+        let mut kinds = parameters
+            .iter()
+            .filter_map(|parameter| {
+                Some((
+                    &parameter.id,
+                    crate::design_v11::parameters::cache(parameter.value.as_ref()?).0,
+                ))
+            })
+            .collect::<BTreeMap<_, _>>();
+        kinds.extend(
+            target
+                .design
+                .parameters
+                .iter()
+                .map(|parameter| (&parameter.id, parameter.kind.clone())),
+        );
+        let mut unavailable = Vec::new();
+        for row in &mut self.rows {
+            for (id, expression) in &mut row.parameter_overrides {
+                let placed = match self.expressions.get(&(row.id.clone(), id.clone())) {
+                    Some(typed) => crate::design_v11::configurations::spelled(typed, &names),
+                    None => {
+                        if kinds.get(id).is_some_and(|kind| {
+                            crate::design_v11::parameters::literal(expression, kind).is_some()
+                        }) {
+                            continue;
+                        }
+                        let tokens = crate::design_v11::parameters::tokens(expression, &vocabulary);
+                        if !tokens
+                            .iter()
+                            .any(|token| matches!(token, ExpressionToken::Reference(_)))
+                        {
+                            continue;
+                        }
+                        super::design::expression::print_tokens(&tokens, &name)
+                    }
+                };
+                if let Some(placed) = placed {
+                    *expression = placed;
+                } else {
+                    unavailable.push(format!("{} parameter {id}: {expression:?}", row.id));
+                }
+            }
+        }
+        losses.extend(value_unwritable(
+            "F3D",
+            "cannot bind references in these configuration expressions to written Design parameters",
+            unavailable,
+        ));
+    }
+}
 
 fn pin_losses(pinned: &[Pinned]) -> Option<LossNote> {
     value_unwritable(
@@ -583,12 +731,9 @@ fn pin_losses(pinned: &[Pinned]) -> Option<LossNote> {
 /// The configuration documents a patch of the retained archive carries, and
 /// the losses of what the configurations state otherwise than the rows of
 /// the documents.
-pub(in crate::writer) struct Patched {
-    /// The documents, where they state the configurations otherwise than the
-    /// stored documents.
-    pub(in crate::writer) documents: Option<Vec<DesignConfiguration>>,
+pub(in crate::writer) struct Patched<'a> {
+    pub(in crate::writer) destination: read_back::Destination<'a>,
     pub(in crate::writer) losses: Vec<LossNote>,
-    pub(in crate::writer) witness: read_back::Witness,
 }
 
 /// The configuration documents of `target`, whose native records are
@@ -596,10 +741,10 @@ pub(in crate::writer) struct Patched {
 /// patch writes no Design stream parameter, so the row the stored
 /// `DesignConfigurationRoot` record names stays active, and each scope whose
 /// active configuration differs is charged.
-pub(in crate::writer) fn patched(
+pub(in crate::writer) fn patched<'a>(
     target: &CadIr,
-    native: &F3dNative,
-) -> Result<Patched, CodecError> {
+    native: &'a F3dNative,
+) -> Result<Patched<'a>, CodecError> {
     let targets = configuration_targets(target, native);
     let documents = &native.design_configurations;
     let decoded = decoded_configurations(documents, &targets)?;
@@ -628,15 +773,9 @@ pub(in crate::writer) fn patched(
     if !unchanged {
         written.finish(active, &targets, &stated, None, &mut losses)?;
     }
-    let witness = read_back::Witness::retained(&written);
-    let documents = match written.documents {
-        Cow::Borrowed(_) => None,
-        Cow::Owned(documents) => Some(documents),
-    };
     Ok(Patched {
-        documents,
+        destination: read_back::Destination::retained(written, stated.part_numbers),
         losses,
-        witness,
     })
 }
 
@@ -644,26 +783,25 @@ pub(in crate::writer) fn patched(
 /// whose rows are `decoded`, written to state `stated`, with the root record
 /// `target` names, and the `testRowData` entries of its active row. Adds to
 /// `losses` what the documents read back as otherwise.
-pub(super) fn generated<'a>(
+pub(super) fn generated<'a, 'f>(
     target: &CadIr,
     documents: &'a [DesignConfiguration],
     decoded: &Projection,
-    stated: &'a Stated,
+    stated: &'f Stated,
     targets: &ConfigurationTargets<'_>,
     destinations: Option<&DestinationParameters<'_>>,
     losses: &mut Vec<LossNote>,
-) -> Result<(Written<'a>, Plan), CodecError> {
-    let (mut written, regenerated) = regenerate(documents, decoded, &stated.rows, targets)?;
+) -> Result<(Written<'a, 'f>, Plan), CodecError> {
+    let (mut written, regenerated) =
+        regenerate_with_bindings(documents, decoded, &stated.rows, targets, destinations)?;
     losses.extend(regenerated);
     let plan = plan(target, documents, decoded.table, &written, &stated.rows);
     written.finish(plan.active(), targets, stated, destinations, losses)?;
     Ok((written, plan))
 }
 
-impl Written<'_> {
-    /// Write the `testRowData` entries of the row of the configuration
-    /// `active` ([`Self::test_rows`]), and add to `losses` what the
-    /// documents read back as otherwise than `stated` ([`Self::read_back`]).
+impl Written<'_, '_> {
+    /// Finish the table's test entries and destination Design bindings.
     fn finish(
         &mut self,
         active: Option<&str>,
@@ -683,14 +821,13 @@ impl Written<'_> {
         }
         losses.extend(pin_losses(&stated.pinned));
         if let Some(destinations) = destinations {
-            self.bind_columns(targets, destinations, losses)?;
+            self.bind_columns(destinations, losses)?;
         }
         Ok(())
     }
 
     fn bind_columns(
         &mut self,
-        targets: &ConfigurationTargets<'_>,
         destinations: &DestinationParameters<'_>,
         losses: &mut Vec<LossNote>,
     ) -> Result<(), CodecError> {
@@ -702,7 +839,7 @@ impl Written<'_> {
         let mut missing = Vec::new();
         let mut occupied = destinations
             .values()
-            .map(|(record, _)| *record)
+            .map(|destination| destination.index)
             .collect::<BTreeSet<_>>();
         for column in &table.columns {
             let (ColumnTarget::Parameter(record) | ColumnTarget::OwnedParameter(record)) =
@@ -710,13 +847,13 @@ impl Written<'_> {
             else {
                 continue;
             };
-            let id = column_parameter(&column.target, targets);
-            let destination = id.as_ref().and_then(|id| destinations.get(id));
+            let id = self.bindings.get(&column.id);
+            let destination = id.and_then(|id| destinations.get(id));
             let replacement = match destination {
-                Some((written, _)) if column.target == ColumnTarget::Parameter(*written) => {
+                Some(written) if column.target == ColumnTarget::Parameter(written.index) => {
                     continue
                 }
-                Some((written, _)) => *written,
+                Some(written) => written.index,
                 None => {
                     if let Some(id) = id {
                         missing.push(format!(
@@ -782,12 +919,12 @@ impl Written<'_> {
     ) -> Option<PlannedTestRows> {
         let (index, table) = host(&self.documents, self.projection.table)?;
         let bases = bases(targets.neutral_features, targets.neutral_parameters);
-        let configuration = active.and_then(|active| {
+        let placed = active.and_then(|id| {
             self.expected
-                .values()
-                .copied()
-                .find(|configuration| configuration.id.as_str() == active)
+                .iter()
+                .find(|(_, configuration)| configuration.id.as_str() == id)
         });
+        let configuration = placed.map(|(_, configuration)| *configuration);
         let stored = self.stored_active.as_ref();
         let moved = active != stored.map(|stored| stored.id.as_str());
         let entry_name = self.documents[index].entry_name();
@@ -796,32 +933,67 @@ impl Written<'_> {
             .iter()
             .map(|record| (crate::ids::neutral_parameter_id(record), record.name()))
             .collect::<BTreeMap<_, _>>();
+        let selected = placed.and_then(|(placed, _)| {
+            table
+                .rows
+                .iter()
+                .find(|row| neutral_configuration_id(entry_name, &row.id).as_str() == placed)
+        });
         let expected = table
             .columns
             .iter()
             .filter_map(|column| {
-                let parameter = column_parameter(&column.target, targets);
-                let name = parameter
-                    .as_ref()
-                    .and_then(|parameter| destinations?.get(parameter))
-                    .map(|(_, name)| *name);
-                let members = test_row(column, configuration, targets, &bases, name);
+                let parameter = self.bindings.get(&column.id);
+                let destination = parameter.and_then(|parameter| destinations?.get(parameter));
+                let selected_cell = selected
+                    .and_then(|row| row.cells.iter().find(|cell| cell.column_id == column.id));
+                let pair = selected_cell.and_then(|cell| match &cell.value {
+                    ConfiguredValue::Parameter {
+                        expression, value, ..
+                    }
+                    | ConfiguredValue::OwnedParameter {
+                        expression, value, ..
+                    } => Some((expression.as_str(), value.get())),
+                    _ => None,
+                });
+                let existing_only = parameter.is_none() && pair.is_some();
+                let members = if existing_only {
+                    pair.map(|(expression, value)| {
+                        Map::from_iter([
+                            ("DataType".to_owned(), Value::from("ParameterDoubleValue")),
+                            ("Expression".to_owned(), Value::from(expression)),
+                            ("Value".to_owned(), Value::from(value)),
+                        ])
+                    })
+                } else {
+                    test_row(
+                        column,
+                        parameter,
+                        configuration,
+                        targets,
+                        &bases,
+                        destination,
+                        pair,
+                    )
+                };
                 let added = self.added.contains(&column.id);
-                let rewritten = parameter.as_ref().is_some_and(|parameter| {
+                let rewritten = parameter.is_some_and(|parameter| {
                     rewritten.contains(parameter)
-                        || name
+                        || destination
                             .zip(stored_names.get(parameter))
-                            .is_some_and(|(name, stored)| name != *stored)
+                            .is_some_and(|(destination, stored)| destination.name != *stored)
                 });
                 let restated = moved
                     || added
                     || rewritten
-                    || members != test_row(column, stored, targets, &bases, None);
+                    || (!existing_only
+                        && members
+                            != test_row(column, parameter, stored, targets, &bases, None, None));
                 restated.then_some((
                     column.id.clone(),
                     TestRowTarget {
                         members,
-                        required: added || rewritten || stored.is_some(),
+                        required: !existing_only && (added || rewritten || stored.is_some()),
                     },
                 ))
             })
@@ -904,15 +1076,23 @@ struct Rows<'s, 'p> {
     table: &'s ConfigurationTable,
     /// The columns of `table` and the columns the write adds.
     columns: Vec<ConfigurationColumn>,
+    bindings: BTreeMap<String, ParameterId>,
+    destinations: Option<&'s DestinationParameters<'s>>,
     /// The ids of the columns the write adds.
     added: BTreeSet<String>,
     targets: &'s ConfigurationTargets<'s>,
     /// What a configuration that states no override resolves to.
     bases: &'s Bases<'s>,
-    /// Each row the write leaves with no cell of a property column it adds.
     /// Each property column the write adds under a component id it
     /// generates.
     components: Vec<String>,
+}
+
+struct WrittenRows<'a> {
+    expected: BTreeMap<String, &'a Configuration>,
+    added: BTreeSet<String>,
+    bindings: BTreeMap<String, ParameterId>,
+    losses: Vec<LossNote>,
 }
 
 impl Rows<'_, '_> {
@@ -929,11 +1109,7 @@ impl Rows<'_, '_> {
         mut self,
         decoded: &[Configuration],
         configurations: &'c [Configuration],
-    ) -> (
-        BTreeMap<String, &'c Configuration>,
-        BTreeSet<String>,
-        Vec<LossNote>,
-    ) {
+    ) -> WrittenRows<'c> {
         let (entry, table) = (self.entry, self.table);
         for configuration in configurations {
             self.grow(configuration);
@@ -1025,7 +1201,12 @@ impl Rows<'_, '_> {
                 )
             })
             .collect();
-        (expected, self.added, losses)
+        WrittenRows {
+            expected,
+            added: self.added,
+            bindings: self.bindings,
+            losses,
+        }
     }
 
     /// Write the name and the cells of `configuration` into the row
@@ -1055,8 +1236,18 @@ impl Rows<'_, '_> {
             let value = stored
                 .and_then(|row| row.cells.iter().find(|cell| cell.column_id == column.id))
                 .map(|cell| &cell.value);
-            let data = match cell(column, configuration, value, self.targets, self.bases) {
-                Cell::Keep | Cell::UnresolvableBinding | Cell::Unrepresentable => continue,
+            let data = match cell(
+                column,
+                self.bindings.get(&column.id),
+                configuration,
+                value,
+                self.targets,
+                self.bases,
+                self.bindings
+                    .get(&column.id)
+                    .and_then(|id| self.destinations?.get(id)),
+            ) {
+                Cell::Keep | Cell::Unwritable => continue,
                 Cell::Write(data) => Some(data),
                 Cell::Absent if value.is_some() => None,
                 Cell::Absent => continue,
@@ -1077,11 +1268,7 @@ impl Rows<'_, '_> {
     /// description, that no column names.
     fn grow(&mut self, configuration: &Configuration) {
         let targets = self.targets;
-        let parameters = self
-            .columns
-            .iter()
-            .filter_map(|column| column_parameter(&column.target, targets))
-            .collect::<BTreeSet<_>>();
+        let parameters = self.bindings.values().collect::<BTreeSet<_>>();
         let features = self
             .columns
             .iter()
@@ -1104,13 +1291,25 @@ impl Rows<'_, '_> {
             .keys()
             .filter(|id| !parameters.contains(*id))
         {
-            if let Some(target) = targets.parameter_column(id) {
-                let title = self
-                    .bases
-                    .parameters
-                    .get(id)
-                    .map_or(id.as_str(), |parameter| parameter.name.as_str());
-                added.push((id.to_string(), title.to_owned(), target));
+            let physical = self
+                .destinations
+                .and_then(|destinations| destinations.get(id));
+            let target = match (self.destinations, physical) {
+                (Some(_), Some(parameter)) => Some(ColumnTarget::Parameter(parameter.index)),
+                (Some(_), None) => None,
+                (None, _) => targets.parameter_column(id),
+            };
+            if let Some(target) = target {
+                let title = physical.map_or_else(
+                    || {
+                        self.bases
+                            .parameters
+                            .get(id)
+                            .map_or(id.as_str(), |parameter| parameter.name.as_str())
+                    },
+                    |parameter| parameter.name,
+                );
+                added.push((id.to_string(), title.to_owned(), target, Some(id.clone())));
             }
         }
         if !configuration.active {
@@ -1130,7 +1329,7 @@ impl Rows<'_, '_> {
                         .find(|feature| feature.id == *id)
                         .and_then(|feature| feature.name.as_deref())
                         .unwrap_or(id.as_str());
-                    added.push((id.to_string(), title.to_owned(), target));
+                    added.push((id.to_string(), title.to_owned(), target, None));
                 }
             }
         }
@@ -1144,10 +1343,11 @@ impl Rows<'_, '_> {
                     format!("property:{key}"),
                     key.to_owned(),
                     ColumnTarget::Property(key.to_owned()),
+                    None,
                 ));
             }
         }
-        for (key, title, target) in added {
+        for (key, title, target, parameter) in added {
             let id = deterministic_guid("configuration column", &key);
             if self.columns.iter().any(|column| column.id == id) {
                 continue;
@@ -1179,6 +1379,9 @@ impl Rows<'_, '_> {
                 ),
             };
             if pushed {
+                if let Some(parameter) = parameter {
+                    self.bindings.insert(id.clone(), parameter);
+                }
                 self.added.insert(id.clone());
                 self.columns.push(ConfigurationColumn { id, target });
             }
@@ -1199,10 +1402,12 @@ const DESCRIPTION: &str = "Description";
 /// empty, else `Option` 1 with the text.
 fn test_row(
     column: &ConfigurationColumn,
+    parameter: Option<&ParameterId>,
     active: Option<&Configuration>,
     targets: &ConfigurationTargets<'_>,
     bases: &Bases<'_>,
-    destination_name: Option<&str>,
+    destination: Option<&DestinationParameter<'_>>,
+    pair: Option<(&str, f64)>,
 ) -> Option<Map<String, Value>> {
     let mut entry = Map::new();
     let mut set = |member: &str, value: Value| {
@@ -1210,24 +1415,33 @@ fn test_row(
     };
     match &column.target {
         ColumnTarget::Parameter(_) | ColumnTarget::OwnedParameter(_) => {
-            let parameter = column_parameter(&column.target, targets)?;
-            let base = bases.parameters.get(&parameter)?;
-            let (expression, value) = match active {
-                Some(active) => (
-                    bases.expression(active, &parameter)?,
-                    bases.value(active, &parameter)?,
+            let parameter = parameter?;
+            let own = bases.parameters.get(parameter);
+            let name = destination
+                .map(|destination| destination.name)
+                .or_else(|| own.map(|base| base.name.as_str()))?;
+            let (expression, value) = match (pair, active) {
+                (Some(pair), _) => pair,
+                (None, Some(row)) if row.parameter_overrides.contains_key(parameter) => (
+                    row.parameter_overrides.get(parameter)?.as_str(),
+                    evaluated(parameter, row.parameter_values.get(parameter)?, targets)?.get(),
                 ),
-                None => (&base.expression, base.value.as_ref()?),
+                (None, _) => match destination {
+                    Some(destination) => (destination.expression, destination.evaluated),
+                    None => {
+                        let base = own?;
+                        (
+                            base.expression.as_str(),
+                            evaluated(parameter, base.value.as_ref()?, targets)?.get(),
+                        )
+                    }
+                },
             };
-            let value = evaluated(&parameter, value, targets)?;
             set("DataType", Value::from("ParameterDoubleValue"));
             set("ColumnUniqueID", Value::from(column.id.as_str()));
-            set(
-                "UserName",
-                Value::from(destination_name.unwrap_or(&base.name)),
-            );
-            set("Expression", Value::from(expression.as_str()));
-            set("Value", Value::from(value.get()));
+            set("UserName", Value::from(name));
+            set("Expression", Value::from(expression));
+            set("Value", Value::from(value));
         }
         ColumnTarget::Feature(record) => {
             let computed = match active {
@@ -1280,8 +1494,7 @@ fn column_parameter(
 enum Cell {
     Keep,
     Absent,
-    UnresolvableBinding,
-    Unrepresentable,
+    Unwritable,
     Write(CellData),
 }
 
@@ -1292,10 +1505,12 @@ enum Cell {
 /// charges it.
 fn cell(
     column: &ConfigurationColumn,
+    parameter: Option<&ParameterId>,
     configuration: &Configuration,
     stored: Option<&ConfiguredValue>,
     targets: &ConfigurationTargets<'_>,
     bases: &Bases<'_>,
+    destination: Option<&DestinationParameter<'_>>,
 ) -> Cell {
     match &column.target {
         ColumnTarget::Property(key) => {
@@ -1317,7 +1532,7 @@ fn cell(
                     .properties
                     .contains_key(format!("suppressed:{}", column.id).as_str())
             {
-                return Cell::Unrepresentable;
+                return Cell::Unwritable;
             }
             match computed {
                 None => Cell::Absent,
@@ -1327,21 +1542,14 @@ fn cell(
                 Some(computed) => Cell::Write(CellData::Computed(computed)),
             }
         }
-        ColumnTarget::Parameter(record) => expression_cell(
+        ColumnTarget::Parameter(_) | ColumnTarget::OwnedParameter(_) => expression_cell(
             column,
-            targets.parameter(*record, None).as_ref(),
+            parameter,
             configuration,
             stored,
             targets,
             bases,
-        ),
-        ColumnTarget::OwnedParameter(record) => expression_cell(
-            column,
-            targets.owned_parameter(*record).as_ref(),
-            configuration,
-            stored,
-            targets,
-            bases,
+            destination,
         ),
     }
 }
@@ -1379,7 +1587,33 @@ fn expression_cell(
     stored: Option<&ConfiguredValue>,
     targets: &ConfigurationTargets<'_>,
     bases: &Bases<'_>,
+    destination: Option<&DestinationParameter<'_>>,
 ) -> Cell {
+    if let Some(destination) = destination
+        .filter(|_| parameter.is_some_and(|id| !configuration.parameter_overrides.contains_key(id)))
+    {
+        let Some(value) = FiniteReal::new(destination.evaluated) else {
+            return Cell::Unwritable;
+        };
+        return match stored {
+            Some(
+                ConfiguredValue::Parameter {
+                    expression,
+                    value: cache,
+                    ..
+                }
+                | ConfiguredValue::OwnedParameter {
+                    expression,
+                    value: cache,
+                    ..
+                },
+            ) if expression == destination.expression && *cache == value => Cell::Keep,
+            _ => Cell::Write(CellData::Expression {
+                expression: destination.expression.to_owned(),
+                value,
+            }),
+        };
+    }
     let (expression, value) = match parameter {
         Some(parameter) => (
             bases.expression(configuration, parameter),
@@ -1420,10 +1654,10 @@ fn expression_cell(
                 expression: expression.clone(),
                 value,
             }),
-            None => Cell::Unrepresentable,
+            None => Cell::Unwritable,
         },
-        (Some(_), None) => Cell::Unrepresentable,
-        (None, _) => Cell::UnresolvableBinding,
+        (Some(_), None) => Cell::Unwritable,
+        (None, _) => Cell::Unwritable,
     }
 }
 
@@ -1548,7 +1782,7 @@ fn written(
 /// configuration id it reads back as. `bases` holds what a configuration
 /// that states no override resolves to.
 fn compare(
-    expected: &BTreeMap<String, &Configuration>,
+    expected: &BTreeMap<&str, &Configuration>,
     read: &[Configuration],
     bases: &Bases<'_>,
     assigned_ids: &BTreeSet<&str>,
@@ -1565,11 +1799,11 @@ fn compare(
     let mut unresolved = Vec::new();
     for (written, configuration) in expected {
         let id = configuration.id.as_str();
-        let Some(back) = read.get(written.as_str()) else {
+        let Some(back) = read.get(written) else {
             dropped.push(format!("{id}: row"));
             continue;
         };
-        if assigned_ids.contains(written.as_str()) {
+        if assigned_ids.contains(written) {
             generated.push(format!("{id} as {written}"));
         }
         if back.ordinal != configuration.ordinal {

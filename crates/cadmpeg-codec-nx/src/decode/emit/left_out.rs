@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::Identity;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::dropped_with;
+use cadmpeg_ir::unknown::part::{dropped_with, Cause};
 
 use crate::decode::build::PendingParts;
 use crate::framing::node_kind::NodeKind;
@@ -58,19 +58,22 @@ impl<'parts, 'stream> LeftOut<'parts, 'stream> {
             .find_map(|((_, left_out), id)| (*left_out == xmt).then_some(id))
     }
 
-    /// Gives up `node` for `why`, unless an earlier site left it out, and
-    /// returns the id a charge names for it.
+    /// Gives up `node` with the text of `why`, unless an earlier site left
+    /// it out, and returns the id a charge names for it. Emission leaves a
+    /// record out when a record that it names is not emitted or its fields
+    /// have no reading, so the give-up is [`Cause::Undecoded`].
     pub(super) fn give_up(
         &mut self,
         kind: NodeKind,
         node: &Node,
-        why: LossNote,
+        why: &LossNote,
     ) -> Result<Identity, CodecError> {
         if let Some(id) = self.ids.get(&(kind, node.xmt())) {
             return Ok(id.clone());
         }
-        let id = self.parts.push_record(self.stream, node, &why)?;
-        self.losses.push(why);
+        let id = self
+            .parts
+            .push_record(self.stream, node, (Cause::Undecoded, why))?;
         self.ids.insert((kind, node.xmt()), id.clone());
         Ok(id)
     }
@@ -120,7 +123,7 @@ impl<'parts, 'stream> LeftOut<'parts, 'stream> {
         match needs.and_then(|(kind, xmt)| self.get(kind, xmt)).cloned() {
             Some(needs) => self.drop_with((kind, node.xmt()), record, &needs),
             None => {
-                self.give_up(kind, node, why())?;
+                self.give_up(kind, node, &why())?;
             }
         }
         Ok(())

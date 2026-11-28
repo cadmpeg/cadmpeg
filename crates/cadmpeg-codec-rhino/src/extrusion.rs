@@ -146,10 +146,14 @@ pub(crate) fn decode(
     let profile = decode_embedded_curve_2d(expand.ctx(), data, &mut reader, scale, archive, 1)?;
     let profile_range = profile_start..reader.position();
     let path_from = crate::wire::scaled_point(point(&mut reader)?.0.get(), scale)
-        .ok_or_else(|| error(reader.position(), "scaled extrusion path is invalid"))?
+        .map_err(|unscaled| {
+            unscaled.charge(error(reader.position(), "scaled extrusion path is invalid"))
+        })?
         .get();
     let path_to = crate::wire::scaled_point(point(&mut reader)?.0.get(), scale)
-        .ok_or_else(|| error(reader.position(), "scaled extrusion path is invalid"))?
+        .map_err(|unscaled| {
+            unscaled.charge(error(reader.position(), "scaled extrusion path is invalid"))
+        })?
         .get();
     let trim = increasing_interval(interval(&mut reader)?.0, reader.position(), "path trim")?;
     if trim[0] < 0.0 || trim[1] > 1.0 {

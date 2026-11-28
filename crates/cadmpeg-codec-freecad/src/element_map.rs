@@ -7,7 +7,7 @@ use cadmpeg_core::decode::tree::XmlDocument;
 use cadmpeg_core::decode::{bounded_len, ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::Identity;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 
 use crate::native::element_map::{
     ElementMapGroup, ElementMapNode, ElementMapNodes, ElementMapRecord, ElementMappedName,
@@ -24,7 +24,11 @@ fn recover_metadata<T>(
 ) -> Result<Option<T>, CodecError> {
     match result {
         Ok(value) => Ok(Some(value)),
-        Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
+        Err(
+            error @ (CodecError::Malformed(_)
+            | CodecError::Truncated { .. }
+            | CodecError::NotImplemented(_)),
+        ) => {
             losses.push(metadata_unresolved(field, &error));
             Ok(None)
         }
@@ -36,6 +40,20 @@ fn metadata_unresolved(field: &str, error: &CodecError) -> cadmpeg_ir::report::l
     crate::loss::FreecadLossCode::ElementMapMetadataUnresolved.note(format!(
         "{field} remains source-only: {error}; independent shape geometry is retained"
     ))
+}
+
+/// A shape's string-table index, or a mapped name's string id, names no
+/// record of the string tables, which the decode reads in full.
+fn dangling_string_reference(what: std::fmt::Arguments<'_>) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::FreecadLossCode::ElementMapStringReferenceDangling.note(format!(
+        "{what}; Part HasherIndex remains source-only; independent shape geometry is retained"
+    ))
+}
+
+/// A count past one of the caps below: the decoder does not decode a table
+/// or map that large.
+fn past_cap(what: &str, count: usize, cap: usize) -> CodecError {
+    CodecError::NotImplemented(format!("FreeCAD {what} {count} exceeds {cap}"))
 }
 
 const MAX_TABLE_ENTRIES: usize = 10_000_000;
@@ -250,14 +268,10 @@ pub(crate) fn parse(
                 })
                 .transpose()?
                 .flatten();
-            if hasher_index.is_some_and(|index| tables.get(index).is_none()) {
-                recover_metadata::<()>(
-                    Err(CodecError::Malformed(
-                        "HasherIndex references an unavailable string table".into(),
-                    )),
-                    losses,
-                    "Part HasherIndex",
-                )?;
+            if let Some(index) = hasher_index.filter(|index| tables.get(*index).is_none()) {
+                losses.push(dangling_string_reference(format_args!(
+                    "Part HasherIndex {index} names no document string table"
+                )));
                 hasher_index = None;
             }
             let payload = match carrier {
@@ -338,13 +352,10 @@ pub(crate) fn parse(
                         missing |= !known_ids.contains(id);
                     }
                     if missing {
-                        recover_metadata::<()>(
-                            Err(CodecError::Malformed(
-                                "mapped names reference unavailable persistent string IDs".into(),
-                            )),
-                            losses,
-                            "Part HasherIndex",
-                        )?;
+                        losses.push(dangling_string_reference(format_args!(
+                            "mapped names reference persistent string ids that string table \
+                             {index} does not hold"
+                        )));
                         hasher_index = None;
                     }
                 }
@@ -363,14 +374,15 @@ pub(crate) fn parse(
         })();
         match parsed {
             Ok(map) => maps.extend(map),
-            Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
-                losses.push(metadata_unresolved(&property.id, &error).with_provenance(
-                    cadmpeg_ir::SourceProvenance::in_stream(
-                        "fcstd",
-                        cadmpeg_ir::stream_name!("Document.xml"),
-                        property.xml.start(),
-                    ),
-                ));
+            Err(
+                error @ (CodecError::Malformed(_)
+                | CodecError::Truncated { .. }
+                | CodecError::NotImplemented(_)),
+            ) => {
+                let cause = match error {
+                    CodecError::NotImplemented(_) => Cause::Undecoded,
+                    _ => Cause::Unreadable,
+                };
                 let identity = |id: String| Identity::new(id).map_err(CodecError::malformed);
                 // The kept property record holds the same raw XML.
                 let part = Part::at(
@@ -388,7 +400,7 @@ pub(crate) fn parse(
                     "map",
                 ))?])
                 .digest_only();
-                given_up.push(ctx.give_up_part(part, error)?);
+                given_up.push(ctx.give_up_part(part, cause, error)?);
             }
             Err(error) => return Err(error),
         }
@@ -410,9 +422,11 @@ fn string_table_header_count(bytes: &[u8]) -> Result<usize, CodecError> {
         .ok_or_else(|| CodecError::Malformed("string-table side entry has no count".into()))?;
     let count = parse_usize(count, "string-table header count")?;
     if count > MAX_TABLE_ENTRIES {
-        return Err(CodecError::malformed(format_args!(
-            "FreeCAD string table entry count {count} exceeds {MAX_TABLE_ENTRIES}"
-        )));
+        return Err(past_cap(
+            "string table entry count",
+            count,
+            MAX_TABLE_ENTRIES,
+        ));
     }
     Ok(count)
 }
@@ -786,9 +800,7 @@ fn parse_legacy_records<'a>(
     count: usize,
 ) -> Result<Vec<LegacyElementRecord>, CodecError> {
     if count > MAX_NAMES {
-        return Err(CodecError::malformed(format_args!(
-            "FreeCAD legacy element record count {count} exceeds {MAX_NAMES}"
-        )));
+        return Err(past_cap("legacy element record count", count, MAX_NAMES));
     }
     let mut records = Vec::new();
     for _ in 0..count {
@@ -799,9 +811,7 @@ fn parse_legacy_records<'a>(
             "legacy string-id count",
         )?;
         if sid_count > MAX_NAMES {
-            return Err(CodecError::malformed(format_args!(
-                "FreeCAD legacy string ID count {sid_count} exceeds {MAX_NAMES}"
-            )));
+            return Err(past_cap("legacy string ID count", sid_count, MAX_NAMES));
         }
         let mut string_ids = Vec::new();
         for _ in 0..sid_count {
@@ -935,9 +945,7 @@ fn split_indexed_name(value: &str) -> Result<(String, usize), CodecError> {
             .map_err(|_| CodecError::Malformed("invalid legacy indexed-name index".into()))?
     };
     if index > MAX_NAMES {
-        return Err(CodecError::malformed(format_args!(
-            "FreeCAD legacy indexed name {index} exceeds {MAX_NAMES}"
-        )));
+        return Err(past_cap("legacy indexed name", index, MAX_NAMES));
     }
     Ok((type_name.to_owned(), index))
 }
@@ -980,9 +988,7 @@ fn parse_count(node: roxmltree::Node<'_, '_>, kind: &str) -> Result<usize, Codec
     let count = node.attribute("count").unwrap_or("0");
     let count = parse_usize(count, &format!("{kind} count"))?;
     if count > MAX_TABLE_ENTRIES {
-        return Err(CodecError::malformed(format_args!(
-            "FreeCAD naming record count {count} exceeds {MAX_TABLE_ENTRIES}"
-        )));
+        return Err(past_cap("naming record count", count, MAX_TABLE_ENTRIES));
     }
     Ok(count)
 }
@@ -1216,7 +1222,12 @@ fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<ParsedMap, CodecE
     let mut tokens = text.split_whitespace();
     if side_entry {
         expect(&mut tokens, "BeginElementMap")?;
-        expect(&mut tokens, "v1")?;
+        let version = next_token(&mut tokens, "element-map version")?;
+        if version != "v1" {
+            return Err(CodecError::NotImplemented(format!(
+                "element-map side-entry version {version:?}"
+            )));
+        }
     }
     let map_id = next_u64(&mut tokens, "element-map id")?;
     expect(&mut tokens, "PostfixCount")?;
@@ -1238,7 +1249,7 @@ fn parse_element_map(bytes: &[u8], side_entry: bool) -> Result<ParsedMap, CodecE
     let mut maps = Vec::new();
     for expected_index in 1..=map_count {
         expect(&mut tokens, "ElementMap")?;
-        let index = next_count(&mut tokens, "map index", MAX_MAP_NODES)?;
+        let index = parse_usize(next_token(&mut tokens, "map index")?, "map index")?;
         if index != expected_index {
             return Err(CodecError::Malformed(
                 "element-map node indices are not contiguous".into(),
@@ -1406,9 +1417,7 @@ fn next_count<'a>(
 ) -> Result<usize, CodecError> {
     let value = parse_usize(next_token(tokens, field)?, field)?;
     if value > limit {
-        return Err(CodecError::malformed(format_args!(
-            "FreeCAD element map count {value} exceeds {limit}"
-        )));
+        return Err(past_cap("element map count", value, limit));
     }
     Ok(value)
 }

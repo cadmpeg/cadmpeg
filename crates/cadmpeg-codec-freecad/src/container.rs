@@ -13,7 +13,7 @@ use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::ids::Identity;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::ContainerSummary;
 
 use crate::brep::ShapePayloadRecord;
@@ -93,6 +93,9 @@ pub(crate) struct UnreadableEntry<'a> {
 
 impl UnreadableEntry<'_> {
     /// Gives the entry up, naming the records dropped because they need it.
+    /// An encrypted member or one of an unsupported compression method is
+    /// undecoded; a member whose frame or stream breaks the ZIP rules is
+    /// unreadable.
     pub(crate) fn give_up(
         self,
         ctx: &DecodeContext<'_>,
@@ -107,7 +110,11 @@ impl UnreadableEntry<'_> {
                 .collect::<Result<Vec<_>, _>>()?;
             part = part.dropping(records);
         }
-        ctx.give_up_part(part, self.error)
+        let cause = match self.error {
+            CodecError::NotImplemented(_) => Cause::Undecoded,
+            _ => Cause::Unreadable,
+        };
+        ctx.give_up_part(part, cause, self.error)
     }
 }
 

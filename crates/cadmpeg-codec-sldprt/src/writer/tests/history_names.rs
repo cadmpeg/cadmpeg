@@ -95,6 +95,14 @@ fn charged(losses: &[LossNote], code: SldprtLossCode) -> Vec<&str> {
         .collect()
 }
 
+/// Whether the reader gives up a Keywords history member.
+fn gives_up_history(losses: &[LossNote]) -> bool {
+    losses.iter().any(|loss| {
+        cadmpeg_ir::unknown::part::gives_up(&loss.code)
+            && loss.message.starts_with("part history-member ")
+    })
+}
+
 /// The writer's charges against the Keywords text.
 fn history_charges(losses: &[LossNote]) -> Vec<&LossNote> {
     losses
@@ -120,7 +128,7 @@ fn assert_regenerated(written: &Written) {
         "{:?}",
         written.losses
     );
-    assert!(charged(&written.reread, SldprtLossCode::HistoryUnread).is_empty());
+    assert!(!gives_up_history(&written.reread));
 }
 
 fn key(name: &str) -> NonBlankString {
@@ -420,7 +428,7 @@ fn a_history_the_decoder_reads_from_the_written_file_is_written_and_one_it_does_
         refused[0]
     );
     assert_eq!(written.keywords, KEYWORDS.as_bytes());
-    assert!(charged(&written.reread, SldprtLossCode::HistoryUnread).is_empty());
+    assert!(!gives_up_history(&written.reread));
 }
 
 #[test]

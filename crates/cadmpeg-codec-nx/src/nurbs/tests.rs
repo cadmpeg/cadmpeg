@@ -931,8 +931,10 @@ fn dimension_four_rational_curve_stream(weights: [f64; 2]) -> Vec<u8> {
     stream
 }
 
+/// A scan hit cannot show that its bytes are the record, so the refusal of a
+/// scanned carrier is undecoded.
 #[test]
-fn a_curve_with_a_negative_weight_is_omitted_with_one_loss() {
+fn a_scanned_curve_with_a_negative_weight_is_omitted_with_one_undecoded_loss() {
     let (curves, refusals) =
         crate::nurbs::curves(&dimension_four_rational_curve_stream([1.0, 2.0]));
     assert_eq!(curves.len(), 1);
@@ -943,10 +945,9 @@ fn a_curve_with_a_negative_weight_is_omitted_with_one_loss() {
     let [refusal] = refusals.as_slice() else {
         panic!("one refusal, got {refusals:?}");
     };
-    assert_eq!(
-        refusal.loss(0).code,
-        crate::loss::NxLossCode::CarrierSplineWeightNonpositive.kind()
-    );
+    let (cause, why) = refusal.give_up(0);
+    assert_eq!(cause, cadmpeg_ir::unknown::part::Cause::Undecoded);
+    assert!(why.contains("weight that is zero or negative"), "{why}");
 }
 
 #[test]

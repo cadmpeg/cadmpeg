@@ -50,10 +50,6 @@ fn malformed_gui_metadata_keeps_geometry_and_valid_native_state() {
             .arena_as::<GuiDocumentRecord>("gui_documents")
             .unwrap();
         assert_eq!(documents.len(), 1);
-        assert!(recovered
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.code.local_code() == "source.gui-metadata-unresolved"));
+        assert_gui_metadata_recovery(&recovered);
     }
 }
