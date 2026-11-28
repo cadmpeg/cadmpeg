@@ -305,12 +305,12 @@ fn settings_decoder_skips_unregistered_bulk_without_requesting_a_metastream() {
     use std::io::{Cursor, Write};
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
         .unwrap();
     zip.write_all(&[]).unwrap();
     let bytes = zip.finish().unwrap().into_inner();
-    crate::test_support::zip_test::with_scan(&bytes, |scan| {
+    crate::test_support::zip_fixture::with_scan(&bytes, |scan| {
         assert!(super::decode_settings(scan, &mut Vec::new())
             .unwrap()
             .is_empty());
@@ -413,7 +413,7 @@ fn decode_two_frames(
         first.extend_from_slice(b"258");
         first.extend_from_slice(&u32::try_from(entity).unwrap().to_le_bytes());
     }
-    let mut meta = crate::test_support::streams_test::design_metastream_with_records(
+    let mut meta = crate::test_support::streams_fixture::design_metastream_with_records(
         &[
             (SETTINGS_GUID, "", version, "Fusion", &[50, 150]),
             (PAIRED_GUID, "", 0, "Fusion", &[]),
@@ -434,7 +434,7 @@ fn decode_two_frames(
     meta.splice(secondary_at..secondary_at + 4, secondary);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
         .unwrap();
     zip.write_all(&first).unwrap();
@@ -442,7 +442,7 @@ fn decode_two_frames(
         .unwrap();
     zip.write_all(&meta).unwrap();
     let bytes = zip.finish().unwrap().into_inner();
-    crate::test_support::zip_test::with_scan(&bytes, |scan| {
+    crate::test_support::zip_fixture::with_scan(&bytes, |scan| {
         let mut given_up = Vec::new();
         let settings = super::decode_settings(scan, &mut given_up).unwrap();
         (settings, given_up)

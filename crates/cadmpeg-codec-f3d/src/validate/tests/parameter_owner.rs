@@ -7,7 +7,7 @@ use crate::records::parameters::{
     DesignParameterOwnerWire, DesignParameterSource,
 };
 use crate::records::references::DesignClassTag;
-use crate::test_support::native_test::f3d_native_mut;
+use crate::test_support::native_fixture::f3d_native_mut;
 
 const DESIGN_STREAM: &str = "Design/BulkStream.dat";
 const SCOPE: u32 = 10;

@@ -36,7 +36,9 @@ use cadmpeg_core::dialect::{DialectId, DialectMatch};
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 
-include!("dialect/registry_ids.rs");
+#[path = "dialect/registry_ids.rs"]
+pub(crate) mod registry_ids;
+use self::registry_ids::{CREO_DEPDB, CREO_LEGACY_ASCII, CREO_ND, CREO_UNKNOWN};
 
 /// Key of the UGC header line, verbatim, in [`DialectMatch::declared`].
 ///

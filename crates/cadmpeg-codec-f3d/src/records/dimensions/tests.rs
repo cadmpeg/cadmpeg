@@ -70,7 +70,7 @@ fn dimension_locus_group_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:locus-group#0",
         value: &group,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || super::DIMENSION_LOCUS_GROUP_CLONE_COUNT.with(|count| count.set(0)),
@@ -174,7 +174,7 @@ fn annotation_frame_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:annotation-frame#0",
         value: &frame,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || super::DIMENSION_ANNOTATION_CLONE_COUNT.with(|count| count.set(0)),
@@ -301,7 +301,7 @@ fn dimension_locus_pair_borrowed_wire_matches_owned_wire_bytes() {
 #[test]
 fn dimension_locus_pair_native_retained_limit_refuses_before_record_clone() {
     let record = locus_pair(true);
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_dimension_locus_pairs",
         || super::DIMENSION_LOCUS_PAIR_CLONE_COUNT.with(|count| count.set(0)),

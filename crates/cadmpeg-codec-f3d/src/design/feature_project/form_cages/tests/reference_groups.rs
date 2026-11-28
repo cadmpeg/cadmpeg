@@ -329,12 +329,12 @@ fn forms_sharing_a_body_use_the_same_group_bindings() {
     )]));
     let scopes = [form_scope(201, vec![]), form_scope(202, vec![])];
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    crate::test_support::manifest_test::write_synthetic_manifests(
+    crate::test_support::manifest_fixture::write_synthetic_manifests(
         &mut archive,
         crate::zip_write::file_options(zip::CompressionMethod::Stored),
     );
     let archive = archive.finish().unwrap().into_inner();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
             let mut groups = form_cages::ReferenceGroups::default();
             let mut observed = Vec::new();
@@ -391,7 +391,7 @@ fn projector_rejects_unwitnessed_groups_and_does_not_publish_failed_attempts() {
     let bytes = [frame, indexed_frame(b"258", 400, 15)].concat();
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, options);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut archive, options);
     archive
         .start_file("FusionAssetName[Active]/Design1/BulkStream.dat", options)
         .unwrap();
@@ -410,7 +410,7 @@ fn projector_rejects_unwitnessed_groups_and_does_not_publish_failed_attempts() {
         "definition":{"kind":"operation","value":{"kind":"native","value":{"kind":"Form","parameters":{}}}},
         "dependencies":[], "source_properties":{}, "source_content":[], "outputs":[]
     })).unwrap();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         let mut projection = form_cages::FormProjection::new(scan);
         let mut rows = vec![feature.clone()];
         let arena = DecodeArena::new();

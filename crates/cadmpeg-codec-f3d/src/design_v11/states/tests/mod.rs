@@ -37,7 +37,7 @@ use crate::design::components::HistoryPairOwner;
 use crate::history::stored_states::{Blob, Read, StateRecords, Want};
 use crate::loss::F3dLossCode;
 use crate::records::feature::scope::DesignScopeTailFlags;
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 
 use super::{
     attach_bound, bind, held, history_owners, inherited_bodies, mark_current, marked, omitted,

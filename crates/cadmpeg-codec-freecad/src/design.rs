@@ -73,10 +73,12 @@ pub(crate) mod primitive_placement;
 mod sketch_cache;
 pub(crate) mod v11;
 
+// resource-cap: MAX_SKETCH_RECORDS = 2
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
 /// Endpoint relations that profile chaining may examine in one
 /// sketch. A sketch whose chaining passes it keeps no profiles and reports
 /// `sketch.profile-matching-bounded`; later sketches start a new count.
+// resource-cap: MAX_PROFILE_ENDPOINT_CANDIDATES = 4
 const MAX_PROFILE_ENDPOINT_CANDIDATES: usize = 1 << 24;
 const EXTERNAL_GEO_AXIS_COUNT: usize = 2;
 /// `ExternalGeometryExtension` flag: the external geometry builds the

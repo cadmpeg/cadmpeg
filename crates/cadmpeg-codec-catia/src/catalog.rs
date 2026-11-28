@@ -35,6 +35,7 @@ pub(crate) struct CatalogEntry {
 /// Catalogs in a real image do not overlap, so the scan walks each entry byte
 /// about once. Candidates that overlap an accepted catalog or fail late walk
 /// the same bytes again; a candidate that would pass the allowance is skipped.
+// resource-cap: MAX_CATALOG_WALK_BYTES_PER_INPUT_BYTE = 4
 pub(crate) const MAX_CATALOG_WALK_BYTES_PER_INPUT_BYTE: usize = 4;
 
 /// The catalogs of one image and the candidates the walk allowance skipped.

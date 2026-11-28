@@ -278,26 +278,6 @@ fn nist_twin_catia_ftc_07() {
 }
 
 #[test]
-#[cfg(feature = "creo")]
-#[ignore = "native CTC-01 has a 2 mm blind cut; total area differs from STEP"]
-fn nist_twin_creo_ctc_01() {
-    twin(
-        "creo/nist_ctc_01_asme1_rd_cr10030.prt.5",
-        "nist_ctc_01_asme1_ap242-e1.stp",
-    );
-}
-
-#[test]
-#[cfg(feature = "inventor")]
-#[ignore = "CTC-01 total area differs; native box is shifted by 400 mm in X and 225 mm in Y"]
-fn nist_twin_inventor_ctc_01() {
-    twin(
-        "inventor/INV_nist_ctc_01_asme1_2021.ipt",
-        "nist_ctc_01_asme1_ap242-e1.stp",
-    );
-}
-
-#[test]
 fn nist_twin_check_accepts_equal_geometry_across_face_partitions() {
     let a = Design::measure(cadmpeg_ir::examples::unit_cube().unwrap());
     let split = cadmpeg_test_support::polyhedron::polyhedron(

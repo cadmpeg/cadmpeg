@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 
 /// Candidate edge uses that the traversal search of one wire examines.
+// resource-cap: MAX_WIRE_TRAVERSAL_STEPS = 4
 const MAX_WIRE_TRAVERSAL_STEPS: usize = 1 << 16;
 
 /// Serialized positions of the oriented edge uses in traversal order, where

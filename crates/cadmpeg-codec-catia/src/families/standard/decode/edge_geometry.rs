@@ -1820,6 +1820,7 @@ pub(super) fn circle_endpoint_range_choices(
 }
 
 /// Bounds the selection states the circular-range selection check visits.
+// resource-cap: MAX_SELECTION_STATES = 4
 pub(super) const MAX_SELECTION_STATES: usize = 4_096;
 
 /// Whether one range per choice set can be selected so that the selected

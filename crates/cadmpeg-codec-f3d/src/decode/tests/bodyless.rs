@@ -114,8 +114,8 @@ fn a_text_brep_carrier_is_never_reclassified_as_sketch_only() {
 
 #[test]
 fn empty_model_body_ownership_is_final_without_sketch_wire_ownership() {
-    let wire = crate::test_support::smbh_geometry_test::synthetic_wire_body_smbh();
-    let archive = crate::test_support::zip_test::f3d_with_smbh(&wire);
+    let wire = crate::test_support::smbh_geometry_fixture::synthetic_wire_body_smbh();
+    let archive = crate::test_support::zip_fixture::f3d_with_smbh(&wire);
     let decoded = cadmpeg_ir::codec::Codec::decode(
         &crate::F3dCodec,
         &mut std::io::Cursor::new(archive),
@@ -493,7 +493,8 @@ fn a_bodyless_design_reports_its_body_history_tails() {
     let feature = cadmpeg_ir::features::FeatureId::mint("test:model:feature#1").unwrap();
     let mut design = crate::decode::design_intent::DesignNative::default();
     design.history_body_consumers.tails.unread = vec![(body.clone(), feature.clone())];
-    let bytes = crate::test_support::assembly_test::f3d_without_brep("assembly", "root.f3d", &[]);
+    let bytes =
+        crate::test_support::assembly_fixture::f3d_without_brep("assembly", "root.f3d", &[]);
     crate::test_support::with_decode_context(|ctx| {
         let scan =
             crate::container::scan(ctx, cadmpeg_core::decode::View::over_retained(&bytes)).unwrap();
@@ -523,7 +524,8 @@ fn bodyless_finalization_retains_the_body_history_tails() {
     let (tails, body) = crate::history::body_history_tail::tests::one_tail();
     let mut design = crate::decode::design_intent::DesignNative::default();
     design.history_body_consumers.tails = tails;
-    let bytes = crate::test_support::assembly_test::f3d_without_brep("assembly", "root.f3d", &[]);
+    let bytes =
+        crate::test_support::assembly_fixture::f3d_without_brep("assembly", "root.f3d", &[]);
     crate::test_support::with_decode_context(|ctx| {
         let scan =
             crate::container::scan(ctx, cadmpeg_core::decode::View::over_retained(&bytes)).unwrap();

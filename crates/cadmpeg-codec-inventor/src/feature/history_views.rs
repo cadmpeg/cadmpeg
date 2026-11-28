@@ -32,9 +32,11 @@ use super::history_states::Closed;
 use crate::kernel::ActiveCarrier;
 
 /// Cap of records materialized for all views of a part.
+// resource-cap: MAX_STATE_VIEW_WORK = 4
 pub(crate) const MAX_STATE_VIEW_WORK: usize = 1 << 21;
 
 /// Cap of cached state outcomes per part.
+// resource-cap: MAX_STATE_VIEW_MODELS = 4
 pub(crate) const MAX_STATE_VIEW_MODELS: usize = 4;
 
 /// The model of one history state.

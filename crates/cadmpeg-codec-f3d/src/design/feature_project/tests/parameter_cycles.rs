@@ -5,7 +5,7 @@ use std::io::{Cursor, Write};
 
 use crate::loss::F3dLossCode;
 use crate::test_support::lp_utf16;
-use crate::test_support::manifest_test::write_synthetic_manifests;
+use crate::test_support::manifest_fixture::write_synthetic_manifests;
 use crate::F3dCodec;
 
 fn decode_parameters(records: &[(u32, &str, &str)]) -> DecodeResult {
@@ -94,7 +94,7 @@ fn parameter_cycle_preserves_an_acyclic_dependency_into_the_cycle() {
         assert!(loss
             .message
             .starts_with("1 decoded parameter expression symbol(s)"));
-        let native = crate::test_support::native_test::f3d_native(decoded.ir());
+        let native = crate::test_support::native_fixture::f3d_native(decoded.ir());
         assert_eq!(native.design_parameters.len(), 3);
         assert!(native
             .design_parameters

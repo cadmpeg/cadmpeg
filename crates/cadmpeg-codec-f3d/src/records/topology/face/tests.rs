@@ -34,7 +34,7 @@ fn face_source_group_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:face-source#0",
         value: &group,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || {
@@ -226,7 +226,7 @@ fn registered_recipe_frame_borrowed_and_owned_wire_match() {
 #[test]
 fn face_operand_native_retained_limit_refuses_before_clone() {
     let operand = face_operand_for_borrowed(true);
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &operand,
         "design_face_operands",
         || super::FACE_OPERAND_CLONE_COUNT.with(|count| count.set(0)),

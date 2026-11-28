@@ -18,6 +18,7 @@ pub(in crate::solve) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
     candidates: impl Fn(usize) -> Option<MeshEndpointCandidates<'a>>,
     allowed: impl Fn(usize, [usize; 2]) -> bool + Copy,
 ) -> Option<bool> {
+    // resource-cap: MAX_LOCAL_ENDPOINT_STATES = 4
     const MAX_LOCAL_ENDPOINT_STATES: usize = 65_536;
 
     fn endpoint_adjacency(
@@ -144,6 +145,7 @@ pub(in crate::solve) fn mesh_assignment_endpoint_cycle_support_by<'a>(
     candidates: impl Fn(usize) -> Option<MeshEndpointCandidates<'a>>,
     allowed: impl Fn(usize, [usize; 2]) -> bool + Copy,
 ) -> Option<MeshEndpointPairSupport> {
+    // resource-cap: MAX_LOCAL_ENDPOINT_STATES = 4
     const MAX_LOCAL_ENDPOINT_STATES: usize = 65_536;
 
     type EndpointRelation = BTreeMap<usize, BTreeSet<usize>>;

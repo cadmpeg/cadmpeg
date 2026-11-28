@@ -57,6 +57,7 @@ const UV_AREA: f64 = 1.0e-10;
 const CHART_SLACK: f64 = 1.0e-5;
 const ROLLING_TRANSVERSE_CHART_SLACK: f64 = 5.0e-5;
 const TRIM_STEPS: u32 = 64;
+// resource-cap: MAX_ROLLING_BOUNDARY_EXCURSION = N
 const MAX_ROLLING_BOUNDARY_EXCURSION: f64 = 0.001;
 
 #[derive(Clone)]
@@ -1758,6 +1759,7 @@ fn fit_with_alternate_lines(
     context: &RingFit<'_>,
     recover: bool,
 ) -> Option<Patch> {
+    // resource-cap: MAX_ALTERNATE_LINES = 4
     const MAX_ALTERNATE_LINES: usize = 4;
     let mut trims = Cow::Borrowed(trims);
     if let (Carrier::Plane(_), Some(vertices)) = (carrier, context.vertices) {

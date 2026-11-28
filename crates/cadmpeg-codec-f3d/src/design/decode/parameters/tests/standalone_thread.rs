@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use crate::test_support::streams_test::design_metastream_with_records;
+use crate::test_support::streams_fixture::design_metastream_with_records;
 
 /// Owners decoded from one Thread scope (record 12) and one standalone scalar
 /// owner frame (record 44) that stores `local_ordinal`.

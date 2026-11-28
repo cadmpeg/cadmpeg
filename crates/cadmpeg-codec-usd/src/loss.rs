@@ -16,6 +16,7 @@ use cadmpeg_ir::report::Severity;
 
 const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("usd");
 
+cadmpeg_ir::loss_codes! {
 /// A stable, machine-readable identifier for one `OpenUSD` transfer loss.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum UsdLossCode {
@@ -162,69 +163,9 @@ pub(crate) enum UsdLossCode {
     /// The face that a triangle group names was not written.
     ExportGroupFaceNotWritten,
 }
+}
 
 impl UsdLossCode {
-    /// Every code, in declaration order.
-    #[cfg(test)]
-    pub(crate) const ALL: &'static [UsdLossCode] = &[
-        Self::SourceDialectUnverified,
-        Self::CompositionSublayersNotComposed,
-        Self::CompositionExternalArc,
-        Self::CompositionLayerUnavailable,
-        Self::CompositionTargetMissing,
-        Self::CompositionTargetUnresolved,
-        Self::CompositionVariantNotSelected,
-        Self::CompositionOverUndefined,
-        Self::CompositionCycle,
-        Self::CompositionOverrideNotApplied,
-        Self::PrimTypeNotTransferred,
-        Self::PrimIntrinsicNotTransferred,
-        Self::ApiSchemaNotTransferred,
-        Self::PropertyNotTransferred,
-        Self::AttributeValueMalformed,
-        Self::AttributeAnimationNotTransferred,
-        Self::MetadataNotTransferred,
-        Self::CrateValueNotRead,
-        Self::XformMalformed,
-        Self::XformNotTransferred,
-        Self::MeshSubdivisionNotApplied,
-        Self::MeshFaceRejected,
-        Self::MeshPrimvarNotTransferred,
-        Self::MeshNormalsNotTransferred,
-        Self::MeshSubsetNotTransferred,
-        Self::CurvesRejected,
-        Self::CurvesNotTransferred,
-        Self::NurbsTrimNotTransferred,
-        Self::NurbsTrimRegionAssumed,
-        Self::NurbsBoundaryNotTransferred,
-        Self::NurbsRangeNotTransferred,
-        Self::DisplayColorNotTransferred,
-        Self::MaterialNotTransferred,
-        Self::TextureUnlocated,
-        Self::BrepElementNotTransferred,
-        Self::BrepSubsetNotTransferred,
-        Self::TopologyFaceBoundaryUnstated,
-        Self::JointPropertyNotTransferred,
-        Self::SolverPropertyNotTransferred,
-        Self::PhysicsPropertyNotTransferred,
-        Self::ExportVertexPrecision,
-        Self::ExportFaceNotWritten,
-        Self::ExportCurveNotWritten,
-        Self::ExportChannelNotWritten,
-        Self::ExportAppearanceReduced,
-        Self::ExportTextureExternal,
-        Self::ExportTopologyTessellated,
-        Self::ExportBrepNotWritten,
-        Self::ExportBrepUntrimmed,
-        Self::ExportBrepPoleNotWritten,
-        Self::ExportCarrierNotWritten,
-        Self::ExportJointNotWritten,
-        Self::ExportSolverPropertyNotWritten,
-        Self::ExportDesignNotWritten,
-        Self::ExportPhysicsNotWritten,
-        Self::ExportGroupFaceNotWritten,
-    ];
-
     /// The stable string identifier, severity, and shared category.
     const fn spec(self) -> (&'static str, Severity, LossTaxonomy) {
         use LossTaxonomy as T;

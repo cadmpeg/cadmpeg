@@ -36,7 +36,9 @@ use cadmpeg_asm::{acis_header, asm_header};
 use crate::dialect::F3dDialect;
 use crate::manifest;
 
+// resource-cap: MAX_ARCHIVE_BYTES = N
 pub(crate) const MAX_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
+// resource-cap: MAX_INFLATED_ENTRY_BYTES = N
 pub(crate) const MAX_INFLATED_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
 
 /// The f3d marker substrings used for confident detection from a byte prefix

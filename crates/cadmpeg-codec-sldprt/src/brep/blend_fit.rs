@@ -27,8 +27,10 @@ const DOMAIN_MARGIN_FRACTION: f64 = 0.05;
 /// Spans the fit starts from, shared among the pieces of a polyline chart.
 const SEED_SPANS: usize = 4;
 /// Midpoint splits allowed below one seed span.
+// resource-cap: MAX_SPLIT_DEPTH = 4
 const MAX_SPLIT_DEPTH: usize = 12;
 /// Spans a fitted cache may hold.
+// resource-cap: MAX_SPANS = 4
 const MAX_SPANS: usize = 1 << 10;
 /// Relative step of the central difference along the spine.
 const DIFFERENCE_STEP_FRACTION: f64 = 1.0e-4;
@@ -396,8 +398,10 @@ pub(super) fn fit(
 /// converged.
 const CENTER_STEP_TOLERANCE_MM: f64 = 1.0e-11;
 /// Newton iterations allowed for one center.
+// resource-cap: MAX_CENTER_STEPS = 4
 const MAX_CENTER_STEPS: usize = 32;
 /// Centre solves one use of a blend may spend.
+// resource-cap: MAX_CENTER_SOLVES = 4
 const MAX_CENTER_SOLVES: usize = 1 << 20;
 /// Smallest `|n1 × n2|²` of two transversal support offsets.
 const MIN_CENTER_TRANSVERSALITY: f64 = 1.0e-8;
@@ -408,6 +412,7 @@ const COINCIDENT_OFFSETS_MM: f64 = 1.0e-7;
 /// has converged.
 const EDGE_STEP_TOLERANCE_MM: f64 = 1.0e-11;
 /// Iterations allowed for one point of a wedge's edge.
+// resource-cap: MAX_EDGE_STEPS = 4
 const MAX_EDGE_STEPS: usize = 32;
 /// Smallest `|n1 × n2|²` of a wedge's two members at its edge.
 const MIN_EDGE_TRANSVERSALITY: f64 = 1.0e-8;
@@ -418,10 +423,12 @@ const LOCAL_SEARCH_FRACTION: f64 = 0.1;
 /// Departure of the cached exact spine from solved centers.
 const SPINE_CACHE_TOLERANCE_MM: f64 = 1.0e-7;
 /// Midpoint splits allowed below one stored spine segment.
+// resource-cap: MAX_SPINE_CACHE_DEPTH = 4
 const MAX_SPINE_CACHE_DEPTH: usize = 10;
 /// Spine parameter step of the central difference along a contact track.
 const TRACK_DIFFERENCE_STEP: f64 = 1.0e-7;
 /// Newton steps allowed when a point is inverted onto a track or the spine.
+// resource-cap: MAX_NEAREST_STEPS = 4
 const MAX_NEAREST_STEPS: usize = 16;
 /// Model-space length of a final Newton step at which an inversion has
 /// converged.

@@ -18,9 +18,11 @@ use crate::math::{Point3, Vector3};
 use crate::scalar::{NonZeroReal, PositiveLength};
 
 /// Largest angle one cubic segment spans before its deviation is measured.
+// resource-cap: MAX_SEGMENT_ANGLE = N
 const MAX_SEGMENT_ANGLE: f64 = std::f64::consts::FRAC_PI_2;
 
 /// Number of times the segment count doubles before the fit is refused.
+// resource-cap: MAX_REFINEMENTS = 4
 const MAX_REFINEMENTS: u32 = 16;
 
 /// Segment fractions at which a cubic segment is compared with the helix.

@@ -1546,6 +1546,7 @@ fn stable_object_record_identities(
 }
 
 /// Canonicalization work shared by one indexed section's object records.
+// resource-cap: MAX_STABLE_GRAPH_WORK = 4
 pub(super) const MAX_STABLE_GRAPH_WORK: usize = 8 * 1024 * 1024;
 
 /// Remaining graph-identity work for one section.

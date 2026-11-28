@@ -231,7 +231,7 @@ fn a_paste_inserts_its_copies_and_each_copy_names_its_source() {
         ),
     ] {
         let result = decoded(bytes);
-        let native = crate::test_support::native_test::f3d_native(result.ir());
+        let native = crate::test_support::native_fixture::f3d_native(result.ir());
         assert_paste_inserts_its_copies(result.ir(), &native, copies);
         assert_paste_item_keeps_its_feature(&result, &native);
         if volumes_pair_sources {
