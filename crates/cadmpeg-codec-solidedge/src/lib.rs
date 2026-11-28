@@ -13,8 +13,10 @@ mod dialect;
 mod geometry;
 mod intersection;
 mod isocurve;
+mod layout;
 mod loss;
 mod partition;
+mod settings;
 mod sp_curve;
 mod trace;
 

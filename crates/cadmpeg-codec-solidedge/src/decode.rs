@@ -7,12 +7,12 @@ use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::SourceMeta;
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::ProductDefinitionId;
-use cadmpeg_ir::products::ExternalDocument;
+use cadmpeg_ir::products::{ExternalDocument, ProductDefinition};
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpRecord, Part};
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
-use crate::{brep, container, dialect, loss::SolidEdgeLossCode, partition};
+use crate::{brep, container, dialect, loss::SolidEdgeLossCode, partition, settings};
 use cadmpeg_container::compound::CompoundEntry;
 use cadmpeg_parasolid::precision;
 use cadmpeg_parasolid::records::PrimaryRecords;
@@ -33,6 +33,32 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     );
     let mut stored_resolutions = std::collections::BTreeMap::new();
     if !ctx.container_only() {
+        let mut product = ProductDefinition::root(root_definition(), ExternalDocument::default());
+        product.units = match snapshot.stream(settings::CLUSTER_STREAM) {
+            Some(entry) => match snapshot.open(ctx, entry) {
+                Ok(cluster) => {
+                    let sets = settings::property_sets(ctx, cluster.window());
+                    settings::unit_system(&sets, &mut body.losses)
+                }
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(error) => {
+                    body.losses.push(SolidEdgeLossCode::UnitsUnread.note(format!(
+                        "the {} stream could not be read: {error}; the document unit system is not transferred",
+                        settings::CLUSTER_STREAM
+                    )));
+                    None
+                }
+            },
+            None => {
+                body.losses
+                    .push(SolidEdgeLossCode::UnitsUnread.note(format!(
+                    "the document has no {} stream; the document unit system is not transferred",
+                    settings::CLUSTER_STREAM
+                )));
+                None
+            }
+        };
+        ir.model.product_definitions.push(product);
         let mut found = false;
         let mut kernels = Vec::new();
         let mut given_up = Vec::new();
@@ -108,7 +134,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 // document states one root over the bodies of every partition.
                 candidate.state_root_definition(
                     ctx,
-                    root_definition_id(),
+                    root_definition(),
                     ExternalDocument::default(),
                 )?;
                 // Past the projection, the decoder cannot tell a source defect
@@ -184,7 +210,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             layers,
             std::collections::BTreeMap::default(),
         ));
-        ir.state_root_definition(ctx, root_definition_id(), ExternalDocument::default())?;
+        ir.state_root_definition(ctx, root_definition(), ExternalDocument::default())?;
         for part in given_up {
             body.losses.push(part.commit(ctx, &mut ir, &mut fidelity)?);
         }
@@ -224,7 +250,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     })
 }
 
-fn root_definition_id() -> ProductDefinitionId {
+fn root_definition() -> ProductDefinitionId {
     ProductDefinitionId::compose(
         &cadmpeg_ir::identity_namespace!("solidedge", "model", "product-definition"),
         cadmpeg_ir::identity_key!("root"),

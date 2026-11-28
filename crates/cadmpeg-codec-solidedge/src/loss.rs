@@ -10,6 +10,9 @@ const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("solidedge
 pub(crate) enum SolidEdgeLossCode {
     ContainerNoncanonical,
     BodiesPending,
+    UnitsUnread,
+    UnitCodeUnknown,
+    UnitNotNeutral,
     PartitionIncomplete,
     PrimaryStateAssumed,
     SurfaceUnsupported,
@@ -47,6 +50,9 @@ impl SolidEdgeLossCode {
                 "container.noncanonical",
                 LossTaxonomy::NoncanonicalSourceSyntax,
             ),
+            Self::UnitsUnread => ("units.unread", LossTaxonomy::MetadataNotTransferred),
+            Self::UnitCodeUnknown => ("units.code-unknown", LossTaxonomy::MetadataNotTransferred),
+            Self::UnitNotNeutral => ("units.not-neutral", LossTaxonomy::MetadataNotTransferred),
             Self::PrimaryStateAssumed => (
                 "partition.primary-state-assumed",
                 LossTaxonomy::DecodeDiagnostic,

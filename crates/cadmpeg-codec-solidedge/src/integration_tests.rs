@@ -1220,3 +1220,46 @@ fn swept_surface_with_a_stated_scale_keeps_an_unsupported_carrier() {
 fn swept_surface_with_a_null_scale_sweeps_at_unit_parameter_speed() {
     assert!((swept_ring_direction(NULL_REAL) - 1.0).abs() < EPS_RING_VERTEX_MM);
 }
+
+#[test]
+fn full_decode_states_the_document_unit_system() {
+    use cadmpeg_ir::design::units::UnitSymbol;
+    use test_support::RecordValue;
+
+    let cluster = test_support::property_set(
+        2,
+        &[
+            ("DefaultDistancePrimary", RecordValue::Word(2, 64)),
+            ("DefaultAnglePrimary", RecordValue::Word(2, 357)),
+        ],
+    );
+    let result = SolidEdgeCodec
+        .decode(
+            &mut Cursor::new(test_support::with_cluster(&cluster)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let definitions = &result.ir().model.product_definitions;
+    assert_eq!(definitions.len(), 1);
+    let units = definitions[0].units.as_ref().unwrap();
+    assert_eq!(
+        (units.length, units.angle),
+        (UnitSymbol::In, UnitSymbol::Deg)
+    );
+}
+
+#[test]
+fn full_decode_without_cluster_reports_unread_units() {
+    let result = SolidEdgeCodec
+        .decode(
+            &mut Cursor::new(test_support::compound()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result.ir().model.product_definitions[0].units.is_none());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "units.unread"));
+}

@@ -37,7 +37,126 @@ The root storage CLSID distinguishes the document kind:
 The CLSID is written in the canonical GUID form; the directory stores its
 first three fields little-endian.
 
-## 2. Kernel stream map
+## 2. Document settings
+
+`PSMcluster0` stores the document settings in typed property sets. A part,
+sheet-metal, or assembly document has one such stream at the root.
+
+### 2.1 Property sets
+
+A property set starts with a 16-byte header. All header fields are
+little-endian.
+
+| Offset | Field | Value |
+| ---: | --- | --- |
+| 0 | `u32` zero word | `0` |
+| 4 | `u16` set tag | `0x5151` |
+| 6 | `u16` set form | |
+| 8 | `u32` set index | |
+| 12 | `u32` record count `N` | |
+
+The set form does not change the record grammar.
+
+`N` records follow the header without padding. A record has this layout.
+All integer fields are little-endian.
+
+| Offset | Field |
+| ---: | --- |
+| 0 | `u32` name byte count `n` |
+| 4 | name: `n` bytes of UTF-16LE, ending with one NUL code unit |
+| 4 + `n` | `u32` record identifier |
+| 8 + `n` | `u32` flag |
+| 12 + `n` | `u32` value type |
+| 16 + `n` | value |
+
+`n` is even and includes the NUL code unit. The value type sets the value
+width:
+
+| Type | Value |
+| ---: | --- |
+| 1 | `u32` |
+| 2 | `u32` |
+| 4 | IEEE 754 binary64 |
+| 6 | `u32`, `0` or `1` |
+
+The next record starts immediately after the value. The set ends after its
+`N`th record. The stream contains other object data between and after the
+property sets, and that data can contain the zero word and set-tag bytes. A header is a
+property set only when all `N` records parse to the end of the set.
+
+### 2.2 Document units
+
+The property set with index `2` stores the document unit settings as type-2
+records. The record names identify the settings; the record order and the
+record identifiers do not.
+
+| Record name | Setting |
+| --- | --- |
+| `DefaultDistancePrimary` | Length unit code |
+| `DefaultDistanceSecondary` | Second length unit code of a compound display |
+| `DefaultDistanceTertiary` | Third length unit code of a compound display |
+| `DefaultDistancePrecision` | Displayed decimal places of a length |
+| `DefaultAnglePrimary` | Angle unit code |
+| `DefaultAngleSecondary` | Second angle unit code of a compound display |
+| `DefaultAngleTertiary` | Third angle unit code of a compound display |
+| `DefaultAnglePrecision` | Displayed decimal places of an angle |
+
+The primary code is the document unit. A secondary or tertiary code of
+`345` selects no unit.
+
+The length unit codes are below. An option that has abbreviated and full
+display forms has one code for each form.
+
+| Code | Unit |
+| ---: | --- |
+| 59 | metre |
+| 60 | nanometre |
+| 61 | millimetre |
+| 62 | centimetre |
+| 63 | kilometre |
+| 64 | inch |
+| 65 | foot |
+| 66 | yard |
+| 67 | mile |
+| 68 | tenth of an inch |
+| 69 | hundredth of an inch |
+| 70 | thousandth of an inch |
+| 71 | rod |
+| 72 | pole |
+| 74 | chain |
+| 76 | furlong |
+| 360 | foot, abbreviated |
+| 361 | inch, abbreviated |
+
+The angle unit codes are:
+
+| Code | Unit |
+| ---: | --- |
+| 77 | radian |
+| 78 | degree |
+| 79 | minute of arc |
+| 80 | second of arc |
+| 81 | gradian |
+| 357 | degree, abbreviated |
+| 358 | minute of arc, abbreviated |
+| 359 | second of arc, abbreviated |
+
+A compound display adds smaller units to the primary unit. The
+foot-and-inch display stores the foot code as primary and the inch code as
+secondary, each in the same display form. The degree-minute-second display
+stores the degree code as primary, the minute code as secondary, and the
+second code as tertiary.
+
+The document units are display settings. They do not change Parasolid
+coordinates, which are in metres for every unit setting.
+
+`PSMcluster0` also stores the five style labels `ANSI (mm)`, `ANSI (cm)`,
+`ANSI (m)`, `ANSI (in)`, and `ANSI (ft)` in every document. Each label is a
+little-endian `u32` UTF-16 code-unit count followed by that many UTF-16LE
+code units. The labels list the available styles and do not select the
+document units.
+
+## 3. Kernel stream map
 
 The `PARASOLID` storage contains binary kernel streams. A primary partition
 has the path `PARASOLID/STREAM<n>.P_B`, where `<n>` is a stream index of one or
@@ -51,7 +170,7 @@ not. Each stream has its own transmit header and node-index space.
 `JSite<n>`. Assembly sites carry reference and physical-property streams,
 including `JAsmRefAttr` and `JAsmPhysicalPropertiesAttr`.
 
-## 3. Transmit envelope
+## 4. Transmit envelope
 
 A kernel stream starts with the Parasolid text header. Header lines end with
 LF. Named text fields use `KEY=VALUE;`. The header has `**PART1;`, `**PART2;`,
@@ -78,7 +197,7 @@ does not read, with `record.unreadable`. It gives up a partition whose header
 names a schema version that it does not read, or whose projected topology does
 not validate, with `record.undecoded`.
 
-## 4. Geometry
+## 5. Geometry
 
 Primary partition node indices identify bodies, regions, shells, faces,
 loops, fins, edges, vertices, and their carriers. References are local to
@@ -145,7 +264,7 @@ it. Limit records carry a type character and a counted
 point array. Types `L`, `H`, `T`, and `B` place their terminal point first in
 that array.
 
-## 5. Document version declarations
+## 6. Document version declarations
 
 The root streams `Versions`, `DocVersion2`, and `BuildVersions` carry document
 version declarations. These declarations and the kernel schema token occupy
