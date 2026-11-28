@@ -3,6 +3,7 @@
 
 use super::geometry::ProjectionOutcome;
 use super::{mirror_flag_valid, push_attributed_loss, vertical_text_flag_valid};
+use cadmpeg_ir::unknown::part::Cause;
 
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
@@ -47,14 +48,15 @@ fn presentation_note(entry: &DirectoryEntry, reason: &str) -> cadmpeg_ir::report
     )
 }
 
-/// Pushes the loss of a presentation definition whose record the projection
-/// cannot read, with its `record.unreadable`.
+/// Pushes the loss of a presentation definition that the projection gives
+/// up for `cause`.
 fn push_presentation_loss(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     entry: &DirectoryEntry,
+    cause: Cause,
     reason: &str,
 ) {
-    super::give_up(losses, entry, presentation_note(entry, reason));
+    super::give_up(losses, entry, cause, presentation_note(entry, reason));
 }
 
 /// Pushes a presentation loss that gives up no record: a display attribute
@@ -441,7 +443,12 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 314 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            push_presentation_loss(&mut losses, entry, "Parameter Data record is missing");
+            push_presentation_loss(
+                &mut losses,
+                entry,
+                Cause::Unreadable,
+                "Parameter Data record is missing",
+            );
             continue;
         };
         let components = [1, 2, 3].map(|index| {
@@ -453,6 +460,7 @@ pub(super) fn project(
             push_presentation_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 "RGB percentage is outside 0 through 100",
             );
             continue;
@@ -473,7 +481,12 @@ pub(super) fn project(
                 | crate::parameter::TokenValue::Real(_)
                 | crate::parameter::TokenValue::Unreadable(_),
             ) => {
-                push_presentation_loss(&mut losses, entry, "optional color name is not a string");
+                push_presentation_loss(
+                    &mut losses,
+                    entry,
+                    Cause::Unreadable,
+                    "optional color name is not a string",
+                );
                 continue;
             }
         };
@@ -484,6 +497,7 @@ pub(super) fn project(
             push_presentation_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 "color definition Directory fields are invalid",
             );
             continue;
@@ -493,6 +507,7 @@ pub(super) fn project(
             push_presentation_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 "color definition components are outside [0, 100]",
             );
             continue;

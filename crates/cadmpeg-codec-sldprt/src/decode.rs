@@ -34,7 +34,7 @@ use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{AppearanceId, ProductDefinitionId, UnknownId};
 
 use crate::loss::SldprtLossCode;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -2764,7 +2764,6 @@ fn merge_local_bodies(
         u64_from_index(streams.len()),
         "admit SLDPRT imported body streams",
     )?;
-    let mut unreadable = 0;
     for (site, stream) in &streams {
         match ctx.run_part(|| {
             decode_bodies(
@@ -2779,7 +2778,6 @@ fn merge_local_bodies(
                 merge_brep(decoded, bodies)?;
             }
             Err(error) => {
-                unreadable += 1;
                 let part = Part::at(
                     "sldprt",
                     IMPORTED_BODY_PART,
@@ -2790,17 +2788,14 @@ fn merge_local_bodies(
                 .named(stream.header.description.as_str())
                 .in_stream(stream.source_stream().clone())
                 .digest_only();
+                let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
                 let error = CodecError::malformed(format_args!(
-                    "{}: {error}",
-                    SldprtLossCode::GeometryImportedBodiesNotTransferred.kind()
+                    "an imported body stream does not decode: {error}"
                 ));
-                given_up.push(ctx.give_up_part(part, error)?);
+                given_up.push(ctx.give_up_part(part, cause, error)?);
             }
         }
     }
-    decoded
-        .losses
-        .extend(imported_bodies_loss(unreadable, streams.len()));
     Ok(())
 }
 
@@ -2882,25 +2877,13 @@ fn give_up_unbuilt_site(
     if records > 0 {
         given_up.push(ctx.give_up_part(
             part,
+            Cause::Undecoded,
             CodecError::malformed(format_args!(
-                "{}: {records} Parasolid entity record(s) frame and build no geometry",
-                SldprtLossCode::GeometryParasolidNotTransferred.kind()
+                "{records} Parasolid entity record(s) frame and state no content"
             )),
         )?);
     }
     Ok(())
-}
-
-/// The loss for `unreadable` of `total` imported body streams.
-fn imported_bodies_loss(
-    unreadable: usize,
-    total: usize,
-) -> Option<cadmpeg_ir::report::loss::LossNote> {
-    (unreadable > 0).then(|| {
-        SldprtLossCode::GeometryImportedBodiesNotTransferred.note(format!(
-            "{unreadable} of {total} imported body stream(s) do not decode."
-        ))
-    })
 }
 
 /// Decode the available Parasolid body streams into one B-rep. Returns
@@ -2931,7 +2914,8 @@ fn try_decode_brep(
         match ctx.run_part(|| decode_bodies(ctx, &bodies, streams[first].source_stream()))? {
             Ok(decoded) => decoded_sites.push((site.clone(), first, decoded)),
             Err(error) => {
-                given_up.push(ctx.give_up_part(site_part(streams, indices), error)?);
+                let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
+                given_up.push(ctx.give_up_part(site_part(streams, indices), cause, error)?);
             }
         }
     }
@@ -3389,7 +3373,6 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.unresolved_topology_fins += source.stats.unresolved_topology_fins;
     target.stats.unresolved_topology_vertices += source.stats.unresolved_topology_vertices;
     target.stats.withheld_fin_partners += source.stats.withheld_fin_partners;
-    target.stats.withheld_fin_links += source.stats.withheld_fin_links;
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
     let (into, from) = (&mut target.stats.derived_kind, source.stats.derived_kind);
@@ -5270,12 +5253,6 @@ fn append_topology_record_losses(
             stats.withheld_fin_partners,
         )));
     }
-    if stats.withheld_fin_links > 0 {
-        losses.push(SldprtLossCode::TopologyFinLinkUnresolved.note(format!(
-            "{} ring(s) were withheld because a FIN forward link names no reciprocal same-loop backward link; the ring is not walked on doubt.",
-            stats.withheld_fin_links,
-        )));
-    }
 }
 
 fn build_geometry_report(
@@ -5382,12 +5359,6 @@ pub(crate) fn brep_losses(
         losses.push(SldprtLossCode::AppearanceFaceColorUnresolved.note(format!(
             "{} face-color binding(s) were withheld because the current face and link records do not select one consistent framed color record.",
             s.unresolved_face_colors
-        )));
-    }
-    if s.unclaimed_faces > 0 {
-        losses.push(SldprtLossCode::TopologyFaceUnclaimed.note(format!(
-            "{} canonical face(s) are not claimed by an explicit body relation; the decoder withholds them rather than inventing body membership.",
-            s.unclaimed_faces
         )));
     }
     if s.synthetic_body_grouping {
@@ -7306,30 +7277,40 @@ fn build_container_report(
             .count();
     let payload_sources = scan.blocks.len() + scan.compound_streams.len();
 
-    let mut losses = vec![
-        SldprtLossCode::GeometryParasolidNotTransferred.note(format!(
+    // A given-up Parasolid site, or a given-up section that the choice of
+    // the active partition needs, states the lost geometry in its give-up.
+    let geometry_given_up = scan
+        .given_up
+        .iter()
+        .any(|part| part.kind() == PARASOLID_SITE_PART)
+        || !container::unread_active_partition_sections(scan).is_empty();
+    let mut losses = Vec::new();
+    if !geometry_given_up {
+        losses.push(
+            SldprtLossCode::GeometryParasolidNotTransferred.note(format!(
             "Parasolid B-rep geometry was not transferred: no partition/deltas stream resolved \
              into a topology graph. {payload_sources} payload source(s) were enumerated, \
              {parasolid_sources} carrying Parasolid streams."
         )),
-        SldprtLossCode::TopologyGraphNotTransferred.note(
+        );
+        losses.push(SldprtLossCode::TopologyGraphNotTransferred.note(
             "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built \
              for this file."
                 .to_string(),
-        ),
-        if display_meshes > 0 {
-            SldprtLossCode::MaterialMetadataNotTransferred.note(format!(
-                "Body-bound appearances were not transferred because no body graph exists; \
+        ));
+    }
+    losses.push(if display_meshes > 0 {
+        SldprtLossCode::MaterialMetadataNotTransferred.note(format!(
+            "Body-bound appearances were not transferred because no body graph exists; \
                  {display_meshes} DisplayLists mesh(es) retained without owners."
-            ))
-        } else {
-            SldprtLossCode::MaterialMetadataNotTransferred.note(
-                "Body-bound appearances and tessellation were not transferred because no body graph \
+        ))
+    } else {
+        SldprtLossCode::MaterialMetadataNotTransferred.note(
+            "Body-bound appearances and tessellation were not transferred because no body graph \
                  exists."
-                    .to_string(),
-            )
-        },
-    ];
+                .to_string(),
+        )
+    });
 
     // A given-up part that holds or can hold a Parasolid stream carries its
     // own loss; the container is not stated to lack one.

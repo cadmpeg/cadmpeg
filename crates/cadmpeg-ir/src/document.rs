@@ -1351,9 +1351,7 @@ macro_rules! declare_document_arenas {
                         home: stringify!($home),
                         field: stringify!($field),
                     };
-                    for entity in &self.$home.$field {
-                        references.add(&arena, entity.record_identity(), entity);
-                    }
+                    crate::give_up::add_references!($home, references, &arena, &self.$home.$field);
                 })*
                 if references.native_links == crate::give_up::NativeLinks::Read {
                     self.native.add_holders(&mut references);
@@ -1380,7 +1378,7 @@ macro_rules! declare_document_arenas {
                     let names: Vec<(String, String)> = crate::give_up::records(&self.$home.$field, id)
                         .iter()
                         .filter_map(|entity| {
-                            crate::give_up::Holder::named(native_links, arena, id, entity, |text| {
+                            crate::give_up::named_holder!($home, native_links, arena, id, entity, |text| {
                                 gone.get(text).map(String::as_str)
                             })
                         })

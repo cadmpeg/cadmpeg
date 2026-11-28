@@ -3,7 +3,7 @@
 
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::topology::{Body, BodyKind};
-use cadmpeg_ir::unknown::part::record_unreadable_kind;
+use cadmpeg_ir::unknown::part::record_undecoded_kind;
 
 use super::state_records;
 use crate::brep::graph::{Brep, DroppedRecord};
@@ -43,7 +43,7 @@ fn a_replayed_state_keeps_readable_bodies_and_reports_withheld_records() {
     assert_eq!(state.bodies.as_slice(), std::slice::from_ref(&body.id));
     assert_eq!(state.geometry.bodies, [body]);
     assert_eq!(state.losses.len(), 1);
-    assert_eq!(state.losses[0].code, record_unreadable_kind());
+    assert_eq!(state.losses[0].code, record_undecoded_kind());
     assert!(state.losses[0].message.contains("sldprt:brep:body#43"));
 }
 

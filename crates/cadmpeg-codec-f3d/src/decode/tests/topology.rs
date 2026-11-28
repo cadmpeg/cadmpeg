@@ -1513,7 +1513,7 @@ fn faces_with_missing_surface_references_are_given_up() {
         let charge = crate::test_support::charged_part(
             result.ir(),
             &result.report().losses,
-            &head,
+            (cadmpeg_ir::unknown::part::Cause::Unreadable, &head),
             &dropped,
         );
         assert!(charge.message.contains(cause), "{}", charge.message);

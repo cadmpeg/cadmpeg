@@ -360,15 +360,14 @@ fn intersection_records_that_share_an_identity_are_each_given_up() {
             assert!(losses
                 .iter()
                 .all(|loss| loss.code.local_code() != "intersection.records-opaque"));
-            assert!(losses.iter().any(|loss| loss.code.local_code()
-                == "intersection.identity-duplicated"
-                && loss.message.contains("INTERSECTION 12")));
             let parts = losses
                 .iter()
                 .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
                 .filter(|loss| {
                     loss.message
                         .starts_with("part parasolid-record stream=\"nx:parasolid#0:")
+                        && loss.message.contains("intersection.identity-duplicated")
+                        && loss.message.contains("INTERSECTION 12")
                 })
                 .collect::<Vec<_>>();
             for offset in [construction, declared] {
@@ -1016,18 +1015,17 @@ fn an_intersection_record_that_names_no_surface_is_given_up() {
                 crate::decode::decode(ctx, cadmpeg_core::decode::View::over_retained(&bytes))
                     .unwrap();
             let losses = &decoded.body.losses;
-            assert!(losses.iter().any(|loss| loss.code.local_code()
-                == "intersection.record-unresolved"
-                && loss.message.contains("INTERSECTION 12")));
             assert!(
                 losses.iter().any(|loss| loss.code
-                    == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                    == cadmpeg_ir::unknown::part::record_undecoded_kind()
                     && loss
                         .message
                         .starts_with("part parasolid-record stream=\"nx:parasolid#0:")
                     && loss
                         .message
-                        .contains(&format!("\" offset={construction} length={length} record="))),
+                        .contains(&format!("\" offset={construction} length={length} record="))
+                    && loss.message.contains("intersection.record-unresolved")
+                    && loss.message.contains("INTERSECTION 12")),
                 "{losses:#?}"
             );
         },

@@ -4,6 +4,7 @@ use super::{key, optional_rows, split_rows, text, Error, Report, Rows};
 use crate::archive::Bundle;
 use crate::loss::OnshapeLossCode;
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_ir::unknown::part::Cause;
 use serde_json::Value;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
@@ -103,7 +104,7 @@ impl<'a> Index<'a> {
                         report.give_up_as(
                             &format!("{definition_path}#/rootAssembly/occurrences/{position}"),
                             &key(entry.key()),
-                            OnshapeLossCode::AssemblyRecordRepeated,
+                            (Cause::Unreadable, OnshapeLossCode::AssemblyRecordRepeated),
                             "occurrence path repeats with a different placement; retained the first placement",
                         );
                     }
@@ -126,7 +127,10 @@ impl<'a> Index<'a> {
                 Err(reason) => report.give_up_as(
                     &format!("{definition_path}#/rootAssembly/occurrences/{position}"),
                     "occurrence",
-                    OnshapeLossCode::AssemblyRecordUnsupported,
+                    (
+                        Cause::Unreadable,
+                        OnshapeLossCode::AssemblyRecordUnsupported,
+                    ),
                     reason,
                 ),
             }
@@ -149,7 +153,10 @@ impl<'a> Index<'a> {
                 report.give_up_as(
                     &format!("{definition_path}#/subAssemblies/{position}"),
                     "subassembly",
-                    OnshapeLossCode::AssemblyRecordUnsupported,
+                    (
+                        Cause::Unreadable,
+                        OnshapeLossCode::AssemblyRecordUnsupported,
+                    ),
                     "subassembly element id has an invalid folder character",
                 );
                 continue;
@@ -165,9 +172,8 @@ impl<'a> Index<'a> {
             match index.subassemblies.entry(definition_key) {
                 Entry::Occupied(entry) => {
                     if !same_content(entry.get().1, sub) {
-                        report.give_up_as(
+                        report.push_coded(
                             &format!("{definition_path}#/subAssemblies/{position}"),
-                            "subassembly",
                             OnshapeLossCode::AssemblyRecordRepeated,
                             format!(
                                 "subassembly definition repeats with different content; retained the first record: {:?}",
@@ -196,9 +202,8 @@ impl<'a> Index<'a> {
             match index.parts.entry(reference) {
                 Entry::Occupied(entry) => {
                     if !same_content(entry.get(), part) {
-                        report.give_up_as(
+                        report.push_coded(
                             &format!("{definition_path}#/parts/{position}"),
-                            "part",
                             OnshapeLossCode::AssemblyRecordRepeated,
                             format!(
                                 "part identity repeats with different content; retained the first record: {:?}",
@@ -367,7 +372,10 @@ fn source_rows<'a>(
             report.give_up_as(
                 &format!("{source}/{field}"),
                 field,
-                OnshapeLossCode::AssemblyRecordUnsupported,
+                (
+                    Cause::Unreadable,
+                    OnshapeLossCode::AssemblyRecordUnsupported,
+                ),
                 reason,
             );
             &[]

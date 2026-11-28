@@ -38,7 +38,7 @@ fn a_given_up_face_is_not_counted_again_by_the_ownership_note() {
     assert_eq!(
         losses
             .iter()
-            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
             .filter(|loss| loss.message.starts_with("record sldprt:brep:face#5 "))
             .count(),
         1
@@ -166,7 +166,7 @@ fn a_typed_face_that_names_no_loop_is_given_up_beside_a_kept_face() {
     let losses = out.take_losses().unwrap();
     let charges = losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
         .map(|loss| loss.message.as_str())
         .collect::<Vec<_>>();
     let [charge] = charges[..] else {

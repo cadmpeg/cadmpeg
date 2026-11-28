@@ -23,9 +23,7 @@ pub(super) enum OnshapeLossCode {
     EmptyMember,
     SketchGeometryNotSupported,
     RecordMalformed,
-    MemberTooLarge,
     MemberUnreadable,
-    TopologyTooLarge,
     EdgeGeometryUnsampled,
     StepUnreadable,
     RollbackUnread,
@@ -64,8 +62,6 @@ impl OnshapeLossCode {
             Self::SketchGeometryNotSupported => "sketch.geometry-not-supported",
             Self::RecordMalformed => "record.malformed",
             Self::MemberUnreadable => "member.unreadable",
-            Self::MemberTooLarge => "member.too-large",
-            Self::TopologyTooLarge => "topology.too-large",
             Self::EdgeGeometryUnsampled => "topology.edge-geometry-unsampled",
             Self::StepUnreadable => "step.unreadable",
             Self::RollbackUnread => "history.rollback-unread",
@@ -99,7 +95,7 @@ impl OnshapeLossCode {
                     Self::AssemblyRecordUnsupported => {
                         LossTaxonomy::AssemblyPlacementsNotTransferred
                     }
-                    Self::EmptyMember | Self::MemberTooLarge | Self::MemberUnreadable => {
+                    Self::EmptyMember | Self::MemberUnreadable => {
                         LossTaxonomy::MetadataNotTransferred
                     }
                     _ => LossTaxonomy::FeatureHistoryRetained,

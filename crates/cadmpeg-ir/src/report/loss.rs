@@ -300,8 +300,9 @@ impl LossTaxonomy {
 
 /// The shared codes §3.2 spells without a namespace, whichever codec charges
 /// them, each with the strict floor §3.2 states for it.
-pub const BARE_SHARED_CODES: [(&str, Option<Severity>); 6] = [
+pub const BARE_SHARED_CODES: [(&str, Option<Severity>); 7] = [
     ("record.unreadable", Some(Severity::Error)),
+    ("record.undecoded", None),
     ("sidecar.stale", None),
     ("geometry.vertex-tolerance-widened", None),
     ("topology.face-boundary-unstated", None),

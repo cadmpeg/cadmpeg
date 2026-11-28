@@ -8,7 +8,7 @@ use cadmpeg_core::decode::{DecodeDepth, InspectOptions};
 use cadmpeg_core::dialect::Admission;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
-use cadmpeg_ir::unknown::part::record_unreadable_kind;
+use cadmpeg_ir::unknown::part::{record_undecoded_kind, record_unreadable_kind};
 use cadmpeg_ir::ContainerSummary;
 
 use crate::loss::PvzLossCode;
@@ -255,7 +255,6 @@ fn the_assembly_maps_to_products_placements_meshes_and_appearances() {
         loss_codes(&result),
         [
             PvzLossCode::StructureBoundsNotTransferred.kind(),
-            PvzLossCode::GeometryExactUndecoded.kind(),
             PvzLossCode::AttributeRecordsUndecoded.kind(),
             PvzLossCode::AttributeAppearanceTail.kind(),
             PvzLossCode::TessellationPatchFields.kind(),
@@ -321,7 +320,7 @@ fn wide_package(count: usize) -> Vec<u8> {
 }
 
 #[test]
-fn occurrences_past_the_limit_are_given_up_and_a_pinned_decode_refuses_them() {
+fn occurrences_past_the_limit_are_given_up_and_a_pinned_decode_accepts_them() {
     let limit = crate::decode::MAX_OCCURRENCES;
     let bytes = wide_package(limit + 2);
     let admitted = decode(&bytes);
@@ -330,7 +329,7 @@ fn occurrences_past_the_limit_are_given_up_and_a_pinned_decode_refuses_them() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == record_unreadable_kind())
+        .filter(|loss| loss.code == record_undecoded_kind())
         .collect();
     let [given_up] = charges.as_slice() else {
         panic!("one charge: {charges:?}");
@@ -352,13 +351,63 @@ fn occurrences_past_the_limit_are_given_up_and_a_pinned_decode_refuses_them() {
 
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let failure = PvzCodec
+    PvzCodec
         .decode(&mut Cursor::new(bytes.as_slice()), &options)
-        .expect_err("a pinned decode refuses the occurrences past the limit");
-    let cadmpeg_ir::DecodeFailure::StrictRejected { rejection } = &failure else {
-        panic!("expected a strict rejection, got {failure:?}");
+        .expect("a pinned decode accepts the occurrences past the limit");
+}
+
+#[test]
+fn a_pinned_decode_accepts_a_member_with_two_exact_streams() {
+    use crate::layout::token::{STREAM_ATTRIBUTES, STREAM_EXACT_F32, STREAM_EXACT_F64};
+    use crate::test_support::ol::{member, stream_index};
+
+    let plate = member(
+        "DIV-OL08BL",
+        false,
+        &[
+            (STREAM_ATTRIBUTES, stream_index(STREAM_ATTRIBUTES)),
+            (STREAM_EXACT_F32, stream_index(STREAM_EXACT_F32)),
+            (STREAM_EXACT_F64, stream_index(STREAM_EXACT_F64)),
+        ],
+    );
+    let bytes = package(&[
+        ("model.pvs", &assembly_structure("PV-PVS0301")),
+        ("bracket.ol", &bracket_member()),
+        ("plate.ol", &plate),
+    ]);
+    let given_up = |result: &DecodeResult| {
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+            .cloned()
+            .collect::<Vec<_>>()
     };
-    assert_eq!(rejection.loss().message, given_up.message);
+    let admitted = given_up(&decode(&bytes));
+    assert_eq!(admitted.len(), 2, "{admitted:?}");
+    for loss in &admitted {
+        assert_eq!(
+            loss.code,
+            cadmpeg_ir::unknown::part::record_undecoded_kind()
+        );
+        assert!(
+            loss.message
+                .starts_with("part ol-stream stream=\"pvz:plate.ol\" offset="),
+            "{loss:?}"
+        );
+        assert!(
+            loss.message.contains("carries 2 exact-geometry streams"),
+            "{loss:?}"
+        );
+    }
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let pinned = PvzCodec
+        .decode(&mut Cursor::new(bytes.as_slice()), &options)
+        .expect("a pinned decode accepts exact streams that it gives up as undecoded");
+    assert_eq!(given_up(&pinned), admitted);
 }
 
 #[test]
@@ -401,12 +450,18 @@ fn a_geometry_member_that_does_not_open_is_reported_and_the_rest_decodes() {
         RawEntry::stored("plate.ol", &plate_member()),
     ]);
     let result = decode(&bytes);
-    let (malformed, exact): (Vec<_>, Vec<_>) = result
+    let malformed: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == record_undecoded_kind())
+        .collect();
+    let exact: Vec<_> = result
         .report()
         .losses
         .iter()
         .filter(|loss| loss.code == record_unreadable_kind())
-        .partition(|loss| loss.message.starts_with("part archive-entry "));
+        .collect();
     assert_eq!(malformed.len(), 1);
     assert!(
         exact.iter().all(|loss| loss
@@ -564,18 +619,22 @@ fn exact_streams_become_solids_that_keep_their_tessellation() {
         .tessellations
         .iter()
         .any(|mesh| mesh.of == cadmpeg_ir::tessellation::Meshed::definition(plate.id.clone())));
-    let codes = loss_codes(&result);
-    assert_eq!(
-        codes
-            .iter()
-            .filter(|code| **code == PvzLossCode::GeometryExactUndecoded.kind())
-            .count(),
-        1
+    let given_up: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+        .collect();
+    let [exact] = given_up.as_slice() else {
+        panic!("one give-up: {given_up:?}");
+    };
+    assert_eq!(exact.code, record_unreadable_kind());
+    assert!(
+        exact
+            .message
+            .starts_with("part ol-stream stream=\"pvz:plate.ol\" offset="),
+        "{exact:?}"
     );
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code == PvzLossCode::GeometryExactUndecoded.kind()
-            && loss.message.contains("\"plate.ol\"")
-    }));
     assert!(result.report().geometry_transferred());
     let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).unwrap();
     let serious: Vec<_> = report

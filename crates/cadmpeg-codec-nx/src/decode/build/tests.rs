@@ -4,6 +4,7 @@
 use std::collections::BTreeSet;
 
 use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::unknown::part::Cause;
 
 use super::{
     body_preselection, has_plain_beside_partition_streams, plain_history_images,
@@ -70,32 +71,27 @@ fn torus_record(xmt: u16, major: f64) -> Vec<u8> {
     bytes
 }
 
-/// The carrier codes of each refused record, each checked to give the record
-/// up as a `parasolid-record` part over its own bytes in its stream, inside
-/// the retained record of that stream.
-fn surface_refusal_codes(stream: &[u8]) -> Vec<cadmpeg_ir::report::loss::LossKind> {
+/// The give-up cause of each refused record, each checked to give the
+/// record up as a `parasolid-record` part over its own bytes in its stream,
+/// inside the retained record of that stream, with one loss of that cause.
+fn surface_refusal_causes(stream: &[u8]) -> Vec<Cause> {
     let graph = crate::topology::Graph::parse(stream);
     crate::test_support::with_decode_context(|ctx| {
         super::surface_refusals(0, &graph)
             .into_iter()
-            .map(|(node, refusal)| {
+            .map(|(node, cause, why)| {
                 let pos = node.pos();
-                assert!(
-                    refusal.message.contains(&format!("at byte {pos} ")),
-                    "{refusal:#?}"
-                );
+                assert!(why.contains(&format!("at byte {pos} ")), "{why}");
                 let part = super::give_up_record(
                     ctx,
                     (0, &cadmpeg_ir::stream_name!("nx:parasolid#0:partition")),
                     node,
-                    &refusal,
+                    cause,
+                    why.clone(),
                 )
                 .expect("the refused record is given up");
                 let loss = part.loss();
-                assert_eq!(
-                    loss.code,
-                    cadmpeg_ir::unknown::part::record_unreadable_kind()
-                );
+                assert_eq!(loss.code, cause.kind());
                 assert!(
                     loss.message.starts_with(&format!(
                         "part parasolid-record stream=\"nx:parasolid#0:partition\" offset={pos} \
@@ -105,8 +101,8 @@ fn surface_refusal_codes(stream: &[u8]) -> Vec<cadmpeg_ir::report::loss::LossKin
                     )),
                     "{loss:#?}"
                 );
-                assert!(loss.message.contains(&refusal.message), "{loss:#?}");
-                refusal.code.clone()
+                assert!(loss.message.contains(&why), "{loss:#?}");
+                cause
             })
             .collect()
     })
@@ -120,11 +116,8 @@ fn a_negative_cone_half_angle_field_and_a_negative_torus_major_radius_each_repor
     stream.extend(torus_record(4, 0.002));
     stream.extend(torus_record(5, -0.002));
     assert_eq!(
-        surface_refusal_codes(&stream),
-        [
-            crate::loss::NxLossCode::CarrierConeHalfAngleSignUnresolved.kind(),
-            crate::loss::NxLossCode::CarrierTorusNegativeMajorUnresolved.kind(),
-        ]
+        surface_refusal_causes(&stream),
+        [Cause::Undecoded, Cause::Undecoded]
     );
 }
 
@@ -133,8 +126,8 @@ fn a_cone_pair_off_the_unit_identity_by_1e7_reports_a_loss() {
     let sine = 0.6_f64;
     let cosine = (1.0 + 1.0e-7 - sine * sine).sqrt();
     assert_eq!(
-        surface_refusal_codes(&cone_record(2, sine, cosine)),
-        [crate::loss::NxLossCode::CarrierConeHalfAngleIdentityRefused.kind()]
+        surface_refusal_causes(&cone_record(2, sine, cosine)),
+        [Cause::Unreadable]
     );
 }
 
@@ -348,7 +341,7 @@ fn decode_partition(stream: &[u8]) -> cadmpeg_ir::codec::DecodeResult {
         .expect("a permissive decode reports its give-ups")
 }
 
-/// The `record.unreadable` that gives up the record at `pos` of stream 0.
+/// The `record.undecoded` that gives up the record at `pos` of stream 0.
 fn record_charge(
     losses: &[cadmpeg_ir::report::loss::LossNote],
     pos: usize,
@@ -357,7 +350,7 @@ fn record_charge(
     losses
         .iter()
         .find(|loss| {
-            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
                 && loss
                     .message
                     .starts_with("part parasolid-record stream=\"nx:parasolid#0:")
@@ -387,10 +380,13 @@ fn a_refused_carrier_of_a_stream_that_admits_no_carrier_is_given_up() {
     assert!(losses
         .iter()
         .any(|loss| loss.code == crate::loss::NxLossCode::GeometryNotTransferred.kind()));
-    assert!(losses.iter().any(
-        |loss| loss.code == crate::loss::NxLossCode::CarrierConeHalfAngleSignUnresolved.kind()
-    ));
-    record_charge(losses, pos, length);
+    let charge = record_charge(losses, pos, length);
+    assert!(
+        charge
+            .message
+            .contains("stores a negative half-angle sine or cosine"),
+        "{charge:#?}"
+    );
 }
 
 #[test]

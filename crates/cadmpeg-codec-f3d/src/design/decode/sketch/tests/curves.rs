@@ -215,10 +215,7 @@ fn a_curve_record_without_a_usable_curve_identity_gives_up_its_frame() {
                 .collect::<Vec<_>>(),
             [42]
         );
-        assert_eq!(
-            crate::test_support::loss_codes(&losses),
-            [crate::loss::F3dLossCode::SketchCurveRecordUndecoded.kind()]
-        );
+        assert!(losses.is_empty(), "{losses:?}");
         assert_eq!(
             given_up
                 .iter()
@@ -243,10 +240,7 @@ fn a_curve_record_whose_entity_id_exceeds_u32_gives_up_its_frame() {
             .collect::<Vec<_>>(),
         [42]
     );
-    assert_eq!(
-        crate::test_support::loss_codes(&losses),
-        [crate::loss::F3dLossCode::SketchCurveRecordUndecoded.kind()]
-    );
+    assert!(losses.is_empty(), "{losses:?}");
     assert_eq!(
         given_up
             .iter()

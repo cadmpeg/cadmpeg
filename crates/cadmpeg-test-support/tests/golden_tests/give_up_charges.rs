@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Every `record.unreadable` in a committed golden names what the document
-//! lost (`docs/cadir-v11.md` §3.3).
+//! Every give-up loss (`record.unreadable` or `record.undecoded`) in a
+//! committed golden names what the document lost (`docs/cadir-v11.md` §3.3).
 //!
 //! A record give-up names a record id the document does not hold. A part
 //! give-up names the `unknowns` stub that stands in for the lost part. No id
@@ -15,7 +15,7 @@ use serde_json::Value;
 
 use super::{collect_documents, golden_files};
 
-const GIVE_UP_CODE: &str = "record.unreadable";
+const GIVE_UP_CODES: [&str; 2] = ["record.unreadable", "record.undecoded"];
 
 /// The id prefix of the STEP omitted statements a dropped list may name.
 const STEP_OMITTED: &str = "step:file:omitted#";
@@ -37,7 +37,11 @@ fn every_give_up_names_a_record_the_document_does_not_hold() {
             let Some(losses) = report else { continue };
             let messages = losses
                 .iter()
-                .filter(|loss| loss.pointer("/code/value/code") == Some(&Value::from(GIVE_UP_CODE)))
+                .filter(|loss| {
+                    loss.pointer("/code/value/code")
+                        .and_then(Value::as_str)
+                        .is_some_and(|code| GIVE_UP_CODES.contains(&code))
+                })
                 .filter_map(|loss| loss.get("message").and_then(Value::as_str))
                 .collect::<Vec<_>>();
             charges += messages.len();
@@ -48,7 +52,7 @@ fn every_give_up_names_a_record_the_document_does_not_hold() {
             );
         }
     }
-    assert!(charges > 0, "the goldens carry no {GIVE_UP_CODE} to audit");
+    assert!(charges > 0, "the goldens carry no give-up loss to audit");
     assert!(
         findings.is_empty(),
         "{} give-up charges name the wrong record:\n{}",
@@ -57,7 +61,7 @@ fn every_give_up_names_a_record_the_document_does_not_hold() {
     );
 }
 
-/// What one `record.unreadable` message names.
+/// What one give-up loss message names.
 #[derive(Debug, PartialEq, Eq)]
 struct Charge<'a> {
     /// The record id of a record give-up, or the stub of a part give-up.
@@ -92,7 +96,7 @@ fn parse(message: &str) -> Option<Charge<'_>> {
     })
 }
 
-/// Each way the `record.unreadable` messages of one document misname a
+/// Each way the give-up loss messages of one document misname a
 /// record.
 fn audit(ir: &Value, messages: &[&str]) -> Vec<String> {
     let mut held = BTreeSet::new();
