@@ -10889,6 +10889,63 @@ source = "spec"
 anchor = "name length at `+5`"
 
 [[record]]
+name = "cut_list_folder_tail"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/carchive/rules/feature.rs"
+kind = "byte"
+section = "Extrusion feature objects"
+anchor = "A cut-list folder (`moCutListFolder_c`"
+size = 43
+endianness = "little"
+note = "The bytes a cut-list folder writes after its last item."
+
+[[record.field]]
+name = "one"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "u32 `1`, i32 `-1`, u32 `2` or `3`"
+value = 1
+
+[[record.field]]
+name = "minus_one"
+offset = 4
+type = "i32"
+source = "spec"
+anchor = "i32 `-1`, u32 `2` or `3`"
+value = -1
+
+[[record.field]]
+name = "word"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "u32 `2` or `3`"
+
+[[record.field]]
+name = "zeros"
+offset = 12
+type = "bytes[23]"
+source = "spec"
+anchor = "23 zero bytes"
+value = [0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0]
+
+[[record.field]]
+name = "one_after_zeros"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "23 zero bytes, u32 `1`, u32 `1`"
+value = 1
+
+[[record.field]]
+name = "one_last"
+offset = 39
+type = "u32"
+source = "spec"
+anchor = "23 zero bytes, u32 `1`, u32 `1`"
+value = 1
+
+[[record]]
 name = "revolution_turn_block"
 parsed_by = ["crates/cadmpeg-codec-sldprt/src/carchive/rules/feature.rs", "crates/cadmpeg-codec-sldprt/src/resolved_features/turn_sense.rs"]
 kind = "byte"

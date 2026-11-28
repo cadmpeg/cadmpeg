@@ -419,7 +419,7 @@ impl RigidGroupLayout {
                     ordinary::SECOND_LOCATOR_REFERENCE - ordinary::FIRST_LOCATOR_REFERENCE,
                     ordinary::REFERENCE_COUNT,
                 )
-            } else if !alternate && tail_length == u64_from_index(typed::LEN - typed::SCOPE_TAIL) {
+            } else if tail_length == u64_from_index(typed::LEN - typed::SCOPE_TAIL) {
                 (
                     typed::SCOPE_TAIL,
                     typed::LOCATOR_COUNT,
@@ -1106,6 +1106,16 @@ pub(crate) fn project_assembly_joints_with_paths(
                 if motion.is_some_and(zero_lane_rotation_limits) && undecoded.is_none() {
                     native_angular_limits += 1;
                 }
+                // A scope with an additional-owner run (versions 4 and 5) whose
+                // joint record has no decoded motion projects with the fixed
+                // fallback; say so even when it has no additional owners.
+                let undecoded = undecoded.or_else(|| {
+                    (motion.is_none()
+                        && scope.assembly_alignment().is_some_and(|alignment| {
+                            alignment.additional_owner_run.is_some()
+                        }))
+                    .then(|| "the joint record's motion is not decoded".to_owned())
+                });
                 if let Some(reason) = undecoded {
                     undecoded_motion_count += 1;
                     undecoded_motions.insert(reason);
@@ -1356,6 +1366,12 @@ fn project_assembly_joint(
     let Some(alignment) = scope.assembly_alignment() else {
         return if rigid_as_built_scope(scope) {
             Err(unresolved_rigid_group())
+        } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble {
+            // A joint scope whose tail grammar does not read is a lost joint,
+            // not an unrelated scope.
+            Err(CodecError::NotImplemented(
+                "Assemble scope tail is unresolved".into(),
+            ))
         } else {
             Ok(None)
         };
