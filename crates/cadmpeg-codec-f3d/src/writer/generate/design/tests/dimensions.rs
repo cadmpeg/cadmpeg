@@ -372,7 +372,17 @@ fn a_dimension_parameter_is_owned_by_its_sketch() {
         .iter()
         .find(|parameter| parameter.id == hole.id)
         .expect("Hole in the design");
-    assert_eq!(design_hole.display, Some(DimensionDisplay::Diameter));
+    assert_eq!(design_hole.display, None);
+    assert!(decoded.design.sketch_constraints.iter().any(|constraint| {
+        matches!(
+            &constraint.relation,
+            SketchRelation::Radial {
+                measure: RadialMeasure::Diameter,
+                value: Dimension::Parameter(parameter),
+                ..
+            } if parameter == &hole.id
+        )
+    }));
     assert_cadir_carries_parameter_field(&decoded, hole.id.as_str(), "display");
     let tilt = decoded
         .model

@@ -1987,4 +1987,5 @@ mod legacy_path_pose;
 mod reference_rows;
 
 mod compact_generation;
+mod local_path_closure;
 mod partial_tables;

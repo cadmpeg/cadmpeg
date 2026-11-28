@@ -115,6 +115,24 @@ pub(crate) fn f3d_with_breps_design_and_assets(
 
 /// An empty modern model map and a named, zero-pair snapshot map.
 pub(crate) fn f3d_with_empty_model_maps(snapshot: &[u8], targets: &[(&str, &str)]) -> Vec<u8> {
+    empty_model_maps_archive(snapshot, targets, false)
+}
+
+/// The archive of [`f3d_with_empty_model_maps`] whose Design stream also holds
+/// one parameter scope of a native feature name, with an owned parameter, its
+/// owner and its companion, and nothing else.
+pub(crate) fn f3d_with_empty_model_maps_and_parameters(
+    snapshot: &[u8],
+    targets: &[(&str, &str)],
+) -> Vec<u8> {
+    empty_model_maps_archive(snapshot, targets, true)
+}
+
+fn empty_model_maps_archive(
+    snapshot: &[u8],
+    targets: &[(&str, &str)],
+    parameters: bool,
+) -> Vec<u8> {
     let mut bulk = Vec::new();
     bulk.extend_from_slice(&3_u32.to_le_bytes());
     bulk.extend_from_slice(b"256");
@@ -134,39 +152,97 @@ pub(crate) fn f3d_with_empty_model_maps(snapshot: &[u8], targets: &[(&str, &str)
     bulk.extend(super::local_reference(22));
     bulk.push(0);
     lp_utf16(&mut bulk, "BREP.snapshot.smb");
-    let meta = design_metastream_with_records(
-        &[
-            (
-                BODY_MAP_CARRIER_TYPE_GUID,
-                BODY_MAP_CARRIER_BASE_TYPE_GUID,
-                BODY_MAP_CARRIER_TYPE_VERSION,
-                DESIGN_MODULE_BODY,
-                &[10],
-            ),
-            (
-                "40DCC3F41D-E94F-B3B1-3E95-9B6ABE572C",
-                BODY_MAP_CARRIER_BASE_TYPE_GUID,
-                0,
-                DESIGN_MODULE_BODY,
-                &[20],
-            ),
-            (
-                "E55D0457-898F-4A8E-B1A5-C85BDBA8794F",
-                "",
-                0,
-                DESIGN_MODULE_BODY,
-                &[21],
-            ),
-            (
-                crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
-                "",
-                0,
-                DESIGN_MODULE_BODY,
-                &[22],
-            ),
-        ],
-        &[(10, 0), (20, snapshot_offset)],
-    );
+    let mut types: Vec<(&str, &str, u32, &str, &[u64])> = vec![
+        (
+            BODY_MAP_CARRIER_TYPE_GUID,
+            BODY_MAP_CARRIER_BASE_TYPE_GUID,
+            BODY_MAP_CARRIER_TYPE_VERSION,
+            DESIGN_MODULE_BODY,
+            &[10],
+        ),
+        (
+            "40DCC3F41D-E94F-B3B1-3E95-9B6ABE572C",
+            BODY_MAP_CARRIER_BASE_TYPE_GUID,
+            0,
+            DESIGN_MODULE_BODY,
+            &[20],
+        ),
+        (
+            "E55D0457-898F-4A8E-B1A5-C85BDBA8794F",
+            "",
+            0,
+            DESIGN_MODULE_BODY,
+            &[21],
+        ),
+        (
+            crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
+            "",
+            0,
+            DESIGN_MODULE_BODY,
+            &[22],
+        ),
+    ];
+    let mut records = vec![(10, 0), (20, snapshot_offset)];
+    if parameters {
+        // Type-table rows 4 to 7 give the class tags 260 to 263.
+        let scope_record = 1_100_u32;
+        super::streams_fixture::append_parameter_scope(
+            &mut bulk,
+            &mut records,
+            b"260",
+            scope_record,
+            1200,
+            "Parameter Group",
+        );
+        super::streams_fixture::append_owner(
+            &mut bulk,
+            &mut records,
+            b"261",
+            [1200, 1201, 1202],
+            scope_record,
+            0,
+        );
+        super::streams_fixture::append_parameter(
+            &mut bulk,
+            &mut records,
+            b"262",
+            1200,
+            1201,
+            "d1",
+            "Linear Dimension-1",
+        );
+        super::streams_fixture::append_companion(&mut bulk, &mut records, b"263", 1200, 1202);
+        let base = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+        types.push((
+            "00000000-0000-0000-0000-000000001100",
+            base,
+            1,
+            crate::records::entity_header::DESIGN_MODULE_FUSION,
+            &[1100],
+        ));
+        types.push((
+            "D91D429C-1BB5-4640-B49F-69AF14F463E9",
+            base,
+            1,
+            "Dimension",
+            &[1200],
+        ));
+        types.push((
+            "00000000-0000-0000-0000-000000001201",
+            base,
+            1,
+            "Dimension",
+            &[1201],
+        ));
+        types.push((
+            "00000000-0000-0000-0000-000000001202",
+            base,
+            1,
+            "Dimension",
+            &[1202],
+        ));
+    }
+    let meta = design_metastream_with_records(&types, &records);
     let bytes = f3d_with_breps_and_design(&[("BREP.snapshot.smb", snapshot)], &bulk, &meta);
     let mut zip = zip::ZipWriter::new_append(Cursor::new(bytes)).unwrap();
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
