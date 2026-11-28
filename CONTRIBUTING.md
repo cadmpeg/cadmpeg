@@ -62,6 +62,7 @@ Install the pre-commit hook with `git config core.hooksPath .githooks`. Run the 
 cargo fmt --all --check
 cargo clippy --workspace --all-targets
 cargo test-fast
+cargo test --workspace --doc
 ```
 
 See [AGENTS.md](AGENTS.md) for single-codec builds. A CLI test that needs a codec that is not built is compiled out.
@@ -74,7 +75,7 @@ CI builds test binaries without debug information. A failure there reports a bac
 
 PR CI tests only the packages a change reaches ([`scripts/ci_scope.py`](scripts/ci_scope.py)). A draft PR runs static checks, clippy, and the dependency audit when selected. macOS and Windows run in the nightly full gate, and on a `main` run that selects the full gate, which includes every release bump. To run them on a branch, dispatch CI on it: `gh workflow run ci.yml --ref BRANCH`. CodeQL analyzes Rust and Python on its schedule and on dispatch. To run it on a branch, dispatch CodeQL: `gh workflow run codeql.yml --ref BRANCH`.
 
-A PR merges directly after its own CI run passes. Main can move between that run and the merge, so the main run is the first test of the merged tree. A push to main queues behind an in-progress main run. Each main run tests the packages that changed since the last successful main run, so the commits of a cancelled or failed run stay in scope until a main run passes. The `main` ruleset names the required checks by job name, so a renamed or added gate job also needs a ruleset change. A failing scheduled run opens a `scheduled-failure` issue for its workflow, assigned to the login in the `SCHEDULE_ALERT_ASSIGNEE` repository variable. The next passing scheduled run closes it.
+A PR merges directly after its own CI run passes. Main can move between that run and the merge, so the main run is the first test of the merged tree. A push to main queues behind an in-progress push run and replaces any queued push run. Each main run tests the packages that changed since the last successful main run, so the commits of a cancelled or failed run stay in scope until a main run passes. The `main` ruleset names the required checks by job name, so a renamed or added gate job also needs a ruleset change. A failing scheduled run opens a `scheduled-failure` issue for its workflow, assigned to the login in the `SCHEDULE_ALERT_ASSIGNEE` repository variable. The next passing scheduled run closes it.
 
 The `JsonSchema` derives sit behind a `schema` feature that no dependent enables, because building them costs 14% of `cadmpeg-ir`'s generated code. `cadmpeg query schema` and the repro privacy projection read the committed output of `cadmpeg_ir::cadir_json_schema()` and `decode_sidecar_json_schema()` in [`crates/cadmpeg-ir/schema/`](crates/cadmpeg-ir/schema/). The schema gate compares those files with the derives. When you change IR or native record types, regenerate them and review the diff:
 
@@ -100,11 +101,10 @@ Run the preflight from the branch's worktree before you open or update a pull re
 
 ```sh
 python3 scripts/preflight.py          # static checks against the upstream branch
-python3 scripts/preflight.py --full   # also the Cargo checks for the crates the change reaches
 python3 scripts/preflight.py --list   # what each check looks for
 ```
 
-Run `python3 scripts/preflight.py --list` for the checks and their descriptions. Use `--no-fetch` to skip fetching the upstream branch.
+Use `--no-fetch` to skip fetching the upstream branch.
 
 ---
 
@@ -113,12 +113,12 @@ Run `python3 scripts/preflight.py --list` for the checks and their descriptions.
 The Python scripts under `scripts/` run on Windows with these steps:
 
 - Run them with `py -3` (for example `py -3 scripts/preflight.py`) or the full path of a real Python. A bare `python3` can resolve to the Microsoft Store stub, which prints "Python was not found" and fails. `scripts/preflight.py` starts its child checks with the interpreter that runs it.
-- Install the GitHub CLI (`winget install GitHub.cli`) and run `gh auth login`. The `open-prs` check needs it.
+- Install the GitHub CLI (`winget install GitHub.cli`) and run `gh auth login`.
 - Configure your Git identity before contributing.
 - Run the scripts from Git Bash, or from a shell where `git` and `cargo` are on `PATH`.
 - Set `git config --global core.autocrlf false` before you clone. Or clone with `git clone -c core.autocrlf=false <url>`, which sets it in the new repository before checkout. CRLF line endings change the bytes of fixtures and generated files, and the checks that compare them byte for byte then fail.
 
-The shell scripts (`*.sh`) need Git Bash and the commands that each script checks for at its start. For example, `scripts/verify-step-signatures.sh` needs `base64`, `fold`, `git`, `openssl`, `python3`, and `tr` on `PATH`. In that script `python3` must be a real interpreter, not the Store stub. Put a real Python first on `PATH` under that name, or run the script on Linux or macOS.
+The shell scripts (`*.sh`) need Git Bash and the commands that each script checks for at its start. For example, `scripts/restore-merge-stage.sh` needs Git and standard shell utilities on `PATH`.
 
 ---
 

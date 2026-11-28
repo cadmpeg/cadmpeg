@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: CC-BY-4.0 -->
+
 # Format authoring
 
 Write dense, direct technical prose in ASD-STE100. State each fact once and affirmatively. Do not define by negation.
