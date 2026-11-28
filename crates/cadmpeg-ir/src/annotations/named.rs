@@ -201,4 +201,13 @@ impl Annotations {
         self.provenance.retain(|key, _| !removed.names(key));
         self.exactness.retain(|key, _| !removed.names(key));
     }
+
+    /// Retains each key whose [`AnnotationKey::owner`] is a record of `ir`
+    /// (a record of an arena or a native record) or a record `retained`
+    /// keeps. The annotations of each record a decoder dropped leave with it
+    /// (§3.3).
+    pub fn retain_records_of(&mut self, ir: &CadIr, mut retained: impl FnMut(&str) -> bool) {
+        let named = entities(ir, false);
+        self.retain_entities(|owner| named.contains(owner) || retained(owner));
+    }
 }

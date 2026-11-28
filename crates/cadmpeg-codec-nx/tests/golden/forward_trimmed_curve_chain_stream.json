@@ -521,6 +521,16 @@
             "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
+          "nx:s0:trimmed-curve-record#12": {
+            "offset": 473,
+            "stream": "nx:s0",
+            "tag": "TRIMMED_CURVE"
+          },
+          "nx:s0:trimmed-curve-record#20": {
+            "offset": 558,
+            "stream": "nx:s0",
+            "tag": "TRIMMED_CURVE"
+          },
           "nx:s0:vertex#10": {
             "offset": 389,
             "stream": "nx:parasolid#0:partition",

@@ -495,6 +495,7 @@ fn a_stored_copy_paste_result_survives_an_interval_in_another_history() {
         stream: "Design/BulkStream.dat".into(),
         pair_count: 1,
         pair_ordinal: 0,
+        consumers: Vec::new(),
         asm_body_key: 1,
         asm_body_key_offset: 10,
         entity_suffix: 4,
