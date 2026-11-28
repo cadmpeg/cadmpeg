@@ -2,7 +2,7 @@
 //! Pcurve ends mapped through their face support before orientation.
 
 use super::super::records::TopologyIndex;
-use super::super::{pcurve_orientation_context, UseDirection};
+use super::super::{PcurveOrientationContext, UseDirection};
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::PcurveId;
@@ -12,6 +12,7 @@ use cadmpeg_ir::CadIr;
 
 #[test]
 fn a_pcurve_end_whose_support_point_overflows_is_refused_as_non_finite() {
+    test_ctx!(ctx);
     // The plane's origin is the largest finite x coordinate: the pcurve end
     // u = MAX maps to a point without a finite x, and the start u = -MAX
     // maps to the model origin.
@@ -39,15 +40,16 @@ fn a_pcurve_end_whose_support_point_overflows_is_refused_as_non_finite() {
         native_ref: None,
     });
     let index = TopologyIndex::new(&ir);
-    let context = pcurve_orientation_context(
-        &index,
-        &surface,
-        Point3::new(0.0, 0.0, 0.0),
-        Point3::new(1.0, 0.0, 0.0),
-        UseDirection::traversed(Sense::Forward),
-        1.0e-6,
-        "edge test",
-    );
+    let context = PcurveOrientationContext {
+        ctx: &ctx,
+        index: &index,
+        surface: &surface,
+        natural_start: Point3::new(0.0, 0.0, 0.0),
+        natural_end: Point3::new(1.0, 0.0, 0.0),
+        direction: UseDirection::traversed(Sense::Forward),
+        tolerance: 1.0e-6,
+        owner: "edge test",
+    };
     let error = context
         .map(&[PcurveUse {
             pcurve: id,
@@ -67,6 +69,7 @@ fn a_pcurve_end_whose_support_point_overflows_is_refused_as_non_finite() {
 /// The error the orientation context states for the single use of a line
 /// pcurve over `[-1, 1]` on `surface`.
 fn line_pcurve_end_error(surface: &SurfaceGeometry, line: LinePcurve) -> String {
+    test_ctx!(ctx);
     let id = PcurveId::mint("test:iges:pcurve#overflow").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.geometry.pcurves.push(Pcurve {
@@ -80,15 +83,16 @@ fn line_pcurve_end_error(surface: &SurfaceGeometry, line: LinePcurve) -> String 
         native_ref: None,
     });
     let index = TopologyIndex::new(&ir);
-    let context = pcurve_orientation_context(
-        &index,
+    let context = PcurveOrientationContext {
+        ctx: &ctx,
+        index: &index,
         surface,
-        Point3::new(0.0, 0.0, 0.0),
-        Point3::new(1.0, 0.0, 0.0),
-        UseDirection::traversed(Sense::Forward),
-        1.0e-6,
-        "edge test",
-    );
+        natural_start: Point3::new(0.0, 0.0, 0.0),
+        natural_end: Point3::new(1.0, 0.0, 0.0),
+        direction: UseDirection::traversed(Sense::Forward),
+        tolerance: 1.0e-6,
+        owner: "edge test",
+    };
     context
         .map(&[PcurveUse {
             pcurve: id,
@@ -165,6 +169,7 @@ fn a_pcurve_on_an_extrusion_whose_directrix_acceleration_overflows_maps_to_finit
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, PlacedCurve, ProceduralSurface, SolvedCurveGeometry,
     };
+    test_ctx!(ctx);
     let directrix =
         cadmpeg_ir::ids::CurveId::mint("test:iges:curve#directrix").expect("identity grammar");
     let construction = cadmpeg_ir::ids::ProceduralSurfaceId::mint("test:iges:procedural#extrusion")
@@ -229,15 +234,16 @@ fn a_pcurve_on_an_extrusion_whose_directrix_acceleration_overflows_maps_to_finit
         cache: None,
     };
     let index = TopologyIndex::new(&ir);
-    let context = pcurve_orientation_context(
-        &index,
-        &surface,
-        Point3::new(0.0, 0.0, 0.0),
-        Point3::new(0.0, 0.0, 2.0),
-        UseDirection::traversed(Sense::Forward),
-        1.0e-6,
-        "edge test",
-    );
+    let context = PcurveOrientationContext {
+        ctx: &ctx,
+        index: &index,
+        surface: &surface,
+        natural_start: Point3::new(0.0, 0.0, 0.0),
+        natural_end: Point3::new(0.0, 0.0, 2.0),
+        direction: UseDirection::traversed(Sense::Forward),
+        tolerance: 1.0e-6,
+        owner: "edge test",
+    };
     assert_eq!(
         context
             .map(&[PcurveUse {

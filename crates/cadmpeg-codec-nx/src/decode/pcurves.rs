@@ -611,15 +611,22 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
         replacements
     };
 
+    let mut procedural_indices =
+        std::collections::HashMap::with_capacity(ir.geometry.procedural_curves.len());
+    for (index, procedural) in ir.geometry.procedural_curves.iter().enumerate() {
+        procedural_indices
+            .entry(procedural.id.clone())
+            .or_insert(index);
+    }
+    let mut edge_indices = std::collections::HashMap::with_capacity(ir.geometry.edges.len());
+    for (index, edge) in ir.geometry.edges.iter().enumerate() {
+        edge_indices.entry(edge.id.clone()).or_insert(index);
+    }
     for (procedural_id, edge_id, edge_reversed, parameterization) in replacements {
-        let Some(procedural) = ir
-            .geometry
-            .procedural_curves
-            .iter_mut()
-            .find(|procedural| procedural.id == procedural_id)
-        else {
+        let Some(&procedural_index) = procedural_indices.get(&procedural_id) else {
             continue;
         };
+        let procedural = &mut ir.geometry.procedural_curves[procedural_index];
         let range = procedural.edit_definition(|definition| {
             let ProceduralCurveDefinition::TolerantIntersection {
                 parameterization: slot,
@@ -638,7 +645,8 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
         let Some(range) = range else {
             continue;
         };
-        if let Some(edge) = ir.geometry.edges.iter_mut().find(|edge| edge.id == edge_id) {
+        if let Some(&edge_index) = edge_indices.get(&edge_id) {
+            let edge = &mut ir.geometry.edges[edge_index];
             if edge_reversed {
                 if let Some(ends) = &mut edge.ends {
                     std::mem::swap(&mut ends.start, &mut ends.end);
@@ -1434,32 +1442,6 @@ fn blend_boundary_transfer_available(
     };
     for support in supports {
         if parameterization_equivalent_surfaces_with_index(index, support, source_surface)? {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-fn reverse_blend_boundary_transfer_available(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    source_surface: &SurfaceId,
-    target_surface: &SurfaceId,
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
-    let Some(CircularBlendDefinition {
-        supports,
-        spine,
-        radius,
-        ..
-    }) = blend_surface_definition_with_index(index, source_surface)
-    else {
-        return Ok(false);
-    };
-    for support in supports {
-        if parameterization_equivalent_surfaces_with_index(index, support, target_surface)?
-            && spine_contact_pcurve_with_index(index, target_surface, spine, radius, 0, ctx)?
-                .is_some()
-        {
             return Ok(true);
         }
     }
@@ -3124,14 +3106,48 @@ fn transfer_intersection_pcurve_with_budget<'a>(
         tolerance,
     } = pcurve_transfer;
 
-    let blend_boundary_transfer =
-        blend_boundary_transfer_available(index, source_surface, target_surface)?
-            || reverse_blend_boundary_transfer_available(
-                index,
-                source_surface,
-                target_surface,
-                geometry_budget.ctx,
-            )?;
+    let target_blend = blend_surface_definition_with_index(index, target_surface);
+    let target_is_blend = target_blend.is_some();
+    let mut target_blend_matches = 0_usize;
+    if let Some(CircularBlendDefinition { supports, .. }) = target_blend {
+        for support in supports {
+            if parameterization_equivalent_surfaces_with_index(index, support, source_surface)? {
+                target_blend_matches += 1;
+            }
+        }
+    }
+    let source_blend = blend_surface_definition_with_index(index, source_surface);
+    let mut source_blend_matches = 0_usize;
+    let mut reverse_blend_boundary_transfer = false;
+    if let Some(CircularBlendDefinition {
+        supports,
+        spine,
+        radius,
+        ..
+    }) = source_blend
+    {
+        for support in supports {
+            if parameterization_equivalent_surfaces_with_index(index, support, target_surface)? {
+                source_blend_matches += 1;
+                if !reverse_blend_boundary_transfer
+                    && spine_contact_pcurve_with_index(
+                        index,
+                        target_surface,
+                        spine,
+                        radius,
+                        0,
+                        geometry_budget.ctx,
+                    )?
+                    .is_some()
+                {
+                    reverse_blend_boundary_transfer = true;
+                }
+            }
+        }
+    }
+    let blend_boundary_transfer = target_blend_matches > 0 || reverse_blend_boundary_transfer;
+    let source_blend_unique_support = source_blend_matches == 1;
+    let target_blend_unique_support = target_blend_matches == 1;
     let continuation_steps = if blend_boundary_transfer {
         BLEND_BOUNDARY_CONTINUATION_STEPS
     } else {
@@ -3147,18 +3163,22 @@ fn transfer_intersection_pcurve_with_budget<'a>(
     {
         return Ok(None);
     }
+    let fit = TransferredPcurveFit {
+        curve,
+        source_surface,
+        source_pcurve,
+        target_surface,
+        source_geometry,
+        target_geometry,
+        tolerance,
+        blend_contact,
+        source_blend_unique_support,
+        target_blend_unique_support,
+        target_is_blend,
+    };
     let Some(first) = transferred_pcurve_sample_with_budget(
         index,
-        &TransferredPcurveFit {
-            curve,
-            source_surface,
-            source_pcurve,
-            target_surface,
-            source_geometry,
-            target_geometry,
-            tolerance,
-            blend_contact,
-        },
+        &fit,
         &PcurveSampleSeed {
             parameter: parameter_range[0],
             seed: None,
@@ -3181,16 +3201,7 @@ fn transfer_intersection_pcurve_with_budget<'a>(
         };
         let Some(sample) = transferred_pcurve_sample_with_budget(
             index,
-            &TransferredPcurveFit {
-                curve,
-                source_surface,
-                source_pcurve,
-                target_surface,
-                source_geometry,
-                target_geometry,
-                tolerance,
-                blend_contact,
-            },
+            &fit,
             &PcurveSampleSeed {
                 parameter,
                 seed: coarse.last().map(|sample| sample.1),
@@ -3209,16 +3220,7 @@ fn transfer_intersection_pcurve_with_budget<'a>(
     for pair in coarse.windows(2) {
         let Some(()) = append_transferred_pcurve_segment_with_budget(
             index,
-            &TransferredPcurveFit {
-                curve,
-                source_surface,
-                source_pcurve,
-                target_surface,
-                source_geometry,
-                target_geometry,
-                tolerance,
-                blend_contact,
-            },
+            &fit,
             &TransferSegment {
                 first: pair[0],
                 last: pair[1],
@@ -3304,6 +3306,9 @@ struct TransferredPcurveFit<'inputs, 'a> {
     target_geometry: Option<&'inputs SolvedSurfaceGeometry>,
     tolerance: f64,
     blend_contact: Option<BlendTransferContact<'inputs>>,
+    source_blend_unique_support: bool,
+    target_blend_unique_support: bool,
+    target_is_blend: bool,
 }
 
 struct PcurveSampleSeed {
@@ -3331,6 +3336,9 @@ fn transferred_pcurve_sample_with_budget<'a>(
         target_geometry,
         tolerance,
         blend_contact,
+        source_blend_unique_support,
+        target_blend_unique_support,
+        target_is_blend,
     } = transferred_pcurve_fit;
 
     if !budget.charge() {
@@ -3404,44 +3412,63 @@ fn transferred_pcurve_sample_with_budget<'a>(
     } else {
         None
     };
-    let reverse_contact_target_uv = blend_support_parameter_from_source_pcurve(
-        index,
-        &crate::decode::blend::SourcePcurveSample {
-            blend: source_surface,
-            support: target_surface,
-            source_pcurve,
-            curve_parameter: parameter,
-        },
-        target,
-        contact_seeds,
-        geometry_budget,
-    )?;
+    let reverse_contact_target_uv = if source_blend_unique_support {
+        blend_support_parameter_from_source_pcurve(
+            index,
+            &crate::decode::blend::SourcePcurveSample {
+                blend: source_surface,
+                support: target_surface,
+                source_pcurve,
+                curve_parameter: parameter,
+            },
+            target,
+            contact_seeds,
+            geometry_budget,
+        )?
+    } else {
+        None
+    };
     let (target_uv, target_certified) = if reverse_contact_target_uv.is_some() {
         (reverse_contact_target_uv, true)
     } else if contact_target_uv.is_some() {
         (contact_target_uv, true)
-    } else if let Some(target_uv) = blend_boundary_parameter_from_support_pcurve_with_budget(
-        index,
-        target_surface,
-        source_surface,
-        source_pcurve,
-        parameter,
-        target,
-        geometry_budget,
-    )? {
-        (Some(target_uv), true)
-    } else if let Some(target_uv) =
-        blend_boundary_parameter_from_support_spine_with_index_and_budget(
+    } else if target_blend_unique_support {
+        if let Some(target_uv) = blend_boundary_parameter_from_support_pcurve_with_budget(
             index,
             target_surface,
             source_surface,
-            point,
-            seed,
-            tolerance,
+            source_pcurve,
+            parameter,
+            target,
             geometry_budget,
-        )?
-    {
-        (Some(target_uv), true)
+        )? {
+            (Some(target_uv), true)
+        } else if let Some(target_uv) =
+            blend_boundary_parameter_from_support_spine_with_index_and_budget(
+                index,
+                target_surface,
+                source_surface,
+                point,
+                seed,
+                tolerance,
+                geometry_budget,
+            )?
+        {
+            (Some(target_uv), true)
+        } else {
+            (
+                surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
+                    index,
+                    target_surface,
+                    point,
+                    seed,
+                    tolerance,
+                    geometry_budget,
+                    blend_parameter_grids,
+                )?,
+                false,
+            )
+        }
     } else {
         (
             surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
@@ -3486,14 +3513,15 @@ fn transferred_pcurve_sample_with_budget<'a>(
             )?;
         }
         candidate.is_some_and(|candidate| Point3::distance(candidate, point) <= tolerance)
-            || blend_boundary_spine_geometry_matches_with_index_and_budget(
-                index,
-                target_surface,
-                target_uv,
-                point,
-                tolerance,
-                geometry_budget,
-            )?
+            || (target_is_blend
+                && blend_boundary_spine_geometry_matches_with_index_and_budget(
+                    index,
+                    target_surface,
+                    target_uv,
+                    point,
+                    tolerance,
+                    geometry_budget,
+                )?)
     };
     Ok(accepted.then_some((parameter, target_uv, point)))
 }
@@ -3723,6 +3751,9 @@ fn append_transferred_pcurve_segment_with_budget<'a>(
         target_geometry,
         tolerance,
         blend_contact,
+        source_blend_unique_support: _,
+        target_blend_unique_support: _,
+        target_is_blend,
     } = transferred_pcurve_fit;
 
     let midpoint_parameter = f64::midpoint(first.0, last.0);
@@ -3824,14 +3855,16 @@ fn append_transferred_pcurve_segment_with_budget<'a>(
                     continue;
                 }
             }
-            if blend_boundary_spine_geometry_matches_with_index_and_budget(
-                index,
-                target_surface,
-                uv,
-                source_point,
-                tolerance,
-                geometry_budget,
-            )? {
+            if target_is_blend
+                && blend_boundary_spine_geometry_matches_with_index_and_budget(
+                    index,
+                    target_surface,
+                    uv,
+                    source_point,
+                    tolerance,
+                    geometry_budget,
+                )?
+            {
                 continue;
             }
             let mut target_point = if let Some(geometry) = target_geometry {
@@ -4271,6 +4304,10 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
         candidates
     };
 
+    let mut edge_indices = std::collections::HashMap::with_capacity(ir.geometry.edges.len());
+    for (index, edge) in ir.geometry.edges.iter().enumerate() {
+        edge_indices.entry(edge.id.clone()).or_insert(index);
+    }
     for (xmt, edge_id, supports, endpoints, tolerance) in candidates {
         let Ok(admitted_intersection) =
             cadmpeg_ir::geometry::intersection_curves::TolerantIntersectionConstruction::try_new(
@@ -4293,14 +4330,10 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
                 cache: None,
             },
         );
-        let Some(edge) = ir
-            .geometry
-            .edges
-            .iter_mut()
-            .find(|candidate| candidate.id == edge_id)
-        else {
+        let Some(&edge_index) = edge_indices.get(&edge_id) else {
             continue;
         };
+        let edge = &mut ir.geometry.edges[edge_index];
         edge.set_curve(Some(curve_id.clone()))
             .map_err(cadmpeg_core::CodecError::malformed)?;
         annotations

@@ -617,6 +617,8 @@ pub(crate) struct BodyVisibility {
     pub(crate) asm_body_key_offset: u64,
     asm_body_key: u64,
     pub(crate) entity_suffix: u64,
+    /// Entity ID of the body-visibility browser node that carries `visible`.
+    pub(crate) browser_node_entity: u64,
     pub(crate) visible: bool,
 }
 
@@ -629,6 +631,7 @@ pub(crate) struct BodyVisibilityWire {
     pub(crate) asm_body_key_offset: u64,
     pub(crate) asm_body_key: u64,
     pub(crate) entity_suffix: u64,
+    pub(crate) browser_node_entity: u64,
     pub(crate) visible: bool,
 }
 
@@ -643,6 +646,7 @@ impl TryFrom<BodyVisibilityWire> for BodyVisibility {
             asm_body_key_offset: wire.asm_body_key_offset,
             asm_body_key: wire.asm_body_key,
             entity_suffix: wire.entity_suffix,
+            browser_node_entity: wire.browser_node_entity,
             visible: wire.visible,
         })
     }
@@ -663,7 +667,7 @@ impl BodyVisibility {
 impl Serialize for BodyVisibility {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut record = serializer.serialize_struct("BodyVisibility", 8)?;
+        let mut record = serializer.serialize_struct("BodyVisibility", 9)?;
         record.serialize_field("id", self.id.text())?;
         record.serialize_field("body", &self.body)?;
         record.serialize_field("stream", self.stream.as_str())?;
@@ -671,6 +675,7 @@ impl Serialize for BodyVisibility {
         record.serialize_field("asm_body_key_offset", &self.asm_body_key_offset)?;
         record.serialize_field("asm_body_key", &self.asm_body_key)?;
         record.serialize_field("entity_suffix", &self.entity_suffix)?;
+        record.serialize_field("browser_node_entity", &self.browser_node_entity)?;
         record.serialize_field("visible", &self.visible)?;
         record.end()
     }
@@ -687,6 +692,7 @@ impl From<BodyVisibility> for BodyVisibilityWire {
             asm_body_key_offset: value.asm_body_key_offset,
             asm_body_key: value.asm_body_key,
             entity_suffix: value.entity_suffix,
+            browser_node_entity: value.browser_node_entity,
             visible: value.visible,
         }
     }
@@ -710,6 +716,7 @@ mod tests {
             asm_body_key_offset: 0,
             asm_body_key: 1,
             entity_suffix: 1,
+            browser_node_entity: 2,
             visible: true,
         })
         .unwrap();
@@ -928,7 +935,7 @@ mod tests {
 
     #[test]
     fn body_visibility_rejects_unbound_record_and_stream_identities() {
-        let wire = cadmpeg_core::json!({"id":"f3d:Breps/BREP.synthetic.smbh:body-visibility#3", "body":"f3d:brep:entity#1", "stream":"Design/BulkStream.dat", "byte_offset":10, "asm_body_key_offset":20, "asm_body_key":3, "entity_suffix":7, "visible":true});
+        let wire = cadmpeg_core::json!({"id":"f3d:Breps/BREP.synthetic.smbh:body-visibility#3", "body":"f3d:brep:entity#1", "stream":"Design/BulkStream.dat", "byte_offset":10, "asm_body_key_offset":20, "asm_body_key":3, "entity_suffix":7, "browser_node_entity":8, "visible":true});
         let visibility: super::BodyVisibility = json::from_value(wire.clone()).unwrap();
         assert_eq!(json::to_value(&visibility).unwrap(), wire);
         for (field, value) in [

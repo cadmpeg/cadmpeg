@@ -191,24 +191,71 @@ fn rejects_duplicate_root_property_containers() {
 }
 
 #[test]
-fn rejects_duplicate_property_names_for_one_owner() {
+fn keeps_the_property_element_freecad_restores_last_for_a_repeated_name() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="App::Part" name="Part"/></Objects>
-<ObjectData Count="1"><Object name="Part"><Properties Count="2">
+<ObjectData Count="1"><Object name="Part"><Properties Count="3" TransientCount="1">
+ <_Property name="Label2" type="App::PropertyString" status="1"/>
  <Property name="Label" type="App::PropertyString"><String value="one"/></Property>
  <Property name="Label" type="App::PropertyString"><String value="two"/></Property>
+ <Property name="Label2" type="App::PropertyString"><String value="kept"/></Property>
 </Properties></Object></ObjectData></Document>"#;
-    let error = FcstdCodec
+    let result = FcstdCodec
         .decode(
             &mut Cursor::new(archive(document)),
             &DecodeOptions::default(),
         )
-        .expect_err("duplicate object property names");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
-            if message.contains("duplicate property name Label")
-    ));
+        .expect("repeated property names");
+    let properties = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    let stored = properties
+        .iter()
+        .map(|property| {
+            (
+                property.name.as_str(),
+                matches!(property.body, crate::native::PropertyBody::Transient),
+                property
+                    .values()
+                    .first()
+                    .and_then(|value| value.attributes.get("value"))
+                    .map(String::as_str),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        stored,
+        [
+            ("Label", false, Some("two")),
+            ("Label2", false, Some("kept"))
+        ]
+    );
+    let repeated = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code
+                == crate::loss::FreecadLossCode::PersistencePropertyRepeated
+                    .note(String::new())
+                    .code
+        })
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        repeated,
+        [
+            "fcstd:native:object#Part stores property Label in more than one element; \
+             the element FreeCAD restores last is kept",
+            "fcstd:native:object#Part stores property Label2 in more than one element; \
+             the element FreeCAD restores last is kept",
+        ]
+    );
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -611,7 +658,6 @@ fn rejects_ambiguous_persistence_carriers() {
         r#"<Document SchemaVersion="4"><Objects Count="0"/><Objects Count="0"/><ObjectData Count="0"/></Document>"#,
         r#"<Document SchemaVersion="4"><Objects Count="0"/><ObjectData Count="0"/><ObjectData Count="0"/></Document>"#,
         r#"<Document SchemaVersion="4"><Objects Count="2" Dependencies="1"><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/><ObjectDeps Name="B" Count="0"/><Object type="App::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#,
-        r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="2"><Property name="Same" type="App::PropertyString"/><Property name="Same" type="App::PropertyString"/></Properties></Object></ObjectData></Document>"#,
         r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="0"/><Properties Count="0"/></Object></ObjectData></Document>"#,
         r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A" Extensions="True"><Extensions Count="0"/><Extensions Count="0"/><Properties Count="0"/></Object></ObjectData></Document>"#,
         r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A" Extensions="True"><Extensions Count="2"><Extension type="Vendor::First" name="Same"/><Extension type="Vendor::Second" name="Same"/></Extensions><Properties Count="0"/></Object></ObjectData></Document>"#,
@@ -870,8 +916,13 @@ fn only_the_direct_part_entry_of_an_exact_shape_must_resolve() {
                     cadmpeg_core::decode::View::over_retained(&payload),
                 )]);
                 let mut losses = Vec::new();
-                let result =
-                    super::resolve_side_entries(ctx, &mut graph.properties, &entries, &mut losses);
+                let result = super::resolve_side_entries(
+                    ctx,
+                    &mut graph.properties,
+                    &entries,
+                    &std::collections::BTreeSet::new(),
+                    &mut losses,
+                );
                 (result.is_ok(), losses)
             });
         assert_eq!(result, resolves, "{present}");
@@ -883,6 +934,55 @@ fn only_the_direct_part_entry_of_an_exact_shape_must_resolve() {
                         .code
                     && loss.message.contains("Note.bin")
             }));
+        }
+    }
+}
+
+/// An optional side entry the archive directory does not list breaks a
+/// reference into a table read in full: its note pins Warning. An entry the
+/// decode gave up adds no note beside its give-up.
+#[test]
+fn a_missing_optional_side_entry_is_noted_once_with_a_floor() {
+    let property = r#"<Property name="Shape" type="Part::PropertyPartShape"><Part file="Box.Shape.brp"/><X file="Note.bin"/></Property>"#;
+    let document = format!(
+        "<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"1\">{property}</Properties></Object></ObjectData></Document>"
+    );
+    let payload = b"brep".to_vec();
+    for given_up in [false, true] {
+        let losses = crate::test_support::with_service_context(document.as_bytes(), |ctx| {
+            let mut graph = parse(document.as_bytes(), "4", ctx).expect("exact-shape document");
+            let entries = std::collections::BTreeMap::from([(
+                "Box.Shape.brp".to_owned(),
+                cadmpeg_core::decode::View::over_retained(&payload),
+            )]);
+            let unreadable = if given_up {
+                std::collections::BTreeSet::from(["Note.bin".to_owned()])
+            } else {
+                std::collections::BTreeSet::new()
+            };
+            let mut losses = Vec::new();
+            super::resolve_side_entries(
+                ctx,
+                &mut graph.properties,
+                &entries,
+                &unreadable,
+                &mut losses,
+            )
+            .expect("an optional entry");
+            losses
+        });
+        if given_up {
+            assert!(losses.is_empty(), "{losses:?}");
+        } else {
+            assert_eq!(losses.len(), 1, "{losses:?}");
+            assert_eq!(
+                losses[0].code.local_code(),
+                "metadata.persistence-side-entry-unresolved"
+            );
+            assert_eq!(
+                losses[0].code.strict_floor(),
+                Some(cadmpeg_ir::report::Severity::Warning)
+            );
         }
     }
 }
@@ -955,6 +1055,7 @@ fn only_a_payload_entry_drops_or_requires_its_geometry_property() {
                     ctx,
                     &mut absent.properties,
                     &present,
+                    &std::collections::BTreeSet::new(),
                     &mut Vec::new(),
                 )
                 .is_ok();

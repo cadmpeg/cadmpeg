@@ -9,7 +9,8 @@
 //! `Xform` prim with a `matrix4d` transform. A definition that more than one
 //! occurrence places is written once, with its bodies and the occurrences it
 //! owns, under the abstract `Prototypes` prim, and each placement references
-//! it. Bodies become geometry prims: tessellations as
+//! it. A definition that no occurrence places, other than the root, is
+//! written there with no reference. Bodies become geometry prims: tessellations as
 //! `Mesh` prims; for a body with faces and no tessellation, each untrimmed
 //! face on a NURBS surface as a `NurbsPatch` prim and the other faces as one
 //! `Mesh` prim; and wire edges as one `NurbsCurves` prim. A placement whose content is one geometry prim of a
@@ -31,6 +32,8 @@ mod trims;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
@@ -48,6 +51,7 @@ use cadmpeg_ir::tessellation::{
 };
 use cadmpeg_ir::topology::{Body, Color, FaceBoundary, Sense};
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::up_axis::UpAxis;
 use cadmpeg_ir::CadIr;
 
 use crate::loss::UsdLossCode;
@@ -66,11 +70,9 @@ pub(super) const MILLIMETRES_PER_METRE: f64 = 1000.0;
 /// Name of the transform op that turns a root prim to the selected up axis.
 const UP_AXIS_OP: &str = "xformOp:rotateX:upAxis";
 /// Up axis of a layer whose source states none.
-const DEFAULT_UP_AXIS: &str = "Z";
+const DEFAULT_UP_AXIS: UpAxis = UpAxis::Z;
 /// Family name of the subsets that carry tessellation triangle groups.
 const GROUP_FAMILY: &str = "triangleGroup";
-/// Source attribute naming the stage up axis of a USD source.
-const SOURCE_UP_AXIS: &str = "up_axis";
 
 /// What the writer does with each model arena.
 ///
@@ -194,13 +196,19 @@ fn design_losses(ir: &CadIr) -> Option<LossNote> {
 /// A package member: its name and its content.
 pub(crate) type Member = (String, Vec<u8>);
 
-/// Plans a USDA write, and returns the members a package holds beside the
-/// layer when `packaged`.
+/// Plans a USDA write in the encode session `ctx`, and returns the members a
+/// package holds beside the layer when `packaged`.
+///
+/// # Errors
+///
+/// Returns [`CodecError::ResourceLimit`] where the session refuses during
+/// the write, the tessellation of a face included.
 pub(crate) fn plan(
+    ctx: &DecodeContext<'_>,
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
     packaged: bool,
-) -> (ExportBody, Vec<Member>) {
+) -> Result<(ExportBody, Vec<Member>), CodecError> {
     let version = target
         .synthesized_row()
         .and_then(|(index, _)| crate::TARGET_VERSIONS.get(index).copied());
@@ -217,12 +225,17 @@ pub(crate) fn plan(
     // `subds` coverage charges the cage.
     let cageless = cadmpeg_ir::codec::write::without_cage_bodies(input.ir);
     let written = cageless.as_ref().unwrap_or(input.ir);
-    let mut writer = Writer::new(written, version, input.scene, metres);
+    let mut writer = Writer::new(ctx, written, version, input.scene, metres);
     if packaged {
         writer.package = Some(Vec::new());
         writer.assets = input.assets;
     }
     let (text, holds_prims) = writer.layer();
+    // A face the session refused is no unmeshed face but the session's
+    // refusal (§2.5).
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(limit));
+    }
     let mut losses = writer.losses();
     if !holds_prims {
         losses.push(cadmpeg_ir::codec::write::output_empty(
@@ -233,6 +246,7 @@ pub(crate) fn plan(
     let members = writer.package.take().unwrap_or_default();
     let body = ExportBody {
         bytes: text.into_bytes(),
+        synthesis_cause: None,
         census: cadmpeg_ir::report::export::EntityCensus {
             basis: cadmpeg_ir::report::export::CensusBasis::IrArenas,
             counts: written.census(),
@@ -248,7 +262,7 @@ pub(crate) fn plan(
         written_row: None,
         annotations: None,
     };
-    (body, members)
+    Ok((body, members))
 }
 
 /// The note text of a layer of `metres` metres per unit.
@@ -410,7 +424,8 @@ struct Writer<'ir> {
     bindings: BTreeMap<String, String>,
     /// Faces whose bound material a written prim carries.
     face_bindings: BTreeSet<String>,
-    /// Definitions placed more than once, with their prototype prim names.
+    /// Definitions placed more than once or, other than the root, by nothing,
+    /// with their prototype prim names.
     shared: BTreeMap<ProductDefinitionId, String>,
     /// Bodies some definition owns.
     owned: BTreeSet<BodyId>,
@@ -457,23 +472,23 @@ struct Writer<'ir> {
 
 impl<'ir> Writer<'ir> {
     fn new(
+        ctx: &'ir DecodeContext<'ir>,
         ir: &'ir CadIr,
         version: &'static str,
         scene: cadmpeg_ir::codec::write::SceneOptions,
         metres: f64,
     ) -> Self {
-        use cadmpeg_ir::codec::write::UpAxis;
         let millimetres_per_unit = metres * MILLIMETRES_PER_METRE;
-        let model_axis = source_up_axis(ir);
-        let up_axis = match scene.up_axis {
-            None => model_axis,
-            Some(UpAxis::Y) => "Y",
-            Some(UpAxis::Z) => "Z",
-        };
+        let model_axis = model_up_axis(ir);
+        let up_axis = scene.up_axis.unwrap_or(model_axis);
         let turn = match (model_axis, up_axis) {
-            ("Z", "Y") => Some(-90.0),
-            ("Y", "Z") => Some(90.0),
+            (UpAxis::Z, UpAxis::Y) => Some(-90.0),
+            (UpAxis::Y, UpAxis::Z) => Some(90.0),
             _ => None,
+        };
+        let up_axis = match up_axis {
+            UpAxis::Y => "Y",
+            UpAxis::Z => "Z",
         };
         let mut bindings = BTreeMap::new();
         for binding in &ir.model.appearance_bindings {
@@ -517,7 +532,13 @@ impl<'ir> Writer<'ir> {
             .product_definitions
             .iter()
             .filter(|definition| {
-                uses.get(&definition.id).copied().unwrap_or_default() > 1
+                // A definition nothing places, other than the root, is a
+                // top-level definition the layer holds unplaced.
+                let placements = uses.get(&definition.id).copied().unwrap_or_default();
+                let unplaced = placements == 0
+                    && !definition.is_root()
+                    && !matches!(definition.storage, Storage::External(_));
+                (placements > 1 || unplaced)
                     && (!definition.bodies.is_empty()
                         || !definition.occurrences.is_empty()
                         || definition_meshes.contains_key(&definition.id))
@@ -586,7 +607,8 @@ impl<'ir> Writer<'ir> {
             tessellator: cadmpeg_tessellate::Tessellator::new(
                 ir,
                 cadmpeg_tessellate::Options::default(),
-            ),
+            )
+            .within(cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx)),
             above_parts,
             package: None,
             assets: None,
@@ -2384,24 +2406,9 @@ fn named_as(body: &Body, name: &str) -> bool {
         .is_none_or(|own| text::identifier(own) == text::identifier(name))
 }
 
-/// The up axis of the model: that of a USD source, or Z.
-fn source_up_axis(ir: &CadIr) -> &'static str {
-    let axis = ir
-        .source
-        .as_ref()
-        .filter(|source| source.format() == crate::dialect::FORMAT)
-        .and_then(|source| {
-            source
-                .attributes
-                .iter()
-                .find(|(key, _)| key.as_str() == SOURCE_UP_AXIS)
-                .map(|(_, value)| value.as_str())
-        });
-    match axis {
-        Some("Y") => "Y",
-        Some("Z") => "Z",
-        _ => DEFAULT_UP_AXIS,
-    }
+/// The up axis of the model: the document's, or Z where it states none.
+fn model_up_axis(ir: &CadIr) -> UpAxis {
+    ir.up_axis.unwrap_or(DEFAULT_UP_AXIS)
 }
 
 fn positions(ir: &CadIr) -> BTreeMap<&str, usize> {

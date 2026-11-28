@@ -690,8 +690,7 @@
     "source": {
       "attributes": {
         "default_prim": "Cube",
-        "meters_per_unit": "0.01",
-        "up_axis": "Y"
+        "meters_per_unit": "0.01"
       },
       "identity": {
         "dialects": {
@@ -718,7 +717,8 @@
       "length": "millimeter",
       "mass": "kilogram",
       "time": "second"
-    }
+    },
+    "up_axis": "y"
   },
   "report": {
     "coverage": {},

@@ -112,3 +112,20 @@ fn copying_an_entity_annotates_its_delta_record_as_the_entity() {
     assert!(!annotations.provenance.contains_key(&key));
     assert!(!annotations.exactness().contains_key(&key));
 }
+
+#[test]
+fn in_delta_keys_the_selected_entities_as_records_of_the_delta() {
+    const OTHER: &str = "test:brep:face#3";
+    let stream = StreamHandle::new(crate::stream_name!("source"));
+    let mut builder = AnnotationBuilder::new();
+    builder.note(FACE, &stream, 11, None);
+    builder.exactness(FACE, Exactness::Inferred);
+    builder.note(OTHER, &stream, 12, None);
+    let annotations = builder.build();
+    let moved = annotations.in_delta(&evaluation(), |id| id == FACE);
+    let key = AnnotationKey::in_delta(&evaluation(), &face());
+    assert_eq!(moved.provenance.len(), 1);
+    assert_eq!(moved.provenance[&key], annotations.provenance[FACE]);
+    assert_eq!(moved.exactness().len(), 1);
+    assert_eq!(moved.exactness()[&key], annotations.exactness()[FACE]);
+}

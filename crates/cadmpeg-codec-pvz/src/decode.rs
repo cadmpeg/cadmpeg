@@ -20,10 +20,10 @@ use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{BodyId, Identity};
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::SourceFidelity;
 
-use crate::loss::PvzLossCode;
+use crate::loss::{give_up_cause, PvzLossCode};
 use crate::ol::PackageResidue;
 use crate::package::Package;
 use crate::pvs::Structure;
@@ -31,7 +31,7 @@ use crate::pvs::Structure;
 /// Source attribute naming the structure member.
 const ATTRIBUTE_STRUCTURE_MEMBER: &str = "structure_member";
 /// Most occurrences one package decodes to.
-const MAX_OCCURRENCES: usize = 100_000;
+pub(crate) const MAX_OCCURRENCES: usize = 100_000;
 
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     let package = Package::open(ctx, root)?;
@@ -80,7 +80,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                      geometry members was placed",
                     package.geometry_names().len()
                 ));
-                given_up.push(ctx.give_up_part(part, error)?);
+                given_up.push(ctx.give_up_part(part, give_up_cause(&error), error)?);
             }
         }
     }
@@ -118,7 +118,7 @@ fn give_up_member(
     if let Some(owner) = owner {
         part = part.contained_in(owner);
     }
-    ctx.give_up_part(part, error)
+    ctx.give_up_part(part, give_up_cause(&error), error)
 }
 
 /// One expanded geometry member and its name in the package.
@@ -267,11 +267,7 @@ fn exact_geometry(
     let name = member.name;
     let mut streams = crate::ol::stored_exact_streams(ctx, member.view)?;
     if streams.len() > 1 {
-        losses.push(PvzLossCode::GeometryExactUndecoded.note(format!(
-            "geometry member {name:?}: the member carries {} exact-geometry streams, and the \
-             decode takes none of them as its B-rep; the member keeps its tessellation",
-            streams.len()
-        )));
+        let count = streams.len();
         for stream in streams {
             let mut part = crate::ol::stream_part(name, member.view, stream.stored);
             if let Some(owner) = owner {
@@ -279,9 +275,11 @@ fn exact_geometry(
             }
             given_up.push(ctx.give_up_part(
                 part,
-                CodecError::malformed(
-                    "the geometry member carries more than one exact-geometry stream",
-                ),
+                Cause::Undecoded,
+                CodecError::malformed(format_args!(
+                    "the geometry member carries {count} exact-geometry streams, and the decode \
+                     takes none of them as its B-rep; the member keeps its tessellation"
+                )),
             )?);
         }
         return Ok(Vec::new());
@@ -320,15 +318,18 @@ fn exact_geometry(
             Ok(bodies)
         }
         Err(error) => {
-            losses.push(PvzLossCode::GeometryExactUndecoded.note(format!(
-                "geometry member {name:?}: exact-geometry stream {stream_id:#010x} did not \
-                 decode into B-rep ({error}); the member keeps its tessellation"
-            )));
             let mut part = crate::ol::stream_part(name, member.view, stored.stored);
             if let Some(owner) = owner {
                 part = part.contained_in(owner.clone());
             }
-            given_up.push(ctx.give_up_part(part, error)?);
+            given_up.push(ctx.give_up_part(
+                part,
+                give_up_cause(&error),
+                CodecError::malformed(format_args!(
+                    "the exact-geometry stream did not decode into B-rep: {error}; the member \
+                     keeps its tessellation"
+                )),
+            )?);
             Ok(Vec::new())
         }
     }

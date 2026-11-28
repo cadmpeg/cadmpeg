@@ -12,15 +12,18 @@ pub(super) enum OnshapeLossCode {
     ConstraintNotSupported,
     ThinNotSupported,
     SweepNotSupported,
+    SweepScaleAssumed,
     ShellNotSupported,
     ThinModelNotSupported,
     DesignOperationNative,
+    DesignOperationUnresolved,
+    DesignParameterUnprojected,
+    ChamferSideAssumed,
+    ParameterExpressionText,
     EmptyMember,
     SketchGeometryNotSupported,
     RecordMalformed,
-    MemberTooLarge,
     MemberUnreadable,
-    TopologyTooLarge,
     EdgeGeometryUnsampled,
     StepUnreadable,
     RollbackUnread,
@@ -46,16 +49,19 @@ impl OnshapeLossCode {
             Self::PartNotMatched => "history.part-not-matched",
             Self::ConstraintNotSupported => "sketch.constraint-not-supported",
             Self::SweepNotSupported => "sweep.not-supported",
+            Self::SweepScaleAssumed => "sweep.scale-interpolation-assumed",
             Self::ShellNotSupported => "shell.not-supported",
             Self::ThinNotSupported => "extrude.thin-not-supported",
             Self::ThinModelNotSupported => "extrude.thin-model-not-supported",
             Self::DesignOperationNative => "history.design-operation-native",
+            Self::DesignOperationUnresolved => "history.design-operation-unresolved",
+            Self::DesignParameterUnprojected => "history.parameter-not-projected",
+            Self::ChamferSideAssumed => "history.chamfer-side-assumed",
+            Self::ParameterExpressionText => "parameter.expression-text",
             Self::EmptyMember => "container.empty-member",
             Self::SketchGeometryNotSupported => "sketch.geometry-not-supported",
             Self::RecordMalformed => "record.malformed",
             Self::MemberUnreadable => "member.unreadable",
-            Self::MemberTooLarge => "member.too-large",
-            Self::TopologyTooLarge => "topology.too-large",
             Self::EdgeGeometryUnsampled => "topology.edge-geometry-unsampled",
             Self::StepUnreadable => "step.unreadable",
             Self::RollbackUnread => "history.rollback-unread",
@@ -89,7 +95,7 @@ impl OnshapeLossCode {
                     Self::AssemblyRecordUnsupported => {
                         LossTaxonomy::AssemblyPlacementsNotTransferred
                     }
-                    Self::EmptyMember | Self::MemberTooLarge | Self::MemberUnreadable => {
+                    Self::EmptyMember | Self::MemberUnreadable => {
                         LossTaxonomy::MetadataNotTransferred
                     }
                     _ => LossTaxonomy::FeatureHistoryRetained,

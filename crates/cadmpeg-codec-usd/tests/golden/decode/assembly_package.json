@@ -440,8 +440,7 @@
     "source": {
       "attributes": {
         "default_prim": "Assembly",
-        "meters_per_unit": "0.001",
-        "up_axis": "Z"
+        "meters_per_unit": "0.001"
       },
       "identity": {
         "dialects": {
@@ -479,7 +478,8 @@
       "length": "millimeter",
       "mass": "kilogram",
       "time": "second"
-    }
+    },
+    "up_axis": "z"
   },
   "report": {
     "coverage": {},

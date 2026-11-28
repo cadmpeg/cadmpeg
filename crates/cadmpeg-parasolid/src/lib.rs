@@ -22,6 +22,7 @@ include!("registry_ids.rs");
 
 pub mod deltas;
 pub mod geometry;
+pub mod native;
 pub mod precision;
 pub mod records;
 #[cfg(any(test, feature = "test-support"))]

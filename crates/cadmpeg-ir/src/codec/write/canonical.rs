@@ -6,7 +6,7 @@
 
 use std::collections::BTreeSet;
 
-use cadmpeg_core::decode::{ArenaClass, ContentScope};
+use cadmpeg_core::decode::{ArenaClass, ContentScope, DecodeContext};
 use cadmpeg_core::CodecError;
 
 use super::loss::{value_unwritable, ExportLossCode};
@@ -25,7 +25,10 @@ use crate::report::loss::LossNote;
 /// # Errors
 ///
 /// A native record whose text no longer reads as an object.
-pub(super) fn canonical_form(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, CodecError> {
+pub(super) fn canonical_form(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<Option<(CadIr, Vec<LossNote>)>, CodecError> {
     let breach = holds_out_of_scope(ir);
     if !breach
         && ir.ids_in_order()
@@ -37,9 +40,9 @@ pub(super) fn canonical_form(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)
     let mut written = ir.clone();
     let mut losses = repeated_ids(&mut written);
     if breach {
-        losses.extend(out_of_scope(&mut written)?);
+        losses.extend(out_of_scope(ctx, &mut written)?);
     }
-    losses.extend(without_unowned_constructions(&mut written)?);
+    losses.extend(without_unowned_constructions(ctx, &mut written)?);
     let unwritten = unwritten_links(&written);
     if !unwritten.is_empty() {
         let released = written.native.release_links(&unwritten)?;
@@ -409,7 +412,10 @@ fn release_shared<T: crate::schema::ArenaRecord>(
 /// state's base holds no carrier that names it (§3.4). Each dropped
 /// construction charges one `export:record.invalid` that names it and the
 /// records dropped and marked with it.
-fn without_unowned_constructions(ir: &mut CadIr) -> Result<Vec<LossNote>, CodecError> {
+fn without_unowned_constructions(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+) -> Result<Vec<LossNote>, CodecError> {
     let format = CadirEncoder::FORMAT.as_str();
     let mut losses = shared_constructions(&mut ir.geometry, "");
     loop {
@@ -417,7 +423,7 @@ fn without_unowned_constructions(ir: &mut CadIr) -> Result<Vec<LossNote>, CodecE
         if unowned.is_empty() {
             break;
         }
-        let removed = give_up_in(ir, |ctx, ir| crate::give_up::drop_records(ctx, ir, unowned))?;
+        let removed = crate::give_up::drop_records(ctx, ir, unowned)?;
         if removed.is_empty() {
             break;
         }
@@ -456,10 +462,7 @@ fn without_unowned_constructions(ir: &mut CadIr) -> Result<Vec<LossNote>, CodecE
     }
     for (state, arena, ids) in unowned {
         let constructions = listed(&ids);
-        let Some(released) = give_up_in(ir, |ctx, ir| {
-            crate::give_up::drop_state_records(ctx, ir, &state, ids)
-        })?
-        else {
+        let Some(released) = crate::give_up::drop_state_records(ctx, ir, &state, ids)? else {
             continue;
         };
         losses.push(record_invalid_code(&arena).note(format!(
@@ -484,23 +487,11 @@ pub(super) fn listed(ids: &BTreeSet<String>) -> String {
         .join(", ")
 }
 
-/// Runs the give-up `drop` on `ir` under a decode context that reads no
-/// source bytes.
-pub(super) fn give_up_in<T>(
-    ir: &mut CadIr,
-    drop: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>, &mut CadIr) -> Result<T, CodecError>,
-) -> Result<T, CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    drop(&ctx, ir)
-}
-
 /// Drops each record of a class the scope of `ir` excludes and each record
 /// that needs one, as §3.3 drops a record. Where the scope excludes the
 /// design class, each model reference into it is absent and each attribute
 /// whose target is a design record is left out (§2.1).
-fn out_of_scope(ir: &mut CadIr) -> Result<Vec<LossNote>, CodecError> {
+fn out_of_scope(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, CodecError> {
     let format = CadirEncoder::FORMAT.as_str();
     let before: Vec<(ArenaName, _, BTreeSet<String>)> = ir
         .arenas()
@@ -509,7 +500,7 @@ fn out_of_scope(ir: &mut CadIr) -> Result<Vec<LossNote>, CodecError> {
         .map(|(arena, (kind, ids))| (arena, kind, ids.into_iter().map(str::to_owned).collect()))
         .collect();
     let scope = ir.scope();
-    let marked = drop_excluded(ir, scope)?;
+    let marked = drop_excluded(ctx, ir, scope)?;
     debug_assert!(
         !holds_out_of_scope(ir),
         "a document without the records of the classes its scope excludes and without model \
@@ -548,7 +539,11 @@ fn out_of_scope(ir: &mut CadIr) -> Result<Vec<LossNote>, CodecError> {
 /// Drops the records `held` excludes and each record that needs one, and
 /// returns the records it states without a reference or in their partial
 /// forms.
-fn drop_excluded(ir: &mut CadIr, held: ContentScope) -> Result<BTreeSet<String>, CodecError> {
+fn drop_excluded(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    held: ContentScope,
+) -> Result<BTreeSet<String>, CodecError> {
     let mut marked = BTreeSet::new();
     let mut seeds = Vec::new();
     if !held.holds(ArenaClass::Design) {
@@ -562,7 +557,7 @@ fn drop_excluded(ir: &mut CadIr, held: ContentScope) -> Result<BTreeSet<String>,
             .filter(|class| !held.holds(*class))
             .flat_map(|class| ir.arenas().seeds_of(class)),
     );
-    for (_, released) in give_up_in(ir, |ctx, ir| crate::give_up::drop_records(ctx, ir, seeds))? {
+    for (_, released) in crate::give_up::drop_records(ctx, ir, seeds)? {
         marked.extend(released.marked);
     }
     Ok(marked)
