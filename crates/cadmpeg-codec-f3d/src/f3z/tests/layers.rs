@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::test_support::assembly_test::{
+use crate::test_support::assembly_fixture::{
     f3d_with_text_brep_stream, f3d_without_brep, f3z_archive, XREF_ROLE,
 };
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::smbh_header_test::synthetic_smbh;
-use crate::test_support::zip_test::{f3d_with_smbh, f3d_with_smbh_and_manifest_version};
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::smbh_header_fixture::synthetic_smbh;
+use crate::test_support::zip_fixture::{f3d_with_smbh, f3d_with_smbh_and_manifest_version};
 use crate::F3dCodec;
 use crate::F3dLossCode;
 use cadmpeg_ir::codec::Codec;

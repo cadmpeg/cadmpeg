@@ -335,6 +335,6 @@ pub(crate) fn history_only_pairs_with_consumer(
             local(&mut bulk, u64::from(owner));
         }
     }
-    let meta = super::streams_test::design_metastream_with_records(&types, &records);
+    let meta = super::streams_fixture::design_metastream_with_records(&types, &records);
     (bulk, meta)
 }

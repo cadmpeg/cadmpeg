@@ -8,8 +8,8 @@ use cadmpeg_ir::codec::{Codec, DecodeResult};
 use cadmpeg_ir::transform::Transform;
 
 use crate::loss::F3dLossCode;
-use crate::test_support::body_map_test::f3d_with_breps_and_design;
-use crate::test_support::component_insert_test::{
+use crate::test_support::body_map_fixture::f3d_with_breps_and_design;
+use crate::test_support::component_insert_fixture::{
     component_insert_design, ComponentInsertEnvelope,
 };
 use crate::test_support::history_stream::DesignScale;
@@ -164,7 +164,7 @@ fn attributed_local_children_repeat_under_each_containing_instance() {
     let bytes = f3d_with_breps_and_design(
         &[(
             "BREP.module.smbh",
-            &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+            &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
         )],
         &bulk,
         &meta,
@@ -232,7 +232,7 @@ fn unadmitted_membership_places_the_body_once_at_its_stored_frame() {
         let bytes = f3d_with_breps_and_design(
             &[(
                 "BREP.module.smbh",
-                &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+                &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
             )],
             &bulk,
             &meta,
@@ -294,7 +294,7 @@ fn design_without_occurrences_groups_its_unbound_body_at_its_stored_frame() {
         let bytes = f3d_with_breps_and_design(
             &[(
                 "BREP.module.smbh",
-                &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+                &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
             )],
             &bulk,
             &meta,
@@ -317,7 +317,7 @@ fn design_without_occurrences_groups_its_unbound_body_at_its_stored_frame() {
 
 #[test]
 fn history_only_body_map_pair_leaves_the_current_model_and_reports_its_loss() {
-    use crate::test_support::component_body_test::{
+    use crate::test_support::component_body_fixture::{
         history_only_design, HistoryOnlyContainer as Container,
     };
     for (hidden, container, bodies) in [
@@ -330,7 +330,7 @@ fn history_only_body_map_pair_leaves_the_current_model_and_reports_its_loss() {
         let bytes = f3d_with_breps_and_design(
             &[(
                 "BREP.module.smbh",
-                &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+                &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
             )],
             &bulk,
             &meta,
@@ -354,7 +354,7 @@ fn history_only_body_map_pair_leaves_the_current_model_and_reports_its_loss() {
 
 #[test]
 fn consumed_pair_beside_a_listed_survivor_keeps_exactly_the_survivor() {
-    use crate::test_support::component_body_test::{
+    use crate::test_support::component_body_fixture::{
         history_only_pairs_design, HistoryOnlyContainer as Container,
     };
     const BLOB: &str = "BREP.module.smbh";
@@ -370,7 +370,7 @@ fn consumed_pair_beside_a_listed_survivor_keeps_exactly_the_survivor() {
         let bytes = f3d_with_breps_and_design(
             &[(
                 BLOB,
-                &crate::test_support::smbh_geometry_test::synthetic_two_body_smbh(keys),
+                &crate::test_support::smbh_geometry_fixture::synthetic_two_body_smbh(keys),
             )],
             &bulk,
             &meta,
@@ -378,7 +378,7 @@ fn consumed_pair_beside_a_listed_survivor_keeps_exactly_the_survivor() {
         let result = super::decode(bytes);
         assert_eq!(result.ir().geometry.bodies.len(), 1, "{survivor_key}");
         assert_eq!(result.ir().geometry.faces.len(), 1, "{survivor_key}");
-        let native = crate::test_support::native_test::f3d_native(result.ir());
+        let native = crate::test_support::native_fixture::f3d_native(result.ir());
         let native_keys = native
             .body_native_keys
             .iter()
@@ -412,7 +412,7 @@ fn consumed_pair_beside_a_listed_survivor_keeps_exactly_the_survivor() {
 
 #[test]
 fn no_physical_model_requires_every_body_map_pair_to_be_history_only() {
-    use crate::test_support::component_body_test::{
+    use crate::test_support::component_body_fixture::{
         history_only_pairs_design, HistoryOnlyContainer as Container,
     };
     const BLOB: &str = "BREP.module.smbh";
@@ -438,7 +438,7 @@ fn no_physical_model_requires_every_body_map_pair_to_be_history_only() {
         let bytes = f3d_with_breps_and_design(
             &[(
                 BLOB,
-                &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+                &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
             )],
             &bulk,
             &meta,
@@ -465,7 +465,7 @@ fn admitted_component_membership_wins_over_an_unregistered_owner() {
         let bytes = f3d_with_breps_and_design(
             &[(
                 "BREP.module.smbh",
-                &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+                &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
             )],
             &bulk,
             &meta,
@@ -496,7 +496,7 @@ fn empty_attribute_local_children_place_identity_matrix_and_nested_occurrences()
     let bytes = f3d_with_breps_and_design(
         &[(
             "BREP.module.smbh",
-            &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+            &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
         )],
         &bulk,
         &meta,
@@ -543,7 +543,7 @@ fn later_fixed_identity_occurrence_reports_loss_and_stays_out_of_neutral_structu
     let bytes = f3d_with_breps_and_design(
         &[(
             "BREP.module.smbh",
-            &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+            &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
         )],
         &bulk,
         &meta,
@@ -582,7 +582,7 @@ fn an_unproven_occurrence_frame_is_given_up_as_a_design_record() {
     let bytes = f3d_with_breps_and_design(
         &[(
             "BREP.module.smbh",
-            &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+            &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
         )],
         &bulk,
         &meta,
@@ -627,7 +627,7 @@ fn an_unproven_occurrence_frame_is_given_up_as_a_design_record() {
 
 #[test]
 fn history_only_hidden_uncontained_body_with_a_bound_cluster_stays_in_model() {
-    use crate::test_support::component_body_test::{
+    use crate::test_support::component_body_fixture::{
         history_only_pairs_with_cluster, HistoryOnlyContainer as Container,
     };
     let (bulk, meta) = history_only_pairs_with_cluster(
@@ -639,14 +639,14 @@ fn history_only_hidden_uncontained_body_with_a_bound_cluster_stays_in_model() {
     let bytes = f3d_with_breps_and_design(
         &[(
             "BREP.module.smbh",
-            &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+            &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
         )],
         &bulk,
         &meta,
     );
     let result = super::decode(bytes);
     assert_eq!(result.ir().geometry.bodies.len(), 1);
-    let native = crate::test_support::native_test::f3d_native(result.ir());
+    let native = crate::test_support::native_fixture::f3d_native(result.ir());
     assert!(!native.design_body_bindings[0].history_only);
     assert!(native.design_body_bindings[0].body.is_some());
     assert!(result
@@ -660,7 +660,7 @@ fn history_only_hidden_uncontained_body_with_a_bound_cluster_stays_in_model() {
 #[test]
 fn a_body_a_consuming_scope_names_leaves_the_model_with_a_bound_cluster() {
     use crate::design::decode::body_consumers::REMOVE_BODY_TYPE_GUID;
-    use crate::test_support::component_body_test::{
+    use crate::test_support::component_body_fixture::{
         history_only_pairs_with_consumer, BodyConsumer, HistoryOnlyContainer as Container,
         BODY_CONSUMER_SCOPE,
     };
@@ -681,14 +681,14 @@ fn a_body_a_consuming_scope_names_leaves_the_model_with_a_bound_cluster() {
     let bytes = f3d_with_breps_and_design(
         &[(
             "BREP.module.smbh",
-            &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+            &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
         )],
         &bulk,
         &meta,
     );
     let result = super::decode(bytes);
     assert!(result.ir().geometry.bodies.is_empty());
-    let native = crate::test_support::native_test::f3d_native(result.ir());
+    let native = crate::test_support::native_fixture::f3d_native(result.ir());
     assert!(native.design_body_bindings[0].history_only);
     assert!(native.design_body_bindings[0].body.is_none());
     assert!(result
@@ -701,11 +701,11 @@ fn a_body_a_consuming_scope_names_leaves_the_model_with_a_bound_cluster() {
 
 #[test]
 fn history_only_consumed_member_keeps_the_inserted_design_body() {
-    use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
-    use crate::test_support::component_body_test::{
+    use crate::test_support::assembly_fixture::{f3d_without_brep, f3z_archive, XREF_ROLE};
+    use crate::test_support::component_body_fixture::{
         history_only_pairs_with_cluster, HistoryOnlyContainer as Container,
     };
-    let geometry = crate::test_support::smbh_geometry_test::synthetic_geometry_smbh();
+    let geometry = crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh();
     let document = |bound_cluster| {
         let (bulk, meta) = history_only_pairs_with_cluster(
             "BREP.module.smbh",
@@ -752,7 +752,7 @@ fn attributed_version_two_occurrences_keep_definition_ownership_and_nested_world
     let bytes = f3d_with_breps_and_design(
         &[(
             "BREP.module.smbh",
-            &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+            &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
         )],
         &bulk,
         &meta,

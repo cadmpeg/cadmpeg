@@ -70,7 +70,7 @@ fn fixture(
         index.push((id, u64_from_index(stream.len())));
         stream.extend(bytes);
     }
-    let meta = crate::test_support::streams_test::design_metastream_with_records(
+    let meta = crate::test_support::streams_fixture::design_metastream_with_records(
         &[
             (
                 "6B6FDE2E-D9B9-4866-9D07-3123C919B0D2",
@@ -166,7 +166,7 @@ fn project_with(
     configure(&mut feature);
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     zip.start_file(ENTRY, stored).unwrap();
     zip.write_all(stream).unwrap();
     if let Some(meta) = metadata {
@@ -177,7 +177,7 @@ fn project_with(
     let archive = zip.finish().unwrap().into_inner();
     let mut losses = Vec::new();
     let scopes = std::iter::repeat_n(scope, scope_count).collect::<Vec<_>>();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::test_support::with_decode_context(|ctx| {
             bind_features(
                 ctx,
@@ -619,7 +619,7 @@ fn separate_staging_admits_exact_bytes_and_preserves_collisions() {
 fn separate_budget_refusal_does_not_mutate_feature_or_losses() {
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     let archive = zip.finish().unwrap().into_inner();
     for (budget, operation) in [
         (1, "F3D Separate property key"),
@@ -630,7 +630,7 @@ fn separate_budget_refusal_does_not_mutate_feature_or_losses() {
         let mut losses = Vec::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = budget;
-        crate::test_support::zip_test::with_scan(&archive, |scan| {
+        crate::test_support::zip_fixture::with_scan(&archive, |scan| {
             let result = crate::test_support::with_decode_policy(&policy, |ctx| {
                 bind_features(
                     ctx,
@@ -653,7 +653,7 @@ fn separate_budget_refusal_does_not_mutate_feature_or_losses() {
 fn separate_parameter_text_is_admitted_before_copy() {
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     let archive = zip.finish().unwrap().into_inner();
     for name_is_long in [false, true] {
         let mut feature = unbound_feature("synthetic-scope");
@@ -677,7 +677,7 @@ fn separate_parameter_text_is_admitted_before_copy() {
         let mut losses = Vec::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = 64;
-        crate::test_support::zip_test::with_scan(&archive, |scan| {
+        crate::test_support::zip_fixture::with_scan(&archive, |scan| {
             let result = crate::test_support::with_decode_policy(&policy, |ctx| {
                 bind_features(
                     ctx,
@@ -699,7 +699,7 @@ fn separate_raw_scope_refusal_leaves_feature_unchanged() {
     let (stream, meta) = fixture(0, [0, 1], 2, |_| {});
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     zip.start_file(ENTRY, stored).unwrap();
     zip.write_all(&stream).unwrap();
     zip.start_file(ENTRY.replace("BulkStream.dat", "MetaStream.dat"), stored)
@@ -717,7 +717,7 @@ fn separate_raw_scope_refusal_leaves_feature_unchanged() {
     let mut losses = Vec::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 100;
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         let result = crate::test_support::with_decode_policy(&policy, |ctx| {
             bind_features(
                 ctx,

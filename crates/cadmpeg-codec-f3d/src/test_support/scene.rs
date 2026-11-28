@@ -44,7 +44,7 @@ pub(crate) fn override_row_tagged(path: &[u64], tagged_from: usize) -> Vec<u8> {
 
 pub(crate) fn archive(world: &[u8]) -> Vec<u8> {
     let bytes =
-        super::zip_test::f3d_with_smbh(&super::smbh_geometry_test::synthetic_geometry_smbh());
+        super::zip_fixture::f3d_with_smbh(&super::smbh_geometry_fixture::synthetic_geometry_smbh());
     with_world(bytes, world)
 }
 

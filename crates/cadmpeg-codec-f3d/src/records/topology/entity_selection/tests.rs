@@ -62,7 +62,7 @@ fn entity_selection_serialization_form_validates_wire() {
 fn entity_selection_native_retained_limit_refuses_before_clone() {
     let record: DesignEntitySelectionOperand =
         json::from_value(entity_selection_wire_for_borrowed()).unwrap();
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_entity_selection_operands",
         || super::ENTITY_SELECTION_CLONE_COUNT.with(|count| count.set(0)),
@@ -101,7 +101,7 @@ fn loft_legacy_body_carrier_borrowed_wire_matches_owned_wire_bytes() {
 #[test]
 fn loft_legacy_body_carrier_native_retained_limit_refuses_before_clone() {
     let record = loft_carrier_for_borrowed_wire(true);
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_loft_legacy_body_carriers",
         || super::LOFT_LEGACY_BODY_CARRIER_CLONE_COUNT.with(|count| count.set(0)),
