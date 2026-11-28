@@ -76,7 +76,7 @@ its result.
 | OpenUSD layers                                    | L2    |
 | STEP Part 21                                      | L8    |
 | Solid Edge `.par`, `.psm`, and `.asm`             | L2    |
-| IronCAD `.ics`                                    | L0    |
+| IronCAD `.ics`                                    | L3    |
 | Onshape bundle                                    | L4    |
 
 <!-- /generated: ladder-table -->
@@ -782,28 +782,24 @@ See [`formats/solidedge.md`](formats/solidedge.md) and
 
 ## IronCAD `.ics`
 
-Detected by compound-file content: the scene root class and the `Brep Data`,
-`Shape Data`, and `Document Data` streams. The reader lists streams, inflates
-the framed `Brep Data` stream, and walks its record tree. Each Parasolid record
-contributes a Parasolid dialect layer with its schema token, and each ACIS
-record contributes an ACIS layer from its binary header. The ACIS or
-Parasolid record that follows a part's child node decodes into B-rep topology
-and geometry in the part frame; feature records are retained. Each part is
-placed by the matrix of its `Public Access` part record and carries its
-properties and mass density. When the assembly records and the assembly
-nodes of the record tree agree in count, each assembly node becomes an
-assembly definition, placed by the matrix of its assembly record, that holds
-its parts and member assemblies; otherwise every part is placed in the scene.
-The scene units come from `Document Data`. Feature history is pending, and
-each non-empty scene stream other than `Brep Data`, `Public Access`, and
-`Document Data` produces a loss. The headline is L0. The codec is read-only.
+**Container:** Microsoft Compound File; the framed `Brep Data` stream holds the Parasolid and ACIS kernel records of the scene
+
+The codec detects a scene from the scene root class and the `Brep Data`, `Shape Data`, and `Document Data` streams, inflates the framed streams, and walks the `Brep Data` record tree (`ironcad.md` §§2, 3). The Parasolid or ACIS record that follows the child node of a part decodes through the shared Parasolid and ASM/ACIS decoders into a connected B-rep in the part frame, with analytic and B-spline carriers in millimetres. Format 13006 Parasolid layers are verified. The `Public Access` records bind through the `Shape Contents` objects to their part result records and assembly nodes (`ironcad.md` §§5, 6). Each part becomes a product definition with its properties and mass density, and each part, copy, and assembly record places an occurrence by its matrix; assemblies nest as the record tree nests them. The scene units come from `Document Data`. Connected B-rep with placement sets L3. The codec is read-only.
+
+These gaps remain:
+
+- Feature records are retained as kernel bytes, and the feature history does not transfer (`ironcad/body.feature-shape-retained`).
+- Some Parasolid carriers decode as approximations or as untyped surfaces (`ironcad/body.parasolid-partial`), and ACIS entity extensions are retained (`ironcad/body.extensions-retained`).
+- Each non-empty scene stream other than `Brep Data`, `Public Access`, `Shape Contents`, and `Document Data` does not transfer (`ironcad/scene.decode-pending`).
+- The field that ties a `Public Access` record to its `Shape Contents` object is inferred from names and identifiers (DR-1067, `ironcad/placement.bound-by-identity`); a record without an object, such as a pattern or a sketch, is not placed (`ironcad/placement.unbound`).
+- A record matrix outside the two fixed forms is found by search (DR-1069, `ironcad/placement.matrix-searched`).
 
 See [`formats/ironcad.md`](formats/ironcad.md) and
 [`formats/ironcad-open-items.md`](formats/ironcad-open-items.md).
 
 <!-- generated: dialects ironcad -->
 
-**Ladder: L0.**
+**Ladder: L3.**
 
 | Dialect           | Read     | Write |
 | ----------------- | -------- | ----- |

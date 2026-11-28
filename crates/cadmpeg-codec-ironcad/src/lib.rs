@@ -2,7 +2,7 @@
 //! Reads `IronCAD` scene files.
 //!
 //! <!-- generated: capability ironcad -->
-//! Support: L0 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#ironcad-ics)).
+//! Support: L3 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#ironcad-ics)).
 //! <!-- /generated: capability ironcad -->
 
 mod acis;

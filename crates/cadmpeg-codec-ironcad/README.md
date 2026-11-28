@@ -7,6 +7,6 @@ each part is placed in the scene as a product occurrence.
 
 <!-- generated: capability ironcad -->
 
-Support: L0 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#ironcad-ics)).
+Support: L3 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#ironcad-ics)).
 
 <!-- /generated: capability ironcad -->
