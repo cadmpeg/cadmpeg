@@ -229,7 +229,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
             })
             .or_else(|| span_of(false));
         let mut part = Part::new(
-            crate::dialect::FORMAT,
+            crate::dialect::registry_ids::FORMAT,
             "archive-entry",
             stored,
             held_classes(classify(&name)).iter().copied(),
@@ -424,7 +424,7 @@ pub(crate) fn summarize(
             notes,
         ),
         None => ContainerSummary::unclassified(
-            cadmpeg_ir::codec_id!(crate::dialect::FORMAT),
+            cadmpeg_ir::codec_id!(crate::dialect::registry_ids::FORMAT),
             kind,
             entries,
             losses,

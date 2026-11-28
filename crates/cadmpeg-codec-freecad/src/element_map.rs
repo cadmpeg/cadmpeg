@@ -386,7 +386,7 @@ pub(crate) fn parse(
                 let identity = |id: String| Identity::new(id).map_err(CodecError::malformed);
                 // The kept property record holds the same raw XML.
                 let part = Part::at(
-                    crate::dialect::FORMAT,
+                    crate::dialect::registry_ids::FORMAT,
                     "property-element",
                     property.xml.start(),
                     property.xml.text().as_bytes(),

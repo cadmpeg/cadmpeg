@@ -236,8 +236,18 @@ fn transfer(
         .map(|record| record.id().clone())
         .collect();
     let mut source_fidelity = SourceFidelity::with_annotations(annotations.build(), digest);
-    source_fidelity.attach_native_unknown_records(&mut ir, dialect::FORMAT, unknowns, ctx)?;
-    source_fidelity.attach_native_unknown_records(&mut ir, dialect::FORMAT, retained, ctx)?;
+    source_fidelity.attach_native_unknown_records(
+        &mut ir,
+        dialect::registry_ids::FORMAT,
+        unknowns,
+        ctx,
+    )?;
+    source_fidelity.attach_native_unknown_records(
+        &mut ir,
+        dialect::registry_ids::FORMAT,
+        retained,
+        ctx,
+    )?;
     for id in untyped {
         source_fidelity.mark_untyped(id.as_str(), [ArenaClass::Model])?;
     }
@@ -500,7 +510,9 @@ fn settle(
                 let stream = cadmpeg_ir::stream_name!("ironcad:")
                     .with_suffix(format!("{BREP_DATA}/record-{ordinal}"));
                 for withheld in std::mem::take(&mut brep.withheld) {
-                    let mut part = withheld.part(dialect::FORMAT).in_stream(stream.clone());
+                    let mut part = withheld
+                        .part(dialect::registry_ids::FORMAT)
+                        .in_stream(stream.clone());
                     if retained {
                         part = part.digest_only();
                     }

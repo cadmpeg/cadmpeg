@@ -125,7 +125,7 @@ impl IgesVersion {
 pub struct IgesCodec;
 
 impl CodecBackend for IgesCodec {
-    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+    const FORMAT: FormatId = FormatId::new(dialect::registry_ids::FORMAT);
 
     fn detect_impl(
         &self,

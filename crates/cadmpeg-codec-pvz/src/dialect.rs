@@ -20,7 +20,11 @@ use cadmpeg_ir::report::loss::LossNote;
 use crate::loss::PvzLossCode;
 use crate::pvs::{self, Form, Generation};
 
-include!("dialect/registry_ids.rs");
+#[path = "dialect/registry_ids.rs"]
+pub(crate) mod registry_ids;
+use self::registry_ids::{
+    PVZ_PVS_0301, PVZ_PVS_0302, PVZ_PVS_0303, PVZ_PVS_0304, PVZ_PVS_0305, PVZ_UNKNOWN,
+};
 
 /// Key of the binary structure-member signature in
 /// [`DialectMatch::declared`].
@@ -91,8 +95,9 @@ mod tests {
     use cadmpeg_core::decode::View;
     use cadmpeg_core::dialect::Admission;
 
-    use super::{
-        classify, PVZ_PVS_0301, PVZ_PVS_0302, PVZ_PVS_0303, PVZ_PVS_0304, PVZ_PVS_0305, PVZ_UNKNOWN,
+    use super::classify;
+    use super::registry_ids::{
+        PVZ_PVS_0301, PVZ_PVS_0302, PVZ_PVS_0303, PVZ_PVS_0304, PVZ_PVS_0305, PVZ_UNKNOWN,
     };
     use crate::loss::PvzLossCode;
 

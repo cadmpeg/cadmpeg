@@ -1571,6 +1571,20 @@ class LintSuppressions(TempSourceCase):
 )]
 """
 
+    def test_only_the_generated_registry_module_may_expect_dead_code(self) -> None:
+        path = "crates/cadmpeg-codec-nx/src/dialect/registry_ids.rs"
+        self.write(path, "#![expect(dead_code)]\nconst UNUSED: () = ();\n")
+        self.assertEqual(self.findings("lint_suppression"), [])
+        for text in ["#[expect(dead_code)]\nconst UNUSED: () = ();\n",
+                     "#![expect(unused)]\nconst UNUSED: () = ();\n",
+                     "#![expect(dead_code)]\n#![expect(dead_code)]\n"]:
+            with self.subTest(text=text):
+                self.write(path, text)
+                self.assertTrue(self.findings("lint_suppression"))
+        self.write(path, "")
+        self.write("crates/other/src/dialect/registry_ids.rs", "#![expect(dead_code)]\n")
+        self.assertTrue(self.findings("lint_suppression"))
+
     def test_outer_inner_and_conditional_suppressions_fail(self) -> None:
         self.write("crates/demo/src/lib.rs", """#![allow(dead_code)]
 #[expect(clippy::too_many_arguments, reason = "many inputs")]
