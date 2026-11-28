@@ -204,12 +204,20 @@ fn scale_plane(
     let origin = value.origin.get();
     let mut scaled = [FiniteReal::ZERO; 3];
     for index in 0..3 {
-        scaled[index] = scaled_coordinate(origin[index], scale)
-            .ok_or_else(|| FramingError::structural(offset, "scaled dimension plane is invalid"))?;
+        scaled[index] = scaled_coordinate(origin[index], scale).map_err(|unscaled| {
+            unscaled.charge(FramingError::structural(
+                offset,
+                "scaled dimension plane is invalid",
+            ))
+        })?;
     }
     value.origin = crate::settings::CoordinateLane::Admitted(scaled.into());
-    let constant = scaled_coordinate(value.equation[3], scale)
-        .ok_or_else(|| FramingError::structural(offset, "scaled dimension plane is invalid"))?;
+    let constant = scaled_coordinate(value.equation[3], scale).map_err(|unscaled| {
+        unscaled.charge(FramingError::structural(
+            offset,
+            "scaled dimension plane is invalid",
+        ))
+    })?;
     value.equation = value.equation.with_fourth(constant);
     Ok(value)
 }
@@ -229,7 +237,7 @@ fn anonymous(
     }
     let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     if reader.i32()? != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             chunk.body().start,
             "unsupported dimension chunk major version",
         ));
@@ -353,10 +361,18 @@ fn scaled_point(
     offset: usize,
 ) -> Result<FiniteVector<2>, FramingError> {
     Ok([
-        scaled_coordinate(value[0], scale)
-            .ok_or_else(|| FramingError::structural(offset, "scaled dimension point is invalid"))?,
-        scaled_coordinate(value[1], scale)
-            .ok_or_else(|| FramingError::structural(offset, "scaled dimension point is invalid"))?,
+        scaled_coordinate(value[0], scale).map_err(|unscaled| {
+            unscaled.charge(FramingError::structural(
+                offset,
+                "scaled dimension point is invalid",
+            ))
+        })?,
+        scaled_coordinate(value[1], scale).map_err(|unscaled| {
+            unscaled.charge(FramingError::structural(
+                offset,
+                "scaled dimension point is invalid",
+            ))
+        })?,
     ]
     .into())
 }
@@ -404,7 +420,7 @@ pub(crate) fn legacy_annotation_direct(
 ) -> Result<LegacyAnnotation, FramingError> {
     let version = reader.u8()?;
     if version >> 4 != 1 || version & 0x0f != 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position() - 1,
             "unsupported direct legacy annotation version",
         ));
@@ -450,8 +466,11 @@ fn legacy_annotation_fields(
         }
     };
     let initial_style_index = annotation.i32()?;
-    let text_height = scaled_coordinate(annotation.f64()?, scale).ok_or_else(|| {
-        FramingError::structural(annotation.position() - 8, "invalid legacy text height")
+    let text_height = scaled_coordinate(annotation.f64()?, scale).map_err(|unscaled| {
+        unscaled.charge(FramingError::structural(
+            annotation.position() - 8,
+            "invalid legacy text height",
+        ))
     })?;
     let text_height = NonNegativeReal::from_finite(text_height).ok_or_else(|| {
         FramingError::structural(
@@ -587,7 +606,7 @@ pub(crate) fn v2_annotation_direct(
 ) -> Result<V2Annotation, FramingError> {
     let version_offset = reader.position();
     if reader.u8()? >> 4 != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             version_offset,
             "unsupported direct V2 annotation version",
         ));
@@ -688,7 +707,7 @@ fn decode_legacy(
         let mut reader = BoundedReader::new(data, range.start, range.end)?;
         let version = reader.u8()?;
         if version >> 4 != 1 || version & 0x0f != 0 {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 range.start,
                 "unsupported direct legacy dimension version",
             ));
@@ -726,8 +745,11 @@ fn decode_legacy(
         LegacyDimensionFields::Radial
     } else if class == V5_ANGULAR {
         let angle = outer.f64()?;
-        let radius = scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
-            FramingError::structural(outer.position() - 8, "invalid legacy angular radius")
+        let radius = scaled_coordinate(outer.f64()?, scale).map_err(|unscaled| {
+            unscaled.charge(FramingError::structural(
+                outer.position() - 8,
+                "invalid legacy angular radius",
+            ))
         })?;
         let Some(angle) = NonNegativeReal::new(angle) else {
             return Err(FramingError::structural(
@@ -740,17 +762,17 @@ fn decode_legacy(
         let direction = outer.i32()?;
         let kink_offsets = if minor >= 1 {
             [
-                scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
-                    FramingError::structural(
+                scaled_coordinate(outer.f64()?, scale).map_err(|unscaled| {
+                    unscaled.charge(FramingError::structural(
                         outer.position() - 8,
                         "invalid legacy ordinate kink offset",
-                    )
+                    ))
                 })?,
-                scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
-                    FramingError::structural(
+                scaled_coordinate(outer.f64()?, scale).map_err(|unscaled| {
+                    unscaled.charge(FramingError::structural(
                         outer.position() - 8,
                         "invalid legacy ordinate kink offset",
-                    )
+                    ))
                 })?,
             ]
         } else {
@@ -985,8 +1007,12 @@ fn decode_v2(
         let angle = reader.f64()?;
         let radius_offset = reader.position();
         let raw_radius = reader.f64()?;
-        let radius = scaled_coordinate(raw_radius, scale)
-            .ok_or_else(|| FramingError::structural(radius_offset, "invalid V2 angular radius"))?;
+        let radius = scaled_coordinate(raw_radius, scale).map_err(|unscaled| {
+            unscaled.charge(FramingError::structural(
+                radius_offset,
+                "invalid V2 angular radius",
+            ))
+        })?;
         // The scaled radius is admitted finite, and the unit scale is finite
         // and positive, so the stored radius is finite too.
         let angle = PositiveAngle::new(angle).filter(|value| value.get() <= V2_REALLY_BIG_NUMBER);
@@ -1027,7 +1053,7 @@ fn decode_v2(
             angle.get(),
         )
     } else {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             range.start,
             "unsupported V2 dimension class",
         ));
@@ -1159,12 +1185,20 @@ pub(crate) fn decode(
         }
         let first = point2(&mut outer)?;
         let second = point2(&mut outer)?;
-        let first_extension_offset = scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
-            FramingError::structural(outer.position() - 8, "angular extension offset is invalid")
-        })?;
-        let second_extension_offset = scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
-            FramingError::structural(outer.position() - 8, "angular extension offset is invalid")
-        })?;
+        let first_extension_offset =
+            scaled_coordinate(outer.f64()?, scale).map_err(|unscaled| {
+                unscaled.charge(FramingError::structural(
+                    outer.position() - 8,
+                    "angular extension offset is invalid",
+                ))
+            })?;
+        let second_extension_offset =
+            scaled_coordinate(outer.f64()?, scale).map_err(|unscaled| {
+                unscaled.charge(FramingError::structural(
+                    outer.position() - 8,
+                    "angular extension offset is invalid",
+                ))
+            })?;
         let offset = outer.position();
         let line = point2(&mut outer)?;
         let dimension_line_point = scaled_point(line, scale, offset)?;
@@ -1217,11 +1251,17 @@ pub(crate) fn decode(
             OrdinateAxis::Y
         };
         let kink_offsets = [
-            scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
-                FramingError::structural(outer.position() - 8, "invalid ordinate kink offset")
+            scaled_coordinate(outer.f64()?, scale).map_err(|unscaled| {
+                unscaled.charge(FramingError::structural(
+                    outer.position() - 8,
+                    "invalid ordinate kink offset",
+                ))
             })?,
-            scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
-                FramingError::structural(outer.position() - 8, "invalid ordinate kink offset")
+            scaled_coordinate(outer.f64()?, scale).map_err(|unscaled| {
+                unscaled.charge(FramingError::structural(
+                    outer.position() - 8,
+                    "invalid ordinate kink offset",
+                ))
             })?,
         ];
         Definition::Ordinate {
@@ -1237,14 +1277,15 @@ pub(crate) fn decode(
                 "invalid center-mark annotation type",
             ));
         }
-        let radius = scaled_coordinate(outer.f64()?, scale)
-            .and_then(NonNegativeReal::from_finite)
-            .ok_or_else(|| {
-                FramingError::structural(outer.position() - 8, "invalid center-mark radius")
-            })?;
+        let raw_radius = outer.f64()?;
+        let offset = outer.position() - 8;
+        let invalid = || FramingError::structural(offset, "invalid center-mark radius");
+        let radius = scaled_coordinate(raw_radius, scale)
+            .map_err(|unscaled| unscaled.charge(invalid()))
+            .and_then(|value| NonNegativeReal::from_finite(value).ok_or_else(invalid))?;
         Definition::CenterMark { radius }
     } else {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             range.start,
             "unsupported dimension class",
         ));
@@ -1339,18 +1380,19 @@ pub(crate) fn apply_userdata(
                 extra.payload_range.end,
                 archive,
             )?;
-            *first_extension_offset = scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
-                FramingError::structural(
-                    reader.position() - 8,
-                    "invalid V5 angular extension offset",
-                )
-            })?;
-            *second_extension_offset =
-                scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
-                    FramingError::structural(
+            *first_extension_offset =
+                scaled_coordinate(reader.f64()?, scale).map_err(|unscaled| {
+                    unscaled.charge(FramingError::structural(
                         reader.position() - 8,
                         "invalid V5 angular extension offset",
-                    )
+                    ))
+                })?;
+            *second_extension_offset =
+                scaled_coordinate(reader.f64()?, scale).map_err(|unscaled| {
+                    unscaled.charge(FramingError::structural(
+                        reader.position() - 8,
+                        "invalid V5 angular extension offset",
+                    ))
                 })?;
             reader.skip_remaining()?;
         }

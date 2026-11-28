@@ -29,7 +29,8 @@ prototypes, and sublayers are not composed.
 | `NurbsPatch` | sheet body: faces on a NURBS surface, bounded by the trim loops or by the sides of the parameter range |
 | constant `primvars:displayColor` | body color |
 | `UsdPreviewSurface` material | appearance bound to the tessellation |
-| `metersPerUnit`, `upAxis`, `defaultPrim` | source attributes; lengths in millimetres |
+| `metersPerUnit`, `defaultPrim` | source attributes; lengths in millimetres |
+| `upAxis` | `CadIr.up_axis` (`Y` where absent) |
 
 Every construct with no neutral form is named by a `usd/*` loss.
 

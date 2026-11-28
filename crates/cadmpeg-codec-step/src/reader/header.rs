@@ -72,7 +72,7 @@ const FIELDS: [Field; 10] = [
 /// A string parameter goes under the field key. A list member goes under the
 /// field key, a dot, and its zero-based list position. Control characters
 /// removed from a decoded string are reported with
-/// [`StepLossCode::HeaderMetadataNoncanonical`].
+/// [`StepLossCode::HeaderControlsOmitted`].
 pub(super) fn add_source_attributes(
     exchange: &Exchange,
     attributes: &mut BTreeMap<NonBlankString, String>,
@@ -87,7 +87,7 @@ pub(super) fn add_source_attributes(
                 let (value, removed) = text(exchange, bytes);
                 if removed {
                     losses.push(
-                        crate::loss::StepLossCode::HeaderMetadataNoncanonical.note(format!(
+                        crate::loss::StepLossCode::HeaderControlsOmitted.note(format!(
                             "STEP header attribute {} contained control characters that were omitted.",
                             field.key
                         )),
@@ -106,7 +106,7 @@ pub(super) fn add_source_attributes(
                     let (value, removed) = text(exchange, bytes);
                     if removed {
                         losses.push(
-                            crate::loss::StepLossCode::HeaderMetadataNoncanonical.note(format!(
+                            crate::loss::StepLossCode::HeaderControlsOmitted.note(format!(
                                 "STEP header attribute {key} contained control characters that were omitted."
                             )),
                         );

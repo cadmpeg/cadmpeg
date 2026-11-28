@@ -104,3 +104,20 @@ fn strict_options(depth: cadmpeg_core::decode::DecodeDepth) -> DecodeOptions {
     options.strictness.pinned = true;
     options
 }
+
+/// The loss code that makes a pinned decode refuse `bytes`.
+fn pinned_refusal(bytes: Vec<u8>) -> String {
+    use cadmpeg_ir::codec::Codec;
+    let error = crate::IgesCodec
+        .decode(
+            &mut std::io::Cursor::new(bytes),
+            &strict_options(cadmpeg_core::decode::DecodeDepth::Full),
+        )
+        .unwrap_err();
+    match error {
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
+            rejection.loss().code.to_string()
+        }
+        other => panic!("expected a strict refusal, got {other:?}"),
+    }
+}

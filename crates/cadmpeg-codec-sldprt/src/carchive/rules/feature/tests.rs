@@ -1,4 +1,6 @@
-use super::{axistail, is_turn_block, turn_block_after_zeros, M12345};
+use super::{
+    at_cut_list_tail, axistail, is_turn_block, scaled_bodies, turn_block_after_zeros, M12345,
+};
 use crate::carchive::reader::Reader;
 use crate::carchive::reader::V;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -128,4 +130,107 @@ fn a_full_handle_block_tail_after_a_version_and_zeros_is_read_whole() {
         Ok(V::List(tail.map(V::from).to_vec()))
     );
     assert_eq!(reader.p, end);
+}
+
+/// The scale tail read from the start of `bytes`, and the position after it.
+fn read_scale_tail(bytes: &[u8]) -> (Result<(), crate::carchive::reader::Stop>, usize) {
+    let arena = DecodeArena::new();
+    let (ctx, _root) =
+        DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::desktop()).expect("context");
+    let mut reader = Reader::new(&ctx, bytes, 0, HashMap::new(), 0, None);
+    let result = scaled_bodies(&mut reader);
+    (result, reader.p)
+}
+
+#[test]
+fn a_scale_with_no_body_and_no_identifiers_ends_with_the_stream() {
+    let mut bytes = 0u16.to_le_bytes().to_vec();
+    bytes.extend(0u32.to_le_bytes());
+    assert_eq!(read_scale_tail(&bytes), (Ok(()), bytes.len()));
+}
+
+#[test]
+fn a_scale_with_no_body_before_another_object_ends_after_its_closing_bytes() {
+    let mut bytes = 0u16.to_le_bytes().to_vec();
+    bytes.extend(1u32.to_le_bytes());
+    bytes.extend(100_001u32.to_le_bytes());
+    bytes.extend([0xff; 4]);
+    bytes.extend([0; 12]);
+    let end = bytes.len();
+    bytes.extend([0xaa; 2]);
+    assert_eq!(read_scale_tail(&bytes), (Ok(()), end));
+}
+
+#[test]
+fn a_scale_with_one_body_reads_its_pointer_and_closing_bytes() {
+    let mut bytes = 1u16.to_le_bytes().to_vec();
+    bytes.extend([0, 0]);
+    bytes.extend(0u32.to_le_bytes());
+    bytes.extend([0xff; 4]);
+    bytes.extend([0; 12]);
+    let end = bytes.len();
+    bytes.extend([0xaa; 2]);
+    assert_eq!(read_scale_tail(&bytes), (Ok(()), end));
+}
+
+#[test]
+fn a_scale_without_closing_bytes_before_more_stream_is_refused() {
+    let mut bytes = 0u16.to_le_bytes().to_vec();
+    bytes.extend(0u32.to_le_bytes());
+    bytes.extend([0; 16]);
+    bytes.extend([0xaa; 2]);
+    assert!(read_scale_tail(&bytes).0.is_err());
+}
+
+#[test]
+fn a_scale_with_part_of_its_closing_bytes_at_the_stream_end_is_refused() {
+    let mut bytes = 0u16.to_le_bytes().to_vec();
+    bytes.extend(0u32.to_le_bytes());
+    bytes.extend([0xff, 0xff, 0xff, 0xff, 0, 0]);
+    assert!(read_scale_tail(&bytes).0.is_err());
+}
+
+#[test]
+fn a_scale_with_two_bodies_is_refused() {
+    let mut bytes = 2u16.to_le_bytes().to_vec();
+    bytes.extend([0; 16]);
+    assert!(read_scale_tail(&bytes).0.is_err());
+}
+
+/// A cut-list folder tail whose word at +8 is `word`.
+fn cut_list_tail(word: u32) -> Vec<u8> {
+    let mut bytes = 1u32.to_le_bytes().to_vec();
+    bytes.extend([0xff; 4]);
+    bytes.extend(word.to_le_bytes());
+    bytes.extend([0; 23]);
+    bytes.extend(1u32.to_le_bytes());
+    bytes.extend(1u32.to_le_bytes());
+    bytes
+}
+
+#[test]
+fn a_cut_list_tail_holds_word_two_or_three() {
+    for word in [2, 3] {
+        assert!(
+            with_reader(&cut_list_tail(word), at_cut_list_tail),
+            "word {word}"
+        );
+    }
+}
+
+#[test]
+fn a_cut_list_tail_with_another_word_is_not_a_tail() {
+    for word in [0, 1, 4] {
+        assert!(
+            !with_reader(&cut_list_tail(word), at_cut_list_tail),
+            "word {word}"
+        );
+    }
+}
+
+#[test]
+fn a_cut_list_tail_cut_short_by_the_stream_end_is_not_a_tail() {
+    let mut bytes = cut_list_tail(3);
+    bytes.pop();
+    assert!(!with_reader(&bytes, at_cut_list_tail));
 }

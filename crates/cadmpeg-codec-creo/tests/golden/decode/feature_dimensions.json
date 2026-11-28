@@ -160,6 +160,7 @@
             "kind": "feature",
             "value": "creo:model:sketch_feature#917"
           },
+          "position": 0,
           "scope": "creo:model:product_definition#root",
           "source_settings": {},
           "value": {
@@ -202,6 +203,7 @@
             "kind": "feature",
             "value": "creo:model:sketch_feature#917"
           },
+          "position": 1,
           "scope": "creo:model:product_definition#root",
           "source_settings": {},
           "value": {

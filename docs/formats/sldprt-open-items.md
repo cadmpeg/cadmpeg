@@ -46,7 +46,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which native field distinguishes a FIN forward link that names no reciprocal same-loop backward link from a valid ring closure?
 
-**Known.** `decode.rs` withholds a ring through `TopologyFinLinkUnresolved` when a FIN forward link names no reciprocal same-loop backward link; the ring stays unwalked (#517).
+**Known.** `brep/graph.rs` withholds a ring when a FIN forward link names no reciprocal same-loop backward link: the loop is given up as `record.undecoded` and the ring stays unwalked (#517).
 
 **Need.** We must know the link grammar that walks such a ring.
 
@@ -132,7 +132,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Can a cone store a negative `sin` or `cos` half-angle field, and what surface does it then describe?
 
-**Known.** `sldprt.md` §7.1 "The line direction is unit length." gives each field in the open interval (0, 1), the cone identity within `1e-9`, and the half-angle `atan2(sin, cos)`. `siemens_nx.md` §6.1 gives the same rule. The SLDPRT decoder omits a CONE node with a negative field and reports `geometry.cone-half-angle-sign-unresolved`; the NX decoder reports `carrier.cone-half-angle-sign-unresolved`.
+**Known.** `sldprt.md` §7.1 "The line direction is unit length." gives each field in the open interval (0, 1), the cone identity within `1e-9`, and the half-angle `atan2(sin, cos)`. `siemens_nx.md` §6.1 gives the same rule. The SLDPRT decoder omits a CONE node with a negative field and reports `geometry.cone-half-angle-sign-unresolved`; the NX decoder gives up the carrier as `record.undecoded`.
 
 **Need.** We must know whether a signed half-angle is a valid cone or a different surface before a negative field can transfer as exact geometry.
 
@@ -497,7 +497,7 @@ Each omitted owner-qualified construction circle can have its own current or ext
 
 **Question.** What operation and record shape does each sparse extrusion object outside the defined form codes use?
 
-**Known.** `sldprt.md` §2 "Keywords element order is serialization order, not regeneration order. Neutral regeneration" through `sldprt.md` §2 "Feature-tree" define direct, repeated-class, sentinel, terminated-trailer, and sparse-trailer objects. Form code `11` identifies an object form and does not determine its Boolean operation. A Keywords operation token or a complete inline operation trailer supplies the operation. Without either carrier, the operation remains unresolved.
+**Known.** `sldprt.md` §2 "Keywords elements follow serialization order. Parent and dependency references" through `sldprt.md` §2 "Feature-tree" define direct, repeated-class, sentinel, terminated-trailer, and sparse-trailer objects. Form code `11` identifies an object form and does not determine its Boolean operation. A Keywords operation token or a complete inline operation trailer supplies the operation. Without either carrier, the operation remains unresolved.
 
 **Need.** We must know the remaining form codes to parse each object and construct its Boolean operation.
 
@@ -929,6 +929,14 @@ resolve a seed feature?
 
 **Note.** Each primary cause retains its unresolved extent and decode loss until its ownership and geometry checks succeed.
 
+### DI-110. Suppression of a feature in one configuration
+
+**Question.** Which stored field states that a feature is suppressed in one configuration and built in another?
+
+**Known.** A Keywords history element stores one `Suppressed` attribute, with the value `1`, `true` or `True` for a suppressed feature. The part stores one history for all of its configurations. A configuration snapshot changes the suppression of a feature-tree node (`sldprt.md` §2). Each configuration also stores its own `Config-N-ResolvedFeatures` lane and its own `Config-N-Partition` B-rep. The decoder applies the history's `Suppressed` attribute to every configuration, and the design states no suppression override of a configuration.
+
+**Need.** A part with two configurations and one feature, saved with the feature suppressed in the configuration that is not active and built in the active one, beside the same part saved with the feature built in both. Compare the feature's Keywords element, the `Config-N-ResolvedFeatures` lane of each configuration, and the `Contents/Features` configuration list of the two saves byte for byte.
+
 ## 6. Container record semantics
 
 ### EV-03. `SWObjects` record content
@@ -1243,6 +1251,14 @@ In the first form, reverse byte `0` gives the right-handed turn about the stored
 
 **Need.** Save one profile cut patterned circularly 4 times over 90°, once with equal spacing and once with the instance spacing, each with the pattern direction reversed and not reversed. Compare the angle parameter's name and value, the byte after the axis tail, and the angles of the copies in the stored solid.
 
+### EV-40. The word of a cut-list folder tail
+
+**Question.** What does the u32 at offset 8 of a cut-list folder's tail select?
+
+**Known.** A `moCutListFolder_c` ends its items with a 43-byte tail (`sldprt.md` §2.4): u32 `1`, i32 `-1`, a u32 word, 23 zero bytes, u32 `1`, u32 `1`. The word takes the values `2` and `3`. Every other byte of the tail is the same for both values. The decoder stores the word with the folder.
+
+**Need.** Save a weldment part with two structural members of different profiles. Save it again after each change of one cut-list control: automatic update, automatic sort, and the folder's item grouping. Compare the word at offset 8 of each folder tail.
+
 ### EV-24. Bytes after the last top-level object
 
 **Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?
@@ -1444,6 +1460,14 @@ The other axis-parallel support frames include the frames of those families whos
 **Known.** The relation object writes its relation class, a zero u32 and its parameter class, then a display-role scalar and a driving-role scalar of the same name (`sldprt.md` §2). Each scalar ends with two operand cells, compact 8-byte cells or 12-byte cells, each a class token and a u16 address, and then u16 `1`, u16 `1`, u16 `1` and four zero bytes. Read as feature-local object indices, the addresses of a relation can select two coordinate-bearing points whose horizontal or vertical separation equals the driving scalar and whose Euclidean separation differs from it. Read as zero-based ordinals over all coordinate-bearing markers of the owning feature in byte order, with the point records of DI-46 included, the same addresses select two points whose Euclidean separation equals the driving scalar. In such a sketch, the other relations of the class that use the same token also fit the ordinal reading, and their object-index reading selects no pair at the driving distance. The u16 triple after the operand cells is `1`, `1`, `1` in relations whose points are separated on one axis only and in relations whose points are separated on both. The decoder keeps a relation native when its resolved operands measure another value than its driving scalar.
 
 **Need.** A sketch with two points on no common axis, dimensioned three times with point-to-point dimensions placed aligned, horizontal and vertical, saved, and the three relation objects and their `moDisplayDistanceDim_c` display objects compared, together with a second save in which a point marker is added before the dimensioned points.
+
+### DI-97. The state after a feature whose records name two marks
+
+**Question.** Which state of the main line is the state after a feature whose `moPMarkRecord_c` records name two marks of the main line?
+
+**Known.** A `moPMarkRecord_c` head gives the PMARK identifier at offset +0. A feature can hold two records whose heads name distinct PMARK identifiers on the linked main line. The marks of the records follow the main line in stream order (`sldprt.md` §3.4).
+
+**Need.** A part with a hole-wizard hole on a face of a boss extrusion, saved, with the marks of every record of the hole compared to the marks of the main line.
 
 ## 8. Edited parts
 

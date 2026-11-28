@@ -34,9 +34,14 @@ pub(crate) struct LocalTransform {
     pub(crate) resets_stack: bool,
 }
 
-/// Why an op stack does not resolve.
+/// Why an op stack does not resolve, with the reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct XformError(pub(crate) String);
+pub(crate) enum XformError {
+    /// The stack breaks the op rules of §11.4.
+    Malformed(String),
+    /// The stack has no affine map that the decoder transfers.
+    Unread(String),
+}
 
 /// `left · right`.
 pub(crate) fn compose(left: &Affine, right: &Affine) -> Affine {
@@ -173,27 +178,35 @@ fn axis_of(op_type: &str) -> Result<usize, String> {
 }
 
 /// The matrix of one op from its type token and value components.
-fn op_matrix(op_type: &str, components: &[f64]) -> Result<Affine, String> {
+fn op_matrix(op_type: &str, components: &[f64]) -> Result<Affine, XformError> {
     let vector3 = || match components {
         [x, y, z] => Ok([*x, *y, *z]),
-        _ => Err(format!("`{op_type}` needs three components")),
+        _ => Err(XformError::Malformed(format!(
+            "`{op_type}` needs three components"
+        ))),
     };
     let scalar = || match components {
         [value] => Ok(*value),
-        _ => Err(format!("`{op_type}` needs one component")),
+        _ => Err(XformError::Malformed(format!(
+            "`{op_type}` needs one component"
+        ))),
     };
+    let axis_index = |op_type: &str| axis_of(op_type).map_err(XformError::Malformed);
+    let unknown = || XformError::Malformed(format!("unknown op `{op_type}`"));
     match op_type {
         "translate" => Ok(translation(vector3()?)),
         "scale" => Ok(scaling(vector3()?)),
         "orient" => match components {
             [w, x, y, z] => quaternion([*w, *x, *y, *z])
-                .ok_or_else(|| "`orient` has a zero quaternion".to_owned()),
-            _ => Err("`orient` needs a quaternion".to_owned()),
+                .ok_or_else(|| XformError::Unread("`orient` has a zero quaternion".to_owned())),
+            _ => Err(XformError::Malformed(
+                "`orient` needs a quaternion".to_owned(),
+            )),
         },
         "transform" => match components {
             [m00, m01, m02, m03, m10, m11, m12, m13, m20, m21, m22, m23, m30, m31, m32, w] => {
                 if *m03 != 0.0 || *m13 != 0.0 || *m23 != 0.0 || *w == 0.0 {
-                    return Err("`transform` is not affine".to_owned());
+                    return Err(XformError::Unread("`transform` is not affine".to_owned()));
                 }
                 Ok([
                     [*m00 / w, *m10 / w, *m20 / w, *m30 / w],
@@ -201,27 +214,29 @@ fn op_matrix(op_type: &str, components: &[f64]) -> Result<Affine, String> {
                     [*m02 / w, *m12 / w, *m22 / w, *m32 / w],
                 ])
             }
-            _ => Err("`transform` needs a 4x4 matrix".to_owned()),
+            _ => Err(XformError::Malformed(
+                "`transform` needs a 4x4 matrix".to_owned(),
+            )),
         },
         "translateX" | "translateY" | "translateZ" => {
             let mut offset = [0.0; 3];
-            offset[axis_of(op_type)?] = scalar()?;
+            offset[axis_index(op_type)?] = scalar()?;
             Ok(translation(offset))
         }
         "scaleX" | "scaleY" | "scaleZ" => {
             let mut factors = [1.0; 3];
-            factors[axis_of(op_type)?] = scalar()?;
+            factors[axis_index(op_type)?] = scalar()?;
             Ok(scaling(factors))
         }
-        "rotateX" | "rotateY" | "rotateZ" => Ok(rotation(axis_of(op_type)?, scalar()?)),
+        "rotateX" | "rotateY" | "rotateZ" => Ok(rotation(axis_index(op_type)?, scalar()?)),
         _ => {
             let order = op_type
                 .strip_prefix("rotate")
                 .filter(|order| order.len() == 3)
-                .ok_or_else(|| format!("unknown op `{op_type}`"))?
+                .ok_or_else(unknown)?
                 .as_bytes();
             let [Some(a), Some(b), Some(c)] = [order[0], order[1], order[2]].map(axis) else {
-                return Err(format!("unknown op `{op_type}`"));
+                return Err(unknown());
             };
             let angles = vector3()?;
             let first = rotation(a, angles[a]);
@@ -248,7 +263,7 @@ pub(crate) fn local_transform(
     for (position, entry) in order.iter().enumerate() {
         if entry == RESET_XFORM_STACK {
             if position != 0 {
-                return Err(XformError(format!(
+                return Err(XformError::Malformed(format!(
                     "`{RESET_XFORM_STACK}` is entry {position} of xformOpOrder, not the first"
                 )));
             }
@@ -260,7 +275,9 @@ pub(crate) fn local_transform(
             None => (false, entry.as_str()),
         };
         let Some(op) = name.strip_prefix(OP_NAMESPACE) else {
-            return Err(XformError(format!("`{entry}` is not a transform op")));
+            return Err(XformError::Malformed(format!(
+                "`{entry}` is not a transform op"
+            )));
         };
         let op_type = op.split(':').next().unwrap_or(op);
         let Some(value) = attribute(prim, name, issues) else {
@@ -268,10 +285,11 @@ pub(crate) fn local_transform(
         };
         let components = value
             .numbers()
-            .ok_or_else(|| XformError(format!("op `{name}` has no numeric value")))?;
-        let matrix = op_matrix(op_type, &components).map_err(XformError)?;
+            .ok_or_else(|| XformError::Malformed(format!("op `{name}` has no numeric value")))?;
+        let matrix = op_matrix(op_type, &components)?;
         let matrix = if inverted {
-            invert(&matrix).ok_or_else(|| XformError(format!("op `{name}` is not invertible")))?
+            invert(&matrix)
+                .ok_or_else(|| XformError::Unread(format!("op `{name}` is not invertible")))?
         } else {
             matrix
         };
@@ -280,7 +298,7 @@ pub(crate) fn local_transform(
     if local.matrix.iter().flatten().all(|value| value.is_finite()) {
         Ok(local)
     } else {
-        Err(XformError("the op stack is not finite".to_owned()))
+        Err(XformError::Unread("the op stack is not finite".to_owned()))
     }
 }
 

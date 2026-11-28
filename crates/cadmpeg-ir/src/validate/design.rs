@@ -150,10 +150,10 @@ pub(super) fn check_design<'a>(
     expressions::check_expressions(ctx, records, findings)?;
     dimensions::check_dimensions(records, findings);
     tolerances::check_tolerances(records, findings);
-    caches::check_caches(records, findings);
 
     let _depth = ctx.enter_nested("IR design validation")?;
     let held = collect(ctx, ir, &index)?;
+    caches::check_caches(&index.records, &held, findings);
     dimensions::check_bound_dimensions(&index.records, &held, findings);
     index.add_dependencies(&held);
     let states = matchers.states();

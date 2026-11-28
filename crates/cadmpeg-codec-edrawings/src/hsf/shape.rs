@@ -9,6 +9,7 @@
 //! leave this module in millimetres.
 
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::unknown::part::Cause;
 
 use super::scene::{Object, Scene};
 use super::walk::Shell;
@@ -55,6 +56,14 @@ impl ShellError {
             Self::FaceList => "face list is malformed",
             Self::Index => "strip index lies outside the shell",
             Self::TooLarge => "mesh exceeds the size caps",
+        }
+    }
+
+    /// How the shell record is charged when it is given up.
+    pub(super) const fn cause(self) -> Cause {
+        match self {
+            Self::TooLarge => Cause::Undecoded,
+            Self::Missing | Self::NotShell | Self::FaceList | Self::Index => Cause::Unreadable,
         }
     }
 }
