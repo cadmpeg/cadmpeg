@@ -42,7 +42,7 @@ fn routed_tracking_construction(
             )
         })
         .collect::<Vec<_>>();
-    let meta = crate::test_support::streams_test::design_metastream_with_records(
+    let meta = crate::test_support::streams_fixture::design_metastream_with_records(
         &[(
             "E079B079-016A-43C2-ACC7-9627B32A8960",
             "60F291CB-499B-4AB1-B0E5-340368671724",
@@ -54,7 +54,7 @@ fn routed_tracking_construction(
     );
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut archive, stored);
     for (entry, contents) in [
         ("FusionAssetName[Active]/Design1/BulkStream.dat", bytes),
         (
@@ -67,7 +67,7 @@ fn routed_tracking_construction(
     }
     let archive = archive.finish().unwrap().into_inner();
     let mut result = None;
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
             let mut facts = super::super::FormFacts {
                 inputs: super::super::form_inputs(&scope)?,

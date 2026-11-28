@@ -27,7 +27,7 @@ fn scope() -> Vec<u8> {
 }
 
 fn read(bytes: &[u8]) -> SeparateScope<'_> {
-    let metadata = crate::test_support::streams_test::design_metastream_with_records(&[], &[]);
+    let metadata = crate::test_support::streams_fixture::design_metastream_with_records(&[], &[]);
     let meta = crate::metastream::parse(&metadata, "synthetic metadata").unwrap();
     let records =
         MeshOperationRecords::index(View::over_retained(bytes), std::sync::Arc::new(meta));
@@ -194,7 +194,7 @@ fn separate_flagged_prefix_and_impossible_counts_preserve_raw_facts() {
 #[test]
 fn separate_temporary_slots_do_not_consume_retained_budget() {
     let bytes = scope();
-    let metadata = crate::test_support::streams_test::design_metastream_with_records(&[], &[]);
+    let metadata = crate::test_support::streams_fixture::design_metastream_with_records(&[], &[]);
     let meta = crate::metastream::parse(&metadata, "synthetic metadata").unwrap();
     let records =
         MeshOperationRecords::index(View::over_retained(&bytes), std::sync::Arc::new(meta));
@@ -214,7 +214,7 @@ fn separate_admission_checks_identity_registration_bounds_and_pairing() {
     bytes[..4].copy_from_slice(&3u32.to_le_bytes());
     bytes[4..7].copy_from_slice(b"256");
     bytes[7..11].copy_from_slice(&88u32.to_le_bytes());
-    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+    let metadata = crate::test_support::streams_fixture::design_metastream_with_records(
         &[(
             "6B6FDE2E-D9B9-4866-9D07-3123C919B0D2",
             "90B8D2C6-05BB-4D0F-89EF-83AAC46CA1FF",
@@ -267,7 +267,7 @@ fn separate_member_fields_retain_each_complete_value_before_truncation() {
     crate::test_support::lp_utf16(&mut bytes, "abcdefab-cdef-abcd-efab-cdefabcdefab");
     bytes.extend_from_slice(&23u32.to_le_bytes());
     bytes.extend_from_slice(&29u32.to_le_bytes());
-    let metadata = crate::test_support::streams_test::design_metastream_with_records(&[], &[]);
+    let metadata = crate::test_support::streams_fixture::design_metastream_with_records(&[], &[]);
     let meta = crate::metastream::parse(&metadata, "synthetic metadata").unwrap();
     let records =
         MeshOperationRecords::index(View::over_retained(&bytes), std::sync::Arc::new(meta));
@@ -306,7 +306,7 @@ fn separate_malformed_first_slot_keeps_partial_result_without_retained_slot_char
     let mut bytes = vec![0; 21];
     bytes.extend_from_slice(&10_000u32.to_le_bytes());
     bytes.extend_from_slice(&[2; 10_000]);
-    let metadata = crate::test_support::streams_test::design_metastream_with_records(&[], &[]);
+    let metadata = crate::test_support::streams_fixture::design_metastream_with_records(&[], &[]);
     let meta = crate::metastream::parse(&metadata, "synthetic metadata").unwrap();
     let records =
         MeshOperationRecords::index(View::over_retained(&bytes), std::sync::Arc::new(meta));
@@ -332,7 +332,7 @@ fn separate_actual_slots_obey_entity_budget() {
     let mut bytes = vec![0; 21];
     bytes.extend_from_slice(&2u32.to_le_bytes());
     bytes.extend_from_slice(&[0, 0]);
-    let metadata = crate::test_support::streams_test::design_metastream_with_records(&[], &[]);
+    let metadata = crate::test_support::streams_fixture::design_metastream_with_records(&[], &[]);
     let meta = crate::metastream::parse(&metadata, "synthetic metadata").unwrap();
     let records =
         MeshOperationRecords::index(View::over_retained(&bytes), std::sync::Arc::new(meta));

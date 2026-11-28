@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use crate::test_support::assembly_test::{
+use crate::test_support::assembly_fixture::{
     f3d_with_redirections_json, f3d_with_reference_table_and_identity_xrefs,
     f3z_archive_with_design_description, redirections_json,
 };

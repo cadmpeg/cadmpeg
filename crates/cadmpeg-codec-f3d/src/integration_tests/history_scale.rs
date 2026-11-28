@@ -11,7 +11,7 @@ use cadmpeg_ir::codec::{Codec, DecodeResult};
 
 use crate::loss::F3dLossCode;
 use crate::test_support::history_stream::DesignScale;
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 
 /// Fifty states over 901 entities.

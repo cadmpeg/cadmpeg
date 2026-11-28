@@ -602,7 +602,7 @@ mod tests {
     #[test]
     fn surface_trim_operation_native_retained_limit_refuses_before_clone() {
         let operation = record(2);
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &operation,
             "design_surface_trim_operations",
             || SURFACE_TRIM_OPERATION_CLONE_COUNT.with(|count| count.set(0)),

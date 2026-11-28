@@ -10,7 +10,7 @@ use crate::decode::analytic::edges::{
 use crate::decode::analytic::equations::{
     circle_parameters, intersect_plane_with_circle, CarrierEquation, PlaneEquation,
 };
-use crate::vecmath::{cross, dot};
+use crate::vecmath::dot;
 
 use super::intersection_candidates::{
     apex_plane_cone_generator_candidates, axis_containing_plane_torus_circle_candidates,
@@ -89,7 +89,10 @@ pub(in super::super) fn curve_contains_points(
             let direction = unit_length(line_curve.direction());
             points.into_iter().all(|point| {
                 let relative: [f64; 3] = std::array::from_fn(|index| point[index] - origin[index]);
-                let residual = cross(relative, direction);
+                let residual = <[f64; 3]>::from(
+                    cadmpeg_ir::math::Vector3::from(relative)
+                        .cross(cadmpeg_ir::math::Vector3::from(direction)),
+                );
                 // The origin can move along the same infinite carrier. Its
                 // distance from the witness cannot enlarge the positional gate.
                 let distance = residual[0].hypot(residual[1]).hypot(residual[2]);

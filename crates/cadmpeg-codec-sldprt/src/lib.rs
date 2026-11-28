@@ -677,7 +677,7 @@ impl Written {
 }
 
 impl CodecBackend for SldprtCodec {
-    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+    const FORMAT: FormatId = FormatId::new(dialect::registry_ids::FORMAT);
 
     fn validate_native(
         ctx: &DecodeContext<'_>,

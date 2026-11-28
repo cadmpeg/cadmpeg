@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Check hook routing without running Cargo, Python checkers, or Git writes."""
 
+import contextlib
+import importlib.util
+import io
+import json
 import os
 from pathlib import Path
 import subprocess
 import unittest
+from unittest import mock
 
 HOOK = Path(__file__).resolve().parent.parent / ".githooks/pre-commit"
 STUBS = """
@@ -17,16 +22,46 @@ python3() {
   printf 'python3 %s\n' "$*"
 }
 cargo() { printf 'cargo %s\n' "$*"; }
+rustfmt() { printf 'rustfmt %s\n' "$*"; }
 """
 
 
 def run_hook(staged, owners=""):
     result = subprocess.run(
         ["sh"], input=STUBS + HOOK.read_text(), text=True, capture_output=True,
+        cwd=HOOK.parent.parent,
         env={**os.environ, "STAGED": staged, "OWNERS": owners},
         check=True,
     )
     return result.stdout.splitlines()
+
+
+class StagedCrates(unittest.TestCase):
+    def owners(self, paths):
+        selector_path = HOOK.parent.parent / "scripts/staged-crates.py"
+        spec = importlib.util.spec_from_file_location("staged_crates", selector_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        metadata = {"packages": [{"name": "cadmpeg-codec-step",
+                    "manifest_path": "/repo/crates/cadmpeg-codec-step/Cargo.toml"}]}
+        def command(args):
+            if args[:2] == ["git", "rev-parse"]:
+                return "/repo\n"
+            if args[:2] == ["git", "diff"]:
+                return "\n".join(paths)
+            return json.dumps(metadata)
+        output = io.StringIO()
+        with mock.patch.object(module, "run", side_effect=command):
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(module.main(), 0)
+        return output.getvalue().splitlines()
+
+    def test_fuzz_and_workspace_sources(self):
+        self.assertEqual(self.owners(["crates/cadmpeg-fuzz/fuzz_targets/creo_datum.rs"]), [])
+        self.assertEqual(self.owners(["crates/cadmpeg-fuzz/fuzz_targets/creo_datum.rs",
+                                      "crates/cadmpeg-codec-step/src/reader.rs"]),
+                         ["cadmpeg-codec-step"])
+        self.assertEqual(self.owners(["tools/example.rs"]), ["WORKSPACE"])
 
 
 class CheckerRouting(unittest.TestCase):
@@ -86,10 +121,37 @@ class RustGate(unittest.TestCase):
                     ["cargo fmt --all --check", "cargo clippy --workspace --all-targets"],
                 )
 
+    def test_fuzz_source_does_not_select_workspace_cargo(self):
+        self.assertEqual(
+            self.cargo("crates/cadmpeg-fuzz/fuzz_targets/creo_datum.rs"),
+            [],
+        )
+
+    def test_only_staged_fuzz_rust_is_formatted(self):
+        lines = run_hook("crates/cadmpeg-fuzz/fuzz_targets/creo_datum.rs\nREADME.md")
+        self.assertIn("rustfmt --edition 2021 --check crates/cadmpeg-fuzz/fuzz_targets/creo_datum.rs", lines)
+
+    def test_deleted_fuzz_file_is_not_formatted(self):
+        lines = run_hook("crates/cadmpeg-fuzz/fuzz_targets/deleted.rs")
+        self.assertFalse(any(line.startswith("rustfmt ") for line in lines))
+
+    def test_fuzz_manifest_does_not_select_main_workspace(self):
+        self.assertEqual(
+            self.cargo("crates/cadmpeg-fuzz/Cargo.toml"),
+            [],
+        )
+
+    def test_fuzz_and_workspace_sources_keep_workspace_gate_scoped(self):
+        self.assertEqual(
+            self.cargo("crates/cadmpeg-fuzz/fuzz_targets/creo_datum.rs\n"
+                       "crates/cadmpeg-codec-step/src/reader.rs", "cadmpeg-codec-step"),
+            ["cargo fmt -p cadmpeg-codec-step --check",
+             "cargo clippy -p cadmpeg-codec-step --all-targets"],
+        )
+
     def test_unowned_rust_file_selects_workspace(self):
         self.assertEqual(
-            self.cargo("crates/cadmpeg-fuzz/fuzz_targets/step.rs",
-                       owners="WORKSPACE"),
+            self.cargo("tools/example.rs", owners="WORKSPACE"),
             ["cargo fmt --all --check", "cargo clippy --workspace --all-targets"],
         )
 

@@ -21,7 +21,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
 
 use crate::loss::F3dLossCode;
-use crate::test_support::native_test::f3d_native;
+use crate::test_support::native_fixture::f3d_native;
 
 use super::super::sketch::{
     feature, feature_id, frame, picked, point2, principal, sketch_id, unread, Source,
@@ -491,7 +491,7 @@ fn every_kind_with_a_definition_writer_follows_the_marker_with_the_no_state_tail
 fn with_a_native_design(mut ir: CadIr) -> CadIr {
     use crate::records::decal::DesignRecordHeader;
     use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
-    let mut native = crate::test_support::native_test::f3d_native_mut(&mut ir);
+    let mut native = crate::test_support::native_fixture::f3d_native_mut(&mut ir);
     native.design_record_headers = vec![DesignRecordHeader {
         id: "f3d:generated:record-header#1".into(),
         record_index: 584,

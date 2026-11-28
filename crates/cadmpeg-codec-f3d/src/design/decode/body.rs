@@ -1573,9 +1573,9 @@ mod tests {
     use crate::records::entity_header::DESIGN_MODULE_BODY;
     use crate::records::entity_header::DESIGN_MODULE_FUSION;
     use crate::test_support::indexed_header;
-    use crate::test_support::manifest_test::write_synthetic_manifests;
+    use crate::test_support::manifest_fixture::write_synthetic_manifests;
     use crate::test_support::push_reference_u64;
-    use crate::test_support::zip_test::with_scan;
+    use crate::test_support::zip_fixture::with_scan;
     use std::collections::HashSet;
 
     #[test]
@@ -1839,7 +1839,7 @@ mod tests {
         if truncate_last {
             bulk.pop();
         }
-        let meta = crate::test_support::streams_test::design_metastream_with_records(
+        let meta = crate::test_support::streams_fixture::design_metastream_with_records(
             &[
                 (
                     crate::design::body::SNAPSHOT_BODY_MAP_CARRIER_TYPE_GUID,
@@ -1870,7 +1870,7 @@ mod tests {
         names.sort_unstable();
         names.dedup();
         let breps: Vec<_> = names.into_iter().map(|name| (name, &[0][..])).collect();
-        crate::test_support::body_map_test::f3d_with_breps_and_design(&breps, &bulk, &meta)
+        crate::test_support::body_map_fixture::f3d_with_breps_and_design(&breps, &bulk, &meta)
     }
 
     fn snapshot_record(name: &str, entities: &[u64]) -> BodyMapRecord {
@@ -2187,7 +2187,7 @@ mod tests {
     #[test]
     fn empty_modern_map_without_any_brep_is_an_explicit_empty_selection() {
         let bulk = body_map_bytes(10, 0, &[]);
-        let meta = crate::test_support::streams_test::design_metastream_with_records(
+        let meta = crate::test_support::streams_fixture::design_metastream_with_records(
             &[(
                 crate::design::body::BODY_MAP_CARRIER_TYPE_GUID,
                 crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID,
@@ -2198,7 +2198,7 @@ mod tests {
             &[(900, 0)],
         );
         let archive =
-            crate::test_support::body_map_test::f3d_with_breps_and_design(&[], &bulk, &meta);
+            crate::test_support::body_map_fixture::f3d_with_breps_and_design(&[], &bulk, &meta);
         with_scan(&archive, |scan| {
             let selection = super::design_model_selection(scan).unwrap();
             assert!(selection.explicitly_empty);
@@ -2249,7 +2249,7 @@ mod tests {
             false,
             42,
         );
-        let metadata = crate::test_support::streams_test::design_metastream_with_records(
+        let metadata = crate::test_support::streams_fixture::design_metastream_with_records(
             &[
                 (
                     crate::design::body::BODY_MAP_CARRIER_TYPE_GUID,
@@ -2303,14 +2303,14 @@ mod tests {
 
     fn bindings_with_consumer(
         pairs: &[(u64, u64, Option<bool>)],
-        container: crate::test_support::component_body_test::HistoryOnlyContainer<'_>,
+        container: crate::test_support::component_body_fixture::HistoryOnlyContainer<'_>,
         bound_cluster: bool,
-        consumer: Option<crate::test_support::component_body_test::BodyConsumer<'_>>,
+        consumer: Option<crate::test_support::component_body_fixture::BodyConsumer<'_>>,
     ) -> Vec<(u64, bool)> {
         const PREFIX: &str = "FusionAssetName[Active]/Design1/";
         const BLOB: &str = "BREP.synthetic.smbh";
         let (bulk, metadata) =
-            crate::test_support::component_body_test::history_only_pairs_with_consumer(
+            crate::test_support::component_body_fixture::history_only_pairs_with_consumer(
                 BLOB,
                 pairs,
                 container,
@@ -2353,7 +2353,7 @@ mod tests {
     #[test]
     fn a_consuming_scope_removes_a_hidden_uncontained_pair_from_a_bound_cluster() {
         use crate::design::decode::body_consumers::{COMBINE_TYPE_GUID, REMOVE_BODY_TYPE_GUID};
-        use crate::test_support::component_body_test::{
+        use crate::test_support::component_body_fixture::{
             BodyConsumer, HistoryOnlyContainer as Container, BODY_CONSUMER_SCOPE,
         };
         const MOVE_TYPE_GUID: &str = "64E40C8E-E564-469C-8690-5C4E77C1B02C";
@@ -2508,7 +2508,7 @@ mod tests {
     #[test]
     fn a_consumer_removes_only_the_pair_it_names() {
         use crate::design::decode::body_consumers::COMBINE_TYPE_GUID;
-        use crate::test_support::component_body_test::{
+        use crate::test_support::component_body_fixture::{
             BodyConsumer, HistoryOnlyContainer as Container, BODY_CONSUMER_SCOPE,
         };
         assert_eq!(
@@ -2531,7 +2531,7 @@ mod tests {
 
     #[test]
     fn history_only_pair_requires_complete_memberships_that_omit_a_hidden_entity() {
-        use crate::test_support::component_body_test::{
+        use crate::test_support::component_body_fixture::{
             history_only_design, HistoryOnlyContainer as Container,
         };
         const PREFIX: &str = "FusionAssetName[Active]/Design1/";

@@ -10,8 +10,8 @@ use std::io::{Cursor, Write};
 
 use zip::CompressionMethod;
 
-use super::manifest_test::write_synthetic_manifests;
-use super::streams_test::design_metastream_with_records;
+use super::manifest_fixture::write_synthetic_manifests;
+use super::streams_fixture::design_metastream_with_records;
 use crate::design::body::{
     BODY_MAP_CARRIER_BASE_TYPE_GUID, BODY_MAP_CARRIER_TYPE_GUID, BODY_MAP_CARRIER_TYPE_VERSION,
     GENERATED_BODY_MAP_ZERO_PREFIX_LEN,
@@ -186,7 +186,7 @@ fn empty_model_maps_archive(
     if parameters {
         // Type-table rows 4 to 7 give the class tags 260 to 263.
         let scope_record = 1_100_u32;
-        super::streams_test::append_parameter_scope(
+        super::streams_fixture::append_parameter_scope(
             &mut bulk,
             &mut records,
             b"260",
@@ -194,7 +194,7 @@ fn empty_model_maps_archive(
             1200,
             "Parameter Group",
         );
-        super::streams_test::append_owner(
+        super::streams_fixture::append_owner(
             &mut bulk,
             &mut records,
             b"261",
@@ -202,7 +202,7 @@ fn empty_model_maps_archive(
             scope_record,
             0,
         );
-        super::streams_test::append_parameter(
+        super::streams_fixture::append_parameter(
             &mut bulk,
             &mut records,
             b"262",
@@ -211,7 +211,7 @@ fn empty_model_maps_archive(
             "d1",
             "Linear Dimension-1",
         );
-        super::streams_test::append_companion(&mut bulk, &mut records, b"263", 1200, 1202);
+        super::streams_fixture::append_companion(&mut bulk, &mut records, b"263", 1200, 1202);
         let base = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
         types.push((
             "00000000-0000-0000-0000-000000001100",
@@ -247,7 +247,7 @@ fn empty_model_maps_archive(
     let mut zip = zip::ZipWriter::new_append(Cursor::new(bytes)).unwrap();
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     zip.start_file("RedirectionsStream.dat", stored).unwrap();
-    zip.write_all(super::assembly_test::redirections_json("root.f3d", targets).as_bytes())
+    zip.write_all(super::assembly_fixture::redirections_json("root.f3d", targets).as_bytes())
         .unwrap();
     zip.finish().unwrap().into_inner()
 }

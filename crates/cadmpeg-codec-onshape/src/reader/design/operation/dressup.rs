@@ -561,7 +561,7 @@ fn text(value: &str) -> Mapping<NonBlankString> {
 
 fn option(options: &mut NativeOptions, key: &str, value: NativeOption) -> Mapping<()> {
     let name = cadmpeg_ir::design::names::CodecName::new(
-        &cadmpeg_ir::codec_id!(crate::dialect::FORMAT),
+        &cadmpeg_ir::codec_id!(crate::dialect::registry_ids::FORMAT),
         key,
     )
     .ok_or("a native option name is invalid")?;

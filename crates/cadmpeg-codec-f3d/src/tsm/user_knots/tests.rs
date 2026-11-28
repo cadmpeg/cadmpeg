@@ -4,7 +4,7 @@ use cadmpeg_ir::{scalar::NonNegativeReal, subd::SubdUserKnot};
 
 #[test]
 fn user_knot_regeneration_preserves_deleted_slots_zero_and_extension_absence() {
-    let bytes = crate::test_support::zip_test::generated_form_tsm();
+    let bytes = crate::test_support::zip_fixture::generated_form_tsm();
     let text = String::from_utf8(bytes)
         .expect("synthetic TSM")
         .replace("e 6 1\n", "e 6 1\ne\n");
