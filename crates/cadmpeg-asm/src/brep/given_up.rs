@@ -125,24 +125,31 @@ pub(super) fn list_withheld(
             withheld.push((r, kind, cause, reason, own));
         }
     }
-    let mut named = withheld
-        .iter()
-        .map(|(.., own)| own.as_str().to_owned())
-        .collect::<HashSet<_>>();
-    let (shells, retained) = if withheld.iter().any(|(_, kind, ..)| *kind == "face") {
-        (
-            subshell_ancestor_shells(records, by_index)?,
-            out.unknowns
-                .iter()
-                .map(|record| record.id().as_str().to_owned())
-                .collect::<HashSet<_>>(),
-        )
+    let mut named = HashSet::new();
+    let mut retained = HashSet::new();
+    if bytes.is_some() {
+        named.extend(withheld.iter().map(|(.., own)| own.as_str().to_owned()));
+        retained.extend(out.unknowns.iter().map(|record| record.id().as_str()));
+    }
+    let shells = if withheld.iter().any(|(_, kind, ..)| *kind == "face") {
+        subshell_ancestor_shells(records, by_index)?
     } else {
-        (HashMap::new(), HashSet::new())
+        HashMap::new()
     };
     for (r, kind, cause, reason, own) in withheld {
+        let mut marked = None;
+        if let ("face", Some(owner)) = (kind, r.ref_at(5)) {
+            let shell = id(format, shells.get(&owner).copied().unwrap_or(owner));
+            let shell_id = ShellId::from(shell.clone());
+            if let Some(record) = out.shells.iter_mut().find(|record| record.id == shell_id) {
+                record.unstated = Some(Unstated::Members);
+                marked = Some(shell);
+            }
+        }
+        let Some(bytes) = bytes else {
+            continue;
+        };
         let mut dropped = vec![own];
-        let mut marked = Vec::new();
         if kind == "face" {
             for (index, child) in face_children(r, by_index) {
                 let child_id = id(format, index);
@@ -155,18 +162,7 @@ pub(super) fn list_withheld(
                     dropped.push(child_id);
                 }
             }
-            if let Some(owner) = r.ref_at(5) {
-                let shell = id(format, shells.get(&owner).copied().unwrap_or(owner));
-                let shell_id = ShellId::from(shell.clone());
-                if let Some(record) = out.shells.iter_mut().find(|record| record.id == shell_id) {
-                    record.unstated = Some(Unstated::Members);
-                    marked.push(shell);
-                }
-            }
         }
-        let Some(bytes) = bytes else {
-            continue;
-        };
         let span = r.bytes_in(bytes)?;
         let mut record_bytes = ctx.alloc_filled(span.len(), 0_u8, "withheld ASM record bytes")?;
         record_bytes.copy_from_slice(span);
@@ -177,7 +173,7 @@ pub(super) fn list_withheld(
             cause,
             reason,
             dropped,
-            marked,
+            marked: marked.into_iter().collect(),
         });
     }
     Ok(())

@@ -5,7 +5,7 @@ use cadmpeg_ir::topology::Unstated;
 use cadmpeg_ir::unknown::part::{Cause, DecodeParts};
 
 use super::super::tests::CONE_WITH_POINT_APEX_SAT;
-use super::super::{decode_with_header, AsmBrep, DecodePurpose};
+use super::super::{decode_with_header, inspect_with_header, AsmBrep, DecodePurpose};
 use crate::ids::IdFormat;
 
 const FORMAT: IdFormat = crate::asm_format!("f3d");
@@ -60,6 +60,21 @@ fn decode_and_give_up(source: &str, purpose: DecodePurpose) -> (AsmBrep, Vec<Los
             })
             .collect();
         (brep, losses)
+    })
+    .expect("service decode context")
+}
+
+/// The decode of `source` on a scratch context.
+fn inspect(source: &str) -> AsmBrep {
+    let bytes = source.as_bytes();
+    crate::test_support::with_service_context(bytes, |ctx| {
+        let parsed = crate::sat::parse(ctx, bytes).expect("synthetic SAT stream");
+        let header = parsed.header.as_kernel_header();
+        ctx.scratch(bytes.len(), |scratch| {
+            inspect_with_header(scratch, &parsed.records, Some(&header), "stream", FORMAT)
+        })
+        .expect("synthetic cone decodes")
+        .expect("the graph fits the retained allowance")
     })
     .expect("service decode context")
 }
@@ -191,7 +206,7 @@ fn an_inspecting_decode_marks_the_shell_and_lists_no_record() {
         "face $-1 -1 $-1 $-1 $6 $2 $-1 $8 forward single #",
         "face $-1 -1 $-1 $-1 $6 $2 $-1 $99 forward single #",
     );
-    let brep = decode(&source, DecodePurpose::Inspect);
+    let brep = inspect(&source);
     assert!(brep.withheld.is_empty());
     assert_eq!(brep.shells.len(), 1);
     assert_eq!(brep.shells[0].id.as_str(), "f3d:brep:entity#2");
@@ -200,6 +215,8 @@ fn an_inspecting_decode_marks_the_shell_and_lists_no_record() {
         brep.faces.len(),
         decode(&source, DecodePurpose::Model).faces.len()
     );
+    assert!(brep.annotation_records.is_empty());
+    assert!(brep.unknowns.is_empty());
 }
 
 /// The cone's face 3 stands on a surface reference that names no record.

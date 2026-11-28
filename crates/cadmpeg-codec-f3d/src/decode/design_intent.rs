@@ -1491,9 +1491,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     ));
     design.history_body_consumers.tails = crate::history::body_history_tail::collect(
         &model.features,
-        &design.design_parameter_scopes,
         &design.asm_histories,
-        &scope_histories,
+        &bound_outputs.placements,
         geometry.primary_brep,
     );
     if matches!(geometry.path, DesignPath::Geometry) {

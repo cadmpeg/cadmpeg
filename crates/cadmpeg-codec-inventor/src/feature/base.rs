@@ -7,14 +7,17 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::evaluation::{FeatureResultMembers, FeatureResultTopology};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::ids::FeatureResultTopologyId;
+use cadmpeg_ir::report::loss::LossNote;
 
-use super::history_views::{ResultStates, StateModel};
+use super::history_views::{ResultStates, StateLimit, StateModel};
 use super::{
     FeatureFamily, FeatureInventory, PmDcFeature, PmDcFeatureProperty, PmDcFeaturePropertyKind,
     PmDcKernelEntityLink,
 };
 use crate::design::DesignInventory;
+use crate::kernel::ActiveCarrier;
 use crate::layout::meta_external_revision as revision;
+use crate::loss::InventorLossCode;
 use crate::pmdc::PmDcReference;
 use crate::reader;
 use crate::records::ReferenceTable;
@@ -234,8 +237,8 @@ enum StateBody {
     Absent,
     /// The state does not decode, or does not hold a body with the key.
     Failed,
-    /// The views of the part passed their work cap.
-    Bounded,
+    /// A limit gave up the state of the result body.
+    Bounded(StateLimit),
 }
 
 /// Read the state that first lists `source_index` for the result key of
@@ -256,16 +259,11 @@ fn state_body(
     let model = match &*state {
         StateModel::Model(model) => model,
         StateModel::Unavailable | StateModel::Failed => return Ok(StateBody::Failed),
-        StateModel::Bounded => return Ok(StateBody::Bounded),
+        StateModel::Bounded(limit) => return Ok(StateBody::Bounded(*limit)),
     };
-    let keys: Vec<BodyNativeKey> = model
-        .native
-        .namespace("inventor")
-        .map_or(Ok(Vec::new()), |namespace| {
-            namespace.arena_as_for_decode(ctx, "body_native_keys")
-        })?;
     let key = u64::from(link.entity_id);
-    let held = one(keys
+    let held = one(model
+        .body_keys
         .iter()
         .filter(|candidate| candidate.asm_body_key == Some(key)))
     .is_some_and(|candidate| {
@@ -294,39 +292,50 @@ pub(crate) fn unique_link_header(
     .is_some_and(|candidate| candidate.id() == link.id())
 }
 
+#[derive(Clone, Copy)]
+enum SourceBody {
+    Absent,
+    Present,
+    Bounded(cadmpeg_core::decode::ResourceLimit),
+}
+
 fn source_body(
     ctx: &DecodeContext<'_>,
     document: &RseInventory<'_>,
     inventory: &FeatureInventory,
     wrapper: &PmDcFeatureProperty,
-) -> Result<bool, CodecError> {
+) -> Result<SourceBody, CodecError> {
     let Some(reference) = surface_reference(wrapper) else {
-        return Ok(false);
+        return Ok(SourceBody::Absent);
     };
     if reference.index() == 0 {
-        return Ok(!reference.qualified());
+        return Ok(if reference.qualified() {
+            SourceBody::Absent
+        } else {
+            SourceBody::Present
+        });
     }
     if !reference.qualified() {
-        return Ok(false);
+        return Ok(SourceBody::Absent);
     }
     let Some(link) = one(inventory.kernel_entity_links.iter().filter(|link| {
         link.identity.segment_token == wrapper.identity.segment_token
             && Some(link.identity.record_ordinal) == reference.record_ordinal()
     })) else {
-        return Ok(false);
+        return Ok(SourceBody::Absent);
     };
     if link.state != 0
         || link.selection_source != wrapper.header.source_index
         || !link.body.qualified()
     {
-        return Ok(false);
+        return Ok(SourceBody::Absent);
     }
     let Some(segment) = one(document
         .segments
         .iter()
         .filter(|segment| *segment.pair.token.key() == wrapper.identity.segment_token))
     else {
-        return Ok(false);
+        return Ok(SourceBody::Absent);
     };
     let Some(record) = framed_records(segment).and_then(|records| {
         one(records.iter().filter(|record| {
@@ -334,10 +343,10 @@ fn source_body(
                 && record.type_id == crate::kernel::KERNEL_RECORD_TYPE_ID
         }))
     }) else {
-        return Ok(false);
+        return Ok(SourceBody::Absent);
     };
     let Some(version) = segment.registry.map(|registry| registry.version_major) else {
-        return Ok(false);
+        return Ok(SourceBody::Absent);
     };
     let Ok(carrier) = crate::kernel::parse_carrier(
         record.payload,
@@ -346,39 +355,47 @@ fn source_body(
         record.payload_offset,
         version,
     ) else {
-        return Ok(false);
+        return Ok(SourceBody::Absent);
     };
     if PmDcReference::from_packed(carrier.selected_key) != link.body {
-        return Ok(false);
+        return Ok(SourceBody::Absent);
     }
+    inspect_source_body(ctx, &carrier, link.entity_id)
+}
+
+fn inspect_source_body(
+    ctx: &DecodeContext<'_>,
+    carrier: &ActiveCarrier<'_>,
+    entity_id: u32,
+) -> Result<SourceBody, CodecError> {
     let Ok(header) = carrier.header.as_ref() else {
-        return Ok(false);
+        return Ok(SourceBody::Absent);
     };
-    let decoded = match crate::kernel::decode_kernel_carrier(
-        ctx,
-        &carrier,
-        header,
-        cadmpeg_asm::brep::DecodePurpose::Inspect,
-    ) {
-        Ok(decoded) => decoded,
-        Err(crate::kernel::CarrierFailure {
-            error: error @ CodecError::ResourceLimit(_),
-            ..
-        }) => return Err(error),
-        Err(_) => return Ok(false),
-    };
-    Ok(one(decoded
-        .brep
-        .body_native_keys
-        .iter()
-        .filter(|key| key.asm_body_key == Some(u64::from(link.entity_id))))
-    .is_some())
+    let result = ctx.scratch(carrier.bytes.window().len(), |scratch| {
+        match crate::kernel::inspect_kernel_carrier(scratch, carrier, header) {
+            Ok(brep) => Ok(
+                if one(brep
+                    .body_native_keys
+                    .iter()
+                    .filter(|key| key.asm_body_key == Some(u64::from(entity_id))))
+                .is_some()
+                {
+                    SourceBody::Present
+                } else {
+                    SourceBody::Absent
+                },
+            ),
+            Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+            Err(_) => Ok(SourceBody::Absent),
+        }
+    })?;
+    Ok(result.unwrap_or_else(SourceBody::Bounded))
 }
 
 #[derive(Default)]
 pub(crate) struct Projection {
     pub(crate) transferred: usize,
-    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) losses: Vec<LossNote>,
 }
 
 /// Records that the Base projection reads.
@@ -561,8 +578,20 @@ pub(crate) fn project(
                 valid
             }
         };
-        if !source_valid {
-            continue;
+        match source_valid {
+            SourceBody::Present => {}
+            SourceBody::Absent => continue,
+            SourceBody::Bounded(limit) => {
+                projection
+                    .losses
+                    .push(InventorLossCode::FeatureBaseSourceBounded.note(format!(
+                        "{} source body check: {} during {}",
+                        feature.id,
+                        CodecError::ResourceLimit(limit),
+                        limit.operation
+                    )));
+                continue;
+            }
         }
         let Some(segment) = one(document
             .segments
@@ -658,9 +687,10 @@ pub(crate) fn project(
                         )));
                         continue;
                     }
-                    StateBody::Bounded => {
+                    StateBody::Bounded(limit) => {
                         projection.losses.push(code.note(format!(
-                            "{noun} result body is absent from the current model and its history state passed the local work cap of state views; the feature remains native.",
+                            "{noun} {} history-state result: {limit}; the feature remains native.",
+                            feature.id,
                         )));
                         continue;
                     }

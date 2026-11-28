@@ -324,7 +324,7 @@ fn read(bytes: &[u8], width: RefWidth, limit: usize) -> Option<Reading> {
     let framed = match frame_chain(&ctx, bytes, width).expect("frame") {
         Framing::Framed(chain) => chain,
         Framing::Absent => return None,
-        Framing::Unread(reason) => return Some(Reading::Unread(reason)),
+        Framing::Unread(unread) => return Some(Reading::Unread(unread.reason)),
     };
     Some(
         match prepare(&ctx, &framed, bytes, width).expect("prepare") {

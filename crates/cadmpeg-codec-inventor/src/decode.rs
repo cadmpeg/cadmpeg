@@ -650,13 +650,7 @@ fn decode_container<'a>(
         ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
             Ok(header) => {
                 match ctx.run_part(|| {
-                    crate::kernel::decode_kernel_carrier(
-                        ctx,
-                        carrier,
-                        header,
-                        cadmpeg_asm::brep::DecodePurpose::Model,
-                    )
-                    .map_err(|failure| {
+                    crate::kernel::decode_kernel_carrier(ctx, carrier, header).map_err(|failure| {
                         carrier_cause = failure.cause;
                         failure.error
                     })
@@ -889,18 +883,32 @@ fn decode_container<'a>(
                 }
                 losses.extend(crate::feature::history_states::losses(&history));
                 if let Some(unread) = history.unread {
-                    let why = crate::feature::history_states::unread_note(unread);
+                    let why = crate::feature::history_states::unread_note(unread.reason);
                     // A carrier given up whole already holds the chain bytes;
                     // the note records the history the chain held.
                     if given_up_carrier.is_some() {
                         losses.push(why);
                     } else {
-                        let cause = match unread {
+                        let cause = match unread.reason {
                             crate::feature::history_states::Unread::Unclosed => Cause::Unreadable,
                             crate::feature::history_states::Unread::Bounded => Cause::Undecoded,
                         };
+                        let chain =
+                            carrier.bytes.window().get(unread.start..).ok_or_else(|| {
+                                CodecError::malformed(
+                                    "Inventor history chain start is out of bounds",
+                                )
+                            })?;
+                        let part = crate::rse::bulk_record_part(
+                            "history-chain",
+                            (&carrier.segment_token, carrier.record_ordinal),
+                            carrier.stream_offset(unread.start)?,
+                            chain,
+                            ArenaClass::Design,
+                        )
+                        .costing("the features have no history states");
                         history_chain = Some((
-                            history_chain_part(carrier)?,
+                            part,
                             cause,
                             CodecError::malformed(format_args!("{}: {}", why.code, why.message)),
                         ));
@@ -1268,6 +1276,7 @@ fn decode_container<'a>(
                 "Transferred {partial_shells} Inventor shell operation(s) with wall thickness and removed-face selections; construction controls remain native."
             )));
         }
+        losses.extend(unresolved.profile_losses);
         if unresolved.profile_bodies != 0 {
             losses.push(InventorLossCode::FeatureProfileBodyUndecoded.note(format!(
                 "{} PmDc profile body record(s) did not decode; extrusions whose profiles select them keep their native profile selection.",
@@ -1471,11 +1480,14 @@ fn decode_container<'a>(
                     if placed.contains(&placement.occurrence_id) {
                         continue;
                     }
-                    let part = rse_record_part(
+                    let Some(frame) = rse_record_frame(
                         container,
-                        (&placement.segment_token, placement.record_ordinal),
-                        ArenaClass::Model,
-                    )?;
+                        &placement.segment_token,
+                        placement.record_ordinal,
+                    ) else {
+                        continue;
+                    };
+                    let part = rse_record_part(frame, ArenaClass::Model);
                     rejected.push((placement.occurrence_id, part.id()?.into()));
                 }
                 losses.extend(crate::assembly::unbuilt_losses(
@@ -1846,6 +1858,7 @@ struct UnresolvedDesign {
     features: usize,
     feature_states: usize,
     profile_bodies: usize,
+    profile_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     sketch_construction: usize,
     sketch_axis_distances: usize,
     sketch_carrier_conflicts: usize,
@@ -1936,6 +1949,7 @@ fn project_design(
         features: features.unresolved_features,
         feature_states: features.unresolved_states,
         profile_bodies: profile_bodies.undecoded,
+        profile_losses: profile_bodies.bounded,
         sketch_construction: sketches.unresolved_construction,
         sketch_axis_distances: sketches.native_axis_distances,
         sketch_carrier_conflicts: sketches.native_carrier_conflicts,
@@ -2016,7 +2030,10 @@ fn give_up_issue_records<'a>(
         if !named.insert((token.to_owned(), issue.record_ordinal)) {
             continue;
         }
-        let part = rse_record_part(container, (token, issue.record_ordinal), holds)?;
+        let Some(frame) = rse_record_frame(container, token, issue.record_ordinal) else {
+            continue;
+        };
+        let part = rse_record_part(frame, holds);
         parts.push(ctx.give_up_part(
             part,
             Cause::Undecoded,
@@ -2048,7 +2065,10 @@ fn give_up_annotation_records(
 ) -> Result<(), CodecError> {
     for record in malformed {
         let token = record.segment_token.as_str();
-        let part = rse_record_part(container, (token, record.record_ordinal), ArenaClass::Model)?;
+        let Some(frame) = rse_record_frame(container, token, record.record_ordinal) else {
+            continue;
+        };
+        let part = rse_record_part(frame, ArenaClass::Model);
         if let Some(annotation) = &record.annotation {
             losses.push(dropped_with(annotation, part.id()?));
         }
@@ -2064,39 +2084,37 @@ fn give_up_annotation_records(
         }
     }
     for need in needs {
-        let part = rse_record_part(
-            container,
-            (need.segment_token.as_str(), need.parameter),
-            ArenaClass::Design,
-        )?;
+        let Some(frame) = rse_record_frame(container, need.segment_token.as_str(), need.parameter)
+        else {
+            continue;
+        };
+        let part = rse_record_part(frame, ArenaClass::Design);
         losses.push(dropped_with(&need.annotation, part.id()?));
     }
     Ok(())
 }
 
-/// The framed `RSe` record `ordinal` of the segment whose token is `token`, as
-/// an `rse-record` part that holds content of the class `holds`.
+/// The framed `RSe` record `frame` of the segment whose token is `key`, as an
+/// `rse-record` part that holds content of the class `holds`.
 fn rse_record_part<'s>(
-    container: &'s InventorContainer<'_>,
-    (token, ordinal): (&str, u32),
+    (key, frame): (
+        &'s cadmpeg_ir::ids::IdentityKey,
+        &'s crate::records::RseRecordFrame<'_>,
+    ),
     holds: ArenaClass,
-) -> Result<Part<'s>, CodecError> {
-    let (key, frame) = rse_record_frame(container, token, ordinal).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "Inventor record {token}-{ordinal} names no framed RSe record"
-        ))
-    })?;
-    Ok(crate::rse::bulk_record_part(
+) -> Part<'s> {
+    crate::rse::bulk_record_part(
         "rse-record",
-        (key, ordinal),
+        (key, frame.ordinal),
         frame.payload_offset,
         frame.payload.window(),
         holds,
-    ))
+    )
 }
 
 /// The framed `RSe` record `ordinal` of the segment whose token is `token`,
-/// and that token as an identity key.
+/// and that token as an identity key. A record that names no framed record
+/// has no bytes to give up.
 fn rse_record_frame<'s, 'a>(
     container: &'s InventorContainer<'a>,
     token: &str,
@@ -2140,31 +2158,6 @@ fn carrier_part<'a>(carrier: &crate::kernel::ActiveCarrier<'a>) -> (Part<'a>, (S
             carrier.record_ordinal,
         ),
     )
-}
-
-/// The `delta_state` chain of the active carrier as a `history-chain` part:
-/// the carrier bytes from its first `delta_state` record.
-fn history_chain_part<'a>(
-    carrier: &crate::kernel::ActiveCarrier<'a>,
-) -> Result<Part<'a>, CodecError> {
-    let bytes = carrier.bytes.window();
-    let start = cadmpeg_asm::history::delta_state_offsets(bytes)
-        .first()
-        .copied()
-        .ok_or_else(|| {
-            CodecError::malformed("an unread Inventor history chain has no delta_state record")
-        })?;
-    let chain = bytes
-        .get(start..)
-        .ok_or_else(|| CodecError::malformed("Inventor history chain start is out of bounds"))?;
-    Ok(crate::rse::bulk_record_part(
-        "history-chain",
-        (&carrier.segment_token, carrier.record_ordinal),
-        carrier.stream_offset(start)?,
-        chain,
-        ArenaClass::Design,
-    )
-    .costing("the features have no history states"))
 }
 
 /// The topology record `record` that the kernel decode of `carrier` read and
