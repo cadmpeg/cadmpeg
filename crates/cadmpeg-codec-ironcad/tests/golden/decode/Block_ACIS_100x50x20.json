@@ -2962,7 +2962,7 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "kernel.unverified",
+            "code": "source.kernel-dialect-unverified",
             "kind": "source_dialect_unverified",
             "namespace": "ironcad"
           }
@@ -2974,7 +2974,7 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "kernel.unverified",
+            "code": "source.kernel-dialect-unverified",
             "kind": "source_dialect_unverified",
             "namespace": "ironcad"
           }

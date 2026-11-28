@@ -189,7 +189,7 @@ fn format_13006_parasolid_layers_are_verified() {
             &cadmpeg_core::dialect::Admission::Admitted
         );
     }
-    assert_eq!(count(&result, IronCadLossCode::KernelUnverified), 0);
+    assert_eq!(count(&result, IronCadLossCode::KernelDialectUnverified), 0);
 }
 
 #[test]
