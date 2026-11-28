@@ -279,7 +279,7 @@ fn standard_surface_record_table(brep: &[u8]) -> StandardSurfaceRecordTable {
         None => 0..0,
     };
     for pos in candidate_positions {
-        if brep.get(pos + freeform_core::ZERO_RUN..pos + freeform_core::BOUNDS) != Some(&[0, 0, 0])
+        if brep.get(pos + freeform_core::ZERO_RUN + 1..pos + freeform_core::BOUNDS) != Some(&[0, 0])
         {
             continue;
         }
@@ -295,7 +295,9 @@ fn standard_surface_record_table(brep: &[u8]) -> StandardSurfaceRecordTable {
         {
             continue;
         }
-        let tag = u24_le(brep, pos);
+        let Some(tag) = View::u32_le_at(brep, pos) else {
+            continue;
+        };
         let forward = match brep[pos + freeform_core::SIGN] {
             0x01 => true,
             0xff => false,
@@ -553,19 +555,13 @@ pub(super) fn face_sense(brep: &[u8], prefix: &SurfacePrefix) -> Option<bool> {
     }
 }
 
-/// Read the unique contiguous standard vertex roster with the requested
-/// cardinality. Each seven-byte row stores `54 <identity:u24le> 00 00 00`;
-/// roster order is coordinate-table order.
-pub(super) fn standard_vertex_roster(source: &[u8], vertex_count: usize) -> Option<Vec<u32>> {
-    if vertex_count == 0 {
-        return None;
-    }
-    let mut solutions = Vec::new();
+fn all_standard_vertex_rosters(source: &[u8]) -> Vec<Vec<u32>> {
+    let mut rosters = Vec::new();
     let mut position = 0usize;
     while position + vertex_roster::LEN <= source.len() {
         if source[position + vertex_roster::MARKER] != 0x54
-            || source[position + vertex_roster::ZERO_RUN..position + vertex_roster::LEN]
-                != [0, 0, 0]
+            || source[position + vertex_roster::ZERO_RUN + 1..position + vertex_roster::LEN]
+                != [0, 0]
         {
             position += 1;
             continue;
@@ -574,10 +570,12 @@ pub(super) fn standard_vertex_roster(source: &[u8], vertex_count: usize) -> Opti
         let mut identities = Vec::new();
         while position + vertex_roster::LEN <= source.len()
             && source[position + vertex_roster::MARKER] == 0x54
-            && source[position + vertex_roster::ZERO_RUN..position + vertex_roster::LEN]
-                == [0, 0, 0]
+            && source[position + vertex_roster::ZERO_RUN + 1..position + vertex_roster::LEN]
+                == [0, 0]
         {
-            let identity = View::u24_le_at(source, position + vertex_roster::TAG)?;
+            let Some(identity) = View::u32_le_at(source, position + vertex_roster::TAG) else {
+                break;
+            };
             if identities
                 .last()
                 .is_some_and(|previous| *previous >= identity)
@@ -587,16 +585,74 @@ pub(super) fn standard_vertex_roster(source: &[u8], vertex_count: usize) -> Opti
             identities.push(identity);
             position += vertex_roster::LEN;
         }
-        if identities.len() == vertex_count {
-            solutions.push(identities);
+        if !identities.is_empty() {
+            rosters.push(identities);
         }
         if position == start {
             position += 1;
         }
     }
+    rosters
+}
+
+/// Read the unique contiguous standard vertex roster with the requested
+/// cardinality. Each seven-byte row stores `54 <identity:u32le> 00 00`;
+/// roster order is coordinate-table order.
+pub(super) fn standard_vertex_roster(source: &[u8], vertex_count: usize) -> Option<Vec<u32>> {
+    if vertex_count == 0 {
+        return None;
+    }
+    let solutions: Vec<Vec<u32>> = all_standard_vertex_rosters(source)
+        .into_iter()
+        .filter(|identities| identities.len() == vertex_count)
+        .collect();
     <[Vec<u32>; 1]>::try_from(solutions)
         .ok()
         .map(|[identities]| identities)
+}
+
+/// Pair source-ordered vertex rosters with source-ordered population vertex
+/// counts. When the filtered sequence of candidate rosters matches `counts`
+/// positionally 1-to-1, each population receives its positional roster even
+/// when multiple populations share a vertex count; otherwise each population
+/// falls back to unique-count matching.
+pub(super) fn pair_standard_vertex_rosters(
+    source: &[u8],
+    counts: &[usize],
+) -> Vec<Option<Vec<u32>>> {
+    if counts.is_empty() {
+        return Vec::new();
+    }
+    let wanted: HashSet<usize> = counts.iter().copied().filter(|&count| count > 0).collect();
+    let matched: Vec<Vec<u32>> = all_standard_vertex_rosters(source)
+        .into_iter()
+        .filter(|roster| wanted.contains(&roster.len()))
+        .collect();
+    if matched.len() == counts.len()
+        && matched
+            .iter()
+            .zip(counts)
+            .all(|(roster, &count)| roster.len() == count)
+    {
+        return matched.into_iter().map(Some).collect();
+    }
+    let mut unique_by_len = HashMap::<usize, Option<Vec<u32>>>::new();
+    for roster in matched {
+        unique_by_len
+            .entry(roster.len())
+            .and_modify(|slot| *slot = None)
+            .or_insert(Some(roster));
+    }
+    counts
+        .iter()
+        .map(|&count| {
+            if count == 0 {
+                None
+            } else {
+                unique_by_len.get(&count).cloned().flatten()
+            }
+        })
+        .collect()
 }
 
 /// Locate complete analytic surface records by the strict 5-byte template
@@ -616,12 +672,15 @@ pub(crate) fn surface_prefixes(brep: &[u8]) -> Vec<SurfacePrefix> {
         let Some(kind) = AnalyticSurfaceKind::from_marker(kind) else {
             continue;
         };
-        if brep[i - 2] != 0x00 || brep[i - 1] != kind.prebyte() {
+        if brep[i - 1] != kind.prebyte() {
             continue;
         }
+        let Some(target) = View::u32_le_at(brep, i - analytic_plane::MARKER) else {
+            continue;
+        };
         let prefix = SurfacePrefix {
             pos: i,
-            target: u24_le(brep, i - analytic_plane::MARKER),
+            target,
             kind,
         };
         if face_sense(brep, &prefix).is_none() {
@@ -804,11 +863,11 @@ fn standard_curve_support_row_at(
     face_count: usize,
     position: usize,
 ) -> Option<(StandardCurveSupport, usize)> {
-    const LINE: [u8; 5] = [0x00, 0x02, 0x00, 0x33, 0x36];
-    const CIRCLE: [u8; 5] = [0x00, 0x12, 0x00, 0x33, 0x37];
+    const LINE: [u8; 4] = [0x02, 0x00, 0x33, 0x36];
+    const CIRCLE: [u8; 4] = [0x12, 0x00, 0x33, 0x37];
 
-    let tag = View::u24_le_at(brep, position + 1)?;
-    let header = brep.get(position + 4..position + 9);
+    let tag = View::u32_le_at(brep, position + 1)?;
+    let header = brep.get(position + 5..position + 9);
     let (geometry, refs) = if header == Some(&LINE) {
         (StandardCurveGeometry::Line, position + 9)
     } else if header == Some(&CIRCLE) {
@@ -822,7 +881,7 @@ fn standard_curve_support_row_at(
             StandardCurveGeometry::Circle { center, radius },
             position + 25,
         )
-    } else if brep.get(position + 4..position + 7) == Some(&[0, 0, 0]) {
+    } else if brep.get(position + 5..position + 7) == Some(&[0, 0]) {
         (StandardCurveGeometry::Bspline, position + 7)
     } else {
         return None;
@@ -1027,10 +1086,6 @@ fn face_ref(bytes: &[u8], at: usize) -> Option<(usize, usize)> {
     }
 }
 
-fn u24_le(bytes: &[u8], at: usize) -> u32 {
-    u32::from(bytes[at]) | ((u32::from(bytes[at + 1])) << 8) | ((u32::from(bytes[at + 2])) << 16)
-}
-
 #[cfg(test)]
 mod tests {
     use super::axis_from_xy;
@@ -1224,5 +1279,70 @@ mod tests {
         assert_eq!(census.records, 1);
         assert_eq!(census.supported_rosters, 1);
         assert_eq!(census.supported_records, 1);
+    }
+
+    #[test]
+    fn high_u32_carrier_tags_decode_surfaces_supports_and_vertex_roster() {
+        let mut bytes = Vec::new();
+        let freeform_tag = 0x016f_67da_u32;
+        bytes.extend_from_slice(&freeform_tag.to_le_bytes());
+        bytes.extend_from_slice(&[0, 0]);
+        for value in [0.0f32, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 2.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x01);
+
+        let plane_tag = 0x016f_67db_u32;
+        bytes.extend_from_slice(&plane_tag.to_le_bytes());
+        bytes.extend_from_slice(&[0x02, 0x00, 0x33, 0x32]);
+        for value in [0.0f32, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 2.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x01);
+
+        let edge_tag = 0x016f_6016_u32;
+        bytes.push(0x60);
+        bytes.extend_from_slice(&edge_tag.to_le_bytes());
+        bytes.extend_from_slice(&[0x02, 0x00, 0x33, 0x36, 0, 1]);
+
+        let populations = crate::test_support::with_service_context(|ctx| {
+            super::standard_surface_populations(ctx, &bytes)
+        })
+        .expect("compute populations with >24-bit carrier tags");
+        assert_eq!(populations.len(), 1);
+        assert_eq!(populations[0].records.len(), 2);
+        assert_eq!(populations[0].supports.len(), 1);
+        assert_eq!(populations[0].supports[0].tag, edge_tag);
+
+        let mut roster = Vec::new();
+        for tag in [0x016f_6017_u32, 0x016f_6018_u32] {
+            roster.push(0x54);
+            roster.extend_from_slice(&tag.to_le_bytes());
+            roster.extend_from_slice(&[0, 0]);
+        }
+        assert_eq!(
+            super::standard_vertex_roster(&roster, 2),
+            Some(vec![0x016f_6017, 0x016f_6018])
+        );
+    }
+
+    #[test]
+    fn pair_standard_vertex_rosters_matches_repeated_counts_in_source_order() {
+        let mut bytes = Vec::new();
+        for run in [vec![10u32, 11], vec![20u32, 21]] {
+            for tag in run {
+                bytes.push(0x54);
+                bytes.extend_from_slice(&tag.to_le_bytes());
+                bytes.extend_from_slice(&[0, 0]);
+            }
+            bytes.push(0xff);
+        }
+        // Single-count lookup withholds repeated cardinality.
+        assert_eq!(super::standard_vertex_roster(&bytes, 2), None);
+        // Positional multi-population pairing binds both rosters cleanly.
+        assert_eq!(
+            super::pair_standard_vertex_rosters(&bytes, &[2, 2]),
+            vec![Some(vec![10, 11]), Some(vec![20, 21])]
+        );
     }
 }

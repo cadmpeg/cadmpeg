@@ -647,7 +647,7 @@ pub(super) fn parse_fbb_edge_tables_width(
     let mut rows = Vec::new();
     let mut scopes = Vec::new();
     let mut table_count = 0;
-    let mut delimiter_family = None;
+    let mut expected_delimiter: Option<&[u8]> = None;
     loop {
         if bytes.get(position) != Some(&0x01) {
             return None;
@@ -685,21 +685,23 @@ pub(super) fn parse_fbb_edge_tables_width(
         }
         table_count += 1;
         let delimiter = bytes.get(position..position + EDGE_DELIMITER.len())?;
-        let family = match handle_width {
-            2 if delimiter[0] == 0x10
-                && delimiter[1] >= 0x14
-                && delimiter[1] != 0x24
-                && delimiter[1] & 0x0f == 0x04
-                && delimiter[2..] == EDGE_DELIMITER[2..] =>
-            {
-                delimiter[1] >> 4
+        let valid_delimiter = match handle_width {
+            2 => {
+                delimiter[0] == 0x10
+                    && delimiter[1] >= 0x14
+                    && delimiter[1] != 0x24
+                    && delimiter[1] & 0x0f == 0x04
+                    && delimiter[3..5] == EDGE_DELIMITER[3..5]
             }
-            1 | 3 if delimiter == EDGE_DELIMITER => 0x02,
-            _ => return None,
+            1 | 3 => delimiter == EDGE_DELIMITER,
+            _ => false,
         };
-        if delimiter_family
-            .replace(family)
-            .is_some_and(|value| value != family)
+        if !valid_delimiter {
+            return None;
+        }
+        if expected_delimiter
+            .replace(delimiter)
+            .is_some_and(|previous| previous != delimiter)
         {
             return None;
         }

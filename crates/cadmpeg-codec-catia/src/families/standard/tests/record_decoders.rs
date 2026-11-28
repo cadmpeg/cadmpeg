@@ -694,6 +694,36 @@ fn fbb_topology_requires_one_u16_delimiter_family() {
 }
 
 #[test]
+fn fbb_edge_tables_admit_consistent_colored_and_styled_u16_delimiters() {
+    for delimiter in [
+        [0x10, 0x94, 0x04, 0xff, 0xff, 0xea, 0xea, 0xea],
+        [0x10, 0x74, 0x07, 0xff, 0xff, 0xea, 0xea, 0xea],
+    ] {
+        let mut bytes = Vec::new();
+        for (kind, rows) in [
+            (1u8, [[0x1010u16, 0x1011], [0x1011, 0x1012]]),
+            (2u8, [[0x1012u16, 0x1013], [0x1013, 0x1010]]),
+        ] {
+            bytes.extend_from_slice(&[0x01, kind, 2]);
+            for row in rows {
+                bytes.extend_from_slice(&[0x02, 2]);
+                for handle in row {
+                    bytes.extend_from_slice(&handle.to_be_bytes());
+                }
+            }
+            bytes.extend_from_slice(&delimiter);
+        }
+        bytes.extend_from_slice(&[0x01, 0x06, 0]);
+        let (rows, _, vertex_header, width) =
+            crate::families::standard::fbb::parse_fbb_edge_tables(&bytes, 0)
+                .expect("consistent colored FBB delimiter parses");
+        assert_eq!(rows.len(), 4);
+        assert_eq!(width, 2);
+        assert_eq!(&bytes[vertex_header..vertex_header + 2], &[0x01, 0x06]);
+    }
+}
+
+#[test]
 fn standard_vertex_roster_preserves_native_identity_order() {
     let mut bytes = vec![0x54, 0x02, 0x00, 0x00, 0, 0, 0, 0xff];
     for identity in [0x01_0203u32, 0x01_0206, 0x01_0209] {
