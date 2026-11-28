@@ -10,9 +10,10 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
 use crate::loss::F3dLossCode;
+use cadmpeg_core::json;
 use cadmpeg_ir::native::NativeConvertError;
 use serde::de::DeserializeOwned;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::records::{Manufacturing, ManufacturingParameter};
 
@@ -21,7 +22,7 @@ fn native_error(error: NativeConvertError) -> CodecError {
 }
 
 fn model<T: DeserializeOwned>(value: Value) -> Result<T, CodecError> {
-    serde_json::from_value(value).map_err(CodecError::malformed)
+    cadmpeg_core::serde_erase::json::from_value(value).map_err(CodecError::malformed)
 }
 
 fn native_name(value: &str) -> Value {
@@ -84,6 +85,21 @@ pub(crate) fn retained(ir: &CadIr) -> Result<Manufacturing, CodecError> {
     )
 }
 
+pub(crate) fn recover(
+    result: Result<(), CodecError>,
+    losses: &mut Vec<LossNote>,
+    item: &str,
+) -> Result<(), CodecError> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(error) => {
+            losses.push(F3dLossCode::CamDocumentUnreadable.note(format!("CAM {item}: {error}")));
+            Ok(())
+        }
+    }
+}
+
 pub(crate) fn collect(
     ctx: &DecodeContext<'_>,
     scan: &crate::container::ContainerScan<'_>,
@@ -95,7 +111,8 @@ pub(crate) fn collect(
     if cam.is_empty() {
         return Ok(());
     }
-    admit(ctx, ir, &cam, losses)
+    let result = admit(ctx, ir, &cam, losses);
+    recover(result, losses, "process projection")
 }
 
 /// Projects the read definitions onto the process arenas and retains their
@@ -141,6 +158,16 @@ pub(crate) fn scope(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     member: &str,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    recover(scope_inner(ctx, ir, member, losses), losses, member)
+}
+
+fn scope_inner(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    member: &str,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let mut cam = retained_for_decode(ctx, ir)?;
     if cam.is_empty() {
@@ -151,7 +178,7 @@ pub(crate) fn scope(
     ir.process.operations.clear();
     ir.process.tools.clear();
     ir.process.parameters.clear();
-    project(ctx, ir, &cam, &mut Vec::new())?;
+    project(ctx, ir, &cam, losses)?;
     store(ctx, ir, &cam)
 }
 
@@ -495,9 +522,11 @@ fn project(
     for operation in &cam.operations {
         use super::records::ManufacturingStrategy;
         if !setups.contains(&operation.setup) {
-            return Err(CodecError::malformed(
-                "CAM operation names a setup that no CAM record defines",
-            ));
+            losses.push(F3dLossCode::CamOperationUnreadable.note(format!(
+                "CAM operation {} names undefined setup {}; operation omitted",
+                operation.id, operation.setup
+            )));
+            continue;
         }
         let class = match operation.family {
             ManufacturingStrategy::Face => json!({"kind":"milling","value":"plane"}),
@@ -551,7 +580,41 @@ pub(crate) fn merge_native(
     }
 }
 
-pub(crate) fn ensure_scopes(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
+pub(crate) fn ensure_scopes(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    let fallback = ir
+        .model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.is_root())
+        .or_else(|| ir.model.product_definitions.first())
+        .map(|definition| definition.id.clone());
+    ir.process.setups.retain_mut(|setup| {
+        if ir.model.product_definitions.iter().any(|definition| definition.id == setup.scope) {
+            return true;
+        }
+        losses.push(F3dLossCode::CamSetupScopeUnresolved.note(format!(
+            "CAM setup {} scope {} names no product definition; document scope is assumed when available",
+            setup.id, setup.scope
+        )));
+        if let Some(scope) = &fallback {
+            setup.scope = scope.clone();
+            true
+        } else {
+            false
+        }
+    });
+    ir.process
+        .parameters
+        .retain(|parameter| match &parameter.owner {
+            cadmpeg_ir::process::groups::ProcessOwner::Setup(id) => {
+                ir.process.setups.iter().any(|setup| setup.id == *id)
+            }
+            _ => true,
+        });
     let scopes: std::collections::BTreeSet<_> = ir
         .process
         .setups
@@ -567,12 +630,14 @@ pub(crate) fn ensure_scopes(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(
         {
             continue;
         }
-        let definition = ir
+        let Some(definition) = ir
             .model
             .product_definitions
             .iter()
             .find(|definition| definition.id == scope)
-            .ok_or_else(|| CodecError::malformed("CAM setup scope names no product definition"))?;
+        else {
+            continue;
+        };
         let occurrences = definition
             .occurrences
             .iter()

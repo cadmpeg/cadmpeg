@@ -29,7 +29,7 @@ fn cam_tool_overall_length_comes_from_overall_length_not_body_length() {
         .decode(&mut Cursor::new(part), &DecodeOptions::default())
         .unwrap();
     let process = &result.ir().process;
-    let cutter = serde_json::to_value(&process.tools[0].cutter).unwrap();
+    let cutter = cadmpeg_core::serde_erase::json::to_value(&process.tools[0].cutter).unwrap();
     assert_eq!(cutter["overall_length"]["value"], 50.0);
     assert_eq!(cutter["flute_length"]["value"], 15.0);
     assert_eq!(process.setups[0].name.as_deref(), Some("Setup11"));
@@ -337,13 +337,16 @@ fn cam_manufacturing_wire_keeps_exact_parameter_text() {
 #[test]
 fn cam_empty_section_preserves_existing_wire() {
     let ir = cadmpeg_ir::CadIr::empty();
-    let encoded = serde_json::to_value(&ir).unwrap();
+    let encoded = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
     assert!(encoded.get("manufacturing").is_none());
-    let decoded: cadmpeg_ir::CadIr = serde_json::from_value(encoded.clone()).unwrap();
+    let decoded: cadmpeg_ir::CadIr =
+        cadmpeg_core::serde_erase::json::from_value(encoded.clone()).unwrap();
     assert!(manufacturing(&decoded).is_empty());
     let mut explicit_null = encoded;
     explicit_null["process"] = serde_json::Value::Null;
-    assert!(serde_json::from_value::<cadmpeg_ir::CadIr>(explicit_null).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::CadIr>(explicit_null).is_err()
+    );
 }
 
 #[test]
@@ -385,13 +388,14 @@ fn cam_process_uses_setup_order_tool_references_and_canonical_rates() {
             process.tools[0].id.clone()
         ))
     );
-    let technology = serde_json::to_value(&process.operations[0].technology).unwrap();
+    let technology =
+        cadmpeg_core::serde_erase::json::to_value(&process.operations[0].technology).unwrap();
     let parameter = |name: &str| {
         process
             .parameters
             .iter()
             .find(|parameter| parameter.name.as_str() == name)
-            .map(|parameter| serde_json::to_value(parameter).unwrap())
+            .map(|parameter| cadmpeg_core::serde_erase::json::to_value(parameter).unwrap())
             .unwrap()
     };
     let feed = parameter("tool_feedCutting");

@@ -248,7 +248,7 @@ fn finalize_result(
         &mut body.losses,
         |ir, losses| crate::design_v11::project(ctx, ir, depth, losses),
     )?;
-    crate::cam::project::ensure_scopes(ctx, &mut ir)?;
+    crate::cam::project::ensure_scopes(ctx, &mut ir, &mut body.losses)?;
     ir.finalize();
     ir.source = Some(source);
     Ok(Decoded {

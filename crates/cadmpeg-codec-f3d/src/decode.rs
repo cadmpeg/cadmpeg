@@ -4459,7 +4459,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 &mut decoded.body.losses,
                 |ir, losses| crate::design_v11::project(ctx, ir, depth, losses),
             )?;
-            crate::cam::project::ensure_scopes(ctx, &mut decoded.ir)?;
+            crate::cam::project::ensure_scopes(ctx, &mut decoded.ir, &mut decoded.body.losses)?;
             decoded.ir.finalize();
             Ok(decoded.into_decoded())
         }

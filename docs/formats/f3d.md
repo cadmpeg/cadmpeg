@@ -4484,3 +4484,5 @@ geometry selections.
 Computed toolpaths, NC code, slice data, simulation results, and machine
 definitions occupy separate `Iron.Toolpath`, `Iron.NcCode`,
 `Iron.ToolpathSliceData`, `Iron.ProcessSimResults`, and `Iron.Machine` data.
+
+CAM setup scope resolution charges `cam.setup-scope-unresolved` and uses the document definition when available. A setup with no available definition is omitted.

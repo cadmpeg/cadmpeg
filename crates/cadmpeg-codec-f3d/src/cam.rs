@@ -88,19 +88,13 @@ fn read_entry(
             losses.append(&mut part_losses);
             Ok(())
         }
-        Err(CodecError::Malformed(error)) => {
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(error) => {
             losses.push(
                 F3dLossCode::CamDocumentUnreadable.note(format!("CAM document {name}: {error}")),
             );
             Ok(())
         }
-        Err(CodecError::NotImplemented(error)) => {
-            losses.push(
-                F3dLossCode::CamDocumentUnreadable.note(format!("CAM document {name}: {error}")),
-            );
-            Ok(())
-        }
-        Err(error) => Err(error),
     }
 }
 

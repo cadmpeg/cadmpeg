@@ -491,7 +491,19 @@ impl MergeSession<'_, '_> {
                     },
                 };
                 for setup in &mut component_ir.process.setups {
-                    setup.scope = scope.rewrite(setup.scope.clone())?;
+                    match scope.rewrite(setup.scope.clone()) {
+                        Ok(rewritten) => setup.scope = rewritten,
+                        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                        Err(error) => {
+                            parent_report.losses.push(
+                                crate::loss::F3dLossCode::CamSetupScopeUnresolved.note(format!(
+                                    "CAM setup {} member scope: {error}; member definition assumed",
+                                    setup.id
+                                )),
+                            );
+                            setup.scope = member.definition.clone();
+                        }
+                    }
                 }
                 parent_ir
                     .process

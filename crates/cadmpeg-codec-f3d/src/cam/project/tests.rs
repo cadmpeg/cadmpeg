@@ -26,7 +26,7 @@ fn decode(text: &str) -> (CadIr, Vec<LossNote>) {
 }
 
 fn json<T: serde::Serialize>(value: &T) -> Value {
-    serde_json::to_value(value).unwrap()
+    cadmpeg_core::serde_erase::json::to_value(value).unwrap()
 }
 
 /// The id and cached number of the process parameter `name` of `owner`.
@@ -46,7 +46,7 @@ fn parameter(ir: &CadIr, owner: &str, name: &str) -> (String, f64) {
 }
 
 fn bound(id: &str) -> Value {
-    serde_json::json!({"kind":"parameter", "value":{"kind":"process", "value":id}})
+    cadmpeg_core::json!({"kind":"parameter", "value":{"kind":"process", "value":id}})
 }
 
 fn has_loss(losses: &[LossNote], code: F3dLossCode) -> bool {
@@ -62,7 +62,7 @@ fn setup_choices_name_the_parameters_they_are_read_from() {
     let id = |name| parameter(&ir, "setup", name).0;
     assert_eq!(
         setup["stock"]["parameters"],
-        serde_json::json!([id("job_stockMode"), id("job_stockOffsetMode")])
+        cadmpeg_core::json!([id("job_stockMode"), id("job_stockOffsetMode")])
     );
     assert_eq!(setup["stock"]["value"]["kind"], "relative");
     let sides = bound(&id("job_stockOffsetSides"));
@@ -75,12 +75,12 @@ fn setup_choices_name_the_parameters_they_are_read_from() {
     assert_eq!(value["high"][2], bound(&id("job_stockOffsetTop")));
     assert_eq!(
         setup["wcs"]["orientation"]["parameters"],
-        serde_json::json!([id("wcs_orientation_mode")])
+        cadmpeg_core::json!([id("wcs_orientation_mode")])
     );
     assert_eq!(setup["wcs"]["orientation"]["value"]["kind"], "model");
     assert_eq!(
         setup["wcs"]["origin"]["parameters"],
-        serde_json::json!([id("wcs_origin_mode")])
+        cadmpeg_core::json!([id("wcs_origin_mode")])
     );
     assert!(!has_loss(&losses, F3dLossCode::CamStockOffsetModeUnread));
     assert_eq!(parameter(&ir, "setup", "job_stockOffsetSides").1, 2.0);
@@ -94,7 +94,7 @@ fn stock_offsets_apply_only_in_the_simple_offset_mode() {
     let setup = json(&ir.process.setups[0]);
     assert_eq!(
         setup["stock"]["value"],
-        serde_json::json!({"kind":"native","value":"default"})
+        cadmpeg_core::json!({"kind":"native","value":"default"})
     );
     assert!(has_loss(&losses, F3dLossCode::CamStockOffsetModeUnread));
 }
@@ -106,7 +106,7 @@ fn unstated_stock_modes_keep_their_source_name() {
     );
     assert_eq!(
         json(&ir.process.setups[0])["stock"]["value"],
-        serde_json::json!({"kind":"native","value":"fixedbox"})
+        cadmpeg_core::json!({"kind":"native","value":"fixedbox"})
     );
 }
 
@@ -131,13 +131,13 @@ fn technology_binds_parameters_of_the_stated_units() {
     assert_eq!(feeds[0][0]["kind"], "cutting");
     assert_eq!(
         feeds[0][1],
-        serde_json::json!({"kind":"per_time","value":bound(&cutting)})
+        cadmpeg_core::json!({"kind":"per_time","value":bound(&cutting)})
     );
     let (speed, value) = parameter(&ir, "operation", "tool_spindleSpeed");
     assert!((value - 9000.0 * std::f64::consts::TAU / 60.0).abs() < 1e-9);
     assert_eq!(
         technology["spindle"],
-        serde_json::json!({"kind":"rotation","value":bound(&speed)})
+        cadmpeg_core::json!({"kind":"rotation","value":bound(&speed)})
     );
     let (stepover, value) = parameter(&ir, "operation", "stepover");
     assert!((value - 4.5).abs() < 1e-9);
@@ -164,7 +164,7 @@ fn technology_values_are_canonical_whatever_unit_the_expression_types() {
 }
 
 #[test]
-fn definitions_that_do_not_project_are_a_loss_and_leave_no_process_records() {
+fn missing_setup_omits_operation_and_keeps_tool() {
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
     with_decode_context(|ctx| {
@@ -179,14 +179,18 @@ fn definitions_that_do_not_project_are_a_loss_and_leave_no_process_records() {
             &mut Vec::new(),
         )
         .unwrap();
+        assert_eq!(cam.operations.len(), 1);
         cam.setups.clear();
         admit(ctx, &mut ir, &cam, &mut losses).unwrap();
     });
-    assert!(has_loss(&losses, F3dLossCode::CamDocumentUnreadable));
+    assert!(has_loss(&losses, F3dLossCode::CamOperationUnreadable));
     assert!(ir.process.setups.is_empty());
     assert!(ir.process.operations.is_empty());
-    assert!(ir.process.tools.is_empty());
-    assert!(ir.process.parameters.is_empty());
+    assert_eq!(ir.process.tools.len(), 1);
+    assert_eq!(ir.process.parameters.len(), 1);
+    assert_eq!(ir.process.parameters[0].name.as_str(), "tool.id");
+    assert!(matches!(&ir.process.parameters[0].owner,
+        cadmpeg_ir::process::groups::ProcessOwner::Tool(id) if *id == ir.process.tools[0].id));
 }
 
 #[test]
@@ -195,5 +199,52 @@ fn projection_without_a_document_definition_is_malformed() {
     with_decode_context(|ctx| {
         let error = project(ctx, &mut ir, &Manufacturing::default(), &mut Vec::new()).unwrap_err();
         assert!(matches!(error, CodecError::Malformed(_)));
+    });
+}
+
+#[test]
+fn cam_unresolved_setup_scope_keeps_document_and_parameters() {
+    let (mut ir, _) = decode(&format!("<document>{SETUP}</document>"));
+    let parameters = ir.process.parameters.clone();
+    let definitions = ir.model.product_definitions.clone();
+    ir.process.setups[0].scope =
+        cadmpeg_ir::ids::ProductDefinitionId::mint("f3d:model:product_definition#missing").unwrap();
+    let mut losses = Vec::new();
+    with_decode_context(|ctx| ensure_scopes(ctx, &mut ir, &mut losses).unwrap());
+    assert_eq!(ir.model.product_definitions, definitions);
+    assert_eq!(ir.process.parameters, parameters);
+    assert_eq!(ir.process.setups.len(), 1);
+    assert_eq!(ir.process.setups[0].scope, definitions[0].id);
+    assert!(has_loss(&losses, F3dLossCode::CamSetupScopeUnresolved));
+    ir.model.product_definitions.clear();
+    ir.design.scopes.clear();
+    with_decode_context(|ctx| ensure_scopes(ctx, &mut ir, &mut losses).unwrap());
+    assert!(ir.process.setups.is_empty());
+    assert!(ir.process.parameters.is_empty());
+}
+
+#[test]
+fn cam_missing_operation_setup_keeps_other_records() {
+    with_decode_context(|ctx| {
+        let mut cam = Manufacturing::default();
+        let mut losses = Vec::new();
+        crate::cam::parse(
+            ctx,
+            View::over_retained(
+                b"<document><object parent=\"missing\" strategy=\"face\"/></document>",
+            ),
+            "synthetic",
+            &mut cam,
+            &mut losses,
+        )
+        .unwrap();
+        assert_eq!(cam.operations.len(), 1);
+        cam.setups.clear();
+        let mut ir = CadIr::empty();
+        crate::tree::state_root_definition(ctx, &mut ir).unwrap();
+        project(ctx, &mut ir, &cam, &mut losses).unwrap();
+        assert!(ir.process.operations.is_empty());
+        assert!(!ir.model.product_definitions.is_empty());
+        assert!(has_loss(&losses, F3dLossCode::CamOperationUnreadable));
     });
 }
