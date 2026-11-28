@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::Hash;
 
 use crate::native::F3dNative;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
@@ -22,9 +23,9 @@ use cadmpeg_ir::topology::Sense;
 
 use super::{
     attributes::{
-        edge_persistent_attribute_ref, encode_source_less_attributes, owner_attribute_ref,
-        sketch_link_attribute_ref, source_less_body_key, timestamp_attribute_ref, AttributeIndex,
-        AttributeOwner, AttributeOwnerStarts, SurfaceOwnerStarts,
+        edge_persistent_attribute_ref, encode_source_less_attributes, link_chain_attribute_ref,
+        owner_attribute_ref, source_less_body_key, AttributeIndex, AttributeOwner,
+        AttributeOwnerStarts, SurfaceOwnerStarts,
     },
     index::NativeGenerationIndex,
     native_bytes::{
@@ -48,6 +49,7 @@ pub(super) fn encode_smbh(
     target: &CadIr,
     native: &F3dNative,
     attributes: &AttributeIndex<'_>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<u8>, CodecError> {
     let topology = NativeGenerationIndex::new(native);
     let geometry = &target.geometry;
@@ -69,9 +71,9 @@ pub(super) fn encode_smbh(
             shell.wire_edges().next().is_some() || shell.free_vertices().next().is_some()
         })
     {
-        return encode_wire_body_smbh(target, native, attributes, &topology, &owners);
+        return encode_wire_body_smbh(target, native, attributes, &topology, &owners, ctx);
     }
-    encode_face_topology_smbh(target, native, attributes, &topology, &owners)
+    encode_face_topology_smbh(target, native, attributes, &topology, &owners, ctx)
 }
 
 /// The position of each id in `ids`. A repeated id keeps its first position.
@@ -383,6 +385,7 @@ fn encode_wire_body_smbh(
     attributes: &AttributeIndex<'_>,
     topology: &NativeGenerationIndex<'_>,
     owners: &ProceduralOwners<'_>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<u8>, CodecError> {
     let geometry = &target.geometry;
     if geometry.bodies.is_empty()
@@ -581,8 +584,11 @@ fn encode_wire_body_smbh(
             point: point_start,
             attribute: attribute_start,
         },
-        &wire_edge_owners,
-        &free_vertex_owners,
+        SourceLessOwners {
+            edges: &wire_edge_owners,
+            free_vertices: &free_vertex_owners,
+        },
+        ctx,
     )?;
     for body in &geometry.bodies {
         if let Some(transform) = body.transform {
@@ -831,6 +837,7 @@ fn encode_face_topology_smbh(
     attributes: &AttributeIndex<'_>,
     topology: &NativeGenerationIndex<'_>,
     owners: &ProceduralOwners<'_>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<u8>, CodecError> {
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
@@ -1449,7 +1456,12 @@ fn encode_face_topology_smbh(
         )?;
         native_ref(
             &mut records,
-            sketch_link_attribute_ref(target, attributes, coedge, coedge_ordinal, attribute_start)?,
+            link_chain_attribute_ref(
+                target,
+                attributes,
+                &cadmpeg_ir::attributes::AttributeTarget::Coedge(coedge.id.clone()),
+                attribute_start,
+            )?,
         );
         native_i64(&mut records, -1);
         native_ref(&mut records, -1);
@@ -1547,8 +1559,11 @@ fn encode_face_topology_smbh(
             point: point_start,
             attribute: attribute_start,
         },
-        &wire_edge_owners,
-        &free_vertex_owners,
+        SourceLessOwners {
+            edges: &wire_edge_owners,
+            free_vertices: &free_vertex_owners,
+        },
+        ctx,
     )?;
     for body in &geometry.bodies {
         if let Some(transform) = body.transform {
@@ -1590,6 +1605,7 @@ fn closed_edge_traversal(
     carrier: &CurveGeometry,
     vertex: Point3,
     tolerance: f64,
+    ctx: &DecodeContext<'_>,
 ) -> Result<[f64; 2], CodecError> {
     let no_traversal = || {
         CodecError::NotImplemented(format!(
@@ -1607,7 +1623,7 @@ fn closed_edge_traversal(
         .endpoints();
     for parameter in range {
         let end = match cadmpeg_ir::eval::decode::curve_point_solved(
-            EvaluationAdmission::Standard,
+            EvaluationAdmission::Write(ctx),
             geometry,
             parameter,
         ) {
@@ -1644,15 +1660,26 @@ struct SourceLessRecordStarts {
     attribute: i64,
 }
 
+/// The native owner record of each written edge and free vertex.
+#[derive(Clone, Copy)]
+struct SourceLessOwners<'o> {
+    edges: &'o BTreeMap<cadmpeg_ir::ids::EdgeId, i64>,
+    free_vertices: &'o BTreeMap<VertexId, i64>,
+}
+
 fn encode_source_less_edges_vertices_points(
     records: &mut Vec<u8>,
     target: &CadIr,
     attributes: &AttributeIndex<'_>,
     topology: &NativeGenerationIndex<'_>,
     starts: SourceLessRecordStarts,
-    edge_owners: &BTreeMap<cadmpeg_ir::ids::EdgeId, i64>,
-    free_vertex_owners: &BTreeMap<VertexId, i64>,
+    owners: SourceLessOwners<'_>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
+    let SourceLessOwners {
+        edges: edge_owners,
+        free_vertices: free_vertex_owners,
+    } = owners;
     let SourceLessRecordStarts {
         curve: curve_start,
         edge: edge_start,
@@ -1750,6 +1777,7 @@ fn encode_source_less_edges_vertices_points(
                             &geometry.curves[*ordinal].geometry,
                             position,
                             tolerance,
+                            ctx,
                         )
                     })
                     .transpose()?
@@ -1786,13 +1814,12 @@ fn encode_source_less_edges_vertices_points(
             if let Some(reference) = persistent {
                 reference
             } else {
-                timestamp_attribute_ref(
+                link_chain_attribute_ref(
                     target,
                     attributes,
                     &cadmpeg_ir::attributes::AttributeTarget::Edge(edge.id.clone()),
                     attribute_start,
                 )?
-                .unwrap_or(-1)
             },
         );
         native_i64(records, -1);
@@ -1830,13 +1857,12 @@ fn encode_source_less_edges_vertices_points(
         )?;
         native_ref(
             records,
-            timestamp_attribute_ref(
+            link_chain_attribute_ref(
                 target,
                 attributes,
                 &cadmpeg_ir::attributes::AttributeTarget::Vertex(vertex.id.clone()),
                 attribute_start,
-            )?
-            .unwrap_or(-1),
+            )?,
         );
         native_i64(records, -1);
         native_ref(records, -1);
@@ -2120,10 +2146,10 @@ mod tests {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use std::io::Cursor;
 
-    use crate::test_support::smbh_geometry_test::{
+    use crate::test_support::smbh_geometry_fixture::{
         synthetic_free_vertex_body_smbh, synthetic_wire_body_smbh,
     };
-    use crate::test_support::zip_test::f3d_with_smbh;
+    use crate::test_support::zip_fixture::f3d_with_smbh;
     use crate::writer::generate::write_new;
 
     mod closed_edge_range;
@@ -2175,8 +2201,8 @@ mod tests {
     /// source carrier was reversed reads back with the sense of the neutral face.
     #[test]
     fn a_face_from_a_reversed_source_carrier_reads_back_with_its_sense() {
-        use crate::test_support::native_test::f3d_native_mut;
-        use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+        use crate::test_support::native_fixture::f3d_native_mut;
+        use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
         use cadmpeg_ir::topology::Sense;
 
         let decoded = crate::F3dCodec
@@ -2203,7 +2229,13 @@ mod tests {
             };
         }
         let mut output = Vec::new();
-        write_new(&target, MissingStateForm::GeometryTrue, &mut output).expect("the face writes");
+        write_new(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &target,
+            MissingStateForm::GeometryTrue,
+            &mut output,
+        )
+        .expect("the face writes");
         let written = crate::F3dCodec
             .decode(&mut Cursor::new(&output), &DecodeOptions::default())
             .expect("the written file decodes");
@@ -2228,8 +2260,13 @@ mod tests {
     fn invalid_wire_membership_is_dropped_and_the_rest_written() {
         let target = decoded_wire(&synthetic_free_vertex_body_smbh());
         let mut valid_output = Vec::new();
-        write_new(&target, MissingStateForm::GeometryTrue, &mut valid_output)
-            .expect("unmodified free wire writes");
+        write_new(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &target,
+            MissingStateForm::GeometryTrue,
+            &mut valid_output,
+        )
+        .expect("unmodified free wire writes");
         assert!(!valid_output.is_empty());
 
         let mut missing = target.clone();
@@ -2264,8 +2301,13 @@ mod tests {
             (endpoint, "is both free and an edge endpoint"),
         ] {
             let mut output = Vec::new();
-            let generated = write_new(&target, MissingStateForm::GeometryTrue, &mut output)
-                .expect("invalid wire ownership still writes");
+            let generated = write_new(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &target,
+                MissingStateForm::GeometryTrue,
+                &mut output,
+            )
+            .expect("invalid wire ownership still writes");
             crate::F3dCodec
                 .decode(&mut Cursor::new(&output), &DecodeOptions::default())
                 .expect("the written file decodes");

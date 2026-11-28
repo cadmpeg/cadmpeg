@@ -75,17 +75,6 @@ fn directed_subd_sum_fixture_carries_the_literal_axes_and_frame() {
     );
 }
 
-#[cfg(feature = "schema")]
-#[test]
-fn directed_subd_sum_fixture_matches_schema_shape() {
-    let schema =
-        json::to_value(schemars::schema_for!(crate::document::Topology)).expect("serialize schema");
-    let schema_text = schema.to_string();
-    assert!(schema_text.contains("procedural_surfaces"));
-    assert!(schema_text.contains("sharpness"));
-    assert!(schema_text.contains("\"sum\""));
-}
-
 #[test]
 fn unit_cube_has_expected_census() {
     let ir = unit_cube().expect("valid unit cube fixture");

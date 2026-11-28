@@ -15,9 +15,9 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::native_test::{f3d_native_mut, update_f3d_native};
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::f3d_with_smbh_and_protein;
+use crate::test_support::native_fixture::{f3d_native_mut, update_f3d_native};
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
 
 #[test]
@@ -77,14 +77,7 @@ fn generated_f3d_regenerates_on_act_binding_divergence() {
             .unwrap();
     });
 
-    crate::test_support::assert_written_with_loss(
-        &edited,
-        Some(&fidelity),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
-        "",
-    );
+    crate::test_support::assert_patch_declined(&edited, Some(&fidelity), "");
 }
 
 #[test]
@@ -98,12 +91,9 @@ fn generated_f3d_regenerates_on_act_record_index_edit_without_metastream_edit() 
         native.act_component_links[0].record_index += 1;
     });
 
-    crate::test_support::assert_written_with_loss(
+    crate::test_support::assert_patch_declined(
         &edited,
         Some(&fidelity),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
         "ACT component-link edit changes fields",
     );
 }

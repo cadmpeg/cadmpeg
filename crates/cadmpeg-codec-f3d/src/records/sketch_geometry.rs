@@ -840,17 +840,20 @@ impl<T: Copy + Into<f64>> SketchPointRecordForm<T> {
         }
     }
 
+    fn stored_flags(&self) -> &[bool] {
+        match self {
+            Self::Version0 { flag, .. } => std::slice::from_ref(flag),
+            Self::Version8 { flags, .. }
+            | Self::Version10 { flags, .. }
+            | Self::Version10InlineTyped { flags, .. } => flags,
+            Self::Version11 { flags, .. } | Self::Version11InlineTyped { flags, .. } => flags,
+        }
+    }
+
     pub(crate) fn flags(&self) -> [u8; 8] {
         let mut flags = [0; 8];
-        match self {
-            Self::Version0 { flag, .. } => flags[0] = u8::from(*flag),
-            Self::Version8 { flags: source, .. }
-            | Self::Version10 { flags: source, .. }
-            | Self::Version10InlineTyped { flags: source, .. } => {
-                flags[..7].copy_from_slice(&source.map(u8::from));
-            }
-            Self::Version11 { flags: source, .. }
-            | Self::Version11InlineTyped { flags: source, .. } => flags = source.map(u8::from),
+        for (flag, &stored) in flags.iter_mut().zip(self.stored_flags()) {
+            *flag = u8::from(stored);
         }
         flags
     }
@@ -1220,6 +1223,10 @@ impl SketchPoint {
         self.record_form.persistent_id()
     }
 
+    pub(crate) fn stored_flags(&self) -> &[bool] {
+        self.record_form.stored_flags()
+    }
+
     pub(crate) fn flags(&self) -> [u8; 8] {
         self.record_form.flags()
     }
@@ -1229,7 +1236,7 @@ impl SketchPoint {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum SketchPointRecordFormSerde {
     Version0,
@@ -2260,7 +2267,7 @@ impl SketchNurbsGeometry {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum SketchCurveGeometryWire {
     /// A straight line segment.
@@ -2815,7 +2822,7 @@ mod tests {
             id: "f3d:native:sketch-point#0",
             value: &point,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "sketch_points",
             || super::SKETCH_POINT_CLONE_COUNT.with(|count| count.set(0)),
@@ -2844,7 +2851,7 @@ mod tests {
             id: "f3d:native:sketch-text#0",
             value: &text,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "sketch_texts",
             || super::SKETCH_TEXT_CLONE_COUNT.with(|count| count.set(0)),
@@ -2912,7 +2919,7 @@ mod tests {
             id: "f3d:native:sketch-curve#0",
             value: &geometry,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "sketch_curves",
             || super::SKETCH_CURVE_GEOMETRY_CLONE_COUNT.with(|count| count.set(0)),
@@ -2977,7 +2984,7 @@ mod tests {
             id: "f3d:native:sketch-surface#0",
             value: &surface,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "sketch_surfaces",
             || super::SKETCH_SURFACE_CLONE_COUNT.with(|count| count.set(0)),

@@ -12,7 +12,7 @@ use super::{is_class_token, CLASS_MARKER, NAME_MARKER};
 use crate::classification::{
     classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
 };
-use crate::records::{FeatureInputLane, FeatureInputName};
+use crate::records::{FeatureInputLane, FeatureInputName, LEGACY_FACE_ALIAS_NATIVE};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::units::{Quantity, UnitSymbol};
@@ -106,6 +106,9 @@ pub(crate) fn enrich_history_reference_planes(
     let mut data_heads = BTreeMap::<(usize, usize), Vec<(Point3, Vector3)>>::new();
     let mut candidates = BTreeMap::<(usize, usize), Vec<(Point3, Vector3, Vector3)>>::new();
     let mut candidate_sources = BTreeMap::<(usize, usize), Vec<SketchPlaneUAxisSource>>::new();
+    let mut tagged_candidates =
+        BTreeMap::<(usize, usize), Vec<((Point3, Vector3, Vector3), SketchPlaneUAxisSource)>>::new(
+        );
     let mut reference_candidates = BTreeMap::<(usize, usize), Vec<String>>::new();
     let mut reference_frame_candidates =
         BTreeMap::<(usize, usize), Vec<(Point3, Vector3, Vector3)>>::new();
@@ -197,12 +200,12 @@ pub(crate) fn enrich_history_reference_planes(
                 let source = source.to_string();
                 reference_candidates.entry(index).or_default().push(source);
             }
-            if let Some((relative_offset, owner)) = legacy_offset_plane_face_alias(bytes) {
+            if let Some((relative_offset, identity, owner)) = legacy_offset_plane_face_alias(bytes)
+            {
                 let native = format!(
-                    "sldprt:feature-input:legacy-face-alias#{}:{}:{}",
+                    "{LEGACY_FACE_ALIAS_NATIVE}{}:{}:{identity}:{owner}",
                     lane.id,
                     start + relative_offset,
-                    owner,
                 );
                 face_native_candidates
                     .entry((history_index, feature_index))
@@ -273,13 +276,26 @@ pub(crate) fn enrich_history_reference_planes(
                 reference_plane_frame_key(left).cmp(&reference_plane_frame_key(right))
             });
             anchored_frames.dedup_by_key(|frame| reference_plane_frame_key(frame));
+            let mut from_tag = false;
             let explicit = if offset_frames.is_some() {
                 None
             } else if anchored_frames.is_empty() {
+                let mut tagged = || {
+                    let frame = constraint
+                        .is_none()
+                        .then(|| tagged_plane_data_frame(lane, start, end))
+                        .flatten();
+                    from_tag = frame.is_some();
+                    frame
+                };
                 match explicit_reference_plane_frame(bytes) {
-                    Ok(frame) => frame,
-                    Err(()) if constraint.is_some() => None,
-                    Err(()) => continue,
+                    Ok(Some(frame)) => Some(frame),
+                    Ok(None) => tagged(),
+                    Err(()) => match tagged() {
+                        Some(frame) => Some(frame),
+                        None if constraint.is_some() => None,
+                        None => continue,
+                    },
                 }
             } else {
                 let [frame] = anchored_frames.as_slice() else {
@@ -294,6 +310,13 @@ pub(crate) fn enrich_history_reference_planes(
             };
             let (origin, normal, u_axis) = frame;
             let index = (history_index, feature_index);
+            if from_tag {
+                tagged_candidates
+                    .entry(index)
+                    .or_default()
+                    .push(((origin, normal, u_axis), u_axis_source));
+                continue;
+            }
             candidates
                 .entry(index)
                 .or_default()
@@ -302,6 +325,15 @@ pub(crate) fn enrich_history_reference_planes(
                 .entry(index)
                 .or_default()
                 .push(u_axis_source);
+        }
+    }
+    for (index, tagged) in tagged_candidates {
+        if candidates.contains_key(&index) {
+            continue;
+        }
+        for (frame, source) in tagged {
+            candidates.entry(index).or_default().push(frame);
+            candidate_sources.entry(index).or_default().push(source);
         }
     }
     record_offset_plane_distances(histories, &stored_distances, length_unit);
@@ -627,10 +659,6 @@ fn display_shows(text: &str, distance: Length, unit: Option<UnitSymbol>) -> bool
 /// whose second triple is a unit vector and whose flag byte is `0` or `1`.
 fn plane_data_head(lane: &FeatureInputLane, start: usize, end: usize) -> Option<(Point3, Vector3)> {
     let payload: &[u8] = &lane.native_payload;
-    let units = usize::from(*payload.get(start.checked_add(NAME_MARKER.len())?)?);
-    let body = start
-        .checked_add(NAME_MARKER.len() + 1)?
-        .checked_add(units.checked_mul(2)?)?;
     let declared = lane
         .classes
         .iter()
@@ -643,34 +671,79 @@ fn plane_data_head(lane: &FeatureInputLane, start: usize, end: usize) -> Option<
                 .checked_add(CLASS_MARKER.len() + 2 + class.name.len())
         })
         .collect::<HashSet<_>>();
-    let tagged = |at: usize| {
-        declared.contains(&at)
-            || at
-                .checked_sub(PLANE_DATA_TOKEN_ZEROS + 2)
-                .and_then(|zeros| payload.get(zeros..at - 2))
-                .is_some_and(|zeros| zeros.iter().all(|byte| *byte == 0))
-                && View::u16_le_at(payload, at - 2).is_some_and(is_class_token)
+    (plane_name_end(payload, start)?..end.min(payload.len()))
+        .filter(|at| declared.contains(at) || behind_class_token(payload, *at))
+        .find_map(|at| plane_data_head_at(payload, at))
+}
+
+/// The frame at the head of the plane-data object of the reference plane
+/// whose object spans `start..end`, where that object follows a class token
+/// behind six zero bytes (`sldprt.md` §2): the one frame that the 121-byte
+/// matrix form, the 97-byte pairwise-orthogonal form and the 81-byte form
+/// read there within the object, else the 97-byte repeated-normal reading.
+fn tagged_plane_data_frame(
+    lane: &FeatureInputLane,
+    start: usize,
+    end: usize,
+) -> Option<(Point3, Vector3, Vector3)> {
+    let payload = lane
+        .native_payload
+        .get(..end.min(lane.native_payload.len()))?;
+    let at = (plane_name_end(payload, start)?..payload.len()).find(|at| {
+        at.checked_sub(PLANE_DATA_TOKEN_ZEROS + 2)
+            .is_some_and(|zeros| zeros >= start)
+            && behind_class_token(payload, *at)
+            && plane_data_head_at(payload, *at).is_some()
+    })?;
+    let bytes = |len: usize| payload.get(at..at.checked_add(len)?);
+    let mut frames = [
+        bytes(matrix_plane::LEN).and_then(matrix_reference_plane_frame),
+        bytes(fixed_plane::LEN).and_then(fixed_reference_plane_frame),
+        bytes(minimal_plane::LEN).and_then(minimal_reference_plane_frame),
+    ]
+    .into_iter()
+    .flatten();
+    let Some(frame) = frames.next() else {
+        return bytes(fixed_plane::LEN).and_then(repeated_normal_reference_plane_frame);
     };
-    let head = |at: usize| {
-        let bytes = payload.get(at..at.checked_add(data_head::LEN)?)?;
-        let scalar = |offset| View::f64_le_at(bytes, offset).filter(|value| value.is_finite());
-        let point = Point3::new(
-            scalar(data_head::POINT)? * NATIVE_TO_MM,
-            scalar(data_head::POINT + 8)? * NATIVE_TO_MM,
-            scalar(data_head::POINT + 16)? * NATIVE_TO_MM,
-        );
-        let normal = Vector3::new(
-            scalar(data_head::NORMAL)?,
-            scalar(data_head::NORMAL + 8)?,
-            scalar(data_head::NORMAL + 16)?,
-        );
-        ((normal.norm() - 1.0).abs() <= REFERENCE_PLANE_FRAME_TOLERANCE
-            && bytes[data_head::FLAG] <= 1)
-            .then_some((point, normal))
-    };
-    (body..end.min(payload.len()))
-        .filter(|at| tagged(*at))
-        .find_map(head)
+    frames
+        .all(|other| reference_plane_frame_key(&other) == reference_plane_frame_key(&frame))
+        .then_some(frame)
+}
+
+/// The offset after the name of the feature object that starts at `start`.
+fn plane_name_end(payload: &[u8], start: usize) -> Option<usize> {
+    let units = usize::from(*payload.get(start.checked_add(NAME_MARKER.len())?)?);
+    start
+        .checked_add(NAME_MARKER.len() + 1)?
+        .checked_add(units.checked_mul(2)?)
+}
+
+/// Whether the bytes before `at` are six zero bytes and a class token.
+fn behind_class_token(payload: &[u8], at: usize) -> bool {
+    at.checked_sub(PLANE_DATA_TOKEN_ZEROS + 2)
+        .and_then(|zeros| payload.get(zeros..at - 2))
+        .is_some_and(|zeros| zeros.iter().all(|byte| *byte == 0))
+        && View::u16_le_at(payload, at - 2).is_some_and(is_class_token)
+}
+
+/// The point and unit normal of a plane-data head at `at`, whose flag byte is
+/// `0` or `1`.
+fn plane_data_head_at(payload: &[u8], at: usize) -> Option<(Point3, Vector3)> {
+    let bytes = payload.get(at..at.checked_add(data_head::LEN)?)?;
+    let scalar = |offset| View::f64_le_at(bytes, offset).filter(|value| value.is_finite());
+    let point = Point3::new(
+        scalar(data_head::POINT)? * NATIVE_TO_MM,
+        scalar(data_head::POINT + 8)? * NATIVE_TO_MM,
+        scalar(data_head::POINT + 16)? * NATIVE_TO_MM,
+    );
+    let normal = Vector3::new(
+        scalar(data_head::NORMAL)?,
+        scalar(data_head::NORMAL + 8)?,
+        scalar(data_head::NORMAL + 16)?,
+    );
+    ((normal.norm() - 1.0).abs() <= REFERENCE_PLANE_FRAME_TOLERANCE && bytes[data_head::FLAG] <= 1)
+        .then_some((point, normal))
 }
 
 /// Give each offset reference plane the distance its `D1` parameter object
@@ -2550,7 +2623,7 @@ fn offset_plane_reference_source(
     unique
 }
 
-fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u32)> {
+fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u32, u32)> {
     const TERMINATOR: &[u8] = b"\xc7\xcf\xff\xff\xc7\xcf\xff\xff";
     let mut unique = None;
     let finder = memchr::memmem::Finder::new(TERMINATOR);
@@ -2583,8 +2656,9 @@ fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u32)> {
             {
                 return None;
             }
+            let identity = View::u32_le_at(body, 73)?;
             let owner = View::u32_le_at(body, 91)?;
-            (owner != 0 && owner != u32::MAX).then_some((offset, owner))
+            (owner != 0 && owner != u32::MAX).then_some((offset, identity, owner))
         })();
         let Some(alias) = alias else {
             continue;
@@ -2600,6 +2674,7 @@ fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u32)> {
 
 const MINIMAL_REFERENCE_PLANE_FRAME_LEN: usize = minimal_plane::LEN;
 const COMPACT_REFERENCE_PLANE_FRAME_LEN: usize = 82;
+const COMPACT_FRAME_PREFILTER_MARGIN: f64 = 1.0e-6;
 const ANGLED_REFERENCE_PLANE_FRAME_LEN: usize = 121;
 const REFERENCE_PLANE_FRAME_TOLERANCE: f64 = 1.0e-9;
 
@@ -2626,12 +2701,20 @@ const PLANE_DATA_TOKEN_ZEROS: usize = 6;
 type PlaneFrame = (Point3, Vector3, Vector3);
 
 pub(super) fn explicit_reference_plane_frame(payload: &[u8]) -> Result<Option<PlaneFrame>, ()> {
-    let frames = matrix_reference_plane_frame_candidates(payload)
+    let mut first = None;
+    let mut has_strong = false;
+    for frame in matrix_reference_plane_frame_candidates(payload)
         .map(|(_, frame)| frame)
         .chain(fixed_reference_plane_frame_candidates(payload).map(|(_, frame)| frame))
-        .chain(minimal_reference_plane_frame(payload));
-    let mut first = None;
-    for frame in frames {
+    {
+        has_strong = true;
+        match first {
+            None => first = Some(frame),
+            Some(existing) if existing != frame => return Err(()),
+            Some(_) => {}
+        }
+    }
+    if let Some(frame) = minimal_reference_plane_frame(payload) {
         match first {
             None => first = Some(frame),
             Some(existing) if existing != frame => return Err(()),
@@ -2639,7 +2722,9 @@ pub(super) fn explicit_reference_plane_frame(payload: &[u8]) -> Result<Option<Pl
         }
     }
     for (offset, frame) in raw_angled_reference_plane_frame_candidates(payload) {
-        if strong_reference_plane_overlap(payload, offset, ANGLED_REFERENCE_PLANE_FRAME_LEN) {
+        if has_strong
+            && strong_reference_plane_overlap(payload, offset, ANGLED_REFERENCE_PLANE_FRAME_LEN)
+        {
             continue;
         }
         match first {
@@ -2649,7 +2734,9 @@ pub(super) fn explicit_reference_plane_frame(payload: &[u8]) -> Result<Option<Pl
         }
     }
     for (offset, frame) in compact_reference_plane_frame_candidates(payload) {
-        if strong_reference_plane_overlap(payload, offset, COMPACT_REFERENCE_PLANE_FRAME_LEN) {
+        if has_strong
+            && strong_reference_plane_overlap(payload, offset, COMPACT_REFERENCE_PLANE_FRAME_LEN)
+        {
             continue;
         }
         match first {
@@ -2850,20 +2937,30 @@ type ReferencePlaneFrame = (Point3, Vector3, Vector3);
 fn fixed_reference_plane_frame_candidates(
     payload: &[u8],
 ) -> impl Iterator<Item = (usize, ReferencePlaneFrame)> + '_ {
-    payload
-        .windows(fixed_plane::LEN)
-        .enumerate()
+    marked_windows(payload, fixed_plane::FRAME_MARKER, 1, fixed_plane::LEN)
+        .filter_map(|(offset, bytes)| {
+            fixed_reference_plane_frame(bytes)
+                .or_else(|| repeated_normal_reference_plane_frame(bytes))
+                .map(|frame| (offset, frame))
+        })
         .filter(|(offset, _)| {
             payload
                 .get(*offset..*offset + matrix_plane::LEN)
                 .and_then(matrix_reference_plane_frame)
                 .is_none()
         })
-        .filter_map(|(offset, bytes)| {
-            fixed_reference_plane_frame(bytes)
-                .or_else(|| repeated_normal_reference_plane_frame(bytes))
-                .map(|frame| (offset, frame))
-        })
+}
+
+/// Each window of `len` bytes of `payload` whose byte at `marker` is
+/// `value`, with its offset, in offset order.
+fn marked_windows(
+    payload: &[u8],
+    marker: usize,
+    value: u8,
+    len: usize,
+) -> impl Iterator<Item = (usize, &[u8])> + '_ {
+    memchr::memchr_iter(value, payload.get(marker..).unwrap_or_default())
+        .filter_map(move |offset| Some((offset, payload.get(offset..offset.checked_add(len)?)?)))
 }
 
 fn offset_reference_plane_frame_pair(
@@ -3033,14 +3130,9 @@ fn raw_angled_reference_plane_frame_candidates(
         let value = View::f64_le_at(bytes, relative)?;
         value.is_finite().then_some(value)
     };
-    payload
-        .windows(ANGLED_REFERENCE_PLANE_FRAME_LEN)
-        .enumerate()
-        .filter_map(move |(offset, bytes)| {
-            if bytes.get(16) != Some(&1)
-                || bytes.get(89..113)?.iter().any(|byte| *byte != 0)
-                || scalar(bytes, 113)? != 1.0
-            {
+    marked_windows(payload, 16, 1, ANGLED_REFERENCE_PLANE_FRAME_LEN).filter_map(
+        move |(offset, bytes)| {
+            if bytes.get(89..113)?.iter().any(|byte| *byte != 0) || scalar(bytes, 113)? != 1.0 {
                 return None;
             }
             let u_axis = Vector3::new(scalar(bytes, 17)?, scalar(bytes, 25)?, scalar(bytes, 33)?);
@@ -3060,7 +3152,8 @@ fn raw_angled_reference_plane_frame_candidates(
                 return None;
             }
             Some((offset, (Point3::new(0.0, 0.0, 0.0), normal, u_axis)))
-        })
+        },
+    )
 }
 
 #[cfg(test)]
@@ -3098,13 +3191,8 @@ fn matrix_reference_plane_frame_candidates(
         let value = View::f64_le_at(bytes, relative)?;
         value.is_finite().then_some(value)
     };
-    payload
-        .windows(matrix_plane::LEN)
-        .enumerate()
-        .filter_map(move |(offset, bytes)| {
-            if bytes[matrix_plane::FRAME_MARKER] != 1 {
-                return None;
-            }
+    marked_windows(payload, matrix_plane::FRAME_MARKER, 1, matrix_plane::LEN).filter_map(
+        move |(offset, bytes)| {
             let origin = Point3::new(
                 scalar(bytes, matrix_plane::ORIGIN)? * NATIVE_TO_IR,
                 scalar(bytes, matrix_plane::ORIGIN + 8)? * NATIVE_TO_IR,
@@ -3155,52 +3243,53 @@ fn matrix_reference_plane_frame_candidates(
                 return None;
             }
             Some((offset, (origin, normal, u_axis)))
-        })
+        },
+    )
 }
 
 fn minimal_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
     const NATIVE_TO_IR: f64 = 1000.0;
-    let mut frames = payload.windows(minimal_plane::LEN).filter_map(|bytes| {
-        let scalar = |relative| {
-            let value = View::f64_le_at(bytes, relative)?;
-            value.is_finite().then_some(value)
-        };
-        let triple = |relative| {
-            Some([
-                scalar(relative)?,
-                scalar(relative + 8)?,
-                scalar(relative + 16)?,
-            ])
-        };
-        if bytes[minimal_plane::FRAME_MARKER] != 0 {
-            return None;
-        }
-        let origin = triple(minimal_plane::ORIGIN)?;
-        let normal = triple(minimal_plane::NORMAL)?;
-        let translation = triple(minimal_plane::TRANSLATION)?;
-        if normal != [0.0, 0.0, 1.0]
-            || origin
+    let mut frames = marked_windows(payload, minimal_plane::SCALE + 6, 0xf0, minimal_plane::LEN)
+        .filter_map(|(_, bytes)| {
+            let scalar = |relative| {
+                let value = View::f64_le_at(bytes, relative)?;
+                value.is_finite().then_some(value)
+            };
+            let triple = |relative| {
+                Some([
+                    scalar(relative)?,
+                    scalar(relative + 8)?,
+                    scalar(relative + 16)?,
+                ])
+            };
+            if bytes[minimal_plane::FRAME_MARKER] != 0 || scalar(minimal_plane::SCALE)? != 1.0 {
+                return None;
+            }
+            let origin = triple(minimal_plane::ORIGIN)?;
+            let normal = triple(minimal_plane::NORMAL)?;
+            let translation = triple(minimal_plane::TRANSLATION)?;
+            if normal != [0.0, 0.0, 1.0]
+                || origin
+                    .iter()
+                    .zip(translation)
+                    .any(|(origin, translation)| translation.to_bits() != (-origin).to_bits())
+            {
+                return None;
+            }
+            let origin = Point3::new(
+                origin[0] * NATIVE_TO_IR,
+                origin[1] * NATIVE_TO_IR,
+                origin[2] * NATIVE_TO_IR,
+            );
+            [origin.x, origin.y, origin.z]
                 .iter()
-                .zip(translation)
-                .any(|(origin, translation)| translation.to_bits() != (-origin).to_bits())
-            || scalar(minimal_plane::SCALE)? != 1.0
-        {
-            return None;
-        }
-        let origin = Point3::new(
-            origin[0] * NATIVE_TO_IR,
-            origin[1] * NATIVE_TO_IR,
-            origin[2] * NATIVE_TO_IR,
-        );
-        [origin.x, origin.y, origin.z]
-            .iter()
-            .all(|value| value.is_finite())
-            .then_some((
-                origin,
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            ))
-    });
+                .all(|value| value.is_finite())
+                .then_some((
+                    origin,
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                ))
+        });
     let frame = frames.next()?;
     frames.all(|candidate| candidate == frame).then_some(frame)
 }
@@ -3233,11 +3322,17 @@ fn compact_reference_plane_frame_candidates(
                     scalar(bytes, 16)? * NATIVE_TO_IR,
                 );
                 let normal_xy = scalar(bytes, 24).zip(scalar(bytes, 32))?;
+                if normal_xy.0.abs() > 1.0 + COMPACT_FRAME_PREFILTER_MARGIN
+                    || normal_xy.1.abs() > 1.0 + COMPACT_FRAME_PREFILTER_MARGIN
+                {
+                    return None;
+                }
                 let u_axis =
                     Vector3::new(scalar(bytes, 40)?, scalar(bytes, 48)?, scalar(bytes, 56)?);
                 let v_xy = scalar(bytes, 65).zip(scalar(bytes, 73))?;
-                if (u_axis.dot(u_axis) - 1.0).abs()
-                    > EPS_REFERENCE_GEOMETRY_COMPACT_REFERENCE_PLANE_FRAME_E9
+                if !may_be_unit(u_axis)
+                    || (u_axis.dot(u_axis) - 1.0).abs()
+                        > EPS_REFERENCE_GEOMETRY_COMPACT_REFERENCE_PLANE_FRAME_E9
                 {
                     return None;
                 }
@@ -3248,6 +3343,16 @@ fn compact_reference_plane_frame_candidates(
                 let omitted = remaining.max(0.0).sqrt();
                 let mut pair = [omitted, -omitted].map(|v_z| {
                     let v_axis = Vector3::new(v_xy.0, v_xy.1, v_z);
+                    let approx_dot =
+                        u_axis.x * v_axis.x + u_axis.y * v_axis.y + u_axis.z * v_axis.z;
+                    let approx_nx = u_axis.y * v_axis.z - u_axis.z * v_axis.y;
+                    let approx_ny = u_axis.z * v_axis.x - u_axis.x * v_axis.z;
+                    if approx_dot.abs() > COMPACT_FRAME_PREFILTER_MARGIN
+                        || (approx_nx - normal_xy.0).abs() > COMPACT_FRAME_PREFILTER_MARGIN
+                        || (approx_ny - normal_xy.1).abs() > COMPACT_FRAME_PREFILTER_MARGIN
+                    {
+                        return None;
+                    }
                     let normal = u_axis.cross(v_axis);
                     (u_axis.dot(v_axis).abs()
                         <= EPS_REFERENCE_GEOMETRY_COMPACT_REFERENCE_PLANE_FRAME_E9
@@ -3271,6 +3376,14 @@ fn compact_reference_plane_frame_candidates(
             })();
             candidates.into_iter().flatten().flatten()
         })
+}
+
+/// Whether `vector` can have unit length: a unit vector's largest component
+/// magnitude lies in `[1/sqrt(3), 1]`. A cheap test that rejects most byte
+/// windows before an exact length test.
+fn may_be_unit(vector: Vector3) -> bool {
+    let largest = vector.x.abs().max(vector.y.abs()).max(vector.z.abs());
+    (0.5..=2.0).contains(&largest)
 }
 
 fn ranges_overlap(

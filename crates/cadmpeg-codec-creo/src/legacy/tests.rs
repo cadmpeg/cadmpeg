@@ -10,6 +10,7 @@ use crate::test_support::visibgeom_payload;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::unknown::part::Cause::{self, Undecoded, Unreadable};
 
 use crate::container::{self, Layout, UnknownLayout};
 use crate::loss::CreoLossCode;
@@ -610,7 +611,8 @@ fn array_completeness_wire_retains_continuation_failures() {
         @other 2 10\n0 2 [1]\n1 2 value\n$child\n";
     let persistence = scan(data, std::iter::once(0..data.len()))
         .expect("the fixture states every scope inside its own bytes");
-    assert_eq!(persistence.incomplete_string_array_count, 2);
+    // Continuation forms have no reading; they break no stated count.
+    assert_eq!(persistence.incomplete_string_array_count, 0);
     assert_eq!(persistence.unresolved_string_value_count, 2);
     assert_eq!(
         json::to_value(&persistence.string_values[0].payload).unwrap(),
@@ -690,7 +692,8 @@ fn type_0_objects_retain_incomplete_and_opaque_forms() {
         .expect("the fixture states every scope inside its own bytes");
 
     assert_eq!(persistence.objects.len(), 2);
-    assert_eq!(persistence.incomplete_object_array_count, 1);
+    // A header without element rows stores no objects; it breaks no count.
+    assert_eq!(persistence.incomplete_object_array_count, 0);
     assert!(!persistence.objects[0].payload.is_complete());
     assert_eq!(persistence.unresolved_object_value_count, 1);
     assert!(matches!(
@@ -1012,7 +1015,7 @@ fn incomplete_legacy_values_are_reported() {
     let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
         @values 7 2\n0 7 [2]\n$0\n\
         @ids 8 1\n0 8 [2]\n$1\n\
-        @objects 9 0\n0 9 [2]\n\
+        @objects 9 0\n0 9 [2]\n1 9 ->\n\
         @future 10 0\n0 10 token\n\
         @names 11 10\n0 11 [2]\n1 11 only\n\
         @continued 12 10\n0 12 first\n$second\n\
@@ -1064,8 +1067,29 @@ fn incomplete_legacy_values_are_reported() {
                 loss.code.taxonomy() == cadmpeg_ir::report::loss::LossTaxonomy::RecordNotTyped
             })
             .count(),
-        7
+        3
     );
+    let given_up = |cause: Cause, text: &str| {
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == cause.kind() && loss.message.contains(text))
+            .count()
+    };
+    assert_eq!(
+        given_up(Unreadable, "the legacy type-2 array's run counts"),
+        1
+    );
+    assert_eq!(
+        given_up(Unreadable, "the legacy type-1 array's run counts"),
+        1
+    );
+    assert_eq!(
+        given_up(Undecoded, "the legacy type-3 or type-4 value row"),
+        1
+    );
+    assert_eq!(given_up(Undecoded, "the legacy type-10 scalar row"), 1);
     assert_eq!(
         result
             .report()
@@ -1074,6 +1098,118 @@ fn incomplete_legacy_values_are_reported() {
             .filter(|loss| loss.code == CreoLossCode::LegacyByteStringEncodingRetained.kind())
             .count(),
         1
+    );
+}
+
+#[test]
+fn legacy_value_rows_split_by_the_rule_they_break() {
+    let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
+        @header_only 7 2\n0 7 [2]\n\
+        @non_finite 8 2\n0 8 7FF\n\
+        @bad_hex 9 2\n0 9 zz\n\
+        @bad_int 10 1\n0 10 12x\n\
+        @continued_child 11 1\n0 11 [1]\n1 11 4\n$5\n\
+        @two_children 12 1\n0 12 [1]\n1 12 4\n1 12 5\n\
+        #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("legacy value-row decode");
+    let given_up = |cause: Cause, text: &str| {
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == cause.kind() && loss.message.contains(text))
+            .count()
+    };
+    // The non-finite word is undecoded. The header-only array is empty.
+    assert_eq!(given_up(Undecoded, "the legacy type-2 value row"), 1);
+    assert_eq!(given_up(Unreadable, "the legacy type-2"), 1);
+    assert_eq!(
+        given_up(
+            Unreadable,
+            "the legacy type-2 scalar row is not one through sixteen uppercase hexadecimal digits"
+        ),
+        1
+    );
+    assert_eq!(
+        given_up(
+            Unreadable,
+            "the legacy type-1 scalar row is not a signed decimal 32-bit integer"
+        ),
+        1
+    );
+    // A one-element array with a continued child row gives one entry.
+    assert_eq!(given_up(Undecoded, "the legacy type-1 value row"), 1);
+    assert_eq!(
+        given_up(Unreadable, "the legacy type-1 array's run counts"),
+        1
+    );
+    assert_eq!(given_up(Unreadable, "the legacy type-1"), 2);
+}
+
+#[test]
+fn numeric_array_headers_without_element_rows_are_empty_arrays() {
+    let rows = b"@integers 7 1\n0 7 [2]\n\
+        @single 8 1\n0 8 [1]\n\
+        @type_5 9 5\n0 9 [3]\n\
+        @type_7 10 7\n0 10 [2][2]\n\
+        @type_9 11 9\n0 11 [1]\n\
+        @type_11 12 11\n0 12 [4]\n\
+        @real 13 2\n0 13 [3][2]\n\
+        @type_6 14 6\n0 14 [1]\n";
+    let persistence = scan(rows, std::iter::once(0..rows.len()))
+        .expect("the fixture states every scope inside its own bytes");
+    let empty = |dimensions: &[u32]| NumericPayload::<i32>::Empty {
+        dimensions: dimensions.to_vec(),
+    };
+    let integers = &persistence.integer_values;
+    assert!(integers.unresolved.is_empty());
+    assert_eq!(
+        integers
+            .rows
+            .iter()
+            .map(|row| row.payload.clone())
+            .collect::<Vec<_>>(),
+        [empty(&[2]), empty(&[1])]
+    );
+    macro_rules! assert_one_empty {
+        ($values:expr, $element:ty, $dimensions:expr) => {{
+            let values = &$values;
+            assert!(values.unresolved.is_empty());
+            let [row] = values.rows.as_slice() else {
+                panic!("one row: {}", values.rows.len());
+            };
+            assert_eq!(
+                row.payload,
+                NumericPayload::<$element>::Empty {
+                    dimensions: $dimensions.to_vec(),
+                }
+            );
+            assert_eq!(row.payload.element_count(), 0);
+        }};
+    }
+    assert_one_empty!(persistence.type_5_values, u32, [3]);
+    assert_one_empty!(persistence.type_7_values, u32, [2, 2]);
+    assert_one_empty!(persistence.type_9_values, u32, [1]);
+    assert_one_empty!(persistence.type_11_values, u32, [4]);
+
+    assert_one_empty!(persistence.real_values, super::Real, [3, 2]);
+    assert_one_empty!(persistence.type_6_values, super::Real, [1]);
+
+    let mut data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n".to_vec();
+    data.extend_from_slice(rows);
+    data.extend_from_slice(b"#END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("legacy value-row decode");
+    let losses = &result.report().losses;
+    assert!(
+        losses
+            .iter()
+            .all(|loss| !cadmpeg_ir::unknown::part::gives_up(&loss.code)),
+        "{losses:#?}"
     );
 }
 
@@ -1261,12 +1397,23 @@ fn numeric_array_withholds_child_at_maximum_depth() {
     let data = b"@value 1 1\n4294967295 1 [1]\n4294967295 1 7\n";
     let persistence =
         scan(data, std::iter::once(0..data.len())).expect("maximum-depth fixture is admitted");
-    assert_eq!(persistence.integer_values.rows.len(), 1);
-    assert!(matches!(
-        persistence.integer_values.rows[0].payload,
-        IntegerPayload::Scalar { value: 7 }
-    ));
-    assert_eq!(persistence.integer_values.unresolved.len(), 1);
+    // The header has no element row one depth deeper, so it stores no
+    // elements; the row at its depth is a scalar of its own.
+    assert_eq!(
+        persistence
+            .integer_values
+            .rows
+            .iter()
+            .map(|row| row.payload.clone())
+            .collect::<Vec<_>>(),
+        [
+            IntegerPayload::Empty {
+                dimensions: vec![1]
+            },
+            IntegerPayload::Scalar { value: 7 }
+        ]
+    );
+    assert!(persistence.integer_values.unresolved.is_empty());
 }
 
 #[test]

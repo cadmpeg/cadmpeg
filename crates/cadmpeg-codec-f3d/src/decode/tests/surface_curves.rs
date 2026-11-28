@@ -12,19 +12,18 @@
 
 use cadmpeg_test_support::{edit, EditableDecodeResult};
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::smbh_curves_test::{
+use crate::test_support::smbh_curves_fixture::{
     synthetic_geometry_with_early_close_projection_smbh, synthetic_geometry_with_projection_smbh,
     synthetic_geometry_with_silhouette_smbh, synthetic_geometry_with_surface_curve_smbh,
     synthetic_geometry_with_three_surface_intersection_smbh,
 };
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 
 #[test]
@@ -143,7 +142,7 @@ fn generated_projection_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less projection encode");
     let round_trip = F3dCodec
@@ -226,7 +225,7 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less early-close projection encode");
     let round_trip = F3dCodec
@@ -330,7 +329,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less three-surface intersection encode");
     let round_trip = F3dCodec
@@ -448,7 +447,7 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+            .plan(EncodeInput::new(&source_less, None))
             .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap_or_else(|error| panic!("{name} source-less encode failed: {error}"));
         let round_trip = F3dCodec
@@ -566,7 +565,7 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+            .plan(EncodeInput::new(&source_less, None))
             .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap_or_else(|error| panic!("{name} source-less encode failed: {error}"));
         let round_trip = F3dCodec

@@ -32,7 +32,9 @@ use std::collections::{BTreeMap, BTreeSet};
 mod annotations;
 mod fem;
 
+// resource-cap: MAX_PRODUCT_OCCURRENCES = 4
 pub(crate) const MAX_PRODUCT_OCCURRENCES: usize = 100_000;
+// resource-cap: MAX_PRODUCT_OCCURRENCE_DEPTH = 4
 pub(crate) const MAX_PRODUCT_OCCURRENCE_DEPTH: usize = 64;
 const DEFAULT_DIMENSION_DISPLAY_CHARACTER_SET: i64 = 1;
 const DEFAULT_DIMENSION_DISPLAY_WITNESS_LINE_ANGLE_RAD: f64 = std::f64::consts::FRAC_PI_2;

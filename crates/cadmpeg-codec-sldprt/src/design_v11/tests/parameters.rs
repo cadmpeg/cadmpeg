@@ -125,6 +125,24 @@ fn dimensions_and_global_variables_are_parameters_of_the_scope() {
     assert_no_design_findings(&ir);
 }
 
+/// A dimension takes its place in its feature's dimension list, also where
+/// it reads a dimension listed after it.
+#[test]
+fn a_dimension_is_placed_by_its_feature_list() {
+    let ir = part_with_history(
+        br#"<Keywords Name="Bracket">
+            <Extrusion Name="Boss" Type="BossExtrude" id="7">
+                <Dimension Name="D2">D1@Boss * 2</Dimension>
+                <Dimension Name="D1">12.5mm</Dimension>
+            </Extrusion>
+        </Keywords>"#,
+        &[],
+    );
+    assert_eq!(parameter_named(&ir, "D2").position, Some(0));
+    assert_eq!(parameter_named(&ir, "D1").position, Some(1));
+    assert_no_design_findings(&ir);
+}
+
 #[test]
 fn a_bare_display_is_no_cache() {
     use cadmpeg_ir::design::units::{Quantity, ValueKind};
@@ -203,8 +221,9 @@ fn parameters_with_scalars(
     Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
     let ir = part_with_history(keywords, &[]);
-    let native = crate::native::SldprtNative::load(
+    let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
+        cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
     )
     .unwrap();
@@ -251,22 +270,25 @@ fn parameters_with_scalars(
             .push(*scalar);
     }
     let timeline = super::super::tree::timeline(&native.feature_histories).unwrap();
-    let (mut parameters, mut notes, bare) =
-        super::super::parameters::Entries::new(&native.feature_histories, &timeline)
-            .unwrap()
-            .parameters(
-                &ir.design.scopes[0].definition,
-                &super::super::parameters::Readings {
-                    decoded,
-                    length_unit,
-                    length_places,
-                    bound: std::collections::HashMap::new(),
-                    measured: std::collections::HashMap::new(),
-                    driven: std::collections::HashSet::new(),
-                    manager: std::collections::HashMap::new(),
-                    confirmed: std::collections::HashSet::new(),
-                },
-            );
+    let (mut parameters, mut notes, bare) = super::super::parameters::Entries::new(
+        &native.feature_histories,
+        &native.feature_histories,
+        &timeline,
+    )
+    .unwrap()
+    .parameters(
+        &ir.design.scopes[0].definition,
+        &super::super::parameters::Readings {
+            decoded,
+            length_unit,
+            length_places,
+            bound: std::collections::HashMap::new(),
+            measured: std::collections::HashMap::new(),
+            driven: std::collections::HashSet::new(),
+            manager: std::collections::HashMap::new(),
+            confirmed: std::collections::HashSet::new(),
+        },
+    );
     notes.extend(super::super::equations::bare_references(
         &mut parameters,
         &bare,
@@ -1395,8 +1417,9 @@ fn parameters_with_manager(
     use cadmpeg_ir::features::parameters::{ParameterPmi, PmiDimensionSubtype};
 
     let ir = part_with_history(keywords, &[]);
-    let native = crate::native::SldprtNative::load(
+    let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
+        cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
     )
     .unwrap();
@@ -1452,22 +1475,25 @@ fn parameters_with_manager(
         );
     }
     let timeline = super::super::tree::timeline(&native.feature_histories).unwrap();
-    let (parameters, notes, _) =
-        super::super::parameters::Entries::new(&native.feature_histories, &timeline)
-            .unwrap()
-            .parameters(
-                &ir.design.scopes[0].definition,
-                &super::super::parameters::Readings {
-                    decoded,
-                    length_unit: Some(cadmpeg_ir::design::units::UnitSymbol::Mm),
-                    length_places: places,
-                    bound: std::collections::HashMap::new(),
-                    measured: std::collections::HashMap::new(),
-                    driven: std::collections::HashSet::new(),
-                    manager,
-                    confirmed,
-                },
-            );
+    let (parameters, notes, _) = super::super::parameters::Entries::new(
+        &native.feature_histories,
+        &native.feature_histories,
+        &timeline,
+    )
+    .unwrap()
+    .parameters(
+        &ir.design.scopes[0].definition,
+        &super::super::parameters::Readings {
+            decoded,
+            length_unit: Some(cadmpeg_ir::design::units::UnitSymbol::Mm),
+            length_places: places,
+            bound: std::collections::HashMap::new(),
+            measured: std::collections::HashMap::new(),
+            driven: std::collections::HashSet::new(),
+            manager,
+            confirmed,
+        },
+    );
     (parameters, notes)
 }
 
@@ -1770,3 +1796,62 @@ fn the_manager_length_decides_a_dimension_whose_classes_disagree() {
 }
 
 mod display_rounded;
+mod enriched;
+mod outside_timeline;
+
+/// An angle dimension whose text is a literal in degrees and whose bound
+/// scalar stores the angle caches the stored value, which differs from the
+/// literal's exact conversion in its last digits, and a CADIR write carries
+/// the record's value.
+#[test]
+fn a_literal_dimension_caches_the_value_its_bound_scalar_stores() {
+    use crate::records::ArchiveParameterClass;
+    use cadmpeg_ir::design::parameter::ParameterValue;
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
+    use cadmpeg_ir::scalar::Angle;
+
+    let stored = 0.785_398_163_397_446_7;
+    assert_ne!(stored, 45f64.to_radians());
+    let (mut ir, parameters, _) = parameters_with_readings(
+        r#"<Keywords Name="Bracket">
+            <Feature Name="Chamfer" Type="Chamfer" id="7">
+                <Dimension Name="D1">45°</Dimension>
+            </Feature>
+        </Keywords>"#
+            .as_bytes(),
+        &[(
+            "Chamfer",
+            "D1",
+            V10::Angle(Angle::new(stored).unwrap()),
+            Some("scalar-angle"),
+        )],
+        &[("scalar-angle", ArchiveParameterClass::Angle)],
+        None,
+    );
+    let owner = feature_named(&ir, "Chamfer").id.clone();
+    let design = parameters
+        .iter()
+        .find(|parameter| {
+            parameter.owner
+                == Some(cadmpeg_ir::design::parameter::ParameterOwner::Feature(
+                    owner.clone(),
+                ))
+        })
+        .unwrap()
+        .clone();
+    assert!(
+        matches!(&design.value, Some(ParameterValue::Number(value)) if value.get() == stored),
+        "{design:#?}"
+    );
+    let model = ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.id == design.id)
+        .unwrap();
+    model.value = Some(V10::Angle(Angle::new(stored).unwrap()));
+    model.native_ref = Some("scalar-angle".to_owned());
+    ir.design.parameters = vec![design.clone()];
+    let fields = super::restated::charge(&ir, "parameters", design.id.as_str());
+    assert!(!fields.iter().any(|field| field == "value"), "{fields:?}");
+}

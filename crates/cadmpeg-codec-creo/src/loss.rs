@@ -13,28 +13,11 @@
 //! leaves only the per-instance message to the caller.
 //!
 use cadmpeg_ir::report::{
-    loss::{LossKind, LossNote, LossTaxonomy},
+    loss::{LossKind, LossNote, LossTaxonomy, NamespacedLossKind},
     Severity,
 };
 
-macro_rules! loss_codes {
-    ($(#[$enum_attribute:meta])* pub(crate) enum $name:ident {
-        $($(#[$variant_attribute:meta])* $variant:ident),* $(,)?
-    }) => {
-        $(#[$enum_attribute])*
-        pub(crate) enum $name {
-            $($(#[$variant_attribute])* $variant),*
-        }
-
-        impl $name {
-            /// Every code, in declaration order.
-            #[cfg(test)]
-            const ALL: &'static [Self] = &[$(Self::$variant),*];
-        }
-    };
-}
-
-loss_codes! {
+cadmpeg_ir::loss_codes! {
 /// A stable, machine-readable identifier for one Creo transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
@@ -54,18 +37,8 @@ pub(crate) enum CreoLossCode {
     /// No persistence-layout discriminant matched, so no layout-specific
     /// decode strategy was applied.
     SourceDialectUnverified,
-    /// Legacy type-2 real row did not form a complete finite scalar or array.
-    LegacyRealValueUnresolved,
-    /// Legacy type-1 integer row did not form a signed 32-bit scalar or array.
-    LegacyIntegerValueUnresolved,
-    /// Legacy type-3 or type-4 value row uses an undefined continuation form.
-    LegacyContinuationFormUndefined,
     /// Legacy type-3 or type-4 byte-string retains non-UTF-8 source bytes.
     LegacyByteStringEncodingRetained,
-    /// Legacy type-5/7/9/11 row did not form an unsigned 32-bit scalar or array.
-    LegacyUnsignedValueUnresolved,
-    /// Legacy type-6 compact-real row did not form a complete finite scalar or array.
-    LegacyCompactRealUnresolved,
     /// Legacy type-0 object array element count differs from declared extents.
     LegacyObjectArrayIncomplete,
     /// Legacy type-0 value row uses an undefined object payload form.
@@ -78,8 +51,6 @@ pub(crate) enum CreoLossCode {
     LegacyStringEncodingRetained,
     /// PMI datum or target associations remain unresolved.
     PmiAssociationsUnresolved,
-    /// The neutral PMI attribute or annotation-element table is incomplete.
-    PmiTableIncomplete,
     /// A PMI type, value, or owner join is unresolved.
     PmiRecordUnresolved,
     /// PMI modifiers or geometric-tolerance zone constraints remain unresolved.
@@ -315,10 +286,12 @@ pub(crate) enum CreoLossCode {
     TocScanCapped,
     /// Component occurrences reference model files the decode does not open.
     AssemblyComponentsExternal,
-    /// The component table is missing or ends before its declared rows.
+    /// The component table closes with a row count other than its declared
+    /// count.
     AssemblyMemberTableIncomplete,
-    /// A component frame is not a proper rigid placement.
-    AssemblyPlacementUnresolved,
+    /// The assembly declares a component table that the decode does not
+    /// read: no table is found, or its rows lie outside its section.
+    AssemblyMemberTableUnread,
     /// A component row names no model file the row grammar resolves.
     AssemblyMemberReferenceUnresolved,
     /// Component placement constraints are not decoded.
@@ -337,19 +310,13 @@ impl CreoLossCode {
             Self::SurfaceRowRepeated => "container.surface-row-repeated",
             Self::ReferenceConicPrefixUnresolved => "reference.conic-prefix-unresolved",
             Self::SourceDialectUnverified => "source.dialect-unverified",
-            Self::LegacyRealValueUnresolved => "legacy.real-value-unresolved",
-            Self::LegacyIntegerValueUnresolved => "legacy.integer-value-unresolved",
-            Self::LegacyContinuationFormUndefined => "legacy.continuation-form-undefined",
             Self::LegacyByteStringEncodingRetained => "legacy.byte-string-encoding-retained",
-            Self::LegacyUnsignedValueUnresolved => "legacy.unsigned-value-unresolved",
-            Self::LegacyCompactRealUnresolved => "legacy.compact-real-unresolved",
             Self::LegacyObjectArrayIncomplete => "legacy.object-array-incomplete",
             Self::LegacyObjectPayloadUndefined => "legacy.object-payload-undefined",
             Self::LegacyStringArrayIncomplete => "legacy.string-array-incomplete",
             Self::LegacyStringContinuationUndefined => "legacy.string-continuation-undefined",
             Self::LegacyStringEncodingRetained => "legacy.string-encoding-retained",
             Self::PmiAssociationsUnresolved => "pmi.associations-unresolved",
-            Self::PmiTableIncomplete => "pmi.table-incomplete",
             Self::PmiRecordUnresolved => "pmi.record-unresolved",
             Self::PmiModifiersUnresolved => "pmi.modifiers-unresolved",
             Self::PmiLengthUnitAssumed => "pmi.length-unit-assumed",
@@ -491,7 +458,7 @@ impl CreoLossCode {
             Self::TocScanCapped => "container.toc-scan-capped",
             Self::AssemblyComponentsExternal => "assembly.components-external",
             Self::AssemblyMemberTableIncomplete => "assembly.member-table-incomplete",
-            Self::AssemblyPlacementUnresolved => "assembly.placement-unresolved",
+            Self::AssemblyMemberTableUnread => "assembly.member-table-unread",
             Self::AssemblyMemberReferenceUnresolved => "assembly.member-reference-unresolved",
             Self::AssemblyConstraintsNotTransferred => "assembly.constraints-not-transferred",
         }
@@ -539,7 +506,6 @@ impl CreoLossCode {
             | Self::TopologyVertexIdentifierUnstatable
             | Self::ExtrusionBodyRejected => Severity::Blocking,
             Self::PmiAssociationsUnresolved
-            | Self::PmiTableIncomplete
             | Self::PmiRecordUnresolved
             | Self::PmiModifiersUnresolved
             | Self::PmiLengthUnitAssumed
@@ -575,12 +541,7 @@ impl CreoLossCode {
             | Self::RevolutionCarrierUnresolved
             | Self::RevolutionBoundaryIntervalUnresolved
             | Self::SourceDialectUnverified
-            | Self::LegacyRealValueUnresolved
-            | Self::LegacyIntegerValueUnresolved
-            | Self::LegacyContinuationFormUndefined
             | Self::LegacyByteStringEncodingRetained
-            | Self::LegacyUnsignedValueUnresolved
-            | Self::LegacyCompactRealUnresolved
             | Self::LegacyObjectArrayIncomplete
             | Self::LegacyObjectPayloadUndefined
             | Self::LegacyStringArrayIncomplete
@@ -638,7 +599,7 @@ impl CreoLossCode {
             | Self::CurveExpressionTextCapped
             | Self::TocScanCapped
             | Self::AssemblyMemberTableIncomplete
-            | Self::AssemblyPlacementUnresolved
+            | Self::AssemblyMemberTableUnread
             | Self::AssemblyMemberReferenceUnresolved
             | Self::AssemblyConstraintsNotTransferred
             | Self::DesignParameterReferenceAsText
@@ -674,7 +635,6 @@ impl CreoLossCode {
             | Self::CarrierSharedExtrusionGenerators
             | Self::CarrierTorusParameterRetention => LossTaxonomy::CarrierSummary,
             Self::PmiAssociationsUnresolved
-            | Self::PmiTableIncomplete
             | Self::PmiRecordUnresolved
             | Self::PmiModifiersUnresolved
             | Self::PmiDatumLabelUnresolved
@@ -695,16 +655,11 @@ impl CreoLossCode {
             | Self::PmiAngularUnitAssumed
             | Self::SurfaceRowPackedReading
             | Self::SurfaceRowCompactReading => LossTaxonomy::DecodeDiagnostic,
-            Self::LegacyRealValueUnresolved
-            | Self::CompressedSectionUnexpanded
+            Self::CompressedSectionUnexpanded
             | Self::PhysicalGeometryOwnerUnresolved
             | Self::SurfaceRowRepeated
             | Self::ReferenceConicPrefixUnresolved
             | Self::TocScanCapped
-            | Self::LegacyIntegerValueUnresolved
-            | Self::LegacyContinuationFormUndefined
-            | Self::LegacyUnsignedValueUnresolved
-            | Self::LegacyCompactRealUnresolved
             | Self::LegacyObjectArrayIncomplete
             | Self::LegacyObjectPayloadUndefined
             | Self::LegacyStringArrayIncomplete
@@ -792,17 +747,29 @@ impl CreoLossCode {
             Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
             Self::NonVisibleCarrierVisibilityNotStated => LossTaxonomy::MetadataNotTransferred,
             Self::AssemblyMemberTableIncomplete
-            | Self::AssemblyPlacementUnresolved
+            | Self::AssemblyMemberTableUnread
             | Self::AssemblyConstraintsNotTransferred => {
                 LossTaxonomy::AssemblyPlacementsNotTransferred
             }
         }
     }
 
+    /// The strict floor `creo_prt.md` §10 states: a legacy array or a
+    /// component table whose element or row count breaks its stated count,
+    /// which the decoder reads past, pins Warning.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::LegacyObjectArrayIncomplete
+            | Self::LegacyStringArrayIncomplete
+            | Self::AssemblyMemberTableIncomplete => Some(Severity::Warning),
+            _ => None,
+        }
+    }
+
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
-        LossKind::namespaced(
+        NamespacedLossKind::new(
             const {
                 match cadmpeg_ir::report::loss::LossNamespace::new("creo") {
                     Ok(namespace) => namespace,
@@ -812,6 +779,8 @@ impl CreoLossCode {
             self.code(),
             self.shared_taxonomy(),
         )
+        .with_strict_floor(self.strict_floor())
+        .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -845,19 +814,13 @@ mod tests {
                 "container.surface-row-repeated",
                 "reference.conic-prefix-unresolved",
                 "source.dialect-unverified",
-                "legacy.real-value-unresolved",
-                "legacy.integer-value-unresolved",
-                "legacy.continuation-form-undefined",
                 "legacy.byte-string-encoding-retained",
-                "legacy.unsigned-value-unresolved",
-                "legacy.compact-real-unresolved",
                 "legacy.object-array-incomplete",
                 "legacy.object-payload-undefined",
                 "legacy.string-array-incomplete",
                 "legacy.string-continuation-undefined",
                 "legacy.string-encoding-retained",
                 "pmi.associations-unresolved",
-                "pmi.table-incomplete",
                 "pmi.record-unresolved",
                 "pmi.modifiers-unresolved",
                 "pmi.length-unit-assumed",
@@ -979,7 +942,7 @@ mod tests {
                 "container.toc-scan-capped",
                 "assembly.components-external",
                 "assembly.member-table-incomplete",
-                "assembly.placement-unresolved",
+                "assembly.member-table-unread",
                 "assembly.member-reference-unresolved",
                 "assembly.constraints-not-transferred",
             ]
@@ -1001,6 +964,25 @@ mod tests {
                 "code {text} is not lowercase kebab"
             );
         }
+    }
+
+    /// The floor codes `creo_prt.md` §10 lists pin Warning, and no other
+    /// code pins a floor.
+    #[test]
+    fn strict_floors_are_the_listed_codes() {
+        use cadmpeg_ir::report::Severity;
+        let floored: Vec<_> = CreoLossCode::ALL
+            .iter()
+            .filter_map(|code| code.kind().strict_floor().map(|floor| (code.code(), floor)))
+            .collect();
+        assert_eq!(
+            floored,
+            [
+                ("legacy.object-array-incomplete", Severity::Warning),
+                ("legacy.string-array-incomplete", Severity::Warning),
+                ("assembly.member-table-incomplete", Severity::Warning),
+            ]
+        );
     }
 
     /// The note builder fixes severity from the codec-specific code.

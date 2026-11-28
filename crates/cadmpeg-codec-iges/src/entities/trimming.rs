@@ -37,6 +37,7 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::units::FinitePoint2;
+use cadmpeg_ir::unknown::part::Cause;
 use cadmpeg_ir::CadIr;
 use std::cmp::Ordering;
 use std::collections::btree_map::Entry;
@@ -44,7 +45,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// Endpoint clustering compares every endpoint pair of one boundary. A boundary
 /// with more endpoints than this is not projected and reports a geometry loss.
-const MAX_BOUNDARY_CLUSTER_ENDPOINTS: usize = 16_384;
+// resource-cap: MAX_BOUNDARY_CLUSTER_ENDPOINTS = 4
+pub(super) const MAX_BOUNDARY_CLUSTER_ENDPOINTS: usize = 16_384;
 
 struct BoundarySegment {
     model_curve: u32,
@@ -1931,6 +1933,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
+    limits: super::geometry::ProjectionLimits,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<(ProjectionOutcome, Vec<BoundaryVertexDerivation>), CodecError> {
@@ -1946,7 +1949,7 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut boundary_vertex_derivations = Vec::new();
     let mut boundaries = BTreeMap::new();
-    let planar_pairs = super::geometry::PlanarPairBudget::new();
+    let planar_pairs = super::geometry::PlanarPairBudget::new(limits);
 
     let carrier_index = ModelIndex::new_model_only(ir);
 
@@ -1967,6 +1970,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -1978,6 +1982,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("curve-on-surface creation or preference flag is invalid"),
             );
             continue;
@@ -1986,6 +1991,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("curve-on-surface surface pointer is invalid"),
             );
             continue;
@@ -2004,6 +2010,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("curve-on-surface parameter curve pointer is invalid"),
             );
             continue;
@@ -2012,6 +2019,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("curve-on-surface model curve pointer is invalid"),
             );
             continue;
@@ -2025,6 +2033,7 @@ pub(super) fn project(
                 &mut losses,
                 entry,
                 pcurve.filter(|pcurve| !entries.contains_key(pcurve)),
+                Cause::Unreadable,
                 format_args!("parameter curve does not have entity-use flag 05"),
             );
             continue;
@@ -2050,6 +2059,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -2058,6 +2068,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("boundary representation type is not 0 or 1"),
             );
             continue;
@@ -2066,6 +2077,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("boundary preference flag is invalid"),
             );
             continue;
@@ -2074,6 +2086,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("boundary support pointer is invalid"),
             );
             continue;
@@ -2082,6 +2095,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("boundary segment count is not positive"),
             );
             continue;
@@ -2094,6 +2108,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("boundary model-curve pointer is invalid"),
                 );
                 valid = false;
@@ -2106,6 +2121,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("boundary segment sense is not 1 or 2"),
                     );
                     valid = false;
@@ -2116,6 +2132,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("boundary pcurve count is invalid"),
                 );
                 valid = false;
@@ -2124,7 +2141,7 @@ pub(super) fn project(
             if (boundary_type == 0 && pcurve_count != 0)
                 || (boundary_type == 1 && pcurve_count == 0)
             {
-                super::push_geometry_loss(&mut losses, entry, format_args!("boundary pcurve collection cardinality disagrees with its representation type"));
+                super::push_geometry_loss(&mut losses, entry, Cause::Unreadable, format_args!("boundary pcurve collection cardinality disagrees with its representation type"));
                 valid = false;
                 break;
             }
@@ -2142,6 +2159,7 @@ pub(super) fn project(
                         &mut losses,
                         entry,
                         (!entries.contains_key(&pcurve)).then_some(pcurve),
+                        Cause::Unreadable,
                         format_args!("boundary pcurve does not have entity-use flag 05"),
                     );
                     given_up = true;
@@ -2151,16 +2169,20 @@ pub(super) fn project(
                 pcurves.push(pcurve);
             }
             if pcurves.len() != pcurve_count {
-                let push = if given_up {
-                    super::push_retained_geometry_loss
+                if given_up {
+                    super::push_retained_geometry_loss(
+                        &mut losses,
+                        entry,
+                        format_args!("boundary pcurve pointer is invalid"),
+                    );
                 } else {
-                    super::push_geometry_loss
-                };
-                push(
-                    &mut losses,
-                    entry,
-                    format_args!("boundary pcurve pointer is invalid"),
-                );
+                    super::push_geometry_loss(
+                        &mut losses,
+                        entry,
+                        Cause::Unreadable,
+                        format_args!("boundary pcurve pointer is invalid"),
+                    );
+                }
                 valid = false;
                 break;
             }
@@ -2187,6 +2209,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -2207,6 +2230,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("trimmed-surface support pointer is invalid"),
                 );
                 continue;
@@ -2219,6 +2243,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("trimmed-surface outer-boundary flag is not 0 or 1"),
                 );
                 continue;
@@ -2227,6 +2252,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("trimmed-surface inner-boundary count is invalid"),
                 );
                 continue;
@@ -2240,6 +2266,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("trimmed-surface outer-boundary pointer is invalid"),
                     );
                     continue;
@@ -2252,6 +2279,7 @@ pub(super) fn project(
                         &mut losses,
                         entry,
                         (!entries.contains_key(&outer)).then_some(outer),
+                        Cause::Unreadable,
                         format_args!(
                             "trimmed-surface outer-boundary pointer does not target a Type 142 \
                              Form 0 entity"
@@ -2268,6 +2296,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!(
                         "trimmed-surface parameter-domain outer-boundary pointer is neither zero \
                          nor omitted"
@@ -2281,6 +2310,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("trimmed-surface inner-boundary pointer is invalid"),
                     );
                     valid = false;
@@ -2294,6 +2324,7 @@ pub(super) fn project(
                         &mut losses,
                         entry,
                         (!entries.contains_key(&sequence)).then_some(sequence),
+                        Cause::Unreadable,
                         format_args!(
                             "trimmed-surface inner-boundary pointer does not target a Type 142 \
                              Form 0 entity"
@@ -2317,6 +2348,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("bounded-surface representation type is not 0 or 1"),
                 );
                 continue;
@@ -2325,6 +2357,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("bounded-surface support pointer is invalid"),
                 );
                 continue;
@@ -2333,6 +2366,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("bounded-surface boundary count is not positive"),
                 );
                 continue;
@@ -2344,6 +2378,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("bounded-surface boundary pointer is invalid"),
                     );
                     valid = false;
@@ -2357,6 +2392,7 @@ pub(super) fn project(
                         &mut losses,
                         entry,
                         (!entries.contains_key(&sequence)).then_some(sequence),
+                        Cause::Unreadable,
                         format_args!(
                             "bounded-surface boundary pointer does not target a Type 141 Form 0 \
                              entity"
@@ -2383,6 +2419,7 @@ pub(super) fn project(
                         &mut losses,
                         entry,
                         (!boundaries.contains_key(&sequence)).then_some(sequence),
+                        Cause::Unreadable,
                         format_args!("bounded-surface representation disagrees with its boundary"),
                     );
                     valid = false;
@@ -2419,6 +2456,7 @@ pub(super) fn project(
                 &mut losses,
                 entry,
                 Some(surface_sequence),
+                Cause::Undecoded,
                 format_args!("trimmed-surface support carrier is missing"),
             );
             continue;
@@ -2457,6 +2495,7 @@ pub(super) fn project(
                     &mut losses,
                     entry,
                     Some(sequence),
+                    Cause::Undecoded,
                     format_args!("trimmed-surface boundary definition is missing"),
                 );
                 valid = false;
@@ -2466,6 +2505,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("boundary definition names a different support surface"),
                 );
                 valid = false;
@@ -2480,6 +2520,7 @@ pub(super) fn project(
                         &mut losses,
                         entry,
                         Some(segment.model_curve),
+                        Cause::Undecoded,
                         format_args!("boundary model curve has no bounded edge"),
                     );
                     valid = false;
@@ -2548,6 +2589,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!("boundary parameter curve states no NURBS carrier: {error}"),
                     );
                     valid = false;
@@ -2560,6 +2602,7 @@ pub(super) fn project(
                             &mut losses,
                             entry,
                             missing_pcurve,
+                            Cause::Undecoded,
                             format_args!("boundary parameter curve has no NURBS carrier"),
                         );
                         valid = false;
@@ -2612,6 +2655,7 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
+                            Cause::Undecoded,
                             format_args!("checking the boundary parameter curve against the support parameter bounds exceeds MAX_BEZIER_BLENDS"),
                         );
                         valid = false;
@@ -2633,6 +2677,7 @@ pub(super) fn project(
                             &mut losses,
                             entry,
                             IgesLossCode::BoundaryPcurveOutsideSupportDomain,
+                            Cause::Undecoded,
                             format_args!(
                                 "IGES entity type {} form {}: boundary parameter curve leaves the \
                                  declared support parameter bounds",
@@ -2674,6 +2719,7 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
+                            Cause::Undecoded,
                             format_args!("boundary model-curve endpoints are missing"),
                         );
                         valid = false;
@@ -2683,6 +2729,7 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
+                            Cause::Undecoded,
                             format_args!(
                                 "boundary model-curve edge range does not evaluate to its vertices"
                             ),
@@ -2694,6 +2741,7 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
+                            Cause::Undecoded,
                             format_args!(
                                 "boundary model curve maps to multiple ambiguous edge occurrences"
                             ),
@@ -2705,6 +2753,7 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
+                            Cause::Undecoded,
                             format_args!(
                                 "curve-on-surface carriers disagree beyond the minimum resolution"
                             ),
@@ -2771,6 +2820,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("ordered boundary segments do not form a closed ring"),
                 );
                 valid = false;
@@ -2830,7 +2880,12 @@ pub(super) fn project(
             let use_ranges = match use_ranges(&items, runs_backward) {
                 Ok(use_ranges) => use_ranges,
                 Err(reason) => {
-                    super::push_geometry_loss(&mut losses, entry, format_args!("{reason}"));
+                    super::push_geometry_loss(
+                        &mut losses,
+                        entry,
+                        Cause::Undecoded,
+                        format_args!("{reason}"),
+                    );
                     valid = false;
                     break;
                 }
@@ -2857,18 +2912,21 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("boundary sewing tolerance is invalid"),
                 );
                 valid = false;
                 break;
             };
-            if source_endpoints.len() > MAX_BOUNDARY_CLUSTER_ENDPOINTS {
+            if source_endpoints.len() > limits.boundary_cluster_endpoints {
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!(
-                        "boundary has {} segment endpoints; endpoint clustering is limited to {MAX_BOUNDARY_CLUSTER_ENDPOINTS}",
-                        source_endpoints.len()
+                        "boundary has {} segment endpoints; endpoint clustering is limited to {}",
+                        source_endpoints.len(),
+                        limits.boundary_cluster_endpoints
                     ),
                 );
                 valid = false;
@@ -2893,6 +2951,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!(
                             "boundary endpoint tolerance neighborhoods are non-transitive"
                         ),
@@ -2917,7 +2976,12 @@ pub(super) fn project(
                 ) {
                     Ok(carrier) => carrier,
                     Err(error) => {
-                        super::push_geometry_loss(&mut losses, entry, format_args!("{error}"));
+                        super::push_geometry_loss(
+                            &mut losses,
+                            entry,
+                            Cause::Undecoded,
+                            format_args!("{error}"),
+                        );
                         valid = false;
                         break;
                     }
@@ -2945,6 +3009,7 @@ pub(super) fn project(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!("{}", PcurveMetadata::NON_FINITE_PARAMETER_RANGE),
                     );
                     valid = false;
@@ -3010,6 +3075,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("boundary loop contains no coedges"),
                 );
                 valid = false;
@@ -3040,6 +3106,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!(
                     "validating {ring_points} linear boundary points does not fit the pass's remaining MAX_PLANAR_POINT_PAIRS allowance"
                 ),
@@ -3066,6 +3133,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!(
                     "{}",
                     if surface_kind == BoundarySurfaceKind::Trimmed {
@@ -3102,6 +3170,7 @@ pub(super) fn project(
                         super::push_geometry_loss(
                             &mut losses,
                             entry,
+                            Cause::Undecoded,
                             format_args!("{}", super::non_resource_error(error)?),
                         );
                         continue;
@@ -3115,7 +3184,12 @@ pub(super) fn project(
             {
                 Ok(record_bounds) => record_bounds,
                 Err(error) => {
-                    super::push_geometry_loss(&mut losses, entry, format_args!("{error}"));
+                    super::push_geometry_loss(
+                        &mut losses,
+                        entry,
+                        Cause::Undecoded,
+                        format_args!("{error}"),
+                    );
                     continue;
                 }
             };
@@ -3146,6 +3220,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("face tolerance is invalid"),
                 );
                 continue;
@@ -3222,6 +3297,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("trimmed sheet candidate failed neutral validation"),
             );
             continue;

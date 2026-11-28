@@ -61,7 +61,6 @@
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_sldprt::SldprtCodec;
-//! use cadmpeg_ir::codec::write::target::TargetRequest;
 //! use cadmpeg_ir::codec::write::Encoder;
 //! use cadmpeg_ir::{Codec, DecodeOptions};
 //!
@@ -71,10 +70,7 @@
 //! let (ir, _report, fidelity) = decoded.into_parts();
 //! let mut output = File::create("part-edited.sldprt")?;
 //! SldprtCodec
-//!     .plan(
-//!         cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)),
-//!         TargetRequest::Unnamed,
-//!     )?
+//!     .plan(cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)))?
 //!     .write_to(&mut output)?;
 //! # Ok(())
 //! # }
@@ -133,6 +129,7 @@ mod rollback;
 mod scan;
 mod swift;
 mod tessellation;
+pub mod transmit;
 mod writer;
 mod writer_patch;
 mod writer_transform;
@@ -174,7 +171,8 @@ pub struct SldprtCodec;
 /// edited document with its retained source part decoded again; a session
 /// decodes it once for all of its writes. [`SldprtCodec`] writes in a session
 /// of its own, so it decodes the source for each write. A write whose source
-/// fidelity is not the session's decodes its own.
+/// fidelity is not the session's, or whose limits are not those the session's
+/// source decoded under, decodes its own.
 pub(crate) struct SldprtWriteSession<'f> {
     fidelity: Option<&'f SourceFidelity>,
     source: OnceLock<Arc<writer::RetainedSource>>,
@@ -201,13 +199,14 @@ impl<'f> SldprtWriteSession<'f> {
     }
 }
 
-/// The retained source a semantic write patches: its records, and where the
-/// session of the write keeps the source decoded again. Without records the
-/// write synthesizes the document.
+/// The retained source a semantic write patches: its records, where the
+/// session of the write keeps the source decoded again, and the source image
+/// as input of the encode. Without records the write synthesizes the document.
 #[derive(Clone, Copy, Default)]
-struct RetainedRecords<'r> {
-    records: &'r [SourceRecord<'r>],
+struct RetainedRecords<'r, 'f, 'i> {
+    records: &'r [SourceRecord<'f>],
     decoded: Option<&'r OnceLock<Arc<writer::RetainedSource>>>,
+    input: Option<&'r writer::SourceInput<'i>>,
 }
 
 /// A joined native-record reference whose retained payload stays owned by the
@@ -235,6 +234,8 @@ impl SldprtCodec {
         ir: &CadIr,
         fidelity: &SourceFidelity,
         records: &[SourceRecord<'_>],
+        input: Option<&writer::SourceInput<'_>>,
+        ctx: &DecodeContext<'_>,
         session: &SldprtWriteSession<'_>,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
@@ -244,7 +245,7 @@ impl SldprtCodec {
             .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
             .and_then(|record| record.data);
         let (annotations, digests) = (&fidelity.annotations, &fidelity.codec_digests);
-        if fidelity.edited(ir)? {
+        if fidelity.edited(ctx, ir)? {
             if let Some((image, loss)) = image
                 .filter(|_| !ir.model.omitted_arenas_held())
                 .zip(Self::unrestored_loss())
@@ -252,32 +253,38 @@ impl SldprtCodec {
                 writer.write_all(image)?;
                 return Ok(Written::Stored { losses: vec![loss] });
             }
-            return Self::write_semantic(
+            let (written, bytes) = Self::write_semantic(
                 ir,
                 annotations,
                 digests,
                 RetainedRecords {
                     records,
                     decoded: source,
+                    input,
                 },
                 &[],
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::DigestMismatch),
-                writer,
-            );
+                ctx,
+            )?;
+            writer.write_all(&bytes)?;
+            return Ok(written);
         }
         let Some(data) = image else {
-            return Self::write_semantic(
+            let (written, bytes) = Self::write_semantic(
                 ir,
                 annotations,
                 digests,
                 RetainedRecords {
                     records,
                     decoded: source,
+                    input,
                 },
                 &[],
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing),
-                writer,
-            );
+                ctx,
+            )?;
+            writer.write_all(&bytes)?;
+            return Ok(written);
         };
         writer.write_all(data)?;
         Ok(Written::Replayed)
@@ -299,19 +306,23 @@ impl SldprtCodec {
 
     /// Runs the semantic writer and names the path it stands for: `Patched` when
     /// retained source records fed the write, `Synthesized` when the document was
-    /// built from the neutral IR alone. `digests` are the codec digests the
-    /// decode recorded. `shaped` names the edits that shape the stored solid
-    /// beyond those the write compares with its retained source.
+    /// built from the neutral IR alone. `shaped` names the edits that shape
+    /// the stored solid beyond those the write compares with its retained
+    /// source. Returns the path with the written bytes.
     fn write_semantic(
         ir: &CadIr,
         annotations: &Annotations,
         digests: &CodecDigests,
-        retained: RetainedRecords<'_>,
+        retained: RetainedRecords<'_, '_, '_>,
         shaped: &[history::write::brep_agreement::ShapingEdit],
         fidelity: SemanticFidelity,
-        writer: &mut dyn Write,
-    ) -> Result<Written, CodecError> {
-        let RetainedRecords { records, decoded } = retained;
+        ctx: &DecodeContext<'_>,
+    ) -> Result<(Written, Vec<u8>), CodecError> {
+        let RetainedRecords {
+            records,
+            decoded,
+            input,
+        } = retained;
         if !ir.model.omitted_arenas_held()
             && (!records.is_empty() || ir.native.namespace("sldprt").is_some())
         {
@@ -330,31 +341,54 @@ impl SldprtCodec {
             .iter()
             .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
             .and_then(|record| record.data);
-        let shared_cache = std::cell::RefCell::new(writer::SemanticWriteCache::of_source(decoded));
+        let own_input;
+        let image_source = if let Some(input) = input {
+            Some(input.image(ctx)?)
+        } else {
+            own_input = writer::SourceInput::of(records);
+            own_input
+                .as_ref()
+                .map(|input| input.image(ctx))
+                .transpose()?
+        };
+        let shared_cache = std::cell::RefCell::new(writer::SemanticWriteCache::of_source(
+            decoded,
+            ctx.policy().limits,
+        ));
         let round_trip = |source: &cadmpeg_ir::codec::Decoded| {
             let mut bytes = Vec::new();
-            let mut cache = writer::SemanticWriteCache {
-                source_baseline: shared_cache.borrow().source_baseline.clone(),
-                native: writer::CachedNative::Unloaded,
+            let mut cache = {
+                let shared = shared_cache.borrow();
+                writer::SemanticWriteCache {
+                    source_baseline: shared.source_baseline.clone(),
+                    native: writer::CachedNative::Unloaded,
+                    saved_properties: std::rc::Rc::clone(&shared.saved_properties),
+                }
             };
             let source_digests = if source.source_fidelity.codec_digests.is_empty() {
                 digests
             } else {
                 &source.source_fidelity.codec_digests
             };
-            let result = writer::write_semantic_with_records_cached(
-                &source.ir,
-                &source.source_fidelity.annotations,
-                source_digests,
-                records,
-                writer::SemanticWriteControls {
-                    withheld: &[],
-                    shaped: &[],
-                },
-                &mut cache,
-                &mut bytes,
-            )
-            .ok();
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let result = ctx
+                .with_arena(&arena, |check| {
+                    writer::write_semantic_with_records_cached(
+                        &source.ir,
+                        &source.source_fidelity.annotations,
+                        source_digests,
+                        records,
+                        writer::SemanticWriteControls {
+                            withheld: &[],
+                            shaped: &[],
+                            ctx: check,
+                            source: image_source,
+                        },
+                        &mut cache,
+                        &mut bytes,
+                    )
+                })
+                .ok();
             let mut shared = shared_cache.borrow_mut();
             if shared.source_baseline.is_none() {
                 shared.source_baseline = cache.source_baseline;
@@ -362,26 +396,36 @@ impl SldprtCodec {
             result?;
             (image != Some(bytes.as_slice())).then_some(bytes)
         };
-        let ((bytes, output), mut read_back) = history::write::read_back::write_until_read_back(
+        let passes = history::write::read_back::write_until_read_back(
             ir,
             digests,
             &mut |withheld| {
                 let mut bytes = Vec::new();
                 let mut cache = shared_cache.borrow_mut();
-                let output = writer::write_semantic_with_records_cached(
-                    ir,
-                    annotations,
-                    digests,
-                    records,
-                    writer::SemanticWriteControls { withheld, shaped },
-                    &mut cache,
-                    &mut bytes,
-                )?;
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let output = ctx.with_arena(&arena, |ctx| {
+                    writer::write_semantic_with_records_cached(
+                        ir,
+                        annotations,
+                        digests,
+                        records,
+                        writer::SemanticWriteControls {
+                            withheld,
+                            shaped,
+                            ctx,
+                            source: image_source,
+                        },
+                        &mut cache,
+                        &mut bytes,
+                    )
+                })?;
                 Ok((bytes, output))
             },
             &round_trip,
-        )?;
-        writer.write_all(&bytes)?;
+        );
+        // A later path of the write compares the source this one decoded.
+        shared_cache.borrow().keep_source(decoded);
+        let ((bytes, output), mut read_back) = passes?;
         let writer::SemanticOutput {
             dialect,
             coverage,
@@ -394,14 +438,13 @@ impl SldprtCodec {
         } = output;
         let unwritten_edits = unwritten_edits.render(&read_back);
         let shared = shared_cache.into_inner();
-        shared.keep_source(decoded);
         let native = match shared.native {
             writer::CachedNative::Loaded(loaded) => loaded,
             writer::CachedNative::Unloaded => ir
                 .native
                 .namespace("sldprt")
                 .map(|namespace| {
-                    native::SldprtNative::load(namespace, ir.tolerances.linear)
+                    native::SldprtNative::load_in(ctx, namespace, ir.tolerances.linear)
                         .map_err(CodecError::from)
                 })
                 .transpose()?,
@@ -410,7 +453,7 @@ impl SldprtCodec {
             .source_baseline
             .as_deref()
             .map(|source| history::write::brep_agreement::Source::Decoded(&source.decoded.ir))
-            .or_else(|| image.map(history::write::brep_agreement::Source::Image));
+            .or_else(|| input.map(history::write::brep_agreement::Source::Image));
         let stale_solid = history::write::brep_agreement::agreement(
             ir,
             digests,
@@ -418,9 +461,10 @@ impl SldprtCodec {
             source,
             &written,
             &read_back.misread,
+            ctx,
         )?
         .losses;
-        Ok(Written::Semantic {
+        let written = Written::Semantic {
             path: if records.is_empty() {
                 SemanticPath::Synthesized
             } else {
@@ -435,7 +479,8 @@ impl SldprtCodec {
             unwritten,
             losses,
             read_back: read_back.decoded.take(),
-        })
+        };
+        Ok((written, bytes))
     }
 }
 
@@ -500,31 +545,24 @@ impl SemanticPath {
 
 /// Why a semantic write takes no record of the `sldprt` namespace: the patch
 /// path declined the edited document, which is synthesized without its
-/// `SolidWorks` history.
+/// `SolidWorks` history. The report's synthesis cause states why the patch
+/// declined.
 struct HistoryDropped {
-    /// Why the patch declined.
-    cause: String,
     /// Whether the write was given the sidecar whose image the patch did not
-    /// write, so its path states the cause (§3.4, `PatchDeclined { reason }`).
+    /// write, so its path is degraded.
     sidecar: bool,
 }
 
 impl HistoryDropped {
-    fn native_reason(&self) -> String {
-        format!(
-            "because the patch of the document {}, and its synthesis writes no SolidWorks \
-             history record",
-            self.cause
-        )
-    }
+    const NATIVE_REASON: &'static str =
+        "because the patch declined the document, and its synthesis writes no SolidWorks \
+         history record";
 
-    fn consumption(&self) -> Consumption {
+    fn consumption() -> Consumption {
         Consumption::Degraded {
-            reason: format!(
-                "the SLDPRT patch of the edited document {}, so the document is synthesized \
-                 without its SolidWorks history",
-                self.cause
-            ),
+            reason: "the SLDPRT patch path cannot write the edited document, which is \
+                     synthesized without its SolidWorks history"
+                .into(),
         }
     }
 }
@@ -577,7 +615,7 @@ impl Written {
                 path,
                 history_dropped: Some(dropped),
                 ..
-            } if dropped.sidecar => path.write_path(dropped.consumption()),
+            } if dropped.sidecar => path.write_path(HistoryDropped::consumption()),
             Self::Semantic { path, fidelity, .. } => path.write_path(fidelity.consumption()),
         }
     }
@@ -606,12 +644,11 @@ impl Written {
                 native.namespace("sldprt", NativeDisposition::Written);
             }
             Self::Semantic {
-                history_dropped: Some(dropped),
+                history_dropped: Some(_),
                 ..
             } => {
-                let reason = dropped.native_reason();
                 for arena in crate::native::SLDPRT_ARENA_NAMES {
-                    native.drop_arena("sldprt", arena, &reason);
+                    native.drop_arena("sldprt", arena, HistoryDropped::NATIVE_REASON);
                 }
             }
             Self::Semantic {
@@ -640,7 +677,7 @@ impl Written {
 }
 
 impl CodecBackend for SldprtCodec {
-    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+    const FORMAT: FormatId = FormatId::new(dialect::registry_ids::FORMAT);
 
     fn validate_native(
         ctx: &DecodeContext<'_>,
@@ -696,26 +733,39 @@ impl EncoderBackend for SldprtCodec {
     /// Patches the retained source, so it plans from the design records it
     /// rewrites.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = true;
+    const DEFINITION_PER_FILE: bool = true;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0));
 
     fn plan_resolved(
         &self,
+        ctx: &DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        writer::target::plan(input, &target, &SldprtWriteSession::new(input.fidelity))
-            .map(|(body, _)| body)
+        writer::target::plan(
+            ctx,
+            input,
+            &target,
+            &SldprtWriteSession::new(input.fidelity),
+        )
+        .map(|(body, _)| body)
     }
 
-    fn restore(
+    fn plan_prepared(
         &self,
+        ctx: &DecodeContext<'_>,
         input: EncodeInput<'_>,
-        target: &ResolvedWrite<'_>,
-        notes: &mut Vec<String>,
-        losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    ) -> Result<Option<CadIr>, CodecError> {
-        writer::saved::restore(input, target, notes, losses)
+        target: ResolvedWrite<'_>,
+    ) -> Result<(ExportBody, Option<CadIr>), CodecError> {
+        writer::target::plan_prepared(
+            ctx,
+            input,
+            &target,
+            &SldprtWriteSession::new(input.fidelity),
+        )
+        .map(|(body, restored, _)| (body, restored))
     }
 }
 

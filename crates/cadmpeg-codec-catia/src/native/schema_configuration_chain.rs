@@ -147,6 +147,7 @@ const INTERVENING_ENTITY_OPERATION: &str = "retain CATIA configuration-row inter
 /// Intervening references all chains may keep, per entity record. Intervals
 /// of one chain can nest, so the references grow with the square of its row
 /// count; a link past the allowance keeps no intervening order.
+// resource-cap: MAX_INTERVENING_ENTITIES_PER_RECORD = 4
 pub(crate) const MAX_INTERVENING_ENTITIES_PER_RECORD: usize = 8;
 
 /// Configuration-row chains and the links whose intervening order was not kept.

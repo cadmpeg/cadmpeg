@@ -3,6 +3,7 @@ use super::*;
 
 mod final_bodies;
 mod historical_split;
+mod retained_budget;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
@@ -272,9 +273,22 @@ fn run_roles(
 ) -> (Vec<HistoryBody>, Vec<cadmpeg_ir::report::loss::LossNote>) {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default()).unwrap();
+    fill_roles(&ctx, bytes, width, (count, work), roles, slot).unwrap()
+}
+
+/// [`fill_history`] for `count` wants of the body of `slot` at state 12, with
+/// a work cap of `work`.
+fn fill_roles(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    width: RefWidth,
+    (count, work): (usize, usize),
+    roles: (bool, bool),
+    slot: i64,
+) -> Result<(Vec<HistoryBody>, Vec<cadmpeg_ir::report::loss::LossNote>), CodecError> {
     let mut allowance = u64::MAX;
     let history = super::super::decode(
-        &ctx,
+        ctx,
         bytes,
         "test",
         width,
@@ -299,16 +313,15 @@ fn run_roles(
     let mut bodies = Vec::new();
     let mut losses = Vec::new();
     fill_history(
-        &ctx,
+        ctx,
         bytes,
         (&history, None),
         &wants,
         &mut bodies,
         &WorkBudget::new(work),
         &mut losses,
-    )
-    .unwrap();
-    (bodies, losses)
+    )?;
+    Ok((bodies, losses))
 }
 
 #[test]
@@ -682,7 +695,7 @@ fn consumed_fixture(
     blob[39..47].copy_from_slice(&1_u64.to_le_bytes());
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, options);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, options);
     zip.start_file(name, options).unwrap();
     zip.write_all(&blob).unwrap();
     let archive = zip.finish().unwrap().into_inner();
@@ -696,7 +709,7 @@ fn consumed_fixture(
     let mut model = Model::default();
     model.features = features;
     let mut losses = Vec::new();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         assert_eq!(container::history_breps(scan).count(), 1);
         fill_consumed(
             &cadmpeg_core::decode::test_support::service_decode_context(),
@@ -1666,48 +1679,72 @@ fn nest(id: &str, produced_by: Option<&str>, consumed_by: Option<&str>, state: i
 
 #[test]
 fn a_producer_of_equal_records_joins_the_nest_of_the_consumer() {
-    let records = *cube_candidate().topology;
-    let built = |body, records: Option<&BodyTopology>| Built {
-        body,
-        records: records.cloned(),
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::new(
+        &arena,
+        &DecodePolicy::default(),
+        cadmpeg_core::decode::DecodeDepth::Full,
+    );
+    let allowance = ctx.retained_bytes_available();
+    let mut records = *cube_candidate().topology;
+    let body_name = "source body name";
+    let face_name = "source face name";
+    records.body.name = Some(body_name.into());
+    for face in &mut records.faces {
+        face.name = Some(face_name.into());
+    }
+    let name_bytes = body_name.len() + records.faces.len() * face_name.len();
+    let built = |mut body: HistoryBody, records: &BodyTopology| {
+        body.topology.as_mut().clone_from(records);
+        Built {
+            body,
+            records: Some(records.clone()),
+        }
     };
     let mut bodies = Vec::new();
     let mut joinable = Vec::new();
     place(
+        &ctx,
         &mut bodies,
         &mut joinable,
-        built(nest("a", None, Some("split"), 4), Some(&records)),
+        built(nest("a", None, Some("split"), 4), &records),
         7,
         (true, None),
-    );
+    )
+    .unwrap();
     assert_eq!((bodies.len(), joinable.len()), (1, 1));
     // A producer whose records differ keeps a nest of its own.
     let mut changed = records.clone();
     changed.points.clear();
     place(
+        &ctx,
         &mut bodies,
         &mut joinable,
-        Built {
-            body: nest("b", Some("base"), None, 1),
-            records: Some(changed),
-        },
+        built(nest("b", Some("base"), None, 1), &changed),
         7,
         (false, Some(0)),
-    );
+    )
+    .unwrap();
     assert_eq!((bodies.len(), joinable.len()), (2, 1));
     assert_eq!(bodies[0].produced_by, None);
     // A producer of equal records joins the consumer nest at its own state.
     place(
+        &ctx,
         &mut bodies,
         &mut joinable,
-        built(nest("c", Some("base"), None, 1), Some(&records)),
+        built(nest("c", Some("base"), None, 1), &records),
         7,
         (false, Some(0)),
-    );
+    )
+    .unwrap();
     assert_eq!((bodies.len(), joinable.len()), (2, 0));
     assert_eq!(bodies[0].produced_by, Some(feature("base").id));
     assert_eq!(bodies[0].consumed_by, Some(feature("split").id));
     assert_eq!(bodies[0].state.identifier, 1);
+    assert_eq!(
+        allowance - ctx.retained_bytes_available(),
+        3 * cadmpeg_core::decode::u64_from_index(name_bytes)
+    );
 }
 
 fn leak<T>(value: T) -> &'static T {

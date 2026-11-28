@@ -10,13 +10,18 @@
 //! [`LossNote`] in this crate: it fixes the loss category and severity from
 //! the code, and it leaves only the per-instance message to the caller.
 
-use cadmpeg_ir::report::loss::{LossKind, LossNamespace, LossNote, LossTaxonomy};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::report::loss::{
+    LossKind, LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind,
+};
 use cadmpeg_ir::report::Severity;
+use cadmpeg_ir::unknown::part::Cause;
 
 use crate::brep::resolve::ENDPOINT_TOLERANCE;
 
 const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("pvz");
 
+cadmpeg_ir::loss_codes! {
 /// A stable, machine-readable identifier for one `.pvz` transfer loss.
 ///
 /// The string form (via [`PvzLossCode::code`]) is the stable contract.
@@ -29,8 +34,6 @@ pub(crate) enum PvzLossCode {
     ContainerDirectoryRecovered,
     /// A structure-member stream of an undefined type was not decoded.
     StructureStreamUndecoded,
-    /// A property stream did not decode; none of its properties transferred.
-    StructurePropertyStreamMalformed,
     /// Structure elements outside the decoded model were not transferred.
     StructureElementUndecoded,
     /// Bytes after a typed definition's name (PVZ-04) were not transferred.
@@ -48,10 +51,6 @@ pub(crate) enum PvzLossCode {
     StructurePropertyKeyDropped,
     /// The definitions do not have exactly one root.
     StructureRootAmbiguous,
-    /// A child occurrence closes a definition cycle and was not expanded.
-    StructureOccurrenceCycle,
-    /// Occurrence expansion stopped at its count or depth limit.
-    StructureOccurrenceTruncated,
     /// A placement basis is not a uniformly scaled rotation; the placement
     /// was kept as a general affine transform.
     StructurePlacementNotSimilarity,
@@ -65,8 +64,6 @@ pub(crate) enum PvzLossCode {
     GeometryStreamUndecoded,
     /// The OL preamble block (PVZ-11) was not transferred.
     GeometryPreambleUndecoded,
-    /// An exact-geometry stream was located but its B-rep was not decoded.
-    GeometryExactUndecoded,
     /// Attribute-stream records outside the appearance records (PVZ-13) were
     /// not transferred.
     AttributeRecordsUndecoded,
@@ -87,8 +84,6 @@ pub(crate) enum PvzLossCode {
     TessellationTextureCoordinates,
     /// Decoded edge tessellation was not transferred.
     TessellationEdgesNotTransferred,
-    /// A decoded mesh failed tessellation admission and was not transferred.
-    TessellationMeshRejected,
     /// Exact-stream records with a frame and no settled meaning were not
     /// transferred.
     ExactRecordUninterpreted,
@@ -122,56 +117,9 @@ pub(crate) enum PvzLossCode {
     /// left out of its loop.
     ExactCoedgeDegenerateOmitted,
 }
+}
 
 impl PvzLossCode {
-    /// Every code, in declaration order.
-    #[cfg(test)]
-    const ALL: &'static [PvzLossCode] = &[
-        Self::SourceDialectUnverified,
-        Self::ContainerDirectoryRecovered,
-        Self::StructureStreamUndecoded,
-        Self::StructurePropertyStreamMalformed,
-        Self::StructureElementUndecoded,
-        Self::StructureDefinitionAttributes,
-        Self::StructureOccurrenceAttributes,
-        Self::StructureOccurrenceUndecoded,
-        Self::StructureBoundsNotTransferred,
-        Self::StructurePropertyAttributes,
-        Self::StructurePropertyKeyDropped,
-        Self::StructureRootAmbiguous,
-        Self::StructureOccurrenceCycle,
-        Self::StructureOccurrenceTruncated,
-        Self::StructurePlacementNotSimilarity,
-        Self::StructurePlacementInvalid,
-        Self::GeometryMemberMissing,
-        Self::GeometryMemberUnreferenced,
-        Self::GeometryStreamUndecoded,
-        Self::GeometryPreambleUndecoded,
-        Self::GeometryExactUndecoded,
-        Self::AttributeRecordsUndecoded,
-        Self::AttributeAppearanceUnresolved,
-        Self::AttributeAppearanceTail,
-        Self::AttributeAppearanceColorRejected,
-        Self::TessellationPatchFields,
-        Self::TessellationRecordsUndecoded,
-        Self::TessellationTextureCoordinates,
-        Self::TessellationEdgesNotTransferred,
-        Self::TessellationMeshRejected,
-        Self::ExactRecordUninterpreted,
-        Self::ExactSurfaceUntyped,
-        Self::ExactSurfaceAsBspline,
-        Self::ExactCurveUntyped,
-        Self::ExactPcurveUntransferred,
-        Self::ExactSecondaryPcurveOmitted,
-        Self::ExactEndpointMismatch,
-        Self::ExactLoopOpen,
-        Self::ExactFaceSideGauge,
-        Self::ExactTopologyWorkExhausted,
-        Self::ExactEdgeUsesMerged,
-        Self::ExactFaceUnboundedOmitted,
-        Self::ExactCoedgeDegenerateOmitted,
-    ];
-
     /// The stable string identifier. This is the gating contract.
     #[must_use]
     const fn code(self) -> &'static str {
@@ -179,7 +127,6 @@ impl PvzLossCode {
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::ContainerDirectoryRecovered => "container.directory-recovered",
             Self::StructureStreamUndecoded => "structure.stream-undecoded",
-            Self::StructurePropertyStreamMalformed => "structure.property-stream-malformed",
             Self::StructureElementUndecoded => "structure.element-undecoded",
             Self::StructureDefinitionAttributes => "structure.definition-attributes-undecoded",
             Self::StructureOccurrenceAttributes => "structure.occurrence-attributes-undecoded",
@@ -188,15 +135,12 @@ impl PvzLossCode {
             Self::StructurePropertyAttributes => "structure.property-attributes-undecoded",
             Self::StructurePropertyKeyDropped => "structure.property-key-dropped",
             Self::StructureRootAmbiguous => "structure.root-ambiguous",
-            Self::StructureOccurrenceCycle => "structure.occurrence-cycle",
-            Self::StructureOccurrenceTruncated => "structure.occurrence-expansion-truncated",
             Self::StructurePlacementNotSimilarity => "structure.placement-not-similarity",
             Self::StructurePlacementInvalid => "structure.placement-invalid",
             Self::GeometryMemberMissing => "geometry.member-missing",
             Self::GeometryMemberUnreferenced => "geometry.member-unreferenced",
             Self::GeometryStreamUndecoded => "geometry.stream-undecoded",
             Self::GeometryPreambleUndecoded => "geometry.preamble-undecoded",
-            Self::GeometryExactUndecoded => "geometry.exact-undecoded",
             Self::AttributeRecordsUndecoded => "attributes.records-undecoded",
             Self::AttributeAppearanceUnresolved => "attributes.appearance-unresolved",
             Self::AttributeAppearanceTail => "attributes.appearance-tail-undecoded",
@@ -205,7 +149,6 @@ impl PvzLossCode {
             Self::TessellationRecordsUndecoded => "tessellation.records-undecoded",
             Self::TessellationTextureCoordinates => "tessellation.texture-coordinates-dropped",
             Self::TessellationEdgesNotTransferred => "tessellation.edges-not-transferred",
-            Self::TessellationMeshRejected => "tessellation.mesh-rejected",
             Self::ExactRecordUninterpreted => "exact.record-uninterpreted",
             Self::ExactSurfaceUntyped => "exact.surface-untyped",
             Self::ExactSurfaceAsBspline => "exact.surface-as-bspline",
@@ -239,23 +182,18 @@ impl PvzLossCode {
             Self::SourceDialectUnverified
             | Self::ContainerDirectoryRecovered
             | Self::StructureStreamUndecoded
-            | Self::StructurePropertyStreamMalformed
             | Self::StructureOccurrenceUndecoded
             | Self::StructurePropertyKeyDropped
             | Self::StructureRootAmbiguous
-            | Self::StructureOccurrenceCycle
-            | Self::StructureOccurrenceTruncated
             | Self::StructurePlacementNotSimilarity
             | Self::StructurePlacementInvalid
             | Self::GeometryMemberMissing
             | Self::GeometryMemberUnreferenced
             | Self::GeometryStreamUndecoded
-            | Self::GeometryExactUndecoded
             | Self::AttributeAppearanceUnresolved
             | Self::AttributeAppearanceColorRejected
             | Self::TessellationTextureCoordinates
             | Self::TessellationEdgesNotTransferred
-            | Self::TessellationMeshRejected
             | Self::ExactRecordUninterpreted
             | Self::ExactSurfaceAsBspline
             | Self::ExactCurveUntyped
@@ -276,10 +214,9 @@ impl PvzLossCode {
         match self {
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::ContainerDirectoryRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
-            Self::GeometryStreamUndecoded
-            | Self::GeometryExactUndecoded
-            | Self::TessellationEdgesNotTransferred
-            | Self::TessellationMeshRejected => LossTaxonomy::GeometryNotTransferred,
+            Self::GeometryStreamUndecoded | Self::TessellationEdgesNotTransferred => {
+                LossTaxonomy::GeometryNotTransferred
+            }
             Self::StructureStreamUndecoded
             | Self::StructureElementUndecoded
             | Self::StructureDefinitionAttributes
@@ -288,13 +225,11 @@ impl PvzLossCode {
             | Self::GeometryPreambleUndecoded
             | Self::TessellationPatchFields
             | Self::TessellationRecordsUndecoded => LossTaxonomy::RecordNotTyped,
-            Self::StructurePropertyStreamMalformed
-            | Self::StructureBoundsNotTransferred
-            | Self::StructurePropertyKeyDropped => LossTaxonomy::MetadataNotTransferred,
+            Self::StructureBoundsNotTransferred | Self::StructurePropertyKeyDropped => {
+                LossTaxonomy::MetadataNotTransferred
+            }
             Self::StructureOccurrenceUndecoded
             | Self::StructureRootAmbiguous
-            | Self::StructureOccurrenceCycle
-            | Self::StructureOccurrenceTruncated
             | Self::StructurePlacementInvalid => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::StructurePlacementNotSimilarity => LossTaxonomy::DecodeDiagnostic,
             Self::GeometryMemberMissing | Self::GeometryMemberUnreferenced => {
@@ -379,7 +314,18 @@ impl PvzLossCode {
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
-        LossKind::namespaced(NAMESPACE, self.code(), self.shared_taxonomy())
+        NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy())
+            .with_strict_floor(self.strict_floor())
+            .into()
+    }
+
+    /// The strict floor `creo_view_pvz.md` states: a ZIP central directory
+    /// that the reader recovers from local headers pins Warning.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::ContainerDirectoryRecovered => Some(Severity::Warning),
+            _ => None,
+        }
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -389,6 +335,16 @@ impl PvzLossCode {
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
+    }
+}
+
+/// How the unit that a decode stops on with `error` is given up: a form,
+/// version, or bound the decoder has no reading for is
+/// [`Cause::Undecoded`], and broken bytes are [`Cause::Unreadable`].
+pub(crate) const fn give_up_cause(error: &CodecError) -> Cause {
+    match error {
+        CodecError::NotImplemented(_) => Cause::Undecoded,
+        _ => Cause::Unreadable.of(error),
     }
 }
 
@@ -407,7 +363,6 @@ mod tests {
                 "source.dialect-unverified",
                 "container.directory-recovered",
                 "structure.stream-undecoded",
-                "structure.property-stream-malformed",
                 "structure.element-undecoded",
                 "structure.definition-attributes-undecoded",
                 "structure.occurrence-attributes-undecoded",
@@ -416,15 +371,12 @@ mod tests {
                 "structure.property-attributes-undecoded",
                 "structure.property-key-dropped",
                 "structure.root-ambiguous",
-                "structure.occurrence-cycle",
-                "structure.occurrence-expansion-truncated",
                 "structure.placement-not-similarity",
                 "structure.placement-invalid",
                 "geometry.member-missing",
                 "geometry.member-unreferenced",
                 "geometry.stream-undecoded",
                 "geometry.preamble-undecoded",
-                "geometry.exact-undecoded",
                 "attributes.records-undecoded",
                 "attributes.appearance-unresolved",
                 "attributes.appearance-tail-undecoded",
@@ -433,7 +385,6 @@ mod tests {
                 "tessellation.records-undecoded",
                 "tessellation.texture-coordinates-dropped",
                 "tessellation.edges-not-transferred",
-                "tessellation.mesh-rejected",
                 "exact.record-uninterpreted",
                 "exact.surface-untyped",
                 "exact.surface-as-bspline",
@@ -466,6 +417,21 @@ mod tests {
                 "code {text} is not lowercase kebab"
             );
         }
+    }
+
+    /// `creo_view_pvz.md` lists the recovered central directory as the one
+    /// code with a strict floor, at Warning.
+    #[test]
+    fn strict_floors_are_the_listed_codes() {
+        use cadmpeg_ir::report::Severity;
+        let floored: Vec<_> = PvzLossCode::ALL
+            .iter()
+            .filter_map(|code| code.kind().strict_floor().map(|floor| (code.code(), floor)))
+            .collect();
+        assert_eq!(
+            floored,
+            [("container.directory-recovered", Severity::Warning)]
+        );
     }
 
     /// The note builder fixes severity from the codec-specific code.

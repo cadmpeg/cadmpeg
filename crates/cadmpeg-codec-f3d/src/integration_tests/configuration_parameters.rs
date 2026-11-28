@@ -8,10 +8,10 @@ use crate::design::test_support::parameter_record;
 use crate::test_support::configuration_table::{
     expression_cell, object_target, root_record, table_document, with_root_segment, ROOT_RECORD,
 };
-use crate::test_support::manifest_test::write_synthetic_manifests;
-use crate::test_support::native_test::f3d_native;
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::f3d_with_configuration;
+use crate::test_support::manifest_fixture::write_synthetic_manifests;
+use crate::test_support::native_fixture::f3d_native;
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::zip_fixture::f3d_with_configuration;
 
 const TABLE: &str = "FusionAssetName[Active]/DesignConfigurationTable.BlobParts/DesignConfigurationTable.synthetic.dsgcfg";
 
@@ -235,7 +235,7 @@ fn configuration_parameter_refusal_reports_unparsed_record() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == crate::loss::F3dLossCode::ParameterRecordUnparsed.kind()));
+        .any(crate::test_support::parameter_frame_given_up));
     assert_configuration_valid(&decoded);
 }
 
@@ -250,7 +250,7 @@ fn configuration_registered_tail_refusal_reports_unparsed_record() {
     frame[22..30].copy_from_slice(&9u64.to_le_bytes());
     let tail = frame.len() - 12;
     frame[tail + 2..tail + 10].copy_from_slice(&target.to_le_bytes());
-    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+    let metadata = crate::test_support::streams_fixture::design_metastream_with_records(
         &[(
             TAIL_TYPE_GUID,
             "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
@@ -274,5 +274,5 @@ fn configuration_registered_tail_refusal_reports_unparsed_record() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == crate::loss::F3dLossCode::ParameterRecordUnparsed.kind()));
+        .any(crate::test_support::parameter_frame_given_up));
 }

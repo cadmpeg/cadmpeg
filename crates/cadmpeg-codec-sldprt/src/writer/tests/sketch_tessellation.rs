@@ -26,7 +26,6 @@ use crate::test_support::tessellation::display_list_payload;
 use crate::test_support::tessellation::sldprt_with_body_and_display_list;
 const EPS_SKETCH_ANGLE: f64 = 1.0e-12;
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
 
@@ -70,7 +69,13 @@ fn semantic_writer_patch_declines_retained_sketch_constraint_edits() {
             metadata: None,
             native_ref: None,
         });
-    assert!(decoded.source_fidelity().edited(decoded.ir()).unwrap());
+    assert!(decoded
+        .source_fidelity()
+        .edited(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            decoded.ir(),
+        )
+        .unwrap());
 
     let error =
         crate::test_support::plan_inherited_write_declined(decoded.ir(), decoded.source_fidelity());
@@ -204,13 +209,12 @@ fn semantic_writer_applies_line_sketch_edits() {
 fn semantic_writer_applies_compressed_line_sketch_edits() {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
+    let image = crate::test_support::container::native_envelope_fixture(
+        &sldprt_with_compressed_nested_sketch_profile(&triangle_body()),
+    );
     let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_compressed_nested_sketch_profile(
-                &triangle_body(),
-            )),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(&image), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     let point_ref = decoded.ir().model.sketch_entities[0].endpoint_refs[0].clone();
@@ -237,12 +241,18 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
     }
 
     let mut written = Vec::new();
-    crate::test_support::plan_fixture_write_with_native_envelope(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut written,
-    )
-    .unwrap();
+    let limits = cadmpeg_core::decode::ResourceLimits {
+        max_input_bytes: cadmpeg_core::decode::u64_from_index(image.len()),
+        ..cadmpeg_core::decode::ResourceLimits::desktop()
+    };
+    SldprtCodec
+        .plan(EncodeInput {
+            limits,
+            ..EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity()))
+        })
+        .unwrap()
+        .write_to(&mut written)
+        .unwrap();
     let scan = crate::test_support::container::scan(&written);
     let lane = scan
         .blocks
@@ -827,10 +837,10 @@ fn semantic_writer_keeps_stored_tessellations_past_f32_range() {
         .unwrap();
     let mut output = Vec::new();
     let report = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .unwrap()
         .write_to(&mut output)
         .unwrap();
@@ -964,10 +974,10 @@ fn semantic_writer_writes_default_channels_for_more_auxiliary_channels_than_the_
     decoded.ir_mut().model.tessellations[0] = extended;
 
     let report = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .unwrap()
         .report()
         .clone();

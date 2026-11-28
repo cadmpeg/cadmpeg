@@ -6,12 +6,12 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::math::Point2;
 
-use crate::test_support::smbh_pcurves_test::{
+use crate::test_support::smbh_pcurves_fixture::{
     synthetic_geometry_with_pcurve_smbh, synthetic_geometry_with_rational_pcurve_smbh,
     synthetic_geometry_with_ref_pcurve_smbh, synthetic_geometry_with_wrapped_ref_pcurve_smbh,
     with_plane_pcurve_offset_vertices,
 };
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 
 const UV_TOLERANCE: f64 = 1.0e-12;
@@ -91,7 +91,7 @@ fn pcurve_uv_offset_plane_endpoints_reach_edge_vertices() {
 
 #[test]
 fn pcurve_uv_offset_one_native_period_keeps_cylinder_points() {
-    use crate::test_support::smbh_pcurves_test::synthetic_periodic_pcurve_with_uv_offset_smbh;
+    use crate::test_support::smbh_pcurves_fixture::synthetic_periodic_pcurve_with_uv_offset_smbh;
     let decode = |offset| {
         F3dCodec
             .decode(
@@ -139,8 +139,8 @@ fn pcurve_uv_offset_one_native_period_keeps_cylinder_points() {
 
 #[test]
 fn pcurve_uv_offset_edits_preserve_neutral_geometry_in_each_record_form() {
-    use crate::test_support::smbh_pcurves_test::assert_pcurve_geometry_close;
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use crate::test_support::smbh_pcurves_fixture::assert_pcurve_geometry_close;
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
     use cadmpeg_ir::geometry::pcurve::{PcurveInlineForm, PcurveMetadata};
     use cadmpeg_ir::units::FiniteVector;
     for smbh in [
@@ -189,7 +189,7 @@ fn pcurve_uv_offset_edits_preserve_neutral_geometry_in_each_record_form() {
         .expect("clear native records");
         let mut generated = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
+            .plan(EncodeInput::new(&ir, None))
             .and_then(|plan| plan.write_to(&mut generated))
             .expect("offset generation");
         let decoded = F3dCodec
@@ -205,8 +205,8 @@ fn pcurve_uv_offset_edits_preserve_neutral_geometry_in_each_record_form() {
 
 #[test]
 fn pcurve_uv_offset_new_record_defaults_to_zero() {
-    use crate::test_support::smbh_pcurves_test::assert_pcurve_geometry_close;
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use crate::test_support::smbh_pcurves_fixture::assert_pcurve_geometry_close;
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
     let source = f3d_with_smbh(&synthetic_geometry_with_pcurve_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -222,7 +222,7 @@ fn pcurve_uv_offset_new_record_defaults_to_zero() {
     ir.geometry.pcurves[0].metadata = cadmpeg_ir::geometry::pcurve::PcurveMetadata::default();
     let mut generated = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&ir, None))
         .and_then(|plan| plan.write_to(&mut generated))
         .expect("new record generation");
     let after = F3dCodec

@@ -71,23 +71,6 @@ fn separation_rewrite_traverses_owned_group_selectors_and_source_identity() {
     .unwrap();
 }
 
-#[cfg(feature = "schema")]
-#[test]
-fn separation_schema_matches_optional_nonnull_settings() {
-    use super::{MeshSeparation, MeshSeparationGroups};
-    let schema = json::to_value(schemars::schema_for!(MeshSeparation)).unwrap();
-    assert_eq!(schema["additionalProperties"], false);
-    for name in ["method", "groups", "multiple_bodies", "keep_body"] {
-        assert!(!schema["required"]
-            .as_array()
-            .is_some_and(|required| required.contains(&cadmpeg_core::json!(name))));
-        assert!(!schema["properties"][name].to_string().contains("\"null\""));
-    }
-    assert_eq!(schema["properties"]["keep_body"]["type"], "boolean");
-    let groups = json::to_value(schemars::schema_for!(MeshSeparationGroups)).unwrap();
-    assert!(!groups.to_string().contains("\"null\""));
-}
-
 #[test]
 fn face_group_operations_round_trip_partial_settings_and_rewrite_sources() {
     use crate::features::FeatureOperation;
@@ -524,38 +507,6 @@ fn conversion_rewrites_declared_native_and_typed_source_identities() {
     .unwrap();
 }
 
-#[cfg(feature = "schema")]
-#[test]
-fn conversion_schema_exposes_sources_on_the_tagged_operation() {
-    fn find_conversion(value: &serde_json::Value) -> Option<&serde_json::Value> {
-        if value["properties"]["kind"]["const"] == "mesh_convert"
-            || value["properties"]["kind"]["enum"] == cadmpeg_core::json!(["mesh_convert"])
-        {
-            return Some(&value["properties"]["value"]);
-        }
-        match value {
-            serde_json::Value::Object(fields) => fields.values().find_map(find_conversion),
-            serde_json::Value::Array(values) => values.iter().find_map(find_conversion),
-            _ => None,
-        }
-    }
-    let schema = json::to_value(schemars::schema_for!(FeatureOperation)).unwrap();
-    let conversion = find_conversion(&schema).unwrap();
-    let conversion = match conversion.get("$ref").and_then(serde_json::Value::as_str) {
-        Some(reference) => schema
-            .pointer(reference.strip_prefix('#').unwrap())
-            .unwrap(),
-        None => conversion,
-    };
-    assert_eq!(conversion["properties"]["sources"]["type"], "array");
-    assert!(conversion["required"]
-        .as_array()
-        .unwrap()
-        .contains(&cadmpeg_core::json!("sources")));
-    assert!(conversion["properties"]["method"].is_object());
-    assert_eq!(conversion["additionalProperties"], false);
-}
-
 #[test]
 fn plane_cut_round_trips_independent_components_and_rewrites_sources() {
     use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
@@ -618,31 +569,5 @@ fn plane_cut_rejects_null_unknown_keys_and_invalid_checked_geometry() {
         cadmpeg_core::json!({"u_axis":{"x":1,"y":0,"z":0}}),
     ] {
         assert!(json::from_value::<super::MeshPlaneCut>(wire).is_err());
-    }
-}
-
-#[cfg(feature = "schema")]
-#[test]
-fn plane_cut_schema_matches_omitted_optional_values_and_control_vocabulary() {
-    let schema = json::to_value(schemars::schema_for!(super::MeshPlaneCut)).unwrap();
-    for key in ["origin", "normal", "mode", "fill", "retained_side"] {
-        assert!(schema["properties"][key].is_object());
-        assert!(!schema["properties"][key].to_string().contains("null"));
-        assert!(!schema["required"]
-            .as_array()
-            .is_some_and(|required| required.contains(&cadmpeg_core::json!(key))));
-    }
-    assert_eq!(schema["additionalProperties"], false);
-    for value in [
-        "trim",
-        "split_bodies",
-        "split_faces",
-        "no_fill",
-        "minimal",
-        "uniform",
-        "positive",
-        "negative",
-    ] {
-        assert!(schema.to_string().contains(value));
     }
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use crate::test_support::assembly_test::{
+use crate::test_support::assembly_fixture::{
     f3d_with_identity_xrefs, f3d_with_redirections_json, f3d_without_brep,
     f3z_archive_with_design_description, redirections_json,
 };
@@ -46,7 +46,7 @@ fn redirections_state_self_and_linked_document_urns() {
         Some("child.f3d")
     );
     assert_eq!(
-        crate::test_support::native_test::f3d_native(decoded.ir())
+        crate::test_support::native_fixture::f3d_native(decoded.ir())
             .xref_designs
             .len(),
         2
@@ -70,7 +70,7 @@ fn unreferenced_design_identity_keeps_components_local() {
             zip.write_all(&json::to_vec(&table).unwrap()).unwrap();
         }
         let mut metadata =
-            crate::test_support::streams_test::design_metastream_with_records(&[], &[]);
+            crate::test_support::streams_fixture::design_metastream_with_records(&[], &[]);
         metadata.truncate(metadata.len() - 8);
         metadata.extend_from_slice(&2u32.to_le_bytes());
         for key in ["RootKey", "Key0"] {
@@ -105,7 +105,7 @@ fn unreferenced_design_identity_keeps_components_local() {
             .iter()
             .all(|row| !matches!(row.storage, Storage::External(_))));
         assert_eq!(
-            crate::test_support::native_test::f3d_native(decoded.ir())
+            crate::test_support::native_fixture::f3d_native(decoded.ir())
                 .xref_designs
                 .len(),
             if retain_table { 2 } else { 0 }
@@ -190,7 +190,7 @@ fn archive_description_supplies_member_and_unresolved_link_identities() {
 fn archive_merge_keeps_redirections_member_identity() {
     let root = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("child.f3d", XREF_ROLE)]);
     let child = f3d_without_brep("part-design", "child.f3d", &[]);
-    let bytes = crate::test_support::assembly_test::f3z_archive(
+    let bytes = crate::test_support::assembly_fixture::f3z_archive(
         "root.f3d",
         &[("root.f3d", &root), ("child.f3d", &child)],
     );
@@ -220,6 +220,42 @@ fn api_export_with_placements(linked: bool, terminal: Option<(u8, &str)>) -> Vec
     api_export_with_identity_fields(linked, terminal, None)
 }
 
+/// A manifest reference extension that states an empty reference run, with
+/// no Redirections entry, gives up the extension's bytes in `Manifest.dat`;
+/// no loss names an id that no record carries.
+#[test]
+fn an_unreadable_manifest_reference_extension_is_given_up_in_the_manifest() {
+    // A reference role that is no GUID: the extension does not read.
+    let bytes = api_export_archive(
+        &[("child-role", "ChildKey", "child.f3d")],
+        None,
+        None,
+        false,
+    );
+    let head = "part manifest-references stream=\"Manifest.dat\" offset=";
+    let decoded = EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+            .expect("an unreadable reference extension remains a reported decode"),
+    );
+    crate::test_support::charged_part(
+        decoded.ir(),
+        &decoded.report().losses,
+        (cadmpeg_ir::unknown::part::Cause::Unreadable, head),
+        "",
+    );
+    assert!(
+        !decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("f3d:archive:entry#")),
+        "{:#?}",
+        decoded.report().losses
+    );
+    crate::test_support::assert_pinned_refusal(bytes, head);
+}
+
 fn api_export_with_identity_fields(
     linked: bool,
     terminal: Option<(u8, &str)>,
@@ -230,6 +266,22 @@ fn api_export_with_identity_fields(
 
 fn api_export_build(
     linked: bool,
+    terminal: Option<(u8, &str)>,
+    blank: Option<&str>,
+    keep_redirections: bool,
+) -> Vec<u8> {
+    let references: &[(&str, &str, &str)] = if linked {
+        &[(XREF_ROLE, "ChildKey", "child.f3d")]
+    } else {
+        &[]
+    };
+    api_export_archive(references, terminal, blank, keep_redirections)
+}
+
+/// The identity-xref archive whose `Manifest.dat` reference extension states
+/// `references`, without `RedirectionsStream.dat` unless `keep_redirections`.
+fn api_export_archive(
+    references: &[(&str, &str, &str)],
     terminal: Option<(u8, &str)>,
     blank: Option<&str>,
     keep_redirections: bool,
@@ -250,11 +302,7 @@ fn api_export_build(
         if name == "Manifest.dat" {
             let manifest = crate::manifest::parse_top_level(&bytes).unwrap();
             let mut extension =
-                crate::test_support::manifest_test::api_reference_extension(if linked {
-                    &[(XREF_ROLE, "ChildKey", "child.f3d")]
-                } else {
-                    &[]
-                });
+                crate::test_support::manifest_fixture::api_reference_extension(references);
             if let Some(field) = blank {
                 let mut key = Vec::new();
                 crate::test_support::lp_utf16(&mut key, field);
@@ -495,7 +543,7 @@ fn f3z_conflicting_description_identity_keeps_member_geometry_and_identity() {
         serde_json::from_str(&redirections_json("root.f3d", &targets)).unwrap();
     table["designs"][2]["lineageUrn"] = "".into();
     table["designs"][2]["versionUrn"] = "".into();
-    let root = crate::test_support::assembly_test::f3d_with_reference_table_and_identity_xrefs(
+    let root = crate::test_support::assembly_fixture::f3d_with_reference_table_and_identity_xrefs(
         "assembly-design",
         "root.f3d",
         &targets,

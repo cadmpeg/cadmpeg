@@ -132,7 +132,7 @@ pub(super) fn evaluate(
 
 /// The Fusion text of source tokens in the Fusion dialect, with each
 /// reference written as `name` gives it.
-pub(super) fn print_tokens<'a>(
+pub(in crate::writer::generate) fn print_tokens<'a>(
     tokens: &[ExpressionToken<ParameterRef>],
     name: &impl Fn(&ParameterId) -> Option<&'a str>,
 ) -> Option<String> {

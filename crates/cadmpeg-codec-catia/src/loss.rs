@@ -48,6 +48,7 @@ pub(crate) fn identity_statement<T: std::fmt::Display>(ids: &[T]) -> impl std::f
     Statement(ids)
 }
 
+cadmpeg_ir::loss_codes! {
 /// A stable, machine-readable identifier for one CATIA V5 transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
@@ -173,7 +174,7 @@ pub(crate) enum CatiaLossCode {
     HistoryRelationDependenciesBounded,
     /// Typed two-definition value chains stay native without a neutral parameter.
     HistoryDefinitionChainsRetained,
-    /// The part's feature history is not read, so its bodies are unproduced.
+    /// No feature result is read, so the part's bodies are unproduced.
     HistoryFeaturesUnread,
     /// Design parameters and `Range` nominals read stored `E7` and `E8` literals
     /// as the values one and zero.
@@ -181,6 +182,28 @@ pub(crate) enum CatiaLossCode {
     /// Parameters that hold an input parameter the decoder resolved as text,
     /// or omit it, and state no dependency on that parameter.
     DesignParameterReferenceAsText,
+    /// Unread feature trees and omitted tree placements.
+    DesignTreeRecordsUnstated,
+    /// A stated container has an unread member list.
+    DesignMemberListUnread,
+    /// A Boolean feature has no stated body tool.
+    DesignBooleanToolUnread,
+    /// Features that no stated set lists are members of the part's group.
+    DesignFeaturesUngrouped,
+    /// Tree members whose record is unread keep their place as native
+    /// placeholder features.
+    DesignMembersUnread,
+    /// Sets whose kind is unread are stated as unordered geometrical sets.
+    DesignSetKindUnread,
+    /// Sets that no read list holds are stated as roots of the part's scope.
+    DesignSetsUnlisted,
+    /// An unread in-work field, an unmatched in-work object, or a rollback
+    /// before an unread member.
+    DesignRollbackUnread,
+    /// Sketches are stated without their entities.
+    DesignSketchEntitiesUnread,
+    /// Sketch constraints of a kind other than native are not restated.
+    DesignSketchConstraintsUnstated,
     /// Materials, unbound NURBS caches, and document metadata were not transferred.
     AttributesMaterialsMetadataNotTransferred,
     /// Dimension scalars retain no admitted physical-quantity discriminator.
@@ -204,86 +227,9 @@ pub(crate) enum CatiaLossCode {
     /// Visualization value blocks lack a proven typed face or body target.
     AttributesVisualizationUnbound,
 }
+}
 
 impl CatiaLossCode {
-    /// Every code, in declaration order.
-    #[cfg(test)]
-    const ALL: &'static [CatiaLossCode] = &[
-        Self::SourceDialectUnverified,
-        Self::SourceRouteFellThrough,
-        Self::SourceAnnotationCollision,
-        Self::SourceCatalogScanBounded,
-        Self::GeometryCarrierSummary,
-        Self::GeometryRollingSheetExtended,
-        Self::TopologyAffineVertexReconciled,
-        Self::GeometryParameterMapAccuracyInferred,
-        Self::GeometrySurfaceParametersNotTransferred,
-        Self::GeometrySurfaceExtrapolationNotTransferred,
-        Self::GeometryPlaneBoundsNotTransferred,
-        Self::GeometrySurfaceWeightsInferred,
-        Self::GeometryPlanePcurveProjected,
-        Self::GeometryConicBranchBoundsInferred,
-        Self::GeometrySheetSurfaceFitted,
-        Self::GeometryRollingBallRailsAdjusted,
-        Self::GeometryUnresolvedCarriers,
-        Self::GeometryBrepNotTransferred,
-        Self::GeometryPlaneParametersInvalid,
-        Self::GeometryAnalyticPayloadInvalid,
-        Self::GeometryParameterRangeInvalid,
-        Self::GeometryPcurveRechartNonFinite,
-        Self::GeometryPcurveCirclePlaneMismatch,
-        Self::GeometryPcurveSourceUseUntransferred,
-        Self::GeometryFaceLocalFreeformNotTransferred,
-        Self::GeometryRevolutionProfileUnbound,
-        Self::GeometryLineProfileNotTransferred,
-        Self::TopologyBoundaryGraphNotEmitted,
-        Self::TopologyFbbRowsWithheld,
-        Self::TopologyGraphNotBuilt,
-        Self::TopologySheetComponentsInferred,
-        Self::TopologyStandardSearchBounded,
-        Self::TopologyPlanarBoundaryBounded,
-        Self::TopologyE5GraphUnclosed,
-        Self::TopologyB5GaugeSubstituted,
-        Self::TopologyObjectStreamWorkSliceExhausted,
-        Self::TopologyB5GraphUnclosed,
-        Self::TopologyOwnedPatchSubset,
-        Self::TopologyUnselectedBodiesRetained,
-        Self::TopologyBodySelectionUnresolved,
-        Self::TopologyOwnedPatchSenseInferred,
-        Self::TopologyEndpointStationReadingInferred,
-        Self::TopologySharedBoundaryReconciled,
-        Self::TopologyTwoEdgeBindingInferred,
-        Self::TopologySheetPatchSearchBounded,
-        Self::TopologyB5FacesWithheld,
-        Self::TopologyB5PopulationBounded,
-        Self::TopologyZeroEntitySupportsRetained,
-        Self::TopologyZeroEntityCandidatesBounded,
-        Self::TopologyZeroEntityGaugeSubstituted,
-        Self::TopologyZeroEntityNotTransferred,
-        Self::TopologyZeroEntityFaceUnresolved,
-        Self::TopologyFaceBoundaryUnstated,
-        Self::HistoryModelingScopeUnresolved,
-        Self::HistoryObjectRecordsUnresolved,
-        Self::HistoryLegacyRunsUnresolved,
-        Self::HistoryConfigurationRowOrderBounded,
-        Self::HistoryRelationDependenciesBounded,
-        Self::HistoryDefinitionChainsRetained,
-        Self::HistoryFeaturesUnread,
-        Self::HistoryParameterLiteralAssumed,
-        Self::DesignParameterReferenceAsText,
-        Self::AttributesMaterialsMetadataNotTransferred,
-        Self::AttributesDimensionQuantityUnresolved,
-        Self::AttributesPmiToleranceUntransferred,
-        Self::AttributesPmiSecondaryToleranceUntransferred,
-        Self::AttributesPmiDatumSystemUnresolved,
-        Self::AttributesPmiTargetRosterUnresolved,
-        Self::AttributesPmiTopologyTargetUnresolved,
-        Self::AttributesPmiSemanticsUnresolved,
-        Self::AttributesPmiFieldKeyUnresolved,
-        Self::AttributesPmiCompositeLinkUntransferred,
-        Self::AttributesVisualizationUnbound,
-    ];
-
     /// The stable string identifier. This is the gating contract.
     #[must_use]
     const fn code(self) -> &'static str {
@@ -364,6 +310,16 @@ impl CatiaLossCode {
             Self::HistoryFeaturesUnread => "history.features-unread",
             Self::HistoryParameterLiteralAssumed => "history.parameter-literal-assumed",
             Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
+            Self::DesignTreeRecordsUnstated => "design.tree-records-unstated",
+            Self::DesignMemberListUnread => "design.member-list-unread",
+            Self::DesignBooleanToolUnread => "design.boolean-tool-unread",
+            Self::DesignFeaturesUngrouped => "design.features-ungrouped",
+            Self::DesignMembersUnread => "design.members-unread",
+            Self::DesignSetKindUnread => "design.set-kind-unread",
+            Self::DesignSetsUnlisted => "design.sets-unlisted",
+            Self::DesignRollbackUnread => "design.rollback-unread",
+            Self::DesignSketchEntitiesUnread => "design.sketch-entities-unread",
+            Self::DesignSketchConstraintsUnstated => "design.sketch-constraints-unstated",
             Self::AttributesMaterialsMetadataNotTransferred => {
                 "attributes.materials-metadata-not-transferred"
             }
@@ -486,6 +442,16 @@ impl CatiaLossCode {
             | Self::HistoryFeaturesUnread => LossTaxonomy::FeatureHistoryRetained,
             Self::TopologyUnselectedBodiesRetained => LossTaxonomy::FeatureHistoryRetained,
             Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
+            Self::DesignTreeRecordsUnstated
+            | Self::DesignMemberListUnread
+            | Self::DesignBooleanToolUnread
+            | Self::DesignFeaturesUngrouped
+            | Self::DesignMembersUnread
+            | Self::DesignSetKindUnread
+            | Self::DesignSetsUnlisted
+            | Self::DesignRollbackUnread
+            | Self::DesignSketchEntitiesUnread
+            | Self::DesignSketchConstraintsUnstated => LossTaxonomy::FeatureHistoryRetained,
         }
     }
 
@@ -588,6 +554,16 @@ mod tests {
                 "history.features-unread",
                 "history.parameter-literal-assumed",
                 "design.parameter-reference-as-text",
+                "design.tree-records-unstated",
+                "design.member-list-unread",
+                "design.boolean-tool-unread",
+                "design.features-ungrouped",
+                "design.members-unread",
+                "design.set-kind-unread",
+                "design.sets-unlisted",
+                "design.rollback-unread",
+                "design.sketch-entities-unread",
+                "design.sketch-constraints-unstated",
                 "attributes.materials-metadata-not-transferred",
                 "attributes.dimension-quantity-unresolved",
                 "attributes.pmi-tolerance-untransferred",

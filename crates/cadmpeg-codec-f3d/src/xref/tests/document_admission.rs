@@ -4,7 +4,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::collections::HashSet;
 use std::io::Cursor;
 
-use crate::test_support::assembly_test::{f3d_without_brep, XREF_ROLE};
+use crate::test_support::assembly_fixture::{f3d_without_brep, XREF_ROLE};
 
 use crate::F3dCodec;
 
@@ -30,8 +30,10 @@ fn single_type_metadata(
         ordinal
     ];
     types.push((type_guid, "", version, module, entities.as_slice()));
-    let bytes =
-        crate::test_support::streams_test::design_metastream_with_records(&types, &[(entity, 0)]);
+    let bytes = crate::test_support::streams_fixture::design_metastream_with_records(
+        &types,
+        &[(entity, 0)],
+    );
     crate::metastream::parse(&bytes, "Design/MetaStream.dat").unwrap()
 }
 
@@ -88,7 +90,7 @@ fn three_property_control_one_identity_requires_the_complete_registered_form() {
         .decode(&mut Cursor::new(document), &DecodeOptions::default())
         .unwrap();
     let mut reference =
-        crate::test_support::native_test::f3d_native(result.ir()).xref_references[0].clone();
+        crate::test_support::native_fixture::f3d_native(result.ir()).xref_references[0].clone();
     assert_eq!(reference.id, "f3d:xref:reference#0");
     assert_eq!(
         result.ir().model.occurrences[0].native_ref.as_deref(),
@@ -186,7 +188,7 @@ fn placement_metadata_boundaries_ignore_header_bytes_in_a_rigid_transform() {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let bytes = super::legacy_occurrence_record(role, 10, Some(matrix));
+    let bytes = crate::test_support::legacy_occurrence_record(role, 10, Some(matrix));
     let meta = single_type_metadata(
         super::super::OCCURRENCE_PLACEMENT_TYPE_GUID,
         2,
@@ -205,7 +207,7 @@ fn placement_metadata_boundaries_ignore_header_bytes_in_a_rigid_transform() {
 #[test]
 fn nested_headers_do_not_create_additional_placement_records() {
     let role = "cccccccc-dddd-eeee-ffff-000000000000";
-    let mut bytes = super::legacy_occurrence_record(role, 10, None);
+    let mut bytes = crate::test_support::legacy_occurrence_record(role, 10, None);
     let boundary = bytes.len();
     bytes.extend_from_within(..);
     let mut meta = single_type_metadata(
@@ -234,8 +236,8 @@ fn nested_headers_do_not_create_additional_placement_records() {
 #[test]
 fn inconsistent_legacy_target_fields_retain_the_role_as_a_placement_failure() {
     let role = "cccccccc-dddd-eeee-ffff-000000000000";
-    let original = super::legacy_occurrence_record(role, 10, None);
-    let target = super::legacy_occurrence_reference(3, 0x0102_0304_0506_0708);
+    let original = crate::test_support::legacy_occurrence_record(role, 10, None);
+    let target = crate::test_support::legacy_occurrence_reference(3, 0x0102_0304_0506_0708);
     let positions: Vec<_> = original
         .windows(target.len())
         .enumerate()
@@ -295,7 +297,7 @@ fn missing_metadata_does_not_infer_an_external_transform_from_record_shape() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let native = crate::test_support::native_test::f3d_native(decoded.ir());
+    let native = crate::test_support::native_fixture::f3d_native(decoded.ir());
     assert_eq!(native.xref_references.len(), 1);
     assert_eq!(native.xref_references[0].transform, None);
     assert!(decoded.report().losses.iter().any(|loss| {
@@ -353,8 +355,11 @@ fn assembly_root_without_brep_is_not_a_blocking_loss() {
         .notes
         .iter()
         .any(|note| note.contains("comp.f3d") && note.contains(XREF_ROLE)));
-    let native =
-        crate::native::F3dNative::load(decoded.ir().native.namespace("f3d").unwrap()).unwrap();
+    let native = crate::native::F3dNative::load_inner(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        decoded.ir().native.namespace("f3d").unwrap(),
+    )
+    .unwrap();
     assert_eq!(native.xref_designs.len(), 2);
     assert_eq!(native.xref_references.len(), 1);
     assert_eq!(native.xref_references[0].relative_path.as_str(), "comp.f3d");
@@ -383,8 +388,8 @@ fn part_without_brep_keeps_blocking_losses() {
 
 #[test]
 fn empty_model_maps_with_outgoing_references_are_an_assembly_without_docstruct() {
-    let snapshot = crate::test_support::smbh_geometry_test::synthetic_wire_body_smbh();
-    let archive = crate::test_support::body_map_test::f3d_with_empty_model_maps(
+    let snapshot = crate::test_support::smbh_geometry_fixture::synthetic_wire_body_smbh();
+    let archive = crate::test_support::body_map_fixture::f3d_with_empty_model_maps(
         &snapshot,
         &[("part.f3d", XREF_ROLE)],
     );

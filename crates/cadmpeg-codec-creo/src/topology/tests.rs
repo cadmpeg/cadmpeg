@@ -706,6 +706,96 @@ fn decode_withholds_native_brep_when_declared_body_count_disagrees() {
 }
 
 #[test]
+fn faces_withheld_by_the_component_gate_are_given_up() {
+    let admitted = CreoCodec
+        .decode(
+            &mut Cursor::new(closed_plane_intersection_data(None)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
+    let faces: BTreeSet<String> = admitted
+        .ir()
+        .geometry
+        .faces
+        .iter()
+        .map(|face| face.id.to_string())
+        .collect();
+    assert!(!faces.is_empty());
+
+    let data = closed_plane_intersection_data(Some(b"n_bodies\0\x02"));
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data.clone()), &DecodeOptions::default())
+        .expect("a permissive decode reports the withheld faces");
+    assert!(result.ir().geometry.faces.is_empty());
+    let charges: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
+        .map(|loss| loss.message.clone())
+        .collect();
+    let charged: BTreeSet<String> = charges
+        .iter()
+        .filter_map(|message| message.split_whitespace().nth(1).map(str::to_owned))
+        .collect();
+    assert_eq!(charged, faces, "{charges:#?}");
+    assert_eq!(charges.len(), faces.len(), "{charges:#?}");
+    assert!(
+        charges.iter().all(|message| message.contains(
+            "the component admission gate withheld the face: 1 admitted component(s), \
+             selected body count 2; selected body count mismatch; dropped=["
+        )),
+        "{charges:#?}"
+    );
+    let mut dropped = Vec::new();
+    for message in &charges {
+        let list = message
+            .split_once("dropped=[")
+            .and_then(|(_, tail)| tail.split_once(']'))
+            .map(|(list, _)| list)
+            .expect("each charge lists its dropped records");
+        dropped.extend(
+            list.split(", ")
+                .filter(|id| !id.is_empty())
+                .map(str::to_owned),
+        );
+    }
+    let named: BTreeSet<String> = dropped.iter().cloned().collect();
+    assert_eq!(named.len(), dropped.len(), "one charge names each record");
+    let geometry = &admitted.ir().geometry;
+    let withheld: BTreeSet<String> = geometry
+        .loops
+        .iter()
+        .map(|record| record.id.to_string())
+        .chain(geometry.coedges.iter().map(|record| record.id.to_string()))
+        .chain(geometry.edges.iter().map(|record| record.id.to_string()))
+        .chain(geometry.vertices.iter().map(|record| record.id.to_string()))
+        .chain(geometry.shells.iter().map(|record| record.id.to_string()))
+        .chain(geometry.regions.iter().map(|record| record.id.to_string()))
+        .chain(geometry.bodies.iter().map(|record| record.id.to_string()))
+        .collect();
+    assert!(!withheld.is_empty());
+    assert!(
+        withheld.is_subset(&named),
+        "{:?}",
+        withheld.difference(&named).collect::<Vec<_>>()
+    );
+    let kept = &result.ir().geometry;
+    assert!(named.iter().all(|id| {
+        !kept.curves.iter().any(|record| record.id.as_str() == id)
+            && !kept.surfaces.iter().any(|record| record.id.as_str() == id)
+            && !kept.pcurves.iter().any(|record| record.id.as_str() == id)
+            && !kept.points.iter().any(|record| record.id.as_str() == id)
+    }));
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    CreoCodec
+        .decode(&mut Cursor::new(data), &options)
+        .expect("a pinned decode accepts the undecoded faces");
+}
+
+#[test]
 fn closed_ring_constructor_rejects_empty_repeated_disconnected_and_mixed_faces() {
     let a = HalfEdgeId {
         curve_id: 1,

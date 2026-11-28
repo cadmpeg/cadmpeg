@@ -205,7 +205,7 @@ fn circle_interval(
     frames: impl Iterator<Item = crate::surface::PositionalCylinderFrame>,
 ) -> Option<[f64; 2]> {
     use crate::decode::surfaces::intersection_resolve::curve_contains_points;
-    use crate::vecmath::{cross, dot, normalize};
+    use crate::vecmath::{dot, normalize};
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     let SolvedCurveGeometry::Circle(circle) = geometry.solved()? else {
         return None;
@@ -214,7 +214,9 @@ fn circle_interval(
     let center = <[f64; 3]>::from(circle.center().get());
     let axis = <[f64; 3]>::from(*circle.frame().axis().as_raw());
     let reference = <[f64; 3]>::from(*circle.frame().reference().as_raw());
-    let second = cross(axis, reference);
+    let second = <[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(axis).cross(cadmpeg_ir::math::Vector3::from(reference)),
+    );
     let parameter = |point: [f64; 3]| {
         let relative = std::array::from_fn(|i| point[i] - center[i]);
         dot(relative, second).atan2(dot(relative, reference))
@@ -230,7 +232,9 @@ fn circle_interval(
         let origin = frame.frame().origin();
         let n = frame.frame().axis();
         let u = frame.frame().ref_direction();
-        let v = cross(n, u);
+        let v = <[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(n).cross(cadmpeg_ir::math::Vector3::from(u)),
+        );
         ((dot(n, axis).abs() - 1.0).abs() <= EPS_INTERVAL_ANGLE).then_some(())?;
         let radius = frame.radius().get();
         let scale = points
@@ -361,7 +365,7 @@ pub(in crate::decode) fn bounded_generator(
     paths: [[[f64; 2]; 2]; 2],
 ) -> Option<cadmpeg_ir::geometry::CurveGeometry> {
     use crate::decode::surfaces::intersection_resolve::curve_contains_points;
-    use crate::vecmath::{cross, dot};
+    use crate::vecmath::dot;
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     let witness = paths
         .iter()
@@ -384,7 +388,9 @@ pub(in crate::decode) fn bounded_generator(
         .then_some(())?;
     let radial = |index: usize, angle: f64| {
         let u = frames[index].frame().ref_direction();
-        let v = cross(axes[index], u);
+        let v = <[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(axes[index]).cross(cadmpeg_ir::math::Vector3::from(u)),
+        );
         std::array::from_fn::<_, 3, _>(|i| radii[index] * (u[i] * angle.cos() + v[i] * angle.sin()))
     };
     let at = |index: usize, uv: [f64; 2]| {

@@ -8,13 +8,13 @@
 use std::io::{Cursor, Read};
 
 use cadmpeg_ir::attributes::AttributeTarget;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_test_support::zip_fixture::{self, RawEntry};
 use zip::CompressionMethod;
 
 use crate::records::recipes::CreationTimestamp;
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+use crate::test_support::native_fixture::{f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 
 /// `archive` with every member re-stored as Zstandard.
@@ -67,7 +67,7 @@ fn a_retained_f3d_with_zstandard_members_patches() {
     }];
     let mut generated = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source, None))
         .and_then(|plan| plan.write_to(&mut generated))
         .expect("generate a timestamp carrier");
     let retained = every_member_as_zstandard(&generated);
@@ -89,10 +89,7 @@ fn a_retained_f3d_with_zstandard_members_patches() {
 
     let mut patched = Vec::new();
     let report = F3dCodec
-        .plan(
-            EncodeInput::new(&target, Some(&fidelity)),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(&target, Some(&fidelity)))
         .and_then(|plan| plan.write_to(&mut patched))
         .expect("patch an archive whose members are all Zstandard");
     assert!(matches!(

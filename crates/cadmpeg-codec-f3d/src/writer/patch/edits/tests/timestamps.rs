@@ -4,11 +4,11 @@ use std::collections::BTreeMap;
 use std::io::Cursor;
 
 use cadmpeg_ir::attributes::AttributeTarget;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::records::recipes::CreationTimestamp;
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+use crate::test_support::native_fixture::{f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 
 #[test]
@@ -34,7 +34,7 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
     ];
     let mut bytes = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source, None))
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("encode two timestamp carriers");
     let decoded = F3dCodec
@@ -73,20 +73,14 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
             .iter()
             .any(|finding| finding.check == cadmpeg_ir::report::check::Check::ArenaOrder)
     );
-    crate::test_support::assert_written_with_loss(
+    crate::test_support::assert_patch_declined(
         &unordered,
         Some(&fidelity),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
         "unchanged timestamp-id set",
     );
     let mut patched = Vec::new();
     let report = F3dCodec
-        .plan(
-            EncodeInput::new(&target, Some(&fidelity)),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(&target, Some(&fidelity)))
         .and_then(|plan| plan.write_to(&mut patched))
         .expect("patch timestamps after record-list reordering");
     assert!(matches!(

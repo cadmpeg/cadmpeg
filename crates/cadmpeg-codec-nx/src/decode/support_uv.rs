@@ -49,6 +49,7 @@ use cadmpeg_parasolid::xmt::NonNullXmt;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Maximum serialized support-UV lane length admitted by one model record.
+// resource-cap: MAX_SUPPORT_UV_SAMPLES = 2
 pub(super) const MAX_SUPPORT_UV_SAMPLES: usize = 1_024;
 
 /// Minimum support-UV consistency checks admitted for one model.
@@ -59,6 +60,7 @@ const MIN_SUPPORT_UV_COMPLETION_SAMPLES: usize = 1_024;
 const SUPPORT_UV_COMPLETION_SAMPLES_PER_CHART: usize = 8;
 
 /// Hard ceiling on the support-UV consistency checks of one model.
+// resource-cap: MAX_SUPPORT_UV_COMPLETION_SAMPLES = 4
 const MAX_SUPPORT_UV_COMPLETION_SAMPLES: usize = 65_536;
 
 /// Geometry work that each sample adds to the budget of one support-UV lane
@@ -70,6 +72,7 @@ const MIN_SUPPORT_UV_LANE_GEOMETRY_WORK: usize = 131_072;
 
 /// Maximum geometry work of one support-UV lane attempt. Completion applies it
 /// as the ceiling of its [`LaneGeometryWork`].
+// resource-cap: MAX_SUPPORT_UV_LANE_GEOMETRY_WORK = 4
 pub(super) const MAX_SUPPORT_UV_LANE_GEOMETRY_WORK: usize = 262_144;
 
 pub(super) fn support_uv_completion_budget_limit(chart_count: usize) -> usize {
@@ -783,15 +786,18 @@ pub(super) fn complete_ext11_support_uv_with_budget(
         }
     }
     drop(model_index);
+    let mut procedural_indices =
+        std::collections::HashMap::with_capacity(ir.geometry.procedural_curves.len());
+    for (index, procedural) in ir.geometry.procedural_curves.iter().enumerate() {
+        procedural_indices
+            .entry(procedural.id.clone())
+            .or_insert(index);
+    }
     for (procedural_id, side, replacement) in replacements {
-        let Some(procedural) = ir
-            .geometry
-            .procedural_curves
-            .iter_mut()
-            .find(|procedural| procedural.id == procedural_id)
-        else {
+        let Some(&index) = procedural_indices.get(&procedural_id) else {
             continue;
         };
+        let procedural = &mut ir.geometry.procedural_curves[index];
         let Some(context) = procedural.intersection_context_mut() else {
             continue;
         };
@@ -1049,15 +1055,18 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
         }
         (invalid, endpoint_witnesses, lane_geometry_exhausted)
     };
+    let mut procedural_indices =
+        std::collections::HashMap::with_capacity(ir.geometry.procedural_curves.len());
+    for (index, procedural) in ir.geometry.procedural_curves.iter().enumerate() {
+        procedural_indices
+            .entry(procedural.id.clone())
+            .or_insert(index);
+    }
     for (procedural_id, side) in invalid {
-        let Some(procedural) = ir
-            .geometry
-            .procedural_curves
-            .iter_mut()
-            .find(|procedural| procedural.id == procedural_id)
-        else {
+        let Some(&index) = procedural_indices.get(&procedural_id) else {
             continue;
         };
+        let procedural = &mut ir.geometry.procedural_curves[index];
         let Some(context) = procedural.intersection_context_mut() else {
             continue;
         };
@@ -1606,15 +1615,18 @@ fn complete_support_uv_wave(
             }
         }
         drop(model_index);
+        let mut procedural_indices =
+            std::collections::HashMap::with_capacity(ir.geometry.procedural_curves.len());
+        for (index, procedural) in ir.geometry.procedural_curves.iter().enumerate() {
+            procedural_indices
+                .entry(procedural.id.clone())
+                .or_insert(index);
+        }
         for (procedural_id, side, pcurve, effective_fit_tolerance) in replacements {
-            let Some(procedural) = ir
-                .geometry
-                .procedural_curves
-                .iter_mut()
-                .find(|procedural| procedural.id == procedural_id)
-            else {
+            let Some(&index) = procedural_indices.get(&procedural_id) else {
                 continue;
             };
+            let procedural = &mut ir.geometry.procedural_curves[index];
             let completed = procedural.edit_definition(|definition| {
                 let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                     return false;
@@ -1957,15 +1969,18 @@ fn complete_coupled_support_uv(
         replacements.append(&mut lane_replacements);
     }
     drop(model_index);
+    let mut procedural_indices =
+        std::collections::HashMap::with_capacity(ir.geometry.procedural_curves.len());
+    for (index, procedural) in ir.geometry.procedural_curves.iter().enumerate() {
+        procedural_indices
+            .entry(procedural.id.clone())
+            .or_insert(index);
+    }
     for (procedural_id, side, pcurve) in replacements {
-        let Some(procedural) = ir
-            .geometry
-            .procedural_curves
-            .iter_mut()
-            .find(|procedural| procedural.id == procedural_id)
-        else {
+        let Some(&index) = procedural_indices.get(&procedural_id) else {
             continue;
         };
+        let procedural = &mut ir.geometry.procedural_curves[index];
         let Some(context) = procedural.intersection_context_mut() else {
             continue;
         };
@@ -2520,6 +2535,12 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         }
         replacements
     };
+    let mut coedge_indices = std::collections::HashMap::with_capacity(ir.geometry.coedges.len());
+    for (index, coedge) in ir.geometry.coedges.iter().enumerate() {
+        if coedge.pcurves.is_empty() {
+            coedge_indices.entry(coedge.id.clone()).or_insert(index);
+        }
+    }
     for (coedge_id, source_index, (geometry, metadata)) in replacements {
         let source = &sources[source_index];
         let Some(fin_xmt) = coedge_id
@@ -2567,12 +2588,20 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             metadata,
             native_ref: None,
         });
-        if let Some(coedge) = ir
-            .geometry
-            .coedges
-            .iter_mut()
-            .find(|coedge| coedge.id == coedge_id && coedge.pcurves.is_empty())
-        {
+        let coedge = if let Some(&index) = coedge_indices.get(&coedge_id) {
+            let indexed = &mut ir.geometry.coedges[index];
+            if indexed.pcurves.is_empty() {
+                Some(indexed)
+            } else {
+                ir.geometry
+                    .coedges
+                    .iter_mut()
+                    .find(|coedge| coedge.id == coedge_id && coedge.pcurves.is_empty())
+            }
+        } else {
+            None
+        };
+        if let Some(coedge) = coedge {
             coedge.pcurves.push(cadmpeg_ir::topology::PcurveUse {
                 pcurve: pcurve_id,
                 isoparametric: None,

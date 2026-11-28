@@ -9,6 +9,7 @@
 //! leave this module in millimetres.
 
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::unknown::part::Cause;
 
 use super::scene::{Object, Scene};
 use super::walk::Shell;
@@ -16,6 +17,7 @@ use super::walk::Shell;
 /// Millimetres per metre.
 pub(super) const MILLIMETRES_PER_METRE: f64 = 1000.0;
 /// Deepest chain of shell instances followed to a source shell.
+// resource-cap: MAX_INSTANCE_CHAIN = 4
 const MAX_INSTANCE_CHAIN: usize = 8;
 /// Index width marker of an 8-bit face list.
 const WIDTH_8: u8 = 8;
@@ -55,6 +57,14 @@ impl ShellError {
             Self::FaceList => "face list is malformed",
             Self::Index => "strip index lies outside the shell",
             Self::TooLarge => "mesh exceeds the size caps",
+        }
+    }
+
+    /// How the shell record is charged when it is given up.
+    pub(super) const fn cause(self) -> Cause {
+        match self {
+            Self::TooLarge => Cause::Undecoded,
+            Self::Missing | Self::NotShell | Self::FaceList | Self::Index => Cause::Unreadable,
         }
     }
 }

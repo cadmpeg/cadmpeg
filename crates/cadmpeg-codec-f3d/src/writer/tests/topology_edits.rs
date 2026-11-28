@@ -15,14 +15,14 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
-use crate::test_support::smbh_geometry_test::{
+use crate::test_support::native_fixture::{f3d_native, f3d_native_mut};
+use crate::test_support::smbh_geometry_fixture::{
     synthetic_geometry_smbh, synthetic_geometry_with_body_color_smbh,
     synthetic_geometry_with_body_decimal_color_chain_smbh,
     synthetic_geometry_with_body_truecolor_chain_smbh, synthetic_geometry_with_face_color_smbh,
     synthetic_geometry_with_transform_smbh,
 };
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 
 #[test]
@@ -187,14 +187,7 @@ fn generated_f3d_regenerates_on_lossy_truecolor_edit() {
             .expect("valid color"),
     );
 
-    crate::test_support::assert_written_with_loss(
-        &edited,
-        Some(&fidelity),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
-        "",
-    );
+    crate::test_support::assert_patch_declined(&edited, Some(&fidelity), "");
 }
 
 #[test]
@@ -209,14 +202,7 @@ fn generated_f3d_regenerates_on_decimal_color_text_growth() {
     edited.geometry.bodies[0].color =
         Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"));
 
-    crate::test_support::assert_written_with_loss(
-        &edited,
-        Some(&fidelity),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
-        "",
-    );
+    crate::test_support::assert_patch_declined(&edited, Some(&fidelity), "");
 }
 
 #[test]
@@ -359,7 +345,7 @@ fn generated_f3d_rewrites_face_and_coedge_sense() {
 
 #[test]
 fn generated_f3d_rewrites_a_subset_edge_range_on_its_local_parameter() {
-    use crate::test_support::smbh_curves_test::synthetic_geometry_with_subset_curve_smbh;
+    use crate::test_support::smbh_curves_fixture::synthetic_geometry_with_subset_curve_smbh;
 
     let source = f3d_with_smbh(&synthetic_geometry_with_subset_curve_smbh());
     let decoded = F3dCodec

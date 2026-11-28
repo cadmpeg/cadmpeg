@@ -51,27 +51,27 @@ use cadmpeg_ir::ContainerSummary;
 /// USDZ package of a USDA 1.0 root layer.
 const TARGETS: &[TargetDescriptor] = &[
     TargetDescriptor {
-        id: dialect::USD_USDA_1_0,
+        id: dialect::registry_ids::USD_USDA_1_0,
         aliases: &["usda", "1.0"],
     },
     TargetDescriptor {
-        id: dialect::USD_USDA_1_1,
+        id: dialect::registry_ids::USD_USDA_1_1,
         aliases: &["1.1"],
     },
     TargetDescriptor {
-        id: dialect::USD_USDA_1_2,
+        id: dialect::registry_ids::USD_USDA_1_2,
         aliases: &["1.2"],
     },
     TargetDescriptor {
-        id: dialect::USD_USDA_1_3,
+        id: dialect::registry_ids::USD_USDA_1_3,
         aliases: &["1.3"],
     },
     TargetDescriptor {
-        id: dialect::USD_USDZ,
+        id: dialect::registry_ids::USD_USDZ,
         aliases: &["usdz"],
     },
     TargetDescriptor {
-        id: dialect::USD_USDC_0_8_0,
+        id: dialect::registry_ids::USD_USDC_0_8_0,
         aliases: &["usdc", "0.8.0"],
     },
 ];
@@ -84,7 +84,7 @@ const TARGET_VERSIONS: [&str; 6] = ["1.0", "1.1", "1.2", "1.3", "1.0", "1.0"];
 pub struct UsdCodec;
 
 impl CodecBackend for UsdCodec {
-    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+    const FORMAT: FormatId = FormatId::new(dialect::registry_ids::FORMAT);
 
     fn detect_impl(
         &self,
@@ -122,23 +122,25 @@ impl EncoderBackend for UsdCodec {
     /// Writes topology, geometry, tessellations, appearances, and placements;
     /// design arenas are not read.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = false;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(TARGETS, Some(0));
 
     fn plan_resolved(
         &self,
+        ctx: &DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
         let packaged = target
             .synthesized_row()
-            .is_some_and(|(_, entry)| entry.id == dialect::USD_USDZ);
+            .is_some_and(|(_, entry)| entry.id == dialect::registry_ids::USD_USDZ);
         let binary = target
             .synthesized_row()
-            .is_some_and(|(_, entry)| entry.id == dialect::USD_USDC_0_8_0);
-        let (mut body, members) = writer::plan(input, &target, packaged);
+            .is_some_and(|(_, entry)| entry.id == dialect::registry_ids::USD_USDC_0_8_0);
+        let (mut body, members) = writer::plan(ctx, input, &target, packaged)?;
         if binary {
-            let (bytes, left_out) = crate_layer(&body.bytes)?;
+            let (bytes, left_out) = crate_layer(ctx, &body.bytes)?;
             body.bytes = bytes;
             body.losses
                 .extend(cadmpeg_ir::codec::write::value_unwritable(
@@ -169,19 +171,18 @@ impl EncoderBackend for UsdCodec {
 /// The USDC form of the written text layer `text`, and the fields left out
 /// because their value has no USDC form.
 ///
-/// The text is this writer's own, so it parses: only a decode budget stops
-/// the parse.
-fn crate_layer(text: &[u8]) -> Result<(Vec<u8>, Vec<String>), CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(text, &arena, &policy)?;
-    let layer = text::grammar::parse_layer(&ctx, text).inspect_err(|error| {
+/// The text is this writer's own, so it parses: only the encode session's
+/// budget stops the parse.
+fn crate_layer(ctx: &DecodeContext<'_>, text: &[u8]) -> Result<(Vec<u8>, Vec<String>), CodecError> {
+    let layer = text::grammar::parse_layer(ctx, text).inspect_err(|error| {
         debug_assert!(
             matches!(error, CodecError::ResourceLimit(_)),
             "the written layer parses: {error}"
         );
     })?;
-    ctx.finish_session()?;
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(limit));
+    }
     usdc::write::write(&layer)
 }
 

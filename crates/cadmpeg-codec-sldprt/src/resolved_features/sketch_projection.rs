@@ -82,7 +82,8 @@ pub(crate) fn sketches(
                     .in_stream(source_stream.clone())
                     .costing(format!("{native_ref} states no sketch from this stream"))
                     .digest_only();
-                    given_up.push(ctx.give_up_part(part, error)?);
+                    let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
+                    given_up.push(ctx.give_up_part(part, cause, error)?);
                     continue;
                 }
             };
@@ -426,14 +427,14 @@ fn project_brep(
         let profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles)
             .ok()
             .filter(|profiles| !profiles.is_empty() || entities.len() > first_entity);
+        // An edge that does not project is a form the projection does not
+        // read, so each give-up here is undecoded.
         if profiles.is_none() && !refusals.is_empty() {
             losses.push(
                 cadmpeg_ir::unknown::part::GivenUpRecord::new(
                     sketch_id.clone(),
-                    format_args!(
-                        "{}: no edge of its face projects to a sketch entity",
-                        crate::loss::SldprtLossCode::SketchProfileRejected.kind()
-                    ),
+                    cadmpeg_ir::unknown::part::Cause::Undecoded,
+                    "no edge of its face projects to a sketch entity",
                 )
                 .at(cadmpeg_ir::SourceProvenance::in_stream(
                     "sldprt",
@@ -444,29 +445,23 @@ fn project_brep(
                 .loss(),
             );
         }
-        for (record, loop_id, entity) in refusals {
-            let consequence = match profiles {
-                Some(_) => format!(
-                    "sketch {sketch_id} states no entity for the edge and no profile for loop \
-                     {loop_id} or a later loop of face {}",
-                    face.id
-                ),
-                None => format!(
-                    "face {} of the feature-input stream states no sketch",
-                    face.id
-                ),
-            };
-            let why = crate::loss::SldprtLossCode::SketchProfileRejected
-                .note(format!("{record}; {consequence}"));
-            let given_up = profiles
-                .is_some()
-                .then(|| cadmpeg_ir::unknown::part::GivenUpRecord::caused_by(entity, &why).loss());
-            losses.push(why);
-            losses.extend(given_up);
-        }
         let Some(profiles) = profiles else {
             continue;
         };
+        for (record, loop_id, entity) in refusals {
+            losses.push(
+                cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                    entity,
+                    cadmpeg_ir::unknown::part::Cause::Undecoded,
+                    format_args!(
+                        "{record}; sketch {sketch_id} states no entity for the edge and no \
+                         profile for loop {loop_id} or a later loop of face {}",
+                        face.id
+                    ),
+                )
+                .loss(),
+            );
+        }
         crate::annotations::note(
             annotations,
             &sketch_id,

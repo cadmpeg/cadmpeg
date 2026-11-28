@@ -54,7 +54,9 @@ use cadmpeg_ir::report::loss::LossNote;
 
 use std::collections::BTreeMap;
 
-include!("dialect/registry_ids.rs");
+#[path = "dialect/registry_ids.rs"]
+pub(crate) mod registry_ids;
+use self::registry_ids::{NX_LEGACY_CFB, NX_SPLMSSTR};
 
 #[cfg(test)]
 const PARASOLID_FORMAT: &str = "parasolid";

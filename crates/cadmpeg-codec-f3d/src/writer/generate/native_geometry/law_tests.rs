@@ -4,7 +4,7 @@
 use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::laws::{LawExpression, LawFormula};
 use cadmpeg_ir::geometry::lofts::LoftPathCurve;
@@ -12,10 +12,10 @@ use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::surface_payloads::SweepSurfacePayload;
 use cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceLayout;
 
-use crate::test_support::smbh_surfaces_test::{
+use crate::test_support::smbh_surfaces_fixture::{
     synthetic_law_driven_sweep_smbh, synthetic_revision_text_law_sweep_smbh,
 };
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -86,7 +86,7 @@ fn text(value: &str) -> LawExpression {
 fn assert_round_trip(ir: &CadIr) {
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("representable law construction writes");
     let decoded = F3dCodec

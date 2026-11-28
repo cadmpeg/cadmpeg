@@ -29,6 +29,7 @@ const FOLDED_SHARE: f64 = 1e-3;
 /// Deepest bisection of one derived pcurve segment.
 const PCURVE_DEPTH: u32 = 24;
 /// Largest sample count of one derived pcurve.
+// resource-cap: MAX_PCURVE_SAMPLES = N
 const MAX_PCURVE_SAMPLES: usize = 1 << 16;
 /// Ratio of a triangle's model area to the squared surface size below which
 /// it is dropped as degenerate.
@@ -167,7 +168,7 @@ pub(crate) fn tessellate_within(
         .faces(face_id.as_str(), StandardIndex)
         .ok_or_else(|| Refusal::new(format!("the face {face_id} is not in the model")))?;
     let work = WorkBudget::new(limit);
-    let carrier = Carrier::new(index, &work, &face.surface)?;
+    let carrier = Carrier::new(index, &work, tessellator.admission, &face.surface)?;
     let sense = if face.sense == Sense::Reversed {
         -1.0
     } else {
@@ -177,6 +178,7 @@ pub(crate) fn tessellate_within(
     let sampler = Sampler {
         index,
         work: &work,
+        admission: tessellator.admission,
         chord: options.chord,
         angle: options.angle,
     };

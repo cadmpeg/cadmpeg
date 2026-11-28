@@ -7,7 +7,21 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{AttributeId, UnknownId};
 use cadmpeg_ir::Annotations;
 
-use super::{carrier_scan, changed, same_attribute, unwritten, Held};
+use super::{carrier_scan, changed, same_attribute, Held, PropertyReads};
+
+/// Each saved-property attribute of `ir` that the write does not write as
+/// `ir` states it, against the carriers among `records`.
+fn unwritten(
+    ir: &CadIr,
+    records: &[crate::SourceRecord<'_>],
+    notes: &Annotations,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<std::collections::BTreeMap<String, Held>, cadmpeg_core::CodecError> {
+    Ok(super::unwritten(
+        ir,
+        &PropertyReads::default().read(records, notes, None, ctx)?,
+    ))
+}
 
 const DEFAULT: &str = "docProps/ISolidWorksInformation.xml";
 const DEFAULT_XML: &[u8] = br#"<p:Properties xmlns:p="http://schemas.openxmlformats.org/officeDocument/2006/SolidworksInformation-properties" xmlns:v="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes" SW_UnitsLinear="0"><propertySection fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}"><property pid="2" name="Designer"><v:lpstr>Merlin</v:lpstr></property><property pid="3" name="Mass"><v:r8>-0.0</v:r8></property></propertySection></p:Properties>"#;
@@ -295,7 +309,14 @@ fn each_property_is_charged_by_the_carrier_bytes_the_write_emits() {
             .to_owned()
     };
     assert_eq!(source.model.attributes.len(), 4);
-    assert!(unwritten(&source, &records, &notes).unwrap().is_empty());
+    assert!(unwritten(
+        &source,
+        &records,
+        &notes,
+        &cadmpeg_core::decode::test_support::service_decode_context()
+    )
+    .unwrap()
+    .is_empty());
     let mut read_back = source.clone();
     for row in &mut read_back.model.attributes {
         if row.name == "Mass" {
@@ -306,7 +327,14 @@ fn each_property_is_charged_by_the_carrier_bytes_the_write_emits() {
             row.values = vec![Some(AttributeValue::float(0.0).unwrap())];
         }
     }
-    assert!(unwritten(&read_back, &records, &notes).unwrap().is_empty());
+    assert!(unwritten(
+        &read_back,
+        &records,
+        &notes,
+        &cadmpeg_core::decode::test_support::service_decode_context()
+    )
+    .unwrap()
+    .is_empty());
 
     let mut edited = source.clone();
     for row in &mut edited.model.attributes {
@@ -327,10 +355,15 @@ fn each_property_is_charged_by_the_carrier_bytes_the_write_emits() {
     ];
     expected.sort();
     assert_eq!(
-        unwritten(&edited, &records, &notes)
-            .unwrap()
-            .into_iter()
-            .collect::<Vec<_>>(),
+        unwritten(
+            &edited,
+            &records,
+            &notes,
+            &cadmpeg_core::decode::test_support::service_decode_context()
+        )
+        .unwrap()
+        .into_iter()
+        .collect::<Vec<_>>(),
         expected
     );
 
@@ -347,10 +380,15 @@ fn each_property_is_charged_by_the_carrier_bytes_the_write_emits() {
     let mut expected = vec![(id("Designer"), Held::Nothing), (id("Mass"), Held::Nothing)];
     expected.sort();
     assert_eq!(
-        unwritten(&source, &without_bytes, &notes)
-            .unwrap()
-            .into_iter()
-            .collect::<Vec<_>>(),
+        unwritten(
+            &source,
+            &without_bytes,
+            &notes,
+            &cadmpeg_core::decode::test_support::service_decode_context()
+        )
+        .unwrap()
+        .into_iter()
+        .collect::<Vec<_>>(),
         expected
     );
 }

@@ -76,6 +76,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000000",
+            "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000000"
           },
           {
@@ -88,6 +89,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000001",
+            "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000001"
           },
           {
@@ -100,6 +102,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000002",
+            "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000002"
           },
           {
@@ -112,6 +115,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000003",
+            "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000003"
           },
           {
@@ -124,6 +128,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000004",
+            "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000004"
           },
           {
@@ -136,6 +141,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000005",
+            "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000005"
           },
           {
@@ -148,6 +154,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000006",
+            "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000006"
           },
           {
@@ -160,6 +167,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000007",
+            "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000007"
           },
           {
@@ -172,6 +180,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000008",
+            "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000008"
           },
           {
@@ -184,6 +193,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000009",
+            "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000009"
           },
           {
@@ -196,6 +206,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000010",
+            "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000010"
           },
           {
@@ -208,6 +219,7 @@
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000011",
+            "name": "UNITE",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000011"
           }
         ],

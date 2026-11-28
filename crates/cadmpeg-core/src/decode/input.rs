@@ -38,16 +38,19 @@ impl DecodeContext<'_> {
             self.budget
                 .charge_input(u64_from_index(read), "read input prefix")?;
 
-            bytes.try_reserve_exact(read).map_err(|_| {
-                self.budget.refuse(
-                    ResourceDimension::InputBytes,
-                    ResourceFailure::AllocationFailed,
-                    self.policy().limits.max_input_bytes,
-                    self.budget.input_bytes(),
-                    u64_from_index(read),
-                    "input prefix storage",
-                )
-            })?;
+            bytes
+                .try_reserve(read)
+                .or_else(|_| bytes.try_reserve_exact(read))
+                .map_err(|_| {
+                    self.budget.refuse(
+                        ResourceDimension::InputBytes,
+                        ResourceFailure::AllocationFailed,
+                        self.policy().limits.max_input_bytes,
+                        self.budget.input_bytes(),
+                        u64_from_index(read),
+                        "input prefix storage",
+                    )
+                })?;
             bytes.extend_from_slice(&chunk[..read]);
         }
         Ok(())

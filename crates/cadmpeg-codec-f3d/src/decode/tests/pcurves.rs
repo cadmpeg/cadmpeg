@@ -12,7 +12,6 @@
 
 use cadmpeg_test_support::{edit, EditableDecodeResult};
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
 
@@ -20,15 +19,15 @@ use cadmpeg_asm::asm_header;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::native_test::TestEncode;
-use crate::test_support::smbh_blocks_test::{generated_curve_block, generated_pcurve_block};
-use crate::test_support::smbh_curves_test::{
+use crate::test_support::native_fixture::TestEncode;
+use crate::test_support::smbh_blocks_fixture::{generated_curve_block, generated_pcurve_block};
+use crate::test_support::smbh_curves_fixture::{
     synthetic_geometry_with_deformable_curve_smbh, synthetic_geometry_with_helix_curve_smbh,
     synthetic_geometry_with_null_support_spring_smbh,
     synthetic_geometry_with_procedural_curve_smbh, synthetic_geometry_with_spring_smbh,
     synthetic_geometry_with_surface_offset_smbh,
 };
-use crate::test_support::smbh_pcurves_test::{
+use crate::test_support::smbh_pcurves_fixture::{
     assert_pcurve_close, assert_pcurve_geometry_close,
     synthetic_geometry_with_additional_out_of_scope_pcurve_cache_smbh,
     synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh,
@@ -41,8 +40,8 @@ use crate::test_support::smbh_pcurves_test::{
     with_pcurve_discriminator, with_plane_pcurve_offset_vertices, with_ref_pcurve_companion_name,
     with_ref_pcurve_companion_reversed,
 };
-use crate::test_support::tokens_test::renamed_generated_subtype;
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::tokens_fixture::renamed_generated_subtype;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
@@ -185,7 +184,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less surface-offset encode");
     let round_trip = F3dCodec
@@ -299,7 +298,7 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less spring encode");
     let round_trip = F3dCodec
@@ -368,7 +367,7 @@ fn generated_null_support_spring_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less null-support spring encode");
     let round_trip = F3dCodec
@@ -469,7 +468,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
         ));
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+            .plan(EncodeInput::new(&source_less, None))
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less deformable encode");
         let round_trip = F3dCodec
@@ -1395,7 +1394,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_offset() {
         .unwrap();
     let mut source_less = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&edited, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&edited, None))
         .and_then(|plan| plan.write_to(&mut source_less))
         .expect("source-less ref-form pcurve encode");
     let source_less_round_trip = F3dCodec
@@ -1438,7 +1437,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_offset() {
     mixed.geometry.pcurves.push(inline);
     let mut mixed_bytes = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&mixed, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&mixed, None))
         .and_then(|plan| plan.write_to(&mut mixed_bytes))
         .expect("mixed inline/ref-form pcurve encode");
     let mixed_round_trip = F3dCodec

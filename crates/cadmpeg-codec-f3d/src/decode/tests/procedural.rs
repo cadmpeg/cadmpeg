@@ -10,14 +10,13 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::smbh_curves_test::{
+use crate::test_support::smbh_curves_fixture::{
     synthetic_geometry_with_compound_curve_smbh,
     synthetic_geometry_with_consistent_exact_curve_smbh,
     synthetic_geometry_with_early_close_projection_smbh, synthetic_geometry_with_helix_curve_smbh,
@@ -29,11 +28,11 @@ use crate::test_support::smbh_curves_test::{
     synthetic_geometry_with_two_sided_offset_curve_smbh,
     synthetic_geometry_with_vector_offset_curve_smbh,
 };
-use crate::test_support::smbh_surfaces_test::{
+use crate::test_support::smbh_surfaces_fixture::{
     synthetic_compound_loft_smbh, synthetic_law_spl_sur_smbh, synthetic_scaled_compound_loft_smbh,
     synthetic_skin_spl_sur_smbh, synthetic_sub_spl_sur_smbh,
 };
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
@@ -105,7 +104,7 @@ fn generated_procedural_curve_optional_tolerance_absence_round_trips() {
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+            .plan(EncodeInput::new(&source_less, None))
             .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap_or_else(|error| panic!("{family} source-less encode: {error}"));
         let round_trip = F3dCodec
@@ -201,7 +200,7 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     ));
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less compound-loft encode");
     let round_trip = F3dCodec
@@ -337,7 +336,7 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
         });
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+            .plan(EncodeInput::new(&source_less, None))
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less compound-loft encode");
         let round_trip = F3dCodec
@@ -463,7 +462,7 @@ fn generated_scaled_compound_loft_decodes_full_direct_branch() {
     );
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less scaled compound-loft encode");
     let round_trip = F3dCodec
@@ -562,7 +561,7 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
         });
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+            .plan(EncodeInput::new(&source_less, None))
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less scaled compound-loft encode");
         let round_trip = F3dCodec
@@ -662,7 +661,7 @@ fn generated_scaled_compound_loft_none_shape_round_trips_as_procedural_face() {
     );
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less scaled compound-loft none-shape encode");
     let round_trip = F3dCodec
@@ -731,7 +730,7 @@ fn generated_skin_surface_decodes_recursive_spline_law() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less skin surface encode");
     let round_trip = F3dCodec
@@ -814,7 +813,7 @@ fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+            .plan(EncodeInput::new(&source_less, None))
             .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap();
         let round_trip = F3dCodec
@@ -897,7 +896,7 @@ fn generated_sub_surfaces_decode_and_write_exact_support_graphs() {
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+            .plan(EncodeInput::new(&source_less, None))
             .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap();
         let round_trip = F3dCodec
@@ -994,7 +993,7 @@ fn generated_law_surfaces_round_trip_every_standard_tail_mode() {
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+            .plan(EncodeInput::new(&source_less, None))
             .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap();
         let round_trip = F3dCodec
@@ -1074,7 +1073,7 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
     ));
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less structural-law encode");
     let round_trip = F3dCodec
@@ -1160,7 +1159,7 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
     ));
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less expanded skin encode");
     let round_trip = F3dCodec
@@ -1242,7 +1241,7 @@ fn generated_skin_surface_round_trips_fixed_arity_algebraic_laws() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less algebraic skin encode");
     let round_trip = F3dCodec
@@ -1429,7 +1428,7 @@ fn generated_skin_surface_round_trips_set_compose_rotate_and_term_laws() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
     let round_trip = F3dCodec

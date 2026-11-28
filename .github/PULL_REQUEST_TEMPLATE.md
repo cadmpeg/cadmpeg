@@ -22,4 +22,4 @@
      See LEGAL.md for what sources are allowed.
      Delete this section for tooling/IR/exporter/test/docs-only PRs. -->
 
-I derived the format knowledge in this contribution only from sources allowed by LEGAL.md.
+I derived this contribution solely by analyzing CAD files I am legally entitled to possess and from publicly available information. I did not use vendor SDKs, decompiled binaries, confidential or NDA-covered material, or any source listed as forbidden in LEGAL.md.

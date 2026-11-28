@@ -30,7 +30,7 @@
 //! `Sketch` items, then no design ([`dropped_records`]).
 
 mod base_feature;
-mod expression;
+pub(super) mod expression;
 mod extrude;
 pub(super) mod frames;
 pub(super) mod history;
@@ -54,13 +54,15 @@ use cadmpeg_ir::codec::write::{
 };
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
-use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::feature::FeatureOperation;
+use cadmpeg_ir::design::ids::{ContainerId, EvaluationId};
+use cadmpeg_ir::design::names::TopoName;
 use cadmpeg_ir::design::parameter::ParameterOwner;
 use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::design::selection::StepRef;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::SketchConstraintId;
@@ -532,6 +534,8 @@ pub(super) struct NeutralDesign<'a> {
     /// Whether the timeline marker stands before a feature of the scope:
     /// the history-true form then differs from the geometry-true form.
     rolls_back: bool,
+    /// Whether the insertion history restates an evaluation of the scope.
+    restates: bool,
     losses: Vec<LossNote>,
 }
 
@@ -701,6 +705,18 @@ pub(super) fn plan<'a>(
             }
         }
     }
+    let joints = target
+        .design
+        .features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.definition.operation,
+                FeatureOperation::Joint(_) | FeatureOperation::RigidGroup(_)
+            )
+        })
+        .map(|feature| &feature.id)
+        .collect::<BTreeSet<_>>();
     let unwritten = features
         .iter()
         .filter(|feature| {
@@ -719,6 +735,9 @@ pub(super) fn plan<'a>(
             }
             if let Some(reason) = unstated(feature).filter(|reason| rolled_reason != Some(reason)) {
                 notes.push(format!("the writer writes it without its state: {reason}"));
+            }
+            if joints.contains(*feature) {
+                notes.push("the writer writes no joint or rigid group".to_owned());
             }
             if let Some(reason) = sketches.unwritten.get(*feature) {
                 notes.push(format!("its sketch {reason}"));
@@ -760,12 +779,17 @@ pub(super) fn plan<'a>(
             }),
     ));
     losses.extend(unwritten_records(target, scope, written_marker));
-    losses.extend(states(target));
     let mut base_feature =
         base_feature::plan(target, sketches.items.len() + sketches.planes.len())?;
     if body_less.is_some() {
         base_feature = base_feature.without_bodies();
     }
+    let restated = if base_feature.has_item() {
+        restated(target, scope, item.items(), &sketches, &mut losses)
+    } else {
+        BTreeSet::new()
+    };
+    losses.extend(states(target, &restated));
     Ok(Some(NeutralDesign {
         parameters,
         sketches,
@@ -775,6 +799,7 @@ pub(super) fn plan<'a>(
         base_feature,
         body_less: body_less.is_some(),
         rolls_back: written_marker.is_some(),
+        restates: !restated.is_empty(),
         losses,
     }))
 }
@@ -919,28 +944,42 @@ fn run_end(
 /// an evaluation holds the state at the marker (cadir-v11.md §3.4, Features
 /// without their state; §5.4): `target` with that state as its current
 /// state, and the loss of the records of the current state the document then
-/// does not hold. `None` where the form writes `target` itself.
+/// does not hold. `None` where the form writes `target` itself. The state
+/// resolves under the caller's `limits`.
+///
+/// # Errors
+///
+/// Returns [`CodecError::ResourceLimit`], scoped to the session, where the
+/// evaluation's base chain exceeds `limits` (§2.5).
 pub(in crate::writer::generate) fn state_at_marker(
     target: &CadIr,
-) -> Option<(CadIr, Option<LossNote>)> {
+    limits: &ResourceLimits,
+) -> Result<Option<(CadIr, Option<LossNote>)>, CodecError> {
     // A native Design names the records of the current state.
     if target.native.namespace("f3d").is_some() {
-        return None;
+        return Ok(None);
     }
-    let scope = root_scope(target)?;
+    let Some(scope) = root_scope(target) else {
+        return Ok(None);
+    };
     let features = scope_features(target, scope);
-    let (end, _) = run_end(target, scope, &features, &BTreeMap::new())?;
+    let Some((end, _)) = run_end(target, scope, &features, &BTreeMap::new()) else {
+        return Ok(None);
+    };
     let run = &features[..end];
     let [current] = scope.current.as_slice() else {
-        return None;
+        return Ok(None);
     };
     if !current.poses.is_empty() || !item::after_the_run(&current.at, run) {
-        return None;
+        return Ok(None);
     }
-    let last = run
+    let Some(last) = run
         .iter()
-        .rposition(|feature| !target.is_stateless(feature, None).unwrap_or(false))?;
-    let evaluation = target.design.evaluations.iter().find(|evaluation| {
+        .rposition(|feature| !target.is_stateless(feature, None).unwrap_or(false))
+    else {
+        return Ok(None);
+    };
+    let Some(evaluation) = target.design.evaluations.iter().find(|evaluation| {
         evaluation.scope == scope.definition
             && evaluation.configuration == scope.active_configuration
             && evaluation.status == EvaluationStatus::Current
@@ -949,23 +988,35 @@ pub(in crate::writer::generate) fn state_at_marker(
                 &evaluation.of,
                 Evaluated::State(Position::After(Member::Feature(at))) if run[last..].contains(&at)
             )
-    })?;
-    let Evaluated::State(at) = &evaluation.of else {
-        return None;
+    }) else {
+        return Ok(None);
     };
-    let state = target
-        .resolved_evaluation_state(&evaluation.id, &ResourceLimits::default())
-        .ok()?;
+    let Evaluated::State(at) = &evaluation.of else {
+        return Ok(None);
+    };
+    // A chain past the caller's ceiling is the §2.5 refusal; another
+    // resolution failure leaves the form writing `target` itself.
+    let state = match target.resolved_evaluation_state(&evaluation.id, limits) {
+        Ok(state) => state,
+        Err(error) => {
+            return error
+                .resource_limit()
+                .map_or(Ok(None), |limit| Err(CodecError::ResourceLimit(limit)));
+        }
+    };
     if state.records().bodies.is_empty() {
-        return None;
+        return Ok(None);
     }
     let mut staged = target.clone();
     staged.geometry = state.records().clone();
-    let root = staged
+    let Some(root) = staged
         .design
         .scopes
         .iter_mut()
-        .find(|candidate| candidate.definition == scope.definition)?;
+        .find(|candidate| candidate.definition == scope.definition)
+    else {
+        return Ok(None);
+    };
     root.current = vec![CurrentState {
         at: at.clone(),
         bodies: state
@@ -992,7 +1043,7 @@ pub(in crate::writer::generate) fn state_at_marker(
             unwritten.join("; ")
         ))
     });
-    Some((staged, loss))
+    Ok(Some((staged, loss)))
 }
 
 /// The state the history-true form writes at its timeline marker where a
@@ -1174,6 +1225,17 @@ impl NeutralDesign<'_> {
         Ok(members)
     }
 
+    /// Whether the insertion history writes evaluation geometry and reports its omitted values.
+    pub(super) fn restates_evaluations(&self) -> bool {
+        self.restates
+    }
+
+    /// Whether the design writes a feature of the scope as a timeline item:
+    /// a `Sketch` item, a geometry item, or a rolled-back item.
+    pub(super) fn writes_features(&self) -> bool {
+        self.writes_sketches() || !self.item.items().is_empty() || !self.rolled.is_empty()
+    }
+
     /// Whether the design writes a `Sketch` item.
     pub(super) fn writes_sketches(&self) -> bool {
         !self.sketches.items.is_empty()
@@ -1185,6 +1247,11 @@ impl NeutralDesign<'_> {
             .items
             .iter()
             .any(|item| !item.dimensions.is_empty())
+    }
+
+    /// The ids of the parameters a written record restates.
+    pub(super) fn restated_parameters(&self) -> BTreeSet<ParameterId> {
+        self.parameters.restated()
     }
 
     pub(super) fn into_losses(self) -> Vec<LossNote> {
@@ -1217,6 +1284,16 @@ fn sketch_plan<'a>(
 /// the scope whose definition no occurrence places.
 pub(super) fn root_scope(target: &CadIr) -> Option<&DesignScope> {
     root_scope_at(target).map(|at| &target.design.scopes[at])
+}
+
+/// Whether the root scope states a timeline: an ordered container among its
+/// roots.
+pub(super) fn states_timeline(target: &CadIr) -> bool {
+    root_scope(target).is_some_and(|scope| {
+        target.design.containers.iter().any(|container| {
+            matches!(container, Container::Ordered { .. }) && scope.roots.contains(container.id())
+        })
+    })
 }
 
 /// The position of [`root_scope`] among the document's scopes.
@@ -1258,7 +1335,7 @@ pub(super) fn restated_parameters(target: &CadIr) -> BTreeSet<&str> {
 pub(super) fn dropped_records(target: &CadIr, reason: &str) -> Vec<LossNote> {
     let design = &target.design;
     let unwritten = format!("the F3D writer writes no design ({reason})");
-    let mut losses = states(target);
+    let mut losses = states(target, &BTreeSet::new());
     losses.extend(evaluation_missing(
         "F3D",
         &format!("stores no design for these features ({reason})"),
@@ -1295,9 +1372,9 @@ pub(super) fn dropped_records(target: &CadIr, reason: &str) -> Vec<LossNote> {
 }
 
 /// The losses of the scopes' states: a current state's `Stale` or `Failed`
-/// status and each pose, which the written bodies do not carry, and every
-/// evaluation, which no written record holds.
-fn states(target: &CadIr) -> Vec<LossNote> {
+/// status and each pose, which the written bodies do not carry, and each
+/// evaluation outside `restated`, which no written history state holds.
+fn states(target: &CadIr, restated: &BTreeSet<&EvaluationId>) -> Vec<LossNote> {
     let mut stale = Vec::new();
     let mut poses = Vec::new();
     let mut evaluations = Vec::new();
@@ -1342,6 +1419,7 @@ fn states(target: &CadIr) -> Vec<LossNote> {
             evaluation.id, evaluation.scope
         );
         match evaluation.status {
+            EvaluationStatus::Current if restated.contains(&evaluation.id) => {}
             EvaluationStatus::Current => evaluations.push(entry),
             EvaluationStatus::Stale => stale.push(format!("{entry} (stale)")),
             EvaluationStatus::Failed => stale.push(format!("{entry} (failed)")),
@@ -1362,10 +1440,121 @@ fn states(target: &CadIr) -> Vec<LossNote> {
     losses.extend(named_loss(
         F3dLossCode::WriterDesignRecordOmitted,
         "evaluation",
-        "the F3D design holds its current bodies alone, with no stored evaluation",
+        "the F3D writer writes no history state with the records of these states",
         evaluations,
     ));
     losses
+}
+
+/// The states whose geometry the insertion history writes. Report the
+/// other values it cannot write before marking their evaluations covered.
+fn restated<'a>(
+    target: &'a CadIr,
+    scope: &DesignScope,
+    items: &[Item<'_>],
+    sketches: &SketchPlan<'_>,
+    losses: &mut Vec<LossNote>,
+) -> BTreeSet<&'a EvaluationId> {
+    let mut bodies = BTreeSet::new();
+    let mut written = BTreeMap::new();
+    for item in items {
+        bodies.extend(item.body());
+        written.insert(item.feature(), (item, bodies.clone()));
+    }
+    let mut restated = BTreeSet::new();
+    for evaluation in &target.design.evaluations {
+        if evaluation.scope != scope.definition
+            || evaluation.configuration.is_some()
+            || evaluation.status != EvaluationStatus::Current
+        {
+            continue;
+        }
+        let Evaluated::State(Position::After(Member::Feature(feature))) = &evaluation.of else {
+            continue;
+        };
+        let Some((_, bodies)) = written.get(feature) else {
+            continue;
+        };
+        let Ok(state) =
+            target.resolved_evaluation_state(&evaluation.id, &ResourceLimits::default())
+        else {
+            continue;
+        };
+        if !state.poses().is_empty()
+            || !state
+                .records()
+                .bodies
+                .iter()
+                .map(|body| &body.id)
+                .eq(bodies.iter().copied())
+            || !super::reduce::geometry_records_outside(state.records(), &target.geometry)
+                .is_empty()
+        {
+            continue;
+        }
+
+        let id = &evaluation.id;
+        let unwritten_names = state.names().iter().filter(|(entity, entry)| {
+            if entry
+                .native
+                .as_ref()
+                .is_some_and(|name| name.codec.as_str() == "f3d")
+            {
+                return true;
+            }
+            let Some(name @ TopoName::Generated { feature, .. }) = &entry.name else {
+                return true;
+            };
+            !written
+                .get(feature)
+                .is_some_and(|(item, _)| item.writes_name(entity, name, sketches))
+        });
+        losses.extend(named_loss(
+            F3dLossCode::WriterDesignRecordOmitted,
+            "evaluation name",
+            "the insertion history cannot stamp their names",
+            unwritten_names.map(|(entity, _)| format!("{} in evaluation {id}", entity.id())),
+        ));
+        let definitions = &target.model.product_definitions;
+        let different_owners = state.owners().iter().filter(|(body, owner)| {
+            let current = definitions
+                .iter()
+                .find(|definition| definition.bodies.contains(body))
+                .map_or(&scope.definition, |definition| &definition.id);
+            *owner != current
+        });
+        losses.extend(named_loss(
+            F3dLossCode::WriterDesignRecordOmitted,
+            "evaluation body owner",
+            "the insertion history uses the current body owners",
+            different_owners
+                .map(|(body, owner)| format!("{body} owned by {owner} in evaluation {id}")),
+        ));
+        let different_members = state.members().iter().filter(|(occurrence, owner)| {
+            let current = cadmpeg_ir::products::owner(definitions, occurrence)
+                .map_or(&scope.definition, |definition| &definition.id);
+            *owner != current
+        });
+        losses.extend(named_loss(
+            F3dLossCode::WriterDesignRecordOmitted,
+            "evaluation occurrence membership",
+            "the insertion history has no occurrence membership changes",
+            different_members.map(|(occurrence, owner)| {
+                format!("{occurrence} owned by {owner} in evaluation {id}")
+            }),
+        ));
+        losses.extend(named_loss(
+            F3dLossCode::WriterDesignRecordOmitted,
+            "evaluation instance-body assignment",
+            "the generated Design holds no occurrence state",
+            state
+                .instance_bodies()
+                .keys()
+                .map(|path| format!("{path:?} in evaluation {id}")),
+        ));
+        restated.insert(id);
+    }
+    restated
 }
 
 fn position(at: &Position) -> String {

@@ -44,6 +44,7 @@ const I32_MINUS_TWO: [u8; 4] = [0xfe, 0xff, 0xff, 0xff];
 /// The length of the `sgSketch` header before the first point record.
 const SKETCH_HEADER_LEN: usize = 14;
 /// The largest point count read as an `sgSketch` header.
+// resource-cap: MAX_SKETCH_POINTS = 2
 const MAX_SKETCH_POINTS: usize = 4096;
 /// Where a record's fields start after a head with its eight zero bytes.
 const CURRENT_FIELDS: usize = arc::START;
@@ -136,7 +137,7 @@ enum RecordPlace {
 
 /// Every `sgSketch` record list of one stream.
 #[derive(Debug, Clone, Default)]
-pub(super) struct SketchRecordLists {
+pub(crate) struct SketchRecordLists {
     lists: Vec<SketchRecordList>,
     /// Record offset to list index and place.
     records: BTreeMap<usize, (usize, RecordPlace)>,
@@ -146,7 +147,7 @@ impl SketchRecordLists {
     /// Find the `sgSketch` record lists of `payload`. A curve record after
     /// the first curve list belongs to the nearest sketch whose point records
     /// precede it.
-    pub(super) fn new(payload: &[u8]) -> Self {
+    pub(crate) fn new(payload: &[u8]) -> Self {
         let heads = record_heads(payload);
         let mut lists: Vec<SketchRecordList> = Vec::new();
         let mut later_curves = Vec::new();
@@ -201,7 +202,7 @@ impl SketchRecordLists {
     }
 
     /// Whether a curve record starts at `offset`.
-    fn is_curve(&self, payload: &[u8], offset: usize) -> bool {
+    pub(crate) fn is_curve(&self, payload: &[u8], offset: usize) -> bool {
         matches!(
             self.records.get(&offset),
             Some((_, RecordPlace::FirstCurveList | RecordPlace::LaterCurveList))
@@ -543,8 +544,11 @@ pub(super) struct ListedEntity {
     /// The stream offsets of the point records a line or an arc runs
     /// between, the first at the start of [`Self::geometry`].
     pub(super) endpoints: Option<[usize; 2]>,
-    /// The record is a curve record whose selector has bit 3 set.
-    pub(super) construction: bool,
+    /// The stream offset of the point record at the center of an arc or a
+    /// circle.
+    pub(super) center: Option<usize>,
+    /// Bit 3 of the curve selector, when the record is a curve.
+    pub(super) construction: Option<bool>,
     /// The record is a curve record of state `0`: a curve outside the
     /// sketch's profile.
     pub(super) outside_profile: bool,
@@ -556,7 +560,7 @@ pub(super) struct ListedEntity {
 /// Why the curve record of a marker gives it no entity, so that the marker
 /// keeps what another reading gives it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ChordConflict {
+pub(crate) enum ChordConflict {
     /// A point record the record indexes writes no planar coordinates, or an
     /// index lies past the point records.
     PointUnread,
@@ -677,18 +681,21 @@ fn read_listed_entity(
             geometry: SketchGeometry::try_from(SketchGeometryDefinition::Point { position })
                 .ok()?,
             endpoints: None,
-            construction: false,
+            center: None,
+            construction: None,
             outside_profile: false,
             index_basis_loss: None,
         }));
     };
-    let construction = construction_record(payload, offset);
+    let selector = View::u16_le_at(payload, offset.checked_add(SELECTOR)?)?;
+    let construction = Some(selector & SELECTOR_CONSTRUCTION_BIT != 0);
     let outside_profile =
         View::u16_le_at(payload, offset.checked_add(STATE)?)? == STATE_OUTSIDE_PROFILE;
-    let entity = |geometry, endpoints| {
+    let entity = |geometry, endpoints, center| {
         Some(Ok(ListedEntity {
             geometry,
             endpoints,
+            center,
             construction,
             outside_profile,
             index_basis_loss: point_record_index_basis_loss(payload, offset),
@@ -704,7 +711,7 @@ fn read_listed_entity(
                 end: project(point_coordinates(payload, end)?)?,
             })
             .ok()?;
-            return entity(geometry, Some([start, end]));
+            return entity(geometry, Some([start, end]), None);
         }
         Some(CurveForm::Arc {
             start,
@@ -730,7 +737,7 @@ fn read_listed_entity(
     };
     if start == end {
         return match arc_geometry(center_m, start_m, end_m, ArcSweep::Full, project) {
-            Some(circle) => entity(circle, None),
+            Some(circle) => entity(circle, None, Some(center_at)),
             None => Some(Err(ChordConflict::NoArc)),
         };
     }
@@ -770,11 +777,11 @@ fn read_listed_entity(
     } else if near(first, end_ir) && near(last, start_ir) {
         [end_at, start_at]
     } else if chord == ChordTest::Waived {
-        return entity(arc, None);
+        return entity(arc, None, Some(center_at));
     } else {
         return Some(Err(ChordConflict::MissesChord));
     };
-    entity(arc, Some(endpoints))
+    entity(arc, Some(endpoints), Some(center_at))
 }
 
 /// The conflict of the listed curve record at `offset` with a line that a
@@ -782,7 +789,7 @@ fn read_listed_entity(
 /// for an arc record and the form conflict for a record whose form
 /// [`curve_form`] does not read. `None` when the offset starts no listed
 /// curve record or the record states a line.
-pub(super) fn unchecked_record_conflict(
+pub(crate) fn unchecked_record_conflict(
     payload: &[u8],
     lists: &SketchRecordLists,
     offset: usize,

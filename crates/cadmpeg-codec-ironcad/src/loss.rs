@@ -1,28 +1,37 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Stable `IronCAD` transfer-loss vocabulary.
 
-use cadmpeg_ir::report::loss::{LossKind, LossNamespace, LossNote, LossTaxonomy};
+use cadmpeg_ir::report::loss::{LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind};
+use cadmpeg_ir::report::Severity;
 
 const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("ironcad");
 
+cadmpeg_ir::loss_codes! {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum IronCadLossCode {
     ContainerNoncanonical,
     FrameUnreadable,
-    RecordTreeUnreadable,
+    FrameTrailingBytes,
     RecordHeaderUnrecognized,
     KernelUnrecognized,
     KernelPrologueUnreadable,
     KernelUnverified,
-    BodiesPending,
-    BodyUnreadable,
+    ParasolidBodyPartial,
     BodyRecordsRetained,
     BodyExtensionsRetained,
     BodyPartitionUnread,
     FeatureShapeRetained,
     FaceBoundaryUnstated,
     SurfaceUntyped,
+    PlacementBoundByOrder,
+    PlacementUnbound,
+    AssemblyFlattened,
+    AssemblyBoundByOrder,
+    PropertyUnread,
+    UnitsUnrecognized,
+    UnitsScaleConflict,
     SceneStreamsPending,
+}
 }
 
 impl IronCadLossCode {
@@ -33,10 +42,7 @@ impl IronCadLossCode {
                 LossTaxonomy::NoncanonicalSourceSyntax,
             ),
             Self::FrameUnreadable => ("frame.unreadable", LossTaxonomy::MissingGeometryStream),
-            Self::RecordTreeUnreadable => (
-                "record-tree.unreadable",
-                LossTaxonomy::GeometryNotTransferred,
-            ),
+            Self::FrameTrailingBytes => ("frame.trailing-bytes", LossTaxonomy::DecodeDiagnostic),
             Self::RecordHeaderUnrecognized => {
                 ("record.header-unrecognized", LossTaxonomy::DecodeDiagnostic)
             }
@@ -49,8 +55,10 @@ impl IronCadLossCode {
                 LossTaxonomy::SourceDialectUnverified,
             ),
             Self::KernelUnverified => ("kernel.unverified", LossTaxonomy::SourceDialectUnverified),
-            Self::BodiesPending => ("body.decode-pending", LossTaxonomy::GeometryNotTransferred),
-            Self::BodyUnreadable => ("body.unreadable", LossTaxonomy::GeometryNotTransferred),
+            Self::ParasolidBodyPartial => (
+                "body.parasolid-partial",
+                LossTaxonomy::GeometryNotTransferred,
+            ),
             Self::BodyRecordsRetained => ("body.records-retained", LossTaxonomy::RecordNotTyped),
             Self::BodyExtensionsRetained => (
                 "body.extensions-retained",
@@ -69,11 +77,41 @@ impl IronCadLossCode {
                 LossTaxonomy::TopologyNotTransferred,
             ),
             Self::SurfaceUntyped => ("surface.untyped", LossTaxonomy::GeometryNotTransferred),
+            Self::PlacementBoundByOrder => {
+                ("placement.bound-by-order", LossTaxonomy::DecodeDiagnostic)
+            }
+            Self::PlacementUnbound => (
+                "placement.unbound",
+                LossTaxonomy::AssemblyPlacementsNotTransferred,
+            ),
+            Self::AssemblyFlattened => (
+                "assembly.flattened",
+                LossTaxonomy::AssemblyPlacementsNotTransferred,
+            ),
+            Self::UnitsUnrecognized => ("units.unrecognized", LossTaxonomy::MetadataNotTransferred),
+            Self::UnitsScaleConflict => ("units.scale-conflict", LossTaxonomy::DecodeDiagnostic),
+            Self::PropertyUnread => ("property.unread", LossTaxonomy::MetadataNotTransferred),
+            Self::AssemblyBoundByOrder => {
+                ("assembly.bound-by-order", LossTaxonomy::DecodeDiagnostic)
+            }
             Self::SceneStreamsPending => (
                 "scene.decode-pending",
                 LossTaxonomy::ObjectRecordsUntransferred,
             ),
         };
-        LossNote::new(LossKind::namespaced(NAMESPACE, code, taxonomy), message)
+        LossNote::new(
+            NamespacedLossKind::new(NAMESPACE, code, taxonomy)
+                .with_strict_floor(self.strict_floor()),
+            message,
+        )
+    }
+
+    /// The strict floor `ironcad.md` (Strict floors) states: a compound-file
+    /// deviation that the reader recovers from pins Warning.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::ContainerNoncanonical => Some(Severity::Warning),
+            _ => None,
+        }
     }
 }

@@ -224,7 +224,9 @@ fn member_metadata(
     metadata_ctx.take_trace();
     let mut metadata = MemberMetadata::default();
     let result = (|| {
-        let Some(table) = crate::xref::decode(&metadata_ctx, member_scan)? else {
+        let Some(table) = crate::xref::decode(&metadata_ctx, member_scan, &mut Vec::new())
+            .map_err(|failure| failure.error)?
+        else {
             return Ok(false);
         };
         metadata.references.extend(
@@ -313,12 +315,24 @@ pub(super) fn classify_members<'a>(
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
                     let message = format!("{error}");
-                    let note = F3dLossCode::XrefMemberUndecoded.note(format!(
-                        "xref {member_path}: member could not be scanned as an F3D document ({message}); its source bytes remain retained"
-                    ));
-                    losses.push(note);
+                    let why = format!(
+                        "xref {member_path}: member could not be scanned as an F3D document ({message})"
+                    );
+                    // The scan gave up an entry that it did not open.
+                    let mut given = !scan.has_entry(member_path);
                     if opened {
-                        if let Some(part) = scan.give_up_entry(ctx, member_path, error)? {
+                        let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
+                        if let Some(part) = scan.give_up_entry(
+                            ctx,
+                            member_path,
+                            cause,
+                            if crate::design::decode::record::is_fatal(&error) {
+                                error
+                            } else {
+                                crate::design::decode::record::give_up_error(cause, &why)
+                            },
+                        )? {
+                            given = true;
                             let held = |kept: &GivenUpPart| kept.id() == part.id();
                             // Two directory entries can name one stored span.
                             if !given_up.iter().any(held) && !scan.given_up.iter().any(held) {
@@ -326,6 +340,12 @@ pub(super) fn classify_members<'a>(
                                 given_up.push(part);
                             }
                         }
+                    }
+                    if !given {
+                        losses.push(
+                            F3dLossCode::XrefMemberUndecoded
+                                .note(format!("{why}; its source bytes remain retained")),
+                        );
                     }
                     members.insert(
                         member_path.to_owned(),
@@ -497,7 +517,7 @@ mod tests {
 
     #[test]
     fn manifest_extensions_preserve_depth_refusal() {
-        let bytes = crate::test_support::assembly_test::f3z_archive(
+        let bytes = crate::test_support::assembly_fixture::f3z_archive(
             r#"model.f3d","extension":[[[0]]],"spare":"unused"#,
             &[("model.f3d", b"model")],
         );

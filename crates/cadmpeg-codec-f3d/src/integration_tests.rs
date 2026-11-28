@@ -8,11 +8,13 @@ mod attribute_colors;
 mod body_reference_tails;
 mod cc0_controller;
 mod configuration_parameters;
+pub(crate) mod configuration_wire;
 mod design_containment;
 mod design_parameters;
 mod design_v11;
 mod document_identity;
 mod emboss_operands;
+mod encode_sets;
 mod external_placement;
 mod f30_placements;
 mod fillet_projection;
@@ -22,6 +24,7 @@ mod fusion_combine_patterns;
 mod fusion_combine_producers;
 mod fusion_combine_tools;
 mod fusion_copy_paste;
+mod fusion_joint_tail;
 mod fusion_mirror_remove;
 mod fusion_patterns;
 mod fusion_profile_regions;
@@ -30,11 +33,13 @@ mod fusion_surface_loft;
 mod fusion_surface_revolve;
 mod fusion_tessellate;
 mod fusion_timeline_state;
+mod fusion_two_sided_extrude;
 mod history_deltas;
 mod history_scale;
 mod inconsistent_records;
 mod measured_geometry;
 mod optional_payloads;
+mod patch_session;
 mod pcurve_uv_offset;
 mod placement_history;
 mod position;
@@ -65,19 +70,19 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
-use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
-use crate::test_support::native_test::{add_empty_f3d_native, f3d_native};
-use crate::test_support::smbh_curves_test::synthetic_geometry_with_helix_curve_smbh;
-use crate::test_support::smbh_geometry_test::{
+use crate::test_support::assembly_fixture::{f3d_without_brep, f3z_archive, XREF_ROLE};
+use crate::test_support::native_fixture::{add_empty_f3d_native, f3d_native};
+use crate::test_support::smbh_curves_fixture::synthetic_geometry_with_helix_curve_smbh;
+use crate::test_support::smbh_geometry_fixture::{
     synthetic_geometry_smbh, synthetic_geometry_with_history_smbh,
 };
-use crate::test_support::smbh_pcurves_test::{
+use crate::test_support::smbh_pcurves_fixture::{
     synthetic_geometry_with_rational_pcurve_smbh, with_plane_pcurve_offset_vertices,
 };
-use crate::test_support::smbh_surfaces_test::{
+use crate::test_support::smbh_surfaces_fixture::{
     synthetic_compound_loft_smbh, synthetic_cyl_spl_sur_smbh, synthetic_profile_first_sweep_smbh,
 };
-use crate::test_support::zip_test::{
+use crate::test_support::zip_fixture::{
     f3d_with_configuration, f3d_with_smbh, f3d_with_smbh_and_manifest_version,
     f3d_with_smbh_and_protein,
 };
@@ -242,6 +247,38 @@ fn design_pipeline_correlates_protein_properties_history_sketches_and_configurat
     assert_valid(&configured);
 }
 
+/// A `delta_state` header whose integer is mistagged leaves every state of
+/// the history unread, so the history partition is given up over its bytes.
+#[test]
+fn a_mistagged_delta_state_header_gives_up_the_history_partition() {
+    let mut smbh = synthetic_geometry_with_history_smbh();
+    let marker = b"\x0d\x0bdelta_state";
+    let second = smbh
+        .windows(marker.len())
+        .enumerate()
+        .filter(|(_, window)| *window == marker)
+        .nth(1)
+        .map(|(at, _)| at)
+        .expect("the history holds a second state");
+    let tag = second + marker.len();
+    assert_eq!(smbh[tag], 0x04, "the state id is an integer");
+    smbh[tag] = 0x0c;
+    let bytes = f3d_with_smbh(&smbh);
+
+    let decoded = decode(bytes.clone());
+    let head =
+        "part asm-history stream=\"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh\" offset=";
+    crate::test_support::charged_part(
+        decoded.ir(),
+        &decoded.report().losses,
+        (cadmpeg_ir::unknown::part::Cause::Unreadable, head),
+        "",
+    );
+    assert!(f3d_native(decoded.ir()).asm_histories.is_empty());
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    crate::test_support::assert_pinned_refusal(bytes, head);
+}
+
 #[test]
 fn preserved_source_pipeline_applies_semantic_geometry_edits_without_losing_archive_entries() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
@@ -274,7 +311,7 @@ fn source_less_writer_pipeline_emits_a_fresh_valid_archive() {
     add_empty_f3d_native(&mut ir);
     let mut bytes = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&ir, None))
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("source-less F3D encode");
     assert_eq!(
@@ -499,8 +536,8 @@ fn plan(
     request: TargetRequest<'_>,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
     F3dCodec.plan(
-        EncodeInput::new(result.ir(), fidelity.then(|| result.source_fidelity())),
-        request,
+        EncodeInput::new(result.ir(), fidelity.then(|| result.source_fidelity()))
+            .with_target(request),
     )
 }
 
@@ -650,10 +687,7 @@ fn the_patch_path_names_the_preserved_dialect() {
     );
 
     let plan = F3dCodec
-        .plan(
-            EncodeInput::new(&edited, Some(result.source_fidelity())),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(&edited, Some(result.source_fidelity())))
         .expect("an edited archive still preserves its dialect");
     assert!(matches!(
         plan.report().write_path(),

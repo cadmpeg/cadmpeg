@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
-use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
+use cadmpeg_core::decode::{work_units, DecodeContext, ResourceLimit, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Model, Topology};
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
@@ -28,7 +28,9 @@ use crate::records::topology::body_recipe::DesignBodyRecipeOperand;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 
+// resource-cap: MAX_HISTORY_BODIES = 4
 const MAX_HISTORY_BODIES: usize = 64;
+// resource-cap: MAX_HISTORY_BODY_WORK = 4
 const MAX_HISTORY_BODY_WORK: usize = 1 << 21;
 
 /// A body slot of one history state that a feature produces or consumes.
@@ -383,8 +385,7 @@ fn result_state_wants<'a>(
 /// history state. A Loft is absent when any of its output bodies does not
 /// decode at that state.
 ///
-/// The pass runs in a context resumed from a checkpoint and never commits its
-/// charges, so a refusal inside it leaves the session budget unchanged.
+/// The pass keeps the body kinds of its temporary nests.
 pub(crate) fn loft_result_kinds(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
@@ -421,55 +422,52 @@ pub(crate) fn loft_result_kinds(
     if wants.is_empty() {
         return HashMap::new();
     }
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let local = ctx.checkpoint().resume(&arena);
-    local.take_trace();
-    let mut bodies = Vec::new();
     let work = WorkBudget::new(MAX_HISTORY_BODY_WORK);
     let mut discarded = Vec::new();
-    #[cfg(test)]
-    if INJECTED_LOFT_PASS_REFUSAL.with(std::cell::Cell::take) {
-        let limit = local.policy().limits.max_entities;
-        local
-            .charge_entities(limit.saturating_add(1), "injected Loft pass charge")
-            .expect_err("the injected charge exceeds the entity limit");
-    }
-    let result = fill_requests(
-        &local,
-        scan,
-        (inputs.histories, None),
-        &wants,
-        &mut bodies,
-        &work,
-        &mut discarded,
-    );
+    let result = ctx.scratch(scan.source_image.len(), |scratch| {
+        let mut bodies = Vec::new();
+        #[cfg(test)]
+        if INJECTED_LOFT_PASS_REFUSAL.with(std::cell::Cell::take) {
+            let limit = scratch.policy().limits.max_entities;
+            scratch.charge_entities(limit.saturating_add(1), "injected Loft pass charge")?;
+        }
+        fill_requests(
+            scratch,
+            scan,
+            (inputs.histories, None),
+            &wants,
+            &mut bodies,
+            &work,
+            &mut discarded,
+        )?;
+        let mut kinds = HashMap::<_, Vec<_>>::new();
+        for body in bodies {
+            if let Some(feature) = body.produced_by {
+                kinds
+                    .entry(feature)
+                    .or_default()
+                    .push(body.topology.body.kind);
+            }
+        }
+        kinds.retain(|feature, kinds| expected.get(feature) == Some(&kinds.len()));
+        Ok(kinds)
+    });
     let bounded = F3dLossCode::FeatureHistoryBodyBounded.kind();
     losses.extend(discarded.into_iter().filter(|loss| loss.code == bounded));
-    if let Some(limit) = local.resource_refusal() {
-        let mut refused = expected.keys().collect::<Vec<_>>();
-        refused.sort();
-        losses.extend(refused.into_iter().map(|feature| {
-            F3dLossCode::FeatureHistoryBodyBounded.note(format!(
-                "{feature} output bodies at its own history state exceed the Loft pass budget: {}",
-                CodecError::ResourceLimit(limit)
-            ))
-        }));
-        return HashMap::new();
-    }
-    if result.is_err() {
-        return HashMap::new();
-    }
-    let mut kinds = HashMap::<_, Vec<_>>::new();
-    for body in &bodies {
-        if let Some(feature) = &body.produced_by {
-            kinds
-                .entry(feature.clone())
-                .or_default()
-                .push(body.topology.body.kind);
-        }
-    }
-    kinds.retain(|feature, kinds| expected.get(feature) == Some(&kinds.len()));
-    kinds
+    let limit = match result {
+        Ok(Ok(kinds)) => return kinds,
+        Ok(Err(limit)) | Err(CodecError::ResourceLimit(limit)) => limit,
+        Err(_) => return HashMap::new(),
+    };
+    let mut refused = expected.keys().collect::<Vec<_>>();
+    refused.sort();
+    losses.extend(refused.into_iter().map(|feature| {
+        F3dLossCode::FeatureHistoryBodyBounded.note(format!(
+            "{feature} output bodies at its own history state exceed the Loft pass budget: {}",
+            CodecError::ResourceLimit(limit)
+        ))
+    }));
+    HashMap::new()
 }
 
 #[cfg(test)]
@@ -933,6 +931,7 @@ fn fill_history(
     let states = history.states();
     let mut archive = None;
     let mut archive_attempted = false;
+    let mut archive_refusal = None;
     let Some(active_count) = super::archived_active_record_count(states)?
         .or_else(|| super::insert_only_active_record_count(states))
         .and_then(|count| i64::try_from(count).ok())
@@ -982,13 +981,24 @@ fn fill_history(
                 }
                 if cached.is_none() && !archive_attempted {
                     archive_attempted = true;
-                    match super::decode_record_archive(ctx, states, bytes, header.width) {
-                        Ok(records) => archive = records,
+                    match ctx.scratch(bytes.len(), |scratch| {
+                        super::decode_record_archive(scratch, states, bytes, header.width)
+                    }) {
+                        Ok(Ok(records)) => archive = records,
+                        Ok(Err(limit)) => archive_refusal = Some(limit),
                         Err(error) => {
                             failure = Some(error);
                             break;
                         }
                     }
+                }
+                if let Some(limit) = archive_refusal {
+                    losses.push(F3dLossCode::FeatureHistoryBodyBounded.note(format!(
+                        "{} state {state_id} record archive: {}",
+                        want.origin.id,
+                        CodecError::ResourceLimit(limit)
+                    )));
+                    continue;
                 }
                 let archive_ref = cached.map(|c| &c.archive).or(archive.as_ref());
                 let Some(archive) = archive_ref else {
@@ -1024,11 +1034,10 @@ fn fill_history(
                         match identity_body_slot(
                             ctx,
                             (archive, versions),
-                            bytes,
-                            (&header.metadata, subtypes),
+                            (&header.metadata, subtypes, bytes.len()),
                             identity,
                         ) {
-                            Ok(Some(slot)) => {
+                            Ok(Ok(slot)) => {
                                 resolved = Want {
                                     origin: want.origin,
                                     producer: None,
@@ -1041,13 +1050,21 @@ fn fill_history(
                                 };
                                 &resolved
                             }
-                            Ok(None) => {
+                            Ok(Err(Unbuilt::Undecoded)) => {
                                 losses.push(F3dLossCode::FeatureHistoryBodyUndecoded.note(
                                     format!(
                                         "{} state {state_id} has an unresolved body identity",
                                         want.origin.id
                                     ),
                                 ));
+                                continue;
+                            }
+                            Ok(Err(Unbuilt::Bounded(limit))) => {
+                                losses.push(F3dLossCode::FeatureHistoryBodyBounded.note(format!(
+                                    "{} state {state_id} body identity: {}",
+                                    want.origin.id,
+                                    CodecError::ResourceLimit(limit)
+                                )));
                                 continue;
                             }
                             Err(error) => {
@@ -1068,27 +1085,42 @@ fn fill_history(
                 match build(
                     ctx,
                     (archive, versions),
-                    bytes,
-                    (&header.metadata, subtypes),
+                    (&header.metadata, subtypes, bytes.len()),
                     want,
                     (produced, consumed),
                     (ordinal, bodies.len(), consumed.is_some() || join.is_some()),
                 ) {
-                    Ok(Some(mut built)) => {
+                    Ok(Ok(mut built)) => {
                         built.body.state_of =
                             finals.and_then(|finals| final_body(history, finals, want));
-                        place(
+                        if let Err(error) = place(
+                            ctx,
                             bodies,
                             &mut joinable,
                             built,
                             want.slot,
                             (consumed.is_some(), join),
-                        );
+                        ) {
+                            losses.push(F3dLossCode::FeatureHistoryBodyBounded.note(format!(
+                                "{} body slot {} state {state_id}: {}",
+                                want.origin.id,
+                                want.slot,
+                                CodecError::ResourceLimit(error)
+                            )));
+                        }
                     }
-                    Ok(None) => {
+                    Ok(Err(Unbuilt::Undecoded)) => {
                         losses.push(F3dLossCode::FeatureHistoryBodyUndecoded.note(format!(
                             "{} body slot {} state {state_id} has an incomplete or invalid geometry closure",
                             want.origin.id, want.slot
+                        )));
+                    }
+                    Ok(Err(Unbuilt::Bounded(limit))) => {
+                        losses.push(F3dLossCode::FeatureHistoryBodyBounded.note(format!(
+                            "{} body slot {} state {state_id}: {}",
+                            want.origin.id,
+                            want.slot,
+                            CodecError::ResourceLimit(limit)
                         )));
                     }
                     Err(error) => failure = Some(error),
@@ -1108,7 +1140,7 @@ fn fill_history(
     Ok(())
 }
 
-fn archive_subtypes(
+pub(super) fn archive_subtypes(
     archive: &super::HistoricalRecordArchive,
     version: Option<u32>,
 ) -> cadmpeg_asm::nurbs::toks::SubtypeTable {
@@ -1119,7 +1151,7 @@ fn archive_subtypes(
 }
 
 /// Materialize the sorted full record table from a hashed slot-to-revision map.
-fn materialize_hashed_table(
+pub(super) fn materialize_hashed_table(
     versions: &super::binding::FastMap<i64, i64>,
     archive: &super::HistoricalRecordArchive,
 ) -> Option<Vec<cadmpeg_asm::sab::Record>> {
@@ -1273,26 +1305,24 @@ fn build(
         &super::HistoricalRecordArchive,
         &super::binding::FastMap<i64, i64>,
     ),
-    bytes: &[u8],
     tables: (
         &cadmpeg_asm::kernel_header::KernelHeader,
         &cadmpeg_asm::nurbs::toks::SubtypeTable,
+        usize,
     ),
     want: &Want<'_>,
     owners: (Option<&Feature>, Option<&Feature>),
     position: (usize, usize, bool),
-) -> Result<Option<Built>, CodecError> {
+) -> Result<Result<Built, Unbuilt>, CodecError> {
     let (ordinal, nest_index, keep_records) = position;
-    let decode_table =
-        |table: &[cadmpeg_asm::sab::Record]| -> Result<Option<Box<BodyTopology>>, CodecError> {
-            let brep = match cadmpeg_asm::brep::decode_with_table(
-                ctx,
+    let decode_table = |table: &[cadmpeg_asm::sab::Record]| {
+        ctx.scratch(tables.2, |scratch| {
+            let brep = match cadmpeg_asm::brep::inspect_with_table(
+                scratch,
                 table,
-                bytes,
                 (Some(tables.0), tables.1),
                 "f3d:history",
                 crate::ids::ID_FORMAT,
-                cadmpeg_asm::brep::DecodePurpose::Model,
             ) {
                 Ok(brep) => brep,
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -1306,89 +1336,82 @@ fn build(
             else {
                 return Ok(None);
             };
-            let mut scratch = CadIr::empty();
-            cadmpeg_asm::brep::transfer::transfer_into_ir(
-                ctx,
-                &mut scratch,
-                cadmpeg_ir::codec_id!("f3d"),
-                brep,
-            )?;
-            match extract(ctx, &scratch.geometry, body.as_str())? {
+            let graph = cadmpeg_asm::brep::transfer::transfer_inspection(scratch, brep)?;
+            match extract(scratch, &graph.geometry, body.as_str())? {
                 Extract::Nest(topology) => Ok(Some(topology)),
                 Extract::Absent | Extract::NotClosed => Ok(None),
             }
-        };
-    let topology = if let Some(subset) = body_record_closure(versions, archive, want.slot) {
-        match decode_table(&subset)? {
-            Some(topology) => topology,
-            None => {
-                let Some(table) = materialize_hashed_table(versions, archive) else {
-                    return Ok(None);
-                };
-                let Some(topology) = decode_table(&table)? else {
-                    return Ok(None);
-                };
-                topology
-            }
-        }
-    } else {
-        let Some(table) = materialize_hashed_table(versions, archive) else {
-            return Ok(None);
-        };
-        let Some(topology) = decode_table(&table)? else {
-            return Ok(None);
-        };
-        topology
+        })
+        .map(|decoded| decoded.map_err(Unbuilt::Bounded))
     };
-    let records = keep_records.then(|| (*topology).clone());
-    let mut map = IdentityMap::new(|id: &str| {
-        let (_, rest) = id
-            .split_once(':')
-            .ok_or_else(|| CodecError::malformed("history body identity"))?;
-        let (_, rest) = rest
-            .split_once(':')
-            .ok_or_else(|| CodecError::malformed("history body identity"))?;
-        let (kind, key) = rest
-            .split_once('#')
-            .ok_or_else(|| CodecError::malformed("history body identity"))?;
-        Ok(format!("f3d:history-body:{kind}#h{nest_index:04}-{key}"))
-    });
-    let mut topology = topology.rewrite_identities(ctx, &mut map)?;
-    map.finish()?;
-    sort_by_identity(&mut topology);
-    ctx.charge_entities(
-        cadmpeg_core::decode::u64_from_index(topology.record_count()),
-        "admit history body records",
-    )?;
-    let body = admit(
-        ctx,
-        HistoryBody {
-            id: HistoryBodyId::mint(format!("f3d:history-body:nest#h{nest_index:04}"))
-                .map_err(|error| CodecError::malformed(format_args!("{error}")))?,
-            produced_by: owners.0.map(|feature| feature.id.clone()),
-            consumed_by: owners.1.map(|feature| feature.id.clone()),
-            state_of: None,
-            state: HistoryStateRef {
-                ordinal: u32::try_from(ordinal)
-                    .map_err(|_| CodecError::malformed("history ordinal"))?,
-                identifier: want.state,
-            },
-            topology,
+    let decoded = match body_record_closure(versions, archive, want.slot) {
+        Some(subset) => decode_table(&subset)?,
+        None => Ok(None),
+    };
+    let decoded = match decoded {
+        Ok(None) => match materialize_hashed_table(versions, archive) {
+            Some(table) => decode_table(&table)?,
+            None => Ok(None),
         },
-        want.origin,
-    )?;
-    Ok(body.map(|body| Built { body, records }))
+        decoded => decoded,
+    };
+    let topology = match decoded {
+        Ok(Some(topology)) => topology,
+        Ok(None) => return Ok(Err(Unbuilt::Undecoded)),
+        Err(unbuilt) => return Ok(Err(unbuilt)),
+    };
+    Ok(ctx
+        .scratch(tables.2, |scratch| {
+            let records = keep_records.then(|| (*topology).clone());
+            let mut map = IdentityMap::new(|id: &str| {
+                let (_, rest) = id
+                    .split_once(':')
+                    .ok_or_else(|| CodecError::malformed("history body identity"))?;
+                let (_, rest) = rest
+                    .split_once(':')
+                    .ok_or_else(|| CodecError::malformed("history body identity"))?;
+                let (kind, key) = rest
+                    .split_once('#')
+                    .ok_or_else(|| CodecError::malformed("history body identity"))?;
+                Ok(format!("f3d:history-body:{kind}#h{nest_index:04}-{key}"))
+            });
+            let mut topology = topology.rewrite_identities(scratch, &mut map)?;
+            map.finish()?;
+            sort_by_identity(&mut topology);
+            let body = admit(
+                scratch,
+                HistoryBody {
+                    id: HistoryBodyId::mint(format!("f3d:history-body:nest#h{nest_index:04}"))
+                        .map_err(|error| CodecError::malformed(format_args!("{error}")))?,
+                    produced_by: owners.0.map(|feature| feature.id.clone()),
+                    consumed_by: owners.1.map(|feature| feature.id.clone()),
+                    state_of: None,
+                    state: HistoryStateRef {
+                        ordinal: u32::try_from(ordinal)
+                            .map_err(|_| CodecError::malformed("history ordinal"))?,
+                        identifier: want.state,
+                    },
+                    topology,
+                },
+                want.origin,
+            )?;
+            Ok(body
+                .map(|body| Built { body, records })
+                .ok_or(Unbuilt::Undecoded))
+        })?
+        .unwrap_or_else(|limit| Err(Unbuilt::Bounded(limit))))
 }
 
 /// Add a built nest, or join its producing feature onto the equal consumed
 /// nest that `join` names.
 fn place(
+    ctx: &DecodeContext<'_>,
     bodies: &mut Vec<HistoryBody>,
     joinable: &mut Vec<Joinable>,
     built: Built,
     slot: i64,
     (consumed, join): (bool, Option<usize>),
-) {
+) -> Result<(), ResourceLimit> {
     let equal =
         join.filter(|&position| built.records.as_ref() == Some(&joinable[position].topology));
     if let Some(position) = equal {
@@ -1399,18 +1422,27 @@ fn place(
         if nest.state_of.is_none() {
             nest.state_of = built.body.state_of;
         }
-        return;
+        return Ok(());
     }
-    if consumed {
-        if let Some(topology) = built.records {
-            joinable.push(Joinable {
-                slot,
-                index: bodies.len(),
-                topology,
-            });
-        }
+    let comparison = built.records.filter(|_| consumed);
+    let names =
+        built.body.topology.name_bytes() + comparison.as_ref().map_or(0, BodyTopology::name_bytes);
+    let records = built.body.topology.record_count()
+        + comparison.as_ref().map_or(0, BodyTopology::record_count);
+    ctx.admit_optional(
+        cadmpeg_core::decode::u64_from_index(names),
+        cadmpeg_core::decode::u64_from_index(records),
+        "keep history body records and names",
+    )?;
+    if let Some(topology) = comparison {
+        joinable.push(Joinable {
+            slot,
+            index: bodies.len(),
+            topology,
+        });
     }
     bodies.push(built.body);
+    Ok(())
 }
 
 /// The model body whose earlier state the body of `want` is: the result
@@ -1450,6 +1482,14 @@ fn final_body(
     Some(body.clone())
 }
 
+/// Why a requested history body was not built.
+enum Unbuilt {
+    /// The state does not decode, or its body is not a closed nest.
+    Undecoded,
+    /// The decode of the state reached a resource limit.
+    Bounded(ResourceLimit),
+}
+
 /// A history body, and its records before the nest identities, when kept.
 struct Built {
     body: HistoryBody,
@@ -1464,29 +1504,35 @@ fn identity_body_slot(
         &super::HistoricalRecordArchive,
         &super::binding::FastMap<i64, i64>,
     ),
-    bytes: &[u8],
     tables: (
         &cadmpeg_asm::kernel_header::KernelHeader,
         &cadmpeg_asm::nurbs::toks::SubtypeTable,
+        usize,
     ),
     identity: &BodyIdentity,
-) -> Result<Option<i64>, CodecError> {
+) -> Result<Result<i64, Unbuilt>, CodecError> {
     let Some(table) = materialize_hashed_table(versions, archive) else {
-        return Ok(None);
+        return Ok(Err(Unbuilt::Undecoded));
     };
-    match cadmpeg_asm::brep::decode_with_table(
-        ctx,
-        &table,
-        bytes,
-        (Some(tables.0), tables.1),
-        "f3d:history",
-        crate::ids::ID_FORMAT,
-        cadmpeg_asm::brep::DecodePurpose::Model,
-    ) {
-        Ok(brep) => identity_slot(&brep, identity),
-        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
-        Err(_) => Ok(None),
-    }
+    let slot = ctx.scratch(
+        tables.2,
+        |scratch| match cadmpeg_asm::brep::inspect_with_table(
+            scratch,
+            &table,
+            (Some(tables.0), tables.1),
+            "f3d:history",
+            crate::ids::ID_FORMAT,
+        ) {
+            Ok(brep) => identity_slot(&brep, identity),
+            Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+            Err(_) => Ok(None),
+        },
+    )?;
+    Ok(match slot {
+        Ok(Some(slot)) => Ok(slot),
+        Ok(None) => Err(Unbuilt::Undecoded),
+        Err(limit) => Err(Unbuilt::Bounded(limit)),
+    })
 }
 
 fn admit(

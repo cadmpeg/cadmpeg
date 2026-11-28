@@ -3,6 +3,7 @@
 
 use super::geometry::{resolve_transform, source_object};
 use super::push_attributed_loss;
+use cadmpeg_ir::unknown::part::Cause;
 
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
@@ -22,6 +23,7 @@ use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 
+// resource-cap: MAX_COPIOUS_TUPLES = 2
 const MAX_COPIOUS_TUPLES: usize = 1_000_000;
 
 fn copious_note(entry: &DirectoryEntry, reason: fmt::Arguments<'_>) -> LossNote {
@@ -39,14 +41,15 @@ fn copious_note(entry: &DirectoryEntry, reason: fmt::Arguments<'_>) -> LossNote 
     )
 }
 
-/// Pushes the loss of a copious entity that the projection gives up, with
-/// its `record.unreadable`.
+/// Pushes the loss of a copious entity that the projection gives up for
+/// `cause`.
 fn push_copious_loss(
     losses: &mut Vec<LossNote>,
     entry: &DirectoryEntry,
+    cause: Cause,
     reason: fmt::Arguments<'_>,
 ) {
-    super::give_up(losses, entry, copious_note(entry, reason));
+    super::give_up(losses, entry, cause, copious_note(entry, reason));
 }
 
 pub(super) struct CopiousProjectionOutcome {
@@ -192,6 +195,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
+    limits: super::geometry::ProjectionLimits,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<CopiousProjectionOutcome, CodecError> {
@@ -207,7 +211,7 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
     let mut free_vertices = Vec::new();
-    let planar_pairs = super::geometry::PlanarPairBudget::new();
+    let planar_pairs = super::geometry::PlanarPairBudget::new(limits);
 
     for entry in directory
         .iter()
@@ -217,6 +221,7 @@ pub(super) fn project(
             push_copious_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Type 106 presentation forms require Entity Use Flag 01"),
             );
             continue;
@@ -226,6 +231,7 @@ pub(super) fn project(
             push_copious_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -234,22 +240,34 @@ pub(super) fn project(
             push_copious_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("interpretation is invalid"),
             );
             continue;
         };
         let Some(raw_tuple_count) = record.integer(2) else {
-            push_copious_loss(&mut losses, entry, format_args!("tuple count is invalid"));
+            push_copious_loss(
+                &mut losses,
+                entry,
+                Cause::Unreadable,
+                format_args!("tuple count is invalid"),
+            );
             continue;
         };
         let Some(tuple_count) = usize::try_from(raw_tuple_count).ok() else {
-            push_copious_loss(&mut losses, entry, format_args!("tuple count is invalid"));
+            push_copious_loss(
+                &mut losses,
+                entry,
+                Cause::Unreadable,
+                format_args!("tuple count is invalid"),
+            );
             continue;
         };
         if tuple_count > MAX_COPIOUS_TUPLES {
             push_copious_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("tuple count exceeds {MAX_COPIOUS_TUPLES}"),
             );
             continue;
@@ -258,6 +276,7 @@ pub(super) fn project(
             push_copious_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("interpretation flag disagrees with the entity form"),
             );
             continue;
@@ -266,6 +285,7 @@ pub(super) fn project(
             push_copious_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("tuple count is outside 1..={MAX_COPIOUS_TUPLES}"),
             );
             continue;
@@ -277,7 +297,7 @@ pub(super) fn project(
                 2
             };
             if tuple_count < minimum_tuple_count {
-                push_copious_loss(&mut losses, entry, format_args!(
+                push_copious_loss(&mut losses, entry, Cause::Unreadable, format_args!(
                     "linear paths require at least {minimum_tuple_count} tuple(s) under the effective specification family"
                 ));
                 continue;
@@ -287,6 +307,7 @@ pub(super) fn project(
             push_copious_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("simple closed paths require at least two tuples"),
             );
             continue;
@@ -295,6 +316,7 @@ pub(super) fn project(
             push_copious_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("paired presentation form has an odd tuple count"),
             );
             continue;
@@ -303,6 +325,7 @@ pub(super) fn project(
             push_copious_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("witness lines require an odd tuple count of at least three"),
             );
             continue;
@@ -336,6 +359,7 @@ pub(super) fn project(
                     entry,
                     record,
                     message.needs(),
+                    message.cause(),
                     copious_note(entry, format_args!("{message}")),
                 );
                 continue;
@@ -347,6 +371,7 @@ pub(super) fn project(
                     push_copious_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("common z coordinate is invalid"),
                     );
                     continue;
@@ -359,6 +384,7 @@ pub(super) fn project(
                 push_copious_loss(
                     &mut losses,
                     entry,
+                    Cause::Unreadable,
                     format_args!("copious-data interpretation is invalid"),
                 );
                 continue;
@@ -368,6 +394,7 @@ pub(super) fn project(
             push_copious_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("tuple value count overflows"),
             );
             continue;
@@ -376,6 +403,7 @@ pub(super) fn project(
             push_copious_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("tuple end offset overflows"),
             );
             continue;
@@ -387,6 +415,7 @@ pub(super) fn project(
             push_copious_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("tuple array is truncated or non-finite"),
             );
             continue;
@@ -414,6 +443,7 @@ pub(super) fn project(
             push_copious_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("placement produces non-finite copious points"),
             );
             continue;
@@ -461,9 +491,17 @@ pub(super) fn project(
         let points: Vec<_> = positions.iter().map(|position| position.get()).collect();
         let resolution = global.minimum_resolution_mm();
         if entry.form == 63 && !points_coincident(points[0], points[points.len() - 1], resolution) {
+            // The Global coincidence rule tests the closure against a
+            // positive field 19; a zero resolution states no tolerance.
+            let cause = if resolution > 0.0 {
+                Cause::Unreadable
+            } else {
+                Cause::Undecoded
+            };
             push_copious_loss(
                 &mut losses,
                 entry,
+                cause,
                 format_args!("simple closed path endpoints disagree beyond the minimum resolution"),
             );
             continue;
@@ -474,13 +512,19 @@ pub(super) fn project(
             } else {
                 "simple closed path has coincident non-endpoint points"
             };
-            push_copious_loss(&mut losses, entry, format_args!("{reason}"));
+            push_copious_loss(
+                &mut losses,
+                entry,
+                Cause::Unreadable,
+                format_args!("{reason}"),
+            );
             continue;
         }
         if entry.form == 63 && !planar_pairs.admit(definition_points.len()) {
             push_copious_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!(
                     "the self-intersection check of {} points does not fit the pass's remaining MAX_PLANAR_POINT_PAIRS allowance",
                     definition_points.len()
@@ -492,6 +536,7 @@ pub(super) fn project(
             push_copious_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("simple closed path intersects itself away from shared endpoints"),
             );
             continue;
@@ -501,6 +546,7 @@ pub(super) fn project(
                 push_copious_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("topology tolerance must be finite"),
                 );
                 continue;
@@ -518,6 +564,7 @@ pub(super) fn project(
             push_copious_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("tuple index is not an exact parameter"),
             );
             continue;

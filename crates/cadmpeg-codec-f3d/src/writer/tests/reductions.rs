@@ -4,7 +4,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
@@ -15,12 +15,12 @@ use cadmpeg_ir::topology::{EdgeCarrier, ShellMember};
 
 use crate::loss::F3dLossCode;
 use crate::test_support::assert_written_with_loss;
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
-use crate::test_support::smbh_geometry_test::{
+use crate::test_support::native_fixture::{f3d_native, f3d_native_mut};
+use crate::test_support::smbh_geometry_fixture::{
     synthetic_geometry_smbh, synthetic_two_body_smbh, synthetic_wire_body_smbh,
 };
-use crate::test_support::smbh_pcurves_test::synthetic_geometry_with_pcurve_smbh;
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::smbh_pcurves_fixture::synthetic_geometry_with_pcurve_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 
 fn source_less(smbh: &[u8]) -> CadIr {
@@ -38,7 +38,7 @@ fn source_less(smbh: &[u8]) -> CadIr {
 fn write(ir: &CadIr) -> (ExportReport, CadIr) {
     let mut bytes = Vec::new();
     let report = F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, None))
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the writer writes what it can encode");
     let decoded = F3dCodec

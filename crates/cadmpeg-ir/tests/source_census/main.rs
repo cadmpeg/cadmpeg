@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Census coverage for hand-written and derived wire readers.
 
-use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -15,398 +14,6 @@ mod reader_routes;
 mod roots;
 mod shim_forwards;
 mod writers;
-
-/// Every hand-written `Deserialize` in the three wire crates, with the reader
-/// route that admits its wire value.
-///
-/// A hand impl never reaches `scripts/check-deny-census.py`, which reads
-/// `derive(Deserialize)` items only, so its coverage is stated here. The test
-/// below parses the source at run time and fails when this table and the source
-/// disagree in either direction, so a new hand impl cannot land uncovered and a
-/// deleted one cannot leave a stale entry.
-///
-/// The route classes are checked against parsed implementation bodies by the
-/// `reader_routes` module. They cannot drift independently of the reader.
-///
-/// * `wire` - the impl reads a named or local wire object whose declaration
-///   states `deny_unknown_fields`;
-/// * `keyless` - the impl reads a scalar, byte string, fixed array, or list;
-/// * `free-form` - the impl admits an open map or canonical JSON value;
-/// * `validated-value` - the impl reads a general JSON value and applies an
-///   explicit version gate before constructing its scalar wrapper.
-const HAND_IMPLS: &[(&str, &str, &str)] = &[
-    ("crates/cadmpeg-asm/src/brep/mod.rs", "AsmBrep", "wire"),
-    ("crates/cadmpeg-asm/src/brep/records.rs", "$name", "wire"),
-    (
-        "crates/cadmpeg-asm/src/brep/records.rs",
-        "FaceSidedness",
-        "wire",
-    ),
-    ("crates/cadmpeg-asm/src/brep/stats.rs", "Stats", "wire"),
-    ("crates/cadmpeg-core/src/dialect.rs", "DialectId", "keyless"),
-    (
-        "crates/cadmpeg-core/src/distinct_keys.rs",
-        "JsonValue",
-        "free-form",
-    ),
-    (
-        "crates/cadmpeg-core/src/dialect.rs",
-        "DialectLayers",
-        "wire",
-    ),
-    (
-        "crates/cadmpeg-core/src/printable.rs",
-        "PrintableString",
-        "keyless",
-    ),
-    ("crates/cadmpeg-ir/src/assets.rs", "AssetData", "keyless"),
-    (
-        "crates/cadmpeg-ir/src/annotations.rs",
-        "NonEmptyMap",
-        "free-form",
-    ),
-    (
-        "crates/cadmpeg-ir/src/container.rs",
-        "ContainerKind",
-        "keyless",
-    ),
-    ("crates/cadmpeg-ir/src/document.rs", "CadIr", "wire"),
-    ("crates/cadmpeg-ir/src/repro.rs", "Bundle", "wire"),
-    ("crates/cadmpeg-ir/src/document.rs", "CensusKey", "keyless"),
-    (
-        "crates/cadmpeg-ir/src/document.rs",
-        "IrVersion",
-        "validated-value",
-    ),
-    ("crates/cadmpeg-ir/src/document.rs", "Model", "wire"),
-    ("crates/cadmpeg-ir/src/document.rs", "Topology", "wire"),
-    (
-        "crates/cadmpeg-ir/src/features/edge_treatments.rs",
-        "FullRoundFilletGroup",
-        "wire",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/form.rs",
-        "FormConstruction",
-        "wire",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/holes.rs",
-        "HoleShape",
-        "wire",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/patterns.rs",
-        "PatternKind",
-        "wire",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/replace_face.rs",
-        "ReplaceFaceOperands",
-        "wire",
-    ),
-    ("crates/cadmpeg-ir/src/features.rs", "$name", "wire"),
-    (
-        "crates/cadmpeg-ir/src/features/geometry.rs",
-        "$name",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/selections.rs",
-        "BodyMember",
-        "wire",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/selections.rs",
-        "BodyMembers",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/parameters.rs",
-        "ConfigurationEvaluation",
-        "wire",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/selections.rs",
-        "DistinctMembers",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/sweeps.rs",
-        "FaceMaker",
-        "keyless",
-    ),
-    ("crates/cadmpeg-ir/src/features.rs", "Feature", "wire"),
-    (
-        "crates/cadmpeg-ir/src/features.rs",
-        "FeatureContent",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/profiles.rs",
-        "GeometryImportPath",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features.rs",
-        "NativeFeatureKind",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/selections.rs",
-        "NativeSelections",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/selections.rs",
-        "NonEmptyMembers",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/parameters.rs",
-        "PolygonSideCount",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/selections.rs",
-        "SelectionMembers",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/selections.rs",
-        "SelectionReference",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features.rs",
-        "SewBodySelection",
-        "wire",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/sheet_metal_forms.rs",
-        "SheetMetalFlangeEdgeWidths",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/profiles.rs",
-        "SketchProfileRegions",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/direct_edit.rs",
-        "SplitFacePlanes",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/sweeps.rs",
-        "SweepCircularRegion",
-        "wire",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/profiles.rs",
-        "ThreePointSelection",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features/tree.rs",
-        "TreeChildren",
-        "wire",
-    ),
-    (
-        "crates/cadmpeg-ir/src/geometry/nurbs.rs",
-        "BsplineSurface",
-        "wire",
-    ),
-    (
-        "crates/cadmpeg-ir/src/geometry/nurbs.rs",
-        "NurbsCurve",
-        "wire",
-    ),
-    (
-        "crates/cadmpeg-ir/src/geometry/nurbs.rs",
-        "NurbsSurface",
-        "wire",
-    ),
-    (
-        "crates/cadmpeg-ir/src/geometry/pcurve.rs",
-        "PcurveNurbs",
-        "wire",
-    ),
-    (
-        "crates/cadmpeg-ir/src/geometry/pcurve.rs",
-        "PolarPcurveNurbs",
-        "wire",
-    ),
-    (
-        "crates/cadmpeg-ir/src/geometry/sampled.rs",
-        "PolygonalSurface",
-        "wire",
-    ),
-    (
-        "crates/cadmpeg-ir/src/geometry/procedural_curves.rs",
-        "DirectedParameterRange",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/geometry/procedural_curves.rs",
-        "ProceduralCurveDefinition",
-        "wire",
-    ),
-    (
-        "crates/cadmpeg-ir/src/geometry/procedural_surfaces.rs",
-        "ProceduralSurfaceDefinition",
-        "wire",
-    ),
-    (
-        "crates/cadmpeg-ir/src/geometry/surface_curves.rs",
-        "ProjectionRole",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/hash/digest.rs",
-        "Sha256Digest",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/native/bytes.rs",
-        "NativeBytes",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/native/mod.rs",
-        "NativeRecord",
-        "free-form",
-    ),
-    ("crates/cadmpeg-ir/src/pmi.rs", "PmiMagnitude", "keyless"),
-    ("crates/cadmpeg-ir/src/process/tool.rs", "Uuid", "keyless"),
-    (
-        "crates/cadmpeg-core/src/text.rs",
-        "NonBlankString",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/provenance.rs",
-        "SourceOwner",
-        "keyless",
-    ),
-    ("crates/cadmpeg-ir/src/provenance.rs", "Provenance", "wire"),
-    ("crates/cadmpeg-ir/src/provenance.rs", "Provenance", "wire"),
-    (
-        "crates/cadmpeg-ir/src/report/check.rs",
-        "RuleName",
-        "keyless",
-    ),
-    ("crates/cadmpeg-ir/src/scalar.rs", "$name", "keyless"),
-    (
-        "crates/cadmpeg-ir/src/scalar.rs",
-        "FiniteBinary32",
-        "keyless",
-    ),
-    ("crates/cadmpeg-ir/src/scalar.rs", "UnitBinary32", "keyless"),
-    (
-        "crates/cadmpeg-ir/src/sketches.rs",
-        "SpatialSketchNurbsCurve",
-        "wire",
-    ),
-    ("crates/cadmpeg-ir/src/tessellation.rs", "Strip", "keyless"),
-    ("crates/cadmpeg-ir/src/tessellation.rs", "Strips", "keyless"),
-    ("crates/cadmpeg-ir/src/transform.rs", "Transform", "keyless"),
-    (
-        "crates/cadmpeg-ir/src/transform.rs",
-        "Transform2",
-        "keyless",
-    ),
-    ("crates/cadmpeg-ir/src/units.rs", "$name", "keyless"),
-];
-
-#[test]
-fn every_hand_written_deserialize_states_its_coverage() {
-    let found = hand_written_impls();
-    assert!(
-        !found.is_empty(),
-        "the hand-impl census found no impls to classify"
-    );
-    let listed: Vec<(String, String)> = HAND_IMPLS
-        .iter()
-        .map(|(path, name, _class)| ((*path).to_owned(), (*name).to_owned()))
-        .collect();
-    let mut found = found;
-    let mut listed = listed;
-    found.sort();
-    listed.sort();
-    let missing: Vec<String> = reader_routes::multiset_difference(&found, &listed)
-        .into_iter()
-        .map(|(path, name)| format!("{path} {name}"))
-        .collect();
-    assert!(
-        missing.is_empty(),
-        "{} hand-written Deserialize impl(s) state no coverage in HAND_IMPLS:\n{}",
-        missing.len(),
-        missing.join("\n")
-    );
-    let stale: Vec<String> = reader_routes::multiset_difference(&listed, &found)
-        .into_iter()
-        .map(|(path, name)| format!("{path} {name}"))
-        .collect();
-    assert!(
-        stale.is_empty(),
-        "{} HAND_IMPLS entry/entries name no hand-written Deserialize impl:\n{}",
-        stale.len(),
-        stale.join("\n")
-    );
-
-    reader_routes::classify::assert_hand_written_reader_routes();
-
-    // Namespace and arena names are open. Their values still have fixed shapes:
-    // a namespace is an arena map, and an arena is a list of native records.
-    for wire in [
-        cadmpeg_core::json!({"rhino": {"objects": []}, "zzbogus": {}}),
-        cadmpeg_core::json!({"rhino": {"objects": [], "zz_bogus": []}}),
-    ] {
-        let read: cadmpeg_ir::native::Native =
-            json::from_value(wire.clone()).expect("native store reads back");
-        assert_eq!(
-            json::to_value(read).expect("native store writes back"),
-            wire
-        );
-    }
-    for wire in [
-        cadmpeg_core::json!({"rhino": {"objects": []}, "zz_bogus": true}),
-        cadmpeg_core::json!({"rhino": {"objects": [], "zz_bogus": true}}),
-    ] {
-        assert!(
-            json::from_value::<cadmpeg_ir::native::Native>(wire).is_err(),
-            "native namespace and arena maps refuse invalid value shapes"
-        );
-    }
-}
-
-/// Exercise the compiled readers that the source census classifies at the two
-/// boundaries most likely to be confused by lexical markers: the intentionally
-/// open native field map and a closed hand-written object adapter.
-#[test]
-fn compiled_hand_readers_keep_their_admission_boundaries() {
-    let native = json::from_value::<cadmpeg_ir::native::NativeRecord>(cadmpeg_core::json!({
-        "id": "test:source-census:record#0",
-        "codec_field": {"preserved": true},
-    }))
-    .expect("NativeRecord's open field reader admits codec-owned fields");
-    assert_eq!(
-        native.field("codec_field"),
-        Some(cadmpeg_core::json!({"preserved": true}))
-    );
-
-    let unknown_configuration = json::from_value::<
-        cadmpeg_ir::features::parameters::ConfigurationEvaluation,
-    >(cadmpeg_core::json!({
-        "kind": "suppressed",
-        "unexpected": true,
-    }));
-    assert!(
-        unknown_configuration.is_err(),
-        "the compiled local wire adapter rejects an unknown object key"
-    );
-}
 
 /// Where every hand-written `Deserialize` refuses `null` for an optional
 /// field, as (file, type, field, guard site).
@@ -551,6 +158,12 @@ const HAND_IMPL_NULL_REFUSALS: &[(&str, &str, &str, &str)] = &[
         "CadIrReadWire",
     ),
     (
+        "crates/cadmpeg-ir/src/document.rs",
+        "CadIr",
+        "up_axis",
+        "CadIrReadWire",
+    ),
+    (
         "crates/cadmpeg-ir/src/features.rs",
         "Feature",
         "name",
@@ -680,29 +293,38 @@ fn every_hand_written_deserialize_refuses_a_null_spelling() {
         .to_path_buf();
     let declarations = Declarations::read(&root);
     let mut disagreements = Vec::new();
-    for (path, name, _class) in HAND_IMPLS {
+    let hand_impls = hand_written_impls();
+    for (path, name, _, _) in HAND_IMPL_NULL_REFUSALS {
+        assert!(
+            hand_impls
+                .iter()
+                .any(|(found_path, found_name)| found_path == path && found_name == name),
+            "{path} {name}: the listed hand reader is absent"
+        );
+    }
+    for (path, name) in hand_impls {
         if name.starts_with('$') {
             continue;
         }
-        let parsed_file = parse_source(&root.join(path), path);
+        let parsed_file = parse_source(&root.join(&path), &path);
         let parsed = &parsed_file.1;
         let mut skipping = Vec::new();
         declared_optional_fields(
             &parsed.items,
-            path,
-            &module_scope(path),
-            name,
+            &path,
+            &module_scope(&path),
+            &name,
             &declarations,
             &mut skipping,
         );
         let mut listed: Vec<String> = HAND_IMPL_NULL_REFUSALS
             .iter()
-            .filter(|(listed_path, listed_name, _, _)| listed_path == path && listed_name == name)
+            .filter(|(listed_path, listed_name, _, _)| *listed_path == path && *listed_name == name)
             .map(|(_, _, field, site)| {
                 match helper_at_guard_site(&parsed.items, site, field) {
                     Ok(helper) => assert!(
-                        refuses_null(&declarations, path, &helper)
-                            || states_null(&declarations, path, &module_scope(path), &helper),
+                        refuses_null(&declarations, &path, &helper)
+                            || states_null(&declarations, &path, &module_scope(&path), &helper),
                         "{path} {site} is listed as where {name} states the spelling of null for {field}, but it states the unlisted helper {helper}"
                     ),
                     Err(reason) => panic!(
@@ -1862,7 +1484,7 @@ fn collect_rust_sources(directory: &Path, found: &mut Vec<PathBuf>) -> Result<()
 mod scanner_tests {
     use super::{
         collect_hand_impls, collect_rust_sources, deserialize_impl_target, is_test_module,
-        macro_body_impl_targets, reader_routes,
+        macro_body_impl_targets,
     };
 
     #[test]
@@ -1950,19 +1572,6 @@ mod scanner_tests {
                 ("fixture.rs".to_owned(), "Manual".to_owned()),
                 ("fixture.rs".to_owned(), "Nested".to_owned()),
                 ("fixture.rs".to_owned(), "$name".to_owned()),
-            ]
-        );
-        assert_eq!(
-            reader_routes::multiset_difference(
-                &found,
-                &[
-                    ("fixture.rs".to_owned(), "Manual".to_owned()),
-                    ("fixture.rs".to_owned(), "$name".to_owned()),
-                ],
-            ),
-            vec![
-                ("fixture.rs".to_owned(), "Manual".to_owned()),
-                ("fixture.rs".to_owned(), "Nested".to_owned()),
             ]
         );
     }

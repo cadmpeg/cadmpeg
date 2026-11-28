@@ -84,10 +84,16 @@ pub(crate) fn e5_plane_stream_with_transform_scalars(scalar_count: usize) -> Vec
 }
 
 pub(crate) fn e5_catpart() -> Vec<u8> {
+    e5_catpart_appending(&[])
+}
+
+/// [`e5_catpart`] with `records` after its vertex records.
+pub(crate) fn e5_catpart_appending(records: &[u8]) -> Vec<u8> {
     let mut main = e5_circle_stream();
     for id in 2..=10 {
         append_e5_record(&mut main, 0xfe, id, &[]);
     }
+    main.extend_from_slice(records);
     let surf = vec![0u8];
     let main_off = 16u32;
     let surf_off = main_off + u32::try_from(main.len()).expect("fixture value fits u32");

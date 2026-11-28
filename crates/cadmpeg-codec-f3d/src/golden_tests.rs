@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 use cadmpeg_ir::examples;
 use cadmpeg_ir::{report::export::WritePath, CadIr};
@@ -28,22 +28,22 @@ use cadmpeg_test_support::roundtrip::{
 };
 
 use super::F3dCodec;
-use crate::test_support::native_test::TestEncode;
-use crate::test_support::smbh_bf4_test::{
+use crate::test_support::native_fixture::TestEncode;
+use crate::test_support::smbh_bf4_fixture::{
     synthetic_geometry_bf4_nurbs_smbh, synthetic_geometry_bf4_smbh,
 };
-use crate::test_support::smbh_blends_test::{
+use crate::test_support::smbh_blends_fixture::{
     synthetic_full_rolling_ball_smbh, synthetic_g2_blend_spl_sur_smbh,
     synthetic_variable_blend_smbh, synthetic_vertex_blend_smbh,
 };
-use crate::test_support::smbh_curves_test::{
+use crate::test_support::smbh_curves_fixture::{
     synthetic_geometry_with_compound_curve_smbh, synthetic_geometry_with_exact_curve_smbh,
     synthetic_geometry_with_helix_curve_smbh, synthetic_geometry_with_law_curve_smbh,
     synthetic_geometry_with_projection_smbh, synthetic_geometry_with_silhouette_smbh,
     synthetic_geometry_with_spring_smbh, synthetic_geometry_with_subset_curve_smbh,
     synthetic_geometry_with_surface_intersection_smbh, synthetic_geometry_with_surface_offset_smbh,
 };
-use crate::test_support::smbh_geometry_test::{
+use crate::test_support::smbh_geometry_fixture::{
     synthetic_free_vertex_body_smbh, synthetic_geometry_smbh,
     synthetic_geometry_with_attribute_smbh, synthetic_geometry_with_body_color_smbh,
     synthetic_geometry_with_degenerate_curve_smbh, synthetic_geometry_with_face_color_smbh,
@@ -51,12 +51,12 @@ use crate::test_support::smbh_geometry_test::{
     synthetic_geometry_with_sketch_link_smbh, synthetic_geometry_with_transform_smbh,
     synthetic_mixed_face_wire_body_smbh, synthetic_wire_body_smbh, SketchLinkForm,
 };
-use crate::test_support::smbh_header_test::synthetic_smbh;
-use crate::test_support::smbh_pcurves_test::{
+use crate::test_support::smbh_header_fixture::synthetic_smbh;
+use crate::test_support::smbh_pcurves_fixture::{
     synthetic_geometry_with_pcurve_smbh, synthetic_geometry_with_rational_pcurve_smbh,
     synthetic_geometry_with_ref_pcurve_smbh, with_pcurve_uv_offset,
 };
-use crate::test_support::smbh_surfaces_test::{
+use crate::test_support::smbh_surfaces_fixture::{
     synthetic_comp_spl_sur_smbh, synthetic_cyl_spl_sur_smbh, synthetic_exact_spl_sur_smbh,
     synthetic_helix_surface_smbh, synthetic_law_spl_sur_smbh, synthetic_loft_spl_sur_smbh,
     synthetic_minimal_deformable_surface_smbh, synthetic_net_spl_sur_smbh,
@@ -65,7 +65,7 @@ use crate::test_support::smbh_surfaces_test::{
     synthetic_sub_spl_sur_smbh, synthetic_sum_spl_sur_smbh, synthetic_t_spl_sur_smbh,
     synthetic_taper_spl_sur_smbh,
 };
-use crate::test_support::zip_test::{
+use crate::test_support::zip_fixture::{
     f3d_with_configuration, f3d_with_smbh, f3d_with_smbh_and_protein,
     f3d_with_smbh_and_protein_with_generated_base_feature,
     f3d_with_smbh_and_protein_with_generated_base_flange,
@@ -477,10 +477,10 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let result = EditableDecodeResult::from(decode_result(bytes).ok()?);
     let mut out = Vec::new();
-    let outcome = match F3dCodec.plan(
-        EncodeInput::new(result.ir(), Some(result.source_fidelity())),
-        TargetRequest::Unnamed,
-    ) {
+    let outcome = match F3dCodec.plan(EncodeInput::new(
+        result.ir(),
+        Some(result.source_fidelity()),
+    )) {
         Ok(plan) => {
             let path = plan.report().write_path().clone();
             match plan.write_to(&mut out) {
@@ -883,17 +883,7 @@ fn fixtures_replay_verbatim() {
             marked.push(name);
         }
     }
-    assert_eq!(
-        marked,
-        [
-            "design_remove_body",
-            "design_surface_stitch",
-            "design_copy_paste",
-            "design_copy_paste_bodies",
-            "design_form",
-            "container_metadata_only"
-        ]
-    );
+    assert_eq!(marked, ["container_metadata_only"]);
 }
 
 /// A document its sidecar reads as edited is patched from the retained

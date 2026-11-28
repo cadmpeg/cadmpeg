@@ -3,7 +3,7 @@ use std::cell::Cell;
 use std::time::Duration;
 
 use crate::test_support::archive_session::deflated_archive;
-use crate::test_support::{lp_ascii, streams_test::design_metastream_with_records};
+use crate::test_support::{lp_ascii, streams_fixture::design_metastream_with_records};
 use crate::F3dCodec;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::scan::{ManualClock, ScanClock, ScanLimits, StopReason, Suppressed};
@@ -300,7 +300,7 @@ fn assert_decoder_and_scan_leave_timeline_unread(bytes: &[u8]) {
     let mut input = zip::ZipArchive::new(Cursor::new(bytes)).expect("timeline archive");
     let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut output, options);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut output, options);
     for name in ["Design1/MetaStream.dat", "Design1/BulkStream.dat"] {
         let mut member = Vec::new();
         input
@@ -315,15 +315,15 @@ fn assert_decoder_and_scan_leave_timeline_unread(bytes: &[u8]) {
     }
     let decoder_bytes = output.finish().unwrap().into_inner();
     let mut losses = Vec::new();
-    let decoded = crate::test_support::zip_test::with_scan(&decoder_bytes, |container| {
+    let decoded = crate::test_support::zip_fixture::with_scan(&decoder_bytes, |container| {
         crate::design::decode::meta::decode_feature_timelines(container, &mut losses)
     })
     .expect("an unreadable timeline record is contained");
     assert!(decoded.is_empty());
-    assert_eq!(
-        crate::test_support::loss_codes(&losses),
-        crate::test_support::given_up_codes(crate::loss::F3dLossCode::FeatureTimelineUndecoded)
-    );
+    let [loss] = losses.as_slice() else {
+        panic!("one given-up timeline record: {losses:?}");
+    };
+    assert!(cadmpeg_ir::unknown::part::gives_up(&loss.code), "{loss:?}");
     let scan = F3dCodec::scan_design(
         View::over_retained(bytes),
         ScanLimits::default(),

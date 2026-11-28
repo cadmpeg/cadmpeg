@@ -12,13 +12,14 @@ use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Decoded;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{DecodeParts, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, Part};
 use std::num::NonZeroUsize;
 use std::rc::Rc;
 
 const CARD_WIDTH: usize = 80;
 const CARD_DATA_WIDTH: usize = 72;
 const PARAMETER_DATA_WIDTH: usize = 64;
+// resource-cap: MAX_SEQUENCE = 1
 const MAX_SEQUENCE: u32 = 9_999_999;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -738,37 +739,17 @@ pub(crate) struct RepeatedDataRecord {
 }
 
 impl RepeatedDataRecord {
-    /// The loss that names the restated Directory sequence and gives the
-    /// span of the copy that is not stated.
-    pub(crate) fn loss(&self) -> LossNote {
-        crate::loss::IgesLossCode::DirectoryRecordRepeated
-            .note(format!(
-                "IGES Compressed ASCII Data record D{} restates the Directory sequence of an earlier record; the first record stands and the copy at bytes {}..{} ({} bytes) is not stated",
-                self.sequence,
-                self.span.start,
-                self.span.end,
-                self.span.len()
-            ))
-            .with_provenance(
-                cadmpeg_ir::SourceProvenance::in_stream(
-                    "iges",
-                    cadmpeg_ir::stream_name!("iges"),
-                    cadmpeg_core::decode::u64_from_index(self.span.start),
-                )
-                .with_tag(format!("directory_entry:D{}", self.sequence)),
-            )
-    }
-
     /// Gives the copy up as a part of `source` (CADIR §3.3) in `decoded`, and
-    /// returns its loss and the part's `record.unreadable`. The source image
-    /// already retains the copy's bytes, so the part keeps their digest.
+    /// returns the part's `record.unreadable`, whose text names the
+    /// restated Directory sequence and the span of the copy. The source
+    /// image already retains the copy's bytes, so the part keeps their
+    /// digest.
     pub(crate) fn give_up(
         &self,
         ctx: &DecodeContext<'_>,
         source: View<'_>,
         decoded: &mut Decoded,
-    ) -> Result<[LossNote; 2], CodecError> {
-        let why = self.loss();
+    ) -> Result<LossNote, CodecError> {
         let extent = source
             .child(self.span.start, self.span.end)
             .ok_or_else(|| malformed("repeated Data record lies outside the source"))?;
@@ -779,13 +760,19 @@ impl RepeatedDataRecord {
             [ArenaClass::Model],
         )
         .digest_only();
-        let error = CodecError::malformed(format_args!("{}: {}", why.code, why.message));
-        let unreadable = ctx.give_up_part(part, error)?.commit(
+        let error = CodecError::malformed(format_args!(
+            "IGES Compressed ASCII Data record D{} restates the Directory sequence of an earlier \
+             record; the first record stands and the copy at bytes {}..{} ({} bytes) is not stated",
+            self.sequence,
+            self.span.start,
+            self.span.end,
+            self.span.len()
+        ));
+        ctx.give_up_part(part, Cause::Unreadable, error)?.commit(
             ctx,
             &mut decoded.ir,
             &mut decoded.source_fidelity,
-        )?;
-        Ok([why, unreadable])
+        )
     }
 }
 

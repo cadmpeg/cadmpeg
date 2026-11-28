@@ -3,7 +3,7 @@
 
 use super::{design_length, design_positive_length, unique_feature_match, ProjectInputs};
 use crate::design::edge_resolve::{
-    resolved_edge_treatment_group_with_corners, EdgeTreatmentInputs,
+    resolved_fillet_scope_groups, ScopeTreatmentGroup, ScopeTreatmentInputs,
 };
 use crate::ids::{native_stream, neutral_feature_id};
 use crate::loss::F3dLossCode;
@@ -63,14 +63,15 @@ pub(super) fn project(
                 .then_some(*parameter)
         }))
     };
-    let feature_id = neutral_feature_id(scope);
-    let mut projected = Vec::new();
+    let mut laws = Vec::new();
+    let mut scope_groups = Vec::new();
     for set in &sets.sets {
+        let mut set_losses = Vec::new();
         let (form, law) = radius_law(set, parameter);
         let radius = match law {
             Some((radius, reordered)) => {
                 if reordered {
-                    losses.push(F3dLossCode::FeatureFilletMidpointOrderAssumed.note(format!(
+                    set_losses.push(F3dLossCode::FeatureFilletMidpointOrderAssumed.note(format!(
                         "{}: Fillet set {} applies its paired midpoint radii in increasing edge position.",
                         scope.id, set.record_index
                     )));
@@ -78,7 +79,7 @@ pub(super) fn project(
                 radius
             }
             None => {
-                losses.push(F3dLossCode::FeatureFilletSetInputUnresolved.note(format!(
+                set_losses.push(F3dLossCode::FeatureFilletSetInputUnresolved.note(format!(
                     "{}: Fillet set {} retains its radius inputs in the native set.",
                     scope.id, set.record_index
                 )));
@@ -92,33 +93,45 @@ pub(super) fn project(
                 .filter(|parameter| parameter.unit().is_none())
                 .map(DesignParameter::evaluated_value);
             if tangency_weight.is_none() {
-                losses.push(F3dLossCode::FeatureFilletSetInputUnresolved.note(format!(
+                set_losses.push(F3dLossCode::FeatureFilletSetInputUnresolved.note(format!(
                     "{}: Fillet set {} retains its tangency-weight input in the native set.",
                     scope.id, set.record_index
                 )));
             }
         }
-        let edges = if let Some(group) = unique_feature_match(
-            groups().filter(|group| group.record_index == set.group_record_index),
-        ) {
-            resolved_edge_treatment_group_with_corners(
-                group,
-                EdgeTreatmentInputs {
-                    groups: inputs.construction_groups,
-                    operands: inputs.edge_operands,
-                    identity_operands: inputs.edge_identity_operands,
-                    vertex_operands: inputs.edge_treatment_vertex_operands,
-                    histories: inputs.histories,
-                    previous_state_id: scope.previous_history_state_id(),
-                    feature_id: &feature_id,
-                    treatment_radius: match &radius {
-                        RadiusSpec::Constant { radius } => Some(radius.get()),
-                        _ => None,
-                    },
-                },
-                ctx,
-                losses,
-            )?
+        scope_groups.push(ScopeTreatmentGroup {
+            group: unique_feature_match(
+                groups().filter(|group| group.record_index == set.group_record_index),
+            ),
+            radius: match &radius {
+                RadiusSpec::Constant { radius } => Some(radius.get()),
+                _ => None,
+            },
+        });
+        laws.push((radius, tangency_weight, set_losses));
+    }
+    let feature_id = neutral_feature_id(scope);
+    let selections = resolved_fillet_scope_groups(
+        &scope_groups,
+        ScopeTreatmentInputs {
+            groups: inputs.construction_groups,
+            operands: inputs.edge_operands,
+            identity_operands: inputs.edge_identity_operands,
+            vertex_operands: inputs.edge_treatment_vertex_operands,
+            histories: inputs.histories,
+            previous_state_id: scope.previous_history_state_id(),
+            feature_id: &feature_id,
+        },
+        ctx,
+    )?;
+    let mut projected = Vec::new();
+    for ((set, (radius, tangency_weight, set_losses)), selection) in
+        sets.sets.iter().zip(laws).zip(selections)
+    {
+        losses.extend(set_losses);
+        let edges = if let Some(selection) = selection {
+            losses.extend(selection.losses);
+            selection.edges
         } else {
             losses.push(F3dLossCode::FeatureFilletSetGroupUnresolved.note(format!(
                 "{}: Fillet set {} has an unresolved edge operand group at record {}.",

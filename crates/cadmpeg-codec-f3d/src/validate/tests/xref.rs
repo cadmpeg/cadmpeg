@@ -29,7 +29,7 @@ fn attributed_legacy_placement_sources_validate_every_frame_length() {
         }))
         .unwrap();
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        crate::test_support::native_test::f3d_native_mut(&mut ir)
+        crate::test_support::native_fixture::f3d_native_mut(&mut ir)
             .xref_references
             .push(reference);
         let rejected = |ir: &cadmpeg_ir::CadIr| {
@@ -42,7 +42,7 @@ fn attributed_legacy_placement_sources_validate_every_frame_length() {
         };
         assert!(!rejected(&ir));
         {
-            let mut native = crate::test_support::native_test::f3d_native_mut(&mut ir);
+            let mut native = crate::test_support::native_fixture::f3d_native_mut(&mut ir);
             native.xref_references[0].neutron_role = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
                 .to_owned()
                 .try_into()
@@ -50,17 +50,17 @@ fn attributed_legacy_placement_sources_validate_every_frame_length() {
         }
         assert!(rejected(&ir));
         {
-            let mut native = crate::test_support::native_test::f3d_native_mut(&mut ir);
+            let mut native = crate::test_support::native_fixture::f3d_native_mut(&mut ir);
             native.xref_references[0].neutron_role = ROLE.to_owned().try_into().unwrap();
             let mut shifted = matrix;
             shifted[0][3] = 2.0;
             native.xref_references[0].transform = Some(shifted.try_into().unwrap());
         }
         assert!(rejected(&ir));
-        crate::test_support::native_test::f3d_native_mut(&mut ir).xref_references[0].transform =
+        crate::test_support::native_fixture::f3d_native_mut(&mut ir).xref_references[0].transform =
             None;
         {
-            let mut native = crate::test_support::native_test::f3d_native_mut(&mut ir);
+            let mut native = crate::test_support::native_fixture::f3d_native_mut(&mut ir);
             native.xref_references[0]
                 .placement_source
                 .as_mut()
@@ -74,13 +74,13 @@ fn attributed_legacy_placement_sources_validate_every_frame_length() {
         }
         assert!(rejected(&ir));
         {
-            let mut native = crate::test_support::native_test::f3d_native_mut(&mut ir);
+            let mut native = crate::test_support::native_fixture::f3d_native_mut(&mut ir);
             let source = native.xref_references[0].placement_source.as_mut().unwrap();
             source.occurrence_guid = None;
         }
         assert!(rejected(&ir));
         {
-            let mut native = crate::test_support::native_test::f3d_native_mut(&mut ir);
+            let mut native = crate::test_support::native_fixture::f3d_native_mut(&mut ir);
             let source = native.xref_references[0].placement_source.as_mut().unwrap();
             source.occurrence_guid = Some(
                 "66666666-7777-8888-9999-aaaaaaaaaaaa"
@@ -92,14 +92,14 @@ fn attributed_legacy_placement_sources_validate_every_frame_length() {
         }
         assert!(rejected(&ir));
         {
-            let mut native = crate::test_support::native_test::f3d_native_mut(&mut ir);
+            let mut native = crate::test_support::native_fixture::f3d_native_mut(&mut ir);
             let source = native.xref_references[0].placement_source.as_mut().unwrap();
             source.owner.as_mut().unwrap().target = 7;
             source.carrier_record_index = 11;
         }
         assert!(rejected(&ir));
         {
-            let mut native = crate::test_support::native_test::f3d_native_mut(&mut ir);
+            let mut native = crate::test_support::native_fixture::f3d_native_mut(&mut ir);
             let source = native.xref_references[0].placement_source.as_mut().unwrap();
             source.carrier_record_index = 10;
             source.frame_bytes.pop();
@@ -154,7 +154,7 @@ fn placement_occurrence_key_must_match_the_complete_source_frame() {
             }
         })).unwrap();
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        crate::test_support::native_test::f3d_native_mut(&mut ir)
+        crate::test_support::native_fixture::f3d_native_mut(&mut ir)
             .xref_references
             .push(reference);
         let rejected = |ir: &cadmpeg_ir::CadIr| {
@@ -169,20 +169,20 @@ fn placement_occurrence_key_must_match_the_complete_source_frame() {
             })
         };
         assert!(!rejected(&ir));
-        crate::test_support::native_test::f3d_native_mut(&mut ir).xref_references[0]
+        crate::test_support::native_fixture::f3d_native_mut(&mut ir).xref_references[0]
             .placement_source
             .as_mut()
             .unwrap()
             .carrier_record_index = 11;
         assert!(rejected(&ir));
         {
-            let mut native = crate::test_support::native_test::f3d_native_mut(&mut ir);
+            let mut native = crate::test_support::native_fixture::f3d_native_mut(&mut ir);
             let source = native.xref_references[0].placement_source.as_mut().unwrap();
             source.carrier_record_index = 10;
             source.owner.as_mut().unwrap().target = 4;
         }
         assert!(rejected(&ir));
-        crate::test_support::native_test::f3d_native_mut(&mut ir).xref_references[0]
+        crate::test_support::native_fixture::f3d_native_mut(&mut ir).xref_references[0]
             .placement_source
             .as_mut()
             .unwrap()
@@ -191,7 +191,7 @@ fn placement_occurrence_key_must_match_the_complete_source_frame() {
             .unwrap()
             .target = 3;
         for key in [Some(OTHER), None] {
-            crate::test_support::native_test::f3d_native_mut(&mut ir).xref_references[0]
+            crate::test_support::native_fixture::f3d_native_mut(&mut ir).xref_references[0]
                 .placement_source
                 .as_mut()
                 .unwrap()
@@ -199,7 +199,7 @@ fn placement_occurrence_key_must_match_the_complete_source_frame() {
             assert!(rejected(&ir));
         }
         {
-            let mut native = crate::test_support::native_test::f3d_native_mut(&mut ir);
+            let mut native = crate::test_support::native_fixture::f3d_native_mut(&mut ir);
             let source = native.xref_references[0].placement_source.as_mut().unwrap();
             source.occurrence_guid = Some(KEY.to_owned().try_into().unwrap());
             source.frame_bytes.pop();

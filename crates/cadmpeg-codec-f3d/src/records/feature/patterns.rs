@@ -271,7 +271,7 @@ pub(crate) struct DesignPatternAxisWrapper {
 }
 
 /// Axis construction carried by a fixed circular-pattern scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum DesignCircularPatternAxisWire {
     /// Axis coordinates stored directly in the Design record.
@@ -430,13 +430,16 @@ impl From<DesignCircularPatternAxis> for DesignCircularPatternAxisWire {
 }
 
 /// Instances one rectangular-pattern instance search admits.
+// resource-cap: MAX_RECTANGULAR_PATTERN_INSTANCES = 4
 pub(crate) const MAX_RECTANGULAR_PATTERN_INSTANCES: usize = 4_096;
 
 /// Bytes one instance record may span in a rectangular-pattern instance search.
+// resource-cap: MAX_RECTANGULAR_PATTERN_RECORD_BYTES = 4
 pub(crate) const MAX_RECTANGULAR_PATTERN_RECORD_BYTES: usize = 1 << 20;
 
 /// Bytes the instance records of one rectangular-pattern instance search may
 /// span together.
+// resource-cap: MAX_RECTANGULAR_PATTERN_SCANNED_BYTES = 4
 pub(crate) const MAX_RECTANGULAR_PATTERN_SCANNED_BYTES: usize = 1 << 24;
 
 /// Transform comparisons one rectangular-pattern instance search may make
@@ -1418,7 +1421,7 @@ mod tests {
             id: "f3d:native:circular-pattern-axis#0",
             value: &axis,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "design_parameter_scopes",
             || CIRCULAR_PATTERN_AXIS_CLONE_COUNT.with(|count| count.set(0)),
@@ -1447,7 +1450,7 @@ mod tests {
             id: "f3d:native:pattern-instances#0",
             value: &instances,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "design_parameter_scopes",
             || RECTANGULAR_PATTERN_INSTANCES_CLONE_COUNT.with(|count| count.set(0)),
@@ -1473,7 +1476,7 @@ mod tests {
             id: "f3d:native:pattern-construction#0",
             value: &construction,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "design_parameter_scopes",
             || RECTANGULAR_PATTERN_CONSTRUCTION_CLONE_COUNT.with(|count| count.set(0)),

@@ -11,7 +11,7 @@
 //! for it, or to a name the decoder left out of its dependencies because it
 //! closes a cycle, with what it loses.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroI8;
 
 use cadmpeg_core::decode::DecodeContext;
@@ -31,7 +31,7 @@ use cadmpeg_ir::features::parameters::{
     DesignParameter as LegacyParameter, DimensionDisplay as LegacyDisplay,
     ParameterValue as LegacyValue,
 };
-use cadmpeg_ir::features::ParameterId;
+use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
@@ -50,7 +50,9 @@ const LITERAL_AGREEMENT: f64 = 1e-12;
 const MILLIMETRES_PER_NANOMETRE: f64 = 1e-6;
 
 /// States every model parameter as a parameter of `definition`, and adds to
-/// `losses` the note naming those that drop a dependency.
+/// `losses` the note naming those that drop a dependency. A section
+/// dimension takes its row in its definition's dimension table as its
+/// position, where the section dimensions of its owner come from one table.
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -69,11 +71,13 @@ pub(super) fn project(
         .iter()
         .map(|parameter| (parameter.id.clone(), kind_and_value(parameter).0))
         .collect::<BTreeMap<_, _>>();
+    let positions = positions(&ir.model.parameters);
     let mut projected = Vec::new();
     let mut dropped = Vec::new();
     for parameter in &ir.model.parameters {
         ctx.charge_entities(1, "project Creo v11 parameter")?;
-        let design = project_parameter(parameter, definition, &names, &kinds);
+        let mut design = project_parameter(parameter, definition, &names, &kinds);
+        design.position = positions.get(&parameter.id).copied();
         if let ParameterDefinition::Expression(expression) = &design.definition {
             let lost = dropped_dependencies(parameter, expression, &names);
             if !lost.is_empty() {
@@ -104,6 +108,38 @@ pub(super) fn project(
     ir.design.parameters.extend(projected);
     ir.design.parameters.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(())
+}
+
+/// The row of each section dimension of `parameters` in its definition's
+/// dimension table, where the section dimensions of its owner come from one
+/// table.
+fn positions(parameters: &[LegacyParameter]) -> BTreeMap<&ParameterId, u32> {
+    let property = |parameter: &LegacyParameter, key: &str| {
+        parameter
+            .properties
+            .iter()
+            .find(|(name, _)| name.as_str() == key)
+            .map(|(_, value)| value.clone())
+    };
+    let rows = parameters
+        .iter()
+        .filter_map(|parameter| {
+            let table = property(parameter, "definition_id")?;
+            let row = property(parameter, "source_ordinal")?.parse::<u32>().ok()?;
+            Some((parameter, table, row))
+        })
+        .collect::<Vec<_>>();
+    let mut tables = BTreeMap::<Option<&FeatureId>, BTreeSet<&str>>::new();
+    for (parameter, table, _) in &rows {
+        tables
+            .entry(parameter.owner.as_ref())
+            .or_default()
+            .insert(table.as_str());
+    }
+    rows.iter()
+        .filter(|(parameter, ..)| tables[&parameter.owner.as_ref()].len() == 1)
+        .map(|(parameter, _, row)| (&parameter.id, *row))
+        .collect()
 }
 
 /// Clears the presentation of a parameter whose binding radial dimension
@@ -157,6 +193,7 @@ fn project_parameter(
         id: parameter.id.clone(),
         scope: scope.clone(),
         owner: parameter.owner.clone().map(ParameterOwner::Feature),
+        position: None,
         name: NonBlankString::new(parameter.name.clone()),
         kind,
         unit,

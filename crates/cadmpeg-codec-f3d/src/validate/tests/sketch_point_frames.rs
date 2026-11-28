@@ -11,7 +11,7 @@ use crate::records::topology::entity_selection::{
     DesignEntitySelectionOperand, DesignEntitySelectionOperandDraft,
 };
 use crate::records::topology::extrude_selection::DesignOperandRole;
-use crate::test_support::native_test::f3d_native_mut;
+use crate::test_support::native_fixture::f3d_native_mut;
 
 const STREAM: &str = "f3d:Design/BulkStream.dat";
 

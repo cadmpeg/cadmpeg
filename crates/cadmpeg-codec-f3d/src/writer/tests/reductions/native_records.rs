@@ -11,7 +11,7 @@ use cadmpeg_ir::report::export::ExportReport;
 
 use crate::records::sketch_links::{SketchCurveLink, SketchLinkSense};
 use crate::test_support::assert_written_with_loss;
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+use crate::test_support::native_fixture::{f3d_native, f3d_native_mut};
 
 const OMITTED: &str = "export/native.records-omitted";
 
@@ -44,7 +44,6 @@ fn write_with_bytes(ir: &CadIr) -> (ExportReport, Vec<u8>, CadIr) {
     let report = cadmpeg_ir::codec::write::Encoder::plan(
         &crate::F3dCodec,
         cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
-        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut bytes))
     .expect("the writer writes the document");
@@ -173,6 +172,7 @@ fn body_visibility(
         asm_body_key_offset: 0,
         asm_body_key,
         entity_suffix: 985,
+        browser_node_entity: 986,
         visible,
     })
     .expect("a body visibility")
@@ -241,6 +241,37 @@ fn a_body_visibility_under_another_asm_key_keeps_its_entity_and_takes_the_body_k
         Some(row.asm_body_key())
     );
     assert_eq!(body_member_entities(&decoded), [985]);
+}
+
+#[test]
+fn a_body_that_stores_no_asm_key_keeps_its_visibility_under_its_ordinal() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    ir.geometry.bodies[0].visible = Some(false);
+    let row = body_visibility(&ir, 0, false);
+    let body = ir.geometry.bodies[0].id.clone();
+    let mut native = f3d_native_mut(&mut ir);
+    native.body_visibilities = vec![row];
+    native.body_native_keys = vec![cadmpeg_asm::brep::records::BodyNativeKey {
+        source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+        body,
+        record_index: 1,
+        body_ordinal: 0,
+        source_brep: None,
+        asm_body_key: None,
+    }];
+    drop(native);
+
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_whole_drop(&report);
+    assert_no_loss_naming(&report, "body visibilit");
+    assert_eq!(decoded.geometry.bodies[0].visible, Some(false));
+    let native = f3d_native(&decoded);
+    let [row] = native.body_visibilities.as_slice() else {
+        panic!("one body visibility: {:#?}", native.body_visibilities)
+    };
+    assert_eq!(row.entity_suffix, 985);
+    assert_eq!(row.asm_body_key(), 0);
+    assert_eq!(native.body_native_keys[0].asm_body_key, None);
 }
 
 #[test]
@@ -394,6 +425,75 @@ fn a_record_header_outside_the_sketch_graph_is_dropped_alone() {
         .map(|header| header.record_index)
         .collect::<Vec<_>>();
     assert_eq!(indices, [33]);
+}
+
+#[test]
+fn a_record_header_that_shadows_a_typed_sketch_record_is_dropped_alone() {
+    use crate::records::decal::DesignRecordHeader;
+    use crate::records::references::DesignClassTag;
+
+    let plain = crate::writer::tests::source_less_design::sketch_graph_cube();
+    let mut ir = plain.clone();
+    let point = f3d_native(&ir).sketch_points[0].record_index;
+    f3d_native_mut(&mut ir)
+        .design_record_headers
+        .push(DesignRecordHeader {
+            id: "f3d:generated:record-header#9".into(),
+            record_index: point,
+            class_tag: DesignClassTag::try_from("350".to_owned()).expect("class tag"),
+            byte_offset: 0,
+        });
+
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_whole_drop(&report);
+    let messages = omitted(&report);
+    assert!(
+        messages.iter().any(|message| message.contains(
+            "of Design record headers that use the record index of a typed sketch record"
+        ) && message.ends_with(": f3d:generated:record-header#9")),
+        "{messages:#?}"
+    );
+    assert_eq!(messages.len(), 1, "{messages:#?}");
+    let native = f3d_native(&decoded);
+    let headers = |native: &crate::native::F3dNative| {
+        native
+            .design_record_headers
+            .iter()
+            .map(|header| (header.record_index, header.class_tag.as_str().to_owned()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        headers(&native),
+        headers(&f3d_native(&write_and_decode(&plain)))
+    );
+    assert_eq!(native.sketch_points.len(), 1);
+    assert_eq!(native.sketch_curve_identities.len(), 3);
+    assert_eq!(native.sketch_relations.len(), 1);
+}
+
+#[test]
+fn a_sketch_relation_is_read_back_beside_persistent_references() {
+    use crate::records::references::{PersistentReference, PersistentReferenceKind};
+
+    let mut ir = crate::writer::tests::source_less_design::sketch_graph_cube();
+    f3d_native_mut(&mut ir)
+        .persistent_references
+        .push(PersistentReference {
+            id: "f3d:generated:persistent-reference#0".into(),
+            byte_offset: 0,
+            value_offset: 0,
+            kind: PersistentReferenceKind::Point,
+            value: 4321,
+        });
+
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_whole_drop(&report);
+    let native = f3d_native(&decoded);
+    assert_eq!(native.sketch_relations.len(), 1);
+    assert!(native
+        .persistent_references
+        .iter()
+        .any(|reference| reference.value == 4321));
 }
 
 #[test]
@@ -694,6 +794,53 @@ fn a_relation_that_names_a_dropped_point_is_dropped_with_it() {
 }
 
 #[test]
+fn a_sketch_point_its_class_tag_does_not_register_is_dropped_alone() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let mut native = f3d_native_mut(&mut ir);
+    sketch_container(&mut native, &[33]);
+    native.sketch_points = vec![sketch_point(Some(277), Vec::new())];
+    drop(native);
+
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_whole_drop(&report);
+    assert!(
+        omitted(&report).iter().any(|message| message.contains(
+            "of sketch records that the Design type registration of their class tag does not name"
+        ) && message
+            .ends_with(": f3d:generated:sketch-point#0")),
+        "{:#?}",
+        report.losses
+    );
+    let native = f3d_native(&decoded);
+    assert!(native.sketch_points.is_empty());
+    assert_eq!(native.design_entity_headers.len(), 1);
+}
+
+#[test]
+fn type_registrations_of_a_bodiless_design_are_written_with_their_bulk_stream() {
+    let mut ir = CadIr::empty();
+    let mut native = f3d_native_mut(&mut ir);
+    sketch_container(&mut native, &[]);
+    native.design_entity_headers.clear();
+    native.design_record_headers.clear();
+    drop(native);
+
+    let (_, bytes, decoded) = write_with_bytes(&ir);
+    let archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("a ZIP archive");
+    let names = archive
+        .file_names()
+        .map(|name| name.expect("a member name").into_owned())
+        .collect::<Vec<_>>();
+    let holds = |name: &str| names.iter().any(|member| member == name);
+    assert!(
+        holds("FusionAssetName[Active]/Design1/MetaStream.dat")
+            && holds("FusionAssetName[Active]/Design1/BulkStream.dat"),
+        "{names:?}"
+    );
+    assert_eq!(f3d_native(&decoded).design_types.len(), 1);
+}
+
+#[test]
 fn a_point_whose_companion_names_a_dropped_curve_is_dropped_with_it() {
     use crate::records::sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -774,7 +921,7 @@ fn a_record_header_named_by_the_base_record_slot_is_written_with_its_sketch() {
     let scope = crate::ids::native_stream(&header.id)
         .expect("a stream-scoped header id")
         .to_owned();
-    let written = crate::test_support::zip_test::with_scan(&bytes, |scan| {
+    let written = crate::test_support::zip_fixture::with_scan(&bytes, |scan| {
         crate::design::decode::sketch::decode_related_record_headers(scan, &[(scope, 584)])
     })
     .expect("the written Design stream scans");
@@ -860,8 +1007,8 @@ fn a_sketch_curve_link_that_names_a_dropped_curve_is_dropped_with_it() {
 fn several_asm_histories_are_dropped_and_the_design_stream_is_written() {
     use crate::history_records::AsmHistory;
 
-    let source = crate::test_support::zip_test::f3d_with_smbh(
-        &crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh(),
+    let source = crate::test_support::zip_fixture::f3d_with_smbh(
+        &crate::test_support::smbh_geometry_fixture::synthetic_geometry_with_history_smbh(),
     );
     let decoded = cadmpeg_ir::codec::Codec::decode(
         &crate::F3dCodec,
@@ -1123,7 +1270,6 @@ fn a_body_with_no_record_form_is_omitted_alone_beside_native_records() {
     let report = cadmpeg_ir::codec::write::Encoder::plan(
         &crate::F3dCodec,
         cadmpeg_ir::codec::write::EncodeInput::new(&ir, None),
-        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut bytes))
     .expect("the writer writes the document");
@@ -1147,4 +1293,379 @@ fn a_body_with_no_record_form_is_omitted_alone_beside_native_records() {
         .any(|coedge| coedge.use_curve.is_some()));
     assert_eq!(decoded.geometry.faces.len(), 12);
     assert_eq!(f3d_native(&decoded).tolerant_coedge_parameters.len(), 1);
+}
+
+/// A design with parameter scopes, parameter owners, owned parameters and
+/// sketch records.
+const SKETCHED: &[u8] =
+    include_bytes!("../../../../tests/golden/fixtures/design_sketch_constraints.f3d");
+
+/// [`SKETCHED`] decoded, with no source file.
+fn sketched() -> CadIr {
+    let decoded = cadmpeg_ir::codec::Codec::decode(
+        &crate::F3dCodec,
+        &mut std::io::Cursor::new(SKETCHED),
+        &cadmpeg_ir::codec::DecodeOptions::default(),
+    )
+    .expect("design decode");
+    let (mut ir, _, _) = decoded.into_parts();
+    ir.source = None;
+    ir
+}
+
+/// The name, expression and value in database units of each native
+/// parameter record of `ir`, by name.
+fn parameter_values(ir: &CadIr) -> Vec<(String, String, f64)> {
+    let mut rows = f3d_native(ir)
+        .design_parameters
+        .iter()
+        .map(|parameter| {
+            (
+                parameter.name().to_owned(),
+                parameter.expression().to_owned(),
+                parameter.evaluated_value().get(),
+            )
+        })
+        .collect::<Vec<_>>();
+    rows.sort_by(|left, right| left.0.cmp(&right.0));
+    rows
+}
+
+#[test]
+fn owned_parameters_and_sketch_records_are_written_beside_unwritten_parameter_scopes() {
+    let ir = sketched();
+    let source = f3d_native(&ir);
+    assert!(!source.design_parameter_scopes.is_empty());
+    assert!(!source.design_parameter_owners.is_empty());
+    assert!(!source.sketch_points.is_empty());
+    assert!(!source.design_parameters.is_empty());
+    assert!(source
+        .design_parameters
+        .iter()
+        .all(|parameter| parameter.owner_record_index().is_some()));
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_whole_drop(&report);
+    let written = f3d_native(&decoded);
+    assert_eq!(written.sketch_points.len(), source.sketch_points.len());
+    assert_eq!(parameter_values(&decoded), parameter_values(&ir));
+    assert!(written
+        .design_parameters
+        .iter()
+        .all(|parameter| parameter.owner_record_index().is_none()));
+    assert!(
+        report.losses.iter().any(|loss| loss
+            .message
+            .contains("writes these owned parameters as user parameters")),
+        "{:#?}",
+        report.losses
+    );
+}
+
+#[test]
+fn an_edited_parameter_value_reaches_the_written_record() {
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::Length;
+
+    let mut ir = sketched();
+    let parameter = ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.name == "d1")
+        .expect("parameter d1");
+    parameter.expression = "25 mm".into();
+    parameter.value = Length::new(25.0).map(ParameterValue::Length);
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_whole_drop(&report);
+    let written = parameter_values(&decoded);
+    let d1 = written
+        .iter()
+        .find(|(name, _, _)| name == "d1")
+        .expect("d1 reads back");
+    assert_eq!(
+        (d1.1.as_str(), d1.2),
+        ("25 mm", 2.5),
+        "{:#?}",
+        report.losses
+    );
+    assert_eq!(
+        written.len(),
+        f3d_native(&ir).design_parameters.len(),
+        "{:#?}",
+        report.losses
+    );
+}
+
+#[test]
+fn a_design_stream_written_from_neutral_records_charges_no_regenerated_type_registration() {
+    let mut ir = sketched();
+    {
+        // The Design stream has no form for a recipe that states no record
+        // index.
+        f3d_native_mut(&mut ir).construction_recipes[0].record_index = None;
+    }
+    let (report, decoded) = write_with_report(&ir);
+    let omitted = omitted(&report);
+    assert!(
+        omitted
+            .iter()
+            .any(|message| message.contains("arena `sketch_points` of the Design stream")),
+        "{omitted:#?}"
+    );
+    assert!(
+        !omitted
+            .iter()
+            .any(|message| message.contains("arena `design_types`")),
+        "{omitted:#?}"
+    );
+    assert!(!f3d_native(&decoded).design_types.is_empty());
+}
+
+/// `ir` written and decoded, with no source file.
+fn rewritten(ir: &CadIr) -> (ExportReport, CadIr) {
+    let (report, mut decoded) = write_with_report(ir);
+    decoded.source = None;
+    (report, decoded)
+}
+
+#[test]
+fn the_parameters_of_a_cadir_read_without_its_sidecar_are_written() {
+    let ir = sketched();
+    let saved = CadIr::from_json(&ir.to_canonical_json().expect("CADIR JSON")).expect("read back");
+    assert!(!saved.model.omitted_arenas_held());
+    let (report, decoded) = write_with_report(&saved);
+    assert_no_whole_drop(&report);
+    assert_eq!(
+        parameter_values(&decoded),
+        parameter_values(&ir),
+        "{:#?}",
+        report.losses
+    );
+}
+
+#[test]
+fn a_native_parameter_record_no_written_parameter_restates_is_dropped() {
+    let mut ir = sketched();
+    let record = f3d_native(&ir).design_parameters[0].clone();
+    let parameter = crate::ids::neutral_parameter_id(&record);
+    // A renamed neutral parameter takes the parameters from the design
+    // scope, which writes no user parameter for a reference dimension's
+    // parameter.
+    let row = ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|row| row.id == parameter)
+        .expect("the record's neutral parameter");
+    row.name = format!("{}_renamed", row.name);
+    if let Some(row) = ir
+        .design
+        .parameters
+        .iter_mut()
+        .find(|row| row.id == parameter)
+    {
+        row.definition = cadmpeg_ir::design::parameter::ParameterDefinition::Driven;
+    }
+
+    let (report, _) = write_with_report(&ir);
+    assert_no_whole_drop(&report);
+    let messages = omitted(&report);
+    assert!(
+        messages.iter().any(|message| message
+            .contains("because no written parameter record restates their neutral parameters")
+            && message.contains(&record.id)),
+        "{messages:#?}"
+    );
+}
+
+#[test]
+fn a_written_design_is_written_again_with_its_record_headers() {
+    let (_, first) = rewritten(&sketched());
+    let (report, second) = rewritten(&first);
+    assert_no_whole_drop(&report);
+    assert_no_loss_naming(&report, "Design record headers");
+    let headers = |ir: &CadIr| {
+        f3d_native(ir)
+            .design_record_headers
+            .iter()
+            .map(|header| (header.record_index, header.class_tag.as_str().to_owned()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(headers(&second), headers(&first));
+}
+
+#[test]
+fn persistent_references_are_stable_across_repeated_writes() {
+    let source = sketched();
+    let (_, first) = rewritten(&source);
+    let (_, second) = rewritten(&first);
+    let references = |ir: &CadIr| {
+        let mut references = f3d_native(ir)
+            .persistent_references
+            .iter()
+            .map(|reference| (format!("{:?}", reference.kind), reference.value))
+            .collect::<Vec<_>>();
+        references.sort();
+        references
+    };
+    assert!(!references(&source).is_empty());
+    assert_eq!(references(&first), references(&source));
+    assert_eq!(references(&second), references(&first));
+}
+
+#[test]
+fn sketch_curve_links_on_edges_and_vertices_are_written() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let targets = [
+        AttributeTarget::Edge(ir.geometry.edges[0].id.clone()),
+        AttributeTarget::Edge(ir.geometry.edges[0].id.clone()),
+        AttributeTarget::Coedge(ir.geometry.coedges[0].id.clone()),
+        AttributeTarget::Vertex(ir.geometry.vertices[0].id.clone()),
+    ];
+    f3d_native_mut(&mut ir).sketch_curve_links = targets
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, target)| SketchCurveLink {
+            id: format!("f3d:generated:sketch-curve-link#{ordinal}"),
+            target,
+            sketch_curve_id: 201 + i64::try_from(ordinal).expect("small ordinal"),
+            ref_b: 0,
+            sense: Some(SketchLinkSense::try_from(1).expect("link sense")),
+            role: 2,
+            closure: 3,
+        })
+        .collect();
+
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_loss_naming(&report, "sketch-curve link");
+    let links = |kind: fn(&AttributeTarget) -> bool| {
+        f3d_native(&decoded)
+            .sketch_curve_links
+            .iter()
+            .filter(|link| kind(&link.target))
+            .map(|link| (link.target.clone(), link.sketch_curve_id))
+            .collect::<Vec<_>>()
+    };
+    let edges = links(|target| matches!(target, AttributeTarget::Edge(_)));
+    assert_eq!(
+        edges.iter().map(|link| link.1).collect::<Vec<_>>(),
+        [201, 202]
+    );
+    assert_eq!(edges[0].0, edges[1].0);
+    let coedges = links(|target| matches!(target, AttributeTarget::Coedge(_)));
+    assert_eq!(coedges.iter().map(|link| link.1).collect::<Vec<_>>(), [203]);
+    let vertices = links(|target| matches!(target, AttributeTarget::Vertex(_)));
+    assert_eq!(
+        vertices.iter().map(|link| link.1).collect::<Vec<_>>(),
+        [204]
+    );
+}
+
+#[test]
+fn unframed_design_records_precede_the_first_primary_record() {
+    use crate::records::decal::DesignRecordHeader;
+    use crate::records::recipes::{
+        ConstructionRecipe, ConstructionRecipeDesign, ConstructionRecipeKind,
+    };
+    use crate::records::references::DesignClassTag;
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    // A visible body writes the body map and its browser node, which are
+    // primary records.
+    ir.geometry.bodies[0].visible = Some(true);
+    {
+        let mut native = f3d_native_mut(&mut ir);
+        sketch_container(&mut native, &[33]);
+        native.design_record_headers.push(DesignRecordHeader {
+            id: "f3d:generated:record-header#1".into(),
+            record_index: 584,
+            class_tag: DesignClassTag::try_from("269".to_owned()).expect("class tag"),
+            byte_offset: 0,
+        });
+        native.construction_recipes = vec![ConstructionRecipe {
+            id: "f3d:generated:recipe#0".into(),
+            byte_offset: 0,
+            kind: ConstructionRecipeKind::Edge,
+            design: Some(ConstructionRecipeDesign {
+                id: crate::records::identity::RecordedValue {
+                    value: "320".to_owned(),
+                    offset: 0,
+                },
+                selector: None,
+            }),
+            recipe_index: 0,
+            record_index: Some(crate::records::identity::RecordedValue {
+                value: 100,
+                offset: 0,
+            }),
+        }];
+        native.design_body_members = vec![body_member(0, 985)];
+    }
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_whole_drop(&report);
+    let native = f3d_native(&decoded);
+    let first_primary = native
+        .design_entity_headers
+        .iter()
+        .map(|header| header.byte_offset)
+        .chain(
+            native
+                .body_visibilities
+                .iter()
+                .map(|visibility| visibility.byte_offset),
+        )
+        .min()
+        .expect("a primary record");
+    assert_eq!(native.body_visibilities.len(), 1);
+    assert_eq!(native.construction_recipes.len(), 1);
+    assert_eq!(native.design_body_members.len(), 1);
+    assert_eq!(native.design_record_headers.len(), 1);
+    assert!(native
+        .construction_recipes
+        .iter()
+        .all(|recipe| recipe.byte_offset < first_primary));
+    assert!(native
+        .design_body_members
+        .iter()
+        .all(|member| member.byte_offset() < first_primary));
+    assert!(native
+        .design_record_headers
+        .iter()
+        .all(|header| header.byte_offset < first_primary));
+}
+
+#[test]
+fn sketch_records_that_share_a_record_index_are_dropped_alone() {
+    let mut ir = crate::writer::tests::source_less_design::sketch_graph_cube();
+    let (shared, ids) = {
+        let mut native = f3d_native_mut(&mut ir);
+        let mut copy = native.sketch_curve_identities[0].clone();
+        copy.id = "f3d:generated:sketch-curve#copy".into();
+        let ids = [
+            native.sketch_curve_identities[0].id.clone(),
+            copy.id.clone(),
+        ];
+        let shared = copy.record_index;
+        native.sketch_curve_identities.push(copy);
+        (shared, ids)
+    };
+
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_whole_drop(&report);
+    let messages = omitted(&report);
+    let message = messages
+        .iter()
+        .find(|message| {
+            message.contains("that share their record index with another sketch record")
+        })
+        .unwrap_or_else(|| panic!("{messages:#?}"));
+    assert!(
+        ids.iter().all(|id| message.contains(id.as_str())),
+        "{message}"
+    );
+    assert!(f3d_native(&decoded)
+        .sketch_curve_identities
+        .iter()
+        .all(|curve| curve.record_index != shared));
+    assert!(!f3d_native(&decoded).sketch_curve_identities.is_empty());
 }

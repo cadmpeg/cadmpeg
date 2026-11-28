@@ -744,7 +744,7 @@ fn semantic_writer_patch_declines_conflicting_parameter_edits() {
 /// stale mark, and `export:evaluation.stale` names the edit (§3.4, States).
 #[test]
 fn a_synthesized_edit_marks_its_configuration_stale() {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
     use cadmpeg_ir::features::parameters::ParameterValue;
     use cadmpeg_ir::report::export::WritePath;
     use cadmpeg_ir::scalar::Length;
@@ -777,10 +777,10 @@ fn a_synthesized_edit_marks_its_configuration_stale() {
 
     let mut output = Vec::new();
     let report = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .unwrap()
         .write_to(&mut output)
         .unwrap();

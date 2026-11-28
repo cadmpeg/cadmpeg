@@ -9,12 +9,14 @@ use cadmpeg_core::decode::{DecodeContext, ExpandSpec, View};
 use cadmpeg_core::CodecError;
 
 /// Largest output of one chunk of the chunked framing (spec §9.3).
+// resource-cap: MAX_CHUNK_OUTPUT = 1
 const MAX_CHUNK_OUTPUT: usize = 0x7E00_0000;
 /// Length nibble that continues in the following bytes.
 const LENGTH_CONTINUES: usize = 15;
 /// Smallest match length; the stored nibble adds to it.
 const MIN_MATCH: usize = 4;
 /// Largest number of output bytes one input byte of a block yields.
+// resource-cap: MAX_RATIO = 1
 const MAX_RATIO: usize = 255;
 
 fn corrupt(what: &str) -> CodecError {

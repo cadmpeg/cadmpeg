@@ -9,18 +9,31 @@ use flate2::Compression;
 /// Inflated block size of a frame.
 pub(crate) const BLOCK_SIZE: u32 = 0x40000;
 
-/// A framed stream whose zlib stream inflates to `block` bytes.
+/// A framed stream whose zlib blocks each inflate to `block` bytes: as many
+/// blocks as `payload` needs, and at least one.
 pub(crate) fn framed_with(payload: &[u8], block: u32, declared: u64) -> Vec<u8> {
-    let mut inflated = payload.to_vec();
-    inflated.resize(usize::try_from(block).unwrap(), 0);
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(&inflated).unwrap();
-    let compressed = encoder.finish().unwrap();
+    let size = usize::try_from(block).unwrap();
+    let blocks: Vec<Vec<u8>> = if payload.is_empty() {
+        vec![Vec::new()]
+    } else {
+        payload.chunks(size).map(<[u8]>::to_vec).collect()
+    };
+    let compressed: Vec<Vec<u8>> = blocks
+        .into_iter()
+        .map(|mut inflated| {
+            inflated.resize(size, 0);
+            let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+            encoder.write_all(&inflated).unwrap();
+            encoder.finish().unwrap()
+        })
+        .collect();
     let mut stream = 0x3de3_de00_u32.to_le_bytes().to_vec();
     stream.extend_from_slice(&block.to_le_bytes());
     stream.extend_from_slice(&declared.to_le_bytes());
-    stream.extend_from_slice(&u32::try_from(compressed.len()).unwrap().to_le_bytes());
-    stream.extend_from_slice(&compressed);
+    for zlib in &compressed {
+        stream.extend_from_slice(&u32::try_from(zlib.len()).unwrap().to_le_bytes());
+        stream.extend_from_slice(zlib);
+    }
     stream
 }
 
@@ -166,6 +179,12 @@ pub(crate) fn plane_face_body() -> Vec<u8> {
 /// A solid made of one face on a surface record of class `surface`, in
 /// interned ACIS 32.0 form.
 pub(crate) fn face_body(surface: &'static str) -> Vec<u8> {
+    face_body_on(surface, 4)
+}
+
+/// The solid of [`face_body`], whose face names the record `surface_ref` as
+/// its surface.
+pub(crate) fn face_body_on(surface: &'static str, surface_ref: i32) -> Vec<u8> {
     use Sab::{End, False, Long, Name, Position, Ref, SubName, True, Vector};
     let low = Position([0.0, 0.0, 0.0]);
     let high = Position([1.0, 1.0, 0.0]);
@@ -204,7 +223,7 @@ pub(crate) fn face_body(surface: &'static str) -> Vec<u8> {
         Ref(-1),
         Ref(2),
         Ref(-1),
-        Ref(4),
+        Ref(surface_ref),
         False,
         False,
         True,
@@ -227,4 +246,14 @@ pub(crate) fn face_body(surface: &'static str) -> Vec<u8> {
         End,
     ]);
     acis_stream(&items)
+}
+
+/// A native binary Parasolid transmit with no nodes: the prologue, the
+/// maximum node type, `user_fields`, and the terminator.
+pub(crate) fn parasolid_record(description: &str, user_fields: u32) -> Vec<u8> {
+    let mut bytes = parasolid_prologue(description, "SCH_3401176_34101_13006");
+    bytes.extend_from_slice(&231_u16.to_le_bytes());
+    bytes.extend_from_slice(&user_fields.to_le_bytes());
+    bytes.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
+    bytes
 }
