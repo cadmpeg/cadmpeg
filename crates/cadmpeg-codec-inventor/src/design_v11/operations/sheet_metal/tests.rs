@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
+use cadmpeg_core::json;
 use cadmpeg_ir::design::names::NativeNameValue;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::selections::{DistinctMembers, EdgeSelection};
 use cadmpeg_ir::features::sheet_metal_forms::SheetMetalCornerEffect;
 use cadmpeg_ir::sketches::Sketch;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 fn sketch_data(sketches: &[Sketch]) -> SketchData<'_> {
     SketchData {
