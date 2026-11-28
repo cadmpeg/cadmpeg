@@ -39,20 +39,24 @@ const TRACE_ARRIVAL_STEPS: f64 = 1.5;
 /// stalled.
 const TRACE_MIN_ADVANCE: f64 = 0.25;
 /// Points a trace may hold.
+// resource-cap: MAX_TRACE_POINTS = 4
 const MAX_TRACE_POINTS: usize = 1 << 12;
 /// Distance between successive Newton iterates at which a point has converged.
 const NEWTON_STEP_TOLERANCE_MM: f64 = 1.0e-11;
 /// Newton iterations allowed for one point.
+// resource-cap: MAX_NEWTON_STEPS = 4
 const MAX_NEWTON_STEPS: usize = 32;
 /// Smallest `|n1 × n2|²` of a transversal intersection.
 const MIN_TRANSVERSALITY: f64 = 1.0e-8;
 /// Midpoint splits allowed below one stored chart segment.
+// resource-cap: MAX_SUBDIVISION_DEPTH = 4
 const MAX_SUBDIVISION_DEPTH: usize = 10;
 /// Largest share of its piece's departure a half piece may keep when a
 /// checked point was measured against the supports, beyond which splitting
 /// no longer converges.
 const SUPPORT_SPLIT_CONVERGENCE: f64 = 0.5;
 /// Pieces a refined chart may hold.
+// resource-cap: MAX_REFINED_PIECES = 4
 const MAX_REFINED_PIECES: usize = 1 << 10;
 /// Interior fractions of a piece at which its departure is checked.
 const CHECK_FRACTIONS: [f64; 7] = [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875];

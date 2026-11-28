@@ -232,6 +232,7 @@ pub(in super::super) fn circular_pcurve(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    // resource-cap: MAX_CIRCULAR_PCURVE_SEGMENTS = 2
     const MAX_CIRCULAR_PCURVE_SEGMENTS: u32 = 100_000;
     let span = end_angle - start_angle;
     let count = (span.abs() / std::f64::consts::FRAC_PI_2).ceil().max(1.0);
@@ -1106,6 +1107,7 @@ fn nurbs_profile_point(
     Ok(Some([point.x, point.y]))
 }
 
+// resource-cap: MAX_NURBS_PROFILE_POINTS = 4
 const MAX_NURBS_PROFILE_POINTS: usize = 262_145;
 
 /// Why a NURBS profile segment has no polyline.
@@ -1161,6 +1163,7 @@ fn append_nurbs_profile_span_with_midpoint(
     known_midpoint: Option<(f64, [f64; 2])>,
     points: &mut Vec<[f64; 2]>,
 ) -> Result<Result<(), ProfileSamplingStop>, cadmpeg_core::CodecError> {
+    // resource-cap: MAX_DEPTH = 4
     const MAX_DEPTH: usize = 24;
     let _depth = ctx.enter_nested("creo NURBS profile sampling depth")?;
     if !(span.start.is_finite() && span.end.is_finite() && span.start < span.end) {

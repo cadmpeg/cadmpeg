@@ -23,9 +23,11 @@ use super::Names;
 use crate::design_v11::parameters::{canonical, number_node, LITERAL_UNITS};
 
 /// The deepest nesting of parentheses and unary minus the parser reads.
+// resource-cap: MAX_DEPTH = 2
 const MAX_DEPTH: usize = 64;
 /// The most tokens an expression with a tree holds, which bounds the tree's
 /// depth.
+// resource-cap: MAX_TOKENS = 2
 const MAX_TOKENS: usize = 256;
 
 /// What a tree is typed against.

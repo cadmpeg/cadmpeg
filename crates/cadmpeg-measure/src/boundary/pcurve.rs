@@ -32,6 +32,7 @@ use crate::quadrature::gauss_kronrod_nodes;
 use crate::reason::UnavailableReason;
 
 /// Newton steps of one pcurve endpoint recovery from one seed.
+// resource-cap: MAX_PCURVE_RECOVERY_STEPS = 4
 const MAX_PCURVE_RECOVERY_STEPS: usize = 32;
 
 /// One pcurve use on its interval, in traversal order.

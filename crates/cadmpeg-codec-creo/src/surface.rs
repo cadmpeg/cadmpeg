@@ -4779,6 +4779,7 @@ fn finish_inline_layout(
 
 const EPS_INLINE_WITNESS: f64 = 1.0e-9;
 const EPS_INLINE_FRAME: f64 = 1.0e-8;
+// resource-cap: MAX_INLINE_FRAME_CANDIDATES = 1
 const MAX_INLINE_FRAME_CANDIDATES: usize = 24;
 
 fn observe_inline_type26_radius(
@@ -6718,6 +6719,7 @@ fn decode_support_apex_cone_layout(
     half_angle: ApexConeHalfAngle,
     cache: &scalar::ScalarCache,
 ) -> Option<(PositionalConeFrame, usize, usize, usize)> {
+    // resource-cap: MAX_SUPPORT_FRAME_BYTES = 1
     const MAX_SUPPORT_FRAME_BYTES: usize = 12 * 9;
 
     let mut reference_candidates = (0..body.len()).filter_map(|start| {
@@ -7241,6 +7243,7 @@ fn named_vector_scalar_body_len(
 /// [`counted_parameter_scalar_slots`] admits states one slot, and every step of
 /// that walk consumes at least one byte, so three slots per byte is the densest
 /// parse it can answer.
+// resource-cap: MAX_COUNTED_PARAMETER_SLOTS_PER_BYTE = 2
 const MAX_COUNTED_PARAMETER_SLOTS_PER_BYTE: u64 = 3;
 
 /// The value bytes of a counted `params` body whose declared slot count those

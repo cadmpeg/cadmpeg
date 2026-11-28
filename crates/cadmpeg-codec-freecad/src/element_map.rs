@@ -56,9 +56,13 @@ fn past_cap(what: &str, count: usize, cap: usize) -> CodecError {
     CodecError::NotImplemented(format!("FreeCAD {what} {count} exceeds {cap}"))
 }
 
+// resource-cap: MAX_TABLE_ENTRIES = 2
 const MAX_TABLE_ENTRIES: usize = 10_000_000;
+// resource-cap: MAX_MAP_NODES = 2
 const MAX_MAP_NODES: usize = 1_000_000;
+// resource-cap: MAX_GROUPS = 2
 const MAX_GROUPS: usize = 1_000_000;
+// resource-cap: MAX_NAMES = 2
 const MAX_NAMES: usize = 10_000_000;
 
 struct LegacyElementRecord {

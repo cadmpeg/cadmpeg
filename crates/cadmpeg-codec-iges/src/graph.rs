@@ -16,6 +16,7 @@ use std::cell::RefCell;
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
 /// The largest sequence address representable by an IGES pointer constant.
+// resource-cap: MAX_POINTER_SEQUENCE = 1
 const MAX_POINTER_SEQUENCE: i64 = 9_999_999;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

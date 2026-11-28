@@ -331,6 +331,7 @@ const EPS_PATH_POSE_LINEAR: f64 = 1.0e-6;
 /// absolutely, translation scaled to its magnitude (at least 1 mm).
 const EPS_PATH_POSE_LOCAL_REL: f64 = 1.0e-6;
 /// Search steps allowed when assigning carriers to instances.
+// resource-cap: MAX_PATH_ASSIGNMENT_STEPS = 4
 const MAX_PATH_ASSIGNMENT_STEPS: usize = 100_000;
 
 /// One unit of work for the component-path pose pass.
