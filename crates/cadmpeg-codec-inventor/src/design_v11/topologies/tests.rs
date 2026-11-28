@@ -107,8 +107,7 @@ fn project_part(ir: &mut CadIr) {
         ir,
         &crate::feature::FeatureInventory::default(),
         &sketches,
-        &[],
-        &[],
+        super::super::ParameterRecords::default(),
         &mut losses,
     )
     .expect("projection");

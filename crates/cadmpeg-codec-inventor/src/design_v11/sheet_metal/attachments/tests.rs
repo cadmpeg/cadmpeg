@@ -344,8 +344,7 @@ fn attached_plate(parent: Flange) -> CadIr {
         &mut ir,
         &inventory,
         &sketches,
-        &[],
-        &[],
+        crate::design_v11::ParameterRecords::default(),
         &mut Vec::new(),
     )
     .expect("projection");

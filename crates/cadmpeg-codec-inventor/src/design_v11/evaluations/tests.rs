@@ -180,8 +180,7 @@ fn validate_operations_findings(ir: &CadIr) -> Vec<String> {
         ir,
         &crate::feature::FeatureInventory::default(),
         &no_sketches(),
-        &[],
-        &[],
+        super::super::ParameterRecords::default(),
     )
     .expect("check")
     .into_iter()
@@ -232,8 +231,7 @@ fn project_with_evidence(
         ir,
         &crate::feature::FeatureInventory::default(),
         &no_sketches(),
-        &[],
-        &[],
+        super::super::ParameterRecords::default(),
         &mut losses,
     )
     .expect("projection");
