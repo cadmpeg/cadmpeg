@@ -126,16 +126,16 @@ pub(crate) enum FreecadLossCode {
     SketchNativeGeometry,
     /// A sketch B-spline has no admitted finite neutral representation.
     SketchNurbsNative,
-    /// Cached sketch geometry has no matching live external reference.
-    SketchExternalReferenceUnresolved,
-    /// Optional external sketch cache cannot be projected; live links remain authoritative.
-    SketchExternalCacheUnresolved,
     /// Sketch constraint retains a native relation kind without neutral semantics.
     SketchNativeConstraint,
     /// More than one sketch constraint has the same nonempty name.
     SketchConstraintNameAmbiguous,
     /// A sketch constraint has both index and name expression bindings.
     SketchConstraintBindingConflict,
+    /// Cached sketch geometry has no matching live external reference.
+    SketchExternalReferenceUnresolved,
+    /// Optional external sketch cache cannot be projected; live links remain authoritative.
+    SketchExternalCacheUnresolved,
     /// Sketch profiles are not chained because endpoint matching reached its work cap.
     SketchProfileMatchingBounded,
     /// Topology color values were retained because their count did not match mapped topology.
@@ -452,7 +452,7 @@ mod tests {
     /// Value-level golden: the stable string form of every code, pinned.
     #[test]
     fn code_strings_are_pinned() {
-        let codes: BTreeSet<&str> = FreecadLossCode::ALL.iter().map(|c| c.code()).collect();
+        let codes: Vec<&str> = FreecadLossCode::ALL.iter().map(|c| c.code()).collect();
         assert_eq!(
             codes,
             [
@@ -523,8 +523,6 @@ mod tests {
                 "metadata.file-version-unverified",
                 "element-map.version-unresolved",
             ]
-            .into_iter()
-            .collect::<BTreeSet<_>>()
         );
     }
 

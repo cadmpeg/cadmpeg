@@ -846,14 +846,14 @@ pub(crate) enum F3dLossCode {
     FeatureProfileCrossingLoopCapped,
     /// Extrude profile selections split a self-crossing loop by curve-use counts alone.
     FeatureProfileCrossingLoopAssumed,
-    /// Extrude profile selections matched a counted member to an edge of
-    /// coincident curves by the direction of the curve it names.
-    /// Extrude profile selections joined stored loops to faces through the assumed reading of their first entry operand.
-    FeatureProfileLoopFlagsAssumed,
     FeatureProfileCoincidentDirectionAssumed,
     FeatureProfileCoincidentBoundaryAssumed,
     FeatureProfileCrossingRunsAssumed,
     FeatureProfilePartialEntryAssumed,
+    /// Extrude profile selections matched a counted member to an edge of
+    /// coincident curves by the direction of the curve it names.
+    /// Extrude profile selections joined stored loops to faces through the assumed reading of their first entry operand.
+    FeatureProfileLoopFlagsAssumed,
     /// Extrude profile selections took regions from the faces a cut changed, at one point per region.
     FeatureProfileCutRegionsAssumed,
     /// A stored transition certifies regions with stale curve identities.
@@ -1315,14 +1315,14 @@ pub(crate) enum F3dLossCode {
     AssemblyComponentsExternal,
     /// Spline surface records were decoded into NURBS carriers from cache.
     NurbsSurfaceCarrier,
+    /// Sketch-region body records of a keyless BREP blob are not model bodies.
+    SketchRegionBodyOmitted,
     /// Procedural curve records were decoded into NURBS carriers from cache.
     NurbsCurveCarrier,
     /// Faces rest on spline or procedural surfaces whose shape was not decoded.
     SurfaceShapeNotDecoded,
     /// Faces use zero-payload `mesh_surface` sentinels; exact surfaces are absent.
     MeshSurfaceSentinel,
-    /// Sketch-region body records of a keyless BREP blob are not model bodies.
-    SketchRegionBodyOmitted,
     /// Edges reference a procedural 3D curve with no decodable B-spline cache.
     ProceduralCurveUndecoded,
     /// Vertex tolerance is widened to cover the ends of its edges' curves:
@@ -1408,12 +1408,6 @@ pub(crate) enum F3dLossCode {
     /// restored from its retained source; the file was written from its
     /// `design` records.
     WriterHistoryUnrestored,
-    /// An integer parameter was written as a Fusion user parameter, which
-    /// holds a real.
-    WriterIntegerAsReal,
-    /// A design scope, container, or value of the written timeline was not
-    /// written.
-    WriterDesignRecordOmitted,
     /// An appearance's Protein asset was written under a GUID the writer
     /// allocated, in place of a missing or shared source GUID.
     WriterAppearanceGuidAllocated,
@@ -1446,6 +1440,12 @@ pub(crate) enum F3dLossCode {
     WorkPlaneDisplayNameAmbiguous,
     /// Constructed plane display names could not be decoded.
     WorkPlaneDisplayNameUndecoded,
+    /// An integer parameter was written as a Fusion user parameter, which
+    /// holds a real.
+    WriterIntegerAsReal,
+    /// A design scope, container, or value of the written timeline was not
+    /// written.
+    WriterDesignRecordOmitted,
 }
 }
 
@@ -4447,7 +4447,7 @@ mod tests {
     /// Value-level golden: the stable string form of every code, pinned.
     #[test]
     fn code_strings_are_pinned() {
-        let codes: BTreeSet<&str> = F3dLossCode::ALL.iter().map(|c| c.code()).collect();
+        let codes: Vec<&str> = F3dLossCode::ALL.iter().map(|c| c.code()).collect();
         assert_eq!(
             codes,
             [
@@ -5289,8 +5289,6 @@ mod tests {
                 "writer.integer-as-real",
                 "writer.design-record-omitted",
             ]
-            .into_iter()
-            .collect::<BTreeSet<_>>()
         );
     }
 
