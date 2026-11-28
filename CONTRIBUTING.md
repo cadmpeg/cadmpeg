@@ -39,7 +39,7 @@ By contributing, you license code under **Apache-2.0** and documentation/spec co
 A codec takes native bytes and produces the cadmpeg IR.
 
 1. **Start from a spec.** Pick a format in [`docs/formats/`](docs/formats/) and review its companion `*-open-items.md` file. Implement only settled byte semantics.
-2. **Implement the codec interface.** Codecs implement the [`Codec` trait in `crates/cadmpeg-ir/src/codec.rs`](crates/cadmpeg-ir/src/codec.rs), which defines `id`, `detect`, `inspect`, and `decode`. See [docs/architecture.md](docs/architecture.md) for the plugin model.
+2. **Implement the codec interface.** Codecs implement the [`CodecBackend` trait in `crates/cadmpeg-ir/src/codec.rs`](crates/cadmpeg-ir/src/codec.rs), which defines `id`, `detect`, `inspect`, and `decode`. See [docs/architecture.md](docs/architecture.md) for the plugin model.
 3. **Classify exactness correctly.** `ByteExact` means read from the source stream without transformation beyond documented unit conversion. `Derived` means computed deterministically from byte-exact inputs. `Inferred` means supplied from context or convention rather than an explicit source field. `Unknown` means origin or trustworthiness could not be established.
 4. **Account for loss.** If your decoder skips or approximates something, surface it; do not silently drop bytes.
 5. **Add authorized fixtures.** Add public CAD fixtures through the [corpus donation pipeline](corpus/README.md), not as untracked test binaries. NIST MBE PMI specimens are a separate maintainer-curated track (`LicenseRef-NIST-PD`); see [corpus/nist-pmi/README.md](corpus/nist-pmi/README.md). Add focused decode, validation, and round-trip tests where applicable.
@@ -86,7 +86,7 @@ A PR merges directly after its own CI run passes. Main can move between that run
 The `JsonSchema` derives sit behind a `schema` feature that no dependent enables, because building them costs 14% of `cadmpeg-ir`'s generated code. `cadmpeg query schema` and the repro privacy projection read the committed output of `cadmpeg_ir::cadir_json_schema()` and `decode_sidecar_json_schema()` in [`crates/cadmpeg-ir/schema/`](crates/cadmpeg-ir/schema/). The schema gate compares those files with the derives. When you change IR or native record types, regenerate them and review the diff:
 
 ```sh
-UPDATE_GOLDEN=1 cargo test -p cadmpeg-ir --features schema --lib
+UPDATE_GOLDEN=1 cargo test -p cadmpeg-ir --features schema-order --test committed_schema
 ```
 
 Annex A of [`docs/cadir-v11.md`](docs/cadir-v11.md) states the schema of each type the specification names and does not state, generated from `crates/cadmpeg-ir/schema/cadir.schema.json`. The schema gate checks it; a change to one of those types regenerates it:
@@ -157,7 +157,7 @@ The shell scripts (`*.sh`) need Git Bash and the commands that each script check
 - [ ] `cargo clippy --workspace --all-targets` passes.
 - [ ] `cargo build --workspace` passes.
 - [ ] `cargo test-fast` and `cargo test --workspace --doc` pass.
-- [ ] `cargo test -p cadmpeg-ir --features schema --lib` passes (IR or native record type changes).
+- [ ] `cargo test -p cadmpeg-ir --features schema-order --test committed_schema` passes (IR or native record type changes).
 - [ ] No CAD binaries committed outside the corpus donation pipeline or the generated fuzz seeds (see [`crates/cadmpeg-fuzz/README.md`](crates/cadmpeg-fuzz/README.md)).
 - [ ] IR exactness is classified as `ByteExact`, `Derived`, `Inferred`, or `Unknown` accurately (decoder PRs).
 
