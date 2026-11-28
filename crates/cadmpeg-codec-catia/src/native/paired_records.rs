@@ -5,7 +5,7 @@ use super::entity_record::CatiaEntityRecord;
 use super::{CatiaEntityReference, CatiaObjectRecord};
 use crate::unique_index::UniqueIndex;
 
-pub(super) struct PairedRecords<'e, 'o> {
+pub(crate) struct PairedRecords<'e, 'o> {
     entities: UniqueIndex<(&'e str, u32), &'e CatiaEntityRecord>,
     entity_ids: UniqueIndex<&'e str, &'e CatiaEntityRecord>,
     objects: UniqueIndex<&'o str, &'o CatiaObjectRecord>,
@@ -13,7 +13,7 @@ pub(super) struct PairedRecords<'e, 'o> {
 }
 
 impl<'e, 'o> PairedRecords<'e, 'o> {
-    pub(super) fn new(
+    pub(crate) fn new(
         entities: &'e [CatiaEntityRecord],
         objects: &[&'o CatiaObjectRecord],
     ) -> Self {
@@ -32,7 +32,7 @@ impl<'e, 'o> PairedRecords<'e, 'o> {
         }
     }
 
-    pub(super) fn pair(
+    pub(crate) fn pair(
         &self,
         graph: &str,
         identity: u32,

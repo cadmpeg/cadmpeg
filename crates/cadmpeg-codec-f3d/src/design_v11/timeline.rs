@@ -296,8 +296,8 @@ fn stored(operation: &LegacyOperation, bodies: &BTreeSet<&str>) -> Option<Featur
 
 /// The feature of an item the v10 projection did not resolve: its record
 /// type's family, or a native operation named by that type, suppressed as
-/// its scope tail `flags` state or its Thread companion suppression flag
-/// `companion` states.
+/// its scope tail `flags` state or its Thread companion or reciprocal Hole
+/// tail states.
 fn unprojected_item(
     stream: &str,
     timeline: &DesignFeatureTimeline,
