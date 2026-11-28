@@ -859,14 +859,14 @@ fn chain_framing_reports_absent_and_unframed_histories() {
         truncated.extend(&state[..state.len() - 4]);
         assert!(matches!(
             frame_chain(&truncated, width).unwrap(),
-            ChainFraming::Unframed
+            ChainFraming::Unframed { .. }
         ));
         let mut bad_integer = bytes.clone();
         bad_integer.extend(&state);
         bad_integer[bytes.len() + 13] = 0x7f;
         assert!(matches!(
             frame_chain(&bad_integer, width).unwrap(),
-            ChainFraming::Unframed
+            ChainFraming::Unframed { .. }
         ));
         bytes.extend(&state);
         assert!(matches!(

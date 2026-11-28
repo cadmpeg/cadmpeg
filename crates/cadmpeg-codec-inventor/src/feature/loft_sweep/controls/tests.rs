@@ -303,7 +303,7 @@ fn native_loft_refusals_pin_the_operand_result_and_scalar_losses() {
     for reason in [
         NativeReason::ResultTopology,
         NativeReason::ResultStateFailed,
-        NativeReason::ResultStateBounded,
+        NativeReason::ResultStateBounded(StateLimit::Work),
         NativeReason::ResultJoin,
     ] {
         assert_eq!(
@@ -317,7 +317,7 @@ fn native_loft_refusals_pin_the_operand_result_and_scalar_losses() {
             "history state of the loft does not decode",
         ),
         (
-            NativeReason::ResultStateBounded,
+            NativeReason::ResultStateBounded(StateLimit::Work),
             "history state of the loft passed the local work cap of state views",
         ),
         (
