@@ -473,6 +473,9 @@ const FIRST_UNITS_LINE_SAVE_FORMAT: u32 = 200;
 /// The first save format whose major version selects the ASM branch.
 const FIRST_ASM_SAVE_FORMAT: u32 = 10_000;
 
+/// The first save format whose stream ends with a terminator line.
+const FIRST_TERMINATOR_SAVE_FORMAT: u32 = 106;
+
 fn push_diagnostic(
     diagnostics: &mut Vec<StreamDiagnostic>,
     kind: StreamDiagnosticKind,
@@ -782,9 +785,22 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                     return Err(error)
                 }
                 Err(error) => {
-                    push_diagnostic(&mut framing, StreamDiagnosticKind::Unread, unread_start, format_args!("the next stream header at byte {next} cannot select a native layout: {error}; the later stream is not read as records"));
+                    // `next_header` admits only a first line of four decimal
+                    // words, so a save-format word past `u32` is the one
+                    // well-formed header that selects no native layout.
+                    let layout = bytes[next..]
+                        .split(|byte| is_ws(*byte))
+                        .find(|word| !word.is_empty())
+                        .and_then(|word| std::str::from_utf8(word).ok())
+                        .is_some_and(|word| word.parse::<u32>().is_err());
+                    let what = if layout {
+                        "cannot select a native layout"
+                    } else {
+                        "does not parse"
+                    };
+                    push_diagnostic(&mut framing, StreamDiagnosticKind::Unread, unread_start, format_args!("the next stream header at byte {next} {what}: {error}; the later stream is not read as records"));
                     unread = Some(unread_start..bytes.len());
-                    unread_stream_layout = true;
+                    unread_stream_layout = layout;
                     break 'stream;
                 }
             };
@@ -955,6 +971,7 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                         );
                         unread = Some(start..bytes.len());
                     }
+                    None if header.save_format_version < FIRST_TERMINATOR_SAVE_FORMAT => {}
                     None => push_diagnostic(
                         &mut framing,
                         StreamDiagnosticKind::Terminator,
@@ -3163,6 +3180,21 @@ mod tests {
             stream.framing[0].kind,
             super::StreamDiagnosticKind::Terminator
         );
+    }
+
+    #[test]
+    fn a_stream_before_save_format_106_ends_after_its_last_record() {
+        let terminated = |text: &[u8]| {
+            let stream = parse(text).expect("complete records frame");
+            assert_eq!(stream.records.len(), 1);
+            assert!(!stream.has_terminator_line);
+            assert_eq!(stream.unread, None);
+            stream.framing.iter().any(|diagnostic| {
+                matches!(diagnostic.kind, super::StreamDiagnosticKind::Terminator)
+            })
+        };
+        assert!(!terminated(b"105 1 1 0 \nbody $-1 $-1 $-1 $-1 #\n"));
+        assert!(terminated(b"106 1 1 0 \nbody $-1 $-1 $-1 $-1 #\n"));
     }
 
     /// An inch stream: one stream unit is 25.4 mm, so a stream length is 2.54

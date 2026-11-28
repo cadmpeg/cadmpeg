@@ -12,7 +12,7 @@ use crate::ids::ProductDefinitionId;
 use crate::products::{ExternalDocument, ProductDefinition};
 use crate::report::loss::LossNote;
 use crate::report::Severity;
-use crate::unknown::part::record_unreadable_kind;
+use crate::unknown::part::{record_undecoded_kind, record_unreadable_kind};
 use crate::CadIr;
 
 fn definition(key: &str) -> ProductDefinitionId {
@@ -64,8 +64,8 @@ fn a_failed_projection_leaves_the_document_as_it_was_with_one_loss() {
     assert_eq!(ir.design.entity_count(), 0);
     assert_eq!(losses.len(), 2);
     assert_eq!(losses[0], kept_loss());
-    assert_eq!(losses[1].code, record_unreadable_kind());
-    assert_eq!(losses[1].severity, Severity::Error);
+    assert_eq!(losses[1].code, record_undecoded_kind());
+    assert_eq!(losses[1].severity, Severity::Warning);
     assert_eq!(
         losses[1].message,
         "test v11 design layer is not stated: malformed container: the third record has no frame"

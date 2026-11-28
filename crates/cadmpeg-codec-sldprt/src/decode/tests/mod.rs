@@ -7,17 +7,18 @@ fn empty_report(geometry_transferred: bool) -> cadmpeg_ir::codec::DecodeBody {
     ))
 }
 
-/// How many `record.unreadable` charges of `result` give a record up with
-/// `code` as their cause.
-fn given_up(result: &cadmpeg_ir::codec::DecodeResult, code: crate::loss::SldprtLossCode) -> usize {
-    let cause = format!(" given up: {}:", code.kind());
+/// How many `record.undecoded` charges of `result` give a record up for one
+/// of `causes`.
+fn given_up(result: &cadmpeg_ir::codec::DecodeResult, causes: &[&str]) -> usize {
     result
         .report()
         .losses
         .iter()
         .filter(|loss| {
-            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
-                && loss.message.contains(&cause)
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+                && causes
+                    .iter()
+                    .any(|cause| loss.message.contains(&format!(" given up: {cause}")))
         })
         .count()
 }

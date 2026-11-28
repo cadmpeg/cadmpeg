@@ -1051,6 +1051,32 @@ fn an_offset_free_framing_refusal_names_no_byte() {
     }
 }
 
+/// A framing refusal that names a form without a reading, or a decoder
+/// bound, stays undecoded inside a `SubD` payload; a scaled overflow is one.
+#[test]
+fn an_undecoded_framing_refusal_stays_undecoded() {
+    use crate::wire::DecoderBound;
+    for framing in [
+        FramingError::unsupported(7, "payload version is unsupported"),
+        FramingError::structural(7, "scaled SubD vertex is invalid").decoder_bound(),
+    ] {
+        let expected = framing.to_string();
+        let error = SubdError::from(framing);
+        assert!(
+            matches!(error, SubdError::Undecoded { ref message } if *message == expected),
+            "{error}"
+        );
+    }
+    assert!(matches!(
+        SubdError::Malformed {
+            offset: 7,
+            message: "scaled SubD vertex is invalid".to_owned(),
+        }
+        .decoder_bound(),
+        SubdError::Undecoded { ref message } if message == "scaled SubD vertex is invalid at byte 7"
+    ));
+}
+
 #[test]
 fn an_unresolved_component_pointer_names_no_byte() {
     let error = decode_fixture(

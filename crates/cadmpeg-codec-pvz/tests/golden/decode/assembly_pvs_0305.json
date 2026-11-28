@@ -497,18 +497,6 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "geometry.exact-undecoded",
-            "kind": "geometry_not_transferred",
-            "namespace": "pvz"
-          }
-        },
-        "message": "geometry member \"plate.ol\": exact-geometry stream 0x01000004 did not decode into B-rep (malformed container: exact stream does not end with its stream terminator); the member keeps its tessellation",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
             "code": "attributes.records-undecoded",
             "kind": "attributes_not_transferred",
             "namespace": "pvz"
@@ -575,7 +563,7 @@
             "strict_floor": "error"
           }
         },
-        "message": "part ol-stream stream=\"pvz:plate.ol\" offset=414 length=35 record=pvz:source:part#95c1ad136c77ca6873f674275c1a3430c189c05119636986f3226165b81542a4: malformed container: exact stream does not end with its stream terminator; dropped=[]",
+        "message": "part ol-stream stream=\"pvz:plate.ol\" offset=414 length=35 record=pvz:source:part#95c1ad136c77ca6873f674275c1a3430c189c05119636986f3226165b81542a4: malformed container: the exact-geometry stream did not decode into B-rep: malformed container: exact stream does not end with its stream terminator; the member keeps its tessellation; dropped=[]",
         "provenance": {
           "format": "pvz",
           "offset": 414,
