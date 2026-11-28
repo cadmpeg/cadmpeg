@@ -18,9 +18,11 @@ use std::collections::BTreeMap;
 use std::io::{self, Write};
 
 /// The deepest JSON a CADIR document holds, the root object included.
+// resource-cap: MAX_DOCUMENT_DEPTH = 1
 pub const MAX_DOCUMENT_DEPTH: usize = 128;
 
 /// The deepest expression tree a CADIR document holds, a leaf being one level.
+// resource-cap: MAX_EXPRESSION_DEPTH = 1
 pub const MAX_EXPRESSION_DEPTH: usize = 64;
 
 /// The least nesting the decode wrapper's digest walk admits: twice
@@ -72,13 +74,73 @@ fn admit_text(text: &str) -> Result<(), String> {
     Ok(())
 }
 
+const fn build_delim_table(include_comma: bool) -> [bool; 256] {
+    let mut table = [false; 256];
+    let mut i = 0;
+    while i < 256 {
+        table[i] = matches!(i, 0x22 | 0x7b | 0x5b | 0x7d | 0x5d) || (include_comma && i == 0x2c);
+        i += 1;
+    }
+    table
+}
+
+/// Byte lookup for JSON structural delimiters outside a string when commas do
+/// not matter (`"`, `{`, `[`, `}`, `]`).
+const DEEP_DELIM: [bool; 256] = build_delim_table(false);
+
+/// Byte lookup for JSON structural delimiters outside a string when commas
+/// advance followed container members (`"`, `{`, `[`, `}`, `]`, `,`).
+const SHALLOW_DELIM: [bool; 256] = build_delim_table(true);
+
 /// The depth of JSON text (§2.5), read without parsing it.
 pub(crate) fn text_depth(text: &str) -> usize {
-    let mut scan = Scan::default();
-    let mut deepest = 0;
-    for &byte in text.as_bytes() {
-        scan.byte(byte);
-        deepest = deepest.max(scan.depth);
+    let bytes = text.as_bytes();
+    let mut pos = 0;
+    let mut depth = 0_usize;
+    let mut deepest = 0_usize;
+    while pos < bytes.len() {
+        while pos < bytes.len() && !DEEP_DELIM[usize::from(bytes[pos])] {
+            pos += 1;
+        }
+        if pos >= bytes.len() {
+            break;
+        }
+        match bytes[pos] {
+            b'"' => {
+                pos += 1;
+                let mut terminated = false;
+                while let Some(hit) = memchr::memchr2(b'"', b'\\', &bytes[pos..]) {
+                    if bytes[pos + hit] == b'\\' {
+                        pos += hit + 2;
+                        if pos >= bytes.len() {
+                            pos = bytes.len();
+                            break;
+                        }
+                    } else {
+                        pos += hit + 1;
+                        terminated = true;
+                        break;
+                    }
+                }
+                if !terminated {
+                    pos = bytes.len();
+                }
+            }
+            b'{' | b'[' => {
+                depth += 1;
+                deepest = deepest.max(depth);
+                pos += 1;
+            }
+            b'}' | b']' => {
+                if let Some(next) = depth.checked_sub(1) {
+                    depth = next;
+                }
+                pos += 1;
+            }
+            _ => {
+                pos += 1;
+            }
+        }
     }
     deepest
 }
@@ -129,6 +191,21 @@ pub(crate) fn note_expression_past() {
 
 pub(crate) fn take_expression_past() -> bool {
     EXPRESSION_PAST.with(|past| past.replace(false))
+}
+
+thread_local! {
+    static EXPRESSION_REFUSED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Notes that the text of an expression deeper than
+/// [`MAX_EXPRESSION_DEPTH`] was refused. The CADIR reader gives up the record
+/// that holds it as undecoded (§3.3).
+pub(crate) fn note_expression_refused() {
+    EXPRESSION_REFUSED.with(|refused| refused.set(true));
+}
+
+pub(crate) fn take_expression_refused() -> bool {
+    EXPRESSION_REFUSED.with(|refused| refused.replace(false))
 }
 
 /// The depth bound of §2.5 that a record or a document passes.
@@ -348,21 +425,113 @@ impl<W: Write> Measure<W> {
         }
     }
 
-    fn byte(&mut self, byte: u8) {
-        let in_string = self.scan.string;
-        self.scan.byte(byte);
-        if in_string {
-            if self.in_key {
-                if self.scan.string {
-                    if let Some(level) = self.levels.last_mut() {
-                        level.key.push(byte);
+    fn scan_bytes(&mut self, mut bytes: &[u8]) {
+        while !bytes.is_empty() {
+            if self.scan.string {
+                if self.scan.escaped {
+                    self.scan.escaped = false;
+                    if self.in_key {
+                        if let Some(level) = self.levels.last_mut() {
+                            level.key.push(bytes[0]);
+                        }
                     }
-                } else {
-                    self.in_key = false;
+                    bytes = &bytes[1..];
+                    continue;
                 }
+                match memchr::memchr2(b'"', b'\\', bytes) {
+                    None => {
+                        if self.in_key {
+                            if let Some(level) = self.levels.last_mut() {
+                                level.key.extend_from_slice(bytes);
+                            }
+                        }
+                        return;
+                    }
+                    Some(pos) => {
+                        if self.in_key {
+                            if let Some(level) = self.levels.last_mut() {
+                                level.key.extend_from_slice(&bytes[..pos]);
+                            }
+                        }
+                        if bytes[pos] == b'\\' {
+                            if self.in_key {
+                                if let Some(level) = self.levels.last_mut() {
+                                    level.key.push(b'\\');
+                                    if pos + 1 < bytes.len() {
+                                        level.key.push(bytes[pos + 1]);
+                                    }
+                                }
+                            }
+                            if pos + 1 < bytes.len() {
+                                bytes = &bytes[pos + 2..];
+                            } else {
+                                self.scan.escaped = true;
+                                return;
+                            }
+                        } else {
+                            self.scan.string = false;
+                            self.in_key = false;
+                            bytes = &bytes[pos + 1..];
+                        }
+                    }
+                }
+                continue;
             }
-            return;
+
+            if self.scan.depth > FOLLOWED {
+                let mut pos = 0;
+                while pos < bytes.len() {
+                    while pos < bytes.len() && !DEEP_DELIM[usize::from(bytes[pos])] {
+                        pos += 1;
+                    }
+                    if pos >= bytes.len() {
+                        return;
+                    }
+                    let byte = bytes[pos];
+                    pos += 1;
+                    match byte {
+                        b'"' => {
+                            self.scan.string = true;
+                            bytes = &bytes[pos..];
+                            break;
+                        }
+                        b'{' | b'[' => {
+                            self.scan.depth += 1;
+                            if self.scan.depth > MAX_DOCUMENT_DEPTH {
+                                self.mark(Bound::Document);
+                            }
+                        }
+                        b'}' | b']' => {
+                            self.scan.depth -= 1;
+                            if self.scan.depth <= FOLLOWED {
+                                bytes = &bytes[pos..];
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                    if pos >= bytes.len() {
+                        return;
+                    }
+                }
+                continue;
+            }
+
+            let mut pos = 0;
+            while pos < bytes.len() && !SHALLOW_DELIM[usize::from(bytes[pos])] {
+                pos += 1;
+            }
+            if pos >= bytes.len() {
+                return;
+            }
+            let byte = bytes[pos];
+            bytes = &bytes[pos + 1..];
+            self.outside_delim(byte);
         }
+    }
+
+    fn outside_delim(&mut self, byte: u8) {
+        self.scan.byte(byte);
         let followed = self.levels.len() == self.scan.depth;
         match byte {
             b'"' => {
@@ -420,9 +589,7 @@ impl<W: Write> Measure<W> {
 impl<W: Write> Write for Measure<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let written = self.inner.write(buf)?;
-        for &byte in &buf[..written] {
-            self.byte(byte);
-        }
+        self.scan_bytes(&buf[..written]);
         Ok(written)
     }
 

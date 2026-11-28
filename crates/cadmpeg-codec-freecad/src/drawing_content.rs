@@ -181,7 +181,7 @@ fn template(
         .iter()
         .map(|field| (field.name.as_str(), field.value.as_str()))
         .collect();
-    svg::parse(&xml, size, &editable, owner, losses).map(Some)
+    svg::parse(xml.tree(), size, &editable, owner, losses).map(Some)
 }
 
 fn font_family(property: &PropertyRecord) -> Option<String> {

@@ -17,6 +17,117 @@ use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::FiniteVector;
 
+cadmpeg_core::named_optional_field!(deserialize_allocation_owner<T>, T, "allocation_owner");
+cadmpeg_core::named_optional_field!(deserialize_body_selector<T>, T, "body_selector");
+cadmpeg_core::named_optional_field!(deserialize_boundary_cycle<T>, T, "boundary_cycle");
+cadmpeg_core::named_optional_field!(
+    deserialize_canonical_surface_tag<T>,
+    T,
+    "canonical_surface_tag"
+);
+cadmpeg_core::named_optional_field!(deserialize_catalog<T>, T, "catalog");
+cadmpeg_core::named_optional_field!(deserialize_catalog_byte_offset<T>, T, "catalog_byte_offset");
+cadmpeg_core::named_optional_field!(deserialize_class_entry<T>, T, "class_entry");
+cadmpeg_core::named_optional_field!(deserialize_class_name<T>, T, "class_name");
+cadmpeg_core::named_optional_field!(deserialize_design_object<T>, T, "design_object");
+cadmpeg_core::named_optional_field!(deserialize_endpoint_loci<T>, T, "endpoint_loci");
+cadmpeg_core::named_optional_field!(deserialize_endpoint_record<T>, T, "endpoint_record");
+cadmpeg_core::named_optional_field!(deserialize_entity<T>, T, "entity");
+cadmpeg_core::named_optional_field!(deserialize_entity_id<T>, T, "entity_id");
+cadmpeg_core::named_optional_field!(deserialize_entity_record<T>, T, "entity_record");
+cadmpeg_core::named_optional_field!(deserialize_entry<T>, T, "entry");
+cadmpeg_core::named_optional_field!(deserialize_face<T>, T, "face");
+cadmpeg_core::named_optional_field!(deserialize_face_node<T>, T, "face_node");
+cadmpeg_core::named_optional_field!(deserialize_field<T>, T, "field");
+cadmpeg_core::named_optional_field!(deserialize_field_class<T>, T, "field_class");
+cadmpeg_core::named_optional_field!(deserialize_field_code<T>, T, "field_code");
+cadmpeg_core::named_optional_field!(deserialize_finjpl_segment<T>, T, "finjpl_segment");
+cadmpeg_core::named_optional_field!(deserialize_group<T>, T, "group");
+cadmpeg_core::named_optional_field!(deserialize_inline_body<T>, T, "inline_body");
+cadmpeg_core::named_optional_field!(deserialize_inputs<T>, T, "inputs");
+cadmpeg_core::named_optional_field!(
+    deserialize_lead12_context_entity<T>,
+    T,
+    "lead12_context_entity"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_lead54_trailing_entity<T>,
+    T,
+    "lead54_trailing_entity"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_matching_design_object<T>,
+    T,
+    "matching_design_object"
+);
+cadmpeg_core::named_optional_field!(deserialize_model_curve<T>, T, "model_curve");
+cadmpeg_core::named_optional_field!(
+    deserialize_model_curve_construction<T>,
+    T,
+    "model_curve_construction"
+);
+cadmpeg_core::named_optional_field!(deserialize_model_endpoints<T>, T, "model_endpoints");
+cadmpeg_core::named_optional_field!(deserialize_model_midpoint<T>, T, "model_midpoint");
+cadmpeg_core::named_optional_field!(deserialize_model_parameters<T>, T, "model_parameters");
+cadmpeg_core::named_optional_field!(deserialize_name<T>, T, "name");
+cadmpeg_core::named_optional_field!(deserialize_name_field<T>, T, "name_field");
+cadmpeg_core::named_optional_field!(deserialize_nominal<T>, T, "nominal");
+cadmpeg_core::named_optional_field!(deserialize_object_graph<T>, T, "object_graph");
+cadmpeg_core::named_optional_field!(deserialize_object_record<T>, T, "object_record");
+cadmpeg_core::named_optional_field!(deserialize_outer_container<T>, T, "outer_container");
+cadmpeg_core::named_optional_field!(deserialize_output<T>, T, "output");
+cadmpeg_core::named_optional_field!(deserialize_output_entity<T>, T, "output_entity");
+cadmpeg_core::named_optional_field!(deserialize_owner<T>, T, "owner");
+cadmpeg_core::named_optional_field!(deserialize_owner_chart<T>, T, "owner_chart");
+cadmpeg_core::named_optional_field!(deserialize_owner_class<T>, T, "owner_class");
+cadmpeg_core::named_optional_field!(deserialize_owner_design_object<T>, T, "owner_design_object");
+cadmpeg_core::named_optional_field!(deserialize_owner_record<T>, T, "owner_record");
+cadmpeg_core::named_optional_field!(deserialize_owner_storage_ref<T>, T, "owner_storage_ref");
+cadmpeg_core::named_optional_field!(
+    deserialize_parallel_reference_table<T>,
+    T,
+    "parallel_reference_table"
+);
+cadmpeg_core::named_optional_field!(deserialize_parameter_entity_id<T>, T, "parameter_entity_id");
+cadmpeg_core::named_optional_field!(deserialize_parameter_selector<T>, T, "parameter_selector");
+cadmpeg_core::named_optional_field!(deserialize_pcurve<T>, T, "pcurve");
+cadmpeg_core::named_optional_field!(deserialize_profile_circle<T>, T, "profile_circle");
+cadmpeg_core::named_optional_field!(deserialize_project_target<T>, T, "project_target");
+cadmpeg_core::named_optional_field!(deserialize_relation_expression<T>, T, "relation_expression");
+cadmpeg_core::named_optional_field!(
+    deserialize_repeated_reference_schema_selection<T>,
+    T,
+    "repeated_reference_schema_selection"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_repeated_reference_suffix<T>,
+    T,
+    "repeated_reference_suffix"
+);
+cadmpeg_core::named_optional_field!(deserialize_role<T>, T, "role");
+cadmpeg_core::named_optional_field!(deserialize_schema_program<T>, T, "schema_program");
+cadmpeg_core::named_optional_field!(deserialize_schema_selection<T>, T, "schema_selection");
+cadmpeg_core::named_optional_field!(deserialize_shared_loci<T>, T, "shared_loci");
+cadmpeg_core::named_optional_field!(deserialize_signature<T>, T, "signature");
+cadmpeg_core::named_optional_field!(deserialize_sketch_membership<T>, T, "sketch_membership");
+cadmpeg_core::named_optional_field!(deserialize_source_class<T>, T, "source_class");
+cadmpeg_core::named_optional_field!(deserialize_source_entity<T>, T, "source_entity");
+cadmpeg_core::named_optional_field!(
+    deserialize_storage_design_object<T>,
+    T,
+    "storage_design_object"
+);
+cadmpeg_core::named_optional_field!(deserialize_storage_record<T>, T, "storage_record");
+cadmpeg_core::named_optional_field!(deserialize_target<T>, T, "target");
+cadmpeg_core::named_optional_field!(deserialize_target_class<T>, T, "target_class");
+cadmpeg_core::named_optional_field!(
+    deserialize_target_design_object<T>,
+    T,
+    "target_design_object"
+);
+cadmpeg_core::named_optional_field!(deserialize_uv_endpoints<T>, T, "uv_endpoints");
+cadmpeg_core::named_optional_field!(deserialize_vertex_record<T>, T, "vertex_record");
+
 pub(crate) mod projection;
 use projection::{
     consolidated_edge_nodes, consolidated_edge_runs, consolidated_owner_packets,
@@ -68,6 +179,9 @@ use e5_curve_support::CatiaE5CurveSupportRecord;
 use e5_edge::CatiaE5EdgeRecord;
 use e5_nurbs_limits::CatiaE5NurbsLimitRecord;
 
+pub(crate) mod feature_tree;
+use feature_tree::CatiaFeatureContainer;
+
 pub(crate) mod entity_record;
 use entity_record::{
     CatiaEntityObjectProduction, CatiaEntityRecord, CatiaEntityRecordBody, CatiaEntityRecordWire,
@@ -80,7 +194,7 @@ use zero_entity_allocation::CatiaZeroEntityAllocationEdge;
 pub(crate) mod inline_field;
 use inline_field::CatiaInlineField;
 
-mod paired_records;
+pub(crate) mod paired_records;
 pub(crate) mod project_range;
 pub(crate) mod schema_configuration_chain;
 pub(crate) mod schema_configuration_roles;
@@ -334,7 +448,11 @@ struct CatiaOwnerBoundaryEdge {
 struct CatiaOwnerBoundaryCycle {
     /// Source-scoped class-`0x5f` face node that precedes this boundary
     /// allocation and closes its checked identity, when present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_face_node"
+    )]
     face_node: Option<CatiaFaceNodeRelation>,
     /// Four edge targets in fixed-nine slot order.
     edges: [CatiaOwnerBoundaryEdge; 4],
@@ -402,11 +520,23 @@ struct CatiaConsolidatedOwnerPacketWire {
     payload: CatiaOwnerPacketPayload,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     identity_targets: Vec<CatiaOwnerIdentityTarget>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_face_node"
+    )]
     face_node: Option<CatiaFaceNodeRelation>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_owner_chart"
+    )]
     owner_chart: Option<CatiaOwnerChartRelation>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_boundary_cycle"
+    )]
     boundary_cycle: Option<CatiaOwnerBoundaryCycle>,
 }
 
@@ -1298,7 +1428,11 @@ pub(crate) struct CatiaConsolidatedRevolution {
     /// Stored profile parameter interval.
     profile_range: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Unique consolidated circle with the same stored profile interval.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_profile_circle"
+    )]
     profile_circle: Option<String>,
     /// Positive scale from revolution angle to stored angular parameter.
     angular_scale: cadmpeg_ir::scalar::PositiveReal,
@@ -1324,10 +1458,18 @@ pub(crate) struct CatiaConsolidatedEdgeRun {
     #[serde(default)]
     pub(crate) support_bindings: [Option<CatiaConsolidatedSupportBinding>; 2],
     /// Index-aligned 3D loci shared by every resolved support side.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_shared_loci"
+    )]
     pub(crate) shared_loci: Option<Vec<[f64; 3]>>,
     /// First and last shared loci in endpoint pair direction.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_endpoint_loci"
+    )]
     pub(crate) endpoint_loci: Option<[[f64; 3]; 2]>,
 }
 
@@ -1443,13 +1585,21 @@ pub(crate) struct CatiaConsolidatedVertexIdentity {
     /// Bounded record source that owns this identity namespace.
     source_index: usize,
     /// Resolved structural endpoint record, when available.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_endpoint_record"
+    )]
     endpoint_record: Option<u64>,
     /// Raw endpoint-address operands associated with this identity.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     reference_values: Vec<u32>,
     /// Compact allocation scope for the identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_allocation_owner"
+    )]
     allocation_owner: Option<String>,
     /// Incident consolidated edge nodes in source order.
     incident_edge_nodes: Vec<String>,
@@ -1512,7 +1662,11 @@ pub(crate) struct CatiaFinjplSegment {
     /// Structural type family.
     family: String,
     /// Stored primary name, when the printable-ASCII name form is present.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_name"
+    )]
     name: Option<String>,
     /// Complete segment bytes from marker through the byte before the next segment.
     data: NativeBytes<Vec<u8>>,
@@ -1624,17 +1778,37 @@ struct CatiaAliasRowWire {
     flag: u8,
     f1: NativeBytes<[u8; 3]>,
     entity_record_ordinal: u8,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_object_graph"
+    )]
     object_graph: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_object_record"
+    )]
     object_record: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_design_object"
+    )]
     design_object: Option<String>,
     f2: u32,
     f3: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_group"
+    )]
     group: Option<AliasGroupMembership>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_canonical_surface_tag"
+    )]
     canonical_surface_tag: Option<u32>,
 }
 
@@ -1793,7 +1967,11 @@ struct CatiaValueBlockWire {
     /// Stored length from the marker through the byte before the terminator.
     declared_len: u64,
     /// Object graph ending exactly where this value block begins.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_object_graph"
+    )]
     object_graph: Option<String>,
     /// Source-schema catalog that begins immediately after this block.
     catalog: String,
@@ -1911,9 +2089,17 @@ struct CatiaValueSchemaSelectionWire {
     parent: String,
     offset: u64,
     ordinal: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_entry"
+    )]
     entry: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_name"
+    )]
     name: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     encoded_value: Vec<value_block::ValueField>,
@@ -2103,10 +2289,18 @@ pub(crate) struct CatiaDefinitionSchemaSelection {
     /// Stored zero-based source-schema ordinal.
     pub(crate) ordinal: u32,
     /// Selected catalog entry when the ordinal is in range.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_entry"
+    )]
     pub(crate) entry: Option<String>,
     /// UTF-8 source-schema name stored by the selected entry.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_name"
+    )]
     pub(crate) name: Option<String>,
 }
 
@@ -2139,10 +2333,18 @@ pub(crate) struct CatiaRepeatedReferenceSchemaSelection {
     /// Stored zero-based source-schema ordinal.
     ordinal: u32,
     /// Selected catalog entry when the ordinal is in range.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_entry"
+    )]
     entry: Option<String>,
     /// UTF-8 source-schema name stored by the selected entry.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_name"
+    )]
     name: Option<String>,
 }
 
@@ -2201,7 +2403,11 @@ pub(super) struct CatiaRelationExpressionWire {
     expression: CatiaEntitySchemaValue,
     parameter_role: CatiaEntitySchemaValue,
     type_signature: CatiaEntitySchemaValue,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_signature"
+    )]
     signature: Option<CatiaRelationTypeSignature>,
     function_role: CatiaEntitySchemaValue,
 }
@@ -2514,7 +2720,11 @@ pub(crate) struct CatiaRangeInterval {
     /// Complete selected interval framing and nullable slots.
     pub(crate) interval: entity_table::RangeInterval,
     /// Finite nominal carried by an admitted scalar suffix dialect.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_nominal"
+    )]
     pub(crate) nominal: Option<CatiaRangeNominal>,
     /// Exact same-graph payload-reference occurrences selecting this interval.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -2523,7 +2733,11 @@ pub(crate) struct CatiaRangeInterval {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) incoming_storage_references: Vec<CatiaEntityIncomingStorageReference>,
     /// Complete same-storage `GSMProject` frame and cylinder-face incidence.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_project_target"
+    )]
     pub(crate) project_target: Option<project_range::ProjectRangeTarget>,
 }
 
@@ -2595,7 +2809,11 @@ pub(crate) struct CatiaEntityIncomingReference {
     /// Object record carrying the reference occurrence.
     pub(crate) object_record: String,
     /// Entity paired with the source object record when that record has an identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_source_entity"
+    )]
     pub(crate) source_entity: Option<CatiaEntityReference>,
     /// Byte offset of the reference field within that object's payload.
     pub(crate) payload_offset: u64,
@@ -2609,7 +2827,11 @@ pub(crate) struct CatiaEntityIncomingStorageReference {
     /// Object record carrying the storage selector.
     pub(crate) object_record: String,
     /// Entity paired with the source object record when that record has an identity.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_source_entity"
+    )]
     pub(crate) source_entity: Option<CatiaEntityReference>,
 }
 
@@ -2621,7 +2843,11 @@ pub(crate) struct CatiaDefinitionValue {
     /// Complete typed suffix payload bound to the definition.
     pub(crate) payload: CatiaEntitySuffixPayload,
     /// Catalog-resolved selector when the payload is schema-selected.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_schema_selection"
+    )]
     pub(crate) schema_selection: Option<CatiaEntitySuffixSchemaSelection>,
 }
 
@@ -2769,9 +2995,9 @@ impl CatiaRelationProgramInstance {
 pub(super) struct CatiaRelationProgramInstanceWire {
     #[serde(default)]
     framing: CatiaRelationProgramInstanceFramingTag,
-    #[serde(default)]
+    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
     program_entity: Option<CatiaEntityReference>,
-    #[serde(default)]
+    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
     repeated_entity: Option<CatiaEntityReference>,
     #[serde(
         default,
@@ -2779,17 +3005,37 @@ pub(super) struct CatiaRelationProgramInstanceWire {
         deserialize_with = "deserialize_relation_reference_incidences"
     )]
     reference_incidences: Vec<CatiaPayloadEntityReference>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_relation_expression"
+    )]
     relation_expression: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     parameter_dependencies: Vec<CatiaRelationParameterDependency>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_inputs"
+    )]
     inputs: Option<Vec<CatiaRelationProgramInput>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_output_entity"
+    )]
     output_entity: Option<CatiaEntityReference>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_lead12_context_entity"
+    )]
     lead12_context_entity: Option<CatiaEntityReference>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_lead54_trailing_entity"
+    )]
     lead54_trailing_entity: Option<CatiaEntityReference>,
 }
 
@@ -3026,9 +3272,17 @@ struct CatiaEntityReferenceWire {
     entity_id: u32,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     is_null: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_entity"
+    )]
     entity: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_class_name"
+    )]
     class_name: Option<String>,
 }
 
@@ -3198,7 +3452,11 @@ struct CatiaReferenceSignatureCohortWire {
     /// Common same-graph incidence selected by the second identity.
     second_entity: CatiaEntityReference,
     /// Unique schema selected by descriptor-bearing members after `_SpecList`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_schema_selection"
+    )]
     schema_selection: Option<CatiaReferenceSignatureSchemaSelection>,
     /// Descriptor-bearing entity records in source order.
     members: Vec<String>,
@@ -3349,16 +3607,32 @@ pub(crate) struct CatiaObjectGraph {
     /// Total framed byte length.
     pub(crate) byte_len: u64,
     /// Physically containing FINJPL segment, when the graph is not in the outer preamble.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_finjpl_segment"
+    )]
     pub(crate) finjpl_segment: Option<String>,
     /// Exact declared outer container whose physical stream contains this graph.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_outer_container"
+    )]
     pub(crate) outer_container: Option<CatiaOuterContainerBinding>,
     /// Byte offset of the associated schema catalog.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_catalog_byte_offset"
+    )]
     pub(crate) catalog_byte_offset: Option<u64>,
     /// Associated schema catalog.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_catalog"
+    )]
     pub(crate) catalog: Option<String>,
     /// Consecutive `7C09` records in serialized order.
     #[serde(default)]
@@ -3531,35 +3805,79 @@ impl CatiaObjectRecord {
 struct CatiaObjectRecordWire {
     id: String,
     parent: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_design_object"
+    )]
     design_object: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_entity_record"
+    )]
     entity_record: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_entity_id"
+    )]
     entity_id: Option<u32>,
     ordinal: u64,
     byte_offset: u64,
     byte_len: u64,
     lead: u8,
     head: Vec<HeadToken>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_inline_body"
+    )]
     inline_body: Option<NativeBytes<Vec<u8>>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_owner"
+    )]
     owner: Option<CatiaObjectOwner>,
     class_ref: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_class_name"
+    )]
     class_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_class_entry"
+    )]
     class_entry: Option<String>,
     storage_ref: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_storage_record"
+    )]
     storage_record: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_storage_design_object"
+    )]
     storage_design_object: Option<String>,
     payload: ObjectPayload,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_repeated_reference_suffix"
+    )]
     repeated_reference_suffix: Option<object_graph::RepeatedReferenceSuffix>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_repeated_reference_schema_selection"
+    )]
     repeated_reference_schema_selection: Option<CatiaRepeatedReferenceSchemaSelection>,
     subtype: PayloadSubtype,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -3795,9 +4113,17 @@ struct CatiaObjectRecordReferenceWire {
     source: CatiaObjectRecordReferenceSource,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     is_null: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_target"
+    )]
     target: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_design_object"
+    )]
     design_object: Option<String>,
 }
 
@@ -3919,7 +4245,11 @@ pub(crate) struct CatiaDesignObjectRelation {
     /// Field record containing the relation.
     pub(crate) source_field: String,
     /// Exact schema class of the source field.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_source_class"
+    )]
     pub(crate) source_class: Option<CatiaDesignClass>,
     /// Structural source of the relation occurrence.
     pub(crate) source: CatiaDesignObjectRelationSource,
@@ -3928,10 +4258,18 @@ pub(crate) struct CatiaDesignObjectRelation {
     /// Exact field record selected by the stored identity.
     pub(crate) target_field: String,
     /// Exact schema class of the selected target field.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_target_class"
+    )]
     pub(crate) target_class: Option<CatiaDesignClass>,
     /// Design object containing the selected field record, when it has an owner group.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_target_design_object"
+    )]
     pub(crate) target_design_object: Option<String>,
 }
 
@@ -4100,11 +4438,23 @@ struct CatiaDesignReferenceCellWire {
     entity_id: u32,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     is_null: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_field"
+    )]
     field: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_field_class"
+    )]
     field_class: Option<CatiaDesignClass>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_design_object"
+    )]
     design_object: Option<String>,
 }
 
@@ -4217,7 +4567,11 @@ pub(crate) struct CatiaDesignReferenceRow {
     /// Cells in the order of the table's source fields.
     pub(crate) cells: Vec<CatiaDesignReferenceCell>,
     /// Design object containing distinct selected fields whose classes equal every column class.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_matching_design_object"
+    )]
     pub(crate) matching_design_object: Option<String>,
 }
 
@@ -4227,7 +4581,11 @@ pub(crate) struct CatiaDesignReferenceColumn {
     /// Source field record containing the reference list.
     field: String,
     /// Exact source field class when its schema ordinal resolves.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_field_class"
+    )]
     pub(crate) field_class: Option<CatiaDesignClass>,
     /// Byte offset of the list tag within the source field's payload.
     #[serde(default)]
@@ -4350,16 +4708,32 @@ pub(crate) struct CatiaDesignObject {
     /// Owner entity identity stored by every field record.
     pub(crate) owner_entity_id: u32,
     /// Record selected by `owner_entity_id` when it lies inside the graph.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_owner_record"
+    )]
     pub(crate) owner_record: Option<String>,
     /// Design object whose field set contains `owner_record`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_owner_design_object"
+    )]
     pub(crate) owner_design_object: Option<String>,
     /// Exact class of a separator-form owner declaration.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_owner_class"
+    )]
     pub(crate) owner_class: Option<CatiaDesignClass>,
     /// Class-specific storage selector of a separator-form owner declaration.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_owner_storage_ref"
+    )]
     pub(crate) owner_storage_ref: Option<u32>,
     /// Field records carrying this owner identity, in serialized order.
     pub(crate) fields: Vec<String>,
@@ -4376,9 +4750,17 @@ pub(crate) struct CatiaDesignObject {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) relations: Vec<CatiaDesignObjectRelation>,
     /// Complete row-aligned table formed by parallel all-reference list fields.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_parallel_reference_table"
+    )]
     pub(crate) parallel_reference_table: Option<CatiaDesignParallelReferenceTable>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_sketch_membership"
+    )]
     pub(crate) sketch_membership: Option<Box<sketch_bindings::CatiaSketchMembership>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) local_point_pairs: Vec<sketch_bindings::CatiaLocalPointPair>,
@@ -4696,7 +5078,7 @@ fn record_has_separator_roles(record: &CatiaObjectRecord) -> bool {
     matches!(record.head.get(1), Some(HeadToken::Separator))
 }
 
-fn design_object_id(graph_offset: u64, owner_entity_id: u32) -> String {
+pub(crate) fn design_object_id(graph_offset: u64, owner_entity_id: u32) -> String {
     format!("catia:outer:design-object#{graph_offset:010}-{owner_entity_id:010}")
 }
 
@@ -6343,6 +6725,7 @@ enum RelationExpressionKey<'a> {
 /// Dependency text all relations may keep, per input byte. Many relations can
 /// share one expression and one symbol can bind many same-named parameters, so
 /// the copies grow with the product of those counts.
+// resource-cap: MAX_RELATION_DEPENDENCY_BYTES_PER_INPUT_BYTE = 4
 pub(crate) const MAX_RELATION_DEPENDENCY_BYTES_PER_INPUT_BYTE: usize = 4;
 
 /// Parameter dependencies of relation expressions.
@@ -6726,7 +7109,11 @@ pub(crate) struct CatiaLegacyRoleSelector {
     /// Stored selector following the role name.
     pub(crate) selector: u32,
     /// Field code when an `E8 <field-code:u16le> 01` opener follows immediately.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_field_code"
+    )]
     pub(crate) field_code: Option<u16>,
 }
 
@@ -6752,7 +7139,11 @@ pub(crate) struct CatiaLegacyTextField {
     /// Text framing production.
     pub(crate) encoding: CatiaLegacyTextEncoding,
     /// Immediately preceding length-framed role and selector.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_role"
+    )]
     pub(crate) role: Option<CatiaLegacyRoleSelector>,
     /// Decoded UTF-8 value.
     pub(crate) value: String,
@@ -6808,13 +7199,25 @@ pub(crate) struct CatiaLegacyRelation {
     /// Stored owner identity.
     entity_id: u32,
     /// Selector carried by the expression field's `body` role.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_body_selector"
+    )]
     body_selector: Option<u32>,
     /// Selector carried by the type-signature field's `param` role.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_parameter_selector"
+    )]
     parameter_selector: Option<u32>,
     /// Parameter identity selected by exact self-`body` and target-`param` roles.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_parameter_entity_id"
+    )]
     pub(crate) parameter_entity_id: Option<u32>,
     /// Expression-field opener offset.
     pub(crate) expression_offset: u64,
@@ -6827,7 +7230,11 @@ pub(crate) struct CatiaLegacyRelation {
     /// Ordered input parameters.
     pub(crate) inputs: Vec<CatiaLegacyRelationParameter>,
     /// Output parameter for a `VoidType` relation.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_output"
+    )]
     pub(crate) output: Option<CatiaLegacyRelationParameter>,
     /// Source result type.
     pub(crate) result_type: String,
@@ -6906,10 +7313,18 @@ pub(crate) struct CatiaLegacyScalarValue {
     /// Fixed scalar-prefix production.
     pub(crate) encoding: CatiaLegacyScalarEncoding,
     /// Unique co-owned `name` text field.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_name_field"
+    )]
     name_field: Option<u64>,
     /// Unique co-owned stored name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_name"
+    )]
     pub(crate) name: Option<String>,
     /// Stored evaluation.
     pub(crate) evaluation: CatiaLegacyScalarEvaluation,
@@ -6925,10 +7340,18 @@ pub(crate) struct CatiaLegacyStringValue {
     /// Stored containing identity.
     pub(crate) entity_id: u32,
     /// Unique co-owned `name` text field.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_name_field"
+    )]
     pub(crate) name_field: Option<u64>,
     /// Unique co-owned stored name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_name"
+    )]
     pub(crate) name: Option<String>,
     /// Stored UTF-8 value.
     pub(crate) value: String,
@@ -6956,10 +7379,18 @@ pub(crate) struct CatiaLegacyIntegerValue {
     /// Stored integer encoding.
     encoding: CatiaLegacyIntegerEncoding,
     /// Unique co-owned `name` text field.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_name_field"
+    )]
     pub(crate) name_field: Option<u64>,
     /// Unique co-owned stored name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_name"
+    )]
     pub(crate) name: Option<String>,
     /// Stored signed value.
     pub(crate) value: i32,
@@ -6977,10 +7408,18 @@ pub(crate) struct CatiaLegacyEntityRun {
     /// Offset of the fixed schema-catalog opening production.
     pub(crate) catalog_offset: u64,
     /// Complete compact schema program following the catalog opener.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_schema_program"
+    )]
     pub(crate) schema_program: Option<CatiaLegacySchemaProgram>,
     /// Exact declared outer container whose physical stream contains this run.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_outer_container"
+    )]
     pub(crate) outer_container: Option<CatiaOuterContainerBinding>,
     /// Stored identities in source order.
     pub(crate) identities: Vec<CatiaLegacyEntityIdentity>,
@@ -7021,26 +7460,54 @@ pub(crate) struct CatiaZeroEntitySupportOccurrence {
     /// Face-local support slot stored at record offset 12.
     pub(crate) face_local_slot: u32,
     /// Stored UV endpoints when the record family carries them inline.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_uv_endpoints"
+    )]
     pub(crate) uv_endpoints: Option<[[FiniteReal; 2]; 2]>,
     /// Complete parameter-space curve carried by the support record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_pcurve"
+    )]
     pub(crate) pcurve: Option<cadmpeg_ir::geometry::pcurve::PcurveGeometry>,
     /// Exact model-space carrier derived from the pcurve and owning surface.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_model_curve"
+    )]
     pub(crate) model_curve: Option<cadmpeg_ir::geometry::CurveGeometry>,
     /// Exact procedural model-space carrier derived from the pcurve and owning surface.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_model_curve_construction"
+    )]
     pub(crate) model_curve_construction:
         Option<cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition>,
     /// Model-carrier parameters at the two stored UV endpoints.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_model_parameters"
+    )]
     pub(crate) model_parameters: Option<[FiniteReal; 2]>,
     /// Surface point at the midpoint of the bounded pcurve parameter interval.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_model_midpoint"
+    )]
     pub(crate) model_midpoint: Option<FinitePoint3>,
     /// UV endpoints lifted through the owning surface carrier.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_model_endpoints"
+    )]
     pub(crate) model_endpoints: Option<[FinitePoint3; 2]>,
 }
 
@@ -7105,7 +7572,11 @@ pub(crate) struct CatiaZeroEntitySupportRun {
     /// One-based global record ordinal of the owning surface carrier.
     pub(crate) carrier_record_ordinal: u32,
     /// Positionally aligned face record when the complete rosters agree.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_face"
+    )]
     pub(crate) face: Option<CatiaZeroEntityFace>,
     /// Face-local support occurrences in storage order.
     pub(crate) supports: Vec<CatiaZeroEntitySupportOccurrence>,
@@ -7166,7 +7637,11 @@ pub(crate) struct CatiaZeroEntityVertexIncidence {
     /// Stored allocation values.
     pub(crate) allocations: Vec<u32>,
     /// Immediately following `5d06` vertex-owner record.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_vertex_record"
+    )]
     pub(crate) vertex_record: Option<String>,
 }
 
@@ -7590,6 +8065,11 @@ define_catia_arenas! {
     },
     external_references: CatiaExternalReference {
         /// External CATIA document references in source order.
+        pub(crate) stored;
+    },
+    feature_containers: CatiaFeatureContainer {
+        /// Part roots, bodies, geometrical sets, and Boolean features with
+        /// their stored feature-tree fields.
         pub(crate) stored;
     },
     finjpl_segments: CatiaFinjplSegment {
@@ -8673,6 +9153,8 @@ impl CatiaNative {
                     &entity_table::parse_definition_schema_selectors(entity.definition_prefix()),
                     catalog,
                 )?;
+                entity.compact_class =
+                    feature_tree::compact_class(ctx, entity.definition_prefix(), catalog)?;
                 let value_fields = entity.value_fields();
                 let value_packets = entity.value_packets(&value_fields);
                 entity.value_schema_selections =
@@ -8690,6 +9172,7 @@ impl CatiaNative {
                     &incidences,
                     entity.entity_id,
                 )?;
+                entity.cache_value_views(value_fields, value_packets);
             }
         }
         let entity_classes_by_graph_identity =
@@ -8786,6 +9269,8 @@ impl CatiaNative {
         });
         resolve_alias_surface_tags(&mut alias_rows);
         let design_objects = design_objects(ctx, &object_graphs, &entity_records)?;
+        let feature_containers =
+            feature_tree::derive(ctx, bytes, &object_graphs, &entity_records, &catalogs)?;
         let part_graph = {
             let mut graphs = object_graphs.iter().filter(|graph| {
                 graph
@@ -8970,6 +9455,7 @@ impl CatiaNative {
             e5_nurbs_limit_programs,
             entity_records,
             external_references,
+            feature_containers,
             finjpl_segments,
             legacy_entity_runs,
             object_graphs,

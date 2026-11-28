@@ -4,9 +4,12 @@
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::ContainerEntry;
 
-use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot};
+use cadmpeg_container::compound::{
+    CompoundDeviation, CompoundEntry, CompoundSnapshot, CompoundStreamId,
+};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::external_reference::{parse as parse_ufrx, UfrxState};
@@ -15,6 +18,9 @@ use crate::protein::{parse as parse_protein, ProteinState};
 use crate::rse::SegmentBulkState;
 use crate::rse::{database_band, direct_rse_child, RseInventory, SegmentMetaState};
 
+pub(crate) mod streams;
+use streams::Streams;
+
 /// One parsed Inventor compound container.
 pub(crate) struct InventorContainer<'a> {
     pub(crate) snapshot: CompoundSnapshot<'a>,
@@ -22,6 +28,7 @@ pub(crate) struct InventorContainer<'a> {
     pub(crate) property_sets: Vec<PropertySetDescriptor<'a>>,
     pub(crate) protein: ProteinState<'a>,
     pub(crate) ufrx: UfrxState<'a>,
+    pub(crate) streams: Streams<'a>,
 }
 
 impl<'a> InventorContainer<'a> {
@@ -35,20 +42,47 @@ impl<'a> InventorContainer<'a> {
                 "Inventor document has no RSeStorage storage".into(),
             ));
         }
-        let rse = RseInventory::build(ctx, &snapshot)?;
-        let property_sets = property_set_inventory(ctx, &snapshot)?;
-        let protein = parse_protein(ctx, &snapshot)?;
-        let ufrx = parse_ufrx(ctx, &snapshot, &rse.document_kind())?;
+        let mut streams = Streams::default();
+        let rse = RseInventory::build(ctx, &snapshot, &mut streams)?;
+        let protein = parse_protein(ctx, &snapshot, &mut streams)?;
+        let ufrx = parse_ufrx(ctx, &snapshot, &mut streams, &rse.document_kind())?;
+        let property_sets = property_set_inventory(ctx, &snapshot, &mut streams)?;
+        for entry in snapshot.entries() {
+            if let CompoundEntry::Stream(stream) = entry {
+                if !streams.has_outcome(stream.id()) {
+                    streams.inventory(&snapshot, stream, "compound-stream", None)?;
+                }
+            }
+        }
         Ok(Self {
             snapshot,
             rse,
             property_sets,
             protein,
             ufrx,
+            streams,
         })
     }
 
-    pub(crate) fn summary(&self) -> Result<ContainerSummary, CodecError> {
+    pub(crate) fn give_ups(
+        &self,
+        ctx: &DecodeContext<'_>,
+        inspect: bool,
+    ) -> Result<Vec<GivenUpPart>, CodecError> {
+        let mut parts = self.streams.give_ups(ctx, inspect)?;
+        for segment in &self.rse.segments {
+            if let SegmentMetaState::Parsed(meta) = &segment.meta {
+                parts.extend(meta.tables.block_table.give_up(ctx, inspect)?);
+                parts.extend(meta.tables.type_table.give_up(ctx, inspect)?);
+                for reference in &meta.tables.references {
+                    parts.extend(reference.outcome.give_up(ctx, inspect)?);
+                }
+            }
+        }
+        Ok(parts)
+    }
+
+    pub(crate) fn summary(&self, ctx: &DecodeContext<'_>) -> Result<ContainerSummary, CodecError> {
         let mut entries = self.snapshot.container_entries(classify);
         for segment in &self.rse.segments {
             let Some(entry) =
@@ -95,14 +129,19 @@ impl<'a> InventorContainer<'a> {
         }
         let recovery = crate::dialect::DialectRecovery::of(self);
         let matched = recovery.classify();
-        let mut losses = deviation_losses(&self.snapshot);
+        let skipped = self.streams.damaged().collect::<Vec<_>>();
+        let mut losses = deviation_losses(&self.snapshot, &skipped);
+        let mut parts = self.give_ups(ctx, true)?;
+        parts.extend(self.protein.read_instances(ctx)?.give_ups(ctx)?);
+        parts.extend(crate::drawing::inventory(ctx, self, None)?.section_give_ups(ctx, true)?);
+        losses.extend(parts.iter().map(GivenUpPart::loss));
         if let Some(loss) = crate::dialect::dialect_loss(&matched, &recovery) {
             losses.push(loss);
         }
         let dialects = crate::dialect::layers(&matched, &self.rse.active_carrier)?;
         if let Some(kernel) = dialects
             .iter()
-            .find(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
+            .find(|matched| matched.format() == cadmpeg_asm::dialect::registry_ids::FORMAT)
         {
             if let Some(loss) = crate::dialect::kernel_dialect_loss(kernel) {
                 losses.push(loss);
@@ -124,12 +163,17 @@ impl<'a> InventorContainer<'a> {
     }
 }
 
-/// One loss per noncanonical encoding the compound reader admitted.
+/// One loss per noncanonical encoding the compound reader admitted. The
+/// give-up of a stream in `given_up` charges its broken chain.
 pub(crate) fn deviation_losses(
     snapshot: &CompoundSnapshot<'_>,
+    given_up: &[CompoundStreamId],
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     snapshot
         .deviations()
+        .filter(|deviation| {
+            !matches!(deviation, CompoundDeviation::StreamChainBroken(id) if given_up.contains(id))
+        })
         .map(|deviation| {
             let message = match deviation.stream().and_then(|id| snapshot.stream_by_id(id)) {
                 Some(stream) => format!("{}: {}", stream.path(), deviation.description()),

@@ -312,3 +312,50 @@ fn decode_trace_rejects_a_refused_optional_decision_that_would_now_fit() {
     assert!(!ctx.accept_trace(&member.take_trace()));
     assert_eq!(ctx.retained_bytes_available(), 100);
 }
+
+#[test]
+fn opened_inputs_share_the_session_input_ceiling() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy {
+        limits: ResourceLimits {
+            max_input_bytes: 5,
+            ..ResourceLimits::default()
+        },
+    };
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let first = ctx.open_input(b"abc", "first input").unwrap();
+    assert_eq!(first.window(), b"abc");
+    let temporary = DecodeArena::new();
+    let error = ctx
+        .with_arena(&temporary, |local| local.open_input(b"def", "second input"))
+        .unwrap_err();
+    let crate::CodecError::ResourceLimit(limit) = error else {
+        panic!("must refuse");
+    };
+    assert_eq!(limit.scope, crate::decode::LimitScope::Session);
+    assert_eq!(
+        limit.dimension,
+        crate::decode::ResourceDimension::InputBytes
+    );
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+}
+
+#[test]
+fn a_lent_arena_admits_the_nesting_it_is_given_and_keeps_the_callers() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy {
+        limits: ResourceLimits {
+            max_recursion_depth: 1,
+            ..ResourceLimits::default()
+        },
+    };
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let temporary = DecodeArena::new();
+    ctx.with_arena_nesting(&temporary, 2, |local| {
+        let _outer = local.enter_nested("outer").unwrap();
+        let _inner = local.enter_nested("inner").unwrap();
+    });
+    assert_eq!(ctx.policy().limits.max_recursion_depth, 1);
+    let _outer = ctx.enter_nested("outer").unwrap();
+    assert!(ctx.enter_nested("past the caller's nesting").is_err());
+}

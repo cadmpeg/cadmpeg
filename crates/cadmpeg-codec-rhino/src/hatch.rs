@@ -23,6 +23,7 @@ use cadmpeg_ir::units::FiniteVector;
 pub(crate) const CLASS: Uuid = Uuid::from_canonical([
     0x05, 0x59, 0x73, 0x3b, 0x53, 0x32, 0x49, 0xd1, 0xa9, 0x36, 0x05, 0x32, 0xac, 0x76, 0xad, 0xe5,
 ]);
+// resource-cap: MAX_LOOPS = 2
 const MAX_LOOPS: usize = 1 << 20;
 pub(crate) const V5_HATCH_EXTRA: Uuid = Uuid::from_canonical([
     0x3f, 0xf7, 0x00, 0x7c, 0x3d, 0x04, 0x46, 0x3f, 0x84, 0xe3, 0x13, 0x2a, 0xce, 0xb9, 0x10, 0x62,
@@ -31,6 +32,7 @@ pub(crate) const GRADIENT_COLOR_DATA: Uuid = Uuid::from_canonical([
     0x0c, 0x1a, 0xd6, 0x13, 0x4e, 0xfa, 0x4f, 0x47, 0xa1, 0x47, 0x4d, 0x79, 0xd7, 0x7f, 0xcb, 0x0c,
 ]);
 const ANONYMOUS: u32 = 0x4000_8000;
+// resource-cap: MAX_GRADIENT_STOPS = 2
 const MAX_GRADIENT_STOPS: usize = 1 << 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -198,7 +200,7 @@ pub(crate) fn decode(
         .into());
     };
     if count > MAX_LOOPS {
-        return Err(GeometryError::malformed(
+        return Err(GeometryError::undecoded(
             count_offset,
             "hatch loop count exceeds cap",
         ));
@@ -268,11 +270,17 @@ pub(crate) fn decode(
     let basepoint = if minor >= 2 {
         let offset = body.position();
         [
-            scaled_coordinate(body.req_f64_le()?, scale).ok_or_else(|| {
-                GeometryError::malformed(offset, "scaled hatch basepoint is invalid")
+            scaled_coordinate(body.req_f64_le()?, scale).map_err(|unscaled| {
+                unscaled.charge(GeometryError::malformed(
+                    offset,
+                    "scaled hatch basepoint is invalid",
+                ))
             })?,
-            scaled_coordinate(body.req_f64_le()?, scale).ok_or_else(|| {
-                GeometryError::malformed(offset, "scaled hatch basepoint is invalid")
+            scaled_coordinate(body.req_f64_le()?, scale).map_err(|unscaled| {
+                unscaled.charge(GeometryError::malformed(
+                    offset,
+                    "scaled hatch basepoint is invalid",
+                ))
             })?,
         ]
     } else {
@@ -444,15 +452,13 @@ fn gradient_point(
 ) -> Result<[FiniteReal; 3], GeometryError> {
     let offset = reader.position();
     let values = [reader.f64()?, reader.f64()?, reader.f64()?];
-    let [Some(x), Some(y), Some(z)] =
-        values.map(|value| crate::wire::scaled_coordinate(value, scale))
-    else {
-        return Err(GeometryError::malformed(
-            offset,
-            format!("{label} is invalid"),
-        ));
-    };
-    Ok([x, y, z])
+    let invalid = || GeometryError::malformed(offset, format!("{label} is invalid"));
+    let [x, y, z] = values.map(|value| crate::wire::scaled_coordinate(value, scale));
+    Ok([
+        x.map_err(|unscaled| unscaled.charge(invalid()))?,
+        y.map_err(|unscaled| unscaled.charge(invalid()))?,
+        z.map_err(|unscaled| unscaled.charge(invalid()))?,
+    ])
 }
 
 #[derive(serde::Serialize)]
@@ -504,18 +510,24 @@ fn parse_userdata(
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || minor < 0 {
-        return Err(GeometryError::malformed(
+        return Err(GeometryError::undecoded(
             payload.body().start,
             "unsupported V5 hatch-extra version",
         ));
     }
     reader.take(16)?;
     let basepoint = [
-        crate::wire::scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
-            GeometryError::malformed(reader.position() - 8, "invalid V5 hatch base point")
+        crate::wire::scaled_coordinate(reader.f64()?, scale).map_err(|unscaled| {
+            unscaled.charge(GeometryError::malformed(
+                reader.position() - 8,
+                "invalid V5 hatch base point",
+            ))
         })?,
-        crate::wire::scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
-            GeometryError::malformed(reader.position() - 8, "invalid V5 hatch base point")
+        crate::wire::scaled_coordinate(reader.f64()?, scale).map_err(|unscaled| {
+            unscaled.charge(GeometryError::malformed(
+                reader.position() - 8,
+                "invalid V5 hatch base point",
+            ))
         })?,
     ];
     reader.skip_remaining()?;

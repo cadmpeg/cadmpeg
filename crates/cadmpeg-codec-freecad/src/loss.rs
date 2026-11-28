@@ -19,6 +19,7 @@ use cadmpeg_ir::report::{
 
 const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("fcstd");
 
+cadmpeg_ir::loss_codes! {
 /// A stable, machine-readable identifier for one `.fcstd` transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
@@ -67,6 +68,9 @@ pub(crate) enum FreecadLossCode {
     PersistenceSideEntryUnresolved,
     /// Redundant persistence counts disagree with framed XML populations.
     PersistenceCountNoncanonical,
+    /// One owner stores two property elements of one name; the one `FreeCAD`
+    /// restores last is kept.
+    PersistencePropertyRepeated,
     /// Feature history cannot enter a neutral definition because its ordering is cyclic.
     FeatureCyclicHistory,
     /// Feature retains its native kind without a complete neutral operation.
@@ -80,23 +84,56 @@ pub(crate) enum FreecadLossCode {
     /// A link that follows its linked object's own placement places an
     /// object the scope holds no own occurrence of.
     FeatureLinkPlacementUnresolved,
+    /// An assembly joint names no object for a connector or a blank joint
+    /// type, or grounds an object that the scope holds no occurrence of.
+    FeatureJointUnresolved,
+    /// An assembly `Distance` joint names an element whose shape is in
+    /// another document or is not decoded, so the form `FreeCAD` solves the
+    /// joint in is unknown; the joint keeps the distance as a native option.
+    FeatureJointDistanceUnresolved,
+    /// An assembly `Distance` joint states a negative separation of two
+    /// points, which `FreeCAD`'s solver cannot satisfy; the joint keeps the
+    /// distance as a native option.
+    FeatureJointDistanceUnsatisfiable,
+    /// An `ExpressionEngine` entry of an assembly joint drives a property
+    /// that binds no parameter: a joint value stated as the stored one or
+    /// derived from it, or a property the joint does not state. The
+    /// expression stays in the native record or the parameter.
+    FeatureJointValueUnbound,
+    /// An assembly joint stores `Activated` other than as one
+    /// `App::PropertyBool` value; the joint takes its suppression from
+    /// `Suppressed`, and the flag stays in its native property.
+    FeatureJointFlagUnread,
+    /// An object stores `Placement` with a value other than its
+    /// `LinkPlacement`; the decoder applies `LinkPlacement`.
+    AssemblyPlacementAliasNoncanonical,
     /// A design parameter stores an empty expression; its stored value stands
     /// as its definition.
     ParameterExpressionEmpty,
+    /// A spreadsheet formula's quantity is not found; its parameter is a
+    /// dimensionless real.
+    ParameterQuantityAssumed,
+    /// A formula's kind repeats a string by a plain number whose value the
+    /// file does not store; the kind takes the number as an integer.
+    ParameterIntegerAssumed,
+    /// A spreadsheet cell holds a number that is not finite; its parameter
+    /// has no value.
+    ParameterValueNonFinite,
+    /// An expression references a property that is no parameter; the
+    /// reference stays the source's text.
+    ParameterDependencyDropped,
     /// Sketch geometry record retains a native kind without solved geometry.
     SketchNativeGeometry,
     /// A sketch B-spline has no admitted finite neutral representation.
     SketchNurbsNative,
+    /// Sketch constraint retains a native relation kind without neutral semantics.
+    SketchNativeConstraint,
+    /// A sketch constraint has both index and name expression bindings.
+    SketchConstraintBindingConflict,
     /// Cached sketch geometry has no matching live external reference.
     SketchExternalReferenceUnresolved,
     /// Optional external sketch cache cannot be projected; live links remain authoritative.
     SketchExternalCacheUnresolved,
-    /// Sketch constraint retains a native relation kind without neutral semantics.
-    SketchNativeConstraint,
-    /// More than one sketch constraint has the same nonempty name.
-    SketchConstraintNameAmbiguous,
-    /// A sketch constraint has both index and name expression bindings.
-    SketchConstraintBindingConflict,
     /// Sketch profiles are not chained because endpoint matching reached its work cap.
     SketchProfileMatchingBounded,
     /// Topology color values were retained because their count did not match mapped topology.
@@ -116,6 +153,9 @@ pub(crate) enum FreecadLossCode {
     SourceGuiMetadataUnresolved,
     /// Optional persistent naming metadata could not be interpreted.
     ElementMapMetadataUnresolved,
+    /// A shape's string-table index or a mapped name's string id names no
+    /// record of the fully read string tables.
+    ElementMapStringReferenceDangling,
     /// A parameter-space curve could not enter neutral geometry.
     PcurveNotTransferred,
     /// Equal-matrix pcurves have no admitted matching native location chain.
@@ -136,68 +176,31 @@ pub(crate) enum FreecadLossCode {
     FileVersionUnverified,
     /// Nonempty inline legacy map has no verified file-version interpretation.
     ElementMapVersionUnresolved,
+    /// A sketch's attachment support names an object no design record
+    /// restates; the plane's input is unread.
+    DesignSketchSupportUnread,
+    /// An external geometry links an object that no design record
+    /// restates, or stores no link; its source is the native pick of the
+    /// link, or unread.
+    DesignSketchSourceUnread,
+    /// A sketch's attachment offset has no post steps; the resolved frame
+    /// holds it.
+    DesignSketchOffsetUnstated,
+    /// An expression binds a component of a sketch's attachment offset that
+    /// no post step binds; the step holds the stored value.
+    DesignSketchOffsetUnbound,
+    /// A sketch entity has no planar curve and states its native kind.
+    DesignSketchEntityNative,
+    /// A sketch constraint states its native kind where its kind has a typed
+    /// relation.
+    DesignSketchRelationNative,
+    /// A sketch relation states a curve for a point whose position the curve
+    /// does not store.
+    DesignSketchLocusUnplaced,
+}
 }
 
 impl FreecadLossCode {
-    /// Every code, in declaration order.
-    #[cfg(test)]
-    const ALL: &'static [FreecadLossCode] = &[
-        Self::TemplateNotTransferred,
-        Self::DrawingViewAxisNotTransferred,
-        Self::ViewGeometryNotStored,
-        Self::ViewGeometryNotTransferred,
-        Self::DimensionAnchorsNotTransferred,
-        Self::DrawingStyleNotTransferred,
-        Self::CaptionNotTransferred,
-        Self::DrawingSheetNotTransferred,
-        Self::DrawingTitleBlockNotTransferred,
-        Self::DrawingCosmeticEdgeNotTransferred,
-        Self::DrawingCosmeticVertexNotTransferred,
-        Self::DrawingCenterLineNotTransferred,
-        Self::DrawingGeometryFormatNotTransferred,
-        Self::DrawingDimensionKindNotTransferred,
-        Self::DrawingDimensionGeometryNotTransferred,
-        Self::DrawingDimensionToleranceNotTransferred,
-        Self::MeshPlacementNotTransferred,
-        Self::MeshPlacementBounded,
-        Self::PersistencePayloadUnresolved,
-        Self::PersistenceSideEntryUnresolved,
-        Self::PersistenceCountNoncanonical,
-        Self::FeatureCyclicHistory,
-        Self::FeatureNativeKindRetained,
-        Self::FeatureRevolutionNotTransferred,
-        Self::FeatureRemovalWithoutBase,
-        Self::FeaturePrimitivePlacementUnresolved,
-        Self::FeatureLinkPlacementUnresolved,
-        Self::ParameterExpressionEmpty,
-        Self::SketchNativeGeometry,
-        Self::SketchNurbsNative,
-        Self::SketchNativeConstraint,
-        Self::SketchConstraintNameAmbiguous,
-        Self::SketchConstraintBindingConflict,
-        Self::SketchExternalReferenceUnresolved,
-        Self::SketchExternalCacheUnresolved,
-        Self::SketchProfileMatchingBounded,
-        Self::AppearanceTopologyColorCountMismatch,
-        Self::AppearancePrimitiveSizeNotTransferred,
-        Self::AppearanceStateNotTransferred,
-        Self::SourceDialectUnverified,
-        Self::SourceGuiSchemaUnverified,
-        Self::SourceGuiPropertyKeyBlank,
-        Self::SourceGuiMetadataUnresolved,
-        Self::ElementMapMetadataUnresolved,
-        Self::PcurveNotTransferred,
-        Self::PcurveLocationAmbiguous,
-        Self::TopologyLocationIdentityBounded,
-        Self::TopologyNonBoundaryIncidenceRetained,
-        Self::TopologyFaceBoundaryUnstated,
-        Self::TopologyRecordRepeated,
-        Self::ProgramVersionNoncanonical,
-        Self::FileVersionNoncanonical,
-        Self::FileVersionUnverified,
-        Self::ElementMapVersionUnresolved,
-    ];
-
     /// The stable string identifier. This is the gating contract.
     #[must_use]
     const fn code(self) -> &'static str {
@@ -227,17 +230,27 @@ impl FreecadLossCode {
             Self::PersistencePayloadUnresolved => "metadata.persistence-payload-unresolved",
             Self::PersistenceSideEntryUnresolved => "metadata.persistence-side-entry-unresolved",
             Self::PersistenceCountNoncanonical => "metadata.persistence-count-noncanonical",
+            Self::PersistencePropertyRepeated => "metadata.persistence-property-repeated",
             Self::FeatureCyclicHistory => "feature.cyclic-history",
             Self::FeaturePrimitivePlacementUnresolved => "feature.primitive-placement-unresolved",
             Self::FeatureLinkPlacementUnresolved => "feature.link-placement-unresolved",
+            Self::FeatureJointUnresolved => "feature.joint-unresolved",
+            Self::FeatureJointDistanceUnresolved => "feature.joint-distance-unresolved",
+            Self::FeatureJointDistanceUnsatisfiable => "feature.joint-distance-unsatisfiable",
+            Self::FeatureJointValueUnbound => "feature.joint-value-unbound",
+            Self::AssemblyPlacementAliasNoncanonical => "assembly.placement-alias-noncanonical",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::FeatureRevolutionNotTransferred => "feature.revolution-not-transferred",
+            Self::FeatureJointFlagUnread => "feature.joint-flag-unread",
             Self::ParameterExpressionEmpty => "parameter.expression-empty",
+            Self::ParameterQuantityAssumed => "parameter.quantity-assumed",
+            Self::ParameterIntegerAssumed => "parameter.integer-assumed",
+            Self::ParameterValueNonFinite => "parameter.value-non-finite",
+            Self::ParameterDependencyDropped => "parameter.dependency-dropped",
             Self::FeatureRemovalWithoutBase => "feature.removal-without-base",
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchNurbsNative => "sketch.nurbs-native",
             Self::SketchNativeConstraint => "sketch.native-constraint",
-            Self::SketchConstraintNameAmbiguous => "sketch.constraint-name-ambiguous",
             Self::SketchConstraintBindingConflict => "sketch.constraint-binding-conflict",
             Self::SketchExternalReferenceUnresolved => "sketch.external-reference-unresolved",
             Self::SketchExternalCacheUnresolved => "sketch.external-cache-unresolved",
@@ -254,6 +267,7 @@ impl FreecadLossCode {
             Self::SourceGuiPropertyKeyBlank => "source.gui-property-key-blank",
             Self::SourceGuiMetadataUnresolved => "source.gui-metadata-unresolved",
             Self::ElementMapMetadataUnresolved => "element-map.metadata-unresolved",
+            Self::ElementMapStringReferenceDangling => "element-map.string-reference-dangling",
             Self::PcurveNotTransferred => "pcurve.not-transferred",
             Self::PcurveLocationAmbiguous => "pcurve.location-ambiguous",
             Self::TopologyLocationIdentityBounded => "topology.location-identity-bounded",
@@ -266,6 +280,13 @@ impl FreecadLossCode {
             Self::FileVersionNoncanonical => "metadata.file-version-noncanonical",
             Self::FileVersionUnverified => "metadata.file-version-unverified",
             Self::ElementMapVersionUnresolved => "element-map.version-unresolved",
+            Self::DesignSketchSupportUnread => "design.sketch-support-unread",
+            Self::DesignSketchSourceUnread => "design.sketch-source-unread",
+            Self::DesignSketchOffsetUnstated => "design.sketch-offset-unstated",
+            Self::DesignSketchOffsetUnbound => "design.sketch-offset-unbound",
+            Self::DesignSketchEntityNative => "design.sketch-entity-native",
+            Self::DesignSketchRelationNative => "design.sketch-relation-native",
+            Self::DesignSketchLocusUnplaced => "design.sketch-locus-unplaced",
         }
     }
 
@@ -283,7 +304,6 @@ impl FreecadLossCode {
             | Self::SketchNativeGeometry
             | Self::SketchNurbsNative
             | Self::SketchNativeConstraint
-            | Self::SketchConstraintNameAmbiguous
             | Self::SketchConstraintBindingConflict
             | Self::PcurveLocationAmbiguous
             | Self::TopologyLocationIdentityBounded => Severity::Blocking,
@@ -307,10 +327,21 @@ impl FreecadLossCode {
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchProfileMatchingBounded
             | Self::ParameterExpressionEmpty
+            | Self::ParameterQuantityAssumed
+            | Self::ParameterIntegerAssumed
+            | Self::ParameterValueNonFinite
+            | Self::ParameterDependencyDropped
             | Self::FeatureLinkPlacementUnresolved
+            | Self::FeatureJointUnresolved
+            | Self::FeatureJointDistanceUnresolved
+            | Self::FeatureJointDistanceUnsatisfiable
+            | Self::FeatureJointValueUnbound
+            | Self::FeatureJointFlagUnread
+            | Self::AssemblyPlacementAliasNoncanonical
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved
             | Self::PersistenceCountNoncanonical
+            | Self::PersistencePropertyRepeated
             | Self::AppearanceTopologyColorCountMismatch
             | Self::AppearancePrimitiveSizeNotTransferred
             | Self::AppearanceStateNotTransferred
@@ -319,6 +350,7 @@ impl FreecadLossCode {
             | Self::SourceGuiPropertyKeyBlank
             | Self::SourceGuiMetadataUnresolved
             | Self::ElementMapMetadataUnresolved
+            | Self::ElementMapStringReferenceDangling
             | Self::PcurveNotTransferred
             | Self::TopologyNonBoundaryIncidenceRetained
             | Self::TopologyFaceBoundaryUnstated
@@ -326,7 +358,14 @@ impl FreecadLossCode {
             | Self::ProgramVersionNoncanonical
             | Self::FileVersionNoncanonical
             | Self::FileVersionUnverified
-            | Self::ElementMapVersionUnresolved => Severity::Warning,
+            | Self::ElementMapVersionUnresolved
+            | Self::DesignSketchSupportUnread
+            | Self::DesignSketchSourceUnread
+            | Self::DesignSketchOffsetUnstated
+            | Self::DesignSketchOffsetUnbound
+            | Self::DesignSketchEntityNative
+            | Self::DesignSketchRelationNative
+            | Self::DesignSketchLocusUnplaced => Severity::Warning,
         }
     }
 
@@ -358,19 +397,28 @@ impl FreecadLossCode {
             | Self::FeatureRevolutionNotTransferred
             | Self::FeatureRemovalWithoutBase
             | Self::FeaturePrimitivePlacementUnresolved
-            | Self::FeatureLinkPlacementUnresolved => LossTaxonomy::FeatureHistoryRetained,
+            | Self::FeatureLinkPlacementUnresolved
+            | Self::FeatureJointUnresolved
+            | Self::FeatureJointDistanceUnresolved
+            | Self::FeatureJointDistanceUnsatisfiable
+            | Self::FeatureJointValueUnbound
+            | Self::FeatureJointFlagUnread => LossTaxonomy::FeatureHistoryRetained,
             Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchNativeGeometry
             | Self::SketchNurbsNative
             | Self::SketchNativeConstraint
-            | Self::SketchConstraintNameAmbiguous
             | Self::SketchConstraintBindingConflict
             | Self::SketchProfileMatchingBounded
             | Self::ParameterExpressionEmpty
+            | Self::ParameterQuantityAssumed
+            | Self::ParameterIntegerAssumed
+            | Self::ParameterValueNonFinite
+            | Self::ParameterDependencyDropped
             | Self::SourceGuiPropertyKeyBlank
             | Self::SourceGuiMetadataUnresolved
             | Self::ElementMapMetadataUnresolved
+            | Self::ElementMapStringReferenceDangling
             | Self::PcurveNotTransferred
             | Self::PcurveLocationAmbiguous
             | Self::TopologyLocationIdentityBounded
@@ -381,19 +429,45 @@ impl FreecadLossCode {
             | Self::AppearancePrimitiveSizeNotTransferred
             | Self::AppearanceStateNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::PersistenceCountNoncanonical
+            | Self::PersistencePropertyRepeated
             | Self::ProgramVersionNoncanonical
             | Self::FileVersionNoncanonical
             | Self::FileVersionUnverified => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::ElementMapVersionUnresolved => LossTaxonomy::RecordNotTyped,
+            Self::DesignSketchSupportUnread
+            | Self::DesignSketchSourceUnread
+            | Self::DesignSketchOffsetUnstated
+            | Self::DesignSketchOffsetUnbound
+            | Self::DesignSketchEntityNative
+            | Self::DesignSketchRelationNative
+            | Self::DesignSketchLocusUnplaced => LossTaxonomy::FeatureHistoryRetained,
+            Self::AssemblyPlacementAliasNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceGuiSchemaUnverified => LossTaxonomy::SourceDialectUnverified,
+        }
+    }
+
+    /// The strict floor `freecad_fcstd.md` §14 states: a persistence count
+    /// or a root version attribute that breaks the `Document.xml` grammar, or
+    /// a reference to a record that a table read in full lacks, which the
+    /// decoder reads past, pins Warning.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::PersistenceSideEntryUnresolved
+            | Self::PersistenceCountNoncanonical
+            | Self::ElementMapStringReferenceDangling
+            | Self::ProgramVersionNoncanonical
+            | Self::FileVersionNoncanonical => Some(Severity::Warning),
+            _ => None,
         }
     }
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     fn kind(self) -> LossKind {
-        NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy()).into()
+        NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy())
+            .with_strict_floor(self.strict_floor())
+            .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
@@ -440,17 +514,27 @@ mod tests {
                 "metadata.persistence-payload-unresolved",
                 "metadata.persistence-side-entry-unresolved",
                 "metadata.persistence-count-noncanonical",
+                "metadata.persistence-property-repeated",
                 "feature.cyclic-history",
                 "feature.native-kind-retained",
                 "feature.revolution-not-transferred",
                 "feature.removal-without-base",
                 "feature.primitive-placement-unresolved",
                 "feature.link-placement-unresolved",
+                "feature.joint-unresolved",
+                "feature.joint-distance-unresolved",
+                "feature.joint-distance-unsatisfiable",
+                "feature.joint-value-unbound",
+                "feature.joint-flag-unread",
+                "assembly.placement-alias-noncanonical",
                 "parameter.expression-empty",
+                "parameter.quantity-assumed",
+                "parameter.integer-assumed",
+                "parameter.value-non-finite",
+                "parameter.dependency-dropped",
                 "sketch.native-geometry",
                 "sketch.nurbs-native",
                 "sketch.native-constraint",
-                "sketch.constraint-name-ambiguous",
                 "sketch.constraint-binding-conflict",
                 "sketch.external-reference-unresolved",
                 "sketch.external-cache-unresolved",
@@ -463,6 +547,7 @@ mod tests {
                 "source.gui-property-key-blank",
                 "source.gui-metadata-unresolved",
                 "element-map.metadata-unresolved",
+                "element-map.string-reference-dangling",
                 "pcurve.not-transferred",
                 "pcurve.location-ambiguous",
                 "topology.location-identity-bounded",
@@ -473,6 +558,13 @@ mod tests {
                 "metadata.file-version-noncanonical",
                 "metadata.file-version-unverified",
                 "element-map.version-unresolved",
+                "design.sketch-support-unread",
+                "design.sketch-source-unread",
+                "design.sketch-offset-unstated",
+                "design.sketch-offset-unbound",
+                "design.sketch-entity-native",
+                "design.sketch-relation-native",
+                "design.sketch-locus-unplaced",
             ]
         );
     }
@@ -505,10 +597,27 @@ mod tests {
         }
     }
 
+    /// The floor codes `freecad_fcstd.md` (Strict floors) lists pin
+    /// Warning, and no other code pins a floor.
     #[test]
-    fn no_code_pins_a_strict_floor() {
-        for code in FreecadLossCode::ALL {
-            assert_eq!(code.kind().strict_floor(), None, "{}", code.code());
-        }
+    fn strict_floors_are_the_listed_codes() {
+        use cadmpeg_ir::report::Severity;
+        let floored: Vec<_> = FreecadLossCode::ALL
+            .iter()
+            .filter_map(|code| code.kind().strict_floor().map(|floor| (code.code(), floor)))
+            .collect();
+        assert_eq!(
+            floored,
+            [
+                (
+                    "metadata.persistence-side-entry-unresolved",
+                    Severity::Warning
+                ),
+                ("metadata.persistence-count-noncanonical", Severity::Warning),
+                ("element-map.string-reference-dangling", Severity::Warning),
+                ("metadata.program-version-noncanonical", Severity::Warning),
+                ("metadata.file-version-noncanonical", Severity::Warning),
+            ]
+        );
     }
 }

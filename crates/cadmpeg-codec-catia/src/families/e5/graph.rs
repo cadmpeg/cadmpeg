@@ -1188,6 +1188,15 @@ fn parse_body_root(payload: &[u8]) -> Option<Vec<E5BodyFace>> {
     Some(occurrences)
 }
 
+/// The ids of the face records (class `0x00`) among the E5 records of
+/// `bytes`.
+pub(crate) fn face_record_ids(bytes: &[u8]) -> std::collections::BTreeSet<u32> {
+    records(bytes)
+        .filter(|record| record.class == 0x00)
+        .map(|record| record.id)
+        .collect()
+}
+
 fn records(bytes: &[u8]) -> impl Iterator<Item = Record<'_>> + '_ {
     crate::container::all_e5_record_spans(bytes).filter_map(|span| {
         let start = span.start;

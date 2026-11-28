@@ -17,6 +17,7 @@ mod part;
 mod policy;
 mod probe;
 mod scope;
+mod scratch;
 mod space;
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
@@ -41,6 +42,7 @@ pub use error::{LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, S
 pub use policy::{DecodePolicy, InspectOptions, ResourceLimits};
 pub use probe::{ParseError, ParseErrorKind};
 pub use scope::{ArenaClass, ArenaClasses, ContentScope, ScopeDependency};
+pub use scratch::ScratchContext;
 pub use space::{ByteRange, SpaceId};
 pub use transaction::{DecodeCheckpoint, DecodeSpaceRebinding, DecodeTrace};
 pub use unique::unique_index;

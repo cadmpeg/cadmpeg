@@ -36,6 +36,7 @@ default = [
   "sat",
   "pvz",
   "edrawings",
+  "alibre",
   "usd",
   "onshape",
 ]
@@ -58,6 +59,7 @@ iges = ["cadmpeg-registry/iges", "dep:cadmpeg-codec-iges"]
 sat = ["cadmpeg-registry/sat"]
 pvz = ["cadmpeg-registry/pvz"]
 edrawings = ["cadmpeg-registry/edrawings"]
+alibre = ["cadmpeg-registry/alibre"]
 onshape = ["cadmpeg-registry/onshape"]
 usd = ["cadmpeg-registry/usd"]
 
@@ -88,8 +90,6 @@ thiserror.workspace = true
 
 [dev-dependencies]
 cadmpeg-measure = { workspace = true, features = ["test-support"] }
-proc-macro2.workspace = true
-syn.workspace = true
 assert_cmd.workspace = true
 # The package has no library target, so its unit tests and its integration
 # tests share byte fixtures through this crate.

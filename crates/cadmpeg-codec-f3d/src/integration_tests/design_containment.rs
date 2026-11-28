@@ -11,10 +11,10 @@ use cadmpeg_test_support::EditableDecodeResult;
 use super::{assert_valid, decode};
 use crate::decode::design_intent::inject_failure;
 use crate::loss::F3dLossCode;
-use crate::test_support::assembly_test::{f3d_without_brep, XREF_ROLE};
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
-use crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh;
-use crate::test_support::zip_test::f3d_with_smbh_and_protein;
+use crate::test_support::assembly_fixture::{f3d_without_brep, XREF_ROLE};
+use crate::test_support::native_fixture::{f3d_native, f3d_native_mut};
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_with_history_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
 
 fn design_archive() -> Vec<u8> {
@@ -23,6 +23,16 @@ fn design_archive() -> Vec<u8> {
 
 fn malformed_design() -> CodecError {
     CodecError::malformed("injected design-intent failure")
+}
+
+fn unread_design_form() -> CodecError {
+    CodecError::NotImplemented("injected design-intent form".into())
+}
+
+/// Whether `loss` reports dropped design intent, for either cause.
+fn design_intent_dropped(loss: &cadmpeg_ir::report::loss::LossNote) -> bool {
+    loss.code == F3dLossCode::DesignIntentUnreadable.kind()
+        || loss.code == F3dLossCode::DesignIntentUndecoded.kind()
 }
 
 fn recursion_refusal() -> CodecError {
@@ -62,9 +72,13 @@ fn a_design_intent_failure_keeps_geometry_and_reports_one_error_loss() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == F3dLossCode::DesignIntentUndecoded.kind())
+        .filter(|loss| design_intent_dropped(loss))
         .collect::<Vec<_>>();
     assert_eq!(undecoded.len(), 1);
+    assert_eq!(
+        undecoded[0].code,
+        F3dLossCode::DesignIntentUnreadable.kind()
+    );
     assert_eq!(undecoded[0].severity, cadmpeg_ir::report::Severity::Error);
     assert!(undecoded[0]
         .message
@@ -72,35 +86,78 @@ fn a_design_intent_failure_keeps_geometry_and_reports_one_error_loss() {
     assert!(undecoded[0]
         .message
         .contains("dimension-companion and configuration reports were not produced"));
-    assert!(full
-        .report()
-        .losses
-        .iter()
-        .all(|loss| loss.code != F3dLossCode::DesignIntentUndecoded.kind()));
+    assert!(!full.report().losses.iter().any(design_intent_dropped));
     assert_valid(&contained);
 }
 
+/// A design-intent failure gives up the history partition from where the
+/// history decode starts, the history preamble, as a failed history decode
+/// gives it up.
 #[test]
-fn strict_mode_refuses_a_contained_design_intent_failure() {
+fn a_design_intent_failure_gives_up_the_history_partition_from_its_preamble() {
+    let smbh = synthetic_geometry_with_history_smbh();
+    let start = crate::history::partition_start(&smbh).expect("the stream stores a history");
+    assert_ne!(
+        Some(start),
+        cadmpeg_asm::asm_header::solved_record_limit(&smbh)
+    );
+    inject_failure(malformed_design);
+    let contained = decode(design_archive());
+    let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+    let parts = contained
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == unreadable && loss.message.starts_with("part asm-history "))
+        .collect::<Vec<_>>();
+    assert_eq!(parts.len(), 1, "{parts:#?}");
+    assert!(
+        parts[0]
+            .message
+            .contains(&format!(" offset={start} length={} ", smbh.len() - start)),
+        "{}",
+        parts[0].message
+    );
+}
+
+/// §4: `design.intent-undecoded` records a form the decoder has no reading
+/// for and pins no strict floor, so a pinned decode keeps the contained
+/// document.
+#[test]
+fn a_pinned_decode_keeps_a_design_intent_form_without_a_reading() {
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    inject_failure(unread_design_form);
+
+    let contained = F3dCodec
+        .decode(&mut Cursor::new(design_archive()), &options)
+        .expect("a pinned decode keeps the design-intent failure");
+
+    assert!(contained.report().losses.iter().any(|loss| {
+        loss.code == F3dLossCode::DesignIntentUndecoded.kind()
+            && loss.message.contains("injected design-intent form")
+    }));
+}
+
+/// §4: `design.intent-unreadable` records recovery from Design records that
+/// break their grammar and pins strict floor Warning, so a pinned decode
+/// refuses it.
+#[test]
+fn a_pinned_decode_refuses_design_intent_that_breaks_its_grammar() {
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
     inject_failure(malformed_design);
 
     let failure = F3dCodec
         .decode(&mut Cursor::new(design_archive()), &options)
-        .expect_err("strict mode refuses the design-intent loss");
-
+        .expect_err("a pinned decode refuses broken design intent");
     let DecodeFailure::StrictRejected { rejection } = &failure else {
         panic!("expected a strict rejection, got {failure:?}");
     };
     assert_eq!(
         rejection.loss().code,
-        F3dLossCode::DesignIntentUndecoded.kind()
+        F3dLossCode::DesignIntentUnreadable.kind()
     );
-    assert!(rejection
-        .loss()
-        .message
-        .contains("injected design-intent failure"));
 }
 
 fn moved_first_point(result: &EditableDecodeResult) -> cadmpeg_ir::document::CadIr {
@@ -178,11 +235,21 @@ fn a_bodyless_design_intent_failure_keeps_the_xref_product_structure() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == F3dLossCode::DesignIntentUndecoded.kind())
+            .filter(|loss| loss.code == F3dLossCode::DesignIntentUnreadable.kind())
             .count(),
         1
     );
     assert_valid(&contained);
+}
+
+/// The count of `record.unreadable` losses in `result`'s report.
+fn unreadable_records(result: &EditableDecodeResult) -> usize {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .count()
 }
 
 fn native_findings(ir: &cadmpeg_ir::document::CadIr) -> Vec<String> {
@@ -304,19 +371,10 @@ fn an_unread_configuration_keeps_timeline_sketches_and_geometry() {
     assert_eq!(recovered.ir().geometry, full.ir().geometry);
     assert!(f3d_native(recovered.ir()).design_intent_failures.is_empty());
     assert_eq!(
-        recovered
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code == F3dLossCode::ConfigurationDocumentUndecoded.kind())
-            .count(),
-        1
+        unreadable_records(&recovered),
+        unreadable_records(&full) + 1
     );
-    assert!(recovered
-        .report()
-        .losses
-        .iter()
-        .all(|loss| loss.code != F3dLossCode::DesignIntentUndecoded.kind()));
+    assert!(!recovered.report().losses.iter().any(design_intent_dropped));
     assert_valid(&recovered);
     let mut replayed = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -342,7 +400,7 @@ fn with_unread_primary_header() -> Vec<u8> {
     let sibling_start = bulk.len();
     crate::test_support::lp_ascii(&mut bulk, "256");
     bulk.extend_from_slice(&42u32.to_le_bytes());
-    let meta = crate::test_support::streams_test::design_metastream_with_records(
+    let meta = crate::test_support::streams_fixture::design_metastream_with_records(
         &[(
             "00000000-0000-0000-0000-000000000001",
             "",
@@ -382,19 +440,10 @@ fn an_unread_primary_header_keeps_the_other_design_stream() {
     assert_eq!(recovered.ir().geometry, full.ir().geometry);
     assert!(f3d_native(recovered.ir()).design_intent_failures.is_empty());
     assert_eq!(
-        recovered
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code == F3dLossCode::PrimaryRecordUndecoded.kind())
-            .count(),
-        1
+        unreadable_records(&recovered),
+        unreadable_records(&full) + 1
     );
-    assert!(recovered
-        .report()
-        .losses
-        .iter()
-        .all(|loss| loss.code != F3dLossCode::DesignIntentUndecoded.kind()));
+    assert!(!recovered.report().losses.iter().any(design_intent_dropped));
     assert_valid(&recovered);
 }
 
@@ -541,6 +590,99 @@ fn an_unread_primary_header_is_a_loss_at_geometry_and_design_depth() {
             ),
             "{}",
             rejection.loss().message
+        );
+    }
+}
+
+fn unreadable_messages(result: &EditableDecodeResult) -> Vec<String> {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.clone())
+        .collect()
+}
+
+#[test]
+fn a_design_intent_failure_gives_up_the_design_streams() {
+    assert!(unreadable_messages(&decode(design_archive())).is_empty());
+
+    inject_failure(malformed_design);
+    let contained = decode(design_archive());
+
+    let messages = unreadable_messages(&contained);
+    let design = messages
+        .iter()
+        .filter(|message| {
+            message.starts_with(
+                "part archive-entry \"FusionAssetName[Active]/Design1/BulkStream.dat\" stream=\"\" offset=",
+            )
+        })
+        .collect::<Vec<_>>();
+    let history = messages
+        .iter()
+        .filter(|message| {
+            message.starts_with(
+                "part asm-history stream=\"FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh\"",
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(design.len(), 1, "{messages:#?}");
+    assert_eq!(history.len(), 1, "{messages:#?}");
+    for message in design.iter().chain(&history) {
+        assert!(
+            message.contains("design intent was not decoded: "),
+            "{message}"
+        );
+        assert!(
+            message.contains("injected design-intent failure"),
+            "{message}"
+        );
+        assert!(message.contains("; dropped=[]"), "{message}");
+    }
+    assert_valid(&contained);
+}
+
+#[test]
+fn generated_feature_designs_give_up_no_record() {
+    use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+    use crate::test_support::zip_fixture::{
+        f3d_with_smbh_and_protein_with_generated_copy_paste,
+        f3d_with_smbh_and_protein_with_generated_copy_paste_bodies,
+        f3d_with_smbh_and_protein_with_generated_form,
+        f3d_with_smbh_and_protein_with_generated_remove_body,
+        f3d_with_smbh_and_protein_with_generated_surface_stitch,
+    };
+    let smbh = synthetic_geometry_smbh();
+    for (name, bytes) in [
+        (
+            "remove body",
+            f3d_with_smbh_and_protein_with_generated_remove_body(&smbh),
+        ),
+        (
+            "surface stitch",
+            f3d_with_smbh_and_protein_with_generated_surface_stitch(&smbh),
+        ),
+        (
+            "copy paste",
+            f3d_with_smbh_and_protein_with_generated_copy_paste(&smbh),
+        ),
+        (
+            "copy paste bodies",
+            f3d_with_smbh_and_protein_with_generated_copy_paste_bodies(&smbh),
+        ),
+        ("form", f3d_with_smbh_and_protein_with_generated_form(&smbh)),
+    ] {
+        let result = decode(bytes);
+        assert_eq!(unreadable_messages(&result), Vec::<String>::new(), "{name}");
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .all(|loss| loss.code != cadmpeg_ir::unknown::part::record_undecoded_kind()),
+            "{name}"
         );
     }
 }

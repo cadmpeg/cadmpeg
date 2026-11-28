@@ -129,6 +129,7 @@ const OPTIONAL_ARENAS: &[&str] = &[
     "body_wrapper_links",
     "composite_member_links",
     "feature_history_states",
+    "history_states",
     "pm_dc_sheet_metal_styles",
     "pm_dc_sheet_metal_flanges",
     "pm_app_sheet_metal_unfold_rules",
@@ -300,8 +301,11 @@ fn design_v11_findings(
         ir,
         &features,
         &sketches,
-        &data.pm_dc_parameters,
-        &data.pm_dc_units,
+        crate::design_v11::ParameterRecords {
+            parameters: &data.pm_dc_parameters,
+            units: &data.pm_dc_units,
+            tables: &data.pm_dc_parameter_tables,
+        },
     )?;
     findings.extend(crate::design_v11::validate_states(ir, &ctx.policy().limits));
     Ok(findings)
@@ -1446,6 +1450,10 @@ fn validate_features_with_raw(
                 references.extend(axis.references().iter().map(|reference| reference.index()));
             }
             PmDcFeaturePropertyKind::PlaneSurface {
+                references: surface,
+                ..
+            }
+            | PmDcFeaturePropertyKind::ParametricSurface {
                 references: surface,
                 ..
             } => {
@@ -2776,6 +2784,32 @@ fn validate_features_with_raw(
                 findings.push(finding(
                     Check::NativeLinks,
                     "Inventor neutral split does not match its PmDc operands".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+        }
+        if matches!(family, crate::feature::FeatureFamily::Stitch) {
+            let token = raw_feature.identity.segment_token.as_str();
+            let expected = crate::feature::stitch::operation(
+                raw_feature,
+                |reference| {
+                    properties_by_record
+                        .get(&(token, reference.checked_sub(1)?))
+                        .copied()
+                },
+                |reference| {
+                    let raw = feature_parameters
+                        .get(&(token, reference.checked_sub(1)?))?
+                        .as_ref()?;
+                    crate::feature::stitch::millimetres(raw)
+                },
+            );
+            if expected.is_none_or(|(expected, _)| {
+                cadmpeg_ir::features::FeatureDefinition::Operation(expected) != *definition
+            }) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor neutral stitch does not match its PmDc slots".into(),
                     Some(feature.id.as_str().to_owned()),
                 ));
             }

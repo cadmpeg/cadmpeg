@@ -121,7 +121,7 @@ fn malformed_macro_definition_is_quarantined_without_outside_envelope_loss() {
     assert!(!native.arenas().contains_key("macro_definitions"));
     crate::test_support::given_up_part_bytes(&result, ("parameter-data", 1));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::ParameterDataQuarantined.kind()
+        crate::test_support::reports(loss, IgesLossCode::ParameterDataQuarantined)
             && loss.message.contains("no ENDM statement")
     }));
     assert!(!result

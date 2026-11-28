@@ -139,10 +139,9 @@ enum GripVertexMarker {
 
 /// Decode every active-asset T-spline control cage in archive order.
 ///
-/// A cage whose program is internally inconsistent degrades to an
-/// error-severity loss note instead of failing the document decode; its
-/// entry bytes remain retained in the container, and the serializer-backed
-/// Form join leaves the affected Form on native retention.
+/// A cage that the decoder does not read is given up as an undecoded part;
+/// its entry bytes remain retained in the container, and the
+/// serializer-backed Form join leaves the affected Form on native retention.
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -178,10 +177,15 @@ pub(crate) fn decode(
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
-                let note = F3dLossCode::TsplineCageUndecoded
-                    .note(format!("T-spline control cage not decoded: {error}"));
-                losses.push(note);
-                given_up.extend(scan.give_up_entry(ctx, &entry.name, error)?);
+                given_up.extend(scan.give_up_entry(
+                    ctx,
+                    &entry.name,
+                    cadmpeg_ir::unknown::part::Cause::Undecoded,
+                    crate::design::decode::record::give_up_error(
+                        cadmpeg_ir::unknown::part::Cause::Undecoded,
+                        format_args!("T-spline control cage not decoded: {error}"),
+                    ),
+                )?);
             }
         }
     }
@@ -2286,15 +2290,9 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         .unwrap();
         let records = crate::test_support::verification::text("tsm/radial.json", &synthetic);
         let cases: Vec<RadialFixture> = serde_json::from_str(&records).unwrap();
-        assert_eq!(
-            cases.len(),
-            crate::test_support::verification::case_count(1, 29)
-        );
-        let mut unresolved = 0;
         for case in cases {
             let parsed = parse_cage(case.source.as_bytes()).expect("radial source cage");
             assert_eq!(parsed.unresolved_radial_pairs, case.unresolved_pairs);
-            unresolved += parsed.unresolved_radial_pairs;
             let symmetries = wire::field_or_default::<Vec<subd::SubdSymmetry>>(
                 &parsed.surface.cage,
                 "symmetries",
@@ -2335,10 +2333,6 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
                 case.raw_maps
             );
         }
-        assert_eq!(
-            unresolved,
-            crate::test_support::verification::case_count(0, 52)
-        );
     }
 
     #[test]

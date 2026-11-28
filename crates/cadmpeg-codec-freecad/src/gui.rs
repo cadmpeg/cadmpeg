@@ -5,6 +5,7 @@ mod schema;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use cadmpeg_core::decode::tree::XmlDocument;
 use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
@@ -17,7 +18,7 @@ use cadmpeg_ir::presentation::{
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteBinary32;
 use cadmpeg_ir::topology::Color;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::SourceProvenance;
 
 use crate::brep::ShapePayloadRecord;
@@ -191,20 +192,27 @@ pub(crate) fn transfer(
     bytes: &[u8],
     sources: &GuiSources<'_, '_>,
 ) -> Result<Graph, CodecError> {
+    // These errors arise before the transfer changes `ir`: the entry is not
+    // UTF-8 XML, or it passes a bound of the XML reader.
     match transfer_xml(ctx, ir, bytes, sources) {
         Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
-            source_only_graph(ctx, bytes, None, error)
+            source_only_graph(ctx, bytes, None, Cause::Unreadable, error)
+        }
+        Err(error @ CodecError::NotImplemented(_)) => {
+            source_only_graph(ctx, bytes, None, Cause::Undecoded, error)
         }
         result => result,
     }
 }
 
 /// The graph of a `GuiDocument.xml` the decoder could not read: one
-/// document record with no state, and the entry given up as a part.
+/// document record with no state, and the entry given up as a part for
+/// `cause`.
 fn source_only_graph(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     schema_declaration: Option<&str>,
+    cause: Cause,
     error: CodecError,
 ) -> Result<Graph, CodecError> {
     let mut graph = Graph::default();
@@ -214,13 +222,8 @@ fn source_only_graph(
         attributes: BTreeMap::new(),
         states: Vec::new(),
     });
-    graph
-        .losses
-        .push(FreecadLossCode::SourceGuiMetadataUnresolved.note(format!(
-        "GuiDocument.xml remains source-only: {error}; independently decoded geometry is retained"
-    )));
     let part = Part::at(
-        crate::dialect::FORMAT,
+        crate::dialect::registry_ids::FORMAT,
         "archive-entry",
         0,
         bytes,
@@ -231,7 +234,7 @@ fn source_only_graph(
     .contained_in(
         Identity::new(crate::native::native_id("document", "0")).map_err(CodecError::malformed)?,
     );
-    graph.given_up = Some(ctx.give_up_part(part, error)?);
+    graph.given_up = Some(ctx.give_up_part(part, cause, error)?);
     Ok(graph)
 }
 
@@ -258,7 +261,6 @@ fn transfer_xml(
     let neutral_schema_version = admission.neutral_schema_version();
     let transferred = transfer_schema_one(
         ir,
-        text,
         &xml,
         schema_declaration.as_deref(),
         neutral_schema_version,
@@ -269,8 +271,18 @@ fn transfer_xml(
             plan.apply(ir);
             graph
         }
-        Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
-            source_only_graph(ctx, bytes, schema_declaration.as_deref(), error)?
+        Err(
+            error @ (CodecError::Malformed(_)
+            | CodecError::Truncated { .. }
+            | CodecError::NotImplemented(_)),
+        ) => {
+            let cause = match (&error, &admission) {
+                (CodecError::NotImplemented(_), _) | (_, GuiSchemaAdmission::Unverified { .. }) => {
+                    Cause::Undecoded
+                }
+                _ => Cause::Unreadable,
+            };
+            source_only_graph(ctx, bytes, schema_declaration.as_deref(), cause, error)?
         }
         Err(error) => return Err(error),
     };
@@ -287,8 +299,7 @@ fn transfer_xml(
 
 fn transfer_schema_one(
     ir: &CadIr,
-    text: &str,
-    xml: &roxmltree::Document<'_>,
+    xml: &XmlDocument<'_>,
     schema_declaration: Option<&str>,
     neutral_schema_version: Option<u32>,
     sources: &GuiSources<'_, '_>,
@@ -311,7 +322,7 @@ fn transfer_schema_one(
         .filter(|node| !node.has_tag_name("ViewProviderData"))
         .enumerate()
     {
-        states.push(gui_state(text, order, node)?);
+        states.push(gui_state(xml, order, node)?);
     }
     let document = GuiDocumentRecord {
         id: "fcstd:gui:document#0".into(),
@@ -393,7 +404,7 @@ fn transfer_schema_one(
         let provider_key = provider_identity_key(name);
         let Some(object_id) = objects_by_name.get(name).copied() else {
             append_native_provider(
-                text,
+                xml,
                 provider,
                 provider_order,
                 None,
@@ -403,7 +414,7 @@ fn transfer_schema_one(
             continue;
         };
         append_native_provider(
-            text,
+            xml,
             provider,
             provider_order,
             Some(object_id),
@@ -441,7 +452,7 @@ fn transfer_schema_one(
                         && property.attribute("type") == Some(type_name)
                 })
                 .map_or(0, |property| {
-                    cadmpeg_core::decode::u64_from_index(property.range().start)
+                    cadmpeg_core::decode::u64_from_index(xml.source_range(property.range()).start)
                 });
             gui_provider_property_provenance(name, property_name, offset)
         };
@@ -1257,7 +1268,7 @@ fn transfer_primitive_appearance(
 }
 
 fn gui_state(
-    text: &str,
+    xml: &XmlDocument<'_>,
     order: usize,
     node: roxmltree::Node<'_, '_>,
 ) -> Result<GuiStateRecord, CodecError> {
@@ -1275,7 +1286,7 @@ fn gui_state(
                 .map(|attribute| Ok((attribute.name().to_owned(), attribute.value().to_owned())))
                 .collect::<Result<_, CodecError>>()?,
             text: value.text().map(ToOwned::to_owned),
-            raw_xml: text[value.range()].to_owned(),
+            raw_xml: crate::persistence::source_xml(xml, value).to_owned(),
         });
     }
     let mut side_entries = Vec::new();
@@ -1294,10 +1305,7 @@ fn gui_state(
         .attributes()
         .map(|attribute| Ok((attribute.name().to_owned(), attribute.value().to_owned())))
         .collect::<Result<_, CodecError>>()?;
-    let xml = crate::native::RetainedXml::from_source(
-        &text[node.range()],
-        cadmpeg_core::decode::u64_from_index(node.range().start),
-    )?;
+    let xml = crate::persistence::retained_xml(xml, node)?;
     let key = format!("{kind}:{order}");
     Ok(GuiStateRecord {
         id: crate::native::native_id("gui-state", &key),
@@ -1328,7 +1336,7 @@ fn unique_child<'a, 'input>(
 }
 
 fn append_native_provider(
-    text: &str,
+    xml: &XmlDocument<'_>,
     provider: roxmltree::Node<'_, '_>,
     order: usize,
     object: Option<&str>,
@@ -1352,7 +1360,7 @@ fn append_native_provider(
         name: name.to_owned(),
         expanded: provider.attribute("expanded").and_then(parse_bool),
         order,
-        raw_xml: text[provider.range()].to_owned(),
+        raw_xml: crate::persistence::source_xml(xml, provider).to_owned(),
     });
     let Some(container) = unique_child(provider, "Properties")? else {
         return Err(CodecError::malformed(format_args!(
@@ -1416,7 +1424,7 @@ fn append_native_provider(
                     })
                     .collect::<Result<_, CodecError>>()?,
                 text: value.text().map(ToOwned::to_owned),
-                raw_xml: text[value.range()].to_owned(),
+                raw_xml: crate::persistence::source_xml(xml, value).to_owned(),
             });
         }
         let mut side_entries = Vec::new();
@@ -1443,10 +1451,7 @@ fn append_native_provider(
             order: property_order,
             values,
             side_entries,
-            xml: crate::native::RetainedXml::from_source(
-                &text[property.range()],
-                cadmpeg_core::decode::u64_from_index(property.range().start),
-            )?,
+            xml: crate::persistence::retained_xml(xml, property)?,
         });
     }
     Ok(())
@@ -2550,12 +2555,7 @@ fn validate_gui_center_line_record(
         property_name,
         "GeometryType",
     )?)
-    .map_err(|()| {
-        gui_techdraw_error(
-            property_name,
-            "TechDraw geometry has an unsupported GeometryType",
-        )
-    })?;
+    .map_err(|()| unsupported_geometry_type(property_name))?;
     validate_gui_techdraw_geometry_branch(
         &fields,
         prefix.len(),
@@ -2647,12 +2647,7 @@ fn validate_gui_cosmetic_edge_record(
                 gui_techdraw_error(property_name, "CosmeticEdge GeometryType is not an integer")
             })?,
     )
-    .map_err(|()| {
-        gui_techdraw_error(
-            property_name,
-            "TechDraw geometry has an unsupported GeometryType",
-        )
-    })?;
+    .map_err(|()| unsupported_geometry_type(property_name))?;
 
     validate_gui_techdraw_geometry_branch(
         &fields,
@@ -3163,6 +3158,13 @@ fn parse_gui_techdraw_integer(
         .parse::<i64>()
         .map(|_| ())
         .map_err(|_| gui_techdraw_error(property_name, "GeomFormat has an invalid integer"))
+}
+
+/// A `TechDraw` `GeomType` this decoder has no reading for.
+fn unsupported_geometry_type(property_name: &str) -> CodecError {
+    CodecError::NotImplemented(format!(
+        "GUI property {property_name} TechDraw geometry has an unsupported GeometryType"
+    ))
 }
 
 fn gui_techdraw_error(property_name: &str, detail: &str) -> CodecError {

@@ -1832,6 +1832,7 @@ fn advance_compact_boundary_domains<'a>(
     mut states: Vec<MeshQuotientGaugeState>,
     budget: &WorkBudget,
 ) -> Result<CompactBoundaryAdvanceOutcome, CodecError> {
+    // resource-cap: MAX_QUOTIENT_STATES = 4
     const MAX_QUOTIENT_STATES: usize = 4_096;
 
     let mut ordered = Vec::<Vec<MeshFaceBoundaryAssignment>>::new();
@@ -3160,6 +3161,7 @@ impl IncidenceComponentSearch<'_, '_> {
         coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
     ) -> Result<(), CodecError> {
+        // resource-cap: MAX_SOLUTIONS = 4
         const MAX_SOLUTIONS: usize = 256;
         if self.state != IncidenceSearchState::Open {
             return Ok(());
@@ -4084,41 +4086,49 @@ where
             &active,
             budget,
         )?;
+        let completed_buf = RefCell::new(assignment.to_vec());
         let filter = |solution: &[MeshEndpointPair]| -> Result<bool, CodecError> {
-            let mut completed = assignment.to_vec();
+            let mut completed = completed_buf.borrow_mut();
             for &(edge, pair) in solution {
                 completed[edge] = Some(pair);
             }
-            let locally_closed = component_incidence_faces_viable(
-                ctx,
-                &component_faces,
-                &completed,
-                choices,
-                face_edges,
-                mesh_assignments,
-                point_count,
-            )?;
-            if !locally_closed {
-                return Ok(false);
-            }
-            let orientable = if orientation_budget.exhausted() {
-                true
-            } else {
-                partial_face_orientability_viable(
+            let outcome = (|| -> Result<bool, CodecError> {
+                let locally_closed = component_incidence_faces_viable(
                     ctx,
+                    &component_faces,
                     &completed,
-                    edge_faces,
+                    choices,
                     face_edges,
-                    orientation_budget,
-                )? || orientation_budget.exhausted()
-            };
-            if !orientable {
-                return Ok(false);
+                    mesh_assignments,
+                    point_count,
+                )?;
+                if !locally_closed {
+                    return Ok(false);
+                }
+                let orientable = if orientation_budget.exhausted() {
+                    true
+                } else {
+                    partial_face_orientability_viable(
+                        ctx,
+                        &completed,
+                        edge_faces,
+                        face_edges,
+                        orientation_budget,
+                    )? || orientation_budget.exhausted()
+                };
+                if !orientable {
+                    return Ok(false);
+                }
+                if partial_solution_valid.is_some_and(|constraint| !(constraint.valid)(&completed))
+                {
+                    return Ok(false);
+                }
+                Ok(true)
+            })();
+            for &(edge, _) in solution {
+                completed[edge] = assignment[edge];
             }
-            if partial_solution_valid.is_some_and(|constraint| !(constraint.valid)(&completed)) {
-                return Ok(false);
-            }
-            Ok(true)
+            outcome
         };
         let degree_support_budget = budget.charging_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
         let mut search = IncidenceComponentSearch {
@@ -4844,6 +4854,7 @@ pub(crate) fn reconstruct_incidence_candidates(
     face_count: usize,
     budget: &WorkBudget,
 ) -> Result<Option<StandardTopologyDraft>, CodecError> {
+    // resource-cap: MAX_TOPOLOGY_ASSIGNMENTS = 4
     const MAX_TOPOLOGY_ASSIGNMENTS: usize = 256;
 
     let IncidenceEndpointDomains {

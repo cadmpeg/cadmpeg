@@ -11,7 +11,7 @@ use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry};
 use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::PcurveId;
-use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::{Point2, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, PositiveLength, PositiveReal};
 use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
@@ -20,7 +20,7 @@ use super::super::graph::{
     edge_pcurve_parameters, evaluate_pcurve, pcurve_nurbs_knots, B5Graph, B5Pcurve,
     B5SphereGreatCirclePcurve, B5Surface,
 };
-use super::super::vecmath::{add, components, coordinates, cross, scale};
+use super::super::vecmath::{add, components, coordinates, scale};
 use super::edges::ordered_subrange;
 use super::{
     annotate, dot, point3, subtract, vector, CurvePlan, HelixPlan, TransferPlan, POINT_TOLERANCE,
@@ -243,7 +243,9 @@ fn isoparametric_angle_coordinate(
             ..
         } if constant_coordinate(&pcurve.control_points, 1).is_some() => {
             let handedness = dot(
-                cross(components(frame.reference()), components(direction_y)),
+                Vector3::from(components(frame.reference()))
+                    .cross(Vector3::from(components(direction_y)))
+                    .into(),
                 components(frame.axis()),
             )
             .signum();
@@ -396,7 +398,9 @@ pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Poin
             ..
         } => Point2::new(
             dot(
-                cross(components(frame.reference()), components(direction_y)),
+                Vector3::from(components(frame.reference()))
+                    .cross(Vector3::from(components(direction_y)))
+                    .into(),
                 components(frame.axis()),
             )
             .signum()
@@ -637,7 +641,11 @@ pub(super) fn lifted_curve_geometry(
                 Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                         point3(add(coordinates(*center), scale(radial, major_radius.get()))),
-                        vector(cross(radial, components(frame.axis()))),
+                        vector(
+                            Vector3::from(radial)
+                                .cross(Vector3::from(components(frame.axis())))
+                                .into(),
+                        ),
                         vector(radial),
                         minor_radius.get(),
                     )
@@ -742,7 +750,7 @@ pub(super) fn cylinder_point(
     angular_scale: f64,
     uv: [f64; 2],
 ) -> [f64; 3] {
-    let reference_y = cross(axis, reference_x);
+    let reference_y = Vector3::from(axis).cross(Vector3::from(reference_x)).into();
     let angle = uv[0] / angular_scale;
     add(
         origin,
@@ -812,12 +820,12 @@ pub(super) fn cylinder_helix(
         if delta_angle == 0.0 || delta_height == 0.0 {
             return None;
         }
-        let reference_y = cross(axis, reference_x);
+        let reference_y = Vector3::from(axis).cross(Vector3::from(reference_x)).into();
         let radial = add(
             scale(reference_x, angles[0].cos()),
             scale(reference_y, angles[0].sin()),
         );
-        let tangent = cross(axis, radial);
+        let tangent = Vector3::from(axis).cross(Vector3::from(radial)).into();
         let sweep = delta_angle.abs();
         let definition = ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(

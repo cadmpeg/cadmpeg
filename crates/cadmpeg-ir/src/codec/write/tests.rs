@@ -28,6 +28,7 @@ use cadmpeg_core::CodecError;
 
 mod dropped_records;
 mod restated_records;
+mod session;
 
 #[test]
 fn cadir_encoder_streams_the_canonical_json_shape() {
@@ -152,6 +153,7 @@ fn cadir_encoder_drops_the_records_its_scope_excludes() {
             scope: crate::ids::ProductDefinitionId::mint("synthetic:test:product-definition#root")
                 .unwrap(),
             owner: None,
+            position: None,
             name: None,
             kind: crate::design::units::ValueKind::Text,
             unit: None,
@@ -1750,6 +1752,7 @@ fn negated_parameter(key: &str, depth: usize) -> crate::design::parameter::Desig
         id: format!("test:design:parameter#{key}").try_into().unwrap(),
         scope: "test:design:definition#part".to_owned().try_into().unwrap(),
         owner: None,
+        position: None,
         name: Some(cadmpeg_core::text::NonBlankString::new(key).unwrap()),
         kind: crate::design::units::ValueKind::Boolean,
         unit: None,

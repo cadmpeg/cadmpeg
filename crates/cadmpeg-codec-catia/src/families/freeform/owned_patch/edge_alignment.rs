@@ -15,6 +15,7 @@ const PROJECTION_STEPS: usize = 48;
 const UV_FIT_TOLERANCE: f64 = 1.0e-6;
 const UV_FIT_FALLBACK: f64 = 1.0e-4;
 const UV_FIT_PACING_FALLBACK: f64 = 1.0e-3;
+// resource-cap: MAX_ENDPOINT_SEED_GAP_MM = N
 const MAX_ENDPOINT_SEED_GAP_MM: f64 = 0.005;
 
 pub(super) fn edge_relation(first: &Use, second: &Use) -> Option<bool> {

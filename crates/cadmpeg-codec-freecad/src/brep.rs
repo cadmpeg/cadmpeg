@@ -1865,6 +1865,7 @@ pub(crate) struct NurbsCurve2d {
 /// The native trees are not neutral carriers. `MAX_GEOMETRY_NESTING` bounds the
 /// neutral chain separately, in the carrier constructors `topology_transfer`
 /// calls.
+// resource-cap: MAX_GEOMETRY_NESTING_DEPTH = 2
 const MAX_GEOMETRY_NESTING_DEPTH: usize = 64;
 
 /// One exact parameter-space curve record.

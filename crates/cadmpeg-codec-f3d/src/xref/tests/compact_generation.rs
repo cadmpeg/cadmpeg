@@ -80,7 +80,7 @@ fn compact_legacy_placements_keep_owner_key_and_qualified_role() {
                         &DecodeOptions::default(),
                     )
                     .unwrap();
-                let native = crate::test_support::native_test::f3d_native(decoded.ir());
+                let native = crate::test_support::native_fixture::f3d_native(decoded.ir());
                 let reference = &native.xref_references[0];
                 assert!(super::super::placement_source_matches(reference).unwrap());
                 assert_eq!(reference.neutron_role.as_str(), role);
@@ -182,11 +182,11 @@ fn compact_legacy_placements_require_complete_equal_targets_and_rigid_matrix() {
 #[test]
 fn supported_legacy_identity_owner_frame_keeps_its_projection() {
     let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
-    let frame = super::legacy_occurrence_record(role, 10, None);
+    let frame = crate::test_support::legacy_occurrence_record(role, 10, None);
     let placement = super::super::occurrence_placement(&frame, None)
         .unwrap()
         .unwrap();
-    assert!(placement.frame_bytes.is_empty());
+    assert_eq!(placement.frame_bytes, frame);
     assert!(placement.owner.is_none());
     assert!(placement.occurrence_guid.is_none());
 }

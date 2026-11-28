@@ -375,16 +375,20 @@ fn sheet_root_salvages_independent_shells() {
         "{:#?}",
         decoded.report().losses
     );
-    assert!(decoded
+    // The shell is given up alone, with the carrier that did not resolve.
+    let shells = decoded
         .report()
         .losses
         .iter()
-        .any(|loss| loss.message.contains("omitted 1 unresolved shell")));
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.message.contains("shell carrier #34")));
+        .filter(|loss| loss.message.contains("does not resolve: shell carrier #34"))
+        .collect::<Vec<_>>();
+    let [shell] = shells.as_slice() else {
+        panic!("one give-up names the shell: {shells:#?}");
+    };
+    assert_eq!(
+        shell.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);

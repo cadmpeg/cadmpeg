@@ -1045,10 +1045,13 @@ pub(crate) fn expression_records_with_model_name(
                 {
                     return Ok(None);
                 }
-                let body_end = payload[body_start..end]
-                    .windows(1)
-                    .position(|window| window[0] == psb::token::NAMED_RECORD)
-                    .map_or(end, |relative| body_start + relative);
+                let body_end = cadmpeg_core::bytes::find_byte_in(
+                    payload,
+                    psb::token::NAMED_RECORD,
+                    body_start,
+                    end,
+                )
+                .unwrap_or(end);
                 let body = payload[body_start..body_end].to_vec();
                 Ok(Some(CurveExpressionLocalSystem {
                     dimensions,
@@ -4812,15 +4815,18 @@ struct ExpressionParser<'a, V> {
     text_capped: bool,
 }
 
+// resource-cap: MAX_EXPRESSION_NESTING = 2
 const MAX_EXPRESSION_NESTING: usize = 128;
 
 /// String bytes one relation expression evaluation may materialize. Every
 /// literal, variable read, function result, and concatenation counts its full
 /// length, so repeated concatenation cannot double a string past this bound.
+// resource-cap: MAX_RELATION_EXPRESSION_TEXT_BYTES = 4
 const MAX_RELATION_EXPRESSION_TEXT_BYTES: usize = 4096;
 
 /// String bytes the assigned values of one relation program may keep. Each
 /// assignment keeps its own copy of its value.
+// resource-cap: MAX_RELATION_PROGRAM_TEXT_BYTES = 4
 const MAX_RELATION_PROGRAM_TEXT_BYTES: usize = 65_536;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -5609,6 +5615,7 @@ fn relation_string_pattern(value: &str, pattern: &str) -> Option<bool> {
     Some(compiled.is_match(value))
 }
 
+// resource-cap: MAX_RELATION_STRING_PRECISION = 1
 const MAX_RELATION_STRING_PRECISION: f64 = 128.0;
 
 fn relation_precision(value: f64) -> Option<usize> {
@@ -6054,8 +6061,11 @@ fn solve_affine_expression_block(
     Ok(Some(values))
 }
 
+// resource-cap: MAX_NONLINEAR_SOLVE_VARIABLES = 4
 const MAX_NONLINEAR_SOLVE_VARIABLES: usize = 8;
+// resource-cap: MAX_NONLINEAR_SOLVE_ITERATIONS = 4
 const MAX_NONLINEAR_SOLVE_ITERATIONS: usize = 64;
+// resource-cap: MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS = 4
 const MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS: usize = 16;
 const NONLINEAR_SOLVE_RESIDUAL_TOLERANCE: f64 = 1.0e-8;
 const NONLINEAR_SOLVE_DERIVATIVE_STEP: f64 = 1.0e-6;

@@ -577,7 +577,7 @@ mod tests {
             id: "f3d:native:copy-paste-bodies#0",
             value: &operation,
         };
-        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
             &record,
             "design_parameter_scopes",
             || COPY_PASTE_BODIES_CLONE_COUNT.with(|count| count.set(0)),
