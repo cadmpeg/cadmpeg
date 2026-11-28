@@ -6,8 +6,9 @@ use std::ops::Range;
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::{u64_from_index, ByteRange, DecodeArena, DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::value_unwritable;
+use cadmpeg_ir::codec::write::{evaluation_stale, value_unwritable};
 use cadmpeg_ir::codec::DecodeResult;
+use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::{DesignParameter as Legacy, ParameterValue as LegacyValue};
@@ -250,6 +251,65 @@ impl Parameters {
             }),
         ));
         Ok(())
+    }
+
+    pub(super) fn stale_losses(&self, target: &CadIr, losses: &mut Vec<LossNote>) {
+        losses.extend(evaluation_stale(
+            "F3D",
+            "writes these parameter edits without regenerating stored geometry or history states, which may still reflect the previous values",
+            self.written.iter().map(ToString::to_string),
+        ));
+        let status = |status| match status {
+            EvaluationStatus::Current => None,
+            EvaluationStatus::Stale => Some("stale"),
+            EvaluationStatus::Failed => Some("failed"),
+        };
+        let evaluations = target.design.evaluations.iter().filter_map(|evaluation| {
+            status(evaluation.status).map(|status| format!("{} ({status})", evaluation.id))
+        });
+        let current = target.design.scopes.iter().flat_map(|scope| {
+            scope.current.iter().filter_map(|state| {
+                status(state.status).map(|status| {
+                    format!(
+                        "{} current state {:?} ({status})",
+                        scope.definition, state.at
+                    )
+                })
+            })
+        });
+        losses.extend(evaluation_stale(
+            "F3D",
+            "writes these states without a stale or failure mark",
+            evaluations.chain(current),
+        ));
+    }
+}
+
+pub(crate) fn adopt_status(
+    design: &mut cadmpeg_ir::document::Design,
+    stated: &cadmpeg_ir::document::Design,
+) {
+    for evaluation in &mut design.evaluations {
+        if let Some(other) = stated
+            .evaluations
+            .iter()
+            .find(|other| other.id == evaluation.id)
+        {
+            evaluation.status = other.status;
+        }
+    }
+    for scope in &mut design.scopes {
+        if let Some(other) = stated
+            .scopes
+            .iter()
+            .find(|other| other.definition == scope.definition)
+        {
+            for state in &mut scope.current {
+                if let Some(other) = other.current.iter().find(|other| other.at == state.at) {
+                    state.status = other.status;
+                }
+            }
+        }
     }
 }
 

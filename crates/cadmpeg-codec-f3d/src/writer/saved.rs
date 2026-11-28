@@ -40,6 +40,7 @@ pub(crate) fn restore<'a>(
     };
     let restored = super::RetainedArchive::read(ctx, image).and_then(|source| {
         let mut restored = restore_history(input.ir, source.decoded.ir(), &FusionText)?;
+        super::patch::parameters::adopt_status(&mut restored.ir.design, &input.ir.design);
         restored.ir.model.configurations = reproject(ctx, &restored.ir)?;
         Ok((restored, source))
     });

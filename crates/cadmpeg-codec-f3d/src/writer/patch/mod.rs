@@ -19,7 +19,7 @@ use cadmpeg_ir::codec::write::saved::adopt_configurations;
 use cadmpeg_ir::report::loss::LossNote;
 pub(crate) mod edits;
 mod geometry;
-mod parameters;
+pub(crate) mod parameters;
 pub(crate) mod records;
 mod user_knots;
 use edits::{
@@ -421,6 +421,7 @@ pub(crate) fn write_semantic(
         .clone_from(&target.model.configurations);
     adopt_configurations(&mut supported_target.design, &target.design);
     parameters::adopt(&mut supported_target, target);
+    parameters::adopt_status(&mut supported_target.design, &target.design);
     if let (Some(mut supported), Some(target_native)) =
         (baseline_native.clone(), target_native.as_ref())
     {
@@ -866,6 +867,7 @@ pub(crate) fn write_semantic(
         .map_err(|error| CodecError::malformed(format_args!("cannot finish F3D ZIP: {error}")))?
         .into_inner();
     parameter_edits.verify(ctx, &output, table_target, &mut table_losses)?;
+    parameter_edits.stale_losses(target, &mut table_losses);
     if let Some(tables) = tables {
         tables.destination.read_back(
             ctx.policy(),

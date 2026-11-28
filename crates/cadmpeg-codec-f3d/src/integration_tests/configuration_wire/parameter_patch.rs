@@ -3,6 +3,73 @@
 use super::*;
 
 #[test]
+fn patched_parameter_reports_the_retained_state() {
+    use cadmpeg_ir::design::parameter::ParameterDefinition;
+
+    let (decoded, fixture) = fixture(false);
+    for mut ir in [decoded.ir().clone(), saved(decoded.ir())] {
+        let value = length_override(15.5);
+        let parameter = ir
+            .design
+            .parameters
+            .iter_mut()
+            .find(|p| p.id == fixture.width)
+            .unwrap();
+        parameter.definition = ParameterDefinition::Expression(value.expression.unwrap());
+        parameter.value = value.value;
+        let (written, losses) = written_with_losses(&ir, decoded.source_fidelity());
+        assert_eq!(
+            own(written.ir(), &fixture.width),
+            ("15.5 mm".to_owned(), 15.5)
+        );
+        assert!(
+            losses
+                .iter()
+                .any(|loss| loss.code.to_string() == "export/evaluation.stale"
+                    && loss.message.contains(fixture.width.as_str())),
+            "{losses:#?}"
+        );
+    }
+}
+
+#[test]
+fn patched_archive_reports_stale_and_failed_states() {
+    use cadmpeg_ir::design::evaluation::EvaluationStatus;
+
+    let (decoded, _) = fixture(false);
+    for mut ir in [decoded.ir().clone(), saved(decoded.ir())] {
+        for (status, label) in [
+            (EvaluationStatus::Stale, "stale"),
+            (EvaluationStatus::Failed, "failed"),
+        ] {
+            let scope = ir
+                .design
+                .scopes
+                .iter_mut()
+                .find(|scope| !scope.current.is_empty())
+                .expect("current state");
+            let id = scope.definition.clone();
+            scope.current[0].status = status;
+            let (written, losses) = written_with_losses(&ir, decoded.source_fidelity());
+            assert!(written
+                .ir()
+                .design
+                .scopes
+                .iter()
+                .any(|scope| scope.definition == id && !scope.current.is_empty()));
+            assert!(
+                losses
+                    .iter()
+                    .any(|loss| loss.code.to_string() == "export/evaluation.stale"
+                        && loss.message.contains(id.as_str())
+                        && loss.message.contains(label)),
+                "{losses:#?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn the_patch_writes_the_active_override_in_design_cell_and_test_row() {
     let (decoded, fixture) = fixture(true);
     assert_eq!(own(decoded.ir(), &fixture.width), ("2 mm".to_owned(), 2.0));
@@ -41,6 +108,13 @@ fn the_patch_writes_the_active_override_in_design_cell_and_test_row() {
         );
         assert!(
             unwritten_parameter(&losses, &fixture.width).is_empty(),
+            "{path}: {losses:#?}"
+        );
+        assert!(
+            losses
+                .iter()
+                .any(|loss| loss.code.to_string() == "export/evaluation.stale"
+                    && loss.message.contains(fixture.width.as_str())),
             "{path}: {losses:#?}"
         );
     }
