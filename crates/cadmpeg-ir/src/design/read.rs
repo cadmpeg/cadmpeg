@@ -88,7 +88,7 @@ pub(super) fn within_state_chain(depth: u64) -> Result<(), String> {
         return Ok(());
     }
     let refusal = ResourceLimit {
-        scope: LimitScope::for_dimension(ResourceDimension::RecursionDepth),
+        scope: LimitScope::Session,
         dimension: ResourceDimension::RecursionDepth,
         reason: ResourceFailure::BudgetExceeded,
         limit,

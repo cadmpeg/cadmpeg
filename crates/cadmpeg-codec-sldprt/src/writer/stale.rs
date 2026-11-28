@@ -11,6 +11,7 @@ use cadmpeg_core::CodecError;
 
 use cadmpeg_ir::codec::write::evaluation_stale;
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
+use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -75,6 +76,27 @@ impl StaleStates {
                 .entry(name)
                 .or_default()
                 .push(evaluation.id.as_str().to_owned());
+        }
+        for scope in &ir.design.scopes {
+            let name = match &scope.active_configuration {
+                Some(id) => names.get(id).map(|name| (*name).to_owned()),
+                None => Some(super::active_configuration_name(ir)),
+            };
+            for current in &scope.current {
+                if current.status == EvaluationStatus::Current {
+                    continue;
+                }
+                let id = match &current.at {
+                    Position::Start(id) | Position::After(Member::Container(id)) => id.as_str(),
+                    Position::After(Member::Feature(id)) => id.as_str(),
+                };
+                states.configurations.extend(name.clone());
+                states
+                    .evaluations
+                    .entry(name.clone())
+                    .or_default()
+                    .push(id.to_owned());
+            }
         }
         states
     }

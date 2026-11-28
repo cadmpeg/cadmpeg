@@ -69,7 +69,6 @@ pub struct Model {
     pub presentation_documents: Vec<PresentationDocument>,
     pub view_presentations: Vec<ViewPresentation>,
     pub tessellations: Vec<Tessellation>,
-    pub point_clouds: Vec<PointCloud>,
     pub appearances: Vec<Appearance>,
     pub appearance_bindings: Vec<AppearanceBinding>,
     pub attributes: Vec<SourceAttribute>,
@@ -83,6 +82,7 @@ pub struct Model {
     pub physics_scenes: Vec<PhysicsScene>,
     pub solver_settings: Vec<SolverSettings>,
     pub declared_measures: Vec<DeclaredMeasure>,
+    pub point_clouds: Vec<PointCloud>,
 }
 ```
 

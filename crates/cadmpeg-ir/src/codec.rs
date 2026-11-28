@@ -282,6 +282,7 @@ impl DecodeResult {
         strictness: &Strictness,
         record_digests: bool,
     ) -> Result<Self, DecodeFailure> {
+        crate::document::check_state_chain_limit(&decoded.ir, &ctx.policy().limits)?;
         let mut result = DecodeResult::new(decoded, format, ctx.depth(), ctx.policy())?;
         result.charge_unread_xml(ctx);
         result.name_dropped_records(ctx)?;

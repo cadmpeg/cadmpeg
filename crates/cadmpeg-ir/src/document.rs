@@ -3223,6 +3223,19 @@ impl CadIrReadWire {
     }
 }
 
+pub(crate) fn check_state_chain_limit(
+    ir: &CadIr,
+    limits: &cadmpeg_core::decode::ResourceLimits,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let (result, refusal) = crate::design::read::with_limits(limits, || {
+        admit_state_chains(&ir.design, &ir.process, Cycles::End)
+    });
+    if let Some(limit) = refusal {
+        return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
+    }
+    result.map_err(cadmpeg_core::CodecError::malformed)
+}
+
 /// Walks every chain of state bases of `design` and `process` under the
 /// state chain ceiling.
 fn admit_state_chains(design: &Design, process: &Process, cycles: Cycles) -> Result<(), String> {
