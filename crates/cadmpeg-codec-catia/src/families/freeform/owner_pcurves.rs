@@ -224,10 +224,23 @@ fn retained_size(
     Ok(bytes)
 }
 
+#[cfg(test)]
 pub(in crate::families) fn attach(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl AnnotationStorage>,
     data: &[u8],
+    records: &[ConsolidatedRecord],
+    refusal: &mut crate::nurbs::LaneRefusals,
+    admission: &mut FamilyEntityAdmission<'_, '_>,
+) -> Result<AttachResult, CodecError> {
+    attach_in_sources(ir, annotations, data, &[], records, refusal, admission)
+}
+
+pub(in crate::families) fn attach_in_sources(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder<impl AnnotationStorage>,
+    data: &[u8],
+    sources: &[Vec<crate::wire::records::SourceExtent>],
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
     admission: &mut FamilyEntityAdmission<'_, '_>,
@@ -241,7 +254,7 @@ pub(in crate::families) fn attach(
         return Ok(result);
     }
     let ctx = admission.context();
-    let journal = AllocationJournal::new(records);
+    let journal = AllocationJournal::with_sources(data, sources, records);
     let owners = OwnerClosureIndex::new(data, records, &journal);
     let count = records
         .iter()

@@ -100,6 +100,48 @@ fn owned_surface_keeps_full_domain_identity_parameters_without_a_loss() {
 }
 
 #[test]
+fn owned_surface_keeps_shifted_terminal_span_identity_parameters_without_a_loss() {
+    use crate::layout::surface_terminal_span_tail as layout;
+    let mut bytes = a5_surface_stream();
+    // Shift distinct U knots from [0.0, 1.0] to [10.0, 11.0]; the tail keeps
+    // local terminal-span limits [0.0, 1.0] with identity affine map.
+    let u0_offset = bytes
+        .windows(8)
+        .position(|w| w == 0.0_f64.to_le_bytes())
+        .expect("u0 knot");
+    bytes[u0_offset..u0_offset + 8].copy_from_slice(&10.0_f64.to_le_bytes());
+    bytes[u0_offset + 8..u0_offset + 16].copy_from_slice(&11.0_f64.to_le_bytes());
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    let surfaces = super::super::a5_owned_surfaces_from_records(&bytes, &records, &mut refusal)
+        .expect("shifted terminal-span surface");
+    assert_eq!(surfaces.len(), 1);
+    assert_eq!(
+        surfaces[0].geometry.u_knots().as_slice(),
+        &[10.0, 10.0, 11.0, 11.0]
+    );
+    assert!(refusal.take_notes().is_empty());
+
+    // Genuine trimmed sub-domain inside the terminal span still reports a loss.
+    let mut trimmed = a5_surface_tail();
+    let values = [0.2_f64, 0.8, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0]
+        .into_iter()
+        .flat_map(f64::to_le_bytes)
+        .collect::<Vec<_>>();
+    trimmed[layout::PARAMETERS..layout::FLAGS].copy_from_slice(&values);
+    let trimmed_bytes = a5_surface_stream_with_tail(&trimmed);
+    let trimmed_records = crate::wire::records::consolidated_records(&trimmed_bytes);
+    let mut trimmed_refusal = crate::nurbs::LaneRefusals::new();
+    let _ = super::super::a5_owned_surfaces_from_records(
+        &trimmed_bytes,
+        &trimmed_records,
+        &mut trimmed_refusal,
+    )
+    .expect("trimmed surface");
+    assert_eq!(trimmed_refusal.take_notes().len(), 1);
+}
+
+#[test]
 fn new_tail_forms_refuse_chart_changes_that_are_not_transferred() {
     use crate::layout::surface_terminal_span_tail as layout;
     for (parameters, suffix, descending) in [

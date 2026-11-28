@@ -117,7 +117,7 @@ fn spline_axis(points: &[f64]) -> NurbsSurfaceAxis {
     NurbsSurfaceAxis::new(3, knots, false)
 }
 
-pub(super) fn offset(
+pub(in crate::families::freeform) fn offset(
     source: &NurbsSurface,
     distance: f64,
     [u, v]: [[f64; 2]; 2],

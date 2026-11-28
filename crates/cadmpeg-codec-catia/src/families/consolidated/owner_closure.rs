@@ -72,10 +72,11 @@ impl OwnerClosureIndex {
             else {
                 continue;
             };
-            let mut owners: [Option<(usize, B2CountedOwner)>; 127] = std::array::from_fn(|_| None);
+            let mut owners: Vec<(usize, B2CountedOwner)> =
+                Vec::with_capacity(usize::from(references.owner_count));
             let mut at = references.owner_lane.start;
             let mut complete = true;
-            for slot in 0..usize::from(references.owner_count) {
+            for _ in 0..usize::from(references.owner_count) {
                 let Some(reference) = allocation_reference(payload, &mut at) else {
                     complete = false;
                     break;
@@ -95,10 +96,7 @@ impl OwnerClosureIndex {
                 };
                 if owner_record.family() != ConsolidatedFamily::B
                     || owner_record.class() != 0x62
-                    || owners[..slot]
-                        .iter()
-                        .flatten()
-                        .any(|(index, _)| *index == owner_index)
+                    || owners.iter().any(|(index, _)| *index == owner_index)
                 {
                     complete = false;
                     break;
@@ -126,12 +124,12 @@ impl OwnerClosureIndex {
                     complete = false;
                     break;
                 }
-                owners[slot] = Some((owner_index, owner));
+                owners.push((owner_index, owner));
             }
             if !complete || at != references.owner_lane.end {
                 continue;
             }
-            for (owner_index, owner) in owners.into_iter().flatten() {
+            for (owner_index, owner) in owners {
                 let support_slot = owner.references.len() - 1;
                 for (references, encodings) in owner.references[..support_slot]
                     .chunks_exact(2)
@@ -144,7 +142,8 @@ impl OwnerClosureIndex {
                     };
                     if !matches!(
                         (representation.family(), representation.class()),
-                        (ConsolidatedFamily::A, 0x20) | (ConsolidatedFamily::B, 0x18 | 0x19 | 0x20)
+                        (ConsolidatedFamily::A, 0x20 | 0x21)
+                            | (ConsolidatedFamily::B, 0x18 | 0x19 | 0x20 | 0x21)
                     ) {
                         continue;
                     }
@@ -172,12 +171,22 @@ impl OwnerClosureIndex {
                         continue;
                     };
                     let mut at = 0;
-                    let Some(support) = CompactUnsigned::read(payload, &mut at) else {
-                        continue;
-                    };
-                    if journal.resolve_weighted_distance(representation_index, support.value())
-                        != Some(carrier)
-                    {
+                    let support_match =
+                        if let Some(support) = CompactUnsigned::read(payload, &mut at) {
+                            journal.resolve_weighted_distance(representation_index, support.value())
+                                == Some(carrier)
+                        } else {
+                            let mut ref_at = 0;
+                            allocation_reference(payload, &mut ref_at).is_some_and(|reference| {
+                                owner_reference(
+                                    journal,
+                                    representation_index,
+                                    reference.value,
+                                    reference.encoding,
+                                ) == Some(carrier)
+                            })
+                        };
+                    if !support_match {
                         continue;
                     }
                     by_edge
@@ -225,6 +234,10 @@ impl OwnerClosureIndex {
         Some(sides)
     }
 
+    pub(crate) fn all_edge_occurrences(&self, edge_index: usize) -> &[OwnerOccurrence] {
+        self.by_edge.get(&edge_index).map_or(&[], Vec::as_slice)
+    }
+
     pub(crate) fn edge_occurrences(
         &self,
         edge_index: usize,
@@ -260,7 +273,11 @@ fn counted_face_references(payload: &[u8]) -> Option<CountedFaceReferences> {
     for _ in 1..count {
         allocation_reference(payload, &mut at)?;
     }
-    matches!(payload.get(at..), Some([0x03 | 0x05])).then_some(CountedFaceReferences {
+    matches!(
+        payload.get(at..),
+        Some([0x03 | 0x05] | [0x01, 0x00] | [0xff, 0xff])
+    )
+    .then_some(CountedFaceReferences {
         carrier,
         owner_lane: owners_start..at,
         owner_count: count.checked_sub(1)?,
@@ -277,17 +294,17 @@ fn owner_reference<'a>(
         AllocationReferenceEncoding::BackwardDistance | AllocationReferenceEncoding::WidthCoded => {
             journal.resolve_weighted_distance(origin, value)
         }
-        AllocationReferenceEncoding::OwnedChild => journal.resolve_address(
+        AllocationReferenceEncoding::OwnedChild
+        | AllocationReferenceEncoding::TaggedU8
+        | AllocationReferenceEncoding::TaggedU16
+        | AllocationReferenceEncoding::TaggedU24 => journal.resolve_address(
             origin,
             journal
                 .address(origin)?
                 .checked_add(u64::from(value))?
                 .checked_add(1)?,
         ),
-        AllocationReferenceEncoding::Selector2
-        | AllocationReferenceEncoding::TaggedU8
-        | AllocationReferenceEncoding::TaggedU16
-        | AllocationReferenceEncoding::TaggedU24 => None,
+        AllocationReferenceEncoding::Selector2 => None,
     }
 }
 
@@ -297,7 +314,7 @@ fn surface_carrier(record: &ConsolidatedRecord) -> bool {
         (ConsolidatedFamily::A, 0x32 | 0x34)
             | (
                 ConsolidatedFamily::B,
-                0x27 | 0x28 | 0x29 | 0x2a | 0x2b | 0x2d
+                0x27 | 0x28 | 0x29 | 0x2a | 0x2b | 0x2c | 0x2d | 0x2e | 0x30 | 0x31 | 0x37
             )
     )
 }
@@ -597,6 +614,26 @@ mod tests {
             assert!(OwnerClosureIndex::new(&data, &records, &journal)
                 .bind(4, [1, 3], [0, 2], [20, 12])
                 .is_none());
+        }
+    }
+
+    #[test]
+    fn owner_closure_admits_uncompressed_two_byte_face_orientation_tails() {
+        for tail in [[0x01, 0x00], [0xff, 0xff]] {
+            let mut frames = seven_loop_face();
+            let mut payload = vec![0x88, compact(9)];
+            for ordinal in 0..7 {
+                payload.push(ordinal * 4 + 3);
+            }
+            payload.extend_from_slice(&tail);
+            frames[11] = frame(0x5f, 1, &payload);
+            let data = frames.concat();
+            let records = consolidated_records(&data);
+            let journal = AllocationJournal::new(&records);
+            let sides = OwnerClosureIndex::new(&data, &records, &journal)
+                .bind(4, [1, 3], [0, 2], [20, 12])
+                .expect("two-byte orientation tail should bind");
+            assert_eq!(sides.map(|side| side.face_index), [19, 11]);
         }
     }
 }

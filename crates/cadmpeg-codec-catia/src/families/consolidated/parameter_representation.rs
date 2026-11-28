@@ -30,13 +30,21 @@ fn curve_representation<'a>(
     origin: usize,
     operand: Class25Operand,
 ) -> Option<&'a ConsolidatedRecord> {
+    let is_curve_rep = |target: &ConsolidatedRecord| {
+        matches!(
+            (target.family(), target.class()),
+            (ConsolidatedFamily::A, 0x20 | 0x21)
+                | (ConsolidatedFamily::B, 0x18 | 0x19 | 0x20 | 0x21)
+        )
+    };
     let target = match operand.encoding {
         AllocationReferenceEncoding::WidthCoded => {
             journal.resolve_weighted_distance(origin, operand.value)
         }
-        AllocationReferenceEncoding::BackwardDistance => {
-            journal.resolve_record_distance(origin, operand.value)
-        }
+        AllocationReferenceEncoding::BackwardDistance => journal
+            .resolve_record_distance(origin, operand.value)
+            .filter(|candidate| is_curve_rep(candidate))
+            .or_else(|| journal.resolve_weighted_distance(origin, operand.value)),
         AllocationReferenceEncoding::OwnedChild => {
             journal.resolve_owned_child(origin, operand.value)
         }
@@ -45,11 +53,7 @@ fn curve_representation<'a>(
         | AllocationReferenceEncoding::TaggedU16
         | AllocationReferenceEncoding::TaggedU24 => None,
     }?;
-    matches!(
-        (target.family(), target.class()),
-        (ConsolidatedFamily::A, 0x20) | (ConsolidatedFamily::B, 0x18 | 0x19 | 0x20)
-    )
-    .then_some(target)
+    is_curve_rep(target).then_some(target)
 }
 
 pub(crate) fn b18_support<'a>(
