@@ -29,9 +29,13 @@ pub(in crate::feature) fn project<'a>(
     type_at: impl Fn(u32) -> Option<&'a str>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    let mut pending_loss = None;
     let operation = match family {
         FeatureFamily::Sweep => match super::sweep::project(source, label, index) {
-            Ok(operation) => operation,
+            Ok((operation, law_loss)) => {
+                pending_loss = law_loss;
+                operation
+            }
             Err(reason) => {
                 losses.push(reason.note());
                 return None;
@@ -55,7 +59,11 @@ pub(in crate::feature) fn project<'a>(
         },
         _ => return None,
     };
-    typed(ctx, source, label, index, family, operation, losses)
+    let projected = typed(ctx, source, label, index, family, operation, losses);
+    if matches!(projected, Some(Ok(_))) {
+        losses.extend(pending_loss);
+    }
+    projected
 }
 
 /// Whether an earlier feature names the result wrapper of a surface loft. The

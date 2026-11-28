@@ -2140,3 +2140,32 @@ Parsed by:
 Unstated regions:
 
 - `6..9` (3 B): The specification states three bytes between `second` and `third`.
+
+## `pm_dc_spatial_sketch_prefix`
+
+Spec §12 · layout: byte offsets · size: 8 B
+
+Offsets start after the state content header in segment major version 31. The type-8 entity-reference array follows this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/sketch/spatial.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `i32` | little | spec | state:i32 |
+| 4 | 4 | `count_value` | `u32` | little | spec | count_value:u32 |
+
+## `pm_dc_spatial_sketch_tail`
+
+Spec §12 · layout: byte offsets · size: 56 B
+
+Offsets start after the type-8 entity-reference array in segment major version 31.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/sketch/spatial.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `values` | `u32[2]` | little | spec | values:u32[2] |
+| 8 | 24 | `lower` | `f64[3]` | little | spec | lower:f64[3] |
+| 32 | 24 | `upper` | `f64[3]` | little | spec | upper:f64[3] |

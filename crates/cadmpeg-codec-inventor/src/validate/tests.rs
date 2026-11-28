@@ -6,6 +6,7 @@ mod coil;
 mod delete_face;
 mod edge_selections;
 mod revolve_axis;
+mod spatial;
 mod split_face;
 mod tagging;
 

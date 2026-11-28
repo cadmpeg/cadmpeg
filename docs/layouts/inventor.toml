@@ -6118,3 +6118,56 @@ offset = 9
 type = "u32"
 source = "spec"
 anchor = "`third:u32`"
+
+[[record]]
+name = "pm_dc_spatial_sketch_prefix"
+kind = "byte"
+section = "12"
+anchor = "Its state content header is followed by"
+parsed_by = "crates/cadmpeg-codec-inventor/src/sketch/spatial.rs"
+size = 8
+note = "Offsets start after the state content header in segment major version 31. The type-8 entity-reference array follows this prefix."
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "state:i32"
+
+[[record.field]]
+name = "count_value"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "count_value:u32"
+
+[[record]]
+name = "pm_dc_spatial_sketch_tail"
+kind = "byte"
+section = "12"
+anchor = "The record ends after `upper`"
+parsed_by = "crates/cadmpeg-codec-inventor/src/sketch/spatial.rs"
+size = 56
+note = "Offsets start after the type-8 entity-reference array in segment major version 31."
+
+[[record.field]]
+name = "values"
+offset = 0
+type = "u32[2]"
+source = "spec"
+anchor = "values:u32[2]"
+
+[[record.field]]
+name = "lower"
+offset = 8
+type = "f64[3]"
+source = "spec"
+anchor = "lower:f64[3]"
+
+[[record.field]]
+name = "upper"
+offset = 32
+type = "f64[3]"
+source = "spec"
+anchor = "upper:f64[3]"

@@ -5,7 +5,7 @@ use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use std::rc::Rc;
 
-fn model() -> CadIr {
+pub(in crate::feature::loft_sweep) fn model() -> CadIr {
     let mut partial = json!({
         "bodies": [{"id":"test:model:body#b", "kind":"solid"}],
         "regions": [{"id":"test:model:region#r", "body":"test:model:body#b", "shells":["test:model:shell#s"]}],
@@ -929,6 +929,688 @@ fn a_naming_tag_of_a_real_carrier_reaches_a_typed_loft_through_the_state_index()
     assert!(loss.message.contains(limit.operation), "{}", loss.message);
     assert!(!loss.message.contains("work cap"), "{}", loss.message);
     assert!(bounded.resource_refusal().is_none());
+}
+
+const GENERATOR: u32 = 17;
+
+/// The sweep tags `(section, span, role)` of a face and its surface.
+type TaggedFace = ((i64, i64, i64), serde_json::Value);
+
+fn plane_json(origin: [f64; 3], normal: [f64; 3], u_axis: [f64; 3]) -> serde_json::Value {
+    json!({"kind":"plane","origin":{"x":origin[0],"y":origin[1],"z":origin[2]},"normal":{"x":normal[0],"y":normal[1],"z":normal[2]},"u_axis":{"x":u_axis[0],"y":u_axis[1],"z":u_axis[2]}})
+}
+
+fn cylinder_json(origin: [f64; 3], radius: f64) -> serde_json::Value {
+    json!({"kind":"cylinder","origin":{"x":origin[0],"y":origin[1],"z":origin[2]},"axis":{"x":0.0,"y":0.0,"z":1.0},"ref_direction":{"x":1.0,"y":0.0,"z":0.0},"radius":radius})
+}
+
+/// A solid whose faces carry the sweep tags `(section, span, role)` of the
+/// generator `GENERATOR`, each with the given surface.
+fn tagged_model(faces: &[TaggedFace]) -> CadIr {
+    let name = |kind: &str, i: usize| format!("test:model:{kind}#{kind}{i}");
+    let mut partial = json!({
+        "bodies": [{"id":"test:model:body#b", "kind":"solid"}],
+        "regions": [{"id":"test:model:region#r", "body":"test:model:body#b", "shells":["test:model:shell#s"]}],
+        "shells": [{"id":"test:model:shell#s", "region":"test:model:region#r", "members":[]}],
+        "faces": (0..faces.len()).map(|i| json!({"id":name("face", i),"shell":"test:model:shell#s", "surface":name("surface", i), "sense":"forward", "loops":{"kind":"unspecified","loops":[]}})).collect::<Vec<_>>(),
+        "surfaces": faces.iter().enumerate().map(|(i, (_, geometry))| json!({"id":name("surface", i), "geometry":{"kind":"solved","value":geometry}})).collect::<Vec<_>>(),
+    });
+    let attributes = faces.iter().enumerate().map(|(i, ((section, span, role), _))| {
+        let mut values = vec![json!({"kind":"reference","value":"x"});5];
+        values.push(json!({"kind":"string","value":"INV_NMX_SWEEPGENERATED_TAG"}));
+        values.extend([1,44,1,i64::from(GENERATOR),-1].into_iter().map(|value|json!({"kind":"integer","value":value})));
+        values.extend([*section, *span, *role].into_iter().chain([0;7]).map(|value|json!({"kind":"integer","value":value})));
+        json!({"id":format!("test:model:attribute#a{i}"),"name":"ATTRIB_CUSTOM-attrib","target":{"entity":{"kind":"face","value":name("face", i)}},"values":values})
+    }).collect::<Vec<_>>();
+    let partial = partial.as_object_mut().expect("partial model");
+    let mut ir = CadIr::empty();
+    let mut geometry =
+        cadmpeg_core::serde_erase::json::to_value(&ir.geometry).expect("empty topology");
+    geometry
+        .as_object_mut()
+        .expect("topology object")
+        .extend(partial.clone());
+    ir.geometry =
+        cadmpeg_core::serde_erase::json::from_value(geometry).expect("synthetic owned solid");
+    ir.model.attributes = cadmpeg_core::serde_erase::json::from_value(attributes.into())
+        .expect("synthetic attributes");
+    ir
+}
+
+fn model_line(start: [f64; 3], end: [f64; 3]) -> SweepCurve {
+    SweepCurve::Line {
+        start: Point3::new(start[0], start[1], start[2]),
+        end: Point3::new(end[0], end[1], end[2]),
+    }
+}
+
+/// The rectangle with corners (2, 0, 0), (4, 0, 0), (4, 0, 5), (2, 0, 5) in
+/// the plane y = 0, as four section curves named 1 to 4.
+fn rectangle() -> Vec<(i64, SweepCurve)> {
+    vec![
+        (1, model_line([2.0, 0.0, 0.0], [4.0, 0.0, 0.0])),
+        (2, model_line([4.0, 0.0, 0.0], [4.0, 0.0, 5.0])),
+        (3, model_line([4.0, 0.0, 5.0], [2.0, 0.0, 5.0])),
+        (4, model_line([2.0, 0.0, 5.0], [2.0, 0.0, 0.0])),
+    ]
+}
+
+fn pt(x: f64, y: f64, z: f64) -> Point3 {
+    Point3::new(x, y, z)
+}
+
+/// The plane y = 0 of the rectangle, as a point and a normal.
+fn rectangle_plane() -> (Point3, cadmpeg_ir::math::Vector3) {
+    (
+        pt(0.0, 0.0, 0.0),
+        cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+    )
+}
+
+/// A counterclockwise arc about the z axis as the path span `name`.
+fn path_arc(name: i64, center: Point3, from: Point3, quarter: bool) -> PathSpan {
+    let radius = from.vector_from(center).norm();
+    let (x, y) = (from.x - center.x, from.y - center.y);
+    // A quarter turn carries (x, y) to (-y, x); the middle is the eighth turn.
+    let (to, half) = if quarter {
+        let eighth = std::f64::consts::FRAC_PI_4;
+        let (sin, cos) = eighth.sin_cos();
+        (
+            pt(center.x - y, center.y + x, from.z),
+            pt(
+                center.x + x * cos - y * sin,
+                center.y + x * sin + y * cos,
+                from.z,
+            ),
+        )
+    } else {
+        (from, from)
+    };
+    PathSpan {
+        name,
+        curve: SweepCurve::Arc {
+            center,
+            radius,
+            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        },
+        from,
+        to,
+        middle: Some(half),
+    }
+}
+
+fn path_line(name: i64, from: Point3, to: Point3) -> PathSpan {
+    PathSpan {
+        name,
+        curve: SweepCurve::Line {
+            start: from,
+            end: to,
+        },
+        from,
+        to,
+        middle: None,
+    }
+}
+
+/// A quarter turn of radius 3 about the z axis, as the one path span 9.
+fn quarter_turn() -> Vec<PathSpan> {
+    vec![path_arc(9, pt(0.0, 0.0, 0.0), pt(3.0, 0.0, 0.0), true)]
+}
+
+/// The faces of the rectangle turned a quarter about the z axis: the annulus
+/// planes z = 0 and z = 5 from the horizontal sides, the cylinders of radius 4
+/// and 2 from the vertical sides, and the two cap planes that hold the axis.
+fn rectangle_faces(axis_x: f64) -> Vec<TaggedFace> {
+    let x = [1.0, 0.0, 0.0];
+    vec![
+        ((0, 0, 4), plane_json([0.0; 3], [0.0, 1.0, 0.0], x)),
+        (
+            (0, 0, 12),
+            plane_json([0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        ),
+        ((1, 9, 20), plane_json([0.0; 3], [0.0, 0.0, 1.0], x)),
+        ((2, 9, 20), cylinder_json([axis_x, 0.0, 0.0], 4.0)),
+        ((3, 9, 20), plane_json([0.0, 0.0, 5.0], [0.0, 0.0, 1.0], x)),
+        ((4, 9, 20), cylinder_json([axis_x, 0.0, 0.0], 2.0)),
+    ]
+}
+
+fn partition(faces: &[TaggedFace], op: SolidSweepOperation) -> Option<()> {
+    partition_of(&tagged_model(faces), op)
+}
+
+fn partition_of(model: &CadIr, op: SolidSweepOperation) -> Option<()> {
+    sweep_partition(
+        model,
+        GENERATOR,
+        op,
+        &rectangle(),
+        rectangle_plane(),
+        &quarter_turn(),
+    )
+}
+
+#[test]
+fn a_rectangle_turned_about_an_arc_axis_is_two_planes_and_two_coaxial_cylinders() {
+    // A vertical line at distance r from the axis sweeps the cylinder of
+    // radius r about it; a horizontal line sweeps the plane through it.
+    assert!(partition(&rectangle_faces(0.0), SolidSweepOperation::NewBody).is_some());
+    // A cylinder whose axis is translated off the arc axis is refused.
+    assert!(partition(&rectangle_faces(0.5), SolidSweepOperation::NewBody).is_none());
+    assert!(partition(&rectangle_faces(0.5), SolidSweepOperation::Cut).is_none());
+}
+
+#[test]
+fn a_cut_or_join_can_own_a_subset_of_the_pairs_and_no_caps() {
+    let side = rectangle_faces(0.0)[2..].to_vec();
+    assert!(partition(&side, SolidSweepOperation::Cut).is_some());
+    assert!(partition(&side, SolidSweepOperation::Join).is_some());
+    assert!(partition(&side[..2], SolidSweepOperation::Cut).is_some());
+    // A new body owns every pair and both caps.
+    assert!(partition(&side, SolidSweepOperation::NewBody).is_none());
+    let mut missing_pair = rectangle_faces(0.0);
+    missing_pair.pop();
+    assert!(partition(&missing_pair, SolidSweepOperation::NewBody).is_none());
+    let mut one_cap = rectangle_faces(0.0);
+    one_cap.remove(1);
+    assert!(partition(&one_cap, SolidSweepOperation::NewBody).is_none());
+    assert!(partition(&one_cap, SolidSweepOperation::Join).is_some());
+    // No cap of a new body holds the section.
+    let mut apart = rectangle_faces(0.0);
+    apart[0].1 = plane_json([0.0, 1.0, 0.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]);
+    apart[1].1 = plane_json([0.0, 2.0, 0.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]);
+    assert!(partition(&apart, SolidSweepOperation::NewBody).is_none());
+    // A cut or join splits faces: a pair or a cap role can have two faces.
+    let mut split = rectangle_faces(0.0);
+    split.push(split[3].clone());
+    split.push(split[0].clone());
+    assert!(partition(&split, SolidSweepOperation::Join).is_some());
+    assert!(partition(&split, SolidSweepOperation::NewBody).is_none());
+    // No side face proves nothing, and an intersection is not a sweep form.
+    assert!(partition(&rectangle_faces(0.0)[..2], SolidSweepOperation::Cut).is_none());
+    assert!(partition(&rectangle_faces(0.0), SolidSweepOperation::Intersect).is_none());
+}
+
+#[test]
+fn a_face_that_matches_no_pair_refuses_the_whole_result() {
+    // The vertical line 2 is at distance 4 from the axis, not 2.
+    let mut swapped = rectangle_faces(0.0);
+    swapped[3].1 = cylinder_json([0.0; 3], 2.0);
+    assert!(partition(&swapped, SolidSweepOperation::Cut).is_none());
+    // An unknown section curve or span.
+    let mut unknown = rectangle_faces(0.0);
+    unknown[3].0 = (7, 9, 20);
+    assert!(partition(&unknown, SolidSweepOperation::Cut).is_none());
+    unknown[3].0 = (2, 8, 20);
+    assert!(partition(&unknown, SolidSweepOperation::Cut).is_none());
+    // A face that repeats a pair with a surface of another kind.
+    let mut twice = rectangle_faces(0.0);
+    twice[4].0 = (2, 9, 20);
+    assert!(partition(&twice, SolidSweepOperation::Cut).is_none());
+    // A horizontal line sweeps a plane, never a cylinder; an unknown role.
+    let mut wrong_kind = rectangle_faces(0.0);
+    wrong_kind[2].1 = cylinder_json([0.0; 3], 4.0);
+    assert!(partition(&wrong_kind, SolidSweepOperation::Cut).is_none());
+    let mut role = rectangle_faces(0.0);
+    role[2].0 = (1, 9, 21);
+    assert!(partition(&role, SolidSweepOperation::Cut).is_none());
+}
+
+#[test]
+fn line_and_arc_sections_along_line_and_arc_paths_generate_their_pair_surfaces() {
+    let z = cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0);
+    let x_axis = [1.0, 0.0, 0.0];
+    // The section plane holds the start of the path span.
+    let check = |section: SweepCurve,
+                 plane: (Point3, cadmpeg_ir::math::Vector3),
+                 span: PathSpan,
+                 geometry: serde_json::Value| {
+        let model = tagged_model(&[((1, 9, 20), geometry)]);
+        sweep_partition(
+            &model,
+            GENERATOR,
+            SolidSweepOperation::Cut,
+            &[(1, section)],
+            plane,
+            &[span],
+        )
+        .is_some()
+    };
+    let y_plane = rectangle_plane();
+    let z_plane = (pt(0.0, 0.0, 0.0), z);
+    // The segment from (0, 0, 0) to (2, 0, 0) swept along the segment from
+    // (0, 0, 0) to (0, 3, 0) spans the plane z = 0.
+    let flat = plane_json([0.0; 3], [0.0, 0.0, 1.0], x_axis);
+    let along_x = model_line([0.0; 3], [2.0, 0.0, 0.0]);
+    let along_y = path_line(9, pt(0.0, 0.0, 0.0), pt(0.0, 3.0, 0.0));
+    assert!(check(along_x, y_plane, along_y, flat.clone()));
+    // A path along the section line leaves no area between them.
+    let along_x_path = path_line(9, pt(0.0, 0.0, 0.0), pt(5.0, 0.0, 0.0));
+    assert!(!check(along_x, y_plane, along_x_path, flat.clone()));
+    assert!(!check(
+        along_x,
+        y_plane,
+        along_y,
+        plane_json([0.0, 0.0, 1.0], [0.0, 0.0, 1.0], x_axis)
+    ));
+    // A circle of radius 2 about the origin in the plane z = 0 swept along
+    // the z segment spans the cylinder of radius 2 about the z axis.
+    let circle = SweepCurve::Arc {
+        center: pt(0.0, 0.0, 0.0),
+        radius: 2.0,
+        normal: z,
+    };
+    let rising = path_line(9, pt(0.0, 0.0, 0.0), pt(0.0, 0.0, 4.0));
+    assert!(check(circle, z_plane, rising, cylinder_json([0.0; 3], 2.0)));
+    assert!(!check(
+        circle,
+        z_plane,
+        rising,
+        cylinder_json([0.0; 3], 2.5)
+    ));
+    assert!(!check(
+        circle,
+        z_plane,
+        rising,
+        cylinder_json([1.0, 0.0, 0.0], 2.0)
+    ));
+    // A circle of radius 1 centered at (5, 0, 0) in the plane y = 0, swept a
+    // quarter turn about the z axis through the origin, spans the torus with
+    // major radius 5 and minor radius 1 about that axis.
+    let minor = SweepCurve::Arc {
+        center: pt(5.0, 0.0, 0.0),
+        radius: 1.0,
+        normal: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+    };
+    let turn = path_arc(9, pt(0.0, 0.0, 0.0), pt(5.0, 0.0, 0.0), true);
+    let torus = |major: f64| json!({"kind":"torus","center":{"x":0.0,"y":0.0,"z":0.0},"axis":{"x":0.0,"y":0.0,"z":1.0},"ref_direction":{"x":1.0,"y":0.0,"z":0.0},"major_radius":major,"minor_radius":1.0});
+    assert!(check(minor, y_plane, turn, torus(5.0)));
+    assert!(!check(minor, y_plane, turn, torus(4.0)));
+    assert!(!check(minor, y_plane, turn, cylinder_json([0.0; 3], 5.0)));
+}
+
+/// The rectangle swept 10 along +y from (3, 0, 2.5), then a quarter turn of
+/// radius 4 about the axis through (-1, 10) along z. The faces are the
+/// planes of the line span, then the planes z = 0 and z = 5 and the
+/// cylinders of radius 5 and 3 about that axis.
+fn line_then_arc() -> (Vec<PathSpan>, Vec<TaggedFace>) {
+    let line = path_line(12, pt(3.0, 0.0, 2.5), pt(3.0, 10.0, 2.5));
+    let arc = path_arc(15, pt(-1.0, 10.0, 2.5), pt(3.0, 10.0, 2.5), true);
+    let x = [1.0, 0.0, 0.0];
+    let faces = vec![
+        ((0, 0, 4), plane_json([0.0; 3], [0.0, 1.0, 0.0], x)),
+        (
+            (0, 0, 12),
+            plane_json([-1.0, 10.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        ),
+        ((1, 12, 20), plane_json([0.0; 3], [0.0, 0.0, 1.0], x)),
+        (
+            (2, 12, 20),
+            plane_json([4.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        ),
+        ((3, 12, 20), plane_json([0.0, 0.0, 5.0], [0.0, 0.0, 1.0], x)),
+        (
+            (4, 12, 20),
+            plane_json([2.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        ),
+        ((1, 15, 20), plane_json([0.0; 3], [0.0, 0.0, 1.0], x)),
+        ((2, 15, 20), cylinder_json([-1.0, 10.0, 0.0], 5.0)),
+        ((3, 15, 20), plane_json([0.0, 0.0, 5.0], [0.0, 0.0, 1.0], x)),
+        ((4, 15, 20), cylinder_json([-1.0, 10.0, 0.0], 3.0)),
+    ];
+    (vec![line, arc], faces)
+}
+
+#[test]
+fn the_section_follows_the_path_frame_over_the_spans_before_each_span() {
+    let (path, faces) = line_then_arc();
+    let check = |faces: &[TaggedFace], path: &[PathSpan], op| {
+        sweep_partition(
+            &tagged_model(faces),
+            GENERATOR,
+            op,
+            &rectangle(),
+            rectangle_plane(),
+            path,
+        )
+        .is_some()
+    };
+    assert!(check(&faces, &path, SolidSweepOperation::NewBody));
+    // The same path from its other end gives the same result: the end that
+    // lies in the section plane is the start.
+    let backward: Vec<PathSpan> = path
+        .iter()
+        .rev()
+        .map(|span| PathSpan {
+            from: span.to,
+            to: span.from,
+            ..*span
+        })
+        .collect();
+    assert!(check(&faces, &backward, SolidSweepOperation::NewBody));
+    // The cylinders hold only for the section moved 10 along the line: the
+    // section edge at x = 4 is 5 from the axis, not 5.4 or the unmoved 6.
+    let mut unmoved = faces.clone();
+    unmoved[7].1 = cylinder_json([-1.0, 0.0, 0.0], 5.0);
+    assert!(!check(&unmoved, &path, SolidSweepOperation::Cut));
+    let mut swapped = faces.clone();
+    swapped[7].1 = cylinder_json([-1.0, 10.0, 0.0], 3.0);
+    assert!(!check(&swapped, &path, SolidSweepOperation::Cut));
+    // The end cap holds the section at the path end, not at the start.
+    let mut early = faces.clone();
+    early[1].1 = plane_json([0.0, 10.0, 0.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]);
+    assert!(!check(&early, &path, SolidSweepOperation::NewBody));
+    assert!(!check(&early, &path, SolidSweepOperation::Join));
+    // No end of the path lies in the section plane.
+    let away = (
+        pt(0.0, -5.0, 0.0),
+        cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+    );
+    let in_plane = |plane, path: &[PathSpan]| {
+        sweep_partition(
+            &tagged_model(&faces),
+            GENERATOR,
+            SolidSweepOperation::NewBody,
+            &rectangle(),
+            plane,
+            path,
+        )
+        .is_some()
+    };
+    assert!(!in_plane(away, &path));
+}
+
+#[test]
+fn a_cut_or_join_result_can_keep_faces_of_the_bodies_it_works_on() {
+    let mut model = tagged_model(&rectangle_faces(0.0));
+    let mut other = model.geometry.faces[2].clone();
+    other.id = cadmpeg_core::serde_erase::json::from_value(json!("test:model:face#other"))
+        .expect("face id");
+    model.geometry.faces.push(other);
+    let check = |op| partition_of(&model, op);
+    assert!(check(SolidSweepOperation::Cut).is_some());
+    assert!(check(SolidSweepOperation::Join).is_some());
+    // A new body is made of the faces of its own sweep alone.
+    assert!(check(SolidSweepOperation::NewBody).is_none());
+}
+
+/// The model with each sweep naming attribute in the legacy class chain of a
+/// schema-40 carrier: five common fields, the schema, one source name with
+/// name value -1, and the same tail.
+fn legacy_sweep_model(faces: &[TaggedFace]) -> CadIr {
+    let mut model = tagged_model(faces);
+    for attribute in &mut model.model.attributes {
+        let tail = attribute.values.split_off(11);
+        attribute.values.truncate(5);
+        attribute.name = LEGACY_SWEEP_CLASS.to_owned();
+        let integer = |value: i64| Some(AttributeValue::Integer(value));
+        attribute
+            .values
+            .extend([40, 1, i64::from(GENERATOR), -1].map(integer));
+        attribute.values.extend(tail);
+    }
+    model
+}
+
+#[test]
+fn a_legacy_sweep_name_is_the_schema_44_name_with_the_class_chain_prefix() {
+    let faces = rectangle_faces(0.0);
+    let check = partition_of;
+    let legacy = legacy_sweep_model(&faces);
+    assert!(check(&legacy, SolidSweepOperation::NewBody).is_some());
+    assert!(sweep_partition(
+        &legacy,
+        GENERATOR + 1,
+        SolidSweepOperation::Cut,
+        &rectangle(),
+        rectangle_plane(),
+        &quarter_turn()
+    )
+    .is_none());
+    // The tail belongs to the first source name. A face that names another
+    // feature first is not owned, and a name after the generator is allowed.
+    let integer = |value: i64| Some(AttributeValue::Integer(value));
+    let mut after = legacy.clone();
+    after.model.attributes[0]
+        .values
+        .splice(6..9, [2, i64::from(GENERATOR), -1, 99, 5].map(integer));
+    assert!(check(&after, SolidSweepOperation::NewBody).is_some());
+    let mut before = legacy.clone();
+    before.model.attributes[0]
+        .values
+        .splice(6..9, [2, 99, 5, i64::from(GENERATOR), -1].map(integer));
+    assert!(check(&before, SolidSweepOperation::NewBody).is_none());
+    assert!(check(&before, SolidSweepOperation::Cut).is_some());
+    // A name value other than -1 is not a name of the sweep.
+    let mut positive = legacy;
+    positive.model.attributes[0].values[8] = Some(AttributeValue::Integer(3));
+    assert!(check(&positive, SolidSweepOperation::Cut).is_none());
+}
+
+#[test]
+fn a_cap_holds_the_section_only_in_the_plane_of_the_section() {
+    // A half disc of radius 2 in the plane y = 0: the diameter along x and the
+    // arc about the origin.
+    let y = cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0);
+    let half_disc = vec![
+        (1, model_line([-2.0, 0.0, 0.0], [2.0, 0.0, 0.0])),
+        (
+            2,
+            SweepCurve::Arc {
+                center: pt(0.0, 0.0, 0.0),
+                radius: 2.0,
+                normal: y,
+            },
+        ),
+    ];
+    let x = [1.0, 0.0, 0.0];
+    let path = [path_line(9, pt(0.0, 0.0, 0.0), pt(0.0, 3.0, 0.0))];
+    let check = |cap: serde_json::Value| {
+        let faces = [
+            ((0, 0, 4), cap),
+            // The diameter swept along y spans the plane z = 0.
+            ((1, 9, 20), plane_json([0.0; 3], [0.0, 0.0, 1.0], x)),
+        ];
+        sweep_partition(
+            &tagged_model(&faces),
+            GENERATOR,
+            SolidSweepOperation::Cut,
+            &half_disc,
+            (pt(0.0, 0.0, 0.0), y),
+            &path,
+        )
+        .is_some()
+    };
+    // The plane of the section holds it.
+    assert!(check(plane_json([0.0; 3], [0.0, 1.0, 0.0], x)));
+    // The plane z = 0 is perpendicular to the section. It holds both ends of
+    // the diameter and the center of the arc, and not the arc.
+    assert!(!check(plane_json([0.0; 3], [0.0, 0.0, 1.0], x)));
+    // A plane through the section line that is turned about it holds the
+    // diameter only.
+    assert!(!check(plane_json(
+        [0.0; 3],
+        [0.0, 0.6, 0.8],
+        [1.0, 0.0, 0.0]
+    )));
+}
+
+#[test]
+fn a_cap_holds_every_edge_of_a_section_curve_cut_by_other_curves() {
+    let y = cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0);
+    let x = [1.0, 0.0, 0.0];
+    let path = [path_line(9, pt(0.0, 0.0, 0.0), pt(0.0, 3.0, 0.0))];
+    let cap = plane_json([0.0; 3], [0.0, 1.0, 0.0], x);
+    let check = |section: &[(i64, SweepCurve)]| {
+        let faces = [((0, 0, 4), cap.clone())];
+        // The one cap and one side face of a cut.
+        let mut faces = faces.to_vec();
+        faces.push(((1, 9, 20), plane_json([0.0; 3], [0.0, 0.0, 1.0], x)));
+        sweep_partition(
+            &tagged_model(&faces),
+            GENERATOR,
+            SolidSweepOperation::Cut,
+            section,
+            (pt(0.0, 0.0, 0.0), y),
+            &path,
+        )
+        .is_some()
+    };
+    // Both edges of the one curve 1 lie in the plane of the cap.
+    let first = model_line([0.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
+    let second = model_line([1.0, 0.0, 0.0], [2.0, 0.0, 0.0]);
+    assert!(check(&[(1, first), (1, second)]));
+    // The second edge leaves the plane of the cap.
+    let off = model_line([1.0, 0.0, 0.0], [2.0, 1.0, 0.0]);
+    assert!(!check(&[(1, first), (1, off)]));
+}
+
+#[test]
+fn a_line_that_skews_the_arc_axis_does_not_span_a_cone() {
+    let z = cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0);
+    // The segment from (2, 0, 0) to (3, 0, 1) turned about the z axis spans the
+    // cone of half angle 45 degrees that holds radius 2 at the origin.
+    let cone = json!({"kind":"cone","origin":{"x":0.0,"y":0.0,"z":0.0},"axis":{"x":0.0,"y":0.0,"z":1.0},"ref_direction":{"x":1.0,"y":0.0,"z":0.0},"radius":2.0,"ratio":1.0,"half_angle":std::f64::consts::FRAC_PI_4});
+    let check = |line: SweepCurve| {
+        sweep_partition(
+            &tagged_model(&[((1, 9, 20), cone.clone())]),
+            GENERATOR,
+            SolidSweepOperation::Cut,
+            &[(1, line)],
+            rectangle_plane(),
+            &[path_arc(9, pt(0.0, 0.0, 0.0), pt(5.0, 0.0, 0.0), true)],
+        )
+        .is_some()
+    };
+    assert!(check(model_line([2.0, 0.0, 0.0], [3.0, 0.0, 1.0])));
+    // The ends (2, 0, 0) and (1.8, 2.4, 1) both lie on the cone, but the line
+    // between them misses the axis.
+    assert!(!check(model_line([2.0, 0.0, 0.0], [1.8, 2.4, 1.0])));
+    // The ends (2, 0, 0) and (-3, 0, 1) lie on opposite generators in the one
+    // axial plane y = 0, but the line between them misses the apex (0, 0, -2).
+    assert!(!check(model_line([2.0, 0.0, 0.0], [-3.0, 0.0, 1.0])));
+    let _ = z;
+}
+
+#[test]
+fn a_malformed_legacy_name_leaves_its_face_unowned_unless_it_names_the_sweep() {
+    let faces = rectangle_faces(0.0);
+    let legacy = legacy_sweep_model(&faces);
+    let check = partition_of;
+    assert!(check(&legacy, SolidSweepOperation::NewBody).is_some());
+    let integer = |value: i64| Some(AttributeValue::Integer(value));
+    // A record of another face that is too short or has no integer source
+    // name stays unowned and the sweep stays proved.
+    let mut other = legacy.clone();
+    let mut stray = other.model.attributes[0].clone();
+    stray.id = cadmpeg_core::serde_erase::json::from_value(json!("test:model:attribute#stray"))
+        .expect("id");
+    stray.target.entity = AttributeTarget::Face(
+        cadmpeg_core::serde_erase::json::from_value(json!("test:model:face#stray"))
+            .expect("face id"),
+    );
+    other.model.attributes.push(stray.clone());
+    for malformed in [
+        vec![integer(0), integer(0)],
+        // The count is below one.
+        {
+            let mut values = stray.values.clone();
+            values[6] = integer(0);
+            values
+        },
+        // The count runs past the integers.
+        {
+            let mut values = stray.values.clone();
+            values.truncate(8);
+            values[6] = integer(5);
+            values[7] = integer(99);
+            values
+        },
+        // A source name that is not an integer.
+        {
+            let mut values = stray.values.clone();
+            values[7] = None;
+            values
+        },
+    ] {
+        let mut model = other.clone();
+        model.model.attributes.last_mut().expect("stray").values = malformed;
+        assert!(
+            check(&model, SolidSweepOperation::Cut).is_some(),
+            "unrelated malformed record"
+        );
+    }
+    // A tail of more or fewer than ten integers, or with a nonzero value after
+    // the role, is not the sweep tail: the record refuses the sweep.
+    for edit in [
+        |values: &mut Vec<Option<AttributeValue>>| values.push(Some(AttributeValue::Integer(0))),
+        |values: &mut Vec<Option<AttributeValue>>| {
+            values.pop();
+        },
+        |values: &mut Vec<Option<AttributeValue>>| {
+            let last = values.len() - 1;
+            values[last] = Some(AttributeValue::Integer(1));
+        },
+    ] {
+        let mut model = legacy.clone();
+        edit(&mut model.model.attributes[0].values);
+        assert!(check(&model, SolidSweepOperation::Cut).is_none());
+    }
+    // A record whose first source name is the sweep but that lacks the owned
+    // form refuses the sweep.
+    let mut truncated = legacy.clone();
+    truncated.model.attributes[0].values.truncate(8);
+    truncated.model.attributes[0].values[6] = integer(2);
+    assert!(check(&truncated, SolidSweepOperation::Cut).is_none());
+}
+
+#[test]
+fn a_path_with_both_ends_in_the_section_plane_proves_from_either_end() {
+    // The rectangle swept 10 along +y from (3, 0, 2.5), a half turn of radius 4
+    // about the axis through (-1, 10) along z as two quarter turns, and 10
+    // back along -y: both ends lie in the plane y = 0.
+    let path = vec![
+        path_line(12, pt(3.0, 0.0, 2.5), pt(3.0, 10.0, 2.5)),
+        path_arc(15, pt(-1.0, 10.0, 2.5), pt(3.0, 10.0, 2.5), true),
+        path_arc(16, pt(-1.0, 10.0, 2.5), pt(-1.0, 14.0, 2.5), true),
+        path_line(18, pt(-5.0, 10.0, 2.5), pt(-5.0, 0.0, 2.5)),
+    ];
+    let x = [1.0, 0.0, 0.0];
+    let faces = |x_side: f64| {
+        vec![
+            ((0, 0, 4), plane_json([0.0; 3], [0.0, 1.0, 0.0], x)),
+            ((1, 12, 20), plane_json([0.0; 3], [0.0, 0.0, 1.0], x)),
+            (
+                (2, 12, 20),
+                plane_json([x_side, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+            ),
+        ]
+    };
+    let check = |faces: &[TaggedFace], path: &[PathSpan]| {
+        sweep_partition(
+            &tagged_model(faces),
+            GENERATOR,
+            SolidSweepOperation::Cut,
+            &rectangle(),
+            rectangle_plane(),
+            path,
+        )
+        .is_some()
+    };
+    let backward: Vec<PathSpan> = path
+        .iter()
+        .rev()
+        .map(|span| PathSpan {
+            from: span.to,
+            to: span.from,
+            ..*span
+        })
+        .collect();
+    assert!(check(&faces(4.0), &path));
+    assert!(check(&faces(4.0), &backward));
+    // The side at x = 4 is not at x = 3 from either end.
+    assert!(!check(&faces(3.0), &path));
+    assert!(!check(&faces(3.0), &backward));
 }
 
 /// History states of a joined loft: the state after it and the state before

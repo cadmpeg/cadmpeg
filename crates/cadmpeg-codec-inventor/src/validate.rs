@@ -125,6 +125,7 @@ const ARENAS: &[&str] = &[
 ];
 
 const OPTIONAL_ARENAS: &[&str] = &[
+    "pm_dc_spatial_sketches",
     "pm_dc_thread_definitions",
     "body_wrapper_links",
     "composite_member_links",
@@ -600,6 +601,47 @@ fn validate_sketches_with_raw(
             .iter()
             .all(|reference| *reference == 0 || raw.contains_key(&(token, reference - 1)))
     };
+    unique(
+        findings,
+        data.pm_dc_spatial_sketches.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
+        "Inventor PmDc spatial sketch",
+    );
+    for record in &data.pm_dc_spatial_sketches {
+        let references = std::iter::once(record.header.next.index())
+            .chain(std::iter::once(record.header.context.index()))
+            .chain(
+                record
+                    .entities
+                    .references()
+                    .iter()
+                    .map(|reference| reference.index()),
+            )
+            .collect::<Vec<_>>();
+        if record.save_version_major != 31
+            || record.header.flags_extension != Some(0)
+            || record.entities.marker() != 8
+            || !record.header.stamps.is_empty()
+            || record.identity.type_id.as_str()
+                != crate::pmdc::type_id_string(crate::sketch::spatial::TYPE)
+            || !record_is_exact(
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+                record.identity.type_id.as_str(),
+            )
+            || !references_resolve(record.identity.segment_token.as_str(), &references)
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc spatial-sketch record or reference does not resolve".into(),
+                Some(record.id()),
+            ));
+        }
+    }
     unique(
         findings,
         data.pm_dc_sketches.iter().map(|record| {
@@ -3272,6 +3314,7 @@ struct NativeData {
     pm_dc_model_roots: Vec<crate::design::scope::PmDcModelRoot>,
     design_record_issues: Vec<RecordIssue>,
     pm_dc_sketches: Vec<PmDcSketch>,
+    pm_dc_spatial_sketches: Vec<crate::sketch::spatial::Record>,
     pm_dc_sketch_entities: Vec<PmDcSketchEntity>,
     pm_dc_sketch_constraints: Vec<PmDcSketchConstraint>,
     pm_dc_transforms: Vec<PmDcTransform>,
@@ -3408,6 +3451,7 @@ impl NativeData {
             pm_dc_model_roots: namespace.arena_as_for_decode(ctx, "pm_dc_model_roots")?,
             design_record_issues: namespace.arena_as_for_decode(ctx, "design_record_issues")?,
             pm_dc_sketches: namespace.arena_as_for_decode(ctx, "pm_dc_sketches")?,
+            pm_dc_spatial_sketches: namespace.arena_as_for_decode(ctx, "pm_dc_spatial_sketches")?,
             pm_dc_sketch_entities: namespace.arena_as_for_decode(ctx, "pm_dc_sketch_entities")?,
             pm_dc_sketch_constraints: namespace
                 .arena_as_for_decode(ctx, "pm_dc_sketch_constraints")?,
@@ -4379,6 +4423,7 @@ impl NativeData {
             structural_issues: Vec::new(),
             property_sets: Vec::new(),
             property_sections: Vec::new(),
+            pm_dc_spatial_sketches: Vec::new(),
             properties: Vec::new(),
             property_issues: Vec::new(),
             protein: ProteinRecord::Absent { id: String::new() },
