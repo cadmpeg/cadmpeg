@@ -216,6 +216,16 @@ fn k_factor_row_samples() -> Vec<KFactorRow> {
     }]
 }
 
+fn attached_relief_samples() -> Vec<AttachedRelief> {
+    vec![AttachedRelief {
+        form: AttachedReliefForm::StyleDefault,
+        width: lit(positive(2.0)),
+        depth: lit(positive(3.0)),
+        minimum_remnant: lit(nonnegative(4.0)),
+        seam_gap: lit(nonnegative(0.5)),
+    }]
+}
+
 fn sheet_metal_kind_samples() -> Vec<SheetMetalKind> {
     vec![
         SheetMetalKind::ApplyRule {
@@ -364,6 +374,23 @@ fn sheet_metal_kind_samples() -> Vec<SheetMetalKind> {
             fixed: Some(selection(1)),
         },
         SheetMetalKind::FlatPattern { fixed: None },
+        SheetMetalKind::AttachedPlate {
+            profile: selection(3),
+            thickness: lit(positive(2.0)),
+            side: NormalSide::Against,
+            attachment: selection(2),
+        },
+        SheetMetalKind::AttachedBend {
+            plate: id("feature", 1),
+            attachment: selection(2),
+            inside_radius: lit(positive(1.0)),
+            relief: attached_relief_samples().remove(0),
+            transition_form: TransitionForm::StyleDefault,
+            transition_radius: lit(nonnegative(2.0)),
+        },
+        SheetMetalKind::UnchangedCorner {
+            bend: id("feature", 2),
+        },
         SheetMetalKind::Native(text("codec:native")),
     ]
 }
@@ -841,6 +868,9 @@ fn every_sheet_metal_type_round_trips() {
     report.check("TableLookup", table_lookup_samples());
     report.check("KFactorRow", k_factor_row_samples());
     report.check("SheetMetalKind", sheet_metal_kind_samples());
+    report.check("AttachedRelief", attached_relief_samples());
+    report.check("AttachedReliefForm", vec![AttachedReliefForm::StyleDefault]);
+    report.check("TransitionForm", vec![TransitionForm::StyleDefault]);
     report.check("ConnectBetween", connect_between_samples());
     report.check("Rip", rip_samples());
     report.check("RipPath", rip_path_samples());

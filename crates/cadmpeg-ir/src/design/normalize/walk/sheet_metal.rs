@@ -231,6 +231,25 @@ impl Walk for SheetMetalKind {
                 side: _,
                 rule: _,
             } => profile.walk(into),
+            Self::AttachedPlate {
+                profile,
+                thickness: _,
+                side: _,
+                attachment,
+            } => {
+                profile.walk(into)?;
+                attachment.walk(into)?;
+                Ok(())
+            }
+            Self::AttachedBend {
+                plate: _,
+                attachment,
+                inside_radius: _,
+                relief: _,
+                transition_form: _,
+                transition_radius: _,
+            } => attachment.walk(into),
+            Self::UnchangedCorner { bend: _ } => Ok(()),
             Self::ContourFlange {
                 profile,
                 edges,

@@ -33,7 +33,7 @@ use crate::feature::{
 };
 use crate::pmdc::PmDcReference;
 
-mod attachment;
+pub(in crate::feature) mod attachment;
 
 /// Largest deviation of the travel direction from the profile-plane normal.
 const EPS_TRAVEL_NORMAL: f64 = 1.0e-10;

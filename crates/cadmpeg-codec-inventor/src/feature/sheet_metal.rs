@@ -20,6 +20,7 @@ pub(crate) mod flange;
 pub(crate) mod fold;
 pub(super) mod inputs;
 pub(crate) mod operands;
+pub(super) mod plate_inputs;
 pub(crate) mod projection;
 pub(crate) mod refusal;
 pub(crate) mod style;

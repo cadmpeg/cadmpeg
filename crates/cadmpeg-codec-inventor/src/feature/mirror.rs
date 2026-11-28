@@ -120,6 +120,8 @@ pub(crate) struct MirrorIndex<'a> {
     planes: HashMap<(&'a str, u32), Option<&'a PmDcWorkPlane>>,
     /// Plane-reference records by the plane record that they own.
     plane_references: HashMap<(&'a str, u32), Option<&'a PmDcFeatureProperty>>,
+    /// Sheet-metal parent records (flange, contour flange, face) by ordinal.
+    parents: HashMap<(&'a str, u32), Option<&'a super::sheet_metal::flange::Flange>>,
     record_lengths: Option<HashMap<(&'a str, u32), Option<u64>>>,
     generated_nodes: Option<(&'a [super::PmDcFeature], &'a [PmDcFeatureLabel])>,
     bodies: Option<&'a HashMap<String, cadmpeg_ir::ids::BodyId>>,
@@ -163,6 +165,7 @@ impl<'a> MirrorIndex<'a> {
             record_lengths: None,
             generated_nodes: None,
             bodies: None,
+            parents: HashMap::new(),
             properties: unique_index(properties.iter().map(|r| {
                 (
                     (r.identity.segment_token.as_str(), r.identity.record_ordinal),
@@ -232,6 +235,38 @@ impl<'a> MirrorIndex<'a> {
             == crate::record_identity::RecordTypeId::from_bytes(super::WORK_PLANE_TYPE)
             && plane_reference::same_plane(supplier, snapshot))
         .then_some(supplier.identity.record_ordinal)
+    }
+
+    /// Sheet-metal parent records that a Mirror seed may name in place of the
+    /// plate, bend, and corner records that they list.
+    pub(crate) fn with_sheet_metal_parents(
+        mut self,
+        parents: impl Iterator<Item = &'a super::sheet_metal::flange::Flange>,
+    ) -> Self {
+        self.parents = unique_index(parents.filter_map(|parent| {
+            super::sheet_metal::flange::FlangeKind::of(parent)?;
+            Some((
+                (
+                    parent.identity.segment_token.as_str(),
+                    parent.identity.record_ordinal,
+                ),
+                parent,
+            ))
+        }));
+        self
+    }
+
+    /// Record ordinals of the seeds that the participant `ordinal` names: the
+    /// ordered children of a sheet-metal parent, otherwise the record itself.
+    pub(crate) fn seed_ordinals(&self, token: &str, ordinal: u32) -> Vec<u32> {
+        match self.parents.get(&(token, ordinal)) {
+            Some(parent) => parent
+                .iter()
+                .flat_map(|parent| parent.children.references())
+                .filter_map(|child| child.record_ordinal())
+                .collect(),
+            None => vec![ordinal],
+        }
     }
 
     pub(crate) fn with_generated_nodes(
@@ -579,7 +614,22 @@ impl<'a> MirrorIndex<'a> {
                 if !seen.insert(ordinal) {
                     return None;
                 }
-                seeds.push(PatternSeed::Feature(seed_feature(ordinal)?));
+                let Some(parent) = self.parents.get(&(token, ordinal)) else {
+                    seeds.push(PatternSeed::Feature(seed_feature(ordinal)?));
+                    continue;
+                };
+                // A sheet-metal parent stands for its ordered child features.
+                let children = parent.as_ref()?.children.references();
+                if children.is_empty() {
+                    return None;
+                }
+                for child in children {
+                    let child = child.record_ordinal()?;
+                    if !seen.insert(child) {
+                        return None;
+                    }
+                    seeds.push(PatternSeed::Feature(seed_feature(child)?));
+                }
             }
             seeds
         };
@@ -838,6 +888,7 @@ pub(super) fn admit_operands(
     if needed.is_empty() {
         return Ok(());
     }
+    let participants = participant_references(&inventory.pattern_features);
     let planes = plane_operands(&inventory.pattern_features);
     for segment in &document.segments {
         if segment.kind != SegmentKind::PmDc {
@@ -867,6 +918,21 @@ pub(super) fn admit_operands(
                 }
                 instance_map::TYPE if needed.contains(&key) => {
                     instance_map::parse(ctx, record.payload, version)
+                }
+                super::sheet_metal::flange::FACE_TYPE if participants.contains(&key) => {
+                    super::sheet_metal::flange::parse(ctx, record.payload, version)
+                        .and_then(|face| {
+                            super::push_record(
+                                ctx,
+                                &mut inventory.sheet_metal_faces,
+                                face,
+                                record.type_id,
+                                segment.pair.token.key(),
+                                record.ordinal,
+                                "admit Inventor mirror seed face",
+                            )
+                        })
+                        .map(|()| None)
                 }
                 plane_reference::TYPE => {
                     plane_reference::parse(ctx, record.payload, version).map(|parsed| {
@@ -915,6 +981,26 @@ pub(super) fn admit_operands(
         }
     }
     Ok(())
+}
+
+/// Participant records of the mirrors, by segment token and ordinal.
+fn participant_references(patterns: &[PmDcPatternFeature]) -> HashSet<(&str, u32)> {
+    patterns
+        .iter()
+        .filter(|source| is_mirror_record(source))
+        .flat_map(|source| {
+            source
+                .participants
+                .references()
+                .iter()
+                .filter_map(move |reference| {
+                    Some((
+                        source.identity.segment_token.as_str(),
+                        reference.record_ordinal()?,
+                    ))
+                })
+        })
+        .collect()
 }
 
 /// Slot-12 plane records of the mirrors, by segment token and ordinal.

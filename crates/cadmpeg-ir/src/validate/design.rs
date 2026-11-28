@@ -42,6 +42,7 @@ mod programs;
 pub(super) mod records;
 pub(crate) mod resolved;
 pub(super) mod selections;
+mod sheet_metal;
 mod sheets;
 pub(super) mod states;
 mod target_states;
@@ -156,6 +157,7 @@ pub(super) fn check_design<'a>(
     caches::check_caches(&index.records, &held, findings);
     dimensions::check_bound_dimensions(&index.records, &held, findings);
     index.add_dependencies(&held);
+    sheet_metal::check(&index, findings);
     let states = matchers.states();
     membership::check(&index, states, findings);
     joins::check(&index, states, findings);

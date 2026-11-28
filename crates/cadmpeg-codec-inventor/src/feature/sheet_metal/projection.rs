@@ -16,7 +16,7 @@ use cadmpeg_ir::ids::HistoricalEdgeId;
 
 use super::{
     flange::Flange,
-    operands,
+    operands::{self, JOINED_EDGE_SLOT, SELECTION_LIST_SLOT},
     refusal::{require, PlateError, PlateRefusal, Refuse},
     style::Style,
 };
@@ -123,14 +123,48 @@ pub(crate) fn style<'a>(styles: &'a [Style], token: &str) -> Option<&'a Style> {
     candidates.next().is_none().then_some(first)
 }
 
-/// The edge collections of the slot-12 attachment selection list.
+/// Whether a plate slot holds the null reference.
+fn slot_is_null(source: &PmDcFeature, slot: usize) -> bool {
+    source
+        .properties
+        .references()
+        .get(slot)
+        .is_some_and(|reference| reference.index() == 0)
+}
+
+/// The edge collections that hold the attachment edges of a plate.
+///
+/// A plate with a slot-12 selection list selects its edges through that list.
+/// A 17-property plate with a null slot 12 and a slot-5 edge collection of one
+/// edge item selects the joined edge through that collection. A plate with
+/// null slots 5 and 12 stores no attachment selection.
 fn attachment_collections<'a>(
     source: &PmDcFeature,
     index: &'a ProjectionIndex<'a>,
 ) -> Result<(&'a PmDcFeatureProperty, Vec<&'a PmDcFeatureProperty>), PlateRefusal> {
     let token = source.identity.segment_token.as_str();
-    let selection =
-        crate::feature::slot_property(source, 12, index).refuse(PlateRefusal::SelectionList)?;
+    if slot_is_null(source, SELECTION_LIST_SLOT) {
+        return match (
+            operands::PlateForm::of(source),
+            slot_is_null(source, JOINED_EDGE_SLOT),
+        ) {
+            (Some(_), true) => Err(PlateRefusal::AttachmentNotStored),
+            (Some(operands::PlateForm::Collection), false) => {
+                let collection = crate::feature::slot_property(source, JOINED_EDGE_SLOT, index)
+                    .refuse(PlateRefusal::SelectionList)?;
+                match &collection.kind {
+                    PmDcFeaturePropertyKind::References {
+                        family: PmDcFeatureReferenceFamily::EdgeCollection,
+                        items,
+                    } if items.references().len() == 1 => Ok((collection, vec![collection])),
+                    _ => Err(PlateRefusal::SelectionList),
+                }
+            }
+            _ => Err(PlateRefusal::SelectionList),
+        };
+    }
+    let selection = crate::feature::slot_property(source, SELECTION_LIST_SLOT, index)
+        .refuse(PlateRefusal::SelectionList)?;
     let PmDcFeaturePropertyKind::References {
         family: PmDcFeatureReferenceFamily::SheetMetalAttachmentSelections,
         items,
@@ -461,8 +495,8 @@ pub(in crate::feature) fn reject_unresolved_inputs(
 }
 
 /// The features that generate the historical attachment edges of a plate:
-/// the generator array of each edge's direct selector, as feature records of
-/// the plate's segment.
+/// the generator array of each edge's direct selector, as feature and pattern
+/// feature records of the plate's segment.
 fn historical_producers(
     plate: &Feature,
     inventory: &FeatureInventory,
@@ -493,14 +527,25 @@ fn historical_producers(
             return Ok(None);
         };
         for generator in generators {
-            let mut records = inventory.features.iter().filter(|record| {
-                record.identity.segment_token.as_str() == token
-                    && record.header.source_index == *generator
-            });
-            let (Some(record), None) = (records.next(), records.next()) else {
+            let in_segment = |identity: &crate::record_identity::RecordIdentity, source: u32| {
+                identity.segment_token.as_str() == token && source == *generator
+            };
+            let mut records = inventory
+                .features
+                .iter()
+                .filter(|record| in_segment(&record.identity, record.header.source_index))
+                .map(|record| &record.identity)
+                .chain(
+                    inventory
+                        .pattern_features
+                        .iter()
+                        .filter(|record| in_segment(&record.identity, record.header.source_index))
+                        .map(|record| &record.identity),
+                );
+            let (Some(identity), None) = (records.next(), records.next()) else {
                 return Ok(None);
             };
-            features.push(crate::feature::history_feature_id(&record.identity)?);
+            features.push(crate::feature::history_feature_id(identity)?);
         }
     }
     Ok(Some(features))
@@ -549,6 +594,15 @@ impl Refusals {
             })
             .filter_map(|feature| {
                 let refusal = self.0.get(feature.native_ref.as_deref()?)?;
+                if *refusal == PlateRefusal::AttachmentNotStored {
+                    return Some(
+                        crate::loss::InventorLossCode::FeatureSheetMetalPlateAttachmentNotStored
+                            .note(format!(
+                                "Retained {} as native: the plate stores no attachment selection.",
+                                feature.id
+                            )),
+                    );
+                }
                 Some(
                     crate::loss::InventorLossCode::FeatureSheetMetalPlateRefused.note(format!(
                         "Retained {} as native: the first refused attached-plate check is {}.",

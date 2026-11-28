@@ -353,6 +353,9 @@ mod sheet_metal {
         generates::<TableLookup>(&mut generator);
         generates::<KFactorRow>(&mut generator);
         generates::<SheetMetalKind>(&mut generator);
+        generates::<AttachedRelief>(&mut generator);
+        generates::<AttachedReliefForm>(&mut generator);
+        generates::<TransitionForm>(&mut generator);
         generates::<ConnectBetween>(&mut generator);
         generates::<Rip>(&mut generator);
         generates::<RipPath>(&mut generator);

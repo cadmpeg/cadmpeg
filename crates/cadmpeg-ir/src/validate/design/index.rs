@@ -104,6 +104,22 @@ impl<'a> DesignIndex<'a> {
     pub(super) fn add_dependencies(&mut self, held: &[Held<'a>]) {
         self.state_cache.borrow_mut().clear();
         self.current_cache.borrow_mut().clear();
+        for feature in &self.records.ir.design.features {
+            if let FeatureOperation::SheetMetal(sheet) = &feature.definition.operation {
+                use crate::design::ops::sheet_metal::SheetMetalKind;
+                let target = match &sheet.kind {
+                    SheetMetalKind::AttachedBend { plate, .. } => Some(plate),
+                    SheetMetalKind::UnchangedCorner { bend } => Some(bend),
+                    _ => None,
+                };
+                if let Some(target) = target {
+                    self.dependencies
+                        .entry(feature.id.as_str())
+                        .or_default()
+                        .insert(target.as_str());
+                }
+            }
+        }
         for record in held {
             let Some(feature) = record.holder.feature() else {
                 continue;

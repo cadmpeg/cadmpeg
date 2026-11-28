@@ -219,6 +219,8 @@ pub(crate) struct FeatureInventory {
     pub(crate) sheet_metal_unfold_selections: Vec<sheet_metal::unfold::Selection>,
     pub(crate) sheet_metal_styles: Vec<sheet_metal::style::Style>,
     pub(crate) sheet_metal_flanges: Vec<sheet_metal::flange::Flange>,
+    /// Sheet-metal face records that a Mirror lists as participants.
+    pub(crate) sheet_metal_faces: Vec<sheet_metal::flange::Flange>,
     /// Segment major versions of sheet-metal style records without a field layout.
     pub(crate) unread_style_versions: std::collections::BTreeSet<u8>,
     pub(crate) dimensions: Vec<revolve::Dimension>,
@@ -1022,6 +1024,7 @@ pub(crate) fn inventory(
     )?;
     mirror::admit_operands(ctx, document, &mut inventory)?;
     sheet_metal::contour::read_attachments(ctx, document, &mut inventory)?;
+    sheet_metal::plate_inputs::read(ctx, document, &mut inventory)?;
     Ok(inventory)
 }
 
@@ -2788,7 +2791,13 @@ pub(crate) fn project(
                 &sketch.transforms,
                 &inventory.work_planes,
             )
-            .with_generated_nodes(&inventory.features, &inventory.labels);
+            .with_generated_nodes(&inventory.features, &inventory.labels)
+            .with_sheet_metal_parents(
+                inventory
+                    .sheet_metal_flanges
+                    .iter()
+                    .chain(&inventory.sheet_metal_faces),
+            );
             let seeds = unique_index(
                 inventory
                     .features
@@ -2932,12 +2941,6 @@ pub(crate) fn project(
                 )
         })
         .count();
-    neutral -= sheet_metal::projection::reject_unresolved_inputs(
-        ctx,
-        &mut projected,
-        inventory,
-        &mut plate_refusals,
-    )?;
     neutral += sheet_metal::projection::project_bends(ctx, &mut projected, &index, inventory)?;
     loop {
         let rejected = sheet_metal::projection::reject_incomplete_pairs(
@@ -3101,7 +3104,13 @@ fn apply_history(
         .map(|pattern| (pattern.identity.record_ordinal, pattern))
         .collect::<HashMap<_, _>>();
     let mirror_planes =
-        mirror::MirrorIndex::new(&inventory.properties, &[], &inventory.work_planes);
+        mirror::MirrorIndex::new(&inventory.properties, &[], &inventory.work_planes)
+            .with_sheet_metal_parents(
+                inventory
+                    .sheet_metal_flanges
+                    .iter()
+                    .chain(&inventory.sheet_metal_faces),
+            );
     for item in projected.iter_mut() {
         let Some(placement) = history.placement(item.record) else {
             continue;
@@ -3134,11 +3143,19 @@ fn apply_history(
             history::HistoryNodeKind::Pattern => patterns
                 .get(&item.record)
                 .map(|pattern| {
+                    let token = pattern.identity.segment_token.as_str();
                     pattern
                         .participants
                         .references()
                         .iter()
                         .filter_map(|reference| reference.record_ordinal())
+                        .flat_map(|ordinal| {
+                            if item.neutral && mirror::is_mirror_record(pattern) {
+                                mirror_planes.seed_ordinals(token, ordinal)
+                            } else {
+                                vec![ordinal]
+                            }
+                        })
                         .collect()
                 })
                 .unwrap_or_default(),

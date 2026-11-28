@@ -125,7 +125,7 @@ fn extrusion_draft_keeps_unread_sign_and_neutral_plane_native() {
 #[test]
 fn loft_and_sweep_defaults_do_not_state_source_controls() {
     let FeatureOperation::Extrude(value) =
-        typed(&extrude(), selections::SketchData::default(), &[]).expect("extrude")
+        typed(&extrude(), selections::SketchData::default(), &[], &[]).expect("extrude")
     else {
         panic!("extrude")
     };
@@ -203,7 +203,8 @@ fn validator_checks_the_shared_projection_and_native_gate() {
     project_part(&mut ir);
     assert!(validate(&ir).expect("valid native gate").is_empty());
     ir.design.features[0].definition.operation =
-        typed(&extrude(), selections::SketchData::default(), &[]).expect("unsupported replacement");
+        typed(&extrude(), selections::SketchData::default(), &[], &[])
+            .expect("unsupported replacement");
     assert_eq!(validate(&ir).expect("gate bypass").len(), 1);
 }
 
