@@ -296,6 +296,175 @@ fn surface_with_a_trim_off_its_edge_keeps_the_omission_report() {
     }));
 }
 
+/// A cube whose first edge lies on the intersection of a unit cylinder about the Z axis and the
+/// bicubic spline surface `z = 0.3 x y`. The curve's coarse degree-one chart samples the
+/// intersection. The linear tolerance is `1e-5`.
+fn cylinder_on_spline_edge() -> CadIr {
+    use cadmpeg_ir::geometry::analytic::CylinderSurface;
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use cadmpeg_ir::geometry::nurbs::{
+        NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
+    };
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::{ProceduralCurve, SolvedSurfaceGeometry, Surface};
+    use cadmpeg_ir::ids::{ProceduralCurveId, SurfaceId};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    ir.tolerances.linear = cadmpeg_ir::scalar::PositiveLength::new(1.0e-5).unwrap();
+    let grid = [-2.0, -2.0 / 3.0, 2.0 / 3.0, 2.0];
+    let spline = NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(3, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(3, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
+            grid.iter()
+                .map(|&x| {
+                    grid.iter()
+                        .map(|&y| Point3::new(x, y, 0.3 * x * y))
+                        .collect()
+                })
+                .collect(),
+            None,
+        ),
+        false,
+    )
+    .unwrap();
+    let cylinder = CylinderSurface::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        1.0,
+    )
+    .unwrap();
+    let mut add = |name: &str, geometry: SolvedSurfaceGeometry| {
+        let id = SurfaceId::mint(name).unwrap();
+        ir.geometry.surfaces.push(Surface {
+            id: id.clone(),
+            geometry: SurfaceGeometry::Solved(geometry),
+            source_object: None,
+            native_ref: None,
+        });
+        id
+    };
+    let cylinder = add(
+        "test:model:surface#fit-cylinder",
+        SolvedSurfaceGeometry::Cylinder(cylinder),
+    );
+    let spline = add(
+        "test:model:surface#fit-spline",
+        SolvedSurfaceGeometry::Nurbs(spline),
+    );
+    let segments = 8_u32;
+    let on_both = |i: u32| {
+        let t = 0.3 + 1.6 * f64::from(i) / f64::from(segments);
+        Point3::new(t.cos(), t.sin(), 0.15 * (2.0 * t).sin())
+    };
+    let mut knots = vec![0.0];
+    knots.extend((0..=segments).map(f64::from));
+    knots.push(f64::from(segments));
+    let chart =
+        NurbsCurve::from_lanes(1, knots, (0..=segments).map(on_both).collect(), None, false)
+            .unwrap();
+    let curve = CurveId::mint("test:model:curve#fit-intersection").unwrap();
+    let construction = ProceduralCurveId::mint("test:model:procedural-curve#fit").unwrap();
+    let side = |surface| IntcurveSupportSide {
+        surface: Some(surface),
+        pcurve: None,
+    };
+    let context = IntcurveSupportContext::try_new(
+        [side(cylinder), side(spline)],
+        [0.0, f64::from(segments)],
+        [Vec::new(), Vec::new(), Vec::new()],
+    )
+    .unwrap();
+    ir.geometry.procedural_curves.push(ProceduralCurve::new(
+        construction.clone(),
+        ProceduralCurveDefinition::Intersection {
+            context,
+            discontinuity_flag: false,
+            cache: None,
+        },
+    ));
+    ir.geometry.curves.push(Curve {
+        id: curve.clone(),
+        geometry: CurveGeometry::Procedural {
+            construction,
+            cache: Some(SolvedCurveGeometry::Nurbs(chart)),
+        },
+        parameter_range: None,
+        source_object: None,
+        native_ref: None,
+    });
+    let edge = &mut ir.geometry.edges[0];
+    edge.set_curve(Some(curve)).unwrap();
+    edge.set_param_range(Some(
+        cadmpeg_ir::topology::ParameterInterval::new([0.0, f64::from(segments)]).unwrap(),
+    ));
+    let ends: Vec<_> = edge.vertices().cloned().collect();
+    for (vertex, point) in ends.iter().zip([on_both(0), on_both(segments)]) {
+        let point_id = ir
+            .geometry
+            .vertices
+            .iter()
+            .find(|candidate| candidate.id == *vertex)
+            .unwrap()
+            .point
+            .clone();
+        ir.geometry
+            .points
+            .iter_mut()
+            .find(|candidate| candidate.id == point_id)
+            .unwrap()
+            .set_position(FinitePoint3::new(point).unwrap());
+    }
+    ir
+}
+
+#[test]
+fn a_cylinder_spline_intersection_edge_is_written_within_the_document_tolerance() {
+    let ir = cylinder_on_spline_edge();
+    let (text, losses) = written(&ir);
+    assert!(text.contains("B_SPLINE_CURVE_WITH_KNOTS"));
+    // Every fit reaches the strict limit, so no curve is reported as sampled at a looser one.
+    assert!(!losses
+        .iter()
+        .any(|loss| loss.message.contains("lie on free-form surfaces")));
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(text.into_bytes()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let decoded = decoded.ir();
+    let mut checked = 0;
+    for curve in &decoded.geometry.curves {
+        let Some(SolvedCurveGeometry::Nurbs(spline)) = curve.geometry.solved() else {
+            continue;
+        };
+        if spline.degree() != 3 {
+            continue;
+        }
+        let domain = cadmpeg_ir::eval::nurbs_curve_parameter_domain(spline)
+            .map(IncreasingParameterInterval::endpoints)
+            .unwrap();
+        for i in 0..=2000 {
+            let u = domain[0] + (domain[1] - domain[0]) * f64::from(i) / 2000.0;
+            let p = cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                spline,
+                u,
+            )
+            .unwrap()
+            .get();
+            let off_cylinder = (p.x.hypot(p.y) - 1.0).abs();
+            let off_spline = (p.z - 0.3 * p.x * p.y).abs();
+            assert!(off_cylinder <= 1.0e-5, "{off_cylinder}");
+            assert!(off_spline <= 1.0e-5, "{off_spline}");
+        }
+        checked += 1;
+    }
+    assert_eq!(checked, 1);
+}
+
 #[test]
 fn the_sampling_evaluation_nests_apart_from_the_session_recursion_limit() {
     use cadmpeg_core::decode::{
