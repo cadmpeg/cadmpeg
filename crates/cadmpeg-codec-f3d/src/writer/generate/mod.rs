@@ -272,8 +272,9 @@ fn attempt(
             return Err(Failure::unwritable(Stage::NeutralDesign, unwritable));
         }
     }
-    // A Base Feature design keys its history stream's bodies from `0`.
     let attributes = attributes::AttributeIndex::new(target, &native);
+    // A Base Feature design keys its history stream's bodies, and the body
+    // visibilities that name them, from `0`.
     let attributes = if stamped {
         attributes.with_body_keys(target, |ordinal| ordinal)
     } else {

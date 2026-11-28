@@ -59,7 +59,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::SketchEntityId;
 
 use crate::container::ContainerScan;
-use crate::loss::SldprtLossCode;
+use crate::loss::{NamedCount, SldprtLossCode};
 use crate::records::{FeatureHistory, FeatureInputLane};
 use crate::resolved_features::assembly::ConfigurationMaps;
 use crate::rollback::{Reading, StoredMarks, Unread};
@@ -72,6 +72,11 @@ pub(crate) use units::{length_places, length_unit};
 /// What a part's design is projected from.
 pub(crate) struct Part<'a> {
     pub(crate) histories: &'a [FeatureHistory],
+    /// The histories whose features also hold the parameters the decoder
+    /// reads from `ResolvedFeatures` scalars, PMI dimensions, and Move Face
+    /// translations; their ordinals give the parameters their ids.
+    pub(crate) parameter_histories: &'a [FeatureHistory],
+    pub(crate) configuration_samples: &'a crate::history::configuration::ConfigurationSamples,
     /// The `ResolvedFeatures` lanes whose scalars type the v10 parameters.
     pub(crate) lanes: &'a [FeatureInputLane],
     /// The `Config-N` class map each lane continues, by lane id.
@@ -124,8 +129,16 @@ pub(crate) struct Projection {
 /// be stated, a sketch, extrude or revolve that cannot be typed, a parameter
 /// whose literal is a rounded display, and a dimension whose bare-number text
 /// has no value add their reasons to `losses`. A part whose timeline is empty
-/// states only its sketches. A part that states no scope has its
-/// equation-manager lines go to `losses`.
+/// states its sketches and its configurations in a scope whose bodies are
+/// unproduced (§5.5); a part that states no scope has its equation-manager
+/// lines go to `losses`. Interim: a body the geometry of such a part holds
+/// outside the active configuration's bodies is one more unproduced body of
+/// its scope, and a loss names it. A feature node under a tree node that is
+/// no timeline member states no design feature, and a loss names it, unless
+/// it owns a sketch that no timeline member restates: it is then a member of
+/// the sketches' `Group`. A reference-dimension parameter that no dimension
+/// binds is a `Driven` parameter of its owner where that owner is a design
+/// feature.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -134,9 +147,11 @@ pub(crate) fn project(
 ) -> Result<Projection, CodecError> {
     let Part {
         histories,
+        parameter_histories,
+        configuration_samples,
         lanes,
         configuration_maps,
-        bodies,
+        mut bodies,
         persistent,
         length,
         equations: managers,
@@ -149,11 +164,26 @@ pub(crate) fn project(
     } = part;
     let active = equations::active_slot(histories, ir.source.as_ref());
     let mut timeline = tree::timeline(histories)?;
-    let listed = !timeline.features.is_empty();
-    if !listed && ir.model.sketches.is_empty() && ir.model.spatial_sketches.is_empty() {
-        losses.extend(equations::without_design(&managers, active));
-        return Ok(Projection::default());
+    timeline.grouped = sketch::owners_outside(&ir.model, &timeline.features);
+    timeline
+        .skipped
+        .retain(|(_, feature)| !timeline.grouped.contains(feature));
+    let mut skipped = NamedCount::default();
+    for (_, feature) in &timeline.skipped {
+        skipped.push(feature.as_str());
     }
+    if !skipped.is_empty() {
+        losses.push(SldprtLossCode::DesignFeatureOutsideTimeline.note(format!(
+            "{} feature nodes under a feature-tree node that is no timeline member (an \
+             annotations, body or equations folder, or another node with no design meaning) \
+             state no design feature: {skipped}",
+            skipped.count()
+        )));
+    }
+    let listed = !timeline.features.is_empty();
+    let definition = root_definition();
+    let mut configurations =
+        configurations::configurations(histories, ir.source.as_ref(), &definition, losses)?;
     let sources = scan
         .filter(|_| listed)
         .map(|scan| states::between::Sources {
@@ -168,9 +198,15 @@ pub(crate) fn project(
     if listed {
         let orders = joins.iter().flat_map(states::between::Joins::orders);
         losses.extend(order::regeneration_order(&mut timeline, &ir.model, orders));
+    } else if ir.model.sketches.is_empty()
+        && ir.model.spatial_sketches.is_empty()
+        && configurations.records.is_empty()
+    {
+        losses.extend(equations::without_design(&managers, active));
+        return Ok(Projection::default());
     }
-    let definition = root_definition();
-    let entries = parameters::Entries::new(histories, &timeline)?;
+    let entries = parameters::Entries::new(histories, parameter_histories, &timeline)?;
+    losses.extend(entries.outside(&ir.model.parameters));
     let typed = typed::project(
         &ir.model,
         histories,
@@ -203,7 +239,7 @@ pub(crate) fn project(
     losses.extend(typed.datums);
     let mut sketches = typed.sketches;
     let group = group(std::mem::take(&mut sketches.outside));
-    if !listed && group.is_none() {
+    if !listed && group.is_none() && configurations.records.is_empty() {
         losses.extend(equations::without_design(&managers, active));
         return Ok(Projection::default());
     }
@@ -248,8 +284,31 @@ pub(crate) fn project(
         &ir.tolerances,
     ));
     losses.extend(equations::link(&mut parameters, &linking));
-    let configurations =
-        configurations::configurations(histories, ir.source.as_ref(), &definition)?;
+    let design_features = timeline
+        .features
+        .iter()
+        .chain(group.iter().flat_map(|(_, members)| members))
+        .map(|feature| &feature.id)
+        .collect::<HashSet<_>>();
+    losses.extend(parameters::references_unbound(
+        &ir.model.parameters,
+        &mut parameters,
+        &design_features,
+        &definition,
+    ));
+    let (parameter_cuts, parameter_losses) = configurations::values::project(
+        &mut configurations,
+        &ir.model.configurations,
+        configuration_samples,
+        &mut parameters,
+        length,
+    );
+    losses.extend(parameter_losses);
+    losses.extend(configurations::unread_states(
+        &configurations,
+        &ir.model.configurations,
+        &timeline.features,
+    ));
     let (mut containers, current, unproduced, table, states, between) = if listed {
         let id = container_id(cadmpeg_ir::identity_key!("timeline"));
         let members = timeline.members();
@@ -336,11 +395,19 @@ pub(crate) fn project(
             between,
         )
     } else {
+        if let Some(note) = configurations::unplaced(&ir.geometry.bodies, &bodies) {
+            losses.push(note);
+            bodies = ir
+                .geometry
+                .bodies
+                .iter()
+                .map(|body| body.id.clone())
+                .collect();
+        }
         for configuration in &configurations.records {
             if Some(&configuration.id) != configurations.active.as_ref() {
                 losses.push(SldprtLossCode::ConfigStateUnstated.note(format!(
-                    "configuration {}: the part stores no feature history, so its state is \
-                     not stated.",
+                    "configuration {}: the part has no ordered design timeline to place its state.",
                     configuration.id
                 )));
             }
@@ -354,7 +421,13 @@ pub(crate) fn project(
             states::between::Between::default(),
         )
     };
-    configurations::restate(ir, &configurations, &states.evaluations, &bodies);
+    configurations::restate(
+        ir,
+        &configurations,
+        &states.evaluations,
+        &bodies,
+        &parameter_cuts,
+    );
     let mut features = timeline.features;
     if let Some((group, members)) = group {
         containers.push(group);
@@ -454,7 +527,10 @@ pub(crate) fn state_current_model(
             return Ok(BTreeMap::new());
         };
         retired
-    } else if ir.model.sketches.is_empty() && ir.model.spatial_sketches.is_empty() {
+    } else if ir.model.sketches.is_empty()
+        && ir.model.spatial_sketches.is_empty()
+        && configurations::native_with_active(histories, ir.source.as_ref()).is_none()
+    {
         return Ok(BTreeMap::new());
     } else {
         BTreeMap::new()

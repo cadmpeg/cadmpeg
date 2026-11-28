@@ -9284,6 +9284,34 @@ pub(crate) mod assembly_alternate_rigid_group_prefix {
     pub(crate) const FIRST_LOCATOR_REFERENCE: usize = 45;
 }
 
+/// Byte offsets for the `assembly_typed_alternate_rigid_group_prefix` record.
+///
+/// Spec §Assembly operands. Record length 187 B.
+///
+/// ```text
+/// The typed alternate prologue through its first two member references. Offsets are relative to the primary indexed header.
+/// ```
+pub(crate) mod assembly_typed_alternate_rigid_group_prefix {
+    /// Offset of `zero_run_8` (`bytes[8]`). Spec §Assembly operands.
+    #[cfg(test)]
+    pub(crate) const ZERO_RUN_8: usize = 11;
+    /// Offset of `pathless_locator_reference` (`bytes[51]`). Spec §Assembly operands.
+    #[cfg(test)]
+    pub(crate) const PATHLESS_LOCATOR_REFERENCE: usize = 26;
+    /// Offset of `zero_run_77` (`bytes[4]`). Spec §Assembly operands.
+    #[cfg(test)]
+    pub(crate) const ZERO_RUN_77: usize = 77;
+    /// Offset of `locator_count` (`u32`, little-endian). Spec §Assembly operands.
+    #[cfg(test)]
+    pub(crate) const LOCATOR_COUNT: usize = 81;
+    /// Offset of `first_locator_reference` (`bytes[51]`). Spec §Assembly operands.
+    #[cfg(test)]
+    pub(crate) const FIRST_LOCATOR_REFERENCE: usize = 85;
+    /// Offset of `second_locator_reference` (`bytes[51]`). Spec §Assembly operands.
+    #[cfg(test)]
+    pub(crate) const SECOND_LOCATOR_REFERENCE: usize = 136;
+}
+
 /// Byte offsets for the `assembly_compact_rigid_group_identity_locator` record.
 ///
 /// Spec §Assembly operands. Record length 52 B.
