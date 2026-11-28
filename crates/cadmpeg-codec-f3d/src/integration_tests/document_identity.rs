@@ -220,6 +220,42 @@ fn api_export_with_placements(linked: bool, terminal: Option<(u8, &str)>) -> Vec
     api_export_with_identity_fields(linked, terminal, None)
 }
 
+/// A manifest reference extension that states an empty reference run, with
+/// no Redirections entry, gives up the extension's bytes in `Manifest.dat`;
+/// no loss names an id that no record carries.
+#[test]
+fn an_unreadable_manifest_reference_extension_is_given_up_in_the_manifest() {
+    // A reference role that is no GUID: the extension does not read.
+    let bytes = api_export_archive(
+        &[("child-role", "ChildKey", "child.f3d")],
+        None,
+        None,
+        false,
+    );
+    let head = "part manifest-references stream=\"Manifest.dat\" offset=";
+    let decoded = EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+            .expect("an unreadable reference extension remains a reported decode"),
+    );
+    crate::test_support::charged_part(
+        decoded.ir(),
+        &decoded.report().losses,
+        (cadmpeg_ir::unknown::part::Cause::Unreadable, head),
+        "",
+    );
+    assert!(
+        !decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("f3d:archive:entry#")),
+        "{:#?}",
+        decoded.report().losses
+    );
+    crate::test_support::assert_pinned_refusal(bytes, head);
+}
+
 fn api_export_with_identity_fields(
     linked: bool,
     terminal: Option<(u8, &str)>,
@@ -230,6 +266,22 @@ fn api_export_with_identity_fields(
 
 fn api_export_build(
     linked: bool,
+    terminal: Option<(u8, &str)>,
+    blank: Option<&str>,
+    keep_redirections: bool,
+) -> Vec<u8> {
+    let references: &[(&str, &str, &str)] = if linked {
+        &[(XREF_ROLE, "ChildKey", "child.f3d")]
+    } else {
+        &[]
+    };
+    api_export_archive(references, terminal, blank, keep_redirections)
+}
+
+/// The identity-xref archive whose `Manifest.dat` reference extension states
+/// `references`, without `RedirectionsStream.dat` unless `keep_redirections`.
+fn api_export_archive(
+    references: &[(&str, &str, &str)],
     terminal: Option<(u8, &str)>,
     blank: Option<&str>,
     keep_redirections: bool,
@@ -250,11 +302,7 @@ fn api_export_build(
         if name == "Manifest.dat" {
             let manifest = crate::manifest::parse_top_level(&bytes).unwrap();
             let mut extension =
-                crate::test_support::manifest_test::api_reference_extension(if linked {
-                    &[(XREF_ROLE, "ChildKey", "child.f3d")]
-                } else {
-                    &[]
-                });
+                crate::test_support::manifest_test::api_reference_extension(references);
             if let Some(field) = blank {
                 let mut key = Vec::new();
                 crate::test_support::lp_utf16(&mut key, field);

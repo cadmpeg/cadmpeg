@@ -410,8 +410,8 @@ fn check_base(
         ProcessBase::Design(StateBase::Current(position)) => {
             let position = PositionKey::of(position);
             let exists = super::as_process(findings, |findings| {
-                check_position(records.design, position, id, findings)
-                    && check_resulting_position(records.design, position, id, findings)
+                check_position(&records.design, position, id, findings)
+                    && check_resulting_position(&records.design, position, id, findings)
             });
             if !exists {
                 return;
@@ -460,7 +460,7 @@ fn check_chains(
         OnChain,
         Depth(u64),
     }
-    let design = state_chains(records.design)
+    let design = state_chains(&records.design)
         .map(|chains| chains.depths)
         .unwrap_or_default();
     let below = |state: &ProcessState| -> Result<&str, u64> {
@@ -541,7 +541,7 @@ fn check_chains(
         }
     }
     match crate::validate::state_chain_refusal(max_chain_depth, deepest) {
-        Some(refusal) => Err(refusal),
+        Some(refusal) => Err(CodecError::ResourceLimit(refusal)),
         None => Ok(()),
     }
 }
@@ -590,7 +590,7 @@ pub(super) fn check_resolved_states(
 ) -> Result<(), CodecError> {
     crate::validate::design::resolved::check_process_states(
         ctx,
-        records.design,
+        &records.design,
         ids,
         |state| setup_of_state(records, state).and_then(|setup| records.scope_of_setup(setup)),
         findings,
@@ -605,8 +605,8 @@ pub(crate) fn visit_resolved_states(
     ir: &CadIr,
     visit: &mut dyn FnMut(StateView<'_, '_>) -> Result<(), ResourceLimit>,
 ) -> Result<(), ResourceLimit> {
-    let design = DesignRecords::new(ir);
-    let records = ProcessRecords::new(&design);
+    let design = std::rc::Rc::new(DesignRecords::new(ir));
+    let records = ProcessRecords::new(design.clone());
     visit_states(
         ctx,
         &design,

@@ -74,9 +74,10 @@ fn archive_session_crc_failures_keep_unreachable_losses_and_root_refusal() {
                     && loss
                         .message
                         .starts_with(&format!("part archive-entry {name:?}"))));
-            assert!(losses
+            // §3.3: the given-up entry is the one loss of the member.
+            assert!(!losses
                 .iter()
-                .any(|loss| loss.code == crate::F3dLossCode::XrefMemberUndecoded.note("").code));
+                .any(|loss| loss.code == crate::F3dLossCode::XrefMemberUndecoded.kind()));
         }
     }
 }

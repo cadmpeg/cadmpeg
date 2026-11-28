@@ -159,25 +159,13 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "model.malformed",
-            "kind": "geometry_not_transferred",
-            "namespace": "edrawings"
-          }
-        },
-        "message": "the model stream broke a record rule (bracket record is not the 24 byte trailer at byte 1315); the package carries no model data",
-        "severity": "blocking"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
             "code": "record.unreadable",
             "kind": "decode_diagnostic",
             "namespace": "decode",
             "strict_floor": "error"
           }
         },
-        "message": "part archive-entry \"eModel\" stream=\"\" offset=36 length=1399 record=edrawings:source:part#fe0ef8a6c0b97e155c86ab12d6187cbf4e92573b6b75576619658dfcba7fd14f: malformed container: bracket record is not the 24 byte trailer at byte 1315; dropped=[]",
+        "message": "part archive-entry \"eModel\" stream=\"\" offset=36 length=1399 record=edrawings:source:part#fe0ef8a6c0b97e155c86ab12d6187cbf4e92573b6b75576619658dfcba7fd14f: malformed container: the model stream walk stopped: bracket record is not the 24 byte trailer at byte 1315; dropped=[]",
         "provenance": {
           "format": "edrawings",
           "offset": 36,

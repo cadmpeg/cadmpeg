@@ -9,7 +9,7 @@ use super::{
 };
 use crate::om::compact::{atom, row_indices};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(super) enum EncodingWire {
     /// Linked row with an unresolved leading object identity.

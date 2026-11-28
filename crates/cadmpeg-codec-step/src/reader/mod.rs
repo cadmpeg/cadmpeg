@@ -15,7 +15,9 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{Identity, UnknownId};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{dropped_with, DecodeParts, GivenUpPart, GivenUpRecord, Part};
+use cadmpeg_ir::unknown::part::{
+    dropped_with, Cause, DecodeParts, GivenUpPart, GivenUpRecord, Part,
+};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
 
@@ -197,6 +199,10 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                     StepLossCode::ParseNoncanonicalSyntax,
                     "presentation_metadata",
                 ),
+                crate::parse::ParseDiagnosticKind::PresentationLiteralUnrepresentable => (
+                    StepLossCode::ParsePresentationLiteralUnrepresentable,
+                    "presentation_metadata",
+                ),
                 crate::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical => {
                     (StepLossCode::ParseNoncanonicalSyntax, "complex_entity")
                 }
@@ -214,9 +220,6 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                     StepLossCode::ImplementationLevelUnverified,
                     "implementation_level",
                 ),
-                crate::parse::ParseDiagnosticKind::ExpansionBounded => {
-                    (StepLossCode::ParseExpansionBounded, "expansion")
-                }
             };
             let message = diagnostic.message.clone();
             let loss = code.note(message).with_provenance(
@@ -571,9 +574,7 @@ fn decode_exchange_mode(
     if matches!(mode, DecodeMode::Decode(_)) {
         let metadata_offsets = diagnostics
             .iter()
-            .filter(|diagnostic| {
-                diagnostic.kind == crate::parse::ParseDiagnosticKind::PresentationMetadataUnusable
-            })
+            .filter(|diagnostic| diagnostic.kind.retains_presentation_record())
             .map(|diagnostic| diagnostic.offset)
             .collect::<std::collections::BTreeSet<_>>();
         for (&id, record) in exchange.records() {
@@ -828,7 +829,11 @@ fn give_up_statements(
                 .iter()
                 .map(|(record, entry)| format!("#{record} entry #{entry}")),
         );
-        let part = ctx.give_up_part(part, statement.cause.clone().into_error())?;
+        let part = ctx.give_up_part(
+            part,
+            statement.cause.cause(),
+            statement.cause.clone().into_error(),
+        )?;
         for record in &statement.dropped {
             dependents.push(dropped_with(
                 ids::omitted_record(record.offset),
@@ -843,8 +848,8 @@ fn give_up_statements(
 /// Why the reader lost a DATA instance.
 #[derive(Debug, Clone, PartialEq)]
 enum Lost {
-    /// The instance is given up for the error text.
-    GivenUp(String),
+    /// The instance is given up for `cause` with the error text.
+    GivenUp { cause: Cause, error: String },
     /// The instance is dropped because it needs instance `needs`, which is
     /// given up or dropped. `record` is the id the document would hold for
     /// the instance, and `None` where the instance is a value of no record.
@@ -885,17 +890,22 @@ impl LostInstances {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// Gives up instance `id` for `error`.
-    pub(crate) fn give_up(&self, id: u64, error: impl std::fmt::Display) {
+    /// Gives up instance `id` for `cause` with the text `error`. The
+    /// instance's give-up follows the decode as its one loss.
+    pub(crate) fn give_up(&self, id: u64, cause: Cause, error: impl std::fmt::Display) {
         self.lock()
             .instances
             .entry(id)
-            .or_insert_with(|| Lost::GivenUp(error.to_string()));
+            .or_insert_with(|| Lost::GivenUp {
+                cause,
+                error: error.to_string(),
+            });
     }
 
-    /// Gives up instance `id` for the codec loss `why`.
-    pub(crate) fn give_up_for(&self, id: u64, why: &LossNote) {
-        self.give_up(id, format_args!("{}: {}", why.code, why.message));
+    /// Gives up instance `id` for `cause` as the codec loss `why` states:
+    /// the give-up's text carries `why`'s code and message.
+    pub(crate) fn give_up_for(&self, id: u64, cause: Cause, why: &LossNote) {
+        self.give_up(id, cause, format_args!("{}: {}", why.code, why.message));
     }
 
     /// Drops instance `id`, a value of no record of the document, because it
@@ -961,11 +971,24 @@ fn drop_with_lost(exchange: &Exchange, id: u64, needs: impl IntoIterator<Item = 
     lost.is_some()
 }
 
-/// The losses of DATA instance `id`, which the reader gives up for the
-/// codec loss `why`: `why`. The instance's part follows the decode.
-fn give_up_instance(exchange: &Exchange, id: u64, why: LossNote) -> [LossNote; 1] {
-    exchange.lost().give_up_for(id, &why);
-    [why]
+/// Drops instance `id` with the first instance that a parameter of `record`
+/// references, at any depth, and that the parser or the reader gave up or
+/// dropped. Returns whether one was.
+fn drop_with_lost_reference(
+    exchange: &Exchange,
+    id: u64,
+    record: &RawRecord,
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    let mut references = BTreeSet::new();
+    for value in record
+        .partials
+        .iter()
+        .flat_map(|partial| &partial.parameters)
+    {
+        collect_references(value, &mut references, ctx)?;
+    }
+    Ok(drop_with_lost(exchange, id, references))
 }
 
 /// Gives up each DATA instance the reader gave up as one part, and notes
@@ -987,8 +1010,8 @@ fn give_up_instances(
     let mut parts = Vec::new();
     let mut losses = Vec::new();
     let mut stubs = BTreeMap::new();
-    for (&id, cause) in &lost {
-        let Lost::GivenUp(error) = cause else {
+    for (&id, entry) in &lost {
+        let &Lost::GivenUp { cause, ref error } = entry else {
             continue;
         };
         // An instance with no DATA record is a statement the parser gave up
@@ -1009,7 +1032,7 @@ fn give_up_instances(
         if !typed.contains(id) {
             part = part.digest_only();
         }
-        let part = ctx.give_up_part(part, CodecError::malformed(error))?;
+        let part = ctx.give_up_part(part, cause, CodecError::malformed(error))?;
         stubs.insert(id, Identity::from(part.id().clone()));
         losses.push(part.loss());
         parts.push(part);
@@ -1033,7 +1056,7 @@ fn give_up_instances(
                     needs: next,
                     record: None,
                 }) => needs = *next,
-                Some(Lost::GivenUp(_)) | None => {
+                Some(Lost::GivenUp { .. }) | None => {
                     return exchange
                         .lost_record(needs)
                         .and_then(|statement| statements.get(statement))
@@ -1058,6 +1081,7 @@ fn give_up_instances(
             Some(needed) => dropped_with(record.clone(), needed),
             None => GivenUpRecord::new(
                 record.clone(),
+                Cause::Undecoded,
                 format_args!("it needs instance #{needs}, which the decode holds as no record"),
             )
             .loss(),
@@ -1662,6 +1686,16 @@ fn byte_accounting(
         .cloned()
         .collect::<Vec<_>>();
     omitted.sort_unstable_by_key(|left| left.start);
+    // Every byte of a record span is claimed above, and the record lexed
+    // under the parser's admission, which this lexer's admission contains.
+    // Its tokens and trivia would claim nothing, so the walk resumes after it.
+    let mut record_spans = exchange
+        .records()
+        .values()
+        .map(|record| record.span.clone())
+        .collect::<Vec<_>>();
+    record_spans.sort_unstable_by_key(|span| span.start);
+    let mut next_record = 0;
     let mut cursor = 0;
     loop {
         let token = match lexer.next_token() {
@@ -1686,6 +1720,22 @@ fn byte_accounting(
                 break;
             }
         };
+        while record_spans
+            .get(next_record)
+            .is_some_and(|span| span.start < token.span.start)
+        {
+            next_record += 1;
+        }
+        if let Some(span) = record_spans
+            .get(next_record)
+            .filter(|span| span.start == token.span.start)
+        {
+            claim_trivia(input, cursor..span.start, &mut classes, draft)?;
+            lexer.seek(span.end);
+            cursor = span.end;
+            next_record += 1;
+            continue;
+        }
         claim_range(
             &mut classes,
             &token.span,
@@ -1772,7 +1822,10 @@ fn claim_trivia(
                 format_args!("trivia byte at {at}"),
             )?;
             at += 1;
-        } else if let Some(after_print_control) = crate::lex::print_control_end(input, at) {
+        } else if let Some(after_print_control) = (byte == b'\\')
+            .then(|| crate::lex::print_control_end(input, at))
+            .flatten()
+        {
             if after_print_control > end {
                 return Err(CodecError::malformed(format_args!(
                     "STEP print control directive at byte {at} ends at {after_print_control}, but its trivia run ends at {end}"
@@ -1816,19 +1869,30 @@ fn decode_text(
     field: &str,
     code: StepLossCode,
 ) -> Option<String> {
-    let Value::String(bytes) = value else {
-        return None;
-    };
-    match exchange.decode_string(bytes) {
-        Ok(text) => Some(text),
-        Err(error) => {
-            let message =
-                format!("STEP record #{record_id} has an invalid {field} string: {error}");
-
+    match string_text(exchange, value, record_id, field) {
+        Ok(text) => text,
+        Err(message) => {
             losses.push(code.note(message));
             None
         }
     }
+}
+
+/// The text of string `value`, `None` for a value of another kind, or the
+/// reason that the string does not decode, for a give-up that names it.
+fn string_text(
+    exchange: &Exchange,
+    value: &Value,
+    record_id: u64,
+    field: &str,
+) -> Result<Option<String>, String> {
+    let Value::String(bytes) = value else {
+        return Ok(None);
+    };
+    exchange
+        .decode_string(bytes)
+        .map(Some)
+        .map_err(|error| format!("STEP record #{record_id} has an invalid {field} string: {error}"))
 }
 
 fn collect_references(

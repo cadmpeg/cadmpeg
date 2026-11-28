@@ -18,7 +18,6 @@ use super::index::DesignIndex;
 use super::matching::Matchers;
 use super::names::derived_kinds;
 use super::selections::{resolving_definition, Stored};
-use super::states::Extent;
 
 pub(super) fn check<'a>(
     index: &DesignIndex<'a>,
@@ -53,12 +52,7 @@ pub(super) fn check<'a>(
             .get(scope)
             .and_then(|record| record.active_configuration.as_ref())
             == Some(&configuration.id);
-        let extents: Vec<&Extent<'a>> = matchers
-            .states()
-            .extents
-            .iter()
-            .filter(|extent| extent.scope == scope)
-            .collect();
+        let extents = matchers.states().extents_for_scope(scope);
         let matcher = (active && !extents.is_empty())
             .then(|| matchers.get(&Stored::Extents(extents)))
             .flatten();

@@ -1090,7 +1090,7 @@ impl From<SketchRelation> for SketchRelationSerde {
 }
 
 /// One sketch-relation reference resolved against the indexed Design record graph.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum SketchRelationOperand {
     /// A sketch point.
@@ -1211,7 +1211,7 @@ impl SketchPatternCount {
 }
 
 /// Class-specific auxiliary payload of a pattern or text sketch relation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum SketchPatternDefinition {
     /// A circular-pattern relation's auxiliary operands.

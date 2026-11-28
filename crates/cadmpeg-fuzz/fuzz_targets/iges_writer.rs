@@ -66,17 +66,13 @@ fuzz_target!(|data: &[u8]| {
         }
         assert!(encoder
             .plan(
-                EncodeInput::new(&ir, Some(&source_fidelity)),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
-            )
+                EncodeInput::new(&ir, Some(&source_fidelity)).with_target(TargetRequest::Explicit(version.descriptor().id.as_str())))
             .is_err());
         return;
     }
 
     let Ok(plan) = encoder.plan(
-        EncodeInput::new(&ir, None),
-        TargetRequest::Explicit(version.descriptor().id.as_str()),
-    ) else {
+        EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(version.descriptor().id.as_str()))) else {
         return;
     };
     let mut encoded = Vec::new();
@@ -115,9 +111,7 @@ fuzz_target!(|data: &[u8]| {
     }
 
     let Ok(replay) = encoder.plan(
-        EncodeInput::new(&decoded_ir, Some(&source_fidelity)),
-        TargetRequest::Explicit(version.descriptor().id.as_str()),
-    ) else {
+        EncodeInput::new(&decoded_ir, Some(&source_fidelity)).with_target(TargetRequest::Explicit(version.descriptor().id.as_str()))) else {
         return;
     };
     if control & 0x40 == 0 {

@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::serde_erase::json;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::Codec;
 
 use crate::SldprtCodec;
@@ -19,7 +19,7 @@ fn foreign_cube() -> cadmpeg_ir::CadIr {
 
 fn plan_losses(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     SldprtCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, None))
         .unwrap()
         .report()
         .losses
@@ -189,10 +189,10 @@ fn semantic_writer_names_an_edge_range_its_vertices_do_not_fix() {
     }
     let edge = decoded.ir().geometry.edges[0].id.as_str().to_owned();
     let report = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .unwrap()
         .report()
         .clone();
@@ -217,7 +217,7 @@ fn a_document_with_no_face_writes_an_empty_partition_and_names_it() {
     assert!(bodies.message.contains(ir.geometry.bodies[0].id.as_str()));
     let mut bytes = Vec::new();
     SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&ir, None))
         .unwrap()
         .write_to(&mut bytes)
         .unwrap();
@@ -314,9 +314,7 @@ fn an_error_of_a_design_rule_writes_the_part_with_a_loss() {
         "{:#?}",
         report.findings
     );
-    let plan = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
-        .unwrap();
+    let plan = SldprtCodec.plan(EncodeInput::new(&ir, None)).unwrap();
     let losses = plan.report().losses.clone();
     let invalid = losses
         .iter()
@@ -385,10 +383,10 @@ fn pmi_added_to_a_native_part_is_named_on_the_patched_path() {
         source_settings: cadmpeg_ir::design::options::NativeOptions::new(),
     });
     let plan = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .unwrap();
     assert!(
         matches!(
@@ -515,10 +513,7 @@ fn a_retained_partition_keeps_a_body_on_a_torus_the_compact_records_cannot_hold(
     let (ir, _, mut fidelity) = decoded.into_parts();
     fidelity.content_digest = None;
     let plan = SldprtCodec
-        .plan(
-            EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(&ir, Some(&fidelity)))
         .unwrap();
     assert!(
         loss(&plan.report().losses, "writer.bodies-omitted").is_none(),
@@ -553,10 +548,7 @@ fn a_faceless_part_keeps_its_swift_annotations() {
     let (ir, _, mut fidelity) = decoded.into_parts();
     fidelity.content_digest = None;
     let plan = SldprtCodec
-        .plan(
-            EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(&ir, Some(&fidelity)))
         .unwrap();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();

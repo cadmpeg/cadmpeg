@@ -182,8 +182,8 @@ use super::parasolid::{
     parasolid_attribute_field_names, parasolid_attribute_field_uses, parasolid_blend_bound_records,
     parasolid_chart_records, parasolid_deltas_events_from_records,
     parasolid_entity_51_numeric_uses, parasolid_entity_51_records, parasolid_entity_51_string_uses,
-    parasolid_entity_51_structured_uses, parasolid_entity_value_records,
-    parasolid_field_names_records, parasolid_groups, parasolid_omitted_entity_51_xmts,
+    parasolid_entity_51_structured_uses, parasolid_entity_value_records_with_parsed,
+    parasolid_field_names_records, parasolid_groups_with_parsed, parasolid_omitted_entity_51_xmts,
     parasolid_support_uv_records, parasolid_term_use_records,
     parasolid_topology_attribute_class_uses,
     parasolid_topology_attribute_fields_have_untransferred_values,
@@ -746,7 +746,7 @@ impl NativeModel {
         );
         let deltas_events = parasolid_deltas_events_from_records(streams, parsed.take_deltas())?;
         let (parasolid_group_records, mut parasolid_group_members) =
-            parasolid_groups(streams, &delta_pairs, &deltas_events)?;
+            parasolid_groups_with_parsed(streams, Some(parsed), &delta_pairs, &deltas_events)?;
         resolve_group_members(&mut parasolid_group_members, parsed);
         let parasolid_blend_surface_records =
             per_parasolid_stream::<ParasolidBlendSurfaceRecord>(parsed)?;
@@ -759,12 +759,12 @@ impl NativeModel {
             per_parasolid_stream::<ParasolidSurfaceCurveRecord>(parsed)?;
         let parasolid_intersection_records =
             per_parasolid_stream::<ParasolidIntersectionRecord>(parsed)?;
-        let parasolid_term_use_records = parasolid_term_use_records(streams)?;
+        let parasolid_term_use_records = parasolid_term_use_records(streams, parsed)?;
         let parasolid_support_uv_records = parasolid_support_uv_records(streams)?;
         let parasolid_chart_records = parasolid_chart_records(streams)?;
-        let parasolid_attribute_definitions = parasolid_attribute_definitions(streams)?;
-        let parasolid_entity_51_records = parasolid_entity_51_records(streams)?;
-        let value_records = parasolid_entity_value_records(streams)?;
+        let parasolid_attribute_definitions = parasolid_attribute_definitions(streams, parsed)?;
+        let parasolid_entity_51_records = parasolid_entity_51_records(streams, parsed)?;
+        let value_records = parasolid_entity_value_records_with_parsed(streams, Some(parsed))?;
         let parasolid_entity_52_integer_records = value_records.integers;
         let parasolid_entity_53_double_records = value_records.doubles;
         let parasolid_entity_54_string_records = value_records.strings;
@@ -772,7 +772,7 @@ impl NativeModel {
         let parasolid_entity_57_axis_records = value_records.axes;
         let parasolid_entity_58_tag_records = value_records.tags;
         let parasolid_entity_62_unicode_records = value_records.unicode;
-        let parasolid_field_names_records = parasolid_field_names_records(streams)?;
+        let parasolid_field_names_records = parasolid_field_names_records(streams, parsed)?;
         let parasolid_attribute_field_names = parasolid_attribute_field_names(
             &parasolid_attribute_definitions,
             &parasolid_field_names_records,
@@ -818,7 +818,7 @@ impl NativeModel {
                 &parasolid_topology_attribute_list_references,
                 &parasolid_entity_51_records,
                 &parasolid_attribute_class_uses,
-                &parasolid_omitted_entity_51_xmts(streams)?,
+                &parasolid_omitted_entity_51_xmts(streams, parsed)?,
             );
         let om_record_areas = om_record_areas(container)?;
         let audit_trail_rows = audit_trail_rows(container)?;

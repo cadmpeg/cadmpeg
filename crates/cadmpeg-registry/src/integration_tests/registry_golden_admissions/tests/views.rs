@@ -23,14 +23,14 @@ fn view_local_kernel_loss_counts_include_zero_for_admitted_layers() {
     assert_rejected(
         &report_view(&sldprt, &[kernel_loss("sldprt")]),
         &registry,
-        "has 0 residual Parasolid layers but 1 typed kernel losses",
+        "has 0 residual kernel layers but 1 typed kernel losses",
     );
 
     let no_loss = report_view(&nx, &[]);
     assert_rejected(
         &no_loss,
         &registry,
-        "has 1 residual Parasolid layers but 0 typed kernel losses",
+        "has 1 residual kernel layers but 0 typed kernel losses",
     );
 
     assert_rejected(

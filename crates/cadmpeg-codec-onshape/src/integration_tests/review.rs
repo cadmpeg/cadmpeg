@@ -1,21 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Regression cases for source admission and history fidelity.
 use crate::test_support::review::{decode, edit, members, parameter, validate, variable, wire};
-use crate::test_support::{codec, fixture};
+use crate::test_support::{codec, fixture, Charge};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
+use cadmpeg_ir::unknown::part::Cause;
 use serde_json::Value;
 use std::io::Cursor;
 
-fn loss(result: &cadmpeg_ir::codec::DecodeResult, code: &str) -> bool {
-    result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code.to_string() == code)
+fn loss(result: &cadmpeg_ir::codec::DecodeResult, code: &str, charge: Charge) -> bool {
+    result.report().losses.iter().any(|loss| {
+        crate::test_support::states(code, charge, &loss.code.to_string(), &loss.message)
+    })
 }
 fn kind(wire: &Value, ordinal: usize) -> &Value {
     &wire["model"]["features"][ordinal]["definition"]["value"]["kind"]
@@ -24,35 +23,21 @@ fn kind(wire: &Value, ordinal: usize) -> &Value {
 #[test]
 fn stored_json_part_refusals_are_losses_and_session_entities_remain_errors() {
     let original = fixture("plate-fillet");
-    for resource in ["depth", "storage", "entities"] {
+    for resource in ["depth", "entities"] {
         let bytes = edit(&original, |path, value| {
-            if path.ends_with("features.json") {
-                if resource == "depth" {
-                    value["extra"] = json!([[[[[[[[0]]]]]]]]);
-                } else if resource == "storage" {
-                    value["extra"] = json!(vec![0; 4096]);
-                }
+            if path.ends_with("features.json") && resource == "depth" {
+                value["extra"] = json!([[[[[[[[0]]]]]]]]);
             }
         });
         let mut policy = DecodePolicy::default();
-        match resource {
-            "depth" => policy.limits.max_recursion_depth = 7,
-            "storage" => policy.limits.max_decompressed_bytes_per_expand = 32_768,
-            "entities" => policy.limits.max_entities = 3,
-            _ => unreachable!(),
+        if resource == "depth" {
+            policy.limits.max_recursion_depth = 7;
+        } else {
+            policy.limits.max_entities = 3;
         }
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let backend = crate::OnshapeCodec::new(|ctx, root| {
-            Ok(cadmpeg_ir::codec::Decoded {
-                ir: cadmpeg_ir::CadIr::empty(),
-                body: cadmpeg_ir::codec::DecodeBody::new(
-                    cadmpeg_ir::report::decode::DecodeTransfer::at(ctx.depth(), false),
-                ),
-                source_fidelity: cadmpeg_ir::SourceFidelity::for_root(root),
-            })
-        });
-        let result = backend.decode_impl(&ctx, root);
+        let result = admission_only(&ctx, root);
         if resource == "entities" {
             let error = result.unwrap_err();
             let CodecError::ResourceLimit(limit) = error else {
@@ -70,13 +55,18 @@ fn stored_json_part_refusals_are_losses_and_session_entities_remain_errors() {
                 .body
                 .losses
                 .iter()
-                .filter(|note| crate::loss::OnshapeLossCode::MemberUnreadable.matches(note))
+                .filter(|note| {
+                    crate::test_support::states(
+                        "onshape/member.unreadable",
+                        Charge::GivenUp(Cause::Undecoded),
+                        &note.code.to_string(),
+                        &note.message,
+                    )
+                })
                 .collect();
-            assert_eq!(notes.len(), 1);
-            if resource == "storage" {
-                assert!(notes[0].message.contains("JSON"));
-            }
-            assert!(decoded
+            assert_eq!(notes.len(), 1, "{resource}");
+            // The give-up of the member is the one entry for the lost history.
+            assert!(!decoded
                 .body
                 .losses
                 .iter()
@@ -93,6 +83,73 @@ fn stored_json_part_refusals_are_losses_and_session_entities_remain_errors() {
             assert!(ctx.resource_refusal().is_none());
         }
     }
+}
+
+/// The Onshape admission of `root` with a backend that builds an empty
+/// document.
+fn admission_only(
+    ctx: &DecodeContext<'_>,
+    root: cadmpeg_core::decode::View<'_>,
+) -> Result<cadmpeg_ir::codec::Decoded, CodecError> {
+    let backend = crate::OnshapeCodec::new(|ctx, root| {
+        Ok(cadmpeg_ir::codec::Decoded {
+            ir: cadmpeg_ir::CadIr::empty(),
+            body: cadmpeg_ir::codec::DecodeBody::new(
+                cadmpeg_ir::report::decode::DecodeTransfer::at(ctx.depth(), false),
+            ),
+            source_fidelity: cadmpeg_ir::SourceFidelity::for_root(root),
+        })
+    });
+    backend.decode_impl(ctx, root)
+}
+
+/// A stored JSON member's tree is charged to the session's expanded bytes
+/// (decode-resource-caps). The `features.json` member with 4096 added
+/// numbers needs at least 64 bytes for each of their values. A ceiling one
+/// below the session's count at that member refuses the decode in the
+/// session, and the default ceiling admits it.
+#[test]
+fn a_json_member_past_the_expanded_bytes_ceiling_refuses_the_session() {
+    use cadmpeg_core::decode::test_support::at_charge;
+    use cadmpeg_core::decode::{LimitScope, ResourceDimension};
+
+    let bytes = edit(&fixture("plate-fillet"), |path, value| {
+        if path.ends_with("features.json") {
+            value["extra"] = json!(vec![0; 4096]);
+        }
+    });
+    let refusal = |total: u64| {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_decompressed_bytes_total = total;
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        match admission_only(&ctx, root) {
+            Err(CodecError::ResourceLimit(limit)) => {
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+                Some(limit)
+            }
+            Err(error) => panic!("expected a resource limit: {error}"),
+            Ok(_) => None,
+        }
+    };
+    let entries = zip::ZipArchive::new(Cursor::new(&bytes)).unwrap().len();
+    let found = (0..entries)
+        .filter_map(|skip| {
+            at_charge(
+                ResourceDimension::DecompressedBytes,
+                "Onshape JSON member",
+                skip,
+                || refusal(u64::MAX),
+            )
+        })
+        .find(|limit| limit.additional > 4096 * 64)
+        .expect("the wide member is charged");
+    assert_eq!(found.scope, LimitScope::Session);
+    assert_eq!(refusal(found.used + found.additional - 1), Some(found));
+    assert_eq!(
+        refusal(DecodePolicy::default().limits.max_decompressed_bytes_total),
+        None
+    );
 }
 
 #[test]
@@ -138,7 +195,7 @@ fn latest_refused_variable_binding_blocks_later_consumers() {
             .losses
             .iter()
             .any(|l| l.message.contains("unresolved latest binding")));
-        assert!(loss(&result, "onshape/history.not-supported"));
+        assert!(loss(&result, "onshape/history.not-supported", Charge::Note));
         validate(result);
     }
 }
@@ -190,7 +247,7 @@ fn boolean_operands_refuse_invalid_and_repeated_values_and_keep_valid_controls()
                 );
             }
             if !valid || gated {
-                assert!(loss(&result, "onshape/history.not-supported"));
+                assert!(loss(&result, "onshape/history.not-supported", Charge::Note));
             }
             validate(result);
         }
@@ -206,7 +263,7 @@ fn boolean_operands_refuse_invalid_and_repeated_values_and_keep_valid_controls()
             let wire = wire(&result);
             assert_eq!(kind(&wire, 1), "native");
             assert!(wire["model"]["features"][1].get("suppressed").is_none());
-            assert!(loss(&result, "onshape/history.not-supported"));
+            assert!(loss(&result, "onshape/history.not-supported", Charge::Note));
         }
     }
 }
@@ -247,7 +304,7 @@ fn quantities_require_dimensioned_expressions_or_explicit_units() {
             );
         } else {
             assert_eq!(kind(&wire, 1), "native");
-            assert!(loss(&result, "onshape/history.not-supported"));
+            assert!(loss(&result, "onshape/history.not-supported", Charge::Note));
         }
         validate(result);
     }
@@ -278,7 +335,7 @@ fn quantities_require_dimensioned_expressions_or_explicit_units() {
             assert!((angle - expected).abs() <= f64::EPSILON);
         } else {
             assert_eq!(kind(&wire, 1), "native");
-            assert!(loss(&result, "onshape/history.not-supported"));
+            assert!(loss(&result, "onshape/history.not-supported", Charge::Note));
         }
         validate(result);
     }
@@ -313,8 +370,15 @@ fn thin_open_curves_refuse_unresolved_sides_for_both_directions_and_flips() {
             });
             let result = decode(&bytes);
             assert_eq!(kind(&wire(&result), 1), "native");
-            assert!(result.ir().design.features.is_empty());
-            assert!(loss(&result, "onshape/extrude.thin-not-supported"));
+            assert_eq!(
+                crate::test_support::review::design_operation(result.ir(), "Plate"),
+                crate::test_support::review::unresolved("extrude")
+            );
+            assert!(loss(
+                &result,
+                "onshape/extrude.thin-not-supported",
+                Charge::Note
+            ));
             validate(result);
         }
     }
@@ -395,7 +459,7 @@ fn blind_holes_require_drill_point_and_depth_reference_and_read_thread_facts() {
             }
         } else {
             assert_eq!(kind(&wire, 5), "native", "{case}");
-            assert!(loss(&result, "onshape/history.not-supported"));
+            assert!(loss(&result, "onshape/history.not-supported", Charge::Note));
         }
         validate(result);
     }
@@ -531,11 +595,14 @@ fn stale_unused_and_optional_responses_are_omitted_at_geometry_and_design_depth(
                     },
                 )
                 .unwrap();
-            assert!(result
-                .report()
-                .losses
-                .iter()
-                .any(|note| crate::loss::OnshapeLossCode::MemberUnreadable.matches(note)));
+            assert!(result.report().losses.iter().any(|note| {
+                crate::test_support::states(
+                    "onshape/member.unreadable",
+                    Charge::GivenUp(Cause::Unreadable),
+                    &note.code.to_string(),
+                    &note.message,
+                )
+            }));
             assert!(result
                 .ir()
                 .model
@@ -586,7 +653,11 @@ fn multi_body_decode_names_an_unmatched_creator_and_unsupported_thin_bound() {
     });
     let result = decode(&bytes);
     assert_eq!(result.ir().geometry.bodies.len(), 2);
-    assert!(loss(&result, "onshape/history.part-not-matched"));
+    assert!(loss(
+        &result,
+        "onshape/history.part-not-matched",
+        Charge::Note
+    ));
     validate(result);
     let bytes = edit(&fixture("plate-fillet"), |path, response| {
         if !path.ends_with("features.json") {
@@ -598,7 +669,11 @@ fn multi_body_decode_names_an_unmatched_creator_and_unsupported_thin_bound() {
     });
     let result = decode(&bytes);
     assert_eq!(kind(&wire(&result), 1), "native");
-    assert!(loss(&result, "onshape/extrude.thin-not-supported"));
+    assert!(loss(
+        &result,
+        "onshape/extrude.thin-not-supported",
+        Charge::Note
+    ));
     validate(result);
 }
 
@@ -628,7 +703,11 @@ fn native_sketch_entities_keep_supported_lines_and_gate_whole_sketch_consumers()
             .count(),
         4
     );
-    assert!(loss(&result, "onshape/sketch.geometry-not-supported"));
+    assert!(loss(
+        &result,
+        "onshape/sketch.geometry-not-supported",
+        Charge::Note
+    ));
     validate(result);
 }
 
@@ -639,8 +718,10 @@ fn manifest_detection_preserves_the_context_tree_refusal() {
             response["extra"] = json!(vec![0; 4096]);
         }
     });
+    // The edited manifest holds 4096 added numbers, a tree of more than
+    // 4096 * 64 bytes.
     let mut policy = DecodePolicy::default();
-    policy.limits.max_decompressed_bytes_per_expand = 32_768;
+    policy.limits.max_decompressed_bytes_total = 32_768;
     let arena = DecodeArena::new();
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let whole = cadmpeg_core::decode::WholeInput::of_source(root, &mut Cursor::new(&bytes))
@@ -648,7 +729,9 @@ fn manifest_detection_preserves_the_context_tree_refusal() {
         .unwrap();
     assert!(matches!(
         codec().detect_whole_impl(&ctx, whole),
-        Err(CodecError::NotImplemented(_))
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::DecompressedBytes
+                && limit.operation == "Onshape manifest"
     ));
 }
 
@@ -753,7 +836,11 @@ fn opaque_additional_json_members_remain_bytes_and_empty_members_keep_their_loss
     });
     let result = decode(&bytes);
     assert_eq!(kind(&wire(&result), 1), "extrude");
-    assert!(loss(&result, "onshape/container.empty-member"));
+    assert!(loss(
+        &result,
+        "onshape/container.empty-member",
+        Charge::Note
+    ));
     let asset = result
         .ir()
         .model
@@ -803,15 +890,29 @@ fn unresolved_variables_refuse_sketch_dimension_values_and_leave_inactive_values
                 "Plate"
             },
         );
-        assert!(result.ir().model.parameters.iter().all(|p| p
-            .owner
-            .as_ref()
-            .is_none_or(|owner| owner.as_str() != consumer)));
         if constraint_consumer {
-            assert!(result.report().losses.iter().any(|l| l.code.to_string()
-                == "onshape/sketch.constraint-not-supported"
-                && l.message.contains("unresolved latest binding")));
+            let definition = wire["design"]["parameters"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|parameter| parameter["owner"]["value"] == consumer)
+                .unwrap();
+            assert_eq!(definition["definition"]["value"]["kind"], "source");
+            assert_eq!(
+                definition["definition"]["value"]["value"]["tokens"][0]["value"],
+                "#span"
+            );
+            assert!(definition.get("value").is_none());
         } else {
+            assert!(result
+                .ir()
+                .model
+                .parameters
+                .iter()
+                .all(|parameter| parameter
+                    .owner
+                    .as_ref()
+                    .is_none_or(|owner| owner.as_str() != consumer)));
             assert_eq!(
                 wire["model"]["features"][3]["definition"]["value"]["value"]["extent"]["side"]
                     ["termination"]["kind"],

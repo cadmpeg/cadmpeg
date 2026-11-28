@@ -2,6 +2,7 @@
 //! Piecewise parametric spline projection.
 
 use super::geometry::{resolve_transform, source_object, DeclaredInterval, WireProjectionOutcome};
+use cadmpeg_ir::unknown::part::Cause;
 
 use crate::directory::DirectoryEntry;
 use crate::global::{ProjectedGlobal, RealPrecision};
@@ -273,6 +274,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -289,6 +291,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("spline header segment count is invalid"),
             );
             continue;
@@ -300,6 +303,12 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                if usize::try_from(raw_segment_count).is_ok_and(|count| count > MAX_SPLINE_SEGMENTS)
+                {
+                    Cause::Undecoded
+                } else {
+                    Cause::Unreadable
+                },
                 format_args!("segment count is outside 1..={MAX_SPLINE_SEGMENTS}"),
             );
             continue;
@@ -308,6 +317,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("breakpoint count overflows"),
             );
             continue;
@@ -319,6 +329,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("breakpoint array is truncated or non-finite"),
             );
             continue;
@@ -330,6 +341,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("breakpoints are not strictly increasing"),
             );
             continue;
@@ -339,6 +351,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("coefficient count overflows"),
             );
             continue;
@@ -350,6 +363,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("coefficient array is truncated or non-finite"),
             );
             continue;
@@ -370,6 +384,7 @@ pub(super) fn project(
                     &mut losses,
                     entry,
                     message.needs(),
+                    message.cause(),
                     format_args!("{message}"),
                 );
                 continue;
@@ -547,6 +562,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!(
                     "spline segments are positionally discontinuous, degenerate, or non-finite"
                 ),
@@ -608,6 +624,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("converted spline cardinalities are inconsistent: {error}"),
                 );
                 continue;
@@ -625,6 +642,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("converted spline endpoints cannot be evaluated"),
             );
             continue;
@@ -661,6 +679,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -669,6 +688,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("spline-surface type fields are not integers"),
             );
             continue;
@@ -677,6 +697,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("spline-surface type enum is out of range"),
             );
             continue;
@@ -686,6 +707,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("spline-surface dimensions are invalid"),
             );
             continue;
@@ -696,6 +718,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("spline-surface dimensions are invalid"),
             );
             continue;
@@ -711,6 +734,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("spline-surface pole dimensions overflow"),
             );
             continue;
@@ -722,6 +746,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("spline-surface pole count exceeds {MAX_SPLINE_SURFACE_POLES}"),
             );
             continue;
@@ -730,6 +755,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("u-breakpoint count overflows"),
             );
             continue;
@@ -738,6 +764,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("v-breakpoint count overflows"),
             );
             continue;
@@ -749,6 +776,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("u-breakpoints are truncated or non-finite"),
             );
             continue;
@@ -761,6 +789,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("v-breakpoints are truncated or non-finite"),
             );
             continue;
@@ -775,6 +804,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("spline-surface breakpoints are not increasing"),
             );
             continue;
@@ -795,6 +825,7 @@ pub(super) fn project(
                     &mut losses,
                     entry,
                     message.needs(),
+                    message.cause(),
                     format_args!("{message}"),
                 );
                 continue;
@@ -805,6 +836,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("spline-surface block stride overflows"),
             );
             continue;
@@ -816,6 +848,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("spline-surface placeholder grid overflows"),
             );
             continue;
@@ -827,6 +860,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("spline-surface parameter count overflows"),
             );
             continue;
@@ -896,6 +930,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("spline-surface patch indexing or continuity is invalid"),
             );
             continue;
@@ -916,6 +951,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("spline-surface pole dimensions exceed u32"),
             );
             continue;
@@ -936,6 +972,7 @@ pub(super) fn project(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("spline-surface patch grid is incomplete"),
             );
             continue;
@@ -956,6 +993,7 @@ pub(super) fn project(
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!(
                         "converted spline-surface cardinalities are inconsistent: {error}"
                     ),
