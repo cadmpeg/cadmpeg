@@ -881,6 +881,7 @@ The feature-family name is display text that varies with the application languag
 | `8DFDD543-F823-43AA-BDAF-C638E023F0A0` | `Assemble` |
 | `D7015B81-AB4D-4C89-BED7-AA4411E1964A` | `Base Feature` |
 | `99F6967E-ED35-4222-B906-5CCF0AC70B53` | `Base Mesh Feature` |
+| `B1E5B971-C007-48C9-8FF5-F4CCD91F87A4` | `Derived Base Feature` |
 | `1CF7B9E3-5DB6-4F9D-A131-6DE7535BFF52` | `Bend` |
 | `EC187027-FF97-48A3-8031-F923807E630B` | `Unfold` |
 | `483D584F-29AA-46DA-ABA2-F139B0ED8100` | `Refold` |

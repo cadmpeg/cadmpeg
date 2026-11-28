@@ -2,7 +2,7 @@
 
 use super::{
     companion, derived_base_owner, mirror, mirror_owner, owner, DesignPrimaryFrame, View,
-    MIRROR_DERIVED_BASE, PRESENTATION,
+    PRESENTATION, TYPE_GUID,
 };
 use crate::records::entity_header::{BaseTypeGuid, SegmentTypeData, DESIGN_MODULE_FUSION};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
@@ -148,7 +148,7 @@ fn mirror_derived_base_owner_requires_registered_reciprocal_references() {
         module: DESIGN_MODULE_FUSION.into(),
         entities: ReferenceRun::unlocated(Vec::new()),
     };
-    let scope_type = type_row(MIRROR_DERIVED_BASE, 10);
+    let scope_type = type_row(TYPE_GUID, 10);
     let companion_type = type_row(PRESENTATION, 1);
     let tag = DesignClassTag::try_from("256".to_owned()).unwrap();
     let frames = [

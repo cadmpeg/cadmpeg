@@ -8,7 +8,7 @@ use crate::layout::{
 };
 use crate::records::entity_header::DESIGN_MODULE_FUSION;
 use crate::records::feature::derived_base::{
-    is_derived_base, DesignDerivedBaseOwner, DesignDerivedBaseSource, REPEAT_FROM_END,
+    is_derived_base, DesignDerivedBaseOwner, DesignDerivedBaseSource, REPEAT_FROM_END, TYPE_GUID,
 };
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::identity::Located;
@@ -20,7 +20,6 @@ use std::collections::HashSet;
 use super::meta::{metadata_for_bulk_stream, scan_design_primary_frames, DesignPrimaryFrame};
 
 const MIRROR_COMPONENT: &str = "71BBEDD5-81F8-4585-816B-05908C207204";
-const MIRROR_DERIVED_BASE: &str = "B1E5B971-C007-48C9-8FF5-F4CCD91F87A4";
 const PRESENTATION: &str = "6CCF41D5-40BE-48ED-A834-18F3EAED6C57";
 
 /// Record the owner of each `Derived Base Feature` scope whose frame names it.
@@ -163,7 +162,7 @@ fn mirror_owner(
         || start.checked_add(mirror::PAIRED_HEADER)? != paired
         || start.checked_add(mirror::LEN)? != primary.end
         || primary.end != presentation.start
-        || !registered_as(primary, MIRROR_DERIVED_BASE, 10)
+        || !registered_as(primary, TYPE_GUID, 10)
         || !registered_as(presentation, PRESENTATION, 1)
         || presentation.start.checked_add(companion::LEN)? != presentation.member_end
         || presentation.member_end != presentation.end

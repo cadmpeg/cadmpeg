@@ -1003,6 +1003,43 @@ fn a_scanned_count_whose_table_overflows_is_rejected_not_fatal() {
 }
 
 #[test]
+fn the_derived_base_class_guid_selects_the_derived_base_family() {
+    use crate::records::feature::derived_base::{is_derived_base, TYPE_GUID};
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+
+    let derived = super::family::from_type_guid(TYPE_GUID);
+    assert_eq!(
+        derived,
+        Some(DesignFeatureKind::native("Derived Base Feature"))
+    );
+    let localised =
+        super::scope_feature_kind("Fonction de base dérivée", derived.as_ref()).unwrap();
+    assert_eq!(localised, DesignFeatureKind::native("Derived Base Feature"));
+    let scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#6",
+        localised,
+        6,
+    );
+    assert!(is_derived_base(&scope));
+}
+
+#[test]
+fn a_mesh_operation_class_guid_selects_its_family() {
+    use crate::records::feature::scope::DesignFeatureKind;
+
+    let section = super::family::from_type_guid("8FFFCBD2-7102-4A62-BCA0-8229A3C3B9DB");
+    assert_eq!(section, Some(DesignFeatureKind::native("MeshSection")));
+    assert_eq!(
+        super::scope_feature_kind("SectionDuMaillage", section.as_ref()),
+        Some(DesignFeatureKind::native("MeshSection"))
+    );
+    assert_eq!(
+        super::family::from_type_guid("68691143-5ee3-428e-9cd3-f728e4718559"),
+        Some(DesignFeatureKind::native("MeshRepair"))
+    );
+}
+
+#[test]
 fn only_the_class_guid_selects_the_path_pattern_family() {
     use crate::records::feature::scope::DesignFeatureKind;
 
