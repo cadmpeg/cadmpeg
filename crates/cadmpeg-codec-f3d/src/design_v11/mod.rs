@@ -231,18 +231,7 @@ pub(crate) fn project(
         ctx,
         "sketch_points",
     )?;
-    let incidence = sketch::Incidence::new(
-        curves
-            .iter()
-            .map(|curve| (curve.id.as_str(), curve.record_index)),
-        points.iter().map(|point| {
-            (
-                point.id.as_str(),
-                point.companion().incident_curves,
-                point.flags()[5] != 0,
-            )
-        }),
-    );
+    let incidence = sketch::Incidence::from_records(&curves, &points);
     let mut spans = span(&ir.model.product_definitions, &placers, &scopes);
     let mut sketches = sketch::Sketches::default();
     let owners = ir

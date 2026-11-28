@@ -22,7 +22,7 @@ use crate::features::ParameterId;
 use crate::math::portable::Portable;
 use crate::scalar::{Angle, FiniteReal, Length};
 use crate::sketches::{
-    SketchConstraintDefinitionInput as Kind, SketchEntityId, SketchGeometry,
+    SketchConstraintDefinitionInput as Kind, SketchCoordinateAxis, SketchEntityId, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand, SketchPlacement,
 };
 use crate::units::{FinitePoint2, UnitVector2, UnitVector3};
@@ -373,6 +373,19 @@ pub fn geometric(kind: &Kind, loci: &impl Loci) -> Option<SketchRelation<Planar>
             b: entity(second),
             contact: None,
         },
+        Kind::Curvature { first, second } => SketchRelation::Curvature {
+            a: entity(first),
+            b: entity(second),
+            contact: None,
+        },
+        Kind::SameCoordinate { relation } => {
+            let a = loci.operand(relation.first())?;
+            let b = Some(loci.operand(relation.second())?);
+            match relation.axis() {
+                SketchCoordinateAxis::U => SketchRelation::Vertical { a, b },
+                SketchCoordinateAxis::V => SketchRelation::Horizontal { a, b },
+            }
+        }
         Kind::Horizontal { entity: id } => SketchRelation::Horizontal {
             a: entity(id),
             b: None,
@@ -712,7 +725,10 @@ fn relation_name(kind: &Kind) -> &'static str {
         Kind::TextFrame { .. } => "text_frame",
         Kind::TextPath { .. } => "text_path",
         Kind::CoincidentLoci { .. } => "coincident_loci",
-        Kind::SameCoordinate { .. } => "same_coordinate",
+        Kind::SameCoordinate { relation } => match relation.axis() {
+            SketchCoordinateAxis::U => "vertical",
+            SketchCoordinateAxis::V => "horizontal",
+        },
         Kind::PointOnObject { .. } => "point_on_object",
         Kind::Midpoint { .. } => "midpoint",
         Kind::PointCoordinateValues { .. } => "point_coordinate_values",
@@ -777,6 +793,12 @@ fn named(kind: &Kind) -> Vec<Named<'_>> {
         | Kind::Coincident { entities }
         | Kind::Distance { entities, .. } => entities.iter().map(Named::Entity).collect(),
         Kind::CoincidentLoci { loci } => loci.iter().map(Named::Locus).collect(),
+        Kind::SameCoordinate { relation } => {
+            vec![
+                Named::Locus(relation.first()),
+                Named::Locus(relation.second()),
+            ]
+        }
         Kind::PointOnObject { point, entity } | Kind::Midpoint { point, entity } => {
             vec![Named::Locus(point), Named::Entity(entity)]
         }
