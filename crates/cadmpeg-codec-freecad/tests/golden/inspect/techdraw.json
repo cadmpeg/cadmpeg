@@ -3,23 +3,23 @@
   "entries": [
     {
       "attributes": {
-        "central_header_offset": "4582",
-        "crc32": "3c8f77df",
+        "central_header_offset": "4616",
+        "crc32": "a7dce23a",
         "data_offset": "42",
         "header_offset": "0"
       },
-      "expanded": 32781,
+      "expanded": 32777,
       "kind": "deflate",
       "name": "Document.xml",
       "role": "document",
-      "stored": 3116
+      "stored": 3150
     },
     {
       "attributes": {
-        "central_header_offset": "4640",
+        "central_header_offset": "4674",
         "crc32": "ff78a55f",
-        "data_offset": "3201",
-        "header_offset": "3158"
+        "data_offset": "3235",
+        "header_offset": "3192"
       },
       "expanded": 8938,
       "kind": "deflate",
@@ -29,10 +29,10 @@
     },
     {
       "attributes": {
-        "central_header_offset": "4699",
+        "central_header_offset": "4733",
         "crc32": "9ecedf81",
-        "data_offset": "3983",
-        "header_offset": "3932"
+        "data_offset": "4017",
+        "header_offset": "3966"
       },
       "expanded": 462,
       "kind": "deflate",
@@ -42,10 +42,10 @@
     },
     {
       "attributes": {
-        "central_header_offset": "4766",
+        "central_header_offset": "4800",
         "crc32": "86470692",
-        "data_offset": "4307",
-        "header_offset": "4267"
+        "data_offset": "4341",
+        "header_offset": "4301"
       },
       "expanded": 52,
       "kind": "deflate",
@@ -55,10 +55,10 @@
     },
     {
       "attributes": {
-        "central_header_offset": "4822",
+        "central_header_offset": "4856",
         "crc32": "00aacf32",
-        "data_offset": "4383",
-        "header_offset": "4327"
+        "data_offset": "4417",
+        "header_offset": "4361"
       },
       "expanded": 566,
       "kind": "deflate",

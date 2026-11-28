@@ -2588,24 +2588,24 @@
       "__arena_sha256": {
         "fcstd": {
           "annotations": "68b75c41df6fa66b027985e54ae879b38f2c4cd9f938af9c95b404f7da959ee1",
-          "applications": "66de5d50355113b1393d73a4ccb7adda46610f5653f669efda2174b8157821b9",
-          "byte_coverage": "9205567ee05be048a2653a07cd232eb4e548ad9999b476717c54aaf5472a97d8",
+          "applications": "93d45e40d859dece2401c17bec44b8e0af3ae769dfcec4e8bc2d66913d0379bb",
+          "byte_coverage": "4cf03bf03f5973f0f124f354efb487ab8e4c2daf13b7708481f5daa8b6078540",
           "carrier_census": "7d06a4bde9c8713ac37f69996b4d2a2c142332c4c992b6e3560336e3c18383f4",
           "design_census": "f34de2afa3000497746c6edfebd2d055fe89bd3c72492580cf2683b1ffe86e33",
           "document": "6f858ee6b2e86afbed818de68dbc980ed677b216825802860f13dd9da72dc246",
           "drawings": "e434aadff778d1ab72d028705438ef12ffa8bcdbb13d8e49f8019de5edd4fa04",
           "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "entries": "5dca5ed67073317de6ba99debab263eb1ba86137cc68e679e8a994d2d3d08339",
+          "entries": "c3f12c4eb409e26b950d50a1bfac239651557572b22cbf4c9d18805d69bffbe4",
           "extensions": "21af737f335b3574cf5c2e0e48fb1bed917107e7ecbfaa5d116daac2f7a425d5",
           "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_properties": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_view_providers": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "joints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "logical_ledger": "82722a307af77b46fcf89a21ef9173094d99e15564bb01e9fce6184a8dc10634",
-          "objects": "0a48091f6af24cc89b9bb7fc88e6106ff52dccc360f960bcdcdc4ce2a9f9ed7e",
-          "physical_ledger": "9c865133a452626f7148342bb27586c79f0e1a6b196d4b1e61728f92879af3ff",
+          "logical_ledger": "de2672e7999754791670ca07d53cf9522a343d8d95c1ef2392763f7ff9ad78d2",
+          "objects": "69fbb531c87c20e88a457b64007ded66fedb3bd08fa64040865138f6eec5e2b0",
+          "physical_ledger": "e4af4cd1bce950d106b4aa30b56c33c3dbc2ef120e9bd0f19c6234a4c2c7d263",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "properties": "23287947ff33056497e333602378c51cb53ce5181f024ba8aa6464fcee684a90",
+          "properties": "ddc47897c21fa8ed9f5a60910085a3dcf624f73d33c9a61430db7f4fe1d84254",
           "shape_payloads": "96df42130448d069751ab66eeccea6c29762af1bf00094cee0257327f5b004bb",
           "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
         }
@@ -2863,7 +2863,7 @@
       "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
     },
     "content_digest": "<elided: digest over tolerantly compared geometry>",
-    "decode_digest": "50450fbe592989557b01a854f4c4b5916c46fa4654f85d78cae3817fda95879b",
+    "decode_digest": "bc6a3b88d923b2b69ed9d171e662076d18d3fc2dbd2d6622513dd1d3c9628bc9",
     "file_digests": {},
     "retained_records": {},
     "unrepresented": []

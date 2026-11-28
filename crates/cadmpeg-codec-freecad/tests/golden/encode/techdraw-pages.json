@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 18484,
-      "payload_sha256": "4881e24d792dd7d312b8cbc1629baf664941a488578c08846740933f7fb84c82"
+      "payload_len": 18476,
+      "payload_sha256": "85a6b782e7f862d2f15ff60ac60a7603ecf9c106f2755f8708bb36704b1df741"
     },
     {
       "name": "techdraw-template.svg",
