@@ -170,6 +170,14 @@ loss_codes! {
     /// A Display-JT polygon mesh did not resolve to a tessellation and was
     /// skipped.
     DisplayJtTessellationsDropped => ("carrier.display-jt-tessellations-dropped", Warning, ObjectRecordsUntransferred),
+    /// A sketch record has no design record.
+    SketchDesignUnprojected => ("sketch.design-unprojected", Warning, ParametricRecordOmitted),
+    /// An arrangement stores no name or a blank name, and a design
+    /// arrangement requires a name.
+    ArrangementUnnamed => ("configuration.arrangement-unnamed", Warning, ParametricRecordOmitted),
+    /// An expression stores a blank name, and a design parameter requires a
+    /// name.
+    ParameterUnnamed => ("expression.parameter-unnamed", Warning, ParametricRecordOmitted),
     /// A BODY stores a `res_linear` that states no linear precision
     /// (`parasolid.md` §4).
     BodyResolutionInvalid => ("body.resolution-invalid", Warning, SourceTopologyInvalid),
@@ -279,6 +287,9 @@ mod tests {
                 "native.record-identity-bounded",
                 "container.display-jt-arithmetic-lane-bounded",
                 "carrier.display-jt-tessellations-dropped",
+                "sketch.design-unprojected",
+                "configuration.arrangement-unnamed",
+                "expression.parameter-unnamed",
                 "body.resolution-invalid",
                 "body.resolution-unread",
                 "feature.recognition-tolerance-floor",
