@@ -662,6 +662,56 @@ fn arc_witness_selects_tiny_nonzero_sweep() {
 }
 
 #[test]
+fn standard_sphere_meridian_through_pole_inverts_to_isoparametric_line() {
+    let radius = 5.0;
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        )
+        .expect("valid SphereSurface fixture"),
+    ));
+    let support = StandardCurveSupport {
+        pos: 0,
+        tag: 1,
+        faces: [0, 1],
+        geometry: super::super::checked_circle(Point3::new(0.0, 0.0, 0.0), radius),
+    };
+    let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        )
+        .expect("valid meridian circle"),
+    ));
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    let (geometry, _) = standard_pcurve_geometry(
+        &surface,
+        &support,
+        Point3::new(-radius, 0.0, 0.0),
+        Point3::new(0.0, 0.0, radius),
+        None,
+        Some(&carrier),
+        &mut refusal,
+    )
+    .expect("sphere meridian ending at north pole");
+    assert!(refusal.take_notes().is_empty());
+    let PcurveGeometry::Line(line_pcurve) = geometry else {
+        panic!("expected line pcurve");
+    };
+    let origin = line_pcurve.origin().as_raw();
+    let direction = line_pcurve.direction().as_raw();
+    assert!((origin.u - std::f64::consts::PI).abs() < 1.0e-12);
+    assert!(origin.v.abs() < 1.0e-12);
+    assert!(direction.u.abs() < 1.0e-12);
+    assert!((direction.v - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+}
+
+#[test]
 fn standard_sphere_latitude_inverts_to_isoparametric_line() {
     let latitude = 0.4f64;
     let radius = 5.0;

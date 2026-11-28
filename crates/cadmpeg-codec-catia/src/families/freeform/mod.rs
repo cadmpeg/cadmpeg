@@ -2,6 +2,7 @@
 //! Freeform decode route composing a5a8 and consolidated NURBS record carriers.
 
 pub(in crate::families) mod owner_pcurves;
+pub(in crate::families) mod standard_carriers;
 pub(in crate::families) mod weighted_edges;
 mod weighted_plane;
 
@@ -2457,7 +2458,7 @@ struct ConsolidatedStandardFaceBinding {
 }
 
 impl ConsolidatedCarrierChart<'_> {
-    fn point(&self, [u, v]: [f64; 2]) -> [f64; 2] {
+    pub(super) fn point(&self, [u, v]: [f64; 2]) -> [f64; 2] {
         match self {
             Self::Identity => [u, v],
             Self::Cylinder { radius } => [u / radius, v],
