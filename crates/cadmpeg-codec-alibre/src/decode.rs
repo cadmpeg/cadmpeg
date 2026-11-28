@@ -17,10 +17,10 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::part::DecodeParts;
 
 use crate::container::{AlibreContainer, SAB_STREAM, STEP_STREAM};
+use crate::dialect::registry_ids::FORMAT;
 use crate::dialect::{classify, kernel_stream, Classification, KernelStream};
 use crate::history::History;
 use crate::loss::AlibreLossCode;
-use crate::FORMAT;
 
 /// Millimetres per ASM model-space length unit: the shared binary reader
 /// reads every length in centimetres, and an Alibre header states that unit
@@ -67,7 +67,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         .iter()
         .map(|record| {
             let part = record.part(FORMAT).in_stream(stream.clone());
-            ctx.give_up_part(part, record.error())
+            ctx.give_up_part(part, record.cause, record.error())
         })
         .collect::<Result<Vec<_>, _>>()?;
     losses.extend(extensions_loss(removed));

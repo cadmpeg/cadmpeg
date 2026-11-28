@@ -12,6 +12,7 @@ use crate::failure::Measure;
 use crate::tolerance::EXTREMUM_PARAMETER_RESOLUTION;
 
 /// Bisection steps of one root refinement.
+// resource-cap: MAX_EXTREMUM_REFINEMENT_STEPS = 4
 const MAX_EXTREMUM_REFINEMENT_STEPS: usize = 64;
 
 /// Equal panels each span between breaks is split into before sampling.

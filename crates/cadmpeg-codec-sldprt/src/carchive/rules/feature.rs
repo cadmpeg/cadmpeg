@@ -6,6 +6,7 @@
 use super::super::reader::{bad, MarkOwner, ParameterRecord, Ptr, Reader, Res, Stop, V};
 use super::{ctx, sketch};
 use crate::layout::axis_tail_version_15000_prefix as tail_prefix;
+use crate::layout::cut_list_folder_tail as cut_tail;
 use crate::layout::revolution_line_reference_record_tail as record_tail;
 use crate::layout::revolution_turn_block as turn;
 
@@ -1461,15 +1462,30 @@ pub(crate) fn scale(r: &mut Reader<'_>) -> Res<V> {
         k.push(V::from(r.f64()?));
     }
     r.expect_zeros(6, "scale 6 zero")?;
-    r.expect_bytes(&[1, 0], "scale u16 1")?;
-    r.ptr(None)?;
+    scaled_bodies(r)?;
+    Ok(V::map([("n", n), ("factors", V::List(k))]))
+}
+
+/// The bytes of a `moScale_c` after its six zero bytes: the scaled bodies,
+/// the identifier list and, when the stream continues, i32 `-1` and twelve
+/// zero bytes.
+fn scaled_bodies(r: &mut Reader<'_>) -> Res<()> {
+    let bodies = r.u16()?;
+    if bodies > 1 {
+        return Err(bad(format!("scale body count {bodies}")));
+    }
+    for _ in 0..bodies {
+        r.ptr(None)?;
+    }
     let count = r.u32()?;
     for _ in 0..count {
         r.u32()?;
     }
+    if r.p == r.len() {
+        return Ok(());
+    }
     r.expect_bytes(&[0xff; 4], "scale -1")?;
-    r.expect_zeros(12, "scale 12 zero")?;
-    Ok(V::map([("n", n), ("factors", V::List(k))]))
+    r.expect_zeros(12, "scale 12 zero")
 }
 
 /// A body head's `g == 1` continuation: u32 count and that many body ids,
@@ -3281,11 +3297,11 @@ pub(crate) fn cutlist(r: &mut Reader<'_>) -> Res<V> {
     let n = feature(r, "moFtrFolder_c")?;
     r.expect_zeros(12, "cut list 12 zero")?;
     let bodies = r.ptr(Some(SUOBLIST))?;
-    let mut tail = vec![1, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 2, 0, 0, 0];
-    tail.extend_from_slice(&[0; 23]);
-    tail.extend_from_slice(&[1, 0, 0, 0, 1, 0, 0, 0]);
     let mut items = Vec::new();
-    while !r.eq(r.p, &tail) {
+    loop {
+        if at_cut_list_tail(r) {
+            break;
+        }
         let mut k = None;
         for q in r.p..r.p + 80 {
             if isclass(r, q, &["moCompFeature_c", "moCompSolidBody_c"])? {
@@ -3303,12 +3319,34 @@ pub(crate) fn cutlist(r: &mut Reader<'_>) -> Res<V> {
         r.p = k;
         items.push(r.ptr(None)?);
     }
-    r.skip(tail.len());
+    let tail_word = r.pu32(r.p + cut_tail::WORD)?;
+    r.skip(cut_tail::LEN);
     Ok(V::map([
         ("n", n),
         ("bodies", V::from(bodies)),
         ("items", V::from(items)),
+        ("tail_word", V::from(tail_word)),
     ]))
+}
+
+/// Whether the bytes at the reader's position are a cut-list folder's tail.
+fn at_cut_list_tail(r: &Reader<'_>) -> bool {
+    let at = |offset| r.p + offset;
+    r.eq(at(cut_tail::ONE), &cut_tail::ONE_VALUE.to_le_bytes())
+        && r.eq(
+            at(cut_tail::MINUS_ONE),
+            &cut_tail::MINUS_ONE_VALUE.to_le_bytes(),
+        )
+        && matches!(r.pu32(at(cut_tail::WORD)), Ok(2 | 3))
+        && r.eq(at(cut_tail::ZEROS), &cut_tail::ZEROS_VALUE)
+        && r.eq(
+            at(cut_tail::ONE_AFTER_ZEROS),
+            &cut_tail::ONE_AFTER_ZEROS_VALUE.to_le_bytes(),
+        )
+        && r.eq(
+            at(cut_tail::ONE_LAST),
+            &cut_tail::ONE_LAST_VALUE.to_le_bytes(),
+        )
 }
 
 /// `moCutListSortOptions_c`.

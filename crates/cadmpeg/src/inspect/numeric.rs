@@ -129,6 +129,7 @@ pub(super) enum ScalarType {
 
 impl ScalarType {
     /// The widest encoding any variant uses.
+    // resource-cap: MAX_WIDTH = N
     pub(super) const MAX_WIDTH: usize = 8;
 
     /// Returns the encoded width in bytes.

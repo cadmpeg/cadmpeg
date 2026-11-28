@@ -3878,6 +3878,7 @@ impl<'a> IndexedCandidate<'a> {
 /// and its entity index, and candidates of one payload share those bytes, so
 /// the total is quadratic in the payload without a bound. The sections NX
 /// writes scan each payload byte about once.
+// resource-cap: MAX_INDEXED_SECTION_REGISTRY_WORK = 4
 pub(crate) const MAX_INDEXED_SECTION_REGISTRY_WORK: usize = 1 << 28;
 
 fn product_record_range_at(bytes: &[u8], offset: usize) -> Option<ProductRecordRange> {

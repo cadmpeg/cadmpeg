@@ -1802,9 +1802,10 @@ fn merge_population_give_ups(
     losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     scope: &str,
 ) -> Result<(), CodecError> {
-    let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
     for mut loss in losses {
-        if loss.code == unreadable || cadmpeg_ir::unknown::part::needs(&loss).is_some() {
+        if cadmpeg_ir::unknown::part::gives_up(&loss.code)
+            || cadmpeg_ir::unknown::part::needs(&loss).is_some()
+        {
             cadmpeg_ir::unknown::part::rescope_give_up(&mut loss, |id| {
                 Ok(rescope_standard_id(id, scope))
             })?;
@@ -2907,6 +2908,7 @@ topology_failure.map(StandardTopologyFailure::message));
         report.losses.extend(given_up_faces.into_iter().map(|face| {
             cadmpeg_ir::unknown::part::GivenUpRecord::new(
                 face,
+                cadmpeg_ir::unknown::part::Cause::Undecoded,
                 format_args!("{code}: {}", failure.message()),
             )
             .loss()
@@ -4221,6 +4223,7 @@ struct SearchBounded;
 /// Bounds the best-first subdivision of one span. A span whose control polygon
 /// stays within tolerance of the point is never pruned, so its search would
 /// otherwise expand a full binary tree.
+// resource-cap: MAX_BEZIER_SEARCH_NODES = 4
 const MAX_BEZIER_SEARCH_NODES: usize = 1 << 16;
 
 /// Collect the parameters of one quintic span within `tolerance` of `point`.
@@ -4578,8 +4581,10 @@ fn resolve_standard_limit_curve_binding(
 }
 
 /// Bounds the endpoint choices the exhaustive native-port binding accepts.
+// resource-cap: MAX_NATIVE_PORT_CHOICES = 4
 const MAX_NATIVE_PORT_CHOICES: usize = 65_536;
 /// Bounds the edge-by-choice work the exhaustive native-port binding accepts.
+// resource-cap: MAX_NATIVE_PORT_WORK = 4
 const MAX_NATIVE_PORT_WORK: usize = 20_000_000;
 
 /// Bind every edge to one endpoint pair through its native port identities.
@@ -6849,12 +6854,15 @@ fn standard_native_support_endpoint_pair(
 }
 
 /// Bounds the endpoint-pair relations one edge row enumerates.
+// resource-cap: MAX_PAIR_RELATIONS_PER_EDGE = 4
 const MAX_PAIR_RELATIONS_PER_EDGE: usize = 65_536;
 /// Least number of unrefined endpoint-pair relations all edge rows of one
 /// candidate may enumerate together.
+// resource-cap: MAX_FALLBACK_PAIR_RELATIONS = 4
 const MAX_FALLBACK_PAIR_RELATIONS: usize = 65_536;
 /// Unrefined endpoint-pair relations allowed per candidate endpoint once that
 /// exceeds [`MAX_FALLBACK_PAIR_RELATIONS`].
+// resource-cap: MAX_FALLBACK_PAIR_RELATIONS_PER_POINT = 4
 const MAX_FALLBACK_PAIR_RELATIONS_PER_POINT: usize = 64;
 
 /// Unrefined endpoint-pair relations all edge rows of one candidate may

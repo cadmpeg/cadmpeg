@@ -19,15 +19,17 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use zip::CompressionMethod;
 
 use crate::loss::F3dLossCode;
-use crate::test_support::manifest_test::write_synthetic_manifests;
-use crate::test_support::native_test::{f3d_native, f3d_native_mut, update_f3d_native, TestEncode};
-use crate::test_support::protein_test::generated_instance_properties_for;
-use crate::test_support::smbh_geometry_test::{
+use crate::test_support::manifest_fixture::write_synthetic_manifests;
+use crate::test_support::native_fixture::{
+    f3d_native, f3d_native_mut, update_f3d_native, TestEncode,
+};
+use crate::test_support::protein_fixture::generated_instance_properties_for;
+use crate::test_support::smbh_geometry_fixture::{
     synthetic_geometry_smbh, synthetic_geometry_with_attribute_smbh,
     synthetic_geometry_with_sketch_link_smbh, synthetic_mixed_smbh, SketchLinkForm,
 };
-use crate::test_support::streams_test::design_metastream_with_records;
-use crate::test_support::zip_test::{
+use crate::test_support::streams_fixture::design_metastream_with_records;
+use crate::test_support::zip_fixture::{
     f3d_with_smbh, f3d_with_smbh_and_instance_properties, f3d_with_smbh_and_protein,
     f3d_with_smbh_and_protein_guids, with_scan,
 };
@@ -72,6 +74,7 @@ fn resolved_body_binding(
             component_owner: None,
             component_owner_unresolved: false,
             history_only: false,
+            consumers: Vec::new(),
             id: crate::ids::native_design_body_binding_id(stream, asm_key_offset),
             stream: stream.into(),
             pair_count: 1,
@@ -143,7 +146,7 @@ fn protein_rejections_preserve_valid_records_and_give_up_the_rejected_record() {
         &protein,
         &edits,
         &mut notes,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
+        &cadmpeg_core::decode::test_support::desktop_decode_context(),
     )
     .unwrap();
     assert_eq!(
@@ -190,8 +193,12 @@ fn protein_rejections_preserve_valid_records_and_give_up_the_rejected_record() {
     // instance stream; no decoded record needs it.
     let head = "part protein-record stream=\"FusionAssetName[Active]/ProteinAssets.BlobParts/\
         ProteinAsset.0.protein/AssetData/InstanceProperties.bin\" offset=";
-    let charge =
-        crate::test_support::charged_part(decoded.ir(), &decoded.report().losses, head, "");
+    let charge = crate::test_support::charged_part(
+        decoded.ir(),
+        &decoded.report().losses,
+        (cadmpeg_ir::unknown::part::Cause::Undecoded, head),
+        "",
+    );
     assert!(
         charge.message.contains("MissingSchema"),
         "{}",
@@ -202,7 +209,7 @@ fn protein_rejections_preserve_valid_records_and_give_up_the_rejected_record() {
         .notes
         .iter()
         .any(|note| note.contains("rejected")));
-    crate::test_support::assert_pinned_refusal(bytes, head);
+    crate::test_support::assert_pinned_acceptance(bytes);
 }
 
 /// A Protein ZIP whose members are Zstandard (method 93) is decoded and patched.
@@ -237,7 +244,7 @@ fn a_zstandard_protein_archive_decodes_and_patches() {
         &protein,
         &edits,
         &mut notes,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
+        &cadmpeg_core::decode::test_support::desktop_decode_context(),
     )
     .expect("patch a Zstandard Protein archive");
     assert_eq!(
@@ -1122,7 +1129,10 @@ fn invalid_instance_property_page_framing_gives_up_the_protein_entry() {
     crate::test_support::charged_part(
         decoded.ir(),
         &decoded.report().losses,
-        PROTEIN_ENTRY_HEAD,
+        (
+            cadmpeg_ir::unknown::part::Cause::Unreadable,
+            PROTEIN_ENTRY_HEAD,
+        ),
         "",
     );
     // A Design assignment still names its appearance; none of the entry's
@@ -1155,7 +1165,10 @@ fn a_protein_entry_that_is_no_archive_is_given_up() {
     crate::test_support::charged_part(
         decoded.ir(),
         &decoded.report().losses,
-        PROTEIN_ENTRY_HEAD,
+        (
+            cadmpeg_ir::unknown::part::Cause::Unreadable,
+            PROTEIN_ENTRY_HEAD,
+        ),
         "",
     );
 }
@@ -1792,7 +1805,7 @@ fn a_protein_appearance_record_truncated_past_its_guid_is_refused() {
         &protein,
         &edits,
         &mut Vec::new(),
-        cadmpeg_core::decode::ResourceLimits::desktop(),
+        &cadmpeg_core::decode::test_support::desktop_decode_context(),
     )
     .expect_err("a record that ends at its GUID places no colour carrier");
     assert!(

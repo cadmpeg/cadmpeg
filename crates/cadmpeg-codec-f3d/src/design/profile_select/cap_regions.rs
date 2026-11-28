@@ -625,10 +625,21 @@ struct PlaneSides {
 /// or its surface several plane rows.
 fn changed_planes(
     sketch: &cadmpeg_ir::sketches::Sketch,
-    (before, after): (&AsmHistoricalTopology, &AsmHistoricalTopology),
+    topologies: (&AsmHistoricalTopology, &AsmHistoricalTopology),
     faces: &crate::history_records::AsmHistoricalEntityDelta,
     tolerance: f64,
 ) -> Option<Vec<PlaneSides>> {
+    changed_planes_with_gaps(sketch, topologies, faces, tolerance).map(|(planes, _)| planes)
+}
+
+/// `changed_planes` and the heights of the planes it left out because a
+/// changed face on them has no proven cap.
+fn changed_planes_with_gaps(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    (before, after): (&AsmHistoricalTopology, &AsmHistoricalTopology),
+    faces: &crate::history_records::AsmHistoricalEntityDelta,
+    tolerance: f64,
+) -> Option<(Vec<PlaneSides>, Vec<f64>)> {
     let frame = PlaneFrame::of_sketch(sketch)?;
     let mut planes: Vec<PlaneSides> = Vec::new();
     let mut incomplete: Vec<f64> = Vec::new();
@@ -675,7 +686,7 @@ fn changed_planes(
             .iter()
             .any(|offset| (plane.offset - offset).abs() <= tolerance)
     });
-    Some(planes)
+    Some((planes, incomplete))
 }
 
 /// The regions bounded only by the curves of the stored profiles `current`
@@ -2171,6 +2182,7 @@ fn sample_points(
 }
 
 /// The most rows a region scan reads.
+// resource-cap: MAX_SCANLINES = 4
 const MAX_SCANLINES: usize = 512;
 
 /// The midpoints of the intervals that horizontal rows cut from `rings`. A row

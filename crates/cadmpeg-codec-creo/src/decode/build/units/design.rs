@@ -61,7 +61,8 @@ fn options(
             | NativeOption::Integer(_)
             | NativeOption::Real(_)
             | NativeOption::Angle(_)
-            | NativeOption::Text(_) => {}
+            | NativeOption::Text(_)
+            | NativeOption::Blank(_) => {}
         }
     }
     Ok(())

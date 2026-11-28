@@ -44,6 +44,25 @@
       "code": {
         "kind": "namespaced",
         "value": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "strict_floor": "error"
+        }
+      },
+      "message": "part rse-table stream=\"inventor:RSeStorage/RSeSegInfo\" offset=0 length=0 record=inventor:source:part#45def9b0938caad03ad8fdf8015f161ab456dbb32804cb69b867452ded7261c4: malformed container: truncated input during segment count at space 0 offset 0; dropped=[]",
+      "provenance": {
+        "format": "inventor",
+        "offset": 0,
+        "stream": "inventor:RSeStorage/RSeSegInfo",
+        "tag": "rse-table"
+      },
+      "severity": "error"
+    },
+    {
+      "code": {
+        "kind": "namespaced",
+        "value": {
           "code": "source.dialect-unverified",
           "kind": "source_dialect_unverified",
           "namespace": "inventor"

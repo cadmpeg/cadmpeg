@@ -30,11 +30,12 @@ fn space(record: u64, uuid: &str) -> DesignComponentNamingSpace {
     }
 }
 
-/// Components named at records 10 and 30 hold Extrude scope 40, whose tail
-/// stores no suppression. The body history binds its feature a body that no
-/// product definition holds, and active row `a` suppresses it. The owner
-/// pass drops that output link. The feature produces a body, so it keeps its
-/// state and the row contradicts it.
+/// Components named at records 10 and 30 hold Extrude scope 40, which
+/// stores history state 8 after state 7 and no suppression: feature
+/// projection infers its feature active. The body history binds the feature
+/// a body that no product definition holds, and active row `a` suppresses
+/// it. The owner pass drops that output link. The feature produces a body,
+/// so it keeps its state and the row contradicts it.
 #[test]
 fn a_feature_whose_output_the_owner_pass_drops_keeps_its_state_under_a_suppressing_row() {
     let mut table = DesignConfiguration::try_new(
@@ -59,11 +60,18 @@ fn a_feature_whose_output_the_owner_pass_drops_keeps_its_state_under_a_suppressi
             row_id: "a".into(),
         })
         .unwrap();
-    let scope = DesignParameterScope::empty(
+    let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#40",
         DesignFeatureKind::Extrude,
         40,
     );
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(8);
+            draft.previous_history_state_id = Some(7);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let native = crate::native::F3dNative {
         design_component_naming_spaces: vec![
             space(10, "11111111-1111-1111-1111-111111111111"),
@@ -92,11 +100,11 @@ fn a_feature_whose_output_the_owner_pass_drops_keeps_its_state_under_a_suppressi
     );
     ir.model.features.push(feature);
     let mut losses = Vec::new();
-    let archive = crate::test_support::zip_test::f3d_with_configurations(
-        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    let archive = crate::test_support::zip_fixture::f3d_with_configurations(
+        &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
         &[],
     );
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::test_support::with_decode_context(|ctx| {
             crate::decode::attach_design(ctx, scan, &native, &mut ir, &mut losses)
         })

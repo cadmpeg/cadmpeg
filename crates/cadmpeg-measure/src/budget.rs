@@ -25,10 +25,12 @@ pub const MEASURE_PASS_WORK_FLOOR: usize = 1 << 26;
 
 /// Pass allowance per face and edge of the document under the desktop
 /// profile.
+// resource-cap: MAX_MEASURE_PASS_WORK_PER_ITEM = 4
 pub const MAX_MEASURE_PASS_WORK_PER_ITEM: usize = 1 << 22;
 
 /// Pass allowance per face and edge of the document under the service
 /// profile.
+// resource-cap: MAX_MEASURE_PASS_WORK_PER_ITEM_SERVICE = 4
 pub const MAX_MEASURE_PASS_WORK_PER_ITEM_SERVICE: usize = 1 << 18;
 
 /// The smallest pair allowance of an ID-free comparison, in body pair
@@ -37,17 +39,21 @@ const COMPARE_PAIR_WORK_FLOOR: usize = 1 << 20;
 
 /// Pair evaluations of an ID-free comparison per body of both documents
 /// under the desktop profile.
+// resource-cap: MAX_COMPARE_PAIR_WORK_PER_BODY = N
 const MAX_COMPARE_PAIR_WORK_PER_BODY: usize = 1 << 12;
 
 /// Pair evaluations of an ID-free comparison per body of both documents
 /// under the service profile.
+// resource-cap: MAX_COMPARE_PAIR_WORK_PER_BODY_SERVICE = N
 const MAX_COMPARE_PAIR_WORK_PER_BODY_SERVICE: usize = 1 << 8;
 
 /// One face slice: traversal, resolver, regions, quadrature, extents, box and
 /// flux of one face.
+// resource-cap: MAX_FACE_MEASURE_WORK = 4
 const MAX_FACE_MEASURE_WORK: usize = 1 << 26;
 
 /// One edge slice: length and box of one edge.
+// resource-cap: MAX_EDGE_MEASURE_WORK = 4
 const MAX_EDGE_MEASURE_WORK: usize = 1 << 22;
 
 /// The work profile of a measurement pass.

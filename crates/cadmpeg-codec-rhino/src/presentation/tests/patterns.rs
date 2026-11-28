@@ -399,10 +399,19 @@ fn linetype_install_retains_model_distances_without_physical_units() {
                 .opaque_records
                 .iter()
                 .any(|source| { bytes[source.record.range.clone()] == record }));
-            assert!(installed.losses.iter().any(|loss| {
-                loss.code == RhinoLossCode::PresentationRecordDropped.kind()
-                    && loss.message.contains("no physical millimetre binding")
-            }));
+            let [part] = installed.given_up.as_slice() else {
+                panic!("one given-up record: {:?}", installed.given_up);
+            };
+            let loss = part.loss();
+            assert_eq!(
+                loss.code,
+                cadmpeg_ir::unknown::part::record_undecoded_kind()
+            );
+            assert!(loss.message.contains("no physical millimetre binding"));
+            assert!(installed
+                .losses
+                .iter()
+                .all(|loss| loss.code != RhinoLossCode::PresentationRecordDropped.kind()));
         }
     }
 }
@@ -450,10 +459,19 @@ fn hatch_install_retains_document_distances_without_physical_units() {
                 .opaque_records
                 .iter()
                 .any(|source| { bytes[source.record.range.clone()] == record }));
-            assert!(installed.losses.iter().any(|loss| {
-                loss.code == RhinoLossCode::PresentationRecordDropped.kind()
-                    && loss.message.contains("no physical millimetre binding")
-            }));
+            let [part] = installed.given_up.as_slice() else {
+                panic!("one given-up record: {:?}", installed.given_up);
+            };
+            let loss = part.loss();
+            assert_eq!(
+                loss.code,
+                cadmpeg_ir::unknown::part::record_undecoded_kind()
+            );
+            assert!(loss.message.contains("no physical millimetre binding"));
+            assert!(installed
+                .losses
+                .iter()
+                .all(|loss| loss.code != RhinoLossCode::PresentationRecordDropped.kind()));
         }
     }
 }
@@ -526,6 +544,7 @@ fn modern_hatch_pattern_uses_its_explicit_unit_binding() {
             }
             None => assert!(hatch_patterns.is_empty()),
         }
+        let bytes_for_pinned = bytes.clone();
         let decoded = EditableDecodeResult::from(
             crate::RhinoCodec
                 .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
@@ -553,20 +572,35 @@ fn modern_hatch_pattern_uses_its_explicit_unit_binding() {
             } else {
                 "no physical millimetre binding".to_owned()
             };
-            assert!(decoded.report().losses.iter().any(|loss| {
-                loss.code == RhinoLossCode::PresentationRecordDropped.kind()
-                    && loss.message.contains(&reason)
-                    && loss.message.contains(&format!(
-                        "offset {}",
-                        scan.tables
-                            .iter()
-                            .find(|table| table.typecode == HATCH_PATTERN_TABLE)
-                            .unwrap()
-                            .records[0]
-                            .range
-                            .start
-                    ))
-            }));
+            let offset = format!(
+                "offset {}",
+                scan.tables
+                    .iter()
+                    .find(|table| table.typecode == HATCH_PATTERN_TABLE)
+                    .unwrap()
+                    .records[0]
+                    .range
+                    .start
+            );
+            let charges = decoded
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.message.contains(&offset))
+                .collect::<Vec<_>>();
+            let [loss] = charges.as_slice() else {
+                panic!("one loss of the hatch pattern record: {charges:?}");
+            };
+            assert_eq!(
+                loss.code,
+                cadmpeg_ir::unknown::part::record_undecoded_kind()
+            );
+            assert!(loss.message.contains(&reason));
+            let mut pinned = DecodeOptions::default();
+            pinned.strictness.pinned = true;
+            crate::RhinoCodec
+                .decode(&mut std::io::Cursor::new(bytes_for_pinned.clone()), &pinned)
+                .expect("a pinned decode accepts an undecoded hatch pattern record");
         }
     }
 }

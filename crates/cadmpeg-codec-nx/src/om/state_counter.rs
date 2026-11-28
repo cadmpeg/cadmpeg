@@ -119,6 +119,7 @@ impl StateCounterMap {
     /// an area footer. This end anchor prevents a syntactically valid short lane in
     /// an operation payload from becoming a state map.
     pub(super) fn read(bytes: &[u8], base_offset: usize) -> Option<Self> {
+        // resource-cap: MAX_COUNTER_TAIL_BYTES = 1
         const MAX_COUNTER_TAIL_BYTES: usize = 64;
 
         let mut best: Option<(usize, usize, usize)> = None;

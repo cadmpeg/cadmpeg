@@ -4,7 +4,8 @@
 #[test]
 fn decoded_history_reports_an_invalid_transition() {
     crate::test_support::with_decode_context(|decode| {
-        let bytes = crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh();
+        let bytes =
+            crate::test_support::smbh_geometry_fixture::synthetic_geometry_with_history_smbh();
         let decoded = crate::history::decode(
             decode,
             &bytes,

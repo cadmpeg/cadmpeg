@@ -143,10 +143,11 @@ fn compose(
             report,
             fidelity,
             &merge::InstanceScopes::new(),
+            crate::design_v11::joint::RootOperands::new(),
         );
     }
 
-    let (merged, instance_scopes) = merge::merge_archive(
+    let (merged, instance_scopes, joint_roots) = merge::merge_archive(
         ctx,
         session,
         members,
@@ -174,7 +175,15 @@ fn compose(
         &mut report.losses,
     )?;
     report.losses.append(&mut outer_losses);
-    finalize_result(ctx, ir, source, report, fidelity, &instance_scopes)
+    finalize_result(
+        ctx,
+        ir,
+        source,
+        report,
+        fidelity,
+        &instance_scopes,
+        joint_roots,
+    )
 }
 
 /// Gives each given-up part in `stream` that keeps only a digest a copy of
@@ -231,6 +240,7 @@ fn finalize_result(
     mut body: DecodeBody,
     mut source_fidelity: cadmpeg_ir::SourceFidelity,
     instance_scopes: &merge::InstanceScopes,
+    joint_roots: crate::design_v11::joint::RootOperands,
 ) -> Result<Decoded, CodecError> {
     let members = member_keys::MemberKeys::new(&ir.model, instance_scopes);
     body.losses
@@ -241,13 +251,31 @@ fn finalize_result(
     body.losses
         .extend(crate::tree::state_root_definition(ctx, &mut ir)?);
     members.apply(ctx, &mut ir, &mut source_fidelity, &mut body.losses)?;
+    let joint_roots = joint_roots
+        .into_iter()
+        .map(|(id, mut roots)| {
+            let id = match members.map(id.as_str()) {
+                Some(mapped) => {
+                    cadmpeg_ir::products::JointId::mint(mapped).map_err(CodecError::malformed)?
+                }
+                None => id,
+            };
+            if let Some(mapped) = members.map(roots.definition.as_str()) {
+                roots.definition = cadmpeg_ir::ids::ProductDefinitionId::mint(mapped)
+                    .map_err(CodecError::malformed)?;
+            }
+            Ok::<_, CodecError>((id, roots))
+        })
+        .collect::<Result<_, _>>()?;
     let depth = body.transfer.depth();
     cadmpeg_ir::design::projection::project_layer(
         ctx,
         "f3d",
         &mut ir,
         &mut body.losses,
-        |ir, losses| crate::design_v11::project(ctx, ir, depth, losses),
+        |ir, losses| {
+            crate::design_v11::project(ctx, ir, depth, &joint_roots, None, losses).map(drop)
+        },
     )?;
     ir.finalize();
     ir.source = Some(source);

@@ -132,9 +132,15 @@ pub(crate) enum FramingError {
     InvalidLength { offset: usize, value: i128 },
     /// A structural framing rule was violated.
     Structural { offset: usize, message: String },
+    /// A framed payload has a version or a form the decoder has no reading
+    /// for, or a count above a decoder cap.
+    Unsupported { offset: usize, message: String },
     /// A structural rule was violated by a derived or already-decoded value
     /// that has no byte position of its own.
     Unpositioned { message: String },
+    /// A derived or already-decoded value passes a decoder bound; it has no
+    /// byte position of its own.
+    Unbound { message: String },
     /// Arithmetic overflow occurred while deriving a boundary.
     Overflow { offset: usize },
     /// A derived boundary exceeded its containing bound.
@@ -166,9 +172,26 @@ impl FramingError {
         }
     }
 
+    pub(crate) fn unsupported(offset: usize, message: impl Into<String>) -> Self {
+        Self::Unsupported {
+            offset,
+            message: message.into(),
+        }
+    }
+
     pub(crate) fn unpositioned(message: impl Into<String>) -> Self {
         Self::Unpositioned {
             message: message.into(),
+        }
+    }
+
+    /// The cause of a give-up that this error ends.
+    pub(crate) const fn cause(&self) -> cadmpeg_ir::unknown::part::Cause {
+        match self {
+            Self::Resource(_) | Self::Unsupported { .. } | Self::Unbound { .. } => {
+                cadmpeg_ir::unknown::part::Cause::Undecoded
+            }
+            _ => cadmpeg_ir::unknown::part::Cause::Unreadable,
         }
     }
 }
@@ -183,10 +206,12 @@ impl fmt::Display for FramingError {
             Self::InvalidLength { offset, value } => {
                 write!(f, "invalid length {value} at {offset}")
             }
-            Self::Structural { offset, message } => {
+            Self::Structural { offset, message } | Self::Unsupported { offset, message } => {
                 write!(f, "framing error at {offset}: {message}")
             }
-            Self::Unpositioned { message } => write!(f, "framing error: {message}"),
+            Self::Unpositioned { message } | Self::Unbound { message } => {
+                write!(f, "framing error: {message}")
+            }
             Self::Overflow { offset } => write!(f, "offset arithmetic overflow at {offset}"),
             Self::OutOfBounds { offset, end, bound } => {
                 write!(f, "range {offset}..{end} exceeds bound {bound}")
@@ -199,8 +224,19 @@ impl fmt::Display for FramingError {
 
 impl std::error::Error for FramingError {}
 
+impl crate::wire::DecoderBound for FramingError {
+    fn decoder_bound(self) -> Self {
+        match self {
+            Self::Structural { offset, message } => Self::Unsupported { offset, message },
+            Self::Unpositioned { message } => Self::Unbound { message },
+            other => other,
+        }
+    }
+}
+
 /// Parses the exact 32-byte file header.
 pub(crate) fn parse_header(bytes: &[u8]) -> Result<Header, FramingError> {
+    // resource-cap: MAX_HEADER_SEARCH = 1
     const MAX_HEADER_SEARCH: usize = 33_554_432 + MAGIC.len();
     let search_end = bytes.len().min(MAX_HEADER_SEARCH);
 

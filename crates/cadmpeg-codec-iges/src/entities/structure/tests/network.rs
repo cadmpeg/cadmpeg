@@ -92,7 +92,7 @@ fn v4_subfigure_definitions_require_line_font_and_independence() {
         )
         .unwrap();
     assert!(v4.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::EntityNotProjected)
             && loss
                 .message
                 .contains("network definition fields or nesting depth is invalid")
@@ -108,5 +108,65 @@ fn v4_subfigure_definitions_require_line_font_and_independence() {
         .report()
         .losses
         .iter()
-        .any(|loss| { loss.code == IgesLossCode::EntityNotProjected.kind() }));
+        .any(|loss| { crate::test_support::reports(loss, IgesLossCode::EntityNotProjected) }));
+}
+
+#[test]
+fn the_give_up_of_a_definition_names_each_instance_that_needs_it() {
+    // In V4 a physically dependent definition breaks its rules, so it is
+    // given up; the instance that places it is dropped with it.
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    for (definition, instance) in [
+        (
+            (308, "SUB", "308,0,3HSUB,0;"),
+            (408, "408,1,0.0,0.0,0.0,1.0;"),
+        ),
+        (
+            (320, "NETWORK", "320,0,3HNET,0,1,,,0;"),
+            (420, "420,1,0,0,0,1,,,1,,,0;"),
+        ),
+    ] {
+        let entities = [
+            OwnedTestEntity {
+                entity_type: definition.0,
+                form: 0,
+                label: definition.1.into(),
+                status: "00010200",
+                parameters: definition.2.into(),
+            },
+            OwnedTestEntity {
+                entity_type: instance.0,
+                form: 0,
+                label: "INSTANCE".into(),
+                status: "00000000",
+                parameters: instance.1.into(),
+            },
+        ];
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file_with_global_and_line_fonts(
+                    &entities,
+                    global_v4,
+                    &[(1, 1)],
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let losses = &result.report().losses;
+        let given_up = losses
+            .iter()
+            .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+            .collect::<Vec<_>>();
+        assert_eq!(given_up.len(), 1, "{losses:#?}");
+        assert!(
+            given_up[0]
+                .message
+                .contains(&format!("iges:entity:directory#3 (Type {})", instance.0)),
+            "{losses:#?}"
+        );
+        let native = result.ir().native.namespace("iges").unwrap();
+        assert!(native.arenas()["entities"]
+            .iter()
+            .any(|record| record.id() == "iges:entity:directory#3"));
+    }
 }

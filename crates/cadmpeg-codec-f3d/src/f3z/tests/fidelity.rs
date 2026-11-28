@@ -2,9 +2,9 @@
 
 use cadmpeg_test_support::EditableDecodeResult;
 
-use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
-use crate::test_support::smbh_geometry_test::synthetic_mixed_smbh;
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::assembly_fixture::{f3d_without_brep, f3z_archive, XREF_ROLE};
+use crate::test_support::smbh_geometry_fixture::synthetic_mixed_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use cadmpeg_ir::codec::DecodeOptions;
 use std::io::Cursor;
 
@@ -18,8 +18,8 @@ fn malformed_design() -> cadmpeg_core::CodecError {
 #[test]
 fn the_archive_image_carries_what_its_members_leave_undecoded() {
     use cadmpeg_core::decode::{ArenaClass, DecodeDepth};
-    let root = crate::test_support::zip_test::f3d_with_smbh_and_protein(
-        &crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh(),
+    let root = crate::test_support::zip_fixture::f3d_with_smbh_and_protein(
+        &crate::test_support::smbh_geometry_fixture::synthetic_geometry_with_history_smbh(),
     );
     let archive = f3z_archive("root.f3d", &[("root.f3d", &root)]);
     let image_marks = |depth| {

@@ -36,19 +36,23 @@ three streams is an IronCAD scene.
 
 ## 2. Compressed stream frame
 
-A framed stream holds a 20-byte little-endian header and one zlib stream.
+A framed stream holds a 20-byte little-endian header and one or more zlib
+blocks.
 
 | Offset | Size | Field | Meaning |
 |---|---|---|---|
 | 0 | 4 | `magic` | `0x3de3de00`. |
-| 4 | 4 | `block_size` | `0x40000`. The inflated size of the zlib stream. |
-| 8 | 8 | `payload_length` | Number of payload bytes at the start of the inflated block. |
-| 16 | 4 | `compressed_length` | Number of zlib bytes. Equal to the stream length minus 20. |
+| 4 | 4 | `block_size` | `0x40000`. The inflated size of each block. |
+| 8 | 8 | `payload_length` | Number of payload bytes at the start of the inflated blocks. |
+| 16 | 4 | `compressed_length` | Number of zlib bytes of the first block. |
 
-The zlib stream starts at offset 20 and ends at the stream end. It inflates to
-exactly `block_size` bytes. The first `payload_length` bytes are the payload.
-The remaining bytes of the block are zero. `payload_length` is at most
-`block_size`.
+The frame holds `⌈payload_length / block_size⌉` blocks, and at least one. The
+first block is the `compressed_length` zlib bytes at offset 20. Each later
+block is a little-endian `u32` compressed length followed by that many zlib
+bytes. The blocks fill the stream exactly, and each block inflates to exactly
+`block_size` bytes. The inflated blocks, in stored order, form one buffer. Its
+first `payload_length` bytes are the payload, and the remaining bytes are
+zero.
 
 ## 3. Kernel record tree
 
@@ -64,16 +68,15 @@ the record header and the kernel bytes, and excludes the length field.
 | Offset | Size | Field | Meaning |
 |---|---|---|---|
 | 0 | 4 | `length` | Header and kernel byte count. |
-| 4 | 4 | `marker` | `0x0009b401`. |
+| 4 | 4 | `marker` | Low byte `0x01`; the upper 24 bits vary between records. |
 | 8 | 4 | `kernel` | `0x80000001` for ACIS, `0x80000002` for Parasolid. |
 | 12 | 12 | `words` | Three `u32` words. Each is `1`. |
-| 24 | 4 | `reserved` | `0`. |
+| 24 | 4 | `reserved` | `0`, `1`, or `2`. |
 
 The kernel bytes start at offset 28 and fill the remainder of the record.
 
-The second `u32` of an item selects its kind. The value `0x0009b401` starts a
-kernel record. A node length is less than 2³², so the second `u32` of a node is
-zero.
+The second `u32` of an item selects its kind. A nonzero value starts a kernel
+record. A node length is less than 2³², so the second `u32` of a node is zero.
 
 The payload node is the scene root. A **pair** is a child node that holds a
 kernel record at any depth, directly followed by a kernel record. In the child
@@ -162,3 +165,28 @@ in the first two rows of `R`.
 
 `Shape Data` holds one matrix of the same form for each feature. It maps a
 point of the feature body to the part frame as `p · R + t`.
+
+## 6. Given-up parts and strict floors
+
+The decoder gives up a part (CADIR §3.3) in these cases:
+
+| Part kind | Bytes | Cause |
+|---|---|---|
+| `stream` | The `Brep Data` stream, as its digest, when the stream does not open, its frame (§2) does not read, or its record tree (§3) does not read. | `record.unreadable` |
+| `stream` | The `Public Access` stream, as its digest, when the stream does not open or its frame (§2) does not read. Bodies remain in their part frames. | `record.unreadable` |
+| `stream` | The `Brep Data` or `Public Access` stream, as its digest, when its frame (§2) declares a block above the decoder's limit for one inflate. | `record.undecoded` |
+| `stream` | `Brep Data`, `Public Access`, or `Document Data` when its joined copy exceeds the remaining retained-byte budget. | `record.undecoded` |
+| `stream` | The `Document Data` stream, as its digest, when the stream does not open. The root definition then states no units (§4). | `record.unreadable` |
+| `stream` | An inventoried compound stream has a broken sector chain or a physically short extent. Its digest covers accessible bytes in chain order. | `record.unreadable` |
+| `kernel-record` | The kernel bytes of an ACIS result record whose save stream does not frame. | `record.unreadable` |
+| `kernel-record` | The kernel bytes of an ACIS record whose header does not read, of a result record whose framed ACIS records or Parasolid transmit the decode does not read, or of a result record whose identities do not move into its record namespace. | `record.undecoded` |
+
+Container depth and inspect check stream extents and hash the accessible bytes directly. A joined copy is made for a fragmented stream whose contents the scene reader uses.
+
+The digest is bounded by the declared stream length. A chain that reaches
+no available sector gives the empty digest. A session-wide resource refusal
+stops the decode.
+
+`ironcad/container.noncanonical` carries strict floor Warning (CADIR §3.2)
+for other compound deviations. The stream give-up charges a broken chain.
+Other IronCAD diagnostics use their default severity without a strict floor.

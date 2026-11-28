@@ -4,9 +4,10 @@
 
 #![allow(clippy::unwrap_used)]
 
+use super::registry_ids::{FORMAT, IGES_UNKNOWN};
 use super::{
     classify, dialect_id, dialect_loss, fixed_ascii_id, DECLARED_REPRESENTATION,
-    DECLARED_VERSION_FLAG, DECLARED_VERSION_FLAG_DECLARATION, FORMAT, IGES_UNKNOWN,
+    DECLARED_VERSION_FLAG, DECLARED_VERSION_FLAG_DECLARATION,
 };
 use crate::loss::IgesLossCode;
 use crate::representation::Representation;
@@ -96,12 +97,15 @@ fn resolved_global(version_flag: &str) -> crate::global::GlobalRecord {
     ))
 }
 
-/// Whether `global` charges [`IgesLossCode::SourceDialectUnverified`].
+/// Whether `global` charges [`IgesLossCode::SourceDialectUnverified`] or, for
+/// a field 23 that breaks the format, [`IgesLossCode::SourceVersionFlagInvalid`].
 fn global_charges_dialect_unverified(global: &crate::global::GlobalRecord) -> bool {
-    let expected = IgesLossCode::SourceDialectUnverified
-        .note(String::new())
-        .code;
-    dialect_loss(global).is_some_and(|note| note.code == expected)
+    let expected = [
+        IgesLossCode::SourceDialectUnverified,
+        IgesLossCode::SourceVersionFlagInvalid,
+    ]
+    .map(|code| code.note(String::new()).code);
+    dialect_loss(global).is_some_and(|note| expected.contains(&note.code))
 }
 
 /// One matrix row: a field-23 declaration and what each representation must

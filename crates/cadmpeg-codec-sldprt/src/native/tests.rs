@@ -248,7 +248,7 @@ fn native_load_with_context_matches_load() {
             cadmpeg_ir::units::Tolerances::default().linear
         )
         .unwrap(),
-        crate::native::SldprtNative::load_under(
+        crate::test_support::native::load_under(
             namespace,
             cadmpeg_core::decode::ResourceLimits::default(),
             cadmpeg_ir::units::Tolerances::default().linear
@@ -393,7 +393,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         )
         .unwrap();
     let original = decoded.ir().native.namespace("sldprt").unwrap();
-    let typed = crate::native::SldprtNative::load_under(
+    let typed = crate::test_support::native::load_under(
         original,
         cadmpeg_core::decode::ResourceLimits::default(),
         cadmpeg_ir::units::Tolerances::default().linear,
@@ -408,7 +408,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .unwrap();
     assert_eq!(
         typed,
-        crate::native::SldprtNative::load_under(
+        crate::test_support::native::load_under(
             &round_trip,
             cadmpeg_core::decode::ResourceLimits::default(),
             cadmpeg_ir::units::Tolerances::default().linear
@@ -622,7 +622,7 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
             &mut namespace,
         )
         .unwrap();
-    let stored = crate::native::SldprtNative::load_under(
+    let stored = crate::test_support::native::load_under(
         &namespace,
         cadmpeg_core::decode::ResourceLimits::default(),
         cadmpeg_ir::units::Tolerances::default().linear,
@@ -726,7 +726,7 @@ fn native_load_rejects_nonadjacent_duplicate_relation_scalars() {
         )
         .unwrap();
 
-    let error = crate::native::SldprtNative::load_under(
+    let error = crate::test_support::native::load_under(
         &namespace,
         cadmpeg_core::decode::ResourceLimits::default(),
         cadmpeg_ir::units::Tolerances::default().linear,
@@ -864,7 +864,7 @@ fn native_load_rejects_fabricated_payload_lane_rows_from_json() {
         let ordinal = record["ordinal"].as_u64().unwrap();
         record["ordinal"] = cadmpeg_core::json!(ordinal + 100);
         let namespace: cadmpeg_ir::NativeNamespace = json::from_value(wire).unwrap();
-        let error = crate::native::SldprtNative::load_under(
+        let error = crate::test_support::native::load_under(
             &namespace,
             cadmpeg_core::decode::ResourceLimits::default(),
             cadmpeg_ir::units::Tolerances::default().linear,
@@ -876,7 +876,7 @@ fn native_load_rejects_fabricated_payload_lane_rows_from_json() {
     assert!(!wire["sketch_input_entities"].as_array().unwrap().is_empty());
     wire["sketch_input_entities"] = cadmpeg_core::json!([]);
     let namespace: cadmpeg_ir::NativeNamespace = json::from_value(wire).unwrap();
-    let error = crate::native::SldprtNative::load_under(
+    let error = crate::test_support::native::load_under(
         &namespace,
         cadmpeg_core::decode::ResourceLimits::default(),
         cadmpeg_ir::units::Tolerances::default().linear,
@@ -910,7 +910,7 @@ fn native_load_rejects_edited_object_name_identity_from_json() {
     let forged_object_id = if current_object_id == Some(1) { 2 } else { 1 };
     object_id_edit["feature_input_names"][0]["object_id"] = cadmpeg_core::json!(forged_object_id);
     let namespace: cadmpeg_ir::NativeNamespace = json::from_value(object_id_edit).unwrap();
-    let error = crate::native::SldprtNative::load_under(
+    let error = crate::test_support::native::load_under(
         &namespace,
         cadmpeg_core::decode::ResourceLimits::default(),
         cadmpeg_ir::units::Tolerances::default().linear,
@@ -936,7 +936,7 @@ fn native_load_admits_the_unedited_namespace_and_refuses_every_object_name_edit(
     let original = json::to_value(decoded.ir().native.namespace("sldprt").unwrap()).unwrap();
 
     let control: cadmpeg_ir::NativeNamespace = json::from_value(original.clone()).unwrap();
-    crate::native::SldprtNative::load_under(
+    crate::test_support::native::load_under(
         &control,
         cadmpeg_core::decode::ResourceLimits::default(),
         cadmpeg_ir::units::Tolerances::default().linear,
@@ -958,7 +958,7 @@ fn native_load_admits_the_unedited_namespace_and_refuses_every_object_name_edit(
         .expect("a scalar states its payload offset");
     scalar_edit["feature_input_scalars"][0]["offset"] = cadmpeg_core::json!(offset + 7);
     let namespace: cadmpeg_ir::NativeNamespace = json::from_value(scalar_edit).unwrap();
-    let error = crate::native::SldprtNative::load_under(
+    let error = crate::test_support::native::load_under(
         &namespace,
         cadmpeg_core::decode::ResourceLimits::default(),
         cadmpeg_ir::units::Tolerances::default().linear,
@@ -974,7 +974,7 @@ fn native_load_admits_the_unedited_namespace_and_refuses_every_object_name_edit(
     object_id_edit["feature_input_names"][0]["object_id"] =
         cadmpeg_core::json!(if current == Some(1) { 2 } else { 1 });
     let namespace: cadmpeg_ir::NativeNamespace = json::from_value(object_id_edit).unwrap();
-    let error = crate::native::SldprtNative::load_under(
+    let error = crate::test_support::native::load_under(
         &namespace,
         cadmpeg_core::decode::ResourceLimits::default(),
         cadmpeg_ir::units::Tolerances::default().linear,
@@ -991,7 +991,7 @@ fn native_load_admits_the_unedited_namespace_and_refuses_every_object_name_edit(
         let mut value_edit = original.clone();
         value_edit["feature_input_names"][0]["value"] = cadmpeg_core::json!(forged);
         let namespace: cadmpeg_ir::NativeNamespace = json::from_value(value_edit).unwrap();
-        let error = crate::native::SldprtNative::load_under(
+        let error = crate::test_support::native::load_under(
             &namespace,
             cadmpeg_core::decode::ResourceLimits::default(),
             cadmpeg_ir::units::Tolerances::default().linear,
@@ -1043,7 +1043,7 @@ fn native_load_rejects_invalid_sketch_marker_positions_from_json() {
         let mut wire = original.clone();
         wire["sketch_input_entities"][0][field] = value;
         let namespace: cadmpeg_ir::NativeNamespace = json::from_value(wire).unwrap();
-        let error = crate::native::SldprtNative::load_under(
+        let error = crate::test_support::native::load_under(
             &namespace,
             cadmpeg_core::decode::ResourceLimits::default(),
             cadmpeg_ir::units::Tolerances::default().linear,
@@ -1064,7 +1064,7 @@ fn native_load_rejects_invalid_sketch_marker_positions_from_json() {
         let mut wire = original.clone();
         wire["sketch_input_entities"][1][field] = wire["sketch_input_entities"][0][field].clone();
         let namespace: cadmpeg_ir::NativeNamespace = json::from_value(wire).unwrap();
-        let error = crate::native::SldprtNative::load_under(
+        let error = crate::test_support::native::load_under(
             &namespace,
             cadmpeg_core::decode::ResourceLimits::default(),
             cadmpeg_ir::units::Tolerances::default().linear,
@@ -1094,7 +1094,7 @@ fn native_load_rejects_duplicate_history_ordinals_from_json() {
             cadmpeg_core::json!(format!("{}-duplicate", records[0]["id"].as_str().unwrap()));
         records.push(duplicate);
         let namespace: cadmpeg_ir::NativeNamespace = json::from_value(wire).unwrap();
-        let error = crate::native::SldprtNative::load_under(
+        let error = crate::test_support::native::load_under(
             &namespace,
             cadmpeg_core::decode::ResourceLimits::default(),
             cadmpeg_ir::units::Tolerances::default().linear,
@@ -1125,7 +1125,7 @@ fn native_load_refuses_a_forged_object_name_length_byte_after_a_store() {
         )
         .unwrap();
     let namespace = decoded.ir().native.namespace("sldprt").unwrap();
-    let mut typed = crate::native::SldprtNative::load_under(
+    let mut typed = crate::test_support::native::load_under(
         namespace,
         cadmpeg_core::decode::ResourceLimits::default(),
         cadmpeg_ir::units::Tolerances::default().linear,
@@ -1145,7 +1145,7 @@ fn native_load_refuses_a_forged_object_name_length_byte_after_a_store() {
             &mut forged,
         )
         .unwrap();
-    let error = crate::native::SldprtNative::load_under(
+    let error = crate::test_support::native::load_under(
         &forged,
         cadmpeg_core::decode::ResourceLimits::default(),
         cadmpeg_ir::units::Tolerances::default().linear,
@@ -1197,7 +1197,7 @@ fn native_load_refuses_every_object_name_value_edit_and_leaves_the_scalar_arena_
             "the value edit moved the scalar arena"
         );
         let namespace: cadmpeg_ir::NativeNamespace = json::from_value(edit).unwrap();
-        let error = crate::native::SldprtNative::load_under(
+        let error = crate::test_support::native::load_under(
             &namespace,
             cadmpeg_core::decode::ResourceLimits::default(),
             cadmpeg_ir::units::Tolerances::default().linear,
@@ -1235,7 +1235,7 @@ fn native_load_refuses_an_object_name_offset_the_payload_does_not_state() {
         let mut edit = original.clone();
         edit["feature_input_names"][0]["offset"] = cadmpeg_core::json!(forged);
         let namespace: cadmpeg_ir::NativeNamespace = json::from_value(edit).unwrap();
-        let error = crate::native::SldprtNative::load_under(
+        let error = crate::test_support::native::load_under(
             &namespace,
             cadmpeg_core::decode::ResourceLimits::default(),
             cadmpeg_ir::units::Tolerances::default().linear,

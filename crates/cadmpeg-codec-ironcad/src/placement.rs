@@ -29,6 +29,7 @@ pub(crate) const STRING_PROPERTY: u16 = 8;
 const UNSET_REAL: f64 = -1.0e300;
 
 /// The longest property name, in bytes.
+// resource-cap: MAX_PROPERTY_NAME = 1
 const MAX_PROPERTY_NAME: u32 = 256;
 
 /// Metres to millimetres.

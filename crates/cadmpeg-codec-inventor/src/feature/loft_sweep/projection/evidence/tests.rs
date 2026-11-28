@@ -627,7 +627,9 @@ impl FixedStates {
     }
 
     fn holding(model: CadIr) -> Self {
-        Self::new(model, |model| StateModel::Model(Box::new(model.clone())))
+        Self::new(model, |model| {
+            StateModel::Model(crate::test_support::history_carrier::state_evidence(model))
+        })
     }
 }
 
@@ -639,6 +641,10 @@ impl ResultStates for FixedStates {
     ) -> Result<Rc<StateModel>, CodecError> {
         self.asked.borrow_mut().push(source_index);
         Ok(Rc::new((self.outcome)(&self.model)))
+    }
+
+    fn introduces(&self, _: u32, _: i64) -> bool {
+        false
     }
 }
 
@@ -707,10 +713,10 @@ fn the_state_must_hold_the_complete_result_itself() {
 #[test]
 fn a_state_view_over_its_work_cap_keeps_the_loft_unproved_as_bounded() {
     let later = consumed_cap();
-    let bounded = FixedStates::new(CadIr::empty(), |_| StateModel::Bounded);
+    let bounded = FixedStates::new(CadIr::empty(), |_| StateModel::Bounded(StateLimit::Work));
     assert!(matches!(
         proof(Some(&later), Some(&bounded)),
-        Err(Unproved::Bounded)
+        Err(Unproved::Bounded(StateLimit::Work))
     ));
     // A final model that proves the loft never reads the state.
     assert!(proof(Some(&legacy_model()), Some(&bounded)).is_ok());
@@ -845,14 +851,16 @@ fn a_naming_tag_of_a_real_carrier_reaches_a_typed_loft_through_the_state_index()
         frame_chain, index_chain, prepare, Closed, Framing, Prepared, Reading,
     };
     use crate::feature::history_views::StateViews;
+    use crate::feature::loft_sweep::controls::NativeReason;
     use crate::kernel::parse_carrier;
     use crate::test_support::history_carrier::{
         framed_carrier, lofted_carrier_bytes, LATER_GENERATOR, LOFT_CURVES, LOFT_GENERATOR,
         LOFT_SECTIONS,
     };
     use cadmpeg_asm::kernel_header::RefWidth;
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-    let payload = framed_carrier(&lofted_carrier_bytes(RefWidth::Eight));
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+    let name = "n".repeat(1200);
+    let payload = framed_carrier(&lofted_carrier_bytes(RefWidth::Eight, &name));
     let arena = DecodeArena::new();
     let (ctx, view) = DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::default())
         .expect("carrier fits policy");
@@ -895,6 +903,32 @@ fn a_naming_tag_of_a_real_carrier_reaches_a_typed_loft_through_the_state_index()
         loft_proof(&ctx, None, Some(&views), loft_source, [23, 19], curves),
         Err(Unproved::Result)
     ));
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 8192;
+    let (bounded, _) =
+        DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("document context");
+    bounded
+        .retain_bytes(8191, "active body")
+        .expect("active model fits");
+    let views = StateViews::new(&carrier, &closed, 1 << 20);
+    let Err(Unproved::Bounded(cause @ StateLimit::Resource(limit))) = loft_proof(
+        &bounded,
+        Some(&consumed_cap()),
+        Some(&views),
+        loft_source,
+        LOFT_SECTIONS,
+        curves,
+    ) else {
+        panic!("the named state exceeds the remaining retained bytes");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, "keep Inventor history state evidence");
+    let loss = NativeReason::ResultStateBounded(cause).note();
+    assert!(loss.message.contains("RetainedBytes"), "{}", loss.message);
+    assert!(loss.message.contains(limit.operation), "{}", loss.message);
+    assert!(!loss.message.contains("work cap"), "{}", loss.message);
+    assert!(bounded.resource_refusal().is_none());
 }
 
 /// History states of a joined loft: the state after it and the state before
@@ -905,7 +939,7 @@ struct PairStates {
 }
 
 fn held(model: &CadIr) -> StateModel {
-    StateModel::Model(Box::new(model.clone()))
+    StateModel::Model(crate::test_support::history_carrier::state_evidence(model))
 }
 
 impl ResultStates for PairStates {
@@ -915,6 +949,10 @@ impl ResultStates for PairStates {
 
     fn before(&self, _: &DecodeContext<'_>, _: u32) -> Result<Rc<StateModel>, CodecError> {
         Ok(Rc::new((self.before.1)(&self.before.0)))
+    }
+
+    fn introduces(&self, _: u32, _: i64) -> bool {
+        false
     }
 }
 
@@ -1035,9 +1073,12 @@ fn a_joined_loft_requires_a_solid_with_enough_faces_in_the_state_before_it() {
     ));
     let bounded = PairStates {
         after: (legacy_model(), held),
-        before: (model(), |_| StateModel::Bounded),
+        before: (model(), |_| StateModel::Bounded(StateLimit::Work)),
     };
-    assert!(matches!(join_proof(Some(&bounded)), Err(Unproved::Bounded)));
+    assert!(matches!(
+        join_proof(Some(&bounded)),
+        Err(Unproved::Bounded(StateLimit::Work))
+    ));
     let after_failed = PairStates {
         after: (legacy_model(), |_| StateModel::Failed),
         before: (model(), held),
@@ -1062,7 +1103,7 @@ fn legacy_cap(index: usize, generator: i64, tail: [i64; 3]) -> CadIr {
 #[test]
 fn a_joined_legacy_loft_admits_split_caps_and_one_unnamed_curve_per_section() {
     let joined = |model: &CadIr, curves: fn(usize) -> Vec<i64>| {
-        legacy_loft_in(model, 17, [19, 23], curves, true).is_some()
+        legacy_loft_in(model.into(), 17, [19, 23], curves, true).is_some()
     };
     let strict = |model: &CadIr, curves: fn(usize) -> Vec<i64>| {
         legacy_loft(model, 17, [19, 23], curves).is_some()
@@ -1089,7 +1130,7 @@ fn a_joined_legacy_loft_admits_split_caps_and_one_unnamed_curve_per_section() {
     // A named curve outside the section boundary is a face of another loft.
     assert!(!joined(&one_cap, |section| [vec![9], vec![3]][section].clone()));
     // A joined loft of another generator is not this loft.
-    assert!(legacy_loft_in(&split, 99, [19, 23], legacy_curves, true).is_none());
+    assert!(legacy_loft_in((&split).into(), 99, [19, 23], legacy_curves, true).is_none());
 }
 
 #[test]
@@ -1164,6 +1205,10 @@ fn a_joined_loft_whose_source_no_state_lists_stays_unproved() {
     impl ResultStates for Unlisted {
         fn after(&self, _: &DecodeContext<'_>, _: u32) -> Result<Rc<StateModel>, CodecError> {
             Ok(Rc::new(StateModel::Unavailable))
+        }
+
+        fn introduces(&self, _: u32, _: i64) -> bool {
+            false
         }
     }
     assert!(matches!(join_proof(Some(&Unlisted)), Err(Unproved::Result)));

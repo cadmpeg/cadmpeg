@@ -56,7 +56,7 @@ fn a_symmetric_pattern_with_a_count_one_second_direction_reads_its_spacing() {
     ];
     for bytes in files {
         let ir = decoded(bytes);
-        let pattern = &definition(&ir, "R-Pattern 1")["value"]["value"]["pattern"];
+        let pattern = &definition(&ir, "R-Pattern1")["value"]["value"]["pattern"];
         assert_eq!(pattern["kind"], "linear", "{pattern}");
         assert_eq!(pattern["direction"], json!({"x": 1.0, "y": 0.0, "z": 0.0}));
         assert_eq!(pattern["spacing"], 5.0);
@@ -111,7 +111,7 @@ fn an_optimized_pattern_reads_its_extent_and_symmetric_distribution() {
     let extent = decoded(include_bytes!(
         "../../../../corpus/f3d/optimized_extent_pattern.f3d"
     ));
-    let pattern = &definition(&extent, "R-Pattern 1")["value"]["value"]["pattern"];
+    let pattern = &definition(&extent, "R-Pattern1")["value"]["value"]["pattern"];
     assert_eq!(pattern["kind"], "linear", "{pattern}");
     assert_eq!(pattern["direction"], json!({"x": 1.0, "y": 0.0, "z": 0.0}));
     assert_eq!(pattern["spacing"], 10.0);
@@ -122,7 +122,7 @@ fn an_optimized_pattern_reads_its_extent_and_symmetric_distribution() {
     let symmetric = decoded(include_bytes!(
         "../../../../corpus/f3d/optimized_symmetric_pattern.f3d"
     ));
-    let pattern = &definition(&symmetric, "R-Pattern 1")["value"]["value"]["pattern"];
+    let pattern = &definition(&symmetric, "R-Pattern1")["value"]["value"]["pattern"];
     assert_eq!(pattern["spacing"], 10.0);
     assert_eq!(pattern["count"], 3);
     assert_eq!(pattern["symmetric"], true);
@@ -136,7 +136,7 @@ fn a_symmetric_extent_direction_spaces_its_copies_by_the_extent_on_each_side() {
     let ir = decoded(include_bytes!(
         "../../../../corpus/f3d/optimized_symmetric_extent_pattern.f3d"
     ));
-    let pattern = &definition(&ir, "R-Pattern 1")["value"]["value"]["pattern"];
+    let pattern = &definition(&ir, "R-Pattern1")["value"]["value"]["pattern"];
     assert_eq!(pattern["kind"], "linear", "{pattern}");
     assert_eq!(pattern["direction"], json!({"x": 1.0, "y": 0.0, "z": 0.0}));
     assert_eq!(pattern["spacing"], 20.0);
@@ -151,7 +151,7 @@ fn a_pattern_of_a_cut_through_two_bodies_reads_its_distribution() {
     let ir = decoded(include_bytes!(
         "../../../../corpus/f3d/two_target_pattern.f3d"
     ));
-    let pattern = &definition(&ir, "R-Pattern 1")["value"]["value"]["pattern"];
+    let pattern = &definition(&ir, "R-Pattern1")["value"]["value"]["pattern"];
     assert_eq!(pattern["kind"], "linear", "{pattern}");
     assert_eq!(pattern["direction"], json!({"x": 0.0, "y": 1.0, "z": 0.0}));
     assert_eq!(pattern["spacing"], 10.0);
@@ -196,7 +196,7 @@ fn each_direction_of_a_rectangular_pattern_reads_its_own_symmetric_byte() {
     ];
     for (bytes, count, second_count, symmetric, second_symmetric) in files {
         let ir = decoded(bytes);
-        let pattern = &definition(&ir, "R-Pattern 1")["value"]["value"]["pattern"];
+        let pattern = &definition(&ir, "R-Pattern1")["value"]["value"]["pattern"];
         assert_eq!(pattern["kind"], "linear", "{pattern}");
         assert_eq!(pattern["direction"], json!({"x": 1.0, "y": 0.0, "z": 0.0}));
         assert_eq!(pattern["spacing"], 5.0);
@@ -218,13 +218,14 @@ fn design_bulk_stream(bytes: &[u8]) -> Vec<u8> {
     let index = archive.index_for_name(NAME).expect("Design BulkStream");
     assert!(crate::zip_write::is_zstd_member(&mut archive, index).expect("method"));
     let mut member = archive.by_index_raw(index).expect("raw member");
-    crate::zip_write::expand_zstd_member(
-        &mut member,
-        NAME,
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-    )
-    .expect("expand BulkStream")
+    let session = cadmpeg_core::decode::test_support::desktop_decode_context();
+    session
+        .charge_input(
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
+            "the archive",
+        )
+        .expect("the archive fits the session");
+    crate::zip_write::expand_member(&session, &mut member, NAME, true).expect("expand BulkStream")
 }
 
 #[test]
@@ -355,7 +356,7 @@ fn a_symmetric_extent_direction_places_its_copies_where_fusion_does() {
     ];
     for (bytes, xs, ys) in files {
         let ir = decoded(bytes);
-        let pattern = &definition(&ir, "R-Pattern 1")["value"]["value"]["pattern"];
+        let pattern = &definition(&ir, "R-Pattern1")["value"]["value"]["pattern"];
         assert_eq!(pattern["kind"], "linear", "{pattern}");
         let first = direction_offsets(pattern);
         let second = if pattern["second"].is_null() {
@@ -392,7 +393,7 @@ fn a_negative_symmetric_extent_reverses_the_direction_and_its_extra_instance() {
     let ir = decoded(include_bytes!(
         "../../../../corpus/f3d/sym_extent_q4_negative.f3d"
     ));
-    let pattern = &definition(&ir, "R-Pattern 1")["value"]["value"]["pattern"];
+    let pattern = &definition(&ir, "R-Pattern1")["value"]["value"]["pattern"];
     assert_eq!(pattern["kind"], "linear", "{pattern}");
     assert_eq!(pattern["direction"], json!({"x": -1.0, "y": 0.0, "z": 0.0}));
     assert_eq!(pattern["spacing"], 10.0);
@@ -408,7 +409,7 @@ fn a_rectangular_feature_pattern_keeps_its_direction_in_the_v11_record() {
     let features = ir["design"]["features"].as_array().expect("v11 features");
     let feature = features
         .iter()
-        .find(|feature| feature["name"] == "R-Pattern 1")
+        .find(|feature| feature["name"] == "R-Pattern1")
         .expect("rectangular pattern");
     let operation = &feature["definition"]["operation"];
     assert_eq!(operation["kind"], "pattern");
@@ -464,7 +465,7 @@ fn an_unproved_body_seed_keeps_its_native_record_and_final_geometry() {
         .design
         .features
         .iter()
-        .find(|feature| feature.name.as_deref() == Some("R-Pattern 1"))
+        .find(|feature| feature.name.as_deref() == Some("R-Pattern1"))
         .expect("body pattern feature");
     let cadmpeg_ir::design::feature::FeatureOperation::Pattern(pattern) =
         &feature.definition.operation
@@ -512,7 +513,7 @@ fn suppressed_instances_are_omitted_from_the_pattern() {
     ];
     for (bytes, count, second, omitted) in files {
         let ir = decoded(bytes);
-        let pattern = &definition(&ir, "R-Pattern 1")["value"]["value"]["pattern"];
+        let pattern = &definition(&ir, "R-Pattern1")["value"]["value"]["pattern"];
         assert_eq!(pattern["kind"], "linear", "{pattern}");
         let spacing = pattern["spacing"].as_f64().expect("spacing");
         assert!((spacing - 6.0).abs() < 1e-9, "{pattern}");
@@ -579,7 +580,7 @@ fn suppressed_instances_of_symmetric_directions_keep_the_neutral_numbering() {
     ];
     for (bytes, direction, count, second, symmetric, second_symmetric, omitted) in files {
         let ir = decoded(bytes);
-        let pattern = &definition(&ir, "R-Pattern 1")["value"]["value"]["pattern"];
+        let pattern = &definition(&ir, "R-Pattern1")["value"]["value"]["pattern"];
         assert_eq!(pattern["kind"], "linear", "{pattern}");
         assert_eq!(pattern["direction"], direction, "{pattern}");
         if second.is_some() {
@@ -598,5 +599,73 @@ fn suppressed_instances_of_symmetric_directions_keep_the_neutral_numbering() {
             "{pattern}"
         );
         assert_eq!(pattern["omitted_instances"], omitted, "{pattern}");
+    }
+}
+
+#[test]
+fn a_zero_distance_second_direction_charges_its_coincident_instances() {
+    // Direction two stores count 3 at distance 0: its instances repeat the
+    // direction-one copies in place, and a linear pattern has no field for
+    // them.
+    let files: [(&[u8], &str, u64, f64); 4] = [
+        (
+            include_bytes!("../../../../corpus/f3d/strip_cut.f3d"),
+            "R-Pattern1",
+            6,
+            3.0,
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/compute_adjust.f3d"),
+            "Groove pattern",
+            5,
+            2.0,
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/compute_optimized.f3d"),
+            "Groove pattern",
+            5,
+            2.0,
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/compute_identical.f3d"),
+            "Groove pattern",
+            5,
+            2.0,
+        ),
+    ];
+    for (bytes, name, count, spacing) in files {
+        let result = F3dCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode the corpus file");
+        let ir = cadmpeg_test_support::wire::in_memory_json(result.ir());
+        let constructions: Vec<_> = ir["native"]["f3d"]["design_parameter_scopes"]
+            .as_array()
+            .expect("scopes")
+            .iter()
+            .map(|scope| &scope["rectangular_pattern_construction"])
+            .filter(|construction| !construction.is_null())
+            .collect();
+        let [construction] = constructions.as_slice() else {
+            panic!("one rectangular pattern construction: {constructions:?}");
+        };
+        assert_eq!(construction["u_count"], count);
+        assert_eq!(construction["v_count"], 3);
+        assert_eq!(construction["v_extent"], 0.0);
+        let pattern = &definition(&ir, name)["value"]["value"]["pattern"];
+        assert_eq!(pattern["kind"], "linear", "{pattern}");
+        assert_eq!(pattern["count"], count);
+        assert!((pattern["spacing"].as_f64().expect("spacing") - spacing).abs() < 1e-9);
+        assert!(pattern["second"].is_null(), "{pattern}");
+        let placement =
+            crate::loss::F3dLossCode::FeatureRectangularPatternPlacementNotTransferred.kind();
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == placement),
+            "{:?}",
+            result.report().losses
+        );
     }
 }

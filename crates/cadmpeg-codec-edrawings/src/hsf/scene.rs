@@ -23,19 +23,25 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::convert::truncate_f64_to_u8;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::unknown::part::Cause;
 
 use super::walk::{Instance, Record, Shell, SlotKind, WalkError, Walker};
 use crate::dialect::Grammar;
 
 /// Most tree nodes one stream may declare.
+// resource-cap: MAX_NODES = 2
 pub(super) const MAX_NODES: usize = 100_000;
 /// Most library bodies one stream may declare.
+// resource-cap: MAX_BODIES = 2
 pub(super) const MAX_BODIES: usize = 100_000;
 /// Most object slots one stream may declare.
+// resource-cap: MAX_SLOTS = 2
 pub(super) const MAX_SLOTS: usize = 8_000_000;
 /// Most objects the store keeps.
+// resource-cap: MAX_OBJECTS = 2
 pub(super) const MAX_OBJECTS: usize = 8_000_000;
 /// Most display state components the scene keeps.
+// resource-cap: MAX_COMPONENTS = 2
 pub(super) const MAX_COMPONENTS: usize = 200_000;
 
 /// Prefix of a library segment name.
@@ -300,6 +306,7 @@ impl<'a> Scene<'a> {
             builder.record(record, span).map_err(|reason| WalkError {
                 offset: walker.offset(),
                 reason,
+                cause: Cause::Undecoded,
             })?;
         }
         Ok(builder.finish())

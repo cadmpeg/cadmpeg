@@ -15,7 +15,7 @@ use super::{kinds, TOLERANCE};
 
 /// The model points of the vertices of the face named `token`.
 pub(super) fn corners(decoded: &CadIr, token: &str) -> Vec<[f64; 3]> {
-    let native = crate::test_support::native_test::f3d_native(decoded);
+    let native = crate::test_support::native_fixture::f3d_native(decoded);
     let Some(AttributeTarget::Face(face)) = native
         .persistent_subentity_tags
         .iter()

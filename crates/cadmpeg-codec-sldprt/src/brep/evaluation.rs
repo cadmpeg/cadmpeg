@@ -252,6 +252,7 @@ fn analytic_first_partials(
 }
 
 /// Steps of the nearest-point solve on an analytic surface.
+// resource-cap: MAX_FOOT_STEPS = 4
 const MAX_FOOT_STEPS: usize = 16;
 /// Model-space step at which the nearest-point solve has converged.
 const FOOT_STEP_TOLERANCE_MM: f64 = 1.0e-12;

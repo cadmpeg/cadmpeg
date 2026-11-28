@@ -20,10 +20,10 @@ use cadmpeg_ir::products::Storage;
 use cadmpeg_ir::CadIr;
 
 use super::decode;
-use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
-use crate::test_support::manifest_test::write_synthetic_manifests;
-use crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh;
-use crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_base_feature;
+use crate::test_support::assembly_fixture::{f3d_without_brep, f3z_archive, XREF_ROLE};
+use crate::test_support::manifest_fixture::write_synthetic_manifests;
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_with_history_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh_and_protein_with_generated_base_feature;
 
 /// A writer of a format that stores one definition per file. It keeps the
 /// document of each output it plans.
@@ -75,7 +75,7 @@ fn user_parameter_design() -> Vec<u8> {
     frame.extend_from_slice(&[0, 1]);
     frame.extend_from_slice(&target.to_le_bytes());
     frame.extend_from_slice(&[0; 6]);
-    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+    let metadata = crate::test_support::streams_fixture::design_metastream_with_records(
         &[(
             TAIL_TYPE_GUID,
             "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",

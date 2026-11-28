@@ -230,7 +230,7 @@ pub(super) fn emit_topology(
                 left_out.give_up(
                     NodeKind::Loop,
                     node,
-                    unresolved(format!(
+                    &unresolved(format!(
                         "LOOP {loop_xmt} is a vertex loop whose FIN names no VERTEX record"
                     )),
                 )?;
@@ -331,7 +331,7 @@ pub(super) fn emit_topology(
                  admitted",
                 shell.xmt()
             ));
-            let id = left_out.give_up(NodeKind::Shell, shell, withheld)?;
+            let id = left_out.give_up(NodeKind::Shell, shell, &withheld)?;
             if let Some(body) = body {
                 given_up_shells.entry(body).or_insert(id);
             }
@@ -382,7 +382,7 @@ pub(super) fn emit_topology(
             let id = left_out.give_up(
                 NodeKind::Shell,
                 node,
-                crate::loss::NxLossCode::TopologyShellWithheld.note(format!(
+                &crate::loss::NxLossCode::TopologyShellWithheld.note(format!(
                     "parasolid#{stream_index} SHELL {} is withheld: {reason}",
                     node.xmt()
                 )),
@@ -480,9 +480,9 @@ pub(super) fn emit_topology(
     for body_xmt in shape_bodies {
         let body = bodies.get(&body_xmt);
         if body.is_none_or(|body| !shell_owners.contains(body)) {
-            let withheld = crate::loss::NxLossCode::TopologyShellWithheld.note(format!(
+            let withheld = format!(
                 "parasolid#{stream_index} BODY {body_xmt} is withheld: no SHELL of the body is emitted"
-            ));
+            );
             if let Some(shell) = given_up_shells.get(&body_xmt) {
                 let body: Option<BodyId> = match body {
                     Some(body) => Some(body.clone()),
@@ -494,14 +494,18 @@ pub(super) fn emit_topology(
                         })
                         .transpose()?,
                 };
-                if let Some(body) = body {
-                    topology_losses.push(cadmpeg_ir::unknown::part::dropped_with(body, shell));
-                }
-                topology_losses.push(withheld);
+                topology_losses.push(match body {
+                    Some(body) => cadmpeg_ir::unknown::part::dropped_with(body, shell),
+                    None => crate::loss::NxLossCode::TopologyShellWithheld.note(withheld),
+                });
             } else if let Some(node) = graph.get(NodeKind::Body, body_xmt) {
-                left_out.give_up(NodeKind::Body, node, withheld)?;
+                left_out.give_up(
+                    NodeKind::Body,
+                    node,
+                    &crate::loss::NxLossCode::TopologyShellWithheld.note(withheld),
+                )?;
             } else {
-                topology_losses.push(withheld);
+                topology_losses.push(crate::loss::NxLossCode::TopologyShellWithheld.note(withheld));
             }
             withheld_bodies.extend(body.cloned());
         }
@@ -582,7 +586,7 @@ pub(super) fn emit_topology(
             left_out.give_up(
                 NodeKind::Edge,
                 node,
-                unresolved(format!("EDGE {} has fields that do not decode", node.xmt())),
+                &unresolved(format!("EDGE {} has fields that do not decode", node.xmt())),
             )?;
             continue;
         };
@@ -601,7 +605,7 @@ pub(super) fn emit_topology(
             left_out.give_up(
                 NodeKind::Edge,
                 node,
-                unresolved(format!(
+                &unresolved(format!(
                     "EDGE {} names FIN {} whose fields do not decode",
                     node.xmt(),
                     fin.xmt()
@@ -926,7 +930,7 @@ pub(super) fn emit_topology(
             left_out.give_up(
                 NodeKind::Face,
                 node,
-                unresolved(format!("FACE {} has fields that do not decode", node.xmt())),
+                &unresolved(format!("FACE {} has fields that do not decode", node.xmt())),
             )?;
             continue;
         };
@@ -970,7 +974,7 @@ pub(super) fn emit_topology(
                 left_out.give_up(
                     NodeKind::Face,
                     node,
-                    unresolved(format!("FACE {} names no decoded SURFACE", node.xmt())),
+                    &unresolved(format!("FACE {} names no decoded SURFACE", node.xmt())),
                 )?;
             }
             continue;
@@ -2253,6 +2257,7 @@ pub(super) fn canonical_trim_range(geometry: &CurveGeometry, raw: [f64; 2]) -> O
 #[cfg(test)]
 pub(super) mod test_support;
 
+// resource-cap: MAX_CURVE_POINT_CACHE_ENTRIES = N
 const MAX_CURVE_POINT_CACHE_ENTRIES: usize = 131_072;
 
 #[derive(Default)]

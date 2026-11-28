@@ -72,6 +72,7 @@ use indexed::IndexedTopology;
 /// work grows with the state count times the live record count. A stream
 /// that reaches the cap keeps its bulletin boards and history records
 /// without historical topology.
+// resource-cap: MAX_HISTORY_BINDING_WORK = 4
 pub(crate) const MAX_HISTORY_BINDING_WORK: usize = 1 << 23;
 
 #[derive(Debug, Default)]
@@ -999,12 +1000,11 @@ fn container_rows(
         &mut out,
         ContainerInputs {
             records: &records,
-            bytes,
+            shell_bytes: Some(bytes),
             by_index: &by_index,
             reach: &reach,
             wire: &WireShellTopology::default(),
             stream: "",
-            header_scale: 1.0,
             format: crate::ids::ID_FORMAT,
         },
     )?;
@@ -1040,12 +1040,11 @@ fn container_rows_precollected(
         &mut out,
         ContainerInputs {
             records: &owned,
-            bytes,
+            shell_bytes: Some(bytes),
             by_index: &by_index,
             reach: &reach,
             wire: &WireShellTopology::default(),
             stream: "",
-            header_scale: 1.0,
             format: crate::ids::ID_FORMAT,
         },
     )?;

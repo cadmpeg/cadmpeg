@@ -2,9 +2,9 @@
 
 use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
 use crate::test_support::configuration_table::{property_target, string_cell, table_document};
-use crate::test_support::native_test::update_f3d_native;
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::native_fixture::update_f3d_native;
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use cadmpeg_core::serde_erase::json;
 
 const FINDING: &str = "Fusion Design configurations have no single authored table order";

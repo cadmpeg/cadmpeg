@@ -70,7 +70,7 @@ fn split_direct_face_admits_the_reference_zero_and_two_tool_faces() {
 fn retained_sketch_profiles_resolve_members_in_their_own_scope() {
     let (archive, mut scope, headers, entities) =
         crate::test_support::multiple_profiles::fixture(2);
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         let losses = crate::design::decode::operands::sketch_profiles::bind_sketch_profiles(
             scan,
             std::slice::from_mut(&mut scope),
