@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 use cadmpeg_ir::examples;
 use cadmpeg_ir::{report::export::WritePath, CadIr};
@@ -477,10 +477,10 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let result = EditableDecodeResult::from(decode_result(bytes).ok()?);
     let mut out = Vec::new();
-    let outcome = match F3dCodec.plan(
-        EncodeInput::new(result.ir(), Some(result.source_fidelity())),
-        TargetRequest::Unnamed,
-    ) {
+    let outcome = match F3dCodec.plan(EncodeInput::new(
+        result.ir(),
+        Some(result.source_fidelity()),
+    )) {
         Ok(plan) => {
             let path = plan.report().write_path().clone();
             match plan.write_to(&mut out) {
@@ -883,17 +883,7 @@ fn fixtures_replay_verbatim() {
             marked.push(name);
         }
     }
-    assert_eq!(
-        marked,
-        [
-            "design_remove_body",
-            "design_surface_stitch",
-            "design_copy_paste",
-            "design_copy_paste_bodies",
-            "design_form",
-            "container_metadata_only"
-        ]
-    );
+    assert_eq!(marked, ["container_metadata_only"]);
 }
 
 /// A document its sidecar reads as edited is patched from the retained

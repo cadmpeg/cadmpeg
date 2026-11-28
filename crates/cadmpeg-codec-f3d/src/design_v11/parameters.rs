@@ -68,7 +68,7 @@ pub(crate) const LITERAL: &str = "f3d:literal";
 /// in `hosted`, or one `scopes` does not key, has no scope of its own for its
 /// user parameters. These parameters, and those with a blank name, stay v10
 /// parameters, and one loss per class in `losses` names them.
-pub(super) fn project(
+pub(crate) fn project(
     legacy: &[LegacyParameter],
     scopes: &BTreeMap<String, ProductDefinitionId>,
     hosted: &BTreeSet<String>,
@@ -241,7 +241,7 @@ fn record(
 }
 
 /// The kind and canonical cache of a value the decoder read.
-pub(super) fn cache(value: &LegacyValue) -> (ValueKind, Option<ParameterValue>) {
+pub(crate) fn cache(value: &LegacyValue) -> (ValueKind, Option<ParameterValue>) {
     match value {
         LegacyValue::Length(length) => (
             ValueKind::Quantity(Quantity::LENGTH),

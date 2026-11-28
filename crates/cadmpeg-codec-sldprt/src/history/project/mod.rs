@@ -126,7 +126,8 @@ impl FeatureProjection {
                     "{} offset reference plane(s) ({unstated}) keep the side of the source plane \
                      that the sign of D1 gives: D1 is a magnitude, and neither a stored frame of \
                      the object nor the point and normal of its plane-data object states the \
-                     side.",
+                     side, or the plane's reference is a face whose plane the decoder does not \
+                     read.",
                     unstated.count(),
                 )),
             );
@@ -407,7 +408,8 @@ pub(crate) fn project_semantic_notes(
 #[derive(Debug, Default)]
 pub(super) struct OffsetSideReport {
     /// Planes at a nonzero `D1` whose side neither a stored frame nor the
-    /// point and normal of their plane-data object states.
+    /// point and normal of their plane-data object states, and planes at a
+    /// nonzero `D1` from a face whose plane the decoder does not read.
     pub(super) unstated: crate::loss::NamedCount,
     /// Planes that store a frame, or a point and normal, other than the plane
     /// placed from their source plane and `D1`, each with what differs and
@@ -982,6 +984,19 @@ pub(super) fn bind_offset_plane_references(
         let stated = take_side(feature, source, distance);
         if stated != distance {
             set_offset_distance(feature, stated);
+        }
+    }
+    for feature in features.iter() {
+        if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face { .. }),
+            distance,
+        }) = feature.evaluation.definition()
+        {
+            if !same_scalar(distance.get(), 0.0) {
+                report
+                    .unstated
+                    .push(feature.name.as_deref().unwrap_or(feature.id.as_str()));
+            }
         }
     }
     report

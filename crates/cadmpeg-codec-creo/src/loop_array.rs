@@ -105,13 +105,14 @@ pub(crate) struct LoopArrayScan {
 }
 
 fn find_named_field(data: &[u8], start: usize, end: usize, name: &[u8]) -> Option<usize> {
-    let marker_len = name.len().checked_add(3)?;
-    data.get(start..end)?
-        .windows(marker_len)
-        .position(|marker| {
-            marker[0] == 0xe0 && &marker[2..2 + name.len()] == name && marker[2 + name.len()] == 0
+    let window = data.get(start..end)?;
+    cadmpeg_core::bytes::find_iter(window, name)
+        .find(|&relative| {
+            relative >= 2
+                && window[relative - 2] == 0xe0
+                && window.get(relative + name.len()) == Some(&0)
         })
-        .map(|offset| start + offset)
+        .map(|relative| start + relative - 2)
 }
 
 fn compact_at(data: &[u8], offset: usize, end: usize) -> Option<(u32, usize)> {

@@ -554,6 +554,20 @@ fn a_record_given_up_names_its_span_and_the_sorted_records_dropped_with_it() {
 }
 
 #[test]
+fn a_record_given_up_states_what_else_it_cost_before_its_lists() {
+    let id = |text: &str| Identity::new(text).expect("an id");
+    let loss = super::GivenUpRecord::new(id("t:r:rec#7"), "carrier unsupported")
+        .costing("occurrence t:o:occ#1 states no transform")
+        .dropping([id("t:r:rec#8")])
+        .loss();
+    assert_eq!(
+        loss.message,
+        "record t:r:rec#7 given up: carrier unsupported; occurrence t:o:occ#1 states no \
+         transform; dropped=[t:r:rec#8]"
+    );
+}
+
+#[test]
 fn a_tail_gains_the_wrapper_s_dropped_and_marked_records_in_order() {
     let id = |text: &str| Identity::new(text).expect("an id");
     let mut loss = super::GivenUpRecord::new(id("t:r:rec#1"), "bad")
@@ -590,5 +604,38 @@ fn a_tail_gains_the_wrapper_s_dropped_and_marked_records_in_order() {
     assert_eq!(
         (record.as_str(), needs.as_str()),
         ("t:a:rec#1/s", "t:r:rec#1/s")
+    );
+}
+
+#[test]
+fn a_part_and_a_record_name_the_records_they_mark_sorted() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(SOURCE, &arena, &DecodePolicy::default()).expect("root");
+    let part = Part::new(
+        "synthetic",
+        "face",
+        root.child(4, 18).expect("extent"),
+        [ArenaClass::Model],
+    )
+    .dropping([identity("t:m:face#3")])
+    .marking([identity("t:m:shell#9"), identity("t:m:shell#2")]);
+    let id = part.id().expect("part id");
+    let given_up = ctx
+        .give_up_part(part, CodecError::malformed("damaged"))
+        .expect("given up");
+    assert_eq!(
+        given_up.loss().message,
+        format!(
+            "part face stream=\"\" offset=4 length=14 record={id}: malformed container: damaged; \
+             dropped=[t:m:face#3]; marked=[t:m:shell#2, t:m:shell#9]"
+        )
+    );
+    assert_eq!(
+        super::GivenUpRecord::new(identity("t:m:loop#5"), "bad")
+            .marking([identity("t:m:face#4"), identity("t:m:face#4")])
+            .loss()
+            .message,
+        "record t:m:loop#5 given up: bad; dropped=[]; marked=[t:m:face#4]"
     );
 }

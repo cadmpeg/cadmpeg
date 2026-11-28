@@ -114,6 +114,8 @@ pub(crate) enum InventorLossCode {
     FeatureEdgeSelectionNative,
     /// A fillet omits an edge set whose items all store empty index-reference lists.
     FeatureFilletEmptyEdgeSetsOmitted,
+    /// A fillet omits edge items with empty index-reference lists beside listed items of an edge set.
+    FeatureFilletEmptyEdgeItemsOmitted,
     /// An edge-treatment input edge has several matched owners of identical geometry.
     FeatureEdgeOwnerIdenticalGeometry,
     /// An input edge rests on the assumption that extra selector generators do not change it.
@@ -140,7 +142,7 @@ pub(crate) enum InventorLossCode {
     FeatureSurfaceExtrusionPolarityAssumed,
     /// A through-all surface extrusion reads its neutral extent as bounded by the selected solid body.
     FeatureSurfaceExtrusionSolidBoundAssumed,
-    /// A planar extrusion target retains its unresolved body-face identity.
+    /// An extrusion target face retains its stored surface record without a resolved body-face identity.
     FeatureExtrusionTargetFaceNative,
     /// Rectangular patterns retain construction operands outside the fixed-spacing feature form.
     FeatureRectangularPatternOperandsNative,
@@ -150,6 +152,9 @@ pub(crate) enum InventorLossCode {
     FeatureThickenOperandsNative,
     /// Thicken retains a construction form with unresolved operands.
     FeatureThickenConstructionNative,
+    /// A typed Stitch Surface keeps its Boolean controls as source properties
+    /// and assumes the tolerance role of its slot-4 parameter.
+    FeatureStitchControlsNative,
     /// Shell operations retain construction controls only natively.
     FeatureShellDefinitionPartial,
     /// Attachment type-9 modes, Boolean controls, and states have no construction map.
@@ -247,12 +252,18 @@ pub(crate) enum InventorLossCode {
     FeatureLoftResultOperandsNative,
     /// Surface-loft section selections have no complete neutral construction.
     FeatureSurfaceLoftSectionsNative,
+    /// A surface loft keeps its face-loop section selection native.
+    FeatureSurfaceLoftFaceLoopNative,
+    /// A surface loft reads part-operation value 5 as a new-body creation.
+    FeatureSurfaceLoftOperationAssumed,
     /// Inventor operations retain unresolved suppression and dependency state.
     FeatureStateUnresolved,
     /// Derived components retain external source construction only natively.
     FeatureDerivedSourceNative,
-    /// Derived result-body operands retain unresolved current-model body joins.
+    /// Derived result-body operands absent from the current model stay native: no state introduces the key, the state does not decode, or the state views passed their work cap.
     FeatureDerivedResultNative,
+    /// Stored-body Base results absent from the current model retain a history state that does not decode or passed its work cap.
+    FeatureBaseResultStateNative,
     /// Derived-part tagging has no neutral construction rule.
     FeatureDerivedTaggingNative,
     /// Tagging selection effects remain native.
@@ -336,11 +347,15 @@ pub(crate) enum InventorLossCode {
     /// The body of a Base or Split feature in its history state is not a closed
     /// manifold solid.
     FeatureHistoryBodyNotClosed,
-    /// A part passed the local cap of history bodies or of their materialization work.
+    /// A part passed the local cap of history bodies or of their materialization
+    /// work, or the decode of a history state reached a resource limit.
     FeatureHistoryBodyBounded,
     /// The Base or Split feature of a decoded history body is not a projected
     /// feature, so the body has no origin to name.
     FeatureHistoryBodyUnlinked,
+    /// The decode of the source carrier of a Base feature reached a resource
+    /// limit, so the feature keeps its native form.
+    FeatureBaseSourceBounded,
     /// Drawing records retain unresolved semantics natively.
     DrawingNativeOnly,
     /// A drawing record is outside its typed prefix form.
@@ -400,6 +415,7 @@ impl InventorLossCode {
         Self::FeatureEdgeSelectionEmptyItemsNative,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureFilletEmptyEdgeSetsOmitted,
+        Self::FeatureFilletEmptyEdgeItemsOmitted,
         Self::FeatureEdgeOwnerIdenticalGeometry,
         Self::FeatureEdgeSelectorGeneratorsAssumed,
         Self::FeatureMoveFaceSelectionNative,
@@ -418,6 +434,7 @@ impl InventorLossCode {
         Self::FeatureThreadDefinitionPartial,
         Self::FeatureThickenOperandsNative,
         Self::FeatureThickenConstructionNative,
+        Self::FeatureStitchControlsNative,
         Self::FeatureShellDefinitionPartial,
         Self::FeatureSheetMetalAttachmentControlsNative,
         Self::FeatureSheetMetalBendControlsNative,
@@ -466,9 +483,12 @@ impl InventorLossCode {
         Self::FeatureLoftOperandsNative,
         Self::FeatureLoftResultOperandsNative,
         Self::FeatureSurfaceLoftSectionsNative,
+        Self::FeatureSurfaceLoftFaceLoopNative,
+        Self::FeatureSurfaceLoftOperationAssumed,
         Self::FeatureStateUnresolved,
         Self::FeatureDerivedSourceNative,
         Self::FeatureDerivedResultNative,
+        Self::FeatureBaseResultStateNative,
         Self::FeatureDerivedTaggingNative,
         Self::FeatureTaggingNative,
         Self::FeatureCompositeOperandsNative,
@@ -511,6 +531,7 @@ impl InventorLossCode {
         Self::FeatureHistoryBodyNotClosed,
         Self::FeatureHistoryBodyBounded,
         Self::FeatureHistoryBodyUnlinked,
+        Self::FeatureBaseSourceBounded,
         Self::DrawingNativeOnly,
         Self::DrawingRecordMalformed,
         Self::PmiTargetUnresolved,
@@ -578,6 +599,7 @@ impl InventorLossCode {
             }
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureFilletEmptyEdgeSetsOmitted => "feature.fillet-empty-edge-sets-omitted",
+            Self::FeatureFilletEmptyEdgeItemsOmitted => "feature.fillet-empty-edge-items-omitted",
             Self::FeatureEdgeOwnerIdenticalGeometry => "feature.edge-owner-identical-geometry",
             Self::FeatureEdgeSelectorGeneratorsAssumed => {
                 "feature.edge-selector-generators-assumed"
@@ -594,6 +616,7 @@ impl InventorLossCode {
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
             Self::FeatureThickenConstructionNative => "feature.thicken-construction-native",
+            Self::FeatureStitchControlsNative => "feature.stitch-controls-native",
             Self::FeatureShellDefinitionPartial => "feature.shell-definition-partial",
             Self::FeatureSheetMetalAttachmentControlsNative => {
                 "feature.sheet-metal-attachment-controls-native"
@@ -664,9 +687,12 @@ impl InventorLossCode {
             Self::FeatureLoftOperandsNative => "feature.loft-operands-native",
             Self::FeatureLoftResultOperandsNative => "feature.loft-result-operands-native",
             Self::FeatureSurfaceLoftSectionsNative => "feature.surface-loft-sections-native",
+            Self::FeatureSurfaceLoftFaceLoopNative => "feature.surface-loft-face-loop-native",
+            Self::FeatureSurfaceLoftOperationAssumed => "feature.surface-loft-operation-assumed",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::FeatureDerivedSourceNative => "feature.derived-source-native",
             Self::FeatureDerivedResultNative => "feature.derived-result-native",
+            Self::FeatureBaseResultStateNative => "feature.base-result-state-native",
             Self::FeatureDerivedTaggingNative => "feature.derived-tagging-native",
             Self::FeatureTaggingNative => "feature.tagging-native",
             Self::FeatureCompositeOperandsNative => "feature.composite-operands-native",
@@ -709,6 +735,7 @@ impl InventorLossCode {
             Self::FeatureHistoryBodyNotClosed => "feature.history-body-not-closed",
             Self::FeatureHistoryBodyBounded => "feature.history-body-bounded",
             Self::FeatureHistoryBodyUnlinked => "feature.history-body-unlinked",
+            Self::FeatureBaseSourceBounded => "feature.base-source-bounded",
             Self::DrawingNativeOnly => "drawing.native-only",
             Self::DrawingRecordMalformed => "drawing.record-malformed",
             Self::PmiTargetUnresolved => "pmi.target-unresolved",
@@ -764,6 +791,7 @@ impl InventorLossCode {
             | Self::FeatureEdgeSelectionEmptyItemsNative
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureFilletEmptyEdgeSetsOmitted
+            | Self::FeatureFilletEmptyEdgeItemsOmitted
             | Self::FeatureEdgeOwnerIdenticalGeometry
             | Self::FeatureEdgeSelectorGeneratorsAssumed
             | Self::FeatureMoveFaceSelectionNative
@@ -782,6 +810,7 @@ impl InventorLossCode {
             | Self::FeatureThreadDefinitionPartial
             | Self::FeatureThickenOperandsNative
             | Self::FeatureThickenConstructionNative
+            | Self::FeatureStitchControlsNative
             | Self::FeatureDesignOperationNative
             | Self::SketchDesignConstraintNative
             | Self::FeatureShellDefinitionPartial
@@ -832,6 +861,8 @@ impl InventorLossCode {
             | Self::FeatureLoftOperandsNative
             | Self::FeatureLoftResultOperandsNative
             | Self::FeatureSurfaceLoftSectionsNative
+            | Self::FeatureSurfaceLoftFaceLoopNative
+            | Self::FeatureSurfaceLoftOperationAssumed
             | Self::FeatureProfileBodyUndecoded
             | Self::SketchConstructionUnresolved
             | Self::SketchAxisDistanceNative
@@ -854,6 +885,7 @@ impl InventorLossCode {
             | Self::FeatureStateUnresolved
             | Self::FeatureDerivedSourceNative
             | Self::FeatureDerivedResultNative
+            | Self::FeatureBaseResultStateNative
             | Self::FeatureDerivedTaggingNative
             | Self::FeatureCompositeOperandsNative
             | Self::FeatureCoilOperandsNative
@@ -864,6 +896,7 @@ impl InventorLossCode {
             | Self::FeatureHistoryBodyUndecoded
             | Self::FeatureHistoryBodyNotClosed
             | Self::FeatureHistoryBodyBounded
+            | Self::FeatureBaseSourceBounded
             | Self::FeatureHistoryBodyUnlinked
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
@@ -967,6 +1000,7 @@ mod tests {
                 "feature.edge-selection-empty-items-native",
                 "feature.edge-selection-native",
                 "feature.fillet-empty-edge-sets-omitted",
+                "feature.fillet-empty-edge-items-omitted",
                 "feature.edge-owner-identical-geometry",
                 "feature.edge-selector-generators-assumed",
                 "feature.move-face-selection-native",
@@ -985,6 +1019,7 @@ mod tests {
                 "feature.thread-definition-partial",
                 "feature.thicken-operands-native",
                 "feature.thicken-construction-native",
+                "feature.stitch-controls-native",
                 "feature.shell-definition-partial",
                 "feature.sheet-metal-attachment-controls-native",
                 "feature.sheet-metal-bend-controls-native",
@@ -1033,9 +1068,12 @@ mod tests {
                 "feature.loft-operands-native",
                 "feature.loft-result-operands-native",
                 "feature.surface-loft-sections-native",
+                "feature.surface-loft-face-loop-native",
+                "feature.surface-loft-operation-assumed",
                 "feature.state-unresolved",
                 "feature.derived-source-native",
                 "feature.derived-result-native",
+                "feature.base-result-state-native",
                 "feature.derived-tagging-native",
                 "feature.tagging-native",
                 "feature.composite-operands-native",
@@ -1078,6 +1116,7 @@ mod tests {
                 "feature.history-body-not-closed",
                 "feature.history-body-bounded",
                 "feature.history-body-unlinked",
+                "feature.base-source-bounded",
                 "drawing.native-only",
                 "drawing.record-malformed",
                 "pmi.target-unresolved",

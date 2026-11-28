@@ -1,0 +1,245 @@
+3100 0 2 0           
+14 IronCAD - 32.0 12 ACIS 32.0 NT 24 Thu Nov 26 21:17:13 2026 
+1 9.9999999999999995e-07 1e-10 
+T @77 KKF9EPJU9EHR2WWFQ9R_HVUXV8DVMG6YRAJMMCQXPAAMT6NDYC8CPM5BYDAMQC7EUCTUMR657974P 
+body $2 -1 -1 $-1 0 $3 $-1 $4 T -2.5 -2 0 2.5 2 2.5 #
+body $5 -1 -1 $-1 0 $6 $-1 $7 T -2.5 -2 0 2.5 2 2.5 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $8 $-1 $0 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @5 Part1 #
+lump $-1 -1 -1 $-1 $-1 $9 $0 T -2.5 -2 0 2.5 2 2.5 #
+transform $-1 -1 1 0 0 0 1 0 0 0 1 30 -20.000000000000004 9.9999999999999964 10 no_rotate no_reflect no_shear #
+string_attrib-name_attrib-gen-attrib $-1 -1 $10 $-1 $1 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @5 Part2 #
+lump $-1 -1 -1 $-1 $-1 $11 $1 T -2.5 -2 0 2.5 2 2.5 #
+transform $-1 -1 1 0 0 0 1 0 0 0 1 30 -20.000000000000004 34.999999999999993 10 no_rotate no_reflect no_shear #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $2 $0 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @5 Part1 #
+shell $-1 -1 -1 $-1 $-1 $-1 $12 $-1 $3 T -2.5 -2 0 2.5 2 2.5 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $5 $1 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @5 Part2 #
+shell $-1 -1 -1 $-1 $-1 $-1 $13 $-1 $6 T -2.5 -2 0 2.5 2 2.5 #
+face $14 -1 -1 $-1 $15 $16 $9 $-1 $17 reversed single T -2.5 -2 0 -2.5 2 2.5 F #
+face $18 -1 -1 $-1 $19 $20 $11 $-1 $21 reversed single T -2.5 -2 0 -2.5 2 2.5 F #
+string_attrib-name_attrib-gen-attrib $-1 -1 $22 $-1 $12 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_F 2639 #
+face $23 -1 -1 $-1 $24 $25 $9 $-1 $26 reversed single T -2.5 -2 0 2.5 -2 2.5 F #
+loop $-1 -1 -1 $-1 $-1 $27 $12 T -2.5 -2 0 -2.5 2 2.5 unknown #
+plane-surface $-1 -1 -1 $-1 -2.5 2 2.5 1 0 -0 -0 0 -100 forward_v I I I I #
+string_attrib-name_attrib-gen-attrib $-1 -1 $28 $-1 $13 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_F 2925 #
+face $29 -1 -1 $-1 $30 $31 $11 $-1 $32 reversed single T -2.5 -2 0 2.5 -2 2.5 F #
+loop $-1 -1 -1 $-1 $-1 $33 $13 T -2.5 -2 0 -2.5 2 2.5 unknown #
+plane-surface $-1 -1 -1 $-1 -2.5 2 2.5 1 0 -0 -0 0 -100 forward_v I I I I #
+rgb_color-st-attrib $-1 -1 $-1 $14 $12 2 1 2 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 0.90196079015731812 0.82745099067687988 0.7764706015586853 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $34 $-1 $15 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_F 2641 #
+face $35 -1 -1 $-1 $36 $37 $9 $-1 $38 reversed single T 2.5 -2 0 2.5 2 2.5 F #
+loop $-1 -1 -1 $-1 $-1 $39 $15 T -2.5 -2 0 2.5 -2 2.5 unknown #
+plane-surface $-1 -1 -1 $-1 -2.5 -2 2.5 0 1 0 0 -0 100 forward_v I I I I #
+coedge $-1 -1 -1 $-1 $40 $41 $42 $43 forward $16 $-1 #
+rgb_color-st-attrib $-1 -1 $-1 $18 $13 2 1 2 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 0.90196079015731812 0.82745099067687988 0.7764706015586853 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $44 $-1 $19 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_F 2927 #
+face $45 -1 -1 $-1 $46 $47 $11 $-1 $48 reversed single T 2.5 -2 0 2.5 2 2.5 F #
+loop $-1 -1 -1 $-1 $-1 $49 $19 T -2.5 -2 0 2.5 -2 2.5 unknown #
+plane-surface $-1 -1 -1 $-1 -2.5 -2 2.5 0 1 0 0 -0 100 forward_v I I I I #
+coedge $-1 -1 -1 $-1 $50 $51 $52 $53 forward $20 $-1 #
+rgb_color-st-attrib $-1 -1 $-1 $23 $15 2 1 2 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 0.90196079015731812 0.82745099067687988 0.7764706015586853 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $54 $-1 $24 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_F 2644 #
+face $55 -1 -1 $-1 $56 $57 $9 $-1 $58 reversed single T -2.5 2 0 2.5 2 2.5 F #
+loop $-1 -1 -1 $-1 $-1 $59 $24 T 2.5 -2 0 2.5 2 2.5 unknown #
+plane-surface $-1 -1 -1 $-1 2.5 -2 2.5 -1 0 0 0 0 100 forward_v I I I I #
+coedge $-1 -1 -1 $-1 $60 $61 $62 $63 forward $25 $-1 #
+coedge $-1 -1 -1 $-1 $64 $27 $61 $65 reversed $16 $-1 #
+coedge $-1 -1 -1 $-1 $27 $64 $66 $67 forward $16 $-1 #
+coedge $-1 -1 -1 $-1 $68 $62 $27 $43 reversed $69 $-1 #
+edge $70 -1 -1 $-1 $71 0 $72 0.040000000000000001 $27 $73 forward @7 unknown T -2.5 -2 0 -2.5 2 0 #
+rgb_color-st-attrib $-1 -1 $-1 $29 $19 2 1 2 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 0.90196079015731812 0.82745099067687988 0.7764706015586853 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $74 $-1 $30 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_F 2930 #
+face $75 -1 -1 $-1 $76 $77 $11 $-1 $78 reversed single T -2.5 2 0 2.5 2 2.5 F #
+loop $-1 -1 -1 $-1 $-1 $79 $30 T 2.5 -2 0 2.5 2 2.5 unknown #
+plane-surface $-1 -1 -1 $-1 2.5 -2 2.5 -1 0 0 0 0 100 forward_v I I I I #
+coedge $-1 -1 -1 $-1 $80 $81 $82 $83 forward $31 $-1 #
+coedge $-1 -1 -1 $-1 $84 $33 $81 $85 reversed $20 $-1 #
+coedge $-1 -1 -1 $-1 $33 $84 $86 $87 forward $20 $-1 #
+coedge $-1 -1 -1 $-1 $88 $82 $33 $53 reversed $89 $-1 #
+edge $90 -1 -1 $-1 $91 0 $92 0.040000000000000001 $33 $93 forward @7 unknown T -2.5 -2 0 -2.5 2 0 #
+rgb_color-st-attrib $-1 -1 $-1 $35 $24 2 1 2 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 0.90196079015731812 0.82745099067687988 0.7764706015586853 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $94 $-1 $36 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_F 2648 #
+face $95 -1 -1 $-1 $96 $69 $9 $-1 $97 reversed single T -2.5 -2 0 2.5 2 0 F #
+loop $-1 -1 -1 $-1 $-1 $98 $36 T -2.5 2 0 2.5 2 2.5 unknown #
+plane-surface $-1 -1 -1 $-1 2.5 2 2.5 0 -1 0 0 0 -100 forward_v I I I I #
+coedge $-1 -1 -1 $-1 $99 $100 $101 $102 forward $37 $-1 #
+coedge $-1 -1 -1 $-1 $103 $39 $100 $104 reversed $25 $-1 #
+coedge $-1 -1 -1 $-1 $39 $103 $40 $65 forward $25 $-1 #
+coedge $-1 -1 -1 $-1 $42 $101 $39 $63 reversed $69 $-1 #
+edge $105 -1 -1 $-1 $72 0 $106 0.050000000000000003 $39 $107 forward @7 unknown T -2.5 -2 0 2.5 -2 0 #
+coedge $-1 -1 -1 $-1 $41 $40 $108 $109 reversed $16 $-1 #
+edge $110 -1 -1 $-1 $111 -0 $72 0.025000000000000001 $61 $112 forward @7 unknown T -2.5 -2 0 -2.5 -2 2.5 #
+coedge $-1 -1 -1 $-1 $113 $98 $41 $67 reversed $57 $-1 #
+edge $114 -1 -1 $-1 $115 -0 $71 0.025000000000000001 $41 $116 forward @7 unknown T -2.5 2 0 -2.5 2 2.5 #
+coedge $-1 -1 -1 $-1 $101 $42 $98 $117 reversed $69 $-1 #
+loop $-1 -1 -1 $-1 $-1 $42 $56 T -2.5 -2 0 2.5 2 0 unknown #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $43 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2616 #
+vertex $118 -1 -1 $-1 $117 $119 #
+vertex $120 -1 -1 $-1 $63 $121 #
+straight-curve $-1 -1 -1 $-1 -2.5 2 0 0 -100 0 F 0 F 0.040000000000000001 #
+rgb_color-st-attrib $-1 -1 $-1 $45 $30 2 1 2 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 0.90196079015731812 0.82745099067687988 0.7764706015586853 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $122 $-1 $46 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_F 2934 #
+face $123 -1 -1 $-1 $124 $89 $11 $-1 $125 reversed single T -2.5 -2 0 2.5 2 0 F #
+loop $-1 -1 -1 $-1 $-1 $126 $46 T -2.5 2 0 2.5 2 2.5 unknown #
+plane-surface $-1 -1 -1 $-1 2.5 2 2.5 0 -1 0 0 0 -100 forward_v I I I I #
+coedge $-1 -1 -1 $-1 $127 $128 $129 $130 forward $47 $-1 #
+coedge $-1 -1 -1 $-1 $131 $49 $128 $132 reversed $31 $-1 #
+coedge $-1 -1 -1 $-1 $49 $131 $50 $85 forward $31 $-1 #
+coedge $-1 -1 -1 $-1 $52 $129 $49 $83 reversed $89 $-1 #
+edge $133 -1 -1 $-1 $92 0 $134 0.050000000000000003 $49 $135 forward @7 unknown T -2.5 -2 0 2.5 -2 0 #
+coedge $-1 -1 -1 $-1 $51 $50 $136 $137 reversed $20 $-1 #
+edge $138 -1 -1 $-1 $139 -0 $92 0.025000000000000001 $81 $140 forward @7 unknown T -2.5 -2 0 -2.5 -2 2.5 #
+coedge $-1 -1 -1 $-1 $141 $126 $51 $87 reversed $77 $-1 #
+edge $142 -1 -1 $-1 $143 -0 $91 0.025000000000000001 $51 $144 forward @7 unknown T -2.5 2 0 -2.5 2 2.5 #
+coedge $-1 -1 -1 $-1 $129 $52 $126 $145 reversed $89 $-1 #
+loop $-1 -1 -1 $-1 $-1 $52 $76 T -2.5 -2 0 2.5 2 0 unknown #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $53 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2902 #
+vertex $146 -1 -1 $-1 $145 $147 #
+vertex $148 -1 -1 $-1 $83 $149 #
+straight-curve $-1 -1 -1 $-1 -2.5 2 0 0 -100 0 F 0 F 0.040000000000000001 #
+rgb_color-st-attrib $-1 -1 $-1 $55 $36 2 1 2 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 0.90196079015731812 0.82745099067687988 0.7764706015586853 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $150 $-1 $56 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_F 2650 #
+face $151 -1 -1 $-1 $-1 $152 $9 $-1 $153 forward single T -2.5 -2 2.5 2.5 2 2.5 F #
+plane-surface $-1 -1 -1 $-1 -2.5 -2 0 -0 0 1 100 0 0 forward_v I I I I #
+coedge $-1 -1 -1 $-1 $66 $154 $68 $117 forward $57 $-1 #
+coedge $-1 -1 -1 $-1 $155 $59 $154 $156 reversed $37 $-1 #
+coedge $-1 -1 -1 $-1 $59 $155 $60 $104 forward $37 $-1 #
+coedge $-1 -1 -1 $-1 $62 $68 $59 $102 reversed $69 $-1 #
+edge $157 -1 -1 $-1 $106 0 $158 0.040000000000000001 $59 $159 forward @7 unknown T 2.5 -2 0 2.5 2 0 #
+coedge $-1 -1 -1 $-1 $61 $60 $160 $161 reversed $25 $-1 #
+edge $162 -1 -1 $-1 $163 -0 $106 0.025000000000000001 $100 $164 forward @7 unknown T 2.5 -2 0 2.5 -2 2.5 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $63 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2610 #
+vertex $165 -1 -1 $-1 $63 $166 #
+straight-curve $-1 -1 -1 $-1 -2.5 -2 0 100 0 0 F 0 F 0.050000000000000003 #
+coedge $-1 -1 -1 $-1 $160 $167 $64 $109 forward $152 $-1 #
+edge $168 -1 -1 $-1 $115 0 $111 0.040000000000000001 $108 $169 forward @7 unknown T -2.5 -2 2.5 -2.5 2 2.5 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $65 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2563 #
+vertex $170 -1 -1 $-1 $161 $171 #
+straight-curve $-1 -1 -1 $-1 -2.5 -2 2.5 -0 -0 -100 F -0 F 0.025000000000000001 #
+coedge $-1 -1 -1 $-1 $154 $66 $167 $172 reversed $57 $-1 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $67 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2618 #
+vertex $173 -1 -1 $-1 $172 $174 #
+straight-curve $-1 -1 -1 $-1 -2.5 2 2.5 -0 -0 -100 F -0 F 0.025000000000000001 #
+edge $175 -1 -1 $-1 $158 0 $71 0.050000000000000003 $98 $176 forward @7 unknown T -2.5 2 0 2.5 2 0 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $71 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_V 2578 #
+point $-1 -1 -1 $-1 -2.5 2 0 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $72 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_V 2571 #
+point $-1 -1 -1 $-1 -2.5 -2 0 #
+rgb_color-st-attrib $-1 -1 $-1 $75 $46 2 1 2 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 0.90196079015731812 0.82745099067687988 0.7764706015586853 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $177 $-1 $76 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_F 2936 #
+face $178 -1 -1 $-1 $-1 $179 $11 $-1 $180 forward single T -2.5 -2 2.5 2.5 2 2.5 F #
+plane-surface $-1 -1 -1 $-1 -2.5 -2 0 -0 0 1 100 0 0 forward_v I I I I #
+coedge $-1 -1 -1 $-1 $86 $181 $88 $145 forward $77 $-1 #
+coedge $-1 -1 -1 $-1 $182 $79 $181 $183 reversed $47 $-1 #
+coedge $-1 -1 -1 $-1 $79 $182 $80 $132 forward $47 $-1 #
+coedge $-1 -1 -1 $-1 $82 $88 $79 $130 reversed $89 $-1 #
+edge $184 -1 -1 $-1 $134 0 $185 0.040000000000000001 $79 $186 forward @7 unknown T 2.5 -2 0 2.5 2 0 #
+coedge $-1 -1 -1 $-1 $81 $80 $187 $188 reversed $31 $-1 #
+edge $189 -1 -1 $-1 $190 -0 $134 0.025000000000000001 $128 $191 forward @7 unknown T 2.5 -2 0 2.5 -2 2.5 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $83 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2896 #
+vertex $192 -1 -1 $-1 $83 $193 #
+straight-curve $-1 -1 -1 $-1 -2.5 -2 0 100 0 0 F 0 F 0.050000000000000003 #
+coedge $-1 -1 -1 $-1 $187 $194 $84 $137 forward $179 $-1 #
+edge $195 -1 -1 $-1 $143 0 $139 0.040000000000000001 $136 $196 forward @7 unknown T -2.5 -2 2.5 -2.5 2 2.5 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $85 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2849 #
+vertex $197 -1 -1 $-1 $188 $198 #
+straight-curve $-1 -1 -1 $-1 -2.5 -2 2.5 -0 -0 -100 F -0 F 0.025000000000000001 #
+coedge $-1 -1 -1 $-1 $181 $86 $194 $199 reversed $77 $-1 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $87 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2904 #
+vertex $200 -1 -1 $-1 $199 $201 #
+straight-curve $-1 -1 -1 $-1 -2.5 2 2.5 -0 -0 -100 F -0 F 0.025000000000000001 #
+edge $202 -1 -1 $-1 $185 0 $91 0.050000000000000003 $126 $203 forward @7 unknown T -2.5 2 0 2.5 2 0 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $91 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_V 2864 #
+point $-1 -1 -1 $-1 -2.5 2 0 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $92 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_V 2857 #
+point $-1 -1 -1 $-1 -2.5 -2 0 #
+rgb_color-st-attrib $-1 -1 $-1 $95 $56 2 1 2 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 0.90196079015731812 0.82745099067687988 0.7764706015586853 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $204 $-1 $96 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_F 2652 #
+loop $-1 -1 -1 $-1 $-1 $108 $96 T -2.5 -2 2.5 2.5 2 2.5 unknown #
+plane-surface $-1 -1 -1 $-1 -2.5 -2 2.5 -0 0 1 100 0 0 forward_v I I I I #
+coedge $-1 -1 -1 $-1 $98 $113 $99 $156 forward $57 $-1 #
+coedge $-1 -1 -1 $-1 $100 $99 $205 $206 reversed $37 $-1 #
+edge $207 -1 -1 $-1 $208 -0 $158 0.025000000000000001 $154 $209 forward @7 unknown T 2.5 2 0 2.5 2 2.5 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $102 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2612 #
+vertex $210 -1 -1 $-1 $102 $211 #
+straight-curve $-1 -1 -1 $-1 2.5 -2 0 0 100 0 F 0 F 0.040000000000000001 #
+coedge $-1 -1 -1 $-1 $205 $108 $103 $161 forward $152 $-1 #
+edge $212 -1 -1 $-1 $111 0 $163 0.050000000000000003 $160 $213 forward @7 unknown T -2.5 -2 2.5 2.5 -2 2.5 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $104 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2597 #
+vertex $214 -1 -1 $-1 $161 $215 #
+straight-curve $-1 -1 -1 $-1 2.5 -2 2.5 -0 -0 -100 F -0 F 0.025000000000000001 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $106 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_V 2573 #
+point $-1 -1 -1 $-1 2.5 -2 0 #
+coedge $-1 -1 -1 $-1 $108 $205 $113 $172 forward $152 $-1 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $109 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2608 #
+straight-curve $-1 -1 -1 $-1 -2.5 2 2.5 0 -100 0 F 0 F 0.040000000000000001 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $111 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_V 2581 #
+point $-1 -1 -1 $-1 -2.5 -2 2.5 #
+edge $216 -1 -1 $-1 $208 0 $115 0.050000000000000003 $167 $217 forward @7 unknown T -2.5 2 2.5 2.5 2 2.5 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $115 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_V 2564 #
+point $-1 -1 -1 $-1 -2.5 2 2.5 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $117 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2614 #
+straight-curve $-1 -1 -1 $-1 2.5 2 0 -100 0 0 F 0 F 0.050000000000000003 #
+rgb_color-st-attrib $-1 -1 $-1 $123 $76 2 1 2 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 0.90196079015731812 0.82745099067687988 0.7764706015586853 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $218 $-1 $124 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_F 2938 #
+loop $-1 -1 -1 $-1 $-1 $136 $124 T -2.5 -2 2.5 2.5 2 2.5 unknown #
+plane-surface $-1 -1 -1 $-1 -2.5 -2 2.5 -0 0 1 100 0 0 forward_v I I I I #
+coedge $-1 -1 -1 $-1 $126 $141 $127 $183 forward $77 $-1 #
+coedge $-1 -1 -1 $-1 $128 $127 $219 $220 reversed $47 $-1 #
+edge $221 -1 -1 $-1 $222 -0 $185 0.025000000000000001 $181 $223 forward @7 unknown T 2.5 2 0 2.5 2 2.5 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $130 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2898 #
+vertex $224 -1 -1 $-1 $130 $225 #
+straight-curve $-1 -1 -1 $-1 2.5 -2 0 0 100 0 F 0 F 0.040000000000000001 #
+coedge $-1 -1 -1 $-1 $219 $136 $131 $188 forward $179 $-1 #
+edge $226 -1 -1 $-1 $139 0 $190 0.050000000000000003 $187 $227 forward @7 unknown T -2.5 -2 2.5 2.5 -2 2.5 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $132 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2883 #
+vertex $228 -1 -1 $-1 $188 $229 #
+straight-curve $-1 -1 -1 $-1 2.5 -2 2.5 -0 -0 -100 F -0 F 0.025000000000000001 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $134 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_V 2859 #
+point $-1 -1 -1 $-1 2.5 -2 0 #
+coedge $-1 -1 -1 $-1 $136 $219 $141 $199 forward $179 $-1 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $137 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2894 #
+straight-curve $-1 -1 -1 $-1 -2.5 2 2.5 0 -100 0 F 0 F 0.040000000000000001 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $139 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_V 2867 #
+point $-1 -1 -1 $-1 -2.5 -2 2.5 #
+edge $230 -1 -1 $-1 $222 0 $143 0.050000000000000003 $194 $231 forward @7 unknown T -2.5 2 2.5 2.5 2 2.5 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $143 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_V 2850 #
+point $-1 -1 -1 $-1 -2.5 2 2.5 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $145 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2900 #
+straight-curve $-1 -1 -1 $-1 2.5 2 0 -100 0 0 F 0 F 0.050000000000000003 #
+rgb_color-st-attrib $-1 -1 $-1 $151 $96 2 1 2 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 0.90196079015731812 0.82745099067687988 0.7764706015586853 #
+coedge $-1 -1 -1 $-1 $167 $160 $155 $206 forward $152 $-1 #
+edge $232 -1 -1 $-1 $163 0 $208 0.040000000000000001 $205 $233 forward @7 unknown T 2.5 -2 2.5 2.5 2 2.5 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $156 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2620 #
+vertex $234 -1 -1 $-1 $206 $235 #
+straight-curve $-1 -1 -1 $-1 2.5 2 2.5 -0 -0 -100 F -0 F 0.025000000000000001 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $158 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_V 2575 #
+point $-1 -1 -1 $-1 2.5 2 0 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $161 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2592 #
+straight-curve $-1 -1 -1 $-1 -2.5 -2 2.5 100 0 0 F 0 F 0.050000000000000003 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $163 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_V 2584 #
+point $-1 -1 -1 $-1 2.5 -2 2.5 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $172 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2603 #
+straight-curve $-1 -1 -1 $-1 2.5 2 2.5 -100 0 0 F 0 F 0.050000000000000003 #
+rgb_color-st-attrib $-1 -1 $-1 $178 $124 2 1 2 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 0.90196079015731812 0.82745099067687988 0.7764706015586853 #
+coedge $-1 -1 -1 $-1 $194 $187 $182 $220 forward $179 $-1 #
+edge $236 -1 -1 $-1 $190 0 $222 0.040000000000000001 $219 $237 forward @7 unknown T 2.5 -2 2.5 2.5 2 2.5 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $183 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2906 #
+vertex $238 -1 -1 $-1 $220 $239 #
+straight-curve $-1 -1 -1 $-1 2.5 2 2.5 -0 -0 -100 F -0 F 0.025000000000000001 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $185 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_V 2861 #
+point $-1 -1 -1 $-1 2.5 2 0 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $188 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2878 #
+straight-curve $-1 -1 -1 $-1 -2.5 -2 2.5 100 0 0 F 0 F 0.050000000000000003 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $190 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_V 2870 #
+point $-1 -1 -1 $-1 2.5 -2 2.5 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $199 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2889 #
+straight-curve $-1 -1 -1 $-1 2.5 2 2.5 -100 0 0 F 0 F 0.050000000000000003 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $206 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2601 #
+straight-curve $-1 -1 -1 $-1 2.5 -2 2.5 0 100 0 F 0 F 0.040000000000000001 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $208 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_V 2567 #
+point $-1 -1 -1 $-1 2.5 2 2.5 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $220 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_E 2887 #
+straight-curve $-1 -1 -1 $-1 2.5 -2 2.5 0 100 0 F 0 F 0.040000000000000001 #
+string_attrib-name_attrib-gen-attrib $-1 -1 $-1 $-1 $222 2 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 @17 ATTRIB_XACIS_NAME @13 IC_LWR_V 2853 #
+point $-1 -1 -1 $-1 2.5 2 2.5 #
+End-of-ACIS-data 

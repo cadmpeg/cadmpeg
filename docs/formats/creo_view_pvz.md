@@ -188,7 +188,7 @@ A placement maps the child definition coordinate system into the parent definiti
 
 The definitions and child occurrences form a directed acyclic graph. Exactly one definition is not the target of a child occurrence; it is the root. Several occurrences can target one definition, which then has several instances. A world transform of an occurrence path is the product of the placements from the root to the leaf.
 
-The number of occurrence paths can grow exponentially with the depth of the graph. When the decoder reaches its occurrence limit, it gives up the occurrence at which it stops. The loss lists as dropped each other occurrence that the walk reaches and does not place.
+The number of occurrence paths can grow exponentially with the depth of the graph. When the decoder reaches its occurrence limit, it gives up the occurrence at which it stops, by the occurrence id that the occurrence would hold. The loss lists as dropped, by the same ids, each other occurrence that the expansion reaches and does not place, root placements included.
 
 When the package carries illustrations, the root is a definition of type `0x01` (§3.12), and one of its child occurrences places the top model definition.
 

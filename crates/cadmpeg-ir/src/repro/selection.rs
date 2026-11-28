@@ -158,6 +158,7 @@ pub fn select(
         .as_ref()
         .map(crate::document::SourceMeta::repro_header);
     selected.tolerances = document.tolerances;
+    selected.up_axis = document.up_axis;
     selected.geometry = document.geometry.repro_select(&ids);
     selected.model = document.model.repro_select(&ids);
     selected.design = document.design.repro_select(&ids);

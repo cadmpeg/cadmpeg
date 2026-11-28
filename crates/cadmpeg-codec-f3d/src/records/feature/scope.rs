@@ -1131,7 +1131,7 @@ pub(crate) struct DesignParameterScope {
     /// Timeline state bytes and lane flags of the tail.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) tail_flags: Option<DesignScopeTailFlags>,
-    /// Suppression flag of the 88-byte Thread companion tail.
+    /// Suppression from a Thread companion or a reciprocal Hole tail.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) companion_suppressed: Option<crate::records::identity::Located<bool>>,
     /// Material side of a sheet-metal `Face` or `BaseFlange` scope; the offset
@@ -1302,7 +1302,7 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_tail_flags"
     )]
     tail_flags: Option<DesignScopeTailFlags>,
-    /// Suppression flag of the 88-byte Thread companion tail.
+    /// Suppression from a Thread companion or a reciprocal Hole tail.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -2917,14 +2917,21 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.companion_suppressed.is_some_and(|flag| {
             use crate::layout::thread_hole_companion_tail as companion;
             let tail = admitted.feature_ordinal_offset;
-            admitted.kind() != DesignFeatureKind::Thread
-                || wire.tail_flags.is_some()
-                || admitted.paired_byte_offset.checked_sub(tail)
-                    != Some(u64_from_index(companion::LEN))
-                || tail.checked_add(u64_from_index(companion::FLAGS)) != Some(flag.offset)
+            let valid_offset = match admitted.kind() {
+                DesignFeatureKind::Thread => {
+                    admitted.paired_byte_offset.checked_sub(tail)
+                        == Some(u64_from_index(companion::LEN))
+                        && tail.checked_add(u64_from_index(companion::FLAGS)) == Some(flag.offset)
+                }
+                DesignFeatureKind::Hole => admitted
+                    .reciprocal_hole_suppression_offsets()
+                    .is_some_and(|offsets| offsets.contains(&flag.offset)),
+                _ => false,
+            };
+            wire.tail_flags.is_some() || !valid_offset
         }) {
             return Err(DesignParameterScopePayloadError(
-                "companion_suppressed outside a Thread companion tail".into(),
+                "companion_suppressed outside a Thread companion or reciprocal Hole flag".into(),
             ));
         }
         admitted.tail_flags = wire.tail_flags;
@@ -3672,6 +3679,38 @@ impl DesignParameterScope {
     }
     pub(crate) fn history_state_id(&self) -> Option<i64> {
         self.history_state_id
+    }
+    /// The byte positions of the two suppression flags of a reciprocal Hole.
+    pub(crate) fn reciprocal_hole_suppression_offsets(&self) -> Option<[u64; 2]> {
+        use crate::layout::reciprocal_hole_tail as tail;
+        if self.kind() != DesignFeatureKind::Hole {
+            return None;
+        }
+        let label_bytes = self.label.as_ref().map_or(0, |label| {
+            u64_from_index(label.value.encode_utf16().count() * 2)
+        });
+        let start = self.feature_ordinal_offset.checked_add(label_bytes)?;
+        let member_count = match (
+            self.label.is_some(),
+            self.paired_byte_offset.checked_sub(start)?,
+        ) {
+            (false, 98 | 108) => 1,
+            (false, 109 | 119) | (true, 110 | 120) => 2,
+            _ => return None,
+        };
+        let first =
+            start.checked_add(u64_from_index(tail::SELF_REFERENCE + 11 * member_count + 1))?;
+        let second = self
+            .previous_history_state_id_offset?
+            .checked_add(20 + 11)?;
+        Some([first, second])
+    }
+
+    /// The suppression that the scope tail stores.
+    pub(crate) fn stored_suppression(&self) -> Option<bool> {
+        self.tail_flags
+            .map(|flags| flags.suppressed())
+            .or(self.companion_suppressed.as_ref().map(|flag| flag.value))
     }
     pub(crate) fn previous_history_state_id(&self) -> Option<i64> {
         self.previous_history_state_id

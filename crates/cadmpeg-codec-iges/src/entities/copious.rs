@@ -192,6 +192,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
+    limits: super::geometry::ProjectionLimits,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<CopiousProjectionOutcome, CodecError> {
@@ -207,7 +208,7 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
     let mut free_vertices = Vec::new();
-    let planar_pairs = super::geometry::PlanarPairBudget::new();
+    let planar_pairs = super::geometry::PlanarPairBudget::new(limits);
 
     for entry in directory
         .iter()
