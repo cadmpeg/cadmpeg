@@ -549,3 +549,33 @@ fn optional_sketch_response_preserves_existing_default_plane_output() {
     assert_eq!(expected, actual);
     crate::test_support::review::validate(updated);
 }
+
+#[test]
+fn accounting_reports_only_the_unused_datum_control() {
+    let bytes = changed(&offset_bundle(false, "OFFSET"), |path, value| {
+        if path.ends_with("features.json") {
+            value["features"][0]["parameters"]
+                .as_array_mut()
+                .unwrap()
+                .extend([
+                    json!({"parameterId":"futureFlag","value":true}),
+                    json!({"parameterId":"flipNormal","value":false}),
+                ]);
+        }
+    });
+    let (model, report) = read(&bytes).unwrap();
+    assert_eq!(kinds(&model)[0], "datum_offset_plane");
+    let losses: Vec<_> = report
+        .losses()
+        .iter()
+        .filter(|loss| {
+            loss.code.as_deref() == Some("onshape/history.parameter-not-projected")
+                && loss.detail.ends_with("; subject: Raised datum")
+        })
+        .map(|loss| loss.detail.as_str())
+        .collect();
+    assert_eq!(
+        losses,
+        ["parameter futureFlag has no projected design field; subject: Raised datum"]
+    );
+}

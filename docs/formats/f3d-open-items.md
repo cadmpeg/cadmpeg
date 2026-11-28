@@ -124,9 +124,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DR-1005. Live flags of duplicate scope envelopes
 
-**Question.** Same-index scope envelopes can differ only in their tail state bytes or in the suppression flags of their Thread companion tails, with no envelope bound to an ASM transition, or only in their tail state bytes and their no-result and rolled-back flags, with no envelope bound to an ASM transition and no single envelope at a primary record frame. Which envelope's tail state is live?
+**Question.** Same-index scope envelopes can differ only in their tail state bytes or in the suppression flags of their Thread companion or reciprocal Hole tails, with no envelope bound to an ASM transition, or only in their tail state bytes and their no-result and rolled-back flags, with no envelope bound to an ASM transition and no single envelope at a primary record frame. Which envelope's tail state is live?
 
-**Known.** `f3d.md` §3.1 "Same-index scope envelopes with the same logical payload" selects the authoritative envelope by a unique ASM transition, by equivalence of all logical payloads, or by a unique primary record frame. The decoder keeps the later envelope in stream order, also over a unique primary record frame when only the state bytes or the Thread companion suppression flags differ. Where that envelope stores flags, it keeps them. Where it stores none, it keeps the flags of the latest earlier envelope that stores them, with their byte offsets in that envelope. For each such record it charges one `feature.scope-envelope-superseded` note that names the scope, the envelope that supplied the kept flags and their values, and the byte offset and flags of each other envelope whose flags differ from the kept flags.
+**Known.** `f3d.md` §3.1 "Same-index scope envelopes with the same logical payload" selects the authoritative envelope by a unique ASM transition, by equivalence of all logical payloads, or by a unique primary record frame. The decoder keeps the later envelope in stream order, also over a unique primary record frame when only the state bytes or the suppression flags of a Thread companion or reciprocal Hole tail differ. Where that envelope stores flags, it keeps them. Where it stores none, it keeps the feature item tail flags of the latest earlier envelope that stores them, with their byte offsets in that envelope. For each such record it charges one `feature.scope-envelope-superseded` note that names the scope, the envelope that supplied the kept flags and their values, and the byte offset and flags of each other envelope whose flags differ from the kept flags.
 
 **Need.** A field or an order rule that selects the live envelope. The state bytes decide whether the feature is suppressed and the rolled-back flag decides where the timeline marker stands, so the selection changes the evaluated design.
 
@@ -3408,7 +3408,7 @@ The bounded-face programs of these groups have 13, 23, and 12 nodes. The first t
 
 **Question.** Where does a Sketch renamed in the timeline store its name?
 
-**Known.** The placement reader in `design/decode/sketch.rs` reads the display-name slot in its empty form. The stored Sketch placements hold the slot in its empty form. The projected Feature name joins the stored scope kind spelling, a space, and the feature ordinal. A planar or spatial Sketch takes this name when one placement in the same stream carries its scope, one Feature with a non-empty name projects from that scope, and one scope selects the sketch.
+**Known.** The placement reader in `design/decode/sketch.rs` reads the display-name slot in its empty form. The stored Sketch placements hold the slot in its empty form. The projected Feature name is the stored scope kind spelling directly followed by the stored feature ordinal. A planar or spatial Sketch takes this name when one placement in the same stream carries its scope, one Feature with a non-empty name projects from that scope, and one scope selects the sketch.
 
 **Need.** A design with a Sketch renamed in the timeline.
 
