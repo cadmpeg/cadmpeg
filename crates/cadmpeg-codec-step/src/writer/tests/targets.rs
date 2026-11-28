@@ -286,7 +286,7 @@ fn inherit_writes_a_step_source_that_records_no_dialect_as_the_default() {
     let mut ir = CadIr::empty();
     ir.source = Some(
         json::from_value(cadmpeg_core::json!({
-            "identity": {"kind": "unclassified", "format": crate::dialect::FORMAT},
+            "identity": {"kind": "unclassified", "format": crate::dialect::registry_ids::FORMAT},
             "attributes": {},
         }))
         .unwrap(),

@@ -173,7 +173,7 @@ fn f3z_decode_retains_the_root_kernel_row_and_loss() {
         .into_iter()
         .flat_map(cadmpeg_core::dialect::DialectLayers::iter)
         .any(|matched| {
-            matched.format() == crate::dialect::FORMAT
+            matched.format() == crate::dialect::registry_ids::FORMAT
                 && matched.dialect().as_str() == "f3d:f3z-multi-document"
         }));
     assert!(
@@ -225,7 +225,9 @@ fn f3z_decode_retains_member_identity_and_unverified_loss() {
         .dialects()
         .expect("the F3Z report is classified")
         .iter()
-        .find(|matched| matched.format() == crate::dialect::FORMAT && matched.instance().is_some())
+        .find(|matched| {
+            matched.format() == crate::dialect::registry_ids::FORMAT && matched.instance().is_some()
+        })
         .expect("the member F3D identity is an extra layer");
     assert_eq!(member.instance(), Some("root.f3d"));
     assert_eq!(member.dialect().as_str(), "f3d:unknown");
@@ -269,7 +271,7 @@ fn f3z_kernel_loss_is_derived_from_its_archive_member_layer() {
         .dialects()
         .expect("the report is classified")
         .iter()
-        .filter(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
+        .filter(|matched| matched.format() == cadmpeg_asm::dialect::registry_ids::FORMAT)
         .collect::<Vec<_>>();
     assert_eq!(kernel_layers.len(), 1);
     assert_eq!(kernel_layers[0].instance(), Some("comp.f3d"));
@@ -323,7 +325,7 @@ fn an_unreferenced_unverified_member_still_charges_its_dialect_loss_once() {
         .expect("the F3Z report is classified")
         .iter()
         .find(|matched| {
-            matched.format() == crate::dialect::FORMAT
+            matched.format() == crate::dialect::registry_ids::FORMAT
                 && matched.instance() == Some("unreferenced.f3d")
         })
         .expect("the unreferenced member remains in the final layer set");
@@ -338,7 +340,7 @@ fn an_unreferenced_unverified_member_still_charges_its_dialect_loss_once() {
         .expect("the F3Z report is classified")
         .iter()
         .find(|matched| {
-            matched.format() == cadmpeg_asm::dialect::FORMAT
+            matched.format() == cadmpeg_asm::dialect::registry_ids::FORMAT
                 && matched.instance() == Some("unparseable.f3d")
         })
         .expect("the unparseable member remains a refused kernel layer");
