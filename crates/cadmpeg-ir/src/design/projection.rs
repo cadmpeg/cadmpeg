@@ -4,7 +4,7 @@
 //! The projection reads no source byte: it restates records the decoder
 //! already read. A projection that fails is given up as one part (§3.3 of
 //! the CADIR v11 specification): the design layer stays as it was before the
-//! projection, and one `record.unreadable` loss names the layer.
+//! projection, and one `record.undecoded` loss names the layer.
 
 use std::collections::BTreeSet;
 
@@ -15,12 +15,17 @@ use crate::annotations::{AnnotationBuilder, AnnotationKey, ExactnessNote};
 use crate::document::CadIr;
 use crate::provenance::Exactness;
 use crate::report::loss::LossNote;
-use crate::report::Severity;
-use crate::unknown::part::record_unreadable_kind;
+use crate::unknown::part::Cause;
 
-use self::fields::{FeatureField, Field, ModelFeatureField, ModelParameterField, ParameterField};
+use self::fields::{
+    ArrangementField, FeatureField, Field, ModelConfigurationField, ModelFeatureField,
+    ModelParameterField, ParameterField,
+};
 
 pub mod fields;
+pub mod restated;
+pub mod sketch;
+pub mod spatial_sketch;
 
 /// Runs `project`, the `codec` decoder's projection of the v11 design layer
 /// of `ir`, as one part.
@@ -28,13 +33,17 @@ pub mod fields;
 /// Where `project` fails with an error that does not end the session, `ir`
 /// holds the design records and product definitions it held before the
 /// projection, `losses` holds the losses it held before the projection and
-/// one `record.unreadable` that names the layer. The geometry and the model
-/// records stand.
+/// one `record.undecoded` that names the layer, and the model holds the
+/// restatements it held before the projection. The geometry and the model
+/// records stand. Where `project` succeeds, each design feature that
+/// restates a model feature under its identity states the fields it leaves
+/// out ([`restated::restate_features`]).
 ///
 /// # Errors
 ///
 /// An error that ends the session: a refusal in force, a Session-scoped
-/// resource refusal, or an I/O error.
+/// resource refusal, or an I/O error; and a resource refusal while the
+/// restatements are stated.
 pub fn project_layer(
     ctx: &DecodeContext<'_>,
     codec: &str,
@@ -44,18 +53,18 @@ pub fn project_layer(
 ) -> Result<(), CodecError> {
     let design = ir.design.clone();
     let definitions = ir.model.product_definitions.clone();
+    let restated = ir.model.restated.clone();
     let reported = losses.len();
     if let Err(error) = ctx.run_part(|| project(ir, losses))? {
         ir.design = design;
         ir.model.product_definitions = definitions;
+        ir.model.restated = restated;
         losses.truncate(reported);
         losses.push(
-            LossNote::new(
-                record_unreadable_kind(),
-                format!("{codec} v11 design layer is not stated: {error}"),
-            )
-            .with_severity(Severity::Error),
+            Cause::Undecoded.note(format!("{codec} v11 design layer is not stated: {error}")),
         );
+    } else {
+        restated::restate_features(ctx, ir)?;
     }
     Ok(())
 }
@@ -69,6 +78,12 @@ pub struct Restatement {
     pub feature: fn(FeatureField) -> &'static [ModelFeatureField],
     /// The model parameter fields each design parameter field is built from.
     pub parameter: fn(ParameterField) -> &'static [ModelParameterField],
+    /// The model configuration fields each field of an arrangement that
+    /// restates the configuration is built from.
+    pub arrangement: fn(ArrangementField) -> &'static [ModelConfigurationField],
+    /// The fields of each model configuration that an arrangement of a
+    /// scope restates which the scope's `active_arrangements` is built from.
+    pub active_arrangements: &'static [ModelConfigurationField],
 }
 
 /// The less exact of `left` and `right`, in the declared order of
@@ -85,6 +100,15 @@ fn least_exact(left: Exactness, right: Exactness) -> Exactness {
     } else {
         left
     }
+}
+
+/// The mark of the model field `key` of `note`: the least exact of its own
+/// mark (else the entity exactness) and the marks on its sub-paths.
+fn model_mark(note: &ExactnessNote, key: &str) -> Exactness {
+    sub_marks(note, key).map(|(_, exactness)| exactness).fold(
+        note.fields().get(key).copied().unwrap_or(note.entity()),
+        least_exact,
+    )
 }
 
 /// The marks of `note` on sub-paths of `field`, with their path.
@@ -119,13 +143,7 @@ fn restated_fields<D: Field, M: Field>(
     inputs: fn(D) -> &'static [M],
 ) -> Vec<(String, Exactness)> {
     let entity = note.entity();
-    let input = |model: &M| {
-        let key = model.key();
-        sub_marks(note, key).map(|(_, exactness)| exactness).fold(
-            note.fields().get(key).copied().unwrap_or(entity),
-            least_exact,
-        )
-    };
+    let input = |model: &M| model_mark(note, model.key());
     let mut overrides = Vec::new();
     for (field, stated) in stated {
         if !stated {
@@ -170,10 +188,17 @@ fn restated_fields<D: Field, M: Field>(
     overrides
 }
 
-/// Restates onto each design feature and parameter of `ir` the exactness of
-/// the model record with its id, through the model fields `restatement`
-/// names for each design field. The CADIR wire carries the design record in
-/// place of the model record (§10).
+/// Restates onto each design feature, parameter and arrangement of `ir` the
+/// exactness of the model feature, parameter or configuration with its id,
+/// through the model fields `restatement` names for each design field. The
+/// CADIR wire carries the design record in place of the model record (§10).
+///
+/// Each scope's `active_arrangements` takes the least exact mark of the
+/// fields `restatement.active_arrangements` names of each configuration that
+/// an arrangement of the scope restates. Where that mark is less exact than
+/// the scope's key, the id of its definition, it is stated there as the mark
+/// of the field `active_arrangements` (interim: §3.2 does not say which of
+/// the two records with that id a field path names).
 ///
 /// # Errors
 ///
@@ -195,7 +220,38 @@ pub fn restate_exactness(
                 .map(|parameter| parameter.id.as_str()),
         )
         .collect::<BTreeSet<_>>();
+    let configurations = ir
+        .model
+        .configurations
+        .iter()
+        .map(|configuration| configuration.id.as_str())
+        .collect::<BTreeSet<_>>();
     let exactness = annotations.annotations().exactness();
+    let mut scopes = Vec::new();
+    for scope in &ir.design.scopes {
+        let mark = ir
+            .design
+            .arrangements
+            .iter()
+            .filter(|arrangement| {
+                arrangement.scope == scope.definition
+                    && configurations.contains(arrangement.id.as_str())
+            })
+            .flat_map(|arrangement| {
+                let note = exactness.get(arrangement.id.as_str());
+                restatement.active_arrangements.iter().map(move |field| {
+                    note.map_or(Exactness::ByteExact, |note| model_mark(note, field.key()))
+                })
+            })
+            .reduce(least_exact);
+        let key = AnnotationKey::from(&scope.definition);
+        let entity = exactness
+            .get(key.as_str())
+            .map_or(Exactness::ByteExact, ExactnessNote::entity);
+        if let Some(mark) = mark.filter(|mark| least_exact(*mark, entity) != entity) {
+            scopes.push((key, mark));
+        }
+    }
     let mut restated = Vec::new();
     for feature in &ir.design.features {
         if let (true, Some(note)) = (
@@ -220,6 +276,23 @@ pub fn restate_exactness(
             restated.push((AnnotationKey::from(&parameter.id), note.entity(), overrides));
         }
     }
+    for arrangement in &ir.design.arrangements {
+        if let (true, Some(note)) = (
+            configurations.contains(arrangement.id.as_str()),
+            exactness.get(arrangement.id.as_str()),
+        ) {
+            let overrides = restated_fields(
+                note,
+                ArrangementField::stated(arrangement),
+                restatement.arrangement,
+            );
+            restated.push((
+                AnnotationKey::from(&arrangement.id),
+                note.entity(),
+                overrides,
+            ));
+        }
+    }
     let keys = restated
         .iter()
         .map(|(key, ..)| key.as_str())
@@ -230,6 +303,9 @@ pub fn restate_exactness(
         for (field, exactness) in overrides {
             annotations.field_exactness(&key, field, exactness)?;
         }
+    }
+    for (key, mark) in scopes {
+        annotations.field_exactness(&key, "active_arrangements", mark)?;
     }
     Ok(())
 }

@@ -1603,13 +1603,15 @@ pub(crate) fn project_relation_solved_line_geometry(
                 let first_ref = markers[0].id().to_string();
                 let second_ref = markers[1].id().to_string();
                 let endpoint_refs = vec![first_ref, second_ref];
-                entities.push(
-                    SketchEntity::new(id, sketch_id, line.geometry.clone())
-                        .with_construction(line.construction)
-                        .with_native_ref(native_ref)
-                        .with_geometry_ref(Some(geometry_ref))
-                        .with_endpoint_refs(endpoint_refs),
-                );
+                let mut entity = SketchEntity::new(id, sketch_id, line.geometry.clone())
+                    .with_construction(line.construction)
+                    .with_native_ref(native_ref)
+                    .with_geometry_ref(Some(geometry_ref))
+                    .with_endpoint_refs(endpoint_refs);
+                if line.construction_read() {
+                    entity.read_construction(line.construction);
+                }
+                entities.push(entity);
             }
         }
     }
@@ -2767,6 +2769,31 @@ pub(crate) fn project_relation_bindings(
     parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    project_relation_bindings_with_cache(
+        ctx,
+        constraints,
+        sketches,
+        features,
+        sketch_entities,
+        parameters,
+        super::lane_cache::CachedLanes {
+            lanes,
+            context: super::lane_cache::CachedLaneContext::default(),
+        },
+    )
+}
+
+pub(crate) fn project_relation_bindings_with_cache(
+    ctx: &DecodeContext<'_>,
+    constraints: &mut Vec<SketchConstraint>,
+    sketches: &[cadmpeg_ir::sketches::Sketch],
+    features: &[cadmpeg_ir::features::Feature],
+    sketch_entities: &[SketchEntity],
+    parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
+    input_lanes: super::lane_cache::CachedLanes<'_, '_, '_>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let lanes = input_lanes.lanes;
+    let cache = input_lanes.context.cache;
     let mut sketches_by_feature = HashMap::new();
     for feature in features {
         let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -2789,7 +2816,8 @@ pub(crate) fn project_relation_bindings(
     for marker in lanes.iter().flat_map(|lane| &lane.sketch_entities) {
         markers_by_id.insert(marker.id(), marker);
     }
-    let relation_parameters = owned_relation_parameters(features, parameters, lanes);
+    let relation_parameters =
+        owned_relation_parameters_with_cache(cache, features, parameters, lanes);
     let entity_sketches = sketch_entities
         .iter()
         .map(|entity| (entity.id().as_str(), &entity.sketch))
@@ -2810,12 +2838,25 @@ pub(crate) fn project_relation_bindings(
         }
     }
     for lane in lanes {
+        let cached = cache.and_then(|cache| cache.get(lane));
         let lane_key = lane
             .id
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
-        let ids = LaneIds::new(lane);
-        let curve_markers = curve_record_markers(lane);
+        let owned_ids;
+        let ids = if let Some(cached) = cached {
+            cached.lane_ids()
+        } else {
+            owned_ids = LaneIds::new(lane);
+            &owned_ids
+        };
+        let owned_curve_markers;
+        let curve_markers = if let Some(cached) = cached {
+            cached.curve_markers()
+        } else {
+            owned_curve_markers = curve_record_markers(lane);
+            &owned_curve_markers
+        };
         for relation in &lane.relation_instances {
             let existing = constraints_by_native_ref.get(relation.id.as_str()).copied();
             if existing.is_some_and(|index| {
@@ -2928,8 +2969,7 @@ pub(crate) fn project_relation_bindings(
                     operands,
                 }
             };
-            let has_display_scalar =
-                relation_display_scalar_for_parameter(relation, &ids).is_some();
+            let has_display_scalar = relation_display_scalar_for_parameter(relation, ids).is_some();
             let Ok(definition) =
                 cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
             else {
@@ -3056,7 +3096,8 @@ pub(crate) fn project_relation_bindings(
             }
         }
     }
-    super::relation_table::project_relation_tables(
+    super::relation_table::project_relation_tables_with_cache(
+        cache,
         constraints,
         &sketches_by_feature,
         sketch_entities,
@@ -3066,6 +3107,15 @@ pub(crate) fn project_relation_bindings(
 }
 
 pub(crate) fn owned_relation_parameters<'a>(
+    features: &[cadmpeg_ir::features::Feature],
+    parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
+    lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
+) -> HashMap<String, Option<cadmpeg_ir::features::ParameterId>> {
+    owned_relation_parameters_with_cache(None, features, parameters, lanes)
+}
+
+fn owned_relation_parameters_with_cache<'a>(
+    cache: Option<&super::lane_cache::LaneScanCache<'_>>,
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
     lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
@@ -3089,9 +3139,20 @@ pub(crate) fn owned_relation_parameters<'a>(
         parameters_by_scalar.insert(native_ref, parameter);
     }
     let named = RelationParameters::new(features, parameters);
+    let lane_id_storage = lane_refs
+        .iter()
+        .map(|lane| match cache.and_then(|cache| cache.get(lane)) {
+            Some(cached) => Ok(cached.lane_ids()),
+            None => Err(LaneIds::new(lane)),
+        })
+        .collect::<Vec<_>>();
     let lane_ids = lane_refs
         .iter()
-        .map(|lane| (*lane, LaneIds::new(lane)))
+        .zip(&lane_id_storage)
+        .map(|(lane, slot)| match slot {
+            Ok(ids) => (*lane, *ids),
+            Err(ids) => (*lane, ids),
+        })
         .collect::<Vec<_>>();
     let mut claimed = HashSet::new();
     for (lane, ids) in &lane_ids {
@@ -3158,13 +3219,13 @@ pub(crate) fn owned_relation_parameters<'a>(
 /// A payload can repeat an id. The `first_` lookups give the earliest record
 /// with it, as a forward search does; the `last_` lookups give the latest, as
 /// a map collected in lane order does.
-pub(super) struct LaneIds<'a> {
+pub(crate) struct LaneIds<'a> {
     scalars: HashMap<&'a str, [&'a FeatureInputScalar; 2]>,
     names: HashMap<&'a str, [&'a str; 2]>,
 }
 
 impl<'a> LaneIds<'a> {
-    pub(super) fn new(lane: &'a FeatureInputLane) -> Self {
+    pub(crate) fn new(lane: &'a FeatureInputLane) -> Self {
         fn first_and_last<'a, T: Copy>(
             records: impl Iterator<Item = (&'a str, T)>,
         ) -> HashMap<&'a str, [T; 2]> {

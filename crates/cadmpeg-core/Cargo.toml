@@ -26,6 +26,8 @@ flate2.workspace = true
 ruzstd.workspace = true
 memchr.workspace = true
 roxmltree.workspace = true
+self_cell.workspace = true
+xmlparser.workspace = true
 serde.workspace = true
 schemars = { workspace = true, optional = true }
 serde_json.workspace = true
@@ -34,6 +36,10 @@ thiserror.workspace = true
 
 [dev-dependencies]
 toml.workspace = true
+
+[[test]]
+name = "schema_derives"
+required-features = ["schema"]
 
 [lints]
 workspace = true

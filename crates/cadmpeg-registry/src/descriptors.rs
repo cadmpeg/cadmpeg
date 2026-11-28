@@ -185,6 +185,7 @@ pub(crate) enum FormatKind {
         feature = "sat",
         feature = "pvz",
         feature = "edrawings",
+        feature = "alibre",
         feature = "usd",
         feature = "onshape"
     ))]
@@ -259,6 +260,7 @@ impl FormatDescriptor {
                 feature = "sat",
                 feature = "pvz",
                 feature = "edrawings",
+                feature = "alibre",
                 feature = "usd",
                 feature = "onshape"
             ))]
@@ -288,6 +290,7 @@ impl FormatDescriptor {
                 feature = "sat",
                 feature = "pvz",
                 feature = "edrawings",
+                feature = "alibre",
                 feature = "usd",
                 feature = "onshape"
             ))]
@@ -314,6 +317,7 @@ impl FormatDescriptor {
                 feature = "sat",
                 feature = "pvz",
                 feature = "edrawings",
+                feature = "alibre",
                 feature = "usd",
                 feature = "onshape"
             ))]
@@ -332,6 +336,7 @@ impl FormatDescriptor {
     feature = "sat",
     feature = "pvz",
     feature = "edrawings",
+    feature = "alibre",
     feature = "onshape"
 ))]
 macro_rules! reader {
@@ -496,6 +501,10 @@ reader!(
 reader!(PVZ, FormatId::new("pvz"), &["pvz"], || Box::new(
     cadmpeg_codec_pvz::PvzCodec
 ));
+#[cfg(feature = "alibre")]
+reader!(ALIBRE, FormatId::new("alibre"), &["ad_prt"], || Box::new(
+    cadmpeg_codec_alibre::AlibreCodec
+));
 #[cfg(feature = "edrawings")]
 reader!(
     EDRAWINGS,
@@ -571,6 +580,8 @@ pub(crate) static FORMAT_DESCRIPTORS: &[&FormatDescriptor] = &[
     &PVZ,
     #[cfg(feature = "edrawings")]
     &EDRAWINGS,
+    #[cfg(feature = "alibre")]
+    &ALIBRE,
     #[cfg(feature = "usd")]
     &USD,
     #[cfg(feature = "onshape")]

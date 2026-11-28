@@ -17,6 +17,8 @@ pub(crate) mod xform;
 
 use std::collections::BTreeSet;
 
+use cadmpeg_ir::unknown::part::Cause;
+
 use crate::stage::{Prim, Resolved};
 use crate::text::value::{typed, Typed};
 
@@ -34,6 +36,17 @@ impl Issues {
     pub(crate) fn malformed(&mut self, prim: &Prim<'_>, name: &str, reason: impl Into<String>) {
         self.malformed
             .push((format!("{}.{name}", prim.path), reason.into()));
+    }
+
+    /// Why reads that began when `since` values were malformed found no
+    /// value that a record needs: unreadable where they recorded a malformed
+    /// value, undecoded where the prim states none.
+    pub(crate) fn cause_since(&self, since: usize) -> Cause {
+        if self.malformed.len() > since {
+            Cause::Unreadable
+        } else {
+            Cause::Undecoded
+        }
     }
 }
 

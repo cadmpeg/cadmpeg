@@ -94,9 +94,6 @@ pub(in super::super) fn build_report(
         .filter(|s| s.role() == SectionRole::PsbGeometry)
         .count();
     let mut losses = Vec::new();
-    for expansion in &scan.framing.expansion_losses {
-        losses.push(CreoLossCode::CompressedSectionUnexpanded.note(expansion.message.clone()));
-    }
     losses.extend(scan.framing.local_work_cap_losses.iter().cloned());
     for offset in &scan.framing.unowned_physical_geometry {
         push_report_loss(
@@ -173,10 +170,22 @@ pub(in super::super) fn build_report(
         }
     }
 
-    push_legacy_value_losses(&mut losses, &coverage);
+    let unresolved_string_array_rows = match scan.framing.layout.legacy_ascii() {
+        Some(legacy) => legacy
+            .persistence
+            .unresolved_string_value_count
+            .checked_sub(legacy.persistence.unread_string_scalars.len())
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed(
+                    "the unread legacy type-10 scalar rows outnumber the unresolved type-10 rows",
+                )
+            })?,
+        None => 0,
+    };
+    push_legacy_value_losses(&mut losses, &coverage, unresolved_string_array_rows);
     push_unread_legacy_rows(&mut losses, scan)?;
 
-    push_brep_transfer_note(&mut losses, brep_diagnostics, geom_sections)?;
+    push_brep_transfer_note(&mut losses, brep_diagnostics, &ir.geometry, geom_sections)?;
 
     push_carrier_transfer_notes(&mut losses, scan, &coverage, container_only);
     push_structural_layer_notes(&mut losses, scan);

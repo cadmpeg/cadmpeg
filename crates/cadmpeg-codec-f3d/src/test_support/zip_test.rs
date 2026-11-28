@@ -123,7 +123,13 @@ pub(crate) fn f3d_with_smbh_and_manifest_version(smbh: &[u8], version: &str) -> 
 pub(crate) fn with_manifest_version(archive: &[u8], version: &str) -> Vec<u8> {
     use std::io::Read;
 
-    let archive_len = u64::try_from(archive.len()).unwrap();
+    let session = cadmpeg_core::decode::test_support::desktop_decode_context();
+    session
+        .charge_input(
+            cadmpeg_core::decode::u64_from_index(archive.len()),
+            "the archive",
+        )
+        .unwrap();
     let mut source = zip::ZipArchive::new(Cursor::new(archive)).unwrap();
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
@@ -141,13 +147,7 @@ pub(crate) fn with_manifest_version(archive: &[u8], version: &str) -> Vec<u8> {
         }
         let payload = if crate::zip_write::is_zstd_member(&mut source, index).unwrap() {
             let mut entry = source.by_index_raw(index).unwrap();
-            crate::zip_write::expand_zstd_member(
-                &mut entry,
-                &name,
-                archive_len,
-                cadmpeg_core::decode::ResourceLimits::default(),
-            )
-            .unwrap()
+            crate::zip_write::expand_member(&session, &mut entry, &name, true).unwrap()
         } else {
             let mut payload = Vec::new();
             source
@@ -1106,10 +1106,8 @@ pub(crate) fn f3d_with_work_axis(
             }
         }
     }
+    types.retain(|row| row.4 != [1500]);
     for row in &mut types {
-        if row.4 == [600, 1500] {
-            row.4 = &[600];
-        }
         if row.4.contains(&1600) {
             row.4 = &[];
         }

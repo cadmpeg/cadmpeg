@@ -2,7 +2,7 @@
 
 use cadmpeg_core::decode::View;
 
-use super::{frame_scalar, frame_slots, member_table, MemberKind};
+use super::{frame_scalar, frame_slots, member_table, MemberKind, RowFault};
 use crate::test_support::members_table;
 
 fn scalar(bytes: &[u8]) -> Option<(f64, usize)> {
@@ -97,12 +97,12 @@ fn non_finite_values_are_refused() {
 fn repeats_copy_the_preceding_slot() {
     let mut slots = [f64::NAN; 3];
     let mut view = View::over_retained(&[0x0f, 0x18, 0xe4]);
-    assert_eq!(frame_slots(&mut view, &mut slots), Some(()));
+    assert_eq!(frame_slots(&mut view, &mut slots), Ok(()));
     assert_eq!(slots, [1.0, 0.0, 0.0]);
 
     let mut slots = [f64::NAN; 3];
     let mut view = View::over_retained(&[0x10, 0xe5]);
-    assert_eq!(frame_slots(&mut view, &mut slots), Some(()));
+    assert_eq!(frame_slots(&mut view, &mut slots), Ok(()));
     assert_eq!(slots, [-1.0; 3]);
 }
 
@@ -111,11 +111,37 @@ fn a_repeat_needs_a_preceding_slot_and_room() {
     let mut slots = [0.0; 3];
     assert_eq!(
         frame_slots(&mut View::over_retained(&[0xe4, 0x0f, 0x0f]), &mut slots),
-        None
+        Err(RowFault::Broken)
     );
     assert_eq!(
         frame_slots(&mut View::over_retained(&[0x0f, 0x18, 0xe5]), &mut slots),
-        None
+        Err(RowFault::Broken)
+    );
+}
+
+#[test]
+fn a_slot_token_outside_the_slot_table_has_no_reading() {
+    for token in [
+        &[0xa4, 0, 0, 0, 0, 0, 0][..],
+        &[0x1c, 0, 0],
+        &[0x00, 0x18, 0x02],
+        &[0xee, 0xb9, 0x3f, 0x00],
+        &[0xf0],
+    ] {
+        let mut slots = [0.0; 1];
+        assert_eq!(
+            frame_slots(&mut View::over_retained(token), &mut slots),
+            Err(RowFault::Unread),
+            "{token:02x?}"
+        );
+    }
+    let mut slots = [0.0; 1];
+    assert_eq!(
+        frame_slots(
+            &mut View::over_retained(&[0xed, 0x7f, 0xf0, 0, 0, 0, 0, 0, 0]),
+            &mut slots
+        ),
+        Err(RowFault::Broken)
     );
 }
 
@@ -181,28 +207,53 @@ fn a_declared_count_that_differs_stops_the_table() {
     let table = member_table(&payload).expect("member table");
     assert_eq!(table.members.len(), 3);
     assert_eq!(
-        table.stop.map(|stop| stop.reason),
-        Some("the table ends with a row count that differs from its declared count")
+        table.stop.map(|stop| (stop.row, stop.reason)),
+        Some((
+            None,
+            "the table ends with a row count that differs from its declared count"
+        ))
     );
 }
 
-#[test]
-fn an_unadmitted_row_keeps_the_rows_before_it() {
+/// The third row's offset and the offset of its `tha_ref` byte.
+fn third_row() -> (Vec<u8>, usize, usize) {
     let payload = members_table();
     let third_row = payload
         .windows(2)
         .position(|window| window == [0x8a, 0x10])
         .expect("third row");
-    let mut damaged = payload.clone();
     let tha_ref = third_row + 2 + b"\x02BRACKET\0BRACKET\0".len();
-    assert_eq!(damaged[tha_ref], 0xe1);
-    damaged[tha_ref] = 0xf6;
-    let table = member_table(&damaged).expect("member table");
+    assert_eq!(payload[tha_ref], 0xe1);
+    (payload, third_row, tha_ref)
+}
+
+#[test]
+fn a_row_with_an_unread_value_form_keeps_the_rows_before_it() {
+    let (mut payload, third_row, tha_ref) = third_row();
+    payload[tha_ref] = 0xf6;
+    let table = member_table(&payload).expect("member table");
     assert_eq!(table.members.len(), 2);
     assert_eq!(
-        table.stop.map(|stop| (stop.offset, stop.reason)),
+        table.stop.map(|stop| (stop.offset, stop.row, stop.reason)),
         Some((
             third_row,
+            Some(RowFault::Unread),
+            "a positional row holds a value form the row grammar does not read"
+        ))
+    );
+}
+
+#[test]
+fn a_row_that_breaks_the_grammar_keeps_the_rows_before_it() {
+    let (mut payload, third_row, tha_ref) = third_row();
+    payload[tha_ref + 1] = 0xe4;
+    let table = member_table(&payload).expect("member table");
+    assert_eq!(table.members.len(), 2);
+    assert_eq!(
+        table.stop.map(|stop| (stop.offset, stop.row, stop.reason)),
+        Some((
+            third_row,
+            Some(RowFault::Broken),
             "a positional row does not match the component row grammar"
         ))
     );

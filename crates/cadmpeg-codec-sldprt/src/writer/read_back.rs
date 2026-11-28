@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::decode::ResourceLimits;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId};
 use cadmpeg_ir::report::loss::LossNote;
@@ -58,12 +58,12 @@ impl SourceDefinitions {
     /// The notes for the features `ir` keeps: that `native` holds them as
     /// Keywords records alone, the values and the bodies their records read
     /// back without, and the selections their records hold by a source token.
-    /// The records are read back under `limits`.
+    /// The records are read back in the encode session `ctx`.
     pub(super) fn notes(
         &self,
         ir: &CadIr,
         native: Option<&SldprtNative>,
-        limits: ResourceLimits,
+        ctx: &DecodeContext<'_>,
     ) -> Vec<LossNote> {
         let kept = ir
             .model
@@ -87,7 +87,7 @@ impl SourceDefinitions {
             ids.join(", ")
         ))];
         let projected =
-            match crate::history::write::project_features_with_native_inputs(native, limits) {
+            match crate::history::write::project_features_with_native_inputs(native, ctx) {
                 Ok(projected) => projected,
                 Err(error) => {
                     notes.push(SldprtLossCode::WriterFeatureFieldsOmitted.note(format!(

@@ -195,10 +195,34 @@ impl GeometryError {
         Self::Malformed(FramingError::unpositioned(message))
     }
 
+    /// A payload the decoder has no reading for, or a count above a decoder
+    /// cap, that ends the decode of its record.
+    pub(crate) fn undecoded(offset: usize, message: impl Into<String>) -> Self {
+        Self::Malformed(FramingError::unsupported(offset, message))
+    }
+
     pub(crate) fn unsupported(offset: usize, message: impl Into<String>) -> Self {
         Self::UnsupportedVersion {
             offset,
             message: message.into(),
+        }
+    }
+
+    /// The cause of a give-up that this error ends.
+    pub(crate) const fn cause(&self) -> cadmpeg_ir::unknown::part::Cause {
+        match self {
+            Self::UnsupportedVersion { .. } => cadmpeg_ir::unknown::part::Cause::Undecoded,
+            Self::Malformed(error) => error.cause(),
+            Self::Codec(error) => cadmpeg_ir::unknown::part::Cause::Unreadable.of(error),
+        }
+    }
+}
+
+impl crate::wire::DecoderBound for GeometryError {
+    fn decoder_bound(self) -> Self {
+        match self {
+            Self::Malformed(error) => Self::Malformed(error.decoder_bound()),
+            other => other,
         }
     }
 }
@@ -452,7 +476,7 @@ pub(crate) fn decode_inner(
 ) -> Result<DecodedGeometry, GeometryError> {
     let _depth_guard = ctx.enter_nested("Rhino curve tree")?;
     if depth > MAX_CURVE_DEPTH {
-        return Err(GeometryError::malformed(
+        return Err(GeometryError::undecoded(
             range.start,
             "curve recursion limit exceeded",
         ));
@@ -553,7 +577,7 @@ pub(crate) fn decode_embedded_curve(
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
     if depth > MAX_CURVE_DEPTH {
-        return Err(GeometryError::malformed(
+        return Err(GeometryError::undecoded(
             reader.position(),
             "curve recursion limit exceeded",
         ));
@@ -612,7 +636,7 @@ pub(crate) fn decode_embedded_curve_2d(
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
     if depth > MAX_CURVE_DEPTH {
-        return Err(GeometryError::malformed(
+        return Err(GeometryError::undecoded(
             reader.position(),
             "plane-space curve recursion limit exceeded",
         ));
@@ -733,7 +757,7 @@ fn scale_decoded_curve(
                 ));
             }
             _ => {
-                return Err(GeometryError::malformed(
+                return Err(GeometryError::undecoded(
                     offset,
                     "unsupported plane-space analytic curve",
                 ));
@@ -1583,7 +1607,7 @@ pub(crate) fn decode_inner_2d(
 ) -> Result<DecodedGeometry, GeometryError> {
     let _depth_guard = ctx.enter_nested("Rhino C2 curve tree")?;
     if depth > MAX_CURVE_DEPTH {
-        return Err(GeometryError::malformed(
+        return Err(GeometryError::undecoded(
             range.start,
             "C2 curve recursion limit exceeded",
         ));
@@ -1723,8 +1747,12 @@ fn read_point(
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let point = native_point(reader)?;
-    crate::wire::scaled_point(point.0.get(), scale)
-        .ok_or_else(|| error(reader.position(), "scaled point coordinate is invalid"))
+    crate::wire::scaled_point(point.0.get(), scale).map_err(|unscaled| {
+        unscaled.charge(error(
+            reader.position(),
+            "scaled point coordinate is invalid",
+        ))
+    })
 }
 
 fn read_cloud(
@@ -1739,8 +1767,12 @@ fn read_cloud(
     for _ in 0..point_count {
         let point = native_point(reader)?;
         points.push(
-            crate::wire::scaled_point(point.0.get(), scale)
-                .ok_or_else(|| error(reader.position(), "scaled point coordinate is invalid"))?,
+            crate::wire::scaled_point(point.0.get(), scale).map_err(|unscaled| {
+                unscaled.charge(error(
+                    reader.position(),
+                    "scaled point coordinate is invalid",
+                ))
+            })?,
         );
     }
     plane(reader)?;
@@ -1807,10 +1839,20 @@ fn read_line(
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let from = crate::wire::scaled_point(native_point(reader)?.0.get(), scale)
-        .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?
+        .map_err(|unscaled| {
+            unscaled.charge(error(
+                reader.position(),
+                "scaled line coordinate is invalid",
+            ))
+        })?
         .get();
     let to = crate::wire::scaled_point(native_point(reader)?.0.get(), scale)
-        .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?
+        .map_err(|unscaled| {
+            unscaled.charge(error(
+                reader.position(),
+                "scaled line coordinate is invalid",
+            ))
+        })?
         .get();
     let domain = interval(reader)?.0.get();
     let dimension = reader.i32()?;
@@ -1849,8 +1891,12 @@ fn read_polyline(
     for _ in 0..point_count {
         let point = native_point(reader)?;
         points.push(
-            crate::wire::scaled_point(point.0.get(), scale)
-                .ok_or_else(|| error(reader.position(), "scaled polyline coordinate is invalid"))?,
+            crate::wire::scaled_point(point.0.get(), scale).map_err(|unscaled| {
+                unscaled.charge(error(
+                    reader.position(),
+                    "scaled polyline coordinate is invalid",
+                ))
+            })?,
         );
     }
     let parameter_count = crate::wire::element_count(reader, 8)?;
@@ -1982,8 +2028,9 @@ fn read_circle(
     let xaxis = vector(native.xaxis.get());
     let yaxis = vector(native.yaxis.get());
     let axis = vector(native.zaxis.get());
-    let center = crate::wire::scaled_point(native.origin.get(), scale)
-        .ok_or_else(|| error(reader.position(), "scaled circle center is invalid"))?;
+    let center = crate::wire::scaled_point(native.origin.get(), scale).map_err(|unscaled| {
+        unscaled.charge(error(reader.position(), "scaled circle center is invalid"))
+    })?;
     let norm_x = xaxis.norm();
     let norm_y = yaxis.norm();
     let norm_axis = axis.norm();

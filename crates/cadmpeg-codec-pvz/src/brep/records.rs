@@ -241,6 +241,12 @@ impl StreamBuilder {
         let marker = body.req_i32_le()?;
         let index = self.model.loops.len();
         let inner = marker != LOOP_OUTER;
+        if marker < 0 && inner {
+            return Err(CodecError::NotImplemented(format!(
+                "loop marker {marker} at offset {offset} is a negative marker other than \
+                 {LOOP_OUTER}"
+            )));
+        }
         if inner {
             let first = self
                 .model
@@ -644,7 +650,7 @@ fn read_knots(
         )));
     }
     if order - 1 > MAX_BSPLINE_DEGREE {
-        return Err(CodecError::malformed(format_args!(
+        return Err(CodecError::NotImplemented(format!(
             "B-spline record at offset {offset} has degree {}, above {MAX_BSPLINE_DEGREE}",
             order - 1
         )));

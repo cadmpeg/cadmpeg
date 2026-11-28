@@ -151,7 +151,7 @@ fn assert_loop_given_up(
     let losses = brep.take_losses().unwrap();
     let charges: Vec<_> = losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
         .collect();
     let head = format!("record {lost_id} ");
     assert_eq!(
