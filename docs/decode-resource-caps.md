@@ -189,6 +189,30 @@ of the decode; a stream that exhausts it keeps its bulletin boards and
 history records without historical topology, and the decode reports
 `history.binding-work-exceeded`.
 
+## Scratch decodes
+
+`DecodeContext::scratch` runs optional evidence work in a separate arena
+and resource account. The measured carrier length scales its allowances.
+The codec's work and population caps bound repeated requests. The decoder
+admits the bytes and entities of each kept result together. A refusal
+at that admission leaves the session usable.
+
+An F3D or Inventor history nest admits its records and body and face names.
+An Inventor state view admits the topology, naming attributes and body keys
+that its proofs read. A profile body admits its wires and copied spline
+coefficients. An identity lookup, source key check or Loft body kind probe
+keeps a scalar result and discards the temporary graph.
+
+A resource refusal gives up the affected evidence. The codec reports the
+limit on a bounded history body, Base source body, Loft result or unread
+profile body. `cadmpeg_asm::brep::inspect_with_header` and
+`inspect_with_table` read framed records and preserve the shell membership
+marks. The Model path copies withheld and passthrough spans and emits
+provenance records.
+
+Scratch work uses the same evidence allowance at every F3Z composition
+position. The whole-session trace composes the charges of the kept output.
+
 ## Scan limits
 
 `ScanLimits` in `crates/cadmpeg-core/src/scan/mod.rs` bounds a feature-only

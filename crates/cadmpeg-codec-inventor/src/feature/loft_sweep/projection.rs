@@ -44,7 +44,11 @@ pub(in crate::feature) fn project<'a>(
         FeatureFamily::Loft => match loft(ctx, source, label, index) {
             Ok(operation) => operation,
             Err(Refusal::Native(reason)) => {
-                losses.push(reason.note());
+                let mut loss = reason.note();
+                if matches!(reason, NativeReason::ResultStateBounded(_)) {
+                    loss.message = format!("{} Feature {}.", loss.message, source.id());
+                }
+                losses.push(loss);
                 return None;
             }
             Err(Refusal::Codec(error)) => return Some(Err(error)),
@@ -338,7 +342,9 @@ fn loft(
         evidence::Unproved::Result => Refusal::Native(NativeReason::ResultTopology),
         evidence::Unproved::NotJoined => Refusal::Native(NativeReason::ResultJoin),
         evidence::Unproved::StateFailed => Refusal::Native(NativeReason::ResultStateFailed),
-        evidence::Unproved::Bounded => Refusal::Native(NativeReason::ResultStateBounded),
+        evidence::Unproved::Bounded(limit) => {
+            Refusal::Native(NativeReason::ResultStateBounded(limit))
+        }
         evidence::Unproved::Codec(error) => Refusal::Codec(error),
     })?;
     let sections = selected

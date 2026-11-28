@@ -17,7 +17,9 @@
 //! decode's: a cache the edit made stale. The restore leaves such an edit
 //! out and names its path, so that the writer writes every other edit and
 //! reports the ones it leaves out. An evaluation's `status` is derived and
-//! is never an edit.
+//! is never an edit. A codec whose history arenas restate the design
+//! configurations ([`HistoryText::restates_configurations`]) takes them, and
+//! each scope's active configuration, from the read document.
 //!
 //! [`ArenaName::WIRE_OMITTED`]: crate::document::ArenaName::WIRE_OMITTED
 
@@ -53,6 +55,13 @@ pub trait HistoryText {
     /// The text of a reference to `target` that no stored expression
     /// spells; `None` where the codec has none.
     fn reference(&self, target: &HistoryParameter, model: &Model) -> Option<String>;
+
+    /// Whether the codec restates the design configurations and the scopes'
+    /// active configurations in its history arenas. The restore then takes
+    /// them from the read document as edits the codec states.
+    fn restates_configurations(&self) -> bool {
+        false
+    }
 }
 
 /// The retained source image `id` of `input`'s document where it was read
@@ -210,6 +219,9 @@ pub fn restore_history(
             history.name.clone_from(&feature.name);
         }
     }
+    if text.restates_configurations() {
+        adopt_configurations(&mut replayed.design, &read.design);
+    }
     let json = |design: &crate::document::Design| {
         cadmpeg_core::serde_erase::to_json_value(design).map_err(|error| {
             CodecError::malformed(format!("the design records have no JSON form: {error}"))
@@ -274,6 +286,23 @@ pub fn restore_history(
         ir: restored,
         unwritten,
     })
+}
+
+/// Give `design` the configurations of `read`, and to each of its scopes the
+/// active configuration of `read`'s scope of the same definition.
+pub fn adopt_configurations(design: &mut crate::document::Design, read: &crate::document::Design) {
+    design.configurations.clone_from(&read.configurations);
+    for scope in &mut design.scopes {
+        if let Some(stated) = read
+            .scopes
+            .iter()
+            .find(|stated| stated.definition == scope.definition)
+        {
+            scope
+                .active_configuration
+                .clone_from(&stated.active_configuration);
+        }
+    }
 }
 
 /// Adds to `out` the path of each value where `read` differs from `stored`,

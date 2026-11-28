@@ -23,8 +23,8 @@ fn combine_operands(bytes: &[u8]) -> (serde_json::Value, Vec<String>, serde_json
         .as_array()
         .expect("feature list")
         .iter()
-        .filter(|feature| feature["name"] == "Combine 1");
-    let combine = combines.next().expect("Combine 1").clone();
+        .filter(|feature| feature["name"] == "Combine1");
+    let combine = combines.next().expect("Combine1").clone();
     assert!(combines.next().is_none(), "one Combine");
     let bodies = ir["geometry"]["bodies"].clone();
     (

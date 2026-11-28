@@ -812,6 +812,8 @@ pub struct ChainState {
 /// The framed `delta_state` chain of a history stream, in stream order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HistoryChain {
+    /// Byte offset of the first `delta_state` marker of the stream.
+    pub start: usize,
     /// Framed states.
     pub states: Vec<ChainState>,
 }
@@ -822,7 +824,10 @@ pub enum ChainFraming {
     /// The stream holds no `delta_state` record.
     Absent,
     /// A header, bulletin-board chain, or record span does not frame.
-    Unframed,
+    Unframed {
+        /// Byte offset of the first `delta_state` marker of the stream.
+        start: usize,
+    },
     /// Every state frames.
     Framed(HistoryChain),
 }
@@ -891,15 +896,15 @@ fn frame_history_chain_inner(
     mut preframed: Option<&mut HashMap<usize, Record>>,
 ) -> Result<ChainFraming, CodecError> {
     let offsets = delta_state_offsets(bytes);
-    if offsets.is_empty() {
+    let Some(&start) = offsets.first() else {
         return Ok(ChainFraming::Absent);
-    }
+    };
     let mut states = Vec::new();
     for (ordinal, &offset) in offsets.iter().enumerate() {
         let header = match read_delta_state_header(bytes, offset, width) {
             DeltaStateHeaderRead::Framed(header) => header,
             DeltaStateHeaderRead::Unframed => continue,
-            DeltaStateHeaderRead::Invalid => return Ok(ChainFraming::Unframed),
+            DeltaStateHeaderRead::Invalid => return Ok(ChainFraming::Unframed { start }),
         };
         let mut changes = Vec::new();
         let Some(body_end) = walk_bulletin_boards(bytes, header.body_start, width, |item| {
@@ -907,7 +912,7 @@ fn frame_history_chain_inner(
                 changes.push(kind);
             }
         }) else {
-            return Ok(ChainFraming::Unframed);
+            return Ok(ChainFraming::Unframed { start });
         };
         let framed = match frame_state_records(
             ctx,
@@ -918,7 +923,7 @@ fn frame_history_chain_inner(
         )? {
             StateRecords::Empty => Vec::new(),
             StateRecords::Framed(records) => records,
-            StateRecords::Unframed { .. } => return Ok(ChainFraming::Unframed),
+            StateRecords::Unframed { .. } => return Ok(ChainFraming::Unframed { start }),
         };
         let mut chain_records = Vec::with_capacity(framed.len());
         for record in framed {
@@ -959,7 +964,7 @@ fn frame_history_chain_inner(
             record.revision_id = Some(id);
         }
     }
-    Ok(ChainFraming::Framed(HistoryChain { states }))
+    Ok(ChainFraming::Framed(HistoryChain { start, states }))
 }
 
 #[cfg(test)]
