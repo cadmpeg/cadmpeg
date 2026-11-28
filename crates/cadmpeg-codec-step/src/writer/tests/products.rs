@@ -1064,3 +1064,239 @@ fn writer_writes_a_definition_no_occurrence_places_as_a_top_level_product() {
         report.losses
     );
 }
+
+fn mirror_x_with_translation(tx: f64, ty: f64, tz: f64) -> Transform {
+    Transform::affine([
+        [-1.0, 0.0, 0.0, tx],
+        [0.0, 1.0, 0.0, ty],
+        [0.0, 0.0, 1.0, tz],
+    ])
+    .expect("finite mirror")
+}
+
+#[test]
+fn writer_emits_and_roundtrips_reflected_assembly_occurrence() {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    let body = ir.geometry.bodies[0].id.clone();
+    ir.model.product_definitions = vec![
+        root_definition(
+            "test:model:product-definition#assembly",
+            &[
+                "test:model:occurrence#right-hand",
+                "test:model:occurrence#left-hand-mirrored",
+            ],
+        ),
+        unnamed_definition("test:model:product-definition#part-0", vec![body]),
+    ];
+    let right_hand = named_occurrence(
+        "test:model:occurrence#right-hand",
+        "test:model:product-definition#part-0",
+        "RightHand",
+    );
+    let mut mirrored = named_occurrence(
+        "test:model:occurrence#left-hand-mirrored",
+        "test:model:product-definition#part-0",
+        "LeftHandMirrored",
+    );
+    mirrored.transform = Some(mirror_x_with_translation(40.0, 5.0, 0.0));
+    ir.model.occurrences = vec![right_hand, mirrored];
+
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write mirrored occurrence");
+    let text = String::from_utf8(output.clone()).expect("STEP text");
+    assert_eq!(not_rigid_losses(&report), 0, "{:#?}", report.losses);
+    assert!(
+        text.contains("CARTESIAN_TRANSFORMATION_OPERATOR_3D"),
+        "{text}"
+    );
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode mirrored occurrence");
+    let decoded_mirror = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occ| occ.name.as_deref() == Some("LeftHandMirrored"))
+        .expect("mirrored occurrence round-trips");
+    let rows = decoded_mirror.transform.expect("transform").rows();
+    assert!((rows[0][0] + 1.0).abs() <= 1.0e-9);
+    assert!((rows[1][1] - 1.0).abs() <= 1.0e-9);
+    assert!((rows[2][2] - 1.0).abs() <= 1.0e-9);
+    assert!((rows[0][3] - 40.0).abs() <= 1.0e-9);
+    assert!((rows[1][3] - 5.0).abs() <= 1.0e-9);
+    assert_eq!(
+        losses(&report, StepLossCode::OccurrencePlacementNotRigid),
+        0
+    );
+}
+
+#[test]
+fn writer_emits_and_roundtrips_reflected_body_placement() {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    ir.geometry.bodies[0].transform = Some(mirror_x_with_translation(12.0, 0.0, 0.0));
+
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write reflected body placement");
+    let text = String::from_utf8(output.clone()).expect("STEP text");
+    assert_eq!(
+        losses(&report, StepLossCode::BodyNonRigidTransform),
+        0,
+        "{:#?}",
+        report.losses
+    );
+    assert!(text.contains("MAPPED_ITEM"), "{text}");
+    assert!(
+        text.contains("CARTESIAN_TRANSFORMATION_OPERATOR_3D"),
+        "{text}"
+    );
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode reflected body");
+    let rows = decoded.ir().geometry.bodies[0]
+        .transform
+        .expect("reflected body transform")
+        .rows();
+    assert!((rows[0][0] + 1.0).abs() <= 1.0e-9);
+    assert!((rows[0][3] - 12.0).abs() <= 1.0e-9);
+}
+
+#[test]
+fn writer_emits_invisibility_for_hidden_occurrences_and_respects_schema() {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    let body = ir.geometry.bodies[0].id.clone();
+    ir.model.product_definitions = vec![
+        root_definition(
+            "test:model:product-definition#assembly",
+            &[
+                "test:model:occurrence#visible",
+                "test:model:occurrence#hidden",
+            ],
+        ),
+        unnamed_definition("test:model:product-definition#part-0", vec![body]),
+    ];
+    let mut visible = named_occurrence(
+        "test:model:occurrence#visible",
+        "test:model:product-definition#part-0",
+        "VisiblePart",
+    );
+    visible.visible = Some(true);
+    let mut hidden = named_occurrence(
+        "test:model:occurrence#hidden",
+        "test:model:product-definition#part-0",
+        "HiddenPart",
+    );
+    hidden.visible = Some(false);
+    hidden.transform = Some(translation(20.0, 0.0, 0.0));
+    ir.model.occurrences = vec![visible, hidden];
+
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write hidden occurrence");
+    let text = String::from_utf8(output.clone()).expect("STEP text");
+    assert!(text.contains("INVISIBILITY("), "{text}");
+    assert_eq!(
+        losses(&report, StepLossCode::OccurrenceMetadataOmitted),
+        0,
+        "{:#?}",
+        report.losses
+    );
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode hidden occurrence");
+    let decoded_hidden = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occ| occ.name.as_deref() == Some("HiddenPart"))
+        .expect("hidden occurrence decoded");
+    assert_eq!(decoded_hidden.visible, Some(false));
+    let decoded_visible = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occ| occ.name.as_deref() == Some("VisiblePart"))
+        .expect("visible occurrence decoded");
+    assert_ne!(decoded_visible.visible, Some(false));
+
+    let mut ap203_output = Vec::new();
+    let ap203_report = write_step(
+        &ir,
+        &mut ap203_output,
+        StepSchema::Ap203Edition1,
+        &StepWriteOptions::default(),
+    )
+    .expect("write ap203e1");
+    let ap203_text = String::from_utf8(ap203_output).expect("STEP text");
+    assert!(!ap203_text.contains("INVISIBILITY("), "{ap203_text}");
+    assert!(losses(&ap203_report, StepLossCode::OccurrenceMetadataOmitted) > 0);
+}
+
+#[test]
+fn writer_supports_caller_file_description_and_is_byte_deterministic() {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    let body = ir.geometry.bodies[0].id.clone();
+    ir.model.product_definitions = vec![
+        root_definition(
+            "test:model:product-definition#assembly",
+            &[
+                "test:model:occurrence#first",
+                "test:model:occurrence#second",
+            ],
+        ),
+        unnamed_definition("test:model:product-definition#part-0", vec![body]),
+    ];
+    let first = named_occurrence(
+        "test:model:occurrence#first",
+        "test:model:product-definition#part-0",
+        "First",
+    );
+    let mut second = named_occurrence(
+        "test:model:occurrence#second",
+        "test:model:product-definition#part-0",
+        "Second",
+    );
+    second.transform = Some(mirror_x_with_translation(15.0, 0.0, 0.0));
+    second.visible = Some(false);
+    ir.model.occurrences = vec![first, second];
+
+    let options = StepWriteOptions {
+        product_name: "Assembly".into(),
+        file_description: vec!["Exact B-Rep".into(), "PARTIAL_EXPORT".into()],
+        ..StepWriteOptions::default()
+    };
+    let mut run_a = Vec::new();
+    write_step(&ir, &mut run_a, StepSchema::Ap242Edition3, &options).expect("first write");
+    let mut run_b = Vec::new();
+    write_step(&ir, &mut run_b, StepSchema::Ap242Edition3, &options).expect("second write");
+    assert_eq!(run_a, run_b, "STEP export must be byte-deterministic");
+    let text = String::from_utf8(run_a).expect("UTF-8 STEP");
+    assert!(
+        text.contains("FILE_DESCRIPTION(('Exact B-Rep','PARTIAL_EXPORT'),'2;1');"),
+        "{text}"
+    );
+    assert!(text.starts_with("ISO-10303-21;\n"));
+    assert!(!text.contains("\r\n"));
+}

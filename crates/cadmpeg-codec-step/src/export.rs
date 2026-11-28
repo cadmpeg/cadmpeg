@@ -200,19 +200,54 @@ mod tests {
     }
 }
 
+/// Orthonormality and determinant tolerance for reflected rigid transforms (`det(R) = -1`).
+const EPS_REFLECTED_RIGID: f64 = 1.0e-9;
+
+/// Whether `transform` is a finite, left-handed rigid reflection (`R^T R = I`, `det(R) = -1`)
+/// representable as a `CARTESIAN_TRANSFORMATION_OPERATOR_3D`.
+fn is_reflected_rigid(transform: &cadmpeg_ir::transform::Transform) -> bool {
+    if !geometry::states_similarity(transform) {
+        return false;
+    }
+    let rows = transform.rows();
+    let x = [rows[0][0], rows[1][0], rows[2][0]];
+    let y = [rows[0][1], rows[1][1], rows[2][1]];
+    let z = [rows[0][2], rows[1][2], rows[2][2]];
+    let dot = |left: [f64; 3], right: [f64; 3]| {
+        left.into_iter().zip(right).map(|(l, r)| l * r).sum::<f64>()
+    };
+    let cross = [
+        x[1] * y[2] - x[2] * y[1],
+        x[2] * y[0] - x[0] * y[2],
+        x[0] * y[1] - x[1] * y[0],
+    ];
+    [x, y, z]
+        .into_iter()
+        .all(|axis| (dot(axis, axis) - 1.0).abs() <= EPS_REFLECTED_RIGID)
+        && dot(x, y).abs() <= EPS_REFLECTED_RIGID
+        && dot(x, z).abs() <= EPS_REFLECTED_RIGID
+        && dot(y, z).abs() <= EPS_REFLECTED_RIGID
+        && (dot(cross, z) + 1.0).abs() <= EPS_REFLECTED_RIGID
+}
+
 fn write_header(
     w: &mut (impl Write + ?Sized),
     schema: StepSchema,
     opts: &StepWriteOptions,
 ) -> std::io::Result<()> {
     let ts = opts.timestamp.as_deref().unwrap_or("1970-01-01T00:00:00");
+    let descriptions = if opts.file_description.is_empty() {
+        string("CAD model exported by cadmpeg")
+    } else {
+        opts.file_description
+            .iter()
+            .map(|entry| string(entry))
+            .collect::<Vec<_>>()
+            .join(",")
+    };
     writeln!(w, "ISO-10303-21;")?;
     writeln!(w, "HEADER;")?;
-    writeln!(
-        w,
-        "FILE_DESCRIPTION(({}),'2;1');",
-        string("CAD model exported by cadmpeg")
-    )?;
+    writeln!(w, "FILE_DESCRIPTION(({descriptions}),'2;1');")?;
     writeln!(
         w,
         "FILE_NAME({},{},({}),({}),{},{},{});",
@@ -421,6 +456,8 @@ pub(crate) struct Builder<'a> {
     body_step_item_refs: HashMap<String, Vec<Ref>>,
     product_step_refs: HashMap<String, Ref>,
     occurrence_step_refs: HashMap<String, Ref>,
+    occurrence_cdsr_refs: BTreeMap<String, Ref>,
+    emitted_hidden_occurrences: BTreeSet<OccurrenceId>,
     tessellation_step_refs: HashMap<String, Ref>,
     /// The shape items [`Self::build`] wrote for bodies and standalone
     /// geometry.
@@ -680,6 +717,8 @@ impl<'a> Builder<'a> {
             body_step_item_refs: HashMap::new(),
             product_step_refs: HashMap::new(),
             occurrence_step_refs: HashMap::new(),
+            occurrence_cdsr_refs: BTreeMap::new(),
+            emitted_hidden_occurrences: BTreeSet::new(),
             tessellation_step_refs: HashMap::new(),
             model_items: Vec::new(),
             states_structure: false,
@@ -864,10 +903,10 @@ impl<'a> Builder<'a> {
             .filter(|binding| binding.visible == Some(false))
             .map(|binding| binding.id.as_str())
             .collect::<BTreeSet<_>>();
-        let mut body_candidates: HashMap<&str, Vec<(ColorSpec<'_>, &AppearanceBindingId)>> =
-            HashMap::new();
-        let mut face_candidates: HashMap<&str, Vec<(ColorSpec<'_>, &AppearanceBindingId)>> =
-            HashMap::new();
+        let mut body_candidates: BTreeMap<&str, Vec<(ColorSpec<'_>, &AppearanceBindingId)>> =
+            BTreeMap::new();
+        let mut face_candidates: BTreeMap<&str, Vec<(ColorSpec<'_>, &AppearanceBindingId)>> =
+            BTreeMap::new();
         let mut dangling_appearance_bindings = BTreeSet::new();
         let mut colorless_appearance_bindings = BTreeSet::new();
         for binding in &ir.model.appearance_bindings {
@@ -917,8 +956,8 @@ impl<'a> Builder<'a> {
         self.colorless_appearance_bindings
             .extend(colorless_appearance_bindings);
 
-        let mut body_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
-        let mut face_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
+        let mut body_colors: BTreeMap<&str, ColorSpec<'_>> = BTreeMap::new();
+        let mut face_colors: BTreeMap<&str, ColorSpec<'_>> = BTreeMap::new();
         let mut conflicting_body_targets = BTreeSet::new();
         let mut conflicting_face_targets = BTreeSet::new();
         let mut conflicted_binding_ids = BTreeSet::new();
@@ -1517,6 +1556,11 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_product_graph(&mut self, context: Ref) {
+        enum OccurrencePlacement {
+            Proper { from: Ref, to: Ref },
+            Reflected { operator: Ref },
+        }
+
         let (application, protocol, year) = self.schema.application_protocol();
         let app_context = self
             .emitter
@@ -1643,7 +1687,7 @@ impl<'a> Builder<'a> {
             );
         }
         let mut representation_placements = HashMap::<ProductDefinitionId, Vec<Ref>>::new();
-        let mut occurrence_placements = HashMap::<OccurrenceId, (Ref, Ref)>::new();
+        let mut occurrence_placements = HashMap::<OccurrenceId, OccurrencePlacement>::new();
         for occurrence in &occurrences {
             let Some(parent_product) = owners
                 .get(&occurrence.id)
@@ -1659,21 +1703,32 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let transform = occurrence.transform.unwrap_or_default();
-            let Some(frame) = transform.proper_rigid_frame() else {
-                continue;
-            };
-            let rows = transform.rows();
-            let to = geometry::placement(
-                &mut self.emitter,
-                cadmpeg_ir::math::Point3::new(rows[0][3], rows[1][3], rows[2][3]),
-                *frame.axis(),
-                *frame.reference(),
-            );
-            representation_placements
-                .entry(parent_product.clone())
-                .or_default()
-                .push(to);
-            occurrence_placements.insert(occurrence.id.clone(), (from, to));
+            if let Some(frame) = transform.proper_rigid_frame() {
+                let rows = transform.rows();
+                let to = geometry::placement(
+                    &mut self.emitter,
+                    cadmpeg_ir::math::Point3::new(rows[0][3], rows[1][3], rows[2][3]),
+                    *frame.axis(),
+                    *frame.reference(),
+                );
+                representation_placements
+                    .entry(parent_product.clone())
+                    .or_default()
+                    .push(to);
+                occurrence_placements.insert(
+                    occurrence.id.clone(),
+                    OccurrencePlacement::Proper { from, to },
+                );
+            } else if is_reflected_rigid(&transform) {
+                if let Some(operator) =
+                    geometry::transformation_operator(&mut self.emitter, transform)
+                {
+                    occurrence_placements.insert(
+                        occurrence.id.clone(),
+                        OccurrencePlacement::Reflected { operator },
+                    );
+                }
+            }
         }
         let mut definitions = HashMap::<ProductDefinitionId, Ref>::new();
         let mut representations = HashMap::<ProductDefinitionId, Ref>::new();
@@ -1827,7 +1882,7 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let transform = occurrence.transform.unwrap_or_default();
-            if !transform.is_proper_rigid() {
+            if !transform.is_proper_rigid() && !is_reflected_rigid(&transform) {
                 self.loss(
                     StepLossCode::OccurrencePlacementNotRigid,
                     format!("occurrence '{}' placement is not rigid", occurrence.id),
@@ -1847,22 +1902,27 @@ impl<'a> Builder<'a> {
             let usage_shape = self
                 .emitter
                 .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{usage}"));
-            let Some(&(from, to)) = occurrence_placements.get(&occurrence.id) else {
+            let Some(placement) = occurrence_placements.get(&occurrence.id) else {
                 continue;
             };
-            let transform = self
-                .emitter
-                .emit("ITEM_DEFINED_TRANSFORMATION", &format!("'','',{from},{to}"));
+            let transform_ref = match *placement {
+                OccurrencePlacement::Proper { from, to } => self
+                    .emitter
+                    .emit("ITEM_DEFINED_TRANSFORMATION", &format!("'','',{from},{to}")),
+                OccurrencePlacement::Reflected { operator } => operator,
+            };
             let relationship = self.emitter.emit_raw(
                 "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION",
                 &format!(
-                    "( REPRESENTATION_RELATIONSHIP('','',{child_representation},{parent_representation}) REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION({transform}) SHAPE_REPRESENTATION_RELATIONSHIP() )"
+                    "( REPRESENTATION_RELATIONSHIP('','',{child_representation},{parent_representation}) REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION({transform_ref}) SHAPE_REPRESENTATION_RELATIONSHIP() )"
                 ),
             );
-            self.emitter.emit(
+            let cdsr = self.emitter.emit(
                 "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION",
                 &format!("{relationship},{usage_shape}"),
             );
+            self.occurrence_cdsr_refs
+                .insert(occurrence.id.as_str().to_owned(), cdsr);
         }
     }
 
@@ -2707,13 +2767,15 @@ impl<'a> Builder<'a> {
         let Some(transform) = transform.filter(|transform| !is_identity(&transform.rows())) else {
             return item;
         };
-        let Some(frame) = transform.proper_rigid_frame() else {
+        let frame = transform.proper_rigid_frame();
+        let reflected = frame.is_none() && is_reflected_rigid(&transform);
+        if frame.is_none() && !reflected {
             self.loss(
                 StepLossCode::BodyNonRigidTransform,
                 format!("body '{body_id}' carries a non-rigid transform"),
             );
             return item;
-        };
+        }
         let origin = geometry::placement(
             &mut self.emitter,
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
@@ -2725,13 +2787,25 @@ impl<'a> Builder<'a> {
         let map = self
             .emitter
             .emit("REPRESENTATION_MAP", &format!("{origin},{representation}"));
-        let rows = transform.rows();
-        let target = geometry::placement(
-            &mut self.emitter,
-            cadmpeg_ir::math::Point3::new(rows[0][3], rows[1][3], rows[2][3]),
-            *frame.axis(),
-            *frame.reference(),
-        );
+        let target = if let Some(frame) = frame {
+            let rows = transform.rows();
+            geometry::placement(
+                &mut self.emitter,
+                cadmpeg_ir::math::Point3::new(rows[0][3], rows[1][3], rows[2][3]),
+                *frame.axis(),
+                *frame.reference(),
+            )
+        } else if let Some(operator) =
+            geometry::transformation_operator(&mut self.emitter, transform)
+        {
+            operator
+        } else {
+            self.loss(
+                StepLossCode::BodyNonRigidTransform,
+                format!("body '{body_id}' carries a non-rigid transform"),
+            );
+            return item;
+        };
         let mapped = self.emitter.emit(
             "MAPPED_ITEM",
             &format!("'cadmpeg body placement',{map},{target}"),
@@ -2785,6 +2859,16 @@ impl<'a> Builder<'a> {
         }
         self.hidden_bodies_without_items
             .extend(hidden_without_items);
+        for occurrence in &self.ir.model.occurrences {
+            if occurrence.visible != Some(false) {
+                continue;
+            }
+            if let Some(&reference) = self.occurrence_cdsr_refs.get(occurrence.id.as_str()) {
+                hidden.push(reference);
+                self.emitted_hidden_occurrences
+                    .insert(occurrence.id.clone());
+            }
+        }
         if !hidden.is_empty() {
             self.emitter.emit("INVISIBILITY", &refs(&hidden));
         }
@@ -5149,8 +5233,8 @@ impl<'a> Builder<'a> {
         let Some(pds) = self.default_product_definition_shape else {
             return;
         };
-        let mut annotation_refs = HashMap::new();
-        let mut aspects = HashMap::<String, Ref>::new();
+        let mut annotation_refs = BTreeMap::new();
+        let mut aspects = BTreeMap::<String, Ref>::new();
         for annotation in &annotations {
             let PmiDefinition::DatumTarget {
                 form,
@@ -5208,7 +5292,7 @@ impl<'a> Builder<'a> {
                 });
             }
         }
-        let mut datum_target_refs = HashMap::<cadmpeg_ir::ids::PmiId, Ref>::new();
+        let mut datum_target_refs = BTreeMap::<cadmpeg_ir::ids::PmiId, Ref>::new();
         for annotation in &annotations {
             let PmiDefinition::DatumTarget {
                 form,
@@ -5228,7 +5312,7 @@ impl<'a> Builder<'a> {
                 .unwrap_or_else(|| self.emit_datum_target(pds, annotation, form, identification));
             datum_target_refs.insert(annotation.id.clone(), target_ref);
         }
-        let mut datum_target_basis_exact = HashMap::<cadmpeg_ir::ids::PmiId, bool>::new();
+        let mut datum_target_basis_exact = BTreeMap::<cadmpeg_ir::ids::PmiId, bool>::new();
         for annotation in &annotations {
             let PmiDefinition::DatumTarget { basis, .. } = &annotation.definition else {
                 continue;
@@ -5289,7 +5373,7 @@ impl<'a> Builder<'a> {
                 &format!("'PMI geometric targets',{},{context}", refs(&target_items)),
             )
         });
-        let mut annotation_aspects = HashMap::new();
+        let mut annotation_aspects = BTreeMap::new();
         let mut all_around_annotations = HashSet::new();
         let mut unsupported_all_around = HashSet::new();
         for annotation in &annotations {
@@ -5359,7 +5443,7 @@ impl<'a> Builder<'a> {
                 .copied()
                 .or_else(|| source_target_ref(annotation))
         };
-        let mut targets_exact_by_annotation = HashMap::new();
+        let mut targets_exact_by_annotation = BTreeMap::new();
         for annotation in &annotations {
             let semantic = !matches!(&annotation.definition, PmiDefinition::Presentation { .. });
             let definition = target_ref(annotation).unwrap_or(fallback_aspect);
@@ -6908,7 +6992,15 @@ impl<'a> Builder<'a> {
             .occurrences
             .iter()
             .map(|occurrence| {
-                usize::from(occurrence.visible.is_some())
+                let visible_omitted = match occurrence.visible {
+                    None => false,
+                    Some(true) => !self.schema.supports_visibility(),
+                    Some(false) => {
+                        !self.schema.supports_visibility()
+                            || !self.emitted_hidden_occurrences.contains(&occurrence.id)
+                    }
+                };
+                usize::from(visible_omitted)
                     + usize::from(occurrence.suppressed.is_some())
                     + usize::from(occurrence.representation.is_some())
                     + occurrence

@@ -37,6 +37,10 @@ pub struct StepWriteOptions {
     pub timestamp: Option<String>,
     /// The `FILE_NAME` originating-system field.
     pub originating_system: String,
+    /// Entries written to the `FILE_DESCRIPTION` header record.
+    ///
+    /// When empty, defaults to `["CAD model exported by cadmpeg"]`.
+    pub file_description: Vec<String>,
 }
 
 impl Default for StepWriteOptions {
@@ -47,6 +51,7 @@ impl Default for StepWriteOptions {
             organization: String::new(),
             timestamp: None,
             originating_system: "cadmpeg".to_string(),
+            file_description: Vec::new(),
         }
     }
 }
