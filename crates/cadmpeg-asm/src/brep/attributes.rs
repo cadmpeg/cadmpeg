@@ -196,12 +196,9 @@ fn attribute_value(token: &Token, format: IdFormat) -> Option<AttributeValue> {
     })
 }
 
-/// Decode a native transform record into an IR affine transform, scaling the
-/// translation into millimetres.
-pub fn decode_transform(
-    record: &Record,
-    header_scale: f64,
-) -> Option<cadmpeg_ir::transform::Transform> {
+/// Decode a native transform record into an IR affine transform that maps a
+/// point `p` to `scale · R · p + t`, with the translation `t` in millimetres.
+pub fn decode_transform(record: &Record) -> Option<cadmpeg_ir::transform::Transform> {
     let mut vectors = record.tokens.iter().filter_map(|token| match token {
         Token::Position(value) | Token::Vector3(value) => Some(*value),
         _ => None,
@@ -223,15 +220,28 @@ pub fn decode_transform(
     ) else {
         return None;
     };
-    // The attribute stores a homogeneous scale in the `w` slot. Only the
-    // unscaled spelling maps to an affine transform.
-    if scale != 1.0 {
+    if !(scale.is_finite() && scale > 0.0) {
         return None;
     }
     cadmpeg_ir::transform::Transform::affine([
-        [x[0], y[0], z[0], translation[0] * header_scale * LEN_TO_MM],
-        [x[1], y[1], z[1], translation[1] * header_scale * LEN_TO_MM],
-        [x[2], y[2], z[2], translation[2] * header_scale * LEN_TO_MM],
+        [
+            scale * x[0],
+            scale * y[0],
+            scale * z[0],
+            translation[0] * LEN_TO_MM,
+        ],
+        [
+            scale * x[1],
+            scale * y[1],
+            scale * z[1],
+            translation[1] * LEN_TO_MM,
+        ],
+        [
+            scale * x[2],
+            scale * y[2],
+            scale * z[2],
+            translation[2] * LEN_TO_MM,
+        ],
     ])
 }
 
@@ -479,13 +489,29 @@ mod tests {
     fn transform_decode_propagates_affine_constructor_rejection() {
         let identity = transform_record(1.0, [1.0, 0.0, 0.0]);
         assert_eq!(
-            decode_transform(&identity, 1.0),
+            decode_transform(&identity),
             Some(cadmpeg_ir::transform::Transform::identity())
         );
-        for scale in [0.0, 2.0, f64::NAN, f64::INFINITY] {
-            assert!(decode_transform(&transform_record(scale, [1.0, 0.0, 0.0]), 1.0).is_none());
+        for scale in [0.0, -2.0, f64::NAN, f64::INFINITY] {
+            assert!(decode_transform(&transform_record(scale, [1.0, 0.0, 0.0])).is_none());
         }
-        assert!(decode_transform(&transform_record(1.0, [f64::NAN, 0.0, 0.0]), 1.0).is_none());
-        assert!(decode_transform(&identity, f64::INFINITY).is_none());
+        assert!(decode_transform(&transform_record(1.0, [f64::NAN, 0.0, 0.0])).is_none());
+    }
+
+    #[test]
+    fn transform_scale_multiplies_the_linear_block_and_leaves_the_translation() {
+        let mut record = transform_record(10.0, [1.0, 0.0, 0.0]);
+        let mut tokens = record.tokens.to_vec();
+        tokens[3] = Token::Position([3.0, -2.0, 1.0]);
+        record.tokens = std::sync::Arc::from(tokens);
+        let rows = decode_transform(&record).unwrap().affine_rows();
+        assert_eq!(
+            rows,
+            [
+                [10.0, 0.0, 0.0, 30.0],
+                [0.0, 10.0, 0.0, -20.0],
+                [0.0, 0.0, 10.0, 10.0],
+            ]
+        );
     }
 }

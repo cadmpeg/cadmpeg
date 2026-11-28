@@ -660,9 +660,8 @@ impl<'a> ContainerScan<'a> {
         if !self.is_design_asset_entry(entry, expected_role) {
             return false;
         }
-        self.asset_segment(&entry.name).is_some_and(|segment| {
-            segment == "Design1" || is_numbered_segment(segment, "FusionDesignSegmentType")
-        })
+        self.asset_segment(&entry.name)
+            .is_some_and(is_design_segment)
     }
 
     /// Whether `entry` is a `BulkStream.dat` in an ACT segment of the
@@ -697,7 +696,7 @@ pub(crate) fn scan<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
 ) -> Result<ContainerScan<'a>, CodecError> {
-    scan_in(ctx, root, None)
+    scan_in(ctx, root, None, false)
 }
 
 /// [`scan`] of the F3Z member stored at `path`, whose given-up parts are
@@ -709,13 +708,26 @@ pub(crate) fn scan_member<'a>(
 ) -> Result<ContainerScan<'a>, CodecError> {
     let stream = StreamName::try_from(path.to_owned())
         .map_err(|_| CodecError::malformed("F3Z member path is empty"))?;
-    scan_in(ctx, root, Some(&stream))
+    scan_in(ctx, root, Some(&stream), false)
+}
+
+/// Read only the container members needed by the configuration decoder.
+pub(crate) fn scan_configurations<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+) -> Result<ContainerScan<'a>, CodecError> {
+    scan_in(ctx, root, None, true)
+}
+
+fn is_design_segment(segment: &str) -> bool {
+    segment == "Design1" || is_numbered_segment(segment, "FusionDesignSegmentType")
 }
 
 fn scan_in<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
     stream: Option<&StreamName>,
+    configurations_only: bool,
 ) -> Result<ContainerScan<'a>, CodecError> {
     #[cfg(test)]
     crate::test_support::scan_counts::record(root);
@@ -733,11 +745,18 @@ fn scan_in<'a>(
     let mut stored_ranges = BTreeMap::new();
 
     for file in archive.entries() {
+        let role = classify(&file.name);
+        if configurations_only
+            && !matches!(role, ContainerRole::Manifest | ContainerRole::DesignConfig)
+            && !(matches!(role, ContainerRole::Bulkstream | ContainerRole::Metastream)
+                && file.name.rsplit('/').nth(1).is_some_and(is_design_segment))
+        {
+            continue;
+        }
         let name = file.name.clone();
         if let Ok(range) = file.stored_range() {
             stored_ranges.insert(name.clone(), range);
         }
-        let role = classify(&name);
         let compression = file.compression;
         let compressed_size = file.compressed_size;
         let uncompressed_size = file.uncompressed_size;
