@@ -11,7 +11,6 @@ pub(crate) fn encoded(method: u8, body: &[u8]) -> Vec<u8> {
     }
     assert_eq!(method, 2);
     // Zstandard single-segment frame, four-byte content size, one raw last block.
-    // No encoder dependency: this also runs with PR #197's shared ruzstd decoder.
     let len = u32::try_from(body.len()).expect("fixture size");
     assert!(len < 128 * 1024);
     let mut bytes = vec![0x28, 0xb5, 0x2f, 0xfd, 0xa0];

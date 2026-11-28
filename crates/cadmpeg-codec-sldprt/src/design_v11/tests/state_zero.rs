@@ -51,8 +51,12 @@ pub(super) fn project(
     .unwrap();
     let mut timeline = super::super::tree::timeline(&native.feature_histories).unwrap();
     let definition = ir.design.scopes[0].definition.clone();
-    let entries =
-        super::super::parameters::Entries::new(&native.feature_histories, &timeline).unwrap();
+    let entries = super::super::parameters::Entries::new(
+        &native.feature_histories,
+        &native.feature_histories,
+        &timeline,
+    )
+    .unwrap();
     let mut typed = super::super::typed::project(
         &ir.model,
         &native.feature_histories,
@@ -60,13 +64,15 @@ pub(super) fn project(
         &mut timeline,
         &entries,
         &super::super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
             definition: &definition,
             outside_profile: outside,
             surfaces: &ir.geometry.surfaces,
             linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let FeatureOperation::Extrude(extrude) =
         &timeline_feature(&timeline, "Boss").definition.operation

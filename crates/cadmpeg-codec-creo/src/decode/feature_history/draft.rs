@@ -56,8 +56,8 @@ use crate::decode::sketch_transfer::recipe::{
     feature_section_sweep_semantics_conflict, FeatureSchemaClasses,
 };
 use crate::feature::schema::SchemaClass;
+use crate::vecmath::dot;
 use crate::vecmath::normalize;
-use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::edge_treatments::{ChamferSpec, RadiusSpec};
 use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
@@ -907,8 +907,13 @@ pub(in super::super) fn schema_feature_definition(
                 let z_axis = normalize([values[6], values[7], values[8]]);
                 let origin = [values[9], values[10], values[11]];
                 if let (Some(x_axis), Some(y_axis), Some(z_axis)) = (x_axis, y_axis, z_axis) {
-                    let right_handed = dot(cross(x_axis, y_axis), z_axis)
-                        >= 1.0 - EPS_FEATURE_LOCAL_SYSTEM_ORTHOGONAL;
+                    let right_handed = dot(
+                        <[f64; 3]>::from(
+                            cadmpeg_ir::math::Vector3::from(x_axis)
+                                .cross(cadmpeg_ir::math::Vector3::from(y_axis)),
+                        ),
+                        z_axis,
+                    ) >= 1.0 - EPS_FEATURE_LOCAL_SYSTEM_ORTHOGONAL;
                     let orthogonal = dot(x_axis, y_axis).abs()
                         <= EPS_FEATURE_LOCAL_SYSTEM_ORTHOGONAL
                         && dot(x_axis, z_axis).abs() <= EPS_FEATURE_LOCAL_SYSTEM_ORTHOGONAL

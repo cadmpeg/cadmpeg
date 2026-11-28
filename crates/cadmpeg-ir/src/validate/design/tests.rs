@@ -651,6 +651,104 @@ fn a_group_member_is_pinned_only_after_a_member_with_a_result_of_its_own() {
     assert_clean(&ir);
 }
 
+/// `grouped(Current)` with a third member, an extrude with a current
+/// state, so that the scope's current geometry is stated and holds neither
+/// datum.
+fn grouped_beside_a_current_state() -> CadIr {
+    let mut ir = grouped(json!({"kind": "current"}));
+    ir.design.features.push(feature(
+        "c",
+        json!({"kind": "unresolved", "value": {"family": "extrude"}}),
+    ));
+    let Container::Unordered { members, .. } = &mut ir.design.containers[0] else {
+        unreachable!()
+    };
+    members.insert(from(
+        json!({"kind": "feature", "value": key("feature", "c")}),
+    ));
+    ir.design.scopes[0].current.push(from(json!({
+        "at": {"kind": "after", "value": {"kind": "feature", "value": key("feature", "c")}},
+        "bodies": [],
+        "poses": [],
+        "status": "current"
+    })));
+    ir
+}
+
+#[test]
+fn a_group_member_attached_to_a_stateless_member_orders_it_before_its_picks() {
+    // Datum b is attached to datum a; no current state depends on either.
+    assert_clean(&grouped_beside_a_current_state());
+
+    let mut cycle = grouped_beside_a_current_state();
+    cycle.design.features[0] = feature(
+        "a",
+        plane_datum(construction(vec![input(
+            "offset",
+            Some(named(json!({"kind": "current"}), vec![datum_pick("b")])),
+            Some(length(1.0)),
+        )])),
+    );
+    assert_finding(
+        &cycle,
+        Check::Design,
+        Severity::Warning,
+        "a back-edge of a dependency cycle",
+    );
+    assert!(!findings(&cycle).iter().any(|finding| {
+        finding.severity == Severity::Error
+            && finding
+                .message
+                .contains("does not depend-order before its anchor")
+    }));
+}
+
+/// `grouped_beside_a_current_state` with datum `a` moved into an ordered
+/// Body, a member of the group, whose rollback is before `a`.
+fn grouped_beside_an_unbuilt_body() -> CadIr {
+    let mut ir = grouped_beside_a_current_state();
+    let Container::Unordered { members, .. } = &mut ir.design.containers[0] else {
+        unreachable!()
+    };
+    members.remove(&from(
+        json!({"kind": "feature", "value": key("feature", "a")}),
+    ));
+    members.insert(from(
+        json!({"kind": "container", "value": key("container", "body")}),
+    ));
+    ir.design.containers.push(from(json!({
+        "kind": "ordered",
+        "value": {
+            "id": key("container", "body"),
+            "kind": "body",
+            "members": [{"kind": "feature", "value": key("feature", "a")}],
+            "folders": [],
+            "rollback": {"kind": "before", "value": {"kind": "feature", "value": key("feature", "a")}}
+        }
+    })));
+    ir
+}
+
+#[test]
+fn a_group_member_attached_to_an_unbuilt_stateless_feature_orders_it_before_its_picks() {
+    // A member of an unordered container depends on each stateless feature
+    // its own selections pick, in whichever container that feature sits
+    // (§5.3).
+    assert_clean(&grouped_beside_an_unbuilt_body());
+}
+
+#[test]
+fn a_group_member_attached_to_a_suppressed_member_orders_it_before_its_picks() {
+    // A suppressed extrude is stateless (§5.4), so it has no state that the
+    // current geometry could hold.
+    let mut ir = grouped_beside_a_current_state();
+    ir.design.features[0].definition.operation = FeatureOperation::Unresolved {
+        family: crate::design::feature::OperationFamily::Extrude,
+    };
+    ir.design.features[0].suppressed = Some(crate::design::dimension::Dimension::Literal(true));
+    assert_clean(&ir);
+}
+
 #[test]
 fn a_group_member_is_not_pinned_after_a_container() {
     let mut ir = grouped(pinned_after("container", &key("container", "body")));

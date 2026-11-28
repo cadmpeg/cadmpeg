@@ -393,6 +393,7 @@ fn file_offset(source: &[SourceExtent], logical: usize) -> Option<usize> {
     None
 }
 
+// resource-cap: MAX_VERTEX_RETRIES = 4
 const MAX_VERTEX_RETRIES: usize = 3;
 const ANCHOR_AGREEMENT_MM: f64 = 0.0004;
 pub(super) const VERTEX_RETRY_PRIORITY: u8 = 5;

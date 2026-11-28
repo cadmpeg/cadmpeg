@@ -154,6 +154,7 @@ fn stream_plane_placement(
 
 /// The work one witness decision may spend: one unit per edge a curve is
 /// compared with.
+// resource-cap: MAX_WITNESS_WORK = 4
 const MAX_WITNESS_WORK: usize = 2_000_000;
 
 /// The vertices and the line and circular edges of the decoded solid, in

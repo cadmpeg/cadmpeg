@@ -79,10 +79,12 @@ pub mod fuzz;
 
 /// Maximum number of exact rational-quadratic spans materialized for one
 /// angular curve or surface direction from untrusted native parameters.
+// resource-cap: MAX_EXACT_ARC_SPANS = 2
 const MAX_EXACT_ARC_SPANS: f64 = 4_096.0;
 
 /// Maximum number of control points materialized for one NURBS surface from
 /// untrusted native cardinalities.
+// resource-cap: MAX_NURBS_SURFACE_CONTROL_POINTS = 2
 const MAX_NURBS_SURFACE_CONTROL_POINTS: usize = 1_000_000;
 
 /// Multiplies two NURBS surface dimensions within the materialization limit.
@@ -102,7 +104,7 @@ use cadmpeg_ir::ContainerSummary;
 pub struct CatiaCodec;
 
 impl CodecBackend for CatiaCodec {
-    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+    const FORMAT: FormatId = FormatId::new(dialect::registry_ids::FORMAT);
     fn detect_impl(
         &self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,

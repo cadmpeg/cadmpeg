@@ -236,6 +236,7 @@ impl crate::wire::DecoderBound for FramingError {
 
 /// Parses the exact 32-byte file header.
 pub(crate) fn parse_header(bytes: &[u8]) -> Result<Header, FramingError> {
+    // resource-cap: MAX_HEADER_SEARCH = 1
     const MAX_HEADER_SEARCH: usize = 33_554_432 + MAGIC.len();
     let search_end = bytes.len().min(MAX_HEADER_SEARCH);
 

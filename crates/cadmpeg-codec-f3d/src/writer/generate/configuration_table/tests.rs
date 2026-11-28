@@ -1341,11 +1341,11 @@ fn owner_conflict() -> (
     }
     ir.model.sketches.push(sketch);
     let mut losses = Vec::new();
-    let archive = crate::test_support::zip_test::f3d_with_configurations(
-        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    let archive = crate::test_support::zip_fixture::f3d_with_configurations(
+        &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
         &[],
     );
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::test_support::with_decode_context(|ctx| {
             crate::decode::attach_design(ctx, scan, &native, &mut ir, &mut losses)
         })

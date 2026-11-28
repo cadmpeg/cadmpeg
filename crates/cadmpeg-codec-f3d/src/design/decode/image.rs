@@ -105,8 +105,8 @@ mod tests {
 
     use zip::CompressionMethod;
 
-    use crate::test_support::manifest_test::write_synthetic_manifests;
-    use crate::test_support::zip_test::with_scan;
+    use crate::test_support::manifest_fixture::write_synthetic_manifests;
+    use crate::test_support::zip_fixture::with_scan;
 
     #[test]
     fn embedded_image_asset_reads_unique_entry() {

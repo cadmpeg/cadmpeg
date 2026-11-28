@@ -5,7 +5,7 @@ use cadmpeg_core::bytes::find_in;
 use cadmpeg_core::CodecError;
 
 use crate::scalar::{self, ScalarCache};
-use crate::vecmath::{cross, dot, normalize_with_length};
+use crate::vecmath::{dot, normalize_with_length};
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveLength, PositiveReal};
@@ -374,7 +374,10 @@ pub(crate) fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllips
         {
             continue;
         }
-        let Some((axis_unit, _)) = normalize_with_length(cross(first_frame, second_frame)) else {
+        let Some((axis_unit, _)) = normalize_with_length(<[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(first_frame)
+                .cross(cadmpeg_ir::math::Vector3::from(second_frame)),
+        )) else {
             continue;
         };
         let axis: [f64; 3] = (*axis_unit.as_raw()).into();
@@ -408,8 +411,11 @@ pub(crate) fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllips
             } else if (first_radius - minor_radius.get()).abs()
                 <= EPS_RADIUS_AGREEMENT * radius_scale
             {
-                normalize_with_length(cross(first_direction_raw, axis))
-                    .map(|(direction, _)| direction)
+                normalize_with_length(<[f64; 3]>::from(
+                    cadmpeg_ir::math::Vector3::from(first_direction_raw)
+                        .cross(cadmpeg_ir::math::Vector3::from(axis)),
+                ))
+                .map(|(direction, _)| direction)
             } else {
                 None
             }
@@ -662,6 +668,7 @@ fn named_conic_local_system(
     cache: &ScalarCache,
 ) -> Option<(usize, Option<cadmpeg_ir::units::FiniteVector<12>>)> {
     const TERMINATOR: &[u8] = &[0xf2, crate::psb::token::ENTITY_REF];
+    // resource-cap: MAX_FRAME_BYTES = 1
     const MAX_FRAME_BYTES: usize = 12 * 9;
     let mut marker_count = 0;
     let mut only_marker = 0;
@@ -895,6 +902,7 @@ fn positional_conic_local_system(
     local_start: usize,
     cache: &ScalarCache,
 ) -> Option<(usize, cadmpeg_ir::units::FiniteVector<12>)> {
+    // resource-cap: MAX_FRAME_BYTES = 1
     const MAX_FRAME_BYTES: usize = 12 * 9;
     let first_end = local_start.checked_add(1)?;
     let last_end = local_start.checked_add(MAX_FRAME_BYTES)?.min(body.len());

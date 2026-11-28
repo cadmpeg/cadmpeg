@@ -13,9 +13,9 @@ use crate::test_support::configuration_table::{
     root_record, set_active_row, table_document, unsourced, with_root_segment, written_on,
     ROOT_RECORD,
 };
-use crate::test_support::native_test::f3d_native;
-use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-use crate::test_support::zip_test::{f3d_with_configuration, f3d_with_configurations};
+use crate::test_support::native_fixture::f3d_native;
+use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+use crate::test_support::zip_fixture::{f3d_with_configuration, f3d_with_configurations};
 use crate::F3dCodec;
 
 const ENTRY: &str = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
@@ -226,7 +226,7 @@ fn a_source_row_of_a_table_document_with_no_rows_is_written_as_stated() {
 fn a_table_id_another_document_holds_decodes_renamed() {
     const OTHER: &str = "FusionAssetName[Active]/DesignConfigurationTable.456.dsgcfg";
     let mut ir = source_less(rooted());
-    crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
+    crate::test_support::native_fixture::update_f3d_native(&mut ir, |native| {
         let empty = || {
             table_document("1", &[], &[], &[])
                 .as_object()
@@ -303,7 +303,7 @@ fn a_table_id_another_document_holds_decodes_renamed() {
 fn a_cleared_active_row_leaves_only_written_records_in_the_type_table() {
     let mut ir = source_less(rooted());
     assert!(listed(&ir, ROOT_RECORD));
-    crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
+    crate::test_support::native_fixture::update_f3d_native(&mut ir, |native| {
         let document = &native.design_configurations[0];
         native.design_configurations[0] =
             crate::records::configuration::DesignConfiguration::try_new(
@@ -593,7 +593,7 @@ fn a_document_read_from_cadir_writes_its_tables_with_and_without_the_sidecar() {
     let mut read = decoded.ir().clone();
     read.model.drop_omitted_arenas();
     assert!(read.model.configurations.is_empty());
-    crate::test_support::native_test::update_f3d_native(&mut read, |native| {
+    crate::test_support::native_fixture::update_f3d_native(&mut read, |native| {
         let configuration = &mut native.design_configurations[0];
         let mut payload = configuration.payload().clone();
         payload["tables"][0]["rows"][2]["asset"]["attributes"]["pim:configuration:rowName"] =

@@ -52,7 +52,12 @@ use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch, G
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
-include!("dialect/registry_ids.rs");
+#[path = "dialect/registry_ids.rs"]
+pub(crate) mod registry_ids;
+use self::registry_ids::{
+    FORMAT, STEP_AP242, STEP_AP242_BO_MODEL_XML, STEP_AP242_E2, STEP_PART26_HDF5, STEP_PART28_XML,
+    STEP_UNKNOWN,
+};
 
 /// Key of the `FILE_SCHEMA` identifier the row keys on, in
 /// [`DialectMatch::declared`].

@@ -9,6 +9,7 @@ use crate::layout::usdc_bootstrap as bootstrap;
 const USDA_COOKIE: &[u8] = b"#usda ";
 const SDF_COOKIE: &[u8] = b"#sdf ";
 /// Longest version token read from a text header.
+// resource-cap: MAX_VERSION_TOKEN = 1
 const MAX_VERSION_TOKEN: usize = 32;
 
 /// The header of a layer.

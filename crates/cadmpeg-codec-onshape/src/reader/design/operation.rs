@@ -285,7 +285,7 @@ fn bound<Q>(parameter: Option<ParameterId>, value: Q) -> Dimension<Q> {
 fn native(kind: &str) -> FeatureOperation {
     FeatureOperation::Native {
         kind: cadmpeg_ir::design::names::CodecName::new(
-            &cadmpeg_ir::codec_id!(crate::dialect::FORMAT),
+            &cadmpeg_ir::codec_id!(crate::dialect::registry_ids::FORMAT),
             kind,
         )
         .unwrap_or_else(|| cadmpeg_ir::codec_name!("onshape:feature")),
