@@ -5,15 +5,12 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::unknown::part::GivenUpPart;
-use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
 use crate::container::Scan;
 use crate::instances::{hex, DefinitionKind, LinkSource, UnitDetail};
-use crate::loss::RhinoLossCode;
 use crate::settings::UnitBinding;
 use crate::wire::Uuid;
 
@@ -172,13 +169,12 @@ fn external_record(definition_uuid: Uuid, link: &LinkSource) -> Option<ExternalR
 }
 
 /// Installs the source product graph without requiring occurrence expansion,
-/// and returns the losses and the given-up occurrence objects.
+/// and returns the given-up occurrence objects.
 pub(crate) fn install(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &Scan<'_>,
     ir: &mut CadIr,
-) -> Result<(Vec<LossNote>, Vec<GivenUpPart>), CodecError> {
-    let mut losses = Vec::new();
+) -> Result<Vec<GivenUpPart>, CodecError> {
     let mut given_up = Vec::new();
     let mut object_records = HashMap::<Uuid, Vec<(usize, String)>>::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
@@ -268,29 +264,17 @@ pub(crate) fn install(
         ) {
             Ok(reference) => reference,
             Err(error) => {
-                let loss = RhinoLossCode::ProductOccurrenceDropped.note(format_args!(
-                    "product occurrence {} at offset {} (class {}) could not be transferred: {error}",
-                    identity.source_id, object.range.start, object.class_uuid
-                ));
-                let tag = format!(
-                    "PRODUCT_OCCURRENCE/source={}/class={}",
-                    identity.source_id, object.class_uuid
-                );
-                let loss = loss.with_provenance(
-                    SourceProvenance::root(
-                        "rhino",
-                        cadmpeg_core::decode::u64_from_index(object.range.start),
-                    )
-                    .with_tag(tag),
-                );
                 given_up.push(crate::container::give_up_object_record(
                     ctx,
                     scan.data,
                     source_order,
                     object.range.clone(),
-                    &loss,
+                    error.cause(),
+                    format_args!(
+                        "product occurrence {} at offset {} (class {}) could not be transferred: {error}",
+                        identity.source_id, object.range.start, object.class_uuid
+                    ),
                 )?);
-                losses.push(loss);
                 continue;
             }
         };
@@ -336,7 +320,7 @@ pub(crate) fn install(
     namespace.set_arena(ctx, "product_definitions", &definitions)?;
     namespace.set_arena(ctx, "product_occurrences", &occurrences)?;
     namespace.set_arena(ctx, "external_references", &external)?;
-    Ok((losses, given_up))
+    Ok(given_up)
 }
 
 #[cfg(test)]
@@ -364,31 +348,28 @@ mod tests {
             .source_id
             .clone();
         let mut ir = CadIr::empty();
-        let (losses, given_up) = install(
+        let given_up = install(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             &scan,
             &mut ir,
         )
         .expect("other product records remain transferable");
-        assert_eq!(losses.len(), 1);
-        assert_eq!(given_up.len(), 1);
-        assert!(given_up[0].loss().message.starts_with(&format!(
+        let [part] = given_up.as_slice() else {
+            panic!("one given-up occurrence: {given_up:?}");
+        };
+        let loss = part.loss();
+        assert_eq!(
+            loss.code,
+            cadmpeg_ir::unknown::part::record_unreadable_kind()
+        );
+        assert!(loss.message.starts_with(&format!(
             "part object-record stream=\"\" offset={source_offset} length={} record={}: ",
             scan.objects[0].range().len(),
-            given_up[0].id()
+            part.id()
         )));
-        let message = &losses[0].message;
-        assert!(message.contains(&source_id));
-        assert!(message.contains(&format!("at offset {source_offset}")));
-        assert!(message.contains("could not be transferred"));
-        let provenance = losses[0]
-            .provenance
-            .as_ref()
-            .expect("located occurrence loss");
-        assert_eq!(
-            provenance.offset,
-            cadmpeg_core::decode::u64_from_index(source_offset)
-        );
+        assert!(loss.message.contains(&source_id));
+        assert!(loss.message.contains(&format!("at offset {source_offset}")));
+        assert!(loss.message.contains("could not be transferred"));
         assert!(ir.native.namespace("rhino").unwrap().arenas()["product_occurrences"].is_empty());
     }
 
@@ -540,6 +521,7 @@ mod tests {
             ],
         );
         let scan = crate::container::scan_owned(bytes.clone()).expect("complete product framing");
+        let bytes_for_pinned = bytes.clone();
         let decoded = EditableDecodeResult::from(
             crate::RhinoCodec
                 .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
@@ -555,17 +537,26 @@ mod tests {
             records[0].field("source_offset"),
             Some(cadmpeg_core::json!(scan.objects[3].range().start))
         );
-        let losses = decoded
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code == super::RhinoLossCode::ProductOccurrenceDropped.kind())
-            .collect::<Vec<_>>();
-        assert_eq!(losses.len(), 3);
-        for (index, loss) in losses.iter().enumerate() {
+        for (index, object) in objects.iter().take(3).enumerate() {
             let source = scan.objects[index]
                 .framed()
                 .expect("framed malformed occurrence");
+            let record = format!("rhino:object:record#{index:06}");
+            let loss = crate::container::tests::assert_part_given_up(
+                decoded.ir(),
+                decoded.source_fidelity(),
+                &decoded.report().losses,
+                ("object-record", source.range.start),
+                Some(&record),
+                &record,
+                // The empty payload breaks the reference grammar; a singular or
+                // non-finite transform has no typed reading.
+                if index == 0 {
+                    cadmpeg_ir::unknown::part::Cause::Unreadable
+                } else {
+                    cadmpeg_ir::unknown::part::Cause::Undecoded
+                },
+            );
             let provenance = loss.provenance.as_ref().expect("located product loss");
             assert_eq!(wire::field::<String>(&provenance, "format"), "rhino");
             assert_eq!(
@@ -573,34 +564,29 @@ mod tests {
                 cadmpeg_core::decode::u64_from_index(source.range.start)
             );
             assert!(loss.message.contains(&source.identity.source_id));
-            assert_eq!(
-                provenance.tag.as_deref(),
-                Some(
-                    format!(
-                        "PRODUCT_OCCURRENCE/source={}/class={}",
-                        source.identity.source_id, source.class_uuid
-                    )
-                    .as_str()
-                )
-            );
-            let record = format!("rhino:object:record#{index:06}");
-            crate::container::tests::assert_part_given_up(
-                decoded.ir(),
-                decoded.source_fidelity(),
-                &decoded.report().losses,
-                "object-record",
-                source.range.start,
-                Some(&record),
-                &record,
-            );
+            assert!(loss
+                .message
+                .contains(&format!("(class {})", source.class_uuid)));
             assert_eq!(
                 decoded
                     .source_fidelity()
                     .retained_record(&record)
                     .expect("complete malformed source retained")
                     .data(),
-                Some(objects[index].as_slice())
+                Some(object.as_slice())
             );
         }
+        let mut pinned = DecodeOptions::default();
+        pinned.strictness.pinned = true;
+        let failure = crate::RhinoCodec
+            .decode(&mut std::io::Cursor::new(bytes_for_pinned), &pinned)
+            .expect_err("a pinned decode refuses an unreadable product occurrence");
+        let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
+            panic!("expected a strict rejection, got {failure:?}");
+        };
+        assert_eq!(
+            rejection.loss().code,
+            cadmpeg_ir::unknown::part::record_unreadable_kind()
+        );
     }
 }

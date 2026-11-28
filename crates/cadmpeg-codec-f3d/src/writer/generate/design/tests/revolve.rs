@@ -996,7 +996,7 @@ fn a_rolled_back_revolve_follows_the_marker_with_its_definition() {
         })
         .filter_map(|feature| feature.name.as_deref())
         .collect::<Vec<_>>();
-    assert_eq!(revolves, ["Revolve 1", "Revolve 2"], "{:#?}", report.losses);
+    assert_eq!(revolves, ["Revolve1", "Revolve2"], "{:#?}", report.losses);
     let [Container::Ordered {
         members, rollback, ..
     }] = decoded.design.containers.as_slice()

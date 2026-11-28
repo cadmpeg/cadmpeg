@@ -106,18 +106,21 @@ pub(super) fn bound_result_bodies(
     }
 }
 
-/// A Base Feature scope projected as a copying move or as inserted copies,
-/// whose outputs are the copies its projection bound.
-pub(super) fn has_projection_bound_base_feature_outputs(
-    feature: &Feature,
-    scopes: &[DesignParameterScope],
-) -> bool {
-    matches!(
-        feature.evaluation.definition(),
-        FeatureDefinition::Operation(
-            FeatureOperation::MoveBody { .. } | FeatureOperation::InsertBodies { .. }
+pub(super) fn has_stored_outputs(feature: &Feature, scope: &DesignParameterScope) -> bool {
+    use cadmpeg_ir::features::selections::InsertedBodies;
+
+    bound_result_bodies(feature).is_some()
+        || matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::InsertBodies {
+                bodies: InsertedBodies::Resolved { .. },
+            })
         )
-    ) && is_base_feature_scope(feature, scopes)
+        || (scope.kind() == DesignFeatureKind::BaseFeature
+            && matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::MoveBody { .. })
+            ))
 }
 
 fn is_base_feature_scope(feature: &Feature, scopes: &[DesignParameterScope]) -> bool {

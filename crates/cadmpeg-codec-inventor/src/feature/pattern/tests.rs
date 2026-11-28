@@ -418,6 +418,7 @@ fn project_fixture_with_spacings(
                 geometry: reference(92),
                 links: vec![reference(93)],
                 span,
+                segments: 1,
             }),
         );
     }
@@ -1934,4 +1935,5 @@ fn pattern_seeds_require_their_exact_record_family() {
 }
 
 mod body_seeds;
+mod line_chains;
 mod omissions;

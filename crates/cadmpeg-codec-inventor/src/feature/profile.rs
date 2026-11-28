@@ -6,13 +6,13 @@ use std::collections::HashMap;
 use std::f64::consts::TAU;
 
 use cadmpeg_asm::brep::AsmBrep;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
 use cadmpeg_ir::features::profiles::{
     PlanarProfileRef, SketchProfileBoundaryUse, SketchProfileRegion,
 };
-use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
 use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::ids::IdentityKey;
@@ -85,9 +85,9 @@ pub(crate) struct ProfileBody {
 /// The profile bodies of a document's `PmDc` kernel-body records.
 pub(crate) struct ProfileBodies {
     pub(crate) bodies: Vec<ProfileBody>,
-    /// Kernel-body records that do not decode. Profile selections that link
-    /// to them keep their native selection.
+    /// Unreadable kernel-body records. Their profile selections stay native.
     pub(crate) undecoded: usize,
+    pub(crate) bounded: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 /// Decode the profile bodies that extrusion profiles resolve through. Only
@@ -100,6 +100,7 @@ pub(crate) fn decode_profile_bodies(
     let mut decoded = ProfileBodies {
         bodies: Vec::new(),
         undecoded: 0,
+        bounded: Vec::new(),
     };
     for segment in &document.segments {
         if segment.kind != SegmentKind::PmDc {
@@ -122,21 +123,49 @@ pub(crate) fn decode_profile_bodies(
             .iter()
             .filter(|record| record.type_id == crate::kernel::KERNEL_RECORD_TYPE_ID)
         {
-            match decode_profile_body(
+            let token = segment.pair.token.key();
+            let ordinal = record.ordinal;
+            let limit = match decode_profile_body(
                 ctx,
                 record.payload,
-                segment.pair.token.key(),
-                record.ordinal,
+                token,
+                ordinal,
                 record.payload_offset,
                 version,
             ) {
-                Ok(body) => {
-                    ctx.charge_entities(1, "admit Inventor PmDc profile body")?;
-                    decoded.bodies.push(body);
+                Ok(Ok(body)) => {
+                    let mut bytes = 0_u64;
+                    let mut entities = 1_u64;
+                    for wire in &body.wires {
+                        entities += 1 + u64_from_index(wire.edges.len());
+                        for edge in &wire.edges {
+                            if let Some(spline) = &edge.spline {
+                                bytes += spline_bytes(&spline.0);
+                            }
+                        }
+                    }
+                    match ctx.admit_optional(bytes, entities, "keep Inventor PmDc profile wires") {
+                        Ok(()) => {
+                            decoded.bodies.push(body);
+                            continue;
+                        }
+                        Err(limit) => limit,
+                    }
                 }
+                Ok(Err(limit)) => limit,
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                Err(_) => decoded.undecoded += 1,
-            }
+                Err(_) => {
+                    decoded.undecoded += 1;
+                    continue;
+                }
+            };
+            decoded.bounded.push(
+                crate::loss::InventorLossCode::FeatureProfileBodyUndecoded.note(format!(
+                    "PmDc profile body {token}:{ordinal}: {} during {}",
+                    CodecError::ResourceLimit(limit),
+                    limit.operation
+                )),
+            );
         }
     }
     Ok(decoded)
@@ -149,7 +178,7 @@ fn decode_profile_body(
     record_ordinal: u32,
     payload_offset: u64,
     version: u8,
-) -> Result<ProfileBody, CodecError> {
+) -> Result<Result<ProfileBody, ResourceLimit>, CodecError> {
     let carrier = crate::kernel::parse_carrier(
         payload,
         segment_token,
@@ -158,12 +187,23 @@ fn decode_profile_body(
         version,
     )?;
     let header = carrier.header.as_deref().map_err(CodecError::malformed)?;
-    let decoded = crate::kernel::decode_kernel_carrier(ctx, &carrier, header)?;
-    Ok(ProfileBody {
+    let wires = ctx.scratch(carrier.bytes.window().len(), |scratch| {
+        let brep = crate::kernel::inspect_kernel_carrier(scratch, &carrier, header)?;
+        profile_wires(scratch, &brep)
+    })?;
+    Ok(wires.map(|wires| ProfileBody {
         segment_token: segment_token.clone(),
         record_ordinal,
-        wires: profile_wires(ctx, &decoded.brep)?,
-    })
+        wires,
+    }))
+}
+
+fn spline_bytes(curve: &NurbsCurve) -> u64 {
+    let poles = match curve.pole_rows() {
+        NurbsPoles3::Polynomial { points } => std::mem::size_of_val(points.as_slice()),
+        NurbsPoles3::Rational { points } => std::mem::size_of_val(points.as_slice()),
+    };
+    u64_from_index(poles + std::mem::size_of_val(curve.knots().as_slice()))
 }
 
 fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileWire>, CodecError> {
@@ -291,16 +331,23 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
                 },
                 _ => None,
             };
-            let spline = edges.get(id.as_str()).and_then(|edge| {
-                let EdgeCarrier::Bounded(curve, interval) = &edge.carrier else {
-                    return None;
-                };
-                let SolvedCurveGeometry::Nurbs(nurbs) = curves.get(curve.as_str())?.solved()?
-                else {
-                    return None;
-                };
-                Some(Box::new((nurbs.clone(), interval.endpoints())))
-            });
+            let spline = edges
+                .get(id.as_str())
+                .and_then(|edge| {
+                    let EdgeCarrier::Bounded(curve, interval) = &edge.carrier else {
+                        return None;
+                    };
+                    let SolvedCurveGeometry::Nurbs(nurbs) = curves.get(curve.as_str())?.solved()?
+                    else {
+                        return None;
+                    };
+                    Some((nurbs, interval.endpoints()))
+                })
+                .map(|(nurbs, interval)| {
+                    ctx.retain_bytes(spline_bytes(nurbs), "copy Inventor profile spline")?;
+                    Ok::<_, CodecError>(Box::new((nurbs.clone(), interval)))
+                })
+                .transpose()?;
             wire_edges.push(ProfileEdge {
                 name,
                 start,

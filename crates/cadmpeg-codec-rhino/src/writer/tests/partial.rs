@@ -17,8 +17,9 @@ fn write(
 ) -> Result<(Vec<u8>, Vec<String>), cadmpeg_ir::codec::write::EncodeError> {
     let mut bytes = Vec::new();
     let plan = RhinoCodec.plan(
-        EncodeInput::new(ir, None),
-        TargetRequest::Explicit(RhinoArchiveVersion::V7.descriptor().id.as_str()),
+        EncodeInput::new(ir, None).with_target(TargetRequest::Explicit(
+            RhinoArchiveVersion::V7.descriptor().id.as_str(),
+        )),
     )?;
     let report = plan.write_to(&mut bytes)?;
     let messages = report

@@ -32,14 +32,6 @@
 
 **Need.** A part whose swept face stores a non-null `scale`, with its edge or pcurve parameters along the sweep.
 
-### DR-1012. Base of the decimal length options
-
-**Question.** Which length unit do the tenth, hundredth and thousandth options (length codes 68, 69 and 70) divide?
-
-**Known.** The three options are length unit options and store codes 68, 69 and 70 in `DefaultDistancePrimary`.
-
-**Need.** A part with a known edge length saved under each option, with the displayed value of that length.
-
 ### DR-1017. Group feature kind and feature operands
 
 **Question.** Which field separates a mirror copy from a pattern in a `CLSID_JMGroup` feature, and where does a feature store its profile, extent and direction?

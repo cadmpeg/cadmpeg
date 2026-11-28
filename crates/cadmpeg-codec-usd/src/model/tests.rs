@@ -32,16 +32,7 @@ fn lengths_scale_from_scene_units_to_millimetres() {
     assert_eq!(root.transform.unwrap().affine_rows()[2][3], 30.0);
     let vertices = ir.model.tessellations[0].vertices();
     assert!((vertices[1].get().x - 10.0).abs() <= EPS_LENGTH);
-    assert_eq!(
-        ir.source
-            .as_ref()
-            .unwrap()
-            .attributes
-            .iter()
-            .find(|(key, _)| key.as_str() == "up_axis")
-            .map(|(_, value)| value.as_str()),
-        Some("Y")
-    );
+    assert_eq!(ir.up_axis, Some(cadmpeg_ir::up_axis::UpAxis::Y));
 }
 
 #[test]
@@ -213,7 +204,7 @@ fn a_partial_brep_face_is_a_loss_that_names_it() {
         scale: 1.0,
         meters_per_unit: 0.001,
         kilograms_per_unit: 1.0,
-        up_axis: "Z".to_owned(),
+        up_axis: cadmpeg_ir::up_axis::UpAxis::Z,
         default_prim: None,
         malformed_units: false,
         malformed_mass_units: false,

@@ -5,7 +5,7 @@ use super::point_data::exact_point_data_construction;
 use super::shared_frames::{exact_fixed_scalar, extrude_operation_at, marked_record_reference};
 use crate::container::ContainerScan;
 use crate::design::decode::meta::{
-    design_primary_frames, metadata_for_bulk_stream, DesignPrimaryFrame,
+    metadata_for_bulk_stream, scan_design_primary_frames, DesignPrimaryFrame,
 };
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::ids::design_segment;
@@ -75,7 +75,7 @@ pub(crate) fn observe_sources(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Ok(frames) = design_primary_frames(bytes, &meta) else {
+        let Ok(frames) = scan_design_primary_frames(scan, &entry.name, &meta) else {
             continue;
         };
         let mut indexed = HashMap::new();
@@ -85,7 +85,7 @@ pub(crate) fn observe_sources(
                 .and_modify(|slot| *slot = None)
                 .or_insert(Some(frame));
         }
-        let records = IndexedRecordOffsets::build(bytes);
+        let records = scan.design_record_offsets(&entry.name)?;
         for scope in scopes
             .iter()
             .copied()
@@ -295,7 +295,7 @@ pub(crate) fn bind_constructions(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Ok(frames) = design_primary_frames(bytes, &meta) else {
+        let Ok(frames) = scan_design_primary_frames(scan, &entry.name, &meta) else {
             continue;
         };
         // A record repeated in the primary index has no unique frame.
@@ -306,7 +306,7 @@ pub(crate) fn bind_constructions(
                 .and_modify(|slot| *slot = None)
                 .or_insert(Some(frame));
         }
-        let records = IndexedRecordOffsets::build(bytes);
+        let records = scan.design_record_offsets(&entry.name)?;
         for (ordinal, scope) in scopes.iter().enumerate().filter(|(_, scope)| {
             scope.kind() == DesignFeatureKind::Pipe
                 && crate::ids::native_stream(&scope.id) == Some(stream.as_str())

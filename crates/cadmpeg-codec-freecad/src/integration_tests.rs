@@ -10,6 +10,7 @@ mod authored_gui;
 mod authored_history;
 mod authored_operations;
 mod design_v11;
+mod distance_joints;
 mod geometry_topology;
 mod gui_expand;
 mod measured_geometry;
@@ -22,6 +23,7 @@ mod revolve_direction;
 mod ring_traversal;
 mod shape_placement;
 mod sketch_bspline;
+mod unknown_key_sweep;
 mod unreadable_shapes;
 mod visibility;
 
@@ -31,7 +33,7 @@ use crate::test_support::test_archive::{
     streaming_archive_with_options, CORE_OPERATIONS,
 };
 use cadmpeg_core::serde_erase::json;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use std::io::Cursor;
 use zip::write::SimpleFileOptions;
@@ -224,7 +226,7 @@ fn typed_graph_pipeline_builds_mutates_writes_and_reloads_side_entries() {
 
     let mut bytes = Vec::new();
     FcstdCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&ir, None))
         .and_then(|plan| plan.write_to(&mut bytes))
         .unwrap();
     let round_trip = decode(bytes);
@@ -401,8 +403,7 @@ fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
         ),
     ];
     for (name, bytes) in fixtures {
-        let first = FcstdCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        let first = crate::test_support::cached_full_decode(bytes)
             .unwrap_or_else(|error| panic!("{name}: {error}"));
         let second = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())

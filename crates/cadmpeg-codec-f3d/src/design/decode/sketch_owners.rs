@@ -20,6 +20,8 @@ use crate::layout::sketch_owner_typed_reference as typed_owner_ref;
 use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
 
+use super::sketch::SKETCH_CONTAINER_TYPE_GUID;
+
 const COLLECTION_GUID: &str = "5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF";
 
 /// A collection frame that does not decode, or a decode-budget failure.
@@ -110,13 +112,23 @@ fn parse_collection(
         .counted(u64::from(declared), owner_ref::LEN)
         .ok_or_else(|| invalid(view))?;
     let mut members = ctx.alloc_filled(count.get(), 0, "F3D sketch collection members")?;
+    let mut run_is_typed = None;
     for member in &mut members {
         let mut end = 0;
         let parsed = take_reference(view.unread(), &mut end).ok_or_else(|| invalid(view))?;
-        let Some((target, None)) = parsed.local() else {
+        let Some((target, inline_type)) = parsed.local() else {
             return Err(invalid(view));
         };
-        if target == 0 {
+        let typed = match inline_type {
+            None => false,
+            Some(guid) => {
+                if version != 3 || !guid.eq_ignore_ascii_case(SKETCH_CONTAINER_TYPE_GUID) {
+                    return Err(invalid(view));
+                }
+                true
+            }
+        };
+        if target == 0 || *run_is_typed.get_or_insert(typed) != typed {
             return Err(invalid(view));
         }
         view.req_take(end)?;
@@ -178,8 +190,9 @@ pub(crate) fn attach(
         let view = scan
             .entry_view(&entry.name)
             .ok_or_else(|| CodecError::malformed("missing Design stream"))?;
-        let frames = super::meta::typed_primary_frames(
-            view.window(),
+        let frames = super::meta::scan_typed_primary_frames(
+            scan,
+            &entry.name,
             &meta,
             COLLECTION_GUID,
             "sketch owner collection",

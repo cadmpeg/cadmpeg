@@ -25,7 +25,7 @@ use cadmpeg_core::decode::{ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap};
 
@@ -110,21 +110,16 @@ fn names_history(name: Option<&str>) -> bool {
 /// The part a Keywords history member is when no record is read from it.
 const HISTORY_MEMBER_PART: &str = "history-member";
 
-/// Charges a Keywords history member that no record is read from, and gives
-/// up its section as a part. The source record holds the section's bytes, so
-/// the part keeps only their digest.
+/// Gives up, for `cause`, the section of a Keywords history member that no
+/// record is read from. The source record holds the section's bytes, so the
+/// part keeps only their digest.
 fn report_unread(
     ctx: &DecodeContext<'_>,
     section: Section<'_>,
-    losses: &mut Vec<LossNote>,
     given_up: &mut Vec<GivenUpPart>,
-    cause: &str,
+    (cause, why): (Cause, &str),
 ) -> Result<(), CodecError> {
     let stream = section.source_stream();
-    let note = crate::loss::SldprtLossCode::HistoryUnread.note(format!(
-        "Keywords member {}: {cause}; no configuration or feature of the history is read",
-        stream.as_str()
-    ));
     let part = Part::at(
         "sldprt",
         HISTORY_MEMBER_PART,
@@ -135,9 +130,11 @@ fn report_unread(
     .named(stream.as_str())
     .in_stream(stream.clone())
     .digest_only();
-    let error = CodecError::malformed(format_args!("{}: {}", note.code, note.message));
-    given_up.push(ctx.give_up_part(part, error)?);
-    losses.push(note);
+    let error = CodecError::malformed(format_args!(
+        "Keywords member {}: {why}; no configuration or feature of the history is read",
+        stream.as_str()
+    ));
+    given_up.push(ctx.give_up_part(part, cause, error)?);
     Ok(())
 }
 
@@ -379,13 +376,18 @@ pub(crate) fn histories(
             let stream = section.source_stream();
             let named = names_history(section.name());
             let Some(payload) = section.xml_payload() else {
-                if named {
+                // A wrapped member that does not inflate is given up by the
+                // container, and that give-up states the lost history.
+                let member_given_up = scan.given_up.iter().any(|part| {
+                    part.kind() == crate::container::WRAPPED_MEMBER_PART
+                        && part.stream() == Some(stream)
+                });
+                if named && !member_given_up {
                     report_unread(
                         ctx,
                         section,
-                        losses,
                         given_up,
-                        "no XML payload is decoded from it",
+                        (Cause::Unreadable, "no XML payload is decoded from it"),
                     )?;
                 }
                 return Ok(histories);
@@ -395,9 +397,11 @@ pub(crate) fn histories(
                     report_unread(
                         ctx,
                         section,
-                        losses,
                         given_up,
-                        "its bytes are not UTF-8 or UTF-16LE text",
+                        (
+                            Cause::Unreadable,
+                            "its bytes are not UTF-8 or UTF-16LE text",
+                        ),
                     )?;
                 }
                 return Ok(histories);
@@ -406,13 +410,15 @@ pub(crate) fn histories(
                 Ok(tree) => tree,
                 Err(error) => {
                     if named {
-                        let cause = match error {
-                            CodecError::Malformed(message) => {
-                                format!("its XML does not parse: {message}")
-                            }
-                            refused => format!("its XML is refused: {refused}"),
+                        // A refusal is a parser bound, not a defect of the text.
+                        let (cause, why) = match error {
+                            CodecError::Malformed(message) => (
+                                Cause::Unreadable,
+                                format!("its XML does not parse: {message}"),
+                            ),
+                            refused => (Cause::Undecoded, format!("its XML is refused: {refused}")),
                         };
-                        report_unread(ctx, section, losses, given_up, &cause)?;
+                        report_unread(ctx, section, given_up, (cause, &why))?;
                     }
                     return Ok(histories);
                 }
@@ -420,11 +426,11 @@ pub(crate) fn histories(
             let root = doc.root_element();
             if !root.tag_name().name().contains("Keywords") {
                 if named {
-                    let cause = format!(
+                    let why = format!(
                         "its root element {:?} is not a Keywords root",
                         root.tag_name().name()
                     );
-                    report_unread(ctx, section, losses, given_up, &cause)?;
+                    report_unread(ctx, section, given_up, (Cause::Undecoded, &why))?;
                 }
                 return Ok(histories);
             }

@@ -89,6 +89,7 @@ pub mod tessellation;
 pub mod topology;
 pub mod transform;
 pub mod units;
+pub mod up_axis;
 pub mod validate;
 
 pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote};

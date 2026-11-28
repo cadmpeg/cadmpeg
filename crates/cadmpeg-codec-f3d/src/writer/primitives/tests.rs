@@ -64,7 +64,7 @@ fn a_definition_or_dependencies_other_than_the_feature_s_make_the_configurations
         parameters: std::collections::BTreeMap::new(),
     });
     assert!(!projects(&definition, &[document()], &targets).unwrap());
-    let bases = bases(&natives.neutral_features);
+    let bases = bases(&natives.neutral_features, &natives.neutral_parameters);
     assert_eq!(
         differences(&definition[0], &decoded[0], &bases)
             .iter()
@@ -107,7 +107,7 @@ fn a_feature_state_a_configuration_does_not_state_is_the_feature_s_own_state() {
     let mut suppressed = neutral_feature(&scope(2), "f3d:test:feature#a");
     suppressed.suppressed = Some(true);
     features.push(suppressed.clone());
-    let bases = bases(&features);
+    let bases = bases(&features, &[]);
     let stated = configurations()[0].clone();
 
     let mut explicit = stated.clone();
