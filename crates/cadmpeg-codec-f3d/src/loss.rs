@@ -695,6 +695,10 @@ pub(crate) enum F3dLossCode {
     HistoryRollbackUnread,
     /// An unread timeline item precedes the first rolled-back item; the rollback marker can stand before it.
     HistoryRollbackBoundUnread,
+    /// A timeline item matches its v10 feature by its position in its Design stream because no scope record states the pairing.
+    HistoryItemMatchedByPosition,
+    /// An archive member's feature does not name the component that owns it, because the member's scope does not span the owner's definition.
+    HistoryMemberComponentUnstated,
     /// A coordinate frame retains its source construction references and expressions.
     CoordinateSystemConstructionNative,
     /// A coordinate frame transfers without its source construction references and expressions.
@@ -1305,9 +1309,11 @@ pub(crate) enum F3dLossCode {
     MeshVertexPrecisionReduced,
     /// A bodyless design's sketches or reference images are its complete carrier.
     BodylessDesignCarrier,
-    /// Empty modern model-body maps select no body, and the design declares no
-    /// body, sketch entity, or reference image.
+    /// The design selects no body and declares no body, sketch entity,
+    /// reference image, or Design record.
     EmptyDesign,
+    /// A design stores Design records and no geometry carrier transferred.
+    DesignRecordsUntransferred,
     /// A part design stores mesh geometry containers and no BREP entry, and no mesh body transferred.
     MeshOnlyDesignUntransferred,
     /// An assembly document's geometry lives in external references.
@@ -1883,6 +1889,8 @@ impl F3dLossCode {
         Self::ConfigurationPropertyUnprojected,
         Self::HistoryRollbackUnread,
         Self::HistoryRollbackBoundUnread,
+        Self::HistoryItemMatchedByPosition,
+        Self::HistoryMemberComponentUnstated,
         Self::CoordinateSystemConstructionNative,
         Self::CoordinateSystemConstructionDropped,
         Self::CoordinateSystemFrameUnresolved,
@@ -2227,6 +2235,7 @@ impl F3dLossCode {
         Self::MeshVertexPrecisionReduced,
         Self::BodylessDesignCarrier,
         Self::EmptyDesign,
+        Self::DesignRecordsUntransferred,
         Self::MeshOnlyDesignUntransferred,
         Self::AssemblyComponentsExternal,
         Self::NurbsSurfaceCarrier,
@@ -2929,6 +2938,8 @@ impl F3dLossCode {
             Self::ConfigurationPropertyUnprojected => "configuration.property-unprojected",
             Self::HistoryRollbackUnread => "history.rollback-unread",
             Self::HistoryRollbackBoundUnread => "history.rollback-bound-unread",
+            Self::HistoryItemMatchedByPosition => "history.item-matched-by-position",
+            Self::HistoryMemberComponentUnstated => "history.member-component-unstated",
             Self::CoordinateSystemConstructionNative => {
                 "feature.coordinate-system-construction-native"
             }
@@ -3464,6 +3475,7 @@ impl F3dLossCode {
             Self::MeshVertexPrecisionReduced => "mesh.vertex-precision-reduced",
             Self::BodylessDesignCarrier => "design.bodyless-carrier",
             Self::EmptyDesign => "design.empty",
+            Self::DesignRecordsUntransferred => "design.records-untransferred",
             Self::MeshOnlyDesignUntransferred => "design.mesh-only-untransferred",
             Self::AssemblyComponentsExternal => "assembly.components-external",
             Self::NurbsSurfaceCarrier => "geometry.nurbs-surface-carrier",
@@ -3670,6 +3682,7 @@ impl F3dLossCode {
             | Self::HistoryRecordFramingFailed
             | Self::MeshContainerUndecoded
             | Self::MeshOnlyDesignUntransferred
+            | Self::DesignRecordsUntransferred
             | Self::MissingGeometryStream
             | Self::XrefCycle
             | Self::XrefMemberMissing
@@ -4013,6 +4026,8 @@ impl F3dLossCode {
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
             | Self::HistoryRollbackBoundUnread
+            | Self::HistoryItemMatchedByPosition
+            | Self::HistoryMemberComponentUnstated
             | Self::CoordinateSystemConstructionNative
             | Self::CoordinateSystemConstructionDropped
             | Self::CoordinateSystemFrameUnresolved
@@ -4805,6 +4820,8 @@ impl F3dLossCode {
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
             | Self::HistoryRollbackBoundUnread
+            | Self::HistoryItemMatchedByPosition
+            | Self::HistoryMemberComponentUnstated
             | Self::CoordinateSystemConstructionNative
             | Self::CoordinateSystemConstructionDropped
             | Self::CoordinateSystemFrameUnresolved
@@ -5174,6 +5191,7 @@ impl F3dLossCode {
             | Self::SurfaceShapeNotDecoded
             | Self::GeometryNotTransferred
             | Self::MeshOnlyDesignUntransferred
+            | Self::DesignRecordsUntransferred
             | Self::SketchCurveUndecoded => LossTaxonomy::GeometryNotTransferred,
             Self::MeshContainerUnjoined | Self::MeshContainerMissing => {
                 LossTaxonomy::AssetNotTransferred
@@ -5723,6 +5741,8 @@ mod tests {
                 "configuration.property-unprojected",
                 "history.rollback-unread",
                 "history.rollback-bound-unread",
+                "history.item-matched-by-position",
+                "history.member-component-unstated",
                 "feature.coordinate-system-construction-native",
                 "feature.coordinate-system-construction-dropped",
                 "feature.coordinate-system-frame-unresolved",
@@ -6067,6 +6087,7 @@ mod tests {
                 "mesh.vertex-precision-reduced",
                 "design.bodyless-carrier",
                 "design.empty",
+                "design.records-untransferred",
                 "design.mesh-only-untransferred",
                 "assembly.components-external",
                 "geometry.nurbs-surface-carrier",
