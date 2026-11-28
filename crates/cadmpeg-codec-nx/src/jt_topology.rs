@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Topological dual-mesh reconstruction for embedded JT display models.
 
+// resource-cap: MAX_TOPOLOGY_ITEMS = 2
 const MAX_TOPOLOGY_ITEMS: usize = 1_000_000;
+// resource-cap: MAX_TOPOLOGY_SLOTS = 2
 const MAX_TOPOLOGY_SLOTS: usize = 8_000_000;
 
 use cadmpeg_core::decode::DecodeContext;

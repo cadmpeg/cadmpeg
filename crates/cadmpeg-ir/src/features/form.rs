@@ -10,76 +10,76 @@ use std::collections::{BTreeMap, HashSet};
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "Native inputs and evidence for a Form construction."]
 pub struct FormInputs {
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Native parameter expressions indexed by parameter name."]
     pub parameters: BTreeMap<NonBlankString, String>,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Ordered direct native references, including repetitions."]
     pub references: Vec<NativeId>,
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "form_reference_runs_schema")
     )]
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Alternative direct-reference runs whose order is unresolved."]
     pub reference_runs: Vec<Vec<NativeId>>,
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "unique_form_vec::<FormNativeList>")
     )]
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Native lists with their source paths, roles, declared counts, and readable members."]
     pub lists: Vec<FormNativeList>,
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "unique_form_vec::<FormNativeReference>")
     )]
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Native reference slots with their roles and target evidence."]
     pub reference_evidence: Vec<FormNativeReference>,
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "unique_form_vec::<FormPositionEvidence>")
     )]
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Evidence that places an observation at a source ordinal."]
     pub position_evidence: Vec<FormPositionEvidence>,
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "unique_form_vec::<FormOrderEvidence>")
     )]
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Evidence for relative order among observations."]
     pub order_evidence: Vec<FormOrderEvidence>,
     #[cfg_attr(feature = "schema", schemars(schema_with = "unique_form_vec::<u32>"))]
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Independent claims about the number of members."]
     pub cardinality_evidence: Vec<u32>,
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "unique_form_vec::<FormClosureEvidence>")
     )]
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Earlier complete membership claims retained as evidence."]
     pub closure_evidence: Vec<FormClosureEvidence>,
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "unique_form_vec::<FormResource>")
     )]
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Native serializer resource identities."]
     pub resource_evidence: Vec<FormResource>,
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "unique_form_vec::<FormResourceAssociation>")
     )]
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Additional associations between decoded cages and resources."]
     pub resource_associations: Vec<FormResourceAssociation>,
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "unique_form_vec::<FormResourceStateEvidence>")
     )]
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Claims about the availability of serializer resources."]
     pub resource_state_evidence: Vec<FormResourceStateEvidence>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "A source claim that places an observation at an ordinal."]
 pub struct FormPositionEvidence {
     #[serde(
         default,
@@ -87,11 +87,11 @@ pub struct FormPositionEvidence {
         deserialize_with = "deserialize_position_source"
     )]
     #[cfg_attr(feature = "schema", schemars(with = "FormInputPath"))]
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Source path for the position claim, when available."]
     pub source: Option<FormInputPath>,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Index of the observation in the canonical observation vector."]
     pub observation: FormObservationIndex,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Zero-based position claimed for the observation."]
     pub ordinal: u32,
 }
 cadmpeg_core::named_optional_field!(deserialize_position_source, FormInputPath, "source");
@@ -99,11 +99,11 @@ cadmpeg_core::named_optional_field!(deserialize_position_source, FormInputPath, 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "A source or assumed relative order of observations."]
 pub struct FormOrderEvidence {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Origin of the order claim."]
     pub order: FormKnownOrder,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Observation indices in the claimed relative order."]
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "form_order_members_schema")
@@ -114,13 +114,13 @@ pub struct FormOrderEvidence {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "An earlier complete membership claim retained as evidence."]
 pub struct FormClosureEvidence {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Observation indices in the claimed membership."]
     pub members: Vec<FormObservationIndex>,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Origin of the sequence order."]
     pub order: FormKnownOrder,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Origin of the membership claim."]
     pub certainty: FormKnownOrder,
 }
 
@@ -131,13 +131,13 @@ pub struct FormClosureEvidence {
     {"if": {"properties": {"target": {"properties": {"kind": {"const": "document"}}}}}, "then": {"anyOf": [{"required": ["inline_type_guid"]}, {"properties": {"target": {"required": ["target_type_guid"]}}}]}},
     {"if": {"properties": {"target": {"properties": {"kind": {"enum": ["null", "unreadable", "unvisited"]}}}}}, "then": {"not": {"required": ["inline_type_guid"]}}}
 ])))]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "A native reference slot and its retained target evidence."]
 pub struct FormNativeReference {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Native record that contains the reference."]
     pub source: NativeId,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Role of the reference in its source record."]
     pub role: FormReferenceRole,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Zero-based source slot for the reference."]
     pub ordinal: u32,
     #[serde(
         default,
@@ -145,7 +145,7 @@ pub struct FormNativeReference {
         deserialize_with = "deserialize_reference_group"
     )]
     #[cfg_attr(feature = "schema", schemars(with = "FormReferenceGroup"))]
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Label that groups alternative references with the same source and role."]
     pub group: Option<FormReferenceGroup>,
     #[serde(
         default,
@@ -162,9 +162,9 @@ pub struct FormNativeReference {
             )
         )
     )]
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Type GUID encoded inline with the reference, when present."]
     pub inline_type_guid: Option<String>,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Target identity or the state of an unreadable slot."]
     pub target: FormNativeReferenceTarget,
     #[serde(
         default,
@@ -172,11 +172,11 @@ pub struct FormNativeReference {
         deserialize_with = "deserialize_resource"
     )]
     #[cfg_attr(feature = "schema", schemars(with = "FormResource"))]
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Serializer resource associated with the reference, when present."]
     pub resource: Option<FormResource>,
 }
 impl FormNativeReference {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Create a reference with its source, role, ordinal, and target."]
     pub fn new(
         source: NativeId,
         role: FormReferenceRole,
@@ -194,7 +194,7 @@ impl FormNativeReference {
         }
     }
 
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Attach an alternative group label to the reference."]
     #[must_use]
     pub fn with_group(mut self, group: FormReferenceGroup) -> Self {
         self.group = Some(group);
@@ -205,11 +205,11 @@ impl FormNativeReference {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "Label that distinguishes reference alternatives within a source and role."]
 pub struct FormReferenceGroup(u64);
 
 impl FormReferenceGroup {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Create a group label from its stored value."]
     pub const fn from_label(label: u64) -> Self {
         Self(label)
     }
@@ -221,41 +221,41 @@ cadmpeg_core::named_optional_field!(deserialize_reference_group, FormReferenceGr
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "Role of a native Form reference slot."]
 pub enum FormReferenceRole {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "A body reference whose ordinal identifies its position in the body chain."]
     Body,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "The owner of a tracking selection."]
     TrackingOwner,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "A member of a tracking selection."]
     TrackingMember,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "A tracking member under the assumed fixed-slot reading."]
     TrackingMemberFixedAssumed,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "A serializer surface reference at ordinal zero."]
     SerializerSurface,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "Target or read state of a native reference slot."]
 pub enum FormNativeReferenceTarget {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "An explicit absent reference."]
     Null {},
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "A slot that could not be read."]
     Unreadable {},
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "A slot whose boundary could not be established."]
     Unvisited {},
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "A reference to a typed local native record."]
     Local {
-        #[doc = include_str!("form-api-item.md")]
+        #[doc = "Typed native identity of the target."]
         target: NativeId,
     },
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "A reference to an entity in a segment of the document."]
     Segment {
-        #[doc = include_str!("form-api-item.md")]
+        #[doc = "Native entity number in the segment."]
         target: u64,
-        #[doc = include_str!("form-api-item.md")]
+        #[doc = "Segment number containing the target."]
         segment: u32,
         #[serde(
             default,
@@ -263,23 +263,23 @@ pub enum FormNativeReferenceTarget {
             deserialize_with = "deserialize_asset_guid"
         )]
         #[cfg_attr(feature = "schema", schemars(with = "String"))]
-        #[doc = include_str!("form-api-item.md")]
+        #[doc = "Asset GUID from a qualified same-document reference, when present."]
         asset_guid: Option<String>,
     },
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "A reference to an entity in another document."]
     Document {
-        #[doc = include_str!("form-api-item.md")]
+        #[doc = "Native entity number in the target segment."]
         target: u64,
-        #[doc = include_str!("form-api-item.md")]
+        #[doc = "Segment number containing the target."]
         segment: u32,
-        #[doc = include_str!("form-api-item.md")]
+        #[doc = "Literal asset GUID of the target document."]
         asset_guid: String,
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_target_type_guid"
         )]
-        #[doc = include_str!("form-api-item.md")]
+        #[doc = "Separately encoded target type GUID, when present."]
         #[cfg_attr(
             feature = "schema",
             schemars(
@@ -291,7 +291,7 @@ pub enum FormNativeReferenceTarget {
             )
         )]
         target_type_guid: Option<String>,
-        #[doc = include_str!("form-api-item.md")]
+        #[doc = "Literal link name for the target document."]
         link_name: String,
         #[serde(
             default,
@@ -299,7 +299,7 @@ pub enum FormNativeReferenceTarget {
             deserialize_with = "deserialize_form_external_version"
         )]
         #[cfg_attr(feature = "schema", schemars(with = "FormExternalVersion"))]
-        #[doc = include_str!("form-api-item.md")]
+        #[doc = "External version identifiers, when present."]
         version: Option<FormExternalVersion>,
     },
 }
@@ -314,26 +314,26 @@ cadmpeg_core::named_optional_field!(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "Literal version identifiers for an external document reference."]
 pub struct FormExternalVersion {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Version key from the reference."]
     pub key: String,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Version URN from the reference."]
     pub urn: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "A native list with its declared count and readable members."]
 pub struct FormNativeList {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Native reference path to the list."]
     pub source: FormInputPath,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Role of the list in the Form input."]
     pub role: FormListRole,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Number of slots declared by the source list."]
     pub declared_count: u32,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Readable members with their source positions."]
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "unique_form_vec::<FormNativeMember>")
@@ -344,63 +344,63 @@ pub struct FormNativeList {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "Role of a native Form input list."]
 pub enum FormListRole {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "The list of cage objects."]
     CageObjects,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "The tracking selection list."]
     TrackingSelection,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "The assumed fixed-slot reading of a sparse tracking selection."]
     TrackingSelectionFixedAssumed,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "The cage catalog lane."]
     CageCatalog,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "The companion lane of the cage catalog."]
     CageCatalogCompanions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "A readable native list member and its source slot."]
 pub struct FormNativeMember {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Zero-based source slot of the member."]
     pub ordinal: u32,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Native record identity referenced by the member."]
     pub reference: NativeId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "A nonempty native reference path."]
 pub struct FormInputPath {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Native identities in path order."]
     pub references: NonEmptyMembers<NativeId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "Paths and binding evidence for one canonical cage observation."]
 pub struct FormCageObservation {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Independently established native paths to the observation."]
     #[cfg_attr(
         feature = "schema",
         schemars(schema_with = "unique_form_vec::<FormInputPath>")
     )]
     pub paths: Vec<FormInputPath>,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Binding of the observation to a cage or resource."]
     pub binding: FormCageBinding,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "Binding state of a Form cage observation."]
 pub enum FormCageBinding {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "A decoded neutral cage and its optional source resource."]
     Decoded {
-        #[doc = include_str!("form-api-item.md")]
+        #[doc = "Identity of the decoded subdivision cage."]
         cage: SubdId,
         #[serde(
             default,
@@ -408,17 +408,17 @@ pub enum FormCageBinding {
             deserialize_with = "deserialize_resource"
         )]
         #[cfg_attr(feature = "schema", schemars(with = "FormResource"))]
-        #[doc = include_str!("form-api-item.md")]
+        #[doc = "Source resource of the decoded cage, when known."]
         resource: Option<FormResource>,
     },
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "A resource retained without a decoded cage."]
     Undecoded {
-        #[doc = include_str!("form-api-item.md")]
+        #[doc = "Identity of the retained resource."]
         resource: FormResource,
-        #[doc = include_str!("form-api-item.md")]
+        #[doc = "Availability of the retained resource."]
         availability: FormResourceAvailability,
     },
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "An observation with an unresolved cage and resource binding."]
     Unresolved {},
 }
 cadmpeg_core::named_optional_field!(deserialize_resource, FormResource, "resource");
@@ -426,22 +426,22 @@ cadmpeg_core::named_optional_field!(deserialize_resource, FormResource, "resourc
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "A serializer resource identified by its source and archive entry."]
 pub struct FormResource {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Native source identity associated with the resource."]
     pub source: NativeId,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Literal archive entry name."]
     pub entry: NonBlankString,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "An additional association between a decoded cage and a resource."]
 pub struct FormResourceAssociation {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Identity of the decoded cage."]
     pub cage: SubdId,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Resource associated with the cage."]
     pub resource: FormResource,
 }
 
@@ -468,7 +468,7 @@ impl FormInputs {
             )
     }
 
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Report whether the cage has incompatible resource states or associations."]
     pub fn cage_resource_conflicts(
         &self,
         observations: &[FormCageObservation],
@@ -498,41 +498,41 @@ impl FormInputs {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "Availability state of a serializer resource."]
 pub enum FormResourceAvailability {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "The active entry is present and its cage is undecoded."]
     ActiveUndecoded,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "The entry is absent from the known active folder."]
     Inactive,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "The active folder is unavailable."]
     Unknown,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "The evidence supports conflicting resource states or associations."]
     Ambiguous,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "A resource and an availability claim retained as evidence."]
 pub struct FormResourceStateEvidence {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Resource to which the availability claim applies."]
     pub resource: FormResource,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Claimed availability of the resource."]
     pub availability: FormResourceAvailability,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
-#[doc = include_str!("form-api-item.md")]
-pub struct FormObservationIndex(#[doc = include_str!("form-api-item.md")] pub usize);
+#[doc = "Index into the canonical cage observation vector."]
+pub struct FormObservationIndex(#[doc = "Zero-based observation index."] pub usize);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "A selected observation with an optional source position."]
 pub struct FormMember {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Index of the selected observation."]
     pub observation: FormObservationIndex,
     #[serde(
         default,
@@ -540,7 +540,7 @@ pub struct FormMember {
         deserialize_with = "deserialize_ordinal"
     )]
     #[cfg_attr(feature = "schema", schemars(with = "u32"))]
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Zero-based position of the member, when known."]
     pub ordinal: Option<u32>,
 }
 cadmpeg_core::named_optional_field!(deserialize_ordinal, u32, "ordinal");
@@ -548,46 +548,46 @@ cadmpeg_core::named_optional_field!(deserialize_ordinal, u32, "ordinal");
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "Origin of an established order or membership claim."]
 pub enum FormKnownOrder {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "The claim comes from source data."]
     Source,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "The claim rests on an assumption."]
     Assumed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "Origin of an order claim, including unknown order."]
 pub enum FormOrder {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "The order comes from source data."]
     Source,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "The order rests on an assumption."]
     Assumed,
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "The order is unknown."]
     Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "Current complete or partial selection of cage observations."]
 pub enum FormMembership {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "An ordered selection of distinct decoded observations."]
     Complete {
-        #[doc = include_str!("form-api-item.md")]
+        #[doc = "Observation indices in the selected order."]
         #[cfg_attr(
             feature = "schema",
             schemars(schema_with = "unique_form_vec::<FormObservationIndex>")
         )]
         members: Vec<FormObservationIndex>,
-        #[doc = include_str!("form-api-item.md")]
+        #[doc = "Origin of the selected order."]
         order: FormKnownOrder,
-        #[doc = include_str!("form-api-item.md")]
+        #[doc = "Origin of the complete membership claim."]
         certainty: FormKnownOrder,
     },
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "A partial selection with optional cardinality and positions."]
     Partial {
         #[serde(
             default,
@@ -595,11 +595,11 @@ pub enum FormMembership {
             deserialize_with = "deserialize_cardinality"
         )]
         #[cfg_attr(feature = "schema", schemars(with = "u32"))]
-        #[doc = include_str!("form-api-item.md")]
+        #[doc = "Claimed member count, when known."]
         cardinality: Option<u32>,
-        #[doc = include_str!("form-api-item.md")]
+        #[doc = "Origin of the order claim, or unknown order."]
         order: FormOrder,
-        #[doc = include_str!("form-api-item.md")]
+        #[doc = "Confirmed members and their known positions."]
         #[cfg_attr(
             feature = "schema",
             schemars(schema_with = "unique_form_vec::<FormMember>")
@@ -610,7 +610,7 @@ pub enum FormMembership {
 cadmpeg_core::named_optional_field!(deserialize_cardinality, u32, "cardinality");
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[doc = include_str!("form-api-item.md")]
+#[doc = "Form inputs, canonical cage observations, and current membership."]
 pub struct FormConstruction {
     inputs: FormInputs,
     observations: Vec<FormCageObservation>,
@@ -658,7 +658,7 @@ impl Default for FormConstruction {
 }
 
 impl FormConstruction {
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Validate and construct a Form from its inputs, observations, and membership."]
     pub fn try_new(
         inputs: FormInputs,
         observations: Vec<FormCageObservation>,
@@ -1014,7 +1014,7 @@ impl FormConstruction {
             membership,
         })
     }
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Construct complete membership from an ordered list of distinct cages."]
     pub fn complete(cages: Vec<SubdId>) -> Result<Self, &'static str> {
         Self::from_cages(FormInputs::default(), cages)
     }
@@ -1039,23 +1039,23 @@ impl FormConstruction {
             },
         )
     }
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Return the retained native inputs and evidence."]
     pub fn inputs(&self) -> &FormInputs {
         &self.inputs
     }
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Return the canonical cage observations."]
     pub fn observations(&self) -> &[FormCageObservation] {
         &self.observations
     }
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Return the current membership."]
     pub fn membership(&self) -> &FormMembership {
         &self.membership
     }
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Report whether the current membership is complete."]
     pub fn membership_is_complete(&self) -> bool {
         matches!(self.membership, FormMembership::Complete { .. })
     }
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Iterate over all decoded cages, including unselected candidates."]
     pub fn referenced_cages(&self) -> impl Iterator<Item = &SubdId> {
         self.observations
             .iter()
@@ -1064,7 +1064,7 @@ impl FormConstruction {
                 _ => None,
             })
     }
-    #[doc = include_str!("form-api-item.md")]
+    #[doc = "Iterate over decoded cages selected by the current membership."]
     pub fn committed_cages(&self) -> impl Iterator<Item = &SubdId> {
         let count = match &self.membership {
             FormMembership::Complete { members, .. } => members.len(),

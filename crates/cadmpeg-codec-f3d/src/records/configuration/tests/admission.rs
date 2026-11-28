@@ -3,7 +3,7 @@
 use crate::records::configuration::{
     DesignConfiguration, DesignConfigurationKind, DesignConfigurationWire,
 };
-use crate::test_support::native_test::reject_changed_id;
+use crate::test_support::native_fixture::reject_changed_id;
 use cadmpeg_core::serde_erase::json;
 
 #[test]

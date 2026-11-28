@@ -5,7 +5,9 @@ use cadmpeg_ir::topology::Unstated;
 use cadmpeg_ir::unknown::part::{Cause, DecodeParts};
 
 use super::super::tests::CONE_WITH_POINT_APEX_SAT;
-use super::super::{decode_with_header, inspect_with_header, AsmBrep, DecodePurpose};
+use super::super::{
+    decode_with_header, inspect_with_header, inspect_with_source, AsmBrep, DecodePurpose,
+};
 use crate::ids::IdFormat;
 
 const FORMAT: IdFormat = crate::asm_format!("f3d");
@@ -217,6 +219,42 @@ fn an_inspecting_decode_marks_the_shell_and_lists_no_record() {
     );
     assert!(brep.annotation_records.is_empty());
     assert!(brep.unknowns.is_empty());
+}
+
+#[test]
+fn a_state_inspection_keeps_undecoded_bytes_and_their_carrier_location() {
+    let orphan = "face $-1 -1 $-1 $-1 $-1 $-1 $-1 $8 forward single #";
+    let source = edited("End-of-ASM-data", &format!("{orphan}\nEnd-of-ASM-data"));
+    let bytes = source.as_bytes();
+    let brep = crate::test_support::with_service_context(bytes, |ctx| {
+        let parsed = crate::sat::parse(ctx, bytes).expect("cone with an orphan face");
+        let header = parsed.header.as_kernel_header();
+        ctx.scratch(bytes.len(), |scratch| {
+            inspect_with_source(
+                scratch,
+                &parsed.records,
+                bytes,
+                Some(&header),
+                "carrier",
+                FORMAT,
+            )
+        })
+        .expect("state decodes")
+        .expect("state fits the scratch allowance")
+    })
+    .expect("service decode context");
+    let [record] = brep.unknowns.as_slice() else {
+        panic!("one undecoded source record");
+    };
+    assert_eq!(record.data(), Some(orphan.as_bytes()));
+    let source = brep
+        .annotation_records
+        .iter()
+        .find(|annotation| annotation.id.as_str() == record.id().as_str())
+        .expect("source location");
+    assert_eq!(source.stream, "carrier");
+    assert_eq!(source.offset, record.offset());
+    assert!(brep.withheld.is_empty());
 }
 
 /// The cone's face 3 stands on a surface reference that names no record.

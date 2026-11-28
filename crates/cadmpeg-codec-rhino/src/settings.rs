@@ -20,7 +20,9 @@ use crate::objects::{
 };
 use crate::wire::{finite, read_finite, uuid, Uuid};
 
+// resource-cap: MAX_STRING_BYTES = 2
 const MAX_STRING_BYTES: usize = 1 << 20;
+// resource-cap: MAX_ARRAY_ITEMS = 2
 const MAX_ARRAY_ITEMS: usize = 1 << 16;
 const PROPERTIES: u32 = 0x1000_0014;
 const SETTINGS: u32 = 0x1000_0015;

@@ -91,11 +91,11 @@ class CommandTests(unittest.TestCase):
 
     def test_rustc_lock_wrapper_runs_claims_beyond_the_budget_one_at_a_time(self):
         with tempfile.TemporaryDirectory() as tmp:
-            env = dict(os.environ, CI_RUSTC_LOCK_FILE=f"{tmp}/budget", CI_RUSTC_MEMORY_GIB="10",
+            env = dict(os.environ, CI_RUSTC_LOCK_FILE=f"{tmp}/budget", CI_RUSTC_MEMORY_GIB="12",
                        CI_RUSTC_LOG=f"{tmp}/units.tsv")
             env.pop("CARGO_MANIFEST_DIR", None)
             # Each stand-in rustc records when it ran; the two largest claims
-            # cannot share a 10 GiB budget, a 0.5 GiB dependency fits beside one.
+            # cannot share a 12 GiB budget, a 0.5 GiB dependency fits beside one.
             script = "import sys, time; open(sys.argv[-1], 'w').write(f'{time.time()} '); time.sleep(0.6); open(sys.argv[-1], 'a').write(f'{time.time()}')"
             runs = [(name, Path(tmp) / name) for name in ("cadmpeg_codec_f3d", "cadmpeg_ir", "serde")]
             procs = [subprocess.Popen([sys.executable, str(low_ram_rustc_wrapper()), sys.executable, "-c", script,

@@ -525,6 +525,7 @@ impl WireWalk for DesignConfiguration {
             overrides,
             native_ref: _,
             name: _,
+            position: _,
             materials,
             id,
             comment: _,
@@ -545,6 +546,7 @@ impl WireWalk for DesignParameter {
             source_settings,
             scope: _,
             owner: _,
+            position: _,
             native_ref: _,
             native_options,
             name: _,
@@ -879,6 +881,7 @@ impl WireWalk for NativeOption {
             Self::Length(_) => {}
             Self::Angle(_) => {}
             Self::Text(_) => {}
+            Self::Blank(_) => {}
             Self::Selection(v0) => {
                 v0.walk_wire(owner, out);
             }

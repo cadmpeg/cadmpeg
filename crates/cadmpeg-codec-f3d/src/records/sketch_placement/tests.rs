@@ -52,7 +52,7 @@ fn null_reference_head_wire_preserves_its_matrix_and_extent() {
 #[test]
 fn sketch_placement_native_retained_limit_refuses_before_record_clone() {
     let record = placement(true);
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_sketch_placements",
         || SKETCH_PLACEMENT_CLONE_COUNT.with(|count| count.set(0)),

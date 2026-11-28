@@ -519,7 +519,7 @@ fn marked_profile_selection_decodes_region_loops_from_the_operand_chain() {
         );
     let mut group = group();
     group.id = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-group#90".into();
-    let selections = crate::test_support::zip_test::with_scan(&archive, |scan| {
+    let selections = crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         super::super::sketch_profiles::decode_profile_curve_selections(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             scan,
@@ -829,13 +829,13 @@ fn sketchless_notes_require_an_extrude_profile_role_and_native_outcome() {
         class_tag: DesignClassTag::try_from("264".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let archive = crate::test_support::zip_test::f3d_with_smbh_and_instance_properties_and_design_with_metastream(
+    let archive = crate::test_support::zip_fixture::f3d_with_smbh_and_instance_properties_and_design_with_metastream(
         &[],
         &[],
         &compact_sketchless_chain("e57eeaa6-ede5-4d34-9f6f-80ee1dad42ca", false),
         &[],
     );
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         for kind in [DesignFeatureKind::Extrude, DesignFeatureKind::Revolve] {
             let scope = DesignParameterScope::empty(
                 &format!("{stream}:design-parameter-scope#80"),

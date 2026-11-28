@@ -14,7 +14,8 @@ fn local(bytes: &mut Vec<u8>, target: u64) {
 }
 
 fn source(consumer: &str, hidden: bool, flag: bool, first_run: bool) -> (Vec<u8>, MetaStream) {
-    let (mut bytes, selection) = crate::test_support::body_reference_tail_test::frame(false, 9, 0);
+    let (mut bytes, selection) =
+        crate::test_support::body_reference_tail_fixture::frame(false, 9, 0);
     bytes.truncate(selection.member_end - 4 - LOCAL_REFERENCE_LEN);
     local(&mut bytes, 30);
     bytes.extend_from_slice(&9u32.to_le_bytes());
@@ -64,7 +65,7 @@ fn hidden_body_consumption_uses_the_second_run_and_either_browser_flag() {
             for first_run in [false, true] {
                 let (bytes, meta) = source(consumer, true, flag, first_run);
                 let consumed = consumed_body_entities(View::over_retained(&bytes), &meta).unwrap();
-                assert_eq!(consumed, HashSet::from([50]));
+                assert_eq!(consumed, HashMap::from([(50, BTreeSet::from([40]))]));
             }
         }
     }

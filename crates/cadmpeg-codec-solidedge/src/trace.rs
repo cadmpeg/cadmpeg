@@ -18,15 +18,18 @@ use crate::geometry::{self, Nodes};
 
 /// Alternating projections applied to one point before the point counts as
 /// off the intersection.
+// resource-cap: MAX_SNAP_ITERATIONS = 4
 const MAX_SNAP_ITERATIONS: usize = 64;
 
 /// Points one refined chart may hold, counting the points of the segments not
 /// yet refined. A chart that reaches the limit keeps the segments it has, and
 /// the stated departure covers the rest. A chart that holds the limit before
 /// refinement is not subdivided.
+// resource-cap: MAX_TRACE_POINTS = 4
 const MAX_TRACE_POINTS: usize = 16_384;
 
 /// Midpoint bisections applied to one chart segment.
+// resource-cap: MAX_TRACE_DEPTH = 4
 const MAX_TRACE_DEPTH: u32 = 16;
 
 /// Largest distance, millimetres, from a point on one support to the other

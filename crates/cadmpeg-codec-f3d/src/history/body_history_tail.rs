@@ -18,6 +18,7 @@ use super::history_states::PlacedState;
 use crate::history_records::{AsmDeltaState, AsmHistory};
 use crate::loss::F3dLossCode;
 
+// resource-cap: MAX_HISTORY_TAIL_WORK = 4
 const MAX_HISTORY_TAIL_WORK: usize = 1 << 21;
 
 #[derive(Debug)]

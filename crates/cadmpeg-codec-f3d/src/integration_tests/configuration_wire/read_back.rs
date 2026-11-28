@@ -17,7 +17,7 @@ use crate::test_support::configuration_table::{
     bool_cell, expression_cell, object_target, property_target, string_cell, table_document,
     ROOT_RECORD,
 };
-use crate::test_support::native_test::{f3d_native, update_f3d_native};
+use crate::test_support::native_fixture::{f3d_native, update_f3d_native};
 use crate::F3dCodec;
 
 const ENTRY: &str = "FusionAssetName[Active]/DesignConfigurationTable.BlobParts/DesignConfigurationTable.test.dsgcfg";
@@ -255,6 +255,7 @@ fn authored_width(ir: &mut CadIr, rename: bool) -> cadmpeg_ir::features::Paramet
     let scopes = BTreeMap::from([(String::new(), definition.clone())]);
     ir.design.parameters = crate::design_v11::parameters::project(
         &ir.model.parameters,
+        &std::collections::HashMap::new(),
         &scopes,
         &BTreeSet::new(),
         &BTreeSet::new(),
@@ -314,6 +315,37 @@ fn generator_rebinds_a_resolved_column_and_uses_the_written_parameter_name() {
     assert_eq!(test_width["UserName"], "RenamedWidth");
     assert_eq!(test_width["Expression"], "9 mm");
     assert_eq!(wire::parameter_cell(&back, ENTRY, "a", &width).0, "9 mm");
+}
+
+#[test]
+fn generator_uses_the_rebased_native_parameter_in_the_configuration_table() {
+    let mut ir = seed(false);
+    let width = authored_width(&mut ir, false);
+    wire::named_mut(&mut ir, "A")
+        .overrides
+        .parameters
+        .insert(width.clone(), wire::length_override(9.0));
+    let mut read = ir.clone();
+    read.model.drop_omitted_arenas();
+
+    for input in [&ir, &read] {
+        let (back, losses) = write_and_decode(input, None);
+        let native = f3d_native(&back);
+        let parameter = &native.design_parameters[0];
+        assert_eq!(parameter.record_index, 700);
+        assert_eq!(parameter.expression(), "9 mm");
+        assert_eq!(wire::parameter_cell(&back, ENTRY, "a", &width).0, "9 mm");
+        assert_eq!(wire::parameter_cell(&back, ENTRY, "b", &width).0, "7 mm");
+        let test_width = wire::test_row(&back, ENTRY, "W");
+        assert_eq!(test_width["Expression"], "9 mm");
+        assert_eq!(test_width["Value"], 0.9);
+        assert!(
+            losses.iter().all(|loss| !loss
+                .message
+                .contains("with a different name, own expression or value")),
+            "{losses:#?}"
+        );
+    }
 }
 
 #[test]
@@ -678,7 +710,7 @@ fn patch_keeps_the_production_suppression_of_an_unbound_base_feature() {
 
     use crate::layout::base_feature_wide_zero_body as layout;
     use crate::test_support::configuration_table::{root_record, with_root_segment_in};
-    use crate::test_support::streams_test::{
+    use crate::test_support::streams_fixture::{
         generated_design_base_feature_bulkstream, generated_design_base_feature_metastream,
     };
 
@@ -697,8 +729,8 @@ fn patch_keeps_the_production_suppression_of_an_unbound_base_feature() {
         .position(|bytes| bytes == prior)
         .unwrap();
     metadata[at..at + prior.len()].copy_from_slice(b"D7015B81-AB4D-4C89-BED7-AA4411E1964A");
-    let archive = crate::test_support::zip_test::f3d_with_smbh_and_instance_properties_and_design_with_metastream(
-        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(), &[], &bulk, &metadata
+    let archive = crate::test_support::zip_fixture::f3d_with_smbh_and_instance_properties_and_design_with_metastream(
+        &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(), &[], &bulk, &metadata
     );
     let payload = table_document(
         "1",

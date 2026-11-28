@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Attribute-chain color decoding over synthetic ASM records.
 
-use crate::test_support::tokens_test::{push_u8_string, t_dbl, t_end, t_ident, t_ref, t_subident};
+use crate::test_support::tokens_fixture::{
+    push_u8_string, t_dbl, t_end, t_ident, t_ref, t_subident,
+};
 
 #[test]
 fn rgb_attribute_chain_decodes_body_color() {

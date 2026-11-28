@@ -73,7 +73,7 @@ fn sketch_entity_binding_native_retained_limit_refuses_before_record_clone() {
         id: "f3d:native:sketch-binding#0",
         binding: &binding,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || super::SKETCH_ENTITY_BINDING_CLONE_COUNT.with(|count| count.set(0)),
@@ -647,7 +647,7 @@ fn native_profile_wire_round_trips_and_rejects_null() {
     use super::DesignParameterScope;
     let (archive, mut scope, headers, entities) =
         crate::test_support::multiple_profiles::fixture(2);
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         crate::design::decode::operands::sketch_profiles::bind_sketch_profiles(
             scan,
             std::slice::from_mut(&mut scope),

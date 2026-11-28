@@ -49,6 +49,7 @@ pub(super) fn extract(
             ));
         }
         streams.push(ExtractedStream {
+            carrier: super::StreamCarrier::Unwritable,
             offset: start,
             payload: retained_copy(ctx, bytes, "retain bounded weldment Parasolid stream")?,
             header,

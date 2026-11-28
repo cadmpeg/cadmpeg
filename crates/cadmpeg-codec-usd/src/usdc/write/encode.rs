@@ -10,6 +10,7 @@ use cadmpeg_core::CodecError;
 use crate::usdc::integers::Width;
 
 /// The most bytes one chunk of a compressed buffer expands to.
+// resource-cap: MAX_CHUNK = N
 const MAX_CHUNK: usize = 0x7E00_0000;
 /// A length nibble that continues in the following bytes.
 const LENGTH_CONTINUES: usize = 15;
@@ -20,6 +21,7 @@ const LAST_LITERALS: usize = 5;
 /// The least distance from the start of a match to the end of its block.
 const MATCH_LIMIT: usize = 12;
 /// The farthest match offset.
+// resource-cap: MAX_OFFSET = N
 const MAX_OFFSET: usize = 0xFFFF;
 /// The multiplier of the match-finder hash.
 const HASH_FACTOR: u64 = 2_654_435_761;

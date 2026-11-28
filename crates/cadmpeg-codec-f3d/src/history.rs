@@ -32,7 +32,7 @@ pub(crate) mod body_selections;
 pub(crate) mod edge_operand_history;
 pub(crate) mod face_boundaries;
 pub(crate) mod face_operand_history;
-mod face_resolution;
+pub(crate) mod face_resolution;
 pub(crate) mod face_selections;
 pub(crate) mod feature_outputs;
 pub(crate) mod hem_gap_forms;
@@ -42,6 +42,7 @@ pub(crate) mod input_topologies;
 pub(crate) mod path_selections;
 mod profile_face_groups;
 pub(crate) mod scope_histories;
+pub(crate) mod stored_states;
 pub(crate) mod topology_rows;
 mod treatment_candidates;
 pub(crate) mod vertex_recipes;
@@ -288,6 +289,64 @@ fn decode_framed(
     chamfer_senses: Option<&mut chamfer_supports::ChamferSenses>,
 ) -> Result<Option<AsmHistory>, cadmpeg_core::CodecError> {
     let framing = HistoryFraming::scan(bytes, stream);
+    let Some((mut states, preframed_records)) = read_states(ctx, bytes, stream, width, &framing)?
+    else {
+        return Ok(None);
+    };
+    let binding_budget_exceeded = admit_history_binding(ctx, &states, remaining_retained_bytes)?
+        == HistoryBindingAdmission::Skipped;
+    let mut stream_senses = chamfer_senses
+        .as_ref()
+        .map(|_| chamfer_supports::StreamChamferSenses::default());
+    let cached_archive = if binding_budget_exceeded {
+        drop(preframed_records);
+        for state in &mut states {
+            state.bulletin_boards = Vec::new();
+            state.records = Vec::new();
+        }
+        None
+    } else {
+        let mut preframed = HashMap::with_capacity(preframed_records.len());
+        for record in preframed_records {
+            preframed.insert(record.offset, record);
+        }
+        bind_complete_record_tables(
+            ctx,
+            &mut states,
+            bytes,
+            width,
+            binding_work,
+            Some(&mut preframed),
+            stream_senses.as_mut(),
+        )?
+    };
+    if states.is_empty() {
+        return Ok(None);
+    }
+    let history = framing.into_history(bytes, width, binding_budget_exceeded, states);
+    if let Some(archive) = cached_archive {
+        history.cache_record_archive(archive);
+    }
+    if let (Some(out), Some(senses)) = (chamfer_senses, stream_senses) {
+        out.record_history(history.id.clone(), senses);
+    }
+    Ok(Some(history))
+}
+
+/// The `delta_state` records of a history and the records framed before
+/// its partition.
+type ReadStates = (Vec<AsmDeltaState>, Vec<cadmpeg_asm::sab::Record>);
+
+/// The `delta_state` records of one ASM history with their bulletin boards
+/// and record tables, and the records framed while reading them; `None` for
+/// a malformed history body.
+fn read_states(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    stream: &str,
+    width: RefWidth,
+    framing: &HistoryFraming,
+) -> Result<Option<ReadStates>, cadmpeg_core::CodecError> {
     let mut states = Vec::new();
     let mut preframed_records = Vec::new();
     for (ordinal, &offset) in framing.delta_offsets.iter().enumerate() {
@@ -331,44 +390,33 @@ fn decode_framed(
         ));
     }
     bind_snapshot_revision_ids(&mut states);
-    let binding_budget_exceeded = admit_history_binding(ctx, &states, remaining_retained_bytes)?
-        == HistoryBindingAdmission::Skipped;
-    let mut stream_senses = chamfer_senses
-        .as_ref()
-        .map(|_| chamfer_supports::StreamChamferSenses::default());
-    let cached_archive = if binding_budget_exceeded {
-        drop(preframed_records);
-        for state in &mut states {
-            state.bulletin_boards = Vec::new();
-            state.records = Vec::new();
-        }
-        None
-    } else {
-        let mut preframed = HashMap::with_capacity(preframed_records.len());
-        for record in preframed_records {
-            preframed.insert(record.offset, record);
-        }
-        bind_complete_record_tables(
-            ctx,
-            &mut states,
-            bytes,
-            width,
-            binding_work,
-            Some(&mut preframed),
-            stream_senses.as_mut(),
-        )?
+    Ok(Some((states, preframed_records)))
+}
+
+/// The states of one ASM history and its record archive, read without
+/// binding historical topology; `None` where the history body is malformed
+/// or its record archive is incomplete.
+pub(crate) fn decode_unbound(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    stream: &str,
+    width: RefWidth,
+) -> Result<Option<(Vec<AsmDeltaState>, HistoricalRecordArchive)>, cadmpeg_core::CodecError> {
+    let framing = HistoryFraming::scan(bytes, stream);
+    let Some((states, preframed_records)) = read_states(ctx, bytes, stream, width, &framing)?
+    else {
+        return Ok(None);
     };
     if states.is_empty() {
         return Ok(None);
     }
-    let history = framing.into_history(bytes, width, binding_budget_exceeded, states);
-    if let Some(archive) = cached_archive {
-        history.cache_record_archive(archive);
+    let mut preframed = HashMap::with_capacity(preframed_records.len());
+    for record in preframed_records {
+        preframed.insert(record.offset, record);
     }
-    if let (Some(out), Some(senses)) = (chamfer_senses, stream_senses) {
-        out.record_history(history.id.clone(), senses);
-    }
-    Ok(Some(history))
+    let archive =
+        decode_record_archive_with_preframed(ctx, &states, bytes, width, Some(&mut preframed))?;
+    Ok(archive.map(|archive| (states, archive)))
 }
 
 /// Decode the header-only index of one ASM history stream.

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::test_support::smbh_blends_test::synthetic_partial_rb_blend_spl_sur_smbh;
-use crate::test_support::smbh_blends_test::synthetic_rb_blend_spl_sur_smbh;
-use crate::test_support::smbh_curves_test::with_legacy_subtype;
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::smbh_blends_fixture::synthetic_partial_rb_blend_spl_sur_smbh;
+use crate::test_support::smbh_blends_fixture::synthetic_rb_blend_spl_sur_smbh;
+use crate::test_support::smbh_curves_fixture::with_legacy_subtype;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::Encoder;

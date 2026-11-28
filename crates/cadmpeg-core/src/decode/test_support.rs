@@ -17,6 +17,13 @@ pub fn service_decode_context() -> DecodeContext<'static> {
     DecodeContext::new(arena, &DecodePolicy::service(), DecodeDepth::Full)
 }
 
+/// A desktop-policy decode context, the session of a write under the default
+/// limits, for a test that reads in memory under those limits.
+pub fn desktop_decode_context() -> DecodeContext<'static> {
+    let arena = Box::leak(Box::new(DecodeArena::new()));
+    DecodeContext::new(arena, &DecodePolicy::desktop(), DecodeDepth::Full)
+}
+
 #[derive(Debug)]
 struct Target {
     dimension: ResourceDimension,

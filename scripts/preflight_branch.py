@@ -4,7 +4,7 @@
 GitHub runs no pull-request workflow while a branch conflicts with its base,
 so a conflict leaves the PR without CI. A merge on the base branch that
 touched the same files can also change what the branch must do, so a branch
-behind such a merge is rebased and checked again.
+behind such a merge needs its shared files checked again.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ def run(context):
         results.append(context.failed(
             f"{head} conflicts with {context.upstream}; GitHub runs no CI on a conflicted PR",
             *(f"conflict: {path}" for path in files[:20]),
-            f"fix: git rebase {context.upstream}, keep both sides' changes, and rerun preflight",
+            f"fix: git merge {context.upstream}, keep both sides' changes, and rerun preflight",
         ))
     elif merge.returncode not in (0, 1):
         results.append(context.skipped("git merge-tree --write-tree is unavailable "
@@ -38,7 +38,7 @@ def run(context):
                 f"{behind} commit(s) behind {context.upstream}; upstream merges touched "
                 f"{len(shared)} file(s) this branch changes",
                 *(f"shared: {path}" for path in shared[:20]),
-                f"fix: git rebase {context.upstream}, then recheck the shared files",
+                f"fix: recheck the shared files against {context.upstream}",
             ))
         elif not results:
             results.append(context.passed(

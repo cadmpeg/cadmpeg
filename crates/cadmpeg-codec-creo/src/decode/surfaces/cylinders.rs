@@ -35,7 +35,7 @@ use crate::decode::analytic::planes::{is_axis_aligned, placed_planes, reconciled
 use crate::decode::sketch_transfer::recipe::{
     feature_recipe, feature_section_sweep_semantics_conflict, FeatureSchemaClasses,
 };
-use crate::vecmath::{cross, dot};
+use crate::vecmath::dot;
 
 /// Positional residual tolerance for reconstructed cylinders.
 const EPS_CYLINDER_POSITION: f64 = 1.0e-8;
@@ -583,8 +583,14 @@ fn round_edge_cylinder_frame(
                 normal: second_normal,
             };
             let cross_norm_squared = dot(
-                cross(first_normal, second_normal),
-                cross(first_normal, second_normal),
+                <[f64; 3]>::from(
+                    cadmpeg_ir::math::Vector3::from(first_normal)
+                        .cross(cadmpeg_ir::math::Vector3::from(second_normal)),
+                ),
+                <[f64; 3]>::from(
+                    cadmpeg_ir::math::Vector3::from(first_normal)
+                        .cross(cadmpeg_ir::math::Vector3::from(second_normal)),
+                ),
             );
             if cross_norm_squared <= EPS_CYLINDER_GEOMETRY {
                 continue;

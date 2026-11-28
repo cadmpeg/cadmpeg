@@ -229,6 +229,8 @@ pub(super) enum Entity {
     Point(usize),
     /// A curve, by its position in [`PlannedSketch::curves`].
     Curve(usize),
+    /// The origin point of the sketch.
+    Origin,
 }
 
 /// A curve of a sketch in Fusion's sketch coordinates, in cm; its points
@@ -821,6 +823,8 @@ impl<'a> PlannedSketch<'a> {
                 "the writer stores Fusion's default sketch name",
             );
         }
+        let tolerance = target.tolerances.linear.get().max(MIN_LINEAR_TOLERANCE);
+        let origin = frame.origin[0].hypot(frame.origin[1]) <= tolerance;
         let mut written = HashMap::<&SketchEntityId, Entity>::new();
         for entity in &entities {
             if let EntityDefinition::Free(PlanarCurve::Point(point)) = &entity.definition {
@@ -864,6 +868,7 @@ impl<'a> PlannedSketch<'a> {
                 curves: &planned.curves,
                 frame,
                 angular: target.tolerances.angular.get(),
+                origin,
             };
             let mut relations = match relations(constraint, &written, &geometry) {
                 Ok(Written::Relations(relations)) => relations,
@@ -923,6 +928,7 @@ impl<'a> PlannedSketch<'a> {
         let point = |id: &SketchEntityId| match written.get(id) {
             Some(Entity::Point(point)) => Ok(*point),
             Some(Entity::Curve(_)) => Err("its contact names a curve, not a point"),
+            Some(Entity::Origin) => Err("its contact names the sketch origin"),
             None => Err("its contact names an entity the writer does not write"),
         };
         match contact {
@@ -1026,7 +1032,7 @@ impl<'a> PlannedSketch<'a> {
                     .flatten()
                     .and_then(|entity| match entity {
                         Entity::Point(point) => Some(*point),
-                        Entity::Curve(_) => None,
+                        Entity::Curve(_) | Entity::Origin => None,
                     })
             })
         };
@@ -1125,6 +1131,10 @@ fn relations<'a>(
             .get(id)
             .copied()
             .ok_or("it names an entity the writer does not write"),
+        Operand::Frame(PrincipalEntity::Origin) if geometry.origin => Ok(Entity::Origin),
+        Operand::Frame(PrincipalEntity::Origin) => {
+            Err("it names the sketch origin, which lies off the origin of Fusion's sketch plane")
+        }
         Operand::Frame(_) | Operand::Model(_) => {
             Err("the writer writes relations between the sketch's own entities")
         }
@@ -1169,7 +1179,7 @@ fn relations<'a>(
                 Entity::Curve(curve) => curves
                     .get(*curve)
                     .map(|curve| !matches!(curve.geometry, CurveGeometry::Line { .. })),
-                Entity::Point(_) => None,
+                Entity::Point(_) | Entity::Origin => None,
             };
             let kind = match members.iter().map(round).collect::<Option<Vec<_>>>() {
                 Some(round) if round.iter().all(|r| !r) => RelationKind::EqualLength,

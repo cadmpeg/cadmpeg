@@ -61,7 +61,7 @@ fn bind(
             nested(bytes, record, frame(record));
         });
     let mut candidates = Vec::new();
-    let losses = crate::test_support::zip_test::with_scan(&archive, |scan| {
+    let losses = crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         bind_sketch_profiles(
             scan,
             std::slice::from_mut(&mut scope),

@@ -17,6 +17,7 @@ use super::walk::Shell;
 /// Millimetres per metre.
 pub(super) const MILLIMETRES_PER_METRE: f64 = 1000.0;
 /// Deepest chain of shell instances followed to a source shell.
+// resource-cap: MAX_INSTANCE_CHAIN = 4
 const MAX_INSTANCE_CHAIN: usize = 8;
 /// Index width marker of an 8-bit face list.
 const WIDTH_8: u8 = 8;
