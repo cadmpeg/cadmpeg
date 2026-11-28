@@ -29,6 +29,7 @@ rustfmt() { printf 'rustfmt %s\n' "$*"; }
 def run_hook(staged, owners=""):
     result = subprocess.run(
         ["sh"], input=STUBS + HOOK.read_text(), text=True, capture_output=True,
+        cwd=HOOK.parent.parent,
         env={**os.environ, "STAGED": staged, "OWNERS": owners},
         check=True,
     )
