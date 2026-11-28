@@ -125,12 +125,7 @@ impl Projection<'_, '_> {
             let mut groups = Vec::new();
             let mut asymmetric_flips = Vec::new();
             for (set, specification) in sets.sets.iter().zip(specifications) {
-                if set.tangent_chain {
-                    losses.push(F3dLossCode::ChamferTangentChainAssumed.note(format!(
-                    "Chamfer set {} of {} uses its retained selector as the complete propagated selection for its tangent-chain flag (DR-460).",
-                    set.record_index, scope.id
-                )));
-                }
+                note_tangent_chain_assumption(scope, set, losses);
                 let spec = match specification {
                     Some((spec, notes)) => {
                         losses.extend(notes);
@@ -214,6 +209,24 @@ impl Projection<'_, '_> {
             groups,
             flip_direction: false,
         }))
+    }
+}
+
+/// Charges the compact-form set whose flag byte is set: the edge group is read
+/// as the edges that tangent propagation reaches.
+pub(super) fn note_tangent_chain_assumption(
+    scope: &DesignParameterScope,
+    set: &DesignChamferSet,
+    losses: &mut Vec<LossNote>,
+) {
+    if set.tangent_chain
+        && usize::try_from(set.frame_length).ok()
+            == Some(crate::layout::chamfer_set_compact_equal::LEN)
+    {
+        losses.push(F3dLossCode::ChamferTangentChainAssumed.note(format!(
+            "Compact chamfer set {} of {} reads its flag byte as tangent chain and its edge group as the propagated edges (DR-460).",
+            set.record_index, scope.id
+        )));
     }
 }
 
