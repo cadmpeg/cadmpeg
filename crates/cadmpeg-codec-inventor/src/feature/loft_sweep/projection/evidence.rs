@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact generator joins and complete result-face construction checks.
 
-use crate::feature::history_views::{ResultStates, StateModel};
+use crate::feature::history_views::{
+    ResultStates, StateLimit, StateModel, LEGACY_CAP_CLASS, LEGACY_SIDE_CLASS,
+};
 use crate::feature::profile::selection::PathCurve;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::Topology;
 use cadmpeg_ir::geometry::lofts::LoftMemberForm;
 use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
@@ -25,6 +27,30 @@ const EPS_SWEEP_PATH_MM: f64 = 1.0e-5;
 /// Largest sine of the angle between a cylinder axis and its path line.
 const EPS_SWEEP_AXIS: f64 = 1.0e-6;
 
+#[derive(Clone, Copy)]
+struct ResultGeometry<'a> {
+    geometry: &'a Topology,
+    attributes: &'a [SourceAttribute],
+}
+
+impl<'a> From<&'a CadIr> for ResultGeometry<'a> {
+    fn from(model: &'a CadIr) -> Self {
+        Self {
+            geometry: &model.geometry,
+            attributes: &model.model.attributes,
+        }
+    }
+}
+
+impl<'a> From<&'a cadmpeg_asm::brep::transfer::InspectionGeometry> for ResultGeometry<'a> {
+    fn from(state: &'a cadmpeg_asm::brep::transfer::InspectionGeometry) -> Self {
+        Self {
+            geometry: &state.geometry,
+            attributes: &state.attributes,
+        }
+    }
+}
+
 struct NamedFace<'a> {
     face: &'a Face,
     family: &'a str,
@@ -32,15 +58,19 @@ struct NamedFace<'a> {
 }
 
 fn owned_faces(ir: &CadIr, generator: u32) -> Option<Vec<NamedFace<'_>>> {
-    owned_faces_in(ir, generator, false)
+    owned_faces_in(ir.into(), generator, false)
 }
 
 /// Faces of the carrier with the schema-44 naming attributes of `generator`.
 /// A joined result body also holds faces of the body it merged with, so
 /// `joined` admits faces that no attribute of the generator names.
-fn owned_faces_in(ir: &CadIr, generator: u32, joined: bool) -> Option<Vec<NamedFace<'_>>> {
+fn owned_faces_in(
+    ir: ResultGeometry<'_>,
+    generator: u32,
+    joined: bool,
+) -> Option<Vec<NamedFace<'_>>> {
     let mut names = HashMap::new();
-    for attribute in &ir.model.attributes {
+    for attribute in ir.attributes {
         let AttributeTarget::Face(face) = &attribute.target.entity else {
             continue;
         };
@@ -293,23 +323,24 @@ fn cap_center(geometry: &Topology, face: &Face, radius: f64) -> Option<Point3> {
     center
 }
 
-pub(in crate::feature::loft_sweep) fn loft(
+#[cfg(test)]
+fn loft(
     ir: &CadIr,
     generator: u32,
     sections: [u32; 2],
     curve_member: impl Fn(usize, i64) -> bool,
 ) -> Option<()> {
-    loft_in(ir, generator, sections, curve_member, false)
+    loft_in(ir.into(), generator, sections, curve_member, false)
 }
 
 fn loft_in(
-    ir: &CadIr,
+    ir: ResultGeometry<'_>,
     generator: u32,
     sections: [u32; 2],
     curve_member: impl Fn(usize, i64) -> bool,
     joined: bool,
 ) -> Option<()> {
-    let geometry = &ir.geometry;
+    let geometry = ir.geometry;
     let faces = owned_faces_in(ir, generator, joined)?;
     let mut caps = HashSet::new();
     let mut sides = HashSet::new();
@@ -531,10 +562,23 @@ pub(in crate::feature::loft_sweep) fn loft_result(
     sections: [u32; 2],
     section_curves: impl Fn(usize) -> Vec<i64>,
 ) -> Option<()> {
-    loft(ir, generator, sections, |section, name| {
-        section_curves(section).contains(&name)
-    })
-    .or_else(|| legacy_loft(ir, generator, sections, &section_curves))
+    loft_result_in(ir.into(), generator, sections, section_curves)
+}
+
+fn loft_result_in(
+    ir: ResultGeometry<'_>,
+    generator: u32,
+    sections: [u32; 2],
+    section_curves: impl Fn(usize) -> Vec<i64>,
+) -> Option<()> {
+    loft_in(
+        ir,
+        generator,
+        sections,
+        |section, name| section_curves(section).contains(&name),
+        false,
+    )
+    .or_else(|| legacy_loft_in(ir, generator, sections, &section_curves, false))
 }
 
 /// Why a loft result is not proved.
@@ -545,8 +589,8 @@ pub(in crate::feature::loft_sweep) enum Unproved {
     Result,
     /// The history state of the loft does not decode.
     StateFailed,
-    /// The views of history states passed their work cap.
-    Bounded,
+    /// A limit prevented the history-state result proof.
+    Bounded(StateLimit),
     /// The state after the loft holds a complete generator-owned result, and
     /// the result body does not merge with a body of the preceding state.
     NotJoined,
@@ -575,11 +619,12 @@ pub(in crate::feature::loft_sweep) fn loft_proof(
     };
     match &*states.after(ctx, generator).map_err(Unproved::Codec)? {
         StateModel::Model(model) => {
-            loft_result(model, generator, sections, &section_curves).ok_or(Unproved::Result)
+            loft_result_in(model.as_ref().into(), generator, sections, &section_curves)
+                .ok_or(Unproved::Result)
         }
         StateModel::Unavailable => Err(Unproved::Result),
         StateModel::Failed => Err(Unproved::StateFailed),
-        StateModel::Bounded => Err(Unproved::Bounded),
+        StateModel::Bounded(limit) => Err(Unproved::Bounded(*limit)),
     }
 }
 
@@ -603,42 +648,37 @@ pub(in crate::feature::loft_sweep) fn loft_join_proof(
     let after = states.after(ctx, generator).map_err(Unproved::Codec)?;
     let foreign = match &*after {
         StateModel::Model(model) => {
-            joined_result(model, generator, sections, &section_curves).ok_or(Unproved::Result)?
+            joined_result(model.as_ref().into(), generator, sections, &section_curves)
+                .ok_or(Unproved::Result)?
         }
         StateModel::Unavailable => return Err(Unproved::Result),
         StateModel::Failed => return Err(Unproved::StateFailed),
-        StateModel::Bounded => return Err(Unproved::Bounded),
+        StateModel::Bounded(limit) => return Err(Unproved::Bounded(*limit)),
     };
     if foreign == 0 {
         return Err(Unproved::NotJoined);
     }
     let before = states.before(ctx, generator).map_err(Unproved::Codec)?;
     match &*before {
-        StateModel::Model(model) if largest_solid_faces(model) >= foreign => Ok(()),
+        StateModel::Model(model) if largest_solid_faces(&model.geometry) >= foreign => Ok(()),
         StateModel::Model(_) | StateModel::Unavailable => Err(Unproved::NotJoined),
         StateModel::Failed => Err(Unproved::StateFailed),
-        StateModel::Bounded => Err(Unproved::Bounded),
+        StateModel::Bounded(limit) => Err(Unproved::Bounded(*limit)),
     }
 }
 
 /// Faces of the solid body of `ir` with the most faces. The state before the
 /// loft holds the joined body as one solid body. The states do not carry a body
 /// identity across the history, so the size of the body stands for it.
-fn largest_solid_faces(ir: &CadIr) -> usize {
+fn largest_solid_faces(geometry: &Topology) -> usize {
     let mut per_body: HashMap<&str, usize> = HashMap::new();
-    for face in &ir.geometry.faces {
-        let body = ir
-            .geometry
+    for face in &geometry.faces {
+        let body = geometry
             .shells
             .iter()
             .find(|shell| shell.id == face.shell)
-            .and_then(|shell| ir.geometry.regions.iter().find(|r| r.id == shell.region))
-            .and_then(|region| {
-                ir.geometry
-                    .bodies
-                    .iter()
-                    .find(|body| body.id == region.body)
-            })
+            .and_then(|shell| geometry.regions.iter().find(|r| r.id == shell.region))
+            .and_then(|region| geometry.bodies.iter().find(|body| body.id == region.body))
             .filter(|body| body.kind == BodyKind::Solid);
         if let Some(body) = body {
             *per_body.entry(body.id.as_str()).or_default() += 1;
@@ -650,7 +690,7 @@ fn largest_solid_faces(ir: &CadIr) -> usize {
 /// Number of faces of the result body that the loft does not name, when the
 /// loft names a complete result in that body.
 fn joined_result(
-    ir: &CadIr,
+    ir: ResultGeometry<'_>,
     generator: u32,
     sections: [u32; 2],
     section_curves: &impl Fn(usize) -> Vec<i64>,
@@ -701,11 +741,6 @@ fn joined_result(
     in_body.checked_sub(owned.len())
 }
 
-const LEGACY_CAP_CLASS: &str =
-    "NMx_Generated_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib";
-const LEGACY_SIDE_CLASS: &str =
-    "NMx_Loft_Surface_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib";
-
 /// A face that carries a generator-owned naming attribute of the legacy class chains.
 struct LegacyFace<'a> {
     face: &'a Face,
@@ -715,9 +750,9 @@ struct LegacyFace<'a> {
 
 /// Faces named by `generator` in a legacy carrier, in model order. The faces
 /// belong to one solid body. Other faces of the body can belong to later features.
-fn legacy_owned_faces(ir: &CadIr, generator: u32) -> Option<Vec<LegacyFace<'_>>> {
+fn legacy_owned_faces(ir: ResultGeometry<'_>, generator: u32) -> Option<Vec<LegacyFace<'_>>> {
     let mut names = HashMap::new();
-    for attribute in &ir.model.attributes {
+    for attribute in ir.attributes {
         let AttributeTarget::Face(face) = &attribute.target.entity else {
             continue;
         };
@@ -793,13 +828,14 @@ fn legacy_owned_faces(ir: &CadIr, generator: u32) -> Option<Vec<LegacyFace<'_>>>
 /// Loft result check for a legacy carrier. The generator names both caps and
 /// one planar side face for each curve of both section boundaries. Later
 /// features can add faces to the body.
-pub(in crate::feature::loft_sweep) fn legacy_loft(
+#[cfg(test)]
+fn legacy_loft(
     ir: &CadIr,
     generator: u32,
     sections: [u32; 2],
     section_curves: impl Fn(usize) -> Vec<i64>,
 ) -> Option<()> {
-    legacy_loft_in(ir, generator, sections, section_curves, false)
+    legacy_loft_in(ir.into(), generator, sections, section_curves, false)
 }
 
 /// Most section curves of one section boundary that a joined loft result can
@@ -815,13 +851,13 @@ const JOINED_UNNAMED_CURVES_PER_SECTION: usize = 1;
 /// cap face is named, and every named face still names a curve or a section
 /// of the loft.
 fn legacy_loft_in(
-    ir: &CadIr,
+    ir: ResultGeometry<'_>,
     generator: u32,
     sections: [u32; 2],
     section_curves: impl Fn(usize) -> Vec<i64>,
     joined: bool,
 ) -> Option<()> {
-    let geometry = &ir.geometry;
+    let geometry = ir.geometry;
     if sections[0] == sections[1] {
         return None;
     }

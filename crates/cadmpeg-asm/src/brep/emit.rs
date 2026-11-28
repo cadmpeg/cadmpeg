@@ -5148,7 +5148,7 @@ pub struct ContainerInputs<'a, 'record> {
     /// Container records and records needed by their chains.
     pub records: &'record [Record],
     /// Source bytes for retained records.
-    pub bytes: &'a [u8],
+    pub shell_bytes: Option<&'a [u8]>,
     /// Records indexed by stable slot.
     pub by_index: &'a HashMap<i64, &'record Record>,
     /// Admitted topology slots.
@@ -5169,7 +5169,7 @@ pub fn emit_containers(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let ContainerInputs {
         records,
-        bytes,
+        shell_bytes,
         by_index,
         reach,
         wire,
@@ -5194,7 +5194,9 @@ pub fn emit_containers(
             cadmpeg_core::CodecError::malformed("ASM record index exceeds the i64 range")
         })?;
         let Some(owner) = r.ref_at(7) else {
-            retain_record(ctx, out, r, bytes, format)?;
+            if let Some(bytes) = shell_bytes {
+                retain_record(ctx, out, r, bytes, format)?;
+            }
             continue;
         };
         let faces = shell_faces(r, by_index, &subshell_shells, kept_faces, format);
@@ -5211,7 +5213,9 @@ pub fn emit_containers(
             .map(|vertex| VertexId::from(id(format, *vertex)))
             .collect::<Vec<_>>();
         if faces.is_empty() && wire_edges.is_empty() && free_vertices.is_empty() {
-            retain_record(ctx, out, r, bytes, format)?;
+            if let Some(bytes) = shell_bytes {
+                retain_record(ctx, out, r, bytes, format)?;
+            }
             continue;
         }
         let shell = Shell::with_members(

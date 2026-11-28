@@ -997,3 +997,36 @@ fn a_joint_flag_of_another_type_is_charged() {
         }
     }
 }
+
+#[test]
+fn a_direct_joint_reference_picks_the_primary_occurrence_of_a_listed_link() {
+    let document = ASSEMBLY
+        .replace(
+            r#"<Objects Count="9">"#,
+            r#"<Objects Count="10">
+ <Object type="App::LinkGroup" name="Folder" id="10"/>"#,
+        )
+        .replace(
+            r#"<ObjectData Count="9">"#,
+            r#"<ObjectData Count="10">
+ <Object name="Folder"><Properties Count="1"><Property name="ElementList" type="App::PropertyLinkList"><LinkList count="1"><Link value="Pin"/></LinkList></Property></Properties></Object>"#,
+        );
+    let ir = decode(&archive(&document), DecodeDepth::Design);
+    let occurrences = ir
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| occurrence.native_ref.as_deref() == Some("fcstd:native:object#Pin"))
+        .map(|occurrence| occurrence.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let primary = "fcstd:model:occurrence#Pin:instance";
+    assert_eq!(
+        occurrences,
+        BTreeSet::from([primary, "fcstd:model:occurrence#Pin:instance/Folder"])
+    );
+    let (_, joint) = joint_feature(&ir, "Hinge");
+    assert_eq!(
+        frame_picks(&joint.connectors[1]),
+        [(Some("Edge3".to_owned()), vec![primary.to_owned()])]
+    );
+}

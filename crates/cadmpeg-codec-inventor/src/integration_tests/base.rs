@@ -196,12 +196,58 @@ fn base_source_body_uses_its_local_carrier_and_independent_key() {
             0x8000_000a,
         ),
     ));
-    let ir = decode(&design, &base);
+    let mut ir = decode(&design, &base);
     assert_eq!(ir.model.feature_result_topologies.len(), 2);
     assert!(ir.model.features.iter().all(|feature| matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
     )));
+    let bytes = base_envelope_fixture(
+        &acis_sphere_kernel_stream_with_body_key(21_800, 7),
+        &design,
+        &base,
+    );
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+        .expect("synthetic Base source envelope");
+    let snapshot =
+        cadmpeg_container::compound::CompoundSnapshot::new(&ctx, root).expect("compound");
+    let document = crate::rse::RseInventory::build(&ctx, &snapshot).expect("RSe inventory");
+    let inventory = crate::feature::inventory(&ctx, &document).expect("feature inventory");
+    let design_inventory = crate::design::inventory(&ctx, &document).expect("design inventory");
+    ir.model.feature_result_topologies.clear();
+    for feature in &mut ir.model.features {
+        feature
+            .evaluation
+            .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: cadmpeg_ir::features::NativeFeatureKind::Other("Base".into()),
+                parameters: BTreeMap::new(),
+            }));
+    }
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let (bounded, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+    let projection = crate::feature::base::project(
+        &bounded,
+        &base_inputs(&document, &inventory, &design_inventory, &[]),
+        &mut ir,
+    )
+    .expect("Base sources can be bounded independently");
+    assert_eq!(projection.transferred, 0);
+    assert_eq!(projection.losses.len(), ir.model.features.len());
+    for feature in &ir.model.features {
+        assert!(
+            projection.losses.iter().any(|note| {
+                note.code == crate::loss::InventorLossCode::FeatureBaseSourceBounded.kind()
+                    && note.message.contains(feature.id.as_str())
+                    && note.message.contains("Entities")
+            }),
+            "{:?}",
+            projection.losses
+        );
+    }
+    assert!(bounded.resource_refusal().is_none());
+
     design[8].1[link_layout::ENTITY_ID..link_layout::ENTITY_ID + 4]
         .copy_from_slice(&10_u32.to_le_bytes());
     let ir = decode(&design, &base);

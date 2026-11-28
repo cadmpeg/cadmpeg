@@ -780,6 +780,12 @@ impl<'a> Products<'a> {
             .map(|definition| &definition.id)
     }
 
+    fn primary_occurrences(&self) -> impl Iterator<Item = &'a Occurrence> + '_ {
+        self.occurrences
+            .iter()
+            .filter(|occurrence| !crate::product::is_listing_copy(occurrence.id.as_str()))
+    }
+
     /// The one occurrence of object `object` among `candidates`: an
     /// occurrence a link places before a `:container` occurrence.
     fn sole<'o>(
@@ -814,10 +820,14 @@ impl<'a> Products<'a> {
                 route.reverse();
                 return Some(route);
             }
-            route.push(cadmpeg_ir::products::sole_placement(
-                self.occurrences,
-                &owner.id,
-            )?);
+            let mut placements = self
+                .primary_occurrences()
+                .filter(|occurrence| occurrence.prototype == owner.id);
+            let placement = placements.next()?;
+            if placements.next().is_some() {
+                return None;
+            }
+            route.push(placement);
         }
         None
     }
@@ -839,7 +849,7 @@ impl<'a> Products<'a> {
         let path = if own {
             Some(Vec::new())
         } else {
-            Self::sole(object, self.occurrences.iter())
+            Self::sole(object, self.primary_occurrences())
                 .and_then(|occurrence| self.path_to(root, occurrence))
         };
         let Some(mut path) = path else {
