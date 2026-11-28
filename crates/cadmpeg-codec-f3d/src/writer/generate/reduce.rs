@@ -121,14 +121,17 @@ const DESIGN_ARENAS_WITHOUT_FORM: &[&str] = &[
     "xref_references",
 ];
 
-/// Native arenas the generator never writes: it has no `MetaStream` record
-/// registry for `ACT`, and a mesh-surface sentinel needs the retained ASM record.
+/// Native arenas that require retained CAM documents, the `ACT` registry,
+/// or ASM mesh-surface records.
 const UNWRITTEN_ARENAS: &[&str] = &[
     "act_component_links",
     "act_entities",
     "act_guids",
     "act_registry_channels",
     "act_table_references",
+    "cam_operations",
+    "cam_setups",
+    "cam_tools",
     "mesh_surface_sentinels",
 ];
 
@@ -579,7 +582,7 @@ impl<'a> Reduction<'a> {
         let dropped = self.remove_native_arenas(|arena| UNWRITTEN_ARENAS.contains(&arena));
         self.native.drop_records(
             "f3d",
-            "that the source-less generator has no form for (ACT records and mesh-surface sentinels need the retained MetaStream registry and ASM record)",
+            "that require retained CAM documents, the ACT MetaStream registry, or ASM mesh-surface records",
             dropped,
         );
     }
