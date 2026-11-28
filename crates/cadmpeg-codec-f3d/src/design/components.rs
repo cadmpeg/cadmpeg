@@ -438,7 +438,8 @@ struct PathPoseOutcome {
     /// Occurrences that an assembly operation or a derived-instance
     /// construction placed from an operation matrix before any carrier
     /// matrix was read. An occurrence that an assembly alignment qualifier
-    /// places from its carrier's closing matrix is not among them.
+    /// places from its carrier's closing matrix or component-path pose is not
+    /// among them.
     operation_placed: BTreeSet<String>,
     /// Carriers of the occurrences that took a path pose.
     applied_carriers: BTreeSet<String>,
@@ -648,7 +649,7 @@ impl<'a> Projector<'a> {
     }
 
     /// The component-path pose of a carrier that the stream's root component
-    /// contains, when the pose is a finite affine transform.
+    /// contains.
     fn root_contained_pose(&self, carrier: &DesignComponentOccurrence) -> Option<[[f64; 4]; 4]> {
         let (_, components) = self.stream_components(carrier)?;
         let root = components.roots.get(&components.root_component?)?;
@@ -657,7 +658,7 @@ impl<'a> Projector<'a> {
             .as_ref()?
             .transform
             .map_or(IDENTITY, crate::records::xref::XrefPlacementTransform::rows);
-        (root.root_entity == carrier.owner_entity && neutral_affine(rows).is_some()).then_some(rows)
+        (root.root_entity == carrier.owner_entity).then_some(rows)
     }
 
     /// Place one occurrence once. The first placement of an occurrence wins.

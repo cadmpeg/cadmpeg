@@ -612,8 +612,11 @@ fn rigid_group_operand_in_the_root_component_takes_its_current_pose() {
             .transform
             .unwrap()
             .rows()[0][3];
-        let applied = crate::test_support::loss_codes(&model.losses)
-            .contains(&crate::loss::F3dLossCode::LocalOccurrenceCurrentPose.kind());
+        let codes = crate::test_support::loss_codes(&model.losses);
+        let applied = codes.contains(&crate::loss::F3dLossCode::LocalOccurrenceCurrentPose.kind());
+        let native =
+            codes.contains(&crate::loss::F3dLossCode::LocalOccurrenceCurrentPoseNative.kind());
+        assert_eq!(applied, posed && !native);
         (x, applied)
     };
     let (x, applied) = project(1, true);
