@@ -253,7 +253,7 @@ pub(crate) fn a5_pcurve_stream_with_uv(u: [f64; 2], v: [f64; 2]) -> Vec<u8> {
     a5_pcurve_stream_with_support_and_uv(0x1234, u, v)
 }
 
-pub(super) fn a5_pcurve_stream_with_support_and_uv(
+pub(crate) fn a5_pcurve_stream_with_support_and_uv(
     support_id: u32,
     u: [f64; 2],
     v: [f64; 2],

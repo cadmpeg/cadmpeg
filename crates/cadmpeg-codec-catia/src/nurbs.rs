@@ -347,6 +347,22 @@ impl LaneRefusals {
         );
     }
 
+    pub(crate) fn push_extrusion_parameter_map(
+        &mut self,
+        source: usize,
+        from: [f64; 2],
+        result: [f64; 2],
+        extended_base: bool,
+    ) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryParameterMapAccuracyInferred.note(format!(
+                "Inferred the class-14 offset-extrusion affine source/result correspondence \
+                 {from:?} to {result:?} at offset {source}; evaluated beyond the declared \
+                 base chart: {extended_base}"
+            )),
+        );
+    }
+
     pub(crate) fn push_conic_branch_bounds_inferred(&mut self, source: usize, gap: f64) {
         self.notes.push(
             crate::loss::CatiaLossCode::GeometryConicBranchBoundsInferred.note(format!(

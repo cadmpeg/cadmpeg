@@ -148,7 +148,7 @@ where
                     }
                     (0x21, Family::B, 0x2c) => {
                         let chart = Extrusion::read(bytes, bounds)?;
-                        self.offset_extrusion(ir, index, &chart, carriers, refusal)
+                        self.offset_extrusion(ir, index, &chart, None, carriers, refusal)
                     }
                     (0x01, Family::B, 0x31) => {
                         let (reference, distance) = offset_cache(bytes, bounds)?;
@@ -391,6 +391,7 @@ where
         ir: &CadIr,
         result: usize,
         chart: &Extrusion,
+        trim_bounds: Option<[[f64; 2]; 2]>,
         carriers: &BTreeMap<usize, usize>,
         refusal: &mut LaneRefusals,
     ) -> Option<Carrier<'_>> {
@@ -418,12 +419,45 @@ where
         }
         let carrier = self.carrier(ir, base, carriers, refusal)?;
         let uv = consolidated_jet_pcurve(&curve, &ConsolidatedCarrierChart::Identity, refusal)?;
-        let surface = chart.surface(&offset, |t| {
+        let trim_chart = trim_bounds.map(|bounds| chart.expanded_to_include(bounds));
+        let chart = trim_chart.as_ref().unwrap_or(chart);
+        let knot_domain = [
+            curve.sites.first()?.knot.get(),
+            curve.sites.last()?.knot.get(),
+        ];
+        let extended_base = match &carrier {
+            Carrier::OffsetTensor(surface, _, distance)
+                if trim_chart.is_some()
+                    || offset.maps_result()
+                    || chart.extends_source(&offset) =>
+            {
+                let bounds = Carrier::Tensor(surface).bounds()?;
+                Some(Carrier::OffsetTensor(surface, bounds, *distance))
+            }
+            _ => None,
+        };
+        let used_extended_base = std::cell::Cell::new(false);
+        let surface = chart.surface(&offset, knot_domain, |t| {
             let p = eval::decode::pcurve_uv(EvaluationAdmission::Standard, &uv, t)
                 .ok()?
                 .get();
-            carrier.evaluate(clamp_chart(&carrier, [p.u, p.v])?)
+            let uv = [p.u, p.v];
+            if let Some(point) = clamp_chart(&carrier, uv).and_then(|uv| carrier.evaluate(uv)) {
+                return Some(point);
+            }
+            let full = extended_base.as_ref()?;
+            let point = full.evaluate(clamp_chart(full, uv)?)?;
+            used_extended_base.set(true);
+            Some(point)
         })?;
+        if offset.maps_result() || used_extended_base.get() {
+            refusal.push_extrusion_parameter_map(
+                (self.physical)(self.records[directrix].byte_offset())?,
+                offset.from,
+                offset.result,
+                used_extended_base.get(),
+            );
+        }
         Some(Carrier::Extrusion(Box::new(surface)))
     }
 
@@ -848,6 +882,54 @@ where
         })
     }
 
+    fn extrusion_ring_carrier(
+        &self,
+        ir: &CadIr,
+        support: usize,
+        owner: usize,
+        current: [[f64; 2]; 2],
+        carriers: &BTreeMap<usize, usize>,
+        refusal: &mut LaneRefusals,
+    ) -> Option<Carrier<'_>> {
+        let ring = self.records.get(owner)?;
+        let bytes = payload(self.bytes, ring)?;
+        let (refs, mut at) = match (ring.family(), *bytes.first()?) {
+            (Family::A, 0x08) => (usize::from(*bytes.get(1)?), 2),
+            (Family::A | Family::B, lead) => (usize::from(lead.checked_sub(0x80)?), 1),
+        };
+        if refs < 5 || refs % 2 != 1 {
+            return None;
+        }
+        for _ in 0..refs {
+            allocation_reference(bytes, &mut at)?;
+        }
+        let bounds = ring_tail(bytes.get(at..)?, refs / 2, false)?
+            .bounds()?
+            .chart;
+        if current
+            .into_iter()
+            .zip(bounds)
+            .all(|([a, b], [lo, hi])| lo >= a - CHART_SLACK && hi <= b + CHART_SLACK)
+        {
+            return None;
+        }
+        let record = self.records.get(support)?;
+        if (record.family(), record.class()) != (Family::B, 0x30) {
+            return None;
+        }
+        let bridge = offset_bridge(payload(self.bytes, record)?)?;
+        if bridge.kind != 0x21 {
+            return None;
+        }
+        let result = (self.resolve)(support, bridge.result)?;
+        let target = self.records.get(result)?;
+        if (target.family(), target.class()) != (Family::B, 0x2c) {
+            return None;
+        }
+        let chart = Extrusion::read(payload(self.bytes, target)?, bridge.bounds)?;
+        self.offset_extrusion(ir, result, &chart, Some(bounds), carriers, refusal)
+    }
+
     pub(super) fn decode<'a>(
         &'a self,
         ir: &'a CadIr,
@@ -873,6 +955,12 @@ where
             return None;
         }
         let carrier = self.carrier(ir, support, carriers, refusal)?;
+        let carrier = if matches!(carrier, Carrier::Extrusion(_)) {
+            self.extrusion_ring_carrier(ir, support, owner, carrier.bounds()?, carriers, refusal)
+                .unwrap_or(carrier)
+        } else {
+            carrier
+        };
         let outer = self.ring(owner, support, &carrier, false, refusal)?;
         let inner = inner
             .into_iter()
@@ -2110,6 +2198,7 @@ mod tests {
     use super::{line_at, ring_tail, RingBounds, RingTail};
 
     mod carriers;
+    mod extrusion_results;
     mod recovery;
     mod rolling_spans;
     mod roster_priority;

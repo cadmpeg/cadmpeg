@@ -71,25 +71,65 @@ impl Extrusion {
                 .into_iter()
                 .zip(self.bounds[0])
                 .all(|(a, b)| near(a, b))
-            || result[0] < from[0] - BOUND_AGREEMENT
-            || result[1] > from[1] + BOUND_AGREEMENT
+            || result[1] - result[0] > from[1] - from[0] + 2.0 * BOUND_AGREEMENT
         {
             return None;
         }
-        Some((source, DirectrixOffset { from, distance }))
+        Some((
+            source,
+            DirectrixOffset {
+                from,
+                result,
+                distance,
+            },
+        ))
+    }
+
+    pub(super) fn expanded_to_include(&self, bounds: [[f64; 2]; 2]) -> Self {
+        Self {
+            directrix: self.directrix,
+            direction: self.direction,
+            bounds: std::array::from_fn(|axis| {
+                [
+                    self.bounds[axis][0].min(bounds[axis][0]),
+                    self.bounds[axis][1].max(bounds[axis][1]),
+                ]
+            }),
+        }
+    }
+
+    pub(super) fn extends_source(&self, offset: &DirectrixOffset) -> bool {
+        let [lo, hi] = self.bounds[0].map(|t| offset.source_parameter(t));
+        lo < offset.from[0] - BOUND_AGREEMENT || hi > offset.from[1] + BOUND_AGREEMENT
     }
 
     pub(super) fn surface(
         &self,
         offset: &DirectrixOffset,
+        knot_domain: [f64; 2],
         point: impl Fn(f64) -> Option<Point3>,
     ) -> Option<NurbsSurface> {
+        let domain = if self.extends_source(offset) {
+            knot_domain
+        } else {
+            offset.from
+        };
+        let source_bounds = self.bounds[0].map(|t| offset.source_parameter(t));
+        if !source_bounds.iter().all(|t| t.is_finite())
+            || source_bounds[0] < knot_domain[0] - BOUND_AGREEMENT
+            || source_bounds[1] > knot_domain[1] + BOUND_AGREEMENT
+            || source_bounds[0] < domain[0] - BOUND_AGREEMENT
+            || source_bounds[1] > domain[1] + BOUND_AGREEMENT
+        {
+            return None;
+        }
         let axis = *self.direction.as_raw();
         let curve = fit_edge_with_error(
             self.bounds[0],
             |t| {
-                let a = point((t - TANGENT_STEP).max(offset.from[0]))?;
-                let b = point((t + TANGENT_STEP).min(offset.from[1]))?;
+                let t = offset.source_parameter(t).clamp(domain[0], domain[1]);
+                let a = point((t - TANGENT_STEP).max(domain[0]))?;
+                let b = point((t + TANGENT_STEP).min(domain[1]))?;
                 let unit =
                     UnitVector3::normalized_by_largest_component(b.vector_from(a).cross(axis))?;
                 let p = point(t)?.translated(*unit.as_raw(), offset.distance);
@@ -118,7 +158,23 @@ impl Extrusion {
 
 pub(super) struct DirectrixOffset {
     pub(super) from: [f64; 2],
+    pub(super) result: [f64; 2],
     distance: f64,
+}
+
+impl DirectrixOffset {
+    pub(super) fn maps_result(&self) -> bool {
+        self.result[0] < self.from[0] - BOUND_AGREEMENT
+            || self.result[1] > self.from[1] + BOUND_AGREEMENT
+    }
+
+    fn source_parameter(&self, result_parameter: f64) -> f64 {
+        if !self.maps_result() {
+            return result_parameter;
+        }
+        let fraction = (result_parameter - self.result[0]) / (self.result[1] - self.result[0]);
+        (self.from[1] - self.from[0]).mul_add(fraction, self.from[0])
+    }
 }
 
 pub(super) fn identity_source(bytes: &[u8], from: [f64; 2]) -> Option<[AllocationReference; 2]> {
@@ -154,3 +210,6 @@ fn direction(view: &mut View<'_>) -> Option<UnitVector3> {
 fn interval(view: &mut View<'_>) -> Option<[f64; 2]> {
     Some(IncreasingParameterInterval::new([view.f64_le()?, view.f64_le()?])?.endpoints())
 }
+
+#[cfg(test)]
+mod tests;

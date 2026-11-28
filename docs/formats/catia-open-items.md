@@ -579,3 +579,21 @@ different, independently constrained orientation route.
 **Conflict.** The extended controls previously failed the row-prefix gate. No decoded rational NURBS surface validates these extended readings.
 
 **Note.** The legacy symmetric and flat-grid forms retain their established readings.
+
+### EX-01. Sheet offset-extrusion parameter correspondence
+
+**Question.** Which relation maps the result U coordinate of a sheet-owned
+class-`2c` extrusion onto its class-`14` source directrix, and which bounds
+control continuation beyond the declared base surface chart?
+
+**Known.** The class-`14` record stores a source interval, signed offset,
+unit normal, and result interval. Its source reference can select a
+class-`23` identity map between two class-`20` pcurves. A containing
+class-`30` kind-`21` record stores the extrusion result bounds. Source and
+result intervals can have different endpoints. The source pcurve retains
+its knot domain separately from the result and face-ring bounds.
+
+**Need.** Save an extrusion of a curved offset directrix with shifted and
+rescaled parameter intervals, then change its trim bounds. Compare the
+class-`14` intervals, source pcurve, base surface limits, ring curves and
+model-space vertices to identify the map and permitted continuation.
