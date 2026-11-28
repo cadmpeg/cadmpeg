@@ -375,8 +375,11 @@ pub(in crate::design) enum Node<'a> {
         otherwise: Box<Node<'a>>,
     },
     Call {
-        name: &'a str,
         function: Function,
+        args: Vec<Argument<'a>>,
+    },
+    Aggregate {
+        collector: Collector,
         args: Vec<Argument<'a>>,
     },
     Group(Box<Node<'a>>),
@@ -580,11 +583,8 @@ impl<'a> Node<'a> {
                 }
                 value
             }
-            Node::Call {
-                name,
-                function,
-                args,
-            } => call(name, *function, args, scope),
+            Node::Call { function, args } => call(*function, args, scope),
+            Node::Aggregate { collector, args } => aggregate(*collector, args, scope),
         }
     }
 
@@ -618,7 +618,7 @@ impl<'a> Node<'a> {
                 then.collect(found);
                 otherwise.collect(found);
             }
-            Node::Call { args, .. } => {
+            Node::Call { args, .. } | Node::Aggregate { args, .. } => {
                 for arg in args {
                     match arg {
                         Argument::Value(node) => node.collect(found),
@@ -1165,7 +1165,6 @@ impl Collector {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::design) enum Function {
     Numeric(Numeric),
-    Aggregate(Collector),
     /// `list`: a `list` of its arguments.
     List,
     /// `tuple`: a `tuple`, which `calc` refuses.
@@ -1218,9 +1217,6 @@ fn function(name: &str) -> Option<Function> {
             result,
         }
     }
-    if let Some(collector) = collector(name) {
-        return Some(Function::Aggregate(collector));
-    }
     Some(match name {
         "cos" | "sin" | "tan" => Function::Numeric(N::Trigonometric),
         "acos" | "asin" | "atan" => Function::Numeric(N::Inverse),
@@ -1265,7 +1261,6 @@ fn valid_call(name: &str, function: Function, count: usize) -> bool {
         return false;
     }
     match function {
-        Function::Aggregate(_) => true,
         Function::Numeric(numeric) => numeric.takes(count),
         Function::Reference | Function::Text | Function::Parse => count == 1,
         Function::Make(Vector) => count == 3,
@@ -1298,10 +1293,7 @@ fn argument(arg: &Argument<'_>, scope: &mut dyn Scope) -> Value {
 }
 
 /// The value of a call (`FunctionExpression::evaluate`).
-fn call(name: &str, function: Function, args: &[Argument<'_>], scope: &mut dyn Scope) -> Value {
-    if let Function::Aggregate(collector) = function {
-        return aggregate(collector, args, scope);
-    }
+fn call(function: Function, args: &[Argument<'_>], scope: &mut dyn Scope) -> Value {
     let values = args
         .iter()
         .map(|arg| argument(arg, scope))
@@ -1315,10 +1307,13 @@ fn call(name: &str, function: Function, args: &[Argument<'_>], scope: &mut dyn S
             outcomes(Object, sequence_of_three(&values[0]))
         }
         Function::Numeric(numeric) => numeric_call(numeric, &values),
-        Function::Aggregate(_) => unreachable!("aggregate arguments are evaluated separately"),
         Function::Reference => return values.first().cloned().unwrap_or(Value::of(&[Raises])),
         Function::List | Function::Tuple => {
-            let class = if name == "list" { List } else { Tuple };
+            let class = if function == Function::List {
+                List
+            } else {
+                Tuple
+            };
             if matches!(args, [Argument::Range(..)]) {
                 Value::of(&[class])
             } else {
@@ -2381,7 +2376,22 @@ impl<'a> Parser<'a> {
     }
 
     fn call(&mut self, name: &'a str) -> Result<Node<'a>, Unparsed> {
-        let function = function(name).ok_or(Unparsed::Syntax)?;
+        let collector = collector(name);
+        let function = function(name);
+        if collector.is_none() && function.is_none() {
+            return Err(Unparsed::Syntax);
+        }
+        let args = self.arguments()?;
+        if let Some(collector) = collector {
+            return Ok(Node::Aggregate { collector, args });
+        }
+        let function = function
+            .filter(|&function| valid_call(name, function, args.len()))
+            .ok_or(Unparsed::Syntax)?;
+        Ok(Node::Call { function, args })
+    }
+
+    fn arguments(&mut self) -> Result<Vec<Argument<'a>>, Unparsed> {
         let mut args = Vec::new();
         loop {
             let range = match (self.peek_at(0), self.peek_at(1), self.peek_at(2)) {
@@ -2403,14 +2413,7 @@ impl<'a> Parser<'a> {
                 continue;
             }
             self.require(')')?;
-            if !valid_call(name, function, args.len()) {
-                return Err(Unparsed::Syntax);
-            }
-            return Ok(Node::Call {
-                name,
-                function,
-                args,
-            });
+            return Ok(args);
         }
     }
 

@@ -10,7 +10,7 @@ use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition, Parame
 use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
 use cadmpeg_ir::report::loss::LossNote;
 
-use super::{charge_count, decode_with_losses, unresolved_kind};
+use super::{decode_with_losses, unresolved_kind};
 use crate::loss::FreecadLossCode::{
     ParameterDependencyDropped, ParameterExpressionResultUnresolved, ParameterValueNonFinite,
 };
@@ -83,9 +83,26 @@ impl Row {
             && !matches!(result.as_str(), "error" | "str");
         let strict =
             family == "review" && !matches!(address.as_str(), "X8" | "X16" | "X24" | "X25");
-        let charge = |code| charge_count(losses, code, cell.id.as_str());
-        let unknown = charge(ParameterExpressionResultUnresolved);
         let mut wrong = Vec::new();
+        let codes = [
+            ParameterExpressionResultUnresolved,
+            ParameterValueNonFinite,
+            ParameterDependencyDropped,
+        ]
+        .map(|code| code.note("").code);
+        let mut counts = [0; 3];
+        for loss in losses.iter().filter(|loss| {
+            loss.message
+                .split_ascii_whitespace()
+                .any(|word| word == cell.id.as_str())
+        }) {
+            if let Some(index) = codes.iter().position(|code| *code == loss.code) {
+                counts[index] += 1;
+            } else {
+                wrong.push(format!("unexpected cell charge {}", loss.code));
+            }
+        }
+        let [unknown, nonfinite_charge, dependency_charge] = counts;
         let ParameterDefinition::Expression(expression) = &cell.definition else {
             return vec!["the cell has no expression".to_owned()];
         };
@@ -140,7 +157,7 @@ impl Row {
             Number::NonFinite(spelling) => matches!(spelling.as_str(), "nan" | "inf" | "-inf"),
             Number::Finite(_) => false,
         });
-        if charge(ParameterValueNonFinite) != usize::from(!formula && nonfinite) {
+        if nonfinite_charge != usize::from(!formula && nonfinite) {
             wrong.push("nonfinite value charge".to_owned());
         }
         let expected_factors: &[(UnitSymbol, i8)] = match display.as_deref() {
@@ -210,9 +227,10 @@ impl Row {
                 ));
             }
             let expected = usize::from(matches!(address.as_str(), "X23" | "X24" | "X25"));
-            let found = charge(ParameterDependencyDropped);
-            if found != expected {
-                wrong.push(format!("dependency charge {found}, expected {expected}"));
+            if dependency_charge != expected {
+                wrong.push(format!(
+                    "dependency charge {dependency_charge}, expected {expected}"
+                ));
             }
         }
         wrong
