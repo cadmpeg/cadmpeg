@@ -8,12 +8,12 @@
 //! position: an object's owned `Base Feature` scope takes the object's
 //! position, and a `JointOrigin` scope takes the position of the `Assemble`
 //! envelope bound to it. Else, as a guess that a loss names, the feature at
-//! the item's ordinal in the stream order, which numbers linked followers and
-//! companion threads with the items, counted from the stream's first feature
-//! ordinal, which the archive merge renumbers. A feature goes to one item. A reverse-normal linked scope that is no item is a member of its own
-//! before the item that follows it. An item with no feature is a feature of
-//! the family its record type establishes, or a native feature named by that
-//! type.
+//! the item's ordinal in the stream order, which numbers linked followers
+//! with the items, counted from the stream's first feature ordinal, which the
+//! archive merge renumbers. A feature goes to one item. A reverse-normal
+//! linked scope that is no item is a member of its own before the item that
+//! follows it. An item with no feature is a feature of the family its record
+//! type establishes, or a native feature named by that type.
 //!
 //! The rolled-back flags of the items' scope tails place the rollback marker
 //! of a timeline before its first rolled-back item. A timeline whose items
