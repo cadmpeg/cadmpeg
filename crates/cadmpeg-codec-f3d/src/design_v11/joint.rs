@@ -79,10 +79,11 @@ pub(super) struct Source<'a> {
     pub(super) ambiguous: bool,
 }
 
-/// The connector positions an archive merge rewrote from the member root.
+/// The member definition of a joint whose connectors an archive merge
+/// rewrote from the member root, and which of its two connectors it rewrote.
 pub(crate) struct MemberRoots {
     pub(crate) definition: ProductDefinitionId,
-    pub(crate) subelements: [Option<Vec<String>>; 2],
+    pub(crate) connectors: [bool; 2],
 }
 
 pub(crate) type RootOperands = HashMap<JointId, MemberRoots>;
@@ -94,7 +95,6 @@ pub(super) struct Places<'a> {
     /// The definition that lists each occurrence.
     pub(super) owners: HashMap<&'a OccurrenceId, &'a ProductDefinitionId>,
     pub(super) keys: OperandKeys<'a>,
-    children: HashMap<&'a ProductDefinitionId, Vec<&'a Occurrence>>,
 }
 
 impl<'a> Places<'a> {
@@ -103,69 +103,20 @@ impl<'a> Places<'a> {
         occurrences: &'a [Occurrence],
         keys: OperandKeys<'a>,
     ) -> Self {
-        let owners: HashMap<_, _> = definitions
-            .iter()
-            .flat_map(|definition| {
-                definition
-                    .occurrences
-                    .iter()
-                    .map(move |occurrence| (occurrence, &definition.id))
-            })
-            .collect();
-        let mut children: HashMap<_, Vec<_>> = HashMap::new();
-        for occurrence in occurrences {
-            if let Some(owner) = owners.get(&occurrence.id) {
-                children.entry(*owner).or_default().push(occurrence);
-            }
-        }
         Self {
             occurrences,
             parents: crate::tree::parent_ids(definitions, occurrences),
-            owners,
+            owners: definitions
+                .iter()
+                .flat_map(|definition| {
+                    definition
+                        .occurrences
+                        .iter()
+                        .map(move |occurrence| (occurrence, &definition.id))
+                })
+                .collect(),
             keys,
-            children,
         }
-    }
-
-    /// Repeated prototypes can reach the same definition by distinct paths.
-    fn unique_placement(
-        &self,
-        assembly: &ProductDefinitionId,
-        owner: &ProductDefinitionId,
-    ) -> Option<OccurrencePath> {
-        let mut queue = vec![(assembly, None)];
-        let mut next = 0;
-        let mut visits = HashMap::new();
-        let mut found = None;
-        while let Some((definition, via)) = queue.get(next).copied() {
-            let at = next;
-            next += 1;
-            if definition == owner {
-                if found.replace(via).is_some() {
-                    return None;
-                }
-                continue;
-            }
-            let visits = visits.entry(definition).or_insert(0);
-            if *visits == 2 {
-                continue;
-            }
-            *visits += 1;
-            for occurrence in self.children.get(definition).into_iter().flatten() {
-                queue.push((&occurrence.prototype, Some((&occurrence.id, at))));
-            }
-        }
-        let mut via = found?;
-        let mut path = Vec::new();
-        while let Some((occurrence, parent)) = via {
-            path.push(PathStep {
-                occurrence: StepRef::Occurrence(occurrence.clone()),
-                configuration: None,
-            });
-            via = queue[parent].1;
-        }
-        path.reverse();
-        Some(OccurrencePath(path))
     }
 
     /// The path from `owner` to `occurrence`: the chain of parents from the
@@ -286,13 +237,15 @@ impl<'a> Inputs<'a> {
         self
     }
 
-    fn member_root(
-        &self,
-        joint: &AssemblyJoint,
-        index: usize,
-    ) -> Option<(&ProductDefinitionId, &[String])> {
+    /// The member definition whose root the connector at `index` of `joint`
+    /// names, where an archive merge rewrote it.
+    fn member_root(&self, joint: &AssemblyJoint, index: usize) -> Option<&ProductDefinitionId> {
         let roots = self.roots?.get(&joint.id)?;
-        Some((&roots.definition, roots.subelements.get(index)?.as_deref()?))
+        roots
+            .connectors
+            .get(index)
+            .copied()?
+            .then_some(&roots.definition)
     }
 
     /// The scope record of `joint`.
@@ -599,7 +552,7 @@ impl<'a> Site<'_, 'a> {
                     definition: self.owner.clone(),
                     configuration: None,
                 },
-                own: self.inputs.places.unique_placement(self.owner, owner),
+                own: self.placement(owner).ok().flatten(),
                 target: path,
             })
         } else {
@@ -610,11 +563,11 @@ impl<'a> Site<'_, 'a> {
     /// The definition of the datum feature a `Root` operand names.
     fn datum(
         &self,
-        object: &str,
-        subelements: &[String],
+        operand: &products::JointOperand,
         root: &ProductDefinitionId,
     ) -> Option<(&str, &ProductDefinitionId)> {
-        if !subelements.is_empty() {
+        let object = operand.object.as_str();
+        if !operand.subelements.is_empty() {
             return None;
         }
         let qualified = crate::ids::member_definition_key(root.as_str())
@@ -659,11 +612,8 @@ impl<'a> Site<'_, 'a> {
                         .flatten();
                     match (&operand.container, member_root) {
                         (OperandContainer::Root {}, _) | (_, Some(_)) => {
-                            let (root, subelements) =
-                                member_root.unwrap_or((self.scope, &operand.subelements));
-                            let home = self
-                                .datum(&operand.object, subelements, root)
-                                .map_or(root, |(_, home)| home);
+                            let root = member_root.unwrap_or(self.scope);
+                            let home = self.datum(operand, root).map_or(root, |(_, home)| home);
                             group || self.placement(home).is_ok()
                         }
                         (OperandContainer::Occurrence { .. }, None) => self
@@ -825,7 +775,7 @@ impl<'a> Site<'_, 'a> {
         &self,
         connector: &products::JointConnector,
         frame: Transform,
-        member_root: Option<(&ProductDefinitionId, &[String])>,
+        member_root: Option<&ProductDefinitionId>,
     ) -> Option<JointConnector> {
         let operand = &connector.operand;
         let pick = |target, context, native| Picked {
@@ -838,8 +788,8 @@ impl<'a> Site<'_, 'a> {
         };
         let (pick, after, resolved) = match (&operand.container, member_root) {
             (OperandContainer::Root {}, _) | (_, Some(_)) => {
-                let (root, subelements) = member_root.unwrap_or((self.scope, &operand.subelements));
-                let datum = self.datum(&operand.object, subelements, root);
+                let root = member_root.unwrap_or(self.scope);
+                let datum = self.datum(operand, root);
                 let (target, native) = match datum {
                     Some((object, _)) => (
                         PickTarget::Datum {
@@ -852,7 +802,7 @@ impl<'a> Site<'_, 'a> {
                         PickTarget::Native { within: None },
                         Some(native_name(
                             std::iter::once(operand.object.as_str())
-                                .chain(subelements.iter().map(String::as_str)),
+                                .chain(operand.subelements.iter().map(String::as_str)),
                         )?),
                     ),
                 };
@@ -911,12 +861,7 @@ impl<'a> Site<'_, 'a> {
             let ordinal = if index < 2 || additional.is_empty() {
                 index
             } else {
-                let Some(ordinal) = member_joint
-                    .id
-                    .as_str()
-                    .strip_prefix(joint.id.as_str())
-                    .and_then(|suffix| suffix.strip_prefix('m'))
-                    .and_then(|suffix| suffix.parse::<usize>().ok())
+                let Some(ordinal) = crate::ids::assembly_group_member(&joint.id, &member_joint.id)
                     .filter(|ordinal| (2..2 + additional.len()).contains(ordinal))
                 else {
                     continue;

@@ -7,6 +7,7 @@ use cadmpeg_core::decode::u64_from_index;
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::products::{
@@ -968,6 +969,23 @@ pub(crate) fn legacy_as_built_421_generation(
 pub(crate) struct AssemblyJointProjection {
     pub(crate) joints: Vec<AssemblyJoint>,
     pub(crate) losses: Vec<LossNote>,
+    /// The losses of the values that the joint features of the design layer
+    /// state: an enabled rest position, and a motion that no assembly joint
+    /// kind states.
+    design_stated: Vec<LossNote>,
+}
+
+impl AssemblyJointProjection {
+    /// The losses of a decode to `depth`. From the design depth, the design
+    /// layer states each joint as its joint feature (§6.7), or charges the
+    /// feature it does not project.
+    pub(crate) fn take_losses(&mut self, depth: DecodeDepth) -> Vec<LossNote> {
+        let mut losses = std::mem::take(&mut self.losses);
+        if depth < DecodeDepth::Design {
+            losses.append(&mut self.design_stated);
+        }
+        losses
+    }
 }
 
 /// Project assembly scopes whose connector frames and operand qualifiers are complete.
@@ -1149,6 +1167,7 @@ pub(crate) fn project_assembly_joints_with_paths(
         }
     }
     let mut losses = Vec::new();
+    let mut design_stated = Vec::new();
     if assumed_extended_typed_tails != 0 {
         losses.push(F3dLossCode::AssemblyExtendedTypedTailAssumed.note(format!(
             "{assumed_extended_typed_tails} Design assembly relation(s) assume the extra tail reference uses the common 51-byte typed spelling with the same role as its plain spelling; its target and location remain native."
@@ -1179,8 +1198,8 @@ pub(crate) fn project_assembly_joints_with_paths(
     }
     if undecoded_motion_count != 0 {
         let reasons = undecoded_motions.into_iter().collect::<Vec<_>>().join("; ");
-        losses.push(F3dLossCode::AssemblyJointMotionUndecoded.note(format!(
-            "{undecoded_motion_count} legacy assembly joint record(s) use a fixed relation because the legacy motion kinds cannot state the stored combination ({reasons})."
+        design_stated.push(F3dLossCode::AssemblyJointMotionUndecoded.note(format!(
+            "{undecoded_motion_count} Design assembly joint(s) were projected as fixed: their motion does not map to a joint kind ({reasons})."
         )));
     }
     if native_angular_limits != 0 {
@@ -1194,8 +1213,8 @@ pub(crate) fn project_assembly_joints_with_paths(
         )));
     }
     if resting_joints != 0 {
-        losses.push(F3dLossCode::AssemblyJointRestUnprojected.note(format!(
-            "{resting_joints} legacy assembly joint record(s) omit an enabled rest position. The native motion record retains the value."
+        design_stated.push(F3dLossCode::AssemblyJointRestUnprojected.note(format!(
+            "{resting_joints} projected Design assembly joint(s) enable a rest position; the neutral joint does not carry it, which is retained natively."
         )));
     }
     if root_contexts != 0 {
@@ -1238,6 +1257,7 @@ pub(crate) fn project_assembly_joints_with_paths(
     AssemblyJointProjection {
         joints: joints.into_values().collect(),
         losses,
+        design_stated,
     }
 }
 
@@ -1989,7 +2009,7 @@ mod tests {
         }
     }
 
-    use cadmpeg_core::decode::u64_from_index;
+    use cadmpeg_core::decode::{u64_from_index, DecodeDepth};
 
     use crate::records::feature::assembly::DesignAssemblyOperandQualifier;
     use std::collections::BTreeMap;
@@ -3192,8 +3212,9 @@ mod tests {
             [crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind()]
         );
 
-        // An enabled rest position is retained natively with a loss; a rest
-        // value without the flag is not reported.
+        // An enabled rest position is retained natively with a loss below the
+        // design depth, where the design layer's joint feature states it; a
+        // rest value without the flag is not reported.
         let resting = |flag: u8| {
             let mut resting = motion(&[1], [1, 1]);
             if let Some(lanes) = resting.limits.as_mut() {
@@ -3204,35 +3225,49 @@ mod tests {
             }
             project(&[resting])
         };
-        let rested = resting(1);
-        assert_eq!(kind(&rested)["kind"], "revolute");
+        let at = |mut projection: super::AssemblyJointProjection, depth| {
+            crate::test_support::loss_codes(&projection.take_losses(depth))
+        };
+        let activation = crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind();
+        assert_eq!(kind(&resting(1))["kind"], "revolute");
         assert_eq!(
-            crate::test_support::loss_codes(&rested.losses),
+            at(resting(1), DecodeDepth::Geometry),
             [
+                activation.clone(),
                 crate::loss::F3dLossCode::AssemblyJointRestUnprojected.kind(),
-                crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind(),
+            ]
+        );
+        for depth in [DecodeDepth::Design, DecodeDepth::Full] {
+            assert_eq!(at(resting(1), depth), std::slice::from_ref(&activation));
+        }
+        assert_eq!(
+            at(resting(0), DecodeDepth::Geometry),
+            std::slice::from_ref(&activation)
+        );
+
+        // A slider with an angle offset is fixed in the assembly joint and a
+        // slider in the design layer's joint feature.
+        let mut angled = scopes.clone();
+        angled[2] = assemble(0.25);
+        let angled = || {
+            super::project_assembly_joints(
+                &angled,
+                &[],
+                &crate::design::components::ComponentInserts::default(),
+                &[motion(&[8], [0, 0])],
+            )
+        };
+        assert_eq!(kind(&angled())["kind"], "fixed");
+        assert_eq!(
+            at(angled(), DecodeDepth::Geometry),
+            [
+                activation.clone(),
+                crate::loss::F3dLossCode::AssemblyJointMotionUndecoded.kind(),
             ]
         );
         assert_eq!(
-            crate::test_support::loss_codes(&resting(0).losses),
-            [crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind()]
-        );
-
-        let mut angled = scopes.clone();
-        angled[2] = assemble(0.25);
-        let angled = super::project_assembly_joints(
-            &angled,
-            &[],
-            &crate::design::components::ComponentInserts::default(),
-            &[motion(&[8], [0, 0])],
-        );
-        assert_eq!(kind(&angled)["kind"], "fixed");
-        assert_eq!(
-            [rested.losses[0].message.as_str(), angled.losses[0].message.as_str()],
-            [
-                "1 legacy assembly joint record(s) omit an enabled rest position. The native motion record retains the value.",
-                "1 legacy assembly joint record(s) use a fixed relation because the legacy motion kinds cannot state the stored combination (slider with an angle offset).",
-            ],
+            at(angled(), DecodeDepth::Design),
+            std::slice::from_ref(&activation)
         );
 
         // A rigid group is fixed: one whose joint record states a freedom is
@@ -3305,17 +3340,13 @@ mod tests {
             motion(&[2], [1, 0]),
             motion(&[8], [0, 1]),
         ] {
-            let projection = project(&[undecoded]);
+            let mut projection = project(&[undecoded]);
             assert_eq!(kind(&projection)["kind"], "fixed");
             assert_eq!(
-                projection
-                    .losses
-                    .iter()
-                    .map(|loss| loss.code.clone())
-                    .collect::<Vec<_>>(),
+                crate::test_support::loss_codes(&projection.take_losses(DecodeDepth::Geometry)),
                 [
-                    crate::loss::F3dLossCode::AssemblyJointMotionUndecoded.kind(),
                     crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind(),
+                    crate::loss::F3dLossCode::AssemblyJointMotionUndecoded.kind(),
                 ]
             );
         }

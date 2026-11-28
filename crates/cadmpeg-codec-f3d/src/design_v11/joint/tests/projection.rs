@@ -33,7 +33,15 @@ fn a_member_root_connector_stays_in_the_member_when_the_legacy_pair_places_it() 
             fixed(),
             [
                 connector(
-                    JointOperand::occurrence(occurrence("m"), root_object, Vec::new()),
+                    JointOperand::occurrence(
+                        occurrence("m"),
+                        root_object,
+                        if root_object == "root-object" {
+                            vec!["stored-key".into()]
+                        } else {
+                            Vec::new()
+                        },
+                    ),
                     STORED,
                 ),
                 connector(on("b"), STORED),
@@ -44,14 +52,7 @@ fn a_member_root_connector_stays_in_the_member_when_the_legacy_pair_places_it() 
             pair.id.clone(),
             MemberRoots {
                 definition: member.clone(),
-                subelements: [
-                    Some(if root_object == "root-object" {
-                        vec!["stored-key".into()]
-                    } else {
-                        Vec::new()
-                    }),
-                    None,
-                ],
+                connectors: [true, false],
             },
         )]);
         let mut origin = legacy("member-origin", &pair);

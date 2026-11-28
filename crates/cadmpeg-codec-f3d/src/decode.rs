@@ -4117,7 +4117,7 @@ impl<'a> F3dDecodeSession<'a> {
             .occurrences
             .extend(unresolved_component_inserts);
         self.report.losses.extend(component_inserts.losses());
-        let joints = crate::design::assembly::project_assembly_joints_with_paths(
+        let mut joints = crate::design::assembly::project_assembly_joints_with_paths(
             &prereqs.design_parameter_scopes,
             &prereqs.design_component_occurrences,
             &component_inserts,
@@ -4132,8 +4132,10 @@ impl<'a> F3dDecodeSession<'a> {
                 &prereqs.design_parameter_scopes,
             ),
         );
+        self.report
+            .losses
+            .extend(joints.take_losses(self.ctx.depth()));
         self.ir.model.assembly_joints = joints.joints;
-        self.report.losses.extend(joints.losses);
         self.report
             .losses
             .extend(crate::design::decode::joint_motion::assumed_motion_loss(

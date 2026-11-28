@@ -2101,7 +2101,7 @@ impl MemberDefinition {
             .map(|joint| {
                 let mut joint =
                     cadmpeg_ir::schema::rewrite::identities(ctx, joint.clone(), rewrite)?;
-                let mut roots = [None, None];
+                let mut roots = [false; 2];
                 for (connector, root) in joint.connectors_mut().zip(&mut roots) {
                     if matches!(
                         connector.operand.container,
@@ -2112,15 +2112,15 @@ impl MemberDefinition {
                                 occurrence: parent.clone(),
                                 occurrence_path: Vec::new(),
                             };
-                        *root = Some(connector.operand.subelements.clone());
+                        *root = true;
                     }
                 }
-                if roots.iter().any(Option::is_some) {
+                if roots.contains(&true) {
                     joint_roots.insert(
                         joint.id.clone(),
                         MemberRoots {
                             definition: self.definition.clone(),
-                            subelements: roots,
+                            connectors: roots,
                         },
                     );
                 }

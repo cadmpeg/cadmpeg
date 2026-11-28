@@ -1126,7 +1126,7 @@ fn a_repeated_member_states_its_joints_once() {
     assert_eq!(joint_roots.len(), 1);
     let roots = &joint_roots[&first.assembly_joints[0].id];
     assert_eq!(roots.definition, definition);
-    assert_eq!(roots.subelements, [Some(Vec::new()), None]);
+    assert_eq!(roots.connectors, [true, false]);
     for instance in [&first, &second] {
         assert!(instance.product_definitions.is_empty());
         assert_eq!(instance.occurrences[0].prototype, definition);
