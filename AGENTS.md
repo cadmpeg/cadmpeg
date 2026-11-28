@@ -14,14 +14,14 @@ Code:
 - A comment states only intent that the code cannot show. Do not use comments to hedge, justify, narrate history, or record invariants; enforce an invariant with code or a test.
 - When you move code, update callers to import from the owning module. Do not keep old paths through re-exports.
 - `python3 scripts/check-codec-facade.py` checks codec facades; read-only codecs have no encoder.
-- `python3 scripts/check-source-policy.py` checks byte reads, allocation, and `LossNote` construction.
+- Use `View` for reads, validate counts before `alloc_filled`, and construct losses with `code.note`; see `scripts/check-source-policy.py`.
 - Keep a `View` where its `SpaceId` must survive; propagate `req_*` errors through a codec-local `From<ParseError>`.
 - Add each new drop path to the codec’s `*LossCode` enum; its `family.detail` strings are the contract.
 - Rust types and `python3 scripts/name-validation-rules.py --check` enforce validation rule names; admission routes select rules in `validate/admit.rs`.
 - `python3 scripts/check-dialects.py` and `scripts/check-dialect-support.py` check dialect registries; select output with `--to FORMAT[:DIALECT]`.
 - CADIR, the decode sidecar, and the CLI report accept one `IR_VERSION` and carry no migrations. Keep the unreleased wire version that `main` carries unless the task explicitly requests a version change; regenerate fixtures after a wire change.
 - A change to `cadmpeg-ir` or `cadmpeg-core` reaches every codec and every golden. Add struct fields through `Default` or constructor helpers.
-- The schema feature and `schema_derives` tests check `JsonSchema` derives; schema readers use the committed schemas in `crates/cadmpeg-ir/schema/`.
+- Gate `JsonSchema` derives on the `schema` feature; `schema_derives` tests check them and readers use `crates/cadmpeg-ir/schema/`.
 - After changing an IR or native record type, run `UPDATE_GOLDEN=1 cargo test -p cadmpeg-ir --features schema-order --test committed_schema` and `python3 scripts/generate-annex-a.py --write`, then review the schema and annex diff. Under `UPDATE_GOLDEN=1`, run only `committed_schema` with `schema-order`.
 - `python3 scripts/check-source-policy.py` enforces [docs/source-policy.md](docs/source-policy.md); preserve distinct tolerance values.
 
