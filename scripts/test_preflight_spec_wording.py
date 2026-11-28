@@ -95,6 +95,12 @@ class SpecWordingCheck(harness.FixtureCase):
         self.assertEqual(harness.statuses(results), ["PASS"])
         self.assertEqual(results[0].summary, "no specification text changed")
 
+    def test_authoring_guide_is_not_a_specification(self) -> None:
+        self.repo.commit({"docs/formats/README.md": "# Guide\n\nDo not write observed or for now.\n"})
+        results = harness.run_check(check, self.repo.context())
+        self.assertEqual(harness.statuses(results), ["PASS"])
+        self.assertEqual(results[0].summary, "no specification text changed")
+
 
 if __name__ == "__main__":
     unittest.main()
