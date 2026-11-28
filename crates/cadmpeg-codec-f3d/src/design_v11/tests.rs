@@ -2,7 +2,7 @@
 //! Tests of the v11 design of a Fusion document.
 #![allow(clippy::unwrap_used)]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::{Dimension, ParameterRef, RefTarget};
@@ -1028,8 +1028,14 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
     ]);
     let features = BTreeSet::from([OWNER]);
     let mut losses = Vec::new();
-    let projected =
-        super::parameters::project(&legacy, &scopes, &BTreeSet::new(), &features, &mut losses);
+    let projected = super::parameters::project(
+        &legacy,
+        &HashMap::new(),
+        &scopes,
+        &BTreeSet::new(),
+        &features,
+        &mut losses,
+    );
     let [outside, unresolved] = losses.as_slice() else {
         panic!("two losses: {losses:?}")
     };
@@ -1167,6 +1173,7 @@ fn the_parameter_of_a_driven_dimension_is_driven() {
     let mut losses = Vec::new();
     let projected = super::parameters::project(
         &legacy,
+        &HashMap::new(),
         &scopes,
         &BTreeSet::new(),
         &BTreeSet::from([OWNER]),
@@ -1280,6 +1287,7 @@ fn a_hosted_referenced_designs_user_parameters_stay_off_the_scope_that_hosts_it(
     let mut losses = Vec::new();
     let projected = super::parameters::project(
         &legacy,
+        &HashMap::new(),
         &scopes,
         &hosted,
         &BTreeSet::from([OWNER]),
@@ -1349,6 +1357,7 @@ fn each_class_of_parameter_the_design_omits_charges_one_loss_naming_them() {
     let mut losses = Vec::new();
     let projected = super::parameters::project(
         &legacy,
+        &HashMap::new(),
         &scopes,
         &BTreeSet::new(),
         &BTreeSet::from([OWNER]),
@@ -1399,6 +1408,7 @@ fn the_active_row_is_the_base_and_other_rows_state_their_cells() {
             &[],
             &[],
         )],
+        &HashMap::new(),
         &scopes,
         &BTreeSet::new(),
         &features,
@@ -1430,7 +1440,13 @@ fn the_active_row_is_the_base_and_other_rows_state_their_cells() {
     };
     let mut losses = Vec::new();
     let projected = super::configurations::project(
-        &[row("wide", true), row("narrow", false)],
+        &[
+            row("wide", true),
+            LegacyConfiguration {
+                ordinal: 1,
+                ..row("narrow", false)
+            },
+        ],
         &scopes,
         &BTreeSet::new(),
         &features,
@@ -1446,6 +1462,7 @@ fn the_active_row_is_the_base_and_other_rows_state_their_cells() {
         panic!("two configurations")
     };
     assert_eq!(wide.name, "wide");
+    assert_eq!((wide.position, narrow.position), (Some(0), Some(1)));
     assert_eq!(
         wide.overrides,
         cadmpeg_ir::design::configuration::Overrides::default()
@@ -1494,6 +1511,7 @@ fn rows_and_cells_the_design_omits_are_named_by_one_loss_per_class() {
     let features = BTreeSet::from([OWNER]);
     let parameters = super::parameters::project(
         &[parameter("d1", Some(OWNER), "10 mm", None, &[], &[])],
+        &HashMap::new(),
         &scopes,
         &hosted,
         &features,
@@ -1875,6 +1893,59 @@ fn a_scope_whose_states_the_walk_does_not_reach_charges_a_loss() {
     assert!(codes("", true, &[ordered("0", &[])]).is_empty());
 }
 
+/// A feature's parameter takes the local ordinal of its owner record, where
+/// the feature's owner records state distinct ordinals of one parameter
+/// scope.
+#[test]
+fn an_owned_parameter_is_placed_by_its_owner_record() {
+    use super::parameters::OwnerPlace;
+    const OWNER: &str = "f3d:model:feature#extrude:20";
+    const SHARED: &str = "f3d:model:feature#fillet:30";
+    let legacy = [
+        parameter("d1", Some(OWNER), "10 mm", None, &[], &[]),
+        parameter("d2", Some(OWNER), "20 mm", None, &[], &[]),
+        parameter("r1", Some(SHARED), "1 mm", None, &[], &[]),
+        parameter("r2", Some(SHARED), "2 mm", None, &[], &[]),
+    ];
+    let place = |key: &str, ordinal: u32| {
+        (
+            format!("{STREAM}:design-parameter#{key}"),
+            OwnerPlace {
+                list: (STREAM.to_owned(), 7),
+                ordinal,
+            },
+        )
+    };
+    let places = HashMap::from([
+        place("d1", 1),
+        place("d2", 0),
+        place("r1", 0),
+        place("r2", 0),
+    ]);
+    let scopes = BTreeMap::from([(String::new(), crate::tree::file_root_id())]);
+    let projected = super::parameters::project(
+        &legacy,
+        &places,
+        &scopes,
+        &BTreeSet::new(),
+        &BTreeSet::from([OWNER, SHARED]),
+        &mut Vec::new(),
+    );
+    let positions = projected
+        .iter()
+        .map(|parameter| {
+            (
+                parameter.name.as_ref().unwrap().as_str(),
+                parameter.position,
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(
+        positions,
+        BTreeMap::from([("d1", Some(1)), ("d2", Some(0)), ("r1", None), ("r2", None)])
+    );
+}
+
 /// The fields a CADIR write of `ir` names for the model parameter `id`:
 /// none where it carries the parameter whole.
 fn parameter_charge(ir: &cadmpeg_ir::document::CadIr, id: &str) -> Vec<String> {
@@ -1921,6 +1992,7 @@ fn the_parameter_of_a_diameter_dimension_states_its_display() {
     let mut losses = Vec::new();
     let projected = super::parameters::project(
         std::slice::from_ref(&legacy),
+        &HashMap::new(),
         &scopes,
         &BTreeSet::new(),
         &BTreeSet::from([OWNER]),

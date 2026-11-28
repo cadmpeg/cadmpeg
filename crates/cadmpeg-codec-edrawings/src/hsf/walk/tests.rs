@@ -2,6 +2,7 @@
 //! Walker contracts over synthetic streams.
 
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::unknown::part::Cause;
 
 use crate::dialect::Grammar;
 
@@ -201,13 +202,15 @@ fn shell_counts_are_checked_against_the_stream() {
         bytes.extend_from_slice(&count.to_le_bytes());
         bytes
     };
+    let zero = walk(&huge(0)).unwrap_err();
     assert_eq!(
-        walk(&huge(0)).unwrap_err().reason,
-        "shell: vertex count is zero or exceeds the cap"
+        (zero.reason, zero.cause),
+        ("shell: vertex count is zero", Cause::Unreadable)
     );
+    let capped = walk(&huge(u32::MAX)).unwrap_err();
     assert_eq!(
-        walk(&huge(u32::MAX)).unwrap_err().reason,
-        "shell: vertex count is zero or exceeds the cap"
+        (capped.reason, capped.cause),
+        ("shell: vertex count exceeds the cap", Cause::Undecoded)
     );
     assert_eq!(
         walk(&huge(1_000_000)).unwrap_err().reason,

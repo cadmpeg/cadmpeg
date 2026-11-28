@@ -107,7 +107,6 @@ pub(crate) fn decode_body_members(
 pub(crate) fn decode_body_bounds(
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     given_up: &mut Vec<super::record::GivenUpFrame>,
 ) -> Result<Vec<DesignBodyBounds>, CodecError> {
     let mut out = Vec::new();
@@ -212,9 +211,8 @@ pub(crate) fn decode_body_bounds(
                 values,
                 value_offsets,
             ),
-            losses,
             given_up,
-            crate::loss::F3dLossCode::DesignBodyBoundsUndecoded,
+            cadmpeg_ir::unknown::part::Cause::Undecoded,
             super::record::RecordFrame::new(&entry.name, first, third_end),
             format_args!(
                 "Body bounds for Design entity {}",
@@ -2866,13 +2864,9 @@ mod tests {
         zip.write_all(&bulk).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
-            let bounds = super::decode_body_bounds(
-                scan,
-                std::slice::from_ref(&entity),
-                &mut Vec::new(),
-                &mut Vec::new(),
-            )
-            .unwrap();
+            let bounds =
+                super::decode_body_bounds(scan, std::slice::from_ref(&entity), &mut Vec::new())
+                    .unwrap();
             assert_eq!(bounds.len(), 1);
             assert_eq!(bounds[0].entity_suffix(), 7);
         });
@@ -2935,19 +2929,17 @@ mod tests {
         zip.write_all(&bulk).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
-            let mut losses = Vec::new();
             let mut given_up = Vec::new();
             let bounds =
-                super::decode_body_bounds(scan, &[entity, sibling], &mut losses, &mut given_up)
-                    .unwrap();
-            assert_eq!(
-                crate::test_support::loss_codes(&losses),
-                [crate::loss::F3dLossCode::DesignBodyBoundsUndecoded.kind()]
-            );
+                super::decode_body_bounds(scan, &[entity, sibling], &mut given_up).unwrap();
             let [frame] = given_up.as_slice() else {
                 panic!("one given-up bounds frame: {given_up:?}");
             };
             assert_eq!(frame.span().0, ENTRY);
+            assert_eq!(
+                frame.reason().0,
+                cadmpeg_ir::unknown::part::Cause::Undecoded
+            );
             assert_eq!(bounds.len(), 1);
             assert_eq!(bounds[0].entity_suffix(), 107);
         });

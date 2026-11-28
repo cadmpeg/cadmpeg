@@ -11,7 +11,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::chain_walk::{ChainStep, ChainStops};
 
+use crate::design_v11;
 use crate::ids::neutral_history_id;
+use crate::native::paired_records::PairedRecords;
 use crate::native::{
     CatiaDesignObject, CatiaDesignObjectRelationSource, CatiaNative, CatiaObjectRecord,
 };
@@ -253,12 +255,16 @@ pub(crate) fn transfer_design_features(
     native: &CatiaNative,
     graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Result<DesignFeatureTransfer, cadmpeg_core::CodecError> {
-    let records = (native
+    let objects = native
         .object_graphs
         .iter()
         .flat_map(|graph| &graph.records)
-        .map(|record| (record.id.as_str(), record)))
-    .collect::<std::collections::HashMap<_, _>>();
+        .collect::<Vec<_>>();
+    let records = objects
+        .iter()
+        .map(|record| (record.id.as_str(), *record))
+        .collect::<HashMap<_, _>>();
+    let pairs = PairedRecords::new(&native.entity_records, &objects);
     let mut transfer = DesignFeatureTransfer::default();
 
     for object in native
@@ -266,9 +272,18 @@ pub(crate) fn transfer_design_features(
         .iter()
         .filter(|object| graph_scope.contains(object.parent.as_str()))
     {
-        let plane_candidate = principal_plane_candidate(object, &records);
-        let sketch_owner = sketch_candidate(object, &records);
-        let reference_plane = reference_plane_candidate(object, &records);
+        let class = pairs
+            .pair(&object.parent, object.owner_entity_id)
+            .filter(|(_, record)| Some(record.id.as_str()) == object.owner_record.as_deref())
+            .and_then(|(entity, _)| entity.compact_class.as_ref())
+            .and_then(|class| design_v11::classes::read(&class.name));
+        let admits = |classes: &[&str]| class.is_none_or(|class| classes.contains(&class));
+        let plane_candidate = principal_plane_candidate(object, &records)
+            .filter(|_| admits(&[design_v11::classes::PLANE]));
+        let sketch_owner =
+            sketch_candidate(object, &records).filter(|_| admits(&[design_v11::classes::SKETCH]));
+        let reference_plane = reference_plane_candidate(object, &records)
+            .filter(|_| admits(&design_v11::classes::PLANES));
         match (plane_candidate, sketch_owner, reference_plane) {
             (Some(candidate), None, None) => {
                 transfer_principal_plane(ctx, ir, &mut transfer, candidate)?;

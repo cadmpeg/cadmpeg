@@ -25,7 +25,7 @@ use crate::records::mesh::DesignMeshUuid;
 use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 
 /// Container magic.
-const MAGIC: [u8; 12] = [
+pub(crate) const MAGIC: [u8; 12] = [
     0x89, 0x55, 0x44, 0x50, 0x4D, 0x45, 0x53, 0x48, 0x0D, 0x0A, 0x1A, 0x0A,
 ];
 /// Container version accepted by this decoder.
@@ -1433,7 +1433,8 @@ fn require_layout(stream: &MeshStream, layout: StreamLayout) -> Result<(), Codec
     Ok(())
 }
 
-/// Version 2 admits six exact stream descriptors and no other component type.
+/// The decoder reads six exact version-2 stream descriptors. Another
+/// descriptor is a form it has no reading for.
 fn require_version_2_descriptor(stream: &MeshStream) -> Result<(), CodecError> {
     for layout in [
         StreamLayout::Byte,
@@ -1447,8 +1448,8 @@ fn require_version_2_descriptor(stream: &MeshStream) -> Result<(), CodecError> {
             return Ok(());
         }
     }
-    Err(CodecError::malformed(
-        "paramesh stream descriptor is outside the version-2 grammar",
+    Err(CodecError::NotImplemented(
+        "paramesh stream descriptor is outside the version-2 grammar".into(),
     ))
 }
 
@@ -1976,9 +1977,11 @@ impl ParamMeshHeader {
         if bytes.get(..MAGIC.len()) != Some(&MAGIC[..]) {
             return Err(CodecError::malformed("paramesh container has no magic"));
         }
-        if View::u32_le_at(bytes, MAGIC.len()) != Some(VERSION) {
-            return Err(CodecError::malformed(
-                "paramesh container declares an unknown version",
+        let version = View::u32_le_at(bytes, MAGIC.len())
+            .ok_or_else(|| CodecError::malformed("paramesh container is truncated"))?;
+        if version != VERSION {
+            return Err(CodecError::NotImplemented(
+                "paramesh container declares an unknown version".into(),
             ));
         }
         let reserved = bytes
@@ -3998,7 +4001,7 @@ mod tests {
             };
             assert!(matches!(
                 require_version_2_descriptor(&stream),
-                Err(CodecError::Malformed(_))
+                Err(CodecError::NotImplemented(_))
             ));
         }
     }

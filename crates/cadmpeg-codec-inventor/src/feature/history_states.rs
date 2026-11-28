@@ -271,6 +271,19 @@ pub(crate) enum Framing {
     Framed(FramedChain),
 }
 
+impl Read<'_> {
+    pub(crate) fn active_state(&self) -> Option<StateRef> {
+        let Self::Closed(closed) = self else {
+            return None;
+        };
+        let states = &closed.index.states;
+        Some(StateRef {
+            ordinal: u32::try_from(states.len().checked_sub(1)?).ok()?,
+            state_id: states.last()?.state_id,
+        })
+    }
+}
+
 /// Frame the `delta_state` chain of `bytes` as a stream of the given reference width.
 pub(crate) fn frame_chain(
     ctx: &DecodeContext<'_>,
@@ -842,20 +855,24 @@ pub(crate) fn project(
     })
 }
 
-/// Losses that a projection reports: an unread chain, and Split and Base
-/// features without a bound state.
+/// The loss of an unread chain whose carrier is not given up.
+pub(crate) fn unread_note(unread: Unread) -> LossNote {
+    use crate::loss::InventorLossCode;
+    match unread {
+        Unread::Unclosed => InventorLossCode::KernelHistoryUnclosed.note(
+            "The kernel carrier's delta_state chain does not frame or close; features have no history states.",
+        ),
+        Unread::Bounded => InventorLossCode::KernelHistoryBounded.note(
+            "The kernel carrier's delta_state chain passed the local scan cap; features have no history states.",
+        ),
+    }
+}
+
+/// Losses that a projection reports for Split and Base features without a
+/// bound state.
 pub(crate) fn losses(projection: &Projection) -> Vec<LossNote> {
     use crate::loss::InventorLossCode;
     let mut notes = Vec::new();
-    match projection.unread.map(|unread| unread.reason) {
-        Some(Unread::Unclosed) => notes.push(InventorLossCode::KernelHistoryUnclosed.note(
-            "The kernel carrier's delta_state chain does not frame or close; features have no history states.",
-        )),
-        Some(Unread::Bounded) => notes.push(InventorLossCode::KernelHistoryBounded.note(
-            "The kernel carrier's delta_state chain passed the local scan cap; features have no history states.",
-        )),
-        None => {}
-    }
     if projection.schema_assumed > 0 {
         notes.push(InventorLossCode::KernelHistoryTagSchemaAssumed.note(format!(
             "{} feature(s) retain a history state from a naming tag whose stored schema differs from the carrier schema, including features that the body check leaves unbound; the state assumes that the tag still names the feature.",
@@ -903,6 +920,10 @@ fn body_given_up(
             InventorLossCode::FeatureHistoryBodyUndecoded,
             "the history state of the body did not materialize or decode",
         ),
+        Unbuilt::Ambiguous => (
+            InventorLossCode::FeatureHistoryBodyUndecoded,
+            "more than one body of the state has the feature's body key",
+        ),
         Unbuilt::Unsolved => (
             InventorLossCode::FeatureHistoryBodyUndecoded,
             "a carrier of the body has no solved form",
@@ -927,6 +948,7 @@ fn body_given_up(
             let code = InventorLossCode::FeatureHistoryBodyBounded;
             return cadmpeg_ir::unknown::part::GivenUpRecord::new(
                 nest,
+                cadmpeg_ir::unknown::part::Cause::Undecoded,
                 format_args!(
                     "{}: {feature} history body: {} during {}",
                     code.kind(),
@@ -941,8 +963,12 @@ fn body_given_up(
             "the body reached a history body resource limit",
         ),
     };
-    cadmpeg_ir::unknown::part::GivenUpRecord::new(nest, format_args!("{}: {detail}", code.kind()))
-        .loss()
+    cadmpeg_ir::unknown::part::GivenUpRecord::new(
+        nest,
+        cadmpeg_ir::unknown::part::Cause::Undecoded,
+        format_args!("{}: {detail}", code.kind()),
+    )
+    .loss()
 }
 
 /// Losses of the nests: bodies that were asked for and not produced.

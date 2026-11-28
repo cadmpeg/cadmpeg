@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transactional resource accounting for independent decode tasks.
 
+use super::tree::XmlNote;
 use super::{
     DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, ExpandSpec, ResourceDimension,
     ResourceLimit, SpaceId,
@@ -15,6 +16,7 @@ pub(super) struct BudgetState {
     pub(super) entities: u64,
     pub(super) depth: u64,
     pub(super) fuse: Option<ResourceLimit>,
+    pub(super) xml_notes: Vec<XmlNote>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -27,6 +29,7 @@ pub(super) enum Event {
     Expand(ExpandSpec),
     Space(usize),
     Batch(Charges),
+    Xml(XmlNote),
     OptionalOutput {
         bytes: u64,
         entities: u64,
@@ -194,7 +197,29 @@ impl DecodeContext<'_> {
         arena: &'b DecodeArena,
         work: impl FnOnce(&DecodeContext<'b>) -> T,
     ) -> T {
-        let local = self.checkpoint().resume(arena);
+        self.lend(&self.checkpoint(), arena, work)
+    }
+
+    /// Runs `work` as [`Self::with_arena`] does, with nesting held to
+    /// `max_recursion_depth` in place of the policy's ceiling.
+    pub fn with_arena_nesting<'b, T>(
+        &self,
+        arena: &'b DecodeArena,
+        max_recursion_depth: u64,
+        work: impl FnOnce(&DecodeContext<'b>) -> T,
+    ) -> T {
+        let mut checkpoint = self.checkpoint();
+        checkpoint.state.policy.limits.max_recursion_depth = max_recursion_depth;
+        self.lend(&checkpoint, arena, work)
+    }
+
+    fn lend<'b, T>(
+        &self,
+        checkpoint: &DecodeCheckpoint,
+        arena: &'b DecodeArena,
+        work: impl FnOnce(&DecodeContext<'b>) -> T,
+    ) -> T {
+        let local = checkpoint.resume(arena);
         *local.budget.trace.borrow_mut() = self.budget.trace.borrow_mut().take();
         let result = work(&local);
         self.budget.restore(&local.budget.state());
@@ -306,6 +331,10 @@ impl DecodeContext<'_> {
                     refusal,
                 } => candidate.admit_optional(bytes, entities, operation).err() == refusal,
                 Event::Expand(spec) => candidate.admit_expand(spec).is_ok(),
+                Event::Xml(note) => {
+                    candidate.budget.merge_xml(note);
+                    true
+                }
                 Event::Space(expected) => {
                     let Some(old_next) = expected.checked_add(1) else {
                         return false;

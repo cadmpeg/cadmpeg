@@ -8,11 +8,12 @@ use std::path::Path;
 
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::bytes::contains;
+use cadmpeg_core::decode::tree::XmlDocument;
 use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::ids::Identity;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::ContainerSummary;
 
 use crate::brep::ShapePayloadRecord;
@@ -78,7 +79,7 @@ pub(crate) struct Persistence<'a> {
     /// Declared persistence schema version, owned by the source declaration.
     pub(crate) schema_version: String,
     /// One admitted persistence tree shared by all document readers.
-    pub(crate) xml: roxmltree::Document<'a>,
+    pub(crate) xml: XmlDocument<'a>,
 }
 
 /// An archive entry that could not be opened. It is given up once the
@@ -92,6 +93,9 @@ pub(crate) struct UnreadableEntry<'a> {
 
 impl UnreadableEntry<'_> {
     /// Gives the entry up, naming the records dropped because they need it.
+    /// An encrypted member or one of an unsupported compression method is
+    /// undecoded; a member whose frame or stream breaks the ZIP rules is
+    /// unreadable.
     pub(crate) fn give_up(
         self,
         ctx: &DecodeContext<'_>,
@@ -106,7 +110,11 @@ impl UnreadableEntry<'_> {
                 .collect::<Result<Vec<_>, _>>()?;
             part = part.dropping(records);
         }
-        ctx.give_up_part(part, self.error)
+        let cause = match self.error {
+            CodecError::NotImplemented(_) => Cause::Undecoded,
+            _ => Cause::Unreadable,
+        };
+        ctx.give_up_part(part, cause, self.error)
     }
 }
 
@@ -263,7 +271,7 @@ fn admit_persistence<'a>(
     }
     let xml = admit_document(ctx, bytes)?;
     let mut losses = Vec::new();
-    let (document, schema_version) = parse_document(&xml, &mut losses)?;
+    let (document, schema_version) = parse_document(xml.tree(), &mut losses)?;
     Ok((
         view,
         Persistence {
@@ -613,7 +621,7 @@ fn scan_tag_end(bytes: &[u8], start: usize) -> Option<usize> {
 pub(crate) fn admit_document<'input>(
     ctx: &DecodeContext<'_>,
     bytes: &'input [u8],
-) -> Result<roxmltree::Document<'input>, CodecError> {
+) -> Result<XmlDocument<'input>, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let admitted_xml = match ctx.parse_xml(text, "FreeCAD document XML tree") {

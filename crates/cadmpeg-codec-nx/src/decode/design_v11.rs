@@ -77,7 +77,7 @@ pub(super) fn project(ir: &mut CadIr, definition: ProductDefinitionId) -> Result
     }
     let (container, current) = timeline(&features, bodies)?;
     let (arrangements, active_arrangements) = arrangements(ir, &definition)?;
-    parameters::project(ir, &definition);
+    parameters::project(ir, &definition)?;
     let design = &mut ir.design;
     design.scopes.push(DesignScope {
         definition,
@@ -166,7 +166,7 @@ fn is_history(feature: &LegacyFeature) -> bool {
 }
 
 /// One ordered timeline of the history in construction order. The decoder
-/// reads no current feature (part 11, entry B.96), so the rollback of a
+/// reads no current feature (part 11, entry B.95), so the rollback of a
 /// timeline with members is unstated and its one current state, at
 /// `After(Container(timeline))` (§5.3), holds every current body. A timeline
 /// with no member has no member to stand before: it is built through its end,

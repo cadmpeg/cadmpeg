@@ -328,6 +328,7 @@ fn a_scope_with_configurations_and_no_active_one_states_no_evaluation() {
         scope: definition.clone(),
         name: "Large".to_owned(),
         parent: None,
+        position: None,
         comment: None,
         overrides: Overrides::default(),
         active_arrangements: BTreeSet::new(),

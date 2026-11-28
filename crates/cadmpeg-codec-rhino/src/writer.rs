@@ -295,8 +295,7 @@ struct Records {
 
 impl Records {
     /// The value `built` holds, or `None` with `id` named as left out where
-    /// the record has no 3DM form. A resource limit or an I/O failure stops
-    /// the write.
+    /// the record has no 3DM form. A resource limit stops the write.
     fn admit<T>(
         &mut self,
         id: &str,
@@ -304,7 +303,7 @@ impl Records {
     ) -> Result<Option<T>, CodecError> {
         match built {
             Ok(value) => Ok(Some(value)),
-            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => Err(error),
+            Err(error @ CodecError::ResourceLimit(_)) => Err(error),
             Err(error) => {
                 self.omitted.push((id.to_owned(), error.to_string()));
                 Ok(None)
@@ -1354,7 +1353,7 @@ fn prepare_write(
                 written_carriers.insert(id);
                 covered.extend(compounds.components([id]));
             }
-            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
                 losses.push(RhinoLossCode::WriterCurveSplit.note(format!(
                     "{id} is written as a curve object for each of its pieces: {error}"

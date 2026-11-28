@@ -418,7 +418,7 @@ fn sealed_decode_keeps_the_geometry_when_the_design_projection_fails() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == crate::unknown::part::record_undecoded_kind())
         .collect::<Vec<_>>();
     assert_eq!(unreadable.len(), 1);
     assert!(unreadable[0]
@@ -1054,7 +1054,7 @@ impl CodecBackend for DeepContextCodec {
 }
 
 /// A value outside every record that passes a bound is stated as the value
-/// it takes when unstated, with one `record.unreadable` Error that names its
+/// it takes when unstated, with one `record.undecoded` Warning that names its
 /// field, so the decode returns a document within the bounds (§2.5, §3.3)
 /// and digests it.
 #[test]
@@ -1072,12 +1072,12 @@ fn a_value_past_the_bound_outside_every_record_is_unstated_with_its_loss() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == crate::unknown::part::record_undecoded_kind())
         .collect::<Vec<_>>();
     let [loss] = unreadable.as_slice() else {
         panic!("one loss for the value outside every record: {unreadable:?}");
     };
-    assert_eq!(loss.severity, crate::report::Severity::Error);
+    assert_eq!(loss.severity, crate::report::Severity::Warning);
     assert!(loss.message.contains("(repro)"), "{}", loss.message);
 }
 
@@ -1167,12 +1167,12 @@ fn the_sealed_wrapper_gives_up_a_record_past_the_document_bound() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+            .filter(|loss| loss.code == crate::unknown::part::record_undecoded_kind())
             .collect::<Vec<_>>();
         let [loss] = unreadable.as_slice() else {
             panic!("one loss for the one record: {unreadable:?}");
         };
-        assert_eq!(loss.severity, crate::report::Severity::Error);
+        assert_eq!(loss.severity, crate::report::Severity::Warning);
         assert!(
             loss.message.contains(PastTheBoundCodec::PAST)
                 && loss.message.contains("native.test.deep"),
@@ -1211,17 +1211,32 @@ fn the_sealed_wrapper_gives_up_a_record_past_the_document_bound() {
     }
 }
 
+/// A record cut by a bound of §2.5 conforms to its format: its give-up is
+/// `record.undecoded`, which a pinned decode keeps and a lossy floor of
+/// Warning refuses (§3.2, §3.5).
 #[test]
-fn a_pinned_decode_refuses_a_record_given_up_past_the_document_bound() {
-    let error = PastTheBoundCodec
+fn a_pinned_decode_keeps_a_record_given_up_past_the_document_bound() {
+    PastTheBoundCodec
         .decode(
             &mut Cursor::new(Vec::new()),
             &strict_options(DecodeDepth::Full),
         )
+        .expect("a pinned decode keeps an undecoded record");
+    let error = PastTheBoundCodec
+        .decode(
+            &mut Cursor::new(Vec::new()),
+            &DecodeOptions {
+                strictness: Strictness {
+                    floor: Some(crate::report::Severity::Warning),
+                    ..Strictness::default()
+                },
+                ..DecodeOptions::default()
+            },
+        )
         .unwrap_err();
     assert_eq!(
         refused_code(error),
-        crate::unknown::part::record_unreadable_kind()
+        crate::unknown::part::record_undecoded_kind()
     );
 }
 
@@ -1304,7 +1319,7 @@ fn the_sealed_wrapper_gives_up_records_whose_text_passes_the_base_retained_allow
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == crate::unknown::part::record_undecoded_kind())
         .collect::<Vec<_>>();
     assert_eq!(unreadable.len(), LargePastTheBoundCodec::RECORDS);
     for index in 0..LargePastTheBoundCodec::RECORDS {
@@ -1438,7 +1453,7 @@ fn add_procedural_surface(
 
 /// The decode result of `ir` after the wrapper's digest walk in a decode
 /// under the service policy, the stock policy with the lowest recursion
-/// ceiling, with its `record.unreadable` losses.
+/// ceiling, with its `record.undecoded` losses.
 fn given_up(ir: CadIr) -> (DecodeResult, Vec<LossNote>) {
     let mut result = decode_result(ir);
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -1446,14 +1461,14 @@ fn given_up(ir: CadIr) -> (DecodeResult, Vec<LossNote>) {
     result
         .record_content_digest(&ctx, FormatId::new("test"))
         .expect("a record past the bound does not refuse the decode");
-    let unreadable = result
+    let undecoded = result
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.code == crate::unknown::part::record_undecoded_kind())
         .cloned()
         .collect();
-    (result, unreadable)
+    (result, undecoded)
 }
 
 /// Every construction has exactly one owning carrier and every carrier's
@@ -1506,7 +1521,7 @@ fn assert_resolves(result: &DecodeResult) {
     );
 }
 
-/// The record a `record.unreadable` loss gives up, and the ids its
+/// The record a give-up loss gives up, and the ids its
 /// `dropped=[…]` names.
 fn given_up_record(message: &str) -> (String, std::collections::BTreeSet<String>) {
     let record = message
@@ -1740,7 +1755,12 @@ impl CodecBackend for GivenUpPointCodec {
         decoded.body.losses.extend([
             dropped_with(instance(10), instance(9)),
             dropped_with(instance(9), point.clone()),
-            GivenUpRecord::new(point, "the point's coordinates do not read").loss(),
+            GivenUpRecord::new(
+                point,
+                crate::unknown::part::Cause::Unreadable,
+                "the point's coordinates do not read",
+            )
+            .loss(),
             dropped_with(instance(6), instance(7)),
             dropped_with(instance(7), instance(8)),
         ]);
@@ -1762,12 +1782,11 @@ fn the_sealed_wrapper_names_each_record_dropped_with_a_given_up_record_in_its_on
         .vertices
         .iter()
         .any(|kept| kept.id.as_str() == vertex));
-    let unreadable = crate::unknown::part::record_unreadable_kind();
     let charges = result
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == unreadable)
+        .filter(|loss| crate::unknown::part::gives_up(&loss.code))
         .collect::<Vec<_>>();
     let [given_up, unneeded] = charges.as_slice() else {
         panic!("one loss for the point and one for the record whose need is kept: {charges:?}");
@@ -1791,7 +1810,7 @@ fn the_sealed_wrapper_names_each_record_dropped_with_a_given_up_record_in_its_on
 
 /// A decoder that keeps the cube with the edits of `.0` and charges the id
 /// `.1` given up.
-struct ChargesLabelCodec(fn(&mut CadIr), &'static str);
+pub(super) struct ChargesLabelCodec(pub(super) fn(&mut CadIr), pub(super) &'static str);
 
 impl CodecBackend for ChargesLabelCodec {
     const FORMAT: FormatId = FormatId::new("test");
@@ -1823,6 +1842,7 @@ impl CodecBackend for ChargesLabelCodec {
         decoded.body.losses.push(
             crate::unknown::part::GivenUpRecord::new(
                 crate::ids::Identity::new(self.1).expect("an id"),
+                crate::unknown::part::Cause::Unreadable,
                 "the record does not read",
             )
             .loss(),
@@ -1831,7 +1851,7 @@ impl CodecBackend for ChargesLabelCodec {
     }
 }
 
-fn decode_charging(codec: &ChargesLabelCodec) -> DecodeResult {
+pub(super) fn decode_charging(codec: &ChargesLabelCodec) -> DecodeResult {
     codec
         .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
         .expect("a given-up record does not refuse the file")
@@ -1961,3 +1981,5 @@ fn a_binding_on_a_charged_record_is_dropped() {
         "test:model:cloud#9",
     )));
 }
+
+mod unread_xml;

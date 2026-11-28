@@ -18,6 +18,7 @@ use crate::test_support::{
     assert_gives_up, code_count, decode, given_up_part_bytes, strict_options,
 };
 use crate::IgesCodec;
+use cadmpeg_ir::unknown::part::record_unreadable_kind;
 
 /// Zero-based index of the Parameter Data pointer in the first Directory card.
 const PARAMETER_FIELD: usize = 1;
@@ -73,6 +74,19 @@ fn directory_card_offset(bytes: &[u8], index: usize) -> usize {
         .expect("Directory card")
 }
 
+/// The give-ups of quarantined Directory Entry records in `report`.
+fn quarantined_count(report: &cadmpeg_ir::report::decode::DecodeReport) -> usize {
+    report
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == record_unreadable_kind()
+                && loss.message.contains("directory-entry record D")
+                && loss.message.contains(" is quarantined because ")
+        })
+        .count()
+}
+
 /// Overwrite one eight-byte field of one Directory card.
 fn corrupt_field(bytes: &[u8], card_index: usize, field: usize, value: [u8; 8]) -> Vec<u8> {
     let mut corrupted = bytes.to_vec();
@@ -98,19 +112,17 @@ fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
         given_up_part_bytes(&result, ("directory-entry", 3)),
         &bytes[first_card..first_card + 161]
     );
-    assert_eq!(result.report().losses.len(), 2);
+    assert_eq!(result.report().losses.len(), 1);
     assert_gives_up(result.report(), &[("directory-entry", 3)]);
-    let unreadable = &result.report().losses[1];
+    let unreadable = &result.report().losses[0];
+    assert_eq!(unreadable.code, record_unreadable_kind());
     assert!(unreadable
         .message
         .contains(&format!(" stream=\"\" offset={first_card} length=161 ")));
     assert!(unreadable
         .message
         .contains("the Parameter Data start field is not a decimal integer"));
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
-        1
-    );
+    assert_eq!(quarantined_count(result.report()), 1);
     let row = result
         .report()
         .transfer_ledger
@@ -162,17 +174,15 @@ fn every_directory_defect_names_its_own_failure() {
 
         given_up_part_bytes(&result, ("directory-entry", 3));
         assert!(
-            result.report().losses.iter().any(|loss| loss.code
-                == IgesLossCode::DirectoryRecordQuarantined.kind()
-                && loss.message.contains(defect)),
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == record_unreadable_kind() && loss.message.contains(defect)),
             "{:#?}",
             result.report().losses
         );
-        assert_eq!(
-            code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
-            1,
-            "{defect}"
-        );
+        assert_eq!(quarantined_count(result.report()), 1, "{defect}");
     }
 }
 
@@ -189,15 +199,18 @@ fn v4_blank_no_default_directory_fields_quarantine_the_record() {
         );
         given_up_part_bytes(&result, ("directory-entry", 3));
         assert!(
-            result.report().losses.iter().any(|loss| loss.code
-                == IgesLossCode::DirectoryRecordQuarantined.kind()
-                && loss
-                    .message
-                    .contains("field is blank and IGES 4.0 defines no default")),
+            result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == record_unreadable_kind()
+                    && loss
+                        .message
+                        .contains("field is blank and IGES 4.0 defines no default")),
             "card {card_index}, field {field}"
         );
         assert_eq!(
-            code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
+            quarantined_count(result.report()),
             1,
             "card {card_index}, field {field}"
         );
@@ -223,15 +236,15 @@ fn an_unpaired_trailing_directory_card_is_quarantined_on_its_own() {
         given_up_part_bytes(&result, ("directory-entry", 5)),
         &unpaired[..80]
     );
-    assert!(result.report().losses.iter().any(|loss| loss.code
-        == IgesLossCode::DirectoryRecordQuarantined.kind()
-        && loss
-            .message
-            .contains("the Directory Entry section ends with an unpaired card")));
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
-        1
-    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == record_unreadable_kind()
+            && loss
+                .message
+                .contains("the Directory Entry section ends with an unpaired card")));
+    assert_eq!(quarantined_count(result.report()), 1);
 }
 
 #[test]
@@ -247,10 +260,7 @@ fn a_pointer_into_a_quarantined_record_does_not_resolve() {
         code_count(result.report(), IgesLossCode::PointerUnresolved),
         1
     );
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
-        1
-    );
+    assert_eq!(quarantined_count(result.report()), 1);
 
     let error = IgesCodec
         .decode(&mut Cursor::new(bytes), &strict_options())
@@ -279,12 +289,9 @@ fn the_outbound_pointers_of_a_quarantined_record_are_not_analyzed() {
         code_count(result.report(), IgesLossCode::PointerUnresolved),
         0
     );
-    assert_eq!(result.report().losses.len(), 2);
+    assert_eq!(result.report().losses.len(), 1);
     assert_gives_up(result.report(), &[("directory-entry", 3)]);
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
-        1
-    );
+    assert_eq!(quarantined_count(result.report()), 1);
 }
 
 #[test]
@@ -301,19 +308,14 @@ fn a_quarantined_directory_record_refuses_a_strict_decode_and_survives_container
         )
         .unwrap();
     given_up_part_bytes(&container_only, ("directory-entry", 3));
-    assert_eq!(
-        code_count(
-            container_only.report(),
-            IgesLossCode::DirectoryRecordQuarantined
-        ),
-        1
-    );
+    assert_eq!(quarantined_count(container_only.report()), 1);
 
     let error = IgesCodec
         .decode(&mut Cursor::new(bytes), &strict_options())
         .unwrap_err();
     match error {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
+            assert_eq!(rejection.loss().code, record_unreadable_kind());
             crate::test_support::assert_given_up(rejection.loss(), ("directory-entry", 3));
         }
         other => panic!("expected a strict refusal, got {other:?}"),
@@ -329,12 +331,7 @@ fn directory_quarantine_record_names_its_defect() {
         bytes: Vec::new(),
         defect: super::DirectoryDefect::FieldNotAnInteger("level"),
     };
-    let loss = record.loss_note();
-    assert_eq!(
-        loss.provenance.unwrap().tag.as_deref(),
-        Some("directory_entry:D3")
-    );
-    assert!(loss
-        .message
-        .contains("the level field is not a decimal integer"));
+    let message = record.defect_message();
+    assert!(message.starts_with("IGES directory-entry record D3 is quarantined"));
+    assert!(message.contains("the level field is not a decimal integer"));
 }

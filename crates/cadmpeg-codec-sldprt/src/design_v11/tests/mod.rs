@@ -70,7 +70,7 @@ fn feature_named<'a>(ir: &'a CadIr, name: &str) -> &'a cadmpeg_ir::design::featu
         .unwrap()
 }
 
-fn assert_no_design_findings(ir: &CadIr) {
+pub(crate) fn assert_no_design_findings(ir: &CadIr) {
     let report = cadmpeg_ir::validate_neutral(ir, Vec::new()).unwrap();
     let design = report
         .findings
@@ -293,9 +293,32 @@ fn configurations_mark_the_active_one() {
     assert_no_design_findings(&ir);
 }
 
+/// A configuration takes its place in the history's configuration list.
+#[test]
+fn a_configuration_is_placed_by_its_history_list() {
+    let ir = part_with_history(
+        br#"<Keywords Name="Bracket">
+            <Configuration Name="Long" SourceIndex="1"/>
+            <Configuration Name="Default" SourceIndex="0"/>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7"/>
+        </Keywords>"#,
+        &[],
+    );
+    let mut positions = ir
+        .design
+        .configurations
+        .iter()
+        .map(|configuration| (configuration.name.as_str(), configuration.position))
+        .collect::<Vec<_>>();
+    positions.sort_unstable();
+    assert_eq!(positions, [("Default", Some(1)), ("Long", Some(0))]);
+    assert_no_design_findings(&ir);
+}
+
 /// A configuration is restated without its custom properties, and one other
 /// than the active one without the feature suppressions that differ from the
-/// active one's and that its overrides do not state.
+/// active one's and that its overrides do not state. Configurations whose
+/// positions follow their ordinals keep the ordinals.
 #[test]
 fn a_configuration_is_restated_without_what_its_record_does_not_state() {
     use cadmpeg_ir::design::configuration::{DesignConfiguration, Overrides};
@@ -340,6 +363,7 @@ fn a_configuration_is_restated_without_what_its_record_does_not_state() {
         id: id(key),
         scope: cadmpeg_ir::ids::ProductDefinitionId::mint(ROOT).unwrap(),
         name: key.to_owned(),
+        position: None,
         parent: None,
         comment: None,
         overrides: Overrides::default(),
@@ -413,6 +437,18 @@ fn a_configuration_is_restated_without_what_its_record_does_not_state() {
             "feature_states.dependencies",
             "ordinal"
         ])
+    );
+
+    let mut configurations = configurations;
+    for (record, position) in configurations.records.iter_mut().zip(0..) {
+        record.position = Some(position);
+    }
+    *ir.model.restated_mut() = cadmpeg_ir::design::projection::restated::Restatements::default();
+    super::configurations::restate(&mut ir, &configurations, &[], &[]);
+    let default = ir.model.restated().get(id("default").as_str()).unwrap();
+    assert_eq!(
+        default.cut_by(|restater| restater == &active),
+        Some(BTreeSet::new())
     );
 }
 
@@ -754,7 +790,7 @@ fn a_configuration_flagged_for_rebuild_without_a_partition_is_stale() {
 /// A part with the three built-in planes, a sketch on the Top plane, and an
 /// extrude of it, whose v10 records state a rectangle sketch with a
 /// horizontal and a vertical dimension and a blind extrusion.
-fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
+pub(crate) fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
     sketch_and_extrude_from(
         br#"<Keywords Name="Block">
             <Feature Name="Front" id="2"/>
@@ -788,7 +824,7 @@ fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNati
             ("moExtrusion_c", "Boss", 7),
         ],
     );
-    let native = crate::native::SldprtNative::load_under(
+    let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
@@ -991,6 +1027,7 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
     );
@@ -1149,6 +1186,7 @@ fn typed_timeline<'a>(
             definition: &ir.design.scopes[0].definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
     );
@@ -1529,7 +1567,7 @@ fn members_follow_the_features_they_depend_on() {
     depends(&mut ir.model.features, "Boss", "Sketch1");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
     assert!(member_position(&timeline, "Boss") < member_position(&timeline, "Sketch1"));
-    let note = super::order::regeneration_order(&mut timeline, &ir.model);
+    let note = super::order::regeneration_order(&mut timeline, &ir.model, std::iter::empty());
     assert!(note.is_none(), "{note:?}");
     assert_eq!(
         member_position(&timeline, "Sketch1") + 1,
@@ -1548,6 +1586,7 @@ fn members_follow_the_features_they_depend_on() {
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
     );
@@ -1561,9 +1600,32 @@ fn members_follow_the_features_they_depend_on() {
 }
 
 #[test]
+fn compatible_configuration_marks_fill_gaps_in_the_active_order() {
+    let ir = part_with_history(BRACKET, BRACKET_CLASSES);
+    let native = crate::test_support::native::sldprt_native(&ir);
+    let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
+    assert!(member_position(&timeline, "Fillet1") < member_position(&timeline, "Odd"));
+    let id = |name| {
+        timeline.features[member_position(&timeline, name)]
+            .id
+            .clone()
+    };
+    let active = [id("Boss"), id("Fillet1")];
+    let alternate = [id("Boss"), id("Odd"), id("Fillet1")];
+    let reversed = [id("Fillet1"), id("Odd")];
+    super::order::regeneration_order(
+        &mut timeline,
+        &ir.model,
+        [&active[..], &alternate[..], &reversed[..]],
+    );
+    assert!(member_position(&timeline, "Boss") < member_position(&timeline, "Odd"));
+    assert!(member_position(&timeline, "Odd") < member_position(&timeline, "Fillet1"));
+}
+
+#[test]
 fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let ir = part_with_history(BRACKET, BRACKET_CLASSES);
-    let native = crate::native::SldprtNative::load_under(
+    let native = crate::test_support::native::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
@@ -1580,7 +1642,7 @@ fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let mut model = ir.model.clone();
     depends(&mut model.features, "Sketch1", "Boss");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
-    let note = super::order::regeneration_order(&mut timeline, &model);
+    let note = super::order::regeneration_order(&mut timeline, &model, std::iter::empty());
     assert!(note.is_none(), "{note:?}");
     assert_eq!(
         names(&timeline),
@@ -1605,7 +1667,7 @@ fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let mut model = ir.model.clone();
     depends(&mut model.features, "Sketch1", "Odd");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
-    let note = super::order::regeneration_order(&mut timeline, &model).unwrap();
+    let note = super::order::regeneration_order(&mut timeline, &model, std::iter::empty()).unwrap();
     assert_eq!(
         note.code,
         crate::loss::SldprtLossCode::DesignFolderDropped.kind()
@@ -1756,6 +1818,7 @@ mod datum;
 mod dimension_curves;
 mod parameters;
 mod pattern;
+pub(crate) mod restated;
 mod revolve;
 mod rollback;
-mod state_zero;
+pub(crate) mod state_zero;
