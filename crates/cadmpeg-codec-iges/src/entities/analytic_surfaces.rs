@@ -6,6 +6,7 @@ use super::geometry::{
 };
 use super::pointer;
 use super::{push_entity_loss, push_entity_loss_needing};
+use cadmpeg_ir::unknown::part::Cause;
 
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
@@ -31,7 +32,7 @@ fn admit_analytic<T>(
     match result {
         Ok(value) => Some(value),
         Err(message) => {
-            push_entity_loss(losses, entry, format_args!("{message}"));
+            push_entity_loss(losses, entry, Cause::Undecoded, format_args!("{message}"));
             None
         }
     }
@@ -120,6 +121,17 @@ impl AnalyticDirectionError {
                 ..
             } => Some(*sequence),
             _ => None,
+        }
+    }
+
+    /// The cause of the give-up of the surface: a direction that the
+    /// surface's placement collapses is a form the decoder does not decode,
+    /// and a pointer or Direction Entity that breaks the format is
+    /// unreadable.
+    fn cause(&self) -> Cause {
+        match self {
+            Self::MissingPointer(_) | Self::Pointed { .. } => Cause::Unreadable,
+            Self::Collapse(_) | Self::SphereAxisCollapse => Cause::Undecoded,
         }
     }
 }
@@ -302,6 +314,7 @@ pub(super) fn project(
             push_entity_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -314,17 +327,27 @@ pub(super) fn project(
                     &mut losses,
                     entry,
                     message.needs(),
+                    message.cause(),
                     format_args!("{message}"),
                 );
                 continue;
             }
         };
-        let location_index = pointer(record, 1);
-        let Some(location) = location_index.and_then(|sequence| point(ir, sequence)) else {
+        let Some(location_index) = pointer(record, 1) else {
+            push_entity_loss(
+                &mut losses,
+                entry,
+                Cause::Unreadable,
+                format_args!("analytic surface location pointer is invalid"),
+            );
+            continue;
+        };
+        let Some(location) = point(ir, location_index) else {
             push_entity_loss_needing(
                 &mut losses,
                 entry,
-                location_index,
+                Some(location_index),
+                Cause::Undecoded,
                 format_args!("analytic surface location point is missing"),
             );
             continue;
@@ -333,6 +356,7 @@ pub(super) fn project(
             push_entity_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("placement produces a non-finite point"),
             );
             continue;
@@ -353,6 +377,7 @@ pub(super) fn project(
                             &mut losses,
                             entry,
                             message.needs(),
+                            message.cause(),
                             format_args!("{message}"),
                         );
                         continue;
@@ -373,6 +398,7 @@ pub(super) fn project(
                             &mut losses,
                             entry,
                             message.needs(),
+                            message.cause(),
                             format_args!("{message}"),
                         );
                         continue;
@@ -408,6 +434,7 @@ pub(super) fn project(
                             &mut losses,
                             entry,
                             message.needs(),
+                            message.cause(),
                             format_args!("{message}"),
                         );
                         continue;
@@ -417,6 +444,7 @@ pub(super) fn project(
                     push_entity_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("cylinder radius is not numeric"),
                     );
                     continue;
@@ -436,6 +464,7 @@ pub(super) fn project(
                             &mut losses,
                             entry,
                             message.needs(),
+                            message.cause(),
                             format_args!("{message}"),
                         );
                         continue;
@@ -480,6 +509,7 @@ pub(super) fn project(
                             &mut losses,
                             entry,
                             message.needs(),
+                            message.cause(),
                             format_args!("{message}"),
                         );
                         continue;
@@ -489,6 +519,7 @@ pub(super) fn project(
                     push_entity_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("cone radius is not numeric"),
                     );
                     continue;
@@ -502,6 +533,7 @@ pub(super) fn project(
                     push_entity_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("cone semi-angle is outside (0, 90) degrees"),
                     );
                     continue;
@@ -521,6 +553,7 @@ pub(super) fn project(
                             &mut losses,
                             entry,
                             message.needs(),
+                            message.cause(),
                             format_args!("{message}"),
                         );
                         continue;
@@ -564,6 +597,7 @@ pub(super) fn project(
                     push_entity_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("sphere radius is not positive and finite"),
                     );
                     continue;
@@ -583,6 +617,7 @@ pub(super) fn project(
                             &mut losses,
                             entry,
                             message.needs(),
+                            message.cause(),
                             format_args!("{message}"),
                         );
                         continue;
@@ -603,6 +638,7 @@ pub(super) fn project(
                             &mut losses,
                             entry,
                             message.needs(),
+                            message.cause(),
                             format_args!("{message}"),
                         );
                         continue;
@@ -642,6 +678,7 @@ pub(super) fn project(
                             &mut losses,
                             entry,
                             message.needs(),
+                            message.cause(),
                             format_args!("{message}"),
                         );
                         continue;
@@ -652,6 +689,7 @@ pub(super) fn project(
                     push_entity_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("torus radii are not numeric"),
                     );
                     continue;
@@ -661,6 +699,7 @@ pub(super) fn project(
                     push_entity_loss(
                         &mut losses,
                         entry,
+                        Cause::Unreadable,
                         format_args!("torus radii do not satisfy 0 < minor < major"),
                     );
                     continue;
@@ -680,6 +719,7 @@ pub(super) fn project(
                             &mut losses,
                             entry,
                             message.needs(),
+                            message.cause(),
                             format_args!("{message}"),
                         );
                         continue;
@@ -725,6 +765,7 @@ pub(super) fn project(
                 push_entity_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("analytic surface type is unsupported"),
                 );
                 continue;
@@ -743,7 +784,12 @@ pub(super) fn project(
                 Ok(source) => source,
                 Err(error) => {
                     let message = super::non_resource_error(error)?;
-                    push_entity_loss(&mut losses, entry, format_args!("{message}"));
+                    push_entity_loss(
+                        &mut losses,
+                        entry,
+                        Cause::Undecoded,
+                        format_args!("{message}"),
+                    );
                     continue;
                 }
             }),

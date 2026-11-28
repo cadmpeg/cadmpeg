@@ -120,9 +120,7 @@ pub(crate) fn project_sketch_constraints(
                 role: None,
             }),
             object_index: Some(record_index),
-            native_ref: native_ref
-                .filter(|_| !projected.contains_key(&(scope, record_index)))
-                .map(std::borrow::ToOwned::to_owned),
+            native_ref: native_ref.map(std::borrow::ToOwned::to_owned),
         }
     };
 

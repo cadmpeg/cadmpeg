@@ -19,7 +19,7 @@ pub(crate) mod hex;
 pub(crate) mod history;
 pub(crate) mod model;
 pub(crate) mod om;
-mod parasolid;
+pub(crate) mod parasolid;
 pub(crate) mod rmfastload_storage;
 pub(crate) mod segments;
 pub(crate) mod structure;
@@ -45,7 +45,7 @@ pub(crate) fn attach_annotations(
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<Option<cadmpeg_ir::unknown::part::GivenUpPart>, CodecError> {
     attach::attach(ctx, ir, model, scan, annotations, unknowns, losses)
 }
 

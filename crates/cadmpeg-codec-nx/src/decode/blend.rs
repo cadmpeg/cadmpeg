@@ -1318,7 +1318,9 @@ pub(super) fn blend_surface_point_inner_with_index_and_budget(
 
 type BlendSurfaceFrame = (Point3, Vector3, Vector3, Vector3, f64);
 
+// resource-cap: MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES = N
 const MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES: usize = 512;
+// resource-cap: MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES = N
 const MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES: usize = 2_048;
 
 struct BlendSurfaceFrameCacheEntry {
@@ -1450,6 +1452,7 @@ impl BlendSurfaceFrameCache {
     }
 }
 
+// resource-cap: MAX_BLEND_CONTACT_SEEDS = N
 const MAX_BLEND_CONTACT_SEEDS: usize = 8;
 
 struct BlendContactSeed {

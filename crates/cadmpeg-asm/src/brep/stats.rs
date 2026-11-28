@@ -109,27 +109,59 @@ impl Stats {
 }
 
 #[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct StatsWire {
     missing_face_surfaces: usize,
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "std::collections::BTreeMap<String, usize>")
+    )]
     missing_face_surface_kinds: std::collections::BTreeMap<String, usize>,
     unknown_surface_faces: usize,
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "std::collections::BTreeMap<String, usize>")
+    )]
     unknown_surface_kinds: std::collections::BTreeMap<String, usize>,
     mesh_surface_faces: usize,
     nurbs_surfaces: usize,
     nurbs_curves: usize,
     procedural_curve_edges: usize,
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "std::collections::BTreeMap<String, usize>")
+    )]
     procedural_curve_kinds: std::collections::BTreeMap<String, usize>,
     undecoded_pcurve_refs: usize,
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "std::collections::BTreeMap<String, usize>")
+    )]
     undecoded_pcurve_kinds: std::collections::BTreeMap<String, usize>,
     partial_procedural_supports: usize,
     other_records: usize,
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "std::collections::BTreeMap<String, usize>")
+    )]
     other_record_kinds: std::collections::BTreeMap<String, usize>,
+}
+
+#[cfg(feature = "schema")]
+impl schemars::JsonSchema for Stats {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Stats".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        <StatsWire as schemars::JsonSchema>::json_schema(generator)
+    }
 }
 
 impl Serialize for Stats {

@@ -15,6 +15,7 @@ use std::sync::Arc;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::unknown::part::Cause;
 
 use self::implementation_level::{DeclaredImplementationLevel, ImplementationLevel};
 
@@ -48,8 +49,9 @@ pub(crate) enum Value {
     Integer(i64),
     /// Real value.
     Real(FiniteReal),
-    /// A metadata literal whose exact bytes remain in its source record.
-    UninterpretedLiteral,
+    /// A metadata literal whose exact bytes remain in its source record,
+    /// with the cause of its defect.
+    UninterpretedLiteral(Cause),
     /// Enumeration or logical name without delimiter dots.
     Enumeration(String),
     /// Raw string-token bytes before Part 21 escape decoding.
@@ -77,7 +79,7 @@ fn try_clone_value(value: &Value, budget: &DecodeContext<'_>) -> Result<Value, C
         Value::ExpressValueConstant(text) => Value::ExpressValueConstant(text.to_owned()),
         Value::Integer(value) => Value::Integer(*value),
         Value::Real(value) => Value::Real(*value),
-        Value::UninterpretedLiteral => Value::UninterpretedLiteral,
+        Value::UninterpretedLiteral(cause) => Value::UninterpretedLiteral(*cause),
         Value::Enumeration(text) => Value::Enumeration(text.to_owned()),
         Value::String(bytes) => Value::String(bytes.clone()),
         Value::Binary(binary) => Value::Binary(binary.clone()),
@@ -112,7 +114,7 @@ fn node_payload(value: &Value) -> u64 {
         | Value::ExternalReference(_)
         | Value::Integer(_)
         | Value::Real(_)
-        | Value::UninterpretedLiteral
+        | Value::UninterpretedLiteral(_)
         | Value::Omitted
         | Value::Derived
         | Value::List(_) => 0,
@@ -122,6 +124,7 @@ fn node_payload(value: &Value) -> u64 {
 
 /// Payload octets that one anchor or REFERENCE expansion pass may copy out
 /// of anchors for each input byte, on top of [`EXPANDED_PAYLOAD_BASE`].
+// resource-cap: MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE = 4
 const MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE: u64 = 16;
 /// Payload octets that one expansion pass may copy out of anchors at any
 /// input size.
@@ -548,17 +551,20 @@ impl Exchange {
         self.entity_ids().keys().any(|name| matches(name))
     }
 
-    pub(crate) fn matching_entity_ids<'a>(
-        &'a self,
-        matches: impl Fn(&str) -> bool + 'a,
-    ) -> impl Iterator<Item = u64> + 'a {
-        self.records.iter().filter_map(move |(&id, record)| {
-            record
-                .partials
-                .iter()
-                .any(|partial| matches(&partial.name))
-                .then_some(id)
-        })
+    /// The ids of the records with a partial whose name `matches`, ascending.
+    pub(crate) fn matching_entity_ids(
+        &self,
+        matches: impl Fn(&str) -> bool,
+    ) -> std::vec::IntoIter<u64> {
+        let mut ids = self
+            .entity_ids()
+            .iter()
+            .filter(|(name, _)| matches(name))
+            .flat_map(|(_, ids)| ids.iter().copied())
+            .collect::<Vec<_>>();
+        ids.sort_unstable();
+        ids.dedup();
+        ids.into_iter()
     }
 
     pub(crate) fn entities(&self, name: &str) -> impl Iterator<Item = (u64, &RawRecord)> {
@@ -569,17 +575,13 @@ impl Exchange {
             .map(|id| (*id, &self.records[id]))
     }
 
+    /// The records with a partial named in `names`, in ascending id order.
     pub(crate) fn entities_any<'a>(
         &'a self,
-        names: &'a [&str],
+        names: &[&str],
     ) -> impl Iterator<Item = (u64, &'a RawRecord)> + 'a {
-        self.records.iter().filter_map(move |(&id, record)| {
-            record
-                .partials
-                .iter()
-                .any(|partial| names.contains(&partial.name.as_str()))
-                .then_some((id, record))
-        })
+        self.matching_entity_ids(|name| names.contains(&name))
+            .map(|id| (id, &self.records[&id]))
     }
 }
 
@@ -600,12 +602,22 @@ pub(crate) enum ParseError {
         /// Violated grammar invariant.
         message: String,
     },
+    /// A token that the grammar admits holds a value the reader has no
+    /// form for.
+    #[error("{message} at byte {offset}")]
+    Unrepresentable {
+        /// Byte offset of the token.
+        offset: usize,
+        /// The value's form.
+        message: String,
+    },
 }
 
 /// A recoverable deviation from canonical Part 21 source syntax.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParseDiagnosticKind {
-    /// A bounded instance or a dependent instance remains source-only.
+    /// A repeated instance name states the same record as the statement
+    /// that stands; the copy remains source-only.
     RecordOmitted,
     /// A bounded noncanonical prefix remains source-only.
     PreambleOmitted,
@@ -615,8 +627,12 @@ pub(crate) enum ParseDiagnosticKind {
     EnvelopeIncomplete,
     /// Descriptive header metadata is nonconforming but readable.
     HeaderMetadataNoncanonical,
-    /// A bounded presentation value remains source-only.
+    /// A bounded presentation value that breaks the Part 21 grammar remains
+    /// source-only.
     PresentationMetadataUnusable,
+    /// A bounded presentation value that is a valid token outside the
+    /// reader's numeric range remains source-only.
+    PresentationLiteralUnrepresentable,
     /// Complex-entity partials are not in their canonical alphabetical order.
     ComplexPartialsNotAlphabetical,
     /// A simple named carrier omits its inherited `name` value.
@@ -629,9 +645,16 @@ pub(crate) enum ParseDiagnosticKind {
     /// `FILE_DESCRIPTION` declares an implementation level whose grammar is
     /// not implemented; parsing continued with the edition-3 class-3 grammar.
     ImplementationLevelUnverified,
-    /// An anchor or REFERENCE expansion passed its value-node limit; the
-    /// binding or instance remains source-only.
-    ExpansionBounded,
+}
+
+impl ParseDiagnosticKind {
+    /// Whether the diagnostic keeps its presentation record as exact source.
+    pub(crate) fn retains_presentation_record(self) -> bool {
+        matches!(
+            self,
+            Self::PresentationMetadataUnusable | Self::PresentationLiteralUnrepresentable
+        )
+    }
 }
 
 /// One attributable parser diagnostic that does not prevent recovery.
@@ -677,16 +700,30 @@ pub(crate) struct DroppedStatement {
 pub(crate) enum GiveUpCause {
     /// The statement violates the exchange grammar.
     Syntax(String),
+    /// The statement holds a token value the reader has no form for.
+    Unrepresentable(String),
     /// The statement exceeded a bound that applies to one part.
     Resource(ResourceLimit),
-    /// The statement reads, but its content cannot stand in the exchange.
-    Content(String),
+    /// The statement reads, but its content cannot stand in the exchange
+    /// for the cause.
+    Content(Cause, String),
 }
 
 impl GiveUpCause {
+    /// The cause of the statement's give-up.
+    pub(crate) const fn cause(&self) -> Cause {
+        match self {
+            Self::Syntax(_) => Cause::Unreadable,
+            Self::Unrepresentable(_) | Self::Resource(_) => Cause::Undecoded,
+            Self::Content(cause, _) => *cause,
+        }
+    }
+
     pub(crate) fn into_error(self) -> CodecError {
         match self {
-            Self::Syntax(message) | Self::Content(message) => CodecError::Malformed(message),
+            Self::Syntax(message) | Self::Unrepresentable(message) | Self::Content(_, message) => {
+                CodecError::Malformed(message)
+            }
             Self::Resource(limit) => limit.into(),
         }
     }
@@ -700,25 +737,61 @@ pub(crate) fn parse(
     parse_inner(input, ctx).map_err(ParseError::into_codec_error)
 }
 
+/// Parse only the `HEADER` section of one exchange structure for lightweight
+/// dialect classification.
+pub(crate) fn parse_header(input: &[u8], ctx: &DecodeContext<'_>) -> Result<Exchange, CodecError> {
+    parse_header_inner(input, ctx).map_err(ParseError::into_codec_error)
+}
+
+fn parse_header_inner(input: &[u8], budget: &DecodeContext<'_>) -> Result<Exchange, ParseError> {
+    let mut parser = Parser::new(input, budget);
+    parser.current = parser.lex_next()?;
+    let ParsedHeader {
+        header,
+        admission: header_admission,
+        ..
+    } = parser.parse_header_section()?;
+    Ok(Exchange {
+        header,
+        anchors: Vec::new(),
+        references: Vec::new(),
+        data: Vec::new(),
+        signatures: Vec::new(),
+        records: BTreeMap::new(),
+        omitted_spans: Vec::new(),
+        given_up: Vec::new(),
+        lost_records: BTreeMap::new(),
+        lost: crate::reader::LostInstances::default(),
+        schema_identifiers: header_admission.schema_identifiers,
+        implementation_level: header_admission.implementation_level,
+        entity_ids: EntityIndex::default(),
+    })
+}
+
 pub(crate) fn parse_inner(
     input: &[u8],
     budget: &DecodeContext<'_>,
 ) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
-    let lexer = Lexer::new(input, budget);
-    let mut parser = Parser {
-        current: None,
-        lexer,
-        last_end: 0,
-        diagnostics: Vec::new(),
-        given_up: Vec::new(),
-        given_up_names: BTreeMap::new(),
-        given_up_anchors: BTreeMap::new(),
-        omitted_entity_names: None,
-        defer_lexical_errors: false,
-        budget,
-    };
+    let mut parser = Parser::new(input, budget);
     parser.current = parser.lex_next()?;
     parser.exchange()
+}
+
+impl<'input, 'ctx, 'arena> Parser<'input, 'ctx, 'arena> {
+    fn new(input: &'input [u8], budget: &'ctx DecodeContext<'arena>) -> Self {
+        Self {
+            current: None,
+            lexer: Lexer::new(input, budget),
+            last_end: 0,
+            diagnostics: Vec::new(),
+            given_up: Vec::new(),
+            given_up_names: BTreeMap::new(),
+            given_up_anchors: BTreeMap::new(),
+            omitted_entity_names: None,
+            defer_lexical_errors: false,
+            budget,
+        }
+    }
 }
 
 impl ParseError {
@@ -726,7 +799,9 @@ impl ParseError {
         match self {
             Self::Resource(error) => error,
             Self::Lex(error) => error.into_codec_error(),
-            error @ Self::Syntax { .. } => CodecError::Malformed(error.to_string()),
+            error @ (Self::Syntax { .. } | Self::Unrepresentable { .. }) => {
+                CodecError::Malformed(error.to_string())
+            }
         }
     }
 }
@@ -906,8 +981,14 @@ fn omitted_entity_name(partial: &PartialRecord) -> bool {
         )
 }
 
+struct ParsedHeader {
+    header: Vec<HeaderRecord>,
+    admission: HeaderAdmission,
+    omitted_spans: Vec<Range<usize>>,
+}
+
 impl Parser<'_, '_, '_> {
-    fn exchange(mut self) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
+    fn parse_header_section(&mut self) -> Result<ParsedHeader, ParseError> {
         let draft = self.lexer.is_draft();
         let mut omitted_spans = Vec::new();
         if let Some(offset) =
@@ -957,9 +1038,22 @@ impl Parser<'_, '_, '_> {
             Err(ValidationError::Invalid(message)) => return self.err(message),
             Err(ValidationError::Resource(error)) => return Err(ParseError::Resource(error)),
         };
-        let implementation_level = header_admission.implementation_level.level();
-
         self.diagnostics.extend(header_diagnostics);
+        Ok(ParsedHeader {
+            header,
+            admission: header_admission,
+            omitted_spans,
+        })
+    }
+
+    fn exchange(mut self) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
+        let ParsedHeader {
+            mut header,
+            admission: header_admission,
+            mut omitted_spans,
+        } = self.parse_header_section()?;
+        let draft = self.lexer.is_draft();
+        let implementation_level = header_admission.implementation_level.level();
         let schema_names_for_matching =
             schema_names_for_matching(&header_admission.schema_identifiers);
         let header_data_references = match validate_header_sections(
@@ -1483,7 +1577,7 @@ impl Parser<'_, '_, '_> {
             partials::RecordPartials::single(first)
         };
         for diagnostic in &mut self.diagnostics[diagnostic_start..] {
-            if diagnostic.kind == ParseDiagnosticKind::PresentationMetadataUnusable {
+            if diagnostic.kind.retains_presentation_record() {
                 diagnostic.offset = start;
             }
         }
@@ -1512,17 +1606,31 @@ impl Parser<'_, '_, '_> {
             parser.parameters_with_name::<RecordParameters>(first_is_name && !presentation)
         })?;
         if first_is_name
-            && matches!(parameters.first(), Some(Value::UninterpretedLiteral))
+            && matches!(parameters.first(), Some(Value::UninterpretedLiteral(_)))
             && !named_carrier_arities(&name).contains(&parameters.len())
         {
             return self.err("unreadable literal in a required DATA attribute");
         }
         self.lexer.set_literal_admission(LiteralAdmission::Required);
-        if presentation && metadata::unreadable_literal(&parameters, self.budget)? {
-            self.diagnostics.push(ParseDiagnostic {
-                offset, kind: ParseDiagnosticKind::PresentationMetadataUnusable,
-                message: format!("{name} contains an unusable bounded presentation literal; exact record retained"),
-            });
+        if presentation {
+            let literal = match metadata::unreadable_literal(&parameters, self.budget)? {
+                Some(Cause::Unreadable) => Some((
+                    ParseDiagnosticKind::PresentationMetadataUnusable,
+                    "an unusable bounded presentation literal",
+                )),
+                Some(_) => Some((
+                    ParseDiagnosticKind::PresentationLiteralUnrepresentable,
+                    "a bounded presentation literal outside the reader's numeric range",
+                )),
+                None => None,
+            };
+            if let Some((kind, what)) = literal {
+                self.diagnostics.push(ParseDiagnostic {
+                    offset,
+                    kind,
+                    message: format!("{name} contains {what}; exact record retained"),
+                });
+            }
         }
         Ok(PartialRecord { name, parameters })
     }
@@ -1594,7 +1702,7 @@ impl Parser<'_, '_, '_> {
                 TokenKind::ConstantValue(name) => Value::ExpressValueConstant(name),
                 TokenKind::Integer(v) => Value::Integer(v),
                 TokenKind::Real(v) => Value::Real(v),
-                TokenKind::UninterpretedLiteral => Value::UninterpretedLiteral,
+                TokenKind::UninterpretedLiteral(cause) => Value::UninterpretedLiteral(cause),
                 TokenKind::Enumeration(value) => Value::Enumeration(value),
                 TokenKind::String(value) => Value::String(value),
                 TokenKind::Binary(value) => Value::Binary(value),
@@ -1616,7 +1724,7 @@ impl Parser<'_, '_, '_> {
             if parser.peek(&TokenKind::RParen) {
                 if metadata {
                     parser.punct(&TokenKind::RParen)?;
-                    return Ok(Value::UninterpretedLiteral);
+                    return Ok(Value::UninterpretedLiteral(Cause::Unreadable));
                 }
                 return parser.err("typed parameter requires one value");
             }
@@ -1631,7 +1739,7 @@ impl Parser<'_, '_, '_> {
                     let _ = parser.value()?;
                 }
                 parser.punct(&TokenKind::RParen)?;
-                return Ok(Value::UninterpretedLiteral);
+                return Ok(Value::UninterpretedLiteral(Cause::Unreadable));
             }
             parser.punct(&TokenKind::RParen)?;
 
@@ -1678,10 +1786,11 @@ impl Parser<'_, '_, '_> {
         let Some(token) = self.current.take() else {
             return self.err("unexpected end of input");
         };
-        if let TokenKind::InvalidSource(message) = token.kind {
-            return Err(ParseError::Syntax {
-                offset: token.span.start,
-                message,
+        if let TokenKind::InvalidSource(cause, message) = token.kind {
+            let offset = token.span.start;
+            return Err(match cause {
+                Cause::Unreadable => ParseError::Syntax { offset, message },
+                Cause::Undecoded => ParseError::Unrepresentable { offset, message },
             });
         }
         self.last_end = token.span.end;
@@ -1693,12 +1802,13 @@ impl Parser<'_, '_, '_> {
             Ok(token) => token,
             Err(error) if self.defer_lexical_errors => {
                 let offset = error.offset();
+                let cause = error.cause();
                 let message = error.message.clone();
                 if let Some(resource) = error.into_resource_error() {
                     return Err(ParseError::Resource(resource));
                 }
                 Some(Token {
-                    kind: TokenKind::InvalidSource(message),
+                    kind: TokenKind::InvalidSource(cause, message),
                     span: offset..offset,
                 })
             }
@@ -2508,7 +2618,7 @@ fn is_anchor_item(value: &Value) -> bool {
         | Value::Resource(_)
         | Value::Omitted => true,
         Value::List(values) => values.iter().all(is_anchor_item),
-        Value::Derived | Value::Typed(_, _) | Value::UninterpretedLiteral => false,
+        Value::Derived | Value::Typed(_, _) | Value::UninterpretedLiteral(_) => false,
     }
 }
 
@@ -2626,9 +2736,11 @@ struct AnchorResolver<'a, 'ctx, 'arena> {
 
 impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     /// Value nodes that anchor expansion may copy across the whole exchange.
+    // resource-cap: MAX_EXPANDED_NODES = 4
     const MAX_EXPANDED_NODES: usize = 1_000_000;
     /// Value nodes that items omitted at the node limit may copy across the
     /// whole exchange before their expansion stopped.
+    // resource-cap: MAX_DISCARDED_EXPANDED_NODES = 4
     const MAX_DISCARDED_EXPANDED_NODES: usize = 16 * Self::MAX_EXPANDED_NODES;
 
     fn new(
@@ -2920,9 +3032,11 @@ struct ReferenceResolver<'a, 'ctx, 'arena> {
 impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
     /// Value nodes that REFERENCE expansion may copy across the whole
     /// exchange.
+    // resource-cap: MAX_MATERIALIZED_NODES = 4
     const MAX_MATERIALIZED_NODES: usize = 1_000_000;
     /// Value nodes that items omitted at the node limit may copy across the
     /// whole exchange before their expansion stopped.
+    // resource-cap: MAX_DISCARDED_MATERIALIZED_NODES = 4
     const MAX_DISCARDED_MATERIALIZED_NODES: usize = 16 * Self::MAX_MATERIALIZED_NODES;
 
     fn new(

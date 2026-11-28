@@ -24,6 +24,7 @@ const STENCIL_STEP: f64 = 1.0e-3;
 const SMOOTH_MM: f64 = 1.0e-7;
 
 /// Spans a fitted curve may hold.
+// resource-cap: MAX_SPANS = 4
 const MAX_SPANS: usize = 4096;
 
 /// The narrowest span, and the closest breaks kept, as a share of the range.

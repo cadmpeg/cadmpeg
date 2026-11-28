@@ -21,6 +21,7 @@ use cadmpeg_ir::math::Point3;
 
 use crate::nurbs::toks::take_knot_table as knots;
 
+// resource-cap: MAX_RECOVERY_SURFACE_POLES = 2
 const MAX_RECOVERY_SURFACE_POLES: u64 = 200_000;
 
 macro_rules! propagate_resource {

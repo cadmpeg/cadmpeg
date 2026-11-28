@@ -10,10 +10,15 @@ mod container;
 mod decode;
 mod dialect;
 mod frame;
+#[doc(hidden)]
+pub mod fuzz;
 mod kernel;
 mod layout;
 mod loss;
+mod parasolid;
+mod placement;
 mod tree;
+mod units;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -25,7 +30,7 @@ use cadmpeg_ir::ContainerSummary;
 pub struct IronCadCodec;
 
 impl CodecBackend for IronCadCodec {
-    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+    const FORMAT: FormatId = FormatId::new(dialect::registry_ids::FORMAT);
 
     fn detect_impl(
         &self,

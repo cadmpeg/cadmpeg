@@ -4,7 +4,8 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::{admission_loss, DECLARED_ARCHIVE_VERSION, DECLARED_OPENNURBS_WRITER_VERSION, FORMAT};
+use super::registry_ids::FORMAT;
+use super::{admission_loss, DECLARED_ARCHIVE_VERSION, DECLARED_OPENNURBS_WRITER_VERSION};
 use crate::chunks::ArchiveVersion;
 use cadmpeg_core::dialect::Admission;
 

@@ -34,8 +34,8 @@ use crate::decode::surfaces::prototypes::unique_surface_prototype_associations;
 use crate::lane_refusal::JoinedLaneRecords;
 use crate::loss::CreoLossCode;
 use crate::scalar;
+use crate::vecmath::dot;
 use crate::vecmath::normalize;
-use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::revolve::RevolutionAxis;
 use cadmpeg_ir::geometry::analytic::CircleCurve;
@@ -108,7 +108,14 @@ pub(in super::super) fn revolved_section_surface(
             let radial_speed = dot(radial_rate, radial_rate).sqrt();
             let scale = radius;
             if radius > EPS_RADIUS_NONZERO {
-                let coplanar_residual = dot(cross(radial, radial_rate), axis).abs();
+                let coplanar_residual = dot(
+                    <[f64; 3]>::from(
+                        cadmpeg_ir::math::Vector3::from(radial)
+                            .cross(cadmpeg_ir::math::Vector3::from(radial_rate)),
+                    ),
+                    axis,
+                )
+                .abs();
                 (coplanar_residual <= EPS_COPLANAR_RESIDUAL * scale).then_some(())?;
             }
             let reference = normalize(radial).or_else(|| normalize(radial_rate))?;
@@ -414,7 +421,10 @@ pub(in super::super) fn revolved_nurbs_surface(
             point.y - center[1],
             point.z - center[2],
         ];
-        let tangent = cross(axis_direction, radial);
+        let tangent = <[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(axis_direction)
+                .cross(cadmpeg_ir::math::Vector3::from(radial)),
+        );
         let directrix_weight = directrix
             .pole_rows()
             .weight_at(index)
@@ -1407,7 +1417,9 @@ pub(in crate::decode) fn orient_sampled_circle(
     let mut selected = None;
     for sign in [1., -1.] {
         let axis = original_axis.map(|v| v * sign);
-        let transverse = cross(axis, reference);
+        let transverse = <[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(axis).cross(cadmpeg_ir::math::Vector3::from(reference)),
+        );
         let angle = |point: [f64; 3]| {
             let relative = std::array::from_fn(|i| point[i] - center[i]);
             dot(relative, transverse)
@@ -1470,7 +1482,11 @@ fn circle_on_surface(circle: &CircleCurve, surface: &SurfaceGeometry) -> bool {
         let offset: [f64; 3] = std::array::from_fn(|i| center[i] - origin[i]);
         offset.into_iter().all(f64::is_finite).then_some(offset)
     };
-    let parallel = |other: [f64; 3]| length(cross(axis, other)) <= EPS_SAMPLE_ANGLE;
+    let parallel = |other: [f64; 3]| {
+        length(<[f64; 3]>::from(
+            cadmpeg_ir::math::Vector3::from(axis).cross(cadmpeg_ir::math::Vector3::from(other)),
+        )) <= EPS_SAMPLE_ANGLE
+    };
     let tolerance = |offset: [f64; 3], scale: f64| {
         EPS_SAMPLE_POINT
             * offset
@@ -1493,7 +1509,10 @@ fn circle_on_surface(circle: &CircleCurve, surface: &SurfaceGeometry) -> bool {
             };
             let tolerance = tolerance(offset, cylinder.radius().get());
             parallel(other_axis)
-                && length(cross(offset, other_axis)) <= tolerance
+                && length(<[f64; 3]>::from(
+                    cadmpeg_ir::math::Vector3::from(offset)
+                        .cross(cadmpeg_ir::math::Vector3::from(other_axis)),
+                )) <= tolerance
                 && (radius - cylinder.radius().get()).abs() <= tolerance
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus)) => {
@@ -1506,7 +1525,10 @@ fn circle_on_surface(circle: &CircleCurve, surface: &SurfaceGeometry) -> bool {
             let tolerance = tolerance(offset, major.max(minor));
             let height = dot(offset, other_axis);
             if parallel(other_axis) {
-                length(cross(offset, other_axis)) <= tolerance
+                length(<[f64; 3]>::from(
+                    cadmpeg_ir::math::Vector3::from(offset)
+                        .cross(cadmpeg_ir::math::Vector3::from(other_axis)),
+                )) <= tolerance
                     && ((radius - major).hypot(height) - minor).abs() <= tolerance
             } else {
                 dot(axis, other_axis).abs() <= EPS_SAMPLE_ANGLE
@@ -2009,7 +2031,10 @@ impl HoleGeneratorProof {
             (delta <= EPS_HOLE_GENERATOR_ANGLE && radii[index] * delta <= tolerance)
                 .then_some(())?;
             let u = self.frames[index].frame().ref_direction();
-            let v = cross(axes[index], u);
+            let v = <[f64; 3]>::from(
+                cadmpeg_ir::math::Vector3::from(axes[index])
+                    .cross(cadmpeg_ir::math::Vector3::from(u)),
+            );
             let radial = |angle: f64| {
                 std::array::from_fn::<_, 3, _>(|i| {
                     radii[index] * (u[i] * angle.cos() + v[i] * angle.sin())

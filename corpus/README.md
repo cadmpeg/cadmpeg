@@ -27,11 +27,11 @@ A donated file must meet all of these requirements:
 3. Add an entry to the corpus manifest describing it (format below), using [`manifest.example.toml`](manifest.example.toml) as a template.
 4. Open a pull request (or an issue, if the file is large and you need guidance on how to attach it) with the file and its manifest entry. Confirm explicitly in the PR/issue text: the CC0 dedication, that every included part is your own work, and that your CAD license permits sharing it.
 
-The first accepted donation creates `corpus/manifest.toml`. Each later donation adds a `[[file]]` entry. Manifest and donation verification is manual until verification tooling lands. Maintainers verify the manifest fields and declarations before merge.
+Add a `[[file]]` entry to `corpus/manifest.toml`. The `corpus_manifest` integration tests verify manifest entries and specimens. Maintainers verify donation declarations before merge.
 
 ## Manifest format
 
-Valid format keys are `f3d`, `fcstd`, `inventor`, `sldprt`, `catia`, `nx`, `creo`, `rhino`, `iges`, `step`, `sat`, and `ironcad`. The manifest records each file's name, format key, authoring application and version, source URL, acquisition date, license, SHA-256, purpose, and optional expected topology. CC0 donations use `license = "CC0-1.0"`. The NIST specimen track uses `license = "LicenseRef-NIST-PD"`; see [`nist-pmi/README.md`](nist-pmi/README.md). Spreadsheets and publisher README files that have no codec stay out of `[[file]]`. See [`manifest.example.toml`](manifest.example.toml) for an annotated template. A minimal CC0 entry:
+Valid format keys are `f3d`, `fcstd`, `inventor`, `sldprt`, `catia`, `nx`, `creo`, `rhino`, `iges`, `step`, `sat`, `ironcad`, and `alibre`. The manifest records each file's name, format key, authoring application and version, source URL, acquisition date, license, SHA-256, purpose, and optional expected topology. CC0 donations use `license = "CC0-1.0"`. The NIST specimen track uses `license = "LicenseRef-NIST-PD"`; see [`nist-pmi/README.md`](nist-pmi/README.md). Spreadsheets and publisher README files that have no codec stay out of `[[file]]`. See [`manifest.example.toml`](manifest.example.toml) for an annotated template. A minimal CC0 entry:
 
 ```toml
 [[file]]

@@ -43,7 +43,7 @@ fn extrude_selection_group_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:extrude-group#0",
         value: &group,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || super::EXTRUDE_SELECTION_GROUP_CLONE_COUNT.with(|count| count.set(0)),
@@ -76,7 +76,7 @@ fn extrude_selection_member_native_retained_limit_refuses_before_clone() {
         id: "f3d:native:extrude-member#0",
         value: &member,
     };
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "design_parameter_scopes",
         || super::EXTRUDE_SELECTION_MEMBER_CLONE_COUNT.with(|count| count.set(0)),

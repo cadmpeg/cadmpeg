@@ -72,9 +72,9 @@ fn placement_registration_requires_semantic_identity_matching_headers_and_a_pair
         (14, super::TYPE_GUID, super::BASE_GUID, false, 0, 1),
     ] {
         let meta = metadata(frame, version, type_guid, base_guid, secondary);
-        let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &meta);
+        let archive = crate::test_support::body_reference_tail_fixture::archive(&bytes, &meta);
         crate::test_support::with_decode_context(|ctx| {
-            crate::test_support::zip_test::with_scan(&archive, |scan| {
+            crate::test_support::zip_fixture::with_scan(&archive, |scan| {
                 let decoded = super::decode(ctx, scan).unwrap();
                 assert_eq!(decoded.records.len(), wanted);
                 assert_eq!(decoded.unparsed, unparsed);
@@ -91,9 +91,9 @@ fn placement_registration_requires_semantic_identity_matching_headers_and_a_pair
         let mut corrupt = bytes.clone();
         corrupt[offset..offset + corruption.len()].copy_from_slice(corruption);
         let meta = metadata(frame, 14, super::TYPE_GUID, super::BASE_GUID, true);
-        let archive = crate::test_support::body_reference_tail_test::archive(&corrupt, &meta);
+        let archive = crate::test_support::body_reference_tail_fixture::archive(&corrupt, &meta);
         crate::test_support::with_decode_context(|ctx| {
-            crate::test_support::zip_test::with_scan(&archive, |scan| {
+            crate::test_support::zip_fixture::with_scan(&archive, |scan| {
                 let decoded = super::decode(ctx, scan).unwrap();
                 assert!(decoded.records.is_empty());
                 assert_eq!(decoded.unparsed, 1);
@@ -238,9 +238,9 @@ fn placement_modern_registration_uses_the_same_version_gate_as_native_validation
                 end: bytes.len(),
             };
             let meta = metadata(frame, version, super::TYPE_GUID, super::BASE_GUID, true);
-            let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &meta);
+            let archive = crate::test_support::body_reference_tail_fixture::archive(&bytes, &meta);
             crate::test_support::with_decode_context(|ctx| {
-                crate::test_support::zip_test::with_scan(&archive, |scan| {
+                crate::test_support::zip_fixture::with_scan(&archive, |scan| {
                     let decoded = super::decode(ctx, scan).unwrap();
                     assert_eq!(decoded.records.len(), 1);
                     assert_eq!(decoded.unparsed, 0);

@@ -129,6 +129,7 @@ mod rollback;
 mod scan;
 mod swift;
 mod tessellation;
+pub mod transmit;
 mod writer;
 mod writer_patch;
 mod writer_transform;
@@ -198,13 +199,14 @@ impl<'f> SldprtWriteSession<'f> {
     }
 }
 
-/// The retained source a semantic write patches: its records, and where the
-/// session of the write keeps the source decoded again. Without records the
-/// write synthesizes the document.
+/// The retained source a semantic write patches: its records, where the
+/// session of the write keeps the source decoded again, and the source image
+/// as input of the encode. Without records the write synthesizes the document.
 #[derive(Clone, Copy, Default)]
-struct RetainedRecords<'r> {
-    records: &'r [SourceRecord<'r>],
+struct RetainedRecords<'r, 'f, 'i> {
+    records: &'r [SourceRecord<'f>],
     decoded: Option<&'r OnceLock<Arc<writer::RetainedSource>>>,
+    input: Option<&'r writer::SourceInput<'i>>,
 }
 
 /// A joined native-record reference whose retained payload stays owned by the
@@ -232,6 +234,7 @@ impl SldprtCodec {
         ir: &CadIr,
         fidelity: &SourceFidelity,
         records: &[SourceRecord<'_>],
+        input: Option<&writer::SourceInput<'_>>,
         ctx: &DecodeContext<'_>,
         session: &SldprtWriteSession<'_>,
         writer: &mut dyn Write,
@@ -257,6 +260,7 @@ impl SldprtCodec {
                 RetainedRecords {
                     records,
                     decoded: source,
+                    input,
                 },
                 &[],
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::DigestMismatch),
@@ -273,6 +277,7 @@ impl SldprtCodec {
                 RetainedRecords {
                     records,
                     decoded: source,
+                    input,
                 },
                 &[],
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing),
@@ -308,12 +313,16 @@ impl SldprtCodec {
         ir: &CadIr,
         annotations: &Annotations,
         digests: &CodecDigests,
-        retained: RetainedRecords<'_>,
+        retained: RetainedRecords<'_, '_, '_>,
         shaped: &[history::write::brep_agreement::ShapingEdit],
         fidelity: SemanticFidelity,
         ctx: &DecodeContext<'_>,
     ) -> Result<(Written, Vec<u8>), CodecError> {
-        let RetainedRecords { records, decoded } = retained;
+        let RetainedRecords {
+            records,
+            decoded,
+            input,
+        } = retained;
         if !ir.model.omitted_arenas_held()
             && (!records.is_empty() || ir.native.namespace("sldprt").is_some())
         {
@@ -332,38 +341,54 @@ impl SldprtCodec {
             .iter()
             .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
             .and_then(|record| record.data);
+        let own_input;
+        let image_source = if let Some(input) = input {
+            Some(input.image(ctx)?)
+        } else {
+            own_input = writer::SourceInput::of(records);
+            own_input
+                .as_ref()
+                .map(|input| input.image(ctx))
+                .transpose()?
+        };
         let shared_cache = std::cell::RefCell::new(writer::SemanticWriteCache::of_source(
             decoded,
             ctx.policy().limits,
         ));
         let round_trip = |source: &cadmpeg_ir::codec::Decoded| {
             let mut bytes = Vec::new();
-            let mut cache = writer::SemanticWriteCache {
-                source_baseline: shared_cache.borrow().source_baseline.clone(),
-                native: writer::CachedNative::Unloaded,
+            let mut cache = {
+                let shared = shared_cache.borrow();
+                writer::SemanticWriteCache {
+                    source_baseline: shared.source_baseline.clone(),
+                    native: writer::CachedNative::Unloaded,
+                    saved_properties: std::rc::Rc::clone(&shared.saved_properties),
+                }
             };
             let source_digests = if source.source_fidelity.codec_digests.is_empty() {
                 digests
             } else {
                 &source.source_fidelity.codec_digests
             };
-            // The baseline is a check, so it runs in a session of its own.
             let arena = cadmpeg_core::decode::DecodeArena::new();
-            let check = DecodeContext::new(&arena, ctx.policy(), DecodeDepth::Full);
-            let result = writer::write_semantic_with_records_cached(
-                &source.ir,
-                &source.source_fidelity.annotations,
-                source_digests,
-                records,
-                writer::SemanticWriteControls {
-                    withheld: &[],
-                    shaped: &[],
-                    ctx: &check,
-                },
-                &mut cache,
-                &mut bytes,
-            )
-            .ok();
+            let result = ctx
+                .with_arena(&arena, |check| {
+                    writer::write_semantic_with_records_cached(
+                        &source.ir,
+                        &source.source_fidelity.annotations,
+                        source_digests,
+                        records,
+                        writer::SemanticWriteControls {
+                            withheld: &[],
+                            shaped: &[],
+                            ctx: check,
+                            source: image_source,
+                        },
+                        &mut cache,
+                        &mut bytes,
+                    )
+                })
+                .ok();
             let mut shared = shared_cache.borrow_mut();
             if shared.source_baseline.is_none() {
                 shared.source_baseline = cache.source_baseline;
@@ -371,29 +396,36 @@ impl SldprtCodec {
             result?;
             (image != Some(bytes.as_slice())).then_some(bytes)
         };
-        let ((bytes, output), mut read_back) = history::write::read_back::write_until_read_back(
+        let passes = history::write::read_back::write_until_read_back(
             ir,
             digests,
             &mut |withheld| {
                 let mut bytes = Vec::new();
                 let mut cache = shared_cache.borrow_mut();
-                let output = writer::write_semantic_with_records_cached(
-                    ir,
-                    annotations,
-                    digests,
-                    records,
-                    writer::SemanticWriteControls {
-                        withheld,
-                        shaped,
-                        ctx,
-                    },
-                    &mut cache,
-                    &mut bytes,
-                )?;
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let output = ctx.with_arena(&arena, |ctx| {
+                    writer::write_semantic_with_records_cached(
+                        ir,
+                        annotations,
+                        digests,
+                        records,
+                        writer::SemanticWriteControls {
+                            withheld,
+                            shaped,
+                            ctx,
+                            source: image_source,
+                        },
+                        &mut cache,
+                        &mut bytes,
+                    )
+                })?;
                 Ok((bytes, output))
             },
             &round_trip,
-        )?;
+        );
+        // A later path of the write compares the source this one decoded.
+        shared_cache.borrow().keep_source(decoded);
+        let ((bytes, output), mut read_back) = passes?;
         let writer::SemanticOutput {
             dialect,
             coverage,
@@ -406,19 +438,14 @@ impl SldprtCodec {
         } = output;
         let unwritten_edits = unwritten_edits.render(&read_back);
         let shared = shared_cache.into_inner();
-        shared.keep_source(decoded);
         let native = match shared.native {
             writer::CachedNative::Loaded(loaded) => loaded,
             writer::CachedNative::Unloaded => ir
                 .native
                 .namespace("sldprt")
                 .map(|namespace| {
-                    native::SldprtNative::load_under(
-                        namespace,
-                        ctx.policy().limits,
-                        ir.tolerances.linear,
-                    )
-                    .map_err(CodecError::from)
+                    native::SldprtNative::load_in(ctx, namespace, ir.tolerances.linear)
+                        .map_err(CodecError::from)
                 })
                 .transpose()?,
         };
@@ -426,7 +453,7 @@ impl SldprtCodec {
             .source_baseline
             .as_deref()
             .map(|source| history::write::brep_agreement::Source::Decoded(&source.decoded.ir))
-            .or_else(|| image.map(history::write::brep_agreement::Source::Image));
+            .or_else(|| input.map(history::write::brep_agreement::Source::Image));
         let stale_solid = history::write::brep_agreement::agreement(
             ir,
             digests,
@@ -650,7 +677,7 @@ impl Written {
 }
 
 impl CodecBackend for SldprtCodec {
-    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+    const FORMAT: FormatId = FormatId::new(dialect::registry_ids::FORMAT);
 
     fn validate_native(
         ctx: &DecodeContext<'_>,
@@ -726,15 +753,19 @@ impl EncoderBackend for SldprtCodec {
         .map(|(body, _)| body)
     }
 
-    fn restore(
+    fn plan_prepared(
         &self,
         ctx: &DecodeContext<'_>,
         input: EncodeInput<'_>,
-        target: &ResolvedWrite<'_>,
-        notes: &mut Vec<String>,
-        losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    ) -> Result<Option<CadIr>, CodecError> {
-        writer::saved::restore(ctx, input, target, notes, losses)
+        target: ResolvedWrite<'_>,
+    ) -> Result<(ExportBody, Option<CadIr>), CodecError> {
+        writer::target::plan_prepared(
+            ctx,
+            input,
+            &target,
+            &SldprtWriteSession::new(input.fidelity),
+        )
+        .map(|(body, restored, _)| (body, restored))
     }
 }
 

@@ -56,6 +56,7 @@ use crate::math::distance;
 
 const EPS_TORUS_FRAME: f64 = 1.0e-12;
 const EPS_APEX_ALIGNMENT: f64 = 1.0e-12;
+// resource-cap: MAX_PATCH_RECORD_VISITS_PER_RECORD = 4
 const MAX_PATCH_RECORD_VISITS_PER_RECORD: usize = 64;
 
 #[derive(Clone)]
@@ -898,9 +899,10 @@ pub(super) fn try_decode_freeform_surfaces(
                         &payload_id,
                         &why
                     )));
+                } else {
+                    losses.push(why);
                 }
-                losses.push(why);
-            } else {
+            } else if !ir.geometry.faces.is_empty() || census_face_object_ids.is_empty() {
                 losses.push((CatiaLossCode::TopologyB5GraphUnclosed).note(format!(
                     "Object-stream and consolidated NURBS carriers were decoded, but the \
              face/loop/pcurve/edge graph did not close. Unclosed b5 03 5f face records, by object \
@@ -908,25 +910,26 @@ pub(super) fn try_decode_freeform_surfaces(
                     census_face_object_ids.len(),
                     identity_statement(&census_face_object_ids)
                 )));
+            } else {
                 // Owned-patch faces are keyed by roster position, not by b5
                 // face record, so the b5 face records are given up only where
-                // the route states no face.
-                if ir.geometry.faces.is_empty() {
-                    let face_records = census_face_object_ids
-                        .iter()
-                        .collect::<std::collections::BTreeSet<_>>();
-                    let code = CatiaLossCode::TopologyB5GraphUnclosed.kind();
-                    losses.extend(face_records.into_iter().map(|object_id| {
-                        cadmpeg_ir::unknown::part::GivenUpRecord::new(
-                            cadmpeg_ir::ids::Identity::compose(
-                                &cadmpeg_ir::identity_namespace!("catia", "b5", "face"),
-                                object_id,
-                            ),
-                            format_args!("{code}: the face/loop/pcurve/edge graph did not close"),
-                        )
-                        .loss()
-                    }));
-                }
+                // the route states no face. Each give-up names its face and
+                // the unclosed graph, so no note repeats them.
+                let face_records = census_face_object_ids
+                    .iter()
+                    .collect::<std::collections::BTreeSet<_>>();
+                let code = CatiaLossCode::TopologyB5GraphUnclosed.kind();
+                losses.extend(face_records.into_iter().map(|object_id| {
+                    cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                        cadmpeg_ir::ids::Identity::compose(
+                            &cadmpeg_ir::identity_namespace!("catia", "b5", "face"),
+                            object_id,
+                        ),
+                        cadmpeg_ir::unknown::part::Cause::Undecoded,
+                        format_args!("{code}: the face/loop/pcurve/edge graph did not close"),
+                    )
+                    .loss()
+                }));
             }
         }
         losses.extend(owned_patch_loss);
@@ -1186,7 +1189,8 @@ fn give_up_object_stream(
     .digest_only();
     ctx.give_up_part(
         part,
-        cadmpeg_core::CodecError::malformed(format_args!("{}: {}", why.code, why.message)),
+        cadmpeg_ir::unknown::part::Cause::Undecoded,
+        cadmpeg_core::CodecError::NotImplemented(format!("{}: {}", why.code, why.message)),
     )
 }
 
@@ -1452,7 +1456,7 @@ fn standard_carrier_surface_ids(ir: &CadIr) -> HashMap<u32, Option<SurfaceId>> {
         let Some(source) = surface.source_object.as_ref() else {
             continue;
         };
-        if source.format != cadmpeg_ir::codec_id!(crate::dialect::FORMAT) {
+        if source.format != cadmpeg_ir::codec_id!(crate::dialect::registry_ids::FORMAT) {
             continue;
         }
         let Some(tag) = source
@@ -5624,7 +5628,13 @@ mod tests {
                 .expect("the part commits");
             assert_eq!(
                 loss.code,
-                cadmpeg_ir::unknown::part::record_unreadable_kind()
+                cadmpeg_ir::unknown::part::record_undecoded_kind()
+            );
+            assert!(
+                loss.message
+                    .contains("catia/topology.object-stream-work-slice-exhausted: "),
+                "{}",
+                loss.message
             );
             assert!(
                 loss.message.contains(&format!(" record={stub}: ")),

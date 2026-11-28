@@ -530,11 +530,14 @@ fn decode_group_stream(bytes: &[u8], meta: &crate::metastream::MetaStream) -> Gr
 fn assert_group_unread(bytes: &[u8], meta: &crate::metastream::MetaStream) {
     let (groups, losses, given_up) = decode_group_records(bytes, meta);
     assert!(groups.is_empty());
+    assert!(losses.is_empty(), "{losses:?}");
+    let [frame] = given_up.as_slice() else {
+        panic!("one given-up group frame: {given_up:?}");
+    };
     assert_eq!(
-        crate::test_support::loss_codes(&losses),
-        [crate::loss::F3dLossCode::SketchGeometryGroupUndecoded.kind()]
+        frame.reason().0,
+        cadmpeg_ir::unknown::part::Cause::Undecoded
     );
-    assert_eq!(given_up.len(), 1);
 }
 
 #[test]
@@ -596,10 +599,7 @@ fn unreadable_group_keeps_point_and_curve_values_without_its_owner_join() {
     );
     assert_eq!(curves[0].owner_reference, None);
     assert_eq!(curves[0].geometry_group, None);
-    assert_eq!(
-        crate::test_support::loss_codes(&losses),
-        [crate::loss::F3dLossCode::SketchGeometryGroupUndecoded.kind()]
-    );
+    assert!(losses.is_empty(), "{losses:?}");
     let [frame] = given_up.as_slice() else {
         panic!("one given-up group frame: {given_up:?}");
     };
@@ -719,7 +719,7 @@ fn sketch_geometry_group_does_not_create_legacy_sketch_header() {
     use std::io::{Cursor, Write};
     let bulk = geometry_group(&[41, 60], OWNER);
     assert!(crate::design::decode::sketch::parse_legacy_sketch_member_run(&bulk, 0, 50).is_some());
-    let meta = crate::test_support::streams_test::design_metastream_with_records(
+    let meta = crate::test_support::streams_fixture::design_metastream_with_records(
         &[(
             "67F4EECB-EB2C-48E6-8A25-1751E9924EAE",
             "",
@@ -731,7 +731,7 @@ fn sketch_geometry_group_does_not_create_legacy_sketch_header() {
     );
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
         .unwrap();
     zip.write_all(&bulk).unwrap();
@@ -739,7 +739,7 @@ fn sketch_geometry_group_does_not_create_legacy_sketch_header() {
         .unwrap();
     zip.write_all(&meta).unwrap();
     let archive = zip.finish().unwrap().into_inner();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
+    crate::test_support::zip_fixture::with_scan(&archive, |scan| {
         assert!(crate::design::decode::sketch::decode_entity_headers(scan)
             .unwrap()
             .is_empty());
@@ -799,13 +799,17 @@ fn unreadable_point_keeps_sibling_points_and_curves() {
             cadmpeg_ir::math::Point2::new(12.5, -25.0)
         );
         assert_eq!(curves.len(), 1, "{failure}");
+        assert!(losses.is_empty(), "{failure}: {losses:?}");
+        let [frame] = given_up.as_slice() else {
+            panic!("{failure}: one given-up point frame: {given_up:?}");
+        };
+        let (cause, text) = frame.reason();
         assert_eq!(
-            crate::test_support::loss_codes(&losses),
-            [crate::loss::F3dLossCode::SketchPointUndecoded.kind()],
+            cause,
+            cadmpeg_ir::unknown::part::Cause::Undecoded,
             "{failure}"
         );
-        assert_eq!(given_up.len(), 1, "{failure}");
-        assert!(losses[0].message.contains("record 41 version 11"));
+        assert!(text.contains("record 41 version 11"), "{text}");
     }
 }
 

@@ -52,6 +52,10 @@ class LayoutCheck(harness.FixtureCase):
         self.repo.commit({TOML: "a = 2\n"})
         self.assertEqual(harness.statuses(self.results()), ["FAIL"])
 
+    def test_generator_and_page_change_requests_verification(self) -> None:
+        self.repo.commit({check.GENERATOR: GENERATOR + "\n", PAGE: "| generated |\n"})
+        self.assertEqual(harness.statuses(self.results()), ["WARN"])
+
     def test_hand_edited_derived_file_fails(self) -> None:
         self.repo.commit({CODE: "pub const A: usize = 3;\n"})
         results = self.results()

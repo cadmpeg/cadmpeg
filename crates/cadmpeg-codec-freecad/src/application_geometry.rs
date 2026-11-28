@@ -18,6 +18,7 @@ use crate::layout::mesh_facet;
 use crate::layout::mesh_kernel_side_entry_header as mesh_hdr;
 use crate::native::{EntryRecord, PropertyRecord};
 
+// resource-cap: MAX_ELEMENTS = 2
 const MAX_ELEMENTS: usize = 1_000_000;
 const MESH_MAGIC: u32 = mesh_hdr::MAGIC_VALUE;
 const MESH_VERSION: u32 = mesh_hdr::VERSION_VALUE;

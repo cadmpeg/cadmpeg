@@ -11,7 +11,7 @@ import tempfile
 import tomllib
 from unittest.mock import patch
 
-from scripts.ci_scope import ANNEX_INPUTS, lock_dependents, select
+from scripts.ci_scope import lock_dependents, select
 from scripts.ci_cargo import command, main as cargo_main
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -136,7 +136,7 @@ class ScopeTests(unittest.TestCase):
         self.assertEqual(select(ROOT, ['crates/cadmpeg-codec-inventor/src/lib.rs'])['codec_scope'], ['inventor'])
         self.assertEqual(select(ROOT, ['crates/cadmpeg-core/src/lib.rs'])['codec_scope'], [])
         self.assertEqual(select(ROOT, ['crates/cadmpeg-codec-step/src/lib.rs'])['codec_scope'],
-                         ['f3d', 'freecad', 'onshape', 'step'])
+                         ['alibre', 'f3d', 'freecad', 'onshape', 'step'])
 
     def test_codec_scope_widens_for_noncodec_fuzz_dependents(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -304,14 +304,15 @@ class ScopeTests(unittest.TestCase):
         self.assertFalse(select(ROOT, [], full=True)['layout'])
         self.assertIn('cadmpeg-layout-tables', select(ROOT, [], full=True)['packages'])
 
-    def test_the_specification_and_its_annex_generator_select_the_schema_gate(self):
-        for path in sorted(ANNEX_INPUTS):
+    def test_annex_inputs_select_static_checks_without_schema_build(self):
+        for path in ('docs/cadir-v11.md', 'scripts/generate-annex-a.py',
+                     'scripts/test_generate_annex_a.py'):
             with self.subTest(path=path):
                 scope = select(ROOT, [path])
+                self.assertTrue(scope['static'])
                 self.assertFalse(scope['full'])
                 self.assertFalse(scope['rust'])
-                self.assertTrue(scope['schema'])
-        self.assertFalse(select(ROOT, ['docs/cad-ir.md'])['schema'])
+                self.assertFalse(scope['schema'])
 
     def test_embedded_document_selects_its_reader(self):
         scope = select(ROOT, ['docs/dialect-id-conformance.toml'])

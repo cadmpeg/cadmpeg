@@ -19,12 +19,12 @@ use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 use crate::transform::Transform;
 use crate::validate::design::records::{DesignRecords, MemberKey};
-use crate::validate::design::selections::{check_path, check_unconfigured, moved_occurrences};
+use crate::validate::design::selections::{check_path, check_unconfigured};
 use crate::validate::record_finding;
 
-pub(super) fn check(ir: &CadIr, findings: &mut Vec<Finding>) {
-    let records = DesignRecords::new(ir);
-    let moved = moved_occurrences(ir);
+pub(super) fn check(records: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
+    let ir = records.ir;
+    let moved = records.moved_occurrences();
     for definition in &ir.model.product_definitions {
         let id = definition.id.as_str();
         if matches!(definition.storage, Storage::External(_))
@@ -43,16 +43,16 @@ pub(super) fn check(ir: &CadIr, findings: &mut Vec<Finding>) {
             );
         }
         for entry in &definition.instance_bodies {
-            check_path(&records, Some(id), &entry.occurrence, &moved, id, findings);
+            check_path(records, Some(id), &entry.occurrence, moved, id, findings);
             check_unconfigured(&entry.occurrence, id, "an instance-body path", findings);
         }
         if let Some(units) = &definition.units {
             check_units(id, units, findings);
         }
-        check_representations(ir, &records, &moved, definition, findings);
+        check_representations(ir, records, moved, definition, findings);
         if let Some(generated) = &definition.generated_from {
             if let Some(factory) = &generated.definition {
-                check_generated_from(&records, id, factory, &generated.configuration, findings);
+                check_generated_from(records, id, factory, &generated.configuration, findings);
             }
         }
     }
@@ -60,7 +60,7 @@ pub(super) fn check(ir: &CadIr, findings: &mut Vec<Finding>) {
         let id = occurrence.id.as_str();
         if let Some(name) = &occurrence.representation {
             check_representation_name(
-                &records,
+                records,
                 Some(occurrence.prototype.as_str()),
                 name.as_str(),
                 id,
@@ -69,18 +69,18 @@ pub(super) fn check(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         for nested in &occurrence.overrides {
             check_path(
-                &records,
+                records,
                 Some(occurrence.prototype.as_str()),
                 &nested.path,
-                &moved,
+                moved,
                 id,
                 findings,
             );
             check_unconfigured(&nested.path, id, "a nested override's path", findings);
             if let Some(name) = &nested.representation {
                 check_representation_name(
-                    &records,
-                    last_prototype(&records, &nested.path),
+                    records,
+                    last_prototype(records, &nested.path),
                     name.as_str(),
                     id,
                     findings,
@@ -88,7 +88,7 @@ pub(super) fn check(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
     }
-    check_placements(ir, &records, findings);
+    check_placements(ir, records, findings);
 }
 
 /// Each unit of a definition's authoring unit system is a `UnitSymbol` of

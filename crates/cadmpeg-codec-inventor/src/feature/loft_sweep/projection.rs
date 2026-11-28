@@ -40,7 +40,11 @@ pub(in crate::feature) fn project<'a>(
         FeatureFamily::Loft => match loft(ctx, source, label, index) {
             Ok(operation) => operation,
             Err(Refusal::Native(reason)) => {
-                losses.push(reason.note());
+                let mut loss = reason.note();
+                if matches!(reason, NativeReason::ResultStateBounded(_)) {
+                    loss.message = format!("{} Feature {}.", loss.message, source.id());
+                }
+                losses.push(loss);
                 return None;
             }
             Err(Refusal::Codec(error)) => return Some(Err(error)),
@@ -261,7 +265,7 @@ fn loft(
     index: &ProjectionIndex<'_>,
 ) -> Result<FeatureOperation, Refusal> {
     let token = source.identity.segment_token.as_str();
-    let links = controls::sections(
+    let (links, op) = controls::sections(
         source,
         |reference| resolve_property(token, reference.index(), index),
         |reference| section_parameter(token, reference, index),
@@ -302,24 +306,37 @@ fn loft(
     let section_sources: [u32; 2] = section_sources
         .try_into()
         .map_err(|_| NativeReason::ResultTopology)?;
-    evidence::loft_proof(
-        ctx,
-        index.result_model,
-        index.result_states,
-        source.header.source_index,
-        section_sources,
-        |section| {
-            selected
-                .get(section)
-                .map_or_else(Vec::new, |(ordinal, sketch, profile)| {
-                    index.profiles.curve_names(token, *ordinal, sketch, profile)
-                })
-        },
-    )
-    .map_err(|failure| match failure {
+    let curves = |section: usize| {
+        selected
+            .get(section)
+            .map_or_else(Vec::new, |(ordinal, sketch, profile)| {
+                index.profiles.curve_names(token, *ordinal, sketch, profile)
+            })
+    };
+    let proof = match op {
+        BooleanOp::Join => evidence::loft_join_proof(
+            ctx,
+            index.result_states,
+            source.header.source_index,
+            section_sources,
+            curves,
+        ),
+        _ => evidence::loft_proof(
+            ctx,
+            index.result_model,
+            index.result_states,
+            source.header.source_index,
+            section_sources,
+            curves,
+        ),
+    };
+    proof.map_err(|failure| match failure {
         evidence::Unproved::Result => Refusal::Native(NativeReason::ResultTopology),
+        evidence::Unproved::NotJoined => Refusal::Native(NativeReason::ResultJoin),
         evidence::Unproved::StateFailed => Refusal::Native(NativeReason::ResultStateFailed),
-        evidence::Unproved::Bounded => Refusal::Native(NativeReason::ResultStateBounded),
+        evidence::Unproved::Bounded(limit) => {
+            Refusal::Native(NativeReason::ResultStateBounded(limit))
+        }
         evidence::Unproved::Codec(error) => Refusal::Codec(error),
     })?;
     let sections = selected
@@ -330,7 +347,7 @@ fn loft(
     Ok(FeatureOperation::Loft {
         sections,
         guidance: LoftGuidance::default(),
-        op: BooleanOp::NewBody,
+        op,
         closed: false,
         solid: true,
         ruled: false,

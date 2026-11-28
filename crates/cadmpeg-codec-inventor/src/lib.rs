@@ -50,7 +50,7 @@ use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{report::check::Finding, CadIr};
 
 fn issue_detail(error: CodecError) -> Result<String, CodecError> {
-    if matches!(&error, CodecError::ResourceLimit(_)) {
+    if matches!(&error, CodecError::ResourceLimit(_) | CodecError::Io(_)) {
         Err(error)
     } else {
         Ok(error.to_string())
@@ -62,7 +62,7 @@ fn issue_detail(error: CodecError) -> Result<String, CodecError> {
 pub struct InventorCodec;
 
 impl CodecBackend for InventorCodec {
-    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+    const FORMAT: FormatId = FormatId::new(dialect::registry_ids::FORMAT);
 
     fn validate_native(
         ctx: &DecodeContext<'_>,
@@ -94,7 +94,7 @@ impl CodecBackend for InventorCodec {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        container::InventorContainer::open(ctx, root)?.summary()
+        container::InventorContainer::open(ctx, root)?.summary(ctx)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {

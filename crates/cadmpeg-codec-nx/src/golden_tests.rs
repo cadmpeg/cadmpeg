@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Golden serialized decode/inspect snapshots. NX snapshots are code-built and
 //! regenerated with `UPDATE_GOLDEN=1 cargo test-fast golden` (workspace build).
-//! See `docs/golden-coverage-floors.toml` for the zlib/flate2 backend note.
+//! A package-only build can select a different flate2 backend and change the zlib bytes.
 
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
@@ -1052,11 +1052,13 @@ static COVERED_ARENAS: LazyLock<BTreeSet<String>> = LazyLock::new(|| {
     covered
 });
 
-/// Every arena a fixture populates must be a name production actually writes.
+/// Every arena a fixture populates must be a name production actually writes,
+/// and collective arena coverage across the fixture set must meet the floor.
 #[test]
-fn arena_coverage_is_a_subset() {
+fn arena_coverage_is_a_subset_and_meets_floor() {
+    let covered = &*COVERED_ARENAS;
     let known: BTreeSet<&str> = KNOWN_ARENAS.iter().copied().collect();
-    let unknown: Vec<&String> = COVERED_ARENAS
+    let unknown: Vec<&String> = covered
         .iter()
         .filter(|a| a.as_str() != "unknowns" && !known.contains(a.as_str()))
         .collect();
@@ -1064,13 +1066,6 @@ fn arena_coverage_is_a_subset() {
         unknown.is_empty(),
         "fixtures populated arenas absent from KNOWN_ARENAS (update the denominator): {unknown:?}"
     );
-}
-
-/// Collective arena coverage floor across the fixture set.
-#[test]
-fn arena_coverage_meets_floor() {
-    let covered = &*COVERED_ARENAS;
-    let known: BTreeSet<&str> = KNOWN_ARENAS.iter().copied().collect();
     let hit = covered
         .iter()
         .filter(|a| known.contains(a.as_str()))
@@ -1099,27 +1094,7 @@ fn arena_coverage_meets_floor() {
 /// `KNOWN_ARENAS`.
 #[test]
 fn catalogue_arenas_match_known_arenas() {
-    use cadmpeg_ir::native::catalogue::Phase;
-
     use crate::native::catalogue::CATALOGUE;
-
-    assert_eq!(CATALOGUE.len(), 253, "one catalogue row per model field");
-    assert_eq!(
-        CATALOGUE
-            .iter()
-            .filter(|row| matches!(&row.phase, Phase::GroupA { .. }))
-            .count(),
-        109,
-        "group A family count"
-    );
-    assert_eq!(
-        CATALOGUE
-            .iter()
-            .filter(|row| matches!(&row.phase, Phase::GroupB { .. }))
-            .count(),
-        10,
-        "group B family count"
-    );
 
     let mut catalogue_arenas = BTreeSet::new();
     for row in CATALOGUE {

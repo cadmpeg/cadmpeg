@@ -923,7 +923,7 @@ mod tests {
         let scope = scope();
         let mut features = [feature(&scope)];
         let mut losses = Vec::new();
-        crate::test_support::zip_test::with_scan(&archive(true), |scan| {
+        crate::test_support::zip_fixture::with_scan(&archive(true), |scan| {
             super::project_decal_images(
                 &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
@@ -955,7 +955,7 @@ mod tests {
         let scope = scope();
         let mut features = [feature(&scope)];
         let mut losses = Vec::new();
-        crate::test_support::zip_test::with_scan(&archive(true), |scan| {
+        crate::test_support::zip_fixture::with_scan(&archive(true), |scan| {
             super::project_decal_images(
                 &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
@@ -1037,7 +1037,7 @@ mod tests {
     fn archive(with_image: bool) -> Vec<u8> {
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
         if with_image {
             zip.start_file(ENTRY, stored).unwrap();
             zip.write_all(b"PNG").unwrap();
@@ -1054,7 +1054,7 @@ mod tests {
         let scope = scope();
         let mut features = [feature(&scope)];
         let mut losses = Vec::new();
-        let assets = crate::test_support::zip_test::with_scan(archive, |scan| {
+        let assets = crate::test_support::zip_fixture::with_scan(archive, |scan| {
             super::project_decal_images(
                 &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
@@ -1352,14 +1352,14 @@ mod tests {
         let (bytes, at) = fixture(DesignDecalScopeLayout::Compact, 0x60);
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        crate::test_support::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
         zip.start_file(entry, stored).unwrap();
         zip.write_all(&bytes[at..at + 44]).unwrap();
         zip.write_all(&[0; 139]).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         let mut features = [feature(&scope)];
         let mut losses = Vec::new();
-        crate::test_support::zip_test::with_scan(&archive, |scan| {
+        crate::test_support::zip_fixture::with_scan(&archive, |scan| {
             super::project_decal_images(
                 &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
@@ -1406,7 +1406,7 @@ mod tests {
         let scope = scope();
         let mut features = [feature(&scope)];
         let mut losses = Vec::new();
-        let assets = crate::test_support::zip_test::with_scan(&archive(false), |scan| {
+        let assets = crate::test_support::zip_fixture::with_scan(&archive(false), |scan| {
             super::project_decal_images(
                 &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,

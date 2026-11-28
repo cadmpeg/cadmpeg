@@ -8,7 +8,7 @@
 //! makes it: a finding that the base state also has is the base's, which the
 //! base record reports, or the current-geometry checks do.
 
-use std::collections::BTreeSet;
+use std::collections::HashSet;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -73,12 +73,17 @@ impl<'c, 'd> StateRules<'c, 'd> {
             inherited = self.findings(base, caches)?;
             found = self.findings(now, caches)?;
         }
-        let inherited: BTreeSet<String> = inherited
-            .iter()
-            .map(|finding| format!("{finding:?}"))
-            .collect();
+        if inherited.is_empty() {
+            findings.extend(
+                found.into_iter().map(|finding| {
+                    nested_finding(finding, Check::Design, holder, "resolved state")
+                }),
+            );
+            return Ok(());
+        }
+        let inherited: HashSet<&Finding> = inherited.iter().collect();
         for finding in found {
-            if !inherited.contains(&format!("{finding:?}")) {
+            if !inherited.contains(&finding) {
                 findings.push(nested_finding(
                     finding,
                     Check::Design,

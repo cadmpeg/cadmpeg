@@ -34,6 +34,7 @@ const RECONSTRUCTED_PLANE_TYPE_GUID: &str = "8D424E29-DE23-4B1F-A3AD-84C52A497D1
 const POINT_DATA_HOST_POINT: u32 = 17;
 
 /// Records after a direct persistent selection that can belong to it.
+// resource-cap: MAX_SELECTION_CHAIN = 4
 const MAX_SELECTION_CHAIN: u32 = 16;
 
 /// Accepted norm error for a serialized Hole drilling direction.
@@ -41,6 +42,7 @@ const EPS_HOLE_DIRECTION_NORM: f64 = 1.0e-12;
 
 /// Longest standard sizing name, in UTF-16 code units, that a Hole extent
 /// block admits.
+// resource-cap: MAX_HOLE_STANDARD_NAME = 2
 const MAX_HOLE_STANDARD_NAME: usize = 256;
 
 pub(in crate::design::decode) struct ExactHole {

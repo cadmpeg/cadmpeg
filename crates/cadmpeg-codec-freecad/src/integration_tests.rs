@@ -10,6 +10,7 @@ mod authored_gui;
 mod authored_history;
 mod authored_operations;
 mod design_v11;
+mod distance_joints;
 mod geometry_topology;
 mod gui_expand;
 mod measured_geometry;
@@ -22,6 +23,7 @@ mod revolve_direction;
 mod ring_traversal;
 mod shape_placement;
 mod sketch_bspline;
+mod unknown_key_sweep;
 mod unreadable_shapes;
 mod visibility;
 
@@ -401,8 +403,7 @@ fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
         ),
     ];
     for (name, bytes) in fixtures {
-        let first = FcstdCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        let first = crate::test_support::cached_full_decode(bytes)
             .unwrap_or_else(|error| panic!("{name}: {error}"));
         let second = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())

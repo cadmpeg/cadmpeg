@@ -25,7 +25,7 @@ use crate::records::mesh::DesignMeshUuid;
 use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 
 /// Container magic.
-const MAGIC: [u8; 12] = [
+pub(crate) const MAGIC: [u8; 12] = [
     0x89, 0x55, 0x44, 0x50, 0x4D, 0x45, 0x53, 0x48, 0x0D, 0x0A, 0x1A, 0x0A,
 ];
 /// Container version accepted by this decoder.
@@ -42,11 +42,14 @@ const CHUNK_STREAM: u32 = 4;
 const LZMA_PROPERTIES: u8 = 0x5D;
 /// Second byte of the LZMA1 stream encoding.
 const LZMA_ENCODING_TAG: u8 = 0x14;
+/// Second byte of the second LZMA1 stream encoding.
+const LZMA_ENCODING_TAG_SIXTEEN: u8 = 0x10;
 /// Smallest LZMA1 history window the decoder allocates.
 const LZMA_DICTIONARY_BYTES: u32 = 1 << 22;
 /// Raw-stream selector following the common properties byte.
 const RAW_STREAM_MODE: u8 = 0xfe;
 /// Largest stream this decoder inflates.
+// resource-cap: MAX_STREAM_BYTES = 2
 const MAX_STREAM_BYTES: u32 = 64 * 1024 * 1024;
 /// Registry field that declares one vertex-domain attribute channel.
 const REGISTRY_VERTEX_CHANNEL: u64 = 4;
@@ -1284,7 +1287,9 @@ fn inflate_stream_inner(
             bytes: payload.to_vec(),
         });
     }
-    if properties != [LZMA_PROPERTIES, LZMA_ENCODING_TAG] {
+    if properties[0] != LZMA_PROPERTIES
+        || !matches!(properties[1], LZMA_ENCODING_TAG | LZMA_ENCODING_TAG_SIXTEEN)
+    {
         return Err(CodecError::malformed(
             "paramesh stream carries an undefined encoding",
         ));
@@ -1429,7 +1434,8 @@ fn require_layout(stream: &MeshStream, layout: StreamLayout) -> Result<(), Codec
     Ok(())
 }
 
-/// Version 2 admits six exact stream descriptors and no other component type.
+/// The decoder reads six exact version-2 stream descriptors. Another
+/// descriptor is a form it has no reading for.
 fn require_version_2_descriptor(stream: &MeshStream) -> Result<(), CodecError> {
     for layout in [
         StreamLayout::Byte,
@@ -1443,8 +1449,8 @@ fn require_version_2_descriptor(stream: &MeshStream) -> Result<(), CodecError> {
             return Ok(());
         }
     }
-    Err(CodecError::malformed(
-        "paramesh stream descriptor is outside the version-2 grammar",
+    Err(CodecError::NotImplemented(
+        "paramesh stream descriptor is outside the version-2 grammar".into(),
     ))
 }
 
@@ -1972,9 +1978,11 @@ impl ParamMeshHeader {
         if bytes.get(..MAGIC.len()) != Some(&MAGIC[..]) {
             return Err(CodecError::malformed("paramesh container has no magic"));
         }
-        if View::u32_le_at(bytes, MAGIC.len()) != Some(VERSION) {
-            return Err(CodecError::malformed(
-                "paramesh container declares an unknown version",
+        let version = View::u32_le_at(bytes, MAGIC.len())
+            .ok_or_else(|| CodecError::malformed("paramesh container is truncated"))?;
+        if version != VERSION {
+            return Err(CodecError::NotImplemented(
+                "paramesh container declares an unknown version".into(),
             ));
         }
         let reserved = bytes
@@ -2481,11 +2489,11 @@ mod tests {
         MeshAttributeDomain, MeshContainer, MeshElements, MeshStream, StreamDescriptorValue,
         CHANNEL_GROUP, CHANNEL_RESOURCE, CHANNEL_ROLE, CHANNEL_STREAMS, CHUNK_NAME_TABLE,
         CHUNK_STREAM, ELEMENT_PACKED_DIRECTION, ELEMENT_PAIR, ELEMENT_QUAD, ELEMENT_TRIANGLE_DELTA,
-        FEATURE_EDGE_STREAM, GROUP_GUID, GROUP_KEY, LZMA_ENCODING_TAG, LZMA_PROPERTIES, MAGIC,
-        PROPERTY_KEY, PROPERTY_STREAM, PROPERTY_TEXT, RAW_STREAM_MODE, REGISTRY_FACE_GROUP_COUNT,
-        REGISTRY_FEATURE_EDGES, REGISTRY_MESH_UUID, REGISTRY_PROPERTY, REGISTRY_TRIANGLES,
-        REGISTRY_TRIANGLE_CHANNEL, REGISTRY_VERTEX_CHANNEL, REGISTRY_VERTICES, STREAM_ELEMENT_CODE,
-        STREAM_INDEX, STREAM_VALUES, VERSION,
+        FEATURE_EDGE_STREAM, GROUP_GUID, GROUP_KEY, LZMA_ENCODING_TAG, LZMA_ENCODING_TAG_SIXTEEN,
+        LZMA_PROPERTIES, MAGIC, PROPERTY_KEY, PROPERTY_STREAM, PROPERTY_TEXT, RAW_STREAM_MODE,
+        REGISTRY_FACE_GROUP_COUNT, REGISTRY_FEATURE_EDGES, REGISTRY_MESH_UUID, REGISTRY_PROPERTY,
+        REGISTRY_TRIANGLES, REGISTRY_TRIANGLE_CHANNEL, REGISTRY_VERTEX_CHANNEL, REGISTRY_VERTICES,
+        STREAM_ELEMENT_CODE, STREAM_INDEX, STREAM_VALUES, VERSION,
     };
     use cadmpeg_core::CodecError;
     fn decode_mesh_container(bytes: &[u8]) -> Result<MeshContainer, CodecError> {
@@ -3609,6 +3617,31 @@ mod tests {
     }
 
     #[test]
+    fn stream_encoding_tag_sixteen_inflates_the_same_lzma_stream() {
+        let reference = container(GUID, &TRIANGLE_VERTICES, &TRIANGLE_CORNERS);
+        let expected = decode_mesh_container(&reference).expect("tag 0x14 container");
+        for (tag, admitted) in [(LZMA_ENCODING_TAG_SIXTEEN, true), (0x12, false)] {
+            let mut retagged = reference.clone();
+            let mut streams = 0;
+            for at in 0..retagged.len() - 1 {
+                if retagged[at..at + 2] == [LZMA_PROPERTIES, LZMA_ENCODING_TAG] {
+                    retagged[at + 1] = tag;
+                    streams += 1;
+                }
+            }
+            assert_eq!(streams, 2);
+            let decoded = decode_mesh_container(&retagged);
+            if admitted {
+                let decoded = decoded.expect("tag 0x10 container");
+                assert_eq!(decoded.vertices, expected.vertices);
+                assert_eq!(decoded.triangles, expected.triangles);
+            } else {
+                assert!(decoded.is_err());
+            }
+        }
+    }
+
+    #[test]
     fn raw_stream_requires_its_exact_declared_byte_count() {
         let descriptor = [0x82, 0xa1, b'T', 1, 0xa1, b'd', 1];
         let payload = [1, 2, 3, 4];
@@ -3969,7 +4002,7 @@ mod tests {
             };
             assert!(matches!(
                 require_version_2_descriptor(&stream),
-                Err(CodecError::Malformed(_))
+                Err(CodecError::NotImplemented(_))
             ));
         }
     }

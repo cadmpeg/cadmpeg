@@ -11,7 +11,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use super::records::{DesignRecords, MemberKey, OfKey, PositionKey};
-use super::selections::{check_path, moved_occurrences};
+use super::selections::check_path;
 use crate::design::evaluation::{Evaluation, EvaluationStatus};
 use crate::design::feature::FeatureOperation;
 use crate::design::names::{NameEntry, NameKind};
@@ -19,6 +19,7 @@ use crate::design::refs::{EntityRef, RecordRef};
 use crate::document::Topology;
 use crate::features::ConfigurationId;
 use crate::ids::BodyId;
+use crate::index::identities::IdentitySet;
 use crate::index::ModelIndex;
 use crate::process::state::ProcessState;
 use crate::report::check::{Check, Finding};
@@ -295,6 +296,18 @@ impl<'a> Resolver<'a, '_, '_> {
     }
 }
 
+/// Whether a reference to `target` from a state leaves it: the state does
+/// not hold `target` (`held` false), and `target` is a record of a
+/// `Topology` of the document or no record of it.
+pub(crate) fn leaves_state(
+    held: bool,
+    target: &str,
+    topology: &BTreeSet<&str>,
+    ids: &ModelIndex<'_>,
+) -> bool {
+    !held && (topology.contains(target) || !IdentitySet::contains(ids, target))
+}
+
 /// The ids of every `Topology` of the document: the current geometry's and
 /// those of the deltas of `deltas`.
 fn topology_ids<'a>(
@@ -373,7 +386,7 @@ pub(super) fn check_resolved_states(
         topology: &topology,
         ids,
     };
-    let moved = moved_occurrences(ir);
+    let moved = index.moved_occurrences();
     let rules = StateRules::new(ctx, ids.native_view());
     let forest = Forest::of_evaluations(evaluations);
     let mut found: Vec<Vec<Finding>> = vec![Vec::new(); evaluations.len()];
@@ -401,7 +414,7 @@ pub(super) fn check_resolved_states(
                 }
             }
             let root = Some(evaluation.scope.as_str());
-            check_entries(index, state, root, &moved, id, findings);
+            check_entries(index, state, root, moved, id, findings);
             check_closure(state, id, findings);
             let caches = evaluation.status == EvaluationStatus::Current;
             rules.check(state, &applied, id, caches, findings)?;
@@ -624,7 +637,7 @@ pub(in crate::validate) fn check_process_states<'a>(
         topology: &topology,
         ids,
     };
-    let moved = moved_occurrences(ir);
+    let moved = index.moved_occurrences();
     let rules = StateRules::new(ctx, ids.native_view());
     let forest = Forest::of_process_states(&ir.design.evaluations, states, &scope);
     let mut found: Vec<Vec<Finding>> = vec![Vec::new(); states.len()];
@@ -643,7 +656,7 @@ pub(in crate::validate) fn check_process_states<'a>(
             let id = process.id.as_str();
             let findings = &mut found[at - offset];
             let applied = state.apply(&closure, delta, Some((id, &mut *findings)))?;
-            check_entries(index, state, scope(process), &moved, id, findings);
+            check_entries(index, state, scope(process), moved, id, findings);
             check_closure(state, id, findings);
             let caches = process.status == EvaluationStatus::Current;
             rules.check(state, &applied, id, caches, findings)?;

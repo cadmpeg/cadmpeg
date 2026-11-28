@@ -112,6 +112,23 @@ fn visibility(body: &str, selector: u64, browser_node_entity: u64) -> BodyVisibi
 /// beside an occurrence that inserts a member whose bodies carry
 /// `visibilities`.
 fn archive(tools: &[Tool], visibilities: &[BodyVisibility]) -> cadmpeg_ir::CadIr {
+    placed_archive(
+        crate::test_support::legacy_attributed_external_placement(
+            crate::test_support::assembly_fixture::XREF_ROLE,
+            false,
+            None,
+        ),
+        tools,
+        visibilities,
+    )
+}
+
+/// [`archive`] with the occurrence placement record `frame`.
+fn placed_archive(
+    frame: Vec<u8>,
+    tools: &[Tool],
+    visibilities: &[BodyVisibility],
+) -> cadmpeg_ir::CadIr {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let scope = scope(tools);
     let mut ir = cadmpeg_ir::CadIr::empty();
@@ -171,12 +188,7 @@ fn archive(tools: &[Tool], visibilities: &[BodyVisibility]) -> cadmpeg_ir::CadIr
         ordinal: 0,
         occurrence_ordinal: 0,
         placement_source: Some(XrefPlacementSource {
-            frame_bytes: crate::test_support::legacy_attributed_external_placement(
-                crate::test_support::assembly_test::XREF_ROLE,
-                false,
-                None,
-            )
-            .into(),
+            frame_bytes: frame.into(),
             occurrence_guid: None,
             stream: "f3d:Design/BulkStream.dat".into(),
             carrier_record_index: 10,
@@ -184,7 +196,7 @@ fn archive(tools: &[Tool], visibilities: &[BodyVisibility]) -> cadmpeg_ir::CadIr
         }),
         from: "root.f3d".to_owned().try_into().unwrap(),
         relative_path: "part.f3d".to_owned().try_into().unwrap(),
-        neutron_role: crate::test_support::assembly_test::XREF_ROLE
+        neutron_role: crate::test_support::assembly_fixture::XREF_ROLE
             .to_owned()
             .try_into()
             .unwrap(),
@@ -280,8 +292,63 @@ fn legacy_tool_stays_local_without_a_unique_join() {
             "{:?}",
             tool_selection(&ir)
         );
-        assert!(losses.is_empty());
+        assert_eq!(
+            losses.iter().map(|loss| &loss.code).collect::<Vec<_>>(),
+            [&crate::loss::F3dLossCode::FeatureCombineToolExternalBodyUnbound.kind()]
+        );
     }
+}
+
+#[test]
+fn legacy_tool_binds_through_a_legacy_typed_placement() {
+    let mut ir = placed_archive(
+        crate::test_support::legacy_occurrence_record(
+            crate::test_support::assembly_fixture::XREF_ROLE,
+            10,
+            None,
+        ),
+        &[(SOURCE_OCCURRENCE, BROWSER_NODE, 500)],
+        &[visibility(MEMBER_BODY, 0, BROWSER_NODE)],
+    );
+    let losses = bind(&mut ir);
+    let BodySelection::Occurrence {
+        occurrence, bodies, ..
+    } = tool_selection(&ir)
+    else {
+        panic!("occurrence tool selection: {:?}", tool_selection(&ir));
+    };
+    assert_eq!(occurrence.as_str(), OCCURRENCE);
+    assert_eq!(
+        bodies.iter().map(BodyId::as_str).collect::<Vec<_>>(),
+        [MEMBER_BODY]
+    );
+    assert_eq!(
+        losses.iter().map(|loss| &loss.code).collect::<Vec<_>>(),
+        [&crate::loss::F3dLossCode::FeatureCombineToolExternalFinalStateAssumed.kind()]
+    );
+}
+
+#[test]
+fn combine_without_legacy_selectors_charges_no_tool_loss() {
+    let mut ir = archive(
+        &[(SOURCE_OCCURRENCE, BROWSER_NODE, 500)],
+        &[visibility(MEMBER_BODY, 0, BROWSER_NODE)],
+    );
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let mut scope = scope(&[(SOURCE_OCCURRENCE, BROWSER_NODE, 500)]);
+    scope
+        .combine_operation_mut()
+        .unwrap()
+        .tools
+        .first
+        .legacy_external_identity = None;
+    ir.native
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
+        .set_arena(&ctx, "design_parameter_scopes", &[scope])
+        .unwrap();
+    let losses = bind(&mut ir);
+    assert!(matches!(tool_selection(&ir), BodySelection::Local { .. }));
+    assert!(losses.is_empty());
 }
 
 #[test]

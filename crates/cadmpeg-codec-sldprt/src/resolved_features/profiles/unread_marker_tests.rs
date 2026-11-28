@@ -10,7 +10,7 @@ use cadmpeg_ir::sketches::{
 
 use super::{
     finalize_unread_marker_entities, project_marker_backed_sketches, ChordConflict,
-    HeldMarkerGeometry, ListedEntity, MarkerSketchEntities,
+    HeldListedEntity, HeldMarkerGeometry, ListedEntity, MarkerSketchEntities,
 };
 use crate::loss::SldprtLossCode;
 use crate::records::{
@@ -364,20 +364,23 @@ fn a_placeholder_with_held_record_geometry_charges_the_losses_held_with_it() {
     let mut held = HeldMarkerGeometry::default();
     held.listed.insert(
         (entities[0].sketch.clone(), "marker-off-chord".to_owned()),
-        (
+        HeldListedEntity::new(
             ListedEntity {
                 geometry: arc.clone(),
                 endpoints: None,
-                construction: false,
+                center: Some(64),
+                construction: Some(false),
                 outside_profile: false,
                 index_basis_loss: None,
             },
+            |offset| (offset == 64).then(|| "stored-center".to_owned()),
             vec![SldprtLossCode::SketchArcRecordOffChord.note("off chord")],
         ),
     );
     let mut losses = Vec::new();
     finalize_unread_marker_entities(&mut entities, held, &mut losses);
     assert_eq!(entities[0].geometry, arc);
+    assert_eq!(entities[0].center_ref.as_deref(), Some("stored-center"));
     assert_eq!(
         losses
             .iter()
@@ -403,14 +406,16 @@ fn a_placeholder_with_held_record_geometry_takes_it_without_a_loss() {
     let mut held = HeldMarkerGeometry::default();
     held.listed.insert(
         (read.sketch.clone(), "marker-read".to_owned()),
-        (
+        HeldListedEntity::new(
             ListedEntity {
                 geometry: line.clone(),
                 endpoints: None,
-                construction: true,
+                center: None,
+                construction: Some(true),
                 outside_profile: false,
                 index_basis_loss: None,
             },
+            |_| None,
             Vec::new(),
         ),
     );
@@ -440,14 +445,16 @@ fn a_placeholder_with_held_state_zero_record_geometry_is_outside_the_profile() {
     let mut held = HeldMarkerGeometry::default();
     held.listed.insert(
         (read.sketch.clone(), "marker-read".to_owned()),
-        (
+        HeldListedEntity::new(
             ListedEntity {
                 geometry: line,
                 endpoints: None,
-                construction: false,
+                center: None,
+                construction: Some(false),
                 outside_profile: true,
                 index_basis_loss: None,
             },
+            |_| None,
             Vec::new(),
         ),
     );
@@ -768,6 +775,7 @@ fn a_line_of_state_zero_is_read_and_joins_no_profile() {
         SketchGeometryDefinition::Line { .. }
     ));
     assert!(!diagonal.construction);
+    assert!(diagonal.construction_read());
     let profiles = sketch.profiles.iter().collect::<Vec<_>>();
     let [profile] = profiles.as_slice() else {
         panic!("one profile: {profiles:?}");
@@ -920,4 +928,128 @@ fn a_roster_curve_precedes_marker_links_and_keeps_its_clockwise_sense() {
             < super::super::SKETCH_ANGLE_TOLERANCE
     );
     assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
+fn state_zero_inner_loop_stays_ordinary_and_outside_the_solid_profile() {
+    use cadmpeg_ir::design::selection::{PickTarget, Picks};
+
+    let coordinates = [
+        SQUARE[0],
+        SQUARE[1],
+        SQUARE[2],
+        SQUARE[3],
+        [0.002, 0.002],
+        [0.008, 0.002],
+        [0.008, 0.008],
+        [0.002, 0.008],
+    ];
+    let (payload, points, lines) = framed_line_sketch_with_states(
+        &coordinates,
+        &[
+            (0, 1, 4, 1),
+            (1, 2, 4, 1),
+            (2, 3, 4, 1),
+            (3, 0, 4, 1),
+            (4, 5, 4, 0),
+            (5, 6, 4, 0),
+            (6, 7, 4, 0),
+            (7, 4, 4, 0),
+        ],
+    );
+    let markers = points
+        .iter()
+        .zip(coordinates)
+        .enumerate()
+        .map(|(index, (&offset, point))| {
+            marker_at(
+                &format!("corner{index}"),
+                u32::try_from(index).unwrap(),
+                offset,
+                SketchInputKind::Point,
+                Some(point),
+            )
+        })
+        .collect();
+    let (mut sketches, mut entities, held) = projection(markers, payload);
+    let finalized = finalize_unread_marker_entities(&mut entities, held, &mut Vec::new());
+    let inner = lines[4..]
+        .iter()
+        .map(|&offset| record_entity(&entities, offset).id().clone())
+        .collect::<Vec<_>>();
+    assert!(inner
+        .iter()
+        .all(|id| finalized.outside_profile.contains(id)));
+    let point = entities
+        .iter()
+        .find(|entity| entity.native_ref.as_deref() == Some("corner0"))
+        .expect("listed point");
+    assert!(matches!(
+        point.geometry.definition(),
+        SketchGeometryDefinition::Point { .. }
+    ));
+    assert!(!point.construction_read());
+    let point_id = point.id().clone();
+
+    let (mut ir, _) = crate::design_v11::tests::sketch_and_extrude();
+    ir.model.sketches[0].profiles = std::mem::take(&mut sketches[0].profiles);
+    let expected = ir.model.sketches[0]
+        .profiles
+        .iter()
+        .next()
+        .unwrap()
+        .iter()
+        .map(|usage| usage.entity.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(ir.model.sketches[0].profiles.len(), 1);
+    for entity in &mut entities {
+        entity.sketch = ir.model.sketches[0].id.clone();
+    }
+    ir.model.sketch_entities = entities;
+    ir.model.sketch_constraints.clear();
+    let extrude =
+        crate::design_v11::tests::state_zero::project_profile(&mut ir, &finalized.outside_profile);
+    let Picks::Named(picks) = &extrude.profile.picks else {
+        panic!("a named solid profile")
+    };
+    let [pick] = picks.as_slice() else {
+        panic!("one closed region")
+    };
+    let PickTarget::SketchRegion { sketch, region } = &pick.target else {
+        panic!("the outer loop is selected")
+    };
+    assert_eq!(sketch, &ir.model.sketches[0].id);
+    assert_eq!(
+        region
+            .outer
+            .iter()
+            .map(|usage| usage.entity.clone())
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert!(region.holes.is_empty());
+    for id in &inner {
+        let entity = ir
+            .design
+            .sketch_entities
+            .iter()
+            .find(|entity| &entity.id == id)
+            .unwrap();
+        assert_eq!(entity.construction, Some(false));
+        assert!(
+            !crate::design_v11::tests::restated::charge(&ir, "sketch_entities", id.as_str())
+                .iter()
+                .any(|field| field == "construction")
+        );
+    }
+    assert_eq!(
+        ir.design
+            .sketch_entities
+            .iter()
+            .find(|entity| entity.id == point_id)
+            .unwrap()
+            .construction,
+        None
+    );
+    crate::design_v11::tests::assert_no_design_findings(&ir);
 }

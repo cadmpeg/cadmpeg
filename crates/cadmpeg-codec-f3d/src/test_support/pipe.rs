@@ -312,7 +312,7 @@ impl Fixture {
         if config.layout.renumber {
             types.rotate_left(4);
         }
-        let mut meta = super::streams_test::design_metastream_with_records(&types, &records);
+        let mut meta = super::streams_fixture::design_metastream_with_records(&types, &records);
         let at = meta.len() - 20;
         let mut secondary_bytes = Vec::new();
         secondary_bytes.extend_from_slice(&u32::try_from(secondary.len()).unwrap().to_le_bytes());
@@ -334,7 +334,7 @@ impl Fixture {
     pub(crate) fn archive(&self) -> Vec<u8> {
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-        super::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        super::manifest_fixture::write_synthetic_manifests(&mut zip, stored);
         zip.start_file(BULK, stored).unwrap();
         zip.write_all(&self.bulk).unwrap();
         zip.start_file(META, stored).unwrap();
@@ -401,6 +401,6 @@ impl Fixture {
         &self,
         f: impl FnOnce(&crate::container::ContainerScan<'_>) -> T,
     ) -> T {
-        super::zip_test::with_scan(&self.archive(), f)
+        super::zip_fixture::with_scan(&self.archive(), f)
     }
 }

@@ -16,7 +16,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::smbh_curves_test::{
+use crate::test_support::smbh_curves_fixture::{
     synthetic_geometry_with_compound_curve_smbh,
     synthetic_geometry_with_consistent_exact_curve_smbh,
     synthetic_geometry_with_early_close_projection_smbh, synthetic_geometry_with_helix_curve_smbh,
@@ -28,11 +28,11 @@ use crate::test_support::smbh_curves_test::{
     synthetic_geometry_with_two_sided_offset_curve_smbh,
     synthetic_geometry_with_vector_offset_curve_smbh,
 };
-use crate::test_support::smbh_surfaces_test::{
+use crate::test_support::smbh_surfaces_fixture::{
     synthetic_compound_loft_smbh, synthetic_law_spl_sur_smbh, synthetic_scaled_compound_loft_smbh,
     synthetic_skin_spl_sur_smbh, synthetic_sub_spl_sur_smbh,
 };
-use crate::test_support::zip_test::f3d_with_smbh;
+use crate::test_support::zip_fixture::f3d_with_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 

@@ -39,7 +39,7 @@ pub(crate) struct Class25Operand {
     pub(crate) encoding: AllocationReferenceEncoding,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "closure", rename_all = "snake_case")]
 pub(crate) enum Class25Accuracy {
     Fitted {
@@ -51,8 +51,11 @@ pub(crate) enum Class25Accuracy {
     },
 }
 
+// resource-cap: MAX_SAMPLE_PAIRS = 2
 const MAX_SAMPLE_PAIRS: usize = 32;
+// resource-cap: MAX_B_SAMPLE_PAIRS = 1
 const MAX_B_SAMPLE_PAIRS: usize = 12;
+// resource-cap: MAX_A_PAYLOAD_BYTES = 2
 const MAX_A_PAYLOAD_BYTES: usize = 1024;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -125,7 +128,7 @@ impl TryFrom<SamplePairsWire> for Class25SamplePairs {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum Class25SourceRelation {
     Absent,
