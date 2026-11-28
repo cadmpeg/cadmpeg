@@ -2789,7 +2789,7 @@ impl F3dLossCode {
             Self::ThreadAngleNative => "feature.thread-angle-native",
             Self::ThreadDetailNative => "feature.thread-detail-native",
             Self::ThreadHoleNative => "feature.thread-hole-native",
-            Self::ThreadV11Unprojected => "feature.thread-v11-unprojected",
+            Self::ThreadV11Unprojected => "feature.thread-design-unprojected",
             Self::ThreadFractionalSizeDiameterAssumed => {
                 "feature.thread-fractional-size-diameter-assumed"
             }
@@ -5606,7 +5606,7 @@ mod tests {
                 "feature.thread-angle-native",
                 "feature.thread-detail-native",
                 "feature.thread-hole-native",
-                "feature.thread-v11-unprojected",
+                "feature.thread-design-unprojected",
                 "feature.thread-fractional-size-diameter-assumed",
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",

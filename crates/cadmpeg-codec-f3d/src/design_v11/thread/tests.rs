@@ -161,7 +161,7 @@ fn an_unpaired_thread_item_is_found_by_its_scope_record_item() {
         crate::design_v11::timeline::item_feature_id("f3d:Design/BulkStream.dat", record).unwrap()
     };
     let (other, legacy, item) = (id(1), id(2), id(3));
-    let mut features = vec![
+    let mut features = [
         feature(&other, OperationFamily::Thread),
         feature(&item, OperationFamily::Thread),
     ];
