@@ -291,6 +291,7 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
 #[test]
 fn relation_coverage_refuses_rows_above_declared_empty_table() {
     let table = crate::feature::definitions::FeatureRelationTable {
+        rows_end: None,
         declared_count: 1,
         entity_ref: None,
         rows: vec![crate::feature::definitions::FeatureRelation {

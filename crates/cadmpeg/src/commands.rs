@@ -336,7 +336,7 @@ pub(crate) fn inspect(
 
 fn inspect_unrecognized(path: &Path) -> anyhow::Error {
     anyhow!(
-        "no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, Creo View pvz, eDrawings easm/eprt, OpenUSD usda/usd; use --input-format to override detection",
+        "no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, Creo View pvz, eDrawings easm/eprt, Alibre AD_PRT, OpenUSD usda/usd; use --input-format to override detection",
         path.display()
     )
 }
@@ -614,6 +614,9 @@ pub(crate) fn diff(
         println!("diff {} vs {}", a.path.display(), b.path.display());
         if let Some((before, after)) = &result.tolerance_change {
             println!("  tolerances: {before:?} → {after:?}");
+        }
+        if let Some((before, after)) = &result.up_axis_change {
+            println!("  up axis: {before:?} → {after:?}");
         }
         if let Some((before, after)) = result.scope_change {
             println!(

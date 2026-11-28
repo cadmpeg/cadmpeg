@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#![allow(clippy::unwrap_used)]
 //! The committed JSON Schema files are the schemas that the `JsonSchema`
 //! derives generate. Under the `schema-order` feature, which lists each
 //! object's `properties` in declared order, the test compares their text and

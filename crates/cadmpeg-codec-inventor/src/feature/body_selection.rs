@@ -82,7 +82,7 @@ pub(crate) fn scoped<'a, 'b>(
             continue;
         };
         let Some(counts) =
-            base::reference_counts(ctx, &meta.tables.sections[7], &meta.tables.sections[9])?
+            base::reference_counts(ctx, &meta.tables.references[1], &meta.tables.references[2])?
         else {
             continue;
         };
@@ -778,6 +778,9 @@ pub(crate) fn native_losses(
                 ) => native(bodies),
                 FeatureDefinition::Operation(FeatureOperation::MirrorShape { source, .. }) => {
                     native(source)
+                }
+                FeatureDefinition::Operation(FeatureOperation::SewBodies { bodies, .. }) => {
+                    native(bodies)
                 }
                 FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) => seeds
                     .iter()

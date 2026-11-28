@@ -883,17 +883,7 @@ fn fixtures_replay_verbatim() {
             marked.push(name);
         }
     }
-    assert_eq!(
-        marked,
-        [
-            "design_remove_body",
-            "design_surface_stitch",
-            "design_copy_paste",
-            "design_copy_paste_bodies",
-            "design_form",
-            "container_metadata_only"
-        ]
-    );
+    assert_eq!(marked, ["container_metadata_only"]);
 }
 
 /// A document its sidecar reads as edited is patched from the retained

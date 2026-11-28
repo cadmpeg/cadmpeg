@@ -34,7 +34,7 @@ pub(crate) fn decode_configuration_roots(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Ok(frames) = super::meta::design_primary_frames(bytes, &meta) else {
+        let Ok(frames) = super::meta::scan_design_primary_frames(scan, &entry.name, &meta) else {
             continue;
         };
         for frame in frames {

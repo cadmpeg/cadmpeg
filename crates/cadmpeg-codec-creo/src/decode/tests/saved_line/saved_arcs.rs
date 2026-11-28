@@ -111,6 +111,7 @@ fn saved_arc_joins_through_order_table() {
     let mut coordinate_definition = definition.clone();
     coordinate_definition.variables = Some(crate::feature::definitions::test_support::with_points(
         crate::feature::definitions::FeatureVariableTable {
+            rows_end: 0,
             declared_count: 0,
             entity_ref: None,
             rows: Vec::new(),

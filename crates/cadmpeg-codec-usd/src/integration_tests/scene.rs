@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Scene options, and the stage forms that the `OpenUSD` validators check.
 
-use cadmpeg_ir::codec::write::{SceneOptions, UpAxis};
+use cadmpeg_ir::codec::write::SceneOptions;
 use cadmpeg_ir::scalar::PositiveReal;
+use cadmpeg_ir::up_axis::UpAxis;
 
 use crate::test_support::{decode, encode, encode_with};
 

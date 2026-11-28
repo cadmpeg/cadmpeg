@@ -624,6 +624,18 @@ pub(crate) mod pm_dc_pattern_cached_line_body {
     pub(crate) const LEN: usize = 99;
 }
 
+/// Byte offsets for the `pm_dc_pattern_cached_line_chain_entry` record.
+///
+/// Spec §13.6. Record length 54 B.
+///
+/// ```text
+/// Entry of a cached line chain with selection form 2 or more. The first entry shares its zero and curve form with the single-line prefix.
+/// ```
+pub(crate) mod pm_dc_pattern_cached_line_chain_entry {
+    /// Record length in bytes. Spec §13.6.
+    pub(crate) const LEN: usize = 54;
+}
+
 /// Byte offsets for the `pm_dc_pattern_suppression_prefix` record.
 ///
 /// Spec §13.6. Record length 8 B.

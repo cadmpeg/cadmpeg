@@ -122,8 +122,46 @@ fn x62_prefixed_object_envelope_is_admitted_before_the_xml_tree() {
     ));
 }
 
+/// A member of a compression method the decoder has no reading for gives up
+/// as one `record.undecoded`, which a pinned decode accepts.
 #[test]
-fn zstd_member_past_the_window_allowance_is_an_unreadable_entry_without_a_refusal() {
+fn a_member_of_an_unsupported_compression_method_gives_up_as_undecoded() {
+    use cadmpeg_test_support::zip_fixture::{self, RawEntry};
+
+    const BZIP2: u16 = 12;
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let bytes = zip_fixture::archive(&[
+        RawEntry::stored("Document.xml", document.as_bytes()),
+        RawEntry::compressed("thumbnails/Thumbnail.png", BZIP2, b"BZh9", b"thumbnail"),
+    ]);
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(&bytes), &options)
+        .expect("a pinned decode accepts an undecoded member");
+    let given_up: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+        .collect();
+    let [loss] = given_up.as_slice() else {
+        panic!("one give-up: {given_up:?}");
+    };
+    assert_eq!(
+        loss.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    assert!(
+        loss.message
+            .starts_with("part archive-entry \"thumbnails/Thumbnail.png\""),
+        "{}",
+        loss.message
+    );
+}
+
+#[test]
+fn zstd_member_past_the_window_allowance_is_an_undecoded_entry_without_a_refusal() {
     use cadmpeg_test_support::zip_fixture::{self, RawEntry};
 
     let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
@@ -155,8 +193,8 @@ fn zstd_member_past_the_window_allowance_is_an_unreadable_entry_without_a_refusa
         panic!("one given-up entry");
     };
     let loss = given_up.loss();
-    assert_eq!(loss.code.to_string(), "decode/record.unreadable");
-    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Error);
+    assert_eq!(loss.code.to_string(), "decode/record.undecoded");
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
     assert!(
         loss.message
             .starts_with("part archive-entry \"thumbnails/Thumbnail.png\" stream=\"\" offset=")
@@ -177,7 +215,7 @@ fn zstd_member_past_the_window_allowance_is_an_unreadable_entry_without_a_refusa
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
+        .filter(|loss| loss.code.to_string() == "decode/record.undecoded")
         .collect();
     assert_eq!(losses.len(), 1);
     let (ir, _, fidelity) = decoded.into_parts();
@@ -264,11 +302,11 @@ fn a_part_refusal_on_document_xml_gives_up_that_entry_and_keeps_the_others() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
+            .filter(|loss| loss.code.to_string() == "decode/record.undecoded")
             .map(|loss| loss.message.clone())
             .collect();
         let [message] = losses.as_slice() else {
-            panic!("{case}: one record.unreadable loss: {losses:?}");
+            panic!("{case}: one record.undecoded loss: {losses:?}");
         };
         assert!(
             message.starts_with("part archive-entry \"Document.xml\" stream=\"\" offset=")
@@ -353,7 +391,7 @@ fn a_part_refusal_on_document_xml_gives_up_that_entry_and_keeps_the_others() {
             summary
                 .losses
                 .iter()
-                .any(|loss| loss.code.to_string() == "decode/record.unreadable"),
+                .any(|loss| loss.code.to_string() == "decode/record.undecoded"),
             "{case}"
         );
     }
