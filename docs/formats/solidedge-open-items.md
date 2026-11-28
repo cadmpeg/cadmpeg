@@ -31,3 +31,59 @@
 **Known.** A swept surface stores a `section` curve, a unit `sweep` direction, and `scale`. With a null `scale` the sweep parameter is the distance along the direction.
 
 **Need.** A part whose swept face stores a non-null `scale`, with its edge or pcurve parameters along the sweep.
+
+### DR-1015. Feature suppression, rollback and folders
+
+**Question.** Which fields store a feature's suppressed state, the feature-tree rollback position, and the features a folder holds?
+
+**Known.** The feature navigator object lists the features in order (§4.1). A folder is a `CLSID_JMFeatureGroup` entry of the navigator list. In documents without suppressed features and without a rollback, the navigator flag word is `0x08000003` or `0x08800013`.
+
+**Need.** A document saved with one feature suppressed, one saved with the rollback position moved, and a no-edit resave of each.
+
+### DR-1077. Body role values, construction display state and feature link
+
+**Question.** Which role numbers other than 86 and 96 occur, which role number does a design sheet or wire body carry, which fields bind the display state of a construction to its body, where is the display state of a design body stored, and which field links a construction body to its `CLSID_JMConstruction` object?
+
+**Known.** The role numbers 86 and 96 are stated in §12.1. Hiding a construction through its feature, and hiding it through its body, clear the same two stored values: bit `0x0800` of the flag word of the construction's entry in `PartsLiteData`, and one byte of a record in the `CLSID_JMPartOwner` object that holds the identifier of the `CLSID_JMConstruction` object. Both are set while the construction is shown. A document with one construction body holds one `CLSID_JMConstruction` object.
+
+**Need.** A part with two construction bodies of which one is hidden, a part with a design body hidden and shown, and a part with a design sheet body or a design wire body.
+
+### DR-1021. Topology proxy selections
+
+**Question.** What do the `f64` values after the axis of a circular-edge proxy store, which face of a two-setback chamfer is its reference face, and where does a thin wall with several open faces store the faces after the first?
+
+**Known.** The geometry records of straight-edge, planar-face and vertex proxies are in §7.5. A circular-edge proxy holds the center and the axis of the circle and then five `f64` values, the first of which is the radius in one read document. A thin wall stores a proxy of 881 bytes 152 bytes after the end of its function name, whatever number of faces the thin wall opens.
+
+**Need.** A round on a circular edge of a second radius, a two-setback chamfer and its copy with the setbacks swapped, and a thin wall whose volume shows two open faces.
+
+### DR-1022. Tapped hole thread data
+
+**Question.** At which offset does a tapped hole's `CLSID_JMHolePropData` object store its thread diameters and designation?
+
+**Known.** A tapped hole's property data holds two `f64` diameters in millimetres, then a `u32` character count and the UTF-16LE thread designation. The block's offset varies with the object length. A tapped M6 hole with a 12.7 mm by 12.7 mm counterbore stores a tap drill diameter of 5 mm, and its solid removes about 200 mm³ more than a 5 mm bore with that counterbore.
+
+**Need.** Tapped holes of two thread sizes, with and without a counterbore.
+
+### DR-1025. Round set kinds
+
+**Question.** What do the blend shape and the setback of a round set store?
+
+**Known.** Set kind `1` is a constant radius and set kind `2` is a variable radius (§7.3). A corner round with unequal radii holds one set of kind `1` for each edge.
+
+**Need.** A round with a conic or G2 blend shape and a round with a setback, each with a copy that differs in one value, saved from the Solid Edge user interface.
+
+### DR-1023. Swept, lofted and thin-wall operands
+
+**Question.** Where do swept, lofted and thin-wall features store their paths, sections, thicknesses and open faces?
+
+**Known.** Swept and lofted features store their first profile at the §5.3 position. Extruded, revolved, hole, round, chamfer, pattern and mirror features store their parameters as §6 to §8 state.
+
+**Need.** Documents of each of these feature kinds that differ in one parameter.
+
+### DR-1024. Circular pattern sense and mirrors of several seeds
+
+**Question.** Which sense does a circular pattern turn about its axis, and where does a mirror of more than one seed store its plane?
+
+**Known.** Every read circular pattern fills a full turn. Every read mirror has one seed and stores its plane at object offset 329 (§8.2).
+
+**Need.** A circular pattern of three instances 30 degrees apart, and a mirror of two features.
