@@ -650,7 +650,7 @@ impl<'a> ItemTypes<'a> {
 /// The feature of an unresolved item: its stream and record index, the
 /// stream length-prefixed. The item of an archive member takes the id the
 /// member states alone, qualified by the member's definition key.
-fn item_feature_id(stream: &str, record: u64) -> Result<FeatureId, CodecError> {
+pub(super) fn item_feature_id(stream: &str, record: u64) -> Result<FeatureId, CodecError> {
     let (key, stream) = member_scope(stream);
     let stream = IdentityKeyTail::percent_encode(&stream);
     let id = FeatureId::compose(

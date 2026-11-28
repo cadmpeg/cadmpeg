@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_core::{decode::DecodeContext, text::NonBlankString, CodecError};
 use cadmpeg_ir::design::dimension::Dimension;
-use cadmpeg_ir::design::feature::FeatureOperation;
+use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::dressup::{StandardSize, Thread, ThreadLength, ThreadSpec};
 use cadmpeg_ir::design::options::{Hand, NativeOption};
 use cadmpeg_ir::design::selection::{Anchor, Picks, SetSelection};
@@ -18,6 +18,7 @@ use crate::records::feature::thread::DesignThreadConstruction;
 
 const MILLIMETRES_PER_CENTIMETRE: f64 = 10.0;
 
+mod helix_hand;
 mod hole;
 
 pub(super) fn project(
@@ -40,6 +41,7 @@ pub(super) fn project(
     if legacy.is_empty() {
         return Ok(());
     }
+    let helices = helix_hand::paths(&ir.geometry.procedural_surfaces);
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Ok(());
     };
@@ -66,9 +68,17 @@ pub(super) fn project(
     }
     for legacy in legacy.values() {
         let Some(scope) = legacy.native_ref.as_deref().and_then(|id| scopes.get(id)) else {
+            losses.push(unprojected(
+                &legacy.id,
+                "its Thread scope is not in the native scope arena",
+            ));
             continue;
         };
         let Some(construction) = scope.thread_construction() else {
+            losses.push(unprojected(
+                &legacy.id,
+                "its scope has no admitted construction",
+            ));
             continue;
         };
         let LegacyOperation::CosmeticThread { face, extent, .. } =
@@ -100,7 +110,7 @@ pub(super) fn project(
                     .find(|feature| feature.id == owner.id)?;
                 let operation = hole::operation(
                     owner,
-                    spec(construction, extent.as_ref()),
+                    spec_with_geometric_hand(construction, extent.as_ref(), &helices),
                     options(construction),
                     losses,
                 )?;
@@ -114,26 +124,58 @@ pub(super) fn project(
             }
             continue;
         }
-        let Some(feature) = ir
-            .design
-            .features
-            .iter_mut()
-            .find(|feature| feature.id == legacy.id)
+        // A Thread item that the timeline projection could not pair with its
+        // v10 feature is keyed by its stream and scope record.
+        let item = crate::ids::native_stream(&scope.id).and_then(|stream| {
+            super::timeline::item_feature_id(stream, u64::from(scope.record_index)).ok()
+        });
+        let Some(feature) = thread_target(ir.design.features.iter_mut(), &legacy.id, item.as_ref())
         else {
+            losses.push(unprojected(&legacy.id, "its design feature is absent"));
             continue;
         };
         let Some(face) = selection(face) else {
+            losses.push(unprojected(&legacy.id, "its face selection is unresolved"));
             continue;
         };
         feature.definition.operation = FeatureOperation::Thread(Box::new(Thread {
             face,
             start: None,
-            spec: spec(construction, extent.as_ref()),
+            spec: spec_with_geometric_hand(construction, extent.as_ref(), &helices),
             native_options: options(construction),
             source_settings: BTreeMap::new(),
         }));
     }
     Ok(())
+}
+
+/// The design feature that a Thread projects into: the one the v10 feature
+/// names, else the unresolved Thread item of its scope record.
+fn thread_target<'a>(
+    features: impl Iterator<Item = &'a mut cadmpeg_ir::design::feature::Feature>,
+    legacy: &cadmpeg_ir::features::FeatureId,
+    item: Option<&cadmpeg_ir::features::FeatureId>,
+) -> Option<&'a mut cadmpeg_ir::design::feature::Feature> {
+    let mut features = features;
+    features.find(|feature| {
+        feature.id == *legacy
+            || (Some(&feature.id) == item
+                && matches!(
+                    feature.definition.operation,
+                    FeatureOperation::Unresolved {
+                        family: OperationFamily::Thread
+                    }
+                ))
+    })
+}
+
+fn unprojected(
+    feature: &cadmpeg_ir::features::FeatureId,
+    reason: &str,
+) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::F3dLossCode::ThreadV11Unprojected.note(format!(
+        "Thread {feature} keeps its native construction because {reason}."
+    ))
 }
 
 fn selection(face: &FaceSelection) -> Option<SetSelection> {
@@ -161,6 +203,20 @@ fn options(construction: &DesignThreadConstruction) -> cadmpeg_ir::design::optio
             )
         })
         .collect()
+}
+
+/// The Thread specification, with the hand of the helical faces when the
+/// stored construction does not state it.
+fn spec_with_geometric_hand(
+    construction: &DesignThreadConstruction,
+    extent: Option<&CosmeticThreadExtent>,
+    helices: &[helix_hand::HelicalPath],
+) -> ThreadSpec {
+    let mut projected = spec(construction, extent);
+    if projected.hand.is_none() {
+        projected.hand = helix_hand::hand(helices, construction);
+    }
+    projected
 }
 
 fn spec(

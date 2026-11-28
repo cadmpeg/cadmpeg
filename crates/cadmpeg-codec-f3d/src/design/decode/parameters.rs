@@ -1337,7 +1337,7 @@ pub(crate) fn decode_parameter_owners(
     if parameters
         .iter()
         .all(|parameter| parameter.owner_record_index().is_none())
-        && !has_pipe_type(scan)?
+        && !has_standalone_scalar_scope(scan)?
     {
         return Ok(DecodedParameterOwners::default());
     }
@@ -1392,14 +1392,13 @@ pub(crate) fn decode_parameter_owners(
         }
     }
     let mut out = Vec::new();
-    // Pipe scalar owners are canonical records of their scope; they are read
-    // from their registered type even when no parameter links to them.
+    // Read standalone scalar owners through their registered scope type.
     let mut emitted = HashMap::new();
     for (stream, (entry, records, _)) in &streams {
-        for owner in pipe_scalar_owners(scan, &entry.name, records)? {
+        for (owner, flagged) in standalone_scalar_owners(scan, &entry.name, records)? {
             let key = (stream.clone(), owner.record_index());
             if let std::collections::hash_map::Entry::Vacant(slot) = emitted.entry(key) {
-                slot.insert(out.len());
+                slot.insert((out.len(), flagged));
                 out.push(owner);
             }
         }
@@ -1418,9 +1417,14 @@ pub(crate) fn decode_parameter_owners(
         };
         let scope = native_stream(&parameter.id)
             .ok_or_else(|| malformed("has no Design stream identity"))?;
-        if let Some(ordinal) = emitted.get(&(scope.to_owned(), owner_index)).copied() {
+        if let Some((ordinal, flagged)) = emitted.get(&(scope.to_owned(), owner_index)).copied() {
             if out[ordinal].parameter_record_index() != parameter.record_index {
                 return Err(malformed("does not link back to its referencing parameter"));
+            }
+            if flagged {
+                if let Some((entry, _, _)) = streams.get(scope) {
+                    *trailer_flag_counts.entry(entry.name.clone()).or_default() += 1;
+                }
             }
             continue;
         }
@@ -1508,40 +1512,49 @@ pub(crate) fn decode_parameter_owners(
     })
 }
 
-/// Whether any Design `MetaStream` registers the `Pipe` type.
-fn has_pipe_type(scan: &ContainerScan) -> Result<bool, CodecError> {
+fn is_standalone_scalar_scope(data: &crate::records::entity_header::SegmentTypeData) -> bool {
+    crate::records::feature::path_features::pipe::is_pipe(data)
+        || super::scopes::parameter_scope::scan_kind(data.type_guid.as_str())
+            == Some(crate::records::feature::scope::DesignFeatureKind::Thread)
+}
+
+/// Whether a Design stream registers a scope with standalone scalar owners.
+fn has_standalone_scalar_scope(scan: &ContainerScan) -> Result<bool, CodecError> {
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        if super::meta::metadata_for_bulk_stream(scan, &entry.name)?.is_some_and(|meta| {
-            meta.types
-                .iter()
-                .any(crate::records::feature::path_features::pipe::is_pipe)
-        }) {
+        if super::meta::metadata_for_bulk_stream(scan, &entry.name)?
+            .is_some_and(|meta| meta.types.iter().any(is_standalone_scalar_scope))
+        {
             return Ok(true);
         }
     }
     Ok(false)
 }
 
-/// Scalar owners of uniquely registered `Pipe` scopes in one Design stream.
+/// Last local ordinal of a Thread scope's standalone scalar owner: the
+/// scope stores its offset and its length.
+const LAST_THREAD_OWNER_ORDINAL: u32 = 1;
+
+/// Scalar owners of uniquely registered Pipe and Thread scopes in one Design stream,
+/// each with its compact-trailer flag.
 ///
 /// An owner frame is admitted when its entity has one type registration, it
 /// parses as a 103- or 104-byte parameter owner, it is the only indexed frame
-/// with that extent, and its owning scope is a uniquely registered Pipe with
+/// with that extent, and its owning scope is uniquely registered with
 /// one primary frame.
-fn pipe_scalar_owners(
+fn standalone_scalar_owners(
     scan: &ContainerScan,
     entry_name: &str,
     records: &IndexedRecordOffsets,
-) -> Result<Vec<DesignParameterOwner>, CodecError> {
+) -> Result<Vec<(DesignParameterOwner, bool)>, CodecError> {
     use crate::records::feature::path_features::pipe;
     let Some(meta) = super::meta::metadata_for_bulk_stream(scan, entry_name)? else {
         return Ok(Vec::new());
     };
-    if !meta.types.iter().any(pipe::is_pipe) {
+    if !meta.types.iter().any(is_standalone_scalar_scope) {
         return Ok(Vec::new());
     }
     let bytes = scan.entry_bytes(entry_name)?;
@@ -1555,12 +1568,15 @@ fn pipe_scalar_owners(
         }
     }
     let unique = |id: u64| registrations.get(&id) == Some(&1);
-    let mut pipe_frames = HashMap::<u64, usize>::new();
+    // Primary-frame count of each standalone scalar scope, and whether it is a Thread.
+    let mut scope_frames = HashMap::<u64, (usize, bool)>::new();
     for frame in frames
         .iter()
-        .filter(|frame| pipe::is_pipe(frame.design_type) && unique(frame.entity_id))
+        .filter(|frame| is_standalone_scalar_scope(frame.design_type) && unique(frame.entity_id))
     {
-        *pipe_frames.entry(frame.entity_id).or_default() += 1;
+        let slot = scope_frames.entry(frame.entity_id).or_default();
+        slot.0 += 1;
+        slot.1 = !crate::records::feature::path_features::pipe::is_pipe(frame.design_type);
     }
     let mut out = Vec::new();
     for frame in frames
@@ -1573,8 +1589,11 @@ fn pipe_scalar_owners(
         else {
             continue;
         };
+        let Some(&(1, thread)) = scope_frames.get(&u64::from(parsed.scope_record_index)) else {
+            continue;
+        };
         if !matches!(parsed.frame_length, 103 | 104)
-            || pipe_frames.get(&u64::from(parsed.scope_record_index)) != Some(&1)
+            || (thread && parsed.local_ordinal > LAST_THREAD_OWNER_ORDINAL)
             || records
                 .frames(parsed.record_index)
                 .filter(|(start, end)| *start == frame.start && *end == frame.member_end)
@@ -1583,8 +1602,9 @@ fn pipe_scalar_owners(
         {
             continue;
         }
+        let flagged = parsed.trailer_flag;
         if let Some(owner) = parsed.into_record(entry_name, u64_from_index(frame.start)) {
-            out.push(owner);
+            out.push((owner, flagged));
         }
     }
     Ok(out)

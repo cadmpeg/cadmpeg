@@ -1147,16 +1147,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             },
         ),
     );
-    losses.extend(crate::history::thread_face::bind(
-        &mut model.features,
-        &crate::history::thread_face::Inputs {
-            scopes: &design.design_parameter_scopes,
-            topologies: &model.feature_input_topologies,
-            histories: &design.asm_histories,
-            faces: geometry.faces,
-            primary_brep: geometry.primary_brep,
-        },
-    ));
     losses.extend(crate::design::feature_project::shell_fallback::project(
         &mut model.features,
         &crate::design::feature_project::shell_fallback::Inputs {
@@ -1494,9 +1484,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &bound_outputs.placements,
         geometry.primary_brep,
     );
-    if matches!(geometry.path, DesignPath::Geometry) {
-        crate::history::discard_projection_caches(&mut design.asm_histories);
-    }
     let mut extrude_face_resolution = crate::design::face_resolve::ExtrudeFaceResolution {
         faces: geometry.faces,
         surfaces: geometry.surfaces,
@@ -1690,6 +1677,19 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &model.features,
         &mut model.feature_input_topologies,
     )?;
+    losses.extend(crate::history::thread_face::bind(
+        &mut model.features,
+        &crate::history::thread_face::Inputs {
+            scopes: &design.design_parameter_scopes,
+            topologies: &model.feature_input_topologies,
+            histories: &design.asm_histories,
+            faces: geometry.faces,
+            primary_brep: geometry.primary_brep,
+        },
+    ));
+    if matches!(geometry.path, DesignPath::Geometry) {
+        crate::history::discard_projection_caches(&mut design.asm_histories);
+    }
     losses.extend(
         crate::design::decode::operands::sketch_profiles::sketchless_profile_selection_losses(
             scan,
