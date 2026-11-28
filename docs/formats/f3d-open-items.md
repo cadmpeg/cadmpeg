@@ -56,9 +56,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** When a body has a material assignment that names one appearance and a body-override record that names a different appearance, which appearance does Fusion show on the body?
 
-**Known.** `f3d.md` §3.1 "The named-owner form uses" gives the visual tail of a body-presentation record. The appearance library id follows the visual token when an appearance is set on the body, and the token names that appearance, which the body shows. The physical-material library id follows the token when the body shows the appearance of its material. `docs/cadir-v11.md` open item 233 covers an appearance override on a root component or occurrence.
+**Known.** The material assignment of a body is its named-owner body-presentation record, `f3d.md` §3.1 "The named-owner form uses". When an appearance is set on the body, the appearance library id follows its visual token, and the token names that appearance, which the body shows. When the body shows the appearance of its material, the physical-material library id follows the token. A body-override record is a bare-owner body-presentation record of the same body, `f3d.md` §3.1 "The bare-owner form stores", whose visual token is followed by the identifier pair `08861000-1D69-CF2A-C082-CBD98E7E5D7F`, `005E1000-55CE-AFB6-81A1-36E3EF077C5F`. `docs/cadir-v11.md` open item 233 covers an appearance override on a root component or occurrence.
 
-**Need.** The edit that makes a body-override record name an appearance other than the appearance of the body's material assignment, and a save of that edit with the appearance that Fusion shows on the body.
+**Need.** The edit that makes Fusion store a bare-owner record for a body, and a save of that edit in which the visual tokens of the named-owner and bare-owner records of the body differ, with the appearance that Fusion shows on the body.
 
 **Note.** The decoder binds the override's appearance, replaces the binding of the material assignment, and charges `appearance.body-override-precedence-assumed`.
 
