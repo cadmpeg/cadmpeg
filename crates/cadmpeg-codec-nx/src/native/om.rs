@@ -2862,7 +2862,9 @@ fn parse_material_texture_catalog(
         }
         let ordinal = catalog.len();
         let source_offset = entry_offset
-            .checked_add(cadmpeg_core::decode::u64_from_index(node.range().start))
+            .checked_add(cadmpeg_core::decode::u64_from_index(
+                document.source_range(node.range()).start,
+            ))
             .ok_or_else(|| CodecError::malformed("NX material catalog source offset overflows"))?;
 
         catalog.push(MaterialTextureCatalogEntry {
@@ -3313,7 +3315,9 @@ pub(super) fn configurations(
         };
         let is_default = node.attribute("Default") == Some("YES");
         let source_offset = offset
-            .checked_add(cadmpeg_core::decode::u64_from_index(node.range().start))
+            .checked_add(cadmpeg_core::decode::u64_from_index(
+                document.source_range(node.range()).start,
+            ))
             .ok_or_else(|| CodecError::malformed("NX arrangement source offset overflows"))?;
         output.push(Configuration {
             id: format!("nx:arrangements-{entry_index}:configuration#{ordinal}"),
@@ -3461,7 +3465,9 @@ fn parse_part_attributes(
             return Ok(None);
         };
         let source_offset = entry_offset
-            .checked_add(cadmpeg_core::decode::u64_from_index(node.range().start))
+            .checked_add(cadmpeg_core::decode::u64_from_index(
+                document.source_range(node.range()).start,
+            ))
             .ok_or_else(|| CodecError::malformed("NX part attribute source offset overflows"))?;
         output.push(PartAttribute {
             id: format!("nx:part-attributes-{entry_index}:attribute#{ordinal}"),
