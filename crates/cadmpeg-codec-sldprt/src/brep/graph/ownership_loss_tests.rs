@@ -19,12 +19,21 @@ fn a_given_up_face_is_not_counted_again_by_the_ownership_note() {
     .unwrap();
     let mut out = out;
     assert!(out.faces.is_empty());
-    assert_eq!(out.losses.len(), 1);
+    // The shell holds no stated face and says so; it, its region and its
+    // body are stated, so the note counts none of them.
+    assert!(out.losses.is_empty(), "{:#?}", out.losses);
+    assert!(!out
+        .dropped
+        .iter()
+        .any(|dropped| matches!(dropped, super::DroppedRecord::With { .. })));
+    let [shell] = out.shells.as_slice() else {
+        panic!("one shell: {:#?}", out.dropped);
+    };
     assert_eq!(
-        out.losses[0].code.local_code(),
-        "topology.ownership-withheld"
+        shell.unstated,
+        Some(cadmpeg_ir::topology::Unstated::Members)
     );
-    assert_eq!(out.losses[0].message, "2 current typed ownership node(s) are withheld: 1 body node(s), 1 shell node(s), and 0 face node(s).");
+    assert_eq!((out.regions.len(), out.bodies.len()), (1, 1));
     let losses = out.take_losses().unwrap();
     assert_eq!(
         losses

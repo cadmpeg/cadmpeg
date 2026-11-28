@@ -1100,6 +1100,17 @@ fn topology_header_prefix_end(buf: &[u8], off: usize, tag: u8) -> Option<usize> 
 /// ends at `sense_end` (spec §4).
 fn face_front_refs_end(buf: &[u8], off: usize, sense_end: usize) -> Option<usize> {
     let p = body_start(buf, off, 0x0e)?;
+    face_front_tail(buf, p, sense_end).map(|(end, _)| end)
+}
+
+pub(super) fn face_front_refs(buf: &[u8], p: usize, sense_end: usize) -> Option<[u32; 3]> {
+    let (end, [_, _, next, previous, shell]) = face_front_tail(buf, p, sense_end)?;
+    buf.get(end)
+        .is_none_or(|next| *next == 0)
+        .then_some([next, previous, shell])
+}
+
+fn face_front_tail(buf: &[u8], p: usize, sense_end: usize) -> Option<(usize, [u32; 5])> {
     let (len, refs) = if sense_end == p + face_body::SURFACE_FRONT_REFS {
         (face_body::LEN, refs_be::<5>(buf, sense_end)?)
     } else if sense_end == p + face_delta::SURFACE_FRONT_REFS {
@@ -1109,7 +1120,7 @@ fn face_front_refs_end(buf: &[u8], off: usize, sense_end: usize) -> Option<usize
     };
     refs.iter()
         .all(|reference| *reference <= MAX_SHORT_POINTER_INDEX)
-        .then_some(p + len)
+        .then_some((p + len, refs))
 }
 
 /// Framing window for the stated text length of a string node in the scope
