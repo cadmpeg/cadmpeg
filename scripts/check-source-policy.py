@@ -235,8 +235,10 @@ COMMENT_BOUNDARY = re.compile(r"/\*|\*/")
 LINE_END = re.compile(r"[\r\n]")
 
 
-def rust_non_code_spans(text: str):
-    """Yield comment and literal spans, leaving lifetimes and labels intact."""
+@cached_analysis
+def rust_non_code_spans(text: str) -> tuple[tuple[int, int], ...]:
+    """Return comment and literal spans, leaving lifetimes and labels intact."""
+    spans = []
     index = 0
     while match := NON_CODE_START.search(text, index):
         start = match.start()
@@ -271,7 +273,8 @@ def rust_non_code_spans(text: str):
             if literal is None:
                 continue
             index = literal.end()
-        yield start, index
+        spans.append((start, index))
+    return tuple(spans)
 
 
 @cached_analysis
@@ -858,7 +861,7 @@ def codec_native_format(crate_root: Path) -> str | None:
     registry = crate_root / "src/dialect/registry_ids.rs"
     if not registry.is_file():
         return None
-    source = registry.read_text(encoding="utf-8")
+    source = source_text(registry)
     code, _ = production_source(source)
     for declaration in re.finditer(r"\bconst\s+FORMAT\s*:\s*&str\s*=", code):
         literal = re.match(r'\s*"([a-z0-9]+)"\s*;', source[declaration.end():])
@@ -1015,7 +1018,7 @@ def module_scopes(crate_root: Path) -> list[tuple[Path, tuple[str, ...], tuple[s
             return
         seen.add(path)
         modules.append((path, module, scope))
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+        lines = source_text(path).splitlines(keepends=True)
         body(path, lines, 0, len(lines), child_module_dir(path), module, scope)
 
     def body(
@@ -1584,7 +1587,7 @@ def scan_authoring_paths() -> list[Finding]:
         for path in sorted((ROOT / root).rglob("*")):
             if not path.is_file() or path.suffix not in AUTHORING_PATH_TEXT_SUFFIXES:
                 continue
-            text = path.read_text(encoding="utf-8", errors="replace")
+            text = source_text(path)
             if not AUTHORING_PATH.search(text):
                 continue
             for number, line in enumerate(text.splitlines(), start=1):
@@ -2359,14 +2362,21 @@ def worker_count() -> int:
     return os.cpu_count() or 1
 
 
-@analysis_session
-def check_source() -> list[Finding]:
-    sources = {
-        path.resolve(): path.read_text(encoding="utf-8", errors="replace")
+def read_sources() -> dict[Path, str]:
+    """Read each Rust source once for the shared analysis."""
+    return {
+        path.resolve(): path.read_text(encoding="utf-8")
         for path in sorted(ROOT.glob("crates/**/*.rs"))
     }
+
+
+@analysis_session
+def check_source(sources: dict[Path, str] | None = None, workers: int | None = None) -> list[Finding]:
+    if sources is None:
+        sources = read_sources()
     production = [path for path in sources if is_production_rs(path)]
-    workers = worker_count()
+    if workers is None:
+        workers = worker_count()
     tasks = [("patterns", tuple(production[index::workers * 2])) for index in range(workers * 2)]
     tasks += [(name, ()) for name in SOURCE_SCANS]
     global _TASK_SOURCES
@@ -2395,6 +2405,14 @@ SOURCE_SCANS = {
     "json_writes": lambda sources: scan_json_writes(sources),
 }
 _TASK_SOURCES: dict[Path, str] = {}
+
+
+def source_text(path: Path) -> str:
+    """Read a source already loaded by the active scan, or read it directly."""
+    source = _TASK_SOURCES.get(path.resolve())
+    if source is not None:
+        return source
+    return path.read_text(encoding="utf-8", errors="replace")
 
 
 def run_scan_task(task: tuple[str, tuple[Path, ...]]) -> list[Finding]:

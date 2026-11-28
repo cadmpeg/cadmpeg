@@ -12,12 +12,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = Path(__file__).with_name("check-source-policy.py")
-SPEC = importlib.util.spec_from_file_location("panic_source_policy", SCRIPT)
-if SPEC is None or SPEC.loader is None:
-    raise SystemExit(f"cannot load {SCRIPT}")
-SOURCE_POLICY = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = SOURCE_POLICY
-SPEC.loader.exec_module(SOURCE_POLICY)
+SOURCE_POLICY = sys.modules.get("shared_rust_source_policy")
+if SOURCE_POLICY is None:
+    SPEC = importlib.util.spec_from_file_location("panic_source_policy", SCRIPT)
+    if SPEC is None or SPEC.loader is None:
+        raise SystemExit(f"cannot load {SCRIPT}")
+    SOURCE_POLICY = importlib.util.module_from_spec(SPEC)
+    sys.modules[SPEC.name] = SOURCE_POLICY
+    SPEC.loader.exec_module(SOURCE_POLICY)
 
 PANIC_MACRO = re.compile(r"(?<![\w:])(?:panic|unreachable)\s*!")
 CONST_ITEM = re.compile(r"(?<![\w:])const\s+(?:[A-Za-z_]\w*|_)\s*:")
@@ -115,7 +117,7 @@ def declared_modules(path: Path, source: str) -> list[tuple[Path, bool]]:
     return children
 
 
-def production_files() -> tuple[set[Path], set[Path]]:
+def production_files(sources: dict[Path, str] | None = None) -> tuple[set[Path], set[Path]]:
     """Files the walk reaches outside a test module, and the ones it gates."""
     kept: set[Path] = set()
     gated: set[Path] = set()
@@ -125,7 +127,9 @@ def production_files() -> tuple[set[Path], set[Path]]:
         if path in (gated if in_test else kept):
             continue
         (gated if in_test else kept).add(path)
-        source = path.read_text(encoding="utf-8")
+        source = sources.get(path) if sources is not None else None
+        if source is None:
+            source = path.read_text(encoding="utf-8")
         for child, child_gated in declared_modules(path, source):
             pending.append((child, in_test or child_gated))
     return kept, gated - kept
@@ -225,8 +229,8 @@ def test_only_reason(relative: str) -> str | None:
 
 
 @SOURCE_POLICY.analysis_session
-def check_panic_macros() -> int:
-    kept, gated = production_files()
+def panic_findings(sources: dict[Path, str] | None = None) -> list[str]:
+    kept, gated = production_files(sources)
     findings = []
     for path in scope():
         resolved = path.resolve()
@@ -235,10 +239,19 @@ def check_panic_macros() -> int:
         relative = path.relative_to(ROOT).as_posix()
         if test_only_reason(relative) is not None:
             continue
-        code, _ = SOURCE_POLICY.production_source(path.read_text(encoding="utf-8"))
+        source = sources.get(resolved) if sources is not None else None
+        if source is None:
+            source = path.read_text(encoding="utf-8")
+        code, _ = SOURCE_POLICY.production_source(source)
         for offset in panic_macro_sites(code):
             line = code.count("\n", 0, offset) + 1
             findings.append(f"{relative}:{line}: runtime panic macro")
+    return findings
+
+
+@SOURCE_POLICY.analysis_session
+def check_panic_macros() -> int:
+    findings = panic_findings()
     for finding in findings:
         print(finding)
     if not findings:
