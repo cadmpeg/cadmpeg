@@ -653,6 +653,10 @@ fn accounting_omits_disabled_extrusion_controls_and_charges_active_second_offset
         });
         let result = decode(&bytes);
         assert_eq!(design_operation(result.ir(), "Plate")["kind"], "extrude");
+        assert_eq!(
+            design_operation(result.ir(), "Plate")["value"]["span"].is_null(),
+            offset
+        );
         assert!(!parameter_loss(&result, "hasExtrudeDirection", "Plate"));
         assert_eq!(
             parameter_loss(&result, "hasSecondDirectionOffset", "Plate"),
@@ -664,6 +668,64 @@ fn accounting_omits_disabled_extrusion_controls_and_charges_active_second_offset
         );
         validate(result);
     }
+}
+
+#[test]
+fn active_direction_and_next_offset_are_not_stated_as_default_values() {
+    for control in ["direction", "offset"] {
+        let bytes = part_studio("plate-fillet", |document| {
+            let extrude = &mut document["features"][1];
+            if control == "direction" {
+                rows(extrude).extend([
+                    json!({"parameterId":"hasExtrudeDirection","value":true}),
+                    json!({"parameterId":"extrudeDirection","queries":[{"deterministicIds":["edge"]}]}),
+                ]);
+            } else {
+                parameter(extrude, "endBound")["value"] = json!("UP_TO_NEXT");
+                rows(extrude).extend([
+                    json!({"parameterId":"hasOffset","value":true}),
+                    json!({"parameterId":"offsetDistance","expression":"1 mm"}),
+                ]);
+            }
+        });
+        let result = decode(&bytes);
+        let operation = design_operation(result.ir(), "Plate");
+        let field = if control == "direction" {
+            "direction"
+        } else {
+            "span"
+        };
+        assert!(operation["value"][field].is_null());
+        let key = if control == "direction" {
+            "hasExtrudeDirection"
+        } else {
+            "hasOffset"
+        };
+        assert!(parameter_loss(&result, key, "Plate"));
+        validate(result);
+    }
+}
+
+#[test]
+fn shallow_part_studio_reports_omitted_design() {
+    use cadmpeg_core::decode::DecodeDepth;
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let result = crate::test_support::codec()
+        .decode(
+            &mut std::io::Cursor::new(fixture("plate-fillet")),
+            &DecodeOptions {
+                depth: DecodeDepth::Geometry,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    assert!(result.ir().design.features.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "depth.not-delivered"));
+    validate(result);
 }
 
 #[test]
