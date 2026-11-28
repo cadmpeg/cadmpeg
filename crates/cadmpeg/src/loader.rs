@@ -287,6 +287,69 @@ mod tests {
         assert_eq!(loss.code, cadmpeg_ir::source_fidelity::sidecar_stale_kind());
         assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
     }
+
+    #[test]
+    fn matching_sidecar_with_future_members_keeps_retained_bytes() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("part.cadir.json");
+        let text = CadIr::empty().to_canonical_json().unwrap();
+        std::fs::write(&path, &text).unwrap();
+        let report: DecodeReport = json::from_value(cadmpeg_core::json!({
+            "identity": {"kind": "unclassified", "format": "test"},
+            "transfer": {"kind": "full", "geometry_transferred": false},
+            "coverage": {}, "losses": [], "notes": [], "transfer_ledger": {"entries": []}
+        }))
+        .unwrap();
+        let mut fidelity =
+            SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(b"source"));
+        let id = cadmpeg_ir::ids::UnknownId::try_from("test:source:unknown#record").unwrap();
+        fidelity
+            .insert_retained_record(
+                id,
+                cadmpeg_ir::source_fidelity::RetainedSourceRecord::whole(
+                    "source",
+                    b"retained".to_vec(),
+                ),
+            )
+            .unwrap();
+        let sidecar = DecodeSidecar::bind_sha256(
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(text.as_bytes()),
+            report,
+            fidelity,
+        );
+        let mut value = json::to_value(sidecar).unwrap();
+        value["future_member"] = cadmpeg_core::json!(true);
+        value["fidelity"]["future_member"] = cadmpeg_core::json!(true);
+        value["report"]["losses"] = cadmpeg_core::json!([{
+            "code": {"kind": "future_loss", "value": {}},
+            "severity": "warning", "message": "future loss"
+        }]);
+        std::fs::write(
+            cadmpeg_ir::decode_sidecar_path(&path).unwrap(),
+            value.to_string(),
+        )
+        .unwrap();
+
+        let outcome = load_artifact(
+            &InputCatalog::with_builtins(),
+            &path,
+            &DecodeOptions::default(),
+            Some(ForcedInput::Cadir),
+        )
+        .unwrap();
+        let fidelity = outcome.fidelity().expect("matching sidecar retention");
+        assert_eq!(
+            fidelity
+                .retained_record("test:source:unknown#record")
+                .unwrap()
+                .data(),
+            Some(b"retained".as_slice())
+        );
+        assert!(
+            !outcome.read_report.is_empty(),
+            "ignored data must be reported"
+        );
+    }
     #[test]
     fn a_record_the_read_gives_up_takes_its_sidecar_annotations() {
         let directory = tempfile::tempdir().unwrap();
