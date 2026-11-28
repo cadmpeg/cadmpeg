@@ -238,7 +238,12 @@ fn an_unreadable_manifest_reference_extension_is_given_up_in_the_manifest() {
             .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
             .expect("an unreadable reference extension remains a reported decode"),
     );
-    crate::test_support::charged_part(decoded.ir(), &decoded.report().losses, head, "");
+    crate::test_support::charged_part(
+        decoded.ir(),
+        &decoded.report().losses,
+        (cadmpeg_ir::unknown::part::Cause::Unreadable, head),
+        "",
+    );
     assert!(
         !decoded
             .report()

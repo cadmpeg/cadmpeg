@@ -268,7 +268,7 @@ fn cam_obeys_requested_content_scope() {
 
 #[test]
 fn cam_native_archive_replay_preserves_source_bytes() {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
     let part = with_cam(f3d_with_smbh(&synthetic_geometry_smbh()), MEMBER, XML);
     let result = F3dCodec
         .decode(&mut Cursor::new(&part), &DecodeOptions::default())
@@ -276,10 +276,7 @@ fn cam_native_archive_replay_preserves_source_bytes() {
     let (ir, _, fidelity) = result.into_parts();
     let mut written = Vec::new();
     F3dCodec
-        .plan(
-            EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(&ir, Some(&fidelity)))
         .unwrap()
         .write_to(&mut written)
         .unwrap();

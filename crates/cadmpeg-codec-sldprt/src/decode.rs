@@ -32,11 +32,12 @@ use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{AppearanceId, ProductDefinitionId, UnknownId};
 
 use crate::loss::SldprtLossCode;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 mod digest_partition;
+pub(crate) mod replayed_states;
 mod retention;
 pub(crate) mod retired_states;
 
@@ -2740,7 +2741,6 @@ fn merge_local_bodies(
         u64_from_index(streams.len()),
         "admit SLDPRT imported body streams",
     )?;
-    let mut unreadable = 0;
     for (site, stream) in &streams {
         match ctx.run_part(|| {
             decode_bodies(
@@ -2755,7 +2755,6 @@ fn merge_local_bodies(
                 merge_brep(decoded, bodies)?;
             }
             Err(error) => {
-                unreadable += 1;
                 let part = Part::at(
                     "sldprt",
                     IMPORTED_BODY_PART,
@@ -2766,17 +2765,14 @@ fn merge_local_bodies(
                 .named(stream.header.description.as_str())
                 .in_stream(stream.source_stream().clone())
                 .digest_only();
+                let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
                 let error = CodecError::malformed(format_args!(
-                    "{}: {error}",
-                    SldprtLossCode::GeometryImportedBodiesNotTransferred.kind()
+                    "an imported body stream does not decode: {error}"
                 ));
-                given_up.push(ctx.give_up_part(part, error)?);
+                given_up.push(ctx.give_up_part(part, cause, error)?);
             }
         }
     }
-    decoded
-        .losses
-        .extend(imported_bodies_loss(unreadable, streams.len()));
     Ok(())
 }
 
@@ -2858,25 +2854,13 @@ fn give_up_unbuilt_site(
     if records > 0 {
         given_up.push(ctx.give_up_part(
             part,
+            Cause::Undecoded,
             CodecError::malformed(format_args!(
-                "{}: {records} Parasolid entity record(s) frame and build no geometry",
-                SldprtLossCode::GeometryParasolidNotTransferred.kind()
+                "{records} Parasolid entity record(s) frame and state no content"
             )),
         )?);
     }
     Ok(())
-}
-
-/// The loss for `unreadable` of `total` imported body streams.
-fn imported_bodies_loss(
-    unreadable: usize,
-    total: usize,
-) -> Option<cadmpeg_ir::report::loss::LossNote> {
-    (unreadable > 0).then(|| {
-        SldprtLossCode::GeometryImportedBodiesNotTransferred.note(format!(
-            "{unreadable} of {total} imported body stream(s) do not decode."
-        ))
-    })
 }
 
 /// Decode the available Parasolid body streams into one B-rep. Returns
@@ -2907,7 +2891,8 @@ fn try_decode_brep(
         match ctx.run_part(|| decode_bodies(ctx, &bodies, streams[first].source_stream()))? {
             Ok(decoded) => decoded_sites.push((site.clone(), first, decoded)),
             Err(error) => {
-                given_up.push(ctx.give_up_part(site_part(streams, indices), error)?);
+                let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
+                given_up.push(ctx.give_up_part(site_part(streams, indices), cause, error)?);
             }
         }
     }
@@ -3365,7 +3350,6 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.unresolved_topology_fins += source.stats.unresolved_topology_fins;
     target.stats.unresolved_topology_vertices += source.stats.unresolved_topology_vertices;
     target.stats.withheld_fin_partners += source.stats.withheld_fin_partners;
-    target.stats.withheld_fin_links += source.stats.withheld_fin_links;
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
     let (into, from) = (&mut target.stats.derived_kind, source.stats.derived_kind);
@@ -3841,9 +3825,13 @@ fn build_geometry_ir(
     retention.give_up(history_given_up);
     let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps, walked_patterns) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let rollback = part
-        .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
-        .transpose()?;
+    let stored_marks = if part {
+        crate::rollback::stored_marks(ctx, scan, &lanes, false)?
+    } else {
+        crate::rollback::StoredMarks::new()
+    };
+    let rollback =
+        part.then(|| crate::rollback::read(scan, &mark_owners, &stored_marks, &mut pmi_losses));
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
@@ -4706,6 +4694,89 @@ fn build_geometry_ir(
         annotation_builder.field_exactness(&id, "of", Exactness::Derived)?;
     }
     let mut annotations = annotation_builder.build();
+    crate::metadata::mass_properties::append(ctx, &mut ir, &mut pmi_losses)?;
+    let retained = crate::history::extrude_direction::retain_contradicted_directions(&mut ir);
+    for extrusion in &retained.reversals {
+        pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalContradicted.note(format!(
+            "Extrusion {extrusion} travels along the profile normal, as its solid shows, against the reversal flag its record states."
+        )));
+    }
+    if !retained.assumed.is_empty() {
+        pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalAssumed.note(format!(
+            "{} extrusion(s) travel against the profile normal on the reversal flag their records state alone, as the solid neither holds nor contradicts that travel: {}. Assumed: the flag gives the side of a one-direction extrusion that adds material.",
+            retained.assumed.len(),
+            retained.assumed.join(", ")
+        )));
+    }
+    for states in &retained.configuration_reversals {
+        let configuration = &states.configuration;
+        let witness = if states.active {
+            "as the solid of that configuration shows"
+        } else {
+            "as the active solid contradicts that flag for the same extrusion"
+        };
+        for extrusion in &states.extrusions {
+            pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalContradicted.note(format!(
+                "Extrusion {extrusion} travels along the profile normal in configuration {configuration}, against the reversal flag its record states there, {witness}."
+            )));
+        }
+    }
+    for states in &retained.configuration_assumed {
+        let witness = if states.active {
+            "as no test of the active solid holds or contradicts that travel"
+        } else {
+            "as the decoder tests no solid of that configuration for that travel"
+        };
+        pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalAssumed.note(format!(
+            "{} extrusion(s) travel against the profile normal in configuration {} on the reversal flag their records state there alone, {witness}: {}. Assumed: the flag gives the side of a one-direction extrusion that adds material.",
+            states.extrusions.len(),
+            states.configuration,
+            states.extrusions.join(", ")
+        )));
+    }
+    if retained.changed {
+        stamp_feature_baseline(ctx, &mut ir)?;
+    }
+    crate::resolved_features::projections::note_blend_edge_generators(
+        &ir.model.features,
+        &native.feature_input_lanes,
+        &native.feature_histories,
+        &crate::resolved_features::side_generators::SideGenerators::derive(
+            &ir.model,
+            &native.feature_histories,
+            &native.feature_input_lanes,
+        ),
+        &mut pmi_losses,
+    );
+    let projection = if let Some(rollback) = rollback {
+        project_design(
+            ctx,
+            &mut ir,
+            crate::design_v11::Part {
+                histories: &native.feature_histories,
+                lanes: &native.feature_input_lanes,
+                configuration_maps: &configuration_maps,
+                bodies: current_bodies,
+                persistent: crate::design_v11::Persistent {
+                    faces: &brep.native_face_identities,
+                    bodies: &brep.native_body_identities,
+                },
+                length: length_unit,
+                equations: equation_managers,
+                length_places,
+                rollback,
+                outside_profile: &outside_profile,
+                given_up_configurations: &given_up_configurations,
+                scan: Some(&*scan),
+                marks: &stored_marks,
+            },
+            &mut pmi_losses,
+        )?
+    } else {
+        crate::design_v11::Projection::default()
+    };
+    drop(stored_marks);
+
     for source_block in &mut scan.blocks {
         let member = container::Section::Block(source_block);
         let id = member.native_id();
@@ -4765,86 +4836,15 @@ fn build_geometry_ir(
         };
         source.links_mut().extend(links);
     }
-    crate::metadata::mass_properties::append(ctx, &mut ir, &mut pmi_losses)?;
-    let retained = crate::history::extrude_direction::retain_contradicted_directions(&mut ir);
-    for extrusion in &retained.reversals {
-        pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalContradicted.note(format!(
-            "Extrusion {extrusion} travels along the profile normal, as its solid shows, against the reversal flag its record states."
-        )));
-    }
-    if !retained.assumed.is_empty() {
-        pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalAssumed.note(format!(
-            "{} extrusion(s) travel against the profile normal on the reversal flag their records state alone, as the solid neither holds nor contradicts that travel: {}. Assumed: the flag gives the side of a one-direction extrusion that adds material.",
-            retained.assumed.len(),
-            retained.assumed.join(", ")
-        )));
-    }
-    for states in &retained.configuration_reversals {
-        let configuration = &states.configuration;
-        let witness = if states.active {
-            "as the solid of that configuration shows"
-        } else {
-            "as the active solid contradicts that flag for the same extrusion"
-        };
-        for extrusion in &states.extrusions {
-            pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalContradicted.note(format!(
-                "Extrusion {extrusion} travels along the profile normal in configuration {configuration}, against the reversal flag its record states there, {witness}."
-            )));
-        }
-    }
-    for states in &retained.configuration_assumed {
-        let witness = if states.active {
-            "as no test of the active solid holds or contradicts that travel"
-        } else {
-            "as the decoder tests no solid of that configuration for that travel"
-        };
-        pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalAssumed.note(format!(
-            "{} extrusion(s) travel against the profile normal in configuration {} on the reversal flag their records state there alone, {witness}: {}. Assumed: the flag gives the side of a one-direction extrusion that adds material.",
-            states.extrusions.len(),
-            states.configuration,
-            states.extrusions.join(", ")
-        )));
-    }
-    if retained.changed {
-        stamp_feature_baseline(ctx, &mut ir)?;
-    }
-    crate::resolved_features::projections::note_blend_edge_generators(
-        &ir.model.features,
-        &native.feature_input_lanes,
-        &native.feature_histories,
-        &crate::resolved_features::side_generators::SideGenerators::derive(
-            &ir.model,
-            &native.feature_histories,
-            &native.feature_input_lanes,
-        ),
-        &mut pmi_losses,
-    );
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
-    if let Some(rollback) = rollback {
-        project_design(
-            ctx,
-            &mut ir,
-            &mut annotations,
-            &mut unknowns,
-            crate::design_v11::Part {
-                histories: &native.feature_histories,
-                lanes: &native.feature_input_lanes,
-                configuration_maps: &configuration_maps,
-                bodies: current_bodies,
-                persistent: crate::design_v11::Persistent {
-                    faces: &brep.native_face_identities,
-                    bodies: &brep.native_body_identities,
-                },
-                length: length_unit,
-                equations: equation_managers,
-                length_places,
-                rollback,
-                outside_profile: &outside_profile,
-                given_up_configurations: &given_up_configurations,
-            },
-            &mut pmi_losses,
-        )?;
-    }
+    finish_design_projection(
+        ctx,
+        &mut ir,
+        &mut annotations,
+        &mut unknowns,
+        projection,
+        &mut pmi_losses,
+    )?;
     stamp_configuration_baseline(ctx, &mut ir)?;
     snapshot_active_configuration(&mut ir);
     pmi_losses.extend(plane_bindings.note(&ir.model.sketches));
@@ -4874,23 +4874,32 @@ fn build_geometry_ir(
 fn project_design(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    annotations: &mut Annotations,
-    unknowns: &mut [UnknownRecord],
     part: crate::design_v11::Part<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(), CodecError> {
-    let mut retired = std::collections::BTreeMap::new();
+) -> Result<crate::design_v11::Projection, CodecError> {
+    let mut projection = crate::design_v11::Projection::default();
     cadmpeg_ir::design::projection::project_layer(ctx, "sldprt", ir, losses, |ir, losses| {
-        let projection = crate::design_v11::project(ctx, ir, part, losses)?;
-        ctx.charge_entities(
-            u64_from_index(projection.added),
-            "admit SLDPRT design records",
-        )?;
-        retired = projection.retired;
+        let stated = crate::design_v11::project(ctx, ir, part, losses)?;
+        ctx.charge_entities(u64_from_index(stated.added), "admit SLDPRT design records")?;
+        projection = stated;
         Ok(())
     })?;
-    retired_states::retire(ir, annotations, unknowns, &retired, losses);
-    if retired.is_empty() {
+    Ok(projection)
+}
+
+fn finish_design_projection(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    annotations: &mut Annotations,
+    unknowns: &mut [UnknownRecord],
+    projection: crate::design_v11::Projection,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    retired_states::retire(ir, annotations, unknowns, &projection.retired, losses);
+    annotations
+        .append(projection.annotations)
+        .map_err(CodecError::from)?;
+    if projection.retired.is_empty() {
         return Ok(());
     }
     stamp_feature_baseline(ctx, ir)
@@ -5192,12 +5201,6 @@ fn append_topology_record_losses(
             stats.withheld_fin_partners,
         )));
     }
-    if stats.withheld_fin_links > 0 {
-        losses.push(SldprtLossCode::TopologyFinLinkUnresolved.note(format!(
-            "{} ring(s) were withheld because a FIN forward link names no reciprocal same-loop backward link; the ring is not walked on doubt.",
-            stats.withheld_fin_links,
-        )));
-    }
 }
 
 fn build_geometry_report(
@@ -5304,12 +5307,6 @@ pub(crate) fn brep_losses(
         losses.push(SldprtLossCode::AppearanceFaceColorUnresolved.note(format!(
             "{} face-color binding(s) were withheld because the current face and link records do not select one consistent framed color record.",
             s.unresolved_face_colors
-        )));
-    }
-    if s.unclaimed_faces > 0 {
-        losses.push(SldprtLossCode::TopologyFaceUnclaimed.note(format!(
-            "{} canonical face(s) are not claimed by an explicit body relation; the decoder withholds them rather than inventing body membership.",
-            s.unclaimed_faces
         )));
     }
     if s.synthetic_body_grouping {
@@ -5473,9 +5470,13 @@ fn build_metadata_ir(
     retention.give_up(history_given_up);
     let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps, walked_patterns) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let rollback = part
-        .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
-        .transpose()?;
+    let stored_marks = if part {
+        crate::rollback::stored_marks(ctx, scan, &lanes, true)?
+    } else {
+        crate::rollback::StoredMarks::new()
+    };
+    let rollback =
+        part.then(|| crate::rollback::read(scan, &mark_owners, &stored_marks, &mut pmi_losses));
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
@@ -5976,11 +5977,9 @@ fn build_metadata_ir(
             .collect();
         let given_up_configurations =
             configurations_given_up(&ir, scan, &partitions_given_up(&scan.given_up));
-        project_design(
+        let projection = project_design(
             ctx,
             &mut ir,
-            &mut annotations,
-            &mut unknowns,
             crate::design_v11::Part {
                 histories: &native.feature_histories,
                 lanes: &native.feature_input_lanes,
@@ -5996,7 +5995,17 @@ fn build_metadata_ir(
                 rollback,
                 outside_profile: &outside_profile,
                 given_up_configurations: &given_up_configurations,
+                scan: Some(scan),
+                marks: &stored_marks,
             },
+            &mut pmi_losses,
+        )?;
+        finish_design_projection(
+            ctx,
+            &mut ir,
+            &mut annotations,
+            &mut unknowns,
+            projection,
             &mut pmi_losses,
         )?;
     }
@@ -7189,30 +7198,40 @@ fn build_container_report(
             .count();
     let payload_sources = scan.blocks.len() + scan.compound_streams.len();
 
-    let mut losses = vec![
-        SldprtLossCode::GeometryParasolidNotTransferred.note(format!(
+    // A given-up Parasolid site, or a given-up section that the choice of
+    // the active partition needs, states the lost geometry in its give-up.
+    let geometry_given_up = scan
+        .given_up
+        .iter()
+        .any(|part| part.kind() == PARASOLID_SITE_PART)
+        || !container::unread_active_partition_sections(scan).is_empty();
+    let mut losses = Vec::new();
+    if !geometry_given_up {
+        losses.push(
+            SldprtLossCode::GeometryParasolidNotTransferred.note(format!(
             "Parasolid B-rep geometry was not transferred: no partition/deltas stream resolved \
              into a topology graph. {payload_sources} payload source(s) were enumerated, \
              {parasolid_sources} carrying Parasolid streams."
         )),
-        SldprtLossCode::TopologyGraphNotTransferred.note(
+        );
+        losses.push(SldprtLossCode::TopologyGraphNotTransferred.note(
             "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built \
              for this file."
                 .to_string(),
-        ),
-        if display_meshes > 0 {
-            SldprtLossCode::MaterialMetadataNotTransferred.note(format!(
-                "Body-bound appearances were not transferred because no body graph exists; \
+        ));
+    }
+    losses.push(if display_meshes > 0 {
+        SldprtLossCode::MaterialMetadataNotTransferred.note(format!(
+            "Body-bound appearances were not transferred because no body graph exists; \
                  {display_meshes} DisplayLists mesh(es) retained without owners."
-            ))
-        } else {
-            SldprtLossCode::MaterialMetadataNotTransferred.note(
-                "Body-bound appearances and tessellation were not transferred because no body graph \
+        ))
+    } else {
+        SldprtLossCode::MaterialMetadataNotTransferred.note(
+            "Body-bound appearances and tessellation were not transferred because no body graph \
                  exists."
-                    .to_string(),
-            )
-        },
-    ];
+                .to_string(),
+        )
+    });
 
     // A given-up part that holds or can hold a Parasolid stream carries its
     // own loss; the container is not stated to lack one.

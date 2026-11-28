@@ -93,7 +93,7 @@ fn custom_feature_stop_uses_its_id_when_the_name_is_absent_or_blank() {
 }
 
 #[test]
-fn suppressed_custom_features_do_not_report_a_frozen_shape_gap() {
+fn a_suppressed_custom_feature_charges_the_loss_an_active_one_charges() {
     for key in ["suppressed", "parentSuppressed"] {
         let bytes = changed(&fixture("unsupported"), |path, value| {
             if path.ends_with("features.json") {
@@ -101,10 +101,14 @@ fn suppressed_custom_features_do_not_report_a_frozen_shape_gap() {
             }
         });
         let (_, report) = read(&bytes).unwrap();
-        assert!(!report.losses().iter().any(|l| l
-            .code
-            .as_deref()
-            .is_some_and(|code| code.starts_with("onshape/"))));
+        assert!(
+            report.losses().iter().any(|l| l
+                .detail
+                .contains("custom FeatureScript feature Custom feature")
+                && l.detail.ends_with("; subject: Custom feature")),
+            "{key}: {:?}",
+            report.losses()
+        );
     }
 }
 

@@ -33,7 +33,12 @@ fn rse_compression_methods_reach_records_and_valid_sphere_geometry() {
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
             .expect("context");
         let compound = CompoundSnapshot::new(&ctx, root).expect("compound");
-        let inventory = RseInventory::build(&ctx, &compound).expect("inventory");
+        let inventory = RseInventory::build(
+            &ctx,
+            &compound,
+            &mut crate::container::streams::Streams::default(),
+        )
+        .expect("inventory");
         assert_eq!(inventory.segments.len(), 1);
         let SegmentBulkState::Framed(bulk) = &inventory.segments[0].bulk else {
             panic!("bulk must expand for {methods:?}")

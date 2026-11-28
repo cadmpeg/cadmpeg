@@ -128,12 +128,17 @@ fn finite(prim: &Prim<'_>, name: &str, issues: &mut Issues) -> Option<f64> {
         .filter(|value| value.is_finite())
 }
 
-/// A limit bound scalar, keeping finite and infinite values for lock detection
-/// and reporting `NaN` as malformed.
-fn bound(prim: &Prim<'_>, name: &str, issues: &mut Issues) -> Option<f64> {
+/// A limit bound scalar, keeping finite and infinite values for lock
+/// detection. A `NaN` bound joins `unread`.
+fn bound(
+    prim: &Prim<'_>,
+    name: &str,
+    issues: &mut Issues,
+    unread: &mut Vec<String>,
+) -> Option<f64> {
     let value = vector(prim, name, 1, issues)?.first().copied()?;
     if value.is_nan() {
-        issues.malformed(prim, name, "expected a numeric bound, not NaN");
+        unread.push(format!("{name} (NaN)"));
         return None;
     }
     Some(value)
@@ -174,14 +179,25 @@ pub(crate) fn joint(prim: &Prim<'_>, kind: JointType, issues: &mut Issues) -> Jo
         });
     }
     let mut limits = Vec::new();
+    let mut unread = Vec::new();
     for schema in prim.api_schemas() {
         let Some(instance) = schema.strip_prefix("PhysicsLimitAPI:") else {
             continue;
         };
         limits.push(Limit {
             instance: instance.to_owned(),
-            low: bound(prim, &format!("limit:{instance}:physics:low"), issues),
-            high: bound(prim, &format!("limit:{instance}:physics:high"), issues),
+            low: bound(
+                prim,
+                &format!("limit:{instance}:physics:low"),
+                issues,
+                &mut unread,
+            ),
+            high: bound(
+                prim,
+                &format!("limit:{instance}:physics:high"),
+                issues,
+                &mut unread,
+            ),
         });
     }
     let instances: Vec<String> = drives.iter().map(|drive| drive.instance.clone()).collect();
@@ -193,7 +209,7 @@ pub(crate) fn joint(prim: &Prim<'_>, kind: JointType, issues: &mut Issues) -> Jo
             crate::schema::physx::find(base, instance, name).is_some()
         })
     };
-    let dropped = prim
+    let mut dropped: Vec<String> = prim
         .property_names()
         .into_iter()
         .filter(|name| {
@@ -209,6 +225,7 @@ pub(crate) fn joint(prim: &Prim<'_>, kind: JointType, issues: &mut Issues) -> Jo
         })
         .map(str::to_owned)
         .collect();
+    dropped.append(&mut unread);
     JointData {
         kind,
         bodies: [

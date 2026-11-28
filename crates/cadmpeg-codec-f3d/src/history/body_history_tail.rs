@@ -14,9 +14,9 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
 
+use super::history_states::PlacedState;
 use crate::history_records::{AsmDeltaState, AsmHistory};
 use crate::loss::F3dLossCode;
-use crate::records::feature::scope::DesignParameterScope;
 
 const MAX_HISTORY_TAIL_WORK: usize = 1 << 21;
 
@@ -47,22 +47,22 @@ pub(crate) struct BodyHistoryTails {
 
 pub(crate) fn collect(
     features: &[Feature],
-    scopes: &[DesignParameterScope],
     histories: &[AsmHistory],
-    scope_histories: &HashMap<String, String>,
+    placements: &[Option<PlacedState>],
     primary_brep: Option<&str>,
 ) -> BodyHistoryTails {
-    let mut latest = BTreeMap::<&BodyId, &Feature>::new();
-    for feature in features
+    let mut latest = BTreeMap::<&BodyId, (usize, &Feature)>::new();
+    for (index, feature) in features
         .iter()
-        .filter(|feature| feature.suppressed != Some(true))
+        .enumerate()
+        .filter(|(_, feature)| feature.suppressed != Some(true))
     {
         for body in feature.evaluation.outputs() {
             if latest
                 .get(body)
-                .is_none_or(|previous| previous.ordinal < feature.ordinal)
+                .is_none_or(|(_, previous)| previous.ordinal < feature.ordinal)
             {
-                latest.insert(body, feature);
+                latest.insert(body, (index, feature));
             }
         }
     }
@@ -70,13 +70,20 @@ pub(crate) fn collect(
     let mut unread = Vec::new();
     let mut state_maps = HashMap::new();
     let mut touch_cache = HashMap::new();
-    for (body, feature) in latest {
-        let Some(history) = super::history_bodies::output_history(
+    for (body, (feature_index, feature)) in latest {
+        let Some(history_id) = super::history_bodies::output_history(
             std::iter::once(body.as_str()),
             histories,
             primary_brep,
-        )
-        .and_then(|id| histories.iter().find(|history| history.id == id)) else {
+        ) else {
+            unread.push((body.clone(), feature.id.clone()));
+            continue;
+        };
+        let Some((history_index, history)) = histories
+            .iter()
+            .enumerate()
+            .find(|(_, history)| history.id == history_id)
+        else {
             unread.push((body.clone(), feature.id.clone()));
             continue;
         };
@@ -96,12 +103,11 @@ pub(crate) fn collect(
             continue;
         };
         let head = &history.states()[head];
-        let Some(placement) = super::feature_outputs::feature_history_states(
-            feature,
-            scopes,
-            histories,
-            scope_histories,
-        ) else {
+        let Some(placement) = placements
+            .get(feature_index)
+            .and_then(Option::as_ref)
+            .filter(|p| p.history == history_index)
+        else {
             tails.push(unproved(
                 head.id.clone(),
                 TailStart::Unread,
@@ -112,7 +118,7 @@ pub(crate) fn collect(
         };
         let current = placement.state_id;
         let states = state_maps
-            .entry(std::ptr::from_ref(history))
+            .entry(history_index)
             .or_insert_with(|| super::history_states::history_state_index(history));
         if matches!(states.get(&current), Some(None)) {
             tails.push(unproved(

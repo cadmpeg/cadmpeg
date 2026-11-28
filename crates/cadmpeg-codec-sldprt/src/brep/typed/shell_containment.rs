@@ -6,141 +6,226 @@ use cadmpeg_ir::topology::BodyKind;
 
 use super::{region_chain, FaceNode, Facts, RegionKind, ShellNode};
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(in crate::brep) enum ShellRole {
+    Exterior,
+    Cavity,
+}
+
+pub(in crate::brep) struct ShellEvidence {
+    pub(in crate::brep) shells: Vec<(u32, Option<ShellRole>)>,
+    pub(in crate::brep) complete: bool,
+}
+
 impl Facts {
-    /// Maps a finite solid region to its containing shell and its shell count.
-    /// The path to the infinite void crosses that shell before any other.
-    pub(in crate::brep) fn containing_shells(
-        &self,
-        body_attr: u32,
-        face_stated: impl Fn(u32) -> bool,
-    ) -> Option<HashMap<u32, (u32, usize)>> {
-        let (bodies, regions, shells, faces) = self.ownership_maps()?;
-        let body = bodies.get(&body_attr)?;
-        if body.kind != BodyKind::Solid {
-            return None;
+    pub(in crate::brep) fn shell_evidence(&self) -> HashMap<u32, ShellEvidence> {
+        let Some((bodies, regions, shells, faces)) = self.ownership_maps() else {
+            return HashMap::new();
+        };
+        let mut shell_counts = HashMap::<u32, usize>::new();
+        for shell in &self.shells {
+            *shell_counts.entry(shell.refs[6]).or_default() += 1;
         }
-        let chain = region_chain(body, &regions)?;
-        let root = chain.first()?;
-        if root.kind != RegionKind::Void {
-            return None;
-        }
-        let mut by_shell = HashMap::new();
-        let mut by_region = HashMap::new();
-        for region in &chain {
-            let mut own_shells = Vec::new();
+        let mut evidence = HashMap::new();
+        for region in regions.values() {
+            let mut members = Vec::new();
+            let mut visited = HashSet::new();
             let mut next = region.refs[4];
-            while next > 1 {
-                let shell = shells.get(&next)?;
-                if shell.refs[6] != region.attr
-                    || by_shell.insert(next, (shell, region.kind)).is_some()
-                {
-                    return None;
-                }
-                own_shells.push(next);
+            while next > 1 && visited.insert(next) {
+                let Some(shell) = shells
+                    .get(&next)
+                    .filter(|shell| shell.refs[6] == region.attr)
+                else {
+                    break;
+                };
+                members.push((next, None));
                 next = shell.refs[2];
             }
-            by_region.insert(region.attr, own_shells);
+            evidence.insert(
+                region.attr,
+                ShellEvidence {
+                    complete: next <= 1
+                        && members.len()
+                            == shell_counts.get(&region.attr).copied().unwrap_or_default(),
+                    shells: members,
+                },
+            );
         }
-        if regions
+
+        let mut fronts = HashMap::new();
+        let mut front_claims = HashMap::<u32, Option<u32>>::new();
+        let mut back_counts = HashMap::<u32, usize>::new();
+        for face in faces.values() {
+            *back_counts.entry(face.refs[3]).or_default() += 1;
+        }
+        for shell in shells
             .values()
-            .any(|region| region.refs[1] == body_attr && !by_region.contains_key(&region.attr))
-            || shells.values().any(|shell| {
-                by_region.contains_key(&shell.refs[6]) && !by_shell.contains_key(&shell.attr)
-            })
+            .filter(|shell| regions[&shell.refs[6]].kind == RegionKind::Void)
         {
-            return None;
+            if let Some(members) = face_chain(shell, &faces, false) {
+                for &face in &members {
+                    front_claims
+                        .entry(face)
+                        .and_modify(|claim| *claim = None)
+                        .or_insert(Some(shell.attr));
+                }
+                fronts.insert(shell.attr, members);
+            }
         }
 
-        let mut back_faces = HashSet::new();
-        let mut front_faces = HashSet::new();
         let mut partners = HashMap::new();
-        for (&attr, &(shell, kind)) in &by_shell {
-            let opposite = match kind {
-                RegionKind::Solid => opposite_shell(shell, &faces, &mut back_faces, true)?,
-                RegionKind::Void => opposite_shell(shell, &faces, &mut front_faces, false)?,
-            };
-            let &(_, opposite_kind) = by_shell.get(&opposite)?;
-            if opposite_kind == kind {
-                return None;
-            }
-            partners.insert(attr, opposite);
-        }
-        if back_faces != front_faces
-            || faces.values().any(|face| {
-                by_shell.contains_key(&face.refs[3]) && !back_faces.contains(&face.attr)
-            })
-            || partners
-                .iter()
-                .any(|(shell, other)| partners.get(other) != Some(shell))
+        for shell in shells
+            .values()
+            .filter(|shell| regions[&shell.refs[6]].kind == RegionKind::Solid)
         {
-            return None;
-        }
-        let incomplete_regions: HashSet<_> = back_faces
-            .into_iter()
-            .filter(|attr| !face_stated(*attr))
-            .map(|attr| by_shell[&faces[&attr].refs[3]].0.refs[6])
-            .collect();
-
-        let mut visited = HashSet::from([root.attr]);
-        let mut pending = vec![(root.attr, None)];
-        let mut exteriors = HashMap::new();
-        while let Some((region, incoming)) = pending.pop() {
-            let members = by_region.get(&region)?;
-            for &shell in members {
-                if incoming == Some(shell) {
-                    continue;
-                }
-                let opposite = *partners.get(&shell)?;
-                let &(target, kind) = by_shell.get(&opposite)?;
-                let region = target.refs[6];
-                if !visited.insert(region) {
-                    return None;
-                }
-                if kind == RegionKind::Solid && !incomplete_regions.contains(&region) {
-                    exteriors.insert(region, (opposite, by_region.get(&region)?.len()));
-                }
-                pending.push((region, Some(opposite)));
+            let Some(back) = face_chain(shell, &faces, true) else {
+                continue;
+            };
+            if back_counts.get(&shell.attr) != Some(&back.len()) {
+                continue;
+            }
+            let Some(opposite) = back
+                .iter()
+                .next()
+                .and_then(|face| front_claims.get(face))
+                .copied()
+                .flatten()
+            else {
+                continue;
+            };
+            if fronts.get(&opposite) == Some(&back)
+                && back
+                    .iter()
+                    .all(|face| front_claims.get(face) == Some(&Some(opposite)))
+                && regions[&shell.refs[6]].refs[1] == regions[&shells[&opposite].refs[6]].refs[1]
+            {
+                partners.insert(shell.attr, opposite);
+                partners.insert(opposite, shell.attr);
             }
         }
-        (visited.len() == chain.len()).then_some(exteriors)
+
+        let mut region_counts = HashMap::<u32, usize>::new();
+        for region in regions.values() {
+            *region_counts.entry(region.refs[1]).or_default() += 1;
+        }
+        let mut roles = HashMap::new();
+        for body in bodies
+            .values()
+            .filter(|body| matches!(body.kind, BodyKind::Solid | BodyKind::General))
+        {
+            let Some(chain) = region_chain(body, &regions) else {
+                continue;
+            };
+            let Some(root) = chain
+                .first()
+                .filter(|region| region.kind == RegionKind::Void)
+            else {
+                continue;
+            };
+            let members: HashSet<_> = chain.iter().map(|region| region.attr).collect();
+            let mut direct = HashMap::<u32, Option<u32>>::new();
+            for (shell, _) in &evidence[&root.attr].shells {
+                if let Some(&opposite) = partners.get(shell) {
+                    let region = shells[&opposite].refs[6];
+                    if members.contains(&region) {
+                        direct
+                            .entry(region)
+                            .and_modify(|slot| *slot = None)
+                            .or_insert(Some(opposite));
+                    }
+                }
+            }
+            if body.kind == BodyKind::Solid {
+                roles.extend(
+                    direct
+                        .into_values()
+                        .flatten()
+                        .map(|shell| (shell, ShellRole::Exterior)),
+                );
+            }
+
+            let mut visited = HashSet::from([root.attr]);
+            let mut pending = vec![(root.attr, None)];
+            let mut indirect = HashMap::new();
+            let mut tree = true;
+            while let Some((region, incoming)) = pending.pop() {
+                for &(shell, _) in &evidence[&region].shells {
+                    if incoming == Some(shell) {
+                        continue;
+                    }
+                    let Some(&opposite) = partners.get(&shell) else {
+                        continue;
+                    };
+                    let target = shells[&opposite].refs[6];
+                    if !members.contains(&target) || !visited.insert(target) {
+                        tree = false;
+                        continue;
+                    }
+                    match regions[&region].kind {
+                        RegionKind::Solid => {
+                            indirect.insert(shell, ShellRole::Cavity);
+                        }
+                        RegionKind::Void => {
+                            indirect.insert(opposite, ShellRole::Exterior);
+                        }
+                    }
+                    pending.push((target, Some(opposite)));
+                }
+            }
+            let complete = region_counts.get(&body.attr) == Some(&visited.len())
+                && chain.iter().all(|region| {
+                    let source = &evidence[&region.attr];
+                    source.complete
+                        && source
+                            .shells
+                            .iter()
+                            .all(|(shell, _)| partners.contains_key(shell))
+                });
+            if tree && (body.kind == BodyKind::Solid || complete) {
+                roles.extend(indirect);
+            }
+        }
+        for source in evidence.values_mut() {
+            for (attr, role) in &mut source.shells {
+                *role = roles.get(attr).copied();
+            }
+        }
+        evidence
     }
 }
 
-fn opposite_shell(
+fn face_chain(
     shell: &ShellNode,
     faces: &HashMap<u32, FaceNode>,
-    visited: &mut HashSet<u32>,
     back: bool,
-) -> Option<u32> {
+) -> Option<HashSet<u32>> {
     let (head, other_head) = if back {
         (shell.refs[3], shell.refs[7])
     } else {
         (shell.refs[7], shell.refs[3])
     };
-    if other_head > 1 || shell.refs[4] > 1 || shell.refs[5] > 1 {
+    if head <= 1 || other_head > 1 || shell.refs[4] > 1 || shell.refs[5] > 1 {
         return None;
     }
+    let mut visited = HashSet::new();
     let mut next = head;
     let mut previous = None;
-    let mut opposite = None;
     while next > 1 {
         let face = faces.get(&next)?;
-        let [front_next, front_prev, front_shell] = face.front?;
-        let [following, preceding, owner, other] = if back {
-            [face.refs[0], face.refs[1], face.refs[3], front_shell]
+        let [following, preceding, owner] = if back {
+            [face.refs[0], face.refs[1], face.refs[3]]
         } else {
-            [front_next, front_prev, front_shell, face.refs[3]]
+            face.front?
         };
-        if owner != shell.attr
+        // A complete front chain can supply the owner of a null front-shell cell.
+        if (owner != shell.attr && (back || owner > 1))
             || (preceding > 1).then_some(preceding) != previous
-            || opposite.is_some_and(|expected| other != expected)
             || !visited.insert(next)
         {
             return None;
         }
-        opposite = Some(other);
         previous = Some(next);
         next = following;
     }
-    opposite
+    Some(visited)
 }

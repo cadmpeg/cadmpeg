@@ -7,6 +7,7 @@ use crate::test_support::test_dump::{
 };
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::topology::{Body, BodyKind};
+use cadmpeg_ir::unknown::part::Cause;
 
 const HOLDER: &str = "rhino:object:record#000000";
 
@@ -15,7 +16,6 @@ const HOLDER: &str = "rhino:object:record#000000";
 fn decode_against(
     scan: &crate::container::Scan<'_>,
     occupy: impl FnOnce(&mut DecodeContext<'_>, cadmpeg_ir::ids::IdentityKey),
-    warning: &str,
 ) -> cadmpeg_ir::codec::DecodeResult {
     with_expand(scan, |expand| {
         let mut context = DecodeContext::new(scan, expand).expect("transaction");
@@ -25,11 +25,6 @@ fn decode_against(
         context
             .decode_geometry()
             .expect("the refused object is skipped");
-        assert!(context
-            .report
-            .phase_warnings
-            .messages()
-            .any(|message| message.contains(warning)));
         seal_for_test(context.commit().expect("test decode commit"), false)
     })
 }
@@ -43,34 +38,37 @@ fn a_brep_draft_the_document_refuses_is_given_up() {
         &crate::test_support::test_archive::brep_payload(false),
     );
     let scan = scan_with_objects(&[object]);
-    let result = decode_against(
-        &scan,
-        |context, key| {
-            context.ir_mut().geometry.bodies.push(Body {
-                id: cadmpeg_ir::ids::BodyId::compose(
-                    &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
-                    key,
-                ),
-                kind: BodyKind::Sheet,
-                transform: None,
-                name: None,
-                color: None,
-                visible: None,
-                native_ref: None,
-                unstated: None,
-            });
-        },
-        "Brep draft rejected before commit",
-    );
+    let result = decode_against(&scan, |context, key| {
+        context.ir_mut().geometry.bodies.push(Body {
+            id: cadmpeg_ir::ids::BodyId::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
+                key,
+            ),
+            kind: BodyKind::Sheet,
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+            native_ref: None,
+            unstated: None,
+        });
+    });
     assert_eq!(result.ir().geometry.bodies.len(), 1);
-    crate::container::tests::assert_part_given_up(
+    let given_up = crate::container::tests::assert_part_given_up(
         result.ir(),
         result.source_fidelity(),
         &result.report().losses,
-        "object-record",
-        scan.objects[0].range().start,
+        ("object-record", scan.objects[0].range().start),
         Some(HOLDER),
         HOLDER,
+        Cause::Undecoded,
+    );
+    assert!(
+        given_up
+            .message
+            .contains("Brep draft rejected before commit"),
+        "{}",
+        given_up.message
     );
 }
 
@@ -78,30 +76,33 @@ fn a_brep_draft_the_document_refuses_is_given_up() {
 fn a_rejected_unknown_surface_fallback_is_given_up() {
     let object = object_record_with_payload(ArchiveVersion::V5, 8, REV_SURFACE_CLASS, &[0]);
     let scan = scan_with_objects(&[object]);
-    let result = decode_against(
-        &scan,
-        |context, key| {
-            context.ir_mut().geometry.surfaces.push(Surface {
-                id: cadmpeg_ir::ids::SurfaceId::compose(
-                    &cadmpeg_ir::identity_namespace!("rhino", "object", "surface"),
-                    key,
-                ),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-                source_object: None,
-                native_ref: None,
-            });
-        },
-        "unknown surface validation rejected candidate",
-    );
+    let result = decode_against(&scan, |context, key| {
+        context.ir_mut().geometry.surfaces.push(Surface {
+            id: cadmpeg_ir::ids::SurfaceId::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "object", "surface"),
+                key,
+            ),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            source_object: None,
+            native_ref: None,
+        });
+    });
     assert_eq!(result.ir().geometry.surfaces.len(), 1);
-    crate::container::tests::assert_part_given_up(
+    let given_up = crate::container::tests::assert_part_given_up(
         result.ir(),
         result.source_fidelity(),
         &result.report().losses,
-        "object-record",
-        scan.objects[0].range().start,
+        ("object-record", scan.objects[0].range().start),
         Some(HOLDER),
         HOLDER,
+        Cause::Undecoded,
+    );
+    assert!(
+        given_up
+            .message
+            .contains("unknown surface validation rejected candidate"),
+        "{}",
+        given_up.message
     );
 }
 
