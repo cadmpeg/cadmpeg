@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! An Assembly states its design scope: its mates are `Joint` features and
 //! its fixed occurrences are grounded (§5.1, §6.7).
+use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_core::json;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
@@ -15,6 +16,34 @@ fn decode(definition: serde_json::Value) -> cadmpeg_ir::codec::DecodeResult {
             &DecodeOptions::default(),
         )
         .unwrap()
+}
+
+#[test]
+fn shallow_assembly_omits_design_and_reports_it_at_geometry_depth() {
+    let mut root = definition();
+    root["rootAssembly"]["features"] = json!([mate("hinge", "REVOLUTE")]);
+    for depth in [DecodeDepth::Container, DecodeDepth::Geometry] {
+        let result = crate::test_support::codec()
+            .decode(
+                &mut std::io::Cursor::new(bundle(root.clone())),
+                &DecodeOptions {
+                    depth,
+                    ..DecodeOptions::default()
+                },
+            )
+            .unwrap();
+        assert!(result.ir().design.features.is_empty());
+        assert!(result.ir().design.scopes.is_empty());
+        assert!(result.ir().model.assembly_joints.is_empty());
+        if depth == DecodeDepth::Geometry {
+            assert!(result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code.local_code() == "depth.not-delivered"));
+        }
+        validate(result);
+    }
 }
 
 fn joint(result: &cadmpeg_ir::codec::DecodeResult, key: &str) -> serde_json::Value {

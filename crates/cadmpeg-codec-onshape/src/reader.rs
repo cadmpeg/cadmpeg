@@ -700,6 +700,15 @@ fn studio_in(
         part_studio_bodies(&mut model);
     }
     if ctx.depth() == cadmpeg_core::decode::DecodeDepth::Geometry {
+        model.body.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(
+            ctx.depth(),
+            model.body.transfer.geometry_transferred(),
+        );
+        if !features.is_empty() {
+            model
+                .body
+                .source_holds(cadmpeg_core::decode::ArenaClass::Design);
+        }
         return Ok(model);
     }
     let creators: Vec<usize> = features

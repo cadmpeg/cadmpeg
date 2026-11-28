@@ -591,6 +591,9 @@ fn extrude(
             end: Box::new(end),
         },
     };
+    let span_unresolved = (bound == Some("UP_TO_NEXT")
+        && source.peek_flag("hasOffset") != Ok(false))
+        || (second_offset_active && source.peek_flag("hasSecondDirectionOffset") != Ok(false));
     let origin = if source.flag("startOffset")? {
         match source.tag("startOffsetBound") {
             Some("BLIND") => {
@@ -688,11 +691,13 @@ fn extrude(
     Ok(FeatureOperation::Extrude(Box::new(Extrude {
         profile,
         loops: None,
-        direction: Some(ExtrudeDirection::ProfileNormal {
-            reversed: Some(Dimension::Literal(reversed)),
-        }),
+        direction: (source.peek_flag("hasExtrudeDirection") == Ok(false)).then_some(
+            ExtrudeDirection::ProfileNormal {
+                reversed: Some(Dimension::Literal(reversed)),
+            },
+        ),
         origin: Some(origin),
-        span: Some(span),
+        span: (!span_unresolved).then_some(span),
         draft,
         fit: None,
         outside: None,

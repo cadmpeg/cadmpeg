@@ -378,7 +378,14 @@ pub(super) fn read<'a>(
     let root = structure_root;
     let joint_paths = structure.resolved_paths();
     release_bound_bodies(&mut model.ir.model.product_definitions, studio_definitions);
-    if let Some(root) = root {
+    if ctx.depth() < cadmpeg_core::decode::DecodeDepth::Design {
+        if !model.ir.model.assembly_joints.is_empty() {
+            model
+                .body
+                .source_holds(cadmpeg_core::decode::ArenaClass::Design);
+            model.ir.model.assembly_joints.clear();
+        }
+    } else if let Some(root) = root {
         cadmpeg_ir::design::projection::project_layer(
             ctx,
             "Onshape assembly",
