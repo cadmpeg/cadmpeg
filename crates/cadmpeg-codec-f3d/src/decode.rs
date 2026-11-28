@@ -4290,6 +4290,15 @@ impl<'a> F3dDecodeSession<'a> {
                         sketch_entities: self.ir.model.sketch_entities.len()
                             + self.ir.model.spatial_sketch_entities.len(),
                         reference_images: self.native.design_canvas_images.len(),
+                        design_records: self.native.geometry_record_count(),
+                        xref_unparsed: xref.is_err(),
+                        design_decoded: projected
+                            && scan.entries.iter().any(|entry| {
+                                scan.is_design_stream(
+                                    entry,
+                                    cadmpeg_core::container::ContainerRole::Metastream,
+                                )
+                            }),
                     },
                     assembly,
                 );
@@ -5528,6 +5537,17 @@ pub(crate) struct DesignCarriers {
     pub(crate) declared_bodies: usize,
     pub(crate) sketch_entities: usize,
     pub(crate) reference_images: usize,
+    /// Design carriers that state geometry: feature timeline items, indexed
+    /// record headers outside the parameter machinery, sketch placements and
+    /// relations, component occurrences, mesh features and the other carriers
+    /// that name construction or selection. Parameters, parameter scopes,
+    /// owners and companions do not count.
+    pub(crate) design_records: usize,
+    /// A Design metastream entry exists and its design intent decoded and
+    /// projected, so `design_records` is a complete count.
+    pub(crate) design_decoded: bool,
+    /// The XREF table failed to parse, so the document may hold components.
+    pub(crate) xref_unparsed: bool,
 }
 
 /// Classify the geometry transfer of a design from the carriers it stores.
@@ -5554,6 +5574,17 @@ pub(crate) fn apply_carrier_classification(
                 ),
             );
         } else {
+            // One rule for every path: the design is empty when its Design
+            // stream was read, the model-body maps are explicitly empty, no
+            // mesh container went untransferred, the xref table parsed, and no
+            // Design record states geometry.
+            let empty = carriers.design_decoded
+                && !carriers.xref_unparsed
+                && carriers.model_body_maps_explicitly_empty
+                && carriers.design_records == 0
+                && carriers.sketch_entities == 0
+                && carriers.reference_images == 0
+                && untransferred_mesh_containers.is_none();
             apply_bodyless_design_classification(
                 report,
                 carriers.selected_brep_streams,
@@ -5561,9 +5592,18 @@ pub(crate) fn apply_carrier_classification(
                 carriers.declared_bodies,
                 carriers.sketch_entities,
                 carriers.reference_images,
-                carriers.model_body_maps_explicitly_empty
-                    && untransferred_mesh_containers.is_none(),
+                empty,
             );
+            if !report.transfer.geometry_transferred() && carriers.design_records > 0 {
+                push_loss_vec(
+                    &mut report.losses,
+                    F3dLossCode::DesignRecordsUntransferred,
+                    format_args!(
+                        "the Design stream holds {} carrier(s) that state geometry (features, sketches, components, or construction) and no geometry transferred",
+                        carriers.design_records
+                    ),
+                );
+            }
         }
     }
 }
@@ -5598,8 +5638,8 @@ fn apply_mesh_body_classification(report: &mut DecodeBody, brep_streams: usize, 
 ///
 /// The Design segment selects no BREP stream and declares zero bodies.
 /// Sketch entities can supply the complete geometry. Reference-image timeline
-/// objects are presentation content and require no geometry carrier. Empty
-/// modern model-body maps with none of these carriers make an empty design.
+/// objects are presentation content and require no geometry carrier. A design
+/// that is `empty` (the caller's rule) holds neither.
 fn apply_bodyless_design_classification(
     report: &mut DecodeBody,
     brep_streams: usize,
@@ -5607,13 +5647,13 @@ fn apply_bodyless_design_classification(
     declared_bodies: usize,
     sketch_entities: usize,
     reference_images: usize,
-    model_body_maps_explicitly_empty: bool,
+    empty: bool,
 ) {
-    let empty_design = sketch_entities == 0 && reference_images == 0;
+    let empty_design = empty;
     if brep_streams != 0
         || text_brep_streams != 0
         || declared_bodies != 0
-        || (empty_design && !model_body_maps_explicitly_empty)
+        || (!empty_design && sketch_entities == 0 && reference_images == 0)
     {
         return;
     }
@@ -5628,7 +5668,7 @@ fn apply_bodyless_design_classification(
     report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(report.transfer.depth(), true);
     if empty_design {
         report.losses.push(F3dLossCode::EmptyDesign.note(
-            "empty design: the modern model-body maps select no body, and the document declares no body, sketch entity, or reference image",
+            "empty design: the document selects no body and declares no body, sketch entity, reference image, or Design record",
         ));
         return;
     }

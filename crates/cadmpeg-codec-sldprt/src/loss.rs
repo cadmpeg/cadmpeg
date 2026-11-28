@@ -609,6 +609,27 @@ pub(crate) enum SldprtLossCode {
     /// out, its dimension naming the stored curve they lie on, or states
     /// construction where no face of the solid witnesses them.
     DesignSketchDimensionCircle,
+    /// Sketch relations on an end of a closed or unbounded curve, the center
+    /// of a curve that has none, or a point whose minted id another entity
+    /// holds: they state the curve.
+    DesignSketchLocusUnplaced,
+    /// Points of sketch curves where two or more point entities lie that the
+    /// source names alike: no point entity holds the role there, and a
+    /// relation on the point names a point minted there.
+    DesignSketchLocusAmbiguous,
+    /// Sketch relations that name one point entity for both operands of a
+    /// coincidence: the point states the coincidence, and the design holds
+    /// no relation record for it.
+    DesignSketchRelationSinglePoint,
+    /// Sketch relations with no typed relation of their operands and value:
+    /// they state their native kind.
+    DesignSketchRelationNative,
+    /// Sketch entities with no planar curve, stated by their native kind
+    /// with no solved curve.
+    DesignSketchEntityNative,
+    /// Sketch dimensions that bind no parameter of the design: they state
+    /// the value their parameter record stores, or no value.
+    DesignSketchDimensionUnbound,
     /// Typed revolves whose axis picks the line of their profile sketch that
     /// lies on the stored axis; the decoder does not read which entity the
     /// record's axis reference names.
@@ -870,6 +891,12 @@ impl SldprtLossCode {
         Self::DesignExtrudeSketchEmpty,
         Self::DesignExtrudeProfileUnchecked,
         Self::DesignSketchDimensionCircle,
+        Self::DesignSketchLocusUnplaced,
+        Self::DesignSketchLocusAmbiguous,
+        Self::DesignSketchRelationSinglePoint,
+        Self::DesignSketchRelationNative,
+        Self::DesignSketchEntityNative,
+        Self::DesignSketchDimensionUnbound,
         Self::DesignRevolveAxisLineInferred,
         Self::DesignRevolveAxisDerived,
         Self::DesignRevolveBooleanUnstated,
@@ -1147,6 +1174,12 @@ impl SldprtLossCode {
             Self::DesignDatumPlaneAxisAngled => "design.datum-plane-axis-angled",
             Self::DesignDatumConfigurationDropped => "design.datum-configuration-dropped",
             Self::DesignSketchDimensionCircle => "design.sketch-dimension-circle",
+            Self::DesignSketchLocusUnplaced => "design.sketch-locus-unplaced",
+            Self::DesignSketchLocusAmbiguous => "design.sketch-locus-ambiguous",
+            Self::DesignSketchRelationSinglePoint => "design.sketch-relation-single-point",
+            Self::DesignSketchRelationNative => "design.sketch-relation-native",
+            Self::DesignSketchEntityNative => "design.sketch-entity-native",
+            Self::DesignSketchDimensionUnbound => "design.sketch-dimension-unbound",
         }
     }
 
@@ -1362,6 +1395,12 @@ impl SldprtLossCode {
             | Self::DesignExtrudeProfileDiffers
             | Self::DesignExtrudeSketchEmpty
             | Self::DesignSketchDimensionCircle
+            | Self::DesignSketchLocusUnplaced
+            | Self::DesignSketchLocusAmbiguous
+            | Self::DesignSketchRelationSinglePoint
+            | Self::DesignSketchRelationNative
+            | Self::DesignSketchEntityNative
+            | Self::DesignSketchDimensionUnbound
             | Self::DesignRevolveAxisDerived
             | Self::DesignRevolveProfileDiffers
             | Self::DesignRevolveSenseAssumed
@@ -1490,6 +1529,12 @@ impl SldprtLossCode {
             | Self::DesignExtrudeSketchEmpty
             | Self::DesignExtrudeProfileUnchecked
             | Self::DesignSketchDimensionCircle
+            | Self::DesignSketchLocusUnplaced
+            | Self::DesignSketchLocusAmbiguous
+            | Self::DesignSketchRelationSinglePoint
+            | Self::DesignSketchRelationNative
+            | Self::DesignSketchEntityNative
+            | Self::DesignSketchDimensionUnbound
             | Self::DesignRevolveAxisLineInferred
             | Self::DesignRevolveAxisDerived
             | Self::DesignRevolveBooleanUnstated
@@ -2043,6 +2088,12 @@ mod tests {
                 "design.extrude-sketch-empty",
                 "design.extrude-profile-unchecked",
                 "design.sketch-dimension-circle",
+                "design.sketch-locus-unplaced",
+                "design.sketch-locus-ambiguous",
+                "design.sketch-relation-single-point",
+                "design.sketch-relation-native",
+                "design.sketch-entity-native",
+                "design.sketch-dimension-unbound",
                 "design.revolve-axis-line-inferred",
                 "design.revolve-axis-derived",
                 "design.revolve-boolean-unstated",

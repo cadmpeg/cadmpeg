@@ -1044,6 +1044,7 @@ pub(crate) fn project_assembly_joints_with_paths(
     let mut partial_alignments = 0_usize;
     let mut undecoded_motions = std::collections::BTreeSet::new();
     let mut undecoded_motion_count = 0_usize;
+    let mut unread_motion_count = 0_usize;
     let mut paired_joints = 0_usize;
     let mut root_contexts = 0_usize;
     let mut unprojected_members = 0_usize;
@@ -1125,6 +1126,17 @@ pub(crate) fn project_assembly_joints_with_paths(
                 if motion.is_some_and(zero_lane_rotation_limits) && undecoded.is_none() {
                     native_angular_limits += 1;
                 }
+                // A scope with an additional-owner run (versions 4 and 5) whose
+                // joint record has no decoded motion projects with the fixed
+                // fallback; say so even when it has no additional owners.
+                if undecoded.is_none()
+                    && motion.is_none()
+                    && scope
+                        .assembly_alignment()
+                        .is_some_and(|alignment| alignment.additional_owner_run.is_some())
+                {
+                    unread_motion_count += 1;
+                }
                 if let Some(reason) = undecoded {
                     undecoded_motion_count += 1;
                     undecoded_motions.insert(reason);
@@ -1200,6 +1212,11 @@ pub(crate) fn project_assembly_joints_with_paths(
         let reasons = undecoded_motions.into_iter().collect::<Vec<_>>().join("; ");
         design_stated.push(F3dLossCode::AssemblyJointMotionUndecoded.note(format!(
             "{undecoded_motion_count} Design assembly joint(s) were projected as fixed: their motion does not map to a joint kind ({reasons})."
+        )));
+    }
+    if unread_motion_count != 0 {
+        losses.push(F3dLossCode::AssemblyJointMotionUndecoded.note(format!(
+            "{unread_motion_count} Design assembly joint(s) were projected as fixed: the joint record's motion is not decoded."
         )));
     }
     if native_angular_limits != 0 {
@@ -1417,6 +1434,12 @@ fn project_assembly_joint(
     let Some(alignment) = scope.assembly_alignment() else {
         return if rigid_as_built_scope(scope) {
             Err(unresolved_rigid_group())
+        } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble {
+            // A joint scope whose tail grammar does not read is a lost joint,
+            // not an unrelated scope.
+            Err(CodecError::NotImplemented(
+                "Assemble scope tail is unresolved".into(),
+            ))
         } else {
             Ok(None)
         };

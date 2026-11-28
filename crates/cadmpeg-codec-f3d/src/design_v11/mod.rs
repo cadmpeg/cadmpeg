@@ -10,8 +10,17 @@
 //! that the document references keeps its own Design streams under an
 //! occurrence path and is one scope of its own, at the definition that stands
 //! for it; where the decode states no such definition, its timelines are roots
-//! of the scope that encloses it. A stream that lists no item states no container, and a document
-//! whose streams state none has no scope.
+//! of the scope that encloses it. A stream that lists no item states no
+//! container.
+//!
+//! Each planar and spatial sketch is the operation of the feature that owns
+//! it (§6.1). A sketch whose owner has no item of a listing timeline is the
+//! operation of a member of one unordered `Group` of its document's scope, a
+//! root after the timelines; a document whose streams list no item and hold
+//! such a sketch, or a construction plane, axis, or point, has a scope whose
+//! roots are that group, with its sketches and construction features as
+//! members, and whose bodies are unproduced (§5.2, §5.5). A document with
+//! neither has no scope.
 //!
 //! A scope spans its definition and the embedded component definitions below
 //! it; where it spans several, each feature names the component the decoder
@@ -28,6 +37,7 @@ mod operation;
 pub(crate) mod parameters;
 mod pattern;
 mod sheet_metal;
+mod sketch;
 mod split;
 #[cfg(test)]
 mod tests;
@@ -39,15 +49,20 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, Rollback};
+use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
+use cadmpeg_ir::design::feature::Feature;
 use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::ops::sketch::{RadialMeasure, SketchRelation};
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
+use crate::loss::F3dLossCode;
 use crate::records::entity_header::{DesignFeatureTimeline, SegmentType};
 use crate::records::feature::scope::DesignScopeTailFlags;
 
@@ -83,9 +98,16 @@ pub(crate) fn project(
         return Ok(());
     };
     let timelines = namespace.arena_as_for_decode::<DesignFeatureTimeline>(ctx, TIMELINES)?;
-    if timelines
-        .iter()
-        .all(|timeline| timeline.frame().items().is_empty())
+    if ir.model.sketches.is_empty()
+        && ir.model.spatial_sketches.is_empty()
+        && timelines
+            .iter()
+            .all(|timeline| timeline.frame().items().is_empty())
+        && !ir
+            .model
+            .features
+            .iter()
+            .any(|feature| sketch::construction(feature.evaluation.definition().operation()))
     {
         return Ok(());
     }
@@ -135,6 +157,7 @@ pub(crate) fn project(
         &current,
         losses,
     )?;
+    let listing = documents.keys().cloned().collect::<BTreeSet<_>>();
     let mut scopes = BTreeMap::new();
     let mut hosted = Vec::new();
     for (prefix, projected) in documents {
@@ -163,12 +186,34 @@ pub(crate) fn project(
         into.containers.extend(projected.containers);
         into.features.extend(projected.features);
     }
+    let restated = scopes
+        .values()
+        .flat_map(|(_, projected)| &projected.features)
+        .map(|feature| feature.id.clone())
+        .collect::<BTreeSet<_>>();
+    for (prefix, owners) in sketch::outside(&ir.model, &restated, &listing, losses)? {
+        let enclosing = if scopes.contains_key(&prefix) {
+            prefix.clone()
+        } else if let Some(definition) = scope_definition(&ir.model.product_definitions, &prefix) {
+            scopes.insert(prefix.clone(), (definition, timeline::Projected::default()));
+            prefix.clone()
+        } else {
+            host(&scopes, &placers, &prefix)
+        };
+        let (_, into) = scopes.entry(enclosing).or_insert_with(|| {
+            (
+                root_definition(&ir.model.product_definitions),
+                timeline::Projected::default(),
+            )
+        });
+        sketch::hold(ctx, &prefix, owners, into)?;
+    }
     definitions.extend(
         scopes
             .iter()
             .map(|(prefix, (definition, _))| (prefix.clone(), definition.clone())),
     );
-    let scoped_parameters;
+    let mut scoped_parameters;
     let scoped_configurations;
     {
         let features = scopes
@@ -197,7 +242,18 @@ pub(crate) fn project(
             losses,
         );
     }
+    let curves = namespace
+        .arena_as_for_decode::<crate::records::sketch_geometry::SketchCurveIdentity>(
+            ctx,
+            "sketch_curve_identities",
+        )?;
+    let points = namespace.arena_as_for_decode::<crate::records::sketch_geometry::SketchPoint>(
+        ctx,
+        "sketch_points",
+    )?;
+    let incidence = sketch::Incidence::from_records(&curves, &points);
     let mut spans = span(&ir.model.product_definitions, &placers, &scopes);
+    let mut sketches = sketch::Sketches::default();
     let owners = ir
         .model
         .features
@@ -216,11 +272,21 @@ pub(crate) fn project(
             bodies,
         } = spans.remove(&prefix).unwrap_or_default();
         if spanned.len() > 1 {
+            let mut withheld = BTreeMap::<&ProductDefinitionId, usize>::new();
             for feature in &mut projected.features {
-                feature.component = owners
+                let owner = owners
                     .get(&feature.id)
-                    .filter(|owner| spanned.contains(**owner))
-                    .map(|owner| (*owner).clone());
+                    .copied()
+                    .filter(|owner| spanned.contains(*owner));
+                feature.component = owner.and_then(|owner| member_component(feature, owner));
+                if let (Some(owner), None) = (owner, &feature.component) {
+                    *withheld.entry(owner).or_default() += 1;
+                }
+            }
+            for (owner, count) in withheld {
+                losses.push(F3dLossCode::HistoryMemberComponentUnstated.note(format!(
+                    "{count} features of the document {prefix:?} name no component: their owner {owner} stands in an archive member whose scope the checker reads as spanning the files its occurrences place"
+                )));
             }
         }
         if let Some(joints) = &joints {
@@ -231,26 +297,60 @@ pub(crate) fn project(
                 losses,
             ));
         }
-        let Some(Container::Ordered {
-            id,
-            members,
-            rollback,
-            ..
-        }) = projected.containers.first()
-        else {
-            continue;
+        let (current, unproduced) = match projected.containers.first() {
+            Some(Container::Ordered {
+                id,
+                members,
+                rollback,
+                ..
+            }) => {
+                let at = rollback_position(id, members, rollback.as_ref());
+                let current = (!bodies.is_empty())
+                    .then(|| CurrentState {
+                        at,
+                        bodies: bodies.into_iter().collect(),
+                        poses: BTreeMap::new(),
+                        status: EvaluationStatus::Current,
+                        native_ref: None,
+                    })
+                    .into_iter()
+                    .collect();
+                (current, BTreeSet::new())
+            }
+            Some(Container::Unordered { .. }) => (Vec::new(), bodies),
+            None => continue,
         };
-        let at = rollback_position(id, members, rollback.as_ref());
-        let current = (!bodies.is_empty())
-            .then(|| CurrentState {
-                at,
-                bodies: bodies.into_iter().collect(),
-                poses: BTreeMap::new(),
-                status: EvaluationStatus::Current,
-                native_ref: None,
+        let unordered = projected
+            .containers
+            .iter()
+            .filter_map(|container| match container {
+                Container::Unordered { members, .. } => Some(members),
+                Container::Ordered { .. } => None,
             })
-            .into_iter()
-            .collect();
+            .flatten()
+            .filter_map(|member| match member {
+                Member::Feature(feature) => Some(feature.clone()),
+                Member::Container(_) => None,
+            })
+            .collect::<BTreeSet<FeatureId>>();
+        let in_scope = scoped_parameters
+            .iter()
+            .filter(|parameter| parameter.scope == definition)
+            .collect::<Vec<_>>();
+        sketch::project(
+            &sketch::Scope {
+                ctx,
+                model: &ir.model,
+                incidence: &incidence,
+                linear: ir.tolerances.linear.get(),
+                definition: &definition,
+                unordered: &unordered,
+                parameters: &in_scope,
+            },
+            &mut projected.features,
+            &mut sketches,
+            losses,
+        )?;
         ctx.charge_entities(1, "project F3D v11 design scope")?;
         ir.design.scopes.push(DesignScope {
             active_configuration: scoped_configurations.active.get(&definition).cloned(),
@@ -263,7 +363,7 @@ pub(crate) fn project(
             active_arrangements: BTreeSet::new(),
             occurrences: BTreeMap::new(),
             current,
-            unproduced: BTreeSet::default(),
+            unproduced,
         });
         ir.design.containers.extend(projected.containers);
         ir.design.features.extend(projected.features);
@@ -274,7 +374,49 @@ pub(crate) fn project(
             .map_err(|_| CodecError::malformed("F3D v11 design record count exceeds u64"))?,
         "project F3D v11 parameters and configurations",
     )?;
+    ctx.charge_entities(
+        u64::try_from(
+            sketches.records.len()
+                + sketches.entities.len()
+                + sketches.constraints.len()
+                + sketches.spatial.len()
+                + sketches.spatial_entities.len()
+                + sketches.spatial_constraints.len()
+                + sketches.parameters.len(),
+        )
+        .map_err(|_| CodecError::malformed("F3D v11 sketch record count exceeds u64"))?,
+        "project F3D v11 sketches",
+    )?;
+    ir.design.sketches.extend(sketches.records);
+    ir.design.sketch_entities.extend(sketches.entities);
+    ir.design.sketch_constraints.extend(sketches.constraints);
+    ir.design.spatial_sketches.extend(sketches.spatial);
+    ir.design
+        .spatial_sketch_entities
+        .extend(sketches.spatial_entities);
+    ir.design
+        .spatial_sketch_constraints
+        .extend(sketches.spatial_constraints);
+    let diameter_parameters = ir
+        .design
+        .sketch_constraints
+        .iter()
+        .filter_map(|constraint| match &constraint.relation {
+            SketchRelation::Radial {
+                measure: RadialMeasure::Diameter,
+                value: Dimension::Parameter(parameter) | Dimension::Negated(parameter),
+                ..
+            } => Some(parameter),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    for parameter in &mut scoped_parameters {
+        if diameter_parameters.contains(&parameter.id) {
+            parameter.display = None;
+        }
+    }
     ir.design.parameters.extend(scoped_parameters);
+    ir.design.parameters.extend(sketches.parameters);
     ir.design
         .configurations
         .extend(scoped_configurations.records);
@@ -343,6 +485,22 @@ impl JointRecords {
             ),
         )
     }
+}
+
+/// The component a feature names: `owner`, for a feature of the root
+/// document. The span above counts the definitions each document hosts, which
+/// does not match the span of an archive member's own scope: naming the owner
+/// of a member's feature, even one that stands in the member's own document,
+/// makes the checker read the scope as spanning the files its occurrences
+/// place. A member's feature names no component.
+fn member_component(feature: &Feature, owner: &ProductDefinitionId) -> Option<ProductDefinitionId> {
+    let stream = feature
+        .native_ref
+        .as_deref()
+        .and_then(crate::ids::native_stream)?;
+    timeline::document_prefix(stream)
+        .is_empty()
+        .then(|| owner.clone())
 }
 
 /// The position of the rollback marker of the timeline `id`: after its last

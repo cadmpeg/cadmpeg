@@ -60,13 +60,15 @@ pub(super) fn project(
         &mut timeline,
         &entries,
         &super::super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
             definition: &definition,
             outside_profile: outside,
             surfaces: &ir.geometry.surfaces,
             linear: ir.tolerances.linear.get(),
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let FeatureOperation::Extrude(extrude) =
         &timeline_feature(&timeline, "Boss").definition.operation

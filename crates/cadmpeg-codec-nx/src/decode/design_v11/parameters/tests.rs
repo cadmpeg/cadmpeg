@@ -33,7 +33,9 @@ fn projected(parameters: Vec<LegacyParameter>) -> Vec<DesignParameter> {
     let mut ir = CadIr::empty();
     ir.model.parameters = parameters;
     let definition = ProductDefinitionId::mint("nx:document:product-definition#root").unwrap();
-    project(&mut ir, &definition).expect("expressions");
+    let mut losses = Vec::new();
+    project(&mut ir, &definition, &mut losses).unwrap();
+    assert!(losses.is_empty());
     ir.design.parameters
 }
 
@@ -95,7 +97,7 @@ fn an_expression_is_placed_by_the_record_order_of_its_table() {
     let mut ir = CadIr::empty();
     ir.model.parameters = parameters();
     with_expressions(&mut ir, &[("a", TABLE, 10), ("b", TABLE, 20)]);
-    project(&mut ir, &definition).unwrap();
+    project(&mut ir, &definition, &mut Vec::new()).unwrap();
     assert_eq!(positions(&ir), [("a", Some(0)), ("b", Some(1))]);
     let mut ir = CadIr::empty();
     ir.model.parameters = parameters();
@@ -106,7 +108,7 @@ fn an_expression_is_placed_by_the_record_order_of_its_table() {
             ("b", "nx:om-entry-0:feature#equations-1", 20),
         ],
     );
-    project(&mut ir, &definition).unwrap();
+    project(&mut ir, &definition, &mut Vec::new()).unwrap();
     assert_eq!(positions(&ir), [("a", None), ("b", None)]);
 }
 

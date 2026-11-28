@@ -5,24 +5,21 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::{unique_index, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::construction::{
-    Construction, ConstructionInput, FrameValue, InputReference,
-};
+use cadmpeg_ir::design::construction::{Construction, ConstructionInput, InputReference};
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::sketch::{
     DefiningRole, EntityDefinition, EntityForm, EntityRole, Planar, PlanarCurve, Sketch,
     SketchEntity, SketchPlane, SketchSolve,
 };
-use cadmpeg_ir::design::projection::sketch::{curve_ends, planar_curve};
+use cadmpeg_ir::design::projection::sketch::{curve_ends, planar_curve, stored_frame};
 use cadmpeg_ir::design::selection::{Anchor, Picks, Selection};
 use cadmpeg_ir::features::FeatureOperation as LegacyOperation;
 use cadmpeg_ir::math::{portable::Portable, Point2};
 use cadmpeg_ir::sketches::{
     SketchEntity as LegacyEntity, SketchEntityId, SketchGeometryDefinition as Geometry, SketchId,
-    SketchPlacement,
 };
-use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
+use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::CadIr;
 
 mod constraints;
@@ -75,26 +72,9 @@ pub(super) fn project(
             continue;
         };
         ctx.charge_entities(1, "project Inventor v11 sketch")?;
-        let (inputs, resolved) = match source.placement {
-            SketchPlacement::Resolved { .. } => {
-                let (origin, normal, u_axis) = source
-                    .placement
-                    .resolved()
-                    .ok_or_else(|| CodecError::malformed("Inventor sketch frame"))?;
-                let x_axis = UnitVector3::normalized_nonzero(u_axis)
-                    .ok_or_else(|| CodecError::malformed("Inventor sketch x axis"))?;
-                let z_axis = UnitVector3::normalized_nonzero(normal)
-                    .ok_or_else(|| CodecError::malformed("Inventor sketch normal"))?;
-                let frame = FrameValue {
-                    origin,
-                    x_axis,
-                    z_axis,
-                    y_axis: UnitVector3::normalized(z_axis.as_raw().cross(*x_axis.as_raw()))
-                        .ok_or_else(|| CodecError::malformed("Inventor sketch y axis"))?,
-                };
-                (Vec::new(), Some(frame))
-            }
-            SketchPlacement::Unresolved {} => (
+        let (inputs, resolved) = match stored_frame(source.placement) {
+            Some(frame) => (Vec::new(), Some(frame)),
+            None => (
                 vec![ConstructionInput {
                     role: None,
                     reference: Some(InputReference::Picks(Selection {
