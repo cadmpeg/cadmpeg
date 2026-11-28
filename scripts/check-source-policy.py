@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import importlib.util
 from bisect import bisect_right
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass
@@ -19,6 +20,7 @@ import json
 import multiprocessing
 import os
 import re
+import sys
 import tomllib
 from pathlib import Path
 
@@ -26,6 +28,18 @@ ROOT = Path(__file__).resolve().parent.parent
 TEST_LINE_LIMIT = 2000
 PRODUCTION_LINE_LIMIT = 10000
 GENERATED_LAYOUT_LINE_LIMIT = 20000
+
+_DIALECT_SPEC = importlib.util.spec_from_file_location(
+    "source_policy_dialects", Path(__file__).with_name("check-dialects.py")
+)
+if _DIALECT_SPEC is None or _DIALECT_SPEC.loader is None:
+    raise SystemExit("cannot load the dialect registry owners")
+_DIALECTS = importlib.util.module_from_spec(_DIALECT_SPEC)
+sys.modules[_DIALECT_SPEC.name] = _DIALECTS
+_DIALECT_SPEC.loader.exec_module(_DIALECTS)
+GENERATED_DIALECT_PATHS = frozenset(
+    owner.path.as_posix() for owner in _DIALECTS.GENERATED_ID_OWNERS.values()
+)
 
 
 # Parsing results belong to one checker invocation. A new invocation reads the
@@ -174,9 +188,8 @@ def item_end(code: str, start: int) -> int | None:
 
 
 @cached_analysis
-def production_source(source: str) -> tuple[str, int]:
-    """Mask non-code and test-only items; return code and production line count."""
-    code = mask_rust_non_code(source)
+def test_only_spans(code: str) -> list[tuple[int, int]]:
+    """Locate test-only items in masked Rust source."""
     spans: list[tuple[int, int]] = []
     cursor = 0
     while match := OUTER_ATTRIBUTE.search(code, cursor):
@@ -198,6 +211,14 @@ def production_source(source: str) -> tuple[str, int]:
         if end is not None:
             spans.append((start, end))
             cursor = end
+    return spans
+
+
+@cached_analysis
+def production_source(source: str) -> tuple[str, int]:
+    """Mask non-code and test-only items; return code and production line count."""
+    code = mask_rust_non_code(source)
+    spans = test_only_spans(code)
     if not spans:
         return code, len(code.splitlines())
     line_starts = [0, *(match.end() for match in re.finditer("\n", code))]
@@ -643,6 +664,7 @@ def scan_lint_suppressions(path: Path, source: str, code: str) -> list[Finding]:
     tokens, pairs, parents = evaluation_tokens(code)
     words = [token[0] for token in tokens]
     admitted_conversion = False
+    admitted_registry = False
     for index, word in enumerate(words):
         if word != "#":
             continue
@@ -673,6 +695,11 @@ def scan_lint_suppressions(path: Path, source: str, code: str) -> list[Finding]:
         if not suppressions:
             continue
         allowed = False
+        if (relative_path(path) in GENERATED_DIALECT_PATHS
+                and not admitted_registry and inner and index not in parents
+                and words[opening + 1:end] == ["expect", "(", "dead_code", ")"]):
+            allowed = True
+            admitted_registry = True
         if (relative_path(path) == "crates/cadmpeg-core/src/convert.rs"
                 and not admitted_conversion and inner and index not in parents
                 and words[opening + 1:opening + 3] == ["expect", "("]):
@@ -691,7 +718,7 @@ def scan_lint_suppressions(path: Path, source: str, code: str) -> list[Finding]:
         if not allowed:
             findings.append(Finding(
                 "lint_suppression", relative_path(path), code.count("\n", 0, tokens[index].start()) + 1,
-                "Fix the lint instead of suppressing it; only tests and the single module expectation in core convert.rs are exempt.",
+                "Fix the lint instead of suppressing it; only tests, core conversions, and generated dialect IDs have exceptions.",
             ))
     return findings
 

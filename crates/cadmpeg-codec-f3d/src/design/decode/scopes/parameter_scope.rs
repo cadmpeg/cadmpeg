@@ -1754,6 +1754,19 @@ fn scope_reference_table_ends_at(
             .any(|offset| start.checked_add(offset) == Some(count_at))
 }
 
+/// The associated-reference count and closing-reference presence of an
+/// `Assemble` scope tail longer than the 88-byte fixed form: each associated
+/// reference adds eleven bytes, and a closing reference to the scope adds ten
+/// (its eleven bytes replace one of the two closing zero bytes).
+pub(crate) fn assemble_extended_tail(tail_length: usize) -> Option<(usize, bool)> {
+    let extra = tail_length.checked_sub(88)?;
+    match (extra / 11, extra % 11) {
+        (associated @ 1.., 0) => Some((associated, false)),
+        (associated, 10) => Some((associated, true)),
+        _ => None,
+    }
+}
+
 pub(crate) fn parameter_scope_tail_length_is_valid(
     kind: impl AsRef<str>,
     tail_length: usize,
@@ -1763,6 +1776,10 @@ pub(crate) fn parameter_scope_tail_length_is_valid(
         return true;
     }
     match kind {
+        "Assemble" => {
+            matches!(tail_length, 72 | 76 | 77 | 78 | 87)
+                || assemble_extended_tail(tail_length).is_some()
+        }
         "CopyPasteBodies" => tail_length == 110,
         "Hole" => matches!(tail_length, 72 | 76 | 77 | 78 | 87 | 109 | 119),
         "CoilPrimitive" => matches!(tail_length, 72 | 76 | 77 | 78 | 87 | 88),
@@ -2013,6 +2030,11 @@ fn fixed_tail_previous_history_offset(
         return crate::design::assembly::OrdinaryRigidGroupTail::for_length(tail_length)
             .map(|tail| tail.previous_history);
     }
+    if kind == "Assemble" {
+        if let Some((associated, _)) = assemble_extended_tail(tail_length) {
+            return associated.checked_mul(11)?.checked_add(41);
+        }
+    }
     match (kind, tail_length) {
         ("As-built", crate::layout::ordinary_rigid_group_tail_88::LEN) => {
             Some(crate::layout::ordinary_rigid_group_tail_88::PREVIOUS_HISTORY_STATE_ID)
@@ -2170,6 +2192,17 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                         record_index,
                     )
                     .is_some()));
+            // An unlabeled tail can carry associated references and a closing
+            // reference too (a joint whose second connector is its component's
+            // origin); no fixed length describes it.
+            let named_tail = named_tail
+                || (kind == "Assemble"
+                    && label_units == 0
+                    && !fixed_tail
+                    && tail_length <= 590
+                    && plain_scope_tail(bytes, kind_end, paired_at).is_some_and(|tail| {
+                        tail.references.extra_bytes().is_some_and(|extra| extra > 0)
+                    }));
             if named_tail
                 && named_candidate
                     .replace((at, kind_end, tail_length, ScopeTailForm::Named, label_units))

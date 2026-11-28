@@ -14,6 +14,7 @@ use crate::context::Eval;
 use crate::failure::Measure;
 
 /// The highest degree a column evaluates with stack basis buffers.
+// resource-cap: MAX_COLUMN_DEGREE = N
 const MAX_COLUMN_DEGREE: usize = 15;
 
 /// Basis values of one degree, on the stack.

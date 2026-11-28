@@ -685,12 +685,24 @@ pub(crate) fn project(
     name_bodies(&mut ir.geometry, bodies, inventory);
 }
 
+/// Names the bodies of each decoded history state as [`name_bodies`] names the
+/// current bodies.
+pub(crate) fn name_states(
+    states: &mut std::collections::BTreeMap<u32, super::history_bodies::StateRecords>,
+    bodies: &HashMap<String, BodyId>,
+    inventory: &FeatureInventory,
+) {
+    for state in states.values_mut() {
+        name_bodies(&mut state.geometry, bodies, inventory);
+    }
+}
+
 /// Names each current body from the feature label that the body's wrapper
 /// owns. A body keeps no name unless exactly one uniquely identified
 /// surface-body wrapper joins it, exactly one label in the wrapper's
 /// segment names the wrapper as its owner, and the stored name is faithful and
 /// non-blank.
-fn name_bodies(
+pub(crate) fn name_bodies(
     geometry: &mut Topology,
     bodies: &HashMap<String, BodyId>,
     inventory: &FeatureInventory,

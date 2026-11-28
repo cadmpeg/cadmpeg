@@ -69,7 +69,7 @@ impl HistoryDrop {
     /// Remove the records `error` names and those that need them from `ir`,
     /// and charge them. Returns `error` when nothing is left to remove.
     pub(super) fn degrade(&mut self, ir: &mut CadIr, error: CodecError) -> Result<(), CodecError> {
-        if matches!(error, CodecError::ResourceLimit(_) | CodecError::Io(_)) {
+        if matches!(error, CodecError::ResourceLimit(_)) {
             return Err(error);
         }
         let reason = error.to_string();

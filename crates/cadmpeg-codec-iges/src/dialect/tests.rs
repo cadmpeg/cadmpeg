@@ -4,9 +4,10 @@
 
 #![allow(clippy::unwrap_used)]
 
+use super::registry_ids::{FORMAT, IGES_UNKNOWN};
 use super::{
     classify, dialect_id, dialect_loss, fixed_ascii_id, DECLARED_REPRESENTATION,
-    DECLARED_VERSION_FLAG, DECLARED_VERSION_FLAG_DECLARATION, FORMAT, IGES_UNKNOWN,
+    DECLARED_VERSION_FLAG, DECLARED_VERSION_FLAG_DECLARATION,
 };
 use crate::loss::IgesLossCode;
 use crate::representation::Representation;

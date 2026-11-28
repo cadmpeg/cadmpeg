@@ -18,7 +18,7 @@ use crate::surface::SurfaceParameterRecord;
 
 use super::super::native::annotate;
 use super::super::sweep::nurbs::interpolation_spline_surface;
-use crate::vecmath::{cross, dot, local_system_lanes};
+use crate::vecmath::{dot, local_system_lanes};
 
 const EPS_PROTOTYPE_AGREEMENT: f64 = 1.0e-10;
 
@@ -171,7 +171,9 @@ fn prototype_local_frame(
             });
     let second = second_candidates.next()?;
     second_candidates.next().is_none().then_some(())?;
-    let axis = normalize(cross(reference, second))?;
+    let axis = normalize(<[f64; 3]>::from(
+        cadmpeg_ir::math::Vector3::from(reference).cross(cadmpeg_ir::math::Vector3::from(second)),
+    ))?;
     Some((origin, axis, reference))
 }
 

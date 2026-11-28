@@ -57,6 +57,7 @@ impl Walk for DesignConfiguration {
             id: _,
             scope: _,
             name: _,
+            position: _,
             parent: _,
             comment: _,
             overrides,
@@ -315,7 +316,8 @@ impl Walk for NativeOption {
             | Self::Real(_)
             | Self::Length(_)
             | Self::Angle(_)
-            | Self::Text(_) => Ok(()),
+            | Self::Text(_)
+            | Self::Blank(_) => Ok(()),
         }
     }
 }
@@ -398,6 +400,7 @@ impl Walk for DesignParameter {
             id: _,
             scope: _,
             owner: _,
+            position: _,
             name: _,
             kind: _,
             unit: _,

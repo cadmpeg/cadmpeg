@@ -791,6 +791,7 @@ fn complete_nurbs_surface_starts(
     fit_tolerance: Option<f64>,
     budget: &WorkBudget,
 ) -> Result<Option<Vec<FinitePoint2>>, ResourceLimit> {
+    // resource-cap: MAX_PATCHES = 4
     const MAX_PATCHES: usize = 1_000_000;
 
     let Some(mut patches) = rational_surface_residual_patches(surface, point, budget) else {
@@ -1202,7 +1203,9 @@ pub fn nurbs_surface_parameter_near_point<'ctx, 'arena: 'ctx>(
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
     const COARSE_GRID: usize = 8;
     const COARSE_GRID_F64: f64 = 8.0;
+    // resource-cap: MAX_ITERATIONS = 4
     const MAX_ITERATIONS: usize = 24;
+    // resource-cap: MAX_LINE_SEARCH_STEPS = 4
     const MAX_LINE_SEARCH_STEPS: usize = 12;
     let admission = admission.into();
     (|| -> Result<Option<FinitePoint2>, EvaluationRefusal> {
@@ -5981,6 +5984,7 @@ pub fn rolling_ball_jet_extended_point(
     s: f64,
     max_gap_mm: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    // resource-cap: MAX_TRANSVERSE_EXTENSION = N
     const MAX_TRANSVERSE_EXTENSION: f64 = 0.01;
     if !(-MAX_TRANSVERSE_EXTENSION..=1.0 + MAX_TRANSVERSE_EXTENSION).contains(&s)
         || !max_gap_mm.is_finite()

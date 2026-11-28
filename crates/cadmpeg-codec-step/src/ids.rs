@@ -17,7 +17,7 @@ use cadmpeg_ir::ids::{Identity, IdentityComponent, IdentityKey, IdentityNamespac
 pub(crate) type IdentityKind = IdentityComponent;
 
 /// The `<format>` component of every STEP identity.
-const FORMAT: FormatId = FormatId::new(crate::dialect::FORMAT);
+const FORMAT: FormatId = FormatId::new(crate::dialect::registry_ids::FORMAT);
 
 /// The `<scope>` component of a file-level identity.
 static SCOPE_FILE: IdentityComponent = cadmpeg_ir::identity_component!("file");

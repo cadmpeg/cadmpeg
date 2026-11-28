@@ -39,6 +39,7 @@ use crate::design::selection::{
 };
 use crate::design::units::Quantity;
 use crate::features::{ConfigurationId, ParameterId};
+use crate::scalar::Angle;
 
 use super::dimensions::{value_type, Bound, ValueType};
 
@@ -75,6 +76,8 @@ pub(super) struct Collect<'a, 'c> {
     pub(super) dimensions: Vec<BoundDimension<'a>>,
     /// Whether the walk is inside an assembly context's participants.
     in_participants: bool,
+    /// Whether the walk is inside the angle of a rotation step.
+    in_rotation: bool,
 }
 
 impl<'a, 'c> Collect<'a, 'c> {
@@ -86,6 +89,7 @@ impl<'a, 'c> Collect<'a, 'c> {
             expressions: Vec::new(),
             dimensions: Vec::new(),
             in_participants: false,
+            in_rotation: false,
         }
     }
 
@@ -95,6 +99,14 @@ impl<'a, 'c> Collect<'a, 'c> {
         expression: &'a Expression,
     ) {
         self.expressions.push((place, expression));
+    }
+
+    /// Walks the angle of a rotation step.
+    fn rotation(&mut self, angle: &'a Dimension<Angle>) -> Result<(), CodecError> {
+        self.in_rotation = true;
+        let walked = angle.walk(self);
+        self.in_rotation = false;
+        walked
     }
 
     /// Enters one level of a recursive design type.
@@ -111,6 +123,9 @@ pub(super) struct BoundDimension<'a> {
     pub(super) negated: bool,
     /// The dimension's value type.
     pub(super) value: ValueType,
+    /// Whether the dimension is the angle of a rotation step, which a turn
+    /// more or less leaves the same.
+    pub(super) rotation: bool,
 }
 
 /// One selection, with its order marker erased.
@@ -433,11 +448,10 @@ impl Walk for PostStep {
         match self {
             Self::Flip(f0) => f0.walk(into),
             Self::Translate { axis: _, distance } => distance.walk(into),
-            Self::Rotate { axis: _, angle } => angle.walk(into),
+            Self::Rotate { axis: _, angle } => into.rotation(angle),
             Self::AxisRotate { axis, angle } => {
                 axis.walk(into)?;
-                angle.walk(into)?;
-                Ok(())
+                into.rotation(angle)
             }
             Self::Fixed(_) => Ok(()),
         }
@@ -506,6 +520,7 @@ impl<T: Bound> Walk for Dimension<T> {
             parameter,
             negated,
             value: value_type::<T>(),
+            rotation: into.in_rotation,
         });
         Ok(())
     }

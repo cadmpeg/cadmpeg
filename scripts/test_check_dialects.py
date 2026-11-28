@@ -406,35 +406,18 @@ class TestGeneratedIds(unittest.TestCase):
             directory = root / "crates/demo/src"
             directory.mkdir(parents=True)
             (directory / "lib.rs").write_text(source, encoding="utf-8")
-            return checker.generated_id_modules(root, rows, self.OWNER if owners is None else owners)
+            return checker.generated_id_modules(rows, self.OWNER if owners is None else owners)
 
-    def test_generated_ids_follow_source_reads(self):
+    def test_generated_ids_include_unread_registry_rows(self):
         unknown = GOOD_ROW.replace('id = "demo:one"', 'id = "demo:unknown"')
         unknown += 'unknown_kind = "detect-unreachable"\n'
         outputs, failures = self.generate(self.rows(GOOD_ROW + unknown), 'DEMO_ONE; FORMAT; // DEMO_UNKNOWN\n "DEMO_UNKNOWN";')
         self.assertEqual(failures, [])
         content = outputs[self.OWNER["demo"].path]
         self.assertIn("DEMO_ONE", content)
-        self.assertNotIn("DEMO_UNKNOWN", content)
-        self.assertNotIn("allow", content)
-
-    def test_generated_ids_mark_test_only_reads(self):
-        outputs, failures = self.generate(self.rows(), '#[cfg(test)] mod tests { const ID: usize = DEMO_ONE; }')
-        self.assertEqual(failures, [])
-        content = outputs[self.OWNER["demo"].path]
-        self.assertIn("#[cfg(test)]\npub(crate) const DEMO_ONE", content)
-        self.assertNotIn("const FORMAT", content)
-
-    def test_generated_ids_do_not_read_their_own_output(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            path = root / self.OWNER["demo"].path
-            path.parent.mkdir(parents=True)
-            path.write_text("DEMO_ONE; FORMAT;", encoding="utf-8")
-            (path.parents[1] / "lib.rs").write_text("", encoding="utf-8")
-            outputs, failures = checker.generated_id_modules(root, self.rows(), self.OWNER)
-            self.assertEqual(failures, [])
-            self.assertNotIn("DEMO_ONE", outputs[self.OWNER["demo"].path])
+        self.assertIn("DEMO_UNKNOWN", content)
+        self.assertIn("#![expect(dead_code)]", content)
+        self.assertNotIn("#[cfg(test)]", content)
 
     def test_constant_names_are_derived_from_the_complete_id(self):
         self.assertEqual(

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Independently framed SMT headers do not control B-rep survival.
 
-use crate::test_support::assembly_test::f3d_with_text_brep_stream;
+use crate::test_support::assembly_fixture::f3d_with_text_brep_stream;
 use crate::F3dCodec;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;
@@ -74,8 +74,8 @@ fn malformed_smt_metadata_keeps_geometry_and_reports_recovery() {
 
 #[test]
 fn binary_product_encoding_recovery_keeps_independent_geometry() {
-    use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-    use crate::test_support::zip_test::f3d_with_smbh;
+    use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+    use crate::test_support::zip_fixture::f3d_with_smbh;
     let original = synthetic_geometry_smbh();
     let decode = |source: &[u8]| {
         F3dCodec
@@ -139,9 +139,9 @@ fn smt_tolerance_overflow_in_document_units_keeps_geometry() {
 
 #[test]
 fn invalid_binary_kernel_tolerances_keep_independent_geometry() {
-    use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
-    use crate::test_support::smbh_header_test::smbh_header_prefix;
-    use crate::test_support::zip_test::f3d_with_smbh;
+    use crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh;
+    use crate::test_support::smbh_header_fixture::smbh_header_prefix;
+    use crate::test_support::zip_fixture::f3d_with_smbh;
     let original = synthetic_geometry_smbh();
     let decode = |source: &[u8]| {
         F3dCodec
@@ -180,8 +180,8 @@ fn invalid_binary_kernel_tolerances_keep_independent_geometry() {
 #[test]
 fn manifest_metadata_recovery_preserves_geometry_and_exact_archive() {
     use std::io::{Read, Write};
-    let original = crate::test_support::zip_test::f3d_with_smbh(
-        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    let original = crate::test_support::zip_fixture::f3d_with_smbh(
+        &crate::test_support::smbh_geometry_fixture::synthetic_geometry_smbh(),
     );
     let expected = F3dCodec
         .decode(&mut Cursor::new(&original), &DecodeOptions::default())

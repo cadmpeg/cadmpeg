@@ -54,7 +54,7 @@ impl EncoderBackend for StepCodec {
 }
 
 impl CodecBackend for StepCodec {
-    const FORMAT: FormatId = FormatId::new(crate::dialect::FORMAT);
+    const FORMAT: FormatId = FormatId::new(crate::dialect::registry_ids::FORMAT);
 
     fn detect_impl(
         &self,

@@ -13,7 +13,9 @@ use cadmpeg_ir::unknown::part::{Cause, Part};
 use crate::container::streams::Streams;
 
 const BYTE_ORDER_LE: u16 = 0xfffe;
+// resource-cap: MAX_STREAM_SIZE = 2
 const MAX_STREAM_SIZE: usize = 2_097_152;
+// resource-cap: MAX_PROPERTIES = 2
 const MAX_PROPERTIES: usize = 65_536;
 const VT_VECTOR: u16 = 0x1000;
 const VT_VARIANT: u16 = 0x000c;

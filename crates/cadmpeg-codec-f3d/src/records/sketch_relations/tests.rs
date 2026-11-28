@@ -45,7 +45,7 @@ fn sketch_relation_borrowed_wire_matches_owned_wire_bytes() {
 fn sketch_relation_native_retained_limit_refuses_before_clone() {
     let mut relation: SketchRelation = serde_json::from_str(RELATION_WIRE).unwrap();
     relation.id = "f3d:native:sketch-relation#0".into();
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &relation,
         "sketch_relations",
         || super::SKETCH_RELATION_CLONE_COUNT.with(|count| count.set(0)),

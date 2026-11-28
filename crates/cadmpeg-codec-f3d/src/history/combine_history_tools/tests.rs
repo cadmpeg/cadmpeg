@@ -103,6 +103,7 @@ fn pair(entity_suffix: u64, history_only: bool) -> DesignBodyBinding {
         component_owner: None,
         component_owner_unresolved: false,
         history_only,
+        consumers: Vec::new(),
         id: format!("{STREAM}:design-body-binding#{}", entity_suffix * 100),
         stream: "Design/BulkStream.dat".into(),
         pair_count: 1,
@@ -552,12 +553,146 @@ fn a_live_tool_of_another_history_selects_its_model_body() {
 }
 
 #[test]
-fn a_live_tool_that_a_later_transition_changes_stays_native() {
-    let (features, losses) = bind_component_tool(&tool_history(&[&[]]));
+fn a_live_tool_changed_without_a_modifier_scope_stays_native() {
+    let history = updating_history();
+    let (features, losses) = bind_component_tool(&history);
     assert_eq!(losses.len(), 1, "{losses:?}");
     assert!(losses[0].message.contains("later transition"), "{losses:?}");
     assert!(matches!(
         tools_of(&features[1]),
+        BodySelection::NativeSet(_)
+    ));
+}
+
+/// A scope of the tool history whose result state is `state`.
+fn modifier_scope(record_index: u32, state: i64) -> DesignParameterScope {
+    let mut modifier = scope(DesignFeatureKind::Fillet, record_index);
+    modifier
+        .try_edit(|draft| {
+            draft.history_state_id = Some(state);
+            draft.previous_history_state_id = Some(state - 1);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    modifier
+}
+
+/// The tool history whose state 2 updates slot 7.
+fn updating_history() -> crate::history_records::AsmHistory {
+    versioned_history(&[(2, &[(7, 2)]), (1, &[(7, 1)]), (0, &[])])
+}
+
+/// Bind a Combine of ordinal 3 whose tool the tool history changes in state 2,
+/// where the feature of state 2 has `modifier_ordinal`.
+fn bind_modified_tool(
+    modifier_ordinal: u64,
+) -> (Vec<Feature>, Vec<cadmpeg_ir::report::loss::LossNote>) {
+    bind_tool_in_history(&updating_history(), modifier_ordinal, STREAM)
+}
+
+/// Bind the Combine of `bind_modified_tool` over `history`, with the tool
+/// creator in `creator_stream`.
+fn bind_tool_in_history(
+    history: &crate::history_records::AsmHistory,
+    modifier_ordinal: u64,
+    creator_stream: &str,
+) -> (Vec<Feature>, Vec<cadmpeg_ir::report::loss::LossNote>) {
+    let mut creator = component_scope();
+    if creator_stream != STREAM {
+        creator.id = format!("{creator_stream}:design-parameter-scope#100");
+    }
+    let creator_id = creator.id.clone();
+    let scopes = vec![
+        creator,
+        modifier_scope(200, 2),
+        combine_scope(&[(150, 100)]),
+    ];
+    let mut features = vec![
+        feature("first", 1, &creator_id),
+        feature("modifier", modifier_ordinal, &scope_id(200)),
+        feature("combine", 3, &scope_id(400)),
+    ];
+    let scope_histories = std::collections::HashMap::from([
+        (creator_id.clone(), TOOL_HISTORY.to_owned()),
+        (scope_id(200), TOOL_HISTORY.to_owned()),
+    ]);
+    let (losses, _, _) = bind(
+        &mut features,
+        &scopes,
+        &[live_pair(150)],
+        (std::slice::from_ref(history), &scope_histories),
+    );
+    (features, losses)
+}
+
+#[test]
+fn a_live_tool_changed_only_by_features_before_the_combine_selects_its_model_body() {
+    let (features, losses) = bind_modified_tool(2);
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_live_tool(&features);
+}
+
+#[test]
+fn a_live_tool_changed_by_a_feature_after_the_combine_stays_native() {
+    let (features, losses) = bind_modified_tool(5);
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(
+        losses[0].message.contains("follows the Combine"),
+        "{losses:?}"
+    );
+    assert!(matches!(
+        tools_of(&features[2]),
+        BodySelection::NativeSet(_)
+    ));
+}
+
+#[test]
+fn a_live_tool_deleted_before_the_combine_stays_native() {
+    let (features, losses) = bind_tool_in_history(&tool_history(&[&[]]), 2, STREAM);
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(
+        losses[0].message.contains("deletes or re-inserts"),
+        "{losses:?}"
+    );
+    assert!(matches!(
+        tools_of(&features[2]),
+        BodySelection::NativeSet(_)
+    ));
+}
+
+#[test]
+fn a_live_tool_re_inserted_before_the_combine_stays_native() {
+    let history = versioned_history(&[(3, &[(7, 3)]), (2, &[]), (1, &[(7, 1)]), (0, &[])]);
+    let (features, losses) = bind_tool_in_history(&history, 2, STREAM);
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(
+        losses[0].message.contains("deletes or re-inserts"),
+        "{losses:?}"
+    );
+    assert!(matches!(
+        tools_of(&features[2]),
+        BodySelection::NativeSet(_)
+    ));
+}
+
+#[test]
+fn a_live_tool_changed_by_a_feature_below_its_generator_stays_native() {
+    let (features, losses) = bind_modified_tool(0);
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(losses[0].message.contains("does not follow"), "{losses:?}");
+    assert!(matches!(
+        tools_of(&features[2]),
+        BodySelection::NativeSet(_)
+    ));
+}
+
+#[test]
+fn a_live_tool_whose_creator_is_in_another_stream_stays_native() {
+    let (features, losses) =
+        bind_tool_in_history(&updating_history(), 2, "f3d:Design/OtherStream.dat");
+    assert!(losses.is_empty(), "{losses:?}");
+    assert!(matches!(
+        tools_of(&features[2]),
         BodySelection::NativeSet(_)
     ));
 }
@@ -779,4 +914,104 @@ fn a_tool_listed_by_a_several_body_result_state_keeps_its_identity() {
     };
     assert_eq!(bodies[0].local_id.as_str(), pair(150, true).id());
     assert_eq!(bodies[1].local_id.as_str(), pair(250, true).id());
+}
+
+fn assert_live_tool(features: &[Feature]) {
+    let combine = features.last().unwrap();
+    let BodySelection::Resolved { bodies, .. } = tools_of(combine) else {
+        panic!("model-body tools");
+    };
+    assert_eq!(
+        bodies
+            .iter()
+            .map(cadmpeg_ir::ids::BodyId::as_str)
+            .collect::<Vec<_>>(),
+        ["f3d:brep:body#7"]
+    );
+    assert!(combine.dependencies.contains(&features[0].id));
+}
+
+#[test]
+fn a_live_tool_change_without_a_projected_feature_stays_native() {
+    let history = updating_history();
+    let scopes = vec![
+        component_scope(),
+        modifier_scope(200, 2),
+        combine_scope(&[(150, 100)]),
+    ];
+    let mut features = vec![
+        feature("first", 1, &scope_id(100)),
+        feature("combine", 3, &scope_id(400)),
+    ];
+    let bound = std::collections::HashMap::from([
+        (scope_id(100), TOOL_HISTORY.to_owned()),
+        (scope_id(200), TOOL_HISTORY.to_owned()),
+    ]);
+    let (losses, _, _) = bind(
+        &mut features,
+        &scopes,
+        &[live_pair(150)],
+        (&[history], &bound),
+    );
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0]
+        .message
+        .contains("belongs to no projected feature"));
+    assert!(matches!(
+        tools_of(&features[1]),
+        BodySelection::NativeSet(_)
+    ));
+}
+
+#[test]
+fn a_live_tool_of_the_combine_history_charges_a_loss() {
+    let history = tool_history(&[]);
+    let scopes = vec![component_scope(), combine_scope(&[(150, 100)])];
+    let mut features = vec![
+        feature("first", 1, &scope_id(100)),
+        feature("combine", 3, &scope_id(400)),
+    ];
+    let bound = std::collections::HashMap::from([
+        (scope_id(100), TOOL_HISTORY.to_owned()),
+        (scope_id(400), TOOL_HISTORY.to_owned()),
+    ]);
+    let (losses, _, _) = bind(
+        &mut features,
+        &scopes,
+        &[live_pair(150)],
+        (&[history], &bound),
+    );
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("body of the Combine history"));
+    assert!(matches!(
+        tools_of(&features[1]),
+        BodySelection::NativeSet(_)
+    ));
+}
+
+#[test]
+fn a_live_tool_change_in_an_intermediate_feature_state_selects_its_model_body() {
+    let history = versioned_history(&[(3, &[(7, 2)]), (2, &[(7, 2)]), (1, &[(7, 1)]), (0, &[])]);
+    let scopes = vec![
+        component_scope(),
+        state_scope(DesignFeatureKind::Fillet, 200, 3, 1),
+        combine_scope(&[(150, 100)]),
+    ];
+    let mut features = vec![
+        feature("first", 1, &scope_id(100)),
+        feature("modifier", 2, &scope_id(200)),
+        feature("combine", 3, &scope_id(400)),
+    ];
+    let bound = std::collections::HashMap::from([
+        (scope_id(100), TOOL_HISTORY.to_owned()),
+        (scope_id(200), TOOL_HISTORY.to_owned()),
+    ]);
+    let (losses, _, _) = bind(
+        &mut features,
+        &scopes,
+        &[live_pair(150)],
+        (&[history], &bound),
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_live_tool(&features);
 }

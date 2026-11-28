@@ -580,7 +580,7 @@ fn review1368_serializer_primary_identity_is_global_across_routes() {
         assert_eq!(serializers.entries[&296][0].ambiguous, case != 3);
         let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-        crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+        crate::test_support::manifest_fixture::write_synthetic_manifests(&mut archive, stored);
         for uuid in [FIRST_CAGE_UUID, SECOND_CAGE_UUID] {
             archive
                 .start_file(
@@ -593,7 +593,7 @@ fn review1368_serializer_primary_identity_is_global_across_routes() {
         let archive = archive.finish().unwrap().into_inner();
         let scope = form_scope(201, vec![210]);
         let mut result = None;
-        crate::test_support::zip_test::with_scan(&archive, |scan| {
+        crate::test_support::zip_fixture::with_scan(&archive, |scan| {
             crate::design::test_support::with_test_decode_context(|ctx| {
                 let mut facts = form_cages::FormFacts {
                     inputs: form_cages::form_inputs(&scope)?,

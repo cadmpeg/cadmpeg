@@ -29,7 +29,7 @@ fn construction_recipe_borrowed_wire_matches_owned_wire_bytes() {
 #[test]
 fn construction_recipe_native_retained_limit_refuses_before_record_clone() {
     let record = recipe(true);
-    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+    crate::test_support::native_fixture::assert_borrowed_native_retained_limit(
         &record,
         "construction_recipes",
         || CONSTRUCTION_RECIPE_CLONE_COUNT.with(|count| count.set(0)),

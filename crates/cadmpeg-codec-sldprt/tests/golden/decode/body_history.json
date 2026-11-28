@@ -15,6 +15,7 @@
             "occurrences": {},
             "parameters": {}
           },
+          "position": 0,
           "scope": "sldprt:model:product-definition#root"
         }
       ],
@@ -105,6 +106,7 @@
             "kind": "feature",
             "value": "sldprt:model:feature#247:0"
           },
+          "position": 0,
           "scope": "sldprt:model:product-definition#root",
           "source_settings": {},
           "value": {

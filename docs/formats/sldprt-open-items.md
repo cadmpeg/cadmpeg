@@ -929,6 +929,14 @@ resolve a seed feature?
 
 **Note.** Each primary cause retains its unresolved extent and decode loss until its ownership and geometry checks succeed.
 
+### DI-110. Suppression of a feature in one configuration
+
+**Question.** Which stored field states that a feature is suppressed in one configuration and built in another?
+
+**Known.** A Keywords history element stores one `Suppressed` attribute, with the value `1`, `true` or `True` for a suppressed feature. The part stores one history for all of its configurations. A configuration snapshot changes the suppression of a feature-tree node (`sldprt.md` §2). Each configuration also stores its own `Config-N-ResolvedFeatures` lane and its own `Config-N-Partition` B-rep. The decoder applies the history's `Suppressed` attribute to every configuration, and the design states no suppression override of a configuration.
+
+**Need.** A part with two configurations and one feature, saved with the feature suppressed in the configuration that is not active and built in the active one, beside the same part saved with the feature built in both. Compare the feature's Keywords element, the `Config-N-ResolvedFeatures` lane of each configuration, and the `Contents/Features` configuration list of the two saves byte for byte.
+
 ## 6. Container record semantics
 
 ### EV-03. `SWObjects` record content
@@ -1243,6 +1251,14 @@ In the first form, reverse byte `0` gives the right-handed turn about the stored
 
 **Need.** Save one profile cut patterned circularly 4 times over 90°, once with equal spacing and once with the instance spacing, each with the pattern direction reversed and not reversed. Compare the angle parameter's name and value, the byte after the axis tail, and the angles of the copies in the stored solid.
 
+### EV-40. The word of a cut-list folder tail
+
+**Question.** What does the u32 at offset 8 of a cut-list folder's tail select?
+
+**Known.** A `moCutListFolder_c` ends its items with a 43-byte tail (`sldprt.md` §2.4): u32 `1`, i32 `-1`, a u32 word, 23 zero bytes, u32 `1`, u32 `1`. The word takes the values `2` and `3`. Every other byte of the tail is the same for both values. The decoder stores the word with the folder.
+
+**Need.** Save a weldment part with two structural members of different profiles. Save it again after each change of one cut-list control: automatic update, automatic sort, and the folder's item grouping. Compare the word at offset 8 of each folder tail.
+
 ### EV-24. Bytes after the last top-level object
 
 **Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?
@@ -1444,6 +1460,14 @@ The other axis-parallel support frames include the frames of those families whos
 **Known.** The relation object writes its relation class, a zero u32 and its parameter class, then a display-role scalar and a driving-role scalar of the same name (`sldprt.md` §2). Each scalar ends with two operand cells, compact 8-byte cells or 12-byte cells, each a class token and a u16 address, and then u16 `1`, u16 `1`, u16 `1` and four zero bytes. Read as feature-local object indices, the addresses of a relation can select two coordinate-bearing points whose horizontal or vertical separation equals the driving scalar and whose Euclidean separation differs from it. Read as zero-based ordinals over all coordinate-bearing markers of the owning feature in byte order, with the point records of DI-46 included, the same addresses select two points whose Euclidean separation equals the driving scalar. In such a sketch, the other relations of the class that use the same token also fit the ordinal reading, and their object-index reading selects no pair at the driving distance. The u16 triple after the operand cells is `1`, `1`, `1` in relations whose points are separated on one axis only and in relations whose points are separated on both. The decoder keeps a relation native when its resolved operands measure another value than its driving scalar.
 
 **Need.** A sketch with two points on no common axis, dimensioned three times with point-to-point dimensions placed aligned, horizontal and vertical, saved, and the three relation objects and their `moDisplayDistanceDim_c` display objects compared, together with a second save in which a point marker is added before the dimensioned points.
+
+### DI-96. Frame form of a plane-data object written as a class token
+
+**Question.** Which frame form does a reference plane's plane-data object store where it is written as a class token, and its bytes read as both the 121-byte matrix form and the 97-byte fixed form with different u-axes?
+
+**Known.** The token is a u16 class token behind six zero bytes, and the frame begins immediately after it (`sldprt.md` §2). A declared plane-data class selects its frame form by name; the token names a class of the archive's class map. One stored frame has origin `(0.03, 0, 0)` m, unit normal `(1, 0, 0)`, byte `1`, and the nine f64 `0, 0, 1, 0, 1, -0, -1, 0, 0`. Read as a row-major matrix, its third column is the normal and its first column, the u-axis, is `(0, 0, -1)`. Read in the pairwise-orthogonal variant of the 97-byte fixed form, the u-axis is `(0, 0, 1)` and the v-axis `(0, 1, 0)`. The decoder reads the frame of a token-written plane-data object where every form that reads there gives one frame, and the repeated-normal variant where no other form reads. Where the forms differ, it reads no frame from the token, and the plane takes the frame of the interval scan.
+
+**Need.** The class the token names, from the class map of the configuration stream that the lane continues, for a part with a reference plane whose plane-data class is declared earlier in the stream, beside the same plane saved as the stream's first plane of that class.
 
 ### DI-97. The state after a feature whose records name two marks
 

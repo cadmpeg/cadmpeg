@@ -247,14 +247,18 @@ impl ReportBuckets {
     }
 }
 
+// resource-cap: MAX_INSTANCE_REFERENCES = 4
 const MAX_INSTANCE_REFERENCES: usize = 1 << 20;
 
+// resource-cap: MAX_INSTANCE_MEMBERS = 4
 const MAX_INSTANCE_MEMBERS: usize = 1 << 20;
+// resource-cap: MAX_INSTANCE_ENTITIES = 4
 const MAX_INSTANCE_ENTITIES: usize = 1 << 20;
 /// Member visits, copied entities, and the points, control points, mesh
 /// vertices and triangles, and cage vertices that instance expansion copies in
 /// one document. Rejected expansions stay charged, so the copy work of the
 /// document is bounded even when every reference is rolled back.
+// resource-cap: MAX_INSTANCE_COPY_ELEMENTS = 4
 const MAX_INSTANCE_COPY_ELEMENTS: usize = 1 << 26;
 const ENTITY_BUDGET_EXCEEDED: &str =
     "document instance entity budget exceeded (MAX_INSTANCE_ENTITIES)";
@@ -2226,6 +2230,7 @@ impl<'a> DecodeContext<'a> {
         path: &mut Vec<String>,
         stack: &mut Vec<crate::wire::Uuid>,
     ) -> Result<Vec<String>, ReferenceFailure> {
+        // resource-cap: MAX_INSTANCE_DEPTH = 4
         const MAX_INSTANCE_DEPTH: usize = 64;
         let _nested = self.expand.ctx().enter_nested("rhino_instance_nesting")?;
         self.expansion_budget.reference()?;
@@ -6704,7 +6709,7 @@ pub(crate) fn seal_for_test(
     struct TestBackend(Decoded);
 
     impl CodecBackend for TestBackend {
-        const FORMAT: FormatId = FormatId::new(crate::dialect::FORMAT);
+        const FORMAT: FormatId = FormatId::new(crate::dialect::registry_ids::FORMAT);
 
         fn detect_impl(
             &self,
