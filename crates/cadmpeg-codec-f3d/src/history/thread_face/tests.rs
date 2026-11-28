@@ -394,3 +394,79 @@ fn thread_foreign_historical_slot_keeps_history() {
     fixture.topologies[0].faces = vec![foreign].try_into().unwrap();
     fixture.refuses(Some(MEMBER));
 }
+
+#[test]
+fn thread_keeps_input_cylinder_before_live_face_binding() {
+    use crate::history_records::{AsmHistoricalFaceSample, AsmHistoricalTopology};
+    use cadmpeg_ir::features::evaluation::{HistoricalFaceGeometry, HistoricalFaceSurface};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let mut fixture = Fixture::new();
+    let cylinder = HistoricalFaceSurface::Cylinder(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            5.0,
+        )
+        .unwrap(),
+    );
+    let history = &fixture.histories[0];
+    let states = history.states().to_vec();
+    fixture.histories = vec![crate::test_support::history::history(
+        HISTORY.into(),
+        0,
+        None,
+        false,
+        states
+            .into_iter()
+            .map(|state| {
+                let topology = Some(AsmHistoricalTopology {
+                    bodies: vec![1],
+                    faces: vec![10],
+                    face_samples: vec![AsmHistoricalFaceSample {
+                        face: 10,
+                        surface: cylinder.clone(),
+                        reversed: false,
+                    }],
+                    ..Default::default()
+                });
+                (state, topology, Vec::new())
+            })
+            .collect(),
+    )];
+    fixture.topologies = crate::history::input_topologies::project_feature_input_topologies(
+        &fixture.features,
+        &fixture.scopes,
+        &mut fixture.histories,
+        &[],
+        &Default::default(),
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    crate::history::input_topologies::retain_selected_face_geometry(
+        &ctx,
+        &fixture.features,
+        &mut fixture.topologies,
+    )
+    .unwrap();
+    assert!(fixture.run(Some(MEMBER)).is_empty());
+    crate::history::discard_projection_caches(&mut fixture.histories);
+    assert!(matches!(
+        fixture.selection(),
+        FaceSelection::Resolved { .. }
+    ));
+    assert_eq!(fixture.topologies.len(), 1);
+    let input = &fixture.topologies[0];
+    assert_eq!(input.faces.as_slice().len(), 1);
+    assert_eq!(
+        input.face_geometry,
+        vec![HistoricalFaceGeometry {
+            face: input.faces.as_slice()[0].clone(),
+            surface: cylinder,
+            reversed: false,
+        }]
+    );
+}
