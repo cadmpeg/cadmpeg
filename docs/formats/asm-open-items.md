@@ -303,6 +303,14 @@ the record grammar does not identify one construction.
 
 **Note.** QA sweep location: `crates/cadmpeg-asm/src/brep/stats.rs:15-35`.
 
+### GC-49. Zero axis vector of a `helix_int_cur`
+
+**Question.** What does the zero axis vector of a `helix_int_cur` state, and which direction is the axis of that curve?
+
+**Known.** `asm.md` §6.3 `helix_int_cur` gives the payload and the curve `C(t)`. A current-form record stores the interval `[0, t1]` with `t1` below `π/2`, a major and a minor vector of equal magnitude, a pitch vector whose magnitude is between `1e-9` and `1e-8` of that magnitude, apex factor `0`, and the zero vector as the axis. Two `null_surface` tokens and two `nullbs` tokens follow the axis, and the record stores no cache. The pitch vector is antiparallel to `major × minor`. The record is the curve of an edge between a circular cylinder face and a plane face of a sheet-metal bend, and `C(t)` at the two ends of the interval lies on the two vertices of that edge. The decoder states the axis of each `helix_int_cur` that stores the zero vector as its axis, in both forms and with or without a cache, as the unit vector of the stored `major × minor`. It keeps the stored center, major, minor, and pitch vectors, apex factor, and interval, and F3D, SAT, and Inventor report `geometry.helix-axis-assumed` with the count of these records. A patch whose helix axis is the stated vector keeps the stored zero vector. For a record whose major and minor vectors are parallel, the decoder keeps the edge with its vertices and parameter range. F3D reports that edge as `geometry.procedural-curve-undecoded`; the SAT and Inventor reports are silent on it.
+
+**Need.** Save a sheet-metal body with one bend, and a solid of the same shape whose arc edges between the cylinder faces and the plane faces are `ellipse` records. Compare the normal of each `ellipse` record with `major × minor` and with the pitch vector of the `helix_int_cur` record of the same edge. A save of a helical edge with a pitch of visible magnitude and a zero axis vector gives the sign of the axis against the pitch vector.
+
 ## 2. Topology
 
 ### TG-01. Missing partner coedge substitution

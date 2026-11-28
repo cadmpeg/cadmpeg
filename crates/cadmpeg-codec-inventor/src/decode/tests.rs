@@ -700,3 +700,31 @@ fn a_bound_colour_reaches_the_faces_of_the_current_geometry_and_of_each_state() 
     assert_eq!(colours_of(&geometry), [Some(red)]);
     assert_eq!(colours_of(&states[&4].geometry), [Some(red), Some(blue)]);
 }
+
+#[test]
+fn kernel_stats_report_assumed_helix_axes_and_undecoded_procedural_surfaces() {
+    let codes = |stats: &cadmpeg_asm::brep::stats::Stats| {
+        super::kernel_stats_losses(stats)
+            .into_iter()
+            .map(|loss| (loss.code, loss.message))
+            .collect::<Vec<_>>()
+    };
+    let mut stats = cadmpeg_asm::brep::stats::Stats::default();
+    assert!(codes(&stats).is_empty());
+    stats.helix_axes_assumed = 3;
+    let losses = codes(&stats);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].0,
+        InventorLossCode::GeometryHelixAxisAssumed.kind()
+    );
+    assert!(losses[0].1.starts_with("3 helix curve record(s) "));
+    stats.unknown_surface_kinds.insert("spline".into(), 2);
+    let losses = codes(&stats);
+    assert_eq!(losses.len(), 2);
+    assert_eq!(
+        losses[0].0,
+        InventorLossCode::GeometryProceduralSurfaceNotTransferred.kind()
+    );
+    assert!(losses[0].1.starts_with("2 face(s) "));
+}

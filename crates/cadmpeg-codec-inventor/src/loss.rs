@@ -35,6 +35,9 @@ pub(crate) enum InventorLossCode {
     GeometryKernelCarrierNotTransferred,
     /// Faces use procedural surfaces without a decoded carrier.
     GeometryProceduralSurfaceNotTransferred,
+    /// A helix curve record stores the zero vector as its axis; the axis is
+    /// stated as the unit normal of the radial plane.
+    GeometryHelixAxisAssumed,
     /// A face states no loop on a plane, cylinder, or cone; the face is
     /// stated partial.
     TopologyFaceBoundaryUnstated,
@@ -361,6 +364,7 @@ impl InventorLossCode {
             Self::GeometryProceduralSurfaceNotTransferred => {
                 "geometry.procedural-surface-not-transferred"
             }
+            Self::GeometryHelixAxisAssumed => "geometry.helix-axis-assumed",
             Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::RseSegmentPairUntyped => "rse.segment-pair-untyped",
             Self::FeatureDesignOperationNative => "feature.design-operation-native",
@@ -570,7 +574,8 @@ impl InventorLossCode {
             Self::FeatureRecordMalformed
             | Self::PropertySetStreamMalformed
             | Self::KernelHistoryUnclosed
-            | Self::UfrxTableMalformed => LossTaxonomy::DecodeDiagnostic,
+            | Self::UfrxTableMalformed
+            | Self::GeometryHelixAxisAssumed => LossTaxonomy::DecodeDiagnostic,
             Self::KernelCarrierUnparseable => LossTaxonomy::RecordNotTyped,
             Self::KernelHeaderMetadataUnresolved | Self::ContainerNoncanonical => {
                 LossTaxonomy::NoncanonicalSourceSyntax
@@ -762,6 +767,7 @@ mod tests {
             [
                 "geometry.kernel-carrier-not-transferred",
                 "geometry.procedural-surface-not-transferred",
+                "geometry.helix-axis-assumed",
                 "topology.face-boundary-unstated",
                 "rse.segment-pair-untyped",
                 "feature.record-malformed",

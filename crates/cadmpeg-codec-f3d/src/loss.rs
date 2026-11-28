@@ -1386,6 +1386,9 @@ pub(crate) enum F3dLossCode {
     PcurveUndecoded,
     /// Rolling-ball blend definitions resolved only one of two native supports.
     BlendSupportPartial,
+    /// A helix curve record stores the zero vector as its axis; the axis is
+    /// stated as the unit normal of the radial plane.
+    HelixAxisAssumed,
     /// Solved-record application or refinement records were not transferred.
     SolvedRecordUntyped,
     /// Materials and appearances were not transferred.
@@ -2705,6 +2708,7 @@ impl F3dLossCode {
             Self::SpringSupportPcurveUnresolved => "geometry.spring-support-pcurve-unresolved",
             Self::PcurveUndecoded => "geometry.pcurve-undecoded",
             Self::BlendSupportPartial => "geometry.blend-support-partial",
+            Self::HelixAxisAssumed => "geometry.helix-axis-assumed",
             Self::SolvedRecordUntyped => "geometry.solved-record-untyped",
             Self::MaterialNotTransferred => "material.not-transferred",
             Self::GeometryNotTransferred => "geometry.not-transferred",
@@ -3587,6 +3591,7 @@ impl F3dLossCode {
             | Self::SpringSupportPcurveUnresolved
             | Self::PcurveUndecoded
             | Self::BlendSupportPartial
+            | Self::HelixAxisAssumed
             | Self::SolvedRecordUntyped
             | Self::MaterialNotTransferred
             | Self::TsplineRecordUntyped
@@ -4455,6 +4460,7 @@ impl F3dLossCode {
             | Self::NurbsCurveCarrier
             | Self::MeshSurfaceSentinel => LossTaxonomy::CarrierSummary,
             Self::VertexToleranceWidened
+            | Self::HelixAxisAssumed
             | Self::SketchRegionBodyOmitted
             | Self::SketchCurveRegionBoundary
             | Self::SketchCurveUnprofiledSelected => LossTaxonomy::DecodeDiagnostic,
@@ -5354,6 +5360,7 @@ mod tests {
                 "geometry.procedural-support-chart-unresolved",
                 "geometry.pcurve-undecoded",
                 "geometry.blend-support-partial",
+                "geometry.helix-axis-assumed",
                 "geometry.solved-record-untyped",
                 "material.not-transferred",
                 "geometry.not-transferred",

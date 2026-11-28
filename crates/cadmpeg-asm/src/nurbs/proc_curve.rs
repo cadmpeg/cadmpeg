@@ -39,6 +39,9 @@ use cadmpeg_ir::scalar::{
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-12;
+/// Least sine of the angle between a helix major and minor vector that span a
+/// radial plane.
+const EPS_HELIX_RADIAL_PLANE_SINE: f64 = 1.0e-10;
 
 macro_rules! propagate_resource {
     ($result:expr) => {
@@ -447,10 +450,26 @@ pub struct HelixDefinition {
 }
 
 impl HelixDefinition {
+    /// Whether the record stores the zero vector as its axis.
+    #[must_use]
+    pub fn stores_zero_axis(&self) -> bool {
+        self.axis == Vector3::new(0.0, 0.0, 0.0)
+    }
+
+    /// The stored axis, or the unit normal `major x minor` of the radial plane
+    /// for a record that stores the zero vector.
+    fn stated_axis(&self) -> Vector3 {
+        if !self.stores_zero_axis() {
+            return self.axis;
+        }
+        helix_radial_plane_normal(self.major, self.minor).unwrap_or(self.axis)
+    }
+
     pub(crate) fn into_definition(
         self,
     ) -> Result<cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition, &'static str>
     {
+        let axis = self.stated_axis();
         Ok(
             cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Helix(
                 cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
@@ -460,13 +479,23 @@ impl HelixDefinition {
                         major: self.major,
                         minor: self.minor,
                         pitch: self.pitch,
-                        axis: self.axis,
+                        axis,
                     },
                     self.apex_factor,
                     None,
                 )?,
             ),
         )
+    }
+}
+
+/// The unit vector of `major x minor` for vectors that span a radial plane.
+pub(crate) fn helix_radial_plane_normal(major: Vector3, minor: Vector3) -> Option<Vector3> {
+    let normal = major.unit()?.cross(minor.unit()?);
+    if normal.norm() > EPS_HELIX_RADIAL_PLANE_SINE {
+        normal.unit()
+    } else {
+        None
     }
 }
 

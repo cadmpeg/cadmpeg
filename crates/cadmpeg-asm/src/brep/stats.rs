@@ -31,6 +31,9 @@ pub struct Stats {
     pub partial_procedural_supports: usize,
     /// Residual record or component counts by native kind.
     pub other_record_kinds: std::collections::BTreeMap<String, usize>,
+    /// Helix curves whose record stores the zero vector as its axis and whose
+    /// axis is stated as the unit vector of the stored `major x minor`.
+    pub helix_axes_assumed: usize,
 }
 
 impl Stats {
@@ -84,6 +87,7 @@ impl Stats {
             nurbs_surfaces,
             nurbs_curves,
             partial_procedural_supports,
+            helix_axes_assumed,
         );
         for (target, source) in [
             (
@@ -144,6 +148,7 @@ struct StatsWire {
     )]
     undecoded_pcurve_kinds: std::collections::BTreeMap<String, usize>,
     partial_procedural_supports: usize,
+    helix_axes_assumed: usize,
     other_records: usize,
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     #[cfg_attr(
@@ -166,7 +171,7 @@ impl schemars::JsonSchema for Stats {
 
 impl Serialize for Stats {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut wire = serializer.serialize_struct("Stats", 14)?;
+        let mut wire = serializer.serialize_struct("Stats", 15)?;
         wire.serialize_field("missing_face_surfaces", &self.missing_face_surfaces())?;
         wire.serialize_field(
             "missing_face_surface_kinds",
@@ -185,6 +190,7 @@ impl Serialize for Stats {
             "partial_procedural_supports",
             &self.partial_procedural_supports,
         )?;
+        wire.serialize_field("helix_axes_assumed", &self.helix_axes_assumed)?;
         wire.serialize_field("other_records", &self.other_records())?;
         wire.serialize_field("other_record_kinds", &self.other_record_kinds)?;
         wire.end()
@@ -244,6 +250,7 @@ impl<'de> Deserialize<'de> for Stats {
             procedural_curve_kinds: wire.procedural_curve_kinds,
             undecoded_pcurve_kinds: wire.undecoded_pcurve_kinds,
             partial_procedural_supports: wire.partial_procedural_supports,
+            helix_axes_assumed: wire.helix_axes_assumed,
             other_record_kinds: wire.other_record_kinds,
         })
     }
@@ -262,7 +269,7 @@ mod tests {
              \"mesh_surface_faces\":0,\"nurbs_surfaces\":0,\"nurbs_curves\":0,\
              \"procedural_curve_edges\":0,\"procedural_curve_kinds\":{{}},\
              \"undecoded_pcurve_refs\":0,\"undecoded_pcurve_kinds\":{{}},\
-             \"partial_procedural_supports\":0,\
+             \"partial_procedural_supports\":0,\"helix_axes_assumed\":0,\
              \"other_records\":0,\"other_record_kinds\":{{}}}}"
         )
     }

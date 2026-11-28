@@ -168,6 +168,7 @@ impl Brep {
         self.asm.stats.nurbs_surfaces += asm.stats.nurbs_surfaces;
         self.asm.stats.nurbs_curves += asm.stats.nurbs_curves;
         self.asm.stats.partial_procedural_supports += asm.stats.partial_procedural_supports;
+        self.asm.stats.helix_axes_assumed += asm.stats.helix_axes_assumed;
         macro_rules! merge_count_maps {
             ($($field:ident),+ $(,)?) => {
                 $(merge_brep_counts(&mut self.asm.stats.$field, std::mem::take(&mut asm.stats.$field));)+

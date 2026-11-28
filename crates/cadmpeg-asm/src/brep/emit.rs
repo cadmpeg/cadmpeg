@@ -3413,6 +3413,7 @@ fn emit_carrier_curve(
     });
     let surface_start = out.surfaces.len();
     let curve_start = out.curves.len();
+    let mut helix_axis_assumed = false;
     let procedural = match procedural_curve_defs.remove(&i) {
         Some(super::ProceduralCurveSource::Cached {
             construction,
@@ -3775,7 +3776,10 @@ fn emit_carrier_curve(
                     ProceduralCurveConstruction::Exact => {
                         cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Exact { cache: None }
                     }
-                    ProceduralCurveConstruction::Helix(helix) => helix.into_definition()?,
+                    ProceduralCurveConstruction::Helix(helix) => {
+                        helix_axis_assumed = helix.stores_zero_axis();
+                        helix.into_definition()?
+                    }
                     ProceduralCurveConstruction::Unknown(native_kind) => {
                         cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Unknown {
                             native_kind: Some(native_kind),
@@ -3816,9 +3820,11 @@ fn emit_carrier_curve(
         None => return Ok(()),
     };
     match procedural {
-        Ok(procedural) => out
-            .procedural_curves
-            .push((<CurveId>::from(id(format, i)), procedural)),
+        Ok(procedural) => {
+            out.stats.helix_axes_assumed += usize::from(helix_axis_assumed);
+            out.procedural_curves
+                .push((<CurveId>::from(id(format, i)), procedural));
+        }
         Err(CarrierCurveError::Resource(error)) => return Err(error),
         Err(CarrierCurveError::Invalid(cause)) => {
             out.surfaces.truncate(surface_start);

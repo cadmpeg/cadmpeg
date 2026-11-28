@@ -25,7 +25,7 @@ macro_rules! graph {
     };
 }
 graph!(AsmBrep; bodies, regions, shells, faces, loops, coedges, edges, vertices, points, surfaces, curves, pcurves, procedural_surfaces, procedural_curves, edge_continuities, edge_ownerships, vertex_ownerships, face_sidedness, face_native_keys, tolerant_coedge_parameters, tolerant_edge_tails, tolerant_vertex_tails, mesh_surface_sentinels, transform_hints, body_native_keys, wire_topologies, attributes, unknowns, stats, annotation_records, unbounded_faces, withheld);
-graph!(Stats; missing_face_surface_kinds, unknown_surface_kinds, mesh_surface_faces, nurbs_surfaces, nurbs_curves, procedural_curve_kinds, undecoded_pcurve_kinds, partial_procedural_supports, other_record_kinds);
+graph!(Stats; missing_face_surface_kinds, unknown_surface_kinds, mesh_surface_faces, nurbs_surfaces, nurbs_curves, procedural_curve_kinds, undecoded_pcurve_kinds, partial_procedural_supports, helix_axes_assumed, other_record_kinds);
 
 impl RewriteIdentities for UnboundedFace {
     fn visit_identity_references(

@@ -1560,3 +1560,114 @@ fn a_reversed_subset_record_localizes_its_cache_and_edge_ranges() {
         }
     }
 }
+
+#[test]
+fn a_cached_helix_with_a_zero_axis_counts_the_assumed_axis_when_it_is_emitted() {
+    use super::super::ProceduralCurveSource;
+    use crate::nurbs::proc_curve::HelixDefinition;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    for (axis, cache_fit_tolerance, emitted, assumed) in [
+        (Vector3::new(0.0, 0.0, 0.0), Some(1e-6), 1, 1),
+        (Vector3::new(0.0, 1.0, 0.0), Some(1e-6), 1, 0),
+        (Vector3::new(0.0, 0.0, 0.0), Some(-1.0), 0, 0),
+    ] {
+        let mut out = AsmBrep::default();
+        let mut carriers = Carriers::default();
+        carriers.curve_geo.insert(
+            4,
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+        );
+        carriers.procedural_curve_defs.insert(
+            4,
+            ProceduralCurveSource::Cached {
+                construction: Box::new(ProceduralCurveConstruction::Helix(HelixDefinition {
+                    angle_range: [0.0, std::f64::consts::FRAC_PI_4],
+                    center: Point3::new(1.0, 2.0, 3.0),
+                    major: Vector3::new(-0.4, 0.0, 0.0),
+                    minor: Vector3::new(0.0, 0.0, 0.4),
+                    pitch: Vector3::new(0.0, -1e-9, 0.0),
+                    apex_factor: 0.0,
+                    axis,
+                })),
+                cache_fit_tolerance,
+                parsed_domain: Some([0.0, std::f64::consts::FRAC_PI_4]),
+                reversed: false,
+            },
+        );
+        emit_carrier_curve(
+            &mut out,
+            4,
+            &mut carriers,
+            &HashSet::new(),
+            &HashSet::new(),
+            crate::asm_format!("f3d"),
+        )
+        .expect("carrier emission succeeds");
+        assert_eq!(out.procedural_curves.len(), emitted);
+        assert_eq!(out.stats.helix_axes_assumed, assumed);
+    }
+}
+
+#[test]
+fn a_decode_counts_one_zero_axis_helix_record_once() {
+    let record = |index, name: &str, tokens: Vec<Token>| Record {
+        index,
+        name: name.into(),
+        tokens: tokens.into(),
+        offset: 0,
+        len: 0,
+    };
+    let curve_tokens = vec![
+        Token::Ref(-1),
+        Token::Long(-1),
+        Token::Ref(-1),
+        Token::False,
+        Token::SubtypeOpen,
+        Token::Ident("helix_int_cur".into()),
+        Token::Long(22_800),
+        Token::True,
+        Token::Double(0.0),
+        Token::True,
+        Token::Double(std::f64::consts::FRAC_PI_4),
+        Token::Position([1.0, 2.0, 3.0]),
+        Token::Vector3([-0.5, 0.0, 0.0]),
+        Token::Vector3([0.0, 0.0, 0.5]),
+        Token::Vector3([0.0, -1e-10, 0.0]),
+        Token::Double(0.0),
+        Token::Vector3([0.0, 0.0, 0.0]),
+        Token::SubtypeClose,
+    ];
+    let refs = |values: &[i64]| values.iter().copied().map(Token::Ref).collect();
+    let records = [
+        record(0, "face", refs(&[-1, -1, -1, -1, 1, 6, -1, 5])),
+        record(1, "loop", refs(&[-1, -1, -1, -1, 2])),
+        record(2, "coedge", refs(&[-1, -1, -1, 2, -1, -1, 3])),
+        record(3, "edge", refs(&[-1, -1, -1, -1, -1, -1, -1, -1, 4])),
+        record(4, "intcurve", curve_tokens),
+        record(5, "unknown-surface", vec![]),
+        record(6, "shell", refs(&[-1, -1, -1, -1, -1, 0, -1, 7])),
+        record(7, "lump", refs(&[-1, -1, -1, -1, 6, 8])),
+        record(8, "body", refs(&[-1, -1, -1, 7])),
+    ];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("empty source is within the service limit");
+    let out = super::super::decode_with_header(
+        &ctx,
+        &records,
+        &[],
+        None,
+        "context",
+        crate::asm_format!("f3d"),
+        super::super::DecodePurpose::Model,
+    )
+    .expect("one helix edge decodes");
+    assert_eq!(out.procedural_curves.len(), 1);
+    assert_eq!(out.stats.helix_axes_assumed, 1);
+    assert!(out.stats.procedural_curve_kinds.is_empty());
+}

@@ -484,11 +484,13 @@ pub(super) fn walk_reachable_topology(
                                                     ctx,
                                                     &crec.tokens,
                                                     token_table,
-                                                ).transpose()?.and_then(|definition| definition.into_definition().ok())
-                                                .and_then(|mut definition| {
+                                                ).transpose()?.and_then(|definition| {
+                                                    let axis_assumed = definition.stores_zero_axis();
+                                                    let mut definition = definition.into_definition().ok()?;
                                                     if record_reversed(crec) {
                                                         reverse_procedural_curve_definition(&mut definition).ok()?;
                                                     }
+                                                    out.stats.helix_axes_assumed += usize::from(axis_assumed);
                                                     Some(definition)
                                                 })
                                             {
@@ -774,11 +776,13 @@ fn keep_wire_edge(
                 token_table,
             )
             .transpose()?
-            .and_then(|definition| definition.into_definition().ok())
-            .and_then(|mut definition| {
+            .and_then(|definition| {
+                let axis_assumed = definition.stores_zero_axis();
+                let mut definition = definition.into_definition().ok()?;
                 if record_reversed(curve_record) {
                     reverse_procedural_curve_definition(&mut definition).ok()?;
                 }
+                out.stats.helix_axes_assumed += usize::from(axis_assumed);
                 Some(definition)
             })
         {

@@ -1157,6 +1157,53 @@ fn omitted_use_curve_interval_has_a_sat_loss_code() {
 }
 
 #[test]
+fn an_assumed_helix_axis_has_a_sat_loss_code() {
+    use cadmpeg_asm::brep::AsmBrep;
+    use cadmpeg_asm::kernel_header::KernelHeader;
+    use std::collections::BTreeMap;
+    let bytes = text_sphere_stream(1.0);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let stream = cadmpeg_asm::sat::parse(&ctx, &bytes).unwrap();
+    let header: KernelHeader = stream.header.as_kernel_header();
+    let evidence = super::StreamEvidence::Text(Some(super::TextEvidence {
+        branch: stream.terminator,
+        header: &header,
+    }));
+    for (assumed, reported) in [(0, false), (3, true)] {
+        let mut graph = AsmBrep::default();
+        graph.stats.helix_axes_assumed = assumed;
+        let result = super::build_result(
+            &ctx,
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes),
+            Some((
+                graph,
+                super::Unprojected {
+                    whole_stream: false,
+                    face_children: BTreeMap::new(),
+                },
+            )),
+            BTreeMap::new(),
+            &header,
+            Some(stream.terminator),
+            super::layers(&evidence),
+        )
+        .unwrap();
+        assert_eq!(
+            result.body.losses.iter().any(|loss| loss.code
+                == SatLossCode::GeometryHelixAxisAssumed.kind()
+                && loss.message.starts_with("3 helix curve record(s) ")),
+            reported
+        );
+    }
+}
+
+#[test]
 fn invalid_edge_tolerance_has_a_loss_and_retains_its_source_record() {
     for tolerance in [0, -1] {
         let record = format!(
