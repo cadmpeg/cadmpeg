@@ -1428,7 +1428,7 @@ fn fixed_kind_edge_and_revolve_operations(
             &[],
             &[],
             &[],
-            (&[], &[]),
+            (&[], &[], &Default::default()),
             &[],
         ),
         None
@@ -1567,7 +1567,7 @@ fn fixed_kind_edge_and_revolve_operations(
         &[],
         std::slice::from_ref(&axis_selection),
         &[],
-        (&[axis_placement], &[axis_curve]),
+        (&[axis_placement], &[axis_curve], &Default::default()),
         &[],
     );
     assert!(matches!(
@@ -1608,7 +1608,7 @@ fn fixed_kind_edge_and_revolve_operations(
             &[],
             std::slice::from_ref(&axis_selection),
             &[],
-            (&[], &[]),
+            (&[], &[], &Default::default()),
             &[],
         )
         .unwrap();
@@ -1785,7 +1785,7 @@ fn fixed_kind_edge_and_revolve_operations(
             &[],
             &[],
             std::slice::from_ref(&face_axis_operand),
-            (&[], &[]),
+            (&[], &[], &Default::default()),
             &[],
         )
         .expect("face-recipe axis retains a neutral Revolve before geometry binding");

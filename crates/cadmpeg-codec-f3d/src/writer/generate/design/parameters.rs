@@ -708,6 +708,12 @@ pub(in crate::writer::generate) fn native_projection(
     decode_ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     native: &F3dNative,
 ) -> Result<crate::design::feature_project::ProjectedParameterDesign, CodecError> {
+    let foot_origin =
+        crate::design::decode::placement_construction::work_planes::foot_origin_placements(
+            &native.design_sketch_placements,
+            &native.design_parameter_scopes,
+            &native.design_placement_constructions,
+        );
     crate::design::feature_project::project_parameter_design_with_edge_identities(
         decode_ctx,
         &crate::design::feature_project::ProjectInputs {
@@ -728,6 +734,7 @@ pub(in crate::writer::generate) fn native_projection(
             face_source_groups: &native.design_face_source_groups,
             body_recipe_operands: &native.design_body_recipe_operands,
             placements: &native.design_sketch_placements,
+            foot_origin: Some(&foot_origin),
             placement_constructions: &native.design_placement_constructions,
             body_bindings: &native.design_body_bindings,
             component_naming_spaces: &native.design_component_naming_spaces,

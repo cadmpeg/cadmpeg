@@ -628,6 +628,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         );
     }
 
+    let foot_origin_placements =
+        crate::design::decode::placement_construction::work_planes::foot_origin_placements(
+            &design.design_sketch_placements,
+            &design.design_parameter_scopes,
+            &design.design_placement_constructions,
+        );
     losses.extend(
         crate::design::decode::placement_construction::work_planes::bind(
             &mut design.design_parameter_scopes,
@@ -787,6 +793,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             face_source_groups: &design.design_face_source_groups,
             body_recipe_operands: &design.design_body_recipe_operands,
             placements: &design.design_sketch_placements,
+            foot_origin: Some(&foot_origin_placements),
             placement_constructions: &design.design_placement_constructions,
             body_bindings: &prereqs.design_body_bindings,
             component_naming_spaces: &prereqs.design_component_naming_spaces,
@@ -1193,7 +1200,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &design.sketch_relations,
             &design.sketch_texts,
         )
-        .with_scan(inputs.scan),
+        .with_scan(inputs.scan)
+        .with_foot_origin(&foot_origin_placements),
         geometry.tolerances.linear.get(),
     )?;
     model.sketches = planar.sketches;
@@ -1202,7 +1210,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     let unprofiled = planar.unprofiled;
     let spatial = crate::design::sketch_project::project_spatial_sketch_design(
         ctx,
-        &design.design_sketch_placements,
+        (&design.design_sketch_placements, &foot_origin_placements),
         &design.sketch_points,
         &design.sketch_curve_identities,
         &design.sketch_surfaces,
@@ -1355,6 +1363,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             parameters: &prereqs.design_parameters,
             placements: &design.design_sketch_placements,
             sketches: &model.sketches,
+            foot_origin: &foot_origin_placements,
         },
         &mut losses,
     )?;

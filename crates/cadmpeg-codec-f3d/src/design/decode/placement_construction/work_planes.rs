@@ -40,6 +40,46 @@ fn unique_placement<'a>(
     candidates.next().is_none().then_some(placement)
 }
 
+/// Placement `refType` of a `WorkPlane` whose sketches measure their
+/// coordinates from the foot of the perpendicular from the design origin to the
+/// plane instead of from the plane entity's origin.
+const FOOT_ORIGIN_REF_TYPE: u32 = 5;
+
+/// The ids of the sketch placements whose matrix equals the matrix of a
+/// `WorkPlane` placement of the foot-origin `refType`: their coordinates are
+/// measured from the foot of the perpendicular from the design origin to the
+/// plane.
+pub(crate) fn foot_origin_placements(
+    sketches: &[crate::records::sketch_placement::DesignSketchPlacement],
+    scopes: &[DesignParameterScope],
+    placements: &[DesignPlacementConstruction],
+) -> std::collections::BTreeSet<String> {
+    /// Largest coefficient difference at which two placement matrices are equal.
+    const EPS_FRAME_MATCH: f64 = 1.0e-9;
+    let frames: Vec<[[f64; 4]; 4]> = scopes
+        .iter()
+        .filter_map(|scope| {
+            let placement = unique_placement(scope, placements)
+                .filter(|placement| placement.fields.ref_type.value == FOOT_ORIGIN_REF_TYPE)?;
+            Some(super::checked_solved_frame(placement)?.value.rows())
+        })
+        .collect();
+    sketches
+        .iter()
+        .filter(|sketch| {
+            let matrix = sketch.transform();
+            frames.iter().any(|frame| {
+                frame
+                    .iter()
+                    .flatten()
+                    .zip(matrix.iter().flatten())
+                    .all(|(a, b)| (a - b).abs() <= EPS_FRAME_MATCH)
+            })
+        })
+        .map(|sketch| sketch.id.clone())
+        .collect()
+}
+
 pub(crate) fn solved_frame(
     scope: &DesignParameterScope,
     placements: &[DesignPlacementConstruction],

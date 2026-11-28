@@ -2511,6 +2511,52 @@ pub(super) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::sc
     )?)
 }
 
+/// The model-space origin of a sketch placement in the neutral unit. This is
+/// the single source of the sketch frame origin: a sketch that measures its
+/// coordinates from the foot of the design origin takes that foot instead of
+/// the stored translation. `foot_origin` states that the placement is in the
+/// set of `work_planes::foot_origin_placements`.
+pub(crate) fn placement_origin(placement: &DesignSketchPlacement, foot_origin: bool) -> Point3 {
+    let scale = placement_origin_scale(placement);
+    let matrix = placement.transform();
+    let stored = Point3::new(
+        matrix[0][3] * scale,
+        matrix[1][3] * scale,
+        matrix[2][3] * scale,
+    );
+    if !foot_origin {
+        return stored;
+    }
+    let (nx, ny, nz) = (matrix[0][2], matrix[1][2], matrix[2][2]);
+    let distance = stored.x * nx + stored.y * ny + stored.z * nz;
+    Point3::new(distance * nx, distance * ny, distance * nz)
+}
+
+/// A point of the sketch plane's coordinates in model space.
+pub(crate) fn placement_point(
+    placement: &DesignSketchPlacement,
+    foot_origin: bool,
+    point: &Point3,
+) -> Point3 {
+    let matrix = placement.transform();
+    let origin = placement_origin(placement, foot_origin);
+    Point3::new(
+        matrix[0][0] * point.x + matrix[0][1] * point.y + matrix[0][2] * point.z + origin.x,
+        matrix[1][0] * point.x + matrix[1][1] * point.y + matrix[1][2] * point.z + origin.y,
+        matrix[2][0] * point.x + matrix[2][1] * point.y + matrix[2][2] * point.z + origin.z,
+    )
+}
+
+/// A direction of the sketch plane's coordinates in model space.
+pub(crate) fn placement_vector(placement: &DesignSketchPlacement, vector: &Vector3) -> Vector3 {
+    let matrix = placement.transform();
+    Vector3::new(
+        matrix[0][0] * vector.x + matrix[0][1] * vector.y + matrix[0][2] * vector.z,
+        matrix[1][0] * vector.x + matrix[1][1] * vector.y + matrix[1][2] * vector.z,
+        matrix[2][0] * vector.x + matrix[2][1] * vector.y + matrix[2][2] * vector.z,
+    )
+}
+
 /// Length scale from a placement's stored origin to the neutral length unit.
 /// Frames with an explicit transform store its translation in centimetres, as
 /// the `EntityGenesis`-flavor 213/341-byte frames and the member-run head
@@ -2520,7 +2566,7 @@ pub(super) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::sc
 /// frame is one of them: a sketch on the 5 mm top face of a Fusion screw head
 /// stores a translation of 0.5. The compact frame has no translation, and the
 /// 305/325 legacy frames keep the neutral unit.
-pub(crate) fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
+fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
     use crate::records::sketch_placement::DesignSketchFrameForm;
     match placement.frame.form() {
         DesignSketchFrameForm::ScopeGenesisCompact

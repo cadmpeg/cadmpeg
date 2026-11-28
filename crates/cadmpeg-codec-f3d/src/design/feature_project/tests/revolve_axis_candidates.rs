@@ -134,7 +134,7 @@ fn construction_with(
         &[],
         std::slice::from_ref(selection),
         &[],
-        (placements, &[]),
+        (placements, &[], &Default::default()),
         &crate::test_support::origin_types::origin_design_types(
             "f3d:Design/MetaStream.dat",
             ORIGIN_FIRST,
@@ -241,4 +241,59 @@ fn an_identity_outside_the_origin_axes_is_no_origin_axis() {
             None
         );
     }
+}
+
+/// A sketch with u = +x, v = -z, normal = +y and a stored translation of
+/// (5, 10, 2.5) mm.
+fn stored_origin_placement() -> crate::records::sketch_placement::DesignSketchPlacement {
+    use crate::records::sketch_placement::{
+        DesignSketchFrame, DesignSketchFrameForm, SketchPlacementMatrix,
+    };
+    let rows = [
+        [1.0, 0.0, 0.0, 0.5],
+        [0.0, 0.0, 1.0, 1.0],
+        [0.0, -1.0, 0.0, 0.25],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    crate::records::sketch_placement::DesignSketchPlacement {
+        frame: DesignSketchFrame::new(
+            0,
+            DesignSketchFrameForm::ScopeExplicit(SketchPlacementMatrix::try_from(rows).unwrap()),
+        )
+        .unwrap(),
+        id: "f3d:Design/BulkStream.dat:placement#40".into(),
+        scope_record_index: None,
+        entity_id: crate::records::identity::DesignEntityId::from_parts("Sketch", 40),
+        visibility: None,
+        display_name: None,
+        class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap(),
+        record_index: 700,
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned())
+            .unwrap(),
+    }
+}
+
+#[test]
+fn a_revolve_axis_drawn_in_a_foot_origin_sketch_lands_at_the_foot_origin_position() {
+    let axis_at = |foot_origin: bool| {
+        crate::design::feature_project::revolve::sketch_line_axis(
+            &stored_origin_placement(),
+            foot_origin,
+            &cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0),
+            &cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+            "axis",
+        )
+        .expect("a sketch line axis")
+    };
+    let stored = axis_at(false);
+    let foot = axis_at(true);
+    assert_eq!(
+        stored.origin.get(),
+        cadmpeg_ir::math::Point3::new(7.0, 10.0, 2.5)
+    );
+    assert_eq!(
+        foot.origin.get(),
+        cadmpeg_ir::math::Point3::new(2.0, 10.0, 0.0)
+    );
+    assert_eq!(foot.direction, stored.direction);
 }

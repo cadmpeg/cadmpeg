@@ -166,6 +166,9 @@ pub(crate) struct ProjectInputs<'a> {
     pub(crate) face_source_groups: &'a [DesignFaceSourceGroup],
     pub(crate) body_recipe_operands: &'a [DesignBodyRecipeOperand],
     pub(crate) placements: &'a [DesignSketchPlacement],
+    /// Ids of the placements that measure from the foot of the design origin;
+    /// `None` is the empty set.
+    pub(crate) foot_origin: Option<&'a std::collections::BTreeSet<String>>,
     pub(crate) placement_constructions:
         &'a [crate::records::placement_construction::DesignPlacementConstruction],
     pub(crate) body_bindings: &'a [DesignBodyBinding],
@@ -271,6 +274,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         persistent_subentity_tags,
         ..
     } = inputs;
+    let no_foot_origin = std::collections::BTreeSet::new();
+    let foot_origin = inputs.foot_origin.unwrap_or(&no_foot_origin);
     let mut projection_losses = Vec::new();
     let unruled_flange_thicknesses = std::cell::Cell::new(0_usize);
 
@@ -472,7 +477,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         edge_operands,
                         entity_selection_operands,
                         face_operands,
-                        (placements, curve_identities),
+                        (placements, curve_identities, foot_origin),
                         design_types,
                     )
                     .unwrap_or(FeatureDefinition::Operation(FeatureOperation::Unresolved {

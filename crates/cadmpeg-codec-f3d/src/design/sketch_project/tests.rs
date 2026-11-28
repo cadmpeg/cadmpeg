@@ -1295,7 +1295,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     } = crate::test_support::with_decode_context(|decode_ctx| {
         project_spatial_sketch_design(
             decode_ctx,
-            &[placement.clone()],
+            (&[placement.clone()], &std::collections::BTreeSet::new()),
             &points,
             &curves,
             &surfaces,
@@ -1444,7 +1444,7 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
     } = crate::test_support::with_decode_context(|decode_ctx| {
         project_spatial_sketch_design(
             decode_ctx,
-            &placements,
+            (&placements, &std::collections::BTreeSet::new()),
             &[],
             &[],
             &[surface],
@@ -1576,7 +1576,7 @@ fn shared_curve_identity_pairs_project_distinct_entities() {
     } = crate::test_support::with_decode_context(|decode_ctx| {
         project_spatial_sketch_design(
             decode_ctx,
-            &[placement],
+            (&[placement], &std::collections::BTreeSet::new()),
             &[],
             &spatial_curves,
             &[],

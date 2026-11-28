@@ -2,7 +2,9 @@
 //! Project planar and spatial sketch geometry.
 
 use crate::design::dimensions::{planar_point, sketch_normal_sign};
-use crate::design::face_resolve::{placement_origin_scale, sketch_curve_is_spatial};
+use crate::design::face_resolve::{
+    placement_origin, placement_point, placement_vector, sketch_curve_is_spatial,
+};
 use crate::design::feature_project::sweep_loft::closed_spatial_sketch_profiles;
 use crate::design::feature_project::SpatialProfileSearch;
 use crate::design::geometry::closed_sketch_profiles;
@@ -268,6 +270,8 @@ pub(crate) struct SketchProjectInputs<'a, 's, 'c> {
     pub(crate) curves: &'a [SketchCurveIdentity],
     pub(crate) relations: &'a [SketchRelation],
     pub(crate) texts: &'a [SketchText],
+    /// Ids of the placements that measure from the foot of the design origin.
+    pub(crate) foot_origin: Option<&'a std::collections::BTreeSet<String>>,
 }
 
 impl<'a, 's, 'c> SketchProjectInputs<'a, 's, 'c> {
@@ -285,7 +289,16 @@ impl<'a, 's, 'c> SketchProjectInputs<'a, 's, 'c> {
             curves,
             relations,
             texts,
+            foot_origin: None,
         }
+    }
+
+    pub(crate) fn with_foot_origin(
+        mut self,
+        foot_origin: &'a std::collections::BTreeSet<String>,
+    ) -> Self {
+        self.foot_origin = Some(foot_origin);
+        self
     }
 
     pub(crate) fn with_scan(mut self, scan: &'s crate::container::ContainerScan<'c>) -> Self {
@@ -309,6 +322,7 @@ pub(crate) fn project_sketch_design(
     let relations = inputs.relations;
     let texts = inputs.texts;
     let scan = inputs.scan;
+    let foot_origin = inputs.foot_origin;
 
     let text_frame_curves = text_frame_curve_records(relations, curves, texts);
     let mut placements_by_suffix = HashMap::new();
@@ -334,10 +348,9 @@ pub(crate) fn project_sketch_design(
             continue;
         }
         let Ok(resolved) = cadmpeg_ir::sketches::SketchPlacement::try_resolved(
-            Point3::new(
-                placement.transform()[0][3] * placement_origin_scale(placement),
-                placement.transform()[1][3] * placement_origin_scale(placement),
-                placement.transform()[2][3] * placement_origin_scale(placement),
+            placement_origin(
+                placement,
+                foot_origin.is_some_and(|set| set.contains(&placement.id)),
             ),
             Vector3::new(
                 placement.transform()[0][2],
@@ -641,7 +654,10 @@ pub(crate) struct SpatialSketchDesign {
 /// Project non-planar Design sketch curves into model-space spatial sketches.
 pub(crate) fn project_spatial_sketch_design(
     ctx: &DecodeContext<'_>,
-    placements: &[DesignSketchPlacement],
+    (placements, foot_origin): (
+        &[DesignSketchPlacement],
+        &std::collections::BTreeSet<String>,
+    ),
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
     surfaces: &[SketchSurface],
@@ -746,35 +762,9 @@ pub(crate) fn project_spatial_sketch_design(
         }
     }
     let transform_point = |placement: &DesignSketchPlacement, point: &Point3| {
-        let origin_scale = placement_origin_scale(placement);
-        Point3::new(
-            placement.transform()[0][0] * point.x
-                + placement.transform()[0][1] * point.y
-                + placement.transform()[0][2] * point.z
-                + placement.transform()[0][3] * origin_scale,
-            placement.transform()[1][0] * point.x
-                + placement.transform()[1][1] * point.y
-                + placement.transform()[1][2] * point.z
-                + placement.transform()[1][3] * origin_scale,
-            placement.transform()[2][0] * point.x
-                + placement.transform()[2][1] * point.y
-                + placement.transform()[2][2] * point.z
-                + placement.transform()[2][3] * origin_scale,
-        )
+        placement_point(placement, foot_origin.contains(&placement.id), point)
     };
-    let transform_vector = |placement: &DesignSketchPlacement, vector: &Vector3| {
-        Vector3::new(
-            placement.transform()[0][0] * vector.x
-                + placement.transform()[0][1] * vector.y
-                + placement.transform()[0][2] * vector.z,
-            placement.transform()[1][0] * vector.x
-                + placement.transform()[1][1] * vector.y
-                + placement.transform()[1][2] * vector.z,
-            placement.transform()[2][0] * vector.x
-                + placement.transform()[2][1] * vector.y
-                + placement.transform()[2][2] * vector.z,
-        )
-    };
+    let transform_vector = placement_vector;
 
     let shared_identities = shared_curve_identities(curves);
     let mut entities = Vec::new();
