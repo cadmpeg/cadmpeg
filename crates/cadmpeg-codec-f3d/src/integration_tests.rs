@@ -17,6 +17,7 @@ mod emboss_operands;
 mod encode_sets;
 mod external_placement;
 mod f30_placements;
+mod feature_input_geometry;
 mod fillet_projection;
 mod fusion_circular_patterns;
 mod fusion_combine_middle_lists;
