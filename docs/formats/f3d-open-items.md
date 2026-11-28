@@ -3392,7 +3392,7 @@ The bounded-face programs of these groups have 13, 23, and 12 nodes. The first t
 
 **Note.** None.
 
-### DR-1069. Bounded-face members with several support contexts
+### DR-1082. Bounded-face members with several support contexts
 
 **Question.** Which edges does a bounded-face edge-identity member of a `Fillet` group select when its recipe keeps several historical support contexts, and does a face member select edges that an edge group of the same scope also selects?
 
