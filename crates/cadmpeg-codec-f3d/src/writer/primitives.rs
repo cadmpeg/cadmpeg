@@ -430,6 +430,22 @@ pub(crate) fn validate_assembly_projection(
             occurrence_path,
         } = &mut connector.operand.container
         {
+            let mut consumed = 0;
+            for key in occurrence_path.iter() {
+                let mut children = expanded.occurrences.iter().filter(|child| {
+                    parents.get(&child.id) == Some(occurrence)
+                        && child.native_ref.is_some()
+                        && crate::tree::identity_segment(&child.id).eq_ignore_ascii_case(key)
+                });
+                match (children.next(), children.next()) {
+                    (Some(child), None) => {
+                        *occurrence = child.id.clone();
+                        consumed += 1;
+                    }
+                    _ => break,
+                }
+            }
+            occurrence_path.drain(..consumed);
             keys.descend(&expanded.occurrences, &parents, occurrence, occurrence_path);
         }
     }

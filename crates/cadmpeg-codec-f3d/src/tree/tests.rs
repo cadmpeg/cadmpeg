@@ -442,7 +442,7 @@ fn shared_references_use_unique_native_keys_and_preserve_existing_paths() {
                     "f3d:model:occurrence#bolt"
                 }),
                 occurrence_path: if unique {
-                    vec![KEY.to_owned(), "inside".to_owned()]
+                    vec!["bolt".to_owned(), "inside".to_owned()]
                 } else {
                     vec!["inside".to_owned()]
                 },
@@ -559,10 +559,24 @@ fn a_two_level_reference_keeps_the_outer_insertion_and_native_keys() {
         occurrence("f3d:model:occurrence#b:bolt:washer", WASHER, 2.0),
     ]);
     reference_bolt(&mut ir, "f3d:model:occurrence#b:bolt:washer");
+    ir.model.assembly_joints[0]
+        .connectors_mut()
+        .nth(1)
+        .unwrap()
+        .frame = translated(0.5);
     let original = selected_world_pose(&ir);
     assert_eq!(original, translated(29.0));
     let losses = own_once(&mut ir, &BTreeMap::new());
     assert!(losses.is_empty(), "{losses:?}");
+    // The bolt (7) and washer (2) placements apply to the frame.
+    assert_eq!(
+        ir.model.assembly_joints[0]
+            .connectors()
+            .nth(1)
+            .unwrap()
+            .frame,
+        translated(9.5)
+    );
     assert_eq!(
         ir.model.assembly_joints[0]
             .connectors()
@@ -576,6 +590,78 @@ fn a_two_level_reference_keeps_the_outer_insertion_and_native_keys() {
         }
     );
     assert_eq!(selected_world_pose(&ir), original);
+}
+
+/// A joint operand names an inserted-document instance in `occurrence_path` by
+/// the final segment of its identity, not by its design key: a consumer finds
+/// a path element by the end of an occurrence identity, which for an external
+/// placement is `xref-N-M`.
+#[test]
+fn an_operand_names_an_external_instance_by_its_identity_segment() {
+    const KEY: &str = "cb5cf1ed-f1ee-4933-8103-02ea3faf9dd6";
+    const NATIVE: &str = "f3d:xref:reference#0-occurrence-0";
+    const PART: &str = "f3d:model:component#part";
+    const DOCUMENT: &str = "f3d:xref:document#part.f3d";
+    let mut ir = CadIr::empty();
+    ir.model.product_definitions = vec![
+        root(&["f3d:model:occurrence#a"]),
+        component(PART, &["f3d:model:occurrence#a:xref-0-0"]),
+        ProductDefinition::new(
+            definition_id(DOCUMENT),
+            Storage::External(ExternalDocument::path("part.f3d")),
+        ),
+    ];
+    let mut instance = occurrence("f3d:model:occurrence#a:xref-0-0", DOCUMENT, 3.0);
+    instance.native_ref = Some(NATIVE.to_owned());
+    ir.model.occurrences = vec![occurrence("f3d:model:occurrence#a", PART, 10.0), instance];
+    let reference: crate::records::xref::XrefReference =
+        cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
+            "id": NATIVE, "ordinal": 0, "occurrence_ordinal": 0,
+            "from": "root.f3d", "relative_path": "part.f3d", "neutron_role": "role",
+            "neutron_data": "",
+            "placement_source": {
+                "occurrence_guid": KEY, "stream": "f3d:design", "carrier_record_index": 1
+            }
+        }))
+        .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    ir.native
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
+        .set_arena(&ctx, "xref_references", &[reference])
+        .unwrap();
+    reference_bolt(&mut ir, "f3d:model:occurrence#a:xref-0-0");
+    // The frame is in the space of the inserted document, which the external
+    // placement (translation 3) maps into the space of the outer insertion.
+    ir.model.assembly_joints[0]
+        .connectors_mut()
+        .nth(1)
+        .unwrap()
+        .frame = translated(2.0);
+    let losses = own_once(&mut ir, &BTreeMap::new());
+    assert!(losses.is_empty(), "{losses:?}");
+    let connector = ir.model.assembly_joints[0].connectors().nth(1).unwrap();
+    assert_eq!(
+        connector.operand.container,
+        cadmpeg_ir::products::OperandContainer::Occurrence {
+            occurrence: occurrence_id("f3d:model:occurrence#a"),
+            occurrence_path: vec!["xref-0-0".to_owned()],
+        }
+    );
+    // The container's own space: the nested placement applied to the frame.
+    assert_eq!(connector.frame, translated(5.0));
+    // The model-space frame is the placement of the container (10) applied to
+    // it, which is the world frame through the whole path.
+    assert_eq!(
+        placed(&ir, "f3d:model:occurrence#a")
+            .transform
+            .unwrap()
+            .compose(connector.frame)
+            .unwrap(),
+        translated(15.0)
+    );
 }
 
 #[test]
@@ -706,7 +792,7 @@ fn an_archive_member_placed_twice_is_its_root_component_once() {
             .container,
         cadmpeg_ir::products::OperandContainer::Occurrence {
             occurrence: occurrence_id("f3d:model:occurrence#xref-0-1"),
-            occurrence_path: vec![native_key.to_owned()],
+            occurrence_path: vec!["g".to_owned()],
         }
     );
     own_once(&mut ir, &scopes);
