@@ -10,6 +10,8 @@ use crate::loss::IronCadLossCode;
 use crate::test_support::corpus;
 use crate::IronCadCodec;
 
+mod step_twins;
+
 const BOX: &str = "Box_50x40x25.ics";
 const CYLINDER: &str = "Cylinder_50x50.ics";
 const SCENE: &str = "Ironcad_2025_simple_test_parts.ics";
@@ -169,6 +171,25 @@ fn parasolid_layers_carry_the_schema_token() {
             .map(|(_, value)| value.as_str());
         assert_eq!(schema, Some("SCH_3401176_34101_13006"));
     }
+}
+
+#[test]
+fn format_13006_parasolid_layers_are_verified() {
+    let result = decode(BOX);
+    let layers = result.report().dialects().unwrap();
+    let parasolid: Vec<_> = layers
+        .iter()
+        .filter(|layer| layer.format() == "parasolid")
+        .collect();
+    assert!(!parasolid.is_empty());
+    for layer in parasolid {
+        assert_eq!(layer.dialect().as_str(), "parasolid:format-13006");
+        assert_eq!(
+            layer.admission(),
+            &cadmpeg_core::dialect::Admission::Admitted
+        );
+    }
+    assert_eq!(count(&result, IronCadLossCode::KernelUnverified), 0);
 }
 
 #[test]

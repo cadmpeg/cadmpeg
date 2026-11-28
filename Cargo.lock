@@ -366,9 +366,11 @@ version = "0.6.12"
 dependencies = [
  "cadmpeg-asm",
  "cadmpeg-codec-sldprt",
+ "cadmpeg-codec-step",
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-measure",
  "cadmpeg-parasolid",
  "cadmpeg-test-support",
  "flate2",

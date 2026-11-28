@@ -56,6 +56,8 @@ impl CodecBackend for IronCadCodec {
 }
 
 #[cfg(test)]
+mod golden_tests;
+#[cfg(test)]
 mod integration_tests;
 #[cfg(test)]
 mod test_support;
