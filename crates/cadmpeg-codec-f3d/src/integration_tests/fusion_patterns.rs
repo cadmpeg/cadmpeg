@@ -610,7 +610,7 @@ fn a_zero_distance_second_direction_charges_its_coincident_instances() {
     let files: [(&[u8], &str, u64, f64); 4] = [
         (
             include_bytes!("../../../../corpus/f3d/strip_cut.f3d"),
-            "R-Pattern 1",
+            "R-Pattern1",
             6,
             3.0,
         ),
