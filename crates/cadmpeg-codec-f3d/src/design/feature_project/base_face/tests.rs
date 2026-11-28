@@ -71,7 +71,7 @@ fn base_face_projects_a_registered_source_and_owned_rule() {
     }))
     .unwrap();
     let settings = settings();
-    for version in [3, 4] {
+    for version in [3, 4, 7] {
         let inputs = ProjectInputs {
             design_types: &[registration(version)],
             face_source_groups: std::slice::from_ref(&group),
@@ -134,4 +134,52 @@ fn base_face_requires_registered_scope_and_unique_owned_settings() {
     assert!(losses
         .iter()
         .any(|loss| loss.code == F3dLossCode::BaseFaceSourceCarrierUnresolved.kind()));
+}
+
+#[test]
+fn base_face_projects_each_stored_side() {
+    use crate::records::{feature::sheet_metal::DesignFlangeSide, identity::Located};
+    use cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide;
+    let settings = settings();
+    for (side, expected) in [
+        (DesignFlangeSide::SideOne, SheetMetalThicknessSide::Forward),
+        (DesignFlangeSide::SideTwo, SheetMetalThicknessSide::Reverse),
+        (
+            DesignFlangeSide::Centered,
+            SheetMetalThicknessSide::Symmetric,
+        ),
+    ] {
+        let mut scope = DesignParameterScope::empty(
+            "f3d:test/Design1/BulkStream.dat:design-parameter-scope#0",
+            DesignFeatureKind::Face,
+            10,
+        );
+        name_scope_references(&mut scope, [12, 13]);
+        scope.flange_side = Some(Located {
+            value: side,
+            offset: 45,
+        });
+        let inputs = ProjectInputs {
+            design_types: &[registration(7)],
+            sheet_metal_settings: std::slice::from_ref(&settings),
+            ..Default::default()
+        };
+        let mut losses = Vec::new();
+        let Some(FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
+            side: projected,
+            thickness,
+            ..
+        })) = project(&scope, &inputs, &mut losses)
+        else {
+            panic!("base face");
+        };
+        assert_eq!(projected, Some(expected));
+        assert_eq!(thickness, PositiveLength::new(1.25));
+        assert!(!losses
+            .iter()
+            .any(|loss| loss.code == F3dLossCode::BaseFaceMaterialSideUnresolved.kind()));
+        assert!(losses
+            .iter()
+            .any(|loss| loss.code == F3dLossCode::BaseFaceResultChoiceUnresolved.kind()));
+    }
 }

@@ -111,6 +111,11 @@ cadmpeg_core::named_optional_field!(
     "companion_suppressed"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_flange_side,
+    crate::records::identity::Located<super::sheet_metal::DesignFlangeSide>,
+    "flange_side"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_deleted_members,
     super::deleted_members::DesignDeletedMembers,
     "deleted_members"
@@ -1129,6 +1134,11 @@ pub(crate) struct DesignParameterScope {
     /// Suppression from a Thread companion or a reciprocal Hole tail.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) companion_suppressed: Option<crate::records::identity::Located<bool>>,
+    /// Material side of a sheet-metal `Face` or `BaseFlange` scope; the offset
+    /// is that of the two-byte field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) flange_side:
+        Option<crate::records::identity::Located<super::sheet_metal::DesignFlangeSide>>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     history_state_id: Option<i64>,
@@ -1299,6 +1309,13 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_companion_suppressed"
     )]
     companion_suppressed: Option<crate::records::identity::Located<bool>>,
+    /// Material side of a sheet-metal `Face` or `BaseFlange` scope.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_flange_side"
+    )]
+    flange_side: Option<crate::records::identity::Located<super::sheet_metal::DesignFlangeSide>>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(
         default,
@@ -2919,6 +2936,22 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         }
         admitted.tail_flags = wire.tail_flags;
         admitted.companion_suppressed = wire.companion_suppressed;
+        if wire.flange_side.is_some_and(|side| {
+            use crate::layout::sheet_metal_scope_flange_side as flange_side;
+            !matches!(
+                admitted.kind(),
+                DesignFeatureKind::Face | DesignFeatureKind::BaseFlange
+            ) || admitted
+                .byte_offset
+                .checked_add(u64_from_index(flange_side::SECOND_SIDE))
+                != Some(side.offset)
+                || admitted.frame_length < u64_from_index(flange_side::CENTERED + 1)
+        }) {
+            return Err(DesignParameterScopePayloadError(
+                "flange_side outside a Face or BaseFlange frame".into(),
+            ));
+        }
+        admitted.flange_side = wire.flange_side;
         admitted.captured_positions = captured_positions;
         admitted.occurrence_transfer = occurrence_transfer;
         admitted.occurrence_transfer_intent = occurrence_transfer_intent;
@@ -2970,6 +3003,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             display_name: scope.display_name,
             tail_flags: scope.tail_flags,
             companion_suppressed: scope.companion_suppressed,
+            flange_side: scope.flange_side,
             history_state_id: scope.history_state_id,
             history_state_id_offset,
             previous_history_state_id: scope.previous_history_state_id,
@@ -3560,6 +3594,7 @@ impl DesignParameterScope {
             display_name: None,
             tail_flags: None,
             companion_suppressed: None,
+            flange_side: None,
             history_state_id: draft.history_state_id,
             previous_history_state_id: draft.previous_history_state_id,
             previous_history_state_id_offset: draft.previous_history_state_id_offset,

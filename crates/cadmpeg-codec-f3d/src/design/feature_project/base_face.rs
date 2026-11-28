@@ -67,10 +67,15 @@ pub(super) fn project(
             scope.id,
         )));
     }
-    losses.push(F3dLossCode::BaseFaceMaterialSideUnresolved.note(format!(
-        "Face scope {} leaves the sheet thickness distribution unresolved (DR-67).",
-        scope.id,
-    )));
+    let side = scope
+        .flange_side
+        .map(|stored| stored.value.thickness_side());
+    if side.is_none() {
+        losses.push(F3dLossCode::BaseFaceMaterialSideUnresolved.note(format!(
+            "Face scope {} stores no admitted sheet thickness side.",
+            scope.id,
+        )));
+    }
     losses.push(F3dLossCode::BaseFaceResultChoiceUnresolved.note(format!(
         "Face scope {} leaves the body or component creation choice unresolved (DR-67).",
         scope.id,
@@ -79,7 +84,7 @@ pub(super) fn project(
         FeatureOperation::SheetMetalBaseFlange {
             profile,
             thickness,
-            side: None,
+            side,
         },
     ))
 }

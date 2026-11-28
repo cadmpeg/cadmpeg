@@ -383,3 +383,35 @@ fn unread_required_thickness_keeps_the_v11_operation_unresolved() {
         assert!(ir.design.sheet_metal_rules.is_empty());
     });
 }
+
+#[test]
+fn each_thickness_side_selects_its_normal_side() {
+    for (stored, expected) in [
+        (SheetMetalThicknessSide::Forward, NormalSide::Along),
+        (SheetMetalThicknessSide::Reverse, NormalSide::Against),
+        (SheetMetalThicknessSide::Symmetric, NormalSide::Symmetric),
+    ] {
+        crate::test_support::with_decode_context(|ctx| {
+            let mut ir = fixture(ctx, Some(0.125));
+            ir.model.features[0].evaluation.edit(|definition, _| {
+                let cadmpeg_ir::features::FeatureDefinition::Operation(
+                    LegacyOperation::SheetMetalBaseFlange { side, .. },
+                ) = definition
+                else {
+                    panic!("base flange");
+                };
+                *side = Some(stored);
+            });
+            let definitions = BTreeMap::from([(String::new(), crate::tree::file_root_id())]);
+            project(ctx, &mut ir, &definitions, &mut Vec::new()).unwrap();
+            let FeatureOperation::SheetMetal(sheet) = &ir.design.features[0].definition.operation
+            else {
+                panic!("sheet-metal wall");
+            };
+            assert!(
+                matches!(&sheet.kind, SheetMetalKind::Wall { side: Some(side), .. } if *side == expected),
+                "{stored:?}"
+            );
+        });
+    }
+}

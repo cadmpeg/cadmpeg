@@ -8182,6 +8182,20 @@ pub(crate) mod base_flange_scope {
     pub(crate) const PROFILE_GROUP_RECORD_INDEX: usize = 146;
 }
 
+/// Byte offsets for the `sheet_metal_scope_flange_side` record.
+///
+/// Spec §3.1.
+///
+/// ```text
+/// This size-less byte record describes a `Face` or `BaseFlange` scope. Offsets are relative to the scope's primary indexed header. The pair `00 00` is Side One, `01 00` is Side Two, and `00 01` is Centered.
+/// ```
+pub(crate) mod sheet_metal_scope_flange_side {
+    /// Offset of `second_side` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_SIDE: usize = 45;
+    /// Offset of `centered` (`u8`). Spec §3.1.
+    pub(crate) const CENTERED: usize = 46;
+}
+
 /// Byte offsets for the `sheet_metal_rule_prefix` record.
 ///
 /// Spec §3.1.

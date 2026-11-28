@@ -407,15 +407,15 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 **Need.** A producer trace or independently controlled saves must isolate point creation, origin creation, constraint changes, linked and reference state, visibility, and circular-center construction. The producer property mapping must predict held-out nondefault states before a writer can derive these bytes from neutral roles.
 
-### DR-67. Base Face material side and result choice
+### DR-67. Base Face result choice
 
-**Question.** Which producer fields select Side 1, Side 2, Center, New Body, and New Component for a sheet-metal Base Face or Base Flange, and what do the opaque carrier suffix and repeated-u32/f64 lane mean?
+**Question.** Which producer fields select New Body and New Component for a sheet-metal Base Face or Base Flange, and what do the opaque carrier suffix and repeated-u32/f64 lane mean?
 
-**Known.** `f3d.md` §3.1 defines the stable Base Face scope, ordered source-profile pairs, persistent region identities, and separate sheet-metal settings. The one-identity carrier is valid; the enclosing scope is a different record. The repeated discriminator differs between Forward results and is not a constant Forward or feature-family code. The complete carrier suffix remains opaque and has not been shown to omit side or result choice. A Base Flange in the fixed 416-byte form with a read operation frame places the thickness along the sketch plane's positive normal in the saves examined. Family-2 profile clauses, nonconstant loop markers, and secondary loop programs also require preservation; a family-3-only primary-loop decoder does not cover every source recipe.
+**Known.** `f3d.md` §3.1 defines the stable Base Face scope, ordered source-profile pairs, persistent region identities, the material-side bytes, and separate sheet-metal settings. The one-identity carrier is valid; the enclosing scope is a different record. The repeated discriminator differs between Forward results and is not a constant Forward or feature-family code. The complete carrier suffix remains opaque and has not been shown to omit result choice. Family-2 profile clauses, nonconstant loop markers, and secondary loop programs also require preservation; a family-3-only primary-loop decoder does not cover every source recipe.
 
-**Need.** Controlled saves must vary side and result choice independently while holding the sketch, regions, thickness, and rule fixed. Compare the carrier, settings, and profile programs and confirm each change against exact result topology. Resolve the ordered region identities to the corresponding sketch regions, including secondary loops.
+**Need.** Controlled saves must vary the result choice independently while holding the sketch, regions, thickness, rule, and side fixed. Compare the carrier, settings, and profile programs and confirm each change against exact result topology. Resolve the ordered region identities to the corresponding sketch regions, including secondary loops.
 
-**Note.** A Base Flange with an unread operation frame keeps its readable profile and governing thickness. Its selected region program remains native with `feature.base-flange-profile-unresolved`; its side remains native with `feature.base-flange-side-unresolved`. With a read operation frame the decoder assumes Forward and charges `feature.base-flange-side-assumed`.
+**Note.** A Base Flange with an unread operation frame keeps its readable profile and governing thickness. Its selected region program remains native with `feature.base-flange-profile-unresolved`.
 
 ### DR-74. Lost-edge runs shorter than the operand list
 

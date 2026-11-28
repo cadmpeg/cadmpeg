@@ -21,6 +21,49 @@ pub(crate) struct DesignBaseFlangeOperation {
     pub(crate) settings_record_index: u32,
 }
 
+/// Side of the sketch plane that a sheet-metal `Face` or `BaseFlange` scope
+/// gives its material.
+///
+/// Two Boolean bytes encode the side: the second byte of the pair selects
+/// `SideTwo`, the first selects `Centered`. A frame that sets both bytes, or
+/// stores another value, has no side.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DesignFlangeSide {
+    /// The material lies along the positive normal of the sketch plane.
+    SideOne,
+    /// The material lies along the negative normal of the sketch plane.
+    SideTwo,
+    /// The material straddles the sketch plane in equal halves.
+    Centered,
+}
+
+impl DesignFlangeSide {
+    /// Decode the two stored Boolean bytes.
+    #[must_use]
+    pub(crate) fn from_bytes(side_two: u8, centered: u8) -> Option<Self> {
+        match (side_two, centered) {
+            (0, 0) => Some(Self::SideOne),
+            (1, 0) => Some(Self::SideTwo),
+            (0, 1) => Some(Self::Centered),
+            _ => None,
+        }
+    }
+
+    /// The side as the neutral thickness direction along the sketch normal.
+    #[must_use]
+    pub(crate) fn thickness_side(
+        self,
+    ) -> cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide {
+        use cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide as Side;
+        match self {
+            Self::SideOne => Side::Forward,
+            Self::SideTwo => Side::Reverse,
+            Self::Centered => Side::Symmetric,
+        }
+    }
+}
+
 /// Bend position used by sheet-metal edge operations.
 ///
 /// The position places the bend region against the selected edge: `Outside` and

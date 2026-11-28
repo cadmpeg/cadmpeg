@@ -1130,3 +1130,28 @@ fn legacy_edge_flange_result_table_rejects_each_duplicate_without_heap_growth() 
         assert!(decode(&bytes).is_none(), "duplicate at result {ordinal}");
     }
 }
+
+#[test]
+fn flange_side_pair_selects_one_of_three_sides() {
+    use crate::records::feature::sheet_metal::DesignFlangeSide;
+    let side = |second: u8, centered: u8| {
+        let mut bytes = vec![0; 420];
+        bytes[45] = second;
+        bytes[46] = centered;
+        crate::design::decode::scopes::sheet_metal::flange_side(&bytes, 0, 420)
+    };
+    for (pair, expected) in [
+        ((0, 0), DesignFlangeSide::SideOne),
+        ((1, 0), DesignFlangeSide::SideTwo),
+        ((0, 1), DesignFlangeSide::Centered),
+    ] {
+        let located = side(pair.0, pair.1).expect("admitted side pair");
+        assert_eq!(located.value, expected);
+        assert_eq!(located.offset, 45);
+    }
+    assert!(side(1, 1).is_none());
+    assert!(side(2, 0).is_none());
+    assert!(side(0, 2).is_none());
+    let short = vec![0; 46];
+    assert!(crate::design::decode::scopes::sheet_metal::flange_side(&short, 0, 46).is_none());
+}

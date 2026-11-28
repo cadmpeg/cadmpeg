@@ -31345,6 +31345,33 @@ size = 266
 note = "Remaining scope controls and ordered references."
 
 [[record]]
+name = "sheet_metal_scope_flange_side"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/sheet_metal.rs"
+kind = "byte"
+section = "3.1"
+anchor = "stores its material side in two Boolean bytes at primary-record offsets 45 and 46"
+note = "This size-less byte record describes a `Face` or `BaseFlange` scope. Offsets are relative to the scope's primary indexed header. The pair `00 00` is Side One, `01 00` is Side Two, and `00 01` is Centered."
+
+[[record.gap]]
+offset = 0
+size = 45
+note = "Scope header and controls before the side bytes."
+
+[[record.field]]
+name = "second_side"
+offset = 45
+type = "u8"
+source = "spec"
+anchor = "Offset 45 selects Side Two"
+
+[[record.field]]
+name = "centered"
+offset = 46
+type = "u8"
+source = "spec"
+anchor = "offset 46 selects Centered"
+
+[[record]]
 name = "sheet_metal_rule_v0_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/sheet_metal_settings.rs"
 kind = "byte"
