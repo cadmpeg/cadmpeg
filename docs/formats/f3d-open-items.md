@@ -56,9 +56,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** When a body has a material assignment that names one appearance and a body-override record that names a different appearance, which appearance does Fusion show on the body?
 
-**Known.** A body-override record takes precedence over the body's material assignment: when the two name different appearances, the body binds the override's appearance. `docs/cadir-v11.md` open item 233 concerns an appearance override on a root component or occurrence, not a body record, and does not decide this order.
+**Known.** `f3d.md` §3.1 "The named-owner form uses" gives the visual tail of a body-presentation record. The appearance library id follows the visual token when an appearance is set on the body, and the token names that appearance, which the body shows. The physical-material library id follows the token when the body shows the appearance of its material. `docs/cadir-v11.md` open item 233 covers an appearance override on a root component or occurrence.
 
-**Need.** A save with a body whose material assignment and body-override record name different appearances, with the displayed appearance of the body.
+**Need.** The edit that makes a body-override record name an appearance other than the appearance of the body's material assignment, and a save of that edit with the appearance that Fusion shows on the body.
 
 **Note.** The decoder binds the override's appearance, replaces the binding of the material assignment, and charges `appearance.body-override-precedence-assumed`.
 
