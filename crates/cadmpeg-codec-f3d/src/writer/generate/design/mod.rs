@@ -30,7 +30,7 @@
 //! `Sketch` items, then no design ([`dropped_records`]).
 
 mod base_feature;
-mod expression;
+pub(super) mod expression;
 mod extrude;
 pub(super) mod frames;
 pub(super) mod history;
@@ -919,28 +919,42 @@ fn run_end(
 /// an evaluation holds the state at the marker (cadir-v11.md §3.4, Features
 /// without their state; §5.4): `target` with that state as its current
 /// state, and the loss of the records of the current state the document then
-/// does not hold. `None` where the form writes `target` itself.
+/// does not hold. `None` where the form writes `target` itself. The state
+/// resolves under the caller's `limits`.
+///
+/// # Errors
+///
+/// Returns [`CodecError::ResourceLimit`], scoped to the session, where the
+/// evaluation's base chain exceeds `limits` (§2.5).
 pub(in crate::writer::generate) fn state_at_marker(
     target: &CadIr,
-) -> Option<(CadIr, Option<LossNote>)> {
+    limits: &ResourceLimits,
+) -> Result<Option<(CadIr, Option<LossNote>)>, CodecError> {
     // A native Design names the records of the current state.
     if target.native.namespace("f3d").is_some() {
-        return None;
+        return Ok(None);
     }
-    let scope = root_scope(target)?;
+    let Some(scope) = root_scope(target) else {
+        return Ok(None);
+    };
     let features = scope_features(target, scope);
-    let (end, _) = run_end(target, scope, &features, &BTreeMap::new())?;
+    let Some((end, _)) = run_end(target, scope, &features, &BTreeMap::new()) else {
+        return Ok(None);
+    };
     let run = &features[..end];
     let [current] = scope.current.as_slice() else {
-        return None;
+        return Ok(None);
     };
     if !current.poses.is_empty() || !item::after_the_run(&current.at, run) {
-        return None;
+        return Ok(None);
     }
-    let last = run
+    let Some(last) = run
         .iter()
-        .rposition(|feature| !target.is_stateless(feature, None).unwrap_or(false))?;
-    let evaluation = target.design.evaluations.iter().find(|evaluation| {
+        .rposition(|feature| !target.is_stateless(feature, None).unwrap_or(false))
+    else {
+        return Ok(None);
+    };
+    let Some(evaluation) = target.design.evaluations.iter().find(|evaluation| {
         evaluation.scope == scope.definition
             && evaluation.configuration == scope.active_configuration
             && evaluation.status == EvaluationStatus::Current
@@ -949,23 +963,35 @@ pub(in crate::writer::generate) fn state_at_marker(
                 &evaluation.of,
                 Evaluated::State(Position::After(Member::Feature(at))) if run[last..].contains(&at)
             )
-    })?;
-    let Evaluated::State(at) = &evaluation.of else {
-        return None;
+    }) else {
+        return Ok(None);
     };
-    let state = target
-        .resolved_evaluation_state(&evaluation.id, &ResourceLimits::default())
-        .ok()?;
+    let Evaluated::State(at) = &evaluation.of else {
+        return Ok(None);
+    };
+    // A chain past the caller's ceiling is the §2.5 refusal; another
+    // resolution failure leaves the form writing `target` itself.
+    let state = match target.resolved_evaluation_state(&evaluation.id, limits) {
+        Ok(state) => state,
+        Err(error) => {
+            return error
+                .resource_limit()
+                .map_or(Ok(None), |limit| Err(CodecError::ResourceLimit(limit)));
+        }
+    };
     if state.records().bodies.is_empty() {
-        return None;
+        return Ok(None);
     }
     let mut staged = target.clone();
     staged.geometry = state.records().clone();
-    let root = staged
+    let Some(root) = staged
         .design
         .scopes
         .iter_mut()
-        .find(|candidate| candidate.definition == scope.definition)?;
+        .find(|candidate| candidate.definition == scope.definition)
+    else {
+        return Ok(None);
+    };
     root.current = vec![CurrentState {
         at: at.clone(),
         bodies: state
@@ -992,7 +1018,7 @@ pub(in crate::writer::generate) fn state_at_marker(
             unwritten.join("; ")
         ))
     });
-    Some((staged, loss))
+    Ok(Some((staged, loss)))
 }
 
 /// The state the history-true form writes at its timeline marker where a

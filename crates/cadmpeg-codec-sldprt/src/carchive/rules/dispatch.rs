@@ -200,6 +200,7 @@ pub(crate) fn rule(class: &str) -> Option<RuleFn> {
         "moSilhEdgeRef_c" => |r| refs::ref_(r),
         "moSilhVertexRef_c" => |r| refs::ref_(r),
         "moSimpleEdgeIdRep_c" => |r| idrep::rep(r),
+        "moSideFace3IntSurfIdRep_c" => |r| idrep::rep(r),
         "moSimpleSurfIdRep_c" => |r| idrep::rep(r),
         "moSingleFaceRef_w" => |r| sketch::sketchextref(r),
         "moSkDimHandleCircularPattCnt_c" => |r| feature::skdimhandle(r),

@@ -47,7 +47,7 @@ pub fn record_tables(data: &[u8]) {
         let Some(metadata_source) = source.child(source.start(), source.start() + split) else {
             return;
         };
-        let Ok(tables) = crate::records::parse_meta_tables(metadata_source) else {
+        let Ok(tables) = crate::records::parse_meta_tables(metadata_source, None) else {
             return;
         };
         let Some(bulk_source) = source.child(source.start() + split, source.end()) else {
@@ -62,7 +62,7 @@ pub fn record_tables(data: &[u8]) {
         let Some(&version) = data.first() else {
             return;
         };
-        let _probe = crate::records::frame_bulk_records(bulk_source, &tables, version);
+        let _probe = crate::records::frame_bulk_records(bulk_source, &tables, version, None);
     });
 }
 

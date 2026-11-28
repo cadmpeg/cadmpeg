@@ -906,6 +906,7 @@ fn combine_legacy_external_tools_retain_occurrence_local_identities() {
     assert_eq!(bodies.len(), 2);
     assert_ne!(bodies[0], bodies[1]);
     assert_eq!(native.as_str(), scope.id);
+    assert!(super::super::body_selections::combine_external_tools_refusal(&scope).is_none());
 
     scope
         .combine_operation_mut()
@@ -913,6 +914,12 @@ fn combine_legacy_external_tools_retain_occurrence_local_identities() {
         .tools
         .additional[0] = tool(13, 700);
     assert!(super::super::body_selections::combine_external_local_tools(&scope).is_none());
+    assert_eq!(
+        super::super::body_selections::combine_external_tools_refusal(&scope)
+            .expect("refused legacy tools charge a loss")
+            .code,
+        crate::loss::F3dLossCode::FeatureCombineToolExternalBodyUnbound.kind()
+    );
 }
 
 #[test]

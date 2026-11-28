@@ -23,6 +23,7 @@ use cadmpeg_core::bytes::find_from as find;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_core::ContainerEntry;
+use cadmpeg_ir::unknown::part::Cause;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::assembly;
@@ -367,10 +368,13 @@ pub(crate) struct ModelName {
     pub(crate) offset: usize,
 }
 
-/// A failed expansion with its admitted source-section identity and diagnosis.
+/// A failed expansion with its admitted source-section identity, diagnosis,
+/// and give-up cause: a ceiling or allowance leaves the section undecoded,
+/// and LZW framing that does not expand leaves it unreadable.
 pub(crate) struct SectionExpansionLoss {
     pub(crate) section_offset: usize,
     pub(crate) message: String,
+    pub(crate) cause: Cause,
 }
 
 /// Container framing: raw bytes, header, sections, and model-level diagnostics.
@@ -1079,23 +1083,32 @@ fn expanded_sections(
         let over_allowance =
             cadmpeg_core::decode::u64_from_index(expected_length) > per_expand_allowance;
         let expansion = if over_ceiling {
-            Err("declared expansion exceeds the 256 MiB section ceiling".into())
+            Err((
+                Cause::Undecoded,
+                "declared expansion exceeds the 256 MiB section ceiling".into(),
+            ))
         } else if over_allowance {
-            Err(format!(
-                "declared expansion of {expected_length} bytes exceeds the \
-                 {per_expand_allowance}-byte per-expansion allowance"
+            Err((
+                Cause::Undecoded,
+                format!(
+                    "declared expansion of {expected_length} bytes exceeds the \
+                     {per_expand_allowance}-byte per-expansion allowance"
+                ),
             ))
         } else {
             match crate::compress::decode(ctx, payload, expected_length) {
                 Ok(Some(expanded)) => Ok(expanded),
-                Ok(None) => Err("invalid or incomplete LZW framing".into()),
-                Err(CodecError::Malformed(reason)) => Err(reason),
+                Ok(None) => Err((
+                    Cause::Unreadable,
+                    "invalid or incomplete LZW framing".into(),
+                )),
+                Err(CodecError::Malformed(reason)) => Err((Cause::Unreadable, reason)),
                 Err(error) => return Err(error),
             }
         };
         let expanded = match expansion {
             Ok(expanded) => expanded,
-            Err(reason) => {
+            Err((cause, reason)) => {
                 let message = format!(
                     "section `{}` at offset {source_offset}, {} stored bytes: {reason}; \
                  expansion omitted; source bytes retained",
@@ -1105,6 +1118,7 @@ fn expanded_sections(
                 losses.push(SectionExpansionLoss {
                     section_offset: section.section.offset(),
                     message,
+                    cause,
                 });
                 continue;
             }
@@ -1641,37 +1655,39 @@ pub(crate) fn charge_packed_row_readings(
     }
 }
 
-fn charged_surface_rows<'a, 'data: 'a>(
+fn charged_surface_rows_per_section<'a, 'data: 'a>(
     sections: impl Iterator<Item = &'a ScannedSection<'data>>,
     read: impl Fn(&[u8]) -> RowsWithPackedReadings,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Vec<SurfaceRow> {
+) -> (Vec<Vec<SurfaceRow>>, Vec<SurfaceRow>) {
+    let mut per_section = Vec::new();
     let mut rows = Vec::new();
     for section in sections {
         let base = section.section.offset();
         let (section_rows, readings) = read(section.region);
         charge_packed_row_readings(base, readings, losses);
-        rows.extend(section_rows.into_iter().map(|mut row| {
+        rows.extend(section_rows.iter().cloned().map(|mut row| {
             row.offset += base;
             row
         }));
+        per_section.push(section_rows);
     }
     rows.as_mut_slice().sort_by_key(|left| left.offset);
-    rows
+    (per_section, rows)
 }
 
-fn surface_rows(
+fn surface_rows_per_section(
     sections: &[ScannedSection<'_>],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Vec<SurfaceRow> {
-    charged_surface_rows(sections.iter(), surface::rows_with_packed_readings, losses)
+) -> (Vec<Vec<SurfaceRow>>, Vec<SurfaceRow>) {
+    charged_surface_rows_per_section(sections.iter(), surface::rows_with_packed_readings, losses)
 }
 
-fn cross_section_surface_rows(
+fn cross_section_surface_rows_per_section(
     sections: &[ScannedSection<'_>],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Vec<SurfaceRow> {
-    charged_surface_rows(
+) -> (Vec<Vec<SurfaceRow>>, Vec<SurfaceRow>) {
+    charged_surface_rows_per_section(
         cross_sections(sections),
         surface::cross_section_rows_with_packed_readings,
         losses,
@@ -1706,70 +1722,55 @@ fn surface_prototype_records(
     )
 }
 
-fn surface_parameters(
+type SectionSurfaceParameters = (
+    Vec<SurfaceParameterRecord>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+);
+
+fn surface_parameters_for_section_rows<'a, 'data: 'a>(
     ctx: &DecodeContext<'_>,
-    sections: &[ScannedSection<'_>],
+    sections: impl Iterator<Item = &'a ScannedSection<'data>>,
+    section_rows: &[Vec<SurfaceRow>],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
-    collect_section_records_result(
-        sections.iter(),
-        |bytes| surface::parameter_records_with_losses(ctx, bytes, losses),
-        |record, base| {
+) -> Result<(Vec<SectionSurfaceParameters>, Vec<SurfaceParameterRecord>), CodecError> {
+    let mut per_section = Vec::new();
+    let mut all_records = Vec::new();
+    for (section, rows) in sections.zip(section_rows) {
+        let base = section.section.offset();
+        let mut section_losses = Vec::new();
+        let records =
+            surface::parameter_records_for_rows(ctx, section.region, rows, &mut section_losses)?;
+        losses.extend(section_losses.iter().cloned());
+        all_records.extend(records.iter().cloned().map(|mut record| {
             record.offset += base;
             record.body_offset += base;
-        },
-        |record| record.offset,
-    )
+            record
+        }));
+        per_section.push((records, section_losses));
+    }
+    all_records.as_mut_slice().sort_by_key(|left| left.offset);
+    Ok((per_section, all_records))
 }
 
-fn cross_section_surface_parameters(
+fn surface_contours_for_section_rows<'a, 'data: 'a>(
     ctx: &DecodeContext<'_>,
-    sections: &[ScannedSection<'_>],
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
-    collect_section_records_result(
-        cross_sections(sections),
-        |bytes| surface::cross_section_parameter_records(ctx, bytes, losses),
-        |record, base| {
-            record.offset += base;
-            record.body_offset += base;
-        },
-        |record| record.offset,
-    )
-}
-
-fn surface_contours(
-    ctx: &DecodeContext<'_>,
-    sections: &[ScannedSection<'_>],
+    sections: impl Iterator<Item = &'a ScannedSection<'data>>,
+    section_rows: &[Vec<SurfaceRow>],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<SurfaceContourRecord>, CodecError> {
-    collect_section_records_result(
-        sections.iter(),
-        |bytes| surface::contour_records_with_losses(ctx, bytes, losses),
-        |record, base| {
+    let mut records = Vec::new();
+    for (section, rows) in sections.zip(section_rows) {
+        let base = section.section.offset();
+        let decoded = surface::contour_records_for_rows(ctx, section.region, rows, losses)?;
+        records.extend(decoded.into_iter().map(|mut record| {
             record.offset += base;
             record.envelope_offset += base;
             record.surface_row_offset += base;
-        },
-        |record| record.offset,
-    )
-}
-
-fn cross_section_surface_contours(
-    ctx: &DecodeContext<'_>,
-    sections: &[ScannedSection<'_>],
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Vec<SurfaceContourRecord>, CodecError> {
-    collect_section_records_result(
-        cross_sections(sections),
-        |bytes| surface::cross_section_contour_records(ctx, bytes, losses),
-        |record, base| {
-            record.offset += base;
-            record.envelope_offset += base;
-            record.surface_row_offset += base;
-        },
-        |record| record.offset,
-    )
+            record
+        }));
+    }
+    records.as_mut_slice().sort_by_key(|left| left.offset);
+    Ok(records)
 }
 
 fn loop_array_scan(sections: &[ScannedSection<'_>]) -> LoopArrayScan {
@@ -1810,83 +1811,63 @@ fn tabulated_cylinder_curve_replays(
     )
 }
 
-fn plane_local_systems(
+fn plane_local_systems_for_section_data<'a, 'data: 'a>(
     ctx: &DecodeContext<'_>,
-    sections: &[ScannedSection<'_>],
+    sections: impl Iterator<Item = &'a ScannedSection<'data>>,
+    section_rows: &[Vec<SurfaceRow>],
+    section_parameters: &[SectionSurfaceParameters],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<PlaneLocalSystem>, CodecError> {
-    collect_section_records_result(
-        sections.iter(),
-        |bytes| surface::plane_local_systems(ctx, bytes, losses),
-        |record, base| {
+    let mut systems = Vec::new();
+    for ((section, rows), (parameters, param_losses)) in
+        sections.zip(section_rows).zip(section_parameters)
+    {
+        let base = section.section.offset();
+        losses.extend(param_losses.iter().cloned());
+        let decoded = surface::plane_local_systems_for_rows_with_parameters(
+            ctx,
+            section.region,
+            rows,
+            parameters,
+            losses,
+        )?;
+        systems.extend(decoded.into_iter().map(|mut record| {
             record.offset += base;
             record.row_offset += base;
-        },
-        |record| record.offset,
-    )
+            record
+        }));
+    }
+    systems.as_mut_slice().sort_by_key(|left| left.offset);
+    Ok(systems)
 }
 
-fn cross_section_plane_local_systems(
+fn plane_envelopes_for_section_rows<'a, 'data: 'a>(
     ctx: &DecodeContext<'_>,
-    sections: &[ScannedSection<'_>],
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Vec<PlaneLocalSystem>, CodecError> {
-    collect_section_records_result(
-        cross_sections(sections),
-        |bytes| surface::cross_section_plane_local_systems(ctx, bytes, losses),
-        |record, base| {
-            record.offset += base;
-            record.row_offset += base;
-        },
-        |record| record.offset,
-    )
-}
-
-fn plane_envelopes(
-    ctx: &DecodeContext<'_>,
-    sections: &[ScannedSection<'_>],
+    sections: impl Iterator<Item = &'a ScannedSection<'data>>,
+    section_rows: &[Vec<SurfaceRow>],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     frames: &[PlaneLocalSystem],
+    offset_row: bool,
 ) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
-    collect_section_records_result(
-        sections.iter(),
-        |bytes| {
-            let mut records = surface::plane_envelopes_with_losses(ctx, bytes, losses)?;
-            surface::reconcile_plane_envelope_literals(
-                &mut records,
-                frames,
-                &crate::scalar::ScalarCache::from_section_checked(bytes),
-            );
-            Ok(records)
-        },
-        |record, base| {
+    let mut envelopes = Vec::new();
+    for (section, rows) in sections.zip(section_rows) {
+        let base = section.section.offset();
+        let mut records = surface::plane_envelopes_for_rows(ctx, section.region, rows, losses)?;
+        surface::reconcile_plane_envelope_literals(
+            &mut records,
+            frames,
+            &crate::scalar::ScalarCache::from_section_checked(section.region),
+        );
+        envelopes.extend(records.into_iter().map(|mut record| {
             record.offset += base;
-            record.row_offset += base;
-        },
-        |record| record.offset,
-    )
-}
-
-fn cross_section_plane_envelopes(
-    ctx: &DecodeContext<'_>,
-    sections: &[ScannedSection<'_>],
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    frames: &[PlaneLocalSystem],
-) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
-    collect_section_records_result(
-        cross_sections(sections),
-        |bytes| {
-            let mut records = surface::cross_section_plane_envelopes(ctx, bytes, losses)?;
-            surface::reconcile_plane_envelope_literals(
-                &mut records,
-                frames,
-                &crate::scalar::ScalarCache::from_section_checked(bytes),
-            );
-            Ok(records)
-        },
-        |record, base| record.offset += base,
-        |record| record.offset,
-    )
+            if offset_row {
+                record.row_offset += base;
+            }
+            record
+        }));
+    }
+    envelopes.as_mut_slice().sort_by_key(|left| left.offset);
+    Ok(envelopes)
 }
 
 fn curve_prototypes(sections: &[ScannedSection<'_>]) -> Result<Vec<CurvePrototype>, CodecError> {
@@ -2365,6 +2346,7 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
         for row in &mut variables.rows {
             row.offset += section_offset;
         }
+        variables.rows_end += section_offset;
     }
     if let Some(segments) = &mut definition.segments {
         segments.offset += section_offset;
@@ -2408,6 +2390,9 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
         for row in &mut relations.rows {
             row.offset += section_offset;
         }
+        if let Some(end) = &mut relations.rows_end {
+            *end += section_offset;
+        }
         if let Some(table) = &mut relations.skamps {
             table.shift_offsets(section_offset);
         }
@@ -2440,20 +2425,28 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
     }
 }
 
-fn feature_definitions(
+fn feature_definitions_and_replays(
     sections: &[ScannedSection<'_>],
-) -> Result<Vec<FeatureDefinition>, CodecError> {
+) -> Result<(Vec<FeatureDefinition>, Vec<FeatureDefinition>), CodecError> {
     let mut definitions = Vec::new();
+    let mut replay_definitions = Vec::new();
     for section in sections.iter().filter(|section| {
         section.section.name() == "FeatDefs" || section.section.name() == "DEPDB_DATA"
     }) {
         let payload = section.region;
-        let decoded = if section.section.name() == "DEPDB_DATA" {
-            feature::definitions::depdb_definitions(payload)?
+        let (decoded, replays) = if section.section.name() == "DEPDB_DATA" {
+            (
+                feature::definitions::depdb_definitions(payload)?,
+                Vec::new(),
+            )
         } else {
-            feature::definitions::definitions(payload)?
+            feature::definitions::definitions_and_positional_replays(payload)?
         };
         definitions.extend(decoded.into_iter().map(|mut definition| {
+            offset_feature_definition(&mut definition, section.section.offset());
+            definition
+        }));
+        replay_definitions.extend(replays.into_iter().map(|mut definition| {
             offset_feature_definition(&mut definition, section.section.offset());
             definition
         }));
@@ -2483,7 +2476,17 @@ fn feature_definitions(
         }
     }
     definitions.as_mut_slice().sort_by_key(|left| left.offset);
-    Ok(definitions)
+    replay_definitions
+        .as_mut_slice()
+        .sort_by_key(|left| left.offset);
+    Ok((definitions, replay_definitions))
+}
+
+#[cfg(test)]
+fn feature_definitions(
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<FeatureDefinition>, CodecError> {
+    Ok(feature_definitions_and_replays(sections)?.0)
 }
 
 fn feature_row_definitions(rows: &[FeatureRow]) -> Result<Vec<FeatureDefinition>, CodecError> {
@@ -2556,19 +2559,6 @@ fn section_owner_ranges(
         ranges.push((row.body_offset, end));
     }
     Ok(ranges)
-}
-
-fn positional_replay_definitions(
-    sections: &[ScannedSection<'_>],
-) -> Result<Vec<FeatureDefinition>, CodecError> {
-    collect_section_records_result(
-        sections
-            .iter()
-            .filter(|section| section.section.name() == "FeatDefs"),
-        feature::definitions::positional_replay_definitions,
-        offset_feature_definition,
-        |definition| definition.offset,
-    )
 }
 
 fn feature_operations(
@@ -2936,13 +2926,14 @@ pub(crate) fn scan_bytes<'a>(
         sections,
     );
     let loop_arrays = loop_array_scan(&loop_array_sections);
-    let mut nonvisible_surface_rows =
-        surface_rows(&nonvisible_geometry_sections, &mut local_work_cap_losses);
+    let (nonvisible_rows_per_section, mut nonvisible_surface_rows) =
+        surface_rows_per_section(&nonvisible_geometry_sections, &mut local_work_cap_losses);
     nonvisible_surface_rows.extend(legacy_geometry.nonvisible_rows);
     nonvisible_surface_rows
         .as_mut_slice()
         .sort_by_key(|left| left.offset);
-    let mut surface_rows = surface_rows(&model_geometry_sections, &mut local_work_cap_losses);
+    let (model_rows_per_section, mut surface_rows) =
+        surface_rows_per_section(&model_geometry_sections, &mut local_work_cap_losses);
     surface_rows.extend(legacy_geometry.rows);
     let surface_row_owners = collect_section_records_result(
         model_geometry_sections.iter(),
@@ -2951,43 +2942,76 @@ pub(crate) fn scan_bytes<'a>(
         |record| record.offset,
     )?;
     surface_rows.as_mut_slice().sort_by_key(|left| left.offset);
-    let cross_section_surface_rows =
-        cross_section_surface_rows(sections, &mut local_work_cap_losses);
-    let nonvisible_surface_parameters = surface_parameters(
+    let (cross_rows_per_section, cross_section_surface_rows) =
+        cross_section_surface_rows_per_section(sections, &mut local_work_cap_losses);
+    let (_, nonvisible_surface_parameters) = surface_parameters_for_section_rows(
         ctx,
-        &nonvisible_geometry_sections,
+        nonvisible_geometry_sections.iter(),
+        &nonvisible_rows_per_section,
         &mut local_work_cap_losses,
     )?;
-    let surface_parameters =
-        surface_parameters(ctx, &model_geometry_sections, &mut local_work_cap_losses)?;
-    let cross_section_surface_parameters =
-        cross_section_surface_parameters(ctx, sections, &mut local_work_cap_losses)?;
-    let nonvisible_surface_contours = surface_contours(
+    let (model_params_per_section, surface_parameters) = surface_parameters_for_section_rows(
         ctx,
-        &nonvisible_geometry_sections,
+        model_geometry_sections.iter(),
+        &model_rows_per_section,
         &mut local_work_cap_losses,
     )?;
-    let surface_contours =
-        surface_contours(ctx, &model_geometry_sections, &mut local_work_cap_losses)?;
-    let cross_section_surface_contours =
-        cross_section_surface_contours(ctx, sections, &mut local_work_cap_losses)?;
+    let (cross_params_per_section, cross_section_surface_parameters) =
+        surface_parameters_for_section_rows(
+            ctx,
+            cross_sections(sections),
+            &cross_rows_per_section,
+            &mut local_work_cap_losses,
+        )?;
+    let nonvisible_surface_contours = surface_contours_for_section_rows(
+        ctx,
+        nonvisible_geometry_sections.iter(),
+        &nonvisible_rows_per_section,
+        &mut local_work_cap_losses,
+    )?;
+    let surface_contours = surface_contours_for_section_rows(
+        ctx,
+        model_geometry_sections.iter(),
+        &model_rows_per_section,
+        &mut local_work_cap_losses,
+    )?;
+    let cross_section_surface_contours = surface_contours_for_section_rows(
+        ctx,
+        cross_sections(sections),
+        &cross_rows_per_section,
+        &mut local_work_cap_losses,
+    )?;
     let tabulated_cylinder_curve_replays =
         tabulated_cylinder_curve_replays(&model_geometry_sections)?;
-    let plane_local_systems =
-        plane_local_systems(ctx, &model_geometry_sections, &mut local_work_cap_losses)?;
-    let cross_section_plane_local_systems =
-        cross_section_plane_local_systems(ctx, sections, &mut local_work_cap_losses)?;
-    let plane_envelopes = plane_envelopes(
+    let plane_local_systems = plane_local_systems_for_section_data(
         ctx,
-        &model_geometry_sections,
+        model_geometry_sections.iter(),
+        &model_rows_per_section,
+        &model_params_per_section,
+        &mut local_work_cap_losses,
+    )?;
+    let cross_section_plane_local_systems = plane_local_systems_for_section_data(
+        ctx,
+        cross_sections(sections),
+        &cross_rows_per_section,
+        &cross_params_per_section,
+        &mut local_work_cap_losses,
+    )?;
+    let plane_envelopes = plane_envelopes_for_section_rows(
+        ctx,
+        model_geometry_sections.iter(),
+        &model_rows_per_section,
         &mut local_work_cap_losses,
         &plane_local_systems,
+        true,
     )?;
-    let cross_section_plane_envelopes = cross_section_plane_envelopes(
+    let cross_section_plane_envelopes = plane_envelopes_for_section_rows(
         ctx,
-        sections,
+        cross_sections(sections),
+        &cross_rows_per_section,
         &mut local_work_cap_losses,
         &cross_section_plane_local_systems,
+        false,
     )?;
     let outline_planes = surface::placed_outline_planes(&plane_envelopes, &plane_local_systems);
     let positional_frame_planes =
@@ -3140,7 +3164,7 @@ pub(crate) fn scan_bytes<'a>(
         feature::rows::surface_merge_replay_affected_ids(&feature_rows, &feature_affected_ids)?;
     let feature_loop_restore_directions = feature::rows::loop_restore_directions(&feature_rows);
     let feature_entity_tables = feature_entity_tables(sections, &feature_ids, &surface_rows)?;
-    let feature_definitions = feature_definitions(sections)?;
+    let (feature_definitions, raw_replay_definitions) = feature_definitions_and_replays(sections)?;
     let feature_definitions =
         feature::definitions::bind_definition_owners(feature_definitions, &feature_geometry_tables);
     let mut feature_definitions = feature::definitions::bind_trimmed_definition_owners(
@@ -3156,7 +3180,7 @@ pub(crate) fn scan_bytes<'a>(
         .sort_by_key(|left| left.offset);
     let claimed_definition_owners = claimed_definition_owners(&feature_definitions);
     let replay_definitions = feature::definitions::bind_replay_definition_owners(
-        positional_replay_definitions(sections)?,
+        raw_replay_definitions,
         &feature_entity_tables,
         &claimed_definition_owners,
     );

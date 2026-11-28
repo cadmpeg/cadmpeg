@@ -167,6 +167,7 @@ fn face(node: &impl NodeFields, body_offset: usize) -> Option<Read<FaceNode>> {
             attr: node.index(),
             node_id,
             refs,
+            front: node.pointers(["next_front", "previous_front", "front_shell"]),
             sense,
             offset,
             end,

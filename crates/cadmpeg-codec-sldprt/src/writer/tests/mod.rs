@@ -3,6 +3,7 @@
 
 mod anonymous_metadata;
 mod brep_agreement;
+mod caller_limits;
 mod capacity;
 pub(crate) mod configuration_carriers;
 mod digests;

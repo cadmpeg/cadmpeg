@@ -3,6 +3,7 @@
 
 use cadmpeg_asm::acis_header;
 use cadmpeg_asm::asm_header;
+use cadmpeg_asm::brep::given_up::WithheldRecord;
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
 use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
@@ -16,7 +17,7 @@ use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::Identity;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::detect::{classify, header_attributes, StreamKind};
@@ -147,33 +148,29 @@ fn decode_acis_binary(
             "ACIS binary header has no record stream",
         ));
     };
+    let mut extensions = false;
     let (payload, face_children) = if ctx.container_only() {
         (None, BTreeMap::new())
     } else {
         let start = stream.offset();
-        let framed = match acis_header::solved_record_limit_with_header(bytes, header) {
-            Some(limit) => sab::frame(
-                ctx,
-                bytes,
-                start,
-                limit,
-                cadmpeg_asm::kernel_header::RefWidth::Four,
-                header.metadata.entity_count,
-            ),
-            None => sab::frame_history(
-                ctx,
-                bytes,
-                start,
-                bytes.len(),
-                cadmpeg_asm::kernel_header::RefWidth::Four,
-                header.metadata.entity_count,
-            ),
-        };
-        let records = framed.map_err(|failure| {
+        let limit = acis_header::solved_record_limit_with_header(bytes, header);
+        let framed = sab::frame_for_header(
+            ctx,
+            bytes,
+            start,
+            limit.unwrap_or(bytes.len()),
+            cadmpeg_asm::kernel_header::RefWidth::Four,
+            &header.metadata,
+            limit.is_none(),
+        );
+        let mut records = framed.map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
                 CodecError::malformed(format_args!("ACIS SAB framing failed: {error}"))
             })
         })?;
+        extensions =
+            !sab::normalize_extended_base(&mut records, header.metadata.save_format_version)
+                .is_empty();
         let brep = decode_with_header(
             ctx,
             &records,
@@ -212,12 +209,23 @@ fn decode_acis_binary(
         None,
         layers(&evidence),
     )?;
-    if header.metadata.unreadable_product_fields().next().is_some() {
+    if extensions {
+        result.body.losses.push(SatLossCode::SourceRecordExtensionsUnprojected.note(
+            "ACIS base extension integers have no neutral projection; shared entity fields decoded; complete stream retained"));
+    }
+    let header_span = header
+        .metadata
+        .unreadable_product_fields()
+        .next()
+        .is_some()
+        .then_some(("sat:source:header#0", 0..stream.offset()));
+    let extension_span = extensions.then_some(("sat:source:record-extensions#0", 0..bytes.len()));
+    if header_span.is_some() || extension_span.is_some() {
         retain_source(
             ctx,
             &mut result,
             bytes,
-            [("sat:source:header#0", 0..stream.offset())],
+            header_span.into_iter().chain(extension_span),
         )?;
     }
     Ok(result)
@@ -317,8 +325,9 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         )?),
         None => None,
     };
-    let extensions =
-        !ctx.container_only() && (1100..10_000).contains(&text_header.save_format_version);
+    let extensions = !ctx.container_only()
+        && cadmpeg_asm::kernel_header::EXTENDED_ACIS_SAVE_FORMATS
+            .contains(&text_header.save_format_version);
     // A record that holds the whole stream already keeps each part's bytes.
     let whole_stream =
         extensions || concatenated_streams || legacy_context || body_wire || standalone_faces;
@@ -340,11 +349,12 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         (matched, kernel),
     )?;
     crate::loss::text_stream_losses(
-        text_header.diagnostics.iter().chain(&framing),
-        unread
-            .as_ref()
-            .filter(|_| unread_stream_layout)
-            .map(|span| span.start),
+        text_header.diagnostics.iter().chain(
+            framing
+                .iter()
+                .filter(|diagnostic| diagnostic.kind != sat::StreamDiagnosticKind::Unread),
+        ),
+        None,
         &mut result.body.losses,
     );
     if extensions {
@@ -392,6 +402,11 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
             .chain(concatenated_span),
     )?;
     if let Some(span) = unread {
+        let (cause, code) = if unread_stream_layout {
+            (Cause::Undecoded, SatLossCode::SourceStreamLayoutUnprojected)
+        } else {
+            (Cause::Unreadable, SatLossCode::FramingRecordsUnread)
+        };
         let reason = framing
             .iter()
             .find(|diagnostic| diagnostic.kind == sat::StreamDiagnosticKind::Unread)
@@ -409,7 +424,11 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
             part = part.digest_only();
         }
         let loss = ctx
-            .give_up_part(part, CodecError::malformed(reason))?
+            .give_up_part(
+                part,
+                cause,
+                CodecError::malformed(format_args!("{}: {reason}", code.kind())),
+            )?
             .commit(ctx, &mut result.ir, &mut result.source_fidelity)?;
         result.body.losses.push(loss);
     }
@@ -537,17 +556,19 @@ fn build_result(
             (SatLossCode::EdgeToleranceUnresolved,
                 "edge tolerance is not positive and finite; tolerance left unset; source record retained")
         } else if id.contains(":brep:shell#") {
-            given_up.push(unprojected.give_up(ctx, &record, "shell", SatLossCode::TopologyShellUnprojected.note(
-                "shell has no admissible members or owner; shell omitted from region references"))?);
+            given_up.push(unprojected.give_up(
+                ctx,
+                &record,
+                "shell",
+                "shell has no admissible members or owner; shell omitted from region references",
+            )?);
             continue;
         } else if id.contains(":brep:face#") {
             given_up.push(unprojected.give_up(
                 ctx,
                 &record,
                 "face",
-                SatLossCode::TopologyFaceOwnerUnprojected.note(
-                    "standalone source face has no shell owner required by the IR; face omitted",
-                ),
+                "standalone source face has no shell owner required by the IR; face omitted",
             )?);
             continue;
         } else if id.contains(":brep:untyped-record#") {
@@ -569,8 +590,13 @@ fn build_result(
             stats,
             annotation_records,
             unbounded_faces,
+            withheld,
         },
     ) = transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!(FORMAT), brep)?;
+    let withheld = withheld
+        .iter()
+        .map(|record| unprojected.give_up_withheld(ctx, record))
+        .collect::<Result<Vec<_>, _>>()?;
     for face in &unbounded_faces {
         losses.push(SatLossCode::TopologyFaceBoundaryUnstated.note(format!(
             "face record {} states no loop on a {}, which no face covers whole: face {} is stated partial",
@@ -658,8 +684,11 @@ fn build_result(
     for id in untyped {
         source_fidelity.mark_untyped(id.as_str(), [ArenaClass::Model])?;
     }
-    for (why, part) in given_up {
-        body.losses.push(why);
+    for part in given_up {
+        body.losses
+            .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
+    }
+    for part in withheld {
         body.losses
             .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
     }
@@ -680,14 +709,15 @@ struct Unprojected {
 
 impl Unprojected {
     /// Gives up `record`, a source record of `kind` that no neutral topology
-    /// holds, for the codec loss `why`, as a part over its bytes.
+    /// holds, as a part over its bytes. The record conforms to the format,
+    /// and the IR has no place for it.
     fn give_up(
         &self,
         ctx: &DecodeContext<'_>,
         record: &cadmpeg_ir::unknown::UnknownRecord,
         kind: &'static str,
-        why: cadmpeg_ir::report::loss::LossNote,
-    ) -> Result<(cadmpeg_ir::report::loss::LossNote, GivenUpPart), CodecError> {
+        why: &str,
+    ) -> Result<GivenUpPart, CodecError> {
         let mut part = Part::at(
             FORMAT,
             kind,
@@ -705,8 +735,21 @@ impl Unprojected {
         if self.whole_stream {
             part = part.digest_only();
         }
-        let error = CodecError::malformed(format_args!("{}: {}", why.code, why.message));
-        Ok((why, ctx.give_up_part(part, error)?))
+        ctx.give_up_part(part, Cause::Undecoded, CodecError::malformed(why))
+    }
+
+    /// Gives up `record`, a topology record the shared decode read and left
+    /// out, as a part over its bytes.
+    fn give_up_withheld(
+        &self,
+        ctx: &DecodeContext<'_>,
+        record: &WithheldRecord,
+    ) -> Result<GivenUpPart, CodecError> {
+        let mut part = record.part(FORMAT);
+        if self.whole_stream {
+            part = part.digest_only();
+        }
+        ctx.give_up_part(part, record.cause, record.error())
     }
 }
 

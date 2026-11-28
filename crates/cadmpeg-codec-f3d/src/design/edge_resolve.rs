@@ -77,7 +77,12 @@ pub(super) fn resolved_edge_group(
             previous_state_id,
             feature_id,
         },
-        (EdgeGroupProof::Generic, None, &mut false),
+        (
+            EdgeGroupProof::Generic,
+            None,
+            &mut EdgeGroupAssumptions::default(),
+            None,
+        ),
         ctx,
     )
 }
@@ -370,21 +375,40 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
     ctx: &DecodeContext<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<cadmpeg_ir::features::selections::EdgeSelection, CodecError> {
-    let mut deleted_set_assumed = false;
+    resolved_treatment_group(group, input, None, ctx, losses)
+}
+
+/// Resolve an edge-treatment group. With `shared_transition`, the group's
+/// transition proofs and one-member radius-candidate proof are withheld when
+/// an identity of another group in the scope carries the group's transition
+/// edge set, and the flag records that they were withheld.
+fn resolved_treatment_group(
+    group: &DesignConstructionOperandGroup,
+    input: EdgeTreatmentInputs<'_>,
+    shared_transition: Option<&mut bool>,
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<cadmpeg_ir::features::selections::EdgeSelection, CodecError> {
+    let mut assumptions = EdgeGroupAssumptions::default();
     let selection = resolved_edge_treatment_group_with_corners_inner(
         group,
         input,
         ctx,
-        &mut deleted_set_assumed,
+        (&mut assumptions, shared_transition),
     )?;
-    if deleted_set_assumed
-        && matches!(
-            selection,
-            cadmpeg_ir::features::selections::EdgeSelection::Historical { .. }
-        )
-    {
+    let historical = matches!(
+        selection,
+        cadmpeg_ir::features::selections::EdgeSelection::Historical { .. }
+    );
+    if historical && assumptions.deleted_set {
         losses.push(crate::loss::F3dLossCode::HistoricalEdgeSelectionDeletedSetAssumed.note(format!(
             "Group {} is read with the assumption that the treated edge set equals the transition-deleted set.",
+            group.id
+        )));
+    }
+    if historical && assumptions.first_side_pair {
+        losses.push(crate::loss::F3dLossCode::HistoricalEdgeSelectionFirstSidePairAssumed.note(format!(
+            "Group {} is read with the assumption that each member whose first side names three faces selects an edge that two of those faces share, and that the members select distinct edges.",
             group.id
         )));
     }
@@ -395,7 +419,7 @@ fn resolved_edge_treatment_group_with_corners_inner(
     group: &DesignConstructionOperandGroup,
     input: EdgeTreatmentInputs<'_>,
     ctx: &DecodeContext<'_>,
-    deleted_set_assumed: &mut bool,
+    (assumptions, shared_transition): (&mut EdgeGroupAssumptions, Option<&mut bool>),
 ) -> Result<cadmpeg_ir::features::selections::EdgeSelection, CodecError> {
     use cadmpeg_ir::features::selections::EdgeSelection;
     let EdgeTreatmentInputs {
@@ -430,7 +454,8 @@ fn resolved_edge_treatment_group_with_corners_inner(
                     radius: treatment_radius,
                 },
                 None,
-                deleted_set_assumed,
+                assumptions,
+                shared_transition,
             ),
             ctx,
         );
@@ -490,7 +515,8 @@ fn resolved_edge_treatment_group_with_corners_inner(
                 radius: treatment_radius,
             },
             Some(&edge_members),
-            deleted_set_assumed,
+            assumptions,
+            shared_transition,
         ),
         ctx,
     )?;
@@ -547,6 +573,16 @@ fn resolved_edge_treatment_group_with_corners_inner(
     }
 }
 
+/// Readings that a resolved treatment group assumes.
+#[derive(Default)]
+struct EdgeGroupAssumptions {
+    /// The treated edge set equals the transition-deleted set.
+    deleted_set: bool,
+    /// A member whose first side names three faces selects an edge that two
+    /// of them share, and the members select distinct edges.
+    first_side_pair: bool,
+}
+
 #[derive(Clone, Copy)]
 enum EdgeGroupProof {
     /// Member-local recipe and persistent-identity proofs only.
@@ -567,10 +603,11 @@ fn resolved_edge_group_with_transition_chain(
     operands: &[DesignEdgeOperand],
     identity_operands: &[DesignEdgeIdentityOperand],
     transition: EdgeGroupTransition<'_>,
-    (proof, members_override, deleted_set_assumed): (
+    (proof, members_override, assumptions, shared_transition): (
         EdgeGroupProof,
         Option<&[crate::records::identity::Located<u32>]>,
-        &mut bool,
+        &mut EdgeGroupAssumptions,
+        Option<&mut bool>,
     ),
     ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::features::selections::EdgeSelection, CodecError> {
@@ -705,6 +742,14 @@ fn resolved_edge_group_with_transition_chain(
         identity_matches.push(operand);
     }
     let identity_matches = identities_complete.then_some(identity_matches);
+    let transition_shared = shared_transition.is_some_and(|found| {
+        let shared = treatment_radius.is_some()
+            && identity_matches.as_deref().is_some_and(|identities| {
+                transition_is_shared_by_sibling_group(group, identity_operands, identities)
+            });
+        *found |= shared;
+        shared
+    });
     let has_recipe_operands = members.iter().map(|member| &member.value).all(|member| {
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == stream
@@ -823,7 +868,9 @@ fn resolved_edge_group_with_transition_chain(
         None => false,
     };
     let identity_radius_slots = match (treatment_radius, identity_matches.as_ref()) {
-        (Some(radius), Some(matches)) => radius_edge_identity_group_candidates(matches, radius),
+        (Some(radius), Some(matches)) if !transition_shared => {
+            radius_edge_identity_group_candidates(matches, radius)
+        }
         _ => None,
     };
     let has_complete_identity_selection = identity_matches.as_ref().is_some_and(|operands| {
@@ -974,6 +1021,10 @@ fn resolved_edge_group_with_transition_chain(
     if exact_slots.is_none() {
         exact_slots = unique_edge_group_assignment(&matched_operands, ctx)?;
     }
+    if exact_slots.is_none() && allow_edge_treatment_transition_chain {
+        exact_slots = first_side_pair_edge_group_assignment(&matched_operands, ctx)?;
+        assumptions.first_side_pair = exact_slots.is_some();
+    }
     if exact_slots.is_none() {
         exact_slots = changed_reference_edge_group_candidates(&matched_operands, ctx)?;
     }
@@ -984,7 +1035,7 @@ fn resolved_edge_group_with_transition_chain(
         };
         if slots.is_none() {
             slots = match (treatment_radius, identity_matches.as_ref()) {
-                (Some(radius), Some(operands)) => {
+                (Some(radius), Some(operands)) if !transition_shared => {
                     radius_edge_identity_group_candidates(operands, radius)
                 }
                 _ => None,
@@ -1027,7 +1078,7 @@ fn resolved_edge_group_with_transition_chain(
         }
         if slots.is_none() && allow_edge_treatment_transition_chain {
             slots = shared_reference_deleted_edge_group_candidates(&matched_operands, ctx)?;
-            *deleted_set_assumed = slots.is_some();
+            assumptions.deleted_set = slots.is_some();
         }
         if slots.is_none() {
             slots = scope_partition_edge_group_candidates(group, groups, operands, members);
@@ -1040,7 +1091,7 @@ fn resolved_edge_group_with_transition_chain(
         identity_matches.as_deref(),
     ) {
         (true, Some(radius), Some(identities))
-            if exact_slots.is_none() && transition_state_id.is_some() =>
+            if exact_slots.is_none() && transition_state_id.is_some() && !transition_shared =>
         {
             transition_complete_edge_group_candidates(&matched_operands, identities, radius)
         }
@@ -1054,7 +1105,7 @@ fn resolved_edge_group_with_transition_chain(
         // take the edges its transition deletes.
         if allow_edge_treatment_transition_chain {
             let slots = shared_reference_deleted_edge_group_candidates(&matched_operands, ctx)?;
-            *deleted_set_assumed = slots.is_some();
+            assumptions.deleted_set = slots.is_some();
             slots
         } else {
             None
@@ -1682,6 +1733,293 @@ fn transition_complete_edge_group_candidates(
     None
 }
 
+/// Whether an identity of another group in the group's scope carries the
+/// group's transition edge set. The set then states the edges of several
+/// groups together.
+fn transition_is_shared_by_sibling_group(
+    group: &DesignConstructionOperandGroup,
+    identity_operands: &[DesignEdgeIdentityOperand],
+    identities: &[&DesignEdgeIdentityOperand],
+) -> bool {
+    let Some(first) = identities.first() else {
+        return false;
+    };
+    let transition = sorted_transition_slots(&first.transition_edge_candidates);
+    let stream = native_stream(&group.id);
+    !transition.is_empty()
+        && identity_operands.iter().any(|operand| {
+            native_stream(&operand.id) == stream
+                && operand.scope_record_index == group.scope_record_index
+                && operand.group_record_index != group.record_index
+                && sorted_transition_slots(&operand.transition_edge_candidates) == transition
+        })
+}
+
+/// One edge group to which a Fillet scope's radius store assigns a radius.
+pub(crate) struct ScopeTreatmentGroup<'a> {
+    /// The construction group of the assignment, when the scope has it.
+    pub(crate) group: Option<&'a DesignConstructionOperandGroup>,
+    /// The constant radius of the assignment.
+    pub(crate) radius: Option<f64>,
+}
+
+/// The inputs that every edge-treatment group of one scope shares.
+#[derive(Clone, Copy)]
+pub(crate) struct ScopeTreatmentInputs<'a> {
+    pub(crate) groups: &'a [DesignConstructionOperandGroup],
+    pub(crate) operands: &'a [DesignEdgeOperand],
+    pub(crate) identity_operands: &'a [DesignEdgeIdentityOperand],
+    pub(crate) vertex_operands: &'a [DesignEdgeTreatmentVertexOperand],
+    pub(crate) histories: &'a [crate::history_records::AsmHistory],
+    pub(crate) previous_state_id: Option<i64>,
+    pub(crate) feature_id: &'a cadmpeg_ir::features::FeatureId,
+}
+
+impl<'a> ScopeTreatmentInputs<'a> {
+    fn with_radius(self, treatment_radius: Option<f64>) -> EdgeTreatmentInputs<'a> {
+        EdgeTreatmentInputs {
+            groups: self.groups,
+            operands: self.operands,
+            identity_operands: self.identity_operands,
+            vertex_operands: self.vertex_operands,
+            histories: self.histories,
+            previous_state_id: self.previous_state_id,
+            feature_id: self.feature_id,
+            treatment_radius,
+        }
+    }
+}
+
+/// The selection of one group of a Fillet scope and the losses it charges.
+pub(crate) struct ScopeGroupSelection {
+    pub(crate) edges: cadmpeg_ir::features::selections::EdgeSelection,
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+}
+
+/// Resolve the groups of one Fillet scope, in the order of `scope_groups`.
+/// A group without a construction group has no selection.
+///
+/// When an identity of one group carries the transition edge set of another
+/// group, the scope is first read with the leftover partition. When the
+/// partition does not apply, every group keeps the selection that its own
+/// proofs give.
+pub(crate) fn resolved_fillet_scope_groups(
+    scope_groups: &[ScopeTreatmentGroup<'_>],
+    input: ScopeTreatmentInputs<'_>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<Option<ScopeGroupSelection>>, CodecError> {
+    if scope_groups
+        .iter()
+        .any(|scope_group| scope_group.group.is_none())
+    {
+        return resolved_scope_pass(scope_groups, input, None, ctx);
+    }
+    let mut shared = false;
+    let mut selections = resolved_scope_pass(scope_groups, input, Some(&mut shared), ctx)?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    if partition_leftover_treatment_groups(scope_groups, &mut selections, input) || !shared {
+        return Ok(selections.into_iter().map(Some).collect());
+    }
+    resolved_scope_pass(scope_groups, input, None, ctx)
+}
+
+fn resolved_scope_pass(
+    scope_groups: &[ScopeTreatmentGroup<'_>],
+    input: ScopeTreatmentInputs<'_>,
+    mut shared_transition: Option<&mut bool>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<Option<ScopeGroupSelection>>, CodecError> {
+    let mut selections = Vec::new();
+    for scope_group in scope_groups {
+        let Some(group) = scope_group.group else {
+            selections.push(None);
+            continue;
+        };
+        let mut losses = Vec::new();
+        let edges = resolved_treatment_group(
+            group,
+            input.with_radius(scope_group.radius),
+            shared_transition.as_deref_mut(),
+            ctx,
+            &mut losses,
+        )?;
+        selections.push(Some(ScopeGroupSelection { edges, losses }));
+    }
+    Ok(selections)
+}
+
+/// Give the one native group of a Fillet scope the transition edges that
+/// the other groups of the scope do not take, and report whether it did.
+///
+/// The transition edge set of an identity is the union of the edges of every
+/// group in the scope, and every group that carries it is in `groups`. Each
+/// other group with members has a complete historical selection inside that
+/// set, or every member of that group is a lost reference and the group
+/// contributes the edges its selection states. The other groups' edges are
+/// disjoint. The target group has a constant radius, and its distinct
+/// members are identities that carry the set and the same radius
+/// candidates, have no exact slot and no recipe operand. The leftover set is
+/// nonempty, holds at least one edge per member, and blends every edge at
+/// the group radius.
+fn partition_leftover_treatment_groups(
+    groups: &[ScopeTreatmentGroup<'_>],
+    selections: &mut [ScopeGroupSelection],
+    input: ScopeTreatmentInputs<'_>,
+) -> bool {
+    use cadmpeg_ir::features::selections::EdgeSelection;
+
+    let Some(previous_state_id) = input.previous_state_id else {
+        return false;
+    };
+    if groups.len() != selections.len() || groups.len() < 2 {
+        return false;
+    }
+    let mut native = selections
+        .iter()
+        .enumerate()
+        .filter(|(_, selection)| matches!(selection.edges, EdgeSelection::Native(_)))
+        .map(|(index, _)| index);
+    let (Some(target), None) = (native.next(), native.next()) else {
+        return false;
+    };
+    let (Some(target_group), Some(radius)) = (groups[target].group, groups[target].radius) else {
+        return false;
+    };
+    if !radius.is_finite() || radius <= 0.0 {
+        return false;
+    }
+    let stream = native_stream(&target_group.id);
+    let mut members = HashSet::new();
+    let mut identities = Vec::new();
+    for member in target_group.members() {
+        if !members.insert(member.value) {
+            return false;
+        }
+        let mut matches = input.identity_operands.iter().filter(|operand| {
+            native_stream(&operand.id) == stream
+                && operand.scope_record_index == target_group.scope_record_index
+                && operand.group_record_index == target_group.record_index
+                && operand.record_index() == member.value
+        });
+        let Some(identity) = matches.next().filter(|_| matches.next().is_none()) else {
+            return false;
+        };
+        if identity.resolved_edge_slot.is_some()
+            || !identity.resolved_edge_slots.is_empty()
+            || input.operands.iter().any(|operand| {
+                native_stream(&operand.id) == stream
+                    && operand.scope_record_index == target_group.scope_record_index
+                    && operand.record_index() == member.value
+            })
+        {
+            return false;
+        }
+        identities.push(identity);
+    }
+    let [first, rest @ ..] = identities.as_slice() else {
+        return false;
+    };
+    let transition = sorted_transition_slots(&first.transition_edge_candidates);
+    if transition.is_empty()
+        || rest.iter().any(|identity| {
+            sorted_transition_slots(&identity.transition_edge_candidates) != transition
+                || identity.treatment_radius_candidates != first.treatment_radius_candidates
+        })
+    {
+        return false;
+    }
+    let prefix = crate::ids::feature_input_prefix(input.feature_id, previous_state_id);
+    let state = crate::ids::feature_input_topology_id(input.feature_id, previous_state_id);
+    let mut taken = HashSet::new();
+    for (index, (scope_group, selection)) in groups.iter().zip(selections.iter()).enumerate() {
+        if index == target {
+            continue;
+        }
+        let Some(group) = scope_group.group else {
+            return false;
+        };
+        if native_stream(&group.id) != stream
+            || group.scope_record_index != target_group.scope_record_index
+        {
+            return false;
+        }
+        let all_lost = group.lost_edge_references.len() == group.members().len();
+        let edges = match &selection.edges {
+            EdgeSelection::Historical {
+                state: selected_state,
+                edges,
+                ..
+            } if *selected_state == state => edges.as_slice(),
+            EdgeSelection::HistoricalPartial {
+                state: selected_state,
+                edges,
+                ..
+            } if all_lost && *selected_state == state => edges.as_slice(),
+            EdgeSelection::Unresolved | EdgeSelection::Native(_)
+                if group.members().is_empty() || all_lost =>
+            {
+                &[]
+            }
+            _ => return false,
+        };
+        for edge in edges {
+            if !taken.insert(edge.clone()) {
+                return false;
+            }
+        }
+    }
+    if input.identity_operands.iter().any(|operand| {
+        native_stream(&operand.id) == stream
+            && operand.scope_record_index == target_group.scope_record_index
+            && sorted_transition_slots(&operand.transition_edge_candidates) == transition
+            && !groups.iter().any(|scope_group| {
+                scope_group
+                    .group
+                    .is_some_and(|group| group.record_index == operand.group_record_index)
+            })
+    }) {
+        return false;
+    }
+    let mut leftover = Vec::new();
+    let mut leftover_slots = Vec::new();
+    let mut transition_edges = HashSet::new();
+    for &slot in &transition {
+        let edge = crate::ids::history_input_edge_id(&prefix, slot);
+        transition_edges.insert(edge.clone());
+        if !taken.contains(&edge) {
+            leftover.push(edge);
+            leftover_slots.push(slot);
+        }
+    }
+    if taken.iter().any(|edge| !transition_edges.contains(edge))
+        || leftover.len() < identities.len()
+    {
+        return false;
+    }
+    let tolerance = EPS_EDGE_RESOLVE_RADIUS_EDGE_GROUP_CANDIDATES_E9 * (1.0 + radius.abs());
+    if leftover_slots.iter().any(|slot| {
+        !first.treatment_radius_candidates.iter().any(|candidate| {
+            candidate.edge_slot == *slot && (candidate.radius.get() - radius).abs() <= tolerance
+        })
+    }) {
+        return false;
+    }
+    let Ok(selection) = EdgeSelection::historical(state, leftover, target_group.id.clone()) else {
+        return false;
+    };
+    let target_selection = &mut selections[target];
+    target_selection.edges = selection;
+    target_selection.losses.push(
+        crate::loss::F3dLossCode::HistoricalEdgeSelectionLeftoverAssumed.note(format!(
+            "Group {} is read with the assumption that it takes the transition edges that the other groups of its scope do not take.",
+            target_group.id
+        )),
+    );
+    true
+}
+
 fn radius_edge_identity_group_candidates(
     operands: &[&DesignEdgeIdentityOperand],
     radius: f64,
@@ -1727,6 +2065,82 @@ fn radius_edge_identity_group_candidates(
     chain.sort_unstable_by(Ord::cmp);
     chain.dedup();
     (!chain.is_empty()).then_some(chain)
+}
+
+/// Assign the members of a treatment group whose first sides name three face
+/// references. Such a member's candidates are the transition-deleted edges
+/// that two of its three first-side reference lanes share, when the three
+/// lanes share no edge. Every other member contributes its proven edge. The
+/// group resolves when exactly one assignment gives each member a distinct
+/// candidate.
+fn first_side_pair_edge_group_assignment(
+    operands: &[&DesignEdgeOperand],
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<i64>>, CodecError> {
+    let mut candidate_sets = Vec::new();
+    let mut has_pair_member = false;
+    for operand in operands {
+        if let Some(edge) = resolved_edge_operand(operand) {
+            candidate_sets.push(vec![edge]);
+            continue;
+        }
+        let Some(candidates) = first_side_pair_edge_candidates(operand) else {
+            return Ok(None);
+        };
+        has_pair_member = true;
+        candidate_sets.push(candidates);
+    }
+    if !has_pair_member {
+        return Ok(None);
+    }
+    unique_bipartite_assignment(&candidate_sets, ctx)
+}
+
+fn first_side_pair_edge_candidates(operand: &DesignEdgeOperand) -> Option<Vec<i64>> {
+    let structure = operand.recipe_structure.as_ref()?;
+    if structure.root != 2 || structure.sides.len() != 2 {
+        return None;
+    }
+    let side = structure.sides.first()?;
+    let mut ordinals = Vec::new();
+    for value in std::iter::once(side.header_value)
+        .chain(side.scalars.iter().copied())
+        .filter(|value| *value != 0)
+    {
+        ordinals.push(usize::try_from(value).ok()?.checked_sub(1)?);
+    }
+    ordinals.sort_unstable_by(Ord::cmp);
+    ordinals.dedup();
+    let [first, second, third] = ordinals.as_slice() else {
+        return None;
+    };
+    let mut lanes = Vec::new();
+    for &ordinal in [first, second, third] {
+        let context = operand.recipe_reference_contexts.get(ordinal)?;
+        if usize::try_from(context.reference_ordinal).ok()? != ordinal
+            || context.shared_edge_slots.is_empty()
+        {
+            return None;
+        }
+        lanes.push(context.shared_edge_slots.as_slice());
+    }
+    let [a, b, c] = lanes.as_slice() else {
+        return None;
+    };
+    if a.iter().any(|edge| b.contains(edge) && c.contains(edge)) {
+        return None;
+    }
+    let mut candidates = Vec::new();
+    for (left, right) in [(a, b), (a, c), (b, c)] {
+        for edge in *left {
+            if right.contains(edge) && operand.transition_deleted_edge_slots.contains(edge) {
+                candidates.push(*edge);
+            }
+        }
+    }
+    candidates.sort_unstable_by(Ord::cmp);
+    candidates.dedup();
+    (!candidates.is_empty()).then_some(candidates)
 }
 
 fn unique_edge_assignment(
@@ -2785,33 +3199,42 @@ pub(super) fn project_fixed_fillet_with_corners(
     } else {
         return Ok(None);
     };
-    let mut groups = Vec::new();
-    for (fixed_group, edge_group) in assignments {
+    let mut radii = Vec::new();
+    let mut treatment_groups = Vec::new();
+    for &(fixed_group, edge_group) in &assignments {
         let radius = or_none!(radius_spec(fixed_group)?);
-        let edge_radius = match radius {
-            RadiusSpec::Constant { radius } => Some(radius.get()),
-            RadiusSpec::Chordal { .. }
-            | RadiusSpec::Asymmetric { .. }
-            | RadiusSpec::Variable { .. }
-            | RadiusSpec::Unresolved { .. } => None,
-        };
-        let edges = resolved_edge_treatment_group_with_corners(
-            edge_group,
-            crate::design::edge_resolve::EdgeTreatmentInputs {
-                groups: construction_groups,
-                operands: edge_operands,
-                identity_operands: edge_identity_operands,
-                vertex_operands,
-                histories,
-                previous_state_id: scope.previous_history_state_id(),
-                feature_id: &crate::ids::neutral_feature_id(scope),
-                treatment_radius: edge_radius,
+        treatment_groups.push(ScopeTreatmentGroup {
+            group: Some(edge_group),
+            radius: match radius {
+                RadiusSpec::Constant { radius } => Some(radius.get()),
+                RadiusSpec::Chordal { .. }
+                | RadiusSpec::Asymmetric { .. }
+                | RadiusSpec::Variable { .. }
+                | RadiusSpec::Unresolved { .. } => None,
             },
-            ctx,
-            losses,
-        )?;
+        });
+        radii.push(radius);
+    }
+    let feature_id = crate::ids::neutral_feature_id(scope);
+    let selections = resolved_fillet_scope_groups(
+        &treatment_groups,
+        ScopeTreatmentInputs {
+            groups: construction_groups,
+            operands: edge_operands,
+            identity_operands: edge_identity_operands,
+            vertex_operands,
+            histories,
+            previous_state_id: scope.previous_history_state_id(),
+            feature_id: &feature_id,
+        },
+        ctx,
+    )?;
+    let mut groups = Vec::new();
+    for (((fixed_group, _), radius), selection) in assignments.iter().zip(radii).zip(selections) {
+        let selection = or_none!(selection);
+        losses.extend(selection.losses);
         groups.push(FilletGroup {
-            edges,
+            edges: selection.edges,
             radius,
             tangency_weight: fixed_group.tangency_weight().map(|tangency| tangency.value),
         });

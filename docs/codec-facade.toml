@@ -65,6 +65,11 @@ hidden = [
 fuzz = "required"
 
 [[crate]]
+id = "alibre"
+names = ["AlibreCodec"]
+fuzz = "required"
+
+[[crate]]
 id = "edrawings"
 names = ["EdrawingsCodec"]
 fuzz = "required"
@@ -87,7 +92,7 @@ fuzz_reason = "focused targets call SatCodec"
 
 [[crate]]
 id = "sldprt"
-names = ["SldprtCodec", "exact_ledger"]
+names = ["SldprtCodec", "exact_ledger", "transmit"]
 fuzz = "required"
 
 [[crate]]
@@ -107,8 +112,7 @@ fuzz = "required"
 [[crate]]
 id = "ironcad"
 names = ["IronCadCodec"]
-fuzz = "absent"
-fuzz_reason = "the codec target calls IronCadCodec directly"
+fuzz = "required"
 
 [[crate]]
 id = "solidedge"

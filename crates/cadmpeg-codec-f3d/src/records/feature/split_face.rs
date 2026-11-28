@@ -248,7 +248,7 @@ pub(crate) struct DesignSplitFaceMethodControl {
     pub(crate) extension: u8,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum DesignSplitFaceDirectionReference {
     Unavailable,

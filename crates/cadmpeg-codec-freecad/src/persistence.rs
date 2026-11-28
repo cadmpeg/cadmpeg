@@ -124,10 +124,13 @@ pub(crate) fn drop_unreadable(
 
 /// Required property payload references must resolve. Missing naming sidecars
 /// stay in exact value XML, but cannot enter the admitted reference graph.
+/// An entry in `given_up` is absent because the decode gave it up; that
+/// give-up states the loss, so the reference to it adds no note.
 pub(crate) fn resolve_side_entries(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     properties: &mut [PropertyRecord],
     entries: &std::collections::BTreeMap<String, cadmpeg_core::decode::View<'_>>,
+    given_up: &std::collections::BTreeSet<String>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     for property in properties {
@@ -137,28 +140,9 @@ pub(crate) fn resolve_side_entries(
             }
         }
         let required_files = payload_side_files(ctx, property)?;
-        let crate::native::PropertyBody::Persisted {
-            values,
-            side_entries,
-            ..
-        } = &mut property.body
-        else {
+        let crate::native::PropertyBody::Persisted { side_entries, .. } = &mut property.body else {
             continue;
         };
-        let mut naming_files = HashSet::new();
-        for value in values {
-            for (key, name) in &value.attributes {
-                if !matches!(key.as_str(), "file" | "File") || name.is_empty() {
-                    continue;
-                }
-                if matches!(
-                    value.tag.as_str(),
-                    "StringHasher" | "StringHasher2" | "ElementMap" | "ElementMap2"
-                ) {
-                    naming_files.insert(name.as_str());
-                }
-            }
-        }
         for name in side_entries
             .iter()
             .filter(|name| !entries.contains_key(*name))
@@ -169,14 +153,16 @@ pub(crate) fn resolve_side_entries(
                     property.id
                 )));
             }
-            let code = if naming_files.contains(name.as_str()) {
-                crate::loss::FreecadLossCode::ElementMapMetadataUnresolved
-            } else {
-                crate::loss::FreecadLossCode::PersistenceSideEntryUnresolved
-            };
-            losses.push(code.note(
-                format!("property {} references unavailable optional side entry {name}; reference remains in source XML", property.id)
-            ));
+            if given_up.contains(name) {
+                continue;
+            }
+            losses.push(
+                crate::loss::FreecadLossCode::PersistenceSideEntryUnresolved.note(format!(
+                    "property {} references optional side entry {name}, which the archive \
+                     directory does not list; reference remains in source XML",
+                    property.id
+                )),
+            );
         }
         side_entries.retain(|name| entries.contains_key(name));
     }
@@ -562,22 +548,32 @@ fn parse_properties(
         .children()
         .filter(|node| node.has_tag_name("_Property"))
         .collect::<Vec<_>>();
-    let mut names = HashSet::new();
-    for node in transient_property_nodes.iter().chain(property_nodes.iter()) {
+    // `FreeCAD` restores the `_Property` elements, then the `Property`
+    // elements, each into the property of its name, so the element of a
+    // name it restores last sets that property.
+    let mut last = HashMap::new();
+    for (index, node) in transient_property_nodes
+        .iter()
+        .chain(property_nodes.iter())
+        .enumerate()
+    {
         let name = node.attribute("name").ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "{} element has no name attribute",
                 node.tag_name().name()
             ))
         })?;
-        if !names.insert(name) {
-            return Err(CodecError::malformed(format_args!(
-                "duplicate property name {name} for {owner}"
-            )));
+        if last.insert(name, index).is_some() {
+            losses.push(
+                crate::loss::FreecadLossCode::PersistencePropertyRepeated.note(format!(
+                    "{owner} stores property {name} in more than one element; the element \
+                     FreeCAD restores last is kept"
+                )),
+            );
         }
     }
     check_count(container, "Count", property_nodes.len(), losses);
-    if container.attribute("TransientCount").is_some() || !transient_property_nodes.is_empty() {
+    if container.attribute("TransientCount").is_some() {
         check_count(
             container,
             "TransientCount",
@@ -585,6 +581,23 @@ fn parse_properties(
             losses,
         );
     }
+    let restored_last = |index: usize, node: &roxmltree::Node<'_, '_>| {
+        node.attribute("name")
+            .is_some_and(|name| last.get(name) == Some(&index))
+    };
+    let transient_count = transient_property_nodes.len();
+    let transient_property_nodes = transient_property_nodes
+        .into_iter()
+        .enumerate()
+        .filter(|(index, node)| restored_last(*index, node))
+        .map(|(_, node)| node)
+        .collect::<Vec<_>>();
+    let property_nodes = property_nodes
+        .into_iter()
+        .enumerate()
+        .filter(|(index, node)| restored_last(transient_count + index, node))
+        .map(|(_, node)| node)
+        .collect::<Vec<_>>();
     for (order, node) in transient_property_nodes.into_iter().enumerate() {
         let name = retained_attr(node, "name")?;
         let type_name = retained_attr(node, "type")?;

@@ -78,19 +78,35 @@ fn parses_mixed_endian_uuid_and_nil_uuid() {
     );
 }
 
-/// A non-finite coordinate and an overflowing product are both refused, so the
-/// single product test covers every non-finite input.
+/// A non-finite coordinate and an overflowing product are both refused, and
+/// the refusal names which of the two it is.
 #[test]
 fn scaled_coordinate_refuses_nonfinite_inputs_and_overflowing_products() {
+    use super::Unscaled;
     let scale = crate::test_support::millimeter_scale(25.4);
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        assert_eq!(super::scaled_coordinate(value, scale), None, "{value}");
+        assert_eq!(
+            super::scaled_coordinate(value, scale),
+            Err(Unscaled::NonFinite),
+            "{value}"
+        );
     }
     assert_eq!(
         super::scaled_coordinate(2.0, scale),
-        Some(crate::test_support::finite(50.8))
+        Ok(crate::test_support::finite(50.8))
     );
 
     let huge = crate::test_support::millimeter_scale(f64::MAX);
-    assert_eq!(super::scaled_coordinate(f64::MAX, huge), None);
+    assert_eq!(
+        super::scaled_coordinate(f64::MAX, huge),
+        Err(Unscaled::Overflow)
+    );
+    assert_eq!(
+        super::scaled_point([1.0, f64::MAX, 0.0], huge),
+        Err(Unscaled::Overflow)
+    );
+    assert_eq!(
+        super::scaled_point([1.0, f64::MAX, f64::NAN], huge),
+        Err(Unscaled::NonFinite)
+    );
 }

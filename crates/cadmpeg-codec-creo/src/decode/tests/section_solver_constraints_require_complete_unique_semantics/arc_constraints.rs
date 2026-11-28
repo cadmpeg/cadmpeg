@@ -17,6 +17,7 @@ fn section_solver_projected_arc_and_mixed_constraints() {
     let mut point_row_symmetry = definition.clone();
     point_row_symmetry.variables = Some(with_points(
         crate::feature::definitions::FeatureVariableTable {
+            rows_end: 0,
             declared_count: 0,
             entity_ref: None,
             rows: Vec::new(),

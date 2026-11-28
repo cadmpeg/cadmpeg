@@ -63,7 +63,7 @@ pub(crate) fn project(
         }
         if let Some(object) = occurrence.native_ref.as_deref() {
             if definitions.get(occurrence.prototype.as_str()).copied() == Some(object) {
-                own_occurrences.insert(object, occurrence);
+                own_occurrences.entry(object).or_insert(occurrence);
             }
         }
     }
@@ -132,26 +132,33 @@ pub(crate) fn project(
             output.push(mesh.clone());
             continue;
         };
-        let own_occurrence = scene.own_occurrences.get(property.owner.as_str()).copied();
-        let transform = if let Some(occurrence) = own_occurrence {
-            world_transform(
+        // `FreeCAD` applies a mesh object's `Placement` to its kernel.
+        let own_placement = match placements.get(property.owner.as_str()).copied() {
+            None => Some(Transform::identity()),
+            Some(placement) => crate::placement::placement_matrix_unreported(placement)
+                .map(crate::native::frame::FiniteFrame::transform),
+        };
+        let transform = match scene.own_occurrences.get(property.owner.as_str()).copied() {
+            Some(occurrence) => world_transform(
                 ctx,
                 occurrence,
                 &occurrence_index,
                 parents,
                 &mut world,
                 &mut HashSet::new(),
-            )?
-        } else {
-            let placement = placements.get(property.owner.as_str()).copied();
-            placement
-                .map(crate::placement::placement_matrix)
-                .transpose()?
-                .flatten()
-                .map(crate::native::frame::FiniteFrame::transform)
-                .unwrap_or_default()
+            )?,
+            None => own_placement,
         };
-        output.push(placed_mesh(mesh, transform, None)?);
+        // A mesh whose model-space placement is unknown is stated at its own
+        // placement, or at its stored coordinates where that is unknown too.
+        if transform.is_none() {
+            unplaced_loss(ctx, losses, mesh.id.as_str())?;
+        }
+        output.push(placed_mesh(
+            mesh,
+            transform.or(own_placement).unwrap_or_default(),
+            None,
+        )?);
     }
     let mut population = u64_from_index(ir.entity_count());
     for occurrence in scene.occurrences {
@@ -169,14 +176,18 @@ pub(crate) fn project(
         if !scene.reachable.contains(prototype) {
             continue;
         }
-        let transform = world_transform(
+        let Some(transform) = world_transform(
             ctx,
             occurrence,
             &occurrence_index,
             parents,
             &mut world,
             &mut HashSet::new(),
-        )?;
+        )?
+        else {
+            unplaced_loss(ctx, losses, occurrence.id.as_str())?;
+            continue;
+        };
         let first_mesh = output.len();
         let mut sink = Sink {
             output: &mut output,
@@ -320,10 +331,15 @@ impl Scene<'_, '_> {
                 sink.path.pop();
                 continue;
             }
+            let Some(child_transform) = child.transform else {
+                unplaced_loss(self.ctx, sink.losses, &sink.path.join("/"))?;
+                sink.path.pop();
+                continue;
+            };
             self.expand(
                 prototype,
                 transform
-                    .compose(child.transform.unwrap_or_default())
+                    .compose(child_transform)
                     .map_err(CodecError::malformed)?,
                 stack,
                 sink,
@@ -338,14 +354,36 @@ impl Scene<'_, '_> {
     }
 }
 
+/// Reports that the mesh or mesh use `subject` has no model-space placement
+/// because a placement on its path is stored in a form the decoder cannot read.
+fn unplaced_loss(
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    subject: &str,
+) -> Result<(), CodecError> {
+    let message = format!(
+        "mesh {subject} has an unreadable placement on its path; its use is withheld, \
+         and an own mesh is stated at its own Placement, or at its stored coordinates \
+         where that Placement is unreadable"
+    );
+    ctx.retain_bytes(
+        u64_from_index(message.len()),
+        "retain FCStd mesh placement loss",
+    )?;
+    losses.push(FreecadLossCode::MeshPlacementNotTransferred.note(message));
+    Ok(())
+}
+
+/// The model-space transform of `occurrence`: `None` where an occurrence on
+/// its path states no transform.
 fn world_transform(
     ctx: &DecodeContext<'_>,
     occurrence: &Occurrence,
     index: &HashMap<&str, &Occurrence>,
     parents: &HashMap<OccurrenceId, OccurrenceId>,
-    cache: &mut HashMap<String, Transform>,
+    cache: &mut HashMap<String, Option<Transform>>,
     active: &mut HashSet<String>,
-) -> Result<Transform, CodecError> {
+) -> Result<Option<Transform>, CodecError> {
     let _depth = ctx.enter_nested("compose FCStd mesh placement")?;
     if let Some(transform) = cache.get(occurrence.id.as_str()) {
         return Ok(*transform);
@@ -354,7 +392,7 @@ fn world_transform(
         return Err(CodecError::malformed("mesh occurrence parent cycle"));
     }
     let parent = match parents.get(&occurrence.id) {
-        None => Transform::identity(),
+        None => Some(Transform::identity()),
         Some(parent) => world_transform(
             ctx,
             index
@@ -366,9 +404,10 @@ fn world_transform(
             active,
         )?,
     };
-    let transform = parent
-        .compose(occurrence.transform.unwrap_or_default())
-        .map_err(CodecError::malformed)?;
+    let transform = match parent.zip(occurrence.transform) {
+        Some((parent, own)) => Some(parent.compose(own).map_err(CodecError::malformed)?),
+        None => None,
+    };
     active.remove(occurrence.id.as_str());
     cache.insert(occurrence.id.as_str().to_owned(), transform);
     Ok(transform)

@@ -165,7 +165,6 @@ pub(in crate::writer) fn patch_framed_geometry(
     bytes: &mut [u8],
     records: &[sab::Record],
     edits: &GeometryEdits,
-    header_scale: f64,
 ) -> Result<(), CodecError> {
     let asm_edits = AsmEditSet::from_framed(
         records.to_vec(),
@@ -173,7 +172,6 @@ pub(in crate::writer) fn patch_framed_geometry(
             .map_or(cadmpeg_asm::kernel_header::RefWidth::Eight, |header| {
                 header.width
             }),
-        header_scale,
     );
     patch_asm_geometry(bytes, &asm_edits, edits)
 }
