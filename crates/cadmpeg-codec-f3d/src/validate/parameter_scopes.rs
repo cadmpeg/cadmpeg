@@ -1091,6 +1091,31 @@ pub(super) fn validate_parameter_scopes(
                                 .carrier_offset
                                 .is_some_and(|offset| offset < construction.neutron_role_offset)
                     }
+                    (393, _, Some(matrix)) => {
+                        scope.byte_offset().checked_add(54).is_some_and(|expected_offset| {
+                            matrix.scope.offset == expected_offset
+                        }) && matrix
+                            .carrier_offset
+                            .is_some_and(|offset| offset < construction.neutron_role_offset)
+                    }
+                    (399, _, Some(matrix))
+                        if matrix
+                            .carrier_offset
+                            .is_some_and(|offset| offset < construction.neutron_role_offset) =>
+                    {
+                        scope.byte_offset().checked_add(50).is_some_and(|expected_offset| {
+                            matrix.scope.offset == expected_offset
+                        })
+                    }
+                    (
+                        crate::records::feature::assembly_features::TYPED_COMPONENT_INSERT_FRAME_LENGTH,
+                        _,
+                        Some(matrix),
+                    ) if matrix.carrier_offset.is_none() => {
+                        scope.byte_offset().checked_add(u64_from_index(
+                            crate::layout::component_insert_typed_matrix_scope_584_prefix::TRANSFORM,
+                        )) == Some(matrix.scope.offset)
+                    }
                     (frame_length, paired, Some(matrix)) => {
                         let scope_delta = match (frame_length, paired) {
                             (399, _) => Some(50),

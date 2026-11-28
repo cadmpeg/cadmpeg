@@ -5520,6 +5520,17 @@ fn report_xref_placement_failures(report: &mut DecodeBody, table: &crate::xref::
             .map_or("an unresolved target", |reference| {
                 reference.relative_path.as_str()
             });
+        if failure.pose_unstated {
+            push_loss_vec(
+                &mut report.losses,
+                F3dLossCode::XrefPlacementPoseUnstated,
+                format_args!(
+                    "external occurrence {} has compact legacy placement carrier {:?} for roles {:?}; it stores only the insertion frame, which is taken as its pose because neither a direct operation table nor a component-path carrier states another",
+                    target, failure.carrier_record_index, failure.link_names
+                ),
+            );
+            continue;
+        }
         push_loss_vec(
             &mut report.losses,
             F3dLossCode::XrefPlacementUndecoded,

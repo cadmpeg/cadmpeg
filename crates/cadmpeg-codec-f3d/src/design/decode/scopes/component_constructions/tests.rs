@@ -5,6 +5,7 @@ use super::exact_component_insert_construction;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::lp_utf16;
 
+mod compact_legacy_insert;
 mod partial_placement;
 mod typed_insert;
 

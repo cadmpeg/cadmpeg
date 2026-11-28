@@ -901,21 +901,28 @@ fn root_occurrences(table: &XrefTable) -> Result<Vec<Occurrence>, cadmpeg_core::
 }
 
 /// Return the occurrence bound to a construction carrier in its Design stream.
+/// A carrier that stores no equal matrix keeps its own placement, so only an
+/// equal repeated matrix requires the reference to carry the scope transform.
 pub(crate) fn component_insert_reference<'a>(
     references: &'a [XrefReference],
     stream: &str,
     construction: &DesignComponentInsertConstruction,
 ) -> Option<&'a XrefReference> {
+    let kept_placement = construction
+        .placement
+        .as_ref()
+        .is_some_and(|placement| placement.carrier_offset.is_none());
     let mut matches = references.iter().filter(|reference| {
         reference.neutron_role.as_str() == construction.neutron_role
             && reference.placement_source.as_ref().is_some_and(|source| {
                 source.stream == stream
                     && source.carrier_record_index == u64::from(construction.carrier_record_index)
             })
-            && reference
-                .transform
-                .map(crate::records::xref::XrefPlacementTransform::rows)
-                == Some((*construction.transform()).into())
+            && (kept_placement
+                || reference
+                    .transform
+                    .map(crate::records::xref::XrefPlacementTransform::rows)
+                    == Some((*construction.transform()).into()))
     });
     let reference = matches.next()?;
     matches.next().is_none().then_some(reference)
@@ -1056,6 +1063,7 @@ fn bind_occurrences(
         .map(|placement| OccurrencePlacementFailure {
             carrier_record_index: Some(placement.carrier_record_index),
             link_names: placement.link_names.clone(),
+            pose_unstated: false,
         })
         .collect();
     let mut placement_overrides = Vec::new();
@@ -1213,7 +1221,7 @@ fn occurrence_records<'a>(
             .iter()
             .find(|candidate| candidate.name.strip_prefix(prefix) == Some("MetaStream.dat"))
     });
-    let (serializer_magic, headers, carriers) = if let Some(meta_entry) = meta_entry {
+    let (serializer_magic, headers, carriers, posed) = if let Some(meta_entry) = meta_entry {
         let in_meta = |error| XrefFailure::entry(&meta_entry.name, error);
         let meta = scan.parsed_metastream(&meta_entry.name).map_err(in_meta)?;
         let meta_bytes = scan.entry_bytes(&meta_entry.name).map_err(in_meta)?;
@@ -1224,13 +1232,20 @@ fn occurrence_records<'a>(
             typed_occurrence_placement_records(bytes, &meta).map_err(in_stream)?,
             typed_records(bytes, &meta, "CommonData", COMPONENT_PATH_TYPE_GUID)
                 .map_err(in_stream)?,
+            operation_table_targets(bytes, &meta).map_err(in_stream)?,
         )
     } else {
-        (None, Vec::new(), Vec::new())
+        (None, Vec::new(), Vec::new(), HashSet::new())
     };
-    let (placements, failures) =
-        occurrence_placements_with_failures(bytes, &headers, serializer_magic, None)
+    let (placements, mut failures) =
+        occurrence_placements_with_failures(bytes, &headers, serializer_magic, None, Some(&posed))
             .map_err(in_stream)?;
+    let poses = carriers
+        .iter()
+        .filter_map(|record| bytes.get(record.offset..record.end))
+        .filter_map(|body| component_path_pose(body, serializer_magic))
+        .collect::<Vec<_>>();
+    retain_unstated_poses(&mut failures, &poses);
     Ok(OccurrenceRecords {
         bytes,
         serializer_magic,
@@ -1239,6 +1254,20 @@ fn occurrence_records<'a>(
         failures,
         metadata_missing: meta_entry.is_none(),
     })
+}
+
+/// Drop the `pose_unstated` entries whose placement a component-path carrier
+/// names: that carrier states the current pose of the placement.
+fn retain_unstated_poses(
+    failures: &mut Vec<OccurrencePlacementFailure>,
+    poses: &[ComponentPathPose],
+) {
+    failures.retain(|failure| {
+        !failure.pose_unstated
+            || !poses
+                .iter()
+                .any(|pose| Some(pose.placement_record_index) == failure.carrier_record_index)
+    });
 }
 
 /// The component-path carriers that name one placement.
@@ -1316,6 +1345,8 @@ where
 }
 
 /// Apply a scope transform once to its carrier and keep the other placements.
+/// A carrier that stores a placement other than the scope's insertion frame
+/// keeps its own placement.
 fn occurrence_transforms_with_precedence(
     direct: Vec<(u64, [[f64; 4]; 4])>,
     placements: &[OccurrencePlacement],
@@ -1335,7 +1366,9 @@ fn occurrence_transforms_with_precedence(
             if !overridden.insert(*carrier) {
                 continue;
             }
-            placement.transform = Some(*transform);
+            if placement.transform.unwrap_or(IDENTITY_ROWS) == *transform {
+                placement.transform = Some(*transform);
+            }
         }
         selected.push(placement);
     }
@@ -1354,7 +1387,8 @@ fn occurrence_transforms_with_precedence(
     selected
 }
 
-/// Count placements whose carrier also has a scope-bound transform.
+/// Count placements whose carrier also has a scope-bound transform equal to
+/// its own placement.
 fn superseded_placement_count(
     direct: &[(u64, [[f64; 4]; 4])],
     placements: &[OccurrencePlacement],
@@ -1364,11 +1398,43 @@ fn superseded_placement_count(
         .iter()
         .filter(|placement| {
             placement.link_names.iter().any(|name| name == role)
-                && direct
-                    .iter()
-                    .any(|(carrier, _)| *carrier == placement.carrier_record_index)
+                && direct.iter().any(|(carrier, transform)| {
+                    *carrier == placement.carrier_record_index
+                        && placement.transform.unwrap_or(IDENTITY_ROWS) == *transform
+                })
         })
         .count()
+}
+
+/// The occurrence-placement records that the admitted direct operation tables
+/// of one Design stream name.
+fn operation_table_targets(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<HashSet<u64>, CodecError> {
+    let mut versions = std::collections::HashMap::new();
+    for design_type in meta.types.iter().filter(|design_type| {
+        design_type.module == "Fusion"
+            && design_type
+                .type_guid
+                .as_str()
+                .eq_ignore_ascii_case(operation_pose::TYPE_GUID)
+    }) {
+        for &entity in design_type.entities.values() {
+            versions.insert(entity, design_type.version);
+        }
+    }
+    if versions.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let frames = crate::metastream::primary_record_frames(meta, bytes.len())?;
+    Ok(operation_pose::direct_table_targets(
+        frames.iter().filter_map(|frame| {
+            let version = *versions.get(&frame.entity_id)?;
+            let body = bytes.get(frame.start..frame.member_end)?;
+            (View::u64_le_at(body, 7) == Some(frame.entity_id)).then_some((version, body))
+        }),
+    ))
 }
 
 /// Return the `BulkStream` offsets whose type-table identity is the stable
@@ -1496,6 +1562,10 @@ pub(crate) struct OccurrencePlacementFailure {
     pub(crate) carrier_record_index: Option<u64>,
     /// Link names recovered from the valid target-path prefix.
     pub(crate) link_names: Vec<String>,
+    /// The record closes as a compact legacy placement, which stores only the
+    /// insertion frame, and no direct operation table names it. The placement
+    /// is admitted at the insertion frame.
+    pub(crate) pose_unstated: bool,
 }
 
 /// Parse every indexed record that closes exactly under the occurrence-placement
@@ -1518,18 +1588,23 @@ fn occurrence_placements_filtered(
     serializer_magic: Option<u32>,
     typed_offsets: Option<&HashSet<usize>>,
 ) -> Vec<OccurrencePlacement> {
-    occurrence_placements_with_failures(bytes, records, serializer_magic, typed_offsets)
+    occurrence_placements_with_failures(bytes, records, serializer_magic, typed_offsets, None)
         .expect("test placement parse")
         .0
 }
 
 /// Parse admitted placement records and retain role names from records whose
 /// target path is valid but whose remaining generation-specific payload is not.
+///
+/// With `posed`, a compact legacy placement that no direct operation table
+/// names also yields a `pose_unstated` entry in the failures: its matrix is
+/// the insertion frame, and the placement stays admitted at that frame.
 fn occurrence_placements_with_failures(
     bytes: &[u8],
     records: &[IndexedRecord],
     serializer_magic: Option<u32>,
     typed_offsets: Option<&HashSet<usize>>,
+    posed: Option<&HashSet<u64>>,
 ) -> Result<(Vec<OccurrencePlacement>, Vec<OccurrencePlacementFailure>), CodecError> {
     let mut placements = Vec::new();
     let mut failures = Vec::new();
@@ -1546,9 +1621,12 @@ fn occurrence_placements_with_failures(
         {
             continue;
         }
-        if let Some(placement) = occurrence_placement(body, serializer_magic)? {
-            placements.push(placement);
-        } else {
+        let unposed = posed.is_some_and(|posed| {
+            compact_legacy_placement(body)
+                && View::u64_le_at(body, 7).is_none_or(|record| !posed.contains(&record))
+        });
+        let placement = occurrence_placement(body, serializer_magic)?;
+        if placement.is_none() || unposed {
             let link_names = occurrence_path(body)
                 .map(|(names, _)| names)
                 .or_else(|| legacy_occurrence_role(body).map(|role| vec![role.to_string()]))
@@ -1556,8 +1634,10 @@ fn occurrence_placements_with_failures(
             failures.push(OccurrencePlacementFailure {
                 carrier_record_index: View::u64_le_at(body, 7),
                 link_names,
+                pose_unstated: placement.is_some(),
             });
         }
+        placements.extend(placement);
     }
     Ok((placements, failures))
 }
@@ -1574,6 +1654,15 @@ fn occurrence_placement(
     if let Some(details) = legacy_attributed_placement_details(body) {
         return Ok(Some(legacy_external_placement(body, details)));
     }
+    // A record that closes as the wide legacy envelope keeps the wide reading
+    // when it also closes as the compact member sequence: the compact reading
+    // would add an owner whose component-path pose then replaces the scope
+    // transform. Only the compact envelope proper takes the compact reading.
+    if legacy_occurrence_placement(body).is_none() || compact_legacy_placement(body) {
+        if let Some(details) = compact_legacy_placement_details(body) {
+            return Ok(Some(legacy_external_placement(body, details)));
+        }
+    }
     if let Some((role, transform)) = legacy_occurrence_placement(body) {
         let role = role.to_string();
         let link_names = [role].into_iter().collect::<Vec<_>>();
@@ -1585,9 +1674,6 @@ fn occurrence_placement(
             link_names,
             transform,
         }));
-    }
-    if let Some(details) = compact_legacy_placement_details(body) {
-        return Ok(Some(legacy_external_placement(body, details)));
     }
     if let Some(placement) = repeated_target_occurrence_placement(body)? {
         return Ok(Some(placement));
@@ -1748,8 +1834,7 @@ fn legacy_external_placement(
 /// grammar also closes is the typed placement (DR-1077).
 fn legacy_external_placement_details(body: &[u8]) -> Option<LegacyExternalPlacementDetails<'_>> {
     legacy_attributed_placement_details(body).or_else(|| {
-        legacy_occurrence_placement_details(body)
-            .is_none()
+        (legacy_occurrence_placement_details(body).is_none() || compact_legacy_placement(body))
             .then(|| compact_legacy_placement_details(body))
             .flatten()
     })
@@ -2273,27 +2358,46 @@ pub(crate) fn repeated_target_component_insert(
     carrier_record_index: u32,
     expected_transform: [[f64; 4]; 4],
 ) -> Result<Option<(String, usize, Option<usize>)>, CodecError> {
+    let (role, role_offset, transform) = xref_some!(repeated_target_component_insert_carrier(
+        bytes,
+        carrier_at,
+        relation_at,
+        carrier_record_index
+    )?);
+    if transform.map_or(IDENTITY_ROWS, |(_, matrix)| matrix) != expected_transform {
+        return Ok(None);
+    }
+    Ok(Some((
+        role,
+        role_offset,
+        transform.map(|(offset, _)| offset),
+    )))
+}
+
+/// Role, role payload offset, and stored `(offset, matrix)` placement of an
+/// insert carrier; `None` placement is the stored identity form.
+pub(crate) type InsertCarrierPlacement = (String, usize, Option<(usize, [[f64; 4]; 4])>);
+
+/// The role, its payload offset, and the stored placement of the
+/// repeated-target occurrence carrier that ends at the relation record of a
+/// `Component Insert` scope. `None` placement is the stored identity form.
+pub(crate) fn repeated_target_component_insert_carrier(
+    bytes: &[u8],
+    carrier_at: usize,
+    relation_at: usize,
+    carrier_record_index: u32,
+) -> Result<Option<InsertCarrierPlacement>, CodecError> {
     let body = xref_some!(bytes.get(carrier_at..relation_at));
     if xref_some!(View::u64_le_at(body, 7)) != u64::from(carrier_record_index) {
         return Ok(None);
     }
     let details = xref_some!(repeated_target_occurrence_placement_details(body)?);
-    let transform = details.transform.map_or(
-        [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-        |(_, matrix)| matrix,
-    );
-    if transform != expected_transform {
-        return Ok(None);
-    }
     Ok(Some((
         details.role,
         carrier_at + details.role_offset,
-        details.transform.map(|(offset, _)| carrier_at + offset),
+        details
+            .transform
+            .map(|(offset, matrix)| (carrier_at + offset, matrix)),
     )))
 }
 
@@ -3348,6 +3452,13 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f
         .map(|(link_name, _, transform)| (link_name, transform.map(|(_, matrix)| matrix)))
 }
 
+/// Whether a legacy typed placement has the compact envelope. Its matrix is the
+/// insertion frame; the occurrence's direct operation table states its pose.
+pub(crate) fn compact_legacy_placement(body: &[u8]) -> bool {
+    use crate::layout::legacy_attributed_external_placement_prefix as compact;
+    legacy_occurrence_placement_details(body).is_some() && body.get(compact::LEN) == Some(&0)
+}
+
 /// The legacy typed placement with the payload offset of its role and the
 /// offset of its matrix, relative to the record header.
 type LegacyPlacementDetails<'a> = (Utf16View<'a>, usize, Option<(usize, [[f64; 4]; 4])>);
@@ -3461,24 +3572,35 @@ fn legacy_occurrence_prefix(body: &[u8], insert: bool) -> Option<(usize, Option<
     }
     View::u32_le_at(body, at)?;
     at += 4;
-    if View::u32_le_at(body, at)? != 1 {
-        return None;
-    }
-    at += 4;
-    if body.get(at) != Some(&0) {
-        return None;
-    }
-    at += 1;
-    if insert {
-        if !matches!(body.get(at), Some(0 | 1)) || body.get(at + 1) != Some(&0) {
+    // The compact envelope ends the path at the instance discriminator and
+    // stores a positive ordinal; the wide envelope stores `u32 1`, the path
+    // terminator, and `u32 1`.
+    if !insert && body.get(at) == Some(&0) {
+        at += 1;
+        if View::u32_le_at(body, at)? == 0 {
             return None;
         }
-        at += 2;
+        at += 4;
+    } else {
+        if View::u32_le_at(body, at)? != 1 {
+            return None;
+        }
+        at += 4;
+        if body.get(at) != Some(&0) {
+            return None;
+        }
+        at += 1;
+        if insert {
+            if !matches!(body.get(at), Some(0 | 1)) || body.get(at + 1) != Some(&0) {
+                return None;
+            }
+            at += 2;
+        }
+        if View::u32_le_at(body, at)? != 1 {
+            return None;
+        }
+        at += 4;
     }
-    if View::u32_le_at(body, at)? != 1 {
-        return None;
-    }
-    at += 4;
     for _ in 0..2 {
         let (guid, next) = lp_utf16_bounded_view(body, at, 36..=36)?;
         if !guid.is_guid_relaxed() {
