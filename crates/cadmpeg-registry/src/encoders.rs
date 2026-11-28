@@ -95,8 +95,8 @@ mod tests {
             let requested = format!("{}:nonesuch", encoder.id());
             let error = encoder
                 .plan(
-                    cadmpeg_ir::codec::write::EncodeInput::new(&ir, None),
-                    TargetRequest::Explicit(&requested),
+                    cadmpeg_ir::codec::write::EncodeInput::new(&ir, None)
+                        .with_target(TargetRequest::Explicit(&requested)),
                 )
                 .expect_err("an id outside the catalog is refused");
             let cadmpeg_ir::codec::write::EncodeError::UnsupportedTarget(refusal) = &error else {

@@ -379,9 +379,11 @@ fn unreadable_and_stale_sketch_responses_are_given_up_and_duplicates_kept() {
         } else {
             assert!(asset.is_none());
             assert_eq!(given_up, 1);
-            assert!(report.losses().iter().any(|loss| loss.code.as_deref()
-                == Some("onshape/member.unreadable")
-                && loss.detail.contains("omitted the member")));
+            assert!(report
+                .losses()
+                .iter()
+                .any(|loss| loss.detail.contains("onshape/member.unreadable: ")
+                    && loss.detail.contains("omitted the member")));
         }
         assert!(report
             .losses()
@@ -406,11 +408,12 @@ fn assert_support_frame_kept(model: &Model, case: &str) {
     );
 }
 
-fn has_loss(report: &Report, code: &str, detail: &str) -> bool {
+/// Whether `report` states `code` as `charge` with `detail`.
+fn has_loss(report: &Report, code: &str, detail: &str, charge: Charge) -> bool {
     report
         .losses()
         .iter()
-        .any(|loss| loss.code.as_deref() == Some(code) && loss.detail.contains(detail))
+        .any(|loss| loss.states(code, charge) && loss.detail.contains(detail))
 }
 
 #[test]
@@ -461,7 +464,8 @@ fn malformed_stored_matrices_keep_the_support_frame_with_named_assumption() {
             has_loss(
                 &report,
                 "onshape/sketch.plane-assumed",
-                "assumed the support"
+                "assumed the support",
+                Charge::Note
             ),
             "{case}: {:?}",
             report.losses()
@@ -476,7 +480,8 @@ fn absent_sketch_response_keeps_the_support_frame_with_named_assumption() {
     assert!(has_loss(
         &report,
         "onshape/sketch.plane-assumed",
-        "assumed the support"
+        "assumed the support",
+        Charge::Note
     ));
 }
 
@@ -500,7 +505,8 @@ fn sketch_response_microversion_must_match_the_bundle() {
     assert!(has_loss(
         &report,
         "onshape/member.unreadable",
-        "microversion"
+        "microversion",
+        Charge::GivenUp(Cause::Unreadable)
     ));
 }
 
@@ -519,7 +525,8 @@ fn sketch_response_row_count_is_bounded() {
     assert!(has_loss(
         &report,
         "onshape/sketch.plane-assumed",
-        "row limit"
+        "row limit",
+        Charge::Note
     ));
 }
 
@@ -548,4 +555,34 @@ fn optional_sketch_response_preserves_existing_default_plane_output() {
     actual["model"]["assets"] = json!([]);
     assert_eq!(expected, actual);
     crate::test_support::review::validate(updated);
+}
+
+#[test]
+fn accounting_reports_only_the_unused_datum_control() {
+    let bytes = changed(&offset_bundle(false, "OFFSET"), |path, value| {
+        if path.ends_with("features.json") {
+            value["features"][0]["parameters"]
+                .as_array_mut()
+                .unwrap()
+                .extend([
+                    json!({"parameterId":"futureFlag","value":true}),
+                    json!({"parameterId":"flipNormal","value":false}),
+                ]);
+        }
+    });
+    let (model, report) = read(&bytes).unwrap();
+    assert_eq!(kinds(&model)[0], "datum_offset_plane");
+    let losses: Vec<_> = report
+        .losses()
+        .iter()
+        .filter(|loss| {
+            loss.code.as_deref() == Some("onshape/history.parameter-not-projected")
+                && loss.detail.ends_with("; subject: Raised datum")
+        })
+        .map(|loss| loss.detail.as_str())
+        .collect();
+    assert_eq!(
+        losses,
+        ["parameter futureFlag has no projected design field; subject: Raised datum"]
+    );
 }

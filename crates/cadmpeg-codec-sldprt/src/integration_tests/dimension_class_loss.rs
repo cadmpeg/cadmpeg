@@ -307,12 +307,13 @@ fn a_refused_sketch_dimension_of_a_configuration_stream_lane_reaches_the_decode_
             LaneStream::Configuration,
             DEFAULT_LINEAR_RESOLUTION,
         ));
-        let native = SldprtNative::load(
+        let native = SldprtNative::load_under(
             decoded
                 .ir()
                 .native
                 .namespace("sldprt")
                 .expect("native records"),
+            cadmpeg_core::decode::ResourceLimits::default(),
             decoded.ir().tolerances.linear,
         )
         .unwrap();
@@ -359,7 +360,7 @@ fn a_part_written_unchanged_keeps_its_native_records_and_linear_tolerance() {
     for fidelity in [Some(decoded.source_fidelity()), None] {
         let mut output = Vec::new();
         let report = SldprtCodec
-            .plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
+            .plan(EncodeInput::new(ir, fidelity).with_target(TargetRequest::Inherit))
             .unwrap()
             .write_to(&mut output)
             .unwrap();
@@ -381,7 +382,12 @@ fn a_part_written_unchanged_keeps_its_native_records_and_linear_tolerance() {
         if fidelity.is_some() {
             assert_eq!(Some(namespace), ir.native.namespace("sldprt"));
         }
-        assert!(SldprtNative::load(namespace, read_back.ir().tolerances.linear).is_ok());
+        assert!(SldprtNative::load_under(
+            namespace,
+            cadmpeg_core::decode::ResourceLimits::default(),
+            read_back.ir().tolerances.linear,
+        )
+        .is_ok());
     }
 }
 
@@ -403,14 +409,15 @@ fn a_part_written_under_another_linear_tolerance_omits_its_stale_native_records(
     let mut ir = decoded.ir().clone();
     ir.tolerances.linear = PositiveLength::new(WRITE_TOLERANCE_MM).unwrap();
     let namespace = ir.native.namespace("sldprt").expect("native records");
-    assert!(SldprtNative::load(namespace, decoded.ir().tolerances.linear).is_ok());
-    assert!(SldprtNative::load(namespace, ir.tolerances.linear).is_err());
+    let limits = cadmpeg_core::decode::ResourceLimits::default();
+    assert!(SldprtNative::load_under(namespace, limits, decoded.ir().tolerances.linear).is_ok());
+    assert!(SldprtNative::load_under(namespace, limits, ir.tolerances.linear).is_err());
 
     crate::test_support::plan_inherited_write_declined(&ir, decoded.source_fidelity());
 
     let mut output = Vec::new();
     let report = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None).with_target(TargetRequest::Inherit))
         .unwrap()
         .write_to(&mut output)
         .unwrap();

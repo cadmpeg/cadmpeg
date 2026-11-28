@@ -136,13 +136,10 @@ fn owner(list_id: Option<u32>, list_type: u8) -> Option<SurfaceOwner> {
 }
 
 fn exactly_one_match(region: &[u8], needle: &[u8]) -> Option<usize> {
-    let mut matches = region
-        .windows(needle.len())
-        .enumerate()
-        .filter(|(_, window)| *window == needle)
-        .map(|(at, _)| at);
-    let first = matches.next()?;
-    matches.next().is_none().then_some(first)
+    let first = cadmpeg_core::bytes::find(region, needle)?;
+    cadmpeg_core::bytes::find_from(region, needle, first + 1)
+        .is_none()
+        .then_some(first)
 }
 
 #[cfg(test)]

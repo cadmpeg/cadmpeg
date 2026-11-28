@@ -97,7 +97,7 @@ Native writing and replay:
 
 Focused parser coverage. Focused codec parser targets import `::fuzz` only.
 
-- Kernel: `acis_header`
+- Kernel: `acis_header`, `asm_acis_interned`, `parasolid_native`
 - F3D: `f3d_asm_header`, `f3d_sab_frame`, `f3d_nurbs_surfaces`,
   `f3d_nurbs_curves`, `f3d_nurbs_pcurves`
 - SolidWorks: `sldprt_parasolid`, `sldprt_container_scan`, `sldprt_entity`,
@@ -122,10 +122,14 @@ Focused parser coverage. Focused codec parser targets import `::fuzz` only.
   `fcstd_auxiliary`
 - IGES: `iges_cards`, `iges_global`, `iges_directory`, `iges_parameters` go
   through `cadmpeg_codec_iges::fuzz`
+- Alibre: `alibre_sab` goes through `cadmpeg_codec_alibre::fuzz` over raw `SAB_DATA` bytes;
+  `alibre_codec` runs detection, inspect and full decode through `AlibreCodec`. The
+  `alibre_codec` seed is the committed CC0 specimen `corpus/alibre/cylinder.AD_PRT`.
 - Creo View: `pvz_package` and `pvz_exact` go through `cadmpeg_codec_pvz::fuzz`
 - eDrawings: `edrawings_package`, `edrawings_stream`, and `edrawings_model` go through
   `cadmpeg_codec_edrawings::fuzz`
 - OpenUSD: `usd_layer` goes through `cadmpeg_codec_usd::fuzz`
+- IronCAD: `ironcad_scene` goes through `cadmpeg_codec_ironcad::fuzz`
 
 IR and STEP:
 

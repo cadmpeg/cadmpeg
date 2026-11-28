@@ -10,6 +10,6 @@ mod ir_geometry;
 mod meta;
 mod passthrough;
 pub(super) mod report;
-mod report_coverage;
+pub(super) mod report_coverage;
 mod report_losses;
 pub(super) mod units;

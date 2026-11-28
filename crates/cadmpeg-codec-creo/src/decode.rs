@@ -10,7 +10,7 @@
 use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Decoded;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 
 use crate::container;
 
@@ -122,6 +122,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         body.losses
             .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
     }
+    for part in build::report_coverage::give_up_unread_section_rows(ctx, &scan)? {
+        body.losses
+            .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
+    }
     for expansion in &scan.framing.expansion_losses {
         let part = give_up_unexpanded_section(ctx, &scan, expansion)?;
         body.losses
@@ -163,12 +167,19 @@ fn give_up_unexpanded_section(
     )
     .contained_in(cadmpeg_ir::ids::Identity::from(section))
     .digest_only();
-    ctx.give_up_part(
-        part,
-        CodecError::malformed(format_args!(
-            "{}: {}",
-            crate::loss::CreoLossCode::CompressedSectionUnexpanded.kind(),
-            expansion.message
-        )),
-    )
+    let why = format!(
+        "{}: {}",
+        crate::loss::CreoLossCode::CompressedSectionUnexpanded.kind(),
+        expansion.message
+    );
+    ctx.give_up_part(part, expansion.cause, give_up_error(expansion.cause, why))
+}
+
+/// The error a give-up of `cause` states: `Malformed` for bytes that break
+/// the format, `NotImplemented` for a form without a reading.
+pub(super) fn give_up_error(cause: Cause, why: String) -> CodecError {
+    match cause {
+        Cause::Unreadable => CodecError::Malformed(why),
+        Cause::Undecoded => CodecError::NotImplemented(why),
+    }
 }

@@ -40,7 +40,7 @@ fn a_rolled_back_attachment_names_each_record_it_added_and_no_record_it_kept() {
         unknowns.push(unknown("nx:container:added#0"));
 
         assert_eq!(
-            snapshot.attached_records(&ir, &unknowns),
+            snapshot.attached_records(&mut ir, &unknowns),
             BTreeSet::from([
                 "nx:container:added#0".to_owned(),
                 "nx:native:added#0".to_owned(),

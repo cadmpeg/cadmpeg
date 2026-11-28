@@ -3,7 +3,7 @@
 
 use cadmpeg_ir::scalar::FiniteReal;
 use serde_json::{Map, Value};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 const ASSET_PREFIX: &str = "autodesk.configuration:assets.";
 const COMPONENT_PREFIX: &str = "autodesk.configuration:components.";
@@ -434,6 +434,326 @@ pub(crate) fn new_row(id: &str, name: &str, guids: RowGuids) -> Value {
             })),
         ],
     }})
+}
+
+/// Add the column `id` with the display title `title` that names the Design
+/// record of `target` to the table at `position` of the `tables` array: its
+/// `columnData` entry and its `columnOrder` entry. A document-property
+/// target is added by [`push_property_column`]. Returns whether the column
+/// was added.
+pub(crate) fn push_column(
+    payload: &mut Map<String, Value>,
+    position: usize,
+    id: &str,
+    title: &str,
+    target: &ColumnTarget,
+) -> bool {
+    let (kind, record) = match target {
+        ColumnTarget::Parameter(record) => ("UserParameterValue", record),
+        ColumnTarget::OwnedParameter(record) => ("ParameterDoubleValue", record),
+        ColumnTarget::Feature(record) => ("DcFeature", record),
+        ColumnTarget::Property(_) => return false,
+    };
+    let object = typed_value(
+        &format!("{COMPONENT_PREFIX}configuredObject-1.0.0"),
+        cadmpeg_core::json!({
+            "id": typed_value("String", Value::from(record.to_string())),
+            "type": typed_value("String", Value::from(kind)),
+        }),
+    );
+    insert_column(payload, position, id, title, &object)
+}
+
+/// Set the indexed object that a typed parameter column configures.
+pub(crate) fn bind_parameter_column(
+    payload: &mut Map<String, Value>,
+    position: usize,
+    column: &str,
+    target: u32,
+) -> bool {
+    let Some(object) = table_mut(payload, position)
+        .and_then(|table| table.get_mut("asset"))
+        .and_then(|asset| component_mut(asset, "tableDefinition"))
+        .and_then(|definition| definition.get_mut("columnData"))
+        .and_then(|columns| columns.get_mut("value"))
+        .and_then(|columns| columns.get_mut(column))
+        .and_then(|column| column.get_mut("value"))
+        .and_then(|column| column.get_mut("object"))
+        .and_then(|object| object.get_mut("value"))
+        .and_then(Value::as_object_mut)
+    else {
+        return false;
+    };
+    object.insert(
+        "id".to_owned(),
+        typed_value("String", Value::from(target.to_string())),
+    );
+    object.insert(
+        "type".to_owned(),
+        typed_value("String", Value::from("UserParameterValue")),
+    );
+    true
+}
+
+/// Add the column `id` that names the document property `key`, in the
+/// empty property set, of the component `component`, under the title
+/// `key`, to the table at `position` of the `tables` array. Returns whether
+/// the column was added.
+pub(crate) fn push_property_column(
+    payload: &mut Map<String, Value>,
+    position: usize,
+    id: &str,
+    key: &str,
+    component: &str,
+) -> bool {
+    let object = typed_value(
+        &format!("{COMPONENT_PREFIX}configuredProperty-1.0.0"),
+        cadmpeg_core::json!({
+            "id": typed_value("String", Value::from(component)),
+            "propertyKey": typed_value("String", Value::from(key)),
+            "propertySet": typed_value("String", Value::from("")),
+            "type": typed_value("String", Value::from("Property")),
+        }),
+    );
+    insert_column(payload, position, id, key, &object)
+}
+
+/// The `id` of the first property column of the table at `position` of the
+/// `tables` array: the component whose properties the column names.
+pub(crate) fn property_component(payload: &Map<String, Value>, position: usize) -> Option<String> {
+    let table = payload.get("tables")?.as_array()?.get(position)?;
+    let table = asset(table.get("asset")?, "configurationTable-1.1.0")?;
+    let definition = component(table, "tableDefinition", "tableDefinition-1.1.0")?;
+    typed(
+        definition.get("columnData")?,
+        "map<autodesk.configuration:components.columnData-1.1.0>",
+    )?
+    .as_object()?
+    .values()
+    .find_map(|column| {
+        let column = typed_component(column, "columnData-1.1.0")?;
+        let property = typed_component(column.get("object")?, "configuredProperty-1.0.0")?;
+        string(property, "id").map(str::to_owned)
+    })
+}
+
+#[derive(Default)]
+pub(crate) struct TestRowWrite {
+    pub(crate) added: bool,
+    pub(crate) rewritten: bool,
+}
+
+#[derive(Clone)]
+pub(crate) struct TestRowTarget {
+    pub(crate) members: Option<Map<String, Value>>,
+    pub(crate) required: bool,
+}
+
+/// Replace the known members of the targeted entries. Preserve opaque entries
+/// and extra members.
+pub(crate) fn write_test_rows(
+    payload: &mut Map<String, Value>,
+    target: &BTreeMap<String, TestRowTarget>,
+) -> TestRowWrite {
+    let mut result = TestRowWrite::default();
+    if let Some(cells) = payload.get_mut("testRowData").and_then(Value::as_array_mut) {
+        let mut present = BTreeSet::new();
+        for cell in cells.iter_mut() {
+            let Some(mut entry) = test_row_members(cell) else {
+                continue;
+            };
+            let Some((column, expected)) =
+                test_row_column(&entry).and_then(|column| target.get_key_value(column))
+            else {
+                continue;
+            };
+            present.insert(column.as_str());
+            if let Some(expected) = &expected.members {
+                if !test_row_agrees(&entry, expected) {
+                    entry.extend(expected.clone());
+                    *cell = Value::from(Value::Object(entry).to_string());
+                    result.rewritten = true;
+                }
+            }
+        }
+        for (column, expected) in target {
+            let missing = expected.required && !present.contains(column.as_str());
+            if let Some(expected) = expected.members.as_ref().filter(|_| missing) {
+                cells.push(Value::from(Value::Object(expected.clone()).to_string()));
+                result.added = true;
+            }
+        }
+    }
+    result
+}
+
+/// Read the declared test-row members and identify each differing target.
+pub(crate) fn test_row_differences<'a>(
+    payload: &Map<String, Value>,
+    target: &'a BTreeMap<String, TestRowTarget>,
+) -> BTreeSet<&'a str> {
+    let mut read = BTreeSet::new();
+    let mut unwritten = BTreeSet::new();
+    for entry in payload
+        .get("testRowData")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(test_row_members)
+    {
+        if let Some((column, expected)) =
+            test_row_column(&entry).and_then(|column| target.get_key_value(column))
+        {
+            read.insert(column.as_str());
+            if !expected
+                .members
+                .as_ref()
+                .is_some_and(|expected| test_row_agrees(&entry, expected))
+            {
+                unwritten.insert(column.as_str());
+            }
+        }
+    }
+    unwritten.extend(
+        target
+            .iter()
+            .filter(|(column, expected)| {
+                expected.required && expected.members.is_some() && !read.contains(column.as_str())
+            })
+            .map(|(column, _)| column.as_str()),
+    );
+    unwritten
+}
+
+fn test_row_members(cell: &Value) -> Option<Map<String, Value>> {
+    serde_json::from_str(cell.as_str()?).ok()
+}
+
+fn test_row_column(entry: &Map<String, Value>) -> Option<&str> {
+    entry.get("ColumnUniqueID")?.as_str()
+}
+
+fn test_row_agrees(entry: &Map<String, Value>, expected: &Map<String, Value>) -> bool {
+    expected
+        .iter()
+        .all(|(key, value)| entry.get(key) == Some(value))
+}
+
+/// Add the column `id` with the title `title` and the configured `object`
+/// to the table at `position` of the `tables` array: its `columnData` entry
+/// and its `columnOrder` entry.
+fn insert_column(
+    payload: &mut Map<String, Value>,
+    position: usize,
+    id: &str,
+    title: &str,
+    object: &Value,
+) -> bool {
+    use cadmpeg_core::json;
+
+    let Some(members) = table_mut(payload, position) else {
+        return false;
+    };
+    let Some(columns) = members
+        .get_mut("asset")
+        .and_then(|asset| component_mut(asset, "tableDefinition"))
+        .and_then(|definition| definition.get_mut("columnData"))
+        .and_then(|columns| columns.get_mut("value"))
+        .and_then(Value::as_object_mut)
+    else {
+        return false;
+    };
+    columns.insert(
+        id.to_owned(),
+        typed_value(
+            &format!("{COMPONENT_PREFIX}columnData-1.1.0"),
+            json!({
+                "id": typed_value("String", Value::from(id)),
+                "isCustom": typed_value("Bool", Value::from(false)),
+                "object": object,
+                "title": typed_value("String", Value::from(title)),
+            }),
+        ),
+    );
+    if let Some(order) = members
+        .get_mut("tableView")
+        .and_then(|view| view.get_mut("asset"))
+        .and_then(|asset| component_mut(asset, "viewData"))
+        .and_then(|view| view.get_mut("columnOrder"))
+        .and_then(|order| order.get_mut("value"))
+        .and_then(Value::as_array_mut)
+    {
+        order.push(Value::from(id));
+    }
+    true
+}
+
+/// The names of a table that [`new_document`] writes.
+pub(crate) struct TableNames<'a> {
+    pub(crate) id: &'a str,
+    pub(crate) name: &'a str,
+    pub(crate) kind: &'a str,
+}
+
+/// A table document with one table, `names`, that has no column and no row,
+/// in the form [`AdmittedTables::admit`] reads (f3d.md §1.2). `guid` gives
+/// the id and the revision id of each asset from a domain name.
+pub(crate) fn new_document(
+    names: &TableNames<'_>,
+    guid: impl Fn(&str) -> String,
+) -> Map<String, Value> {
+    use cadmpeg_core::json;
+
+    let asset = |domain: &str, kind: &str, attributes: Value, components: Value| {
+        json!({
+            "id": guid(&format!("{domain} asset")),
+            "revisionId": guid(&format!("{domain} revision")),
+            "type": format!("{ASSET_PREFIX}{kind}"),
+            "attributes": attributes,
+            "components": components,
+        })
+    };
+    let component = |name: &str, kind: &str, properties: Value| json!({"name": name, "type": format!("{COMPONENT_PREFIX}{kind}"), "properties": properties});
+    Map::from_iter([
+        (
+            "asset".to_owned(),
+            asset(
+                "configuration document",
+                "configuration-1.0.0",
+                json!({}),
+                json!([component(
+                    "tableVersion",
+                    "tableData-1.0.0",
+                    json!({"tableVersion": typed_value("Int32", Value::from(1))})
+                ),]),
+            ),
+        ),
+        (
+            "tables".to_owned(),
+            json!([{
+                "asset": asset(
+                    "configuration table",
+                    "configurationTable-1.1.0",
+                    json!({"pim:configuration:tableId": names.id}),
+                    json!([component("tableDefinition", "tableDefinition-1.1.0", json!({
+                        "columnData": typed_value(&format!("map<{COMPONENT_PREFIX}columnData-1.1.0>"), json!({})),
+                        "id": typed_value("String", Value::from(names.id)),
+                        "tableName": typed_value("String", Value::from(names.name)),
+                        "tableType": typed_value("String", Value::from(names.kind)),
+                    }))]),
+                ),
+                "rows": [],
+                "tableView": {"asset": asset("configuration table view", "tableView-1.0.0", json!({}), json!([
+                    component("viewData", "tableViewData-1.0.0", json!({
+                        "columnOrder": typed_value("String", json!([])),
+                        "rowOrder": typed_value("String", json!([])),
+                    })),
+                ]))},
+            }]),
+        ),
+        ("cachedRevIds".to_owned(), json!({})),
+        ("testRowData".to_owned(), json!([])),
+    ])
 }
 
 fn typed_value(kind: &str, value: Value) -> Value {
